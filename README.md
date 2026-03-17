@@ -161,6 +161,6 @@ Vlo is licensed under the GNU Affero General Public License v3.0 or later
 
 ## Contributing
 
-Contributions are welcome. By submitting a contribution to this repository, you
-agree to the [Individual Contributor License Agreement](./CLA-INDIVIDUAL.md). To summarise the agreement in short: you retain copyright over your own code, but you give lice.nce for it to be included as part of the vlo codebase hereafter.
+Contributions are welcome, bug fixes especially (there will need to be plenty, given the stage of development). By submitting a contribution to this repository, you
+agree to the [Individual Contributor License Agreement](./CLA-INDIVIDUAL.md). To summarise the agreement in short: you retain copyright over your own code, but you give licence for it to be included as part of the vlo codebase hereafter.
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution process.

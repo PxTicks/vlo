@@ -5,8 +5,10 @@ import type { Asset } from "../../../../types/Asset";
 import { applyClipTransforms } from "../../../transformations";
 
 // Mock PixiJS
-vi.mock("pixi.js", async () => {
+vi.mock("pixi.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("pixi.js")>();
   return {
+    ...actual,
     Container: class MockContainer {
       addChild = vi.fn();
       pluginName = "";
@@ -55,10 +57,14 @@ vi.mock("../../workers/decoder.worker?worker", () => {
   };
 });
 
-// Mock applyClipTransforms
-vi.mock("../../../transformations", () => ({
-  applyClipTransforms: vi.fn(),
-}));
+// Mock applyClipTransforms (keep real calculateClipTime for renderTime)
+vi.mock("../../../transformations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../transformations")>();
+  return {
+    ...actual,
+    applyClipTransforms: vi.fn(),
+  };
+});
 
 describe("TrackRenderEngine Time Units", () => {
   let engine: TrackRenderEngine;

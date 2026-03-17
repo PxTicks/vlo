@@ -32,6 +32,15 @@ vi.mock("../../timeline/useTimelineStore", () => ({
   },
 }));
 
+// Mock the timeline barrel (dynamically imported in deleteAsset)
+vi.mock("../../timeline", () => ({
+  useTimelineStore: {
+    getState: () => ({
+      removeClipsByAssetId: mockRemoveClipsByAssetId,
+    }),
+  },
+}));
+
 vi.mock("../services/MediaProcessingService", () => ({
   mediaProcessingService: {
     computeDuration: vi.fn(),

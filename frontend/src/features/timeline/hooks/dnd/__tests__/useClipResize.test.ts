@@ -69,15 +69,15 @@ describe("useClipResize Logic", () => {
   it("should right-resize normally (Speed 1x)", () => {
     const { handleEnd } = useClipResize();
 
-    // Drag 100px right (+10000 ticks)
-    const event = { delta: { x: 100 } } as DragEndEvent;
+    // Drag 96px right (+9600 ticks = 3 frames at 30fps)
+    const event = { delta: { x: 96 } } as DragEndEvent;
 
     handleEnd(event, mockClip, "resize_right");
 
     expect(mockUpdateClipShape).toHaveBeenCalledWith(
       "clip-1",
       expect.objectContaining({
-        timelineDuration: mockClip.timelineDuration + 10000,
+        timelineDuration: mockClip.timelineDuration + 9600,
       }),
     );
   });

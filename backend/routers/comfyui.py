@@ -40,6 +40,7 @@ from services.workflow_rules.object_info import OBJECT_INFO_PATH, set_object_inf
 from routers.comfyui_compat import compat_router  # noqa: F401 -- re-exported for main.py
 
 WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
+DEFAULT_WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / ".config" / "default_workflows"
 
 router = APIRouter(prefix="/comfy", tags=["comfyui"])
 
@@ -187,6 +188,17 @@ def _is_safe_workflow_filename(filename: str) -> bool:
     return not (".." in filename or "/" in filename or "\\" in filename)
 
 
+def _resolve_workflow_path(filename: str) -> Path | None:
+    """Return the path to the workflow, checking main dir first then defaults."""
+    main = WORKFLOWS_DIR / filename
+    if main.exists():
+        return main
+    default = DEFAULT_WORKFLOWS_DIR / filename
+    if default.exists():
+        return default
+    return None
+
+
 def _parse_workflow_inputs(workflow: dict) -> list[dict]:
     """Parse a workflow and return discoverable input nodes."""
     inputs = []
@@ -232,16 +244,38 @@ async def get_workflow_graph():
 
 @router.get("/workflow/list")
 async def list_workflows():
-    """Returns a list of available workflows from the assets directory."""
+    """Returns a list of available workflows from main and default directories.
+
+    Workflows in the main directory shadow identically-named defaults.
+    """
     try:
+        seen: set[str] = set()
         workflows = []
+
+        # Main dir first – these take precedence.
         if WORKFLOWS_DIR.exists():
             for path in WORKFLOWS_DIR.glob("*.json"):
                 if path.name.endswith(".rules.json"):
                     continue
-                # Read display name from rules sidecar, fall back to file stem
+                seen.add(path.name)
                 name = path.stem
-                rules, _ = load_rules_for_workflow(WORKFLOWS_DIR, path.name)
+                rules, _ = load_rules_for_workflow(
+                    WORKFLOWS_DIR, path.name,
+                    fallback_dirs=[DEFAULT_WORKFLOWS_DIR],
+                )
+                if rules.get("name"):
+                    name = rules["name"]
+                workflows.append({"id": path.name, "name": name})
+
+        # Default dir – only add workflows not already seen.
+        if DEFAULT_WORKFLOWS_DIR.exists():
+            for path in DEFAULT_WORKFLOWS_DIR.glob("*.json"):
+                if path.name.endswith(".rules.json"):
+                    continue
+                if path.name in seen:
+                    continue
+                name = path.stem
+                rules, _ = load_rules_for_workflow(DEFAULT_WORKFLOWS_DIR, path.name)
                 if rules.get("name"):
                     name = rules["name"]
                 workflows.append({"id": path.name, "name": name})
@@ -260,8 +294,10 @@ async def list_workflows():
 
 @router.get("/workflow/content/{filename}")
 async def get_workflow_content(filename: str):
-    """Returns the raw JSON content of a workflow file."""
-    # Basic path safety check
+    """Returns the raw JSON content of a workflow file.
+
+    Checks the main workflows directory first, then falls back to defaults.
+    """
     if not _is_safe_workflow_filename(filename):
         return error_response(
             400,
@@ -270,8 +306,8 @@ async def get_workflow_content(filename: str):
             retryable=False,
         )
 
-    path = WORKFLOWS_DIR / filename
-    if not path.exists():
+    path = _resolve_workflow_path(filename)
+    if path is None:
         return error_response(
             404,
             "workflow_not_found",
@@ -370,8 +406,8 @@ async def get_workflow_rules(filename: str):
             retryable=False,
         )
 
-    workflow_path = WORKFLOWS_DIR / filename
-    if not workflow_path.exists():
+    workflow_path = _resolve_workflow_path(filename)
+    if workflow_path is None:
         return error_response(
             404,
             "workflow_not_found",
@@ -380,7 +416,10 @@ async def get_workflow_rules(filename: str):
         )
 
     try:
-        rules, warnings = load_rules_for_workflow(WORKFLOWS_DIR, filename)
+        rules, warnings = load_rules_for_workflow(
+            WORKFLOWS_DIR, filename,
+            fallback_dirs=[DEFAULT_WORKFLOWS_DIR],
+        )
 
         # Enrich with auto-discovered widgets from object_info
         try:
@@ -669,6 +708,7 @@ async def generate(request: Request):
     )
 
     comfyui_generate_service.WORKFLOWS_DIR = WORKFLOWS_DIR
+    comfyui_generate_service.DEFAULT_WORKFLOWS_DIR = DEFAULT_WORKFLOWS_DIR
     comfyui_generate_service.analyze_mask_video_bounds = analyze_mask_video_bounds
     comfyui_generate_service.crop_video = crop_video
     comfyui_generate_service.get_video_dimensions = get_video_dimensions

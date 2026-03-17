@@ -17,6 +17,7 @@ from services.workflow_rules.mask_pairs import MaskCroppingMode
 logger = logging.getLogger(__name__)
 
 WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
+DEFAULT_WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / ".config" / "default_workflows"
 
 # Maps ComfyUI class_type -> discoverable input type
 INPUT_NODE_MAP = {
@@ -240,6 +241,7 @@ async def execute_generation(
     )
     processors = build_generation_processors(
         workflows_dir=WORKFLOWS_DIR,
+        fallback_workflow_dirs=[DEFAULT_WORKFLOWS_DIR],
         input_node_map=INPUT_NODE_MAP,
         analyze_mask_video_bounds_fn=analyze_mask_video_bounds,
         crop_video_fn=crop_video,

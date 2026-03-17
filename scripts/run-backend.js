@@ -12,13 +12,15 @@ const pythonBin =
     : join(backendDir, ".venv", "bin", "python");
 
 if (!existsSync(pythonBin)) {
-  console.error("Backend environment missing. Run ./install.sh or install.bat first.");
+  console.error(
+    "Backend environment missing. Run ./install.sh or install.bat first.",
+  );
   process.exit(1);
 }
 
 const child = spawn(
   pythonBin,
-  ["-m", "uvicorn", "main:app", ...process.argv.slice(2)],
+  ["-m", "uvicorn", "main:app", "--port", "6332", ...process.argv.slice(2)],
   {
     cwd: backendDir,
     stdio: "inherit",

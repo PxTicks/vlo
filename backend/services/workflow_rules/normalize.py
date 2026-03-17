@@ -1025,6 +1025,8 @@ def normalize_rules(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]
 def load_rules_for_workflow(
     workflows_dir: Path,
     workflow_filename: str | None,
+    *,
+    fallback_dirs: list[Path] | None = None,
 ) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]:
     warnings: list[WorkflowRuleWarning] = []
     if not workflow_filename:
@@ -1041,7 +1043,15 @@ def load_rules_for_workflow(
         )
         return default_rules(), warnings
 
+    # Search primary dir first, then any fallback dirs for the sidecar.
     sidecar_path = sidecar_path_for_workflow(workflows_dir, workflow_filename)
+    if not sidecar_path.exists() and fallback_dirs:
+        for fb_dir in fallback_dirs:
+            candidate = sidecar_path_for_workflow(fb_dir, workflow_filename)
+            if candidate.exists():
+                sidecar_path = candidate
+                break
+
     if not sidecar_path.exists():
         return default_rules(), warnings
 

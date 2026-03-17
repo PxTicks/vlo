@@ -24,6 +24,7 @@ from services.gen_pipeline.processors.widget_overrides import widget_overrides_p
 def build_generation_processors(
     *,
     workflows_dir: Path,
+    fallback_workflow_dirs: list[Path] | None = None,
     input_node_map: dict[str, dict[str, str]],
     analyze_mask_video_bounds_fn: Callable[..., Any],
     crop_video_fn: Callable[[bytes, tuple[int, int, int, int]], bytes],
@@ -34,7 +35,7 @@ def build_generation_processors(
 ) -> list[Processor]:
     return [
         inject_values_processor,
-        create_apply_rules_processor(workflows_dir),
+        create_apply_rules_processor(workflows_dir, fallback_dirs=fallback_workflow_dirs),
         widget_overrides_processor,
         create_mask_crop_processor(
             analyze_mask_video_bounds_fn,

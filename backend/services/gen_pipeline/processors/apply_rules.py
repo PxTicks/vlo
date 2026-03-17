@@ -20,8 +20,9 @@ class _ApplyRulesProcessor:
         description="Loads, enriches, and applies workflow sidecar rules to the workflow",
     )
 
-    def __init__(self, workflows_dir: Path):
+    def __init__(self, workflows_dir: Path, fallback_dirs: list[Path] | None = None):
         self._workflows_dir = workflows_dir
+        self._fallback_dirs = fallback_dirs
 
     def is_active(self, ctx: BackendPipelineContext) -> bool:
         return True
@@ -57,7 +58,8 @@ class _ApplyRulesProcessor:
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
         rules, rule_load_warnings = load_rules_for_workflow(
-            self._workflows_dir, ctx.workflow_id
+            self._workflows_dir, ctx.workflow_id,
+            fallback_dirs=self._fallback_dirs,
         )
         ctx.warnings.extend(rule_load_warnings)
         enrich_rules_with_object_info(rules, ctx.workflow)
@@ -78,8 +80,12 @@ class _ApplyRulesProcessor:
         ctx.rules = rules
 
 
-def create_apply_rules_processor(workflows_dir: Path) -> Processor:
-    return _ApplyRulesProcessor(workflows_dir)
+def create_apply_rules_processor(
+    workflows_dir: Path,
+    *,
+    fallback_dirs: list[Path] | None = None,
+) -> Processor:
+    return _ApplyRulesProcessor(workflows_dir, fallback_dirs=fallback_dirs)
 
 
 __all__ = ["create_apply_rules_processor"]

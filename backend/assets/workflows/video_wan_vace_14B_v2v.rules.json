@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "nodes": {
+    "145": {
+      "ignore": true,
+      "present": {
+        "enabled": false
+      }
+    }
+  },
+  "output_injections": {
+    "144": {
+      "0": {
+        "source": {
+          "kind": "manual_slot",
+          "slot_id": "control_frames"
+        }
+      }
+    }
+  },
+  "slots": {
+    "control_frames": {
+      "input_type": "frame_batch",
+      "label": "Control Frames",
+      "experimental": true,
+      "export_fps": 16,
+      "frame_step": 4,
+      "max_frames": 81
+    }
+  },
+  "aspect_ratio_processing": {
+    "enabled": true,
+    "stride": 32,
+    "search_steps": 2,
+    "target_nodes": [
+      {
+        "node_id": "49",
+        "width_param": "width",
+        "height_param": "height"
+      }
+    ],
+    "postprocess": {
+      "enabled": true,
+      "mode": "stretch_exact",
+      "apply_to": "all_visual_outputs"
+    }
+  }
+}

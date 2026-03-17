@@ -1,0 +1,61 @@
+{
+  "id": "dd0e7a4a-b74c-454b-b144-2ff9dc8ece4a",
+  "title": "Penguin",
+  "created_at": 1769125715433,
+  "last_modified": 1769504585152,
+  "version": "1.0.0",
+  "schemaVersion": 1,
+  "createdWithVloVersion": "0.1.0",
+  "lastSavedWithVloVersion": "0.1.0",
+  "assets": {
+    "c6104c83-f6e4-4db6-a7b2-5258f29e7b28": {
+      "id": "c6104c83-f6e4-4db6-a7b2-5258f29e7b28",
+      "hash": "e580beed3e44a24a",
+      "name": "hf_20260122_232943_45d72e1c_68cb_41b8_bdac_e275e5c.mp4",
+      "type": "video",
+      "src": "assets/hf_20260122_232943_45d72e1c_68cb_41b8_bdac_e275e5c.mp4",
+      "thumbnail": "assets/thumbnails/hf_20260122_232943_45d72e1c_68cb_41b8_bdac_e275e5c.mp4_thumb.jpg",
+      "duration": 12.100000000000001,
+      "createdAt": 1769460291243
+    },
+    "8d7498b3-5238-4f59-8fb2-906c1021d6eb": {
+      "id": "8d7498b3-5238-4f59-8fb2-906c1021d6eb",
+      "hash": "2fb69e8ce66dd360",
+      "name": "A_woman_in_202601222322_bssr2mp4",
+      "type": "video",
+      "src": "assets/A_woman_in_202601222322_bssr2mp4",
+      "thumbnail": "assets/thumbnails/A_woman_in_202601222322_bssr2mp4_thumb.jpg",
+      "duration": 8,
+      "createdAt": 1769504501801
+    },
+    "fcbe653c-5330-43d6-a75f-0f3beb4f7801": {
+      "id": "fcbe653c-5330-43d6-a75f-0f3beb4f7801",
+      "hash": "18ff32470d92d4fc",
+      "name": "Professional_Mode_The_camera_rotates_around_a_sold",
+      "type": "video",
+      "src": "assets/Professional_Mode_The_camera_rotates_around_a_sold",
+      "thumbnail": "assets/thumbnails/Professional_Mode_The_camera_rotates_around_a_sold_thumb.jpg",
+      "duration": 5.1,
+      "createdAt": 1769504543556
+    },
+    "b8b68c6a-7003-4c93-983e-f06c85d943f5": {
+      "id": "b8b68c6a-7003-4c93-983e-f06c85d943f5",
+      "hash": "3836e6e13674ce1a",
+      "name": "0d5748c1_cd1f_4b03_a676_eb2acc82442cpng",
+      "type": "image",
+      "src": "assets/0d5748c1_cd1f_4b03_a676_eb2acc82442cpng",
+      "thumbnail": "assets/thumbnails/0d5748c1_cd1f_4b03_a676_eb2acc82442cpng_thumb.jpg",
+      "duration": 5,
+      "createdAt": 1769504585003
+    },
+    "286ec02a-f9e2-4da2-9d86-bf5a13ecf234": {
+      "id": "286ec02a-f9e2-4da2-9d86-bf5a13ecf234",
+      "hash": "868806a965714734",
+      "name": "ElevenLabs_2025_11_14T23_18_36_Alice_Young_British",
+      "type": "audio",
+      "src": "assets/ElevenLabs_2025_11_14T23_18_36_Alice_Young_British",
+      "duration": 0,
+      "createdAt": 1769504585095
+    }
+  }
+}

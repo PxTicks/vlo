@@ -1,0 +1,15 @@
+# Generated from backend/pyproject.toml by scripts/sync-backend-requirements.py.
+# Keep this file in sync with backend/pyproject.toml.
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+xxhash
+python-magic; sys_platform != 'win32'
+python-magic-bin; sys_platform == 'win32'
+Pillow
+httpx
+websockets
+python-dotenv
+numpy
+av

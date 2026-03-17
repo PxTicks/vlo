@@ -1,0 +1,29 @@
+{
+  "name": "VLO Test Flow",
+  "version": 1,
+  "nodes": {},
+  "output_injections": {},
+  "slots": {},
+  "postprocessing": {
+    "mode": "stitch_frames_with_audio",
+    "panel_preview": "replace_outputs",
+    "on_failure": "show_error"
+  },
+  "aspect_ratio_processing": {
+    "enabled": true,
+    "stride": 32,
+    "search_steps": 2,
+    "target_nodes": [
+      {
+        "node_id": "8",
+        "width_param": "width",
+        "height_param": "height"
+      }
+    ],
+    "postprocess": {
+      "enabled": true,
+      "mode": "stretch_exact",
+      "apply_to": "all_visual_outputs"
+    }
+  }
+}

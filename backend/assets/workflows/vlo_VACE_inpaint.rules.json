@@ -1,0 +1,50 @@
+{
+  "name": "VACE inpaint/stitch (vlo)",
+  "version": 1,
+  "mask_cropping": {
+    "mode": "crop"
+  },
+  "nodes": {
+    "98": {
+      "selection": {
+        "export_fps": 16,
+        "frame_step": 4,
+        "max_frames": 81
+      },
+      "widgets": {
+        "__derived_mask_video_treatment": {
+          "label": "Transparency handling",
+          "value_type": "enum",
+          "default": "Remove transparency",
+          "frontend_only": true
+        }
+      }
+    },
+    "101": {
+      "binary_derived_mask_of": "98"
+    }
+  },
+  "aspect_ratio_processing": {
+    "enabled": true,
+    "stride": 16,
+    "resolutions": [480, 720],
+    "search_steps": 2,
+    "target_nodes": [
+      {
+        "node_id": "104",
+        "width_param": "resize_type.width",
+        "height_param": "resize_type.height"
+      },
+      {
+        "node_id": "105",
+        "width_param": "resize_type.width",
+        "height_param": "resize_type.height"
+      }
+    ],
+    "postprocess": {
+      "enabled": true,
+      "mode": "stretch_exact",
+      "apply_to": "all_visual_outputs"
+    }
+  }
+}

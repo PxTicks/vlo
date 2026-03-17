@@ -1,0 +1,111 @@
+import { AdjustmentFilter } from "pixi-filters";
+import type { TransformationDefinition } from "../types";
+import { filterHandler } from "../filterHandler";
+
+export const colorAdjustmentDefinition: TransformationDefinition = {
+  type: "filter",
+  compatibleClips: "visual",
+  filterName: "AdjustmentFilter",
+  FilterClass: AdjustmentFilter,
+  label: "Color Adjustment",
+  handler: filterHandler,
+  uiConfig: {
+    groups: [
+      {
+        id: "color_all",
+        title: "Channels",
+        columns: 1,
+        controls: [
+          {
+            type: "slider",
+            label: "Red",
+            name: "red",
+            defaultValue: 1,
+            min: 0,
+            max: 5,
+            step: 0.1,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Green",
+            name: "green",
+            defaultValue: 1,
+            min: 0,
+            max: 5,
+            step: 0.1,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Blue",
+            name: "blue",
+            defaultValue: 1,
+            min: 0,
+            max: 5,
+            step: 0.1,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Alpha",
+            name: "alpha",
+            defaultValue: 1,
+            min: 0,
+            max: 1,
+            step: 0.05,
+            supportsSpline: true,
+          },
+        ],
+      },
+      {
+        id: "color_adjust",
+        title: "Adjustments",
+        columns: 1,
+        controls: [
+          {
+            type: "slider",
+            label: "Gamma",
+            name: "gamma",
+            defaultValue: 1,
+            min: 0,
+            max: 5,
+            step: 0.1,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Contrast",
+            name: "contrast",
+            defaultValue: 1,
+            min: 0,
+            max: 5,
+            step: 0.1,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Saturation",
+            name: "saturation",
+            defaultValue: 1,
+            min: 0,
+            max: 5,
+            step: 0.1,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Brightness",
+            name: "brightness",
+            defaultValue: 1,
+            min: 0,
+            max: 5,
+            step: 0.1,
+            supportsSpline: true,
+          },
+        ],
+      },
+    ],
+  },
+};
+

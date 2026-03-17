@@ -1,0 +1,13 @@
+# Rename this file to extra_model_paths.yaml to enable it.
+# This file follows the same format as ComfyUI's extra_model_paths.yaml
+# It allows you to point VLO to shared folders so you don't need to duplicate models.
+
+comfyui:
+    base_path: path/to/comfyui/
+    # If your SAM models are in a specific sub-folder,
+    # you can uncomment and adjust the line below:
+    # sams: models/sams
+
+custom_folders:
+    # Or place your absolute paths here, for example:
+    # sams: D:/my_shared_models/sams

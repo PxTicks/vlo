@@ -1,0 +1,46 @@
+{
+  "name": "Wan2.2 I2V & FLF2V",
+  "version": 1,
+  "nodes": {
+    "67": {
+      "widgets": {
+        "length": {}
+      }
+    },
+    "62": {
+      "present": {
+        "required": false
+      }
+    },
+    "68": {
+      "present": {
+        "required": false
+      }
+    }
+  },
+  "input_conditions": [
+    {
+      "kind": "at_least_one",
+      "inputs": ["62", "68"],
+      "message": "Provide at least one frame input."
+    }
+  ],
+  "aspect_ratio_processing": {
+    "enabled": true,
+    "stride": 32,
+    "resolutions": [480, 720],
+    "search_steps": 2,
+    "target_nodes": [
+      {
+        "node_id": "67",
+        "width_param": "width",
+        "height_param": "height"
+      }
+    ],
+    "postprocess": {
+      "enabled": true,
+      "mode": "stretch_exact",
+      "apply_to": "all_visual_outputs"
+    }
+  }
+}

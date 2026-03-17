@@ -1,0 +1,12 @@
+{
+  "name": "LTX2.3 T2V",
+  "version": 1,
+  "nodes": {
+    "269": {
+      "ignore": true,
+      "present": {
+        "enabled": false
+      }
+    }
+  }
+}

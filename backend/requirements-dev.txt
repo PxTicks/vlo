@@ -1,0 +1,5 @@
+# Generated from backend/pyproject.toml by scripts/sync-backend-requirements.py.
+# Keep this file in sync with backend/pyproject.toml.
+-r requirements.txt
+pytest
+pytest-asyncio

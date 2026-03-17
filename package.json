@@ -1,0 +1,34 @@
+{
+  "name": "vlo",
+  "version": "0.1.0",
+  "description": "Vlo alpha build",
+  "main": "index.js",
+  "scripts": {
+    "test": "npm run test --prefix frontend",
+    "lint": "npm run lint --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "frontend": "cd frontend && npm run dev",
+    "backend": "node scripts/run-backend.js --reload",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\""
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.13.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PxTicks/vlo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "AGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/PxTicks/vlo/issues"
+  },
+  "homepage": "https://github.com/PxTicks/vlo#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "mediabunny": "^1.27.4"
+  }
+}

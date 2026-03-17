@@ -1,0 +1,1 @@
+Currently should just be object_info.json, autopopulated on connecting with ComfyUI

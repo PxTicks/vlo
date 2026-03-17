@@ -1,0 +1,58 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# dependencies
+node_modules
+.venv
+
+# build
+dist
+dist-ssr
+*.local
+**/__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS Generated
+.DS_Store
+Thumbs.db
+
+# Vite Specific
+vite.config.ts.timestamp-*
+.vite
+
+# Projects
+/projects
+sam2_backend (1).py
+video_processing_nodes (1).py
+VideoLoadAndMask (1).js
+sam2_hiera_s.safetensors
+backend/assets/models/sams/sam2_hiera_s.yaml
+backend/assets/models/sams/sam2_hiera_small.pt
+backend/assets/.config/object_info.json

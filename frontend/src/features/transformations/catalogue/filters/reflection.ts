@@ -1,0 +1,136 @@
+import { ReflectionFilter } from "pixi-filters";
+import type { TransformationDefinition } from "../types";
+import { filterHandler } from "../filterHandler";
+
+export const reflectionFilterDefinition: TransformationDefinition = {
+  type: "filter",
+  compatibleClips: "visual",
+  filterName: "ReflectionFilter",
+  FilterClass: ReflectionFilter,
+  label: "Reflection",
+  handler: filterHandler,
+  filterParameterScale: {
+    amplitudeStart: "worldUniform",
+    amplitudeEnd: "worldUniform",
+    wavelengthStart: "worldUniform",
+    wavelengthEnd: "worldUniform",
+  },
+  uiConfig: {
+    groups: [
+      {
+        id: "reflection_settings",
+        title: "Settings",
+        columns: 1,
+        controls: [
+          {
+            type: "slider",
+            label: "Boundary",
+            name: "boundary",
+            defaultValue: 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Time",
+            name: "time",
+            defaultValue: 0,
+            min: 0,
+            max: 100,
+            step: 0.1,
+            supportsSpline: true,
+          },
+          {
+            type: "link",
+            label: "Mirror",
+            name: "mirror",
+            defaultValue: true,
+          },
+        ],
+      },
+      {
+        id: "reflection_amplitude",
+        title: "Amplitude",
+        columns: 1,
+        controls: [
+          {
+            type: "slider",
+            label: "Amplitude Start",
+            name: "amplitudeStart",
+            defaultValue: 0,
+            min: 0,
+            max: 50,
+            step: 0.5,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Amplitude End",
+            name: "amplitudeEnd",
+            defaultValue: 20,
+            min: 0,
+            max: 50,
+            step: 0.5,
+            supportsSpline: true,
+          },
+        ],
+      },
+      {
+        id: "reflection_wavelength",
+        title: "Wavelength",
+        columns: 1,
+        controls: [
+          {
+            type: "slider",
+            label: "Wavelength Start",
+            name: "wavelengthStart",
+            defaultValue: 30,
+            min: 1,
+            max: 500,
+            step: 1,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Wavelength End",
+            name: "wavelengthEnd",
+            defaultValue: 100,
+            min: 1,
+            max: 500,
+            step: 1,
+            supportsSpline: true,
+          },
+        ],
+      },
+      {
+        id: "reflection_alpha",
+        title: "Alpha",
+        columns: 1,
+        controls: [
+          {
+            type: "slider",
+            label: "Alpha Start",
+            name: "alphaStart",
+            defaultValue: 1,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Alpha End",
+            name: "alphaEnd",
+            defaultValue: 1,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            supportsSpline: true,
+          },
+        ],
+      },
+    ],
+  },
+};

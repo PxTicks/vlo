@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "nodes": {
+    "209": {
+      "ignore": true,
+      "present": {
+        "enabled": false
+      }
+    }
+  },
+  "output_injections": {
+    "210": {
+      "0": {
+        "source": {
+          "kind": "manual_slot",
+          "slot_id": "control_frames"
+        }
+      },
+      "1": {
+        "source": {
+          "kind": "manual_slot",
+          "slot_id": "control_audio"
+        }
+      },
+      "2": {
+        "source": {
+          "kind": "manual_slot",
+          "slot_id": "control_fps"
+        }
+      }
+    }
+  },
+  "slots": {
+    "control_frames": {
+      "input_type": "frame_batch",
+      "label": "Control Frames",
+      "experimental": true,
+      "export_fps": 16,
+      "frame_step": 4,
+      "max_frames": 81
+    },
+    "control_audio": {
+      "input_type": "audio",
+      "label": "Control Audio",
+      "experimental": true
+    },
+    "control_fps": {
+      "input_type": "text",
+      "label": "Control FPS",
+      "experimental": true
+    }
+  }
+}

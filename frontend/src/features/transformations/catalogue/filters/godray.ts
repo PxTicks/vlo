@@ -1,0 +1,107 @@
+import { GodrayFilter } from "pixi-filters";
+import type { TransformationDefinition } from "../types";
+import { filterHandler } from "../filterHandler";
+
+export const godrayFilterDefinition: TransformationDefinition = {
+  type: "filter",
+  compatibleClips: "visual",
+  filterName: "GodrayFilter",
+  FilterClass: GodrayFilter,
+  label: "God Ray",
+  handler: filterHandler,
+  filterParameterPoints: [{ x: "centerX", y: "centerY", space: "inputLocal" }],
+  uiConfig: {
+    groups: [
+      {
+        id: "godray_settings",
+        title: "Settings",
+        columns: 1,
+        controls: [
+          {
+            type: "slider",
+            label: "Angle",
+            name: "angle",
+            defaultValue: 30,
+            min: 0,
+            max: 360,
+            step: 1,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Gain",
+            name: "gain",
+            defaultValue: 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Lacunarity",
+            name: "lacunarity",
+            defaultValue: 2.5,
+            min: 0,
+            max: 5,
+            step: 0.1,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Alpha",
+            name: "alpha",
+            defaultValue: 1,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Time",
+            name: "time",
+            defaultValue: 0,
+            min: 0,
+            max: 100,
+            step: 0.1,
+            supportsSpline: true,
+          },
+          {
+            type: "link",
+            label: "Parallel",
+            name: "parallel",
+            defaultValue: true,
+          },
+        ],
+      },
+      {
+        id: "godray_center",
+        title: "Center",
+        columns: 1,
+        controls: [
+          {
+            type: "slider",
+            label: "Center X",
+            name: "centerX",
+            defaultValue: 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Center Y",
+            name: "centerY",
+            defaultValue: 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            supportsSpline: true,
+          },
+        ],
+      },
+    ],
+  },
+};

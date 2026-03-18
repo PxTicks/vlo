@@ -874,7 +874,7 @@ def test_generate_mask_video_passes_visible_source_window_to_propagation(
     assert captured_window["value"] == (1, 1)
 
 
-def test_runtime_falls_back_to_cpu_if_cuda_not_detected(
+def test_runtime_raises_when_cuda_is_requested_but_not_detected(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -887,7 +887,7 @@ def test_runtime_falls_back_to_cpu_if_cuda_not_detected(
         return [{
             "name": "sam2.ckpt",
             "checkpoint_path": str(checkpoint_path),
-            "config_path": str(config_path)
+            "config_path": config_path.name,
         }]
 
     monkeypatch.setattr(sam2_service, "discover_sam2_models", fake_discover)
@@ -917,12 +917,11 @@ def test_runtime_falls_back_to_cpu_if_cuda_not_detected(
     monkeypatch.setitem(sys.modules, "sam2.build_sam", sam2_build_module)
 
     runtime = sam2_service._Sam2PredictorRuntime()
-    predictor = runtime.get_predictor()
-    health = runtime.health()
+    with pytest.raises(sam2_service.Sam2ConfigError) as exc_info:
+        runtime.get_predictor()
 
-    assert predictor == {"predictor": "ok", "device": "cpu"}
-    assert build_calls == ["cpu"]
-    assert health["resolvedDevice"] == "cpu"
+    assert "torch.cuda.is_available() is false" in str(exc_info.value)
+    assert build_calls == []
 
 
 def test_runtime_applies_torch_load_weights_only_compat_for_builder(
@@ -938,7 +937,7 @@ def test_runtime_applies_torch_load_weights_only_compat_for_builder(
         return [{
             "name": "sam2.ckpt",
             "checkpoint_path": str(checkpoint_path),
-            "config_path": str(config_path)
+            "config_path": config_path.name,
         }]
 
     monkeypatch.setattr(sam2_service, "discover_sam2_models", fake_discover)
@@ -991,7 +990,7 @@ def test_runtime_does_not_fallback_to_cpu_when_cuda_is_detected(
         return [{
             "name": "sam2.ckpt",
             "checkpoint_path": str(checkpoint_path),
-            "config_path": str(config_path)
+            "config_path": config_path.name,
         }]
 
     monkeypatch.setattr(sam2_service, "discover_sam2_models", fake_discover)

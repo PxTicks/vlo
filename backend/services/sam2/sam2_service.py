@@ -317,7 +317,11 @@ class _Sam2PredictorRuntime:
             return ["cuda"] if cuda_available else ["cpu"]
 
         if normalized.startswith("cuda"):
-            return [raw] if cuda_available else ["cpu"]
+            if not cuda_available:
+                raise Sam2ConfigError(
+                    "SAM2_DEVICE was set to cuda, but torch.cuda.is_available() is false"
+                )
+            return [raw]
 
         return [raw]
 

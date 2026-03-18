@@ -98,7 +98,7 @@
         ]
       },
       "widgets_values": [
-        "diffusion_models/wan2.2_i2v_high_noise_14B_fp16.safetensors",
+        "wan2.2_i2v_high_noise_14B_fp16.safetensors",
         "default"
       ]
     },
@@ -258,10 +258,7 @@
           }
         ]
       },
-      "widgets_values": [
-        "diffusion_models/wan2.2_i2v_low_noise_14B_fp16.safetensors",
-        "default"
-      ]
+      "widgets_values": ["wan2.2_i2v_low_noise_14B_fp16.safetensors", "default"]
     },
     {
       "id": 55,

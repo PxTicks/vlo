@@ -154,6 +154,14 @@ Edit `backend/.env` to adjust settings (created automatically by the installer):
 - `SAM2_DEVICE`: `auto`, `cpu`, or a CUDA/MPS-capable value supported by your environment
 - `SAM2_CACHE_DIR`: cache location for prepared SAM2 data
 
+## ComfyUI Integration
+
+For details on how workflows interact with Vlo — sidecars, widget exposure,
+aspect ratio processing, and the generation pipeline — see the
+[Generation Pipeline docs](backend/services/gen_pipeline/README.md). The
+[default workflows](backend/assets/.config/default_workflows/) include working
+sidecar examples.
+
 ## License
 
 Vlo is licensed under the GNU Affero General Public License v3.0 or later

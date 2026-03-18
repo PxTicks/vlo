@@ -24,11 +24,8 @@ set "VLO_NODE_ZIP_NAME="
 set "VLO_NODE_ZIP_PATH="
 set "VLO_NODE_URL="
 set "VLO_PYTHON_VERSION=3.13.12"
-set "VLO_PYTHON_ROOT=%VLO_HOME%\Python31312"
-set "VLO_PYTHON_EXE=%VLO_PYTHON_ROOT%\python.exe"
-set "VLO_PYTHON_DOWNLOAD_DIR=%TEMP%\vlo-installer"
-set "VLO_PYTHON_INSTALLER_PATH="
-set "VLO_PYTHON_INSTALLER_NAME="
+set "VLO_PYTHON_MINOR=3.13"
+set "VLO_PYTHON_INSTALL_DIR=%VLO_HOME%\python"
 
 :: Parse arguments
 :parse_args
@@ -74,9 +71,32 @@ set "PATH=%NODE_DIR%;%PATH%"
 echo [INFO]  Node.js %NODE_VERSION% found via %NODE_SOURCE%
 echo [INFO]  npm %NPM_VERSION% found via %NPM_CMD%
 
-:: Python 3.10+
+:: -- 2. Install uv --------------------------------------------------
+
+where uv >nul 2>&1
+if %errorlevel% equ 0 (
+    for /f "tokens=*" %%U in ('where uv') do (
+        set "UV_BIN=%%U"
+        goto :uv_found
+    )
+) else (
+    echo [INFO]  Installing uv...
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    set "UV_BIN=%USERPROFILE%\.local\bin\uv.exe"
+)
+:uv_found
+if not exist "%UV_BIN%" (
+    call :fail "uv was not found after installation."
+    goto :eof
+)
+set "UV_PYTHON_INSTALL_DIR=%VLO_PYTHON_INSTALL_DIR%"
+for /f "tokens=*" %%V in ('"%UV_BIN%" --version') do set "UV_VERSION=%%V"
+echo [INFO]  %UV_VERSION% found at %UV_BIN%
+
+:: -- 3. Check Python 3.10+ -----------------------------------------
+
 echo [INFO]  Checking Python 3.10+...
-call :try_python_path "%VLO_PYTHON_EXE%" "VLO-managed Python"
+call :find_vlo_python
 if not errorlevel 1 goto :python_found
 
 for %%P in (python python3) do (
@@ -102,33 +122,15 @@ for /f "tokens=*" %%F in ('where pymanager 2^>nul') do (
     )
 )
 
+call :try_python_registry_paths
+if not errorlevel 1 goto :python_found
+
 call :prompt_install_vlo_python
 if errorlevel 1 goto :eof
 :python_found
 echo [INFO]  Python %PY_VER% found via %PYTHON_SOURCE%
 
-:: -- 2. Install uv --------------------------------------------------
-
-where uv >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=*" %%U in ('where uv') do (
-        set "UV_BIN=%%U"
-        goto :uv_found
-    )
-) else (
-    echo [INFO]  Installing uv...
-    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-    set "UV_BIN=%USERPROFILE%\.local\bin\uv.exe"
-)
-:uv_found
-if not exist "%UV_BIN%" (
-    call :fail "uv was not found after installation."
-    goto :eof
-)
-for /f "tokens=*" %%V in ('"%UV_BIN%" --version') do set "UV_VERSION=%%V"
-echo [INFO]  %UV_VERSION% found at %UV_BIN%
-
-:: -- 3. Install frontend dependencies -------------------------------
+:: -- 4. Install frontend dependencies -------------------------------
 
 echo [INFO]  Installing npm dependencies...
 cd /d "%SCRIPT_DIR%"
@@ -143,7 +145,7 @@ if %errorlevel% neq 0 (
     goto :eof
 )
 
-:: -- 4. Build frontend ----------------------------------------------
+:: -- 5. Build frontend ----------------------------------------------
 
 echo [INFO]  Building frontend...
 call "%NPM_CMD%" run build --prefix frontend
@@ -152,7 +154,7 @@ if %errorlevel% neq 0 (
     goto :eof
 )
 
-:: -- 5. Install backend dependencies --------------------------------
+:: -- 6. Install backend dependencies --------------------------------
 
 echo [INFO]  Installing backend Python dependencies...
 cd /d "%SCRIPT_DIR%backend"
@@ -162,7 +164,7 @@ if %errorlevel% neq 0 (
     goto :eof
 )
 
-:: -- 6. Environment config ------------------------------------------
+:: -- 7. Environment config ------------------------------------------
 
 if not exist "%SCRIPT_DIR%backend\.env" (
     copy "%SCRIPT_DIR%backend\.env.example" "%SCRIPT_DIR%backend\.env" >nul
@@ -171,7 +173,7 @@ if not exist "%SCRIPT_DIR%backend\.env" (
     echo [INFO]  backend\.env already exists, skipping
 )
 
-:: -- 7. Projects directory ------------------------------------------
+:: -- 8. Projects directory ------------------------------------------
 
 if not exist "%SCRIPT_DIR%projects" mkdir "%SCRIPT_DIR%projects"
 
@@ -310,6 +312,106 @@ set "PYTHON_CMD=%CANDIDATE_PATH%"
 set "PYTHON_SOURCE=%CANDIDATE_SOURCE% (%CANDIDATE_PATH%)"
 exit /b 0
 
+:find_vlo_python
+set "FOUND_PYTHON="
+set "UV_PYTHON_DIR="
+set "UV_PYTHON_BIN_DIR="
+if not exist "%UV_BIN%" exit /b 1
+
+for /f "tokens=*" %%V in ('"%UV_BIN%" python find --managed-python --no-python-downloads "%VLO_PYTHON_VERSION%" 2^>nul') do (
+    set "FOUND_PYTHON=%%V"
+)
+if defined FOUND_PYTHON (
+    call :try_python_path "%FOUND_PYTHON%" "VLO-managed Python"
+    if !errorlevel! equ 0 exit /b 0
+)
+
+for /f "tokens=*" %%V in ('"%UV_BIN%" python dir 2^>nul') do (
+    set "UV_PYTHON_DIR=%%V"
+)
+for /f "tokens=*" %%V in ('"%UV_BIN%" python dir --bin 2^>nul') do (
+    set "UV_PYTHON_BIN_DIR=%%V"
+)
+
+if defined UV_PYTHON_BIN_DIR (
+    call :try_python_path "%UV_PYTHON_BIN_DIR%\python%VLO_PYTHON_MINOR%.exe" "VLO-managed Python"
+    if !errorlevel! equ 0 exit /b 0
+    call :try_python_path "%UV_PYTHON_BIN_DIR%\python.exe" "VLO-managed Python"
+    if !errorlevel! equ 0 exit /b 0
+)
+
+if defined UV_PYTHON_DIR (
+    for /f "delims=" %%V in ('dir /b /s "%UV_PYTHON_DIR%\python.exe" 2^>nul') do (
+        call :try_python_path "%%V" "VLO-managed Python"
+        if !errorlevel! equ 0 exit /b 0
+    )
+    for /f "delims=" %%V in ('dir /b /s "%UV_PYTHON_DIR%\python%VLO_PYTHON_MINOR%.exe" 2^>nul') do (
+        call :try_python_path "%%V" "VLO-managed Python"
+        if !errorlevel! equ 0 exit /b 0
+    )
+)
+
+exit /b 1
+
+:try_python_registry_paths
+:: Registry discovery catches Python installs that are not on PATH or exposed by launchers.
+for %%K in (
+    HKCU\Software\Python\PythonCore
+    HKLM\Software\Python\PythonCore
+    HKLM\Software\WOW6432Node\Python\PythonCore
+) do (
+    call :try_python_registry_root "%%K"
+    if !errorlevel! equ 0 exit /b 0
+)
+exit /b 1
+
+:try_python_registry_root
+for /l %%N in (30,-1,10) do (
+    set "REG_PYTHON_TAG=3.%%N"
+    call :try_python_registry_tag "%~1" "!REG_PYTHON_TAG!"
+    if !errorlevel! equ 0 exit /b 0
+)
+exit /b 1
+
+:try_python_registry_tag
+call :try_python_registry_key "%~1\%~2" "Windows registry (%~1\%~2)"
+if not errorlevel 1 exit /b 0
+call :try_python_registry_key "%~1\%~2-64" "Windows registry (%~1\%~2-64)"
+if not errorlevel 1 exit /b 0
+call :try_python_registry_key "%~1\%~2-32" "Windows registry (%~1\%~2-32)"
+if not errorlevel 1 exit /b 0
+call :try_python_registry_key "%~1\%~2-arm64" "Windows registry (%~1\%~2-arm64)"
+if not errorlevel 1 exit /b 0
+call :try_python_registry_key "%~1\%~2t" "Windows registry (%~1\%~2t)"
+if not errorlevel 1 exit /b 0
+exit /b 1
+
+:try_python_registry_key
+set "REG_INSTALL_KEY=%~1\InstallPath"
+set "REG_INSTALL_PATH="
+set "REG_PYTHON_EXE="
+
+for /f "tokens=1,2,*" %%A in ('reg query "%REG_INSTALL_KEY%" /v ExecutablePath 2^>nul ^| findstr /R /C:"ExecutablePath"') do (
+    set "REG_PYTHON_EXE=%%C"
+)
+
+if not defined REG_PYTHON_EXE (
+    for /f "tokens=1,2,*" %%A in ('reg query "%REG_INSTALL_KEY%" /ve 2^>nul ^| findstr /R /C:"REG_SZ"') do (
+        set "REG_INSTALL_PATH=%%C"
+    )
+    if defined REG_INSTALL_PATH (
+        if "!REG_INSTALL_PATH:~-1!"=="\" (
+            set "REG_PYTHON_EXE=!REG_INSTALL_PATH!python.exe"
+        ) else (
+            set "REG_PYTHON_EXE=!REG_INSTALL_PATH!\python.exe"
+        )
+    )
+)
+
+if not defined REG_PYTHON_EXE exit /b 1
+call :try_python_path "!REG_PYTHON_EXE!" "%~2"
+exit /b !errorlevel!
+
 :try_py_launcher
 py -3 -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 10) else 1)" >nul 2>&1
 if errorlevel 1 exit /b 1
@@ -328,10 +430,9 @@ exit /b 0
 
 :prompt_install_vlo_python
 echo [WARN]  No compatible Python 3.10+ runtime was found.
-echo [INFO]  VLO can download Python %VLO_PYTHON_VERSION% into:
-echo [INFO]    %VLO_PYTHON_ROOT%
+echo [INFO]  VLO can install Python %VLO_PYTHON_VERSION% via uv into:
+echo [INFO]    %VLO_PYTHON_INSTALL_DIR%
 echo [INFO]  This install is per-user and VLO-managed.
-echo [INFO]  It will not modify your system PATH or file associations.
 echo.
 set "INSTALL_VLO_PYTHON="
 set /p INSTALL_VLO_PYTHON=Install VLO-managed Python %VLO_PYTHON_VERSION% now? [Y/n]:
@@ -347,44 +448,23 @@ call :install_vlo_python
 exit /b %errorlevel%
 
 :install_vlo_python
-set "VLO_ARCH=%PROCESSOR_ARCHITECTURE%"
-if defined PROCESSOR_ARCHITEW6432 set "VLO_ARCH=%PROCESSOR_ARCHITEW6432%"
-if /I "%VLO_ARCH%"=="ARM64" (
-    set "VLO_PYTHON_INSTALLER_NAME=python-%VLO_PYTHON_VERSION%-arm64.exe"
-) else if /I "%VLO_ARCH%"=="X86" (
-    set "VLO_PYTHON_INSTALLER_NAME=python-%VLO_PYTHON_VERSION%.exe"
-) else (
-    set "VLO_PYTHON_INSTALLER_NAME=python-%VLO_PYTHON_VERSION%-amd64.exe"
-)
-set "VLO_PYTHON_INSTALLER_PATH=%VLO_PYTHON_DOWNLOAD_DIR%\%VLO_PYTHON_INSTALLER_NAME%"
-set "VLO_PYTHON_URL=https://www.python.org/ftp/python/%VLO_PYTHON_VERSION%/%VLO_PYTHON_INSTALLER_NAME%"
+if not exist "%VLO_HOME%" mkdir "%VLO_HOME%"
+if not exist "%VLO_PYTHON_INSTALL_DIR%" mkdir "%VLO_PYTHON_INSTALL_DIR%"
 
-if not exist "%VLO_PYTHON_DOWNLOAD_DIR%" mkdir "%VLO_PYTHON_DOWNLOAD_DIR%"
-
-echo [INFO]  Downloading Python %VLO_PYTHON_VERSION% from python.org...
-powershell -NoProfile -ExecutionPolicy ByPass -Command "Invoke-WebRequest -Uri '%VLO_PYTHON_URL%' -OutFile '%VLO_PYTHON_INSTALLER_PATH%'"
-if errorlevel 1 (
-    call :fail "Failed to download Python %VLO_PYTHON_VERSION%."
-    exit /b 1
-)
-
-if not exist "%VLO_PYTHON_ROOT%" mkdir "%VLO_PYTHON_ROOT%"
-
-echo [INFO]  Installing VLO-managed Python %VLO_PYTHON_VERSION%...
-"%VLO_PYTHON_INSTALLER_PATH%" /quiet InstallAllUsers=0 TargetDir="%VLO_PYTHON_ROOT%" ^
-    Include_pip=1 PrependPath=0 Include_launcher=0 AssociateFiles=0 Shortcuts=0 Include_test=0
+echo [INFO]  Installing VLO-managed Python %VLO_PYTHON_VERSION% via uv...
+call "%UV_BIN%" python install "%VLO_PYTHON_VERSION%"
 if errorlevel 1 (
     call :fail "Python %VLO_PYTHON_VERSION% installation failed."
     exit /b 1
 )
 
-call :try_python_path "%VLO_PYTHON_EXE%" "VLO-managed Python"
+call :find_vlo_python
 if errorlevel 1 (
-    call :fail "Python %VLO_PYTHON_VERSION% installed, but VLO could not find %VLO_PYTHON_EXE%."
+    call :fail "Python %VLO_PYTHON_VERSION% was installed, but VLO could not find a usable interpreter."
     exit /b 1
 )
 
-echo [INFO]  Installed VLO-managed Python %PY_VER%.
+echo [INFO]  Python %PY_VER% is ready for VLO.
 exit /b 0
 
 :fail

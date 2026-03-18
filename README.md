@@ -74,7 +74,7 @@ pip requirements files with `python scripts/sync-backend-requirements.py`.
 
 For SAM2 setup, follow the official instructions at <https://github.com/facebookresearch/sam2> and install it into the same active backend virtual environment. Place any downloaded models in the vlo/backend/assets/models/sams directory.
 
-### One-click Setup
+### Almost-one-click Setup
 
 Linux / macOS:
 
@@ -93,7 +93,7 @@ builds the frontend, and creates `backend/.venv` for later runs.
 
 The one-click installer does not currently install SAM2 itself. After running it. If you want masking capabilities follow the instructions further up.
 
-After installation, continue to [Using Scripts](#using-scripts-one-click-installer) to start Vlo.
+After installation, continue to [Using Scripts](#using-scripts-almost-one-click-installer) to start Vlo.
 
 ## Run
 
@@ -130,7 +130,7 @@ Run both dev servers (Vite + FastAPI with hot reload):
 npm run dev
 ```
 
-#### Using Scripts (one click-installer)
+#### Using Scripts (almost-one-click installer)
 
 Linux / macOS:
 

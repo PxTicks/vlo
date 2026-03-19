@@ -153,9 +153,74 @@ class _Sam2PredictorRuntime:
         )
 
     def _extract_state_dict(self, payload: Any) -> Any:
-        if isinstance(payload, Mapping) and "model" in payload:
-            return payload["model"]
+        if not isinstance(payload, Mapping):
+            return payload
+
+        for container_key in ("model", "state_dict"):
+            nested_payload = payload.get(container_key)
+            if isinstance(nested_payload, Mapping):
+                return nested_payload
+
         return payload
+
+    def _ensure_native_sam2_checkpoint_compatibility(
+        self,
+        state_dict: Any,
+        checkpoint_path: Path,
+    ) -> None:
+        if not isinstance(state_dict, Mapping):
+            return
+
+        keys = list(state_dict.keys())
+        transformers_prefixes = (
+            "vision_encoder.",
+            "model.vision_encoder.",
+            "module.vision_encoder.",
+            "module.model.vision_encoder.",
+        )
+        native_prefixes = (
+            "image_encoder.",
+            "model.image_encoder.",
+            "module.image_encoder.",
+            "module.model.image_encoder.",
+        )
+        transformers_exact_keys = (
+            "no_memory_embedding",
+            "model.no_memory_embedding",
+            "module.no_memory_embedding",
+            "module.model.no_memory_embedding",
+            "shared_image_embedding",
+            "model.shared_image_embedding",
+            "module.shared_image_embedding",
+            "module.model.shared_image_embedding",
+        )
+        native_exact_keys = (
+            "maskmem_tpos_enc",
+            "model.maskmem_tpos_enc",
+            "module.maskmem_tpos_enc",
+            "module.model.maskmem_tpos_enc",
+            "no_mem_embed",
+            "model.no_mem_embed",
+            "module.no_mem_embed",
+            "module.model.no_mem_embed",
+        )
+        has_transformers_naming = (
+            any(key.startswith(prefix) for prefix in transformers_prefixes for key in keys)
+            or any(key in state_dict for key in transformers_exact_keys)
+        )
+        has_native_sam2_naming = (
+            any(key.startswith(prefix) for prefix in native_prefixes for key in keys)
+            or any(key in state_dict for key in native_exact_keys)
+        )
+
+        if has_transformers_naming and not has_native_sam2_naming:
+            raise Sam2ConfigError(
+                "The SAM2 checkpoint appears to use Hugging Face Transformers naming "
+                f"(for example 'vision_encoder.*') and is incompatible with the native "
+                f"facebookresearch/sam2 runtime used by vlo: {checkpoint_path}. "
+                "Use the raw SAM2 .pt checkpoint instead, such as "
+                "'sam2.1_hiera_large.pt', together with the matching YAML config."
+            )
 
     def _load_checkpoint_intelligently(
         self,
@@ -185,6 +250,10 @@ class _Sam2PredictorRuntime:
             )
 
         state_dict = self._extract_state_dict(state_dict_payload)
+        self._ensure_native_sam2_checkpoint_compatibility(
+            state_dict=state_dict,
+            checkpoint_path=checkpoint_path,
+        )
         stateful_target = self._select_state_dict_target(model)
         stateful_target.load_state_dict(state_dict)
 

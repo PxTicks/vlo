@@ -1094,7 +1094,7 @@ def test_runtime_loads_safetensors_checkpoint_with_manual_state_dict_loading(
         return [{
             "name": checkpoint_path.name,
             "checkpoint_path": str(checkpoint_path),
-            "config_path": str(config_path),
+            "config_path": config_path.name,
         }]
 
     monkeypatch.setattr(sam2_service, "discover_sam2_models", fake_discover)
@@ -1156,6 +1156,75 @@ def test_runtime_loads_safetensors_checkpoint_with_manual_state_dict_loading(
     assert builder_ckpt_values == [None]
     assert loaded_paths == [str(checkpoint_path)]
     assert predictor_instance.loaded_state_dict == {"w": "ok"}
+
+
+def test_runtime_rejects_transformers_style_safetensors_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    checkpoint_path = tmp_path / "sam2_hiera_s.safetensors"
+    config_path = tmp_path / "sam2_hiera_s.yaml"
+    checkpoint_path.write_bytes(b"safetensors")
+    config_path.write_text("model: sam2", encoding="utf-8")
+
+    def fake_discover():
+        return [{
+            "name": checkpoint_path.name,
+            "checkpoint_path": str(checkpoint_path),
+            "config_path": config_path.name,
+        }]
+
+    monkeypatch.setattr(sam2_service, "discover_sam2_models", fake_discover)
+    monkeypatch.setattr(sam2_service, "SAM2_DEVICE", "cpu")
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)  # type: ignore[attr-defined]
+
+    def _unexpected_torch_load(*args, **kwargs):
+        raise AssertionError("torch.load should not be used for .safetensors checkpoints")
+
+    fake_torch.load = _unexpected_torch_load  # type: ignore[attr-defined]
+
+    def fake_load_file(path: str):
+        assert path == str(checkpoint_path)
+        return {
+            "model.vision_encoder.trunk.blocks.0.norm1.weight": "w",
+            "model.no_memory_embedding": "no-mem",
+            "model.shared_image_embedding": "shared",
+        }
+
+    fake_safetensors_module = types.ModuleType("safetensors")
+    fake_safetensors_torch_module = types.ModuleType("safetensors.torch")
+    fake_safetensors_torch_module_any = cast(Any, fake_safetensors_torch_module)
+    fake_safetensors_module_any = cast(Any, fake_safetensors_module)
+    fake_safetensors_torch_module_any.load_file = fake_load_file
+    fake_safetensors_module_any.torch = fake_safetensors_torch_module
+
+    class FakePredictor:
+        def load_state_dict(self, state_dict):
+            raise AssertionError("load_state_dict should not be reached for incompatible checkpoints")
+
+    def fake_builder(*args, **kwargs):
+        del args, kwargs
+        return FakePredictor()
+
+    sam2_module = types.ModuleType("sam2")
+    sam2_build_module = types.ModuleType("sam2.build_sam")
+    sam2_build_module_any = cast(Any, sam2_build_module)
+    sam2_module_any = cast(Any, sam2_module)
+    sam2_build_module_any.build_sam2_video_predictor = fake_builder
+    sam2_module_any.build_sam = sam2_build_module
+
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "safetensors", fake_safetensors_module)
+    monkeypatch.setitem(sys.modules, "safetensors.torch", fake_safetensors_torch_module)
+    monkeypatch.setitem(sys.modules, "sam2", sam2_module)
+    monkeypatch.setitem(sys.modules, "sam2.build_sam", sam2_build_module)
+
+    runtime = sam2_service._Sam2PredictorRuntime()
+
+    with pytest.raises(sam2_service.Sam2ConfigError, match="Hugging Face Transformers naming"):
+        runtime.get_predictor()
 
 
 def test_initialize_inference_state_uses_prepared_video_for_non_mp4(

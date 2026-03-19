@@ -72,7 +72,7 @@ pip requirements files with `python scripts/sync-backend-requirements.py`.
 
 ### SAM2
 
-For SAM2 setup, follow the official instructions at <https://github.com/facebookresearch/sam2> and install it into the same active backend virtual environment. Place any downloaded models in the vlo/backend/assets/models/sams directory.
+For SAM2 setup, follow the official instructions at <https://github.com/facebookresearch/sam2> and install it into the same active backend virtual environment. Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/models/sams`. Models can be found on Hugging Face, for example <https://huggingface.co/facebook/sam2.1-hiera-large>. Use the native `.pt` checkpoint from the official repository, such as `sam2.1_hiera_large.pt`. Do not use the repository's `model.safetensors` file with vlo's native SAM2 runtime, because that artifact uses Hugging Face Transformers parameter naming and is not compatible with `facebookresearch/sam2`.
 
 ### Almost-one-click Setup
 
@@ -148,7 +148,7 @@ Opens `http://127.0.0.1:6332` in your browser. Pass `--no-browser` to skip that.
 
 ### Configuration
 
-Edit `backend/.env` to adjust settings (created automatically by the installer):
+If needed `backend/.env` to adjust settings (created automatically by the installer). You may be able to ignore this step.
 
 - `COMFYUI_URL`: default `http://127.0.0.1:8188`
 - `SAM2_DEVICE`: `auto`, `cpu`, or a CUDA/MPS-capable value supported by your environment

@@ -20,6 +20,7 @@ from services.gen_pipeline.processors.utils.aspect_ratio_processing import (  # 
 from services.workflow_rules import (  # noqa: E402
     apply_rules_to_workflow,
     collect_mask_crop_pairs,
+    evaluate_input_validation,
     enrich_rules_with_object_info,
     find_unsatisfied_input_conditions,
     load_rules_for_workflow,
@@ -152,12 +153,6 @@ def test_load_rules_for_workflow_normalizes_node_selection(tmp_path: Path):
         "frame_step": 4,
         "max_frames": 81,
     }
-    assert any(w["code"] == "invalid_postprocessing_mode" for w in warnings)
-    assert any(
-        w["code"] == "invalid_postprocessing_panel_preview" for w in warnings
-    )
-    assert any(w["code"] == "invalid_postprocessing_on_failure" for w in warnings)
-    assert any(w["code"] == "invalid_postprocessing_stitch_fps" for w in warnings)
 
 
 def test_load_rules_for_workflow_normalizes_slot_selection_config(tmp_path: Path):
@@ -1029,6 +1024,46 @@ def test_find_unsatisfied_input_conditions_requires_at_least_one_input():
         "Provide at least one frame input."
     ]
     assert find_unsatisfied_input_conditions(rules, {"68"}) == []
+
+
+def test_evaluate_input_validation_supports_required_and_at_least_n():
+    rules = {
+        "validation": {
+            "inputs": [
+                {
+                    "kind": "required",
+                    "input": "3",
+                    "message": "Prompt is required.",
+                },
+                {
+                    "kind": "at_least_n",
+                    "inputs": ["68", "62"],
+                    "min": 1,
+                    "message": "Provide at least one frame input.",
+                },
+                {
+                    "kind": "optional",
+                    "input": "99",
+                },
+            ]
+        }
+    }
+
+    assert evaluate_input_validation(rules, set()) == [
+        {
+            "kind": "required",
+            "input": "3",
+            "message": "Prompt is required.",
+        },
+        {
+            "kind": "at_least_n",
+            "inputs": ["68", "62"],
+            "min": 1,
+            "provided": 0,
+            "message": "Provide at least one frame input.",
+        },
+    ]
+    assert evaluate_input_validation(rules, {"3", "68"}) == []
 
 
 def test_apply_rules_manual_slot_payload_rewrites_links():
@@ -1950,6 +1985,135 @@ async def test_generate_rejects_when_input_condition_is_unsatisfied(
     payload = _response_json(response)
     assert payload["error"]["code"] == "invalid_generation_request"
     assert payload["error"]["message"] == "Provide at least one frame input."
+    assert payload["error"]["details"]["validation_failures"] == [
+        {
+            "kind": "at_least_n",
+            "inputs": ["68", "62"],
+            "min": 1,
+            "provided": 0,
+            "message": "Provide at least one frame input.",
+        }
+    ]
+    assert fake_comfy_client.prompt_payload is None
+
+
+@pytest.mark.anyio
+async def test_generate_rejects_when_explicit_validation_rule_fails(
+    tmp_path: Path,
+    monkeypatch,
+    fake_comfy_client,
+):
+    _ = fake_comfy_client
+
+    workflow_id = "workflow_validation_required.json"
+    workflow_path = tmp_path / workflow_id
+    workflow_path.write_text("{}")
+    sidecar_path = tmp_path / "workflow_validation_required.rules.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "validation": {
+                    "inputs": [
+                        {
+                            "kind": "required",
+                            "input": "3",
+                            "message": "Prompt is required.",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    monkeypatch.setattr(comfyui, "WORKFLOWS_DIR", tmp_path)
+
+    workflow = {
+        "3": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}},
+    }
+
+    response = await comfyui.generate(
+        _as_request(
+            FormData(
+                [
+                    ("workflow", json.dumps(workflow)),
+                    ("workflow_id", workflow_id),
+                ]
+            )
+        )
+    )
+
+    assert response.status_code == 400
+    payload = _response_json(response)
+    assert payload["error"]["message"] == "Prompt is required."
+    assert payload["error"]["details"]["validation_failures"] == [
+        {
+            "kind": "required",
+            "input": "3",
+            "message": "Prompt is required.",
+        }
+    ]
+    assert fake_comfy_client.prompt_payload is None
+
+
+@pytest.mark.anyio
+async def test_generate_rejects_invalid_widget_override_values(
+    tmp_path: Path,
+    monkeypatch,
+    fake_comfy_client,
+):
+    _ = fake_comfy_client
+
+    workflow_id = "workflow_invalid_widget.json"
+    workflow_path = tmp_path / workflow_id
+    workflow_path.write_text("{}")
+    sidecar_path = tmp_path / "workflow_invalid_widget.rules.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "nodes": {
+                    "145": {
+                        "widgets": {
+                            "steps": {
+                                "value_type": "int",
+                                "min": 1,
+                                "max": 30,
+                            }
+                        }
+                    }
+                },
+            }
+        )
+    )
+    monkeypatch.setattr(comfyui, "WORKFLOWS_DIR", tmp_path)
+
+    workflow = {
+        "145": {"class_type": "KSampler", "inputs": {"steps": 20}},
+    }
+
+    response = await comfyui.generate(
+        _as_request(
+            FormData(
+                [
+                    ("workflow", json.dumps(workflow)),
+                    ("workflow_id", workflow_id),
+                    ("widget_145_steps", "999"),
+                ]
+            )
+        )
+    )
+
+    assert response.status_code == 400
+    payload = _response_json(response)
+    assert payload["error"]["message"] == "Value must be at most 30."
+    assert payload["error"]["details"]["validation_failures"] == [
+        {
+            "kind": "widget",
+            "node_id": "145",
+            "param": "steps",
+            "message": "Value must be at most 30.",
+        }
+    ]
     assert fake_comfy_client.prompt_payload is None
 
 

@@ -159,6 +159,7 @@ export function GenerationPanel() {
     workflowWarning,
     hasInferredInputs,
     workflowRuleWarnings,
+    inputValidationFailures,
     isRunning,
     isPipelineBusy,
     isPipelineInterruptible,
@@ -593,6 +594,26 @@ export function GenerationPanel() {
             >
               {warning.node_id ? `[${warning.node_id}] ` : ""}
               {warning.message}
+            </Typography>
+          ))}
+        </Box>
+      )}
+
+      {!isWorkflowLoading && inputValidationFailures.length > 0 && (
+        <Box sx={{ px: 2, pb: 2 }}>
+          <Typography
+            variant="caption"
+            sx={{ color: "warning.light", display: "block", mb: 0.5 }}
+          >
+            Generation requirements
+          </Typography>
+          {inputValidationFailures.slice(0, 4).map((failure, idx) => (
+            <Typography
+              key={`${failure.kind}-${failure.input ?? failure.inputs?.join("-") ?? "global"}-${idx}`}
+              variant="caption"
+              sx={{ color: "warning.main", display: "block", lineHeight: 1.4 }}
+            >
+              {failure.message}
             </Typography>
           ))}
         </Box>

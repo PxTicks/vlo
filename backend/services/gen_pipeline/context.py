@@ -69,6 +69,9 @@ class BackendPipelineContext:
     warnings: list[dict[str, Any]] = field(default_factory=list)
     """Accumulated pipeline warnings."""
 
+    provided_input_ids: set[str] = field(default_factory=set)
+    """Normalized set of input IDs the current request is considered to provide."""
+
     applied_widget_values: dict[str, str] = field(default_factory=dict)
     """Final widget values after overrides and randomization (node_id:param → value)."""
 

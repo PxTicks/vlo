@@ -37,6 +37,43 @@ export interface WorkflowInputCondition {
   message?: string;
 }
 
+export interface WorkflowRequiredInputValidationRule {
+  kind: "required";
+  input: string;
+  message?: string;
+}
+
+export interface WorkflowAtLeastNInputValidationRule {
+  kind: "at_least_n";
+  inputs: string[];
+  min: number;
+  message?: string;
+}
+
+export interface WorkflowOptionalInputValidationRule {
+  kind: "optional";
+  input: string;
+  message?: string;
+}
+
+export type WorkflowInputValidationRule =
+  | WorkflowRequiredInputValidationRule
+  | WorkflowAtLeastNInputValidationRule
+  | WorkflowOptionalInputValidationRule;
+
+export interface WorkflowValidationConfig {
+  inputs: WorkflowInputValidationRule[];
+}
+
+export interface WorkflowInputValidationFailure {
+  kind: WorkflowInputValidationRule["kind"];
+  message: string;
+  input?: string;
+  inputs?: string[];
+  min?: number;
+  provided?: number;
+}
+
 export interface WorkflowRuleWidgetEntry {
   label?: string;
   control_after_generate?: boolean;
@@ -120,6 +157,7 @@ export interface WorkflowAspectRatioProcessingConfig {
 export interface WorkflowRules {
   version: number;
   nodes: Record<string, WorkflowRuleNode>;
+  validation?: WorkflowValidationConfig;
   input_conditions?: WorkflowInputCondition[];
   output_injections: Record<
     string,
@@ -221,6 +259,152 @@ export function isWorkflowInputRequired(
   return rules?.nodes[inputId]?.present?.required !== false;
 }
 
+function hasExplicitInputValidation(
+  rules: WorkflowRules | null | undefined,
+): boolean {
+  return Boolean(rules?.validation?.inputs.length);
+}
+
+function resolveInputValidationRules(
+  rules: WorkflowRules | null | undefined,
+): WorkflowInputValidationRule[] {
+  if (!rules) {
+    return [];
+  }
+
+  if (rules.validation?.inputs.length) {
+    return rules.validation.inputs;
+  }
+
+  const conditions = rules.input_conditions ?? [];
+  return conditions.map((condition) => ({
+    kind: "at_least_n" as const,
+    inputs: condition.inputs,
+    min: 1,
+    ...(condition.message ? { message: condition.message } : {}),
+  }));
+}
+
+function messageForValidationRule(
+  rule: WorkflowInputValidationRule,
+): string {
+  if (rule.message?.trim()) {
+    return rule.message.trim();
+  }
+
+  if (rule.kind === "required") {
+    return `Input '${rule.input}' is required.`;
+  }
+
+  if (rule.kind === "at_least_n") {
+    const listedInputs = rule.inputs.join(", ");
+    if (rule.min === 1) {
+      return `Provide at least one of the following inputs: ${listedInputs}`;
+    }
+    return `Provide at least ${rule.min} of the following inputs: ${listedInputs}`;
+  }
+
+  return "";
+}
+
+export function findUnsatisfiedInputValidationRules(
+  rules: WorkflowRules | null | undefined,
+  providedInputIds: ReadonlySet<string>,
+): WorkflowInputValidationFailure[] {
+  return resolveInputValidationRules(rules).flatMap((rule) => {
+    if (rule.kind === "optional") {
+      return [];
+    }
+
+    if (rule.kind === "required") {
+      if (providedInputIds.has(rule.input)) {
+        return [];
+      }
+      return [
+        {
+          kind: rule.kind,
+          input: rule.input,
+          message: messageForValidationRule(rule),
+        },
+      ];
+    }
+
+    const provided = rule.inputs.filter((inputId) =>
+      providedInputIds.has(inputId),
+    ).length;
+    if (provided >= rule.min) {
+      return [];
+    }
+
+    return [
+      {
+        kind: rule.kind,
+        inputs: rule.inputs,
+        min: rule.min,
+        provided,
+        message: messageForValidationRule(rule),
+      },
+    ];
+  });
+}
+
+export function findMissingRequiredWorkflowInputs(
+  workflowInputs: readonly WorkflowInput[],
+  rules: WorkflowRules | null | undefined,
+  providedInputIds: ReadonlySet<string>,
+): WorkflowInputValidationFailure[] {
+  if (hasExplicitInputValidation(rules)) {
+    return [];
+  }
+
+  return workflowInputs.flatMap((input) => {
+    if (!isWorkflowInputRequired(rules, input.nodeId)) {
+      return [];
+    }
+    if (providedInputIds.has(input.nodeId)) {
+      return [];
+    }
+    return [
+      {
+        kind: "required",
+        input: input.nodeId,
+        message: `${input.label} is required.`,
+      },
+    ];
+  });
+}
+
+export function findWorkflowInputValidationFailures(
+  workflowInputs: readonly WorkflowInput[],
+  rules: WorkflowRules | null | undefined,
+  providedInputIds: ReadonlySet<string>,
+): WorkflowInputValidationFailure[] {
+  const explicitOrLegacy = findUnsatisfiedInputValidationRules(
+    rules,
+    providedInputIds,
+  );
+  const legacyRequired = findMissingRequiredWorkflowInputs(
+    workflowInputs,
+    rules,
+    providedInputIds,
+  );
+  return [...legacyRequired, ...explicitOrLegacy];
+}
+
+export function isWorkflowInputValidationSatisfied(
+  workflowInputs: readonly WorkflowInput[],
+  rules: WorkflowRules | null | undefined,
+  providedInputIds: ReadonlySet<string>,
+): boolean {
+  return (
+    findWorkflowInputValidationFailures(
+      workflowInputs,
+      rules,
+      providedInputIds,
+    ).length === 0
+  );
+}
+
 export function findUnsatisfiedInputConditions(
   rules: WorkflowRules | null | undefined,
   providedInputIds: ReadonlySet<string>,
@@ -273,6 +457,95 @@ function toWidgetOptions(
       typeof item === "boolean",
   );
   return options.length > 0 ? options : undefined;
+}
+
+function normalizeValidationInputRule(
+  rawRule: unknown,
+  warnings: WorkflowRuleWarning[],
+  index: number,
+): WorkflowInputValidationRule | null {
+  if (!isRecord(rawRule)) {
+    warnings.push(
+      toRulesWarning(
+        "invalid_validation_input_rule",
+        "validation.inputs[*] must be an object",
+      ),
+    );
+    return null;
+  }
+
+  if (typeof rawRule.kind !== "string") {
+    warnings.push(
+      toRulesWarning(
+        "invalid_validation_input_rule_kind",
+        `validation.inputs[${index}].kind must be a string`,
+      ),
+    );
+    return null;
+  }
+
+  const kind = rawRule.kind.trim().toLowerCase();
+  const message =
+    typeof rawRule.message === "string" && rawRule.message.trim().length > 0
+      ? rawRule.message.trim()
+      : undefined;
+
+  if (kind === "required" || kind === "optional") {
+    if (typeof rawRule.input !== "string" || rawRule.input.trim().length === 0) {
+      warnings.push(
+        toRulesWarning(
+          "invalid_validation_input_rule_input",
+          `validation.inputs[${index}].input must be a non-empty string`,
+        ),
+      );
+      return null;
+    }
+    return {
+      kind,
+      input: rawRule.input.trim(),
+      ...(message ? { message } : {}),
+    };
+  }
+
+  if (kind === "at_least_n") {
+    if (!Array.isArray(rawRule.inputs)) {
+      warnings.push(
+        toRulesWarning(
+          "invalid_validation_input_rule_inputs",
+          `validation.inputs[${index}].inputs must be an array of input IDs`,
+        ),
+      );
+      return null;
+    }
+    const inputs = rawRule.inputs
+      .filter((inputId): inputId is string => typeof inputId === "string")
+      .map((inputId) => inputId.trim())
+      .filter((inputId) => inputId.length > 0);
+    const min = toPositiveInteger(rawRule.min);
+    if (inputs.length === 0 || min === null || min > inputs.length) {
+      warnings.push(
+        toRulesWarning(
+          "invalid_validation_input_rule_min",
+          `validation.inputs[${index}] has invalid inputs/min configuration`,
+        ),
+      );
+      return null;
+    }
+    return {
+      kind,
+      inputs,
+      min,
+      ...(message ? { message } : {}),
+    };
+  }
+
+  warnings.push(
+    toRulesWarning(
+      "invalid_validation_input_rule_kind",
+      `validation.inputs[${index}] has unsupported kind '${rawRule.kind}'`,
+    ),
+  );
+  return null;
 }
 
 export function normalizeWorkflowRules(rawRules: unknown): {
@@ -503,6 +776,32 @@ export function normalizeWorkflowRules(rawRules: unknown): {
     }
   }
 
+  const validation: WorkflowValidationConfig = { inputs: [] };
+  const rawValidation = raw.validation;
+  if (isRecord(rawValidation)) {
+    if (Array.isArray(rawValidation.inputs)) {
+      validation.inputs = rawValidation.inputs.flatMap((rawRule, index) => {
+        const normalizedRule = normalizeValidationInputRule(
+          rawRule,
+          warnings,
+          index,
+        );
+        return normalizedRule ? [normalizedRule] : [];
+      });
+    } else if ("inputs" in rawValidation) {
+      warnings.push(
+        toRulesWarning(
+          "invalid_validation_inputs",
+          "validation.inputs must be an array",
+        ),
+      );
+    }
+  } else if (rawValidation !== undefined) {
+    warnings.push(
+      toRulesWarning("invalid_validation", "validation must be an object"),
+    );
+  }
+
   let inputConditions: WorkflowInputCondition[] | undefined;
   if (Array.isArray(raw.input_conditions)) {
     const normalizedConditions = raw.input_conditions.flatMap((condition) => {
@@ -530,6 +829,14 @@ export function normalizeWorkflowRules(rawRules: unknown): {
 
     if (normalizedConditions.length > 0) {
       inputConditions = normalizedConditions;
+      if (validation.inputs.length === 0) {
+        validation.inputs = normalizedConditions.map((condition) => ({
+          kind: "at_least_n",
+          inputs: condition.inputs,
+          min: 1,
+          ...(condition.message ? { message: condition.message } : {}),
+        }));
+      }
     }
   }
 
@@ -709,6 +1016,7 @@ export function normalizeWorkflowRules(rawRules: unknown): {
     rules: {
       version,
       nodes,
+      validation,
       ...(inputConditions ? { input_conditions: inputConditions } : {}),
       output_injections: toStringRecord(
         raw.output_injections,

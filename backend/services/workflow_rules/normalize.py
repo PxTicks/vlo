@@ -42,6 +42,11 @@ SUPPORTED_WIDGETS_MODE = {
     "control_after_generate",
     "all",
 }
+SUPPORTED_VALIDATION_INPUT_RULE_KINDS = {
+    "required",
+    "at_least_n",
+    "optional",
+}
 SUPPORTED_INPUT_CONDITION_KINDS = {
     "at_least_one",
 }
@@ -79,6 +84,9 @@ def default_rules() -> WorkflowRules:
     return {
         "version": 1,
         "nodes": {},
+        "validation": {
+            "inputs": [],
+        },
         "output_injections": {},
         "slots": {},
         "mask_cropping": {
@@ -150,6 +158,195 @@ def _is_safe_workflow_filename(filename: str) -> bool:
 def sidecar_path_for_workflow(workflows_dir: Path, workflow_filename: str) -> Path:
     stem = Path(workflow_filename).stem
     return workflows_dir / f"{stem}.rules.json"
+
+
+def _normalize_validation_input_rule(
+    raw_rule: Any,
+    *,
+    index: int,
+    warnings: list[WorkflowRuleWarning],
+) -> dict[str, Any] | None:
+    if not isinstance(raw_rule, dict):
+        warnings.append(
+            _warning(
+                "invalid_validation_input_rule",
+                "validation.inputs[*] must be an object",
+                details={"index": index},
+            )
+        )
+        return None
+
+    raw_kind = raw_rule.get("kind")
+    if not isinstance(raw_kind, str):
+        warnings.append(
+            _warning(
+                "invalid_validation_input_rule_kind",
+                "validation.inputs[*].kind must be a string",
+                details={"index": index},
+            )
+        )
+        return None
+
+    kind = raw_kind.strip()
+    if kind not in SUPPORTED_VALIDATION_INPUT_RULE_KINDS:
+        warnings.append(
+            _warning(
+                "invalid_validation_input_rule_kind",
+                "Unsupported validation input rule kind",
+                details={"index": index, "kind": raw_kind},
+            )
+        )
+        return None
+
+    normalized_rule: dict[str, Any] = {"kind": kind}
+    raw_message = raw_rule.get("message")
+    if isinstance(raw_message, str) and raw_message.strip():
+        normalized_rule["message"] = raw_message.strip()
+
+    if kind in {"required", "optional"}:
+        raw_input = raw_rule.get("input")
+        if not isinstance(raw_input, str) or raw_input.strip() == "":
+            warnings.append(
+                _warning(
+                    "invalid_validation_input_rule_input",
+                    "validation.inputs[*].input must be a non-empty string",
+                    details={"index": index, "kind": kind},
+                )
+            )
+            return None
+        normalized_rule["input"] = raw_input.strip()
+        return normalized_rule
+
+    raw_inputs = raw_rule.get("inputs")
+    if not isinstance(raw_inputs, list):
+        warnings.append(
+            _warning(
+                "invalid_validation_input_rule_inputs",
+                "validation.inputs[*].inputs must be an array of input IDs",
+                details={"index": index, "kind": kind},
+            )
+        )
+        return None
+
+    inputs = [
+        input_id.strip()
+        for input_id in raw_inputs
+        if isinstance(input_id, str) and input_id.strip()
+    ]
+    if not inputs:
+        warnings.append(
+            _warning(
+                "invalid_validation_input_rule_inputs",
+                "validation.inputs[*].inputs must include at least one input ID",
+                details={"index": index, "kind": kind},
+            )
+        )
+        return None
+
+    min_count = _to_positive_int(raw_rule.get("min"))
+    if min_count is None:
+        warnings.append(
+            _warning(
+                "invalid_validation_input_rule_min",
+                "validation.inputs[*].min must be a positive integer",
+                details={"index": index, "kind": kind},
+            )
+        )
+        return None
+
+    if min_count > len(inputs):
+        warnings.append(
+            _warning(
+                "invalid_validation_input_rule_min",
+                "validation.inputs[*].min cannot exceed the number of inputs",
+                details={
+                    "index": index,
+                    "kind": kind,
+                    "min": min_count,
+                    "inputs_count": len(inputs),
+                },
+            )
+        )
+        return None
+
+    normalized_rule["inputs"] = inputs
+    normalized_rule["min"] = min_count
+    return normalized_rule
+
+
+def _normalize_legacy_input_condition(
+    raw_condition: Any,
+    *,
+    index: int,
+    warnings: list[WorkflowRuleWarning],
+) -> dict[str, Any] | None:
+    if not isinstance(raw_condition, dict):
+        warnings.append(
+            _warning(
+                "invalid_input_condition",
+                "Each input_conditions entry must be an object",
+                details={"index": index},
+            )
+        )
+        return None
+
+    raw_kind = raw_condition.get("kind")
+    if not isinstance(raw_kind, str):
+        warnings.append(
+            _warning(
+                "invalid_input_condition_kind",
+                "input_conditions[*].kind must be a string",
+                details={"index": index},
+            )
+        )
+        return None
+
+    kind = raw_kind.strip()
+    if kind not in SUPPORTED_INPUT_CONDITION_KINDS:
+        warnings.append(
+            _warning(
+                "invalid_input_condition_kind",
+                "Unsupported input condition kind",
+                details={"index": index, "kind": raw_kind},
+            )
+        )
+        return None
+
+    raw_inputs = raw_condition.get("inputs")
+    if not isinstance(raw_inputs, list):
+        warnings.append(
+            _warning(
+                "invalid_input_condition_inputs",
+                "input_conditions[*].inputs must be an array of input IDs",
+                details={"index": index, "kind": kind},
+            )
+        )
+        return None
+
+    inputs = [
+        input_id.strip()
+        for input_id in raw_inputs
+        if isinstance(input_id, str) and input_id.strip()
+    ]
+    if not inputs:
+        warnings.append(
+            _warning(
+                "invalid_input_condition_inputs",
+                "input_conditions[*].inputs must include at least one input ID",
+                details={"index": index, "kind": kind},
+            )
+        )
+        return None
+
+    normalized_rule: dict[str, Any] = {
+        "kind": "at_least_n",
+        "inputs": inputs,
+        "min": 1,
+    }
+    raw_message = raw_condition.get("message")
+    if isinstance(raw_message, str) and raw_message.strip():
+        normalized_rule["message"] = raw_message.strip()
+    return normalized_rule
 
 
 def normalize_rules(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]:
@@ -486,80 +683,57 @@ def normalize_rules(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]
 
     rules["slots"] = normalized_slots
 
+    normalized_validation_inputs: list[dict[str, Any]] = []
+    raw_validation = raw.get("validation")
+    if raw_validation is not None and not isinstance(raw_validation, dict):
+        warnings.append(
+            _warning(
+                "invalid_validation",
+                "Rules 'validation' must be an object",
+            )
+        )
+    elif isinstance(raw_validation, dict):
+        raw_validation_inputs = raw_validation.get("inputs", [])
+        if isinstance(raw_validation_inputs, list):
+            for index, raw_rule in enumerate(raw_validation_inputs):
+                normalized_rule = _normalize_validation_input_rule(
+                    raw_rule,
+                    index=index,
+                    warnings=warnings,
+                )
+                if normalized_rule is not None:
+                    normalized_validation_inputs.append(normalized_rule)
+        elif "inputs" in raw_validation:
+            warnings.append(
+                _warning(
+                    "invalid_validation_inputs",
+                    "validation.inputs must be an array",
+                )
+            )
+
     raw_input_conditions = raw.get("input_conditions", [])
+    normalized_input_conditions: list[dict[str, Any]] = []
     if isinstance(raw_input_conditions, list):
-        normalized_input_conditions: list[dict[str, Any]] = []
         for index, raw_condition in enumerate(raw_input_conditions):
-            if not isinstance(raw_condition, dict):
-                warnings.append(
-                    _warning(
-                        "invalid_input_condition",
-                        "Each input_conditions entry must be an object",
-                        details={"index": index},
-                    )
+            normalized_condition = _normalize_legacy_input_condition(
+                raw_condition,
+                index=index,
+                warnings=warnings,
+            )
+            if normalized_condition is not None:
+                normalized_input_conditions.append(
+                    {
+                        "kind": "at_least_one",
+                        "inputs": normalized_condition["inputs"],
+                        **(
+                            {"message": normalized_condition["message"]}
+                            if "message" in normalized_condition
+                            else {}
+                        ),
+                    }
                 )
-                continue
-
-            raw_kind = raw_condition.get("kind")
-            if not isinstance(raw_kind, str):
-                warnings.append(
-                    _warning(
-                        "invalid_input_condition_kind",
-                        "input_conditions[*].kind must be a string",
-                        details={"index": index},
-                    )
-                )
-                continue
-
-            kind = raw_kind.strip()
-            if kind not in SUPPORTED_INPUT_CONDITION_KINDS:
-                warnings.append(
-                    _warning(
-                        "invalid_input_condition_kind",
-                        "Unsupported input condition kind",
-                        details={"index": index, "kind": raw_kind},
-                    )
-                )
-                continue
-
-            raw_inputs = raw_condition.get("inputs")
-            if not isinstance(raw_inputs, list):
-                warnings.append(
-                    _warning(
-                        "invalid_input_condition_inputs",
-                        "input_conditions[*].inputs must be an array of input IDs",
-                        details={"index": index, "kind": kind},
-                    )
-                )
-                continue
-
-            inputs = [
-                input_id.strip()
-                for input_id in raw_inputs
-                if isinstance(input_id, str) and input_id.strip()
-            ]
-            if not inputs:
-                warnings.append(
-                    _warning(
-                        "invalid_input_condition_inputs",
-                        "input_conditions[*].inputs must include at least one input ID",
-                        details={"index": index, "kind": kind},
-                    )
-                )
-                continue
-
-            condition: dict[str, Any] = {
-                "kind": kind,
-                "inputs": inputs,
-            }
-            raw_message = raw_condition.get("message")
-            if isinstance(raw_message, str) and raw_message.strip():
-                condition["message"] = raw_message.strip()
-
-            normalized_input_conditions.append(condition)
-
-        if normalized_input_conditions:
-            rules["input_conditions"] = normalized_input_conditions
+                if not normalized_validation_inputs:
+                    normalized_validation_inputs.append(normalized_condition)
     elif "input_conditions" in raw:
         warnings.append(
             _warning(
@@ -567,6 +741,10 @@ def normalize_rules(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]
                 "Rules 'input_conditions' must be an array",
             )
         )
+
+    rules["validation"] = {"inputs": normalized_validation_inputs}
+    if normalized_input_conditions:
+        rules["input_conditions"] = normalized_input_conditions
 
     raw_mask_cropping = raw.get("mask_cropping", {})
     if raw_mask_cropping is None:

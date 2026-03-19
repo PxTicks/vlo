@@ -5,21 +5,43 @@ on workflow sidecars (`*.rules.json`) and their default behavior.
 
 ## End-to-End Flow
 
-1. Frontend preprocessors collect slot inputs into a `GenerationRequest`.
-2. Backend `/comfy/generate` builds `GenerationInput` and runs backend processors.
-3. ComfyUI runs the submitted prompt.
-4. Frontend postprocessors fetch outputs, optionally stitch/resize, and import assets.
+The canonical generation flow is:
 
-Backend processor order is defined in
-`backend/services/pipeline/processors/__init__.py`:
+1. Frontend preprocess
+2. Backend request assembly
+3. Backend preprocess
+4. Dispatch to ComfyUI
+5. Backend postprocess
+6. Frontend postprocess
+
+Today those phases map to the codebase like this:
+
+| Phase | Entry point | Purpose |
+| --- | --- | --- |
+| Frontend preprocess | `frontend/src/features/generation/pipeline/runPreprocess.ts` | Normalize UI inputs and assemble a `GenerationRequest` |
+| Backend request assembly | `backend/routers/comfyui.py` (`POST /comfy/generate`) | Parse multipart form fields, stage uploads/buffers, and build `GenerationInput` |
+| Backend preprocess | `build_backend_preprocessors()` in `backend/services/gen_pipeline/processors/__init__.py` | Validate inputs/widgets, rewrite the workflow, preprocess media, and upload prepared media |
+| Dispatch to ComfyUI | `dispatch_to_comfyui()` in `backend/services/comfyui/comfyui_generate.py` | Submit the ready-to-run prompt to ComfyUI |
+| Backend postprocess | `run_backend_postprocess()` in `backend/services/comfyui/comfyui_generate.py` | Wrap the raw ComfyUI response and enrich JSON payloads with backend metadata |
+| Frontend postprocess | `frontend/src/features/generation/pipeline/runPostprocess.ts` | Fetch outputs, optionally stitch/resize, and import assets |
+
+The backend preprocess phase is currently implemented as an ordered processor
+list in `backend/services/gen_pipeline/processors/__init__.py`:
 
 1. `inject_values`
-2. `apply_rules`
-3. `widget_overrides`
-4. `mask_crop`
-5. `upload_media`
-6. `aspect_ratio`
-7. `submit_prompt`
+2. `load_rules`
+3. `validate_inputs`
+4. `validate_widgets`
+5. `apply_rules`
+6. `widget_overrides`
+7. `mask_crop`
+8. `upload_media`
+9. `aspect_ratio`
+
+Dispatch is modeled separately as `submit_prompt`.
+
+Backend postprocess is currently a thin passthrough/enrichment step rather than
+its own processor list, but it exists as an explicit phase for future growth.
 
 ## Workflow Sidecars
 
@@ -56,6 +78,7 @@ Every normalized sidecar has this shape:
   "version": 1,
   "name": "Optional display name",
   "nodes": {},
+  "validation": { "inputs": [] },
   "output_injections": {},
   "slots": {},
   "input_conditions": [],
@@ -70,12 +93,64 @@ Every normalized sidecar has this shape:
 | `version` | integer | `1` |
 | `name` | string (optional) | none |
 | `nodes` | object | `{}` |
+| `validation` | object | `{ "inputs": [] }` |
 | `output_injections` | object | `{}` |
 | `slots` | object | `{}` |
 | `input_conditions` | array | `[]` |
 | `mask_cropping` | object | `{ "mode": "crop" }` |
 | `postprocessing` | object | `{ "mode": "auto", "panel_preview": "raw_outputs", "on_failure": "fallback_raw" }` |
 | `aspect_ratio_processing` | object | `{ "enabled": false, "stride": 16, "search_steps": 2, "resolutions": [], "target_nodes": [], "postprocess": { "enabled": true, "mode": "stretch_exact", "apply_to": "all_visual_outputs" } }` |
+
+---
+
+## Section: `validation`
+
+**Type:** `{ "inputs": InputValidationRule[] }`
+**Default:** `{ "inputs": [] }`
+
+This is the preferred, explicit validation model for generation requests.
+Validation rules are evaluated before backend graph rewrites and before prompt
+submission. The overall validation result is the logical AND of all rules.
+
+Supported rule kinds:
+
+| Kind | Shape | Meaning |
+| --- | --- | --- |
+| `"required"` | `{ "kind": "required", "input": "3" }` | The named input must be present |
+| `"at_least_n"` | `{ "kind": "at_least_n", "inputs": ["68", "62"], "min": 1 }` | At least `min` of the listed inputs must be present |
+| `"optional"` | `{ "kind": "optional", "input": "99" }` | Explicitly documents that an input may be omitted |
+
+Example:
+
+```json
+{
+  "validation": {
+    "inputs": [
+      {
+        "kind": "required",
+        "input": "3",
+        "message": "Prompt is required."
+      },
+      {
+        "kind": "at_least_n",
+        "inputs": ["68", "62"],
+        "min": 1,
+        "message": "Provide at least one frame input."
+      },
+      {
+        "kind": "optional",
+        "input": "99"
+      }
+    ]
+  }
+}
+```
+
+### Legacy `input_conditions`
+
+`input_conditions` is still accepted for compatibility and is automatically
+normalized into `validation.inputs` as `at_least_n` rules with `min: 1`.
+New workflows should prefer `validation`.
 
 ---
 
@@ -627,27 +702,55 @@ The request provides `target_aspect_ratio` (e.g. `"16:9"`) and
 
 ## Runtime Pipeline Integration
 
-Backend processor order (defined in
-`backend/services/pipeline/processors/__init__.py`):
+The backend service codifies three backend-side phases after the router has
+assembled `GenerationInput`:
+
+1. Backend preprocess
+2. Dispatch to ComfyUI
+3. Backend postprocess
+
+### Backend Preprocess
+
+Backend preprocess order (defined in
+`backend/services/gen_pipeline/processors/__init__.py`):
 
 | Step | Processor | Sidecar sections used |
 | --- | --- | --- |
-| 1 | `apply_rules` | `nodes`, `output_injections`, `slots`, `input_conditions` |
-| 2 | `aspect_ratio` | `aspect_ratio_processing` |
-| 3 | `mask_crop` | `mask_cropping`, derived mask fields in `nodes` |
-| 4 | `widget_overrides` | `nodes.*.widgets` |
-| 5 | `inject_values` | — |
-| 6 | `upload_media` | — |
-| 7 | `submit_prompt` | — |
+| 1 | `inject_values` | — |
+| 2 | `load_rules` | all sidecar sections |
+| 3 | `validate_inputs` | `validation`, legacy `input_conditions` |
+| 4 | `validate_widgets` | `nodes.*.widgets` |
+| 5 | `apply_rules` | `nodes`, `output_injections`, `slots` |
+| 6 | `widget_overrides` | `nodes.*.widgets` |
+| 7 | `mask_crop` | `mask_cropping`, derived mask fields in `nodes` |
+| 8 | `upload_media` | — |
+| 9 | `aspect_ratio` | `aspect_ratio_processing` |
 
 ### apply_rules
 
-Loads and normalizes the sidecar, enriches widgets from object_info, checks
-`input_conditions`, and applies graph rewrites:
+Applies normalized graph rewrite rules after the dedicated validation phases:
 
 - `output_injections` reroute downstream links.
 - `ignore: true` nodes are disconnected and removed (recursively, if safe).
 - Optional inputs (`required: false`) that the user did not provide are removed.
+
+### Dispatch To ComfyUI
+
+Dispatch is a distinct phase implemented by `submit_prompt`. It submits the
+already-prepared workflow to ComfyUI and captures the raw HTTP response on the
+backend context.
+
+### Backend Postprocess
+
+Backend postprocess is implemented by `run_backend_postprocess()` in
+`backend/services/comfyui/comfyui_generate.py`.
+
+Today this phase is intentionally lightweight:
+
+- pass through non-JSON ComfyUI responses unchanged
+- preserve raw JSON responses when there is no backend metadata to attach
+- enrich JSON responses with `workflow_warnings`, applied widget values,
+  aspect-ratio metadata, and mask-crop metadata when present
 
 ### aspect_ratio
 

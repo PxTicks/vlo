@@ -10,7 +10,10 @@ import httpx
 
 from services.gen_pipeline.processors.utils.aspect_ratio_processing import apply_aspect_ratio_processing
 from services.gen_pipeline import BackendPipelineContext, run_processors
-from services.gen_pipeline.processors import build_generation_processors
+from services.gen_pipeline.processors import (
+    build_backend_dispatch_processors,
+    build_backend_preprocessors,
+)
 from services.gen_pipeline.processors.utils.video_crop import analyze_mask_video_bounds, crop_video, get_video_dimensions
 from services.workflow_rules.mask_pairs import MaskCroppingMode
 
@@ -217,12 +220,12 @@ def _build_postprocess_response(
     )
 
 
-async def execute_generation(
+def build_backend_context(
     gen_input: GenerationInput,
     client: httpx.AsyncClient,
-) -> GenerationResult:
-    """Run the backend processor pipeline and wrap the ComfyUI response."""
-    ctx = BackendPipelineContext(
+) -> BackendPipelineContext:
+    """Create the shared backend pipeline context from the request payload."""
+    return BackendPipelineContext(
         client=client,
         client_id=gen_input.client_id,
         workflow=gen_input.workflow,
@@ -239,7 +242,16 @@ async def execute_generation(
         graph_data=gen_input.graph_data,
         warnings=gen_input.workflow_warnings,
     )
-    processors = build_generation_processors(
+
+
+async def run_backend_preprocess(ctx: BackendPipelineContext) -> None:
+    """Backend preprocess phase.
+
+    This phase validates request inputs, rewrites the workflow graph, and
+    prepares/uploads media so the dispatch step can submit a ready-to-run
+    ComfyUI prompt.
+    """
+    preprocessors = build_backend_preprocessors(
         workflows_dir=WORKFLOWS_DIR,
         fallback_workflow_dirs=[DEFAULT_WORKFLOWS_DIR],
         input_node_map=INPUT_NODE_MAP,
@@ -248,10 +260,29 @@ async def execute_generation(
         get_video_dimensions_fn=get_video_dimensions,
         upload_video_bytes_fn=_upload_video_bytes_to_comfy,
         apply_aspect_ratio_processing_fn=apply_aspect_ratio_processing,
+    )
+    await run_processors(preprocessors, ctx)
+
+
+async def dispatch_to_comfyui(ctx: BackendPipelineContext) -> None:
+    """Backend dispatch phase.
+
+    Dispatch is kept separate from preprocessing so the end-to-end flow is
+    explicitly: backend preprocess -> dispatch -> backend postprocess.
+    """
+    dispatch_processors = build_backend_dispatch_processors(
         prompt_id_factory=lambda: str(uuid.uuid4()),
     )
-    await run_processors(processors, ctx)
+    await run_processors(dispatch_processors, ctx)
 
+
+def run_backend_postprocess(ctx: BackendPipelineContext) -> GenerationResult:
+    """Backend postprocess phase.
+
+    This is intentionally a thin response-enrichment step today. It exists as a
+    named phase so future backend response shaping can grow here without being
+    hidden as inline glue around the dispatch call.
+    """
     if ctx.comfyui_response is None:
         raise RuntimeError("Backend generation pipeline did not submit a prompt")
 
@@ -263,3 +294,20 @@ async def execute_generation(
         mask_crop_metadata=ctx.mask_crop_metadata,
         processed_mask_bytes=ctx.processed_mask_bytes,
     )
+
+
+async def execute_generation(
+    gen_input: GenerationInput,
+    client: httpx.AsyncClient,
+) -> GenerationResult:
+    """Run the canonical backend phases for generation.
+
+    Phase order:
+    1. backend preprocess
+    2. dispatch to ComfyUI
+    3. backend postprocess
+    """
+    ctx = build_backend_context(gen_input, client)
+    await run_backend_preprocess(ctx)
+    await dispatch_to_comfyui(ctx)
+    return run_backend_postprocess(ctx)

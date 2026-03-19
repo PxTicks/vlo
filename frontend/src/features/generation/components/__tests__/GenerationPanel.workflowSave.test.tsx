@@ -83,6 +83,7 @@ function makeHookState(
     isWorkflowLoading: false,
     isWorkflowReady: true,
     workflowLoadError: null,
+    inputValidationFailures: [],
     workflowWarning: null,
     hasInferredInputs: false,
     workflowRuleWarnings: [],

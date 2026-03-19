@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   areInputConditionsSatisfied,
+  findUnsatisfiedInputValidationRules,
+  findWorkflowInputValidationFailures,
   findUnsatisfiedInputConditions,
   getClosestWorkflowResolution,
   getSupportedWorkflowResolutions,
+  isWorkflowInputValidationSatisfied,
   isWorkflowInputRequired,
   normalizeWorkflowRules,
   resolvePresentedInputs,
@@ -214,6 +217,14 @@ describe("resolvePresentedInputs", () => {
         message: "Provide at least one frame input.",
       },
     ]);
+    expect(rules.validation?.inputs).toEqual([
+      {
+        kind: "at_least_n",
+        inputs: ["68", "62"],
+        min: 1,
+        message: "Provide at least one frame input.",
+      },
+    ]);
   });
 
   it("evaluates input conditions against provided inputs", () => {
@@ -239,6 +250,63 @@ describe("resolvePresentedInputs", () => {
     expect(areInputConditionsSatisfied(rules, new Set(["68"]))).toBe(true);
   });
 
+  it("normalizes and evaluates explicit input validation rules", () => {
+    const { rules } = normalizeWorkflowRules({
+      version: 1,
+      validation: {
+        inputs: [
+          {
+            kind: "required",
+            input: "3",
+            message: "Prompt is required.",
+          },
+          {
+            kind: "at_least_n",
+            inputs: ["68", "62"],
+            min: 1,
+            message: "Provide at least one frame input.",
+          },
+          {
+            kind: "optional",
+            input: "99",
+          },
+        ],
+      },
+    });
+
+    expect(rules.validation?.inputs).toEqual([
+      {
+        kind: "required",
+        input: "3",
+        message: "Prompt is required.",
+      },
+      {
+        kind: "at_least_n",
+        inputs: ["68", "62"],
+        min: 1,
+        message: "Provide at least one frame input.",
+      },
+      {
+        kind: "optional",
+        input: "99",
+      },
+    ]);
+    expect(findUnsatisfiedInputValidationRules(rules, new Set())).toEqual([
+      {
+        kind: "required",
+        input: "3",
+        message: "Prompt is required.",
+      },
+      {
+        kind: "at_least_n",
+        inputs: ["68", "62"],
+        min: 1,
+        provided: 0,
+        message: "Provide at least one frame input.",
+      },
+    ]);
+  });
+
   it("treats inputs as required unless explicitly marked optional", () => {
     const { rules } = normalizeWorkflowRules({
       version: 1,
@@ -253,6 +321,36 @@ describe("resolvePresentedInputs", () => {
 
     expect(isWorkflowInputRequired(rules, "68")).toBe(false);
     expect(isWorkflowInputRequired(rules, "62")).toBe(true);
+  });
+
+  it("builds generate-button validation failures for legacy required inputs", () => {
+    const { rules } = normalizeWorkflowRules({
+      version: 1,
+      nodes: {
+        "145": {
+          present: {
+            required: false,
+          },
+        },
+      },
+    });
+
+    expect(
+      findWorkflowInputValidationFailures(makeInferredInputs(), rules, new Set()),
+    ).toEqual([
+      {
+        kind: "required",
+        input: "6",
+        message: "Prompt is required.",
+      },
+    ]);
+    expect(
+      isWorkflowInputValidationSatisfied(
+        makeInferredInputs(),
+        rules,
+        new Set(["6"]),
+      ),
+    ).toBe(true);
   });
 
   it("keeps unruled inferred inputs", () => {

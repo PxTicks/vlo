@@ -32,6 +32,7 @@ from services.comfyui.comfyui_proxy import (
     upstream_path_from_raw_request,
 )
 from services.workflow_rules import (
+    WorkflowValidationError,
     enrich_rules_with_object_info,
     load_rules_for_workflow,
 )
@@ -689,7 +690,9 @@ async def generate(request: Request):
                 "filename": filename_value,
             }
 
-    # --- Delegate to generation service ---
+    # --- Backend request assembly ends here ---
+    # The generation service now runs the remaining backend phases explicitly:
+    # backend preprocess -> dispatch to ComfyUI -> backend postprocess.
     gen_input = GenerationInput(
         client_id=client_id,
         workflow=workflow,
@@ -724,11 +727,15 @@ async def generate(request: Request):
             details={"reason": str(exc)},
         )
     except ValueError as exc:
+        details = None
+        if isinstance(exc, WorkflowValidationError) and exc.failures:
+            details = {"validation_failures": exc.failures}
         return error_response(
             400,
             "invalid_generation_request",
             str(exc),
             retryable=False,
+            details=details,
         )
     except RuntimeError as exc:
         return error_response(

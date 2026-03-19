@@ -140,7 +140,8 @@ npm run test --prefix frontend -- --run src/features/generation
 - Generate button disabled:
   - verify websocket is connected
   - verify workflow is `ready` (not `loading`/`error`)
-  - verify all required media inputs are present
+  - verify all required workflow inputs are present
+  - verify any workflow `validation.inputs` rules are satisfied
 
 - Workflow inputs not appearing:
   - check iframe health/reconnect path

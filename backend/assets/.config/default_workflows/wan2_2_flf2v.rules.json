@@ -18,13 +18,16 @@
       }
     }
   },
-  "input_conditions": [
-    {
-      "kind": "at_least_one",
-      "inputs": ["62", "68"],
-      "message": "Provide at least one frame input."
-    }
-  ],
+  "validation": {
+    "inputs": [
+      {
+        "kind": "at_least_n",
+        "inputs": ["62", "68"],
+        "min": 1,
+        "message": "Provide at least one frame input."
+      }
+    ]
+  },
   "aspect_ratio_processing": {
     "enabled": true,
     "stride": 32,

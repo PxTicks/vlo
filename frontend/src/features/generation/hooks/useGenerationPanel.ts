@@ -30,8 +30,7 @@ import {
 } from "../derivedMaskVideoTreatment";
 import { useAssetStore } from "../../userAssets";
 import {
-  areInputConditionsSatisfied,
-  isWorkflowInputRequired,
+  findWorkflowInputValidationFailures,
 } from "../services/workflowRules";
 
 function hasInputValue(
@@ -692,20 +691,12 @@ export function useGenerationPanel() {
     return provided;
   }, [mediaInputs, textValues, workflowInputs]);
 
-  // Check if all required asset inputs have files
-  const hasRequiredAssets = workflowInputs
-    .filter(
-      (i) =>
-        (i.inputType === "image" || i.inputType === "video") &&
-        isWorkflowInputRequired(activeWorkflowRules, i.nodeId),
-    )
-    .every((i) =>
-      hasInputValue(i.inputType as "image" | "video", mediaInputs[i.nodeId]),
-    );
-  const inputConditionsSatisfied = areInputConditionsSatisfied(
+  const inputValidationFailures = findWorkflowInputValidationFailures(
+    workflowInputs,
     activeWorkflowRules,
     providedInputIds,
   );
+  const inputValidationSatisfied = inputValidationFailures.length === 0;
 
   const backendConnected =
     runtimeStatus?.backend.status === "ok" && runtimeStatusError === null;
@@ -718,8 +709,7 @@ export function useGenerationPanel() {
     !isPipelineBusy &&
     !isExtractingSelection &&
     (workflowInputs.length > 0 || widgetInputs.length > 0) &&
-    hasRequiredAssets &&
-    inputConditionsSatisfied;
+    inputValidationSatisfied;
   const generateButtonLabel = isPostprocessing
     ? pipelineStatus.message ?? "Rendering generation"
     : isExtractingSelection
@@ -817,6 +807,7 @@ export function useGenerationPanel() {
     workflowWarning,
     hasInferredInputs,
     workflowRuleWarnings,
+    inputValidationFailures,
     isRunning,
     isPipelineBusy,
     isPipelineInterruptible,

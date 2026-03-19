@@ -9,12 +9,23 @@ export class FileSystemService {
   constructor() {}
 
   /**
+   * Prompts the user to select a directory with read/write access so the browser
+   * doesn't need to re-prompt when we later create files or folders.
+   */
+  async pickDirectory(
+    options: Omit<DirectoryPickerOptions, "mode"> = {},
+  ): Promise<FileSystemDirectoryHandle> {
+    return await window.showDirectoryPicker({
+      ...options,
+      mode: "readwrite",
+    });
+  }
+
+  /**
    * Prompts the user to select a directory to open as a project.
    */
   async openDirectory(): Promise<FileSystemDirectoryHandle> {
-    const handle = await window.showDirectoryPicker({
-      mode: "readwrite",
-    });
+    const handle = await this.pickDirectory();
     this.projectHandle = handle;
     return handle;
   }

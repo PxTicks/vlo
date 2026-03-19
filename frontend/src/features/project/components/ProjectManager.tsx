@@ -137,7 +137,7 @@ export function ProjectManager() {
   async function handleOpenProject() {
     try {
       setLoading(true);
-      const handle = await window.showDirectoryPicker({
+      const handle = await fileSystemService.pickDirectory({
         id: "vlo-project",
         startIn: "videos",
       });
@@ -185,7 +185,7 @@ export function ProjectManager() {
 
   async function handleCreateClick() {
     try {
-      const handle = await window.showDirectoryPicker({
+      const handle = await fileSystemService.pickDirectory({
         id: "vlo-workspace",
         startIn: "videos",
       });

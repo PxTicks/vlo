@@ -72,7 +72,17 @@ pip requirements files with `python scripts/sync-backend-requirements.py`.
 
 ### SAM2
 
-For SAM2 setup, follow the official instructions at <https://github.com/facebookresearch/sam2> and install it into the same active backend virtual environment. Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/models/sams`. Models can be found on Hugging Face, for example <https://huggingface.co/facebook/sam2.1-hiera-large>. Use the native `.pt` checkpoint from the official repository, such as `sam2.1_hiera_large.pt`. Do not use the repository's `model.safetensors` file with vlo's native SAM2 runtime, because that artifact uses Hugging Face Transformers parameter naming and is not compatible with `facebookresearch/sam2`.
+For SAM2 setup, make sure that torch with CUDA is installed in the backend venv, e.g.
+
+```bash
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+```
+
+Being sure to install the version for your correct cuda environment, see <https://pytorch.org/>.
+
+Then follow the official instructions at <https://github.com/facebookresearch/sam2> and install it into the same active backend virtual environment.
+
+Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/models/sams`. Models can be found on Hugging Face, for example <https://huggingface.co/facebook/sam2.1-hiera-large>. Use the native `.pt` checkpoint from the official repository, such as `sam2.1_hiera_large.pt`. Do not use the repository's `model.safetensors` file with vlo's native SAM2 runtime, because that artifact uses Hugging Face Transformers parameter naming and is not compatible with `facebookresearch/sam2`.
 
 ### Almost-one-click Setup
 

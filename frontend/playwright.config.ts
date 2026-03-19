@@ -11,6 +11,8 @@ const LOCAL_WORKERS = Number(process.env.PLAYWRIGHT_WORKERS ?? 1);
  */
 export default defineConfig({
   testDir: './e2e',
+  /* Global timeout per test. */
+  timeout: 60000,
   /* Local runs default to serial for stability; override with PLAYWRIGHT_WORKERS. */
   fullyParallel: LOCAL_WORKERS > 1,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
@@ -21,13 +23,20 @@ export default defineConfig({
   workers: process.env.CI ? 1 : LOCAL_WORKERS,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
+  /* Default expect timeout for async assertions (e.g. toBeVisible). */
+  expect: {
+    timeout: 10000,
+  },
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: E2E_BASE_URL,
 
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on-first-retry',
+    /* Capture screenshot on failure for debugging. */
+    screenshot: 'only-on-failure',
+
+    /* Retain trace on failure for post-mortem debugging. */
+    trace: 'retain-on-failure',
   },
 
   /* Configure projects for major browsers */

@@ -219,16 +219,19 @@ function AssetBrowserComponent() {
             icon={<VideoLibraryIcon fontSize="small" />}
             value="video"
             aria-label="Videos"
+            data-testid="asset-browser-tab-video"
           />
           <Tab
             icon={<PhotoLibraryIcon fontSize="small" />}
             value="image"
             aria-label="Images"
+            data-testid="asset-browser-tab-image"
           />
           <Tab
             icon={<LibraryMusicIcon fontSize="small" />}
             value="audio"
             aria-label="Audio"
+            data-testid="asset-browser-tab-audio"
           />
         </Tabs>
 
@@ -250,6 +253,7 @@ function AssetBrowserComponent() {
               onClick={handleSortClick}
               size="small"
               sx={{ color: "#aaa" }}
+              data-testid="asset-browser-sort-button"
             >
               <SortIcon fontSize="small" />
             </IconButton>

@@ -1,42 +1,34 @@
-import { test, expect } from '@playwright/test';
-import { setupProject, dragAssetToTimeline } from './utils';
+import { test, expect } from './fixtures';
+import { dragAssetToTimeline } from './helpers/drag';
 
 test.describe('Timeline Interactions', () => {
 
-    test.beforeEach(async ({ page }) => {
-        await setupProject(page);
+    test('Smoke Test: Timeline components are visible', async ({ editor }) => {
+        await expect(editor.timeline.toolbar).toBeVisible();
+        await expect(editor.timeline.ruler).toBeVisible();
+        await expect(editor.timeline.rows.first()).toBeVisible();
+        await expect(editor.timeline.body).toBeVisible();
     });
 
-    test('Smoke Test: Timeline components are visible', async ({ page }) => {
-        await expect(page.getByTestId('timeline-toolbar')).toBeVisible();
-        await expect(page.getByTestId('timeline-ruler')).toBeVisible();
-        await expect(page.getByTestId('timeline-row').first()).toBeVisible();
-        await expect(page.getByTestId('timeline-body').first()).toBeVisible();
+    test('Drag and Drop Asset to Timeline', async ({ editor }) => {
+        await dragAssetToTimeline(editor.page);
+        await expect(editor.timeline.clips.first()).toBeVisible();
     });
 
-    test('Drag and Drop Asset to Timeline', async ({ page }) => {
-        await dragAssetToTimeline(page);
-    });
+    test('Selection: Clicking clips toggles selection', async ({ editor }) => {
+        // Drag a clip in first
+        await dragAssetToTimeline(editor.page);
 
-    test('Selection: Clicking clips toggles selection', async ({ page }) => {
-        // Prerequisite: Drag a clip in first
-        await dragAssetToTimeline(page);
-
-        const clip = page.locator(`[data-testid="timeline-clip"]`).first();
+        const clip = editor.timeline.getClip(0);
         await expect(clip).toBeVisible();
 
-        const timelineBody = page.getByTestId('timeline-body').first();
-        await expect(timelineBody).toBeVisible();
-
-        // Click timeline background (deselect), then clip (select), then background again.
-        await timelineBody.click({ position: { x: 20, y: 20 } });
-        
-        // Now click clip
+        // Click timeline background (deselect), then clip (select), then background again
+        await editor.timeline.deselectAll();
         await clip.click();
         await expect(clip).toBeVisible();
 
         // Deselect again
-        await timelineBody.click({ position: { x: 30, y: 20 } });
+        await editor.timeline.deselectAll();
         await expect(clip).toBeVisible();
     });
 

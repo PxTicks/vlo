@@ -365,6 +365,7 @@ function AssetCardComponent({ asset }: AssetCardProps) {
             display="block"
             sx={{ fontWeight: 500 }}
             title={asset.name} // Tooltip for long names
+            data-testid="asset-card-name"
           >
             {asset.name}
           </Typography>

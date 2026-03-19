@@ -65,7 +65,13 @@ export const TimelineHeader = React.memo(function TimelineHeader({
 
       <Box sx={{ display: "flex", gap: 0.5 }}>
         {showMute && (
-          <IconButton size="small" onClick={handleToggleMuteClick}>
+          <IconButton
+            size="small"
+            onClick={handleToggleMuteClick}
+            data-testid="track-mute-toggle"
+            aria-label={isMuted ? "Unmute track" : "Mute track"}
+            aria-pressed={isMuted}
+          >
             {isMuted ? (
               <VolumeOffIcon fontSize="small" color="error" />
             ) : (
@@ -75,7 +81,13 @@ export const TimelineHeader = React.memo(function TimelineHeader({
         )}
 
         {showVisibility && (
-          <IconButton size="small" onClick={handleToggleVisibilityClick}>
+          <IconButton
+            size="small"
+            onClick={handleToggleVisibilityClick}
+            data-testid="track-visibility-toggle"
+            aria-label={isVisible ? "Hide track" : "Show track"}
+            aria-pressed={isVisible}
+          >
             {isVisible ? (
               <VisibilityIcon fontSize="small" />
             ) : (

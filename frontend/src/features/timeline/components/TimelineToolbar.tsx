@@ -43,6 +43,8 @@ export const TimelineToolbar = () => {
             size="small"
             data-testid="timeline-snapping-toggle"
             onClick={toggleSnappingEnabled}
+            aria-label={snappingEnabled ? "Disable timeline snapping" : "Enable timeline snapping"}
+            aria-pressed={snappingEnabled}
             sx={{ color: snappingEnabled ? "#fbc02d" : "#666" }}
           >
             <VerticalAlignCenterIcon

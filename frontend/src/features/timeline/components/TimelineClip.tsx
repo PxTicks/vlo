@@ -38,6 +38,7 @@ const ResizeHandle = ({ id, clip, side }: HandleProps) => {
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      data-testid={`timeline-clip-resize-handle-${side}`}
       sx={{
         position: "absolute",
         top: 0,
@@ -275,6 +276,8 @@ function TimelineClipComponent({ clip, isOverlay = false }: TimelineClipProps) {
         } as React.CSSProperties
       }
       data-testid="timeline-clip"
+      data-selected={isSelected ? "true" : "false"}
+      data-track-visible={isTrackVisible ? "true" : "false"}
     >
       <ThumbnailCanvas clip={clip} isDragging={isDragging} />
       {!isDragging && !isOverlay && (

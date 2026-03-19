@@ -1,4 +1,4 @@
-import { Page, Locator, expect } from '@playwright/test';
+import { Page, Locator } from '@playwright/test';
 
 /**
  * Component Object Model for the Timeline.
@@ -50,8 +50,12 @@ export class TimelineComponent {
     }
 
     async deselectAll() {
-        // Click an empty area of the timeline body to deselect
-        await this.body.click({ position: { x: 20, y: 20 } });
+        // Click an empty area of the timeline body to deselect.
+        // Use a far-right position to avoid clips that may overlay the body near the left edge.
+        const box = await this.body.boundingBox();
+        if (!box) throw new Error('Timeline body not found');
+        const x = Math.max(10, Math.min(box.width - 10, 800));
+        await this.body.click({ position: { x, y: 20 } });
     }
 
     async splitAtPlayhead() {
@@ -100,5 +104,38 @@ export class TimelineComponent {
         const x = box.x + box.width * xFraction;
         const y = box.y + box.height / 2;
         await this.page.mouse.click(x, y);
+    }
+
+    /**
+     * Check whether a clip is selected via the semantic clip state attribute.
+     */
+    async isClipSelected(index: number): Promise<boolean> {
+        const clip = this.getClip(index);
+        return (await clip.getAttribute('data-selected')) === 'true';
+    }
+
+    getClipResizeHandle(index: number, side: 'left' | 'right'): Locator {
+        return this.getClip(index).getByTestId(`timeline-clip-resize-handle-${side}`);
+    }
+
+    /**
+     * Returns the locator for the visibility toggle on a track row by row index.
+     */
+    getTrackVisibilityToggle(rowIndex: number): Locator {
+        return this.rows.nth(rowIndex).getByTestId('track-visibility-toggle');
+    }
+
+    /**
+     * Returns the locator for the mute toggle on a track row by row index.
+     */
+    getTrackMuteToggle(rowIndex: number): Locator {
+        return this.rows.nth(rowIndex).getByTestId('track-mute-toggle');
+    }
+
+    /**
+     * Returns a clip locator filtered by text content (name).
+     */
+    getClipByName(name: string): Locator {
+        return this.clips.filter({ hasText: name });
     }
 }

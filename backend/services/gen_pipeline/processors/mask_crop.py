@@ -20,6 +20,20 @@ def _has_mask_relations(rules: dict[str, Any] | None) -> bool:
     return bool(_collect_pairs_raw(rules, mode_override="crop"))
 
 
+def _find_buffered_video_key(
+    buffered_videos: dict[str, dict[str, Any]],
+    node_id: str,
+) -> str | None:
+    matches = [
+        buffered_input_id
+        for buffered_input_id, video_info in buffered_videos.items()
+        if isinstance(video_info, dict) and video_info.get("node_id") == node_id
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
 class _MaskCropProcessor:
     meta = ProcessorMeta(
         name="mask_crop",
@@ -59,8 +73,9 @@ class _MaskCropProcessor:
             # Capture unmodified mask bytes for frontend ingestion
             all_pairs = _collect_pairs_raw(ctx.rules, mode_override="crop")
             for _, mask_node_id in all_pairs:
-                if mask_node_id in ctx.buffered_videos:
-                    ctx.processed_mask_bytes = ctx.buffered_videos[mask_node_id]["bytes"]
+                mask_buffered_key = _find_buffered_video_key(ctx.buffered_videos, mask_node_id)
+                if mask_buffered_key is not None:
+                    ctx.processed_mask_bytes = ctx.buffered_videos[mask_buffered_key]["bytes"]
                     break
             return
 
@@ -70,8 +85,8 @@ class _MaskCropProcessor:
                 ctx.rules,
                 ctx.mask_crop_mode,
             )
-            if source_node_id in ctx.buffered_videos
-            and mask_node_id in ctx.buffered_videos
+            if _find_buffered_video_key(ctx.buffered_videos, source_node_id) is not None
+            and _find_buffered_video_key(ctx.buffered_videos, mask_node_id) is not None
         ]
         if not mask_pairs:
             ctx.mask_crop_metadata = {"mode": "full"}
@@ -91,7 +106,11 @@ class _MaskCropProcessor:
         last_successful_mask_container_dims: tuple[int, int] | None = None
 
         for source_node_id, mask_node_id in mask_pairs:
-            mask_data = ctx.buffered_videos[mask_node_id]["bytes"]
+            source_buffered_key = _find_buffered_video_key(ctx.buffered_videos, source_node_id)
+            mask_buffered_key = _find_buffered_video_key(ctx.buffered_videos, mask_node_id)
+            if source_buffered_key is None or mask_buffered_key is None:
+                continue
+            mask_data = ctx.buffered_videos[mask_buffered_key]["bytes"]
             try:
                 container_dims = self._get_video_dimensions(mask_data)
                 crop_region = self._analyze_mask_video_bounds(
@@ -118,7 +137,7 @@ class _MaskCropProcessor:
                 crop_region,
             )
             try:
-                ctx.buffered_videos[mask_node_id]["bytes"] = self._crop_video(
+                ctx.buffered_videos[mask_buffered_key]["bytes"] = self._crop_video(
                     mask_data,
                     crop_region,
                 )
@@ -137,8 +156,8 @@ class _MaskCropProcessor:
                 continue
 
             try:
-                ctx.buffered_videos[source_node_id]["bytes"] = self._crop_video(
-                    ctx.buffered_videos[source_node_id]["bytes"],
+                ctx.buffered_videos[source_buffered_key]["bytes"] = self._crop_video(
+                    ctx.buffered_videos[source_buffered_key]["bytes"],
                     crop_region,
                 )
                 cropped_sources.add(source_node_id)
@@ -151,8 +170,9 @@ class _MaskCropProcessor:
 
         # Capture processed mask bytes (cropped or original) for frontend ingestion
         for _, mask_node_id in mask_pairs:
-            if mask_node_id in ctx.buffered_videos:
-                ctx.processed_mask_bytes = ctx.buffered_videos[mask_node_id]["bytes"]
+            mask_buffered_key = _find_buffered_video_key(ctx.buffered_videos, mask_node_id)
+            if mask_buffered_key is not None:
+                ctx.processed_mask_bytes = ctx.buffered_videos[mask_buffered_key]["bytes"]
                 break
 
         if (

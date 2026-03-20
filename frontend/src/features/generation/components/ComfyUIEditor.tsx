@@ -234,6 +234,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
             syncedGraphData,
             selectedWorkflowId,
             shouldAbort,
+            useGenerationStore.getState().inputNodeMap,
           );
           if (shouldAbort()) return false;
 
@@ -271,6 +272,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           iframe,
           shouldAbort,
           APP_READY_TIMEOUT_MS,
+          useGenerationStore.getState().inputNodeMap,
         );
         if (!firstResult) {
           if (!shouldAbort()) {
@@ -335,7 +337,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     const iframe = iframeRef.current;
     if (!iframe) return;
 
-    const result = await readWorkflowFromIframe(iframe);
+    const result = await readWorkflowFromIframe(iframe, useGenerationStore.getState().inputNodeMap);
     if (!result) return;
 
     await commitWorkflowResult(result, true);
@@ -353,7 +355,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         return;
       }
 
-      const result = await readWorkflowFromIframe(iframe);
+      const result = await readWorkflowFromIframe(iframe, useGenerationStore.getState().inputNodeMap);
       if (!result) {
         consecutiveReadFailuresRef.current += 1;
         if (

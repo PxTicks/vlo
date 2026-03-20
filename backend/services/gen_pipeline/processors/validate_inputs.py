@@ -18,14 +18,27 @@ def collect_provided_input_ids(
 ) -> set[str]:
     provided_input_ids: set[str] = set()
 
-    for node_id, injection in ctx.injections.items():
-        if not isinstance(injection, dict):
+    for node_id, injection_values in ctx.injections.items():
+        if not isinstance(injection_values, dict):
             continue
-        if is_provided_value(injection.get("value")):
+        node_was_provided = False
+        for param, value in injection_values.items():
+            if not is_provided_value(value):
+                continue
+            provided_input_ids.add(f"{node_id}:{param}")
+            node_was_provided = True
+        if node_was_provided:
             provided_input_ids.add(str(node_id))
 
-    for node_id in ctx.buffered_videos.keys():
-        provided_input_ids.add(str(node_id))
+    for video_info in ctx.buffered_videos.values():
+        if not isinstance(video_info, dict):
+            continue
+        node_id = video_info.get("node_id")
+        param = video_info.get("param")
+        if isinstance(node_id, str):
+            provided_input_ids.add(node_id)
+            if isinstance(param, str):
+                provided_input_ids.add(f"{node_id}:{param}")
 
     for slot_id, value in ctx.manual_slot_values.items():
         if is_provided_value(value):

@@ -4,6 +4,7 @@ import {
   loadWorkflowIntoIframe,
   readWorkflowFromIframe,
 } from "./workflowBridge";
+import type { InputNodeMap } from "../constants/inputNodeMap";
 
 const APP_READY_POLL_MS = 100;
 const APP_READY_TIMEOUT_MS = 3000;
@@ -34,11 +35,12 @@ export async function readWorkflowWithRetry(
   iframe: HTMLIFrameElement,
   shouldAbort: ShouldAbort,
   timeoutMs = READ_RETRY_TIMEOUT_MS,
+  inputNodeMap?: InputNodeMap | null,
 ): Promise<Awaited<ReturnType<typeof readWorkflowFromIframe>>> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (shouldAbort()) return null;
-    const result = await readWorkflowFromIframe(iframe);
+    const result = await readWorkflowFromIframe(iframe, inputNodeMap);
     if (result) return result;
     await sleep(READ_RETRY_POLL_MS);
   }
@@ -58,6 +60,7 @@ export async function injectWorkflowAndRead(
   graphData: Record<string, unknown>,
   workflowId: string,
   shouldAbort: ShouldAbort,
+  inputNodeMap?: InputNodeMap | null,
 ): Promise<InjectWorkflowAndReadResult> {
   const appReady = await waitForAppReady(iframe, shouldAbort);
   if (!appReady) {
@@ -84,7 +87,12 @@ export async function injectWorkflowAndRead(
     };
   }
 
-  const workflowResult = await readWorkflowWithRetry(iframe, shouldAbort);
+  const workflowResult = await readWorkflowWithRetry(
+    iframe,
+    shouldAbort,
+    READ_RETRY_TIMEOUT_MS,
+    inputNodeMap,
+  );
   if (!workflowResult) {
     return {
       ok: false,

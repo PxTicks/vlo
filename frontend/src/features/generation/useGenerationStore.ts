@@ -50,6 +50,11 @@ import {
   EMPTY_WORKFLOW_RULES,
 } from "./store/workflowState";
 import { isAbortError } from "./pipeline/utils/abort";
+import {
+  mergeInputNodeMap,
+  type InputNodeMap,
+} from "./constants/inputNodeMap";
+import { getWorkflowInputId } from "./utils/workflowInputs";
 
 export type ComfyUIConnectionStatus =
   | "disconnected"
@@ -225,7 +230,7 @@ function buildGeneratedCreationMetadata(
   const inputs: GeneratedCreationMetadata["inputs"] = [];
 
   for (const workflowInput of workflowInputs) {
-    const value = mediaInputs[workflowInput.nodeId];
+    const value = mediaInputs[getWorkflowInputId(workflowInput)];
     if (!value) continue;
 
     if (value.kind === "timelineSelection") {
@@ -256,15 +261,26 @@ function buildGeneratedCreationMetadata(
 function findPreparedMaskFallback(
   slotValues: Record<string, SlotValue>,
   derivedMaskMappings: DerivedMaskMapping[],
+  workflowInputs: WorkflowInput[],
 ): File | null {
-  const sourceNodeIds = new Set(
-    derivedMaskMappings.map((mapping) => mapping.sourceNodeId),
-  );
+  const inputsByNodeId = new Map<string, WorkflowInput[]>();
+  for (const input of workflowInputs) {
+    const existing = inputsByNodeId.get(input.nodeId) ?? [];
+    existing.push(input);
+    inputsByNodeId.set(input.nodeId, existing);
+  }
 
-  for (const sourceNodeId of sourceNodeIds) {
-    const value = slotValues[sourceNodeId];
-    if (value?.type === "video_selection" && value.preparedMaskFile) {
-      return value.preparedMaskFile;
+  for (const mapping of derivedMaskMappings) {
+    const candidateIds = mapping.sourceInputId
+      ? [mapping.sourceInputId]
+      : (inputsByNodeId.get(mapping.sourceNodeId) ?? []).map((input) =>
+          getWorkflowInputId(input),
+        );
+    for (const candidateId of candidateIds) {
+      const value = slotValues[candidateId];
+      if (value?.type === "video_selection" && value.preparedMaskFile) {
+        return value.preparedMaskFile;
+      }
     }
   }
 
@@ -319,6 +335,7 @@ interface GenerationStore {
   activeJobId: string | null;
   latestPreviewUrl: string | null;
   objectInfoSynced: boolean;
+  inputNodeMap: InputNodeMap | null;
 
   // Editor Integration
   editorRef: HTMLIFrameElement | null;
@@ -422,6 +439,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
   activeJobId: null,
   latestPreviewUrl: null,
   objectInfoSynced: false,
+  inputNodeMap: null,
   editorRef: null,
   editorNeedsReconnect: false,
   editorReconnectSignal: 0,
@@ -1193,8 +1211,9 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
     if (get().connectionStatus !== "connected") return;
     try {
       console.info("[Generation] Syncing object_info from ComfyUI...");
-      await comfyApi.syncObjectInfo();
-      set({ objectInfoSynced: true });
+      const result = await comfyApi.syncObjectInfo();
+      const inputNodeMap = mergeInputNodeMap(result.input_node_map);
+      set({ objectInfoSynced: true, inputNodeMap });
     } catch (err) {
       console.error("[Generation] Failed to sync object_info:", err);
     }
@@ -1335,6 +1354,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
           graphData,
           workflowId,
           isStale,
+          get().inputNodeMap,
         );
         if (isStale()) return;
 
@@ -1527,6 +1547,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
       let preparedMaskFile = findPreparedMaskFallback(
         slotValues,
         derivedMaskMappings,
+        workflowInputs,
       );
       if (response.processed_mask_video) {
         const binaryStr = atob(response.processed_mask_video);

@@ -8,6 +8,7 @@ import {
 } from "./selectionHelpers";
 import type { Processor, FrontendPreprocessContext } from "../types";
 import { throwIfAborted } from "../utils/abort";
+import { getWorkflowInputId } from "../../utils/workflowInputs";
 
 /**
  * Extracts audio from video sources for manual slots with `slotInputType === "audio"`.
@@ -27,11 +28,11 @@ export const extractSlotAudio: Processor<FrontendPreprocessContext> = {
   },
 
   isActive(ctx) {
-    const inputByNodeId = new Map(
-      ctx.workflowInputs.map((input) => [input.nodeId, input]),
+    const inputById = new Map(
+      ctx.workflowInputs.map((input) => [getWorkflowInputId(input), input]),
     );
-    for (const [nodeId] of Object.entries(ctx.slotValues)) {
-      const input = inputByNodeId.get(nodeId);
+    for (const [inputId] of Object.entries(ctx.slotValues)) {
+      const input = inputById.get(inputId);
       const dispatch = input?.dispatch;
       if (
         dispatch?.kind === "manual_slot" &&
@@ -45,14 +46,14 @@ export const extractSlotAudio: Processor<FrontendPreprocessContext> = {
 
   async execute(ctx) {
     throwIfAborted(ctx.signal);
-    const inputByNodeId = new Map(
-      ctx.workflowInputs.map((input) => [input.nodeId, input]),
+    const inputById = new Map(
+      ctx.workflowInputs.map((input) => [getWorkflowInputId(input), input]),
     );
     const projectFps = Math.max(1, ctx.projectConfig.fps);
 
-    for (const [nodeId, value] of Object.entries(ctx.slotValues)) {
+    for (const [inputId, value] of Object.entries(ctx.slotValues)) {
       throwIfAborted(ctx.signal);
-      const input = inputByNodeId.get(nodeId);
+      const input = inputById.get(inputId);
       const dispatch = input?.dispatch;
       if (dispatch?.kind !== "manual_slot") continue;
       if (dispatch.slotInputType !== "audio") continue;

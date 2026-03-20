@@ -136,11 +136,13 @@ export interface InputSlot {
 }
 
 export interface WorkflowInput {
+  id?: string;
   nodeId: string;
   classType: string;
   inputType: "text" | "image" | "video";
   param: string;
   label: string;
+  description?: string | null;
   currentValue: unknown;
   origin: "rule" | "inferred";
   dispatch?: WorkflowInputDispatch;

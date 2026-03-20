@@ -23,12 +23,15 @@ export interface DerivedMaskMapping {
   maskParam: string;
   /** Node ID of the source video input that the mask is derived from */
   sourceNodeId: string;
+  /** Stable input ID for the source video input when it can be resolved. */
+  sourceInputId?: string;
   /** The type of mask transform to apply during rendering */
   maskType: DerivedMaskType;
 }
 
 // ---------------------------------------------------------------------------
-// Slot values — the raw input values collected from the UI
+// Slot values — the raw input values collected from the UI, keyed by workflow
+// input ID (or synthetic slot ID for manual slots).
 // ---------------------------------------------------------------------------
 
 export type SlotValue =

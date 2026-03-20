@@ -16,15 +16,16 @@ import type {
   WorkflowWidgetInput,
 } from "../types";
 import type { AssetDropSlotValue } from "../../panelUI";
+import { getWorkflowInputId } from "../utils/workflowInputs";
 
 interface GenerationInputsProps {
   inputs: WorkflowInput[];
   textValues: Record<string, string>;
-  onTextValueCommit: (nodeId: string, value: string) => void;
+  onTextValueCommit: (inputId: string, value: string) => void;
   mediaInputs: Record<string, GenerationMediaInputValue | null>;
-  onInputDrop: (nodeId: string, asset: Asset) => void;
-  onInputClear: (nodeId: string) => void;
-  onClickSelect: (nodeId: string, inputType: "image" | "video") => void;
+  onInputDrop: (inputId: string, asset: Asset) => void;
+  onInputClear: (inputId: string) => void;
+  onClickSelect: (inputId: string, inputType: "image" | "video") => void;
   widgetInputs: WorkflowWidgetInput[];
   widgetValues: Record<string, Record<string, unknown>>;
   randomizeToggles: Record<string, boolean>;
@@ -252,7 +253,7 @@ interface TextInputSectionProps {
   input: WorkflowInput;
   bgColor: string;
   value: string;
-  onCommit: (nodeId: string, value: string) => void;
+  onCommit: (inputId: string, value: string) => void;
 }
 
 function TextInputSection({
@@ -261,11 +262,17 @@ function TextInputSection({
   value,
   onCommit,
 }: TextInputSectionProps) {
+  const inputId = getWorkflowInputId(input);
   return (
     <PanelSection title={input.label} bgColor={bgColor} defaultOpen={true}>
+      {input.description ? (
+        <Typography sx={{ mb: 1, color: "text.secondary", fontSize: "0.8rem" }}>
+          {input.description}
+        </Typography>
+      ) : null}
       <CommittedTextInput
         initialValue={value}
-        onCommit={(nextValue) => onCommit(input.nodeId, nextValue)}
+        onCommit={(nextValue) => onCommit(inputId, nextValue)}
         multiline={true}
         minRows={2}
         maxRows={6}
@@ -287,9 +294,9 @@ interface MediaInputSectionProps {
   input: WorkflowInput;
   bgColor: string;
   value: GenerationMediaInputValue | null | undefined;
-  onInputDrop: (nodeId: string, asset: Asset) => void;
-  onInputClear: (nodeId: string) => void;
-  onClickSelect: (nodeId: string, inputType: "image" | "video") => void;
+  onInputDrop: (inputId: string, asset: Asset) => void;
+  onInputClear: (inputId: string) => void;
+  onClickSelect: (inputId: string, inputType: "image" | "video") => void;
 }
 
 function MediaInputSection({
@@ -300,6 +307,7 @@ function MediaInputSection({
   onInputClear,
   onClickSelect,
 }: MediaInputSectionProps) {
+  const inputId = getWorkflowInputId(input);
   const mediaInputType: "image" | "video" =
     input.inputType === "image" ? "image" : "video";
   const acceptTypes =
@@ -308,13 +316,18 @@ function MediaInputSection({
 
   return (
     <PanelSection title={input.label} bgColor={bgColor} defaultOpen={true}>
+      {input.description ? (
+        <Typography sx={{ mb: 1, color: "text.secondary", fontSize: "0.8rem" }}>
+          {input.description}
+        </Typography>
+      ) : null}
       <AssetDropSlot
-        id={input.nodeId}
+        id={inputId}
         accept={acceptTypes}
         value={slotValue}
-        onClear={() => onInputClear(input.nodeId)}
-        onDrop={(asset: Asset) => onInputDrop(input.nodeId, asset)}
-        onSelect={() => onClickSelect(input.nodeId, mediaInputType)}
+        onClear={() => onInputClear(inputId)}
+        onDrop={(asset: Asset) => onInputDrop(inputId, asset)}
+        onSelect={() => onClickSelect(inputId, mediaInputType)}
       />
     </PanelSection>
   );
@@ -512,14 +525,15 @@ export const GenerationInputs = memo(function GenerationInputs({
     <Box sx={{ display: "flex", flexDirection: "column" }}>
       {inputs.map((input, index) => {
         const bgColor = index % 2 === 0 ? "#202024" : "#18181b";
+        const inputId = getWorkflowInputId(input);
 
         if (input.inputType === "text") {
           return (
             <MemoizedTextInputSection
-              key={input.nodeId}
+              key={inputId}
               input={input}
               bgColor={bgColor}
-              value={textValues[input.nodeId] ?? ""}
+              value={textValues[inputId] ?? ""}
               onCommit={onTextValueCommit}
             />
           );
@@ -527,10 +541,10 @@ export const GenerationInputs = memo(function GenerationInputs({
 
         return (
           <MemoizedMediaInputSection
-            key={input.nodeId}
+            key={inputId}
             input={input}
             bgColor={bgColor}
-            value={mediaInputs[input.nodeId]}
+            value={mediaInputs[inputId]}
             onInputDrop={onInputDrop}
             onInputClear={onInputClear}
             onClickSelect={onClickSelect}

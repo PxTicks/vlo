@@ -32,6 +32,7 @@ import { useAssetStore } from "../../userAssets";
 import {
   findWorkflowInputValidationFailures,
 } from "../services/workflowRules";
+import { getWorkflowInputId } from "../utils/workflowInputs";
 
 function hasInputValue(
   inputType: "image" | "video",
@@ -91,7 +92,7 @@ export function useGenerationPanel() {
   const [urlAnchorEl, setUrlAnchorEl] = useState<null | HTMLElement>(null);
   const [urlInput, setUrlInput] = useState("");
 
-  // Slot values keyed by nodeId
+  // Slot values keyed by workflow input ID
   const [textValues, setTextValues] = useState<Record<string, string>>({});
 
   // Widget state
@@ -186,6 +187,34 @@ export function useGenerationPanel() {
     widgetValuesRef.current = widgetValues;
   }, [widgetValues]);
 
+  useEffect(() => {
+    setTextValues((prev) => {
+      const next: Record<string, string> = {};
+      let changed = false;
+      for (const input of workflowInputs) {
+        if (input.inputType !== "text") continue;
+        const inputId = getWorkflowInputId(input);
+        const existing = prev[inputId];
+        if (typeof existing === "string") {
+          next[inputId] = existing;
+          continue;
+        }
+        const initialValue =
+          typeof input.currentValue === "string" ? input.currentValue : "";
+        next[inputId] = initialValue;
+      }
+
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (prevKeys.length !== nextKeys.length) {
+        changed = true;
+      } else {
+        changed = prevKeys.some((key) => prev[key] !== next[key]);
+      }
+      return changed ? next : prev;
+    });
+  }, [workflowInputs]);
+
   // Initialize widget values and randomize toggles when widget inputs change
   useEffect(() => {
     const nextValues: Record<string, Record<string, unknown>> = {};
@@ -263,21 +292,22 @@ export function useGenerationPanel() {
     const slotValues: Record<string, SlotValue> = {};
 
     for (const input of store.workflowInputs) {
+      const inputId = getWorkflowInputId(input);
       if (input.inputType === "text") {
-        const text = textValues[input.nodeId] ?? "";
-        slotValues[input.nodeId] = { type: "text", value: text };
+        const text = textValues[inputId] ?? "";
+        slotValues[inputId] = { type: "text", value: text };
       } else {
-        const value = store.mediaInputs[input.nodeId];
+        const value = store.mediaInputs[inputId];
         if (!value) continue;
 
         if (input.inputType === "image") {
           if (value.kind === "asset" && value.asset.file) {
-            slotValues[input.nodeId] = {
+            slotValues[inputId] = {
               type: "image",
               file: value.asset.file,
             };
           } else if (value.kind === "frame") {
-            slotValues[input.nodeId] = {
+            slotValues[inputId] = {
               type: "image",
               file: value.file,
             };
@@ -286,7 +316,7 @@ export function useGenerationPanel() {
         }
 
         if (value.kind === "asset" && value.asset.file) {
-          slotValues[input.nodeId] = {
+          slotValues[inputId] = {
             type: "video",
             file: value.asset.file,
           };
@@ -294,7 +324,7 @@ export function useGenerationPanel() {
         }
 
         if (value.kind === "timelineSelection") {
-          slotValues[input.nodeId] = {
+          slotValues[inputId] = {
             type: "video_selection",
             selection: value.timelineSelection,
             preparedVideoFile: value.preparedVideoFile ?? undefined,
@@ -416,30 +446,30 @@ export function useGenerationPanel() {
   }, [clearWorkflowWarning]);
 
   const handleInputDrop = useCallback(
-    (nodeId: string, asset: Asset) => {
-      selectionExtractionRequestIdsRef.current[nodeId] =
-        (selectionExtractionRequestIdsRef.current[nodeId] ?? 0) + 1;
-      setMediaInputAsset(nodeId, asset);
+    (inputId: string, asset: Asset) => {
+      selectionExtractionRequestIdsRef.current[inputId] =
+        (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+      setMediaInputAsset(inputId, asset);
     },
     [setMediaInputAsset],
   );
 
   const handleInputClear = useCallback(
-    (nodeId: string) => {
-      selectionExtractionRequestIdsRef.current[nodeId] =
-        (selectionExtractionRequestIdsRef.current[nodeId] ?? 0) + 1;
-      clearMediaInput(nodeId);
+    (inputId: string) => {
+      selectionExtractionRequestIdsRef.current[inputId] =
+        (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+      clearMediaInput(inputId);
     },
     [clearMediaInput],
   );
 
   const handleClickSelect = useCallback(
-    (nodeId: string, inputType: "image" | "video") => {
+    (inputId: string, inputType: "image" | "video") => {
       const extractStore = useExtractStore.getState();
       const timelineSelectionStore = useTimelineSelectionStore.getState();
       const playerStore = usePlayerStore.getState();
       const input = workflowInputs.find(
-        (candidate) => candidate.nodeId === nodeId,
+        (candidate) => getWorkflowInputId(candidate) === inputId,
       );
       const selectionConfig =
         input?.dispatch && "selectionConfig" in input.dispatch
@@ -460,7 +490,7 @@ export function useGenerationPanel() {
                 playbackClock.time,
                 "generation-frame",
               );
-              setMediaInputFrame(nodeId, frameFile);
+              setMediaInputFrame(inputId, frameFile);
             } catch (error) {
               console.error("Failed to capture generation image frame", error);
             } finally {
@@ -530,12 +560,12 @@ export function useGenerationPanel() {
               "generation-selection-thumb",
             );
             const extractionRequestId =
-              (selectionExtractionRequestIdsRef.current[nodeId] ?? 0) + 1;
-            selectionExtractionRequestIdsRef.current[nodeId] =
+              (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+            selectionExtractionRequestIdsRef.current[inputId] =
               extractionRequestId;
 
             setMediaInputTimelineSelection(
-              nodeId,
+              inputId,
               timelineSelection,
               thumbnailFile,
               {
@@ -546,7 +576,9 @@ export function useGenerationPanel() {
             closeSelectionMode();
 
             const nodeMasks = derivedMaskMappings.filter(
-              (mapping) => mapping.sourceNodeId === nodeId,
+              (mapping) =>
+                mapping.sourceInputId === inputId ||
+                (!mapping.sourceInputId && mapping.sourceNodeId === input?.nodeId),
             );
 
             if (nodeMasks.length > 0) {
@@ -561,11 +593,11 @@ export function useGenerationPanel() {
                 },
               );
               if (
-                selectionExtractionRequestIdsRef.current[nodeId] ===
+                selectionExtractionRequestIdsRef.current[inputId] ===
                 extractionRequestId
               ) {
                 setMediaInputTimelineSelection(
-                  nodeId,
+                  inputId,
                   timelineSelection,
                   thumbnailFile,
                   {
@@ -581,11 +613,11 @@ export function useGenerationPanel() {
               const preparedVideoFile =
                 await renderTimelineSelectionToWebm(timelineSelection);
               if (
-                selectionExtractionRequestIdsRef.current[nodeId] ===
+                selectionExtractionRequestIdsRef.current[inputId] ===
                 extractionRequestId
               ) {
                 setMediaInputTimelineSelection(
-                  nodeId,
+                  inputId,
                   timelineSelection,
                   thumbnailFile,
                   {
@@ -598,15 +630,15 @@ export function useGenerationPanel() {
             }
           } catch (error) {
             const extractionRequestId =
-              selectionExtractionRequestIdsRef.current[nodeId] ?? 0;
+              selectionExtractionRequestIdsRef.current[inputId] ?? 0;
             const existingValue =
-              useGenerationStore.getState().mediaInputs[nodeId];
+              useGenerationStore.getState().mediaInputs[inputId];
             if (
               existingValue?.kind === "timelineSelection" &&
               existingValue.extractionRequestId === extractionRequestId
             ) {
               setMediaInputTimelineSelection(
-                nodeId,
+                inputId,
                 existingValue.timelineSelection,
                 existingValue.thumbnailFile,
                 {
@@ -638,10 +670,10 @@ export function useGenerationPanel() {
     ],
   );
 
-  const handleTextValueCommit = useCallback((nodeId: string, value: string) => {
+  const handleTextValueCommit = useCallback((inputId: string, value: string) => {
     setTextValues((prev) => {
-      if (prev[nodeId] === value) return prev;
-      return { ...prev, [nodeId]: value };
+      if (prev[inputId] === value) return prev;
+      return { ...prev, [inputId]: value };
     });
   }, []);
 
@@ -685,9 +717,11 @@ export function useGenerationPanel() {
   const providedInputIds = useMemo(() => {
     const provided = new Set<string>();
     for (const input of workflowInputs) {
+      const inputId = getWorkflowInputId(input);
       if (input.inputType === "text") {
-        const value = textValues[input.nodeId] ?? "";
+        const value = textValues[inputId] ?? "";
         if (value.trim().length > 0) {
+          provided.add(inputId);
           provided.add(input.nodeId);
         }
         continue;
@@ -696,9 +730,10 @@ export function useGenerationPanel() {
       if (
         hasInputValue(
           input.inputType as "image" | "video",
-          mediaInputs[input.nodeId],
+          mediaInputs[inputId],
         )
       ) {
+        provided.add(inputId);
         provided.add(input.nodeId);
       }
     }

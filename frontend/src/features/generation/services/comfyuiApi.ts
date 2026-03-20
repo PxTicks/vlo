@@ -384,7 +384,21 @@ export async function getObjectInfo(): Promise<Record<string, unknown>> {
   return (await resp.json()) as Record<string, unknown>;
 }
 
-export async function syncObjectInfo(): Promise<{ synced: boolean; node_classes: number }> {
+export interface SyncObjectInfoResult {
+  synced: boolean;
+  node_classes: number;
+  input_node_map?: Record<
+    string,
+    Array<{
+      input_type: string;
+      param: string;
+      label?: string;
+      description?: string | null;
+    }>
+  >;
+}
+
+export async function syncObjectInfo(): Promise<SyncObjectInfoResult> {
   const resp = await fetch(`${COMFY_API}/object_info/sync`, { method: "POST" });
   if (!resp.ok) {
     await throwRequestError("object_info sync", resp);

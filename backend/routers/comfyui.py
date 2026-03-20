@@ -36,7 +36,7 @@ from services.workflow_rules import (
     enrich_rules_with_object_info,
     load_rules_for_workflow,
 )
-from services.workflow_rules.object_info import OBJECT_INFO_PATH, set_object_info_cache
+from services.workflow_rules.object_info import OBJECT_INFO_PATH, set_object_info_cache, build_input_node_map
 
 from routers.comfyui_compat import compat_router  # noqa: F401 -- re-exported for main.py
 
@@ -170,7 +170,8 @@ async def sync_object_info():
         OBJECT_INFO_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
         set_object_info_cache(data)
 
-        return {"synced": True, "node_classes": len(data)}
+        input_node_map = build_input_node_map(data)
+        return {"synced": True, "node_classes": len(data), "input_node_map": input_node_map}
     except (httpx.RequestError, ValueError) as exc:
         return error_response(
             503,
@@ -200,26 +201,109 @@ def _resolve_workflow_path(filename: str) -> Path | None:
     return None
 
 
+def _merge_input_node_entries(
+    dynamic_entries: list[dict[str, Any]],
+    static_entries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_param = {
+        entry.get("param"): dict(entry)
+        for entry in dynamic_entries
+        if isinstance(entry, dict) and isinstance(entry.get("param"), str)
+    }
+    for entry in static_entries:
+        if not isinstance(entry, dict):
+            continue
+        param = entry.get("param")
+        if not isinstance(param, str):
+            continue
+        by_param[param] = {
+            "input_type": entry.get("input_type"),
+            "param": param,
+            "label": entry.get("label"),
+            "description": entry.get("description"),
+        }
+    return list(by_param.values())
+
+
+def _resolve_input_node_map() -> dict[str, list[dict[str, Any]]]:
+    """Return the full input node map (object_info-derived + static fallbacks)."""
+    dynamic = build_input_node_map()
+    merged = {
+        class_type: [dict(entry) for entry in entries]
+        for class_type, entries in dynamic.items()
+    }
+    for class_type, mapping in INPUT_NODE_MAP.items():
+        static_entries = [{
+            "input_type": mapping["input_type"],
+            "param": mapping["param"],
+            "label": "Prompt" if mapping["input_type"] == "text" else "Video" if mapping["input_type"] == "video" else "Image",
+            "description": None,
+        }]
+        merged[class_type] = _merge_input_node_entries(
+            merged.get(class_type, []),
+            static_entries,
+        )
+    return merged
+
+
+def _find_node_input_mapping(
+    entries: list[dict[str, Any]] | None,
+    *,
+    input_type: str | None = None,
+    param: str | None = None,
+) -> dict[str, Any] | None:
+    if not entries:
+        return None
+    if param is not None:
+        for entry in entries:
+            if entry.get("param") != param:
+                continue
+            if input_type is None or entry.get("input_type") == input_type:
+                return entry
+        return None
+    if input_type is not None:
+        for entry in entries:
+            if entry.get("input_type") == input_type:
+                return entry
+        return None
+    return entries[0]
+
+
+def _parse_node_input_form_key(raw_key: str) -> tuple[str, str | None]:
+    parsed = parse_widget_form_key(raw_key)
+    if parsed is not None:
+        return parsed[0], parsed[1]
+    return raw_key, None
+
+
 def _parse_workflow_inputs(workflow: dict) -> list[dict]:
     """Parse a workflow and return discoverable input nodes."""
+    node_map = _resolve_input_node_map()
     inputs = []
     for node_id, node_data in workflow.items():
         if not isinstance(node_data, dict):
             continue
         class_type = node_data.get("class_type", "")
-        mapping = INPUT_NODE_MAP.get(class_type)
-        if not mapping:
+        mappings = node_map.get(class_type)
+        if not mappings:
             continue
         node_inputs = node_data.get("inputs", {})
         meta = node_data.get("_meta", {})
-        inputs.append({
-            "nodeId": node_id,
-            "classType": class_type,
-            "inputType": mapping["input_type"],
-            "param": mapping["param"],
-            "label": meta.get("title", class_type),
-            "currentValue": node_inputs.get(mapping["param"]),
-        })
+        has_multiple = len(mappings) > 1
+        for mapping in mappings:
+            label = mapping.get("label") or meta.get("title", class_type)
+            if not has_multiple:
+                label = meta.get("title", class_type)
+            inputs.append({
+                "id": f"{node_id}:{mapping['param']}",
+                "nodeId": node_id,
+                "classType": class_type,
+                "inputType": mapping["input_type"],
+                "param": mapping["param"],
+                "label": label,
+                "description": mapping.get("description"),
+                "currentValue": node_inputs.get(mapping["param"]),
+            })
     return inputs
 
 
@@ -507,7 +591,7 @@ async def generate(request: Request):
             pass
 
     # --- Collect injections from form fields ---
-    injections: dict[str, dict] = {}
+    injections: dict[str, dict[str, Any]] = {}
     manual_slot_values: dict[str, Any] = {}
     workflow_warnings: list[dict[str, Any]] = []
 
@@ -534,6 +618,8 @@ async def generate(request: Request):
         normalized_mask_crop_mode = mask_crop_mode_raw.strip().lower()
         if normalized_mask_crop_mode in {"crop", "full"}:
             mask_crop_mode = normalized_mask_crop_mode
+
+    node_map = _resolve_input_node_map()
 
     for key, value in form.multi_items():
         if key.startswith("slot_text_"):
@@ -641,18 +727,22 @@ async def generate(request: Request):
                     widget_overrides.setdefault(node_id, {})[param] = parsed_value
             continue
 
-        # text_<nodeId> -> inject text value
+        # text_<nodeId>_<param> -> inject text value
         if key.startswith("text_"):
-            node_id = key[5:]
+            node_id, explicit_param = _parse_node_input_form_key(key[5:])
             node = workflow.get(node_id)
             if node and isinstance(node, dict):
-                mapping = INPUT_NODE_MAP.get(node.get("class_type", ""))
+                mapping = _find_node_input_mapping(
+                    node_map.get(node.get("class_type", "")),
+                    input_type="text",
+                    param=explicit_param,
+                )
                 if mapping:
-                    injections[node_id] = {"param": mapping["param"], "value": value}
+                    injections.setdefault(node_id, {})[mapping["param"]] = value
 
-        # image_<nodeId> -> upload to ComfyUI immediately
+        # image_<nodeId>_<param> -> upload to ComfyUI immediately
         elif key.startswith("image_"):
-            node_id = key[6:]
+            node_id, explicit_param = _parse_node_input_form_key(key[6:])
             upload_file = value
             filename, upload_warning = await upload_form_media_to_comfy(
                 client,
@@ -668,9 +758,13 @@ async def generate(request: Request):
 
             node = workflow.get(node_id)
             if node and isinstance(node, dict):
-                mapping = INPUT_NODE_MAP.get(node.get("class_type", ""))
+                mapping = _find_node_input_mapping(
+                    node_map.get(node.get("class_type", "")),
+                    input_type="image",
+                    param=explicit_param,
+                )
                 if mapping and mapping.get("input_type") == "image":
-                    injections[node_id] = {"param": mapping["param"], "value": filename}
+                    injections.setdefault(node_id, {})[mapping["param"]] = filename
                 elif mapping:
                     workflow_warnings.append(
                         {
@@ -684,9 +778,9 @@ async def generate(request: Request):
                         }
                     )
 
-        # video_<nodeId> -> buffer for potential mask crop before uploading
+        # video_<nodeId>_<param> -> buffer for potential mask crop before uploading
         elif key.startswith("video_"):
-            node_id = key[6:]
+            node_id, explicit_param = _parse_node_input_form_key(key[6:])
             upload_file = value
             if not hasattr(upload_file, "read"):
                 workflow_warnings.append({
@@ -696,11 +790,29 @@ async def generate(request: Request):
                     "details": {"media_type": "video"},
                 })
                 continue
+            node = workflow.get(node_id)
+            if not isinstance(node, dict):
+                continue
+            mapping = _find_node_input_mapping(
+                node_map.get(node.get("class_type", "")),
+                input_type="video",
+                param=explicit_param,
+            )
+            if mapping is None:
+                workflow_warnings.append({
+                    "code": "media_mapping_missing",
+                    "message": "Could not resolve video input mapping for uploaded media",
+                    "node_id": node_id,
+                    "details": {"received": "video", "param": explicit_param},
+                })
+                continue
             file_obj = cast(UploadFile, upload_file)
             video_bytes = await file_obj.read()
             content_type = getattr(file_obj, "content_type", None) or "video/mp4"
             filename_value = getattr(file_obj, "filename", "upload.video")
-            buffered_videos[node_id] = {
+            buffered_videos[f"{node_id}:{mapping['param']}"] = {
+                "node_id": node_id,
+                "param": mapping["param"],
                 "bytes": video_bytes,
                 "content_type": content_type,
                 "filename": filename_value,

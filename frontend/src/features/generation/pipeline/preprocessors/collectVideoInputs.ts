@@ -5,6 +5,10 @@ import {
   renderTimelineSelectionToWebm,
   renderTimelineSelectionToWebmWithMask,
 } from "../../utils/inputSelection";
+import {
+  getNodeInputRequestKey,
+  getWorkflowInputId,
+} from "../../utils/workflowInputs";
 import { prepareNormalizedSelection } from "./selectionHelpers";
 import { throwIfAborted } from "../utils/abort";
 import type {
@@ -40,17 +44,23 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
   },
 
   async execute(ctx) {
-    const inputByNodeId = new Map(
-      ctx.workflowInputs.map((input) => [input.nodeId, input]),
+    const inputById = new Map(
+      ctx.workflowInputs.map((input) => [getWorkflowInputId(input), input]),
     );
     const projectFps = Math.max(1, ctx.projectConfig.fps);
 
-    // Build lookup: sourceNodeId → mask mappings
+    // Build lookup: sourceInputId/sourceNodeId → mask mappings
     const masksBySource = new Map<string, DerivedMaskMapping[]>();
     for (const mapping of ctx.derivedMaskMappings) {
-      const existing = masksBySource.get(mapping.sourceNodeId) ?? [];
-      existing.push(mapping);
-      masksBySource.set(mapping.sourceNodeId, existing);
+      const keys = new Set<string>([
+        mapping.sourceInputId ?? mapping.sourceNodeId,
+        mapping.sourceNodeId,
+      ]);
+      for (const key of keys) {
+        const existing = masksBySource.get(key) ?? [];
+        existing.push(mapping);
+        masksBySource.set(key, existing);
+      }
     }
 
     async function normalizeVideoSelection(
@@ -93,9 +103,9 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       );
     }
 
-    for (const [nodeId, value] of Object.entries(ctx.slotValues)) {
+    for (const [inputId, value] of Object.entries(ctx.slotValues)) {
       throwIfAborted(ctx.signal);
-      const input = inputByNodeId.get(nodeId);
+      const input = inputById.get(inputId);
       const dispatch = input?.dispatch;
 
       if (dispatch?.kind === "manual_slot") {
@@ -122,11 +132,13 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       if (value.type !== "video" && value.type !== "video_selection") {
         continue;
       }
+      if (!input) continue;
 
       if (value.type === "video") {
-        ctx.videoInputs[nodeId] = value.file;
+        ctx.videoInputs[getNodeInputRequestKey(input)] = value.file;
       } else if (value.type === "video_selection") {
-        const masks = masksBySource.get(nodeId);
+        const masks =
+          masksBySource.get(inputId) ?? masksBySource.get(input.nodeId);
         if (masks && masks.length > 0) {
           const videoTreatment =
             value.derivedMaskVideoTreatment ??
@@ -141,15 +153,22 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
               DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
           );
           throwIfAborted(ctx.signal);
-          ctx.videoInputs[nodeId] = result.video;
+          ctx.videoInputs[getNodeInputRequestKey(input)] = result.video;
           for (const mask of masks) {
-            ctx.videoInputs[mask.maskNodeId] = result.mask;
+            const maskInput = ctx.workflowInputs.find(
+              (candidate) =>
+                candidate.nodeId === mask.maskNodeId &&
+                candidate.param === mask.maskParam,
+            );
+            if (!maskInput) continue;
+            ctx.videoInputs[getNodeInputRequestKey(maskInput)] = result.mask;
           }
         } else {
-          ctx.videoInputs[nodeId] = await normalizeVideoSelection(
+          ctx.videoInputs[getNodeInputRequestKey(input)] =
+            await normalizeVideoSelection(
             value.selection,
             value.preparedVideoFile,
-          );
+            );
           throwIfAborted(ctx.signal);
         }
       }

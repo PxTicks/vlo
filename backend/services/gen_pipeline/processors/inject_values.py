@@ -11,14 +11,15 @@ def apply_injections(
     injections: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     """Inject frontend-provided values into workflow node inputs by node ID."""
-    for node_id, injection in injections.items():
+    for node_id, injection_values in injections.items():
         node = workflow.get(node_id)
         if not isinstance(node, dict):
             continue
         inputs = node.get("inputs", {})
         if not isinstance(inputs, dict):
             continue
-        inputs[injection["param"]] = injection["value"]
+        for param, value in injection_values.items():
+            inputs[param] = value
     return workflow
 
 

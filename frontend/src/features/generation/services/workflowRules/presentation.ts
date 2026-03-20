@@ -15,6 +15,7 @@ import {
   toSlotInputType,
   toWorkflowInputType,
 } from "./shared";
+import { buildWorkflowInputId, getWorkflowInputId } from "../../utils/workflowInputs";
 
 function collectReferencedManualSlots(
   outputInjections: WorkflowRules["output_injections"],
@@ -56,6 +57,20 @@ function toConditioningRole(value: string | undefined): ConditioningRole | null 
 
 function toConditioningLabel(role: ConditioningRole): string {
   return role === "positive" ? "Positive Prompt" : "Negative Prompt";
+}
+
+function applyConditioningRoleToLabel(
+  label: string,
+  role: ConditioningRole,
+): string {
+  const rolePrefix = role === "positive" ? "Positive" : "Negative";
+  if (label.trim().toLowerCase() === "prompt") {
+    return toConditioningLabel(role);
+  }
+  if (label.toLowerCase().includes("prompt")) {
+    return `${rolePrefix} ${label}`;
+  }
+  return `${toConditioningLabel(role)} (${label})`;
 }
 
 function resolveConditioningRoles(
@@ -190,6 +205,12 @@ export function resolvePresentedInputsFromRules(
   const inferredMap = new Map(
     inferredInputs.map((input) => [input.nodeId, input]),
   );
+  const inferredByNodeId = new Map<string, WorkflowInput[]>();
+  for (const input of inferredInputs) {
+    const existing = inferredByNodeId.get(input.nodeId) ?? [];
+    existing.push(input);
+    inferredByNodeId.set(input.nodeId, existing);
+  }
   const conditioningRoles = resolveConditioningRoles(inferredInputs, workflow);
   const resolved: WorkflowInput[] = [];
   const derivedMaskMappings: DerivedMaskMapping[] = [];
@@ -217,6 +238,12 @@ export function resolvePresentedInputsFromRules(
         maskNodeId: inferred.nodeId,
         maskParam: present?.param ?? inferred.param,
         sourceNodeId: derivedMask.sourceNodeId,
+        sourceInputId:
+          inferredByNodeId.get(derivedMask.sourceNodeId)?.length === 1
+            ? getWorkflowInputId(
+                inferredByNodeId.get(derivedMask.sourceNodeId)?.[0] ?? inferred,
+              )
+            : undefined,
         maskType: derivedMask.maskType,
       });
       continue;
@@ -267,7 +294,7 @@ export function resolvePresentedInputsFromRules(
     if (!present?.label && nextInput.inputType === "text") {
       const role = conditioningRoles.get(nextInput.nodeId);
       if (role) {
-        nextInput.label = toConditioningLabel(role);
+        nextInput.label = applyConditioningRoleToLabel(nextInput.label, role);
       }
     }
 
@@ -313,11 +340,13 @@ export function resolvePresentedInputsFromRules(
 
     const classType = present.class_type ?? "RuleInput";
     resolved.push({
+      id: buildWorkflowInputId(nodeId, present.param),
       nodeId,
       classType,
       inputType,
       param: present.param,
       label: present.label ?? classType,
+      description: null,
       currentValue: null,
       origin: "rule",
       dispatch: {
@@ -368,11 +397,13 @@ export function resolvePresentedInputsFromRules(
     const selectionConfig = toManualSlotSelectionConfig(slotRule);
 
     resolved.push({
+      id: buildWorkflowInputId(syntheticNodeId, slotRule.param ?? slotId),
       nodeId: syntheticNodeId,
       classType: "ManualSlot",
       inputType: mapped.uiInputType,
       param: slotRule.param ?? slotId,
       label: slotRule.label ?? slotId,
+      description: null,
       currentValue: null,
       origin: "rule",
       dispatch: {

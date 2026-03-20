@@ -1,4 +1,5 @@
 import type { WorkflowInput } from "../../types";
+import { getWorkflowInputId } from "../../utils/workflowInputs";
 import type {
   WorkflowInputCondition,
   WorkflowInputValidationFailure,
@@ -112,16 +113,19 @@ export function findMissingRequiredWorkflowInputs(
   }
 
   return workflowInputs.flatMap((input) => {
+    const inputId = getWorkflowInputId(input);
+    const isProvided =
+      providedInputIds.has(inputId) || providedInputIds.has(input.nodeId);
     if (!isWorkflowInputRequired(rules, input.nodeId)) {
       return [];
     }
-    if (providedInputIds.has(input.nodeId)) {
+    if (isProvided) {
       return [];
     }
     return [
       {
         kind: "required",
-        input: input.nodeId,
+        input: inputId,
         message: `${input.label} is required.`,
       },
     ];

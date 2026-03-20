@@ -16,6 +16,7 @@ from services.gen_pipeline.processors import (
 )
 from services.gen_pipeline.processors.utils.video_crop import analyze_mask_video_bounds, crop_video, get_video_dimensions
 from services.workflow_rules.mask_pairs import MaskCroppingMode
+from services.workflow_rules.object_info import build_input_node_map
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class GenerationInput:
     target_resolution_raw: Any = None
     mask_crop_dilation: float | None = None
     mask_crop_mode: MaskCroppingMode | None = None
-    injections: dict[str, dict] = field(default_factory=dict)
+    injections: dict[str, dict[str, Any]] = field(default_factory=dict)
     manual_slot_values: dict[str, Any] = field(default_factory=dict)
     widget_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     derived_widget_values: dict[str, Any] = field(default_factory=dict)
@@ -253,10 +254,25 @@ async def run_backend_preprocess(ctx: BackendPipelineContext) -> None:
     prepares/uploads media so the dispatch step can submit a ready-to-run
     ComfyUI prompt.
     """
+    # Build dynamic input node map from object_info, with static fallbacks.
+    dynamic_map = build_input_node_map()
+    for class_type, mapping in INPUT_NODE_MAP.items():
+        existing = {
+            entry["param"]: dict(entry)
+            for entry in dynamic_map.get(class_type, [])
+        }
+        existing[mapping["param"]] = {
+            "input_type": mapping["input_type"],
+            "param": mapping["param"],
+            "label": "Prompt" if mapping["input_type"] == "text" else "Video" if mapping["input_type"] == "video" else "Image",
+            "description": None,
+        }
+        dynamic_map[class_type] = list(existing.values())
+
     preprocessors = build_backend_preprocessors(
         workflows_dir=WORKFLOWS_DIR,
         fallback_workflow_dirs=[DEFAULT_WORKFLOWS_DIR],
-        input_node_map=INPUT_NODE_MAP,
+        input_node_map=dynamic_map,
         analyze_mask_video_bounds_fn=analyze_mask_video_bounds,
         crop_video_fn=crop_video,
         get_video_dimensions_fn=get_video_dimensions,

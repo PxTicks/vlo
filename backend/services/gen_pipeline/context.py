@@ -44,7 +44,7 @@ class BackendPipelineContext:
     """Optional runtime override for mask-crop preprocessing mode."""
 
     injections: dict[str, dict[str, Any]] = field(default_factory=dict)
-    """Per-node value injections from the frontend (node_id → {param, value})."""
+    """Per-node value injections from the frontend (node_id → {param: value})."""
 
     manual_slot_values: dict[str, Any] = field(default_factory=dict)
     """Manual slot payloads keyed by slot ID."""
@@ -59,7 +59,7 @@ class BackendPipelineContext:
     """Widget control modes (node_id → {param: 'fixed' | 'randomize'})."""
 
     buffered_videos: dict[str, dict[str, Any]] = field(default_factory=dict)
-    """Video bytes awaiting upload (node_id → {bytes, filename, content_type})."""
+    """Video bytes awaiting upload (input_id → {node_id, param, bytes, ...})."""
 
     graph_data: dict[str, Any] | None = None
     """Visual-format workflow graph (for embedding in output file metadata via extra_pnginfo)."""

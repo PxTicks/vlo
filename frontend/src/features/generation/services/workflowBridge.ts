@@ -1,6 +1,11 @@
 import type { WorkflowInput } from "../types";
-import { INPUT_NODE_MAP } from "../constants/inputNodeMap";
+import {
+  INPUT_NODE_MAP,
+  type InputNodeMap,
+  type InputNodeMapEntry,
+} from "../constants/inputNodeMap";
 import { isRecord } from "./parsers";
+import { buildWorkflowInputId } from "../utils/workflowInputs";
 
 // ---------------------------------------------------------------------------
 // Node class_type → UI input mapping
@@ -12,10 +17,15 @@ import { isRecord } from "./parsers";
 
 /**
  * Parses an API-format ComfyUI workflow and returns discoverable input nodes.
+ *
+ * When a dynamic `inputNodeMap` (built from object_info) is provided it is
+ * checked first; the static `INPUT_NODE_MAP` is always used as a fallback.
  */
 export function parseWorkflowInputs(
   workflow: Record<string, unknown>,
+  inputNodeMap?: InputNodeMap | null,
 ): WorkflowInput[] {
+  const nodeMap = inputNodeMap ?? INPUT_NODE_MAP;
   const inputs: WorkflowInput[] = [];
 
   for (const [nodeId, nodeData] of Object.entries(workflow)) {
@@ -25,25 +35,42 @@ export function parseWorkflowInputs(
     const classType = node.class_type as string | undefined;
     if (!classType) continue;
 
-    const mapping = INPUT_NODE_MAP[classType];
-    if (!mapping) continue;
+    const mappings = nodeMap[classType] ?? [];
+    if (mappings.length === 0) continue;
 
     const nodeInputs = (node.inputs ?? {}) as Record<string, unknown>;
     const meta = (node._meta ?? {}) as Record<string, unknown>;
+    const nodeTitle = (meta.title as string) ?? classType;
+    const hasMultipleMappings = mappings.length > 1;
 
-    inputs.push({
-      nodeId,
-      classType,
-      inputType: mapping.inputType,
-      param: mapping.param,
-      label: (meta.title as string) ?? classType,
-      currentValue: nodeInputs[mapping.param] ?? null,
-      origin: "inferred",
-      dispatch: { kind: "node" },
-    });
+    for (const mapping of mappings) {
+      inputs.push({
+        id: buildWorkflowInputId(nodeId, mapping.param),
+        nodeId,
+        classType,
+        inputType: mapping.inputType,
+        param: mapping.param,
+        label: resolveWorkflowInputLabel(nodeTitle, mapping, hasMultipleMappings),
+        description: mapping.description ?? null,
+        currentValue: nodeInputs[mapping.param] ?? null,
+        origin: "inferred",
+        dispatch: { kind: "node" },
+      });
+    }
   }
 
   return inputs;
+}
+
+function resolveWorkflowInputLabel(
+  nodeTitle: string,
+  mapping: InputNodeMapEntry,
+  hasMultipleMappings: boolean,
+): string {
+  if (hasMultipleMappings) {
+    return mapping.label ?? mapping.param;
+  }
+  return nodeTitle;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +310,7 @@ function extractMissingModels(value: unknown): string[] {
  */
 export async function readWorkflowFromIframe(
   iframe: HTMLIFrameElement,
+  inputNodeMap?: InputNodeMap | null,
 ): Promise<{
   workflow: Record<string, unknown>;
   graphData: Record<string, unknown>;
@@ -330,7 +358,7 @@ export async function readWorkflowFromIframe(
       graphData = apiWorkflow;
     }
 
-    const inputs = parseWorkflowInputs(apiWorkflow);
+    const inputs = parseWorkflowInputs(apiWorkflow, inputNodeMap);
     const filename = resolveWorkflowTabFilename(activeWorkflow);
     return { workflow: apiWorkflow, graphData, inputs, filename };
   } catch (err) {

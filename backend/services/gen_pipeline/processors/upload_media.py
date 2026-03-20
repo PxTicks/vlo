@@ -26,7 +26,7 @@ class _UploadMediaProcessor:
     def __init__(
         self,
         upload_video_bytes_fn: UploadVideoBytesFn,
-        input_node_map: dict[str, dict[str, str]],
+        input_node_map: dict[str, list[dict[str, Any]]],
     ):
         self._upload_video_bytes = upload_video_bytes_fn
         self._input_node_map = input_node_map
@@ -35,7 +35,11 @@ class _UploadMediaProcessor:
         return bool(ctx.buffered_videos)
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
-        for node_id, video_info in ctx.buffered_videos.items():
+        for buffered_input_id, video_info in ctx.buffered_videos.items():
+            node_id = video_info.get("node_id")
+            param = video_info.get("param")
+            if not isinstance(node_id, str) or not isinstance(param, str):
+                continue
             filename, upload_warning = await self._upload_video_bytes(
                 ctx.client,
                 video_info["bytes"],
@@ -44,6 +48,8 @@ class _UploadMediaProcessor:
             )
             if upload_warning:
                 upload_warning["node_id"] = node_id
+                upload_warning.setdefault("details", {})
+                upload_warning["details"]["buffered_input_id"] = buffered_input_id
                 ctx.warnings.append(upload_warning)
                 continue
             if not filename:
@@ -51,12 +57,13 @@ class _UploadMediaProcessor:
 
             node = ctx.workflow.get(node_id)
             if isinstance(node, dict):
-                mapping = self._input_node_map.get(node.get("class_type", ""))
+                mappings = self._input_node_map.get(node.get("class_type", ""), [])
+                mapping = next(
+                    (entry for entry in mappings if entry.get("param") == param),
+                    None,
+                )
                 if mapping and mapping.get("input_type") == "video":
-                    ctx.injections[node_id] = {
-                        "param": mapping["param"],
-                        "value": filename,
-                    }
+                    ctx.injections.setdefault(node_id, {})[param] = filename
                 elif mapping:
                     ctx.warnings.append(
                         pipeline_warning(
@@ -75,7 +82,7 @@ class _UploadMediaProcessor:
 
 def create_upload_media_processor(
     upload_video_bytes_fn: UploadVideoBytesFn,
-    input_node_map: dict[str, dict[str, str]],
+    input_node_map: dict[str, list[dict[str, Any]]],
 ) -> Processor:
     return _UploadMediaProcessor(upload_video_bytes_fn, input_node_map)
 

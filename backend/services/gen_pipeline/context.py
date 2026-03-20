@@ -52,6 +52,9 @@ class BackendPipelineContext:
     widget_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     """Frontend-supplied widget value overrides (node_id → {param: value})."""
 
+    derived_widget_values: dict[str, Any] = field(default_factory=dict)
+    """Frontend-supplied derived widget values keyed by derived widget ID."""
+
     widget_modes: dict[str, dict[str, str]] = field(default_factory=dict)
     """Widget control modes (node_id → {param: 'fixed' | 'randomize'})."""
 

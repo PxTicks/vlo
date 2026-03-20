@@ -130,6 +130,7 @@ export interface GenerationRequest {
   manualSlotVideoInputs: Record<string, File>;
   manualSlotAudioInputs: Record<string, File>;
   widgetInputs?: Record<string, string>;
+  derivedWidgetInputs?: Record<string, string>;
   widgetModes?: Record<string, "fixed" | "randomize">;
   maskCropDilation?: number;
   maskCropMode?: WorkflowMaskCroppingMode;

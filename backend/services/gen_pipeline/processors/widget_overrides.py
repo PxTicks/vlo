@@ -181,11 +181,14 @@ class _WidgetOverridesProcessor:
                 inputs[param] = value
 
         _apply_widget_modes(ctx)
-        ctx.applied_widget_values = _collect_applied_widget_values(
-            ctx.workflow,
-            ctx.widget_overrides,
-            ctx.widget_modes,
-        )
+        ctx.applied_widget_values = {
+            **ctx.applied_widget_values,
+            **_collect_applied_widget_values(
+                ctx.workflow,
+                ctx.widget_overrides,
+                ctx.widget_modes,
+            ),
+        }
 
 
 widget_overrides_processor: Processor = _WidgetOverridesProcessor()

@@ -313,8 +313,18 @@ export function useGenerationPanel() {
     // Actual random number generation happens in the backend to preserve
     // precision for large integer domains (for example seed ranges).
     const widgetOverrides: Record<string, string> = {};
+    const derivedWidgetInputs: Record<string, string> = {};
     const widgetModes: Record<string, "fixed" | "randomize"> = {};
     for (const w of widgetInputs) {
+      const value = currentWidgetValues[w.nodeId]?.[w.param] ?? w.currentValue;
+      if (w.kind === "derived") {
+        if (value !== undefined && value !== null) {
+          derivedWidgetInputs[`derived_widget_${w.derivedWidgetId}`] =
+            String(value);
+        }
+        continue;
+      }
+
       const key = `${w.nodeId}:${w.param}`;
       const isRandomized = randomizeToggles[key] ?? false;
       if (w.config.controlAfterGenerate) {
@@ -329,13 +339,17 @@ export function useGenerationPanel() {
       if (isRandomized && w.config.controlAfterGenerate) {
         continue;
       }
-      const value = currentWidgetValues[w.nodeId]?.[w.param] ?? w.currentValue;
       if (value !== undefined && value !== null) {
         widgetOverrides[`widget_${w.nodeId}_${w.param}`] = String(value);
       }
     }
 
-    await store.submitGeneration(slotValues, widgetOverrides, widgetModes);
+    await store.submitGeneration(
+      slotValues,
+      widgetOverrides,
+      widgetModes,
+      derivedWidgetInputs,
+    );
   }, [
     textValues,
     widgetInputs,

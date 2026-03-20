@@ -17,6 +17,9 @@ from services.gen_pipeline.processors.aspect_ratio import create_aspect_ratio_pr
 from services.gen_pipeline.processors.inject_values import inject_values_processor
 from services.gen_pipeline.processors.load_rules import create_load_rules_processor
 from services.gen_pipeline.processors.mask_crop import create_mask_crop_processor
+from services.gen_pipeline.processors.resolve_derived_widgets import (
+    resolve_derived_widgets_processor,
+)
 from services.gen_pipeline.processors.submit_prompt import create_submit_prompt_processor
 from services.gen_pipeline.processors.upload_media import create_upload_media_processor
 from services.gen_pipeline.processors.validate_inputs import validate_inputs_processor
@@ -74,6 +77,7 @@ def build_backend_preprocessors(
             fallback_dirs=fallback_workflow_dirs,
         ),
         validate_inputs_processor,
+        resolve_derived_widgets_processor,
         validate_widgets_processor,
         create_apply_rules_processor(),
         widget_overrides_processor,

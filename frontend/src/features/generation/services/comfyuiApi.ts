@@ -252,6 +252,7 @@ export async function generate(request: {
   manualSlotVideoInputs?: Record<string, File>;
   manualSlotAudioInputs?: Record<string, File>;
   widgetInputs?: Record<string, string>;
+  derivedWidgetInputs?: Record<string, string>;
   widgetModes?: Record<string, "fixed" | "randomize">;
   maskCropDilation?: number;
   maskCropMode?: WorkflowMaskCroppingMode;
@@ -305,6 +306,9 @@ options: { signal?: AbortSignal } = {},
     formData.append(`slot_audio_${slotId}`, file);
   }
   for (const [key, value] of Object.entries(request.widgetInputs ?? {})) {
+    formData.append(key, value);
+  }
+  for (const [key, value] of Object.entries(request.derivedWidgetInputs ?? {})) {
     formData.append(key, value);
   }
   for (const [key, value] of Object.entries(request.widgetModes ?? {})) {

@@ -58,6 +58,9 @@ SUPPORTED_WIDGET_VALUE_TYPES = {
     "enum",
     "unknown",
 }
+SUPPORTED_DERIVED_WIDGET_KINDS = {
+    "dual_sampler_denoise",
+}
 
 
 def _warning(
@@ -87,6 +90,7 @@ def default_rules() -> WorkflowRules:
         "validation": {
             "inputs": [],
         },
+        "derived_widgets": [],
         "output_injections": {},
         "slots": {},
         "mask_cropping": {
@@ -144,6 +148,23 @@ def _to_non_negative_int(value: Any) -> int | None:
     if parsed is None or parsed < 0:
         return None
     return parsed
+
+
+def _normalize_param_ref(value: Any) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    node_id = value.get("node_id")
+    param = value.get("param")
+    if not isinstance(node_id, str) or not isinstance(param, str):
+        return None
+    normalized_node_id = node_id.strip()
+    normalized_param = param.strip()
+    if not normalized_node_id or not normalized_param:
+        return None
+    return {
+        "node_id": normalized_node_id,
+        "param": normalized_param,
+    }
 
 
 def _is_safe_workflow_filename(filename: str) -> bool:
@@ -486,6 +507,8 @@ def normalize_rules(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]
                     )
                 if isinstance(raw_widget.get("frontend_only"), bool):
                     widget_rule["frontend_only"] = raw_widget["frontend_only"]
+                if isinstance(raw_widget.get("hidden"), bool):
+                    widget_rule["hidden"] = raw_widget["hidden"]
                 if isinstance(raw_widget.get("group_id"), str):
                     group_id = raw_widget["group_id"].strip()
                     if group_id:
@@ -1077,6 +1100,118 @@ def normalize_rules(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]
 
     aspect_ratio_processing["postprocess"] = ar_postprocess
     rules["aspect_ratio_processing"] = aspect_ratio_processing
+
+    raw_derived_widgets = raw.get("derived_widgets", [])
+    if raw_derived_widgets is None:
+        raw_derived_widgets = []
+    if not isinstance(raw_derived_widgets, list):
+        warnings.append(
+            _warning(
+                "invalid_derived_widgets",
+                "Rules 'derived_widgets' must be an array",
+            )
+        )
+        raw_derived_widgets = []
+
+    normalized_derived_widgets: list[dict[str, Any]] = []
+    for index, raw_derived_widget in enumerate(raw_derived_widgets):
+        if not isinstance(raw_derived_widget, dict):
+            warnings.append(
+                _warning(
+                    "invalid_derived_widget_rule",
+                    "Derived widget rules must be objects",
+                    details={"index": index},
+                )
+            )
+            continue
+
+        derived_widget_id = raw_derived_widget.get("id")
+        if not isinstance(derived_widget_id, str) or not derived_widget_id.strip():
+            warnings.append(
+                _warning(
+                    "missing_derived_widget_id",
+                    "Derived widget rules require a non-empty id",
+                    details={"index": index},
+                )
+            )
+            continue
+
+        kind = raw_derived_widget.get("kind")
+        if not isinstance(kind, str) or kind not in SUPPORTED_DERIVED_WIDGET_KINDS:
+            warnings.append(
+                _warning(
+                    "unsupported_derived_widget_kind",
+                    "Derived widget kind is not supported",
+                    details={"index": index, "kind": kind},
+                )
+            )
+            continue
+
+        normalized_rule: dict[str, Any] = {
+            "id": derived_widget_id.strip(),
+            "kind": kind,
+        }
+
+        if isinstance(raw_derived_widget.get("label"), str):
+            label = raw_derived_widget["label"].strip()
+            if label:
+                normalized_rule["label"] = label
+        if isinstance(raw_derived_widget.get("group_id"), str):
+            group_id = raw_derived_widget["group_id"].strip()
+            if group_id:
+                normalized_rule["group_id"] = group_id
+        if isinstance(raw_derived_widget.get("group_title"), str):
+            group_title = raw_derived_widget["group_title"].strip()
+            if group_title:
+                normalized_rule["group_title"] = group_title
+        group_order = raw_derived_widget.get("group_order")
+        if isinstance(group_order, int) and not isinstance(group_order, bool):
+            if group_order >= 0:
+                normalized_rule["group_order"] = group_order
+
+        if kind == "dual_sampler_denoise":
+            total_steps = _normalize_param_ref(raw_derived_widget.get("total_steps"))
+            start_step = _normalize_param_ref(raw_derived_widget.get("start_step"))
+            base_split_step = _normalize_param_ref(
+                raw_derived_widget.get("base_split_step")
+            )
+            raw_split_targets = raw_derived_widget.get("split_step_targets")
+            split_step_targets = (
+                [
+                    normalized_target
+                    for item in raw_split_targets
+                    if (
+                        normalized_target := _normalize_param_ref(item)
+                    )
+                    is not None
+                ]
+                if isinstance(raw_split_targets, list)
+                else []
+            )
+
+            if (
+                total_steps is None
+                or start_step is None
+                or base_split_step is None
+                or not split_step_targets
+            ):
+                warnings.append(
+                    _warning(
+                        "invalid_derived_widget_rule",
+                        "dual_sampler_denoise requires total_steps, start_step, base_split_step, and split_step_targets references",
+                        details={"index": index, "id": normalized_rule["id"]},
+                    )
+                )
+                continue
+
+            normalized_rule["total_steps"] = total_steps
+            normalized_rule["start_step"] = start_step
+            normalized_rule["base_split_step"] = base_split_step
+            normalized_rule["split_step_targets"] = split_step_targets
+
+        normalized_derived_widgets.append(normalized_rule)
+
+    rules["derived_widgets"] = normalized_derived_widgets
 
     raw_output_injections = raw.get("output_injections", {})
     if not isinstance(raw_output_injections, dict):

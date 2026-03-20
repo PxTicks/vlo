@@ -1,7 +1,9 @@
 import type {
+  DerivedWorkflowWidgetInput,
   WorkflowMaskCroppingMode,
   WorkflowInput,
   WorkflowManualSlotSelectionConfig,
+  WorkflowParamReference,
   WorkflowPostprocessingConfig,
   WorkflowRuleSlotInputType,
   WorkflowWidgetInput,
@@ -79,6 +81,7 @@ export interface WorkflowRuleWidgetEntry {
   control_after_generate?: boolean;
   default_randomize?: boolean;
   frontend_only?: boolean;
+  hidden?: boolean;
   group_id?: string;
   group_title?: string;
   group_order?: number;
@@ -120,6 +123,21 @@ export interface WorkflowMaskCroppingConfig {
   mode: WorkflowMaskCroppingMode;
 }
 
+export interface WorkflowDualSamplerDenoiseRule {
+  id: string;
+  kind: "dual_sampler_denoise";
+  label?: string;
+  group_id?: string;
+  group_title?: string;
+  group_order?: number;
+  total_steps: WorkflowParamReference;
+  start_step: WorkflowParamReference;
+  base_split_step: WorkflowParamReference;
+  split_step_targets: WorkflowParamReference[];
+}
+
+export type WorkflowDerivedWidgetRule = WorkflowDualSamplerDenoiseRule;
+
 export const DEFAULT_WORKFLOW_POSTPROCESSING: WorkflowPostprocessingConfig = {
   mode: "auto",
   panel_preview: "raw_outputs",
@@ -136,6 +154,9 @@ export const DEFAULT_GENERATION_RESOLUTION_OPTIONS = [
   720,
   1080,
 ] as const;
+
+const DERIVED_WIDGET_NODE_ID_PREFIX = "derived:";
+const DERIVED_WIDGET_VALUE_PARAM = "__value";
 
 export interface WorkflowAspectRatioProcessingConfig {
   enabled: boolean;
@@ -159,6 +180,7 @@ export interface WorkflowRules {
   nodes: Record<string, WorkflowRuleNode>;
   validation?: WorkflowValidationConfig;
   input_conditions?: WorkflowInputCondition[];
+  derived_widgets?: WorkflowDerivedWidgetRule[];
   output_injections: Record<
     string,
     Record<
@@ -211,6 +233,119 @@ function toPositiveInteger(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
   const normalized = Math.round(value);
   return normalized > 0 ? normalized : null;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizeParamReference(
+  value: unknown,
+): WorkflowParamReference | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.node_id !== "string" || typeof value.param !== "string") {
+    return null;
+  }
+  const nodeId = value.node_id.trim();
+  const param = value.param.trim();
+  if (!nodeId || !param) return null;
+  return {
+    nodeId,
+    param,
+  };
+}
+
+function normalizeDerivedWidgetRule(
+  rawRule: unknown,
+  warnings: WorkflowRuleWarning[],
+  index: number,
+): WorkflowDerivedWidgetRule | null {
+  if (!isRecord(rawRule)) {
+    warnings.push(
+      toRulesWarning(
+        "invalid_derived_widget_rule",
+        "derived_widgets entries must be objects",
+      ),
+    );
+    return null;
+  }
+
+  if (rawRule.kind !== "dual_sampler_denoise") {
+    warnings.push(
+      toRulesWarning(
+        "unsupported_derived_widget_kind",
+        `Unsupported derived widget kind '${String(rawRule.kind ?? "")}'`,
+      ),
+    );
+    return null;
+  }
+
+  if (typeof rawRule.id !== "string" || rawRule.id.trim().length === 0) {
+    warnings.push(
+      toRulesWarning(
+        "missing_derived_widget_id",
+        `derived_widgets[${index}] requires a non-empty id`,
+      ),
+    );
+    return null;
+  }
+
+  const totalSteps = normalizeParamReference(rawRule.total_steps);
+  const startStep = normalizeParamReference(rawRule.start_step);
+  const baseSplitStep = normalizeParamReference(rawRule.base_split_step);
+  const splitStepTargets = Array.isArray(rawRule.split_step_targets)
+    ? rawRule.split_step_targets.flatMap((target) => {
+        const normalized = normalizeParamReference(target);
+        return normalized ? [normalized] : [];
+      })
+    : [];
+
+  if (
+    totalSteps === null ||
+    startStep === null ||
+    baseSplitStep === null ||
+    splitStepTargets.length === 0
+  ) {
+    warnings.push(
+      toRulesWarning(
+        "invalid_derived_widget_rule",
+        `derived_widgets[${index}] has invalid node/param references`,
+      ),
+    );
+    return null;
+  }
+
+  return {
+    id: rawRule.id.trim(),
+    kind: "dual_sampler_denoise",
+    ...(typeof rawRule.label === "string" && rawRule.label.trim().length > 0
+      ? { label: rawRule.label.trim() }
+      : {}),
+    ...(typeof rawRule.group_id === "string" &&
+    rawRule.group_id.trim().length > 0
+      ? { group_id: rawRule.group_id.trim() }
+      : {}),
+    ...(typeof rawRule.group_title === "string" &&
+    rawRule.group_title.trim().length > 0
+      ? { group_title: rawRule.group_title.trim() }
+      : {}),
+    ...(typeof rawRule.group_order === "number" && rawRule.group_order >= 0
+      ? { group_order: Math.floor(rawRule.group_order) }
+      : {}),
+    total_steps: totalSteps,
+    start_step: startStep,
+    base_split_step: baseSplitStep,
+    split_step_targets: splitStepTargets,
+  };
 }
 
 export function getSupportedWorkflowResolutions(
@@ -311,7 +446,8 @@ export function findUnsatisfiedInputValidationRules(
   rules: WorkflowRules | null | undefined,
   providedInputIds: ReadonlySet<string>,
 ): WorkflowInputValidationFailure[] {
-  return resolveInputValidationRules(rules).flatMap((rule) => {
+  return resolveInputValidationRules(rules).flatMap<WorkflowInputValidationFailure>(
+    (rule) => {
     if (rule.kind === "optional") {
       return [];
     }
@@ -345,7 +481,8 @@ export function findUnsatisfiedInputValidationRules(
         message: messageForValidationRule(rule),
       },
     ];
-  });
+    },
+  );
 }
 
 export function findMissingRequiredWorkflowInputs(
@@ -625,6 +762,9 @@ export function normalizeWorkflowRules(rawRules: unknown): {
         }
         if (typeof wRaw.frontend_only === "boolean") {
           entry.frontend_only = wRaw.frontend_only;
+        }
+        if (typeof wRaw.hidden === "boolean") {
+          entry.hidden = wRaw.hidden;
         }
         if (typeof wRaw.group_id === "string") {
           const groupId = wRaw.group_id.trim();
@@ -1012,12 +1152,33 @@ export function normalizeWorkflowRules(rawRules: unknown): {
     };
   }
 
+  let derivedWidgets: WorkflowDerivedWidgetRule[] | undefined;
+  if (Array.isArray(raw.derived_widgets)) {
+    const normalizedDerivedWidgets = raw.derived_widgets.flatMap(
+      (rawRule, index) => {
+        const normalized = normalizeDerivedWidgetRule(rawRule, warnings, index);
+        return normalized ? [normalized] : [];
+      },
+    );
+    if (normalizedDerivedWidgets.length > 0) {
+      derivedWidgets = normalizedDerivedWidgets;
+    }
+  } else if (raw.derived_widgets !== undefined) {
+    warnings.push(
+      toRulesWarning(
+        "invalid_derived_widgets",
+        "derived_widgets must be an array",
+      ),
+    );
+  }
+
   return {
     rules: {
       version,
       nodes,
       validation,
       ...(inputConditions ? { input_conditions: inputConditions } : {}),
+      ...(derivedWidgets ? { derived_widgets: derivedWidgets } : {}),
       output_injections: toStringRecord(
         raw.output_injections,
       ) as WorkflowRules["output_injections"],
@@ -1454,6 +1615,104 @@ export function resolvePresentedInputs(
 // Widget input resolution
 // ---------------------------------------------------------------------------
 
+function getWorkflowParamValue(
+  workflow: Record<string, unknown>,
+  ref: WorkflowParamReference,
+): unknown {
+  const node = workflow[ref.nodeId];
+  if (!isRecord(node)) return null;
+  const inputs = isRecord(node.inputs) ? node.inputs : {};
+  return inputs[ref.param];
+}
+
+function getWorkflowParamNumber(
+  workflow: Record<string, unknown>,
+  ref: WorkflowParamReference,
+): number | null {
+  return toFiniteNumber(getWorkflowParamValue(workflow, ref));
+}
+
+function getDerivedWidgetNodeId(derivedWidgetId: string): string {
+  return `${DERIVED_WIDGET_NODE_ID_PREFIX}${derivedWidgetId}`;
+}
+
+function resolveDualSamplerDenoiseWidget(
+  workflow: Record<string, unknown>,
+  rule: WorkflowDualSamplerDenoiseRule,
+): DerivedWorkflowWidgetInput | null {
+  const totalSteps = toPositiveInteger(
+    getWorkflowParamNumber(workflow, rule.total_steps),
+  );
+  const startStep = getWorkflowParamNumber(workflow, rule.start_step);
+  const baseSplitStep = getWorkflowParamNumber(workflow, rule.base_split_step);
+
+  if (
+    totalSteps === null ||
+    startStep === null ||
+    baseSplitStep === null
+  ) {
+    console.warn(
+      "[resolveWidgetInputs] Skipping derived widget '%s': missing numeric workflow params",
+      rule.id,
+    );
+    return null;
+  }
+
+  const normalizedStartStep = Math.min(
+    Math.max(0, Math.round(startStep)),
+    totalSteps - 1,
+  );
+  const normalizedBaseSplitStep = Math.max(0, Math.round(baseSplitStep));
+  const denoiseSteps = Math.min(
+    totalSteps,
+    Math.max(1, totalSteps - normalizedStartStep),
+  );
+  const step = 1 / totalSteps;
+  const currentValue = denoiseSteps / totalSteps;
+
+  return {
+    kind: "derived",
+    deriveKind: "dual_sampler_denoise",
+    derivedWidgetId: rule.id,
+    nodeId: getDerivedWidgetNodeId(rule.id),
+    param: DERIVED_WIDGET_VALUE_PARAM,
+    currentValue,
+    sources: {
+      totalSteps,
+      startStep: normalizedStartStep,
+      baseSplitStep: normalizedBaseSplitStep,
+    },
+    config: {
+      label: rule.label ?? "Denoise",
+      controlAfterGenerate: false,
+      frontendOnly: true,
+      min: step,
+      max: 1,
+      step,
+      control: "slider",
+      valueType: "float",
+      groupId: rule.group_id,
+      groupTitle: rule.group_title,
+      groupOrder: rule.group_order,
+    },
+  };
+}
+
+function resolveDerivedWidgetInputs(
+  workflow: Record<string, unknown>,
+  rules: WorkflowRules,
+): WorkflowWidgetInput[] {
+  const result: WorkflowWidgetInput[] = [];
+  for (const rule of rules.derived_widgets ?? []) {
+    if (rule.kind !== "dual_sampler_denoise") continue;
+    const widget = resolveDualSamplerDenoiseWidget(workflow, rule);
+    if (widget) {
+      result.push(widget);
+    }
+  }
+  return result;
+}
+
 /**
  * Resolves widget inputs from the workflow and rules.
  *
@@ -1485,7 +1744,7 @@ export function resolveWidgetInputs(
     Object.keys(workflow).slice(0, 20),
   );
 
-  const result: WorkflowWidgetInput[] = [];
+  const rawWidgets: WorkflowWidgetInput[] = [];
 
   for (const [nodeId, nodeRule] of Object.entries(rules.nodes)) {
     if (nodeRule.ignore) continue;
@@ -1520,6 +1779,7 @@ export function resolveWidgetInputs(
         controlAfterGenerate: entry.control_after_generate ?? false,
         defaultRandomize: entry.default_randomize,
         frontendOnly: entry.frontend_only,
+        hidden: entry.hidden,
         groupId: entry.group_id,
         groupTitle: entry.group_title,
         groupOrder: entry.group_order,
@@ -1530,7 +1790,11 @@ export function resolveWidgetInputs(
         valueType: entry.value_type,
         options: entry.options,
       };
-      result.push({
+      if (config.hidden) {
+        continue;
+      }
+
+      rawWidgets.push({
         nodeId,
         param,
         config,
@@ -1538,6 +1802,9 @@ export function resolveWidgetInputs(
       });
     }
   }
+
+  const derivedWidgets = resolveDerivedWidgetInputs(workflow, rules);
+  const result = [...rawWidgets, ...derivedWidgets];
 
   console.info("[resolveWidgetInputs] Resolved %d widget inputs", result.length);
   return result;

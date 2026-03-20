@@ -253,6 +253,71 @@ def test_load_rules_for_workflow_preserves_frontend_only_widget_metadata(
     )
 
 
+def test_load_rules_for_workflow_normalizes_derived_widgets_and_hidden_widgets(
+    tmp_path: Path,
+):
+    workflow_path = tmp_path / "example.json"
+    workflow_path.write_text("{}")
+    sidecar_path = tmp_path / "example.rules.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "nodes": {
+                    "145": {
+                        "widgets": {
+                            "start_step": {
+                                "value_type": "int",
+                                "hidden": True,
+                            },
+                            "split_step": {
+                                "value_type": "int",
+                                "hidden": True,
+                            },
+                        }
+                    }
+                },
+                "derived_widgets": [
+                    {
+                        "id": "denoise",
+                        "kind": "dual_sampler_denoise",
+                        "label": "Denoise",
+                        "total_steps": {"node_id": "145", "param": "steps"},
+                        "start_step": {"node_id": "145", "param": "start_step"},
+                        "base_split_step": {
+                            "node_id": "145",
+                            "param": "split_step",
+                        },
+                        "split_step_targets": [
+                            {"node_id": "145", "param": "split_step"},
+                            {"node_id": "146", "param": "start_at_step"},
+                        ],
+                    }
+                ],
+            }
+        )
+    )
+
+    rules, warnings = load_rules_for_workflow(tmp_path, "example.json")
+
+    assert warnings == []
+    assert rules["nodes"]["145"]["widgets"]["start_step"]["hidden"] is True
+    assert rules["derived_widgets"] == [
+        {
+            "id": "denoise",
+            "kind": "dual_sampler_denoise",
+            "label": "Denoise",
+            "total_steps": {"node_id": "145", "param": "steps"},
+            "start_step": {"node_id": "145", "param": "start_step"},
+            "base_split_step": {"node_id": "145", "param": "split_step"},
+            "split_step_targets": [
+                {"node_id": "145", "param": "split_step"},
+                {"node_id": "146", "param": "start_at_step"},
+            ],
+        }
+    ]
+
+
 def test_enrich_rules_with_object_info_groups_proxy_widgets_under_parent_template():
     workflow = {
         "nodes": [
@@ -2115,6 +2180,118 @@ async def test_generate_rejects_invalid_widget_override_values(
         }
     ]
     assert fake_comfy_client.prompt_payload is None
+
+
+@pytest.mark.anyio
+async def test_generate_expands_dual_sampler_denoise_derived_widget(
+    tmp_path: Path,
+    monkeypatch,
+    fake_comfy_client,
+):
+    workflow_id = "workflow_dual_sampler_denoise.json"
+    workflow_path = tmp_path / workflow_id
+    workflow_path.write_text("{}")
+    sidecar_path = tmp_path / "workflow_dual_sampler_denoise.rules.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "nodes": {
+                    "145": {
+                        "widgets": {
+                            "steps": {
+                                "value_type": "int",
+                                "min": 1,
+                                "max": 10,
+                                "hidden": True,
+                            },
+                            "start_step": {
+                                "value_type": "int",
+                                "min": 0,
+                                "max": 9,
+                                "hidden": True,
+                            },
+                            "split_step": {
+                                "value_type": "int",
+                                "min": 0,
+                                "max": 10,
+                                "hidden": True,
+                            },
+                        }
+                    },
+                    "146": {
+                        "widgets": {
+                            "start_at_step": {
+                                "value_type": "int",
+                                "min": 0,
+                                "max": 10,
+                                "hidden": True,
+                            }
+                        }
+                    },
+                },
+                "derived_widgets": [
+                    {
+                        "id": "denoise",
+                        "kind": "dual_sampler_denoise",
+                        "total_steps": {"node_id": "145", "param": "steps"},
+                        "start_step": {"node_id": "145", "param": "start_step"},
+                        "base_split_step": {
+                            "node_id": "145",
+                            "param": "split_step",
+                        },
+                        "split_step_targets": [
+                            {"node_id": "145", "param": "split_step"},
+                            {"node_id": "146", "param": "start_at_step"},
+                        ],
+                    }
+                ],
+            }
+        )
+    )
+    monkeypatch.setattr(comfyui, "WORKFLOWS_DIR", tmp_path)
+
+    workflow = {
+        "145": {
+            "class_type": "SamplerA",
+            "inputs": {
+                "steps": 10,
+                "start_step": 2,
+                "split_step": 4,
+            },
+        },
+        "146": {
+            "class_type": "SamplerB",
+            "inputs": {
+                "start_at_step": 4,
+            },
+        },
+    }
+
+    response = await comfyui.generate(
+        _as_request(
+            FormData(
+                [
+                    ("workflow", json.dumps(workflow)),
+                    ("workflow_id", workflow_id),
+                    ("derived_widget_denoise", "0.4"),
+                ]
+            )
+        )
+    )
+
+    assert response.status_code == 200
+    payload = _response_json(response)
+    assert payload["applied_widget_values"]["derived:denoise:__value"] == "0.4"
+    assert payload["applied_widget_values"]["145:start_step"] == "6"
+    assert payload["applied_widget_values"]["145:split_step"] == "6"
+    assert payload["applied_widget_values"]["146:start_at_step"] == "6"
+
+    assert fake_comfy_client.prompt_payload is not None
+    prompt = fake_comfy_client.prompt_payload["prompt"]
+    assert prompt["145"]["inputs"]["start_step"] == 6
+    assert prompt["145"]["inputs"]["split_step"] == 6
+    assert prompt["146"]["inputs"]["start_at_step"] == 6
 
 
 @pytest.mark.anyio

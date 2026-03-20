@@ -45,6 +45,7 @@ class GenerationInput:
     injections: dict[str, dict] = field(default_factory=dict)
     manual_slot_values: dict[str, Any] = field(default_factory=dict)
     widget_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    derived_widget_values: dict[str, Any] = field(default_factory=dict)
     widget_modes: dict[str, dict[str, str]] = field(default_factory=dict)
     buffered_videos: dict[str, dict[str, Any]] = field(default_factory=dict)
     graph_data: dict[str, Any] | None = None
@@ -237,6 +238,7 @@ def build_backend_context(
         injections=gen_input.injections,
         manual_slot_values=gen_input.manual_slot_values,
         widget_overrides=gen_input.widget_overrides,
+        derived_widget_values=gen_input.derived_widget_values,
         widget_modes=gen_input.widget_modes,
         buffered_videos=gen_input.buffered_videos,
         graph_data=gen_input.graph_data,

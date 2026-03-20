@@ -95,4 +95,50 @@ describe("GenerationInputs", () => {
     expect(screen.getByText("Width")).toBeInTheDocument();
     expect(screen.getByText("Height")).toBeInTheDocument();
   });
+
+  it("renders derived denoise widgets as sliders", () => {
+    render(
+      <GenerationInputs
+        inputs={[]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[
+          {
+            kind: "derived",
+            deriveKind: "dual_sampler_denoise",
+            derivedWidgetId: "denoise",
+            nodeId: "derived:denoise",
+            param: "__value",
+            currentValue: 0.8,
+            sources: {
+              totalSteps: 10,
+              startStep: 2,
+              baseSplitStep: 4,
+            },
+            config: {
+              label: "Denoise",
+              control: "slider",
+              controlAfterGenerate: false,
+              frontendOnly: true,
+              min: 0.1,
+              max: 1,
+              step: 0.1,
+            },
+          },
+        ]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Denoise")).toBeInTheDocument();
+    expect(screen.getByRole("slider")).toBeInTheDocument();
+    expect(screen.getByText("80%")).toBeInTheDocument();
+  });
 });

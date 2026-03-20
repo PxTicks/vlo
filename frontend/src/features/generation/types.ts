@@ -188,25 +188,57 @@ export type WidgetValueType =
   | "enum"
   | "unknown";
 
+export type WidgetControlType = "slider";
+
 export interface WidgetInputConfig {
   label: string;
   controlAfterGenerate: boolean;
   defaultRandomize?: boolean;
   frontendOnly?: boolean;
+  hidden?: boolean;
   min?: number;
   max?: number;
+  step?: number;
   defaultValue?: unknown;
   nodeTitle?: string;
   groupId?: string;
   groupTitle?: string;
   groupOrder?: number;
+  control?: WidgetControlType;
   valueType?: WidgetValueType;
   options?: Array<string | number | boolean>;
 }
 
-export interface WorkflowWidgetInput {
+export interface WorkflowParamReference {
+  nodeId: string;
+  param: string;
+}
+
+export interface RawWorkflowWidgetInput {
+  kind?: "raw";
   nodeId: string;
   param: string;
   config: WidgetInputConfig;
   currentValue: unknown;
 }
+
+export interface WorkflowDualSamplerDenoiseSourceValues {
+  totalSteps: number;
+  startStep: number;
+  baseSplitStep: number;
+}
+
+export interface DerivedWorkflowWidgetInput {
+  kind: "derived";
+  deriveKind: "dual_sampler_denoise";
+  derivedWidgetId: string;
+  nodeId: string;
+  param: string;
+  config: WidgetInputConfig;
+  currentValue: number;
+  sources: WorkflowDualSamplerDenoiseSourceValues;
+}
+
+export type WorkflowWidgetInput =
+  | RawWorkflowWidgetInput
+  | DerivedWorkflowWidgetInput;

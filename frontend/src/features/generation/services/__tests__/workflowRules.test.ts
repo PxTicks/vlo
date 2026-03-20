@@ -730,4 +730,87 @@ describe("resolvePresentedInputs", () => {
     expect(widgets[0]?.config.frontendOnly).toBe(true);
     expect(widgets[0]?.config.defaultValue).toBe("Keep transparency");
   });
+
+  it("resolves dual-sampler denoise as a derived slider and hides backing widgets", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "145": {
+          inputs: {
+            steps: 10,
+            start_step: 2,
+            split_step: 4,
+          },
+        },
+        "146": {
+          inputs: {
+            start_at_step: 4,
+          },
+        },
+      },
+      {
+        version: 1,
+        nodes: {
+          "145": {
+            widgets: {
+              start_step: {
+                value_type: "int",
+                hidden: true,
+              },
+              split_step: {
+                value_type: "int",
+                hidden: true,
+              },
+            },
+          },
+          "146": {
+            widgets: {
+              start_at_step: {
+                value_type: "int",
+                hidden: true,
+              },
+            },
+          },
+        },
+        derived_widgets: [
+          {
+            id: "denoise",
+            kind: "dual_sampler_denoise",
+            label: "Denoise",
+            total_steps: {
+              node_id: "145",
+              param: "steps",
+            },
+            start_step: {
+              node_id: "145",
+              param: "start_step",
+            },
+            base_split_step: {
+              node_id: "145",
+              param: "split_step",
+            },
+            split_step_targets: [
+              {
+                node_id: "145",
+                param: "split_step",
+              },
+              {
+                node_id: "146",
+                param: "start_at_step",
+              },
+            ],
+          },
+        ],
+        output_injections: {},
+        slots: {},
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.kind).toBe("derived");
+    expect(widgets[0]?.nodeId).toBe("derived:denoise");
+    expect(widgets[0]?.config.control).toBe("slider");
+    expect(widgets[0]?.config.min).toBe(0.1);
+    expect(widgets[0]?.config.step).toBe(0.1);
+    expect(widgets[0]?.currentValue).toBe(0.8);
+  });
 });

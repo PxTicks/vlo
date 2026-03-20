@@ -373,6 +373,7 @@ interface GenerationStore {
     slotValues: Record<string, SlotValue>,
     widgetInputs?: Record<string, string>,
     widgetModes?: Record<string, "fixed" | "randomize">,
+    derivedWidgetInputs?: Record<string, string>,
   ) => Promise<string | null>;
   cancelGeneration: () => Promise<void>;
   importOutput: (jobId: string, outputIndex: number) => Promise<void>;
@@ -1397,7 +1398,12 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
     }
   },
 
-  submitGeneration: async (slotValues, widgetInputs, widgetModes) => {
+  submitGeneration: async (
+    slotValues,
+    widgetInputs,
+    widgetModes,
+    derivedWidgetInputs,
+  ) => {
     const currentState = get();
     const activeJob = currentState.activeJobId
       ? currentState.jobs.get(currentState.activeJobId)
@@ -1496,6 +1502,9 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
       }
       if (widgetModes && Object.keys(widgetModes).length > 0) {
         request.widgetModes = widgetModes;
+      }
+      if (derivedWidgetInputs && Object.keys(derivedWidgetInputs).length > 0) {
+        request.derivedWidgetInputs = derivedWidgetInputs;
       }
       const response = await comfyApi.generate(request, {
         signal: preprocessAbortController.signal,

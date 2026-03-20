@@ -513,6 +513,7 @@ async def generate(request: Request):
 
     # --- Collect widget overrides from form fields ---
     widget_overrides: dict[str, dict[str, Any]] = {}
+    derived_widget_values: dict[str, Any] = {}
     widget_modes: dict[str, dict[str, str]] = {}
 
     # Video uploads are buffered so mask-crop preprocessing can run before
@@ -605,6 +606,21 @@ async def generate(request: Request):
                 mode = value.strip().lower()
                 if mode in WIDGET_CONTROL_MODES:
                     widget_modes.setdefault(node_id, {})[param] = mode
+            continue
+
+        # derived_widget_<widgetId> -> frontend-derived widget value
+        if key.startswith("derived_widget_"):
+            derived_widget_id = key[len("derived_widget_"):]
+            if derived_widget_id and isinstance(value, str):
+                parsed_value: Any = value
+                try:
+                    if "." in value:
+                        parsed_value = float(value)
+                    else:
+                        parsed_value = int(value)
+                except ValueError:
+                    pass
+                derived_widget_values[derived_widget_id] = parsed_value
             continue
 
         # widget_<nodeId>_<param> -> inject widget value into node inputs
@@ -704,6 +720,7 @@ async def generate(request: Request):
         injections=injections,
         manual_slot_values=manual_slot_values,
         widget_overrides=widget_overrides,
+        derived_widget_values=derived_widget_values,
         widget_modes=widget_modes,
         buffered_videos=buffered_videos,
         graph_data=graph_data,

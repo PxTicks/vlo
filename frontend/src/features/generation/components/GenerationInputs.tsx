@@ -1,5 +1,12 @@
 import { memo, useMemo } from "react";
-import { Box, TextField, IconButton, Typography, MenuItem } from "@mui/material";
+import {
+  Box,
+  TextField,
+  IconButton,
+  Typography,
+  MenuItem,
+  Slider,
+} from "@mui/material";
 import { Casino } from "@mui/icons-material";
 import { PanelSection, AssetDropSlot, CommittedTextInput } from "../../panelUI";
 import type { Asset } from "../../../types/Asset";
@@ -119,6 +126,18 @@ function isBooleanWidget(widget: WorkflowWidgetInput): boolean {
   return widget.config.valueType === "boolean";
 }
 
+function isSliderWidget(widget: WorkflowWidgetInput): boolean {
+  return widget.config.control === "slider";
+}
+
+function formatSliderPercent(value: number): string {
+  const percentage = value * 100;
+  if (Math.abs(percentage - Math.round(percentage)) < 0.0001) {
+    return `${Math.round(percentage)}%`;
+  }
+  return `${percentage.toFixed(1)}%`;
+}
+
 function parseEnumValue(
   raw: string,
   options: Array<string | number | boolean> | undefined,
@@ -170,6 +189,9 @@ interface WidgetGroup {
 
 /** Hide frontend-only enum widgets that declare no options (the default is still applied). */
 function isHiddenWidget(widget: WorkflowWidgetInput): boolean {
+  if (widget.config.hidden === true) {
+    return true;
+  }
   return (
     widget.config.frontendOnly === true &&
     widget.config.valueType === "enum" &&
@@ -318,12 +340,71 @@ function WidgetRow({
   const useNumericInput = shouldUseNumericWidgetInput(widget, value);
   const useSelectInput =
     !isRandomized && (isEnumWidget(widget) || isBooleanWidget(widget));
+  const isSlider = isSliderWidget(widget);
   const displayValue =
     value === undefined || value === null
       ? isRandomized
         ? "randomized"
         : ""
       : String(value);
+  const parsedSliderValue =
+    typeof value === "string" ? Number(value) : value;
+  const sliderValue =
+    typeof parsedSliderValue === "number" && Number.isFinite(parsedSliderValue)
+      ? parsedSliderValue
+      : typeof widget.currentValue === "number" && Number.isFinite(widget.currentValue)
+        ? widget.currentValue
+        : typeof widget.config.min === "number"
+          ? widget.config.min
+          : 0;
+
+  if (isSlider) {
+    const min = widget.config.min ?? 0;
+    const max = widget.config.max ?? 1;
+    const step = widget.config.step ?? 0.01;
+
+    return (
+      <Box sx={{ mb: 1.5 }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            mb: 0.75,
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block" }}
+          >
+            {widget.config.label}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block" }}
+          >
+            {formatSliderPercent(sliderValue)}
+          </Typography>
+        </Box>
+        <Slider
+          value={sliderValue}
+          min={min}
+          max={max}
+          step={step}
+          valueLabelDisplay="auto"
+          valueLabelFormat={(nextValue) => formatSliderPercent(nextValue)}
+          onChange={(_, nextValue) => {
+            if (typeof nextValue !== "number") return;
+            onWidgetChange(widget.nodeId, widget.param, nextValue);
+          }}
+          sx={{
+            color: "primary.light",
+            px: 0.5,
+          }}
+        />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>

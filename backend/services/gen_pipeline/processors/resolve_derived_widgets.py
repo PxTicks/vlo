@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from services.gen_pipeline.context import BackendPipelineContext
+from services.gen_pipeline.processors.utils.coerce import coerce_float
 from services.gen_pipeline.types import Processor, ProcessorMeta
 from services.workflow_rules import WorkflowValidationError
 
@@ -17,22 +18,6 @@ def _failure(derived_widget_id: str, message: str) -> dict[str, Any]:
         "derived_widget_id": derived_widget_id,
         "message": message,
     }
-
-
-def _coerce_number(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            return float(stripped)
-        except ValueError:
-            return None
-    return None
 
 
 def _read_param_ref_number(
@@ -51,7 +36,7 @@ def _read_param_ref_number(
     inputs = node.get("inputs")
     if not isinstance(inputs, dict):
         return None
-    return _coerce_number(inputs.get(param))
+    return coerce_float(inputs.get(param))
 
 
 def _apply_override(
@@ -72,7 +57,7 @@ def _expand_dual_sampler_denoise(
     start_step_ref = rule.get("start_step")
     start_step = _read_param_ref_number(workflow, start_step_ref)
     base_split_step = _read_param_ref_number(workflow, rule.get("base_split_step"))
-    denoise = _coerce_number(raw_value)
+    denoise = coerce_float(raw_value)
 
     if denoise is None:
         return None, None, "Derived widget value must be numeric."

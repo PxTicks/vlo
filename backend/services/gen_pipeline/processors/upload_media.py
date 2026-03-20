@@ -5,6 +5,7 @@ from typing import Any
 
 from services.gen_pipeline.context import BackendPipelineContext
 from services.gen_pipeline.processors.inject_values import apply_injections
+from services.gen_pipeline.processors.utils.warning import pipeline_warning
 from services.gen_pipeline.types import Processor, ProcessorMeta
 
 
@@ -58,15 +59,15 @@ class _UploadMediaProcessor:
                     }
                 elif mapping:
                     ctx.warnings.append(
-                        {
-                            "code": "media_mapping_mismatch",
-                            "message": "Media input type does not match node mapping; default node value kept",
-                            "node_id": node_id,
-                            "details": {
+                        pipeline_warning(
+                            "media_mapping_mismatch",
+                            "Media input type does not match node mapping; default node value kept",
+                            node_id=node_id,
+                            details={
                                 "expected": mapping.get("input_type"),
                                 "received": "video",
                             },
-                        }
+                        )
                     )
 
         ctx.workflow = apply_injections(ctx.workflow, ctx.injections)

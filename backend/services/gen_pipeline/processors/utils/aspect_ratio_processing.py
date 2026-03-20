@@ -1,23 +1,7 @@
 import math
 from typing import Any
 
-
-WorkflowWarning = dict[str, Any]
-
-
-def _warning(
-    code: str,
-    message: str,
-    *,
-    details: dict[str, Any] | None = None,
-) -> WorkflowWarning:
-    warning: WorkflowWarning = {
-        "code": code,
-        "message": message,
-    }
-    if details:
-        warning["details"] = details
-    return warning
+from services.gen_pipeline.processors.utils.warning import pipeline_warning
 
 
 def _to_positive_int(value: Any) -> int | None:
@@ -183,8 +167,8 @@ def apply_aspect_ratio_processing(
     rules: dict[str, Any],
     target_aspect_ratio: str | None,
     target_resolution_raw: Any,
-) -> tuple[dict[str, Any] | None, list[WorkflowWarning]]:
-    warnings: list[WorkflowWarning] = []
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    warnings: list[dict[str, Any]] = []
     config = rules.get("aspect_ratio_processing")
     if not isinstance(config, dict):
         return None, warnings
@@ -193,7 +177,7 @@ def apply_aspect_ratio_processing(
 
     if not isinstance(target_aspect_ratio, str) or not target_aspect_ratio.strip():
         warnings.append(
-            _warning(
+            pipeline_warning(
                 "aspect_ratio_processing_missing_target_aspect_ratio",
                 "target_aspect_ratio is required when aspect_ratio_processing is enabled",
             )
@@ -203,7 +187,7 @@ def apply_aspect_ratio_processing(
     target_resolution = _to_positive_int(target_resolution_raw)
     if target_resolution is None:
         warnings.append(
-            _warning(
+            pipeline_warning(
                 "aspect_ratio_processing_invalid_target_resolution",
                 "target_resolution must be a positive integer when aspect_ratio_processing is enabled",
                 details={"target_resolution": target_resolution_raw},
@@ -217,7 +201,7 @@ def apply_aspect_ratio_processing(
             # Pick the closest allowed resolution
             closest = min(allowed_resolutions, key=lambda r: abs(r - target_resolution))
             warnings.append(
-                _warning(
+                pipeline_warning(
                     "aspect_ratio_processing_resolution_clamped",
                     f"target_resolution {target_resolution} not in allowed resolutions; clamped to {closest}",
                     details={
@@ -235,7 +219,7 @@ def apply_aspect_ratio_processing(
     )
     if true_dims is None:
         warnings.append(
-            _warning(
+            pipeline_warning(
                 "aspect_ratio_processing_invalid_target_aspect_ratio",
                 "target_aspect_ratio must follow a '<width>:<height>' format with positive numbers",
                 details={"target_aspect_ratio": target_aspect_ratio},
@@ -264,7 +248,7 @@ def apply_aspect_ratio_processing(
     )
     if best is None:
         warnings.append(
-            _warning(
+            pipeline_warning(
                 "aspect_ratio_processing_candidate_search_failed",
                 "Could not find valid strided dimensions from target dimensions",
                 details={
@@ -299,7 +283,7 @@ def apply_aspect_ratio_processing(
             node = workflow.get(node_id)
             if not isinstance(node, dict):
                 warnings.append(
-                    _warning(
+                    pipeline_warning(
                         "aspect_ratio_processing_target_node_missing",
                         "Configured aspect_ratio_processing target node was not found in workflow",
                         details={"node_id": node_id},
@@ -309,7 +293,7 @@ def apply_aspect_ratio_processing(
             inputs = node.get("inputs")
             if not isinstance(inputs, dict):
                 warnings.append(
-                    _warning(
+                    pipeline_warning(
                         "aspect_ratio_processing_target_node_inputs_missing",
                         "Configured target node does not expose an inputs object",
                         details={"node_id": node_id},
@@ -329,7 +313,7 @@ def apply_aspect_ratio_processing(
 
     if not applied_nodes:
         warnings.append(
-            _warning(
+            pipeline_warning(
                 "aspect_ratio_processing_no_nodes_applied",
                 "Aspect ratio processing was enabled but no configured target nodes were applied",
             )

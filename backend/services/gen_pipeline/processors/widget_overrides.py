@@ -4,36 +4,21 @@ import random
 from typing import Any
 
 from services.gen_pipeline.context import BackendPipelineContext
+from services.gen_pipeline.processors.utils.coerce import coerce_number
+from services.gen_pipeline.processors.utils.warning import pipeline_warning
+from services.gen_pipeline.processors.utils.widget_rule_lookup import WidgetRuleLookup
 from services.gen_pipeline.types import Processor, ProcessorMeta
 
 
 UINT64_MAX = (1 << 64) - 1
 
 
-def _coerce_number(value: Any) -> int | float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return value
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            if "." in stripped or "e" in stripped.lower():
-                return float(stripped)
-            return int(stripped)
-        except ValueError:
-            return None
-    return None
-
-
 def _randomize_from_bounds(
     min_value: Any,
     max_value: Any,
 ) -> int | float | None:
-    min_num = _coerce_number(min_value)
-    max_num = _coerce_number(max_value)
+    min_num = coerce_number(min_value)
+    max_num = coerce_number(max_value)
     if min_num is None or max_num is None:
         return None
 
@@ -63,9 +48,7 @@ def _apply_widget_modes(ctx: BackendPipelineContext) -> None:
     if not ctx.widget_modes:
         return
 
-    nodes_rules = ctx.rules.get("nodes", {})
-    if not isinstance(nodes_rules, dict):
-        return
+    lookup = WidgetRuleLookup(ctx.rules)
 
     for node_id, param_modes in ctx.widget_modes.items():
         if not isinstance(param_modes, dict):
@@ -77,32 +60,18 @@ def _apply_widget_modes(ctx: BackendPipelineContext) -> None:
         if not isinstance(inputs, dict):
             continue
 
-        node_rule = nodes_rules.get(node_id, {})
-        widget_defs = node_rule.get("widgets") if isinstance(node_rule, dict) else None
-
         for param, mode in param_modes.items():
             if mode != "randomize":
                 continue
-            if not isinstance(widget_defs, dict):
+            widget_rule = lookup.get_widget_rule(node_id, param)
+            if widget_rule is None:
                 ctx.warnings.append(
-                    {
-                        "code": "widget_randomize_missing_rule",
-                        "message": "Widget randomize mode requested but widget rule was not found",
-                        "node_id": node_id,
-                        "details": {"param": param},
-                    }
-                )
-                continue
-
-            widget_rule = widget_defs.get(param)
-            if not isinstance(widget_rule, dict):
-                ctx.warnings.append(
-                    {
-                        "code": "widget_randomize_missing_rule",
-                        "message": "Widget randomize mode requested but widget rule was not found",
-                        "node_id": node_id,
-                        "details": {"param": param},
-                    }
+                    pipeline_warning(
+                        "widget_randomize_missing_rule",
+                        "Widget randomize mode requested but widget rule was not found",
+                        node_id=node_id,
+                        details={"param": param},
+                    )
                 )
                 continue
 
@@ -115,16 +84,16 @@ def _apply_widget_modes(ctx: BackendPipelineContext) -> None:
             )
             if randomized is None:
                 ctx.warnings.append(
-                    {
-                        "code": "widget_randomize_invalid_bounds",
-                        "message": "Widget randomize mode requested but min/max bounds are invalid",
-                        "node_id": node_id,
-                        "details": {
+                    pipeline_warning(
+                        "widget_randomize_invalid_bounds",
+                        "Widget randomize mode requested but min/max bounds are invalid",
+                        node_id=node_id,
+                        details={
                             "param": param,
                             "min": widget_rule.get("min"),
                             "max": widget_rule.get("max"),
                         },
-                    }
+                    )
                 )
                 continue
 

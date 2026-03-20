@@ -3,68 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 from services.gen_pipeline.context import BackendPipelineContext
+from services.gen_pipeline.processors.utils.coerce import (
+    coerce_bool,
+    coerce_float,
+    coerce_int,
+    match_enum_value,
+)
+from services.gen_pipeline.processors.utils.widget_rule_lookup import WidgetRuleLookup
 from services.gen_pipeline.types import Processor, ProcessorMeta
 from services.workflow_rules import WorkflowValidationError
-
-
-def _coerce_int(value: Any) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if stripped.startswith("-"):
-            digits = stripped[1:]
-            if digits.isdigit():
-                return int(stripped)
-        elif stripped.isdigit():
-            return int(stripped)
-    return None
-
-
-def _coerce_float(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            return float(stripped)
-        except ValueError:
-            return None
-    return None
-
-
-def _coerce_bool(value: Any) -> bool | None:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized == "true":
-            return True
-        if normalized == "false":
-            return False
-    return None
-
-
-def _match_enum_value(
-    value: Any,
-    options: list[Any] | None,
-) -> Any | None:
-    if not isinstance(options, list) or not options:
-        return None
-    for option in options:
-        if option == value:
-            return option
-        if str(option) == str(value):
-            return option
-    return None
 
 
 def _check_numeric_bounds(
@@ -86,7 +33,7 @@ def _normalize_widget_value(
 ) -> tuple[Any | None, str | None]:
     value_type = widget_rule.get("value_type")
     if value_type == "int":
-        coerced = _coerce_int(value)
+        coerced = coerce_int(value)
         if coerced is None:
             return None, "Value must be an integer."
         bounds_error = _check_numeric_bounds(coerced, widget_rule)
@@ -95,7 +42,7 @@ def _normalize_widget_value(
         return coerced, None
 
     if value_type == "float":
-        coerced = _coerce_float(value)
+        coerced = coerce_float(value)
         if coerced is None:
             return None, "Value must be a number."
         bounds_error = _check_numeric_bounds(coerced, widget_rule)
@@ -104,13 +51,13 @@ def _normalize_widget_value(
         return coerced, None
 
     if value_type == "boolean":
-        coerced = _coerce_bool(value)
+        coerced = coerce_bool(value)
         if coerced is None:
             return None, "Value must be true or false."
         return coerced, None
 
     if value_type == "enum":
-        matched = _match_enum_value(value, widget_rule.get("options"))
+        matched = match_enum_value(value, widget_rule.get("options"))
         if matched is None:
             return None, "Value must match one of the allowed options."
         return matched, None
@@ -152,18 +99,14 @@ class _ValidateWidgetsProcessor:
     async def execute(self, ctx: BackendPipelineContext) -> None:
         failures: list[dict[str, Any]] = []
         normalized_overrides: dict[str, dict[str, Any]] = {}
-        nodes_rules = ctx.rules.get("nodes")
-        if not isinstance(nodes_rules, dict):
-            nodes_rules = {}
+        lookup = WidgetRuleLookup(ctx.rules)
 
         for node_id, overrides in ctx.widget_overrides.items():
             if not isinstance(overrides, dict):
                 continue
-            node_rule = nodes_rules.get(node_id)
-            widget_defs = node_rule.get("widgets") if isinstance(node_rule, dict) else None
             for param, value in overrides.items():
-                widget_rule = widget_defs.get(param) if isinstance(widget_defs, dict) else None
-                if not isinstance(widget_rule, dict):
+                widget_rule = lookup.get_widget_rule(node_id, param)
+                if widget_rule is None:
                     failures.append(
                         _failure(node_id, param, "Widget is not defined by workflow rules.")
                     )
@@ -182,13 +125,11 @@ class _ValidateWidgetsProcessor:
         for node_id, param_modes in ctx.widget_modes.items():
             if not isinstance(param_modes, dict):
                 continue
-            node_rule = nodes_rules.get(node_id)
-            widget_defs = node_rule.get("widgets") if isinstance(node_rule, dict) else None
             for param, mode in param_modes.items():
                 if mode != "randomize":
                     continue
-                widget_rule = widget_defs.get(param) if isinstance(widget_defs, dict) else None
-                if not isinstance(widget_rule, dict):
+                widget_rule = lookup.get_widget_rule(node_id, param)
+                if widget_rule is None:
                     failures.append(
                         _failure(
                             node_id,

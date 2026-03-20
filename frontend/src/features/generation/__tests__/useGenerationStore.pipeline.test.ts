@@ -30,7 +30,7 @@ interface MockWsClient {
   connect: () => void;
   disconnect: () => void;
   emitEvent: (event: unknown) => void;
-  emitPreview: (blob: Blob) => void;
+  emitPreview: (preview: { blob: Blob; frameIndex?: number }) => void;
   emitConnectionChange: (state: "connected" | "disconnected") => void;
 }
 
@@ -39,7 +39,9 @@ vi.mock("../services/ComfyUIWebSocket", () => ({
     currentClientId = "client-id";
     isConnected = false;
     private readonly eventHandlers = new Set<(event: unknown) => void>();
-    private readonly previewHandlers = new Set<(blob: Blob) => void>();
+    private readonly previewHandlers = new Set<
+      (preview: { blob: Blob; frameIndex?: number }) => void
+    >();
     private readonly connectionChangeHandlers = new Set<
       (state: "connected" | "disconnected") => void
     >();
@@ -67,7 +69,9 @@ vi.mock("../services/ComfyUIWebSocket", () => ({
       };
     }
 
-    onPreview(handler: (blob: Blob) => void): () => void {
+    onPreview(
+      handler: (preview: { blob: Blob; frameIndex?: number }) => void,
+    ): () => void {
       this.previewHandlers.add(handler);
       return () => {
         this.previewHandlers.delete(handler);
@@ -89,9 +93,9 @@ vi.mock("../services/ComfyUIWebSocket", () => ({
       }
     }
 
-    emitPreview(blob: Blob): void {
+    emitPreview(preview: { blob: Blob; frameIndex?: number }): void {
       for (const handler of this.previewHandlers) {
-        handler(blob);
+        handler(preview);
       }
     }
 
@@ -564,6 +568,60 @@ describe("useGenerationStore pipeline phases", () => {
     await flushMicrotasks();
 
     expect(mockGetRuntimeStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps websocket preview frames ordered by explicit frame index", async () => {
+    if (!("createObjectURL" in URL)) {
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: vi.fn(() => "blob:preview"),
+      });
+    } else {
+      vi.spyOn(URL, "createObjectURL").mockImplementation(
+        () => "blob:preview",
+      );
+    }
+    if (!("revokeObjectURL" in URL)) {
+      Object.defineProperty(URL, "revokeObjectURL", {
+        configurable: true,
+        value: vi.fn(),
+      });
+    } else {
+      vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    }
+
+    const previewJob = {
+      ...makeQueuedJob("prompt-preview"),
+      usesSaveImageWebsocketOutputs: true,
+    };
+
+    useGenerationStore.setState({
+      jobs: new Map([[previewJob.id, previewJob]]),
+      jobPreviewFrames: new Map([[previewJob.id, []]]),
+      activeJobId: previewJob.id,
+    });
+
+    useGenerationStore.getState().connect();
+    const client = getLatestClient();
+
+    client.emitPreview({
+      blob: new Blob(["frame-2"], { type: "image/jpeg" }),
+      frameIndex: 2,
+    });
+    client.emitPreview({
+      blob: new Blob(["frame-0"], { type: "image/jpeg" }),
+      frameIndex: 0,
+    });
+
+    const previewFrames =
+      useGenerationStore.getState().jobPreviewFrames.get(previewJob.id) ?? [];
+
+    expect(previewFrames[0]?.name).toContain("000000.jpg");
+    expect(previewFrames[2]?.name).toContain("000002.jpg");
+    expect(previewFrames[0]?.type).toBe("image/jpeg");
+    expect(previewFrames[2]?.type).toBe("image/jpeg");
+    expect(previewFrames[0]?.size).toBe(7);
+    expect(previewFrames[2]?.size).toBe(7);
   });
 
   it("blocks new submissions while postprocessing is active", async () => {

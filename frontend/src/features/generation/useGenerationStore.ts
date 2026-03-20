@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   ComfyUIWebSocket,
   type ComfyUIEvent,
+  type ComfyUIPreview,
 } from "./services/ComfyUIWebSocket";
 import * as comfyApi from "./services/comfyuiApi";
 import {
@@ -86,6 +87,30 @@ function revokeJobPostprocessPreview(job: GenerationJob | null | undefined) {
   if (previewUrl) {
     URL.revokeObjectURL(previewUrl);
   }
+}
+
+function getPreviewFrameExtension(mimeType: string): string {
+  if (mimeType === "image/jpeg") {
+    return "jpg";
+  }
+  if (mimeType === "image/webp") {
+    return "webp";
+  }
+  return "png";
+}
+
+function getPreviewFrameIndex(
+  preview: ComfyUIPreview,
+  existingFrames: File[],
+): number {
+  if (
+    typeof preview.frameIndex === "number" &&
+    Number.isInteger(preview.frameIndex) &&
+    preview.frameIndex >= 0
+  ) {
+    return preview.frameIndex;
+  }
+  return existingFrames.length;
 }
 
 function resolveWorkflowDisplayName(
@@ -879,12 +904,12 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
       }
     });
 
-    client.onPreview((blob: Blob) => {
+    client.onPreview((preview: ComfyUIPreview) => {
       set((state) => {
         if (state.latestPreviewUrl) {
           URL.revokeObjectURL(state.latestPreviewUrl);
         }
-        const nextPreviewUrl = URL.createObjectURL(blob);
+        const nextPreviewUrl = URL.createObjectURL(preview.blob);
 
         const activeJobId = state.activeJobId;
         if (!activeJobId) {
@@ -911,17 +936,19 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
 
         const existingFrames = state.jobPreviewFrames.get(activeJobId) ?? [];
         const nextFrames = new Map(state.jobPreviewFrames);
-        nextFrames.set(activeJobId, [
-          ...existingFrames,
-          new File(
-            [blob],
-            `ws-preview-${activeJobId}-${existingFrames.length.toString().padStart(6, "0")}.png`,
-            {
-              type: blob.type || "image/png",
-              lastModified: Date.now(),
-            },
-          ),
-        ]);
+        const previewFrames = existingFrames.slice();
+        const frameIndex = getPreviewFrameIndex(preview, existingFrames);
+        const mimeType = preview.blob.type || "image/png";
+
+        previewFrames[frameIndex] = new File(
+          [preview.blob],
+          `ws-preview-${activeJobId}-${frameIndex.toString().padStart(6, "0")}.${getPreviewFrameExtension(mimeType)}`,
+          {
+            type: mimeType,
+            lastModified: Date.now(),
+          },
+        );
+        nextFrames.set(activeJobId, previewFrames);
 
         return {
           latestPreviewUrl: nextPreviewUrl,

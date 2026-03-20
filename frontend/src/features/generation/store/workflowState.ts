@@ -1,8 +1,8 @@
 import {
   DEFAULT_WORKFLOW_MASK_CROPPING,
   DEFAULT_WORKFLOW_POSTPROCESSING,
-  resolvePresentedInputs,
-  resolveWidgetInputs,
+  resolvePresentedInputsFromRules,
+  resolveWidgetInputsFromRules,
   type WorkflowRules,
 } from "../services/workflowRules";
 import type { WorkflowInput } from "../types";
@@ -21,11 +21,16 @@ export function applyPresentationRules(
   rules: WorkflowRules | null,
   workflow?: Record<string, unknown> | null,
 ) {
-  return resolvePresentedInputs(
+  return resolvePresentedInputsFromRules(
     inferredInputs,
     rules ?? EMPTY_WORKFLOW_RULES,
     workflow,
   );
 }
 
-export { resolveWidgetInputs };
+export function resolveWidgetInputs(
+  workflow: Record<string, unknown> | null,
+  rules: WorkflowRules | null,
+) {
+  return resolveWidgetInputsFromRules(workflow, rules ?? EMPTY_WORKFLOW_RULES);
+}

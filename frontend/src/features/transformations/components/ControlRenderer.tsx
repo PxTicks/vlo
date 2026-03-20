@@ -2,14 +2,13 @@ import { useState, useEffect, useRef, memo, useMemo } from "react";
 import {
   Box,
   IconButton,
-  Slider,
-  Typography,
 } from "@mui/material";
 import type { ControlDefinition } from "../../panelUI/types";
-import { BufferedInput } from "../../panelUI/components/BufferedInput";
 import { SelectControl } from "../../panelUI/components/SelectControl";
 import { LinkControl } from "../../panelUI/components/LinkControl";
+import { NumberControl as PanelNumberControl } from "../../panelUI/components/NumberControl";
 import { SpacerControl } from "../../panelUI/components/SpacerControl";
+import { SliderControl as PanelSliderControl } from "../../panelUI/components/SliderControl";
 import { Timeline } from "@mui/icons-material";
 import { SplineEditorPopover } from "./SplineEditorPopover";
 import { useSplinePopover } from "../hooks/useSplinePopover";
@@ -94,14 +93,13 @@ function ScalarControl({
   }, [transformId, control.name, control.valueTransform]);
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-      <BufferedInput
-        ref={inputRef}
+    <Box>
+      <PanelNumberControl
+        inputRef={inputRef}
         label={control.label}
         value={numericValue}
         step={control.step}
         onCommit={onCommit}
-        variant="standard"
         endAdornment={
           <SplineToggleButton
             supportsSpline={control.supportsSpline}
@@ -128,7 +126,7 @@ function ScalarControl({
 }
 
 // --- Slider Control ---
-function SliderControl({
+function TransformSliderControl({
   control,
   value,
   onCommit,
@@ -149,6 +147,9 @@ function SliderControl({
     handleClear,
   } = useSplinePopover({ value, onCommit, minTime, duration, defaultValue: control.defaultValue, context });
 
+  const min = control.min ?? 0;
+  const max = control.max ?? 100;
+  const step = control.step ?? 1;
   const [localValue, setLocalValue] = useState(numericValue);
   const canPreviewWithoutCommit = Boolean(transformId) && groupId !== "speed";
 
@@ -175,8 +176,6 @@ function SliderControl({
 
   useEffect(() => {
     if (!transformId) return;
-    const min = control.min ?? 0;
-    const max = control.max ?? 100;
 
     return liveParamStore.subscribe(transformId, control.name, (modelVal) => {
       const displayVal = control.valueTransform?.toView
@@ -213,6 +212,8 @@ function SliderControl({
     control.min,
     control.max,
     control.valueTransform,
+    min,
+    max,
   ]);
 
   const handleChange = (_: Event, newValue: number | number[]) => {
@@ -242,8 +243,6 @@ function SliderControl({
   };
 
   const handleInputChange = (val: number) => {
-    const min = control.min ?? 0;
-    const max = control.max ?? 100;
     const clamped = Math.min(Math.max(val, min), max);
 
     setLocalValue(clamped);
@@ -254,55 +253,32 @@ function SliderControl({
   };
 
   return (
-    <Box
-      sx={{ display: "flex", flexDirection: "column", width: "100%", px: 1 }}
-    >
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          mb: 0.5,
-        }}
-      >
-        <Typography variant="caption" sx={{ color: "text.secondary" }}>
-          {control.label}
-        </Typography>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          <Box sx={{ width: 60 }}>
-            <BufferedInput
-              ref={textInputRef}
-              label=""
-              value={localValue}
-              onCommit={handleInputChange}
-              step={control.step}
-              variant="clean"
-            />
-          </Box>
+    <Box>
+      <PanelSliderControl
+        label={control.label}
+        value={localValue}
+        min={min}
+        max={max}
+        step={step}
+        onChange={handleChange}
+        onChangeCommitted={handleSliderCommit}
+        onInputCommit={handleInputChange}
+        inputRef={textInputRef}
+        sliderRef={sliderRef}
+        endAdornment={
           <SplineToggleButton
             supportsSpline={control.supportsSpline}
             isSpline={isSpline}
             onOpen={handleOpenGraph}
             compact
           />
-        </Box>
-      </Box>
-      <Slider
-        ref={sliderRef}
-        value={localValue}
-        min={control.min ?? 0}
-        max={control.max ?? 100}
-        step={control.step ?? 1}
-        onChange={handleChange}
-        onChangeCommitted={handleSliderCommit}
+        }
         onMouseDown={() => {
           isDraggingRef.current = true;
         }}
         onMouseUp={() => {
           isDraggingRef.current = false;
         }}
-        size="small"
-        sx={{ py: 0.5 }}
       />
       <SplineEditorPopover
         open={open}
@@ -374,7 +350,7 @@ export const ControlRenderer = memo(function ControlRenderer({
 
   if (control.type === "slider") {
     return (
-      <SliderControl
+      <TransformSliderControl
         control={control}
         value={value}
         onCommit={onCommit}

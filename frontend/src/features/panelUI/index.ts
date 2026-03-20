@@ -22,5 +22,9 @@ export {
   CommittedTextInput,
 } from "./components/BufferedTextInput";
 export { ControlGroup } from "./components/ControlGroup";
+export type { NumberControlProps } from "./components/NumberControl";
+export { NumberControl } from "./components/NumberControl";
 export { PanelSection } from "./components/PanelSection";
 export { SortableSection } from "./components/SortableSection";
+export type { SliderControlProps } from "./components/SliderControl";
+export { SliderControl } from "./components/SliderControl";

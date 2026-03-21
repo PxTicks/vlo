@@ -1,9 +1,25 @@
+"""Object-info enrichment for workflow rules.
+
+Loads ``object_info.json``, extracts node metadata from workflows, and
+enriches sidecar rules with auto-discovered widget entries and AR target
+nodes.  Discovery and policy logic live in ``node_discovery``; input-node
+detection lives in ``input_nodes``.
+"""
+
 import json
 import logging
 from pathlib import Path
-from collections.abc import Iterator
-from typing import Any, TypedDict
+from typing import Any
 
+from services.workflow_rules.input_nodes import (
+    build_input_node_map as _build_input_node_map_core,
+)
+from services.workflow_rules.node_discovery import (
+    NodePolicy,
+    WIDGETS_MODE_ALL,
+    WIDGETS_MODE_CONTROL_AFTER_GENERATE,
+    resolve_node_policy,
+)
 from services.workflow_rules.normalize import WorkflowRules
 
 
@@ -14,111 +30,6 @@ OBJECT_INFO_PATH = (
 )
 
 _object_info_cache: dict[str, Any] | None = None
-WIDGETS_MODE_ALL = "all"
-WIDGETS_MODE_CONTROL_AFTER_GENERATE = "control_after_generate"
-
-
-# ---------------------------------------------------------------------------
-# Universal node-class matcher: declarative constraint-based discovery
-# ---------------------------------------------------------------------------
-
-
-def _iter_all_params(
-    class_info: dict[str, Any],
-) -> Iterator[tuple[str, Any, dict[str, Any]]]:
-    """Yield ``(param_name, type_spec, opts)`` for every input param."""
-    input_spec = class_info.get("input")
-    if not isinstance(input_spec, dict):
-        return
-    for section_key in ("required", "optional"):
-        section = input_spec.get(section_key)
-        if not isinstance(section, dict):
-            continue
-        for param_name, param_def in section.items():
-            if not isinstance(param_def, (list, tuple)) or len(param_def) < 1:
-                continue
-            type_spec = param_def[0]
-            opts = param_def[1] if len(param_def) >= 2 and isinstance(param_def[1], dict) else {}
-            yield param_name, type_spec, opts
-
-
-class NodeConstraint(TypedDict, total=False):
-    """Declarative constraints for matching a node class against object_info.
-
-    All specified constraints are ANDed — every one must hold for a match.
-    """
-
-    class_names: frozenset[str]
-    """Exact ``class_type`` membership."""
-
-    name_contains: str
-    """Case-insensitive substring match on ``class_type``."""
-
-    has_params: list[str]
-    """All listed param names must exist in the node's inputs."""
-
-    has_param_flag: dict[str, object]
-    """At least one param's opts dict must contain all these key-value pairs."""
-
-
-def _match_node_class(
-    class_type: str,
-    class_info: dict[str, Any] | None,
-    constraint: NodeConstraint,
-) -> bool:
-    """Evaluate a declarative constraint dict against a node class."""
-    if "class_names" in constraint:
-        if class_type not in constraint["class_names"]:
-            return False
-
-    if "name_contains" in constraint:
-        if constraint["name_contains"].lower() not in class_type.lower():
-            return False
-
-    needs_class_info = "has_params" in constraint or "has_param_flag" in constraint
-    if not needs_class_info:
-        return True
-    if not isinstance(class_info, dict):
-        return False
-
-    if "has_params" in constraint:
-        all_params = {name for name, _, _ in _iter_all_params(class_info)}
-        if not all(p in all_params for p in constraint["has_params"]):
-            return False
-
-    if "has_param_flag" in constraint:
-        required_flags = constraint["has_param_flag"]
-        if not any(
-            all(opts.get(k) == v for k, v in required_flags.items())
-            for _, _, opts in _iter_all_params(class_info)
-        ):
-            return False
-
-    return True
-
-
-# ---------------------------------------------------------------------------
-# Constraint constants & predicate helpers
-# ---------------------------------------------------------------------------
-
-_ALL_WIDGETS_CONSTRAINT: NodeConstraint = {
-    "class_names": frozenset({"KSampler", "KSamplerAdvanced"}),
-}
-
-_RESIZE_NODE_CONSTRAINT: NodeConstraint = {
-    "name_contains": "resize",
-    "has_params": ["width", "height"],
-}
-
-
-def _is_all_widgets_node(class_type: str) -> bool:
-    """Return True if *class_type* should default to ``widgets_mode = 'all'``."""
-    return _match_node_class(class_type, None, _ALL_WIDGETS_CONSTRAINT)
-
-
-def _is_resize_node(class_type: str, object_info: dict[str, Any]) -> bool:
-    """Return True if *class_type* is a resize node with ``width`` + ``height`` params."""
-    return _match_node_class(class_type, object_info.get(class_type), _RESIZE_NODE_CONSTRAINT)
 
 
 def set_object_info_cache(object_info: dict[str, Any] | None) -> None:
@@ -140,6 +51,11 @@ def _load_object_info() -> dict[str, Any]:
         log.warning("Failed to load object_info from %s: %s", OBJECT_INFO_PATH, exc)
     _object_info_cache = {}
     return _object_info_cache
+
+
+# ---------------------------------------------------------------------------
+# Workflow node extraction
+# ---------------------------------------------------------------------------
 
 
 class _NodeInfo:
@@ -291,6 +207,11 @@ def _extract_node_info(workflow_data: dict[str, Any]) -> dict[str, _NodeInfo]:
                         )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Widget construction helpers
+# ---------------------------------------------------------------------------
 
 
 def _coerce_widget_options(type_spec: Any) -> list[str | int | float | bool] | None:
@@ -507,6 +428,11 @@ def _merge_existing_widget_entries_with_object_info(
     return merged
 
 
+# ---------------------------------------------------------------------------
+# Enrichment orchestration
+# ---------------------------------------------------------------------------
+
+
 def enrich_rules_with_object_info(
     rules: WorkflowRules,
     workflow_data: dict[str, Any],
@@ -538,6 +464,14 @@ def enrich_rules_with_object_info(
     nodes_rules = rules.setdefault("nodes", {})
     discovered_count = 0
 
+    # Resolve node policies once — maps discovery to display/processing actions.
+    node_policies: dict[str, NodePolicy] = {}
+    for node_id, info in node_infos.items():
+        node_policies[node_id] = resolve_node_policy(
+            info.class_type,
+            object_info.get(info.class_type),
+        )
+
     for node_id, info in node_infos.items():
         existing = nodes_rules.setdefault(node_id, {})
         if not isinstance(existing, dict):
@@ -554,10 +488,8 @@ def enrich_rules_with_object_info(
 
         widgets_mode = existing.get("widgets_mode")
         if not isinstance(widgets_mode, str):
-            widgets_mode = (
-                WIDGETS_MODE_ALL
-                if _is_all_widgets_node(info.class_type)
-                else WIDGETS_MODE_CONTROL_AFTER_GENERATE
+            widgets_mode = node_policies[node_id].get(
+                "widgets_mode", WIDGETS_MODE_CONTROL_AFTER_GENERATE
             )
         include_all_widgets = widgets_mode == WIDGETS_MODE_ALL
 
@@ -602,18 +534,17 @@ def enrich_rules_with_object_info(
         "[enrich] Total nodes with auto-discovered widgets: %d", discovered_count
     )
 
-    _discover_resize_target_nodes(rules, node_infos, object_info)
+    _apply_ar_target_policies(rules, node_infos, node_policies)
 
 
-def _discover_resize_target_nodes(
+def _apply_ar_target_policies(
     rules: WorkflowRules,
     node_infos: dict[str, _NodeInfo],
-    object_info: dict[str, Any],
+    node_policies: dict[str, NodePolicy],
 ) -> None:
-    """Auto-discover resize nodes and append them to aspect_ratio_processing.target_nodes.
+    """Auto-add nodes with ``ar_target`` policy to aspect_ratio_processing.target_nodes.
 
-    Uses ``_is_resize_node`` to detect qualifying nodes.  Nodes already
-    listed in target_nodes (by node_id) are not duplicated.
+    Nodes already listed in target_nodes (by node_id) are not duplicated.
     """
     ar_cfg = rules.get("aspect_ratio_processing")
     if not isinstance(ar_cfg, dict) or not ar_cfg.get("enabled"):
@@ -634,17 +565,18 @@ def _discover_resize_target_nodes(
     for node_id, info in node_infos.items():
         if node_id in existing_ids:
             continue
-        if not _is_resize_node(info.class_type, object_info):
+        policy = node_policies.get(node_id, {})
+        if not policy.get("ar_target"):
             continue
 
         target_nodes.append({
             "node_id": node_id,
-            "width_param": "width",
-            "height_param": "height",
+            "width_param": policy.get("ar_width_param", "width"),
+            "height_param": policy.get("ar_height_param", "height"),
         })
         discovered += 1
         log.info(
-            "[enrich] Auto-discovered resize target node %s (%s)",
+            "[enrich] Auto-discovered AR target node %s (%s)",
             node_id,
             info.class_type,
         )
@@ -652,146 +584,13 @@ def _discover_resize_target_nodes(
     if discovered:
         ar_cfg["target_nodes"] = target_nodes
         log.info(
-            "[enrich] Total auto-discovered resize target nodes: %d", discovered
+            "[enrich] Total auto-discovered AR target nodes: %d", discovered
         )
 
 
 # ---------------------------------------------------------------------------
-# Input node discovery: nodes with image_upload, video_upload, or
-# dynamicPrompts flags are auto-detected.  _INPUT_NODE_FALLBACKS covers
-# nodes that lack those metadata flags but are known input nodes.
+# Public API: build_input_node_map (delegates to input_nodes module)
 # ---------------------------------------------------------------------------
-
-_INPUT_NODE_FALLBACKS: dict[str, list[dict[str, Any]]] = {
-    "VHS_LoadVideo": [
-        {
-            "input_type": "video",
-            "param": "video",
-            "label": "Video",
-            "description": None,
-        }
-    ],
-}
-
-_TEXT_PARAM_LABELS = {
-    "text": "Prompt",
-    "text_g": "Global Prompt",
-    "text_l": "Local Prompt",
-    "clip_l": "CLIP L Prompt",
-    "clip_g": "CLIP G Prompt",
-    "t5xxl": "T5XXL Prompt",
-    "llama": "LLaMA Prompt",
-}
-_MEDIA_PARAM_LABELS = {
-    "image": "Image",
-    "file": "Video",
-    "video": "Video",
-}
-_TOKEN_LABELS = {
-    "g": "Global",
-    "l": "Local",
-    "clip": "CLIP",
-    "t5xxl": "T5XXL",
-    "llama": "LLaMA",
-    "image": "Image",
-    "video": "Video",
-    "mask": "Mask",
-    "reference": "Reference",
-}
-
-
-def _humanize_param_token(token: str) -> str:
-    token = token.strip()
-    if not token:
-        return ""
-    alias = _TOKEN_LABELS.get(token.lower())
-    if alias:
-        return alias
-    return token.replace("-", " ").replace("_", " ").title()
-
-
-def _build_input_label(input_type: str, param_name: str) -> str:
-    lowered_param = param_name.strip().lower()
-    if input_type == "text":
-        alias = _TEXT_PARAM_LABELS.get(lowered_param)
-        if alias:
-            return alias
-        tokens = [token for token in lowered_param.replace("-", "_").split("_") if token]
-        if tokens:
-            humanized = " ".join(_humanize_param_token(token) for token in tokens)
-            if humanized.lower().endswith("prompt"):
-                return humanized
-            return f"{humanized} Prompt"
-        return "Prompt"
-
-    alias = _MEDIA_PARAM_LABELS.get(lowered_param)
-    if alias:
-        return alias if input_type == "video" else "Image"
-
-    tokens = [token for token in lowered_param.replace("-", "_").split("_") if token]
-    if tokens:
-        return " ".join(_humanize_param_token(token) for token in tokens)
-    return "Video" if input_type == "video" else "Image"
-
-
-def _detect_input_param(
-    param_name: str,
-    type_spec: Any,
-    opts: dict[str, Any],
-) -> dict[str, Any] | None:
-    """Detect whether a single param is an image/video/text input."""
-    tooltip = opts.get("tooltip") if isinstance(opts.get("tooltip"), str) else None
-
-    # image_upload: true on a file-list or COMBO input (not STRING — excludes Painter)
-    if opts.get("image_upload") is True:
-        if isinstance(type_spec, list) or (isinstance(type_spec, str) and type_spec.upper() == "COMBO"):
-            return {
-                "input_type": "image",
-                "param": param_name,
-                "label": _build_input_label("image", param_name),
-                "description": tooltip,
-            }
-
-    # video_upload: true
-    if opts.get("video_upload") is True:
-        return {
-            "input_type": "video",
-            "param": param_name,
-            "label": _build_input_label("video", param_name),
-            "description": tooltip,
-        }
-
-    # dynamicPrompts: true on a STRING input → text prompt
-    if (
-        opts.get("dynamicPrompts") is True
-        and isinstance(type_spec, str)
-        and type_spec.upper() == "STRING"
-    ):
-        return {
-            "input_type": "text",
-            "param": param_name,
-            "label": _build_input_label("text", param_name),
-            "description": tooltip,
-        }
-
-    return None
-
-
-def _discover_node_inputs(
-    class_info: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Detect image/video/text inputs for a node class from object_info."""
-    detected: list[dict[str, Any]] = []
-    seen_params: set[str] = set()
-    for param_name, type_spec, opts in _iter_all_params(class_info):
-        if param_name in seen_params:
-            continue
-        detected_entry = _detect_input_param(param_name, type_spec, opts)
-        if detected_entry is None:
-            continue
-        detected.append(detected_entry)
-        seen_params.add(param_name)
-    return detected
 
 
 def build_input_node_map(
@@ -803,33 +602,13 @@ def build_input_node_map(
     """
     if object_info is None:
         object_info = _load_object_info()
-
-    result: dict[str, list[dict[str, Any]]] = {
-        class_type: [dict(entry) for entry in entries]
-        for class_type, entries in _INPUT_NODE_FALLBACKS.items()
-    }
-
-    for class_type, class_info in object_info.items():
-        if not isinstance(class_info, dict):
-            continue
-        detected = _discover_node_inputs(class_info)
-        if not detected:
-            continue
-
-        by_param = {
-            entry["param"]: dict(entry)
-            for entry in result.get(class_type, [])
-        }
-        for entry in detected:
-            by_param.setdefault(entry["param"], entry)
-        result[class_type] = list(by_param.values())
-
-    return result
+    return _build_input_node_map_core(object_info)
 
 
 __all__ = [
-    "enrich_rules_with_object_info",
     "OBJECT_INFO_PATH",
-    "set_object_info_cache",
     "build_input_node_map",
+    "enrich_rules_with_object_info",
+    "get_widget_value_index_map",
+    "set_object_info_cache",
 ]

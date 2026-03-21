@@ -5,7 +5,10 @@ import { runProcessors } from "./runner";
 import { FRONTEND_PREPROCESSORS } from "./preprocessors";
 import { throwIfAborted } from "./utils/abort";
 import { probeVisualFileAspectRatio } from "./utils/media";
-import { getNodeInputRequestKey } from "../utils/workflowInputs";
+import {
+  buildWorkflowInputLookup,
+  getNodeInputRequestKey,
+} from "../utils/workflowInputs";
 import type {
   DerivedMaskMapping,
   FrontendPreprocessContext,
@@ -17,6 +20,7 @@ import type {
 async function resolveTargetAspectRatio(
   ctx: FrontendPreprocessContext,
 ): Promise<string> {
+  const inputById = buildWorkflowInputLookup(ctx.workflowInputs);
   const maskNodeIds = new Set(
     ctx.derivedMaskMappings.map((mapping) => mapping.maskNodeId),
   );
@@ -34,10 +38,10 @@ async function resolveTargetAspectRatio(
     }
 
     if (input.inputType === "image") {
-      return ctx.imageInputs[getNodeInputRequestKey(input)];
+      return ctx.imageInputs[getNodeInputRequestKey(input, inputById)];
     }
     if (input.inputType === "video") {
-      return ctx.videoInputs[getNodeInputRequestKey(input)];
+      return ctx.videoInputs[getNodeInputRequestKey(input, inputById)];
     }
     return undefined;
   };

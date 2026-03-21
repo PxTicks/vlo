@@ -30,7 +30,12 @@ interface MockWsClient {
   connect: () => void;
   disconnect: () => void;
   emitEvent: (event: unknown) => void;
-  emitPreview: (preview: { blob: Blob; frameIndex?: number }) => void;
+  emitPreview: (preview: {
+    blob: Blob;
+    frameIndex?: number;
+    frameRate?: number;
+    totalFrames?: number;
+  }) => void;
   emitConnectionChange: (state: "connected" | "disconnected") => void;
 }
 
@@ -40,7 +45,12 @@ vi.mock("../services/ComfyUIWebSocket", () => ({
     isConnected = false;
     private readonly eventHandlers = new Set<(event: unknown) => void>();
     private readonly previewHandlers = new Set<
-      (preview: { blob: Blob; frameIndex?: number }) => void
+      (preview: {
+        blob: Blob;
+        frameIndex?: number;
+        frameRate?: number;
+        totalFrames?: number;
+      }) => void
     >();
     private readonly connectionChangeHandlers = new Set<
       (state: "connected" | "disconnected") => void
@@ -70,7 +80,12 @@ vi.mock("../services/ComfyUIWebSocket", () => ({
     }
 
     onPreview(
-      handler: (preview: { blob: Blob; frameIndex?: number }) => void,
+      handler: (preview: {
+        blob: Blob;
+        frameIndex?: number;
+        frameRate?: number;
+        totalFrames?: number;
+      }) => void,
     ): () => void {
       this.previewHandlers.add(handler);
       return () => {
@@ -93,7 +108,12 @@ vi.mock("../services/ComfyUIWebSocket", () => ({
       }
     }
 
-    emitPreview(preview: { blob: Blob; frameIndex?: number }): void {
+    emitPreview(preview: {
+      blob: Blob;
+      frameIndex?: number;
+      frameRate?: number;
+      totalFrames?: number;
+    }): void {
       for (const handler of this.previewHandlers) {
         handler(preview);
       }
@@ -206,6 +226,7 @@ function makeReadyStoreState(): void {
     jobs: new Map(),
     jobPreviewFrames: new Map(),
     activeJobId: null,
+    previewAnimation: null,
     workflowRuleWarnings: [],
     lastAppliedWidgetValues: {},
   });
@@ -361,6 +382,7 @@ describe("useGenerationStore pipeline phases", () => {
       jobs: new Map(),
       jobPreviewFrames: new Map(),
       activeJobId: null,
+      previewAnimation: null,
       workflowRuleWarnings: [],
       lastAppliedWidgetValues: {},
       latestPreviewUrl: null,
@@ -592,7 +614,10 @@ describe("useGenerationStore pipeline phases", () => {
 
     const previewJob = {
       ...makeQueuedJob("prompt-preview"),
+      status: "running" as const,
+      currentNode: "save_ws_node",
       usesSaveImageWebsocketOutputs: true,
+      saveImageWebsocketNodeIds: new Set(["save_ws_node"]),
     };
 
     useGenerationStore.setState({
@@ -622,6 +647,56 @@ describe("useGenerationStore pipeline phases", () => {
     expect(previewFrames[2]?.type).toBe("image/jpeg");
     expect(previewFrames[0]?.size).toBe(7);
     expect(previewFrames[2]?.size).toBe(7);
+  });
+
+  it("clears the animation buffer when a plain preview arrives after VHS frames", () => {
+    const objectUrlValues = [
+      "blob:latest-vhs",
+      "blob:vhs-frame-1",
+      "blob:latest-plain",
+    ];
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
+      const nextValue = objectUrlValues.shift();
+      if (!nextValue) {
+        throw new Error("Expected another object URL value");
+      }
+      return nextValue;
+    });
+    const revokeSpy = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+
+    const previewJob = {
+      ...makeQueuedJob("prompt-preview-animation"),
+      status: "running" as const,
+    };
+
+    useGenerationStore.setState({
+      jobs: new Map([[previewJob.id, previewJob]]),
+      activeJobId: previewJob.id,
+    });
+
+    useGenerationStore.getState().connect();
+    const client = getLatestClient();
+
+    client.emitPreview({
+      blob: new Blob(["vhs-frame"], { type: "image/png" }),
+      frameIndex: 1,
+      frameRate: 8,
+      totalFrames: 4,
+    });
+
+    const animationState = useGenerationStore.getState();
+    expect(animationState.previewAnimation?.frameUrls[1]).toBe("blob:vhs-frame-1");
+
+    client.emitPreview({
+      blob: new Blob(["plain-preview"], { type: "image/png" }),
+    });
+
+    const finalState = useGenerationStore.getState();
+    expect(finalState.previewAnimation).toBeNull();
+    expect(finalState.latestPreviewUrl).toBe("blob:latest-plain");
+    expect(revokeSpy).toHaveBeenCalledWith("blob:vhs-frame-1");
   });
 
   it("blocks new submissions while postprocessing is active", async () => {

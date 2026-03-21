@@ -54,7 +54,12 @@ import {
   mergeInputNodeMap,
   type InputNodeMap,
 } from "./constants/inputNodeMap";
-import { getWorkflowInputId } from "./utils/workflowInputs";
+import {
+  buildWorkflowInputLookup,
+  getWorkflowInputId,
+  getWorkflowInputValue,
+  resolveWorkflowInputKeys,
+} from "./utils/workflowInputs";
 
 export type ComfyUIConnectionStatus =
   | "disconnected"
@@ -92,6 +97,30 @@ function revokeJobPostprocessPreview(job: GenerationJob | null | undefined) {
   if (previewUrl) {
     URL.revokeObjectURL(previewUrl);
   }
+}
+
+export interface PreviewAnimation {
+  frameUrls: (string | null)[];
+  frameRate: number;
+  totalFrames: number;
+}
+
+function revokePreviewAnimation(animation: PreviewAnimation | null): void {
+  if (!animation) return;
+  for (const url of animation.frameUrls) {
+    if (url) URL.revokeObjectURL(url);
+  }
+}
+
+function replacePreviewAnimation(
+  currentAnimation: PreviewAnimation | null,
+  nextAnimation: PreviewAnimation | null,
+): PreviewAnimation | null {
+  if (currentAnimation === nextAnimation) {
+    return nextAnimation;
+  }
+  revokePreviewAnimation(currentAnimation);
+  return nextAnimation;
 }
 
 function getPreviewFrameExtension(mimeType: string): string {
@@ -204,22 +233,23 @@ function removeWorkflowOption(
   return workflows.filter((workflow) => workflow.id !== workflowId);
 }
 
-function hasSaveImageWebsocketNode(
+function getSaveImageWebsocketNodeIds(
   workflow: Record<string, unknown> | null,
-): boolean {
-  if (!workflow) return false;
+): Set<string> {
+  const ids = new Set<string>();
+  if (!workflow) return ids;
 
-  for (const node of Object.values(workflow)) {
+  for (const [nodeId, node] of Object.entries(workflow)) {
     if (typeof node !== "object" || node === null || Array.isArray(node)) {
       continue;
     }
     const nodeClassType = (node as { class_type?: unknown }).class_type;
     if (nodeClassType === "SaveImageWebsocket") {
-      return true;
+      ids.add(nodeId);
     }
   }
 
-  return false;
+  return ids;
 }
 
 function buildGeneratedCreationMetadata(
@@ -228,9 +258,10 @@ function buildGeneratedCreationMetadata(
   mediaInputs: Record<string, GenerationMediaInputValue | null>,
 ): GeneratedCreationMetadata {
   const inputs: GeneratedCreationMetadata["inputs"] = [];
+  const inputById = buildWorkflowInputLookup(workflowInputs);
 
   for (const workflowInput of workflowInputs) {
-    const value = mediaInputs[getWorkflowInputId(workflowInput)];
+    const value = getWorkflowInputValue(mediaInputs, workflowInput, inputById);
     if (!value) continue;
 
     if (value.kind === "timelineSelection") {
@@ -263,6 +294,7 @@ function findPreparedMaskFallback(
   derivedMaskMappings: DerivedMaskMapping[],
   workflowInputs: WorkflowInput[],
 ): File | null {
+  const inputById = buildWorkflowInputLookup(workflowInputs);
   const inputsByNodeId = new Map<string, WorkflowInput[]>();
   for (const input of workflowInputs) {
     const existing = inputsByNodeId.get(input.nodeId) ?? [];
@@ -271,13 +303,19 @@ function findPreparedMaskFallback(
   }
 
   for (const mapping of derivedMaskMappings) {
-    const candidateIds = mapping.sourceInputId
-      ? [mapping.sourceInputId]
-      : (inputsByNodeId.get(mapping.sourceNodeId) ?? []).map((input) =>
-          getWorkflowInputId(input),
-        );
-    for (const candidateId of candidateIds) {
-      const value = slotValues[candidateId];
+    if (mapping.sourceInputId) {
+      const sourceInput = inputById.get(mapping.sourceInputId);
+      const value = sourceInput
+        ? getWorkflowInputValue(slotValues, sourceInput, inputById)
+        : slotValues[mapping.sourceInputId];
+      if (value?.type === "video_selection" && value.preparedMaskFile) {
+        return value.preparedMaskFile;
+      }
+      continue;
+    }
+
+    for (const input of inputsByNodeId.get(mapping.sourceNodeId) ?? []) {
+      const value = getWorkflowInputValue(slotValues, input, inputById);
       if (value?.type === "video_selection" && value.preparedMaskFile) {
         return value.preparedMaskFile;
       }
@@ -289,6 +327,20 @@ function findPreparedMaskFallback(
 
 function isActiveGenerationJob(job: GenerationJob | null | undefined): boolean {
   return job?.status === "queued" || job?.status === "running";
+}
+
+function removeMediaInputEntries(
+  mediaInputs: Record<string, GenerationMediaInputValue | null>,
+  inputIds: readonly string[],
+): Record<string, GenerationMediaInputValue | null> {
+  const next = { ...mediaInputs };
+
+  for (const inputId of new Set(inputIds)) {
+    revokePreviewUrl(next[inputId]);
+    delete next[inputId];
+  }
+
+  return next;
 }
 
 interface GenerationStore {
@@ -334,6 +386,7 @@ interface GenerationStore {
   jobPreviewFrames: Map<string, File[]>;
   activeJobId: string | null;
   latestPreviewUrl: string | null;
+  previewAnimation: PreviewAnimation | null;
   objectInfoSynced: boolean;
   inputNodeMap: InputNodeMap | null;
 
@@ -349,10 +402,10 @@ interface GenerationStore {
   requestEditorReconnect: () => void;
   clearWorkflowWarning: () => void;
   clearWorkflowLoadError: () => void;
-  setMediaInputAsset: (nodeId: string, asset: Asset) => void;
-  setMediaInputFrame: (nodeId: string, file: File) => void;
+  setMediaInputAsset: (inputId: string, asset: Asset) => void;
+  setMediaInputFrame: (inputId: string, file: File) => void;
   setMediaInputTimelineSelection: (
-    nodeId: string,
+    inputId: string,
     timelineSelection: TimelineSelection,
     thumbnailFile: File,
     options?: {
@@ -364,7 +417,7 @@ interface GenerationStore {
       extractionError?: string | null;
     },
   ) => void;
-  clearMediaInput: (nodeId: string) => void;
+  clearMediaInput: (inputId: string) => void;
 
   connect: () => void;
   disconnect: () => void;
@@ -438,6 +491,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
   jobPreviewFrames: new Map(),
   activeJobId: null,
   latestPreviewUrl: null,
+  previewAnimation: null,
   objectInfoSynced: false,
   inputNodeMap: null,
   editorRef: null,
@@ -486,42 +540,48 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
     })),
   clearWorkflowWarning: () => set({ workflowWarning: null }),
   clearWorkflowLoadError: () => set({ workflowLoadError: null }),
-  setMediaInputAsset: (nodeId, asset) =>
+  setMediaInputAsset: (inputId, asset) =>
     set((state) => {
-      revokePreviewUrl(state.mediaInputs[nodeId]);
+      const inputById = buildWorkflowInputLookup(state.workflowInputs);
+      const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
+      const canonicalInputId = inputKeys[0] ?? inputId;
       return {
         mediaInputs: {
-          ...state.mediaInputs,
-          [nodeId]: { kind: "asset", asset },
+          ...removeMediaInputEntries(state.mediaInputs, inputKeys),
+          [canonicalInputId]: { kind: "asset", asset },
         },
       };
     }),
-  setMediaInputFrame: (nodeId, file) =>
+  setMediaInputFrame: (inputId, file) =>
     set((state) => {
-      revokePreviewUrl(state.mediaInputs[nodeId]);
+      const inputById = buildWorkflowInputLookup(state.workflowInputs);
+      const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
+      const canonicalInputId = inputKeys[0] ?? inputId;
       return {
         mediaInputs: {
-          ...state.mediaInputs,
-          [nodeId]: {
+          ...removeMediaInputEntries(state.mediaInputs, inputKeys),
+          [canonicalInputId]: {
             kind: "frame",
             file,
             previewUrl: URL.createObjectURL(file),
           },
         },
       };
-    }),
+  }),
   setMediaInputTimelineSelection: (
-    nodeId,
+    inputId,
     timelineSelection,
     thumbnailFile,
     options,
   ) =>
     set((state) => {
-      revokePreviewUrl(state.mediaInputs[nodeId]);
+      const inputById = buildWorkflowInputLookup(state.workflowInputs);
+      const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
+      const canonicalInputId = inputKeys[0] ?? inputId;
       return {
         mediaInputs: {
-          ...state.mediaInputs,
-          [nodeId]: {
+          ...removeMediaInputEntries(state.mediaInputs, inputKeys),
+          [canonicalInputId]: {
             kind: "timelineSelection",
             timelineSelection,
             thumbnailFile,
@@ -537,14 +597,17 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
         },
       };
     }),
-  clearMediaInput: (nodeId) =>
+  clearMediaInput: (inputId) =>
     set((state) => {
-      const existing = state.mediaInputs[nodeId];
-      if (!existing) return {};
-      revokePreviewUrl(existing);
-      const next = { ...state.mediaInputs };
-      delete next[nodeId];
-      return { mediaInputs: next };
+      const inputById = buildWorkflowInputLookup(state.workflowInputs);
+      const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
+      const hasMatchingEntry = inputKeys.some((key) =>
+        Object.prototype.hasOwnProperty.call(state.mediaInputs, key),
+      );
+      if (!hasMatchingEntry) return {};
+      return {
+        mediaInputs: removeMediaInputEntries(state.mediaInputs, inputKeys),
+      };
     }),
 
   refreshRuntimeStatus: async () => {
@@ -645,11 +708,13 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
         });
         const nextPreviewFrames = new Map(state.jobPreviewFrames);
         nextPreviewFrames.delete(activeJobId);
+        revokePreviewAnimation(state.previewAnimation);
 
         return {
           connectionStatus: nextConnectionStatus,
           jobs: updated,
           jobPreviewFrames: nextPreviewFrames,
+          previewAnimation: null,
           activeJobId: null,
         };
       });
@@ -781,8 +846,10 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
 
       const updated = new Map(state.jobs);
       updated.set(promptId, completedJob);
+      revokePreviewAnimation(state.previewAnimation);
       set({
         jobs: updated,
+        previewAnimation: null,
         ...(state.activeJobId === promptId ? { activeJobId: null } : {}),
       });
 
@@ -907,7 +974,12 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
             set((state) => {
               const nextPreviewFrames = new Map(state.jobPreviewFrames);
               nextPreviewFrames.delete(event.data.prompt_id);
-              return { jobs: updated, jobPreviewFrames: nextPreviewFrames };
+              revokePreviewAnimation(state.previewAnimation);
+              return {
+                jobs: updated,
+                jobPreviewFrames: nextPreviewFrames,
+                previewAnimation: null,
+              };
             });
           }
           break;
@@ -930,9 +1002,43 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
         }
         const nextPreviewUrl = URL.createObjectURL(preview.blob);
 
+        // Build animation buffer update for VHS-style previews that include
+        // frame metadata (frameIndex, totalFrames, frameRate). These arrive
+        // during KSampler execution and cycle through the video frames so
+        // the preview can loop.
+        const isVhsFrame =
+          typeof preview.frameIndex === "number" &&
+          typeof preview.totalFrames === "number" &&
+          preview.totalFrames > 0 &&
+          typeof preview.frameRate === "number" &&
+          preview.frameRate > 0;
+
+        let nextAnimation: PreviewAnimation | null = null;
+        if (isVhsFrame) {
+          const totalFrames = preview.totalFrames as number;
+          const frameIdx = preview.frameIndex as number;
+          const frameRate = preview.frameRate as number;
+          const existingAnimation =
+            state.previewAnimation?.totalFrames === totalFrames
+              ? state.previewAnimation
+              : replacePreviewAnimation(state.previewAnimation, null);
+          const frameUrls = existingAnimation
+            ? existingAnimation.frameUrls.slice()
+            : new Array<string | null>(totalFrames).fill(null);
+          const oldUrl = frameUrls[frameIdx];
+          if (oldUrl) URL.revokeObjectURL(oldUrl);
+          frameUrls[frameIdx] = URL.createObjectURL(preview.blob);
+          nextAnimation = { frameUrls, frameRate, totalFrames };
+        } else {
+          nextAnimation = replacePreviewAnimation(state.previewAnimation, null);
+        }
+
         const activeJobId = state.activeJobId;
         if (!activeJobId) {
-          return { latestPreviewUrl: nextPreviewUrl };
+          return {
+            latestPreviewUrl: nextPreviewUrl,
+            previewAnimation: nextAnimation,
+          };
         }
 
         const activeJob = state.jobs.get(activeJobId);
@@ -940,7 +1046,10 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
           !activeJob ||
           (activeJob.status !== "queued" && activeJob.status !== "running")
         ) {
-          return { latestPreviewUrl: nextPreviewUrl };
+          return {
+            latestPreviewUrl: nextPreviewUrl,
+            previewAnimation: nextAnimation,
+          };
         }
         const previewMode = activeJob.postprocessConfig?.mode ?? "auto";
         const shouldCollectPreviewFrames =
@@ -950,7 +1059,24 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
           !shouldCollectPreviewFrames ||
           !activeJob.usesSaveImageWebsocketOutputs
         ) {
-          return { latestPreviewUrl: nextPreviewUrl };
+          return {
+            latestPreviewUrl: nextPreviewUrl,
+            previewAnimation: nextAnimation,
+          };
+        }
+
+        // Only collect frames when the SaveImageWebsocket node is executing.
+        // Other nodes (e.g. KSampler) also emit binary preview frames for
+        // live progress, but those are low-quality denoising previews that
+        // must not be included in the final output.
+        const isFromSaveNode =
+          activeJob.currentNode != null &&
+          activeJob.saveImageWebsocketNodeIds?.has(activeJob.currentNode);
+        if (!isFromSaveNode) {
+          return {
+            latestPreviewUrl: nextPreviewUrl,
+            previewAnimation: nextAnimation,
+          };
         }
 
         const existingFrames = state.jobPreviewFrames.get(activeJobId) ?? [];
@@ -971,6 +1097,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
 
         return {
           latestPreviewUrl: nextPreviewUrl,
+          previewAnimation: nextAnimation,
           jobPreviewFrames: nextFrames,
         };
       });
@@ -1012,6 +1139,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
     const {
       wsClient,
       latestPreviewUrl,
+      previewAnimation,
       jobs,
       preprocessAbortController,
       pipelineRunToken,
@@ -1019,6 +1147,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
     preprocessAbortController?.abort();
     wsClient?.disconnect();
     if (latestPreviewUrl) URL.revokeObjectURL(latestPreviewUrl);
+    revokePreviewAnimation(previewAnimation);
     for (const job of jobs.values()) {
       revokeJobPostprocessPreview(job);
     }
@@ -1028,6 +1157,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
       runtimeStatus: null,
       runtimeStatusError: null,
       latestPreviewUrl: null,
+      previewAnimation: null,
       jobPreviewFrames: new Map(),
       editorNeedsReconnect: false,
       pipelineStatus: IDLE_PIPELINE_STATUS,
@@ -1563,9 +1693,10 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
           },
         );
       }
-      const usesSaveImageWebsocketOutputs = hasSaveImageWebsocketNode(
+      const saveImageWebsocketNodeIds = getSaveImageWebsocketNodeIds(
         request.workflow,
       );
+      const usesSaveImageWebsocketOutputs = saveImageWebsocketNodeIds.size > 0;
       set({
         workflowRuleWarnings: mergeRuleWarnings(
           activeRulesWarnings,
@@ -1591,6 +1722,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
         postprocessedPreview: null,
         postprocessError: null,
         usesSaveImageWebsocketOutputs,
+        saveImageWebsocketNodeIds,
         preparedMaskFile,
       };
 
@@ -1713,10 +1845,12 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
         });
         const nextPreviewFrames = new Map(state.jobPreviewFrames);
         nextPreviewFrames.delete(activeJobId);
+        revokePreviewAnimation(state.previewAnimation);
 
         return {
           jobs: updated,
           jobPreviewFrames: nextPreviewFrames,
+          previewAnimation: null,
           activeJobId: null,
           ...(nextConnectionStatus
             ? { connectionStatus: nextConnectionStatus }

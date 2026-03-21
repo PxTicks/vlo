@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Typography,
@@ -35,7 +35,11 @@ import {
 } from "./services/workflowRules";
 import { normalizeWorkflowFilename } from "./services/workflowFilenames";
 import { useGenerationPanel } from "./hooks/useGenerationPanel";
-import { TEMP_WORKFLOW_ID, useGenerationStore } from "./useGenerationStore";
+import {
+  TEMP_WORKFLOW_ID,
+  useGenerationStore,
+  type PreviewAnimation,
+} from "./useGenerationStore";
 import { getOutputMediaKindFromFilename } from "./constants/mediaKinds";
 import { getObjectInfo, saveWorkflowContent } from "./services/comfyuiApi";
 
@@ -118,6 +122,54 @@ function formatActiveNodeStatus(
   return `Node: ${nodeName}`;
 }
 
+const PREVIEW_STYLE: React.CSSProperties = {
+  width: "100%",
+  borderRadius: 4,
+  display: "block",
+};
+
+function LivePreview({
+  animation,
+  fallbackUrl,
+}: {
+  animation: PreviewAnimation | null;
+  fallbackUrl: string | null;
+}) {
+  const [tick, setTick] = useState(0);
+  const tickRef = useRef(0);
+
+  const advanceTick = useCallback(() => {
+    tickRef.current += 1;
+    setTick(tickRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!animation || animation.frameRate <= 0) return;
+    tickRef.current = 0;
+    setTick(0);
+    const interval = setInterval(advanceTick, 1000 / animation.frameRate);
+    return () => clearInterval(interval);
+  }, [animation?.frameRate, animation?.totalFrames, advanceTick]);
+
+  if (animation) {
+    const populated = animation.frameUrls.filter(
+      (u): u is string => u != null,
+    );
+    if (populated.length > 0) {
+      const url = populated[tick % populated.length];
+      return <img src={url} alt="Generation preview" style={PREVIEW_STYLE} />;
+    }
+  }
+
+  if (fallbackUrl) {
+    return (
+      <img src={fallbackUrl} alt="Generation preview" style={PREVIEW_STYLE} />
+    );
+  }
+
+  return null;
+}
+
 export function GenerationPanel() {
   const [isBackendSavePending, setIsBackendSavePending] = useState(false);
   const [savePromptOpen, setSavePromptOpen] = useState(false);
@@ -148,6 +200,7 @@ export function GenerationPanel() {
 
     // Derived
     latestPreviewUrl,
+    previewAnimation,
     comfyuiDirectUrl,
     workflowInputs,
     activeJob,
@@ -748,12 +801,11 @@ export function GenerationPanel() {
       )}
 
       {/* Live Preview */}
-      {latestPreviewUrl && isRunning && (
+      {(latestPreviewUrl || previewAnimation) && isRunning && (
         <Box sx={{ px: 2, pb: 2 }}>
-          <img
-            src={latestPreviewUrl}
-            alt="Generation preview"
-            style={{ width: "100%", borderRadius: 4, display: "block" }}
+          <LivePreview
+            animation={previewAnimation}
+            fallbackUrl={latestPreviewUrl}
           />
         </Box>
       )}

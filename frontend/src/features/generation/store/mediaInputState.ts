@@ -1,5 +1,5 @@
 import type { GenerationMediaInputValue, WorkflowInput } from "../types";
-import { getWorkflowInputId } from "../utils/workflowInputs";
+import { buildWorkflowInputLookup } from "../utils/workflowInputs";
 
 export function revokePreviewUrl(
   value: GenerationMediaInputValue | null | undefined,
@@ -35,13 +35,11 @@ export function pruneMediaInputs(
   mediaInputs: Record<string, GenerationMediaInputValue | null>,
   workflowInputs: WorkflowInput[],
 ): Record<string, GenerationMediaInputValue | null> {
-  const inputsById = new Map(
-    workflowInputs.map((input) => [getWorkflowInputId(input), input.inputType]),
-  );
+  const inputsById = buildWorkflowInputLookup(workflowInputs);
   const next: Record<string, GenerationMediaInputValue | null> = {};
 
   for (const [inputId, value] of Object.entries(mediaInputs)) {
-    const inputType = inputsById.get(inputId);
+    const inputType = inputsById.get(inputId)?.inputType;
     if (isCompatibleMediaInput(inputType, value)) {
       next[inputId] = value;
     } else {

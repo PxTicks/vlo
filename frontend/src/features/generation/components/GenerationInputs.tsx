@@ -16,7 +16,11 @@ import type {
   WorkflowWidgetInput,
 } from "../types";
 import type { AssetDropSlotValue } from "../../panelUI";
-import { getWorkflowInputId } from "../utils/workflowInputs";
+import {
+  buildWorkflowInputLookup,
+  getWorkflowInputId,
+  getWorkflowInputValue,
+} from "../utils/workflowInputs";
 
 interface GenerationInputsProps {
   inputs: WorkflowInput[];
@@ -253,6 +257,7 @@ interface TextInputSectionProps {
   input: WorkflowInput;
   bgColor: string;
   value: string;
+  commitInputId: string;
   onCommit: (inputId: string, value: string) => void;
 }
 
@@ -260,9 +265,9 @@ function TextInputSection({
   input,
   bgColor,
   value,
+  commitInputId,
   onCommit,
 }: TextInputSectionProps) {
-  const inputId = getWorkflowInputId(input);
   return (
     <PanelSection title={input.label} bgColor={bgColor} defaultOpen={true}>
       {input.description ? (
@@ -272,7 +277,7 @@ function TextInputSection({
       ) : null}
       <CommittedTextInput
         initialValue={value}
-        onCommit={(nextValue) => onCommit(inputId, nextValue)}
+        onCommit={(nextValue) => onCommit(commitInputId, nextValue)}
         multiline={true}
         minRows={2}
         maxRows={6}
@@ -404,7 +409,7 @@ function WidgetRow({
           min={min}
           max={max}
           step={step}
-          valueLabelDisplay="auto"
+          valueLabelDisplay="off"
           valueLabelFormat={(nextValue) => formatSliderPercent(nextValue)}
           onChange={(_, nextValue) => {
             if (typeof nextValue !== "number") return;
@@ -521,11 +526,14 @@ export const GenerationInputs = memo(function GenerationInputs({
     () => groupWidgetsByNode(widgetInputs),
     [widgetInputs],
   );
+  const inputLookup = useMemo(() => buildWorkflowInputLookup(inputs), [inputs]);
   return (
     <Box sx={{ display: "flex", flexDirection: "column" }}>
       {inputs.map((input, index) => {
         const bgColor = index % 2 === 0 ? "#202024" : "#18181b";
         const inputId = getWorkflowInputId(input);
+        const commitInputId =
+          inputLookup.get(input.nodeId) === input ? input.nodeId : inputId;
 
         if (input.inputType === "text") {
           return (
@@ -533,7 +541,8 @@ export const GenerationInputs = memo(function GenerationInputs({
               key={inputId}
               input={input}
               bgColor={bgColor}
-              value={textValues[inputId] ?? ""}
+              value={getWorkflowInputValue(textValues, input, inputLookup) ?? ""}
+              commitInputId={commitInputId}
               onCommit={onTextValueCommit}
             />
           );
@@ -544,7 +553,7 @@ export const GenerationInputs = memo(function GenerationInputs({
             key={inputId}
             input={input}
             bgColor={bgColor}
-            value={mediaInputs[inputId]}
+            value={getWorkflowInputValue(mediaInputs, input, inputLookup)}
             onInputDrop={onInputDrop}
             onInputClear={onInputClear}
             onClickSelect={onClickSelect}

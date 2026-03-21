@@ -125,7 +125,7 @@ export function findMissingRequiredWorkflowInputs(
     return [
       {
         kind: "required",
-        input: inputId,
+        input: input.nodeId,
         message: `${input.label} is required.`,
       },
     ];

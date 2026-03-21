@@ -105,6 +105,7 @@ export interface GenerationJob {
   postprocessError?: string | null;
   importedAssetIds?: string[];
   usesSaveImageWebsocketOutputs?: boolean;
+  saveImageWebsocketNodeIds?: ReadonlySet<string>;
   preparedMaskFile?: File | null;
 }
 

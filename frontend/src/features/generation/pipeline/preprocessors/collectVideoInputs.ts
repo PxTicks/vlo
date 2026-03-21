@@ -6,8 +6,8 @@ import {
   renderTimelineSelectionToWebmWithMask,
 } from "../../utils/inputSelection";
 import {
+  buildWorkflowInputLookup,
   getNodeInputRequestKey,
-  getWorkflowInputId,
 } from "../../utils/workflowInputs";
 import { prepareNormalizedSelection } from "./selectionHelpers";
 import { throwIfAborted } from "../utils/abort";
@@ -44,9 +44,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
   },
 
   async execute(ctx) {
-    const inputById = new Map(
-      ctx.workflowInputs.map((input) => [getWorkflowInputId(input), input]),
-    );
+    const inputById = buildWorkflowInputLookup(ctx.workflowInputs);
     const projectFps = Math.max(1, ctx.projectConfig.fps);
 
     // Build lookup: sourceInputId/sourceNodeId → mask mappings
@@ -135,7 +133,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       if (!input) continue;
 
       if (value.type === "video") {
-        ctx.videoInputs[getNodeInputRequestKey(input)] = value.file;
+        ctx.videoInputs[getNodeInputRequestKey(input, inputById)] = value.file;
       } else if (value.type === "video_selection") {
         const masks =
           masksBySource.get(inputId) ?? masksBySource.get(input.nodeId);
@@ -153,18 +151,21 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
               DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
           );
           throwIfAborted(ctx.signal);
-          ctx.videoInputs[getNodeInputRequestKey(input)] = result.video;
+          ctx.videoInputs[getNodeInputRequestKey(input, inputById)] =
+            result.video;
           for (const mask of masks) {
             const maskInput = ctx.workflowInputs.find(
               (candidate) =>
                 candidate.nodeId === mask.maskNodeId &&
                 candidate.param === mask.maskParam,
             );
-            if (!maskInput) continue;
-            ctx.videoInputs[getNodeInputRequestKey(maskInput)] = result.mask;
+            const maskRequestKey = maskInput
+              ? getNodeInputRequestKey(maskInput, inputById)
+              : mask.maskNodeId;
+            ctx.videoInputs[maskRequestKey] = result.mask;
           }
         } else {
-          ctx.videoInputs[getNodeInputRequestKey(input)] =
+          ctx.videoInputs[getNodeInputRequestKey(input, inputById)] =
             await normalizeVideoSelection(
             value.selection,
             value.preparedVideoFile,

@@ -150,6 +150,7 @@ describe("useGenerationStore workflow rules", () => {
       },
       jobs: new Map(),
       activeJobId: null,
+      previewAnimation: null,
       targetResolution: 1080,
       maskCropMode: "crop",
       isWorkflowLoading: false,
@@ -646,6 +647,30 @@ describe("useGenerationStore workflow rules", () => {
     expect(job?.status).toBe("error");
     expect(job?.error).toBe("Generation cancelled by user");
     expect(state.activeJobId).toBeNull();
+  });
+
+  it("revokes preview animation URLs when cancelling a running job", async () => {
+    const revokeSpy = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+    const runningJob = makeRunningJob("prompt-animated");
+    useGenerationStore.setState({
+      jobs: new Map([[runningJob.id, runningJob]]),
+      activeJobId: runningJob.id,
+      previewAnimation: {
+        frameUrls: ["blob:animated-0", null, "blob:animated-2"],
+        frameRate: 8,
+        totalFrames: 3,
+      },
+    });
+    vi.spyOn(comfyApi, "interrupt").mockResolvedValue(undefined);
+
+    await useGenerationStore.getState().cancelGeneration();
+
+    const state = useGenerationStore.getState();
+    expect(state.previewAnimation).toBeNull();
+    expect(revokeSpy).toHaveBeenCalledWith("blob:animated-0");
+    expect(revokeSpy).toHaveBeenCalledWith("blob:animated-2");
   });
 
   it("revokes postprocessed preview URL when clearing a job", () => {

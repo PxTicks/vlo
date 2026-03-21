@@ -1,7 +1,10 @@
 import type { Processor } from "../types";
 import type { FrontendPreprocessContext } from "../types";
 import { throwIfAborted } from "../utils/abort";
-import { getNodeInputRequestKey, getWorkflowInputId } from "../../utils/workflowInputs";
+import {
+  buildWorkflowInputLookup,
+  getNodeInputRequestKey,
+} from "../../utils/workflowInputs";
 
 /**
  * Collects text slot values and routes them to either `textInputs`
@@ -22,9 +25,7 @@ export const collectTextInputs: Processor<FrontendPreprocessContext> = {
 
   async execute(ctx) {
     throwIfAborted(ctx.signal);
-    const inputById = new Map(
-      ctx.workflowInputs.map((input) => [getWorkflowInputId(input), input]),
-    );
+    const inputById = buildWorkflowInputLookup(ctx.workflowInputs);
 
     for (const [inputId, value] of Object.entries(ctx.slotValues)) {
       throwIfAborted(ctx.signal);
@@ -44,7 +45,7 @@ export const collectTextInputs: Processor<FrontendPreprocessContext> = {
 
       if (value.type !== "text") continue;
       if (!input) continue;
-      ctx.textInputs[getNodeInputRequestKey(input)] = value.value;
+      ctx.textInputs[getNodeInputRequestKey(input, inputById)] = value.value;
     }
   },
 };

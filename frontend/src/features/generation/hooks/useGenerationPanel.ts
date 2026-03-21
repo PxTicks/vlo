@@ -32,7 +32,12 @@ import { useAssetStore } from "../../userAssets";
 import {
   findWorkflowInputValidationFailures,
 } from "../services/workflowRules";
-import { getWorkflowInputId } from "../utils/workflowInputs";
+import {
+  buildWorkflowInputLookup,
+  getWorkflowInputId,
+  getWorkflowInputValue,
+  resolveWorkflowInputKeys,
+} from "../utils/workflowInputs";
 
 function hasInputValue(
   inputType: "image" | "video",
@@ -108,6 +113,7 @@ export function useGenerationPanel() {
   const runtimeStatus = useGenerationStore((s) => s.runtimeStatus);
   const runtimeStatusError = useGenerationStore((s) => s.runtimeStatusError);
   const latestPreviewUrl = useGenerationStore((s) => s.latestPreviewUrl);
+  const previewAnimation = useGenerationStore((s) => s.previewAnimation);
   const comfyuiDirectUrl = useGenerationStore((s) => s.comfyuiDirectUrl);
   const workflowInputs = useGenerationStore((s) => s.workflowInputs);
   const mediaInputs = useGenerationStore((s) => s.mediaInputs);
@@ -173,6 +179,10 @@ export function useGenerationPanel() {
     () => resolveWidgetInputs(syncedWorkflow, activeWorkflowRules),
     [syncedWorkflow, activeWorkflowRules],
   );
+  const workflowInputById = useMemo(
+    () => buildWorkflowInputLookup(workflowInputs),
+    [workflowInputs],
+  );
   const derivedMaskVideoTreatmentBySourceNodeId = useMemo(
     () =>
       resolveDerivedMaskVideoTreatments(
@@ -194,7 +204,7 @@ export function useGenerationPanel() {
       for (const input of workflowInputs) {
         if (input.inputType !== "text") continue;
         const inputId = getWorkflowInputId(input);
-        const existing = prev[inputId];
+        const existing = getWorkflowInputValue(prev, input, workflowInputById);
         if (typeof existing === "string") {
           next[inputId] = existing;
           continue;
@@ -213,7 +223,7 @@ export function useGenerationPanel() {
       }
       return changed ? next : prev;
     });
-  }, [workflowInputs]);
+  }, [workflowInputById, workflowInputs]);
 
   // Initialize widget values and randomize toggles when widget inputs change
   useEffect(() => {
@@ -294,10 +304,15 @@ export function useGenerationPanel() {
     for (const input of store.workflowInputs) {
       const inputId = getWorkflowInputId(input);
       if (input.inputType === "text") {
-        const text = textValues[inputId] ?? "";
+        const text =
+          getWorkflowInputValue(textValues, input, workflowInputById) ?? "";
         slotValues[inputId] = { type: "text", value: text };
       } else {
-        const value = store.mediaInputs[inputId];
+        const value = getWorkflowInputValue(
+          store.mediaInputs,
+          input,
+          workflowInputById,
+        );
         if (!value) continue;
 
         if (input.inputType === "image") {
@@ -381,6 +396,7 @@ export function useGenerationPanel() {
       derivedWidgetInputs,
     );
   }, [
+    workflowInputById,
     textValues,
     widgetInputs,
     randomizeToggles,
@@ -468,9 +484,7 @@ export function useGenerationPanel() {
       const extractStore = useExtractStore.getState();
       const timelineSelectionStore = useTimelineSelectionStore.getState();
       const playerStore = usePlayerStore.getState();
-      const input = workflowInputs.find(
-        (candidate) => getWorkflowInputId(candidate) === inputId,
-      );
+      const input = workflowInputById.get(inputId);
       const selectionConfig =
         input?.dispatch && "selectionConfig" in input.dispatch
           ? input.dispatch.selectionConfig
@@ -583,7 +597,7 @@ export function useGenerationPanel() {
 
             if (nodeMasks.length > 0) {
               const videoTreatment =
-                derivedMaskVideoTreatmentBySourceNodeId[nodeId] ??
+                derivedMaskVideoTreatmentBySourceNodeId[input?.nodeId ?? inputId] ??
                 DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT;
               const { video, mask } = await renderTimelineSelectionToWebmWithMask(
                 timelineSelection,
@@ -631,8 +645,14 @@ export function useGenerationPanel() {
           } catch (error) {
             const extractionRequestId =
               selectionExtractionRequestIdsRef.current[inputId] ?? 0;
-            const existingValue =
-              useGenerationStore.getState().mediaInputs[inputId];
+            const storeMediaInputs = useGenerationStore.getState().mediaInputs;
+            const existingValue = input
+              ? getWorkflowInputValue(
+                  storeMediaInputs,
+                  input,
+                  workflowInputById,
+                )
+              : storeMediaInputs[inputId];
             if (
               existingValue?.kind === "timelineSelection" &&
               existingValue.extractionRequestId === extractionRequestId
@@ -666,16 +686,19 @@ export function useGenerationPanel() {
       derivedMaskVideoTreatmentBySourceNodeId,
       setMediaInputFrame,
       setMediaInputTimelineSelection,
+      workflowInputById,
       workflowInputs,
     ],
   );
 
   const handleTextValueCommit = useCallback((inputId: string, value: string) => {
+    const canonicalInputId =
+      resolveWorkflowInputKeys(inputId, workflowInputById)[0] ?? inputId;
     setTextValues((prev) => {
-      if (prev[inputId] === value) return prev;
-      return { ...prev, [inputId]: value };
+      if (prev[canonicalInputId] === value) return prev;
+      return { ...prev, [canonicalInputId]: value };
     });
-  }, []);
+  }, [workflowInputById]);
 
   const handleWidgetChange = useCallback(
     (nodeId: string, param: string, value: unknown) => {
@@ -719,7 +742,8 @@ export function useGenerationPanel() {
     for (const input of workflowInputs) {
       const inputId = getWorkflowInputId(input);
       if (input.inputType === "text") {
-        const value = textValues[inputId] ?? "";
+        const value =
+          getWorkflowInputValue(textValues, input, workflowInputById) ?? "";
         if (value.trim().length > 0) {
           provided.add(inputId);
           provided.add(input.nodeId);
@@ -730,7 +754,7 @@ export function useGenerationPanel() {
       if (
         hasInputValue(
           input.inputType as "image" | "video",
-          mediaInputs[inputId],
+          getWorkflowInputValue(mediaInputs, input, workflowInputById),
         )
       ) {
         provided.add(inputId);
@@ -738,7 +762,7 @@ export function useGenerationPanel() {
       }
     }
     return provided;
-  }, [mediaInputs, textValues, workflowInputs]);
+  }, [mediaInputs, textValues, workflowInputById, workflowInputs]);
 
   const inputValidationFailures = findWorkflowInputValidationFailures(
     workflowInputs,
@@ -843,6 +867,7 @@ export function useGenerationPanel() {
     runtimeStatus,
     runtimeStatusError,
     latestPreviewUrl,
+    previewAnimation,
     comfyuiDirectUrl,
     workflowInputs,
     activeJob,

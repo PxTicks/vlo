@@ -1,12 +1,12 @@
 import type {
   WorkflowInput,
   WorkflowManualSlotSelectionConfig,
-  WorkflowParamReference,
   WorkflowRuleSlotInputType,
   WidgetValueType,
 } from "../../types";
 import { isRecord } from "../parsers";
 import type {
+  WorkflowParamReference,
   WorkflowRuleSelectionConfig,
   WorkflowRuleWarning,
 } from "./types";
@@ -53,7 +53,7 @@ export function normalizeParamReference(
   const param = value.param.trim();
   if (!nodeId || !param) return null;
   return {
-    nodeId,
+    node_id: nodeId,
     param,
   };
 }

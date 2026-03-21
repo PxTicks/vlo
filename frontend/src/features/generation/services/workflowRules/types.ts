@@ -2,18 +2,49 @@ import type {
   DerivedWorkflowWidgetInput,
   WorkflowInput,
   WorkflowManualSlotSelectionConfig,
-  WorkflowMaskCroppingMode,
-  WorkflowParamReference,
-  WorkflowPostprocessingConfig,
   WorkflowRuleSlotInputType,
   WorkflowWidgetInput,
   WidgetInputConfig,
-  WidgetValueType,
 } from "../../types";
 import type {
   DerivedMaskMapping,
   DerivedMaskType,
 } from "../../pipeline/types";
+import type {
+  WorkflowAspectRatioProcessingConfig,
+  WorkflowAtLeastNInputValidationRule,
+  WorkflowDualSamplerDenoiseRule,
+  WorkflowMaskCroppingConfig,
+  WorkflowOptionalInputValidationRule,
+  WorkflowPostprocessingConfig,
+  WorkflowRequiredInputValidationRule,
+  WorkflowRules,
+} from "./generated";
+
+export type {
+  WorkflowAspectRatioProcessingConfig,
+  WorkflowDualSamplerDenoiseRule,
+  WorkflowInputCondition,
+  WorkflowMaskCroppingConfig,
+  WorkflowOptionalInputValidationRule,
+  WorkflowParamReference,
+  WorkflowPostprocessingConfig,
+  WorkflowRequiredInputValidationRule,
+  WorkflowRuleNode,
+  WorkflowRuleNodePresent,
+  WorkflowRuleSelectionConfig,
+  WorkflowRuleSlot,
+  WorkflowRuleWidgetEntry,
+  WorkflowRules,
+  WorkflowValidationConfig,
+} from "./generated";
+
+export type WorkflowInputValidationRule =
+  | WorkflowRequiredInputValidationRule
+  | WorkflowAtLeastNInputValidationRule
+  | WorkflowOptionalInputValidationRule;
+
+export type WorkflowDerivedWidgetRule = WorkflowDualSamplerDenoiseRule;
 
 export interface WorkflowRuleWarning {
   code: string;
@@ -21,49 +52,6 @@ export interface WorkflowRuleWarning {
   node_id?: string;
   output_index?: number;
   details?: Record<string, unknown>;
-}
-
-export interface WorkflowRuleNodePresent {
-  enabled?: boolean;
-  required?: boolean;
-  input_type?: string;
-  param?: string;
-  label?: string;
-  class_type?: string;
-}
-
-export interface WorkflowInputCondition {
-  kind: "at_least_one";
-  inputs: string[];
-  message?: string;
-}
-
-export interface WorkflowRequiredInputValidationRule {
-  kind: "required";
-  input: string;
-  message?: string;
-}
-
-export interface WorkflowAtLeastNInputValidationRule {
-  kind: "at_least_n";
-  inputs: string[];
-  min: number;
-  message?: string;
-}
-
-export interface WorkflowOptionalInputValidationRule {
-  kind: "optional";
-  input: string;
-  message?: string;
-}
-
-export type WorkflowInputValidationRule =
-  | WorkflowRequiredInputValidationRule
-  | WorkflowAtLeastNInputValidationRule
-  | WorkflowOptionalInputValidationRule;
-
-export interface WorkflowValidationConfig {
-  inputs: WorkflowInputValidationRule[];
 }
 
 export interface WorkflowInputValidationFailure {
@@ -75,67 +63,11 @@ export interface WorkflowInputValidationFailure {
   provided?: number;
 }
 
-export interface WorkflowRuleWidgetEntry {
-  label?: string;
-  control_after_generate?: boolean;
-  default_randomize?: boolean;
-  frontend_only?: boolean;
-  hidden?: boolean;
-  group_id?: string;
-  group_title?: string;
-  group_order?: number;
-  min?: number;
-  max?: number;
-  default?: unknown;
-  value_type?: WidgetValueType;
-  options?: Array<string | number | boolean>;
+export interface WorkflowRulesResponse {
+  workflow_id: string;
+  rules: WorkflowRules;
+  warnings: WorkflowRuleWarning[];
 }
-
-export interface WorkflowRuleNode {
-  ignore?: boolean;
-  present?: WorkflowRuleNodePresent;
-  widgets_mode?: "control_after_generate" | "all";
-  widgets?: Record<string, WorkflowRuleWidgetEntry>;
-  node_title?: string;
-  selection?: WorkflowRuleSelectionConfig;
-  binary_derived_mask_of?: string;
-  soft_derived_mask_of?: string;
-}
-
-export interface WorkflowRuleSelectionConfig {
-  export_fps?: number;
-  frame_step?: number;
-  max_frames?: number;
-}
-
-export interface WorkflowRuleSlot {
-  input_type?: string;
-  label?: string;
-  param?: string;
-  experimental?: boolean;
-  export_fps?: number;
-  frame_step?: number;
-  max_frames?: number;
-}
-
-export interface WorkflowMaskCroppingConfig {
-  mode: WorkflowMaskCroppingMode;
-}
-
-export interface WorkflowDualSamplerDenoiseRule {
-  id: string;
-  kind: "dual_sampler_denoise";
-  label?: string;
-  group_id?: string;
-  group_title?: string;
-  group_order?: number;
-  total_steps: WorkflowParamReference;
-  start_step: WorkflowParamReference;
-  base_split_step: WorkflowParamReference;
-  split_step_targets: WorkflowParamReference[];
-}
-
-export type WorkflowDerivedWidgetRule = WorkflowDualSamplerDenoiseRule;
 
 export const DEFAULT_WORKFLOW_POSTPROCESSING: WorkflowPostprocessingConfig = {
   mode: "auto",
@@ -147,6 +79,76 @@ export const DEFAULT_WORKFLOW_MASK_CROPPING: WorkflowMaskCroppingConfig = {
   mode: "crop",
 };
 
+export const DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING: WorkflowAspectRatioProcessingConfig =
+  {
+    enabled: false,
+    stride: 16,
+    search_steps: 2,
+    resolutions: [],
+    target_nodes: [],
+    postprocess: {
+      enabled: true,
+      mode: "stretch_exact",
+      apply_to: "all_visual_outputs",
+    },
+  };
+
+export function createDefaultWorkflowPostprocessing(): WorkflowPostprocessingConfig {
+  return { ...DEFAULT_WORKFLOW_POSTPROCESSING };
+}
+
+export function createDefaultWorkflowMaskCropping(): WorkflowMaskCroppingConfig {
+  return { ...DEFAULT_WORKFLOW_MASK_CROPPING };
+}
+
+export function createDefaultWorkflowAspectRatioProcessing(): WorkflowAspectRatioProcessingConfig {
+  return {
+    ...DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING,
+    resolutions: [...(DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING.resolutions ?? [])],
+    target_nodes: [
+      ...(DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING.target_nodes ?? []),
+    ],
+    postprocess: {
+      ...(DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING.postprocess ?? {}),
+    },
+  };
+}
+
+export function createDefaultWorkflowRules(
+  overrides: Partial<WorkflowRules> = {},
+): WorkflowRules {
+  const aspectRatioProcessing = overrides.aspect_ratio_processing;
+
+  return {
+    version: overrides.version ?? 1,
+    ...(overrides.name !== undefined ? { name: overrides.name } : {}),
+    nodes: overrides.nodes ?? {},
+    validation: overrides.validation ?? { inputs: [] },
+    ...(overrides.input_conditions !== undefined
+      ? { input_conditions: overrides.input_conditions }
+      : {}),
+    derived_widgets: overrides.derived_widgets ?? [],
+    output_injections: overrides.output_injections ?? {},
+    slots: overrides.slots ?? {},
+    mask_cropping:
+      overrides.mask_cropping ?? createDefaultWorkflowMaskCropping(),
+    postprocessing:
+      overrides.postprocessing ?? createDefaultWorkflowPostprocessing(),
+    aspect_ratio_processing: aspectRatioProcessing
+      ? {
+          ...createDefaultWorkflowAspectRatioProcessing(),
+          ...aspectRatioProcessing,
+          resolutions: [...(aspectRatioProcessing.resolutions ?? [])],
+          target_nodes: [...(aspectRatioProcessing.target_nodes ?? [])],
+          postprocess: {
+            ...createDefaultWorkflowAspectRatioProcessing().postprocess,
+            ...(aspectRatioProcessing.postprocess ?? {}),
+          },
+        }
+      : createDefaultWorkflowAspectRatioProcessing(),
+  };
+}
+
 export const DEFAULT_GENERATION_TARGET_RESOLUTION = 1080;
 export const DEFAULT_GENERATION_RESOLUTION_OPTIONS = [
   360,
@@ -154,55 +156,6 @@ export const DEFAULT_GENERATION_RESOLUTION_OPTIONS = [
   720,
   1080,
 ] as const;
-
-export interface WorkflowAspectRatioProcessingConfig {
-  enabled: boolean;
-  stride: number;
-  search_steps: number;
-  resolutions: number[];
-  target_nodes: Array<{
-    node_id: string;
-    width_param: string;
-    height_param: string;
-  }>;
-  postprocess: {
-    enabled: boolean;
-    mode: string;
-    apply_to: string;
-  };
-}
-
-export interface WorkflowRules {
-  version: number;
-  nodes: Record<string, WorkflowRuleNode>;
-  validation?: WorkflowValidationConfig;
-  input_conditions?: WorkflowInputCondition[];
-  derived_widgets?: WorkflowDerivedWidgetRule[];
-  output_injections: Record<
-    string,
-    Record<
-      string,
-      {
-        source?: {
-          kind?: string;
-          node_id?: string;
-          output_index?: number;
-          slot_id?: string;
-        };
-      }
-    >
-  >;
-  slots: Record<string, WorkflowRuleSlot>;
-  mask_cropping: WorkflowMaskCroppingConfig;
-  postprocessing: WorkflowPostprocessingConfig;
-  aspect_ratio_processing?: WorkflowAspectRatioProcessingConfig;
-}
-
-export interface WorkflowRulesResponse {
-  workflow_id: string;
-  rules: WorkflowRules;
-  warnings: WorkflowRuleWarning[];
-}
 
 export interface ResolvePresentedInputsResult {
   inputs: WorkflowInput[];

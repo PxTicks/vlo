@@ -7,6 +7,7 @@ vi.mock("../../hooks/useGenerationPanel", () => ({
 
 import { useGenerationPanel } from "../../hooks/useGenerationPanel";
 import { GenerationPanel } from "../../GenerationPanel";
+import { createDefaultWorkflowRules } from "../../services/workflowRules";
 import type { GenerationJob } from "../../types";
 import { useGenerationStore } from "../../useGenerationStore";
 
@@ -161,17 +162,7 @@ describe("GenerationPanel workflow rule hints", () => {
 
   it("shows generation resolution only for workflows with aspect ratio processing", () => {
     useGenerationStore.setState({
-      activeWorkflowRules: {
-        version: 1,
-        nodes: {},
-        output_injections: {},
-        slots: {},
-        mask_cropping: { mode: "crop" },
-        postprocessing: {
-          mode: "auto",
-          panel_preview: "raw_outputs",
-          on_failure: "fallback_raw",
-        },
+      activeWorkflowRules: createDefaultWorkflowRules({
         aspect_ratio_processing: {
           enabled: true,
           stride: 16,
@@ -184,7 +175,7 @@ describe("GenerationPanel workflow rule hints", () => {
             apply_to: "all_visual_outputs",
           },
         },
-      },
+      }),
     });
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
       makeHookState(),

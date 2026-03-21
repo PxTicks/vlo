@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerationJob } from "../types";
-import type { WorkflowRules } from "../services/workflowRules";
+import {
+  createDefaultWorkflowRules,
+  type WorkflowRules,
+} from "../services/workflowRules";
 
 const {
   mockFrontendPostprocess,
@@ -161,19 +164,7 @@ import { useGenerationStore } from "../useGenerationStore";
 function makeWorkflowRules(
   overrides: Partial<WorkflowRules> = {},
 ): WorkflowRules {
-  return {
-    version: 1,
-    nodes: {},
-    output_injections: {},
-    slots: {},
-    mask_cropping: { mode: "crop" },
-    postprocessing: {
-      mode: "auto",
-      panel_preview: "raw_outputs",
-      on_failure: "fallback_raw",
-    },
-    ...overrides,
-  };
+  return createDefaultWorkflowRules(overrides);
 }
 
 function makeReadyStoreState(): void {

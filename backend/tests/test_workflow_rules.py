@@ -18,14 +18,24 @@ from services.gen_pipeline.processors.utils.aspect_ratio_processing import (  # 
     find_best_strided_dimensions,
 )
 from services.workflow_rules import (  # noqa: E402
+    AuthoredWorkflowRulesV1,
     apply_rules_to_workflow,
     collect_mask_crop_pairs,
     evaluate_input_validation,
     enrich_rules_with_object_info,
     find_unsatisfied_input_conditions,
+    load_rules_model_for_workflow,
     load_rules_for_workflow,
+    migrate_authored_v1_to_v2,
+    normalize_rules_model,
 )
 from services.workflow_rules.object_info import set_object_info_cache  # noqa: E402
+from services.workflow_rules.schema import (  # noqa: E402
+    ResolvedWorkflowRules,
+    compile_authored_v1_to_resolved,
+    compile_authored_v2_to_resolved,
+    dump_resolved_rules,
+)
 
 
 def _base_prompt() -> dict:
@@ -884,6 +894,222 @@ def test_collect_mask_crop_pairs_allows_runtime_mode_override(tmp_path: Path):
     assert collect_mask_crop_pairs(rules) == []
     assert collect_mask_crop_pairs(rules, "crop") == [("1", "2")]
     assert collect_mask_crop_pairs(rules, "full") == []
+
+
+def test_normalize_rules_model_compiles_v2_pipeline_and_typed_validation():
+    raw_rules = {
+        "version": 2,
+        "default_widgets_mode": "all",
+        "nodes": {
+            "2": {
+                "binary_derived_mask_of": "1",
+            }
+        },
+        "pipeline": [
+            {
+                "kind": "aspect_ratio",
+                "enabled": True,
+                "resolutions": [720, 1080],
+            },
+            {
+                "kind": "mask_cropping",
+                "mode": "crop",
+            },
+        ],
+        "validation": {
+            "inputs": [
+                {
+                    "kind": "required",
+                    "input": {"node_id": "11", "param": "text"},
+                },
+                {
+                    "kind": "optional",
+                    "input": {"slot_key": "voice_audio"},
+                },
+            ]
+        },
+        "output_injections": [
+            {
+                "target_node_id": "20",
+                "target_output_index": 0,
+                "source": {"kind": "manual_slot", "slot_key": "voice_audio"},
+            }
+        ],
+    }
+
+    rules_model, warnings = normalize_rules_model(raw_rules)
+
+    assert warnings == []
+    assert rules_model.version == 2
+    assert rules_model.mask_cropping.mode == "crop"
+    assert rules_model.aspect_ratio_processing.enabled is True
+    assert rules_model.validation.inputs[0].input == "11:text"
+    assert rules_model.validation.inputs[1].input == "slot:voice_audio"
+    assert rules_model._default_widgets_mode == "all"
+    assert rules_model._pipeline_stage_order == ("aspect_ratio", "mask_cropping")
+    assert rules_model._has_explicit_pipeline is True
+
+    dumped_rules = dump_resolved_rules(rules_model)
+    assert dumped_rules["output_injections"] == {
+        "20": {
+            "0": {
+                "source": {
+                    "kind": "manual_slot",
+                    "slot_id": "voice_audio",
+                }
+            }
+        }
+    }
+
+
+def test_load_rules_model_for_workflow_supports_v2_sidecars(tmp_path: Path):
+    workflow_path = tmp_path / "example.json"
+    workflow_path.write_text("{}")
+    sidecar_path = tmp_path / "example.rules.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "pipeline": [
+                    {
+                        "kind": "aspect_ratio",
+                        "enabled": True,
+                        "resolutions": [720],
+                    }
+                ],
+                "validation": {
+                    "inputs": [
+                        {
+                            "kind": "required",
+                            "input": {"slot_key": "voice_audio"},
+                        }
+                    ]
+                },
+            }
+        )
+    )
+
+    rules_model, warnings = load_rules_model_for_workflow(tmp_path, "example.json")
+
+    assert warnings == []
+    assert rules_model.version == 2
+    assert rules_model.mask_cropping.mode == "full"
+    assert rules_model.aspect_ratio_processing.enabled is True
+    assert rules_model.validation.inputs[0].input == "slot:voice_audio"
+    assert rules_model._pipeline_stage_order == ("aspect_ratio",)
+
+
+def test_migrate_authored_v1_to_v2_preserves_resolved_runtime_shape():
+    authored_v1 = AuthoredWorkflowRulesV1.model_validate(
+        {
+            "version": 1,
+            "nodes": {
+                "2": {
+                    "binary_derived_mask_of": "1",
+                }
+            },
+            "validation": {
+                "inputs": [
+                    {
+                        "kind": "required",
+                        "input": "11:text",
+                    },
+                    {
+                        "kind": "optional",
+                        "input": "slot:voice_audio",
+                    },
+                ]
+            },
+            "output_injections": {
+                "20": {
+                    "0": {
+                        "source": {
+                            "kind": "manual_slot",
+                            "slot_id": "voice_audio",
+                        }
+                    }
+                }
+            },
+            "slots": {
+                "voice_audio": {
+                    "input_type": "audio",
+                    "label": "Voice",
+                }
+            },
+        }
+    )
+
+    authored_v2 = migrate_authored_v1_to_v2(authored_v1)
+    resolved_v1 = dump_resolved_rules(compile_authored_v1_to_resolved(authored_v1))
+    resolved_v2 = dump_resolved_rules(compile_authored_v2_to_resolved(authored_v2))
+
+    assert authored_v2.version == 2
+    assert resolved_v2["version"] == 2
+    assert {**resolved_v2, "version": 1} == resolved_v1
+
+
+def test_enrich_rules_with_object_info_uses_v2_default_widgets_mode():
+    workflow = {
+        "1": {
+            "class_type": "CustomScalar",
+            "inputs": {},
+            "_meta": {"title": "Strength"},
+        }
+    }
+    object_info = {
+        "CustomScalar": {
+            "input": {
+                "required": {
+                    "value": [
+                        "INT",
+                        {
+                            "default": 8,
+                        },
+                    ]
+                }
+            },
+            "input_order": {
+                "required": ["value"],
+            },
+        }
+    }
+
+    set_object_info_cache(object_info)
+    try:
+        rules_model, warnings = normalize_rules_model(
+            {
+                "version": 2,
+                "default_widgets_mode": "all",
+            }
+        )
+
+        assert warnings == []
+        rules_model = enrich_rules_with_object_info(rules_model, workflow)
+
+        dumped_rules = dump_resolved_rules(rules_model)
+        assert dumped_rules["nodes"]["1"]["widgets"]["value"] == {
+            "label": "value",
+            "control_after_generate": False,
+            "value_type": "int",
+            "default": 8,
+        }
+    finally:
+        set_object_info_cache(None)
+
+
+def test_resolved_workflow_rules_schema_snapshot_matches_generated_file():
+    schema_path = (
+        Path(__file__).resolve().parent.parent
+        / "services"
+        / "workflow_rules"
+        / "schema"
+        / "resolved_workflow_rules.schema.json"
+    )
+
+    expected = json.loads(schema_path.read_text(encoding="utf-8"))
+    actual = ResolvedWorkflowRules.model_json_schema()
+
+    assert actual == expected
 
 
 def test_derive_true_dimensions_from_short_edge():

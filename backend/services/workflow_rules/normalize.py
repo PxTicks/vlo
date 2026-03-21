@@ -3,6 +3,21 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
+from services.workflow_rules.schema import (
+    AuthoredWorkflowRulesV1,
+    AuthoredWorkflowRulesV2,
+    ResolvedWorkflowRules,
+    WorkflowRuleWarningModel,
+    compile_authored_v1_to_resolved,
+    compile_authored_v2_to_resolved,
+    default_resolved_rules_model,
+    dump_resolved_rules,
+    dump_warning_models,
+    validation_warnings_from_error,
+)
+
 
 WorkflowRuleWarning = dict[str, Any]
 WorkflowRules = dict[str, Any]
@@ -84,36 +99,11 @@ def _warning(
 
 
 def default_rules() -> WorkflowRules:
-    return {
-        "version": 1,
-        "nodes": {},
-        "validation": {
-            "inputs": [],
-        },
-        "derived_widgets": [],
-        "output_injections": {},
-        "slots": {},
-        "mask_cropping": {
-            "mode": "crop",
-        },
-        "postprocessing": {
-            "mode": "auto",
-            "panel_preview": "raw_outputs",
-            "on_failure": "fallback_raw",
-        },
-        "aspect_ratio_processing": {
-            "enabled": False,
-            "stride": 16,
-            "search_steps": 2,
-            "resolutions": [],
-            "target_nodes": [],
-            "postprocess": {
-                "enabled": True,
-                "mode": "stretch_exact",
-                "apply_to": "all_visual_outputs",
-            },
-        },
-    }
+    return dump_resolved_rules(default_resolved_rules_model())
+
+
+def default_rules_model() -> ResolvedWorkflowRules:
+    return default_resolved_rules_model()
 
 
 def _to_bool(value: Any, fallback: bool = False) -> bool:
@@ -370,7 +360,7 @@ def _normalize_legacy_input_condition(
     return normalized_rule
 
 
-def normalize_rules(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]:
+def _normalize_rules_dict(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]:
     warnings: list[WorkflowRuleWarning] = []
     rules = default_rules()
 
@@ -1335,26 +1325,94 @@ def normalize_rules(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]
     return rules, warnings
 
 
-def load_rules_for_workflow(
+def _warning_models_to_dicts(
+    warnings: list[WorkflowRuleWarningModel],
+) -> list[WorkflowRuleWarning]:
+    return dump_warning_models(warnings)
+
+
+def _resolved_rules_with_v1_validation(
+    rules: WorkflowRules,
+    warnings: list[WorkflowRuleWarning],
+) -> tuple[ResolvedWorkflowRules, list[WorkflowRuleWarningModel]]:
+    warning_models = [WorkflowRuleWarningModel.model_validate(warning) for warning in warnings]
+    try:
+        authored = AuthoredWorkflowRulesV1.model_validate(rules)
+        return compile_authored_v1_to_resolved(authored), warning_models
+    except ValidationError as exc:
+        warning_models.extend(
+            validation_warnings_from_error(
+                exc,
+                code="invalid_rules_schema",
+                message_prefix="Resolved workflow rules failed schema validation",
+            )
+        )
+        return default_resolved_rules_model(), warning_models
+
+
+def _resolved_rules_from_v2(
+    raw: Any,
+) -> tuple[ResolvedWorkflowRules, list[WorkflowRuleWarningModel]]:
+    try:
+        authored = AuthoredWorkflowRulesV2.model_validate(raw)
+    except ValidationError as exc:
+        return (
+            default_resolved_rules_model(),
+            validation_warnings_from_error(
+                exc,
+                code="invalid_rules_v2_schema",
+                message_prefix="Workflow rules v2 failed schema validation",
+            ),
+        )
+
+    try:
+        return compile_authored_v2_to_resolved(authored), []
+    except ValidationError as exc:
+        return (
+            default_resolved_rules_model(),
+            validation_warnings_from_error(
+                exc,
+                code="invalid_rules_v2_compilation",
+                message_prefix="Workflow rules v2 could not be compiled",
+            ),
+        )
+
+
+def normalize_rules_model(
+    raw: Any,
+) -> tuple[ResolvedWorkflowRules, list[WorkflowRuleWarningModel]]:
+    if isinstance(raw, dict) and raw.get("version") == 2:
+        return _resolved_rules_from_v2(raw)
+
+    normalized_rules, warnings = _normalize_rules_dict(raw)
+    return _resolved_rules_with_v1_validation(normalized_rules, warnings)
+
+
+def normalize_rules(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]:
+    resolved_rules, warning_models = normalize_rules_model(raw)
+    return dump_resolved_rules(resolved_rules), _warning_models_to_dicts(warning_models)
+
+
+def load_rules_model_for_workflow(
     workflows_dir: Path,
     workflow_filename: str | None,
     *,
     fallback_dirs: list[Path] | None = None,
-) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]:
-    warnings: list[WorkflowRuleWarning] = []
+) -> tuple[ResolvedWorkflowRules, list[WorkflowRuleWarningModel]]:
+    warnings: list[WorkflowRuleWarningModel] = []
     if not workflow_filename:
-        return default_rules(), warnings
+        return default_resolved_rules_model(), warnings
     if not isinstance(workflow_filename, str) or not _is_safe_workflow_filename(
         workflow_filename
     ):
         warnings.append(
-            _warning(
-                "invalid_workflow_id",
-                "workflow_id is invalid; skipping manual rules",
+            WorkflowRuleWarningModel(
+                code="invalid_workflow_id",
+                message="workflow_id is invalid; skipping manual rules",
                 details={"workflow_id": workflow_filename},
             )
         )
-        return default_rules(), warnings
+        return default_resolved_rules_model(), warnings
 
     # Search primary dir first, then any fallback dirs for the sidecar.
     sidecar_path = sidecar_path_for_workflow(workflows_dir, workflow_filename)
@@ -1366,32 +1424,46 @@ def load_rules_for_workflow(
                 break
 
     if not sidecar_path.exists():
-        return default_rules(), warnings
+        return default_resolved_rules_model(), warnings
 
     try:
         raw_rules = json.loads(sidecar_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         warnings.append(
-            _warning(
-                "invalid_rules_json",
-                "Rules sidecar JSON is malformed; defaults will be used",
+            WorkflowRuleWarningModel(
+                code="invalid_rules_json",
+                message="Rules sidecar JSON is malformed; defaults will be used",
                 details={"path": str(sidecar_path), "error": str(exc)},
             )
         )
-        return default_rules(), warnings
+        return default_resolved_rules_model(), warnings
     except OSError as exc:
         warnings.append(
-            _warning(
-                "rules_read_failed",
-                "Rules sidecar could not be read; defaults will be used",
+            WorkflowRuleWarningModel(
+                code="rules_read_failed",
+                message="Rules sidecar could not be read; defaults will be used",
                 details={"path": str(sidecar_path), "error": str(exc)},
             )
         )
-        return default_rules(), warnings
+        return default_resolved_rules_model(), warnings
 
-    normalized, normalize_warnings = normalize_rules(raw_rules)
+    normalized, normalize_warnings = normalize_rules_model(raw_rules)
     warnings.extend(normalize_warnings)
     return normalized, warnings
+
+
+def load_rules_for_workflow(
+    workflows_dir: Path,
+    workflow_filename: str | None,
+    *,
+    fallback_dirs: list[Path] | None = None,
+) -> tuple[WorkflowRules, list[WorkflowRuleWarning]]:
+    resolved_rules, warning_models = load_rules_model_for_workflow(
+        workflows_dir,
+        workflow_filename,
+        fallback_dirs=fallback_dirs,
+    )
+    return dump_resolved_rules(resolved_rules), _warning_models_to_dicts(warning_models)
 
 
 __all__ = [
@@ -1399,7 +1471,10 @@ __all__ = [
     "WorkflowRuleWarning",
     "WorkflowRules",
     "default_rules",
+    "default_rules_model",
+    "load_rules_model_for_workflow",
     "load_rules_for_workflow",
+    "normalize_rules_model",
     "normalize_rules",
     "sidecar_path_for_workflow",
 ]

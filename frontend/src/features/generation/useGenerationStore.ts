@@ -56,7 +56,6 @@ import {
 } from "./constants/inputNodeMap";
 import {
   buildWorkflowInputLookup,
-  getWorkflowInputId,
   getWorkflowInputValue,
   resolveWorkflowInputKeys,
 } from "./utils/workflowInputs";

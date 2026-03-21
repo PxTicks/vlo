@@ -34,8 +34,9 @@ from services.comfyui.comfyui_proxy import (
 from services.workflow_rules import (
     WorkflowValidationError,
     enrich_rules_with_object_info,
-    load_rules_for_workflow,
+    load_rules_model_for_workflow,
 )
+from services.workflow_rules.schema import dump_resolved_rules, dump_warning_models
 from services.workflow_rules.object_info import OBJECT_INFO_PATH, set_object_info_cache, build_input_node_map
 
 from routers.comfyui_compat import compat_router  # noqa: F401 -- re-exported for main.py
@@ -344,12 +345,12 @@ async def list_workflows():
                     continue
                 seen.add(path.name)
                 name = path.stem
-                rules, _ = load_rules_for_workflow(
+                rules, _ = load_rules_model_for_workflow(
                     WORKFLOWS_DIR, path.name,
                     fallback_dirs=[DEFAULT_WORKFLOWS_DIR],
                 )
-                if rules.get("name"):
-                    name = rules["name"]
+                if rules.name:
+                    name = rules.name
                 workflows.append({"id": path.name, "name": name})
 
         # Default dir – only add workflows not already seen.
@@ -360,9 +361,9 @@ async def list_workflows():
                 if path.name in seen:
                     continue
                 name = path.stem
-                rules, _ = load_rules_for_workflow(DEFAULT_WORKFLOWS_DIR, path.name)
-                if rules.get("name"):
-                    name = rules["name"]
+                rules, _ = load_rules_model_for_workflow(DEFAULT_WORKFLOWS_DIR, path.name)
+                if rules.name:
+                    name = rules.name
                 workflows.append({"id": path.name, "name": name})
 
         workflows.sort(key=lambda x: x["name"])
@@ -501,7 +502,7 @@ async def get_workflow_rules(filename: str):
         )
 
     try:
-        rules, warnings = load_rules_for_workflow(
+        rules_model, warnings = load_rules_model_for_workflow(
             WORKFLOWS_DIR, filename,
             fallback_dirs=[DEFAULT_WORKFLOWS_DIR],
         )
@@ -510,12 +511,13 @@ async def get_workflow_rules(filename: str):
         try:
             workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
             if isinstance(workflow, dict):
-                enrich_rules_with_object_info(rules, workflow)
+                rules_model = enrich_rules_with_object_info(rules_model, workflow)
             else:
                 logger.warning("[rules/%s] workflow is not a dict: %s", filename, type(workflow).__name__)
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("[rules/%s] Failed to read workflow for enrichment: %s", filename, exc)
 
+        rules = dump_resolved_rules(rules_model)
         nodes_with_widgets = {
             nid: list(nr.get("widgets", {}).keys())
             for nid, nr in rules.get("nodes", {}).items()
@@ -526,7 +528,7 @@ async def get_workflow_rules(filename: str):
         return {
             "workflow_id": filename,
             "rules": rules,
-            "warnings": warnings,
+            "warnings": dump_warning_models(warnings),
         }
     except OSError as exc:
         return error_response(

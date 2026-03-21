@@ -1,5 +1,6 @@
 import { isRecord } from "../parsers";
 import {
+  createDefaultWorkflowRules,
   DEFAULT_WORKFLOW_MASK_CROPPING,
   DEFAULT_WORKFLOW_POSTPROCESSING,
   type WorkflowAspectRatioProcessingConfig,
@@ -765,12 +766,12 @@ export function normalizeWorkflowRules(rawRules: unknown): {
   const derivedWidgets = normalizeDerivedWidgets(raw.derived_widgets, warnings);
 
   return {
-    rules: {
+    rules: createDefaultWorkflowRules({
       version,
       nodes,
       validation,
       ...(inputConditions ? { input_conditions: inputConditions } : {}),
-      ...(derivedWidgets ? { derived_widgets: derivedWidgets } : {}),
+      derived_widgets: derivedWidgets ?? [],
       output_injections: toStringRecord(
         raw.output_injections,
       ) as WorkflowRules["output_injections"],
@@ -780,7 +781,7 @@ export function normalizeWorkflowRules(rawRules: unknown): {
       ...(aspectRatioProcessing
         ? { aspect_ratio_processing: aspectRatioProcessing }
         : {}),
-    },
+    }),
     warnings,
   };
 }

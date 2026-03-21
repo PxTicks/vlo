@@ -5,8 +5,7 @@ import type {
   WorkflowMaskCroppingMode,
 } from "../types";
 import {
-  DEFAULT_WORKFLOW_MASK_CROPPING,
-  DEFAULT_WORKFLOW_POSTPROCESSING,
+  createDefaultWorkflowRules,
 } from "./workflowRules";
 import { normalizeWorkflowFilename } from "./workflowFilenames";
 import type {
@@ -457,22 +456,7 @@ export async function getWorkflowRules(
     await throwRequestError("Workflow rules fetch", resp);
   }
   const payload = (await resp.json()) as WorkflowRulesResponse;
-  if (!payload.rules) {
-    payload.rules = {
-      version: 1,
-      nodes: {},
-      output_injections: {},
-      slots: {},
-      mask_cropping: { ...DEFAULT_WORKFLOW_MASK_CROPPING },
-      postprocessing: { ...DEFAULT_WORKFLOW_POSTPROCESSING },
-    } as WorkflowRules;
-  }
-  if (!payload.rules.mask_cropping) {
-    payload.rules.mask_cropping = { ...DEFAULT_WORKFLOW_MASK_CROPPING };
-  }
-  if (!payload.rules.postprocessing) {
-    payload.rules.postprocessing = { ...DEFAULT_WORKFLOW_POSTPROCESSING };
-  }
+  payload.rules = createDefaultWorkflowRules(payload.rules ?? {});
   if (!Array.isArray(payload.warnings)) {
     payload.warnings = [];
   }

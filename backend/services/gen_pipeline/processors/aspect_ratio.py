@@ -5,6 +5,7 @@ from typing import Any
 
 from services.gen_pipeline.context import BackendPipelineContext
 from services.gen_pipeline.types import Processor, ProcessorMeta
+from services.workflow_rules.schema import has_pipeline_stage
 
 
 ApplyAspectRatioProcessingFn = Callable[
@@ -25,7 +26,7 @@ class _AspectRatioProcessor:
         self._apply_aspect_ratio_processing = apply_aspect_ratio_processing_fn
 
     def is_active(self, ctx: BackendPipelineContext) -> bool:
-        return True
+        return has_pipeline_stage(ctx.rules_model, "aspect_ratio") and not ctx.aspect_ratio_applied
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
         (
@@ -38,6 +39,7 @@ class _AspectRatioProcessor:
             ctx.target_resolution,
         )
         ctx.warnings.extend(aspect_ratio_processing_warnings)
+        ctx.aspect_ratio_applied = True
 
 
 def create_aspect_ratio_processor(

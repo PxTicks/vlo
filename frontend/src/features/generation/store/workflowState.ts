@@ -1,20 +1,12 @@
 import {
-  DEFAULT_WORKFLOW_MASK_CROPPING,
-  DEFAULT_WORKFLOW_POSTPROCESSING,
+  createDefaultWorkflowRules,
   resolvePresentedInputsFromRules,
   resolveWidgetInputsFromRules,
   type WorkflowRules,
 } from "../services/workflowRules";
 import type { WorkflowInput } from "../types";
 
-export const EMPTY_WORKFLOW_RULES: WorkflowRules = {
-  version: 1,
-  nodes: {},
-  output_injections: {},
-  slots: {},
-  mask_cropping: { ...DEFAULT_WORKFLOW_MASK_CROPPING },
-  postprocessing: { ...DEFAULT_WORKFLOW_POSTPROCESSING },
-};
+export const EMPTY_WORKFLOW_RULES: WorkflowRules = createDefaultWorkflowRules();
 
 export function applyPresentationRules(
   inferredInputs: WorkflowInput[],

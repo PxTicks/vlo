@@ -85,6 +85,7 @@ def build_backend_preprocessors(
             analyze_mask_video_bounds_fn,
             crop_video_fn,
             get_video_dimensions_fn,
+            apply_aspect_ratio_processing_fn,
         ),
         create_upload_media_processor(
             upload_video_bytes_fn,

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import sys
@@ -15,6 +16,8 @@ from services.gen_pipeline.processors import (  # noqa: E402
     build_backend_preprocessors,
     build_generation_processors,
 )
+from services.workflow_rules import normalize_rules_model  # noqa: E402
+from services.workflow_rules.schema import dump_resolved_rules  # noqa: E402
 
 
 async def _noop_upload_video_bytes(
@@ -128,3 +131,141 @@ def test_run_backend_postprocess_enriches_json_response_with_metadata():
     }
     assert payload["mask_crop_metadata"] == {"mode": "full"}
     assert isinstance(payload["processed_mask_video"], str)
+
+
+def test_v2_pipeline_runs_aspect_ratio_during_mask_crop_when_declared_first():
+    call_log: list[str] = []
+
+    def apply_aspect_ratio_processing(
+        _workflow: dict[str, Any],
+        _rules: dict[str, Any],
+        _target_aspect_ratio: str | None,
+        _target_resolution: Any,
+    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+        call_log.append("aspect_ratio")
+        return {"requested": {"aspect_ratio": "16:9"}}, []
+
+    rules_model, warnings = normalize_rules_model(
+        {
+            "version": 2,
+            "nodes": {
+                "2": {
+                    "binary_derived_mask_of": "1",
+                }
+            },
+            "pipeline": [
+                {"kind": "aspect_ratio", "enabled": True, "resolutions": [720]},
+                {"kind": "mask_cropping", "mode": "crop"},
+            ],
+        }
+    )
+    assert warnings == []
+
+    processors = build_backend_preprocessors(
+        workflows_dir=Path("."),
+        fallback_workflow_dirs=None,
+        input_node_map={},
+        analyze_mask_video_bounds_fn=lambda *_args, **_kwargs: (0, 0, 1, 1),
+        crop_video_fn=lambda video_bytes, _crop: video_bytes,
+        get_video_dimensions_fn=lambda _video_bytes: (1, 1),
+        upload_video_bytes_fn=_noop_upload_video_bytes,
+        apply_aspect_ratio_processing_fn=apply_aspect_ratio_processing,
+    )
+    mask_processor = next(
+        processor for processor in processors if processor.meta.name == "mask_crop"
+    )
+    aspect_ratio_processor = next(
+        processor for processor in processors if processor.meta.name == "aspect_ratio"
+    )
+
+    ctx = BackendPipelineContext(
+        client=cast(Any, None),
+        client_id="client-1",
+        workflow={},
+        rules=dump_resolved_rules(rules_model),
+        rules_model=rules_model,
+        buffered_videos={
+            "source": {"node_id": "1", "bytes": b"source"},
+            "mask": {"node_id": "2", "bytes": b"mask"},
+        },
+        target_aspect_ratio="16:9",
+        target_resolution=720,
+        mask_crop_dilation=0.2,
+    )
+
+    assert mask_processor.is_active(ctx) is True
+    assert aspect_ratio_processor.is_active(ctx) is True
+
+    asyncio.run(mask_processor.execute(ctx))
+
+    assert call_log == ["aspect_ratio"]
+    assert ctx.aspect_ratio_applied is True
+    assert ctx.aspect_ratio_metadata == {"requested": {"aspect_ratio": "16:9"}}
+    assert aspect_ratio_processor.is_active(ctx) is False
+
+
+def test_v2_pipeline_without_mask_stage_skips_mask_cropping_effects():
+    call_log: list[str] = []
+
+    def apply_aspect_ratio_processing(
+        _workflow: dict[str, Any],
+        _rules: dict[str, Any],
+        _target_aspect_ratio: str | None,
+        _target_resolution: Any,
+    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+        call_log.append("aspect_ratio")
+        return {"requested": {"aspect_ratio": "16:9"}}, []
+
+    rules_model, warnings = normalize_rules_model(
+        {
+            "version": 2,
+            "nodes": {
+                "2": {
+                    "binary_derived_mask_of": "1",
+                }
+            },
+            "pipeline": [
+                {"kind": "aspect_ratio", "enabled": True, "resolutions": [720]}
+            ],
+        }
+    )
+    assert warnings == []
+
+    processors = build_backend_preprocessors(
+        workflows_dir=Path("."),
+        fallback_workflow_dirs=None,
+        input_node_map={},
+        analyze_mask_video_bounds_fn=lambda *_args, **_kwargs: (0, 0, 1, 1),
+        crop_video_fn=lambda video_bytes, _crop: video_bytes,
+        get_video_dimensions_fn=lambda _video_bytes: (1, 1),
+        upload_video_bytes_fn=_noop_upload_video_bytes,
+        apply_aspect_ratio_processing_fn=apply_aspect_ratio_processing,
+    )
+    mask_processor = next(
+        processor for processor in processors if processor.meta.name == "mask_crop"
+    )
+    aspect_ratio_processor = next(
+        processor for processor in processors if processor.meta.name == "aspect_ratio"
+    )
+
+    ctx = BackendPipelineContext(
+        client=cast(Any, None),
+        client_id="client-1",
+        workflow={},
+        rules=dump_resolved_rules(rules_model),
+        rules_model=rules_model,
+        buffered_videos={
+            "source": {"node_id": "1", "bytes": b"source"},
+            "mask": {"node_id": "2", "bytes": b"mask"},
+        },
+        target_aspect_ratio="16:9",
+        target_resolution=720,
+        mask_crop_dilation=0.2,
+    )
+
+    asyncio.run(mask_processor.execute(ctx))
+
+    assert call_log == []
+    assert ctx.mask_crop_metadata == {"mode": "full"}
+    assert ctx.aspect_ratio_applied is False
+    assert aspect_ratio_processor.is_active(ctx) is True

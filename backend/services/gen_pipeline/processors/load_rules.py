@@ -4,7 +4,10 @@ from pathlib import Path
 
 from services.gen_pipeline.context import BackendPipelineContext
 from services.gen_pipeline.types import Processor, ProcessorMeta
-from services.workflow_rules import enrich_rules_with_object_info, load_rules_for_workflow
+from services.workflow_rules import (
+    enrich_rules_with_object_info,
+    load_rules_model_for_workflow,
+)
 
 
 class _LoadRulesProcessor:
@@ -23,14 +26,14 @@ class _LoadRulesProcessor:
         return True
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
-        rules, rule_load_warnings = load_rules_for_workflow(
+        rules_model, rule_load_warnings = load_rules_model_for_workflow(
             self._workflows_dir,
             ctx.workflow_id,
             fallback_dirs=self._fallback_dirs,
         )
-        ctx.warnings.extend(rule_load_warnings)
-        enrich_rules_with_object_info(rules, ctx.workflow)
-        ctx.rules = rules
+        ctx.warnings.extend(dump_warning.model_dump(exclude_none=True) for dump_warning in rule_load_warnings)
+        rules_model = enrich_rules_with_object_info(rules_model, ctx.workflow)
+        ctx.rules_model = rules_model
 
 
 def create_load_rules_processor(

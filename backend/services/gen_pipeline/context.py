@@ -1,94 +1,96 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
 from services.workflow_rules.mask_pairs import MaskCroppingMode
+from services.workflow_rules.schema import (
+    ResolvedWorkflowRules,
+    default_resolved_rules_model,
+    dump_resolved_rules,
+)
 
 
-@dataclass
 class BackendPipelineContext:
-    """Mutable context that flows through the backend generation pipeline.
+    """Mutable context that flows through the backend generation pipeline."""
 
-    Each processor reads from and writes to this context.  The runner
-    populates the input fields from ``GenerationInput`` before the
-    pipeline starts; processors populate the output fields as they run.
-    """
+    def __init__(
+        self,
+        *,
+        client: httpx.AsyncClient,
+        client_id: str,
+        workflow: dict[str, Any],
+        workflow_id: str | None = None,
+        target_aspect_ratio: str | None = None,
+        target_resolution: Any = None,
+        mask_crop_dilation: float | None = None,
+        mask_crop_mode: MaskCroppingMode | None = None,
+        injections: dict[str, dict[str, Any]] | None = None,
+        manual_slot_values: dict[str, Any] | None = None,
+        widget_overrides: dict[str, dict[str, Any]] | None = None,
+        derived_widget_values: dict[str, Any] | None = None,
+        widget_modes: dict[str, dict[str, str]] | None = None,
+        buffered_videos: dict[str, dict[str, Any]] | None = None,
+        graph_data: dict[str, Any] | None = None,
+        rules: dict[str, Any] | None = None,
+        rules_model: ResolvedWorkflowRules | None = None,
+        warnings: list[dict[str, Any]] | None = None,
+        provided_input_ids: set[str] | None = None,
+        applied_widget_values: dict[str, str] | None = None,
+        aspect_ratio_metadata: dict[str, Any] | None = None,
+        aspect_ratio_applied: bool = False,
+        mask_crop_metadata: dict[str, Any] | None = None,
+        processed_mask_bytes: bytes | None = None,
+        prompt_id: str | None = None,
+        comfyui_response: httpx.Response | None = None,
+    ) -> None:
+        self.client = client
+        self.client_id = client_id
+        self.workflow = workflow
+        self.workflow_id = workflow_id
+        self.target_aspect_ratio = target_aspect_ratio
+        self.target_resolution = target_resolution
+        self.mask_crop_dilation = mask_crop_dilation
+        self.mask_crop_mode = mask_crop_mode
+        self.injections = dict(injections or {})
+        self.manual_slot_values = dict(manual_slot_values or {})
+        self.widget_overrides = dict(widget_overrides or {})
+        self.derived_widget_values = dict(derived_widget_values or {})
+        self.widget_modes = dict(widget_modes or {})
+        self.buffered_videos = dict(buffered_videos or {})
+        self.graph_data = graph_data
+        self.warnings = list(warnings or [])
+        self.provided_input_ids = set(provided_input_ids or set())
+        self.applied_widget_values = dict(applied_widget_values or {})
+        self.aspect_ratio_metadata = aspect_ratio_metadata
+        self.aspect_ratio_applied = aspect_ratio_applied
+        self.mask_crop_metadata = mask_crop_metadata
+        self.processed_mask_bytes = processed_mask_bytes
+        self.prompt_id = prompt_id
+        self.comfyui_response = comfyui_response
 
-    # --- Inputs (populated before the runner starts) ---
+        self._rules_model = default_resolved_rules_model()
+        if rules_model is not None:
+            self.rules_model = rules_model
+        elif rules is not None:
+            self.rules = rules
 
-    client: httpx.AsyncClient
-    """HTTP client for ComfyUI communication."""
+    @property
+    def rules_model(self) -> ResolvedWorkflowRules:
+        return self._rules_model
 
-    client_id: str
-    """WebSocket client ID for ComfyUI prompt tracking."""
+    @rules_model.setter
+    def rules_model(self, value: ResolvedWorkflowRules | None) -> None:
+        self._rules_model = value if value is not None else default_resolved_rules_model()
 
-    workflow: dict[str, Any]
-    """The ComfyUI API-format workflow being assembled."""
+    @property
+    def rules(self) -> dict[str, Any]:
+        return dump_resolved_rules(self._rules_model)
 
-    workflow_id: str | None = None
-    """Filename of the active workflow (used to load sidecar rules)."""
-
-    target_aspect_ratio: str | None = None
-    """User-requested aspect ratio, e.g. '16:9'."""
-
-    target_resolution: Any = None
-    """User-requested resolution (long-edge pixels)."""
-
-    mask_crop_dilation: float | None = None
-    """Dilation factor for mask-crop preprocessing (0.0–1.0)."""
-
-    mask_crop_mode: MaskCroppingMode | None = None
-    """Optional runtime override for mask-crop preprocessing mode."""
-
-    injections: dict[str, dict[str, Any]] = field(default_factory=dict)
-    """Per-node value injections from the frontend (node_id → {param: value})."""
-
-    manual_slot_values: dict[str, Any] = field(default_factory=dict)
-    """Manual slot payloads keyed by slot ID."""
-
-    widget_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
-    """Frontend-supplied widget value overrides (node_id → {param: value})."""
-
-    derived_widget_values: dict[str, Any] = field(default_factory=dict)
-    """Frontend-supplied derived widget values keyed by derived widget ID."""
-
-    widget_modes: dict[str, dict[str, str]] = field(default_factory=dict)
-    """Widget control modes (node_id → {param: 'fixed' | 'randomize'})."""
-
-    buffered_videos: dict[str, dict[str, Any]] = field(default_factory=dict)
-    """Video bytes awaiting upload (input_id → {node_id, param, bytes, ...})."""
-
-    graph_data: dict[str, Any] | None = None
-    """Visual-format workflow graph (for embedding in output file metadata via extra_pnginfo)."""
-
-    # --- Accumulated state (processors write to these) ---
-
-    rules: dict[str, Any] = field(default_factory=dict)
-    """Normalized workflow rules (populated by the rules processor)."""
-
-    warnings: list[dict[str, Any]] = field(default_factory=list)
-    """Accumulated pipeline warnings."""
-
-    provided_input_ids: set[str] = field(default_factory=set)
-    """Normalized set of input IDs the current request is considered to provide."""
-
-    applied_widget_values: dict[str, str] = field(default_factory=dict)
-    """Final widget values after overrides and randomization (node_id:param → value)."""
-
-    aspect_ratio_metadata: dict[str, Any] | None = None
-    """Aspect ratio processing result metadata (returned to frontend for postprocessing)."""
-
-    mask_crop_metadata: dict[str, Any] | None = None
-    """Mask crop processing result metadata (returned to frontend for generation metadata)."""
-
-    processed_mask_bytes: bytes | None = None
-    """Processed mask video bytes (after crop if applicable), returned to frontend for asset ingestion."""
-
-    prompt_id: str | None = None
-    """ComfyUI prompt ID (set after submission)."""
-
-    comfyui_response: httpx.Response | None = None
-    """Raw ComfyUI response (set after submission)."""
+    @rules.setter
+    def rules(self, value: dict[str, Any] | None) -> None:
+        if value is None:
+            self._rules_model = default_resolved_rules_model()
+            return
+        self._rules_model = ResolvedWorkflowRules.model_validate(value)

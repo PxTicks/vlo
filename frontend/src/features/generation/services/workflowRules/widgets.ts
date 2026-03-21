@@ -4,11 +4,11 @@ import { toFiniteNumber, toPositiveInteger } from "./shared";
 import type {
   DerivedWorkflowWidgetInput,
   WidgetInputConfig,
-  WorkflowParamReference,
   WorkflowWidgetInput,
 } from "../../types";
 import type {
   WorkflowDualSamplerDenoiseRule,
+  WorkflowParamReference,
   WorkflowRules,
 } from "./types";
 
@@ -19,7 +19,7 @@ function getWorkflowParamValue(
   workflow: Record<string, unknown>,
   ref: WorkflowParamReference,
 ): unknown {
-  const node = workflow[ref.nodeId];
+  const node = workflow[ref.node_id];
   if (!isRecord(node)) return null;
   const inputs = isRecord(node.inputs) ? node.inputs : {};
   return inputs[ref.param];

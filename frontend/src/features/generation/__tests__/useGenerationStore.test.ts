@@ -4,7 +4,10 @@ import type { WorkflowInput } from "../types";
 import * as comfyApi from "../services/comfyuiApi";
 import type { ComfyUIWebSocket } from "../services/ComfyUIWebSocket";
 import type { GenerationJob } from "../types";
-import type { WorkflowRules } from "../services/workflowRules";
+import {
+  createDefaultWorkflowRules,
+  type WorkflowRules,
+} from "../services/workflowRules";
 import { useProjectStore } from "../../project";
 
 const { mockGetRuntimeStatus } = vi.hoisted(() => ({
@@ -45,19 +48,7 @@ function makeRunningJob(id: string): GenerationJob {
 function makeWorkflowRules(
   overrides: Partial<WorkflowRules> = {},
 ): WorkflowRules {
-  return {
-    version: 1,
-    nodes: {},
-    output_injections: {},
-    slots: {},
-    mask_cropping: { mode: "crop" },
-    postprocessing: {
-      mode: "auto",
-      panel_preview: "raw_outputs",
-      on_failure: "fallback_raw",
-    },
-    ...overrides,
-  };
+  return createDefaultWorkflowRules(overrides);
 }
 
 describe("useGenerationStore workflow rules", () => {

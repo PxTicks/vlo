@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useGenerationStore } from "../useGenerationStore";
 import type { WorkflowInput } from "../types";
 import * as comfyApi from "../services/comfyuiApi";
+import { createDefaultWorkflowRules } from "../services/workflowRules";
 
 function makeInputs(): WorkflowInput[] {
   return [
@@ -149,18 +150,7 @@ describe("useGenerationStore workflow editor sync", () => {
     });
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
-      rules: {
-        version: 1,
-        nodes: {},
-        output_injections: {},
-        slots: {},
-        mask_cropping: { mode: "crop" },
-        postprocessing: {
-          mode: "auto",
-          panel_preview: "raw_outputs",
-          on_failure: "fallback_raw",
-        },
-      },
+      rules: createDefaultWorkflowRules(),
       warnings: [],
     });
 
@@ -179,18 +169,7 @@ describe("useGenerationStore workflow editor sync", () => {
     vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({});
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
-      rules: {
-        version: 1,
-        nodes: {},
-        output_injections: {},
-        slots: {},
-        mask_cropping: { mode: "crop" },
-        postprocessing: {
-          mode: "auto",
-          panel_preview: "raw_outputs",
-          on_failure: "fallback_raw",
-        },
-      },
+      rules: createDefaultWorkflowRules(),
       warnings: [],
     });
 

@@ -8,6 +8,7 @@ from typing import Any
 from services.gen_pipeline.processors.utils.aspect_ratio_processing import _parse_aspect_ratio
 from services.gen_pipeline.context import BackendPipelineContext
 from services.gen_pipeline.types import Processor, ProcessorMeta
+from services.workflow_rules.schema import has_pipeline_stage, pipeline_stage_precedes
 from services.workflow_rules import collect_mask_crop_pairs
 from services.workflow_rules.mask_pairs import collect_mask_crop_pairs as _collect_pairs_raw
 
@@ -52,18 +53,42 @@ class _MaskCropProcessor:
         analyze_mask_video_bounds_fn: Callable[..., Any],
         crop_video_fn: Callable[[bytes, tuple[int, int, int, int]], bytes],
         get_video_dimensions_fn: Callable[[bytes], tuple[int, int]],
+        apply_aspect_ratio_processing_fn: Callable[..., Any] | None = None,
     ):
         self._analyze_mask_video_bounds = analyze_mask_video_bounds_fn
         self._crop_video = crop_video_fn
         self._get_video_dimensions = get_video_dimensions_fn
+        self._apply_aspect_ratio_processing = apply_aspect_ratio_processing_fn
 
     def is_active(self, ctx: BackendPipelineContext) -> bool:
         return bool(ctx.buffered_videos) and _has_mask_relations(ctx.rules)
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
+        if (
+            self._apply_aspect_ratio_processing is not None
+            and has_pipeline_stage(ctx.rules_model, "aspect_ratio")
+            and has_pipeline_stage(ctx.rules_model, "mask_cropping")
+            and pipeline_stage_precedes(ctx.rules_model, "aspect_ratio", "mask_cropping")
+            and not ctx.aspect_ratio_applied
+        ):
+            (
+                ctx.aspect_ratio_metadata,
+                aspect_ratio_processing_warnings,
+            ) = self._apply_aspect_ratio_processing(
+                ctx.workflow,
+                ctx.rules,
+                ctx.target_aspect_ratio,
+                ctx.target_resolution,
+            )
+            ctx.warnings.extend(aspect_ratio_processing_warnings)
+            ctx.aspect_ratio_applied = True
+
+        mask_stage_enabled = has_pipeline_stage(ctx.rules_model, "mask_cropping")
+
         # Check if cropping is enabled (mode is "crop" and dilation is set)
         should_crop = (
-            ctx.mask_crop_dilation is not None
+            mask_stage_enabled
+            and ctx.mask_crop_dilation is not None
             and ctx.mask_crop_dilation >= 0
             and bool(collect_mask_crop_pairs(ctx.rules, ctx.mask_crop_mode))
         )
@@ -201,11 +226,13 @@ def create_mask_crop_processor(
     analyze_mask_video_bounds_fn: Callable[..., Any],
     crop_video_fn: Callable[[bytes, tuple[int, int, int, int]], bytes],
     get_video_dimensions_fn: Callable[[bytes], tuple[int, int]],
+    apply_aspect_ratio_processing_fn: Callable[..., Any] | None = None,
 ) -> Processor:
     return _MaskCropProcessor(
         analyze_mask_video_bounds_fn,
         crop_video_fn,
         get_video_dimensions_fn,
+        apply_aspect_ratio_processing_fn,
     )
 
 

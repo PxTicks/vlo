@@ -24,6 +24,8 @@ from services.workflow_rules.node_parsing import (
     merge_widget_entries_with_object_info,
 )
 from services.workflow_rules.normalize import WorkflowRules
+from services.workflow_rules.schema import ResolvedWorkflowRules
+from services.workflow_rules.schema import dump_resolved_rules
 
 
 log = logging.getLogger(__name__)
@@ -218,9 +220,9 @@ def _extract_node_info(workflow_data: dict[str, Any]) -> dict[str, _NodeInfo]:
 
 
 def enrich_rules_with_object_info(
-    rules: WorkflowRules,
+    rules: WorkflowRules | ResolvedWorkflowRules,
     workflow_data: dict[str, Any],
-) -> None:
+) -> WorkflowRules | ResolvedWorkflowRules:
     """Resolve widget metadata via object_info.
 
     object_info is treated as the primary source of truth for widget data.
@@ -230,12 +232,13 @@ def enrich_rules_with_object_info(
     - With ``widgets_mode = 'all'``, this exposes all editable widget params
       for the node and overlays any explicit per-widget overrides.
 
-    Mutates *rules* in place.
+    Dict inputs are mutated in place and returned. Model inputs return a new
+    resolved model with the enrichment applied.
     """
     object_info = _load_object_info()
     if not object_info:
         log.warning("[enrich] object_info is empty or failed to load")
-        return
+        return rules
 
     node_infos = _extract_node_info(workflow_data)
     log.info("[enrich] Extracted %d node infos from workflow", len(node_infos))
@@ -243,9 +246,23 @@ def enrich_rules_with_object_info(
         log.warning(
             "[enrich] No node infos extracted — workflow format may be unrecognized"
         )
-        return
+        return rules
 
-    nodes_rules = rules.setdefault("nodes", {})
+    rules_model = rules if isinstance(rules, ResolvedWorkflowRules) else None
+    runtime_defaults = (
+        {
+            "default_widgets_mode": rules_model._default_widgets_mode,
+            "pipeline_stage_order": rules_model._pipeline_stage_order,
+            "has_explicit_pipeline": rules_model._has_explicit_pipeline,
+        }
+        if rules_model is not None
+        else None
+    )
+    rules_dict = dump_resolved_rules(rules_model) if rules_model is not None else rules
+    nodes_rules = rules_dict.setdefault("nodes", {})
+    default_widgets_mode = (
+        runtime_defaults["default_widgets_mode"] if runtime_defaults is not None else None
+    )
     discovered_count = 0
 
     # Resolve node policies once — maps discovery to display/processing actions.
@@ -273,7 +290,8 @@ def enrich_rules_with_object_info(
         widgets_mode = existing.get("widgets_mode")
         if not isinstance(widgets_mode, str):
             widgets_mode = node_policies[node_id].get(
-                "widgets_mode", WIDGETS_MODE_CONTROL_AFTER_GENERATE
+                "widgets_mode",
+                default_widgets_mode or WIDGETS_MODE_CONTROL_AFTER_GENERATE,
             )
         include_all_widgets = widgets_mode == WIDGETS_MODE_ALL
 
@@ -320,7 +338,18 @@ def enrich_rules_with_object_info(
         "[enrich] Total nodes with auto-discovered widgets: %d", discovered_count
     )
 
-    _apply_ar_target_policies(rules, node_infos, node_policies)
+    _apply_ar_target_policies(rules_dict, node_infos, node_policies)
+
+    if rules_model is not None and runtime_defaults is not None:
+        refreshed = ResolvedWorkflowRules.model_validate(rules_dict)
+        refreshed.set_runtime_defaults(
+            default_widgets_mode=runtime_defaults["default_widgets_mode"],
+            pipeline_stage_order=runtime_defaults["pipeline_stage_order"],
+            has_explicit_pipeline=runtime_defaults["has_explicit_pipeline"],
+        )
+        return refreshed
+
+    return rules_dict
 
 
 def _apply_ar_target_policies(
@@ -336,7 +365,7 @@ def _apply_ar_target_policies(
     if not isinstance(ar_cfg, dict) or not ar_cfg.get("enabled"):
         return
 
-    target_nodes: list[dict[str, str]] = ar_cfg.get("target_nodes", [])
+    target_nodes = ar_cfg.get("target_nodes")
     if not isinstance(target_nodes, list):
         target_nodes = []
         ar_cfg["target_nodes"] = target_nodes
@@ -355,11 +384,13 @@ def _apply_ar_target_policies(
         if not policy.get("ar_target"):
             continue
 
-        target_nodes.append({
-            "node_id": node_id,
-            "width_param": policy.get("ar_width_param", "width"),
-            "height_param": policy.get("ar_height_param", "height"),
-        })
+        target_nodes.append(
+            {
+                "node_id": node_id,
+                "width_param": policy.get("ar_width_param", "width"),
+                "height_param": policy.get("ar_height_param", "height"),
+            }
+        )
         discovered += 1
         log.info(
             "[enrich] Auto-discovered AR target node %s (%s)",

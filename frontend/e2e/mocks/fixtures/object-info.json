@@ -1,0 +1,20 @@
+{
+  "LTXVLoader": {
+    "input": { "required": { "model": [["ltx-video-2b-v0.9.1.safetensors"]] } },
+    "output": ["MODEL"],
+    "name": "LTXVLoader",
+    "category": "loaders"
+  },
+  "KSampler": {
+    "input": { "required": { "seed": ["INT", { "default": 0 }] } },
+    "output": ["LATENT"],
+    "name": "KSampler",
+    "category": "sampling"
+  },
+  "SaveAnimatedWEBP": {
+    "input": { "required": { "fps": ["INT", { "default": 24 }] } },
+    "output": [],
+    "name": "SaveAnimatedWEBP",
+    "category": "image/animation"
+  }
+}

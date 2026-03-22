@@ -1,0 +1,18 @@
+{
+  "1": {
+    "class_type": "LTXVLoader",
+    "inputs": { "model": "ltx-video-2b-v0.9.1.safetensors" }
+  },
+  "2": {
+    "class_type": "LTXVScheduler",
+    "inputs": { "steps": 30, "cfg": 3.5 }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": { "seed": 0 }
+  },
+  "4": {
+    "class_type": "SaveAnimatedWEBP",
+    "inputs": { "fps": 24 }
+  }
+}

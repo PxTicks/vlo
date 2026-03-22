@@ -1,0 +1,20 @@
+{
+  "workflow_id": "video_ltx2_3_i2v",
+  "rules": {
+    "version": 1,
+    "nodes": {},
+    "output_injections": {},
+    "slots": {},
+    "mask_cropping": {
+      "mode": "crop",
+      "crop_node_id": null,
+      "mask_node_id": null
+    },
+    "postprocessing": {
+      "mode": "auto",
+      "panel_preview": "first_output",
+      "on_failure": "keep_raw"
+    }
+  },
+  "warnings": []
+}

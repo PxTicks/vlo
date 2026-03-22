@@ -22,6 +22,7 @@ from services.workflow_rules.node_parsing import (
     build_widget_entries_for_class,
     get_widget_value_index_map as _get_widget_value_index_map_core,
     merge_widget_entries_with_object_info,
+    resolve_widget_param_metadata,
 )
 from services.workflow_rules.normalize import WorkflowRules
 from services.workflow_rules.schema import ResolvedWorkflowRules
@@ -314,10 +315,19 @@ def enrich_rules_with_object_info(
                 discovered_widgets,
             )
         elif isinstance(existing_widgets, dict):
-            if discovered_widgets:
+            enrichment_source = dict(discovered_widgets) if discovered_widgets else {}
+            unenriched = {
+                name for name, entry in existing_widgets.items()
+                if isinstance(entry, dict) and name not in enrichment_source
+            }
+            if unenriched:
+                enrichment_source.update(
+                    resolve_widget_param_metadata(info.class_type, object_info, unenriched)
+                )
+            if enrichment_source:
                 existing["widgets"] = merge_widget_entries_with_object_info(
                     existing_widgets,
-                    discovered_widgets,
+                    enrichment_source,
                 )
         elif discovered_widgets:
             existing["widgets"] = discovered_widgets

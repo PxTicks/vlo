@@ -382,6 +382,42 @@ def build_widget_entries_for_class(
     return discovered if discovered else None
 
 
+def resolve_widget_param_metadata(
+    class_type: str,
+    object_info: dict[str, Any],
+    param_names: set[str],
+) -> dict[str, dict[str, Any]]:
+    """Resolve widget metadata for specific param names from raw object_info.
+
+    Looks up each requested param directly in the class spec, bypassing
+    discovery policy.  Returns entries keyed by param name with value_type,
+    min, max, default, and options where applicable.
+    """
+    class_info = object_info.get(class_type)
+    if not isinstance(class_info, dict):
+        return {}
+
+    result: dict[str, dict[str, Any]] = {}
+    for param_name, type_spec, opts in iter_all_params(class_info):
+        if param_name not in param_names:
+            continue
+        value_type = _widget_value_type_from_type_spec(type_spec)
+        if value_type is None:
+            continue
+        entry: dict[str, Any] = {"value_type": value_type}
+        enum_options = _coerce_widget_options(type_spec)
+        if enum_options:
+            entry["options"] = enum_options
+        for num_key in ("min", "max"):
+            val = opts.get(num_key)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                entry[num_key] = val
+        if "default" in opts:
+            entry["default"] = opts["default"]
+        result[param_name] = entry
+    return result
+
+
 def merge_widget_entries_with_object_info(
     existing_widgets: dict[str, Any],
     object_info_widgets: dict[str, dict[str, Any]],
@@ -397,7 +433,7 @@ def merge_widget_entries_with_object_info(
             for key in ("value_type", "options"):
                 if key in enriched:
                     entry[key] = enriched[key]
-            for key in ("group_id", "group_title", "group_order"):
+            for key in ("min", "max", "default", "group_id", "group_title", "group_order"):
                 if key in enriched and key not in entry:
                     entry[key] = enriched[key]
         merged[param_name] = entry
@@ -410,4 +446,5 @@ __all__ = [
     "get_widget_value_index_map",
     "merge_widget_entries_with_object_info",
     "parse_node_inputs",
+    "resolve_widget_param_metadata",
 ]

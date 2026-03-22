@@ -2633,3 +2633,131 @@ async def test_generate_skips_aspect_ratio_processing_when_target_missing(
     prompt = fake_comfy_client.prompt_payload["prompt"]
     assert prompt["49"]["inputs"]["width"] == 720
     assert prompt["49"]["inputs"]["height"] == 720
+
+
+def test_enrich_sidecar_widget_not_in_discovery_resolves_type_from_object_info():
+    """Sidecar-declared widgets that discovery would skip (e.g. non-CAG params)
+    should still have their value_type, min, max, and default resolved from
+    object_info."""
+    workflow = {
+        "nodes": [
+            {
+                "id": 67,
+                "type": "WanFirstLastFrameToVideo",
+                "title": "WanFirstLastFrameToVideo",
+                "widgets_values": [832, 480, 81, 1],
+            }
+        ]
+    }
+    rules: dict[str, Any] = {
+        "version": 1,
+        "nodes": {
+            "67": {
+                "widgets": {
+                    "length": {},
+                }
+            }
+        },
+        "output_injections": {},
+        "slots": {},
+        "mask_cropping": {"mode": "crop"},
+        "postprocessing": {
+            "mode": "auto",
+            "panel_preview": "raw_outputs",
+            "on_failure": "fallback_raw",
+        },
+    }
+    object_info = {
+        "WanFirstLastFrameToVideo": {
+            "input": {
+                "required": {
+                    "positive": ["CONDITIONING"],
+                    "negative": ["CONDITIONING"],
+                    "vae": ["VAE"],
+                    "width": ["INT", {"default": 832, "min": 16, "max": 16384, "step": 16}],
+                    "height": ["INT", {"default": 480, "min": 16, "max": 16384, "step": 16}],
+                    "length": ["INT", {"default": 81, "min": 1, "max": 16384, "step": 4}],
+                    "batch_size": ["INT", {"default": 1, "min": 1, "max": 4096}],
+                },
+                "optional": {},
+            },
+            "input_order": {
+                "required": [
+                    "positive", "negative", "vae",
+                    "width", "height", "length", "batch_size",
+                ],
+                "optional": [],
+            },
+        }
+    }
+
+    set_object_info_cache(object_info)
+    try:
+        enrich_rules_with_object_info(rules, workflow)
+    finally:
+        set_object_info_cache(None)
+
+    length = rules["nodes"]["67"]["widgets"]["length"]
+    assert length["value_type"] == "int"
+    assert length["min"] == 1
+    assert length["max"] == 16384
+    assert length["default"] == 81
+
+
+def test_enrich_sidecar_widget_overrides_take_precedence_over_object_info():
+    """When the sidecar explicitly sets min/max/default, those should not be
+    overwritten by object_info values."""
+    workflow = {
+        "nodes": [
+            {
+                "id": 10,
+                "type": "ExampleNode",
+                "title": "ExampleNode",
+                "widgets_values": [50],
+            }
+        ]
+    }
+    rules: dict[str, Any] = {
+        "version": 1,
+        "nodes": {
+            "10": {
+                "widgets": {
+                    "count": {"min": 10, "max": 200, "default": 50},
+                }
+            }
+        },
+        "output_injections": {},
+        "slots": {},
+        "mask_cropping": {"mode": "crop"},
+        "postprocessing": {
+            "mode": "auto",
+            "panel_preview": "raw_outputs",
+            "on_failure": "fallback_raw",
+        },
+    }
+    object_info = {
+        "ExampleNode": {
+            "input": {
+                "required": {
+                    "count": ["INT", {"default": 1, "min": 0, "max": 9999}],
+                },
+                "optional": {},
+            },
+            "input_order": {
+                "required": ["count"],
+                "optional": [],
+            },
+        }
+    }
+
+    set_object_info_cache(object_info)
+    try:
+        enrich_rules_with_object_info(rules, workflow)
+    finally:
+        set_object_info_cache(None)
+
+    count = rules["nodes"]["10"]["widgets"]["count"]
+    assert count["value_type"] == "int"
+    assert count["min"] == 10
+    assert count["max"] == 200
+    assert count["default"] == 50

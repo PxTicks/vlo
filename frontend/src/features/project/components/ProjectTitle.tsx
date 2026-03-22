@@ -44,6 +44,7 @@ export function ProjectTitle() {
           autoFocus
           onBlur={save}
           onChange={(e) => setTempTitle(e.target.value)}
+          data-testid="project-title-input"
           onKeyDown={handleKeyDown}
           slotProps={{
             input: {
@@ -76,6 +77,7 @@ export function ProjectTitle() {
             borderRadius: 1,
             "&:hover": { bgcolor: "rgba(255,255,255, 0.1)" },
           }}
+          data-testid="project-title-display"
         >
           {project.title}
         </Typography>

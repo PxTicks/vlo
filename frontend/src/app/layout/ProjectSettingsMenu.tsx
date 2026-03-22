@@ -65,6 +65,8 @@ export function ProjectSettingsMenu() {
         onClick={handleClick}
         size="small"
         sx={{ ml: 1, color: "rgba(255, 255, 255, 0.7)" }}
+        data-testid="project-settings-button"
+        aria-label="Project Settings"
       >
         <SettingsIcon fontSize="small" />
       </IconButton>

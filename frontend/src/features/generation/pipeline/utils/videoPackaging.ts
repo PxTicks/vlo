@@ -1,10 +1,10 @@
 /**
- * Frame+audio stitching into a WebM video for the generation pipeline.
+ * Frame+audio stitching into an MP4 video for the generation pipeline.
  */
 
 import {
   Output,
-  WebMOutputFormat,
+  Mp4OutputFormat,
   BufferTarget,
   CanvasSource,
   AudioBufferSource,
@@ -55,12 +55,12 @@ export async function packageFramesAndAudioToVideo(
 
   const bufferTarget = new BufferTarget();
   const output = new Output({
-    format: new WebMOutputFormat(),
+    format: new Mp4OutputFormat({ fastStart: "in-memory" }),
     target: bufferTarget,
   });
 
   const videoSource = new CanvasSource(canvas, {
-    codec: "vp9",
+    codec: "avc",
     bitrate: 6_000_000,
     latencyMode: "quality",
   });
@@ -105,9 +105,9 @@ export async function packageFramesAndAudioToVideo(
 
   return new File(
     [bufferTarget.buffer],
-    `generation-packaged-${Date.now()}.webm`,
+    `generation-packaged-${Date.now()}.mp4`,
     {
-      type: "video/webm",
+      type: "video/mp4",
       lastModified: Date.now(),
     },
   );

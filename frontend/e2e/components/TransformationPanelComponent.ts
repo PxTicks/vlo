@@ -3,19 +3,22 @@ import { Page, Locator } from '@playwright/test';
 /**
  * Component Object Model for the Transformation Panel.
  * Wraps: TransformationPanel.tsx
- *
- * Note: Requires data-testid attributes to be added to TransformationPanel.tsx in Phase 6.
- * For now, uses role-based and text-based locators where possible.
  */
 export class TransformationPanelComponent {
     readonly page: Page;
+    readonly panel: Locator;
 
     constructor(page: Page) {
         this.page = page;
+        this.panel = page.getByTestId('transformation-panel');
     }
 
     get addButton() {
-        return this.page.getByRole('button', { name: 'Add Transformation' });
+        return this.page.getByTestId('transformation-add-button');
+    }
+
+    get addMenu() {
+        return this.page.getByTestId('transformation-add-menu');
     }
 
     async addTransform(type: string) {

@@ -173,6 +173,7 @@ export function TransformationPanel() {
 
   return (
     <Box
+      data-testid="transformation-panel"
       sx={{
         display: "flex",
         flexDirection: "column",
@@ -314,6 +315,7 @@ export function TransformationPanel() {
 
         <Box sx={{ mt: 2, px: 2, pb: 2 }}>
           <Button
+            data-testid="transformation-add-button"
             fullWidth
             variant="outlined"
             startIcon={<Add />}
@@ -335,6 +337,7 @@ export function TransformationPanel() {
           </Button>
 
           <Menu
+            data-testid="transformation-add-menu"
             anchorEl={anchorEl}
             open={Boolean(anchorEl)}
             onClose={handleCloseAddMenu}

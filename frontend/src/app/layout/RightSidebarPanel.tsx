@@ -55,6 +55,7 @@ function RightSidebarPanelComponent() {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <Tabs
+        data-testid="right-sidebar-tabs"
         value={visibleTab}
         onChange={(_, v: RightSidebarTab) => setActiveTab(v)}
         textColor="primary"
@@ -65,9 +66,9 @@ function RightSidebarPanelComponent() {
           "& .MuiTab-root": { minHeight: 40, textTransform: "none" },
         }}
       >
-        <Tab label="Generate" value="generate" />
-        {hasSelection && <Tab label="Transform" value="transform" />}
-        {hasSelection && <Tab label="Mask" value="mask" />}
+        <Tab data-testid="right-sidebar-tab-generate" label="Generate" value="generate" />
+        {hasSelection && <Tab data-testid="right-sidebar-tab-transform" label="Transform" value="transform" />}
+        {hasSelection && <Tab data-testid="right-sidebar-tab-mask" label="Mask" value="mask" />}
       </Tabs>
       <Box sx={{ flexGrow: 1, position: "relative", overflow: "hidden" }}>
         <TabPanel active={visibleTab === "generate"}>

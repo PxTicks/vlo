@@ -12,6 +12,7 @@ import {
   toSelectionConfig,
   toWorkflowInputType,
 } from "./shared";
+import { isRecord } from "../parsers";
 import { buildWorkflowInputId, getWorkflowInputId } from "../../utils/workflowInputs";
 
 function hasPresentOverrides(

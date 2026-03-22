@@ -554,42 +554,6 @@ describe("resolvePresentedInputs", () => {
     });
   });
 
-  it("reports unsupported frame_batch slots and skips materialization", () => {
-    const result = resolvePresentedInputs(makeInferredInputs(), {
-      version: 1,
-      nodes: {},
-      output_injections: {
-        "144": {
-          "0": {
-            source: {
-              kind: "manual_slot",
-              slot_id: "control_frames",
-            },
-          },
-        },
-      },
-      slots: {
-        control_frames: {
-          input_type: "frame_batch",
-          label: "Control Frames",
-          export_fps: 16,
-          frame_step: 4,
-          max_frames: 81,
-        },
-      },
-    });
-
-    const slotInput = result.inputs.find(
-      (input) => input.nodeId === "slot:control_frames",
-    );
-    expect(slotInput).toBeUndefined();
-    expect(
-      result.presentationWarnings.some(
-        (warning) => warning.code === "unsupported_slot_input_type",
-      ),
-    ).toBe(true);
-  });
-
   it("keeps widget datatype metadata from rules", () => {
     const workflow = {
       "145": {

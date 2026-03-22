@@ -1291,19 +1291,6 @@ def _normalize_rules_dict(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWar
                     continue
                 normalized_source["node_id"] = source_node_id
                 normalized_source["output_index"] = source_output_index
-            elif kind == "manual_slot":
-                slot_id = source.get("slot_id")
-                if not isinstance(slot_id, str):
-                    warnings.append(
-                        _warning(
-                            "invalid_manual_slot_source",
-                            "manual_slot source requires slot_id (string)",
-                            node_id=target_node_id,
-                            output_index=output_index,
-                        )
-                    )
-                    continue
-                normalized_source["slot_id"] = slot_id
             else:
                 warnings.append(
                     _warning(

@@ -594,7 +594,6 @@ async def generate(request: Request):
 
     # --- Collect injections from form fields ---
     injections: dict[str, dict[str, Any]] = {}
-    manual_slot_values: dict[str, Any] = {}
     workflow_warnings: list[dict[str, Any]] = []
 
     # --- Collect widget overrides from form fields ---
@@ -624,68 +623,6 @@ async def generate(request: Request):
     node_map = _resolve_input_node_map()
 
     for key, value in form.multi_items():
-        if key.startswith("slot_text_"):
-            slot_id = key[len("slot_text_"):]
-            if isinstance(value, str):
-                manual_slot_values[slot_id] = value
-            else:
-                manual_slot_values[slot_id] = str(value)
-            continue
-
-        if key.startswith("slot_image_"):
-            slot_id = key[len("slot_image_"):]
-            filename, upload_warning = await upload_form_media_to_comfy(
-                client,
-                value,
-                "image",
-            )
-            if upload_warning:
-                upload_warning["details"] = {
-                    **(upload_warning.get("details") or {}),
-                    "slot_id": slot_id,
-                }
-                workflow_warnings.append(upload_warning)
-                continue
-            if filename:
-                manual_slot_values[slot_id] = filename
-            continue
-
-        if key.startswith("slot_video_"):
-            slot_id = key[len("slot_video_"):]
-            filename, upload_warning = await upload_form_media_to_comfy(
-                client,
-                value,
-                "video",
-            )
-            if upload_warning:
-                upload_warning["details"] = {
-                    **(upload_warning.get("details") or {}),
-                    "slot_id": slot_id,
-                }
-                workflow_warnings.append(upload_warning)
-                continue
-            if filename:
-                manual_slot_values[slot_id] = filename
-            continue
-
-        if key.startswith("slot_audio_"):
-            slot_id = key[len("slot_audio_"):]
-            filename, upload_warning = await upload_form_media_to_comfy(
-                client,
-                value,
-                "audio",
-            )
-            if upload_warning:
-                upload_warning["details"] = {
-                    **(upload_warning.get("details") or {}),
-                    "slot_id": slot_id,
-                }
-                workflow_warnings.append(upload_warning)
-                continue
-            if filename:
-                manual_slot_values[slot_id] = filename
-            continue
-
         # widget_mode_<nodeId>_<param> -> fixed|randomize
         if key.startswith("widget_mode_"):
             parsed = parse_widget_form_key(key[len("widget_mode_"):])
@@ -832,7 +769,6 @@ async def generate(request: Request):
         mask_crop_dilation=mask_crop_dilation,
         mask_crop_mode=mask_crop_mode,
         injections=injections,
-        manual_slot_values=manual_slot_values,
         widget_overrides=widget_overrides,
         derived_widget_values=derived_widget_values,
         widget_modes=widget_modes,

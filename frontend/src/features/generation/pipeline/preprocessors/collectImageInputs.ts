@@ -7,16 +7,16 @@ import {
 } from "../../utils/workflowInputs";
 
 /**
- * Collects image slot values and routes them to either `imageInputs`
- * (for direct node injection) or `manualSlotImageInputs` (for manual slots).
+ * Collects image slot values and routes them to `imageInputs`
+ * for direct node injection.
  */
 export const collectImageInputs: Processor<FrontendPreprocessContext> = {
   meta: {
     name: "collectImageInputs",
     reads: ["slotValues", "workflowInputs"],
-    writes: ["imageInputs", "manualSlotImageInputs"],
+    writes: ["imageInputs"],
     description:
-      "Routes image slot values to node inputs or manual slot inputs",
+      "Routes image slot values to node inputs",
   },
 
   isActive() {
@@ -29,21 +29,8 @@ export const collectImageInputs: Processor<FrontendPreprocessContext> = {
 
     for (const [inputId, value] of Object.entries(ctx.slotValues)) {
       throwIfAborted(ctx.signal);
-      const input = inputById.get(inputId);
-      const dispatch = input?.dispatch;
-
-      if (dispatch?.kind === "manual_slot") {
-        if (dispatch.slotInputType !== "image") {
-          continue;
-        }
-        if (value.type !== "image") {
-          throw new Error(`Slot '${dispatch.slotId}' expects an image input`);
-        }
-        ctx.manualSlotImageInputs[dispatch.slotId] = value.file;
-        continue;
-      }
-
       if (value.type !== "image") continue;
+      const input = inputById.get(inputId);
       if (!input) continue;
       ctx.imageInputs[getNodeInputRequestKey(input, inputById)] = value.file;
     }

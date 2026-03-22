@@ -23,25 +23,6 @@
       "title": "AspectRatioTargetNode",
       "type": "object"
     },
-    "ManualSlotSource": {
-      "properties": {
-        "kind": {
-          "const": "manual_slot",
-          "default": "manual_slot",
-          "title": "Kind",
-          "type": "string"
-        },
-        "slot_id": {
-          "title": "Slot Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "slot_id"
-      ],
-      "title": "ManualSlotSource",
-      "type": "object"
-    },
     "NodeOutputSource": {
       "properties": {
         "kind": {
@@ -69,22 +50,7 @@
     "ResolvedOutputInjectionRule": {
       "properties": {
         "source": {
-          "discriminator": {
-            "mapping": {
-              "manual_slot": "#/$defs/ManualSlotSource",
-              "node_output": "#/$defs/NodeOutputSource"
-            },
-            "propertyName": "kind"
-          },
-          "oneOf": [
-            {
-              "$ref": "#/$defs/NodeOutputSource"
-            },
-            {
-              "$ref": "#/$defs/ManualSlotSource"
-            }
-          ],
-          "title": "Source"
+          "$ref": "#/$defs/NodeOutputSource"
         }
       },
       "required": [

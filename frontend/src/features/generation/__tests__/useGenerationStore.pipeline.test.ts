@@ -299,10 +299,6 @@ describe("useGenerationStore pipeline phases", () => {
         textInputs: {},
         imageInputs: {},
         videoInputs: {},
-        manualSlotTextInputs: {},
-        manualSlotImageInputs: {},
-        manualSlotVideoInputs: {},
-        manualSlotAudioInputs: {},
         clientId,
       }),
     );
@@ -395,10 +391,6 @@ describe("useGenerationStore pipeline phases", () => {
       textInputs: Record<string, string>;
       imageInputs: Record<string, File>;
       videoInputs: Record<string, File>;
-      manualSlotTextInputs: Record<string, string>;
-      manualSlotImageInputs: Record<string, File>;
-      manualSlotVideoInputs: Record<string, File>;
-      manualSlotAudioInputs: Record<string, File>;
       clientId: string;
     }>();
     mockFrontendPreprocess.mockReturnValue(preprocessDeferred.promise);
@@ -421,10 +413,6 @@ describe("useGenerationStore pipeline phases", () => {
       textInputs: {},
       imageInputs: {},
       videoInputs: {},
-      manualSlotTextInputs: {},
-      manualSlotImageInputs: {},
-      manualSlotVideoInputs: {},
-      manualSlotAudioInputs: {},
       clientId: "client-id",
     });
 
@@ -484,10 +472,6 @@ describe("useGenerationStore pipeline phases", () => {
       textInputs: Record<string, string>;
       imageInputs: Record<string, File>;
       videoInputs: Record<string, File>;
-      manualSlotTextInputs: Record<string, string>;
-      manualSlotImageInputs: Record<string, File>;
-      manualSlotVideoInputs: Record<string, File>;
-      manualSlotAudioInputs: Record<string, File>;
       clientId: string;
     }>();
     mockFrontendPreprocess.mockReturnValue(preprocessDeferred.promise);
@@ -507,10 +491,6 @@ describe("useGenerationStore pipeline phases", () => {
       textInputs: {},
       imageInputs: {},
       videoInputs: {},
-      manualSlotTextInputs: {},
-      manualSlotImageInputs: {},
-      manualSlotVideoInputs: {},
-      manualSlotAudioInputs: {},
       clientId: "client-id",
     });
 

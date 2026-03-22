@@ -44,25 +44,6 @@ def _rewrite_output_links(
     return rewrites
 
 
-def _rewrite_output_links_to_value(
-    workflow: WorkflowPrompt,
-    target_node_id: str,
-    target_output_index: int,
-    replacement_value: Any,
-) -> int:
-    rewrites = 0
-    for node_data in workflow.values():
-        if not isinstance(node_data, dict):
-            continue
-        inputs = node_data.get("inputs")
-        if not isinstance(inputs, dict):
-            continue
-        for input_key, input_value in list(inputs.items()):
-            if _is_output_link_to(input_value, target_node_id, target_output_index):
-                inputs[input_key] = deepcopy(replacement_value)
-                rewrites += 1
-    return rewrites
-
 
 def _disconnect_output_links_from_node(
     workflow: WorkflowPrompt,
@@ -190,7 +171,6 @@ def find_unsatisfied_input_conditions(
 def apply_rules_to_workflow(
     workflow: WorkflowPrompt,
     rules: WorkflowRules | None,
-    manual_slot_values: dict[str, Any] | None = None,
     provided_input_ids: set[str] | None = None,
 ) -> tuple[WorkflowPrompt, list[WorkflowRuleWarning]]:
     if not isinstance(workflow, dict):
@@ -204,16 +184,6 @@ def apply_rules_to_workflow(
     normalized_rules, normalize_warnings = normalize_rules(rules)
     warnings: list[WorkflowRuleWarning] = list(normalize_warnings)
     next_workflow = deepcopy(workflow)
-    resolved_manual_slots: dict[str, Any] = {}
-    if isinstance(manual_slot_values, dict):
-        resolved_manual_slots = manual_slot_values
-    elif manual_slot_values is not None:
-        warnings.append(
-            _warning(
-                "invalid_manual_slot_payloads",
-                "Manual slot payloads must be an object; ignoring manual slot values",
-            )
-        )
 
     output_injections = normalized_rules.get("output_injections", {})
     if isinstance(output_injections, dict):
@@ -297,47 +267,6 @@ def apply_rules_to_workflow(
                                 output_index=output_index,
                             )
                         )
-                elif source_kind == "manual_slot":
-                    slot_id = source.get("slot_id")
-                    if not isinstance(slot_id, str):
-                        warnings.append(
-                            _warning(
-                                "invalid_manual_slot_source",
-                                "manual_slot source requires slot_id (string)",
-                                node_id=target_node_id,
-                                output_index=output_index,
-                            )
-                        )
-                        continue
-
-                    if slot_id not in resolved_manual_slots:
-                        warnings.append(
-                            _warning(
-                                "manual_slot_missing_payload",
-                                "manual_slot payload was not provided; using default routing",
-                                node_id=target_node_id,
-                                output_index=output_index,
-                                details={"slot_id": slot_id},
-                            )
-                        )
-                        continue
-
-                    rewrites = _rewrite_output_links_to_value(
-                        next_workflow,
-                        target_node_id=target_node_id,
-                        target_output_index=output_index,
-                        replacement_value=resolved_manual_slots[slot_id],
-                    )
-                    if rewrites == 0:
-                        warnings.append(
-                            _warning(
-                                "injection_no_consumers",
-                                "No downstream links matched this injection target",
-                                node_id=target_node_id,
-                                output_index=output_index,
-                            )
-                        )
-                        continue
                 else:
                     warnings.append(
                         _warning(

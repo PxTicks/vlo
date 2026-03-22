@@ -246,10 +246,6 @@ export async function generate(request: {
   textInputs: Record<string, string>;
   imageInputs: Record<string, File>;
   videoInputs: Record<string, File>;
-  manualSlotTextInputs?: Record<string, string>;
-  manualSlotImageInputs?: Record<string, File>;
-  manualSlotVideoInputs?: Record<string, File>;
-  manualSlotAudioInputs?: Record<string, File>;
   widgetInputs?: Record<string, string>;
   derivedWidgetInputs?: Record<string, string>;
   widgetModes?: Record<string, "fixed" | "randomize">;
@@ -283,26 +279,6 @@ options: { signal?: AbortSignal } = {},
   }
   for (const [nodeId, file] of Object.entries(request.videoInputs)) {
     formData.append(`video_${nodeId}`, file);
-  }
-  for (const [slotId, text] of Object.entries(
-    request.manualSlotTextInputs ?? {},
-  )) {
-    formData.append(`slot_text_${slotId}`, text);
-  }
-  for (const [slotId, file] of Object.entries(
-    request.manualSlotImageInputs ?? {},
-  )) {
-    formData.append(`slot_image_${slotId}`, file);
-  }
-  for (const [slotId, file] of Object.entries(
-    request.manualSlotVideoInputs ?? {},
-  )) {
-    formData.append(`slot_video_${slotId}`, file);
-  }
-  for (const [slotId, file] of Object.entries(
-    request.manualSlotAudioInputs ?? {},
-  )) {
-    formData.append(`slot_audio_${slotId}`, file);
   }
   for (const [key, value] of Object.entries(request.widgetInputs ?? {})) {
     formData.append(key, value);

@@ -109,25 +109,16 @@ export interface GenerationJob {
   preparedMaskFile?: File | null;
 }
 
-export type WorkflowRuleSlotInputType = "text" | "image" | "video" | "audio";
-
-export interface WorkflowManualSlotSelectionConfig {
+export interface WorkflowSelectionConfig {
   exportFps?: number;
   frameStep?: number;
   maxFrames?: number;
 }
 
-export type WorkflowInputDispatch =
-  | {
-      kind: "node";
-      selectionConfig?: WorkflowManualSlotSelectionConfig;
-    }
-  | {
-      kind: "manual_slot";
-      slotId: string;
-      slotInputType: WorkflowRuleSlotInputType;
-      selectionConfig?: WorkflowManualSlotSelectionConfig;
-    };
+export interface WorkflowInputDispatch {
+  kind: "node";
+  selectionConfig?: WorkflowSelectionConfig;
+}
 
 export interface InputSlot {
   id: string;

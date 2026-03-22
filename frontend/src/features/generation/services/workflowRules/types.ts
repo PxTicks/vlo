@@ -1,8 +1,7 @@
 import type {
   DerivedWorkflowWidgetInput,
   WorkflowInput,
-  WorkflowManualSlotSelectionConfig,
-  WorkflowRuleSlotInputType,
+  WorkflowSelectionConfig,
   WorkflowWidgetInput,
   WidgetInputConfig,
 } from "../../types";
@@ -170,8 +169,7 @@ export type {
   DerivedMaskType,
   DerivedWorkflowWidgetInput,
   WorkflowInput,
-  WorkflowManualSlotSelectionConfig,
-  WorkflowRuleSlotInputType,
+  WorkflowSelectionConfig,
   WorkflowWidgetInput,
   WidgetInputConfig,
 };

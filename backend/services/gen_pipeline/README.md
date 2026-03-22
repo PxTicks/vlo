@@ -400,91 +400,6 @@ node's output.
 Warnings are emitted if the source or target node does not exist in the
 workflow, or if no downstream consumers were matched (injection had no effect).
 
-### Source Kind: `manual_slot`
-
-Reroutes all downstream consumers to receive a value from a manual slot
-(defined in the `slots` section).
-
-```json
-{
-  "output_injections": {
-    "102": {
-      "0": {
-        "source": {
-          "kind": "manual_slot",
-          "slot_id": "primary_content"
-        }
-      }
-    }
-  }
-}
-```
-
-| Field | Type | Purpose |
-| --- | --- | --- |
-| `kind` | `"manual_slot"` | Injection type discriminator |
-| `slot_id` | string | References a slot defined in `slots` |
-
-If the user does not provide a value for the slot, the injection is skipped and
-the original routing is preserved. Warnings are emitted if the slot definition
-does not exist or no downstream consumers matched.
-
----
-
-## Section: `slots`
-
-**Type:** `Record<string, SlotDefinition>`
-**Default:** `{}`
-
-Defines manual input slots that are injected via `output_injections`. Slots
-represent declarative inputs that do not directly correspond to workflow nodes.
-
-| Field | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `input_type` | string | none | `"text"`, `"image"`, `"video"`, `"audio"`, `"frame_batch"`. Required if referenced by output_injections. |
-| `label` | string | slot ID | UI display label |
-| `param` | string | slot ID | Parameter name for injection |
-| `experimental` | boolean | `false` | Mark as experimental/beta |
-| `export_fps` | positive integer | none | FPS for video export |
-| `frame_step` | positive integer | none | Video frame sampling interval |
-| `max_frames` | positive integer | none | Max frames to process |
-
-Slots referenced in `output_injections` are resolved into synthetic
-`WorkflowInput` objects in the frontend with `nodeId: "slot:<slotId>"` and
-`dispatch.kind: "manual_slot"`.
-
-Form field mapping at the `/comfy/generate` endpoint:
-
-| Form field pattern | Slot type |
-| --- | --- |
-| `slot_text_<slot_id>` | Text value |
-| `slot_image_<slot_id>` | Image file upload |
-| `slot_video_<slot_id>` | Video file upload |
-| `slot_audio_<slot_id>` | Audio file upload |
-
-```json
-{
-  "slots": {
-    "primary_input": {
-      "input_type": "video",
-      "label": "Primary Content",
-      "export_fps": 30,
-      "frame_step": 1
-    }
-  },
-  "output_injections": {
-    "102": {
-      "0": {
-        "source": {
-          "kind": "manual_slot",
-          "slot_id": "primary_input"
-        }
-      }
-    }
-  }
-}
-```
-
 ---
 
 ## Section: `input_conditions`
@@ -502,18 +417,17 @@ Requires at least one of the listed inputs to be provided.
 | Field | Type | Required | Purpose |
 | --- | --- | --- | --- |
 | `kind` | `"at_least_one"` | yes | Condition type |
-| `inputs` | array of strings | yes | Input IDs (node IDs or `"slot:<slotId>"`) |
+| `inputs` | array of strings | yes | Input IDs (node IDs) |
 | `message` | string | no | Custom error message on failure |
 
-An input is considered "provided" if it appears in injections, buffered videos,
-or manual slot values.
+An input is considered "provided" if it appears in injections or buffered videos.
 
 ```json
 {
   "input_conditions": [
     {
       "kind": "at_least_one",
-      "inputs": ["98", "slot:secondary_content"],
+      "inputs": ["98", "102"],
       "message": "Please provide at least one video input"
     }
   ]
@@ -869,29 +783,10 @@ for randomization.
     }
   },
 
-  "slots": {
-    "secondary_content": {
-      "input_type": "video",
-      "label": "Secondary Content",
-      "export_fps": 30
-    }
-  },
-
-  "output_injections": {
-    "102": {
-      "0": {
-        "source": {
-          "kind": "manual_slot",
-          "slot_id": "secondary_content"
-        }
-      }
-    }
-  },
-
   "input_conditions": [
     {
       "kind": "at_least_one",
-      "inputs": ["98", "slot:secondary_content"],
+      "inputs": ["98"],
       "message": "Please provide at least one video input"
     }
   ],

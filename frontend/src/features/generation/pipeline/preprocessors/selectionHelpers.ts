@@ -5,12 +5,12 @@
  */
 
 import type { TimelineSelection } from "../../../../types/TimelineTypes";
-import type { WorkflowManualSlotSelectionConfig } from "../../types";
+import type { WorkflowSelectionConfig } from "../../types";
 import { toPositiveInteger } from "../utils/fps";
 
 export function applySelectionConfigDefaults(
   selection: TimelineSelection,
-  config: WorkflowManualSlotSelectionConfig | undefined,
+  config: WorkflowSelectionConfig | undefined,
 ): TimelineSelection {
   const next: TimelineSelection = { ...selection };
   const configFrameStep = toPositiveInteger(config?.frameStep);
@@ -27,7 +27,7 @@ export function applySelectionConfigDefaults(
 
 export function resolveExportFps(
   selection: TimelineSelection | null,
-  _config: WorkflowManualSlotSelectionConfig | undefined,
+  _config: WorkflowSelectionConfig | undefined,
   projectFps: number,
 ): number {
   const selectionFps = toPositiveInteger(selection?.fps);
@@ -37,7 +37,7 @@ export function resolveExportFps(
 
 export function resolveSelectionFpsForVideoSelection(
   selection: TimelineSelection,
-  _config: WorkflowManualSlotSelectionConfig | undefined,
+  _config: WorkflowSelectionConfig | undefined,
   projectFps: number,
 ): number {
   const selectionFps = toPositiveInteger(selection.fps);
@@ -48,7 +48,7 @@ export function resolveSelectionFpsForVideoSelection(
 export function prepareNormalizedSelection(
   selection: TimelineSelection,
   projectFps: number,
-  config?: WorkflowManualSlotSelectionConfig,
+  config?: WorkflowSelectionConfig,
 ): TimelineSelection {
   const normalizedSelection = applySelectionConfigDefaults(selection, config);
   if (

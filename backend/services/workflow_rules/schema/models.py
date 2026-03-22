@@ -158,19 +158,8 @@ class NodeOutputSource(WorkflowRuleBaseModel):
     output_index: int = 0
 
 
-class ManualSlotSource(WorkflowRuleBaseModel):
-    kind: Literal["manual_slot"] = "manual_slot"
-    slot_id: str
-
-
-ResolvedOutputInjectionSource = Annotated[
-    NodeOutputSource | ManualSlotSource,
-    Field(discriminator="kind"),
-]
-
-
 class ResolvedOutputInjectionRule(WorkflowRuleBaseModel):
-    source: ResolvedOutputInjectionSource
+    source: NodeOutputSource
 
 
 class AspectRatioTargetNode(WorkflowRuleBaseModel):
@@ -269,11 +258,7 @@ class NodeInputRef(WorkflowRuleBaseModel):
     param: str | None = None
 
 
-class SlotRef(WorkflowRuleBaseModel):
-    slot_key: str
-
-
-V2InputRef = NodeInputRef | SlotRef
+V2InputRef = NodeInputRef
 
 
 class V2RequiredInputValidationRule(WorkflowRuleBaseModel):
@@ -324,21 +309,10 @@ class NodeOutputSourceV2(WorkflowRuleBaseModel):
     output_index: int = 0
 
 
-class ManualSlotSourceV2(WorkflowRuleBaseModel):
-    kind: Literal["manual_slot"] = "manual_slot"
-    slot_key: str
-
-
-OutputInjectionSourceV2 = Annotated[
-    NodeOutputSourceV2 | ManualSlotSourceV2,
-    Field(discriminator="kind"),
-]
-
-
 class OutputInjectionRuleV2(WorkflowRuleBaseModel):
     target_node_id: str
     target_output_index: int = 0
-    source: OutputInjectionSourceV2
+    source: NodeOutputSourceV2
 
 
 class MaskCroppingPipelineStageV2(WorkflowRuleBaseModel):
@@ -466,8 +440,6 @@ def compile_authored_v1_to_resolved(
 
 
 def _compile_v2_input_ref(ref: V2InputRef) -> str:
-    if isinstance(ref, SlotRef):
-        return f"slot:{ref.slot_key}"
     if ref.param:
         return f"{ref.node_id}:{ref.param}"
     return ref.node_id
@@ -512,18 +484,11 @@ def _compile_v2_output_injections(
 ) -> dict[str, dict[str, ResolvedOutputInjectionRule]]:
     compiled: dict[str, dict[str, ResolvedOutputInjectionRule]] = {}
     for injection in authored.output_injections:
-        source: ResolvedOutputInjectionSource
-        if isinstance(injection.source, NodeOutputSourceV2):
-            source = NodeOutputSource(
-                kind="node_output",
-                node_id=injection.source.node_id,
-                output_index=injection.source.output_index,
-            )
-        else:
-            source = ManualSlotSource(
-                kind="manual_slot",
-                slot_id=injection.source.slot_key,
-            )
+        source = NodeOutputSource(
+            kind="node_output",
+            node_id=injection.source.node_id,
+            output_index=injection.source.output_index,
+        )
         compiled.setdefault(injection.target_node_id, {})[
             str(injection.target_output_index)
         ] = ResolvedOutputInjectionRule(source=source)
@@ -591,8 +556,6 @@ def compile_authored_v2_to_resolved(
 
 
 def _parse_legacy_input_ref(value: str) -> V2InputRef:
-    if value.startswith("slot:"):
-        return SlotRef(slot_key=value[len("slot:") :])
     if ":" in value:
         node_id, param = value.split(":", 1)
         return NodeInputRef(node_id=node_id, param=param)
@@ -647,29 +610,17 @@ def migrate_authored_v1_to_v2(
     for target_node_id, outputs in authored.output_injections.items():
         for output_index, injection_rule in outputs.items():
             source = injection_rule.source
-            if isinstance(source, NodeOutputSource):
-                output_injections.append(
-                    OutputInjectionRuleV2(
-                        target_node_id=target_node_id,
-                        target_output_index=int(output_index),
-                        source=NodeOutputSourceV2(
-                            kind="node_output",
-                            node_id=source.node_id,
-                            output_index=source.output_index,
-                        ),
-                    )
+            output_injections.append(
+                OutputInjectionRuleV2(
+                    target_node_id=target_node_id,
+                    target_output_index=int(output_index),
+                    source=NodeOutputSourceV2(
+                        kind="node_output",
+                        node_id=source.node_id,
+                        output_index=source.output_index,
+                    ),
                 )
-            else:
-                output_injections.append(
-                    OutputInjectionRuleV2(
-                        target_node_id=target_node_id,
-                        target_output_index=int(output_index),
-                        source=ManualSlotSourceV2(
-                            kind="manual_slot",
-                            slot_key=source.slot_id,
-                        ),
-                    )
-                )
+            )
 
     pipeline: list[WorkflowPipelineStageV2] = [
         MaskCroppingPipelineStageV2(

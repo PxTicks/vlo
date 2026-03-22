@@ -4,7 +4,7 @@ The generation feature is the frontend layer for running ComfyUI workflows from
 the editor. It provides:
 
 - Workflow selection and sync with ComfyUI.
-- Dynamic input rendering (text, media, manual slots).
+- Dynamic input rendering (text, media).
 - Generation submission and job tracking.
 - Live preview and output import into the asset library.
 
@@ -73,24 +73,16 @@ Workflow synchronization with ComfyUI iframe is centralized in
 `ComfyUIEditor` no longer owns the workflow injection/readback sequence directly;
 it triggers store actions and handles iframe health checks/recovery.
 
-## Inputs and manual slots
+## Inputs
 
 Presented inputs come from:
 
 - inferred inputs parsed from workflow graph nodes
-- rule-defined overrides and synthetic manual slots (`workflowRules`)
-
-Manual slot dispatch supports:
-
-- `text`
-- `image`
-- `video`
-- `audio` (derived from video source/selection)
+- rule-defined overrides (`workflowRules`)
 
 Selection/media extraction helpers live in:
 
 - `utils/inputSelection.ts`
-- `utils/manualSlotMedia.ts`
 - `utils/pipeline.ts`
 
 ## Public surface

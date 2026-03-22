@@ -109,10 +109,6 @@ export interface FrontendPreprocessContext {
   textInputs: Record<string, string>;
   imageInputs: Record<string, File>;
   videoInputs: Record<string, File>;
-  manualSlotTextInputs: Record<string, string>;
-  manualSlotImageInputs: Record<string, File>;
-  manualSlotVideoInputs: Record<string, File>;
-  manualSlotAudioInputs: Record<string, File>;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,10 +124,6 @@ export interface GenerationRequest {
   textInputs: Record<string, string>;
   imageInputs: Record<string, File>;
   videoInputs: Record<string, File>;
-  manualSlotTextInputs: Record<string, string>;
-  manualSlotImageInputs: Record<string, File>;
-  manualSlotVideoInputs: Record<string, File>;
-  manualSlotAudioInputs: Record<string, File>;
   widgetInputs?: Record<string, string>;
   derivedWidgetInputs?: Record<string, string>;
   widgetModes?: Record<string, "fixed" | "randomize">;

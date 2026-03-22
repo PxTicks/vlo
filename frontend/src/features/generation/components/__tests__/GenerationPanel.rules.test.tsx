@@ -194,8 +194,8 @@ describe("GenerationPanel workflow rule hints", () => {
       makeHookState({
         workflowRuleWarnings: [
           {
-            code: "manual_slot_unresolved",
-            message: "manual_slot injection is not implemented yet",
+            code: "unknown_widget_type",
+            message: "Unrecognized widget type 'custom_slider'",
             node_id: "144",
           },
         ],
@@ -205,7 +205,7 @@ describe("GenerationPanel workflow rule hints", () => {
     render(<GenerationPanel />);
     expect(screen.getByText("Workflow rule warnings")).toBeInTheDocument();
     expect(
-      screen.getByText("[144] manual_slot injection is not implemented yet"),
+      screen.getByText("[144] Unrecognized widget type 'custom_slider'"),
     ).toBeInTheDocument();
   });
 

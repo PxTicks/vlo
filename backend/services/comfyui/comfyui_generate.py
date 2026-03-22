@@ -44,7 +44,6 @@ class GenerationInput:
     mask_crop_dilation: float | None = None
     mask_crop_mode: MaskCroppingMode | None = None
     injections: dict[str, dict[str, Any]] = field(default_factory=dict)
-    manual_slot_values: dict[str, Any] = field(default_factory=dict)
     widget_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     derived_widget_values: dict[str, Any] = field(default_factory=dict)
     widget_modes: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -237,7 +236,6 @@ def build_backend_context(
         mask_crop_dilation=gen_input.mask_crop_dilation,
         mask_crop_mode=gen_input.mask_crop_mode,
         injections=gen_input.injections,
-        manual_slot_values=gen_input.manual_slot_values,
         widget_overrides=gen_input.widget_overrides,
         derived_widget_values=gen_input.derived_widget_values,
         widget_modes=gen_input.widget_modes,

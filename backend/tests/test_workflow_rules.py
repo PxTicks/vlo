@@ -924,7 +924,7 @@ def test_normalize_rules_model_compiles_v2_pipeline_and_typed_validation():
                 },
                 {
                     "kind": "optional",
-                    "input": {"slot_key": "voice_audio"},
+                    "input": {"node_id": "12"},
                 },
             ]
         },
@@ -932,7 +932,7 @@ def test_normalize_rules_model_compiles_v2_pipeline_and_typed_validation():
             {
                 "target_node_id": "20",
                 "target_output_index": 0,
-                "source": {"kind": "manual_slot", "slot_key": "voice_audio"},
+                "source": {"kind": "node_output", "node_id": "9", "output_index": 0},
             }
         ],
     }
@@ -944,7 +944,7 @@ def test_normalize_rules_model_compiles_v2_pipeline_and_typed_validation():
     assert rules_model.mask_cropping.mode == "crop"
     assert rules_model.aspect_ratio_processing.enabled is True
     assert rules_model.validation.inputs[0].input == "11:text"
-    assert rules_model.validation.inputs[1].input == "slot:voice_audio"
+    assert rules_model.validation.inputs[1].input == "12"
     assert rules_model._default_widgets_mode == "all"
     assert rules_model._pipeline_stage_order == ("aspect_ratio", "mask_cropping")
     assert rules_model._has_explicit_pipeline is True
@@ -954,8 +954,9 @@ def test_normalize_rules_model_compiles_v2_pipeline_and_typed_validation():
         "20": {
             "0": {
                 "source": {
-                    "kind": "manual_slot",
-                    "slot_id": "voice_audio",
+                    "kind": "node_output",
+                    "node_id": "9",
+                    "output_index": 0,
                 }
             }
         }
@@ -981,7 +982,7 @@ def test_load_rules_model_for_workflow_supports_v2_sidecars(tmp_path: Path):
                     "inputs": [
                         {
                             "kind": "required",
-                            "input": {"slot_key": "voice_audio"},
+                            "input": {"node_id": "12"},
                         }
                     ]
                 },
@@ -995,7 +996,7 @@ def test_load_rules_model_for_workflow_supports_v2_sidecars(tmp_path: Path):
     assert rules_model.version == 2
     assert rules_model.mask_cropping.mode == "full"
     assert rules_model.aspect_ratio_processing.enabled is True
-    assert rules_model.validation.inputs[0].input == "slot:voice_audio"
+    assert rules_model.validation.inputs[0].input == "12"
     assert rules_model._pipeline_stage_order == ("aspect_ratio",)
 
 
@@ -1016,7 +1017,7 @@ def test_migrate_authored_v1_to_v2_preserves_resolved_runtime_shape():
                     },
                     {
                         "kind": "optional",
-                        "input": "slot:voice_audio",
+                        "input": "12",
                     },
                 ]
             },
@@ -1024,16 +1025,11 @@ def test_migrate_authored_v1_to_v2_preserves_resolved_runtime_shape():
                 "20": {
                     "0": {
                         "source": {
-                            "kind": "manual_slot",
-                            "slot_id": "voice_audio",
+                            "kind": "node_output",
+                            "node_id": "9",
+                            "output_index": 0,
                         }
                     }
-                }
-            },
-            "slots": {
-                "voice_audio": {
-                    "input_type": "audio",
-                    "label": "Voice",
                 }
             },
         }
@@ -1355,32 +1351,6 @@ def test_evaluate_input_validation_supports_required_and_at_least_n():
         },
     ]
     assert evaluate_input_validation(rules, {"3", "68"}) == []
-
-
-def test_apply_rules_manual_slot_payload_rewrites_links():
-    workflow = {
-        "144": {"class_type": "GetVideoComponents", "inputs": {"video": ["145", 0]}},
-        "145": {"class_type": "LoadVideo", "inputs": {"file": "default.mp4"}},
-        "49": {"class_type": "WanVaceToVideo", "inputs": {"control_video": ["144", 0]}},
-    }
-    rules = {
-        "version": 1,
-        "output_injections": {
-            "144": {
-                "0": {
-                    "source": {"kind": "manual_slot", "slot_id": "control_frames"}
-                }
-            }
-        },
-    }
-
-    rewritten, warnings = apply_rules_to_workflow(
-        workflow,
-        rules,
-        manual_slot_values={"control_frames": ["frame_000.png", "frame_001.png"]},
-    )
-    assert warnings == []
-    assert rewritten["49"]["inputs"]["control_video"] == ["frame_000.png", "frame_001.png"]
 
 
 class _FakeResponse:
@@ -2084,50 +2054,6 @@ async def test_generate_reports_full_mask_metadata_when_mask_crop_encoding_fails
 
 
 @pytest.mark.anyio
-async def test_generate_returns_rule_warnings(tmp_path: Path, monkeypatch, fake_comfy_client):
-    _ = fake_comfy_client
-
-    workflow_id = "workflow_warning_test.json"
-    workflow_path = tmp_path / workflow_id
-    workflow_path.write_text("{}")
-    sidecar_path = tmp_path / "workflow_warning_test.rules.json"
-    sidecar_path.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "output_injections": {
-                    "144": {
-                        "0": {
-                            "source": {"kind": "manual_slot", "slot_id": "control_frames"}
-                        }
-                    }
-                },
-            }
-        )
-    )
-    monkeypatch.setattr(comfyui, "WORKFLOWS_DIR", tmp_path)
-
-    workflow = {
-        "144": {"class_type": "GetVideoComponents", "inputs": {"video": ["145", 0]}},
-        "145": {"class_type": "LoadVideo", "inputs": {"file": "default.mp4"}},
-        "49": {"class_type": "WanVaceToVideo", "inputs": {"control_video": ["144", 0]}},
-    }
-    response = await comfyui.generate(
-        _as_request(
-            FormData(
-                [
-                    ("workflow", json.dumps(workflow)),
-                    ("workflow_id", workflow_id),
-                ]
-            )
-        )
-    )
-    assert response.status_code == 200
-    payload = _response_json(response)
-    assert any(w["code"] == "manual_slot_missing_payload" for w in payload["workflow_warnings"])
-
-
-@pytest.mark.anyio
 async def test_generate_bypasses_missing_optional_inputs_in_prompt(
     tmp_path: Path,
     monkeypatch,
@@ -2521,74 +2447,6 @@ async def test_generate_expands_dual_sampler_denoise_derived_widget(
 
 
 @pytest.mark.anyio
-async def test_generate_ignores_manual_frame_batch_slot_uploads(tmp_path: Path, monkeypatch, fake_comfy_client):
-    workflow_id = "workflow_manual_frame_slot.json"
-    workflow_path = tmp_path / workflow_id
-    workflow_path.write_text("{}")
-    sidecar_path = tmp_path / "workflow_manual_frame_slot.rules.json"
-    sidecar_path.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "output_injections": {
-                    "144": {
-                        "0": {
-                            "source": {"kind": "manual_slot", "slot_id": "control_frames"}
-                        }
-                    }
-                },
-            }
-        )
-    )
-    monkeypatch.setattr(comfyui, "WORKFLOWS_DIR", tmp_path)
-
-    workflow = {
-        "144": {"class_type": "GetVideoComponents", "inputs": {"video": ["145", 0]}},
-        "145": {"class_type": "LoadVideo", "inputs": {"file": "default.mp4"}},
-        "49": {"class_type": "WanVaceToVideo", "inputs": {"control_video": ["144", 0]}},
-    }
-
-    frame_a = SpooledTemporaryFile()
-    frame_a.write(b"frame-a")
-    frame_a.seek(0)
-    frame_b = SpooledTemporaryFile()
-    frame_b.write(b"frame-b")
-    frame_b.seek(0)
-
-    response = await comfyui.generate(
-        _as_request(
-            FormData(
-                [
-                    ("workflow", json.dumps(workflow)),
-                    ("workflow_id", workflow_id),
-                    (
-                        "slot_frame_control_frames",
-                        UploadFile(
-                            file=_as_binary_io(frame_a),
-                            filename="frame-a.png",
-                            headers=Headers({"content-type": "image/png"}),
-                        ),
-                    ),
-                    (
-                        "slot_frame_control_frames",
-                        UploadFile(
-                            file=_as_binary_io(frame_b),
-                            filename="frame-b.png",
-                            headers=Headers({"content-type": "image/png"}),
-                        ),
-                    ),
-                ]
-            )
-        )
-    )
-    assert response.status_code == 200
-    payload = _response_json(response)
-    assert any(w["code"] == "manual_slot_missing_payload" for w in payload["workflow_warnings"])
-    prompt = fake_comfy_client.prompt_payload["prompt"]
-    assert prompt["49"]["inputs"]["control_video"] == ["144", 0]
-
-
-@pytest.mark.anyio
 async def test_generate_video_upload_uses_shared_upload_endpoint(tmp_path: Path, monkeypatch):
     workflow_id = "workflow_video_upload_shared_endpoint.json"
     workflow_path = tmp_path / workflow_id
@@ -2636,65 +2494,6 @@ async def test_generate_video_upload_uses_shared_upload_endpoint(tmp_path: Path,
     assert fake_client.prompt_payload is not None
     prompt = fake_client.prompt_payload["prompt"]
     assert prompt["145"]["inputs"]["file"] == "uploaded_video.mp4"
-
-
-@pytest.mark.anyio
-async def test_generate_slot_audio_upload_uses_shared_upload_endpoint(
-    tmp_path: Path,
-    monkeypatch,
-    fake_comfy_client,
-):
-    workflow_id = "workflow_audio_slot_upload_shared_endpoint.json"
-    workflow_path = tmp_path / workflow_id
-    workflow_path.write_text("{}")
-    sidecar_path = tmp_path / "workflow_audio_slot_upload_shared_endpoint.rules.json"
-    sidecar_path.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "output_injections": {
-                    "200": {
-                        "0": {
-                            "source": {"kind": "manual_slot", "slot_id": "voice_audio"}
-                        }
-                    }
-                },
-            }
-        )
-    )
-    monkeypatch.setattr(comfyui, "WORKFLOWS_DIR", tmp_path)
-
-    workflow = {
-        "200": {"class_type": "AudioSource", "inputs": {}},
-        "201": {"class_type": "AudioConsumer", "inputs": {"audio": ["200", 0]}},
-    }
-
-    audio_file = SpooledTemporaryFile()
-    audio_file.write(b"audio-bytes")
-    audio_file.seek(0)
-
-    response = await comfyui.generate(
-        _as_request(
-            FormData(
-                [
-                    ("workflow", json.dumps(workflow)),
-                    ("workflow_id", workflow_id),
-                    (
-                        "slot_audio_voice_audio",
-                        UploadFile(
-                            file=_as_binary_io(audio_file),
-                            filename="voice.wav",
-                            headers=Headers({"content-type": "audio/wav"}),
-                        ),
-                    ),
-                ]
-            )
-        )
-    )
-
-    assert response.status_code == 200
-    prompt = fake_comfy_client.prompt_payload["prompt"]
-    assert prompt["201"]["inputs"]["audio"] == "uploaded_audio.wav"
 
 
 @pytest.mark.anyio

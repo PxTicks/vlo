@@ -3,39 +3,16 @@ import type {
   DerivedMaskMapping,
   ResolvePresentedInputsResult,
   WorkflowRuleNodePresent,
-  WorkflowRuleSlot,
   WorkflowRuleWarning,
   WorkflowRules,
 } from "./types";
-import { isRecord } from "../parsers";
 import { normalizeWorkflowRules } from "./normalize";
 import {
   toRulesWarning,
   toSelectionConfig,
-  toSlotInputType,
   toWorkflowInputType,
 } from "./shared";
 import { buildWorkflowInputId, getWorkflowInputId } from "../../utils/workflowInputs";
-
-function collectReferencedManualSlots(
-  outputInjections: WorkflowRules["output_injections"],
-): Set<string> {
-  const slotIds = new Set<string>();
-  for (const targetNode of Object.values(outputInjections)) {
-    if (!isRecord(targetNode)) continue;
-    for (const outputRule of Object.values(targetNode)) {
-      if (!isRecord(outputRule)) continue;
-      const source = outputRule.source;
-      if (!isRecord(source)) continue;
-      if (source.kind !== "manual_slot") continue;
-      if (typeof source.slot_id !== "string" || source.slot_id.trim() === "") {
-        continue;
-      }
-      slotIds.add(source.slot_id);
-    }
-  }
-  return slotIds;
-}
 
 function hasPresentOverrides(
   present: WorkflowRuleNodePresent | undefined,
@@ -168,31 +145,6 @@ function sortConditioningInputs(
   });
 
   return nextInputs;
-}
-
-function toManualSlotSelectionConfig(
-  slotRule: WorkflowRuleSlot,
-): {
-  exportFps?: number;
-  frameStep?: number;
-  maxFrames?: number;
-} | undefined {
-  const selectionConfig: {
-    exportFps?: number;
-    frameStep?: number;
-    maxFrames?: number;
-  } = {};
-  if (typeof slotRule.export_fps === "number" && slotRule.export_fps > 0) {
-    selectionConfig.exportFps = slotRule.export_fps;
-  }
-  if (typeof slotRule.frame_step === "number" && slotRule.frame_step > 0) {
-    selectionConfig.frameStep = slotRule.frame_step;
-  }
-  if (typeof slotRule.max_frames === "number" && slotRule.max_frames > 0) {
-    selectionConfig.maxFrames = slotRule.max_frames;
-  }
-
-  return Object.keys(selectionConfig).length > 0 ? selectionConfig : undefined;
 }
 
 export function resolvePresentedInputsFromRules(
@@ -351,65 +303,6 @@ export function resolvePresentedInputsFromRules(
       origin: "rule",
       dispatch: {
         kind: "node",
-        ...(selectionConfig ? { selectionConfig } : {}),
-      },
-    });
-  }
-
-  const referencedSlots = collectReferencedManualSlots(rules.output_injections);
-  for (const slotId of referencedSlots) {
-    const slotRule = rules.slots[slotId];
-    if (!slotRule) {
-      presentationWarnings.push(
-        toRulesWarning(
-          "missing_slot_definition",
-          `Missing slot definition for '${slotId}'`,
-        ),
-      );
-      continue;
-    }
-    if (typeof slotRule.input_type !== "string") {
-      presentationWarnings.push(
-        toRulesWarning(
-          "missing_slot_input_type",
-          `Slot '${slotId}' is missing input_type`,
-        ),
-      );
-      continue;
-    }
-
-    const mapped = toSlotInputType(slotRule.input_type);
-    if (!mapped) {
-      presentationWarnings.push(
-        toRulesWarning(
-          "unsupported_slot_input_type",
-          `Unsupported slot input type '${slotRule.input_type}'`,
-        ),
-      );
-      continue;
-    }
-
-    const syntheticNodeId = `slot:${slotId}`;
-    if (resolved.some((input) => input.nodeId === syntheticNodeId)) {
-      continue;
-    }
-
-    const selectionConfig = toManualSlotSelectionConfig(slotRule);
-
-    resolved.push({
-      id: buildWorkflowInputId(syntheticNodeId, slotRule.param ?? slotId),
-      nodeId: syntheticNodeId,
-      classType: "ManualSlot",
-      inputType: mapped.uiInputType,
-      param: slotRule.param ?? slotId,
-      label: slotRule.label ?? slotId,
-      description: null,
-      currentValue: null,
-      origin: "rule",
-      dispatch: {
-        kind: "manual_slot",
-        slotId,
-        slotInputType: mapped.slotInputType,
         ...(selectionConfig ? { selectionConfig } : {}),
       },
     });

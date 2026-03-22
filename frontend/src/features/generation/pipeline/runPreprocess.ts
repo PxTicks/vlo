@@ -26,17 +26,6 @@ async function resolveTargetAspectRatio(
   );
 
   const resolveInputFile = (input: WorkflowInput): File | undefined => {
-    const dispatch = input.dispatch;
-    if (dispatch?.kind === "manual_slot") {
-      if (dispatch.slotInputType === "image") {
-        return ctx.manualSlotImageInputs[dispatch.slotId];
-      }
-      if (dispatch.slotInputType === "video") {
-        return ctx.manualSlotVideoInputs[dispatch.slotId];
-      }
-      return undefined;
-    }
-
     if (input.inputType === "image") {
       return ctx.imageInputs[getNodeInputRequestKey(input, inputById)];
     }
@@ -126,10 +115,6 @@ export async function runFrontendPreprocess(
     textInputs: {},
     imageInputs: {},
     videoInputs: {},
-    manualSlotTextInputs: {},
-    manualSlotImageInputs: {},
-    manualSlotVideoInputs: {},
-    manualSlotAudioInputs: {},
   };
 
   throwIfAborted(ctx.signal);
@@ -147,10 +132,6 @@ export async function runFrontendPreprocess(
     textInputs: ctx.textInputs,
     imageInputs: ctx.imageInputs,
     videoInputs: ctx.videoInputs,
-    manualSlotTextInputs: ctx.manualSlotTextInputs,
-    manualSlotImageInputs: ctx.manualSlotImageInputs,
-    manualSlotVideoInputs: ctx.manualSlotVideoInputs,
-    manualSlotAudioInputs: ctx.manualSlotAudioInputs,
     maskCropDilation:
       ctx.derivedMaskMappings.length > 0 && ctx.maskCropMode !== "full"
         ? ctx.maskCropDilation

@@ -10,11 +10,6 @@ export interface AspectRatioTargetNode {
   height_param: string;
 }
 
-export interface ManualSlotSource {
-  kind?: "manual_slot";
-  slot_id: string;
-}
-
 export interface NodeOutputSource {
   kind?: "node_output";
   node_id: string;
@@ -22,7 +17,7 @@ export interface NodeOutputSource {
 }
 
 export interface ResolvedOutputInjectionRule {
-  source: NodeOutputSource | ManualSlotSource;
+  source: NodeOutputSource;
 }
 
 export interface WorkflowRuleNode {

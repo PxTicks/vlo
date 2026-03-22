@@ -1,5 +1,5 @@
 import type { TimelineSelection } from "../../../../types/TimelineTypes";
-import type { WorkflowManualSlotSelectionConfig } from "../../types";
+import type { WorkflowSelectionConfig } from "../../types";
 import { DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT } from "../../derivedMaskVideoTreatment";
 import {
   renderTimelineSelectionToWebm,
@@ -34,7 +34,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       "derivedMaskMappings",
       "projectConfig",
     ],
-    writes: ["videoInputs", "manualSlotVideoInputs"],
+    writes: ["videoInputs"],
     description:
       "Normalizes video selections into WebM files, renders derived masks, and routes video inputs",
   },
@@ -64,7 +64,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
     async function normalizeVideoSelection(
       selection: TimelineSelection,
       preparedVideoFile?: File,
-      config?: WorkflowManualSlotSelectionConfig,
+      config?: WorkflowSelectionConfig,
     ): Promise<File> {
       if (preparedVideoFile) return preparedVideoFile;
       throwIfAborted(ctx.signal);
@@ -81,7 +81,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       preparedVideoFile?: File,
       preparedMaskFile?: File,
       preparedVideoTreatment = DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
-      config?: WorkflowManualSlotSelectionConfig,
+      config?: WorkflowSelectionConfig,
     ): Promise<{ video: File; mask: File }> {
       if (
         preparedVideoFile &&
@@ -105,27 +105,6 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       throwIfAborted(ctx.signal);
       const input = inputById.get(inputId);
       const dispatch = input?.dispatch;
-
-      if (dispatch?.kind === "manual_slot") {
-        const { slotId, slotInputType, selectionConfig } = dispatch;
-        if (slotInputType !== "video") continue;
-
-        if (value.type === "video_selection") {
-          ctx.manualSlotVideoInputs[slotId] =
-            await normalizeVideoSelection(
-              value.selection,
-              value.preparedVideoFile,
-              selectionConfig,
-            );
-          throwIfAborted(ctx.signal);
-          continue;
-        }
-        if (value.type === "video") {
-          ctx.manualSlotVideoInputs[slotId] = value.file;
-          continue;
-        }
-        throw new Error(`Slot '${slotId}' expects a video input`);
-      }
 
       if (value.type !== "video" && value.type !== "video_selection") {
         continue;

@@ -27,7 +27,6 @@ class BackendPipelineContext:
         mask_crop_dilation: float | None = None,
         mask_crop_mode: MaskCroppingMode | None = None,
         injections: dict[str, dict[str, Any]] | None = None,
-        manual_slot_values: dict[str, Any] | None = None,
         widget_overrides: dict[str, dict[str, Any]] | None = None,
         derived_widget_values: dict[str, Any] | None = None,
         widget_modes: dict[str, dict[str, str]] | None = None,
@@ -54,7 +53,6 @@ class BackendPipelineContext:
         self.mask_crop_dilation = mask_crop_dilation
         self.mask_crop_mode = mask_crop_mode
         self.injections = dict(injections or {})
-        self.manual_slot_values = dict(manual_slot_values or {})
         self.widget_overrides = dict(widget_overrides or {})
         self.derived_widget_values = dict(derived_widget_values or {})
         self.widget_modes = dict(widget_modes or {})

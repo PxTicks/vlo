@@ -15,7 +15,7 @@ import { useGenerationStore } from "../useGenerationStore";
 import { useProjectStore } from "../../project";
 import type {
   GenerationMediaInputValue,
-  WorkflowManualSlotSelectionConfig,
+  WorkflowSelectionConfig,
 } from "../types";
 import type { SlotValue } from "../utils/pipeline";
 import {
@@ -64,7 +64,7 @@ function hasInputValue(
 
 function applySelectionConfigDefaults(
   selection: ReturnType<typeof createTimelineSelection>,
-  config: WorkflowManualSlotSelectionConfig | undefined,
+  config: WorkflowSelectionConfig | undefined,
 ): ReturnType<typeof createTimelineSelection> {
   const next = { ...selection };
 

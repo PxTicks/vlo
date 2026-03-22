@@ -40,17 +40,13 @@ def collect_provided_input_ids(
             if isinstance(param, str):
                 provided_input_ids.add(f"{node_id}:{param}")
 
-    for slot_id, value in ctx.manual_slot_values.items():
-        if is_provided_value(value):
-            provided_input_ids.add(f"slot:{slot_id}")
-
     return provided_input_ids
 
 
 class _ValidateInputsProcessor:
     meta = ProcessorMeta(
         name="validate_inputs",
-        reads=("rules", "injections", "buffered_videos", "manual_slot_values"),
+        reads=("rules", "injections", "buffered_videos"),
         writes=("provided_input_ids",),
         description="Evaluates input validation rules against the inputs currently supplied by the request",
     )

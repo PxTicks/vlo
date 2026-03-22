@@ -1,7 +1,6 @@
 import type {
   WorkflowInput,
-  WorkflowManualSlotSelectionConfig,
-  WorkflowRuleSlotInputType,
+  WorkflowSelectionConfig,
   WidgetValueType,
 } from "../../types";
 import { isRecord } from "../parsers";
@@ -98,35 +97,12 @@ export function toWorkflowInputType(
   return null;
 }
 
-export function toSlotInputType(
-  value: string,
-): {
-  uiInputType: WorkflowInput["inputType"];
-  slotInputType: WorkflowRuleSlotInputType;
-} | null {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "text") {
-    return { uiInputType: "text", slotInputType: "text" };
-  }
-  if (normalized === "image") {
-    return { uiInputType: "image", slotInputType: "image" };
-  }
-  if (normalized === "video") {
-    return { uiInputType: "video", slotInputType: "video" };
-  }
-  if (normalized === "audio") {
-    // Audio slots use a video source in the UI so preprocessing can extract audio.
-    return { uiInputType: "video", slotInputType: "audio" };
-  }
-  return null;
-}
-
 export function toSelectionConfig(
   selection: WorkflowRuleSelectionConfig | undefined,
-): WorkflowManualSlotSelectionConfig | undefined {
+): WorkflowSelectionConfig | undefined {
   if (!selection) return undefined;
 
-  const next: WorkflowManualSlotSelectionConfig = {};
+  const next: WorkflowSelectionConfig = {};
   if (typeof selection.export_fps === "number" && selection.export_fps > 0) {
     next.exportFps = selection.export_fps;
   }

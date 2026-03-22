@@ -113,6 +113,9 @@ export function findMissingRequiredWorkflowInputs(
   }
 
   return workflowInputs.flatMap((input) => {
+    if (input.inputType === "text") {
+      return [];
+    }
     const inputId = getWorkflowInputId(input);
     const isProvided =
       providedInputIds.has(inputId) || providedInputIds.has(input.nodeId);

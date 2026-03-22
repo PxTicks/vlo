@@ -335,20 +335,16 @@ describe("resolvePresentedInputs", () => {
       },
     });
 
+    // Text inputs are not auto-required; only media inputs are.
+    // Node "6" is text, node "145" is video (marked optional) — no failures.
     expect(
       findWorkflowInputValidationFailures(makeInferredInputs(), rules, new Set()),
-    ).toEqual([
-      {
-        kind: "required",
-        input: "6",
-        message: "Prompt is required.",
-      },
-    ]);
+    ).toEqual([]);
     expect(
       isWorkflowInputValidationSatisfied(
         makeInferredInputs(),
         rules,
-        new Set(["6"]),
+        new Set(),
       ),
     ).toBe(true);
   });

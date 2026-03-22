@@ -14,6 +14,7 @@ import {
   InputLabel,
   TextField,
   Slider,
+  Tooltip,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -652,26 +653,6 @@ export function GenerationPanel() {
         </Box>
       )}
 
-      {!isWorkflowLoading && inputValidationFailures.length > 0 && (
-        <Box sx={{ px: 2, pb: 2 }}>
-          <Typography
-            variant="caption"
-            sx={{ color: "warning.light", display: "block", mb: 0.5 }}
-          >
-            Generation requirements
-          </Typography>
-          {inputValidationFailures.slice(0, 4).map((failure, idx) => (
-            <Typography
-              key={`${failure.kind}-${failure.input ?? failure.inputs?.join("-") ?? "global"}-${idx}`}
-              variant="caption"
-              sx={{ color: "warning.main", display: "block", lineHeight: 1.4 }}
-            >
-              {failure.message}
-            </Typography>
-          ))}
-        </Box>
-      )}
-
       <GenerationInputs
         inputs={workflowInputs}
         textValues={textValues}
@@ -757,22 +738,40 @@ export function GenerationPanel() {
             {generateButtonLabel}
           </Button>
         ) : (
-          <Button
-            fullWidth
-            variant="contained"
-            startIcon={isExtractingSelection ? undefined : <PlayArrow />}
-            disabled={!canGenerate}
-            onPointerDown={() => {
-              // Force blur so CommittedTextInput commits its value before onClick fires
-              if (document.activeElement instanceof HTMLElement) {
-                document.activeElement.blur();
-              }
+          <Tooltip
+            title={
+              !canGenerate && inputValidationFailures.length > 0
+                ? inputValidationFailures
+                    .slice(0, 4)
+                    .map((f) => f.message)
+                    .join("\n")
+                : ""
+            }
+            placement="top"
+            arrow
+            slotProps={{
+              tooltip: { sx: { whiteSpace: "pre-line" } },
             }}
-            onClick={handleGenerate}
-            sx={{ textTransform: "none" }}
           >
-            {generateButtonLabel}
-          </Button>
+            <span style={{ display: "block", width: "100%" }}>
+              <Button
+                fullWidth
+                variant="contained"
+                startIcon={isExtractingSelection ? undefined : <PlayArrow />}
+                disabled={!canGenerate}
+                onPointerDown={() => {
+                  // Force blur so CommittedTextInput commits its value before onClick fires
+                  if (document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                  }
+                }}
+                onClick={handleGenerate}
+                sx={{ textTransform: "none" }}
+              >
+                {generateButtonLabel}
+              </Button>
+            </span>
+          </Tooltip>
         )}
         {isPipelineBusy && pipelineStatusText ? (
           <Typography

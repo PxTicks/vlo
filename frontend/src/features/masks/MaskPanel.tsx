@@ -144,6 +144,7 @@ export const MaskPanel = memo(function MaskPanel() {
 
   return (
     <Box
+      data-testid="mask-panel"
       sx={{
         display: "flex",
         flexDirection: "column",
@@ -170,6 +171,7 @@ export const MaskPanel = memo(function MaskPanel() {
           {masks.map((mask, index) => (
             <Chip
               key={mask.id}
+              data-testid="mask-chip"
               label={`Mask ${index + 1}`}
               size="small"
               variant="outlined"
@@ -191,6 +193,7 @@ export const MaskPanel = memo(function MaskPanel() {
           ))}
           <Chip
             size="small"
+            data-testid="mask-add-chip"
             label="Add mask"
             variant="outlined"
             icon={<Add sx={{ fontSize: "1rem !important" }} />}
@@ -204,6 +207,7 @@ export const MaskPanel = memo(function MaskPanel() {
           />
         </Box>
         <Menu
+          data-testid="mask-add-menu"
           anchorEl={addMenuAnchorEl}
           open={Boolean(addMenuAnchorEl)}
           onClose={() => setAddMenuAnchorEl(null)}
@@ -264,6 +268,7 @@ export const MaskPanel = memo(function MaskPanel() {
             <Box sx={{ px: 2, pb: 2 }}>
               <Divider sx={{ borderColor: "#2a2d33", mb: 2 }} />
               <Button
+                data-testid="mask-delete-button"
                 variant="outlined"
                 color="error"
                 startIcon={<DeleteOutline fontSize="small" />}
@@ -321,6 +326,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 sx={{ mb: 1 }}
               >
                 <Button
+                  data-testid="mask-mode-apply"
                   onClick={() => setMaskMode("apply")}
                   sx={
                     selectedMaskMode === "apply"
@@ -331,6 +337,7 @@ export const MaskPanel = memo(function MaskPanel() {
                   Apply
                 </Button>
                 <Button
+                  data-testid="mask-mode-preview"
                   onClick={() => setMaskMode("preview")}
                   sx={
                     selectedMaskMode === "preview"
@@ -341,6 +348,7 @@ export const MaskPanel = memo(function MaskPanel() {
                   Preview
                 </Button>
                 <Button
+                  data-testid="mask-mode-off"
                   onClick={() => setMaskMode("off")}
                   sx={
                     selectedMaskMode === "off"
@@ -366,6 +374,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 sx={{ mb: 1 }}
               >
                 <Button
+                  data-testid="mask-inversion-normal"
                   onClick={() => setMaskInverted(false)}
                   sx={
                     !maskInverted
@@ -376,6 +385,7 @@ export const MaskPanel = memo(function MaskPanel() {
                   Normal
                 </Button>
                 <Button
+                  data-testid="mask-inversion-inverted"
                   onClick={() => setMaskInverted(true)}
                   sx={
                     maskInverted ? selectedConnectedButtonSx : connectedButtonSx
@@ -386,6 +396,7 @@ export const MaskPanel = memo(function MaskPanel() {
               </ButtonGroup>
 
               <Button
+                data-testid="mask-delete-button"
                 variant="outlined"
                 color="error"
                 startIcon={<DeleteOutline fontSize="small" />}

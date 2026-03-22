@@ -1,14 +1,11 @@
 import { Page, Locator } from '@playwright/test';
 
-type MaskType = 'Circle' | 'Rectangle' | 'Triangle' | 'SAM2' | 'Generation';
+type MaskType = 'Circle' | 'Rectangle' | 'Triangle' | 'Sam2';
 type MaskMode = 'Apply' | 'Preview' | 'Off';
 
 /**
  * Component Object Model for the Mask Panel.
  * Wraps: MaskPanel.tsx
- *
- * Note: Requires data-testid attributes to be added to MaskPanel.tsx in Phase 9.
- * For now, uses role-based and text-based locators where possible.
  */
 export class MaskPanelComponent {
     readonly page: Page;
@@ -17,8 +14,32 @@ export class MaskPanelComponent {
         this.page = page;
     }
 
+    get panel() {
+        return this.page.getByTestId('mask-panel');
+    }
+
+    get maskChips() {
+        return this.page.getByTestId('mask-chip');
+    }
+
     get addMaskChip() {
-        return this.page.getByText('Add mask');
+        return this.page.getByTestId('mask-add-chip');
+    }
+
+    get addMenu() {
+        return this.page.getByTestId('mask-add-menu');
+    }
+
+    get deleteButton() {
+        return this.page.getByTestId('mask-delete-button');
+    }
+
+    getModeButton(mode: 'apply' | 'preview' | 'off') {
+        return this.page.getByTestId(`mask-mode-${mode}`);
+    }
+
+    getInversionButton(value: 'normal' | 'inverted') {
+        return this.page.getByTestId(`mask-inversion-${value}`);
     }
 
     async addMask(type: MaskType) {
@@ -27,10 +48,14 @@ export class MaskPanelComponent {
     }
 
     async setMode(mode: MaskMode) {
-        await this.page.getByRole('button', { name: mode }).click();
+        await this.getModeButton(mode.toLowerCase() as 'apply' | 'preview' | 'off').click();
+    }
+
+    async setInversion(value: 'Normal' | 'Inverted') {
+        await this.getInversionButton(value.toLowerCase() as 'normal' | 'inverted').click();
     }
 
     async deleteMask() {
-        await this.page.getByRole('button', { name: 'Delete Mask' }).click();
+        await this.deleteButton.click();
     }
 }

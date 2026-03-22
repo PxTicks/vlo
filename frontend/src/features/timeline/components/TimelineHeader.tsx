@@ -46,6 +46,7 @@ export const TimelineHeader = React.memo(function TimelineHeader({
 
   return (
     <Box
+      data-testid="timeline-track-header"
       sx={{
         width: TRACK_HEADER_WIDTH,
         borderRight: "1px solid #333",

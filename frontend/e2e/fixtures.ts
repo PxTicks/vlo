@@ -16,6 +16,8 @@ export const test = base.extend<{
     editor: EditorComponent;
     /** Editor with project_v2_with_clips — has 2 clips on the timeline. */
     editorWithClips: EditorComponent;
+    /** Editor with project_v3_with_audio_track — has 2 video clips + 1 audio clip on 3 tracks. */
+    editorWithAudioTrack: EditorComponent;
     /** An EditorComponent instance without project setup — for tests that need the landing page. */
     editorNoSetup: EditorComponent;
 }>({
@@ -28,6 +30,12 @@ export const test = base.extend<{
     editorWithClips: async ({ page }, use) => {
         const editor = new EditorComponent(page);
         await editor.setup('project_v2_with_clips');
+        await use(editor);
+    },
+
+    editorWithAudioTrack: async ({ page }, use) => {
+        const editor = new EditorComponent(page);
+        await editor.setup('project_v3_with_audio_track');
         await use(editor);
     },
 

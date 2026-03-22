@@ -1,0 +1,138 @@
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "title": "Penguin With Clips",
+  "created_at": 1769553445445,
+  "last_modified": 1769554104504,
+  "version": "1.0.0",
+  "config": {
+    "aspectRatio": "16:9",
+    "fps": 30,
+    "layoutMode": "compact"
+  },
+  "assets": {
+    "50ad896c-fccb-440a-a011-a535cdec8156": {
+      "id": "50ad896c-fccb-440a-a011-a535cdec8156",
+      "hash": "3836e6e13674ce1a",
+      "name": "0d5748c1_cd1f_4b03_a676_eb2acc82442cpng",
+      "type": "image",
+      "src": "0d5748c1_cd1f_4b03_a676_eb2acc82442cpng",
+      "thumbnail": ".vloproject/thumbnails/0d5748c1_cd1f_4b03_a676_eb2acc82442cpng_thumb.jpg",
+      "duration": 5,
+      "createdAt": 1769553486650
+    },
+    "bf12c1cf-e322-4a48-a3fa-9ee418c2c8f7": {
+      "id": "bf12c1cf-e322-4a48-a3fa-9ee418c2c8f7",
+      "hash": "18ff32470d92d4fc",
+      "name": "Professional_Mode_The_camera_rotates_around_a_sold",
+      "type": "video",
+      "src": "Professional_Mode_The_camera_rotates_around_a_sold",
+      "thumbnail": ".vloproject/thumbnails/Professional_Mode_The_camera_rotates_around_a_sold_thumb.jpg",
+      "duration": 5.1,
+      "createdAt": 1769553528060
+    },
+    "ecdac126-6ca5-4fca-a9a2-2f99182b1fe1": {
+      "id": "ecdac126-6ca5-4fca-a9a2-2f99182b1fe1",
+      "hash": "868806a965714734",
+      "name": "ElevenLabs_2025_11_14T23_18_36_Alice_Young_British",
+      "type": "audio",
+      "src": "ElevenLabs_2025_11_14T23_18_36_Alice_Young_British",
+      "duration": 0,
+      "createdAt": 1769553528125
+    },
+    "bb5aae6f-df0e-4af8-972e-c5e11b43a9b7": {
+      "id": "bb5aae6f-df0e-4af8-972e-c5e11b43a9b7",
+      "hash": "e580beed3e44a24a",
+      "name": "hf_20260122_232943_45d72e1c_68cb_41b8_bdac_e275e5c.mp4",
+      "type": "video",
+      "src": "hf_20260122_232943_45d72e1c_68cb_41b8_bdac_e275e5c.mp4",
+      "thumbnail": ".vloproject/thumbnails/hf_20260122_232943_45d72e1c_68cb_41b8_bdac_e275e5c.mp4_thumb.jpg",
+      "duration": 12.100000000000001,
+      "createdAt": 1769553568646
+    },
+    "64446e1f-7048-423b-b1d9-5b82070be07b": {
+      "id": "64446e1f-7048-423b-b1d9-5b82070be07b",
+      "hash": "2fb69e8ce66dd360",
+      "name": "A_woman_in_202601222322_bssr2mp4",
+      "type": "video",
+      "src": "A_woman_in_202601222322_bssr2mp4",
+      "thumbnail": ".vloproject/thumbnails/A_woman_in_202601222322_bssr2mp4_thumb.jpg",
+      "duration": 8,
+      "createdAt": 1769553611587
+    }
+  },
+  "timeline": {
+    "tracks": [
+      {
+        "id": "track_001",
+        "type": "visual",
+        "label": "Track 1",
+        "isVisible": true,
+        "isMuted": false,
+        "isLocked": false
+      },
+      {
+        "id": "track_002",
+        "type": "visual",
+        "label": "Track 2",
+        "isVisible": true,
+        "isMuted": false,
+        "isLocked": false
+      },
+      {
+        "id": "track_003",
+        "type": "audio",
+        "label": "Track 3",
+        "isVisible": true,
+        "isMuted": false,
+        "isLocked": false
+      }
+    ],
+    "clips": [
+      {
+        "id": "clip_001",
+        "type": "video",
+        "trackId": "track_001",
+        "assetId": "64446e1f-7048-423b-b1d9-5b82070be07b",
+        "name": "A_woman_in_202601222322_bssr2mp4",
+        "start": 0,
+        "timelineDuration": 768000,
+        "offset": 0,
+        "croppedSourceDuration": 768000,
+        "sourceDuration": 768000,
+        "transformedDuration": 768000,
+        "transformedOffset": 0,
+        "transformations": []
+      },
+      {
+        "id": "clip_002",
+        "type": "video",
+        "trackId": "track_002",
+        "assetId": "bf12c1cf-e322-4a48-a3fa-9ee418c2c8f7",
+        "name": "Professional_Mode_The_camera_rotates_around_a_sold",
+        "start": 768000,
+        "timelineDuration": 489600,
+        "offset": 0,
+        "croppedSourceDuration": 489600,
+        "sourceDuration": 489600,
+        "transformedDuration": 489600,
+        "transformedOffset": 0,
+        "transformations": []
+      },
+      {
+        "id": "clip_003",
+        "type": "audio",
+        "trackId": "track_003",
+        "assetId": "ecdac126-6ca5-4fca-a9a2-2f99182b1fe1",
+        "name": "ElevenLabs_2025_11_14T23_18_36_Alice_Young_British",
+        "start": 0,
+        "timelineDuration": 288000,
+        "offset": 0,
+        "croppedSourceDuration": 288000,
+        "sourceDuration": 288000,
+        "transformedDuration": 288000,
+        "transformedOffset": 0,
+        "transformations": []
+      }
+    ]
+  }
+}

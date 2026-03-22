@@ -119,6 +119,13 @@ export class TimelineComponent {
     }
 
     /**
+     * Returns the locator for a track header by row index.
+     */
+    getTrackHeader(rowIndex: number): Locator {
+        return this.rows.nth(rowIndex).getByTestId('timeline-track-header');
+    }
+
+    /**
      * Returns the locator for the visibility toggle on a track row by row index.
      */
     getTrackVisibilityToggle(rowIndex: number): Locator {

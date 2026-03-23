@@ -1669,6 +1669,12 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
       if (response.mask_crop_metadata) {
         generationMetadata.maskCropMetadata = response.mask_crop_metadata;
       }
+      if (response.comfyui_prompt) {
+        generationMetadata.comfyuiPrompt = response.comfyui_prompt;
+      }
+      if (response.comfyui_workflow) {
+        generationMetadata.comfyuiWorkflow = response.comfyui_workflow;
+      }
       // Convert processed mask from base64 to File for postprocess ingestion.
       // The transport is intentionally singular today because one generation
       // run only ever produces one linked generation mask clip. If that

@@ -54,29 +54,29 @@ still accepted and automatically migrated to V2 during compilation.
 }
 ```
 
-| Field | Type | Default |
-| --- | --- | --- |
-| `version` | `2` (literal) | required |
-| `name` | string (optional) | none |
-| `default_widgets_mode` | `"control_after_generate"` \| `"all"` | `"control_after_generate"` |
-| `nodes` | object | `{}` |
-| `pipeline` | array (optional) | `null` (uses default pipeline) |
-| `validation` | object | `{ "inputs": [] }` |
-| `derived_widgets` | array | `[]` |
-| `output_injections` | array | `[]` |
-| `slots` | object | `{}` |
-| `postprocessing` | object | `{ "mode": "auto", "panel_preview": "raw_outputs", "on_failure": "fallback_raw" }` |
+| Field                  | Type                                  | Default                                                                            |
+| ---------------------- | ------------------------------------- | ---------------------------------------------------------------------------------- |
+| `version`              | `2` (literal)                         | required                                                                           |
+| `name`                 | string (optional)                     | none                                                                               |
+| `default_widgets_mode` | `"control_after_generate"` \| `"all"` | `"control_after_generate"`                                                         |
+| `nodes`                | object                                | `{}`                                                                               |
+| `pipeline`             | array (optional)                      | `null` (uses default pipeline)                                                     |
+| `validation`           | object                                | `{ "inputs": [] }`                                                                 |
+| `derived_widgets`      | array                                 | `[]`                                                                               |
+| `output_injections`    | array                                 | `[]`                                                                               |
+| `slots`                | object                                | `{}`                                                                               |
+| `postprocessing`       | object                                | `{ "mode": "auto", "panel_preview": "raw_outputs", "on_failure": "fallback_raw" }` |
 
 ### Key Differences from V1
 
-| Concern | V1 | V2 |
-| --- | --- | --- |
-| Pipeline stages | Separate `mask_cropping` and `aspect_ratio_processing` top-level sections | Unified `pipeline` array with typed stages |
-| Output injections | Nested dict keyed by target node ID → output index | Flat array of `{ target_node_id, target_output_index, source }` objects |
-| Validation refs | Plain node ID strings (`"98"`) | Structured `{ "node_id": "98", "param": "video" }` objects |
-| `input_conditions` | Top-level legacy field | Removed; use `validation.inputs` with `at_least_n` rules |
-| `default_widgets_mode` | Not available | Root-level field; sets the fallback for all nodes |
-| `present.input_type` | Any string | Restricted to `"text"`, `"image"`, `"video"` |
+| Concern                | V1                                                                        | V2                                                                      |
+| ---------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Pipeline stages        | Separate `mask_cropping` and `aspect_ratio_processing` top-level sections | Unified `pipeline` array with typed stages                              |
+| Output injections      | Nested dict keyed by target node ID → output index                        | Flat array of `{ target_node_id, target_output_index, source }` objects |
+| Validation refs        | Plain node ID strings (`"98"`)                                            | Structured `{ "node_id": "98", "param": "video" }` objects              |
+| `input_conditions`     | Top-level legacy field                                                    | Removed; use `validation.inputs` with `at_least_n` rules                |
+| `default_widgets_mode` | Not available                                                             | Root-level field; sets the fallback for all nodes                       |
+| `present.input_type`   | Any string                                                                | Restricted to `"text"`, `"image"`, `"video"`                            |
 
 ---
 
@@ -94,11 +94,11 @@ Inputs are the primary data the user provides: text prompts, images, and
 videos. They are auto-discovered from `object_info.json` by checking parameter
 flags on each node class:
 
-| Flag in object_info | Detected input type | Additional constraint |
-| --- | --- | --- |
-| `image_upload: true` | `"image"` | Type spec must be a list (COMBO), not STRING |
-| `video_upload: true` | `"video"` | None |
-| `dynamicPrompts: true` | `"text"` | Type spec must be STRING |
+| Flag in object_info    | Detected input type | Additional constraint                        |
+| ---------------------- | ------------------- | -------------------------------------------- |
+| `image_upload: true`   | `"image"`           | Type spec must be a list (COMBO), not STRING |
+| `video_upload: true`   | `"video"`           | None                                         |
+| `dynamicPrompts: true` | `"text"`            | Type spec must be STRING                     |
 
 The discovery logic lives in `build_input_node_map()` in
 `backend/services/workflow_rules/node_parsing.py`. Labels are generated
@@ -128,23 +128,24 @@ Widgets are the adjustable controls exposed in the Generate panel (sliders,
 dropdowns, text fields). They are auto-discovered from `object_info.json` based
 on parameter type. Only primitive types are eligible:
 
-| object_info type | Resolved `value_type` |
-| --- | --- |
-| `"INT"` | `"int"` |
-| `"FLOAT"` | `"float"` |
-| `"STRING"` | `"string"` |
-| `"BOOLEAN"` | `"boolean"` |
-| `[value1, value2, ...]` | `"enum"` (options extracted) |
-| Uppercase link types (`IMAGE`, `LATENT`, `MODEL`, ...) | Skipped (not a widget) |
+| object_info type                                       | Resolved `value_type`        |
+| ------------------------------------------------------ | ---------------------------- |
+| `"INT"`                                                | `"int"`                      |
+| `"FLOAT"`                                              | `"float"`                    |
+| `"STRING"`                                             | `"string"`                   |
+| `"BOOLEAN"`                                            | `"boolean"`                  |
+| `[value1, value2, ...]`                                | `"enum"` (options extracted) |
+| Uppercase link types (`IMAGE`, `LATENT`, `MODEL`, ...) | Skipped (not a widget)       |
 
 Which widgets are discovered depends on the **widgets mode**:
 
-| Mode | Behavior | When applied |
-| --- | --- | --- |
-| `"control_after_generate"` | Only widgets with `control_after_generate: true` in object_info | Default for most nodes |
-| `"all"` | All editable widget parameters | Default for `KSampler` and `KSamplerAdvanced`; can be set per-node or globally |
+| Mode                       | Behavior                                                        | When applied                                                                   |
+| -------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `"control_after_generate"` | Only widgets with `control_after_generate: true` in object_info | Default for most nodes                                                         |
+| `"all"`                    | All editable widget parameters                                  | Default for `KSampler` and `KSamplerAdvanced`; can be set per-node or globally |
 
 The mode is resolved in priority order:
+
 1. Per-node `widgets_mode` in sidecar rules (highest priority)
 2. Node policy rules (e.g. KSampler defaults to `"all"`)
 3. Root-level `default_widgets_mode` in sidecar
@@ -240,8 +241,7 @@ nodes that don't specify their own `widgets_mode`:
 
 ### Hiding Auto-Discovered Widgets
 
-Auto-discovered widgets cannot be excluded from discovery itself — the system
-will still find them. To suppress one from the UI, set `hidden: true` on it
+To suppress a widget from the UI, set `hidden: true` on it
 in the sidecar:
 
 ```json
@@ -319,11 +319,11 @@ is the logical AND of all rules.
 
 In V2, input references are structured objects:
 
-| Kind | Shape | Meaning |
-| --- | --- | --- |
-| `"required"` | `{ "kind": "required", "input": { "node_id": "3" } }` | The named input must be present |
-| `"at_least_n"` | `{ "kind": "at_least_n", "inputs": [...], "min": 1 }` | At least `min` of the listed inputs must be present |
-| `"optional"` | `{ "kind": "optional", "input": { "node_id": "99" } }` | Documents that an input may be omitted (skipped during validation) |
+| Kind           | Shape                                                  | Meaning                                                            |
+| -------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
+| `"required"`   | `{ "kind": "required", "input": { "node_id": "3" } }`  | The named input must be present                                    |
+| `"at_least_n"` | `{ "kind": "at_least_n", "inputs": [...], "min": 1 }`  | At least `min` of the listed inputs must be present                |
+| `"optional"`   | `{ "kind": "optional", "input": { "node_id": "99" } }` | Documents that an input may be omitted (skipped during validation) |
 
 ```json
 {
@@ -336,10 +336,7 @@ In V2, input references are structured objects:
       },
       {
         "kind": "at_least_n",
-        "inputs": [
-          { "node_id": "68" },
-          { "node_id": "62" }
-        ],
+        "inputs": [{ "node_id": "68" }, { "node_id": "62" }],
         "min": 1,
         "message": "Provide at least one frame input."
       },
@@ -407,18 +404,18 @@ Defined in the `derived_widgets` array at the sidecar root. Each entry has a
 Maps a single 0–1 denoise slider to step parameters across dual-sampler
 workflows.
 
-| Field | Type | Required | Purpose |
-| --- | --- | --- | --- |
-| `id` | string | yes | Unique identifier (used in form key: `derived_widget_{id}`) |
-| `kind` | `"dual_sampler_denoise"` | yes | Expansion type |
-| `label` | string | no | UI display label (default: "Denoise") |
-| `group_id` | string | no | Widget group ID |
-| `group_title` | string | no | Widget group title |
-| `group_order` | number | no | Sort order within group |
-| `total_steps` | `{ "node_id", "param" }` | yes | Reference to total steps parameter |
-| `start_step` | `{ "node_id", "param" }` | yes | Reference to start step parameter |
-| `base_split_step` | `{ "node_id", "param" }` | yes | Reference to base split step parameter |
-| `split_step_targets` | array of `{ "node_id", "param" }` | yes | Parameters to override with calculated split step |
+| Field                | Type                              | Required | Purpose                                                     |
+| -------------------- | --------------------------------- | -------- | ----------------------------------------------------------- |
+| `id`                 | string                            | yes      | Unique identifier (used in form key: `derived_widget_{id}`) |
+| `kind`               | `"dual_sampler_denoise"`          | yes      | Expansion type                                              |
+| `label`              | string                            | no       | UI display label (default: "Denoise")                       |
+| `group_id`           | string                            | no       | Widget group ID                                             |
+| `group_title`        | string                            | no       | Widget group title                                          |
+| `group_order`        | number                            | no       | Sort order within group                                     |
+| `total_steps`        | `{ "node_id", "param" }`          | yes      | Reference to total steps parameter                          |
+| `start_step`         | `{ "node_id", "param" }`          | yes      | Reference to start step parameter                           |
+| `base_split_step`    | `{ "node_id", "param" }`          | yes      | Reference to base split step parameter                      |
+| `split_step_targets` | array of `{ "node_id", "param" }` | yes      | Parameters to override with calculated split step           |
 
 ```json
 {
@@ -440,6 +437,7 @@ workflows.
 ```
 
 **Expansion logic:** Given a denoise value `d` and `total_steps` `T`:
+
 - `denoise_steps = round(d × T)`
 - `start_step = T - denoise_steps`
 - `split_step = max(base_split_step, start_step)`
@@ -453,10 +451,10 @@ step = `1/T`).
 Derived masks define relationships where a mask node's content is
 auto-populated from a source input during preprocessing.
 
-| Field | Type | Purpose |
-| --- | --- | --- |
+| Field                    | Type             | Purpose                                   |
+| ------------------------ | ---------------- | ----------------------------------------- |
 | `binary_derived_mask_of` | string (node ID) | Source node for binary (black/white) mask |
-| `soft_derived_mask_of` | string (node ID) | Source node for soft (grayscale) mask |
+| `soft_derived_mask_of`   | string (node ID) | Source node for soft (grayscale) mask     |
 
 These are set on the mask node's rule entry, not the source node:
 
@@ -475,6 +473,7 @@ These are set on the mask node's rule entry, not the source node:
 ```
 
 Behavior:
+
 - The mask node is always hidden from the UI input list.
 - Only one of `binary_derived_mask_of` / `soft_derived_mask_of` should be set
   per node.
@@ -495,13 +494,14 @@ appear under a single collapsible section with the `group_title` as header.
 Within a group, widgets are sorted by `group_order` (ascending), with original
 discovery order as a tiebreaker.
 
-| Field | Type | Purpose |
-| --- | --- | --- |
-| `group_id` | string | Logical group identifier |
-| `group_title` | string | Section header text |
+| Field         | Type                 | Purpose                     |
+| ------------- | -------------------- | --------------------------- |
+| `group_id`    | string               | Logical group identifier    |
+| `group_title` | string               | Section header text         |
 | `group_order` | non-negative integer | Sort order within the group |
 
 Fallback behavior when grouping fields are absent:
+
 - `group_id` defaults to the node ID
 - `group_title` defaults to the node's `node_title`, then `"Node {id}"`
 
@@ -552,12 +552,12 @@ Explicit sidecar `group_*` fields override auto-discovered proxy grouping.
 
 ### Widget Display Types
 
-| `value_type` | Rendered as |
-| --- | --- |
+| `value_type`       | Rendered as                                   |
+| ------------------ | --------------------------------------------- |
 | `"int"`, `"float"` | Text input (or slider if `control: "slider"`) |
-| `"string"` | Text input |
-| `"boolean"` | Dropdown (true/false) |
-| `"enum"` | Dropdown with `options` list |
+| `"string"`         | Text input                                    |
+| `"boolean"`        | Dropdown (true/false)                         |
+| `"enum"`           | Dropdown with `options` list                  |
 
 The `control` field can override the default rendering. Currently the only
 supported value is `"slider"`, which renders a range slider showing a
@@ -565,9 +565,9 @@ percentage. This is primarily used by derived widgets (e.g. denoise).
 
 ### Hidden and Frontend-Only Widgets
 
-| Field | Behavior |
-| --- | --- |
-| `hidden: true` | Widget is completely filtered from the UI |
+| Field                 | Behavior                                                              |
+| --------------------- | --------------------------------------------------------------------- |
+| `hidden: true`        | Widget is completely filtered from the UI                             |
 | `frontend_only: true` | Widget is rendered in the UI but its value is not sent to the backend |
 
 A `frontend_only` enum widget with no `options` is automatically hidden.
@@ -582,58 +582,58 @@ A `frontend_only` enum widget with no `options` is automatically hidden.
 
 ### Per-Node Fields
 
-| Field | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `ignore` | boolean | `false` | Remove node from workflow during rule application |
-| `present` | object | none | Control input presentation in UI |
-| `widgets_mode` | `"control_after_generate"` \| `"all"` | context-dependent | Widget auto-discovery mode |
-| `widgets` | `Record<string, WidgetEntry>` | `{}` | Explicit widget definitions/overrides |
-| `selection` | object | none | Video frame selection config |
-| `binary_derived_mask_of` | string | none | Source node ID for binary mask derivation |
-| `soft_derived_mask_of` | string | none | Source node ID for soft mask derivation |
+| Field                    | Type                                  | Default           | Purpose                                           |
+| ------------------------ | ------------------------------------- | ----------------- | ------------------------------------------------- |
+| `ignore`                 | boolean                               | `false`           | Remove node from workflow during rule application |
+| `present`                | object                                | none              | Control input presentation in UI                  |
+| `widgets_mode`           | `"control_after_generate"` \| `"all"` | context-dependent | Widget auto-discovery mode                        |
+| `widgets`                | `Record<string, WidgetEntry>`         | `{}`              | Explicit widget definitions/overrides             |
+| `selection`              | object                                | none              | Video frame selection config                      |
+| `binary_derived_mask_of` | string                                | none              | Source node ID for binary mask derivation         |
+| `soft_derived_mask_of`   | string                                | none              | Source node ID for soft mask derivation           |
 
 ### `present`
 
 Controls whether and how a node appears as a user-facing input.
 
-| Field | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `enabled` | boolean | `true` | Show in UI input list |
-| `required` | boolean | `true` | If `false`, node is optional; when user omits it the node is disconnected and removed |
-| `input_type` | string | inferred | Override input type: `"text"`, `"image"`, `"video"` |
-| `param` | string | inferred | Parameter name for value injection |
-| `label` | string | node title | Custom display label |
-| `class_type` | string | `"RuleInput"` | Override class type for rule-defined inputs |
+| Field        | Type    | Default       | Purpose                                                                               |
+| ------------ | ------- | ------------- | ------------------------------------------------------------------------------------- |
+| `enabled`    | boolean | `true`        | Show in UI input list                                                                 |
+| `required`   | boolean | `true`        | If `false`, node is optional; when user omits it the node is disconnected and removed |
+| `input_type` | string  | inferred      | Override input type: `"text"`, `"image"`, `"video"`                                   |
+| `param`      | string  | inferred      | Parameter name for value injection                                                    |
+| `label`      | string  | node title    | Custom display label                                                                  |
+| `class_type` | string  | `"RuleInput"` | Override class type for rule-defined inputs                                           |
 
 ### `widgets`
 
 Per-widget fields (keyed by parameter name):
 
-| Field | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `label` | string | param name | UI display label |
-| `control_after_generate` | boolean | `false` | Expose for adjustment after generation |
-| `default_randomize` | boolean | `false` | Randomize value by default (requires min/max) |
-| `frontend_only` | boolean | `false` | Not sent to backend; UI-side only |
-| `hidden` | boolean | `false` | Completely hidden from UI |
-| `group_id` | string | none | Group widgets under a collapsible section |
-| `group_title` | string | none | Display title for widget group |
-| `group_order` | number | none | Sort order within group (non-negative) |
-| `min` | number | from object_info | Minimum value for numeric widgets |
-| `max` | number | from object_info | Maximum value for numeric widgets |
-| `default` | any | from object_info | Default value |
-| `value_type` | string | inferred | One of: `"int"`, `"float"`, `"string"`, `"boolean"`, `"enum"`, `"unknown"` |
-| `options` | array | from object_info | Allowed values for enum-type widgets |
+| Field                    | Type    | Default          | Purpose                                                                    |
+| ------------------------ | ------- | ---------------- | -------------------------------------------------------------------------- |
+| `label`                  | string  | param name       | UI display label                                                           |
+| `control_after_generate` | boolean | `false`          | Expose for adjustment after generation                                     |
+| `default_randomize`      | boolean | `false`          | Randomize value by default (requires min/max)                              |
+| `frontend_only`          | boolean | `false`          | Not sent to backend; UI-side only                                          |
+| `hidden`                 | boolean | `false`          | Completely hidden from UI                                                  |
+| `group_id`               | string  | none             | Group widgets under a collapsible section                                  |
+| `group_title`            | string  | none             | Display title for widget group                                             |
+| `group_order`            | number  | none             | Sort order within group (non-negative)                                     |
+| `min`                    | number  | from object_info | Minimum value for numeric widgets                                          |
+| `max`                    | number  | from object_info | Maximum value for numeric widgets                                          |
+| `default`                | any     | from object_info | Default value                                                              |
+| `value_type`             | string  | inferred         | One of: `"int"`, `"float"`, `"string"`, `"boolean"`, `"enum"`, `"unknown"` |
+| `options`                | array   | from object_info | Allowed values for enum-type widgets                                       |
 
 ### `selection`
 
 Controls video frame selection for video input nodes.
 
-| Field | Type | Constraint | Purpose |
-| --- | --- | --- | --- |
-| `export_fps` | positive integer | > 0 | Frames per second for video export |
-| `frame_step` | positive integer | > 0 | Sample every Nth frame |
-| `max_frames` | positive integer | > 0 | Maximum frames to process |
+| Field        | Type             | Constraint | Purpose                            |
+| ------------ | ---------------- | ---------- | ---------------------------------- |
+| `export_fps` | positive integer | > 0        | Frames per second for video export |
+| `frame_step` | positive integer | > 0        | Sample every Nth frame             |
+| `max_frames` | positive integer | > 0        | Maximum frames to process          |
 
 ---
 
@@ -653,8 +653,8 @@ entirely uses the default pipeline. Providing an explicit `pipeline` means
 { "kind": "mask_cropping", "mode": "crop" }
 ```
 
-| Field | Type | Values | Default |
-| --- | --- | --- | --- |
+| Field  | Type   | Values             | Default  |
+| ------ | ------ | ------------------ | -------- |
 | `mode` | string | `"crop"`, `"full"` | `"crop"` |
 
 - `"crop"`: Analyze mask video bounds, determine a crop region, and crop both
@@ -662,6 +662,7 @@ entirely uses the default pipeline. Providing an explicit `pipeline` means
 - `"full"`: Skip mask cropping; use full video dimensions.
 
 Mask cropping only activates when all of these are true:
+
 - `buffered_videos` contains entries.
 - Rules contain derived mask relations.
 - `mask_crop_dilation` is set (0.0–1.0 range).
@@ -687,14 +688,14 @@ Mask cropping only activates when all of these are true:
 }
 ```
 
-| Field | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `enabled` | boolean | `false` | Enable aspect ratio processing |
-| `stride` | positive integer | `16` | Dimension quantization unit |
-| `search_steps` | non-negative integer | `2` | Search radius in strides |
-| `resolutions` | array of positive integers | `[]` | Allowed short-edge resolutions |
-| `target_nodes` | array of objects | `[]` | Nodes to inject calculated dimensions into |
-| `postprocess` | object | enabled, `stretch_exact`, `all_visual_outputs` | Frontend resize behavior |
+| Field          | Type                       | Default                                        | Purpose                                    |
+| -------------- | -------------------------- | ---------------------------------------------- | ------------------------------------------ |
+| `enabled`      | boolean                    | `false`                                        | Enable aspect ratio processing             |
+| `stride`       | positive integer           | `16`                                           | Dimension quantization unit                |
+| `search_steps` | non-negative integer       | `2`                                            | Search radius in strides                   |
+| `resolutions`  | array of positive integers | `[]`                                           | Allowed short-edge resolutions             |
+| `target_nodes` | array of objects           | `[]`                                           | Nodes to inject calculated dimensions into |
+| `postprocess`  | object                     | enabled, `stretch_exact`, `all_visual_outputs` | Frontend resize behavior                   |
 
 Each `target_nodes` entry must declare `node_id`, `width_param`, and
 `height_param`. Resize nodes with `width`/`height` parameters are also
@@ -712,7 +713,11 @@ auto-discovered by policy rules.
       "stride": 16,
       "resolutions": [480, 720],
       "target_nodes": [
-        { "node_id": "104", "width_param": "resize_type.width", "height_param": "resize_type.height" }
+        {
+          "node_id": "104",
+          "width_param": "resize_type.width",
+          "height_param": "resize_type.height"
+        }
       ]
     }
   ]
@@ -754,13 +759,13 @@ Reroutes node outputs to different sources, enabling conditional graph rewrites.
 }
 ```
 
-| Field | Type | Purpose |
-| --- | --- | --- |
-| `target_node_id` | string | Node whose output to reroute |
-| `target_output_index` | integer | Output slot index on the target (default `0`) |
-| `source.kind` | `"node_output"` | Injection type |
-| `source.node_id` | string | Source node to reroute from |
-| `source.output_index` | integer | Output slot index on the source (default `0`) |
+| Field                 | Type            | Purpose                                       |
+| --------------------- | --------------- | --------------------------------------------- |
+| `target_node_id`      | string          | Node whose output to reroute                  |
+| `target_output_index` | integer         | Output slot index on the target (default `0`) |
+| `source.kind`         | `"node_output"` | Injection type                                |
+| `source.node_id`      | string          | Source node to reroute from                   |
+| `source.output_index` | integer         | Output slot index on the source (default `0`) |
 
 Warnings are emitted if the source or target node does not exist in the
 workflow, or if no downstream consumers were matched.
@@ -774,12 +779,12 @@ workflow, or if no downstream consumers were matched.
 
 Controls how outputs are processed after generation. Consumed by the frontend.
 
-| Field | Type | Values | Default | Purpose |
-| --- | --- | --- | --- | --- |
-| `mode` | string | `"auto"`, `"stitch_frames_with_audio"`, `"none"` | `"auto"` | How to combine frame sequences into videos |
-| `panel_preview` | string | `"raw_outputs"`, `"replace_outputs"` | `"raw_outputs"` | What to show in result panel |
-| `on_failure` | string | `"fallback_raw"`, `"show_error"` | `"fallback_raw"` | Behavior when postprocessing fails |
-| `stitch_fps` | positive integer | — | none | FPS override for frame stitching |
+| Field           | Type             | Values                                           | Default          | Purpose                                    |
+| --------------- | ---------------- | ------------------------------------------------ | ---------------- | ------------------------------------------ |
+| `mode`          | string           | `"auto"`, `"stitch_frames_with_audio"`, `"none"` | `"auto"`         | How to combine frame sequences into videos |
+| `panel_preview` | string           | `"raw_outputs"`, `"replace_outputs"`             | `"raw_outputs"`  | What to show in result panel               |
+| `on_failure`    | string           | `"fallback_raw"`, `"show_error"`                 | `"fallback_raw"` | Behavior when postprocessing fails         |
+| `stitch_fps`    | positive integer | —                                                | none             | FPS override for frame stitching           |
 
 ---
 
@@ -797,17 +802,17 @@ assembled `GenerationInput`:
 Backend preprocess order (defined in
 `backend/services/gen_pipeline/processors/__init__.py`):
 
-| Step | Processor | Sidecar sections used |
-| --- | --- | --- |
-| 1 | `inject_values` | — |
-| 2 | `load_rules` | all sidecar sections |
-| 3 | `validate_inputs` | `validation` |
-| 4 | `validate_widgets` | `nodes.*.widgets` |
-| 5 | `apply_rules` | `nodes`, `output_injections`, `slots` |
-| 6 | `widget_overrides` | `nodes.*.widgets` |
-| 7 | `mask_crop` | `pipeline[kind=mask_cropping]`, derived mask fields in `nodes` |
-| 8 | `upload_media` | — |
-| 9 | `aspect_ratio` | `pipeline[kind=aspect_ratio]` |
+| Step | Processor          | Sidecar sections used                                          |
+| ---- | ------------------ | -------------------------------------------------------------- |
+| 1    | `inject_values`    | —                                                              |
+| 2    | `load_rules`       | all sidecar sections                                           |
+| 3    | `validate_inputs`  | `validation`                                                   |
+| 4    | `validate_widgets` | `nodes.*.widgets`                                              |
+| 5    | `apply_rules`      | `nodes`, `output_injections`, `slots`                          |
+| 6    | `widget_overrides` | `nodes.*.widgets`                                              |
+| 7    | `mask_crop`        | `pipeline[kind=mask_cropping]`, derived mask fields in `nodes` |
+| 8    | `upload_media`     | —                                                              |
+| 9    | `aspect_ratio`     | `pipeline[kind=aspect_ratio]`                                  |
 
 ### apply_rules
 

@@ -36,6 +36,10 @@ export interface GeneratedCreationMetadata {
   inputs: GeneratedCreationInput[];
   maskCropMetadata?: MaskCropMetadata;
   generationMaskAssetId?: string;
+  /** The ComfyUI API prompt (node_id → {class_type, inputs}) that was executed. */
+  comfyuiPrompt?: Record<string, unknown>;
+  /** The ComfyUI visual workflow graph (LiteGraph format) with resolved values. */
+  comfyuiWorkflow?: Record<string, unknown>;
 }
 
 export type CreationMetadata =

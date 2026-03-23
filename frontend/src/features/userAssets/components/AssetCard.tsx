@@ -1,16 +1,29 @@
-import React, { useState, useRef } from "react";
-import { Box, Typography, Paper, IconButton } from "@mui/material";
+import React, { useRef, useState } from "react";
+import {
+  Box,
+  IconButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Paper,
+  Typography,
+} from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useDraggable } from "@dnd-kit/core";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
 import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
 import DeleteIcon from "@mui/icons-material/Delete";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import TimelineIcon from "@mui/icons-material/Timeline";
 import type { Asset } from "../../../types/Asset";
 import {
   createClipFromAsset,
+  insertAssetAtTime,
   useTimelineClipCountForAsset,
 } from "../../timeline";
+import { getTimelineSelectionFromAsset } from "../../timelineSelection";
 import { useAssetStore } from "../useAssetStore";
 
 interface AssetCardProps {
@@ -69,7 +82,7 @@ const DurationBadge = styled(Box)({
   pointerEvents: "none",
 });
 
-const StyledDeleteButton = styled(IconButton)({
+const StyledActionButton = styled(IconButton)({
   position: "absolute",
   top: 4,
   right: 4,
@@ -77,7 +90,7 @@ const StyledDeleteButton = styled(IconButton)({
   color: "white",
   padding: 4,
   "&:hover": {
-    backgroundColor: "rgba(200, 0, 0, 0.8)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
   },
   zIndex: 10,
 });
@@ -92,6 +105,7 @@ const formatDuration = (seconds?: number) => {
 
 function AssetCardComponent({ asset }: AssetCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const draggableData = React.useMemo(
@@ -118,22 +132,39 @@ function AssetCardComponent({ asset }: AssetCardProps) {
 
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
   const timelineClipCount = useTimelineClipCountForAsset(asset.id);
+  const timelineSelection = getTimelineSelectionFromAsset(asset);
+  const isMenuOpen = Boolean(menuAnchorEl);
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
+  function handleOpenMenu(event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    event.preventDefault();
+    setMenuAnchorEl(event.currentTarget);
+  }
 
+  function handleCloseMenu() {
+    setMenuAnchorEl(null);
+  }
+
+  function handleDelete() {
+    handleCloseMenu();
     const confirmMessage =
       timelineClipCount > 0
         ? "Are you sure you want to delete this asset? This will remove it from disk permanently.\n\nThis asset is used by clips on the Timeline.\nClips on the Timeline are derived from the asset and will be deleted."
         : "Are you sure you want to delete this asset? This will remove it from disk permanently.";
 
-    if (
-      window.confirm(confirmMessage)
-    ) {
-      deleteAsset(asset.id);
+    if (window.confirm(confirmMessage)) {
+      void deleteAsset(asset.id);
     }
-  };
+  }
+
+  function handleSendToTimeline() {
+    handleCloseMenu();
+    if (!timelineSelection) {
+      return;
+    }
+
+    insertAssetAtTime(asset, timelineSelection.start);
+  }
 
   return (
     <StyledCard
@@ -218,14 +249,38 @@ function AssetCardComponent({ asset }: AssetCardProps) {
         )}
       </ThumbnailContainer>
 
-      <StyledDeleteButton
+      <StyledActionButton
         size="small"
-        onClick={handleDelete}
+        onClick={handleOpenMenu}
         onPointerDown={(e) => e.stopPropagation()}
-        title="Delete Asset"
+        aria-label="Asset actions"
+        title="Asset actions"
       >
-        <DeleteIcon fontSize="small" />
-      </StyledDeleteButton>
+        <MoreVertIcon fontSize="small" />
+      </StyledActionButton>
+      <Menu
+        anchorEl={menuAnchorEl}
+        open={isMenuOpen}
+        onClose={handleCloseMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {timelineSelection ? (
+          <MenuItem onClick={handleSendToTimeline}>
+            <ListItemIcon>
+              <TimelineIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Send to Timeline</ListItemText>
+          </MenuItem>
+        ) : null}
+        <MenuItem onClick={handleDelete}>
+          <ListItemIcon>
+            <DeleteIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Delete</ListItemText>
+        </MenuItem>
+      </Menu>
 
       {/* Metadata Area */}
       <Box sx={{ p: 1 }}>

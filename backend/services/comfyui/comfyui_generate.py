@@ -176,10 +176,12 @@ def _build_postprocess_response(
     aspect_ratio_processing: dict[str, Any] | None = None,
     mask_crop_metadata: dict[str, Any] | None = None,
     processed_mask_bytes: bytes | None = None,
+    comfyui_prompt: dict[str, Any] | None = None,
+    comfyui_workflow: dict[str, Any] | None = None,
 ) -> GenerationResult:
     """Wraps the ComfyUI response, optionally enriching JSON payloads with metadata."""
     media_type = comfyui_response.headers.get("content-type", "application/json")
-    if not workflow_warnings and not applied_widget_values and not aspect_ratio_processing and not mask_crop_metadata and not processed_mask_bytes:
+    if not workflow_warnings and not applied_widget_values and not aspect_ratio_processing and not mask_crop_metadata and not processed_mask_bytes and not comfyui_prompt and not comfyui_workflow:
         return GenerationResult(
             content=comfyui_response.content,
             status_code=comfyui_response.status_code,
@@ -213,6 +215,10 @@ def _build_postprocess_response(
             payload["mask_crop_metadata"] = mask_crop_metadata
         if processed_mask_bytes:
             payload["processed_mask_video"] = base64.b64encode(processed_mask_bytes).decode("ascii")
+        if comfyui_prompt:
+            payload["comfyui_prompt"] = comfyui_prompt
+        if comfyui_workflow:
+            payload["comfyui_workflow"] = comfyui_workflow
 
     return GenerationResult(
         content=json.dumps(payload).encode(),
@@ -309,6 +315,8 @@ def run_backend_postprocess(ctx: BackendPipelineContext) -> GenerationResult:
         aspect_ratio_processing=ctx.aspect_ratio_metadata,
         mask_crop_metadata=ctx.mask_crop_metadata,
         processed_mask_bytes=ctx.processed_mask_bytes,
+        comfyui_prompt=ctx.workflow or None,
+        comfyui_workflow=ctx.graph_data,
     )
 
 

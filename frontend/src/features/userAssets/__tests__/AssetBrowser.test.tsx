@@ -18,6 +18,16 @@ describe("AssetBrowser Component", () => {
       src: "vid.mp4",
       hash: "1",
       createdAt: 0,
+      favourite: true,
+    },
+    {
+      id: "1b",
+      type: "video",
+      name: "b-roll.mp4",
+      src: "b-roll.mp4",
+      hash: "1b",
+      createdAt: 2,
+      favourite: false,
     },
     {
       id: "mask-video",
@@ -244,5 +254,21 @@ describe("AssetBrowser Component", () => {
     expect(
       screen.getByRole("button", { name: /Import Asset/i }),
     ).toBeDisabled();
+  });
+
+  it("filters the current tab to favourite assets when the toolbar heart is enabled", () => {
+    mockStore({ assets: mockAssets });
+
+    render(<AssetBrowser />);
+
+    expect(screen.getByText("vacation.mp4")).toBeInTheDocument();
+    expect(screen.getByText("b-roll.mp4")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show favourite assets" }),
+    );
+
+    expect(screen.getByText("vacation.mp4")).toBeInTheDocument();
+    expect(screen.queryByText("b-roll.mp4")).not.toBeInTheDocument();
   });
 });

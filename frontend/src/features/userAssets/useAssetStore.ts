@@ -24,7 +24,7 @@ interface AssetStore {
     files: readonly File[],
     creationMetadata?: Asset["creationMetadata"],
   ) => Promise<Asset[]>;
-  updateAsset: (id: string, updates: Partial<Asset>) => void;
+  updateAsset: (id: string, updates: Partial<Asset>) => Promise<void>;
   fetchAssets: () => Promise<void>;
   scanForNewAssets: () => Promise<void>;
   getInput: (assetId: string) => Promise<Input | null>;
@@ -281,10 +281,32 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     }
   },
 
-  updateAsset: (id: string, updates: Partial<Asset>) => {
+  updateAsset: async (id: string, updates: Partial<Asset>) => {
+    const previousAsset = get().assets.find((asset) => asset.id === id);
+    if (!previousAsset) {
+      return;
+    }
+
     set((state) => ({
       assets: state.assets.map((a) => (a.id === id ? { ...a, ...updates } : a)),
     }));
+
+    try {
+      await projectDocumentService.updateProjectDocument((draft) => {
+        if (!draft.assets?.[id]) {
+          return;
+        }
+
+        Object.assign(draft.assets[id], updates);
+      });
+    } catch (error) {
+      console.error(`Failed to persist asset update for '${id}'`, error);
+      set((state) => ({
+        assets: state.assets.map((asset) =>
+          asset.id === id ? previousAsset : asset,
+        ),
+      }));
+    }
   },
 
   getInput: async (assetId: string) => {

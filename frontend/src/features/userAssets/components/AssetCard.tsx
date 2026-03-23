@@ -18,6 +18,8 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import ReplayIcon from "@mui/icons-material/Replay";
 import TimelineIcon from "@mui/icons-material/Timeline";
+import FavoriteIcon from "@mui/icons-material/Favorite";
+import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 import type { Asset } from "../../../types/Asset";
 import {
   createClipFromAsset,
@@ -88,7 +90,6 @@ const DurationBadge = styled(Box)({
 const StyledActionButton = styled(IconButton)({
   position: "absolute",
   top: 4,
-  right: 4,
   backgroundColor: "rgba(0, 0, 0, 0.5)",
   color: "white",
   padding: 4,
@@ -96,6 +97,14 @@ const StyledActionButton = styled(IconButton)({
     backgroundColor: "rgba(0, 0, 0, 0.75)",
   },
   zIndex: 10,
+});
+
+const StyledFavouriteButton = styled(StyledActionButton)({
+  left: 4,
+});
+
+const StyledMenuButton = styled(StyledActionButton)({
+  right: 4,
 });
 
 // Helper to format seconds into MM:SS
@@ -150,6 +159,7 @@ function AssetCardComponent({ asset }: AssetCardProps) {
   };
 
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
+  const updateAsset = useAssetStore((state) => state.updateAsset);
   const timelineClipCount = useTimelineClipCountForAsset(asset.id);
   const timelineSelection = getTimelineSelectionFromAsset(asset);
   const canRegenerate = canRegenerateFromMetadata(asset);
@@ -198,6 +208,12 @@ function AssetCardComponent({ asset }: AssetCardProps) {
           : "Failed to load workflow metadata";
       window.alert(message);
     }
+  }
+
+  function handleFavouriteToggle(event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    event.preventDefault();
+    void updateAsset(asset.id, { favourite: !asset.favourite });
   }
 
   return (
@@ -281,7 +297,26 @@ function AssetCardComponent({ asset }: AssetCardProps) {
           )}
         </ThumbnailContainer>
 
-        <StyledActionButton
+        <StyledFavouriteButton
+          size="small"
+          onClick={handleFavouriteToggle}
+          onPointerDown={(event) => event.stopPropagation()}
+          aria-label={
+            asset.favourite ? "Remove from favourites" : "Add to favourites"
+          }
+          title={asset.favourite ? "Remove from favourites" : "Add to favourites"}
+          sx={{
+            color: asset.favourite ? "#ff4d4f" : "white",
+          }}
+        >
+          {asset.favourite ? (
+            <FavoriteIcon fontSize="small" />
+          ) : (
+            <FavoriteBorderIcon fontSize="small" />
+          )}
+        </StyledFavouriteButton>
+
+        <StyledMenuButton
           size="small"
           onClick={handleOpenMenu}
           onPointerDown={(e) => e.stopPropagation()}
@@ -289,7 +324,7 @@ function AssetCardComponent({ asset }: AssetCardProps) {
           title="Asset actions"
         >
           <MoreVertIcon fontSize="small" />
-        </StyledActionButton>
+        </StyledMenuButton>
         <Menu
           anchorEl={menuAnchorEl}
           open={isMenuOpen}

@@ -18,6 +18,8 @@ import PhotoLibraryIcon from "@mui/icons-material/PhotoLibrary";
 import LibraryMusicIcon from "@mui/icons-material/LibraryMusic";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SortIcon from "@mui/icons-material/Sort";
+import FavoriteIcon from "@mui/icons-material/Favorite";
+import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 
 import type { AssetType } from "../../types/Asset";
 import { useAssetStore } from "./useAssetStore";
@@ -47,6 +49,7 @@ function AssetBrowserComponent() {
   const [sortOption, setSortOption] = useState<SortOption>("dateDesc");
   const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showFavouritesOnly, setShowFavouritesOnly] = useState(false);
 
   const assets = useAssetStore((state) => state.assets);
 
@@ -152,6 +155,7 @@ function AssetBrowserComponent() {
     const filtered = assets.filter(
       (asset) =>
         asset.type === activeTab &&
+        (!showFavouritesOnly || asset.favourite) &&
         asset.creationMetadata?.source !== "sam2_mask" &&
         asset.creationMetadata?.source !== "generation_mask",
     );
@@ -166,7 +170,7 @@ function AssetBrowserComponent() {
           return (b.createdAt || 0) - (a.createdAt || 0);
       }
     });
-  }, [assets, activeTab, sortOption]);
+  }, [assets, activeTab, sortOption, showFavouritesOnly]);
 
   return (
     <Box
@@ -248,6 +252,26 @@ function AssetBrowserComponent() {
               sx={{ color: "#aaa" }}
             >
               <SortIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip
+            title={showFavouritesOnly ? "Show all assets" : "Show favourites"}
+          >
+            <IconButton
+              onClick={() => setShowFavouritesOnly((current) => !current)}
+              size="small"
+              aria-label={
+                showFavouritesOnly ? "Show all assets" : "Show favourite assets"
+              }
+              aria-pressed={showFavouritesOnly}
+              sx={{ color: showFavouritesOnly ? "#ff4d4f" : "#aaa" }}
+            >
+              {showFavouritesOnly ? (
+                <FavoriteIcon fontSize="small" />
+              ) : (
+                <FavoriteBorderIcon fontSize="small" />
+              )}
             </IconButton>
           </Tooltip>
 

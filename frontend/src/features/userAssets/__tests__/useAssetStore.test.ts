@@ -214,4 +214,106 @@ describe("useAssetStore", () => {
       expect.stringContaining('"duration": 42.75'),
     );
   });
+
+  it("updateAsset persists favourite changes to project.json", async () => {
+    (useProjectStore.getState as Mock).mockReturnValue({ rootHandle: {} });
+
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "asset-1",
+          name: "clip.mp4",
+          hash: "hash-1",
+          src: "blob:clip",
+          type: "video",
+          createdAt: 1,
+          favourite: false,
+        },
+      ],
+    });
+
+    const mockProjectJson = JSON.stringify({
+      assets: {
+        "asset-1": {
+          id: "asset-1",
+          name: "clip.mp4",
+          hash: "hash-1",
+          src: "clip.mp4",
+          type: "video",
+          createdAt: 1,
+          favourite: false,
+        },
+      },
+    });
+
+    (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
+      if (path === ".vloproject/project.json") {
+        return { text: async () => mockProjectJson };
+      }
+      throw new Error("File not found: " + path);
+    });
+
+    await useAssetStore.getState().updateAsset("asset-1", { favourite: true });
+
+    expect(useAssetStore.getState().assets[0].favourite).toBe(true);
+    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
+      ".vloproject/project.json",
+      expect.stringContaining('"favourite": true'),
+    );
+  });
+
+  it("updateAsset rolls back the optimistic change when persistence fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "asset-1",
+          name: "clip.mp4",
+          hash: "hash-1",
+          src: "blob:clip",
+          type: "video",
+          createdAt: 1,
+          favourite: false,
+        },
+      ],
+    });
+
+    (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
+      if (path === ".vloproject/project.json") {
+        return {
+          text: async () =>
+            JSON.stringify({
+              assets: {
+                "asset-1": {
+                  id: "asset-1",
+                  name: "clip.mp4",
+                  hash: "hash-1",
+                  src: "clip.mp4",
+                  type: "video",
+                  createdAt: 1,
+                  favourite: false,
+                },
+              },
+            }),
+        };
+      }
+
+      throw new Error("File not found: " + path);
+    });
+
+    (fileSystemService.writeFile as Mock).mockRejectedValueOnce(
+      new Error("disk full"),
+    );
+
+    await useAssetStore.getState().updateAsset("asset-1", { favourite: true });
+
+    expect(useAssetStore.getState().assets[0].favourite).toBe(false);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Failed to persist asset update for 'asset-1'",
+      expect.any(Error),
+    );
+  });
 });

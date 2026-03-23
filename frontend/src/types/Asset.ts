@@ -65,6 +65,7 @@ export interface Asset {
   hash: string; // xxhash
   name: string;
   type: AssetType;
+  favourite?: boolean;
   src: string; // Runtime: "blob:http://..." | Disk: "assets/my-video.mp4"
   thumbnail?: string; // Server URL for the thumbnail
   proxySrc?: string; // Server URL for the proxy video

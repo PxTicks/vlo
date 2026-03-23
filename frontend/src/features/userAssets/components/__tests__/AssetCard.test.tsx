@@ -6,6 +6,7 @@ import { useAssetStore } from "../../useAssetStore";
 
 const mocks = vi.hoisted(() => ({
   mockDeleteAsset: vi.fn(),
+  mockUpdateAsset: vi.fn(),
   mockInsertAssetAtTime: vi.fn(),
   mockLoadWorkflowFromAssetMetadata: vi.fn(),
   timelineClipCount: 0,
@@ -107,6 +108,7 @@ function mockStores(timelineClipCount: number) {
   vi.mocked(useAssetStore).mockImplementation((selector: (state: AssetStoreState) => unknown) =>
     selector({
       deleteAsset: mocks.mockDeleteAsset,
+      updateAsset: mocks.mockUpdateAsset,
     } as unknown as AssetStoreState),
   );
 }
@@ -115,6 +117,7 @@ describe("AssetCard actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.mockDeleteAsset.mockReset();
+    mocks.mockUpdateAsset.mockReset();
     mocks.mockInsertAssetAtTime.mockReset();
     mocks.mockLoadWorkflowFromAssetMetadata.mockReset();
     mocks.mockLoadWorkflowFromAssetMetadata.mockResolvedValue(undefined);
@@ -258,6 +261,18 @@ describe("AssetCard actions", () => {
       expect(
         screen.queryByRole("dialog", { name: mockAsset.name }),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  it("toggles the favourite flag from the heart button", () => {
+    mockStores(0);
+
+    render(<AssetCard asset={mockAsset} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add to favourites" }));
+
+    expect(mocks.mockUpdateAsset).toHaveBeenCalledWith(mockAsset.id, {
+      favourite: true,
     });
   });
 });

@@ -67,7 +67,7 @@ export function AssetPreviewDialog({
       <DialogContent sx={{ p: 0, bgcolor: "#000" }}>
         <Box
           component="video"
-          src={asset.proxySrc ?? asset.src}
+          src={asset.src}
           autoPlay
           controls
           playsInline

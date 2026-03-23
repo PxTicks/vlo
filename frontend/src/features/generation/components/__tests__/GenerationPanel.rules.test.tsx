@@ -321,33 +321,23 @@ describe("GenerationPanel workflow rule hints", () => {
   });
 
   it("shows imported asset preview when ingested assets exist", () => {
-    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
-      makeHookState({
-        displayJob: makeCompletedJob({
-          outputs: [],
-          postprocessConfig: {
-            mode: "auto",
-            panel_preview: "raw_outputs",
-            on_failure: "fallback_raw",
-          },
-          postprocessedPreview: null,
-        }),
-        importedAssets: [
-          {
-            id: "asset-1",
-            hash: "hash-1",
-            name: "stitched.webm",
-            type: "video",
-            src: "blob:video",
-            createdAt: Date.now(),
-          },
-        ],
-      }),
-    );
+    const { container } = renderWithImportedVideoPreview();
 
-    render(<GenerationPanel />);
     expect(screen.getByText("Imported asset preview")).toBeInTheDocument();
     expect(screen.getByText("stitched.webm")).toBeInTheDocument();
+    expect(container.querySelector("video")).toHaveAttribute("src", "blob:video");
+  });
+
+  it("uses the original imported asset source instead of the proxy source for video preview", () => {
+    const { container } = renderWithImportedVideoPreview({
+      proxySrc: "blob:proxy-video",
+    });
+
+    expect(container.querySelector("video")).toHaveAttribute("src", "blob:video");
+    expect(container.querySelector("video")).not.toHaveAttribute(
+      "src",
+      "blob:proxy-video",
+    );
   });
 
   it("shows send to timeline whenever sendable assets exist", () => {
@@ -382,3 +372,34 @@ describe("GenerationPanel workflow rule hints", () => {
     expect(screen.getByRole("button", { name: "Send to Timeline" })).toBeInTheDocument();
   });
 });
+
+function renderWithImportedVideoPreview(
+  assetOverrides: Record<string, unknown> = {},
+) {
+  (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        displayJob: makeCompletedJob({
+          outputs: [],
+          postprocessConfig: {
+            mode: "auto",
+            panel_preview: "raw_outputs",
+            on_failure: "fallback_raw",
+          },
+          postprocessedPreview: null,
+        }),
+        importedAssets: [
+          {
+            id: "asset-1",
+            hash: "hash-1",
+            name: "stitched.webm",
+            type: "video",
+            src: "blob:video",
+            createdAt: Date.now(),
+            ...assetOverrides,
+          },
+        ],
+      }),
+    );
+
+  return render(<GenerationPanel />);
+}

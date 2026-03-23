@@ -46,6 +46,7 @@ const mockAsset: Asset = {
   id: "asset-1",
   name: "clip.mp4",
   src: "clip.mp4",
+  proxySrc: "proxy-clip.mp4",
   type: "video",
   hash: "hash-1",
   createdAt: 1000,
@@ -212,6 +213,10 @@ describe("AssetCard actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Preview video" }));
 
     expect(screen.getByRole("dialog", { name: mockAsset.name })).toBeInTheDocument();
+    expect(screen.getByLabelText(`${mockAsset.name} preview`)).toHaveAttribute(
+      "src",
+      mockAsset.src,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
 

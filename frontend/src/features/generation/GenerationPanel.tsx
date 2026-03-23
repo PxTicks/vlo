@@ -446,9 +446,7 @@ export function GenerationPanel() {
       : false;
   const importedPreviewAsset = importedAssets[0] ?? null;
   const importedPreviewSrc = importedPreviewAsset
-    ? importedPreviewAsset.type === "video"
-      ? importedPreviewAsset.proxySrc ?? importedPreviewAsset.src
-      : importedPreviewAsset.src
+    ? importedPreviewAsset.src
     : "";
 
   return (

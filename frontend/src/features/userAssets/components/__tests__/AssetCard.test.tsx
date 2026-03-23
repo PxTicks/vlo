@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import { AssetCard } from "../AssetCard";
@@ -202,5 +202,57 @@ describe("AssetCard actions", () => {
     expect(
       screen.queryByRole("menuitem", { name: "Regenerate" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("opens a video preview modal from the play button and closes with the x button", async () => {
+    mockStores(0);
+
+    render(<AssetCard asset={mockAsset} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview video" }));
+
+    expect(screen.getByRole("dialog", { name: mockAsset.name })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: mockAsset.name }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("closes the video preview modal on escape", async () => {
+    mockStores(0);
+
+    render(<AssetCard asset={mockAsset} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview video" }));
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: mockAsset.name }), {
+      key: "Escape",
+      code: "Escape",
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: mockAsset.name }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("closes the video preview modal when the window blurs", async () => {
+    mockStores(0);
+
+    render(<AssetCard asset={mockAsset} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview video" }));
+    fireEvent(window, new Event("blur"));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: mockAsset.name }),
+      ).not.toBeInTheDocument();
+    });
   });
 });

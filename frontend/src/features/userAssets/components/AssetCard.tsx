@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   Box,
   IconButton,
@@ -27,6 +27,7 @@ import {
 import { useGenerationStore } from "../../generation/useGenerationStore";
 import { getTimelineSelectionFromAsset } from "../../timelineSelection";
 import { useAssetStore } from "../useAssetStore";
+import { AssetPreviewDialog } from "./AssetPreviewDialog";
 
 interface AssetCardProps {
   asset: Asset;
@@ -115,8 +116,8 @@ function canRegenerateFromMetadata(asset: Asset): boolean {
 
 function AssetCardComponent({ asset }: AssetCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   const draggableData = React.useMemo(
     () => ({
@@ -136,8 +137,16 @@ function AssetCardComponent({ asset }: AssetCardProps) {
     asset.thumbnail || (asset.type === "image" ? asset.src : null);
 
   const handlePlayToggle = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent drag events if nested
-    setIsPlaying((prev) => !prev);
+    e.stopPropagation();
+
+    if (asset.type === "video") {
+      setIsPreviewOpen(true);
+      return;
+    }
+
+    if (asset.type === "audio") {
+      setIsPlaying((prev) => !prev);
+    }
   };
 
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
@@ -192,152 +201,159 @@ function AssetCardComponent({ asset }: AssetCardProps) {
   }
 
   return (
-    <StyledCard
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      elevation={2}
-      isDragging={isDragging}
-      onMouseLeave={() => setIsPlaying(false)}
-      data-testid="asset-card"
-    >
-      {/* Thumbnail / Video Area */}
-      <ThumbnailContainer>
-        {isPlaying && asset.type === "video" ? (
-          <video
-            ref={videoRef}
-            src={asset.src}
-            autoPlay
-            muted={false} // User likely wants to hear it
-            controls={false} // Clean look, click to stop
-            loop
-            style={{ width: "100%", height: "100%", objectFit: "contain" }}
-          />
-        ) : displayImage ? (
-          <img
-            src={displayImage}
-            alt={asset.name}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        ) : (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "100%",
-              height: "100%",
-            }}
-          >
-            {asset.type === "audio" ? (
-              <MusicNoteIcon sx={{ fontSize: 40, color: "#888" }} />
-            ) : (
-              <Typography variant="caption" sx={{ color: "#555" }}>
-                No Preview
-              </Typography>
-            )}
-          </Box>
-        )}
-
-        {/* Audio Player */}
-        {isPlaying && asset.type === "audio" && (
-          <audio src={asset.src} autoPlay loop />
-        )}
-
-        {/* Video/Audio Overlay Controls */}
-        {(asset.type === "video" || asset.type === "audio") && (
-          <OverlayControls isPlaying={isPlaying}>
-            <IconButton
-              onClick={handlePlayToggle}
-              onPointerDown={(e) => e.stopPropagation()}
-              sx={{ color: "white" }}
+    <>
+      <StyledCard
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
+        elevation={2}
+        isDragging={isDragging}
+        onMouseLeave={() => setIsPlaying(false)}
+        data-testid="asset-card"
+      >
+        {/* Thumbnail / Video Area */}
+        <ThumbnailContainer>
+          {displayImage ? (
+            <img
+              src={displayImage}
+              alt={asset.name}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "100%",
+                height: "100%",
+              }}
             >
-              {isPlaying ? (
-                <PauseCircleOutlineIcon sx={{ fontSize: 32 }} />
+              {asset.type === "audio" ? (
+                <MusicNoteIcon sx={{ fontSize: 40, color: "#888" }} />
               ) : (
-                <PlayCircleOutlineIcon sx={{ fontSize: 32 }} />
+                <Typography variant="caption" sx={{ color: "#555" }}>
+                  No Preview
+                </Typography>
               )}
-            </IconButton>
-          </OverlayControls>
-        )}
+            </Box>
+          )}
 
-        {/* Duration Badge */}
-        {asset.type !== "image" && asset.duration && (
-          <DurationBadge>
-            <Typography
-              variant="caption"
-              sx={{ fontSize: "0.6rem", color: "white" }}
-            >
-              {formatDuration(asset.duration)}
-            </Typography>
-          </DurationBadge>
-        )}
-      </ThumbnailContainer>
+          {/* Audio Player */}
+          {isPlaying && asset.type === "audio" && (
+            <audio src={asset.src} autoPlay loop />
+          )}
 
-      <StyledActionButton
-        size="small"
-        onClick={handleOpenMenu}
-        onPointerDown={(e) => e.stopPropagation()}
-        aria-label="Asset actions"
-        title="Asset actions"
-      >
-        <MoreVertIcon fontSize="small" />
-      </StyledActionButton>
-      <Menu
-        anchorEl={menuAnchorEl}
-        open={isMenuOpen}
-        onClose={handleCloseMenu}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-        transformOrigin={{ vertical: "top", horizontal: "right" }}
-        onClick={(event) => event.stopPropagation()}
-      >
-        {canRegenerate ? (
-          <MenuItem onClick={() => void handleRegenerate()}>
-            <ListItemIcon>
-              <ReplayIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Regenerate</ListItemText>
-          </MenuItem>
-        ) : null}
-        {timelineSelection ? (
-          <MenuItem onClick={handleSendToTimeline}>
-            <ListItemIcon>
-              <TimelineIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Send to Timeline</ListItemText>
-          </MenuItem>
-        ) : null}
-        <MenuItem onClick={handleDelete}>
-          <ListItemIcon>
-            <DeleteIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
-      </Menu>
+          {/* Video/Audio Overlay Controls */}
+          {(asset.type === "video" || asset.type === "audio") && (
+            <OverlayControls isPlaying={asset.type === "audio" && isPlaying}>
+              <IconButton
+                onClick={handlePlayToggle}
+                onPointerDown={(e) => e.stopPropagation()}
+                aria-label={
+                  asset.type === "video"
+                    ? "Preview video"
+                    : isPlaying
+                      ? "Pause audio"
+                      : "Play audio"
+                }
+                sx={{ color: "white" }}
+              >
+                {asset.type === "audio" && isPlaying ? (
+                  <PauseCircleOutlineIcon sx={{ fontSize: 32 }} />
+                ) : (
+                  <PlayCircleOutlineIcon sx={{ fontSize: 32 }} />
+                )}
+              </IconButton>
+            </OverlayControls>
+          )}
 
-      {/* Metadata Area */}
-      <Box sx={{ p: 1 }}>
-        <Typography
-          variant="caption"
-          noWrap
-          display="block"
-          sx={{ fontWeight: 500 }}
-          title={asset.name} // Tooltip for long names
+          {/* Duration Badge */}
+          {asset.type !== "image" && asset.duration && (
+            <DurationBadge>
+              <Typography
+                variant="caption"
+                sx={{ fontSize: "0.6rem", color: "white" }}
+              >
+                {formatDuration(asset.duration)}
+              </Typography>
+            </DurationBadge>
+          )}
+        </ThumbnailContainer>
+
+        <StyledActionButton
+          size="small"
+          onClick={handleOpenMenu}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Asset actions"
+          title="Asset actions"
         >
-          {asset.name}
-        </Typography>
-        <Typography
-          variant="caption"
-          display="block"
-          sx={{ fontSize: "0.65rem", color: "#aaa" }}
+          <MoreVertIcon fontSize="small" />
+        </StyledActionButton>
+        <Menu
+          anchorEl={menuAnchorEl}
+          open={isMenuOpen}
+          onClose={handleCloseMenu}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          transformOrigin={{ vertical: "top", horizontal: "right" }}
+          onClick={(event) => event.stopPropagation()}
         >
-          {asset.createdAt
-            ? new Date(asset.createdAt).toLocaleTimeString()
-            : "Unknown Time"}
-          {/* Fallback added in case createdAt is missing in legacy data */}
-        </Typography>
-      </Box>
-    </StyledCard>
+          {canRegenerate ? (
+            <MenuItem onClick={() => void handleRegenerate()}>
+              <ListItemIcon>
+                <ReplayIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Regenerate</ListItemText>
+            </MenuItem>
+          ) : null}
+          {timelineSelection ? (
+            <MenuItem onClick={handleSendToTimeline}>
+              <ListItemIcon>
+                <TimelineIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Send to Timeline</ListItemText>
+            </MenuItem>
+          ) : null}
+          <MenuItem onClick={handleDelete}>
+            <ListItemIcon>
+              <DeleteIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Delete</ListItemText>
+          </MenuItem>
+        </Menu>
+
+        {/* Metadata Area */}
+        <Box sx={{ p: 1 }}>
+          <Typography
+            variant="caption"
+            noWrap
+            display="block"
+            sx={{ fontWeight: 500 }}
+            title={asset.name} // Tooltip for long names
+          >
+            {asset.name}
+          </Typography>
+          <Typography
+            variant="caption"
+            display="block"
+            sx={{ fontSize: "0.65rem", color: "#aaa" }}
+          >
+            {asset.createdAt
+              ? new Date(asset.createdAt).toLocaleTimeString()
+              : "Unknown Time"}
+            {/* Fallback added in case createdAt is missing in legacy data */}
+          </Typography>
+        </Box>
+      </StyledCard>
+
+      {asset.type === "video" ? (
+        <AssetPreviewDialog
+          asset={asset}
+          open={isPreviewOpen}
+          onClose={() => setIsPreviewOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }
 

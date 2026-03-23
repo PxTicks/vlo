@@ -64,6 +64,7 @@ export interface WorkflowInputValidationFailure {
 
 export interface WorkflowRulesResponse {
   workflow_id: string;
+  has_sidecar?: boolean;
   rules: WorkflowRules;
   warnings: WorkflowRuleWarning[];
 }

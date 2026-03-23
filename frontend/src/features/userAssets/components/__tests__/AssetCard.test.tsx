@@ -7,6 +7,7 @@ import { useAssetStore } from "../../useAssetStore";
 const mocks = vi.hoisted(() => ({
   mockDeleteAsset: vi.fn(),
   mockInsertAssetAtTime: vi.fn(),
+  mockLoadWorkflowFromAssetMetadata: vi.fn(),
   timelineClipCount: 0,
 }));
 
@@ -30,6 +31,14 @@ vi.mock("../../../timeline", () => {
     useTimelineClipCountForAsset: () => mocks.timelineClipCount,
   };
 });
+
+vi.mock("../../../generation/useGenerationStore", () => ({
+  useGenerationStore: {
+    getState: () => ({
+      loadWorkflowFromAssetMetadata: mocks.mockLoadWorkflowFromAssetMetadata,
+    }),
+  },
+}));
 
 vi.mock("../../useAssetStore");
 
@@ -74,6 +83,22 @@ const generatedFromSelectionAsset: Asset = {
   },
 };
 
+const generatedWithWorkflowMetadataAsset: Asset = {
+  ...mockAsset,
+  id: "asset-generated-metadata",
+  creationMetadata: {
+    source: "generated",
+    workflowName: "Workflow",
+    inputs: [],
+    comfyuiPrompt: {
+      "1": {
+        class_type: "LoadVideo",
+        inputs: { file: "clip.mp4" },
+      },
+    },
+  },
+};
+
 type AssetStoreState = ReturnType<typeof useAssetStore.getState>;
 
 function mockStores(timelineClipCount: number) {
@@ -90,6 +115,8 @@ describe("AssetCard actions", () => {
     vi.clearAllMocks();
     mocks.mockDeleteAsset.mockReset();
     mocks.mockInsertAssetAtTime.mockReset();
+    mocks.mockLoadWorkflowFromAssetMetadata.mockReset();
+    mocks.mockLoadWorkflowFromAssetMetadata.mockResolvedValue(undefined);
     mocks.timelineClipCount = 0;
   });
 
@@ -149,6 +176,19 @@ describe("AssetCard actions", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows regenerate for generated assets with saved workflow metadata", () => {
+    mockStores(0);
+
+    render(<AssetCard asset={generatedWithWorkflowMetadataAsset} />);
+
+    fireEvent.click(screen.getByLabelText("Asset actions"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Regenerate" }));
+
+    expect(mocks.mockLoadWorkflowFromAssetMetadata).toHaveBeenCalledWith(
+      generatedWithWorkflowMetadataAsset,
+    );
+  });
+
   it("does not show send to timeline when no selection metadata exists", () => {
     mockStores(0);
 
@@ -158,6 +198,9 @@ describe("AssetCard actions", () => {
 
     expect(
       screen.queryByRole("menuitem", { name: "Send to Timeline" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "Regenerate" }),
     ).not.toBeInTheDocument();
   });
 });

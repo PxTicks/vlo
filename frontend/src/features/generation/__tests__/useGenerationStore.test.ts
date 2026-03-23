@@ -215,6 +215,7 @@ describe("useGenerationStore workflow rules", () => {
     vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({});
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
+      has_sidecar: true,
       rules: makeWorkflowRules({
         mask_cropping: { mode: "full" },
       }),
@@ -224,6 +225,139 @@ describe("useGenerationStore workflow rules", () => {
     await useGenerationStore.getState().loadWorkflow("wf.json");
 
     expect(useGenerationStore.getState().maskCropMode).toBe("full");
+  });
+
+  it("loads generated asset metadata as a loaded workflow and applies matched sidecar rules", async () => {
+    const asset = {
+      id: "generated-asset",
+      hash: "hash",
+      name: "generated.mp4",
+      type: "video" as const,
+      src: "generated.mp4",
+      createdAt: Date.now(),
+      creationMetadata: {
+        source: "generated" as const,
+        workflowName: "Original Workflow",
+        inputs: [],
+        comfyuiPrompt: {
+          "145": {
+            class_type: "LoadVideo",
+            inputs: { file: "source.mp4" },
+          },
+        },
+      },
+    };
+
+    useGenerationStore.setState({
+      tempWorkflow: null,
+      availableWorkflows: [],
+      activeWorkflowRules: null,
+      activeRulesWarnings: [],
+      rulesWorkflowSourceId: null,
+      workflowInputs: [],
+      mediaInputs: {},
+    });
+
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
+      { id: "match.json", name: "Matched Workflow" },
+    ]);
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      nodes: [{ id: 145, type: "LoadVideo", widgets_values: ["other.mp4"] }],
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "match.json",
+      has_sidecar: true,
+      rules: makeWorkflowRules({
+        nodes: {
+          "145": {
+            present: {
+              label: "Matched Video",
+              input_type: "video",
+              param: "file",
+              class_type: "LoadVideo",
+            },
+          },
+        },
+      }),
+      warnings: [],
+    });
+
+    await useGenerationStore.getState().loadWorkflowFromAssetMetadata(asset);
+
+    const state = useGenerationStore.getState();
+    expect(state.selectedWorkflowId).toBe(TEMP_WORKFLOW_ID);
+    expect(
+      state.availableWorkflows.some(
+        (workflow) =>
+          workflow.id === TEMP_WORKFLOW_ID &&
+          workflow.name === "loaded workflow",
+      ),
+    ).toBe(true);
+    expect(state.rulesWorkflowSourceId).toBe("match.json");
+    expect(state.workflowInputs[0]?.label).toBe("Matched Video");
+    expect(state.workflowInputs[0]?.origin).toBe("rule");
+  });
+
+  it("keeps inferred presentation when the matched workflow has no sidecar", async () => {
+    const asset = {
+      id: "generated-asset",
+      hash: "hash",
+      name: "generated.mp4",
+      type: "video" as const,
+      src: "generated.mp4",
+      createdAt: Date.now(),
+      creationMetadata: {
+        source: "generated" as const,
+        workflowName: "Original Workflow",
+        inputs: [],
+        comfyuiPrompt: {
+          "145": {
+            class_type: "LoadVideo",
+            inputs: { file: "source.mp4" },
+          },
+        },
+      },
+    };
+
+    useGenerationStore.setState({
+      tempWorkflow: null,
+      availableWorkflows: [],
+      activeWorkflowRules: null,
+      activeRulesWarnings: [],
+      rulesWorkflowSourceId: null,
+      workflowInputs: [],
+      mediaInputs: {},
+    });
+
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
+      { id: "match.json", name: "Matched Workflow" },
+    ]);
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      nodes: [{ id: 145, type: "LoadVideo", widgets_values: ["other.mp4"] }],
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "match.json",
+      has_sidecar: false,
+      rules: makeWorkflowRules({
+        nodes: {
+          "145": {
+            present: {
+              label: "Should Not Apply",
+              input_type: "video",
+              param: "file",
+              class_type: "LoadVideo",
+            },
+          },
+        },
+      }),
+      warnings: [],
+    });
+
+    await useGenerationStore.getState().loadWorkflowFromAssetMetadata(asset);
+
+    const state = useGenerationStore.getState();
+    expect(state.rulesWorkflowSourceId).toBeNull();
+    expect(state.workflowInputs[0]?.origin).toBe("inferred");
   });
 
   it("surfaces workflow load errors when workflow discovery fails", async () => {

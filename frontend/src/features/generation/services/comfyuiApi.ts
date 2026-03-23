@@ -10,7 +10,6 @@ import {
 import { normalizeWorkflowFilename } from "./workflowFilenames";
 import type {
   WorkflowRuleWarning,
-  WorkflowRules,
   WorkflowRulesResponse,
 } from "./workflowRules";
 import { isRecord } from "./parsers";
@@ -433,6 +432,7 @@ export async function getWorkflowRules(
   }
   const payload = (await resp.json()) as WorkflowRulesResponse;
   payload.rules = createDefaultWorkflowRules(payload.rules ?? {});
+  payload.has_sidecar = payload.has_sidecar === true;
   if (!Array.isArray(payload.warnings)) {
     payload.warnings = [];
   }

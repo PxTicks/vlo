@@ -37,6 +37,7 @@ import type { DerivedMaskMapping } from "./pipeline/types";
 import { parseNodeOutputItems } from "./services/parsers";
 import { mergeRuleWarnings } from "./services/warnings";
 import { injectWorkflowAndRead } from "./services/workflowSyncController";
+import { parseWorkflowInputs } from "./services/workflowBridge";
 import {
   isTemporaryWorkflowDuplicateFilename,
   isSafeWorkflowFilename,
@@ -59,6 +60,7 @@ import {
   getWorkflowInputValue,
   resolveWorkflowInputKeys,
 } from "./utils/workflowInputs";
+import { haveMatchingWorkflowNodes } from "./utils/workflowNodeSignature";
 
 export type ComfyUIConnectionStatus =
   | "disconnected"
@@ -70,12 +72,17 @@ interface TempWorkflow {
   workflow: Record<string, unknown>;
   graphData: Record<string, unknown>;
   inputs: WorkflowInput[];
+  name?: string;
+  rules?: WorkflowRules | null;
+  rulesSourceId?: string | null;
+  rulesWarnings?: WorkflowRuleWarning[];
 }
 
 type WorkflowOption = { id: string; name: string };
 
 export const TEMP_WORKFLOW_ID = "__temp__";
 const TEMP_WORKFLOW_DISPLAY_NAME = "Edited Workflow";
+const LOADED_WORKFLOW_DISPLAY_NAME = "loaded workflow";
 const IDLE_PIPELINE_STATUS: GenerationPipelineStatus = {
   phase: "idle",
   message: null,
@@ -232,6 +239,22 @@ function removeWorkflowOption(
   return workflows.filter((workflow) => workflow.id !== workflowId);
 }
 
+function resolveTempWorkflowDisplayName(
+  tempWorkflow: TempWorkflow | null,
+): string {
+  return tempWorkflow?.name ?? TEMP_WORKFLOW_DISPLAY_NAME;
+}
+
+function upsertTempWorkflowOption(
+  workflows: WorkflowOption[],
+  tempWorkflow: TempWorkflow,
+): WorkflowOption[] {
+  return upsertWorkflowOption(workflows, {
+    id: TEMP_WORKFLOW_ID,
+    name: resolveTempWorkflowDisplayName(tempWorkflow),
+  });
+}
+
 function getSaveImageWebsocketNodeIds(
   workflow: Record<string, unknown> | null,
 ): Set<string> {
@@ -249,6 +272,101 @@ function getSaveImageWebsocketNodeIds(
   }
 
   return ids;
+}
+
+async function resolveMetadataWorkflowMatch(
+  workflowData: Record<string, unknown>,
+  availableWorkflows: WorkflowOption[],
+): Promise<{
+  availableWorkflows: WorkflowOption[];
+  matchedWorkflow: WorkflowOption | null;
+  rules: WorkflowRules;
+  rulesWarnings: WorkflowRuleWarning[];
+  rulesSourceId: string | null;
+}> {
+  let candidateWorkflows = removeWorkflowOption(
+    availableWorkflows,
+    TEMP_WORKFLOW_ID,
+  );
+
+  try {
+    candidateWorkflows = await comfyApi.listWorkflows();
+  } catch (error) {
+    console.warn(
+      "[Generation] Failed to refresh workflows for metadata match:",
+      error,
+    );
+  }
+
+  const workflowMatches = await Promise.all(
+    candidateWorkflows.map(async (workflow) => {
+      try {
+        const candidateGraph = await comfyApi.getWorkflowContent(workflow.id);
+        return haveMatchingWorkflowNodes(workflowData, candidateGraph)
+          ? workflow
+          : null;
+      } catch (error) {
+        console.warn(
+          "[Generation] Failed to compare workflow against metadata:",
+          workflow.id,
+          error,
+        );
+        return null;
+      }
+    }),
+  );
+
+  const matchedWorkflow =
+    workflowMatches.find(
+      (workflow): workflow is WorkflowOption => workflow !== null,
+    ) ?? null;
+
+  if (!matchedWorkflow) {
+    return {
+      availableWorkflows: candidateWorkflows,
+      matchedWorkflow: null,
+      rules: EMPTY_WORKFLOW_RULES,
+      rulesWarnings: [],
+      rulesSourceId: null,
+    };
+  }
+
+  try {
+    const response = await comfyApi.getWorkflowRules(matchedWorkflow.id);
+    if (!response.has_sidecar) {
+      return {
+        availableWorkflows: candidateWorkflows,
+        matchedWorkflow,
+        rules: EMPTY_WORKFLOW_RULES,
+        rulesWarnings: [],
+        rulesSourceId: null,
+      };
+    }
+
+    return {
+      availableWorkflows: candidateWorkflows,
+      matchedWorkflow,
+      rules: response.rules,
+      rulesWarnings: response.warnings ?? [],
+      rulesSourceId: matchedWorkflow.id,
+    };
+  } catch (error) {
+    return {
+      availableWorkflows: candidateWorkflows,
+      matchedWorkflow,
+      rules: EMPTY_WORKFLOW_RULES,
+      rulesWarnings: [
+        {
+          code: "rules_fetch_failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to fetch workflow rules; defaulting to inferred behavior",
+        },
+      ],
+      rulesSourceId: null,
+    };
+  }
 }
 
 function buildGeneratedCreationMetadata(
@@ -437,6 +555,7 @@ interface GenerationStore {
   fetchWorkflows: () => Promise<void>;
   syncObjectInfo: () => Promise<void>;
   loadWorkflow: (filename: string) => Promise<void>;
+  loadWorkflowFromAssetMetadata: (asset: Asset) => Promise<void>;
 
   submitGeneration: (
     slotValues: Record<string, SlotValue>,
@@ -1265,10 +1384,19 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
       return;
     }
 
-    const nextAvailable = upsertWorkflowOption(availableWorkflows, {
-      id: TEMP_WORKFLOW_ID,
-      name: TEMP_WORKFLOW_DISPLAY_NAME,
-    });
+    const nextTempWorkflow: TempWorkflow = {
+      workflow,
+      graphData,
+      inputs,
+      name: state.tempWorkflow?.name ?? TEMP_WORKFLOW_DISPLAY_NAME,
+      rules: state.activeWorkflowRules,
+      rulesSourceId: state.rulesWorkflowSourceId,
+      rulesWarnings: state.activeRulesWarnings,
+    };
+    const nextAvailable = upsertTempWorkflowOption(
+      availableWorkflows,
+      nextTempWorkflow,
+    );
 
     set((currentState) => ({
       syncedWorkflow: workflow,
@@ -1281,7 +1409,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
       mediaInputs: pruneMediaInputs(currentState.mediaInputs, presented.inputs),
       selectedWorkflowId: TEMP_WORKFLOW_ID,
       availableWorkflows: nextAvailable,
-      tempWorkflow: { workflow, graphData, inputs },
+      tempWorkflow: nextTempWorkflow,
       isWorkflowLoading: false,
       workflowLoadState: "ready",
       isWorkflowReady: true,
@@ -1305,10 +1433,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
 
       // Append temp entry if one exists
       const workflows = tempWorkflow
-        ? upsertWorkflowOption(mergedWorkflows, {
-            id: TEMP_WORKFLOW_ID,
-            name: TEMP_WORKFLOW_DISPLAY_NAME,
-          })
+        ? upsertTempWorkflowOption(mergedWorkflows, tempWorkflow)
         : removeWorkflowOption(mergedWorkflows, TEMP_WORKFLOW_ID);
 
       set({ availableWorkflows: workflows });
@@ -1393,9 +1518,11 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
 
     try {
       let graphData: Record<string, unknown>;
-      let rules = activeWorkflowRules;
-      let rulesSourceId = rulesWorkflowSourceId;
-      let rulesWarnings = activeRulesWarnings;
+      let rules = tempWorkflow?.rules ?? activeWorkflowRules ?? EMPTY_WORKFLOW_RULES;
+      let rulesSourceId =
+        tempWorkflow?.rulesSourceId ?? rulesWorkflowSourceId;
+      let rulesWarnings =
+        tempWorkflow?.rulesWarnings ?? activeRulesWarnings;
 
       // 1. Resolve workflow graph + rules (in-memory temp or backend file)
       if (isTempWorkflow && tempWorkflow) {
@@ -1447,7 +1574,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
         activeWorkflowRules: rules,
         rulesWorkflowSourceId: rulesSourceId,
         activeRulesWarnings: rulesWarnings,
-        maskCropMode: (rules ?? EMPTY_WORKFLOW_RULES).mask_cropping.mode,
+        maskCropMode: rules.mask_cropping.mode,
       });
 
       if (isTempWorkflow && tempWorkflow) {
@@ -1544,6 +1671,72 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
           isWorkflowReady: state.syncedWorkflow !== null,
         }));
       }
+    }
+  },
+
+  loadWorkflowFromAssetMetadata: async (asset) => {
+    const metadata = asset.creationMetadata;
+    if (metadata?.source !== "generated") {
+      throw new Error("Only generated assets can be regenerated from metadata");
+    }
+
+    const workflow =
+      metadata.comfyuiPrompt ?? metadata.comfyuiWorkflow ?? null;
+    const graphData =
+      metadata.comfyuiWorkflow ?? metadata.comfyuiPrompt ?? null;
+    if (!workflow || !graphData) {
+      throw new Error("This asset does not include saved workflow metadata");
+    }
+
+    set({
+      isWorkflowLoading: true,
+      workflowLoadState: "loading",
+      workflowLoadError: null,
+      isWorkflowReady: false,
+      workflowWarning: null,
+      workflowRuleWarnings: [],
+    });
+
+    try {
+      const state = get();
+      const resolvedMatch = await resolveMetadataWorkflowMatch(
+        workflow,
+        state.availableWorkflows,
+      );
+      const nextTempWorkflow: TempWorkflow = {
+        workflow,
+        graphData,
+        inputs:
+          metadata.comfyuiPrompt
+            ? parseWorkflowInputs(metadata.comfyuiPrompt, state.inputNodeMap)
+            : [],
+        name: LOADED_WORKFLOW_DISPLAY_NAME,
+        rules: resolvedMatch.rules,
+        rulesSourceId: resolvedMatch.rulesSourceId,
+        rulesWarnings: resolvedMatch.rulesWarnings,
+      };
+
+      set({
+        tempWorkflow: nextTempWorkflow,
+        availableWorkflows: upsertTempWorkflowOption(
+          resolvedMatch.availableWorkflows,
+          nextTempWorkflow,
+        ),
+      });
+
+      await get().loadWorkflow(TEMP_WORKFLOW_ID);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load workflow metadata";
+      set({
+        workflowLoadError: message,
+        isWorkflowLoading: false,
+        workflowLoadState: "error",
+        isWorkflowReady: false,
+      });
+      throw error;
     }
   },
 

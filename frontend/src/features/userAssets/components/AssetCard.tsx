@@ -16,6 +16,7 @@ import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
 import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
 import DeleteIcon from "@mui/icons-material/Delete";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import ReplayIcon from "@mui/icons-material/Replay";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import type { Asset } from "../../../types/Asset";
 import {
@@ -23,6 +24,7 @@ import {
   insertAssetAtTime,
   useTimelineClipCountForAsset,
 } from "../../timeline";
+import { useGenerationStore } from "../../generation/useGenerationStore";
 import { getTimelineSelectionFromAsset } from "../../timelineSelection";
 import { useAssetStore } from "../useAssetStore";
 
@@ -103,6 +105,14 @@ const formatDuration = (seconds?: number) => {
   return `${m}:${s.toString().padStart(2, "0")}`;
 };
 
+function canRegenerateFromMetadata(asset: Asset): boolean {
+  const metadata = asset.creationMetadata;
+  return (
+    metadata?.source === "generated" &&
+    Boolean(metadata.comfyuiPrompt || metadata.comfyuiWorkflow)
+  );
+}
+
 function AssetCardComponent({ asset }: AssetCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
@@ -133,6 +143,7 @@ function AssetCardComponent({ asset }: AssetCardProps) {
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
   const timelineClipCount = useTimelineClipCountForAsset(asset.id);
   const timelineSelection = getTimelineSelectionFromAsset(asset);
+  const canRegenerate = canRegenerateFromMetadata(asset);
   const isMenuOpen = Boolean(menuAnchorEl);
 
   function handleOpenMenu(event: React.MouseEvent<HTMLButtonElement>) {
@@ -164,6 +175,20 @@ function AssetCardComponent({ asset }: AssetCardProps) {
     }
 
     insertAssetAtTime(asset, timelineSelection.start);
+  }
+
+  async function handleRegenerate() {
+    handleCloseMenu();
+
+    try {
+      await useGenerationStore.getState().loadWorkflowFromAssetMetadata(asset);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load workflow metadata";
+      window.alert(message);
+    }
   }
 
   return (
@@ -266,6 +291,14 @@ function AssetCardComponent({ asset }: AssetCardProps) {
         transformOrigin={{ vertical: "top", horizontal: "right" }}
         onClick={(event) => event.stopPropagation()}
       >
+        {canRegenerate ? (
+          <MenuItem onClick={() => void handleRegenerate()}>
+            <ListItemIcon>
+              <ReplayIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Regenerate</ListItemText>
+          </MenuItem>
+        ) : null}
         {timelineSelection ? (
           <MenuItem onClick={handleSendToTimeline}>
             <ListItemIcon>

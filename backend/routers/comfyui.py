@@ -35,6 +35,7 @@ from services.workflow_rules import (
     WorkflowValidationError,
     enrich_rules_with_object_info,
     load_rules_model_for_workflow,
+    sidecar_path_for_workflow,
 )
 from services.workflow_rules.schema import dump_resolved_rules, dump_warning_models
 from services.workflow_rules.object_info import OBJECT_INFO_PATH, set_object_info_cache, build_input_node_map
@@ -199,6 +200,18 @@ def _resolve_workflow_path(filename: str) -> Path | None:
     default = DEFAULT_WORKFLOWS_DIR / filename
     if default.exists():
         return default
+    return None
+
+
+def _resolve_workflow_sidecar_path(filename: str) -> Path | None:
+    main = sidecar_path_for_workflow(WORKFLOWS_DIR, filename)
+    if main.exists():
+        return main
+
+    default = sidecar_path_for_workflow(DEFAULT_WORKFLOWS_DIR, filename)
+    if default.exists():
+        return default
+
     return None
 
 
@@ -527,6 +540,7 @@ async def get_workflow_rules(filename: str):
 
         return {
             "workflow_id": filename,
+            "has_sidecar": _resolve_workflow_sidecar_path(filename) is not None,
             "rules": rules,
             "warnings": dump_warning_models(warnings),
         }

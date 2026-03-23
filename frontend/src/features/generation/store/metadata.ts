@@ -219,6 +219,7 @@ export function buildGeneratedCreationMetadata(
   workflowName: string,
   workflowInputs: WorkflowInput[],
   mediaInputs: Record<string, import("../types").GenerationMediaInputValue | null>,
+  targetResolution: number,
 ): GeneratedCreationMetadata {
   const inputs: GeneratedCreationMetadata["inputs"] = [];
   const inputById = buildWorkflowInputLookup(workflowInputs);
@@ -249,6 +250,7 @@ export function buildGeneratedCreationMetadata(
     source: "generated",
     workflowName,
     inputs,
+    targetResolution,
   };
 }
 

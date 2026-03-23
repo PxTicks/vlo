@@ -508,6 +508,22 @@ export function buildWorkflowStoreState(
 
         await get().loadWorkflow(TEMP_WORKFLOW_ID);
 
+        const savedTargetResolution = metadata.targetResolution;
+        if (typeof savedTargetResolution === "number") {
+          const supportedResolutions = getSupportedWorkflowResolutions(
+            get().activeWorkflowRules,
+          );
+          set({
+            targetResolution:
+              supportedResolutions.length > 0
+                ? getClosestWorkflowResolution(
+                    savedTargetResolution,
+                    supportedResolutions,
+                  )
+                : savedTargetResolution,
+          });
+        }
+
         if (metadata.inputs.length > 0) {
           set({
             isWorkflowLoading: true,

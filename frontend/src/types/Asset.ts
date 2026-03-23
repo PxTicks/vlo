@@ -34,6 +34,7 @@ export interface GeneratedCreationMetadata {
   source: "generated";
   workflowName: string;
   inputs: GeneratedCreationInput[];
+  targetResolution?: number;
   maskCropMetadata?: MaskCropMetadata;
   generationMaskAssetId?: string;
   /** The ComfyUI API prompt (node_id → {class_type, inputs}) that was executed. */

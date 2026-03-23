@@ -507,6 +507,7 @@ describe("useGenerationStore workflow rules", () => {
           parentAssetId: "asset-1",
         },
       ],
+      targetResolution: 1080,
     });
     expect(submittedJob?.postprocessConfig).toEqual({
       mode: "stitch_frames_with_audio",

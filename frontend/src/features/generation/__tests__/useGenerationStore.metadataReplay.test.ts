@@ -77,6 +77,7 @@ describe("useGenerationStore metadata replay", () => {
       creationMetadata: {
         source: "generated",
         workflowName: "Original Workflow",
+        targetResolution: 720,
         inputs: [
           {
             nodeId: "145",
@@ -112,6 +113,10 @@ describe("useGenerationStore metadata replay", () => {
       workflow_id: "wan2_2_flf2v.json",
       has_sidecar: true,
       rules: createDefaultWorkflowRules({
+        aspect_ratio_processing: {
+          enabled: true,
+          resolutions: [480, 720, 1080],
+        },
         nodes: {
           "145": {
             present: {
@@ -135,12 +140,63 @@ describe("useGenerationStore metadata replay", () => {
 
     expect(state.selectedWorkflowId).toBe(TEMP_WORKFLOW_ID);
     expect(state.rulesWorkflowSourceId).toBe("wan2_2_flf2v.json");
+    expect(state.targetResolution).toBe(720);
     expect(state.workflowInputs[0]?.label).toBe("Source Image");
     expect(state.workflowInputs[0]?.origin).toBe("rule");
     expect(restoredInput).toMatchObject({
       kind: "asset",
       asset: { id: sourceAsset.id },
     });
+  });
+
+  it("clamps a saved target resolution to the closest supported workflow value", async () => {
+    const generatedAsset: Asset = {
+      id: "generated-asset",
+      hash: "hash-generated",
+      name: "generated.png",
+      type: "image",
+      src: "generated.png",
+      createdAt: Date.now(),
+      creationMetadata: {
+        source: "generated",
+        workflowName: "Original Workflow",
+        targetResolution: 900,
+        inputs: [],
+        comfyuiPrompt: {
+          "145": {
+            class_type: "LoadImage",
+            inputs: { image: "source.png" },
+          },
+        },
+        comfyuiWorkflow: {
+          nodes: [{ id: 145, type: "LoadImage", widgets_values: ["source.png"] }],
+        },
+      },
+    };
+
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
+      { id: "wan2_2_flf2v.json", name: "Wan2.2 I2V & FLF2V" },
+    ]);
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      nodes: [{ id: 145, type: "LoadImage", widgets_values: ["other.png"] }],
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "wan2_2_flf2v.json",
+      has_sidecar: true,
+      rules: createDefaultWorkflowRules({
+        aspect_ratio_processing: {
+          enabled: true,
+          resolutions: [720, 1080],
+        },
+      }),
+      warnings: [],
+    });
+
+    await useGenerationStore
+      .getState()
+      .loadWorkflowFromAssetMetadata(generatedAsset);
+
+    expect(useGenerationStore.getState().targetResolution).toBe(720);
   });
 
   it("restores prepared timeline selections so generation is immediately ready", async () => {

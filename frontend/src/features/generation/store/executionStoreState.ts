@@ -128,6 +128,7 @@ export function buildExecutionStoreState(
           workflowName,
           workflowInputs,
           mediaInputs,
+          targetResolution,
         );
 
         const request = await frontendPreprocess(

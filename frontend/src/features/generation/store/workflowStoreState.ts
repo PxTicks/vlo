@@ -1,4 +1,3 @@
-import type { Asset } from "../../../types/Asset";
 import * as comfyApi from "../services/comfyuiApi";
 import {
   DEFAULT_GENERATION_TARGET_RESOLUTION,
@@ -8,7 +7,8 @@ import {
 } from "../services/workflowRules";
 import { injectWorkflowAndRead } from "../services/workflowSyncController";
 import { mergeRuleWarnings } from "../services/warnings";
-import { pruneMediaInputs, revokePreviewUrl } from "./mediaInputState";
+import { buildMediaInputActions } from "./mediaInputActions";
+import { pruneMediaInputs } from "./mediaInputState";
 import {
   parseMetadataWorkflowInputs,
   resolveMetadataWorkflowMatch,
@@ -27,19 +27,22 @@ import type {
 import { EMPTY_WORKFLOW_RULES, applyPresentationRules } from "./workflowState";
 import {
   formatWorkflowName,
-  resolveWorkflowPersistenceId,
   removeWorkflowOption,
+  resolveWorkflowPersistenceId,
   upsertTempWorkflowOption,
   upsertWorkflowOption,
 } from "./workflowCatalog";
-import { buildWorkflowInputLookup, resolveWorkflowInputKeys } from "../utils/workflowInputs";
 import type { WorkflowInput } from "../types";
 
-let latestWorkflowLoadRequestId = 0;
+interface WorkflowStoreStateOptions {
+  getNextWorkflowLoadRequestId: () => number;
+  isCurrentWorkflowLoadRequestId: (requestId: number) => boolean;
+}
 
-export function createWorkflowSlice(
+export function buildWorkflowStoreState(
   set: GenerationStoreSet,
   get: GenerationStoreGet,
+  options: WorkflowStoreStateOptions,
 ): GenerationWorkflowState {
   return {
     syncedWorkflow: null,
@@ -106,79 +109,7 @@ export function createWorkflowSlice(
 
     clearWorkflowWarning: () => set({ workflowWarning: null }),
     clearWorkflowLoadError: () => set({ workflowLoadError: null }),
-
-    setMediaInputAsset: (inputId, asset: Asset) =>
-      set((state) => {
-        const inputById = buildWorkflowInputLookup(state.workflowInputs);
-        const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
-        const canonicalInputId = inputKeys[0] ?? inputId;
-        return {
-          mediaInputs: {
-            ...removeMediaInputEntries(state.mediaInputs, inputKeys),
-            [canonicalInputId]: { kind: "asset", asset },
-          },
-        };
-      }),
-
-    setMediaInputFrame: (inputId, file) =>
-      set((state) => {
-        const inputById = buildWorkflowInputLookup(state.workflowInputs);
-        const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
-        const canonicalInputId = inputKeys[0] ?? inputId;
-        return {
-          mediaInputs: {
-            ...removeMediaInputEntries(state.mediaInputs, inputKeys),
-            [canonicalInputId]: {
-              kind: "frame",
-              file,
-              previewUrl: URL.createObjectURL(file),
-            },
-          },
-        };
-      }),
-
-    setMediaInputTimelineSelection: (
-      inputId,
-      timelineSelection,
-      thumbnailFile,
-      options,
-    ) =>
-      set((state) => {
-        const inputById = buildWorkflowInputLookup(state.workflowInputs);
-        const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
-        const canonicalInputId = inputKeys[0] ?? inputId;
-        return {
-          mediaInputs: {
-            ...removeMediaInputEntries(state.mediaInputs, inputKeys),
-            [canonicalInputId]: {
-              kind: "timelineSelection",
-              timelineSelection,
-              thumbnailFile,
-              thumbnailUrl: URL.createObjectURL(thumbnailFile),
-              isExtracting: options?.isExtracting ?? false,
-              extractionRequestId: options?.extractionRequestId ?? 0,
-              preparedVideoFile: options?.preparedVideoFile ?? null,
-              preparedMaskFile: options?.preparedMaskFile ?? null,
-              preparedDerivedMaskVideoTreatment:
-                options?.preparedDerivedMaskVideoTreatment ?? null,
-              extractionError: options?.extractionError ?? null,
-            },
-          },
-        };
-      }),
-
-    clearMediaInput: (inputId) =>
-      set((state) => {
-        const inputById = buildWorkflowInputLookup(state.workflowInputs);
-        const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
-        const hasMatchingEntry = inputKeys.some((key) =>
-          Object.prototype.hasOwnProperty.call(state.mediaInputs, key),
-        );
-        if (!hasMatchingEntry) return {};
-        return {
-          mediaInputs: removeMediaInputEntries(state.mediaInputs, inputKeys),
-        };
-      }),
+    ...buildMediaInputActions(set, get),
 
     syncWorkflow: (workflow, graphData, inputs) => {
       const state = get();
@@ -333,8 +264,8 @@ export function createWorkflowSlice(
     },
 
     loadWorkflow: async (workflowId: string) => {
-      const requestId = ++latestWorkflowLoadRequestId;
-      const isStale = () => requestId !== latestWorkflowLoadRequestId;
+      const requestId = options.getNextWorkflowLoadRequestId();
+      const isStale = () => !options.isCurrentWorkflowLoadRequestId(requestId);
       const {
         editorRef,
         tempWorkflow,
@@ -618,18 +549,4 @@ export function createWorkflowSlice(
       }
     },
   };
-}
-
-function removeMediaInputEntries(
-  mediaInputs: Record<string, import("../types").GenerationMediaInputValue | null>,
-  inputIds: readonly string[],
-): Record<string, import("../types").GenerationMediaInputValue | null> {
-  const next = { ...mediaInputs };
-
-  for (const inputId of new Set(inputIds)) {
-    revokePreviewUrl(next[inputId]);
-    delete next[inputId];
-  }
-
-  return next;
 }

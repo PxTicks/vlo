@@ -41,7 +41,7 @@ function getSaveImageWebsocketNodeIds(
   return ids;
 }
 
-export function createExecutionSlice(
+export function buildExecutionStoreState(
   set: GenerationStoreSet,
   get: GenerationStoreGet,
 ): GenerationExecutionState {

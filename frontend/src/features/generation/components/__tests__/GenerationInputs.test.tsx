@@ -46,7 +46,7 @@ describe("GenerationInputs", () => {
       "6",
       "new draft prompt",
     );
-  }, 10000);
+  });
 
   it("groups proxy-backed widget controls under a shared section", () => {
     render(

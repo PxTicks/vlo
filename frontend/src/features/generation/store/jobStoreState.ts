@@ -2,7 +2,7 @@ import * as comfyApi from "../services/comfyuiApi";
 import { clearJobEntry } from "./jobMutations";
 import type { GenerationJobState, GenerationStoreGet, GenerationStoreSet } from "./types";
 
-export function createJobSlice(
+export function buildJobStoreState(
   set: GenerationStoreSet,
   get: GenerationStoreGet,
 ): GenerationJobState {

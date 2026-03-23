@@ -15,6 +15,31 @@ import type {
   PreviewAnimation,
 } from "./types";
 
+type JobErrorState = Pick<
+  GenerationStore,
+  "jobs" | "jobPreviewFrames" | "previewAnimation" | "activeJobId" | "connectionStatus"
+>;
+
+type JobCompletionState = Pick<
+  GenerationStore,
+  "jobs" | "previewAnimation" | "activeJobId"
+>;
+
+type JobProgressState = Pick<GenerationStore, "jobs" | "activeJobId">;
+
+type JobPreviewState = Pick<
+  GenerationStore,
+  | "latestPreviewUrl"
+  | "previewAnimation"
+  | "activeJobId"
+  | "jobs"
+  | "jobPreviewFrames"
+>;
+
+type JobPostprocessState = Pick<GenerationStore, "jobs">;
+
+type JobClearState = Pick<GenerationStore, "jobs" | "jobPreviewFrames">;
+
 export function isActiveGenerationJob(
   job: GenerationJob | null | undefined,
 ): boolean {
@@ -22,7 +47,7 @@ export function isActiveGenerationJob(
 }
 
 export function markJobError(
-  state: GenerationStore,
+  state: JobErrorState,
   jobId: string,
   errorMessage: string,
   currentNode: string | null,
@@ -68,7 +93,7 @@ export function markJobError(
 }
 
 export function markActiveJobError(
-  state: GenerationStore,
+  state: JobErrorState,
   errorMessage: string,
   options?: {
     nextConnectionStatus?: ComfyUIConnectionStatus;
@@ -97,7 +122,7 @@ export function markActiveJobError(
 }
 
 export function setJobPostprocessResult(
-  state: GenerationStore,
+  state: JobPostprocessState,
   jobId: string,
   result: PostprocessResultPatch,
 ): GenerationStorePatch {
@@ -121,7 +146,7 @@ export function setJobPostprocessResult(
 }
 
 export function completeGenerationJob(
-  state: GenerationStore,
+  state: JobCompletionState,
   promptId: string,
   outputsOverride?: GenerationJob["outputs"],
 ): { patch: GenerationStorePatch; completedJob: GenerationJob | null } {
@@ -154,7 +179,7 @@ export function completeGenerationJob(
 }
 
 export function applyJobProgress(
-  state: GenerationStore,
+  state: JobProgressState,
   promptId: string,
   progress: number,
   currentNode: string,
@@ -173,7 +198,7 @@ export function applyJobProgress(
 }
 
 export function applyExecutingNode(
-  state: GenerationStore,
+  state: JobProgressState,
   promptId: string,
   currentNode: string,
 ): GenerationStorePatch {
@@ -190,7 +215,7 @@ export function applyExecutingNode(
 }
 
 export function appendJobOutputs(
-  state: GenerationStore,
+  state: Pick<GenerationStore, "jobs">,
   promptId: string,
   newOutputs: GenerationJobOutput[],
 ): GenerationStorePatch {
@@ -237,7 +262,7 @@ function buildNextAnimation(
 }
 
 export function applyPreviewUpdate(
-  state: GenerationStore,
+  state: JobPreviewState,
   preview: ComfyUIPreview,
 ): GenerationStorePatch {
   if (state.latestPreviewUrl) {
@@ -309,7 +334,7 @@ export function applyPreviewUpdate(
 }
 
 export function clearJobEntry(
-  state: GenerationStore,
+  state: JobClearState,
   jobId: string,
 ): GenerationStorePatch {
   revokeJobPostprocessPreview(state.jobs.get(jobId));

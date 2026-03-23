@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import { createConnectionSlice } from "./store/createConnectionSlice";
-import { createExecutionSlice } from "./store/createExecutionSlice";
-import { createJobSlice } from "./store/createJobSlice";
-import { createWorkflowSlice } from "./store/createWorkflowSlice";
+import { buildExecutionStoreState } from "./store/executionStoreState";
+import { buildJobStoreState } from "./store/jobStoreState";
+import { buildRuntimeStoreState } from "./store/runtimeStoreState";
+import { buildWorkflowStoreState } from "./store/workflowStoreState";
 import type { GenerationStore } from "./store/types";
 
 export { TEMP_WORKFLOW_ID } from "./store/constants";
@@ -11,9 +11,20 @@ export type {
   PreviewAnimation,
 } from "./store/types";
 
-export const useGenerationStore = create<GenerationStore>((set, get) => ({
-  ...createWorkflowSlice(set, get),
-  ...createConnectionSlice(set, get),
-  ...createJobSlice(set, get),
-  ...createExecutionSlice(set, get),
-}));
+export const useGenerationStore = create<GenerationStore>((set, get) => {
+  let workflowLoadRequestId = 0;
+
+  return {
+    ...buildWorkflowStoreState(set, get, {
+      getNextWorkflowLoadRequestId: () => {
+        workflowLoadRequestId += 1;
+        return workflowLoadRequestId;
+      },
+      isCurrentWorkflowLoadRequestId: (requestId) =>
+        requestId === workflowLoadRequestId,
+    }),
+    ...buildRuntimeStoreState(set, get),
+    ...buildJobStoreState(set, get),
+    ...buildExecutionStoreState(set, get),
+  };
+});

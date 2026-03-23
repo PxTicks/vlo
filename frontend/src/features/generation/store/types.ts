@@ -1,4 +1,4 @@
-import type { Asset, GeneratedCreationMetadata } from "../../../types/Asset";
+import type { Asset } from "../../../types/Asset";
 import type { RuntimeStatus } from "../../../types/RuntimeStatus";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import type { DerivedMaskSourceVideoTreatment } from "../derivedMaskVideoTreatment";
@@ -107,7 +107,7 @@ export interface GenerationWorkflowState {
   loadWorkflowFromAssetMetadata: (asset: Asset) => Promise<void>;
 }
 
-export interface GenerationConnectionState {
+export interface GenerationRuntimeState {
   connectionStatus: ComfyUIConnectionStatus;
   runtimeStatus: RuntimeStatus | null;
   runtimeStatusError: string | null;
@@ -150,7 +150,7 @@ export interface GenerationExecutionState {
   cancelGeneration: () => Promise<void>;
 }
 
-export type GenerationStore = GenerationConnectionState &
+export type GenerationStore = GenerationRuntimeState &
   GenerationWorkflowState &
   GenerationJobState &
   GenerationExecutionState;
@@ -169,10 +169,4 @@ export interface PostprocessResultPatch {
   postprocessedPreview: GenerationJob["postprocessedPreview"];
   postprocessError: string | null;
   importedAssetIds?: string[];
-}
-
-export interface GenerationJobMetadataFallback {
-  source: GeneratedCreationMetadata["source"];
-  workflowName: string;
-  inputs: GeneratedCreationMetadata["inputs"];
 }

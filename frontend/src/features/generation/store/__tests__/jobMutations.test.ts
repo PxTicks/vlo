@@ -1,85 +1,45 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { IDLE_PIPELINE_STATUS } from "../constants";
 import {
   applyPreviewUpdate,
   completeGenerationJob,
   markActiveJobError,
 } from "../jobMutations";
-import type { GenerationStore } from "../types";
 
-function makeStoreState(
-  overrides: Partial<GenerationStore> = {},
-): GenerationStore {
+type ErrorState = Parameters<typeof markActiveJobError>[0];
+type CompletionState = Parameters<typeof completeGenerationJob>[0];
+type PreviewState = Parameters<typeof applyPreviewUpdate>[0];
+
+function makeErrorState(overrides: Partial<ErrorState> = {}): ErrorState {
   return {
     connectionStatus: "connected",
-    runtimeStatus: null,
-    runtimeStatusError: null,
-    comfyuiDirectUrl: null,
-    wsClient: null,
-    objectInfoSynced: false,
-    inputNodeMap: null,
-    editorNeedsReconnect: false,
-    editorReconnectSignal: 0,
-    setEditorNeedsReconnect: () => {},
-    requestEditorReconnect: () => {},
-    connect: () => {},
-    disconnect: () => {},
-    refreshRuntimeStatus: async () => null,
-    updateComfyUrl: async () => {},
-    syncObjectInfo: async () => {},
-    pipelineStatus: IDLE_PIPELINE_STATUS,
-    pipelineRunToken: 0,
-    preprocessAbortController: null,
-    syncedWorkflow: null,
-    syncedGraphData: null,
-    workflowInputs: [],
-    availableWorkflows: [],
-    tempWorkflow: null,
-    selectedWorkflowId: null,
-    isWorkflowLoading: false,
-    workflowLoadState: "idle",
-    workflowLoadError: null,
-    isWorkflowReady: false,
-    workflowWarning: null,
-    hasInferredInputs: false,
-    workflowRuleWarnings: [],
-    activeWorkflowRules: null,
-    rulesWorkflowSourceId: null,
-    activeRulesWarnings: [],
-    derivedMaskMappings: [],
-    maskCropMode: "crop",
-    targetResolution: 1080,
-    setTargetResolution: () => {},
-    setMaskCropMode: () => {},
-    maskCropDilation: 0.1,
-    setMaskCropDilation: () => {},
-    lastAppliedWidgetValues: {},
-    mediaInputs: {},
+    activeJobId: null,
     jobs: new Map(),
     jobPreviewFrames: new Map(),
+    previewAnimation: null,
+    ...overrides,
+  };
+}
+
+function makeCompletionState(
+  overrides: Partial<CompletionState> = {},
+): CompletionState {
+  return {
     activeJobId: null,
+    jobs: new Map(),
+    previewAnimation: null,
+    ...overrides,
+  };
+}
+
+function makePreviewState(
+  overrides: Partial<PreviewState> = {},
+): PreviewState {
+  return {
     latestPreviewUrl: null,
     previewAnimation: null,
-    editorRef: null,
-    registerEditor: () => {},
-    unregisterEditor: () => {},
-    setWorkflowLoading: () => {},
-    setWorkflowLoadState: () => {},
-    clearWorkflowWarning: () => {},
-    clearWorkflowLoadError: () => {},
-    setMediaInputAsset: () => {},
-    setMediaInputFrame: () => {},
-    setMediaInputTimelineSelection: () => {},
-    clearMediaInput: () => {},
-    loadWorkflow: async () => {},
-    syncWorkflow: () => {},
-    registerWorkflowFromEditor: async () => {},
-    fetchWorkflows: async () => {},
-    loadWorkflowFromAssetMetadata: async () => {},
-    importOutput: async () => {},
-    clearJob: () => {},
-    submitGeneration: async () => null,
-    cancelGeneration: async () => {},
+    activeJobId: null,
+    jobs: new Map(),
+    jobPreviewFrames: new Map(),
     ...overrides,
   };
 }
@@ -91,7 +51,7 @@ describe("jobMutations", () => {
 
   it("marks the active job as error and clears preview state", () => {
     const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-    const state = makeStoreState({
+    const state = makeErrorState({
       activeJobId: "job-1",
       previewAnimation: {
         frameUrls: ["blob:1"],
@@ -133,7 +93,7 @@ describe("jobMutations", () => {
   });
 
   it("marks a job completed and clears it as the active job", () => {
-    const state = makeStoreState({
+    const state = makeCompletionState({
       activeJobId: "job-1",
       jobs: new Map([
         [
@@ -168,7 +128,7 @@ describe("jobMutations", () => {
       .spyOn(URL, "createObjectURL")
       .mockReturnValue("blob:latest");
 
-    const state = makeStoreState({
+    const state = makePreviewState({
       activeJobId: "job-1",
       jobs: new Map([
         [

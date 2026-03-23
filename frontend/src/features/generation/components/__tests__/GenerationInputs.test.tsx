@@ -24,6 +24,7 @@ describe("GenerationInputs", () => {
         onTextValueCommit={handleTextValueCommit}
         mediaInputs={{}}
         onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[]}
@@ -56,6 +57,7 @@ describe("GenerationInputs", () => {
         onTextValueCommit={vi.fn()}
         mediaInputs={{}}
         onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
@@ -104,6 +106,7 @@ describe("GenerationInputs", () => {
         onTextValueCommit={vi.fn()}
         mediaInputs={{}}
         onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
         onInputClear={vi.fn()}
         onClickSelect={vi.fn()}
         widgetInputs={[
@@ -140,5 +143,107 @@ describe("GenerationInputs", () => {
     expect(screen.getByText("Denoise")).toBeInTheDocument();
     expect(screen.getByRole("slider")).toBeInTheDocument();
     expect(screen.getByText("80%")).toBeInTheDocument();
+  });
+
+  it("forwards compatible external file drops to the media input handler", () => {
+    const handleExternalInputDrop = vi.fn();
+
+    render(
+      <GenerationInputs
+        inputs={[
+          {
+            id: "image-input",
+            nodeId: "10",
+            classType: "LoadImage",
+            inputType: "image",
+            param: "image",
+            label: "Image",
+            currentValue: null,
+            origin: "rule",
+          },
+        ]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={handleExternalInputDrop}
+        onInputClear={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const slot = document.querySelector(
+      '[data-drop-slot-id="image-input"]',
+    ) as HTMLElement | null;
+    expect(slot).not.toBeNull();
+
+    const file = new File(["image-bytes"], "reference.png", {
+      type: "image/png",
+    });
+
+    fireEvent.drop(slot!, {
+      dataTransfer: {
+        files: [file],
+        types: ["Files"],
+      },
+    });
+
+    expect(handleExternalInputDrop).toHaveBeenCalledWith("image-input", file);
+  });
+
+  it("ignores incompatible external file drops", () => {
+    const handleExternalInputDrop = vi.fn();
+
+    render(
+      <GenerationInputs
+        inputs={[
+          {
+            id: "image-input",
+            nodeId: "10",
+            classType: "LoadImage",
+            inputType: "image",
+            param: "image",
+            label: "Image",
+            currentValue: null,
+            origin: "rule",
+          },
+        ]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={handleExternalInputDrop}
+        onInputClear={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const slot = document.querySelector(
+      '[data-drop-slot-id="image-input"]',
+    ) as HTMLElement | null;
+    expect(slot).not.toBeNull();
+
+    const file = new File(["video-bytes"], "clip.mp4", {
+      type: "video/mp4",
+    });
+
+    fireEvent.drop(slot!, {
+      dataTransfer: {
+        files: [file],
+        types: ["Files"],
+      },
+    });
+
+    expect(handleExternalInputDrop).not.toHaveBeenCalled();
   });
 });

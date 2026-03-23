@@ -235,6 +235,7 @@ export function GenerationPanel() {
     handleDismissWorkflowWarning,
     handleOpenEditorFromWarning,
     handleInputDrop,
+    handleExternalInputDrop,
     handleInputClear,
     handleClickSelect,
 
@@ -657,6 +658,7 @@ export function GenerationPanel() {
         onTextValueCommit={handleTextValueCommit}
         mediaInputs={mediaInputs}
         onInputDrop={handleInputDrop}
+        onExternalInputDrop={handleExternalInputDrop}
         onInputClear={handleInputClear}
         onClickSelect={handleClickSelect}
         widgetInputs={widgetInputs}

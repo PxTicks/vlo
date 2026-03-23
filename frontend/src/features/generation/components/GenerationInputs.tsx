@@ -28,6 +28,7 @@ interface GenerationInputsProps {
   onTextValueCommit: (inputId: string, value: string) => void;
   mediaInputs: Record<string, GenerationMediaInputValue | null>;
   onInputDrop: (inputId: string, asset: Asset) => void;
+  onExternalInputDrop: (inputId: string, file: File) => void | Promise<void>;
   onInputClear: (inputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video") => void;
   widgetInputs: WorkflowWidgetInput[];
@@ -300,6 +301,7 @@ interface MediaInputSectionProps {
   bgColor: string;
   value: GenerationMediaInputValue | null | undefined;
   onInputDrop: (inputId: string, asset: Asset) => void;
+  onExternalInputDrop: (inputId: string, file: File) => void | Promise<void>;
   onInputClear: (inputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video") => void;
 }
@@ -309,6 +311,7 @@ function MediaInputSection({
   bgColor,
   value,
   onInputDrop,
+  onExternalInputDrop,
   onInputClear,
   onClickSelect,
 }: MediaInputSectionProps) {
@@ -332,6 +335,7 @@ function MediaInputSection({
         value={slotValue}
         onClear={() => onInputClear(inputId)}
         onDrop={(asset: Asset) => onInputDrop(inputId, asset)}
+        onExternalDrop={(file: File) => onExternalInputDrop(inputId, file)}
         onSelect={() => onClickSelect(inputId, mediaInputType)}
       />
     </PanelSection>
@@ -514,6 +518,7 @@ export const GenerationInputs = memo(function GenerationInputs({
   onTextValueCommit,
   mediaInputs,
   onInputDrop,
+  onExternalInputDrop,
   onInputClear,
   onClickSelect,
   widgetInputs,
@@ -555,6 +560,7 @@ export const GenerationInputs = memo(function GenerationInputs({
             bgColor={bgColor}
             value={getWorkflowInputValue(mediaInputs, input, inputLookup)}
             onInputDrop={onInputDrop}
+            onExternalInputDrop={onExternalInputDrop}
             onInputClear={onInputClear}
             onClickSelect={onClickSelect}
           />

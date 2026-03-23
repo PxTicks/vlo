@@ -23,6 +23,8 @@ export interface AssetDropSlotProps {
   onClear?: () => void;
   /** Called when a compatible asset is dropped on this slot */
   onDrop?: (asset: Asset) => void;
+  /** Called when a compatible external file is dropped on this slot */
+  onExternalDrop?: (file: File) => void | Promise<void>;
   /** Called when the slot is clicked to select from timeline */
   onSelect?: () => void;
   /** Label shown above the slot */
@@ -41,7 +43,10 @@ const SlotContainer = styled(Box)({
 const SlotBox = styled(Box, {
   shouldForwardProp: (prop) =>
     prop !== "filled" && prop !== "highlight",
-})<{ filled?: boolean; highlight?: "compatible" | "incompatible" | null }>(
+})<{
+  filled?: boolean;
+  highlight?: "compatible" | "incompatible" | "external" | null;
+}>(
   ({ filled, highlight }) => ({
     width: SLOT_SIZE,
     height: SLOT_SIZE,
@@ -52,6 +57,8 @@ const SlotBox = styled(Box, {
         ? "2px solid #90caf9"
         : highlight === "incompatible"
           ? "2px solid #f44336"
+          : highlight === "external"
+            ? "2px dashed #b0bec5"
           : filled
             ? "1px solid #444"
             : "1px dashed #555",
@@ -82,16 +89,117 @@ function formatAcceptLabel(accept: AssetType[]): string {
   return accept.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join(" / ");
 }
 
+const IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".bmp",
+  ".gif",
+]);
+const AUDIO_EXTENSIONS = new Set([
+  ".wav",
+  ".mp3",
+  ".ogg",
+  ".flac",
+  ".m4a",
+  ".aac",
+]);
+const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".mkv"]);
+
+function fileExtension(name: string): string {
+  const dotIndex = name.lastIndexOf(".");
+  return dotIndex >= 0 ? name.slice(dotIndex).toLowerCase() : "";
+}
+
+function getFileAssetType(file: File): AssetType | null {
+  const extension = fileExtension(file.name);
+  if (file.type.startsWith("image/") || IMAGE_EXTENSIONS.has(extension)) {
+    return "image";
+  }
+  if (file.type.startsWith("audio/") || AUDIO_EXTENSIONS.has(extension)) {
+    return "audio";
+  }
+  if (file.type.startsWith("video/") || VIDEO_EXTENSIONS.has(extension)) {
+    return "video";
+  }
+  return null;
+}
+
+function getItemAssetType(
+  item: Pick<DataTransferItem, "kind" | "type">,
+): AssetType | null {
+  if (item.kind !== "file") return null;
+  if (item.type.startsWith("image/")) return "image";
+  if (item.type.startsWith("audio/")) return "audio";
+  if (item.type.startsWith("video/")) return "video";
+  return null;
+}
+
+function hasDraggedFiles(dataTransfer: Pick<DataTransfer, "types"> | null): boolean {
+  if (!dataTransfer) return false;
+  return Array.from(dataTransfer.types).includes("Files");
+}
+
+export function getExternalFileDragHighlight(
+  dataTransfer: Pick<DataTransfer, "types" | "items" | "files"> | null,
+  accept: readonly AssetType[],
+): "compatible" | "incompatible" | "external" | null {
+  if (!hasDraggedFiles(dataTransfer)) {
+    return null;
+  }
+
+  const items = Array.from(dataTransfer.items ?? []);
+  let sawTypedFile = false;
+  for (const item of items) {
+    const itemType = getItemAssetType(item);
+    if (!itemType) continue;
+    sawTypedFile = true;
+    if (accept.includes(itemType)) {
+      return "compatible";
+    }
+  }
+  if (sawTypedFile) {
+    return "incompatible";
+  }
+
+  const files = Array.from(dataTransfer.files ?? []);
+  if (files.length > 0) {
+    return getFirstAcceptedFile(files, accept) ? "compatible" : "incompatible";
+  }
+
+  return "external";
+}
+
+function getFirstAcceptedFile(
+  files: readonly File[],
+  accept: readonly AssetType[],
+): File | null {
+  for (const file of files) {
+    const fileType = getFileAssetType(file);
+    if (fileType && accept.includes(fileType)) {
+      return file;
+    }
+  }
+
+  return null;
+}
+
 function AssetDropSlotComponent({
   id,
   accept,
   value,
   onClear,
   onDrop,
+  onExternalDrop,
   onSelect,
   label,
 }: AssetDropSlotProps) {
   const filled = value != null;
+  const [externalHighlight, setExternalHighlight] = React.useState<
+    "compatible" | "incompatible" | "external" | null
+  >(null);
+  const externalDragDepthRef = React.useRef(0);
 
   const { setNodeRef, isOver } = useDroppable({
     id: `asset-slot-${id}`,
@@ -100,13 +208,16 @@ function AssetDropSlotComponent({
 
   // Determine highlight state when dragging over
   const { active } = useDndContext();
-  let highlight: "compatible" | "incompatible" | null = null;
+  let highlight: "compatible" | "incompatible" | "external" | null = null;
   if (isOver && active?.data.current?.type === "asset") {
     const draggedType = (active.data.current.asset as Asset | undefined)?.type;
     highlight =
       draggedType && accept.includes(draggedType)
         ? "compatible"
         : "incompatible";
+  }
+  if (externalHighlight) {
+    highlight = externalHighlight;
   }
 
   const thumbnail = value?.thumbnail ?? null;
@@ -135,6 +246,62 @@ function AssetDropSlotComponent({
         role={onSelect ? "button" : undefined}
         tabIndex={onSelect ? 0 : -1}
         onClick={onSelect}
+        onDragEnter={(event) => {
+          if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
+            return;
+          }
+
+          event.preventDefault();
+          externalDragDepthRef.current += 1;
+          setExternalHighlight(
+            getExternalFileDragHighlight(event.dataTransfer, accept),
+          );
+        }}
+        onDragOver={(event) => {
+          if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
+            return;
+          }
+
+          event.preventDefault();
+          const nextHighlight = getExternalFileDragHighlight(
+            event.dataTransfer,
+            accept,
+          );
+          event.dataTransfer.dropEffect =
+            nextHighlight === "incompatible" ? "none" : "copy";
+          setExternalHighlight(nextHighlight);
+        }}
+        onDragLeave={(event) => {
+          if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
+            return;
+          }
+
+          event.preventDefault();
+          externalDragDepthRef.current = Math.max(
+            0,
+            externalDragDepthRef.current - 1,
+          );
+          if (externalDragDepthRef.current === 0) {
+            setExternalHighlight(null);
+          }
+        }}
+        onDrop={(event) => {
+          if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
+            return;
+          }
+
+          event.preventDefault();
+          externalDragDepthRef.current = 0;
+          setExternalHighlight(null);
+          const acceptedFile = getFirstAcceptedFile(
+            Array.from(event.dataTransfer.files),
+            accept,
+          );
+          if (!acceptedFile) {
+            return;
+          }
+          void onExternalDrop(acceptedFile);
+        }}
         onKeyDown={(event) => {
           if (!onSelect) return;
           if (event.key === "Enter" || event.key === " ") {

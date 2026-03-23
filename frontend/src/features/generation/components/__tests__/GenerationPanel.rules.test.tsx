@@ -55,6 +55,7 @@ function makeHookState(overrides: Record<string, unknown> = {}) {
     handleDismissWorkflowWarning: vi.fn(),
     handleOpenEditorFromWarning: vi.fn(),
     handleInputDrop: vi.fn(),
+    handleExternalInputDrop: vi.fn(),
     handleInputClear: vi.fn(),
     handleClickSelect: vi.fn(),
     widgetInputs: [],

@@ -28,7 +28,7 @@ import {
   DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
   resolveDerivedMaskVideoTreatments,
 } from "../derivedMaskVideoTreatment";
-import { useAssetStore } from "../../userAssets";
+import { addLocalAsset, useAssetStore } from "../../userAssets";
 import {
   findWorkflowInputValidationFailures,
 } from "../services/workflowRules";
@@ -38,6 +38,7 @@ import {
   getWorkflowInputValue,
   resolveWorkflowInputKeys,
 } from "../utils/workflowInputs";
+import { resolveExistingAssetForExternalDrop } from "../utils/externalDropAsset";
 
 function hasInputValue(
   inputType: "image" | "video",
@@ -465,6 +466,31 @@ export function useGenerationPanel() {
     (inputId: string, asset: Asset) => {
       selectionExtractionRequestIdsRef.current[inputId] =
         (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+      setMediaInputAsset(inputId, asset);
+    },
+    [setMediaInputAsset],
+  );
+
+  const handleExternalInputDrop = useCallback(
+    async (inputId: string, file: File) => {
+      const requestId =
+        (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+      selectionExtractionRequestIdsRef.current[inputId] = requestId;
+
+      const ingestedAsset = await addLocalAsset(file, { source: "uploaded" });
+      const asset =
+        ingestedAsset ??
+        (await resolveExistingAssetForExternalDrop(
+          file,
+          useAssetStore.getState().assets,
+        ));
+      if (selectionExtractionRequestIdsRef.current[inputId] !== requestId) {
+        return;
+      }
+      if (!asset) {
+        return;
+      }
+
       setMediaInputAsset(inputId, asset);
     },
     [setMediaInputAsset],
@@ -908,6 +934,7 @@ export function useGenerationPanel() {
     handleDismissWorkflowWarning,
     handleOpenEditorFromWarning,
     handleInputDrop,
+    handleExternalInputDrop,
     handleInputClear,
     handleClickSelect,
   };

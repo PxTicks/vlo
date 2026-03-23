@@ -33,6 +33,7 @@ import {
   type WorkflowRules,
 } from "./services/workflowRules";
 import type { DerivedMaskSourceVideoTreatment } from "./derivedMaskVideoTreatment";
+import { DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT } from "./derivedMaskVideoTreatment";
 import type { DerivedMaskMapping } from "./pipeline/types";
 import { parseNodeOutputItems } from "./services/parsers";
 import { mergeRuleWarnings } from "./services/warnings";
@@ -57,10 +58,17 @@ import {
 } from "./constants/inputNodeMap";
 import {
   buildWorkflowInputLookup,
+  getWorkflowInputId,
   getWorkflowInputValue,
   resolveWorkflowInputKeys,
 } from "./utils/workflowInputs";
 import { haveMatchingWorkflowNodes } from "./utils/workflowNodeSignature";
+import {
+  captureFramePngAtTick,
+  renderTimelineSelectionToWebm,
+  renderTimelineSelectionToWebmWithMask,
+} from "./utils/inputSelection";
+import { getAssetById } from "../userAssets/publicApi";
 
 export type ComfyUIConnectionStatus =
   | "disconnected"
@@ -366,6 +374,103 @@ async function resolveMetadataWorkflowMatch(
       ],
       rulesSourceId: null,
     };
+  }
+}
+
+async function restoreMediaInputsFromMetadata(
+  metadata: GeneratedCreationMetadata,
+  workflowInputs: WorkflowInput[],
+  derivedMaskMappings: DerivedMaskMapping[],
+  actions: Pick<
+    GenerationStore,
+    "setMediaInputAsset" | "setMediaInputTimelineSelection"
+  >,
+): Promise<void> {
+  const workflowInputByNodeId = new Map<string, WorkflowInput>();
+  for (const workflowInput of workflowInputs) {
+    if (!workflowInputByNodeId.has(workflowInput.nodeId)) {
+      workflowInputByNodeId.set(workflowInput.nodeId, workflowInput);
+    }
+  }
+
+  for (const input of metadata.inputs) {
+    const workflowInput = workflowInputByNodeId.get(input.nodeId);
+    if (!workflowInput) {
+      continue;
+    }
+
+    const inputId = getWorkflowInputId(workflowInput);
+
+    if (input.kind === "draggedAsset") {
+      const asset = getAssetById(input.parentAssetId);
+      if (!asset) {
+        throw new Error(
+          `Could not restore generation input: missing asset ${input.parentAssetId}`,
+        );
+      }
+
+      actions.setMediaInputAsset(inputId, asset);
+      continue;
+    }
+
+    const thumbnailFile = await captureFramePngAtTick(
+      input.timelineSelection.start,
+      "generation-selection-thumb",
+    );
+    actions.setMediaInputTimelineSelection(
+      inputId,
+      input.timelineSelection,
+      thumbnailFile,
+      {
+        isExtracting: true,
+        extractionRequestId: 1,
+      },
+    );
+
+    const derivedMaskMapping = derivedMaskMappings.find(
+      (mapping) =>
+        mapping.sourceInputId === inputId ||
+        (!mapping.sourceInputId && mapping.sourceNodeId === workflowInput.nodeId),
+    );
+
+    if (derivedMaskMapping) {
+      const { video, mask } = await renderTimelineSelectionToWebmWithMask(
+        input.timelineSelection,
+        derivedMaskMapping.maskType,
+        {
+          videoTreatment: DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
+        },
+      );
+
+      actions.setMediaInputTimelineSelection(
+        inputId,
+        input.timelineSelection,
+        thumbnailFile,
+        {
+          isExtracting: false,
+          extractionRequestId: 1,
+          preparedVideoFile: video,
+          preparedMaskFile: mask,
+          preparedDerivedMaskVideoTreatment:
+            DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
+        },
+      );
+      continue;
+    }
+
+    const preparedVideoFile = await renderTimelineSelectionToWebm(
+      input.timelineSelection,
+    );
+    actions.setMediaInputTimelineSelection(
+      inputId,
+      input.timelineSelection,
+      thumbnailFile,
+      {
+        isExtracting: false,
+        extractionRequestId: 1,
+        preparedVideoFile,
+      },
+    );
   }
 }
 
@@ -1700,7 +1805,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
     try {
       const state = get();
       const resolvedMatch = await resolveMetadataWorkflowMatch(
-        workflow,
+        graphData,
         state.availableWorkflows,
       );
       const nextTempWorkflow: TempWorkflow = {
@@ -1725,6 +1830,33 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
       });
 
       await get().loadWorkflow(TEMP_WORKFLOW_ID);
+
+      if (metadata.inputs.length > 0) {
+        set({
+          isWorkflowLoading: true,
+          workflowLoadState: "loading",
+          workflowLoadError: null,
+          isWorkflowReady: false,
+        });
+
+        const loadedState = get();
+        await restoreMediaInputsFromMetadata(
+          metadata,
+          loadedState.workflowInputs,
+          loadedState.derivedMaskMappings,
+          {
+            setMediaInputAsset: loadedState.setMediaInputAsset,
+            setMediaInputTimelineSelection:
+              loadedState.setMediaInputTimelineSelection,
+          },
+        );
+
+        set((currentState) => ({
+          isWorkflowLoading: false,
+          workflowLoadState: currentState.syncedWorkflow ? "ready" : "error",
+          isWorkflowReady: currentState.syncedWorkflow !== null,
+        }));
+      }
     } catch (error) {
       const message =
         error instanceof Error

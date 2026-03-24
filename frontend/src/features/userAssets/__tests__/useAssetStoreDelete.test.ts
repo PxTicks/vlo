@@ -31,6 +31,14 @@ vi.mock("../../timeline/useTimelineStore", () => ({
   },
 }));
 
+vi.mock("../../timeline", () => ({
+  useTimelineStore: {
+    getState: () => ({
+      removeClipsByAssetId: mockRemoveClipsByAssetId,
+    }),
+  },
+}));
+
 describe("useAssetStore - Deletion", () => {
   beforeEach(() => {
     useAssetStore.setState({
@@ -117,5 +125,216 @@ describe("useAssetStore - Deletion", () => {
     expect(useAssetStore.getState().assets).toHaveLength(1); // Should still remove from memory
     expect(mockRemoveClipsByAssetId).toHaveBeenCalledWith("asset-1");
     expect(fileSystemService.deleteFile).not.toHaveBeenCalled(); // Cannot delete files if we don't know paths
+  });
+
+  it("keeps a shared generation mask asset while another generated asset still consumes it", async () => {
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "generated-1",
+          name: "generated-1.mp4",
+          src: "generated-1.mp4",
+          type: "video",
+          hash: "generated-hash-1",
+          createdAt: 1000,
+          creationMetadata: {
+            source: "generated",
+            workflowName: "Workflow",
+            inputs: [],
+            generationMaskAssetId: "mask-1",
+          },
+        },
+        {
+          id: "generated-2",
+          name: "generated-2.mp4",
+          src: "generated-2.mp4",
+          type: "video",
+          hash: "generated-hash-2",
+          createdAt: 2000,
+          creationMetadata: {
+            source: "generated",
+            workflowName: "Workflow",
+            inputs: [],
+            generationMaskAssetId: "mask-1",
+          },
+        },
+        {
+          id: "mask-1",
+          name: "generation-mask-1.webm",
+          src: "mask-1.webm",
+          type: "video",
+          hash: "mask-hash-1",
+          createdAt: 3000,
+          creationMetadata: {
+            source: "generation_mask",
+            parentGeneratedAssetId: "generated-1",
+          },
+        },
+      ],
+      isUploading: false,
+    });
+    (fileSystemService.readFile as Mock).mockResolvedValue({
+      text: async () =>
+        JSON.stringify({
+          assets: {
+            "generated-1": {
+              id: "generated-1",
+              name: "generated-1.mp4",
+              src: "generated-1.mp4",
+            },
+            "generated-2": {
+              id: "generated-2",
+              name: "generated-2.mp4",
+              src: "generated-2.mp4",
+            },
+            "mask-1": {
+              id: "mask-1",
+              name: "generation-mask-1.webm",
+              src: "mask-1.webm",
+            },
+          },
+        }),
+    });
+
+    await useAssetStore.getState().deleteAsset("generated-1");
+
+    expect(useAssetStore.getState().assets.map((asset) => asset.id)).toEqual([
+      "generated-2",
+      "mask-1",
+    ]);
+    expect(mockRemoveClipsByAssetId).toHaveBeenCalledTimes(1);
+    expect(mockRemoveClipsByAssetId).toHaveBeenCalledWith("generated-1");
+    expect(fileSystemService.deleteFile).toHaveBeenCalledWith("generated-1.mp4");
+    expect(fileSystemService.deleteFile).not.toHaveBeenCalledWith("mask-1.webm");
+    expect(fileSystemService.writeFile).toHaveBeenLastCalledWith(
+      ".vloproject/project.json",
+      expect.stringContaining('"mask-1"'),
+    );
+  });
+
+  it("refuses to delete a generation mask asset while generated assets still reference it", async () => {
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "generated-1",
+          name: "generated-1.mp4",
+          src: "generated-1.mp4",
+          type: "video",
+          hash: "generated-hash-1",
+          createdAt: 1000,
+          creationMetadata: {
+            source: "generated",
+            workflowName: "Workflow",
+            inputs: [],
+            generationMaskAssetId: "mask-1",
+          },
+        },
+        {
+          id: "mask-1",
+          name: "generation-mask-1.webm",
+          src: "mask-1.webm",
+          type: "video",
+          hash: "mask-hash-1",
+          createdAt: 3000,
+          creationMetadata: {
+            source: "generation_mask",
+            parentGeneratedAssetId: "generated-1",
+          },
+        },
+      ],
+      isUploading: false,
+    });
+
+    await useAssetStore.getState().deleteAsset("mask-1");
+
+    expect(useAssetStore.getState().assets.map((asset) => asset.id)).toEqual([
+      "generated-1",
+      "mask-1",
+    ]);
+    expect(mockRemoveClipsByAssetId).not.toHaveBeenCalled();
+    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
+    expect(fileSystemService.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it("deletes a shared generation mask asset after the final generated consumer is removed", async () => {
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "generated-1",
+          name: "generated-1.mp4",
+          src: "generated-1.mp4",
+          type: "video",
+          hash: "generated-hash-1",
+          createdAt: 1000,
+          creationMetadata: {
+            source: "generated",
+            workflowName: "Workflow",
+            inputs: [],
+            generationMaskAssetId: "mask-1",
+          },
+        },
+        {
+          id: "generated-2",
+          name: "generated-2.mp4",
+          src: "generated-2.mp4",
+          type: "video",
+          hash: "generated-hash-2",
+          createdAt: 2000,
+          creationMetadata: {
+            source: "generated",
+            workflowName: "Workflow",
+            inputs: [],
+            generationMaskAssetId: "mask-1",
+          },
+        },
+        {
+          id: "mask-1",
+          name: "generation-mask-1.webm",
+          src: "mask-1.webm",
+          type: "video",
+          hash: "mask-hash-1",
+          createdAt: 3000,
+          creationMetadata: {
+            source: "generation_mask",
+            parentGeneratedAssetId: "generated-1",
+          },
+        },
+      ],
+      isUploading: false,
+    });
+    (fileSystemService.readFile as Mock).mockResolvedValue({
+      text: async () =>
+        JSON.stringify({
+          assets: {
+            "generated-1": {
+              id: "generated-1",
+              name: "generated-1.mp4",
+              src: "generated-1.mp4",
+            },
+            "generated-2": {
+              id: "generated-2",
+              name: "generated-2.mp4",
+              src: "generated-2.mp4",
+            },
+            "mask-1": {
+              id: "mask-1",
+              name: "generation-mask-1.webm",
+              src: "mask-1.webm",
+            },
+          },
+        }),
+    });
+
+    await useAssetStore.getState().deleteAsset("generated-1");
+    await useAssetStore.getState().deleteAsset("generated-2");
+
+    expect(useAssetStore.getState().assets).toHaveLength(0);
+    expect(fileSystemService.deleteFile).toHaveBeenCalledWith("generated-2.mp4");
+    expect(fileSystemService.deleteFile).toHaveBeenCalledWith("mask-1.webm");
+    expect(mockRemoveClipsByAssetId).toHaveBeenCalledWith("mask-1");
+    expect(fileSystemService.writeFile).toHaveBeenLastCalledWith(
+      ".vloproject/project.json",
+      expect.not.stringContaining('"mask-1"'),
+    );
   });
 });

@@ -205,8 +205,13 @@ export class AssetService {
 
       const hash = await mediaProcessingService.computeChecksum(file);
 
-      // Hash check
-      if (existingAssets.some((a) => a.hash === hash)) {
+      const allowDuplicateHash =
+        creationMetadata?.source === "generation_mask";
+
+      // Generation masks are hidden child assets: even if their bytes match an
+      // existing asset, they still need their own asset record so generated
+      // outputs can keep a stable mask linkage for cleanup and timeline use.
+      if (!allowDuplicateHash && existingAssets.some((a) => a.hash === hash)) {
         console.log("Skipping duplicate asset (hash match):", file.name);
         return null; // Finally block will dispose
       }
@@ -254,7 +259,6 @@ export class AssetService {
         } catch (e) {
           console.warn(`[Ingest] Proxy generation failed for ${file.name}`, e);
         }
-        console.timeEnd(`[Ingest] Proxy Generation ${file.name}`);
         console.timeEnd(`[Ingest] Proxy Generation ${file.name}`);
       } else if (isAudio) {
         duration = await processor.computeDuration();

@@ -40,6 +40,23 @@ function hasValidDuration(duration: number | undefined): duration is number {
   return typeof duration === "number" && Number.isFinite(duration) && duration > 0;
 }
 
+function countGenerationMaskAssetConsumers(
+  assets: readonly Asset[],
+  maskAssetId: string | null | undefined,
+): number {
+  if (!maskAssetId) {
+    return 0;
+  }
+
+  return assets.reduce((count, asset) => {
+    const metadata = asset.creationMetadata;
+    const isConsumer =
+      metadata?.source === "generated" &&
+      metadata.generationMaskAssetId === maskAssetId;
+    return count + (isConsumer ? 1 : 0);
+  }, 0);
+}
+
 async function resolveAssetDurationRepair(
   asset: Asset,
   file: File | undefined,
@@ -336,15 +353,19 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
   },
 
   deleteAsset: async (id: string) => {
-    // 0. If this is a generated asset with a twinned mask, cascade-delete the mask asset
     const assetToDelete = get().assets.find((a) => a.id === id);
     if (
-      assetToDelete?.creationMetadata?.source === "generated" &&
-      assetToDelete.creationMetadata.generationMaskAssetId
+      assetToDelete?.creationMetadata?.source === "generation_mask" &&
+      countGenerationMaskAssetConsumers(get().assets, id) > 0
     ) {
-      const maskId = assetToDelete.creationMetadata.generationMaskAssetId;
-      // Fire-and-forget: delete the linked mask asset (won't recurse further)
-      get().deleteAsset(maskId);
+      console.warn(
+        `[AssetStore] Skipping generation mask deletion for '${id}' because generated assets still reference it.`,
+      );
+      return;
+    }
+
+    if (!assetToDelete) {
+      return;
     }
 
     try {
@@ -427,6 +448,21 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
         } catch (e) {
           console.warn("Failed to delete proxy file", e);
         }
+      }
+    }
+
+    if (
+      assetToDelete?.creationMetadata?.source === "generated" &&
+      assetToDelete.creationMetadata.generationMaskAssetId
+    ) {
+      const maskId = assetToDelete.creationMetadata.generationMaskAssetId;
+      const remainingConsumers = countGenerationMaskAssetConsumers(
+        get().assets,
+        maskId,
+      );
+
+      if (remainingConsumers === 0) {
+        await get().deleteAsset(maskId);
       }
     }
   },

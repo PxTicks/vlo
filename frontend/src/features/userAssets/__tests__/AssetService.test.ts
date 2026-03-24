@@ -312,4 +312,54 @@ describe("AssetService", () => {
     expect(newAssets[0].duration).toBe(42.75);
     expect(mockProcessor.computeDuration).toHaveBeenCalledTimes(1);
   });
+
+  it("allows generation masks to ingest even when the hash already exists", async () => {
+    const maskFile = new File(["mask"], "generation-mask.webm", {
+      type: "video/webm",
+    });
+
+    (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
+      "shared-mask-hash",
+    );
+    mockProcessor.generateVideoMetadata.mockResolvedValue({
+      duration: 10,
+      thumbnail: null,
+      fps: 16,
+    });
+    mockProcessor.generateProxyVideo.mockResolvedValue(null);
+
+    const newAsset = await assetService.ingestAsset(
+      maskFile,
+      true,
+      true,
+      [
+        {
+          id: "existing-mask",
+          name: "existing-mask.webm",
+          hash: "shared-mask-hash",
+          src: "existing-mask.webm",
+          type: "video",
+          createdAt: 1,
+          creationMetadata: {
+            source: "generation_mask",
+            parentGeneratedAssetId: "generated-1",
+          },
+        },
+      ],
+      {
+        source: "generation_mask",
+        parentGeneratedAssetId: "generated-2",
+      },
+    );
+
+    expect(newAsset).toMatchObject({
+      name: "generation-mask.webm",
+      hash: "shared-mask-hash",
+      type: "video",
+      creationMetadata: {
+        source: "generation_mask",
+        parentGeneratedAssetId: "generated-2",
+      },
+    });
+  });
 });

@@ -258,6 +258,7 @@ export function useMaskInteractionController(
       : null,
   );
   const isMaskTabActive = useMaskViewStore((state) => state.isMaskTabActive);
+  const sam2PointMode = useMaskViewStore((state) => state.sam2PointMode);
   const pendingDrawRequest = useMaskViewStore(
     (state) => state.pendingDrawRequest,
   );
@@ -984,7 +985,8 @@ export function useMaskInteractionController(
       const local = toClipLocal(e.global);
       const contentSize = resolveActiveClipContentSize();
       const currentInputTime = resolveMaskInputTimeAtPlayhead(target.maskClip);
-      const label: 0 | 1 = button === 2 ? 0 : 1;
+      const label: 0 | 1 =
+        button === 2 ? 0 : sam2PointMode === "remove" ? 0 : 1;
       const nextPoint = toSam2NormalizedPoint(
         local,
         contentSize,
@@ -1165,6 +1167,7 @@ export function useMaskInteractionController(
     setInteractionContext,
     setIsPlaying,
     setSelectedMask,
+    sam2PointMode,
     toSam2LocalPoint,
     toSam2NormalizedPoint,
     toClipLocal,

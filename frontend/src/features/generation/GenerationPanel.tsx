@@ -452,6 +452,7 @@ export function GenerationPanel() {
 
   return (
     <Box
+      data-testid="generation-panel"
       sx={{
         display: "flex",
         flexDirection: "column",
@@ -472,6 +473,7 @@ export function GenerationPanel() {
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <Chip
+            data-testid="generation-connection-chip"
             size="small"
             label={connectionChipLabel}
             color={connectionChipColor}
@@ -539,6 +541,7 @@ export function GenerationPanel() {
         <FormControl fullWidth size="small">
           <InputLabel id="workflow-select-label">Workflow</InputLabel>
           <Select
+            data-testid="generation-workflow-select"
             labelId="workflow-select-label"
             value={selectedWorkflowId ?? ""}
             label="Workflow"
@@ -719,6 +722,7 @@ export function GenerationPanel() {
       <Box sx={{ px: 2, py: 2 }}>
         {isPipelineInterruptible ? (
           <Button
+            data-testid="generation-generate-button"
             fullWidth
             variant="contained"
             color="error"
@@ -730,6 +734,7 @@ export function GenerationPanel() {
           </Button>
         ) : isPostprocessing ? (
           <Button
+            data-testid="generation-generate-button"
             fullWidth
             variant="contained"
             disabled
@@ -755,6 +760,7 @@ export function GenerationPanel() {
           >
             <span style={{ display: "block", width: "100%" }}>
               <Button
+                data-testid="generation-generate-button"
                 fullWidth
                 variant="contained"
                 startIcon={isExtractingSelection ? undefined : <PlayArrow />}
@@ -787,6 +793,7 @@ export function GenerationPanel() {
       {isRunning && activeJob && (
         <Box sx={{ px: 2, pb: 2 }}>
           <LinearProgress
+            data-testid="generation-progress-bar"
             variant={activeJob.progress > 0 ? "determinate" : "indeterminate"}
             value={activeJob.progress}
             sx={{ mb: 0.5, borderRadius: 1 }}
@@ -943,6 +950,7 @@ export function GenerationPanel() {
       {sendableAssets.length > 0 && (
         <Box sx={{ px: 2, pb: 2 }}>
           <Button
+            data-testid="generation-send-to-timeline-button"
             fullWidth
             variant="outlined"
             size="small"

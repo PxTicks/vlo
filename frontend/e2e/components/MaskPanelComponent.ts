@@ -30,6 +30,26 @@ export class MaskPanelComponent {
         return this.page.getByTestId('mask-add-menu');
     }
 
+    get sam2Panel() {
+        return this.page.getByTestId('sam2-mask-panel');
+    }
+
+    get sam2AddPointButton() {
+        return this.page.getByTestId('sam2-add-point-button');
+    }
+
+    get sam2RemovePointButton() {
+        return this.page.getByTestId('sam2-remove-point-button');
+    }
+
+    get sam2GenerateButton() {
+        return this.page.getByTestId('sam2-generate-button');
+    }
+
+    get sam2PreviewButton() {
+        return this.page.getByRole('button', { name: 'Generate Current Frame Preview' });
+    }
+
     get deleteButton() {
         return this.page.getByTestId('mask-delete-button');
     }

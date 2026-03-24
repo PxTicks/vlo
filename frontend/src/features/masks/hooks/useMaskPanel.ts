@@ -124,6 +124,8 @@ export interface UseMaskPanelResult {
   setMaskMode: (mode: ClipMaskMode) => void;
   maskInverted: boolean;
   setMaskInverted: (inverted: boolean) => void;
+  sam2PointMode: "add" | "remove";
+  setSam2PointMode: (mode: "add" | "remove") => void;
   sam2Points: ClipMaskPoint[];
   sam2CurrentFramePointsCount: number;
   isSam2EditorOpen: boolean;
@@ -212,6 +214,8 @@ export function useMaskPanel(): UseMaskPanelResult {
   );
   const isMaskTabActive = useMaskViewStore((state) => state.isMaskTabActive);
   const setSelectedMask = useMaskViewStore((state) => state.setSelectedMask);
+  const sam2PointMode = useMaskViewStore((state) => state.sam2PointMode);
+  const setSam2PointMode = useMaskViewStore((state) => state.setSam2PointMode);
 
   // Read mask clips from the store via parent's mask clip components
   const masks = useTimelineStore(
@@ -307,6 +311,11 @@ export function useMaskPanel(): UseMaskPanelResult {
       return false;
     }
   }, []);
+
+  useEffect(() => {
+    if (!addMenuAnchorEl) return;
+    void ensureSam2Available();
+  }, [addMenuAnchorEl, ensureSam2Available]);
 
   useEffect(() => {
     if (!isMaskTabActive || !isSam2Selected) return;
@@ -1086,6 +1095,8 @@ export function useMaskPanel(): UseMaskPanelResult {
     setMaskMode,
     maskInverted,
     setMaskInverted,
+    sam2PointMode,
+    setSam2PointMode,
     sam2Points,
     sam2CurrentFramePointsCount,
     isSam2EditorOpen,

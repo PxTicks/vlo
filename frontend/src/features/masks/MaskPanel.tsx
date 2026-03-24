@@ -63,6 +63,8 @@ export const MaskPanel = memo(function MaskPanel() {
     setMaskMode,
     maskInverted,
     setMaskInverted,
+    sam2PointMode,
+    setSam2PointMode,
     sam2Points,
     isSam2Available,
     isSam2Checking,
@@ -141,6 +143,7 @@ export const MaskPanel = memo(function MaskPanel() {
     (selectedMask?.type === "mask" ? selectedMask.maskMode : undefined) ??
     "apply";
   const isSam2Mask = selectedMaskIsSam2;
+  const isSam2MenuItemDisabled = isSam2Checking || !isSam2Available;
 
   return (
     <Box
@@ -213,7 +216,11 @@ export const MaskPanel = memo(function MaskPanel() {
           onClose={() => setAddMenuAnchorEl(null)}
         >
           {MASK_TYPES.map((shape) => (
-            <MenuItem key={shape} onClick={() => requestDraw(shape)}>
+            <MenuItem
+              key={shape}
+              disabled={shape === "sam2" ? isSam2MenuItemDisabled : false}
+              onClick={() => requestDraw(shape)}
+            >
               {shape[0].toUpperCase() + shape.slice(1)}
             </MenuItem>
           ))}
@@ -235,6 +242,7 @@ export const MaskPanel = memo(function MaskPanel() {
               maskMode={selectedMaskMode}
               maskInverted={maskInverted}
               maskLabel={selectedMaskLabel}
+              sam2PointMode={sam2PointMode}
               points={sam2Points}
               currentFramePointsCount={sam2CurrentFramePointsCount}
               isSam2Available={isSam2Available}
@@ -252,6 +260,7 @@ export const MaskPanel = memo(function MaskPanel() {
               hasMaskAsset={hasSam2MaskAsset}
               onSetMaskMode={setMaskMode}
               onSetMaskInverted={setMaskInverted}
+              onSetSam2PointMode={setSam2PointMode}
             />
             <DefaultTransformationSections
               definitions={maskOperationDefinitions}

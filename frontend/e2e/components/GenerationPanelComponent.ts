@@ -3,9 +3,6 @@ import { Page, Locator } from '@playwright/test';
 /**
  * Component Object Model for the Generation Panel.
  * Wraps: GenerationPanel.tsx
- *
- * Note: Requires data-testid attributes to be added to GenerationPanel.tsx in Phase 11.
- * For now, uses role-based and text-based locators where possible.
  */
 export class GenerationPanelComponent {
     readonly page: Page;
@@ -14,15 +11,40 @@ export class GenerationPanelComponent {
         this.page = page;
     }
 
+    get panel() {
+        return this.page.getByTestId('generation-panel');
+    }
+
+    get connectionChip() {
+        return this.page.getByTestId('generation-connection-chip');
+    }
+
+    get workflowSelect() {
+        return this.page.getByTestId('generation-workflow-select');
+    }
+
     get generateButton() {
-        return this.page.getByRole('button', { name: /Generate|Cancel/ });
+        return this.page.getByTestId('generation-generate-button');
+    }
+
+    get progressBar() {
+        return this.page.getByTestId('generation-progress-bar');
+    }
+
+    get sendToTimelineButton() {
+        return this.page.getByTestId('generation-send-to-timeline-button');
     }
 
     async clickGenerate() {
-        await this.page.getByRole('button', { name: 'Generate' }).click();
+        await this.generateButton.click();
     }
 
     async clickCancel() {
-        await this.page.getByRole('button', { name: 'Cancel' }).click();
+        await this.generateButton.click();
+    }
+
+    async selectWorkflow(name: string) {
+        await this.workflowSelect.click();
+        await this.page.getByRole('option', { name }).click();
     }
 }

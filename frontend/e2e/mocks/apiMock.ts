@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Page, Route } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -6,12 +6,109 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
+const SAM2_FRAME_PREVIEW_PATH = path.join(
+    __dirname,
+    '..',
+    'fixtures',
+    'project_v2_with_clips',
+    '.vloproject',
+    'thumbnails',
+    'A_woman_in_202601222322_bssr2mp4_thumb.jpg',
+);
 
 function readFixture(name: string): string {
     return fs.readFileSync(path.join(FIXTURES_DIR, name), 'utf-8');
 }
 
+function buildMockComfyFrameHtml(): string {
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mock ComfyUI Frame</title>
+  </head>
+  <body>
+    <script>
+      (() => {
+        const workflowApi = {
+          workflows: [],
+          openWorkflows: [],
+          activeWorkflow: null,
+          async closeWorkflow(workflow) {
+            this.workflows = this.workflows.filter((candidate) => candidate !== workflow);
+            this.openWorkflows = this.openWorkflows.filter((candidate) => candidate !== workflow);
+            if (this.activeWorkflow === workflow) {
+              this.activeWorkflow = this.workflows[0] ?? null;
+            }
+          },
+        };
+
+        function normalizeFilename(value) {
+          const trimmed = String(value ?? '').trim();
+          return trimmed.length > 0 ? trimmed : 'workflow.json';
+        }
+
+        function setActiveWorkflow(graphData, filename) {
+          const normalizedFilename = normalizeFilename(filename);
+          const workflow = {
+            filename: normalizedFilename,
+            fullFilename: normalizedFilename,
+            path: normalizedFilename,
+            activeState: graphData,
+            pendingWarnings: null,
+          };
+          workflowApi.workflows = [workflow];
+          workflowApi.openWorkflows = [workflow];
+          workflowApi.activeWorkflow = workflow;
+        }
+
+        window.app = {
+          async handleFile(file) {
+            const text = await file.text();
+            const graphData = JSON.parse(text);
+            setActiveWorkflow(graphData, file && 'name' in file ? file.name : 'workflow.json');
+          },
+          async graphToPrompt() {
+            const graphData = workflowApi.activeWorkflow && workflowApi.activeWorkflow.activeState;
+            if (!graphData) {
+              return null;
+            }
+            return [graphData, graphData];
+          },
+          extensionManager: {
+            workflow: workflowApi,
+          },
+          api: {
+            socket: {
+              connected: true,
+              readyState: 1,
+              OPEN: 1,
+            },
+          },
+        };
+
+        window.api = {
+          socket: {
+            connected: true,
+            readyState: 1,
+            OPEN: 1,
+          },
+        };
+      })();
+    </script>
+  </body>
+</html>`;
+}
+
 export interface ApiMockOptions {
+    /** Override /app/status RuntimeStatus response. */
+    runtimeStatus?: {
+        backend?: { status?: string; mode?: string; frontendBuildPresent?: boolean };
+        comfyui?: { status?: string; url?: string; error?: string | null };
+        sam2?: { status?: string; error?: string | null };
+    };
+    /** Make /app/status return an error (e.g. 500). Default: false */
+    runtimeStatusError?: boolean;
     /** Override /comfy/health response status. Default: "ok" */
     comfyHealthStatus?: string;
     /** Override /sam2/health response. Default: { status: "ok" } */
@@ -36,6 +133,7 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
     const workflowContent = JSON.parse(readFixture('workflow-content.json'));
     const workflowRules = JSON.parse(readFixture('workflow-rules.json'));
     const objectInfo = JSON.parse(readFixture('object-info.json'));
+    const comfyFrameHtml = buildMockComfyFrameHtml();
     const comfyHealthStatus = options.comfyHealthStatus ?? 'ok';
     const sam2Health = options.sam2Health ?? { status: 'ok' };
 
@@ -45,6 +143,46 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
         node_errors: {},
     };
     const historyResponse = options.historyResponse ?? {};
+
+    // ── App status endpoint ──
+
+    const defaultRuntimeStatus = {
+        backend: { status: 'ok', mode: 'development', frontendBuildPresent: true },
+        comfyui: { status: 'connected', url: 'http://localhost:8188', error: null },
+        sam2: { status: 'available', error: null },
+    };
+
+    if (options.runtimeStatus) {
+        if (options.runtimeStatus.backend) Object.assign(defaultRuntimeStatus.backend, options.runtimeStatus.backend);
+        if (options.runtimeStatus.comfyui) Object.assign(defaultRuntimeStatus.comfyui, options.runtimeStatus.comfyui);
+        if (options.runtimeStatus.sam2) Object.assign(defaultRuntimeStatus.sam2, options.runtimeStatus.sam2);
+    }
+
+    await page.route('**/app/status', async (route) => {
+        if (options.runtimeStatusError) {
+            await route.fulfill({ status: 500, body: 'Internal Server Error' });
+            return;
+        }
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(defaultRuntimeStatus),
+        });
+    });
+
+    // ── ComfyUI iframe shell ──
+
+    const fulfillComfyFrame = async (route: Route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'text/html',
+            body: comfyFrameHtml,
+        });
+    };
+
+    await page.route('**/comfyui-frame', fulfillComfyFrame);
+    await page.route('**/comfyui-frame/', fulfillComfyFrame);
+    await page.route('**/comfyui-frame/**', fulfillComfyFrame);
 
     // ── ComfyUI endpoints ──
 
@@ -185,12 +323,11 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
     });
 
     await page.route('**/sam2/masks/frame', async (route) => {
-        // Return a minimal 1x1 transparent PNG as mock mask frame
-        const pngBytes = createMinimalPng();
+        const previewImageBytes = fs.readFileSync(SAM2_FRAME_PREVIEW_PATH);
         await route.fulfill({
             status: 200,
-            contentType: 'image/png',
-            body: Buffer.from(pngBytes),
+            contentType: 'image/jpeg',
+            body: previewImageBytes,
             headers: {
                 'X-Sam2-Width': '1280',
                 'X-Sam2-Height': '720',
@@ -219,27 +356,4 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
 
     // ── Catch-all for /comfy/ws — prevent real WebSocket from failing ──
     // WebSocket mocking is handled separately via websocketMock.ts
-}
-
-/**
- * Creates a minimal valid 1x1 transparent PNG (67 bytes).
- */
-function createMinimalPng(): Uint8Array {
-    // PNG signature + IHDR + IDAT + IEND for a 1x1 RGBA transparent pixel
-    return new Uint8Array([
-        // PNG signature
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-        // IHDR chunk (13 bytes data)
-        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
-        0x89,
-        // IDAT chunk (minimal zlib stream for 1 RGBA pixel)
-        0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54,
-        0x78, 0x9c, 0x62, 0x00, 0x00, 0x00, 0x05, 0x00,
-        0x01, 0x0d, 0x0a, 0x2d, 0xb4,
-        // IEND chunk
-        0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
-        0xae, 0x42, 0x60, 0x82,
-    ]);
 }

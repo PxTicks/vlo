@@ -21,6 +21,8 @@ export interface Sam2LivePreview {
   sourceFps: number;
 }
 
+export type Sam2PointMode = "add" | "remove";
+
 interface MaskViewState {
   selectedMaskByClipId: Record<string, string | undefined>;
   sam2EditorMaskByClipId: Record<string, string | undefined>;
@@ -28,12 +30,14 @@ interface MaskViewState {
   pendingDrawRequest: PendingMaskDrawRequest | null;
   interactionContext: MaskInteractionContext | null;
   sam2LivePreviewByClipId: Record<string, Sam2LivePreview | undefined>;
+  sam2PointMode: Sam2PointMode;
   setSelectedMask: (clipId: string, maskId: string | null) => void;
   setSam2EditorMask: (clipId: string, maskId: string | null) => void;
   setMaskTabActive: (isActive: boolean) => void;
   requestMaskDraw: (clipId: string, shape: ClipMaskType) => void;
   clearPendingDraw: () => void;
   setInteractionContext: (context: MaskInteractionContext | null) => void;
+  setSam2PointMode: (mode: Sam2PointMode) => void;
   setSam2LivePreview: (
     clipId: string,
     maskId: string,
@@ -54,6 +58,7 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
   pendingDrawRequest: null,
   interactionContext: null,
   sam2LivePreviewByClipId: {},
+  sam2PointMode: "add",
 
   setSelectedMask: (clipId, maskId) =>
     set((state) => {
@@ -105,6 +110,8 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
     })),
 
   setInteractionContext: (context) => set({ interactionContext: context }),
+
+  setSam2PointMode: (mode) => set({ sam2PointMode: mode }),
 
   setSam2LivePreview: (
     clipId,

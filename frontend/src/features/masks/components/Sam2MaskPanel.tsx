@@ -31,6 +31,7 @@ interface Sam2MaskPanelProps {
   maskMode: ClipMaskMode;
   maskInverted: boolean;
   maskLabel: string;
+  sam2PointMode: "add" | "remove";
   points: ClipMaskPoint[];
   currentFramePointsCount: number;
   isSam2Available: boolean;
@@ -48,12 +49,14 @@ interface Sam2MaskPanelProps {
   hasMaskAsset: boolean;
   onSetMaskMode: (mode: ClipMaskMode) => void;
   onSetMaskInverted: (inverted: boolean) => void;
+  onSetSam2PointMode: (mode: "add" | "remove") => void;
 }
 
 export const Sam2MaskPanel = memo(function Sam2MaskPanel({
   maskMode,
   maskInverted,
   maskLabel,
+  sam2PointMode,
   points,
   currentFramePointsCount,
   isSam2Available,
@@ -71,6 +74,7 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
   hasMaskAsset,
   onSetMaskMode,
   onSetMaskInverted,
+  onSetSam2PointMode,
 }: Sam2MaskPanelProps) {
   const positiveCount = useMemo(
     () => points.filter((p) => p.label === 1).length,
@@ -84,7 +88,10 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
   const showRegenerate = hasMaskAsset && isDirty;
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+    <Box
+      data-testid="sam2-mask-panel"
+      sx={{ display: "flex", flexDirection: "column", gap: 1 }}
+    >
       {/* Header */}
       <Box sx={{ px: 2 }}>
         <Typography
@@ -136,6 +143,36 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
           Left click what you want to select, right click what you want to omit.
           Click a point to remove it.
         </Typography>
+        <ButtonGroup
+          variant="contained"
+          disableElevation
+          size="small"
+          fullWidth
+          sx={{ mb: 1 }}
+        >
+          <Button
+            data-testid="sam2-add-point-button"
+            onClick={() => onSetSam2PointMode("add")}
+            sx={
+              sam2PointMode === "add"
+                ? selectedConnectedButtonSx
+                : connectedButtonSx
+            }
+          >
+            Add Point
+          </Button>
+          <Button
+            data-testid="sam2-remove-point-button"
+            onClick={() => onSetSam2PointMode("remove")}
+            sx={
+              sam2PointMode === "remove"
+                ? selectedConnectedButtonSx
+                : connectedButtonSx
+            }
+          >
+            Remove Point
+          </Button>
+        </ButtonGroup>
         <Box sx={{ display: "flex", gap: 2, mb: 0.5 }}>
           <Typography variant="body2" sx={{ color: "#22c55e" }}>
             +{positiveCount}
@@ -234,6 +271,7 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
         )}
 
         <Button
+          data-testid="sam2-generate-button"
           variant="contained"
           size="small"
           onClick={() => {

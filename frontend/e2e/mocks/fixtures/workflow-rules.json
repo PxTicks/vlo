@@ -2,7 +2,18 @@
   "workflow_id": "video_ltx2_3_i2v",
   "rules": {
     "version": 1,
-    "nodes": {},
+    "nodes": {
+      "3": {
+        "node_title": "KSampler",
+        "widgets": {
+          "seed": {
+            "label": "Seed",
+            "value_type": "int",
+            "default": 0
+          }
+        }
+      }
+    },
     "output_injections": {},
     "slots": {},
     "mask_cropping": {

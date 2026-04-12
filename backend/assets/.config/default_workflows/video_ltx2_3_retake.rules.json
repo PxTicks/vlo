@@ -79,20 +79,6 @@
         "max_frames": 361
       }
     },
-    "661": {
-      "widgets": {
-        "value": {
-          "hidden": true
-        }
-      }
-    },
-    "662": {
-      "widgets": {
-        "value": {
-          "hidden": true
-        }
-      }
-    },
     "689": {
       "binary_derived_mask_of": "644"
     },

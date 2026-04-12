@@ -113,17 +113,17 @@
     },
     "ResolvedWorkflowRuleNode": {
       "properties": {
-        "binary_derived_mask_of": {
+        "audio_derived_mask_fps": {
           "anyOf": [
             {
-              "type": "string"
+              "type": "integer"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Binary Derived Mask Of"
+          "title": "Audio Derived Mask Fps"
         },
         "binary_audio_derived_mask_of": {
           "anyOf": [
@@ -137,17 +137,17 @@
           "default": null,
           "title": "Binary Audio Derived Mask Of"
         },
-        "audio_derived_mask_fps": {
+        "binary_derived_mask_of": {
           "anyOf": [
             {
-              "type": "integer"
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Audio Derived Mask Fps"
+          "title": "Binary Derived Mask Of"
         },
         "ignore": {
           "default": false,
@@ -471,6 +471,44 @@
         }
       },
       "title": "WorkflowMaskCroppingConfig",
+      "type": "object"
+    },
+    "WorkflowMaskProcessingConfig": {
+      "properties": {
+        "cropping": {
+          "$ref": "#/$defs/WorkflowMaskCroppingConfig"
+        },
+        "source_video_treatment": {
+          "$ref": "#/$defs/WorkflowMaskSourceVideoTreatmentConfig"
+        }
+      },
+      "title": "WorkflowMaskProcessingConfig",
+      "type": "object"
+    },
+    "WorkflowMaskSourceVideoTreatmentConfig": {
+      "properties": {
+        "default": {
+          "default": "preserve_transparency",
+          "enum": [
+            "preserve_transparency",
+            "fill_transparent_with_neutral_gray",
+            "remove_transparency"
+          ],
+          "title": "Default",
+          "type": "string"
+        },
+        "expose_as_widget": {
+          "default": true,
+          "title": "Expose As Widget",
+          "type": "boolean"
+        },
+        "label": {
+          "default": "Transparency handling",
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "title": "WorkflowMaskSourceVideoTreatmentConfig",
       "type": "object"
     },
     "WorkflowOptionalInputValidationRule": {
@@ -1246,8 +1284,8 @@
       "default": null,
       "title": "Input Conditions"
     },
-    "mask_cropping": {
-      "$ref": "#/$defs/WorkflowMaskCroppingConfig"
+    "mask_processing": {
+      "$ref": "#/$defs/WorkflowMaskProcessingConfig"
     },
     "name": {
       "anyOf": [

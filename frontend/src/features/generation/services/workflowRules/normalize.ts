@@ -1,13 +1,20 @@
 import { isRecord } from "../parsers";
 import {
+  DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+  LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+  parseDerivedMaskSourceVideoTreatment,
+} from "../../derivedMaskVideoTreatment";
+import {
   createDefaultWorkflowRules,
   DEFAULT_WORKFLOW_MASK_CROPPING,
+  createDefaultWorkflowMaskProcessing,
   DEFAULT_WORKFLOW_POSTPROCESSING,
   type WorkflowAspectRatioProcessingConfig,
   type WorkflowDerivedWidgetRule,
   type WorkflowInputCondition,
   type WorkflowInputValidationRule,
   type WorkflowMaskCroppingConfig,
+  type WorkflowMaskProcessingConfig,
   type WorkflowRuleNode,
   type WorkflowRuleNodePresent,
   type WorkflowRules,
@@ -272,6 +279,39 @@ function normalizeNodeRules(
       const widgets: Record<string, WorkflowRuleWidgetEntry> = {};
       for (const [widgetName, rawWidget] of Object.entries(nodeRuleUnknown.widgets)) {
         if (!isRecord(rawWidget)) continue;
+        const trimmedWidgetName = widgetName.trim();
+        if (trimmedWidgetName.length === 0) continue;
+        const normalizedWidgetName =
+          trimmedWidgetName ===
+          LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM
+            ? DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM
+            : trimmedWidgetName;
+        const usedDeprecatedAlias =
+          normalizedWidgetName !== trimmedWidgetName;
+        if (usedDeprecatedAlias) {
+          warnings.push(
+            toRulesWarning(
+              "deprecated_widget_param_alias",
+              "Widget param '__derived_mask_video_treatment' is deprecated; use 'derived_mask_source_video_treatment'",
+              nodeId,
+            ),
+          );
+        }
+        if (
+          normalizedWidgetName ===
+            DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM &&
+          Object.prototype.hasOwnProperty.call(widgets, normalizedWidgetName) &&
+          usedDeprecatedAlias
+        ) {
+          warnings.push(
+            toRulesWarning(
+              "duplicate_widget_param_alias",
+              "Ignoring deprecated widget alias because the canonical widget param is already defined",
+              nodeId,
+            ),
+          );
+          continue;
+        }
 
         const entry: WorkflowRuleWidgetEntry = {};
         if (typeof rawWidget.label === "string") entry.label = rawWidget.label;
@@ -324,7 +364,7 @@ function normalizeNodeRules(
         if (valueType) entry.value_type = valueType;
         const options = toWidgetOptions(rawWidget.options);
         if (options) entry.options = options;
-        widgets[widgetName] = entry;
+        widgets[normalizedWidgetName] = entry;
       }
 
       if (Object.keys(widgets).length > 0) {
@@ -580,8 +620,8 @@ function normalizeMaskCropping(
   if (rawMaskCropping !== undefined && !isRecord(rawMaskCropping)) {
     warnings.push(
       toRulesWarning(
-        "invalid_mask_cropping_rule",
-        "mask_cropping must be an object",
+        "invalid_mask_processing_cropping_rule",
+        "mask_processing.cropping must be an object",
       ),
     );
   }
@@ -596,8 +636,8 @@ function normalizeMaskCropping(
     } else {
       warnings.push(
         toRulesWarning(
-          "invalid_mask_cropping_mode",
-          "mask_cropping.mode must be 'crop' or 'full'; defaulting to crop",
+          "invalid_mask_processing_cropping_mode",
+          "mask_processing.cropping.mode must be 'crop' or 'full'; defaulting to crop",
         ),
       );
     }
@@ -607,14 +647,138 @@ function normalizeMaskCropping(
     } else {
       warnings.push(
         toRulesWarning(
-          "invalid_mask_cropping_enabled",
-          "mask_cropping.enabled must be a boolean; defaulting to crop",
+          "invalid_mask_processing_cropping_enabled",
+          "mask_processing.cropping.enabled must be a boolean; defaulting to crop",
         ),
       );
     }
   }
 
   return maskCropping;
+}
+
+const MASK_SOURCE_VIDEO_TREATMENT_INPUTS = new Set([
+  "preserve_transparency",
+  "fill_transparent_with_neutral_gray",
+  "remove_transparency",
+  "keep transparency",
+  "preserve transparency",
+  "fill transparent with neutral gray",
+  "fill transparent with neutral grey",
+  "remove transparency",
+]);
+
+function normalizeMaskProcessing(
+  rawMaskProcessing: unknown,
+  warnings: WorkflowRuleWarning[],
+  rawMaskCropping?: unknown,
+): WorkflowMaskProcessingConfig {
+  const maskProcessing = createDefaultWorkflowMaskProcessing();
+  let maskProcessingValue = rawMaskProcessing;
+
+  if (maskProcessingValue === undefined && rawMaskCropping !== undefined) {
+    maskProcessingValue = { cropping: rawMaskCropping };
+  }
+
+  if (maskProcessingValue !== undefined && !isRecord(maskProcessingValue)) {
+    warnings.push(
+      toRulesWarning(
+        "invalid_mask_processing_rule",
+        "mask_processing must be an object",
+      ),
+    );
+  }
+
+  const maskProcessingRecord = toStringRecord(maskProcessingValue);
+  if ("cropping" in maskProcessingRecord) {
+    if (isRecord(maskProcessingRecord.cropping)) {
+      maskProcessing.cropping = normalizeMaskCropping(
+        maskProcessingRecord.cropping,
+        warnings,
+      );
+    } else {
+      warnings.push(
+        toRulesWarning(
+          "invalid_mask_processing_cropping_rule",
+          "mask_processing.cropping must be an object",
+        ),
+      );
+    }
+  } else if (rawMaskCropping !== undefined && rawMaskProcessing === undefined) {
+    maskProcessing.cropping = normalizeMaskCropping(rawMaskCropping, warnings);
+  }
+
+  if ("source_video_treatment" in maskProcessingRecord) {
+    const rawSourceVideoTreatment = maskProcessingRecord.source_video_treatment;
+    if (isRecord(rawSourceVideoTreatment)) {
+      if ("default" in rawSourceVideoTreatment) {
+        if (
+          typeof rawSourceVideoTreatment.default === "string" &&
+          MASK_SOURCE_VIDEO_TREATMENT_INPUTS.has(
+            rawSourceVideoTreatment.default.trim().toLowerCase(),
+          )
+        ) {
+          maskProcessing.source_video_treatment = {
+            ...maskProcessing.source_video_treatment,
+            default: parseDerivedMaskSourceVideoTreatment(
+              rawSourceVideoTreatment.default,
+            ),
+          };
+        } else {
+          warnings.push(
+            toRulesWarning(
+              "invalid_mask_processing_source_video_treatment_default",
+              "mask_processing.source_video_treatment.default is invalid; defaulting to preserve_transparency",
+            ),
+          );
+        }
+      }
+
+      if ("expose_as_widget" in rawSourceVideoTreatment) {
+        if (typeof rawSourceVideoTreatment.expose_as_widget === "boolean") {
+          maskProcessing.source_video_treatment = {
+            ...maskProcessing.source_video_treatment,
+            expose_as_widget: rawSourceVideoTreatment.expose_as_widget,
+          };
+        } else {
+          warnings.push(
+            toRulesWarning(
+              "invalid_mask_processing_source_video_treatment_expose_as_widget",
+              "mask_processing.source_video_treatment.expose_as_widget must be a boolean; defaulting to true",
+            ),
+          );
+        }
+      }
+
+      if ("label" in rawSourceVideoTreatment) {
+        if (
+          typeof rawSourceVideoTreatment.label === "string" &&
+          rawSourceVideoTreatment.label.trim().length > 0
+        ) {
+          maskProcessing.source_video_treatment = {
+            ...maskProcessing.source_video_treatment,
+            label: rawSourceVideoTreatment.label.trim(),
+          };
+        } else {
+          warnings.push(
+            toRulesWarning(
+              "invalid_mask_processing_source_video_treatment_label",
+              "mask_processing.source_video_treatment.label must be a non-empty string; defaulting to 'Transparency handling'",
+            ),
+          );
+        }
+      }
+    } else {
+      warnings.push(
+        toRulesWarning(
+          "invalid_mask_processing_source_video_treatment_rule",
+          "mask_processing.source_video_treatment must be an object",
+        ),
+      );
+    }
+  }
+
+  return maskProcessing;
 }
 
 function normalizePostprocessing(
@@ -832,7 +996,11 @@ export function normalizeWorkflowRules(rawRules: unknown): {
   const slots = normalizeSlotRules(toStringRecord(raw.slots), warnings);
   const validation = normalizeValidationConfig(raw.validation, warnings);
   const inputConditions = normalizeInputConditions(raw.input_conditions, validation);
-  const maskCropping = normalizeMaskCropping(raw.mask_cropping, warnings);
+  const maskProcessing = normalizeMaskProcessing(
+    raw.mask_processing,
+    warnings,
+    raw.mask_cropping,
+  );
   const postprocessing = normalizePostprocessing(raw.postprocessing, warnings);
   const aspectRatioProcessing = normalizeAspectRatioProcessing(
     raw.aspect_ratio_processing,
@@ -850,7 +1018,7 @@ export function normalizeWorkflowRules(rawRules: unknown): {
         raw.output_injections,
       ) as WorkflowRules["output_injections"],
       slots,
-      mask_cropping: maskCropping,
+      mask_processing: maskProcessing,
       postprocessing,
       ...(aspectRatioProcessing
         ? { aspect_ratio_processing: aspectRatioProcessing }

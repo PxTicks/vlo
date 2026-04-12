@@ -469,7 +469,7 @@ export function buildWorkflowStoreState(
           activeWorkflowRules: rules,
           rulesWorkflowSourceId: rulesSourceId,
           activeRulesWarnings: rulesWarnings,
-          maskCropMode: rules.mask_cropping?.mode ?? "crop",
+          maskCropMode: rules.mask_processing?.cropping?.mode ?? "crop",
         });
 
         if (isTempWorkflow && tempWorkflow) {

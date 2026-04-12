@@ -1,8 +1,15 @@
 {
   "name": "LTX2.3 ReTake",
   "version": 1,
-  "mask_cropping": {
-    "mode": "crop"
+  "mask_processing": {
+    "cropping": {
+      "mode": "crop"
+    },
+    "source_video_treatment": {
+      "default": "preserve_transparency",
+      "expose_as_widget": true,
+      "label": "Transparency handling"
+    }
   },
   "nodes": {
     "115": {

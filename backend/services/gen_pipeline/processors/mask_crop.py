@@ -71,8 +71,8 @@ class _MaskCropProcessor:
         if (
             self._apply_aspect_ratio_processing is not None
             and has_pipeline_stage(ctx.rules_model, "aspect_ratio")
-            and has_pipeline_stage(ctx.rules_model, "mask_cropping")
-            and pipeline_stage_precedes(ctx.rules_model, "aspect_ratio", "mask_cropping")
+            and has_pipeline_stage(ctx.rules_model, "mask_processing")
+            and pipeline_stage_precedes(ctx.rules_model, "aspect_ratio", "mask_processing")
             and not ctx.aspect_ratio_applied
         ):
             (
@@ -87,7 +87,7 @@ class _MaskCropProcessor:
             ctx.warnings.extend(aspect_ratio_processing_warnings)
             ctx.aspect_ratio_applied = True
 
-        mask_stage_enabled = has_pipeline_stage(ctx.rules_model, "mask_cropping")
+        mask_stage_enabled = has_pipeline_stage(ctx.rules_model, "mask_processing")
 
         # Check if cropping is enabled (mode is "crop" and dilation is set)
         should_crop = (

@@ -34,6 +34,9 @@ import { resolveWidgetInputs } from "../store/workflowState";
 import { parseWorkflowInputs } from "../services/workflowBridge";
 import {
   DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
+  DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+  LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+  resolveDefaultDerivedMaskSourceVideoTreatment,
   resolveDerivedMaskVideoTreatments,
 } from "../derivedMaskVideoTreatment";
 import { addLocalAsset, useAssetStore } from "../../userAssets";
@@ -389,6 +392,10 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     () => buildWorkflowInputLookup(workflowInputs),
     [workflowInputs],
   );
+  const derivedMaskDefaultVideoTreatment = useMemo(
+    () => resolveDefaultDerivedMaskSourceVideoTreatment(activeWorkflowRules),
+    [activeWorkflowRules],
+  );
   const derivedMaskVideoTreatmentBySourceNodeId = useMemo(
     () =>
       mode === "manual"
@@ -397,8 +404,9 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
             derivedMaskMappings,
             smartWidgetInputs,
             widgetValues,
+            derivedMaskDefaultVideoTreatment,
           ),
-    [derivedMaskMappings, mode, smartWidgetInputs, widgetValues],
+    [derivedMaskDefaultVideoTreatment, derivedMaskMappings, mode, smartWidgetInputs, widgetValues],
   );
 
   useEffect(() => {
@@ -549,7 +557,15 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
           }
         } else {
           const replayKey = `widget_${widget.nodeId}_${widget.param}`;
-          const storedValue = pendingReplayPanelState.widgetValues[replayKey];
+          const legacyReplayKey =
+            widget.param === DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM
+              ? `widget_${widget.nodeId}_${LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM}`
+              : null;
+          const storedValue =
+            pendingReplayPanelState.widgetValues[replayKey] ??
+            (legacyReplayKey
+              ? pendingReplayPanelState.widgetValues[legacyReplayKey]
+              : undefined);
           if (typeof storedValue === "string") {
             restoredValue = parseStoredWidgetValue(widget, storedValue);
           }
@@ -612,6 +628,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
             derivedMaskMappings,
             smartWidgetInputs,
             currentWidgetValues,
+            derivedMaskDefaultVideoTreatment,
           );
 
     if (store.connectionStatus !== "connected") {
@@ -759,6 +776,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       count,
     );
   }, [
+    derivedMaskDefaultVideoTreatment,
     mode,
     queueGeneration,
     workflowInputById,

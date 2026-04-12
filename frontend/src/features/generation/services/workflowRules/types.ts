@@ -14,6 +14,7 @@ import type {
   WorkflowAtLeastNInputValidationRule,
   WorkflowDualSamplerDenoiseRule,
   WorkflowMaskCroppingConfig,
+  WorkflowMaskProcessingConfig,
   WorkflowOptionalInputValidationRule,
   WorkflowPostprocessingConfig,
   WorkflowRequiredInputValidationRule,
@@ -25,6 +26,8 @@ export type {
   WorkflowDualSamplerDenoiseRule,
   WorkflowInputCondition,
   WorkflowMaskCroppingConfig,
+  WorkflowMaskProcessingConfig,
+  WorkflowMaskSourceVideoTreatmentConfig,
   WorkflowOptionalInputValidationRule,
   WorkflowParamReference,
   WorkflowPostprocessingConfig,
@@ -79,6 +82,15 @@ export const DEFAULT_WORKFLOW_MASK_CROPPING: WorkflowMaskCroppingConfig = {
   mode: "crop",
 };
 
+export const DEFAULT_WORKFLOW_MASK_PROCESSING: WorkflowMaskProcessingConfig = {
+  cropping: { ...DEFAULT_WORKFLOW_MASK_CROPPING },
+  source_video_treatment: {
+    default: "preserve_transparency",
+    expose_as_widget: true,
+    label: "Transparency handling",
+  },
+};
+
 export const DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING: WorkflowAspectRatioProcessingConfig =
   {
     enabled: true,
@@ -101,6 +113,15 @@ export function createDefaultWorkflowMaskCropping(): WorkflowMaskCroppingConfig 
   return { ...DEFAULT_WORKFLOW_MASK_CROPPING };
 }
 
+export function createDefaultWorkflowMaskProcessing(): WorkflowMaskProcessingConfig {
+  return {
+    cropping: { ...DEFAULT_WORKFLOW_MASK_PROCESSING.cropping },
+    source_video_treatment: {
+      ...DEFAULT_WORKFLOW_MASK_PROCESSING.source_video_treatment,
+    },
+  };
+}
+
 export function createDefaultWorkflowAspectRatioProcessing(): WorkflowAspectRatioProcessingConfig {
   return {
     ...DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING,
@@ -118,6 +139,7 @@ export function createDefaultWorkflowRules(
   overrides: Partial<WorkflowRules> = {},
 ): WorkflowRules {
   const aspectRatioProcessing = overrides.aspect_ratio_processing;
+  const maskProcessing = overrides.mask_processing;
 
   return {
     version: overrides.version ?? 1,
@@ -130,8 +152,20 @@ export function createDefaultWorkflowRules(
     derived_widgets: overrides.derived_widgets ?? [],
     output_injections: overrides.output_injections ?? {},
     slots: overrides.slots ?? {},
-    mask_cropping:
-      overrides.mask_cropping ?? createDefaultWorkflowMaskCropping(),
+    mask_processing: maskProcessing
+      ? {
+          ...createDefaultWorkflowMaskProcessing(),
+          ...maskProcessing,
+          cropping: {
+            ...createDefaultWorkflowMaskProcessing().cropping,
+            ...(maskProcessing.cropping ?? {}),
+          },
+          source_video_treatment: {
+            ...createDefaultWorkflowMaskProcessing().source_video_treatment,
+            ...(maskProcessing.source_video_treatment ?? {}),
+          },
+        }
+      : createDefaultWorkflowMaskProcessing(),
     postprocessing:
       overrides.postprocessing ?? createDefaultWorkflowPostprocessing(),
     aspect_ratio_processing: aspectRatioProcessing

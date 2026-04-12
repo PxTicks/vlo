@@ -168,7 +168,7 @@ def test_v2_pipeline_runs_aspect_ratio_during_mask_crop_when_declared_first():
             },
             "pipeline": [
                 {"kind": "aspect_ratio", "enabled": True, "resolutions": [720]},
-                {"kind": "mask_cropping", "mode": "crop"},
+                {"kind": "mask_processing", "cropping": {"mode": "crop"}},
             ],
         }
     )
@@ -218,7 +218,7 @@ def test_v2_pipeline_runs_aspect_ratio_during_mask_crop_when_declared_first():
     assert aspect_ratio_processor.is_active(ctx) is False
 
 
-def test_v2_pipeline_without_mask_stage_skips_mask_cropping_effects():
+def test_v2_pipeline_without_mask_stage_skips_mask_processing_effects():
     call_log: list[str] = []
 
     def apply_aspect_ratio_processing(

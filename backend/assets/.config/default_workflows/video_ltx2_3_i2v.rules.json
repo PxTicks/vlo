@@ -49,8 +49,10 @@
   },
   "pipeline": [
     {
-      "kind": "mask_cropping",
-      "mode": "crop"
+      "kind": "mask_processing",
+      "cropping": {
+        "mode": "crop"
+      }
     },
     {
       "kind": "aspect_ratio",

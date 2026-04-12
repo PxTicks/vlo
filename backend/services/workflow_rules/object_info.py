@@ -11,6 +11,15 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from services.workflow_rules.derived_mask_video_treatment import (
+    DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+    DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
+    DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_LABEL,
+    LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+    VISUAL_DERIVED_MASK_RULE_KEYS,
+    create_derived_mask_source_video_treatment_widget_rule,
+    normalize_derived_mask_source_video_treatment,
+)
 from services.workflow_rules.node_discovery import (
     NodePolicy,
     WIDGETS_MODE_ALL,
@@ -306,6 +315,89 @@ def _apply_length_widget_policy(
     }
 
 
+def _collect_visual_derived_mask_source_node_ids(
+    rules: WorkflowRules,
+) -> set[str]:
+    nodes = rules.get("nodes")
+    if not isinstance(nodes, dict):
+        return set()
+
+    source_node_ids: set[str] = set()
+    for node_rule in nodes.values():
+        if not isinstance(node_rule, dict):
+            continue
+        for mask_key in VISUAL_DERIVED_MASK_RULE_KEYS:
+            raw_source_id = node_rule.get(mask_key)
+            if isinstance(raw_source_id, str) and raw_source_id.strip():
+                source_node_ids.add(raw_source_id.strip())
+    return source_node_ids
+
+
+def _resolve_mask_processing_source_video_treatment_config(
+    rules: WorkflowRules,
+) -> tuple[str, str, bool]:
+    default = DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT
+    label = DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_LABEL
+    expose_as_widget = True
+
+    mask_processing = rules.get("mask_processing")
+    if not isinstance(mask_processing, dict):
+        return default, label, expose_as_widget
+
+    source_video_treatment = mask_processing.get("source_video_treatment")
+    if not isinstance(source_video_treatment, dict):
+        return default, label, expose_as_widget
+
+    default = normalize_derived_mask_source_video_treatment(
+        source_video_treatment.get("default")
+    )
+
+    raw_label = source_video_treatment.get("label")
+    if isinstance(raw_label, str) and raw_label.strip():
+        label = raw_label.strip()
+
+    raw_expose_as_widget = source_video_treatment.get("expose_as_widget")
+    if isinstance(raw_expose_as_widget, bool):
+        expose_as_widget = raw_expose_as_widget
+
+    return default, label, expose_as_widget
+
+
+def _apply_derived_mask_source_video_treatment_widget(
+    node_rule: dict[str, Any],
+    *,
+    default: str,
+    label: str,
+) -> None:
+    current_widgets = node_rule.get("widgets")
+    if not isinstance(current_widgets, dict):
+        current_widgets = {}
+        node_rule["widgets"] = current_widgets
+
+    if (
+        LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM in current_widgets
+        and DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM not in current_widgets
+    ):
+        current_widgets[DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM] = (
+            current_widgets.pop(LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM)
+        )
+    else:
+        current_widgets.pop(
+            LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+            None,
+        )
+
+    if DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM in current_widgets:
+        return
+
+    current_widgets[DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM] = (
+        create_derived_mask_source_video_treatment_widget_rule(
+            default=default,
+            label=label,
+        )
+    )
+
+
 def _resolve_default_policy_widgets(
     node_info: _NodeInfo,
     node_policy: NodePolicy,
@@ -509,6 +601,14 @@ def enrich_rules_with_object_info(
         runtime_defaults["default_widgets_mode"] if runtime_defaults is not None else None
     )
     discovered_count = 0
+    visual_derived_mask_source_node_ids = _collect_visual_derived_mask_source_node_ids(
+        rules_dict
+    )
+    (
+        derived_mask_treatment_default,
+        derived_mask_treatment_label,
+        expose_derived_mask_treatment_widget,
+    ) = _resolve_mask_processing_source_video_treatment_config(rules_dict)
 
     # Resolve node policies once — maps discovery to display/processing actions.
     node_policies: dict[str, NodePolicy] = {}
@@ -593,6 +693,20 @@ def enrich_rules_with_object_info(
             node_policies[node_id],
             object_info,
         )
+
+        present = existing.get("present")
+        is_input_hidden = isinstance(present, dict) and present.get("enabled") is False
+        if (
+            node_id in visual_derived_mask_source_node_ids
+            and not existing.get("ignore")
+            and not is_input_hidden
+            and expose_derived_mask_treatment_widget
+        ):
+            _apply_derived_mask_source_video_treatment_widget(
+                existing,
+                default=derived_mask_treatment_default,
+                label=derived_mask_treatment_label,
+            )
 
         if existing.get("widgets"):
             existing["node_title"] = info.title

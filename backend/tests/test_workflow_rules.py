@@ -57,7 +57,7 @@ def test_load_rules_for_workflow_without_sidecar(tmp_path: Path):
     assert rules["version"] == 1
     assert rules["nodes"] == {}
     assert rules["output_injections"] == {}
-    assert rules["mask_cropping"] == {"mode": "crop"}
+    assert rules["mask_processing"]["cropping"] == {"mode": "crop"}
     assert rules["postprocessing"] == {
         "mode": "auto",
         "panel_preview": "raw_outputs",
@@ -85,7 +85,7 @@ def test_load_rules_for_workflow_malformed_sidecar(tmp_path: Path):
 
     rules, warnings = load_rules_for_workflow(tmp_path, "example.json")
     assert rules["nodes"] == {}
-    assert rules["mask_cropping"] == {"mode": "crop"}
+    assert rules["mask_processing"]["cropping"] == {"mode": "crop"}
     assert any(w["code"] == "invalid_rules_json" for w in warnings)
     assert rules["postprocessing"] == {
         "mode": "auto",
@@ -281,7 +281,7 @@ def test_load_rules_for_workflow_preserves_frontend_only_widget_metadata(
                 "nodes": {
                     "1": {
                         "widgets": {
-                            "__derived_mask_video_treatment": {
+                            "derived_mask_source_video_treatment": {
                                 "label": "Transparency handling",
                                 "value_type": "enum",
                                 "options": [
@@ -303,11 +303,44 @@ def test_load_rules_for_workflow_preserves_frontend_only_widget_metadata(
 
     assert warnings == []
     assert (
-        rules["nodes"]["1"]["widgets"]["__derived_mask_video_treatment"][
+        rules["nodes"]["1"]["widgets"]["derived_mask_source_video_treatment"][
             "frontend_only"
         ]
         is True
     )
+
+
+def test_load_rules_for_workflow_normalizes_legacy_derived_mask_treatment_widget_param(
+    tmp_path: Path,
+):
+    workflow_path = tmp_path / "example.json"
+    workflow_path.write_text("{}")
+    sidecar_path = tmp_path / "example.rules.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "nodes": {
+                    "1": {
+                        "widgets": {
+                            "__derived_mask_video_treatment": {
+                                "label": "Transparency handling",
+                                "value_type": "enum",
+                                "default": "Keep transparency",
+                                "frontend_only": True,
+                            }
+                        }
+                    }
+                },
+            }
+        )
+    )
+
+    rules, warnings = load_rules_for_workflow(tmp_path, "example.json")
+
+    assert "derived_mask_source_video_treatment" in rules["nodes"]["1"]["widgets"]
+    assert "__derived_mask_video_treatment" not in rules["nodes"]["1"]["widgets"]
+    assert any(w["code"] == "deprecated_widget_param_alias" for w in warnings)
 
 
 def test_load_rules_for_workflow_normalizes_derived_widgets_and_hidden_widgets(
@@ -417,7 +450,7 @@ def test_enrich_rules_with_object_info_groups_proxy_widgets_under_parent_templat
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -509,7 +542,7 @@ def test_enrich_rules_with_object_info_auto_discovers_ltx_ar_target_from_subgrap
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -601,7 +634,7 @@ def test_enrich_rules_with_object_info_respects_disabled_default_ar_processing()
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -659,7 +692,7 @@ def test_enrich_rules_with_object_info_auto_discovers_required_validation_for_me
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -771,7 +804,7 @@ def test_enrich_rules_with_object_info_uses_param_specific_required_validation_f
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -827,7 +860,7 @@ def test_enrich_rules_with_object_info_skips_default_required_validation_for_opt
         },
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -1476,13 +1509,26 @@ def test_real_ltx_retake_rules_define_dual_masks_and_primary_seed():
     finally:
         set_object_info_cache(None)
 
-    assert rules["mask_cropping"]["mode"] == "crop"
+    assert rules["mask_processing"]["cropping"]["mode"] == "crop"
     assert rules["nodes"]["689"]["binary_derived_mask_of"] == "644"
     assert rules["nodes"]["691"]["binary_audio_derived_mask_of"] == "644"
     assert rules["nodes"]["691"]["audio_derived_mask_fps"] == 25
     assert rules["nodes"]["644"]["present"]["input_type"] == "video"
     assert rules["nodes"]["644"]["present"]["param"] == "video"
-    assert rules["nodes"]["644"].get("widgets", {}) == {}
+    assert rules["nodes"]["644"]["widgets"] == {
+        "derived_mask_source_video_treatment": {
+            "label": "Transparency handling",
+            "control_after_generate": False,
+            "value_type": "enum",
+            "default": "Keep transparency",
+            "frontend_only": True,
+            "options": [
+                "Keep transparency",
+                "Fill transparent with neutral gray",
+                "Remove transparency",
+            ],
+        }
+    }
     assert rules["nodes"]["626"]["present"]["enabled"] is False
     assert rules["aspect_ratio_processing"]["enabled"] is True
     assert rules["aspect_ratio_processing"]["stride"] == 32
@@ -1504,7 +1550,6 @@ def test_real_ltx_retake_rules_define_dual_masks_and_primary_seed():
         "mode": "stretch_exact",
         "apply_to": "all_visual_outputs",
     }
-
     sampler_widgets = rules["nodes"]["115"]["widgets"]
     upscale_widgets = rules["nodes"]["243"]["widgets"]
     prompt_widgets = rules["nodes"]["594"]["widgets"]
@@ -1515,6 +1560,169 @@ def test_real_ltx_retake_rules_define_dual_masks_and_primary_seed():
     assert "661" not in rules["nodes"]
     assert "662" not in rules["nodes"]
     assert rules["name"] == "LTX2.3 ReTake"
+
+
+def test_enrich_rules_with_object_info_auto_adds_derived_mask_source_video_treatment_widget():
+    workflow = {
+        "1": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "source.mov"},
+        },
+        "2": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "mask.mov"},
+        },
+    }
+    rules = {
+        "version": 1,
+        "nodes": {
+            "2": {
+                "binary_derived_mask_of": "1",
+            }
+        },
+    }
+
+    set_object_info_cache({"LoadVideo": {"input": {"required": {}, "optional": {}}}})
+    try:
+        enriched = enrich_rules_with_object_info(rules, workflow)
+    finally:
+        set_object_info_cache(None)
+
+    assert enriched["nodes"]["1"]["widgets"] == {
+        "derived_mask_source_video_treatment": {
+            "label": "Transparency handling",
+            "value_type": "enum",
+            "options": [
+                "Keep transparency",
+                "Fill transparent with neutral gray",
+                "Remove transparency",
+            ],
+            "default": "Keep transparency",
+            "frontend_only": True,
+        }
+    }
+
+
+def test_enrich_rules_with_object_info_respects_explicit_hidden_derived_mask_source_video_treatment_widget():
+    workflow = {
+        "1": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "source.mov"},
+        },
+        "2": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "mask.mov"},
+        },
+    }
+    rules = {
+        "version": 1,
+        "nodes": {
+            "1": {
+                "widgets": {
+                    "derived_mask_source_video_treatment": {
+                        "hidden": True,
+                    }
+                }
+            },
+            "2": {
+                "binary_derived_mask_of": "1",
+            },
+        },
+    }
+
+    set_object_info_cache({"LoadVideo": {"input": {"required": {}, "optional": {}}}})
+    try:
+        enriched = enrich_rules_with_object_info(rules, workflow)
+    finally:
+        set_object_info_cache(None)
+
+    assert enriched["nodes"]["1"]["widgets"] == {
+        "derived_mask_source_video_treatment": {
+            "hidden": True,
+        }
+    }
+
+
+def test_enrich_rules_with_object_info_uses_mask_processing_source_video_treatment_defaults():
+    workflow = {
+        "1": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "source.mov"},
+        },
+        "2": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "mask.mov"},
+        },
+    }
+    rules = {
+        "version": 1,
+        "mask_processing": {
+            "source_video_treatment": {
+                "default": "remove_transparency",
+                "label": "Mask source alpha",
+                "expose_as_widget": True,
+            }
+        },
+        "nodes": {
+            "2": {
+                "binary_derived_mask_of": "1",
+            }
+        },
+    }
+
+    set_object_info_cache({"LoadVideo": {"input": {"required": {}, "optional": {}}}})
+    try:
+        enriched = enrich_rules_with_object_info(rules, workflow)
+    finally:
+        set_object_info_cache(None)
+
+    assert enriched["nodes"]["1"]["widgets"] == {
+        "derived_mask_source_video_treatment": {
+            "label": "Mask source alpha",
+            "value_type": "enum",
+            "options": [
+                "Keep transparency",
+                "Fill transparent with neutral gray",
+                "Remove transparency",
+            ],
+            "default": "Remove transparency",
+            "frontend_only": True,
+        }
+    }
+
+
+def test_enrich_rules_with_object_info_can_suppress_auto_added_mask_processing_widget():
+    workflow = {
+        "1": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "source.mov"},
+        },
+        "2": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "mask.mov"},
+        },
+    }
+    rules = {
+        "version": 1,
+        "mask_processing": {
+            "source_video_treatment": {
+                "expose_as_widget": False,
+            }
+        },
+        "nodes": {
+            "2": {
+                "binary_derived_mask_of": "1",
+            }
+        },
+    }
+
+    set_object_info_cache({"LoadVideo": {"input": {"required": {}, "optional": {}}}})
+    try:
+        enriched = enrich_rules_with_object_info(rules, workflow)
+    finally:
+        set_object_info_cache(None)
+
+    assert enriched["nodes"].get("1", {}).get("widgets") in (None, {})
 
 
 def test_real_ltx_single_stage_discovers_resize_image_mask_node_as_ar_target():
@@ -1528,7 +1736,7 @@ def test_real_ltx_single_stage_discovers_resize_image_mask_node_as_ar_target():
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -1607,7 +1815,7 @@ def test_enrich_rules_with_object_info_preserves_explicit_ar_targets():
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -1684,7 +1892,7 @@ def test_enrich_rules_with_object_info_auto_discovers_length_widget_for_video_no
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -1760,7 +1968,7 @@ def test_enrich_rules_with_object_info_auto_discovers_num_frames_as_length_widge
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -1870,7 +2078,7 @@ def test_enrich_rules_with_object_info_skips_linked_length_widget_targets():
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -1936,7 +2144,7 @@ def test_enrich_rules_with_object_info_defaults_ksampler_to_cfg_and_seed():
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -2015,7 +2223,7 @@ def test_enrich_rules_with_object_info_defaults_ksampler_advanced_to_cfg_and_noi
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -2091,7 +2299,7 @@ def test_enrich_rules_with_object_info_always_discovers_seed_widgets_under_polic
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -2148,7 +2356,7 @@ def test_enrich_rules_with_object_info_always_discovers_randomized_cag_widgets_u
         "nodes": {},
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -2230,7 +2438,7 @@ def test_enrich_rules_with_object_info_appends_default_ksampler_advanced_widgets
         },
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -2310,7 +2518,7 @@ def test_enrich_rules_with_object_info_respects_explicit_widgets_mode_override()
         },
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -2365,7 +2573,7 @@ def test_enrich_rules_with_object_info_respects_explicit_widgets_mode_all_overri
         },
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -2572,7 +2780,7 @@ def test_load_rules_for_workflow_reports_invalid_aspect_ratio_processing(tmp_pat
     )
 
 
-def test_load_rules_for_workflow_normalizes_mask_cropping(tmp_path: Path):
+def test_load_rules_for_workflow_normalizes_mask_processing(tmp_path: Path):
     workflow_path = tmp_path / "example.json"
     workflow_path.write_text("{}")
     sidecar_path = tmp_path / "example.rules.json"
@@ -2580,8 +2788,10 @@ def test_load_rules_for_workflow_normalizes_mask_cropping(tmp_path: Path):
         json.dumps(
             {
                 "version": 1,
-                "mask_cropping": {
-                    "mode": "full",
+                "mask_processing": {
+                    "cropping": {
+                        "mode": "full",
+                    }
                 },
                 "nodes": {
                     "2": {
@@ -2594,11 +2804,11 @@ def test_load_rules_for_workflow_normalizes_mask_cropping(tmp_path: Path):
 
     rules, warnings = load_rules_for_workflow(tmp_path, "example.json")
     assert warnings == []
-    assert rules["mask_cropping"] == {"mode": "full"}
+    assert rules["mask_processing"]["cropping"] == {"mode": "full"}
     assert collect_mask_crop_pairs(rules) == []
 
 
-def test_load_rules_for_workflow_supports_legacy_mask_cropping_enabled(tmp_path: Path):
+def test_load_rules_for_workflow_supports_mask_processing_enabled_compat(tmp_path: Path):
     workflow_path = tmp_path / "example.json"
     workflow_path.write_text("{}")
     sidecar_path = tmp_path / "example.rules.json"
@@ -2620,11 +2830,11 @@ def test_load_rules_for_workflow_supports_legacy_mask_cropping_enabled(tmp_path:
 
     rules, warnings = load_rules_for_workflow(tmp_path, "example.json")
     assert warnings == []
-    assert rules["mask_cropping"] == {"mode": "full"}
+    assert rules["mask_processing"]["cropping"] == {"mode": "full"}
     assert collect_mask_crop_pairs(rules) == []
 
 
-def test_load_rules_for_workflow_reports_invalid_mask_cropping(tmp_path: Path):
+def test_load_rules_for_workflow_reports_invalid_mask_processing(tmp_path: Path):
     workflow_path = tmp_path / "example.json"
     workflow_path.write_text("{}")
     sidecar_path = tmp_path / "example.rules.json"
@@ -2645,12 +2855,15 @@ def test_load_rules_for_workflow_reports_invalid_mask_cropping(tmp_path: Path):
     )
 
     rules, warnings = load_rules_for_workflow(tmp_path, "example.json")
-    assert rules["mask_cropping"] == {"mode": "crop"}
+    assert rules["mask_processing"]["cropping"] == {"mode": "crop"}
     assert collect_mask_crop_pairs(rules) == [("1", "2")]
-    assert any(w["code"] == "invalid_mask_cropping_mode" for w in warnings)
+    assert any(
+        w["code"] == "invalid_mask_processing_cropping_mode" for w in warnings
+    )
 
-
-def test_load_rules_for_workflow_reports_invalid_legacy_mask_cropping_enabled(tmp_path: Path):
+def test_load_rules_for_workflow_reports_invalid_mask_processing_enabled_compat(
+    tmp_path: Path,
+):
     workflow_path = tmp_path / "example.json"
     workflow_path.write_text("{}")
     sidecar_path = tmp_path / "example.rules.json"
@@ -2671,9 +2884,12 @@ def test_load_rules_for_workflow_reports_invalid_legacy_mask_cropping_enabled(tm
     )
 
     rules, warnings = load_rules_for_workflow(tmp_path, "example.json")
-    assert rules["mask_cropping"] == {"mode": "crop"}
+    assert rules["mask_processing"]["cropping"] == {"mode": "crop"}
     assert collect_mask_crop_pairs(rules) == [("1", "2")]
-    assert any(w["code"] == "invalid_mask_cropping_enabled" for w in warnings)
+    assert any(
+        w["code"] == "invalid_mask_processing_cropping_enabled"
+        for w in warnings
+    )
 
 
 def test_collect_mask_crop_pairs_allows_runtime_mode_override(tmp_path: Path):
@@ -2755,8 +2971,10 @@ def test_normalize_rules_model_compiles_v2_pipeline_and_typed_validation():
                 "resolutions": [720, 1080],
             },
             {
-                "kind": "mask_cropping",
-                "mode": "crop",
+                "kind": "mask_processing",
+                "cropping": {
+                    "mode": "crop",
+                },
             },
         ],
         "validation": {
@@ -2784,12 +3002,12 @@ def test_normalize_rules_model_compiles_v2_pipeline_and_typed_validation():
 
     assert warnings == []
     assert rules_model.version == 2
-    assert rules_model.mask_cropping.mode == "crop"
+    assert rules_model.mask_processing.cropping.mode == "crop"
     assert rules_model.aspect_ratio_processing.enabled is True
     assert rules_model.validation.inputs[0].input == "11:text"
     assert rules_model.validation.inputs[1].input == "12"
     assert rules_model._default_widgets_mode == "all"
-    assert rules_model._pipeline_stage_order == ("aspect_ratio", "mask_cropping")
+    assert rules_model._pipeline_stage_order == ("aspect_ratio", "mask_processing")
     assert rules_model._has_explicit_pipeline is True
 
     dumped_rules = dump_resolved_rules(rules_model)
@@ -2837,7 +3055,7 @@ def test_load_rules_model_for_workflow_supports_v2_sidecars(tmp_path: Path):
 
     assert warnings == []
     assert rules_model.version == 2
-    assert rules_model.mask_cropping.mode == "full"
+    assert rules_model.mask_processing.cropping.mode == "full"
     assert rules_model.aspect_ratio_processing.enabled is True
     assert rules_model.validation.inputs[0].input == "12"
     assert rules_model._pipeline_stage_order == ("aspect_ratio",)
@@ -3787,7 +4005,7 @@ async def test_generate_routes_memory_video_nodes_to_memory_registration(
 
 
 @pytest.mark.anyio
-async def test_generate_applies_mask_cropping_by_default_for_derived_masks(
+async def test_generate_applies_mask_processing_cropping_by_default_for_derived_masks(
     tmp_path: Path,
     monkeypatch,
     fake_comfy_client,
@@ -3900,7 +4118,7 @@ async def test_generate_applies_mask_cropping_by_default_for_derived_masks(
 
 
 @pytest.mark.anyio
-async def test_generate_skips_mask_cropping_when_sidecar_requests_full_mode(
+async def test_generate_skips_mask_processing_cropping_when_sidecar_requests_full_mode(
     tmp_path: Path,
     monkeypatch,
     fake_comfy_client,
@@ -3913,8 +4131,10 @@ async def test_generate_skips_mask_cropping_when_sidecar_requests_full_mode(
         json.dumps(
             {
                 "version": 1,
-                "mask_cropping": {
-                    "mode": "full",
+                "mask_processing": {
+                    "cropping": {
+                        "mode": "full",
+                    }
                 },
                 "nodes": {
                     "2": {
@@ -4007,7 +4227,7 @@ async def test_generate_skips_mask_cropping_when_sidecar_requests_full_mode(
 
 
 @pytest.mark.anyio
-async def test_generate_skips_mask_cropping_when_request_overrides_to_full(
+async def test_generate_skips_mask_processing_cropping_when_request_overrides_to_full(
     tmp_path: Path,
     monkeypatch,
     fake_comfy_client,
@@ -4020,8 +4240,10 @@ async def test_generate_skips_mask_cropping_when_request_overrides_to_full(
         json.dumps(
             {
                 "version": 1,
-                "mask_cropping": {
-                    "mode": "crop",
+                "mask_processing": {
+                    "cropping": {
+                        "mode": "crop",
+                    }
                 },
                 "nodes": {
                     "2": {
@@ -4115,7 +4337,7 @@ async def test_generate_skips_mask_cropping_when_request_overrides_to_full(
 
 
 @pytest.mark.anyio
-async def test_generate_applies_mask_cropping_when_request_overrides_to_crop(
+async def test_generate_applies_mask_processing_cropping_when_request_overrides_to_crop(
     tmp_path: Path,
     monkeypatch,
     fake_comfy_client,
@@ -4128,8 +4350,10 @@ async def test_generate_applies_mask_cropping_when_request_overrides_to_crop(
         json.dumps(
             {
                 "version": 1,
-                "mask_cropping": {
-                    "mode": "full",
+                "mask_processing": {
+                    "cropping": {
+                        "mode": "full",
+                    }
                 },
                 "nodes": {
                     "2": {
@@ -4554,7 +4778,7 @@ async def test_generate_uses_provided_workflow_rules_to_prune_missing_optional_i
         "derived_widgets": [],
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "full"},
+        "mask_processing": {"cropping": {"mode": "full"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -5298,7 +5522,7 @@ def test_enrich_sidecar_widget_not_in_discovery_resolves_type_from_object_info()
         },
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",
@@ -5366,7 +5590,7 @@ def test_enrich_sidecar_widget_overrides_take_precedence_over_object_info():
         },
         "output_injections": {},
         "slots": {},
-        "mask_cropping": {"mode": "crop"},
+        "mask_processing": {"cropping": {"mode": "crop"}},
         "postprocessing": {
             "mode": "auto",
             "panel_preview": "raw_outputs",

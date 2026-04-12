@@ -221,7 +221,7 @@ describe("useGenerationStore workflow rules", () => {
       workflow_id: "wf.json",
       has_sidecar: true,
       rules: makeWorkflowRules({
-        mask_cropping: { mode: "full" },
+        mask_processing: { cropping: { mode: "full" } },
       }),
       warnings: [],
     });
@@ -519,7 +519,7 @@ describe("useGenerationStore workflow rules", () => {
     expect(submittedJob?.generationMetadata).toEqual({
       source: "generated",
       workflowName: "Workflow Display Name",
-      workflowSourceId: "wf.json",
+      workflowSourceId: "video_wan_vace_14B_v2v.json",
       inputs: [
         {
           nodeId: "node_timeline",
@@ -550,7 +550,7 @@ describe("useGenerationStore workflow rules", () => {
       },
       replayState: {
         version: 1,
-        workflowSourceId: "wf.json",
+        workflowSourceId: "video_wan_vace_14B_v2v.json",
         workflowInputs: [
           {
             nodeId: "node_timeline",

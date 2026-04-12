@@ -10,6 +10,11 @@ DerivedWidgetKind = Literal["dual_sampler_denoise"]
 WidgetControl = Literal["slider"]
 WidgetSliderDisplay = Literal["percent", "number"]
 MaskCroppingMode = Literal["crop", "full"]
+MaskSourceVideoTreatment = Literal[
+    "preserve_transparency",
+    "fill_transparent_with_neutral_gray",
+    "remove_transparency",
+]
 PostprocessingMode = Literal["auto", "stitch_frames_with_audio", "none"]
 PostprocessingPanelPreview = Literal["raw_outputs", "replace_outputs"]
 PostprocessingOnFailure = Literal["fallback_raw", "show_error"]
@@ -124,6 +129,21 @@ class WorkflowRuleSlot(WorkflowRuleBaseModel):
 
 class WorkflowMaskCroppingConfig(WorkflowRuleBaseModel):
     mode: MaskCroppingMode = "crop"
+
+
+class WorkflowMaskSourceVideoTreatmentConfig(WorkflowRuleBaseModel):
+    default: MaskSourceVideoTreatment = "preserve_transparency"
+    expose_as_widget: bool = True
+    label: str = "Transparency handling"
+
+
+class WorkflowMaskProcessingConfig(WorkflowRuleBaseModel):
+    cropping: WorkflowMaskCroppingConfig = Field(
+        default_factory=WorkflowMaskCroppingConfig
+    )
+    source_video_treatment: WorkflowMaskSourceVideoTreatmentConfig = Field(
+        default_factory=WorkflowMaskSourceVideoTreatmentConfig
+    )
 
 
 class WorkflowPostprocessingConfig(WorkflowRuleBaseModel):
@@ -253,8 +273,8 @@ class AuthoredWorkflowRulesV1(WorkflowRuleBaseModel):
         default_factory=dict
     )
     slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)
-    mask_cropping: WorkflowMaskCroppingConfig = Field(
-        default_factory=WorkflowMaskCroppingConfig
+    mask_processing: WorkflowMaskProcessingConfig = Field(
+        default_factory=WorkflowMaskProcessingConfig
     )
     postprocessing: WorkflowPostprocessingConfig = Field(
         default_factory=WorkflowPostprocessingConfig
@@ -275,8 +295,8 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
         default_factory=dict
     )
     slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)
-    mask_cropping: WorkflowMaskCroppingConfig = Field(
-        default_factory=WorkflowMaskCroppingConfig
+    mask_processing: WorkflowMaskProcessingConfig = Field(
+        default_factory=WorkflowMaskProcessingConfig
     )
     postprocessing: WorkflowPostprocessingConfig = Field(
         default_factory=WorkflowPostprocessingConfig
@@ -287,7 +307,7 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
 
     _default_widgets_mode: WidgetsMode | None = PrivateAttr(default=None)
     _pipeline_stage_order: tuple[str, ...] = PrivateAttr(
-        default=("mask_cropping", "aspect_ratio")
+        default=("mask_processing", "aspect_ratio")
     )
     _has_explicit_pipeline: bool = PrivateAttr(default=False)
 
@@ -373,9 +393,14 @@ class OutputInjectionRuleV2(WorkflowRuleBaseModel):
     when: WorkflowRuleWidgetInputPresenceCondition | None = None
 
 
-class MaskCroppingPipelineStageV2(WorkflowRuleBaseModel):
-    kind: Literal["mask_cropping"] = "mask_cropping"
-    mode: MaskCroppingMode = "crop"
+class MaskProcessingPipelineStageV2(WorkflowRuleBaseModel):
+    kind: Literal["mask_processing"] = "mask_processing"
+    cropping: WorkflowMaskCroppingConfig = Field(
+        default_factory=WorkflowMaskCroppingConfig
+    )
+    source_video_treatment: WorkflowMaskSourceVideoTreatmentConfig = Field(
+        default_factory=WorkflowMaskSourceVideoTreatmentConfig
+    )
 
 
 class AspectRatioPipelineStageV2(WorkflowRuleBaseModel):
@@ -391,7 +416,7 @@ class AspectRatioPipelineStageV2(WorkflowRuleBaseModel):
 
 
 WorkflowPipelineStageV2 = Annotated[
-    MaskCroppingPipelineStageV2 | AspectRatioPipelineStageV2,
+    MaskProcessingPipelineStageV2 | AspectRatioPipelineStageV2,
     Field(discriminator="kind"),
 ]
 
@@ -433,7 +458,7 @@ def has_pipeline_stage(
     if rules is None:
         return False
     if not rules._has_explicit_pipeline:
-        return stage_name in {"mask_cropping", "aspect_ratio"}
+        return stage_name in {"mask_processing", "aspect_ratio"}
     return stage_name in rules._pipeline_stage_order
 
 
@@ -445,7 +470,7 @@ def pipeline_stage_precedes(
     if rules is None:
         return False
     if not rules._has_explicit_pipeline:
-        default_order = ("mask_cropping", "aspect_ratio")
+        default_order = ("mask_processing", "aspect_ratio")
         return default_order.index(left_stage) < default_order.index(right_stage)
 
     try:
@@ -556,23 +581,32 @@ def _compile_v2_output_injections(
 def compile_authored_v2_to_resolved(
     authored: AuthoredWorkflowRulesV2,
 ) -> ResolvedWorkflowRules:
-    mask_cropping = WorkflowMaskCroppingConfig()
+    mask_processing = WorkflowMaskProcessingConfig()
     aspect_ratio_processing = WorkflowAspectRatioProcessingConfig()
     pipeline_stage_order: tuple[str, ...]
     has_explicit_pipeline = authored.pipeline is not None
 
     if authored.pipeline is None:
-        pipeline_stage_order = ("mask_cropping", "aspect_ratio")
+        pipeline_stage_order = ("mask_processing", "aspect_ratio")
     else:
         pipeline_stage_order = tuple(stage.kind for stage in authored.pipeline)
         mask_stage = next(
-            (stage for stage in authored.pipeline if isinstance(stage, MaskCroppingPipelineStageV2)),
+            (
+                stage
+                for stage in authored.pipeline
+                if isinstance(stage, MaskProcessingPipelineStageV2)
+            ),
             None,
         )
         if mask_stage is None:
-            mask_cropping = WorkflowMaskCroppingConfig(mode="full")
+            mask_processing = WorkflowMaskProcessingConfig(
+                cropping=WorkflowMaskCroppingConfig(mode="full")
+            )
         else:
-            mask_cropping = WorkflowMaskCroppingConfig(mode=mask_stage.mode)
+            mask_processing = WorkflowMaskProcessingConfig(
+                cropping=mask_stage.cropping,
+                source_video_treatment=mask_stage.source_video_treatment,
+            )
 
         aspect_stage = next(
             (stage for stage in authored.pipeline if isinstance(stage, AspectRatioPipelineStageV2)),
@@ -603,7 +637,7 @@ def compile_authored_v2_to_resolved(
         derived_widgets=list(authored.derived_widgets),
         output_injections=_compile_v2_output_injections(authored),
         slots=dict(authored.slots),
-        mask_cropping=mask_cropping,
+        mask_processing=mask_processing,
         postprocessing=authored.postprocessing,
         aspect_ratio_processing=aspect_ratio_processing,
     )
@@ -684,9 +718,10 @@ def migrate_authored_v1_to_v2(
             )
 
     pipeline: list[WorkflowPipelineStageV2] = [
-        MaskCroppingPipelineStageV2(
-            kind="mask_cropping",
-            mode=authored.mask_cropping.mode,
+        MaskProcessingPipelineStageV2(
+            kind="mask_processing",
+            cropping=authored.mask_processing.cropping,
+            source_video_treatment=authored.mask_processing.source_video_treatment,
         ),
         AspectRatioPipelineStageV2(
             kind="aspect_ratio",

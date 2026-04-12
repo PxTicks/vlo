@@ -71,7 +71,7 @@ still accepted and automatically migrated to V2 during compilation.
 
 | Concern                | V1                                                                        | V2                                                                      |
 | ---------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Pipeline stages        | Separate `mask_cropping` and `aspect_ratio_processing` top-level sections | Unified `pipeline` array with typed stages                              |
+| Pipeline stages        | Separate `mask_processing` and `aspect_ratio_processing` top-level sections | Unified `pipeline` array with typed stages                              |
 | Output injections      | Nested dict keyed by target node ID → output index                        | Flat array of `{ target_node_id, target_output_index, source }` objects |
 | Validation refs        | Plain node ID strings (`"98"`)                                            | Structured `{ "node_id": "98", "param": "video" }` objects              |
 | `input_conditions`     | Top-level legacy field                                                    | Removed; use `validation.inputs` with `at_least_n` rules                |
@@ -479,6 +479,10 @@ Behavior:
   per node.
 - The mask crop processor uses these mappings to crop both source and mask
   to the mask's bounding region.
+- Source nodes referenced by visual derived masks automatically expose a
+  frontend-only `derived_mask_source_video_treatment` widget based on
+  `mask_processing.source_video_treatment` unless the sidecar explicitly
+  overrides or hides it.
 
 ---
 
@@ -640,26 +644,40 @@ Controls video frame selection for video input nodes.
 ## Section: `pipeline`
 
 **Type:** Array of pipeline stage objects (discriminated by `kind`).
-**Default:** `null` (uses default pipeline: mask_cropping then aspect_ratio).
+**Default:** `null` (uses default pipeline: mask_processing then aspect_ratio).
 
 The `pipeline` array controls which backend processing stages run and in what
 order. Each stage kind can appear at most once. Omitting the `pipeline` field
 entirely uses the default pipeline. Providing an explicit `pipeline` means
 **only the listed stages run** — omitting a stage disables it.
 
-### `mask_cropping` Stage
+### `mask_processing` Stage
 
 ```json
-{ "kind": "mask_cropping", "mode": "crop" }
+{
+  "kind": "mask_processing",
+  "cropping": { "mode": "crop" },
+  "source_video_treatment": {
+    "default": "preserve_transparency",
+    "expose_as_widget": true,
+    "label": "Transparency handling"
+  }
+}
 ```
 
-| Field  | Type   | Values             | Default  |
-| ------ | ------ | ------------------ | -------- |
-| `mode` | string | `"crop"`, `"full"` | `"crop"` |
+| Field                               | Type    | Values                                                                 | Default                |
+| ----------------------------------- | ------- | ---------------------------------------------------------------------- | ---------------------- |
+| `cropping.mode`                     | string  | `"crop"`, `"full"`                                                     | `"crop"`               |
+| `source_video_treatment.default`    | string  | `"preserve_transparency"`, `"fill_transparent_with_neutral_gray"`, `"remove_transparency"` | `"preserve_transparency"` |
+| `source_video_treatment.expose_as_widget` | boolean | `true`, `false`                                                        | `true`                 |
+| `source_video_treatment.label`      | string  | any non-empty string                                                   | `"Transparency handling"` |
 
-- `"crop"`: Analyze mask video bounds, determine a crop region, and crop both
-  source and mask videos. Returns `mask_crop_metadata`.
-- `"full"`: Skip mask cropping; use full video dimensions.
+- `cropping.mode = "crop"`: Analyze mask video bounds, determine a crop region,
+  and crop both source and mask videos. Returns `mask_crop_metadata`.
+- `cropping.mode = "full"`: Skip mask cropping; use full video dimensions.
+- `source_video_treatment` controls the default transparency handling for
+  source videos used to render visual derived masks, and whether that default
+  should be exposed as a widget on the source node.
 
 Mask cropping only activates when all of these are true:
 
@@ -706,7 +724,10 @@ auto-discovered by policy rules.
 ```json
 {
   "pipeline": [
-    { "kind": "mask_cropping", "mode": "crop" },
+    {
+      "kind": "mask_processing",
+      "cropping": { "mode": "crop" }
+    },
     {
       "kind": "aspect_ratio",
       "enabled": true,
@@ -810,7 +831,7 @@ Backend preprocess order (defined in
 | 4    | `validate_widgets` | `nodes.*.widgets`                                              |
 | 5    | `apply_rules`      | `nodes`, `output_injections`, `slots`                          |
 | 6    | `widget_overrides` | `nodes.*.widgets`                                              |
-| 7    | `mask_crop`        | `pipeline[kind=mask_cropping]`, derived mask fields in `nodes` |
+| 7    | `mask_crop`        | `pipeline[kind=mask_processing]`, derived mask fields in `nodes` |
 | 8    | `upload_media`     | —                                                              |
 | 9    | `aspect_ratio`     | `pipeline[kind=aspect_ratio]`                                  |
 
@@ -957,15 +978,6 @@ the `resolve_derived_widgets` processor into concrete widget overrides.
         "export_fps": 16,
         "frame_step": 4,
         "max_frames": 81
-      },
-      "widgets": {
-        "__derived_mask_video_treatment": {
-          "label": "Transparency handling",
-          "value_type": "enum",
-          "default": "Remove transparency",
-          "frontend_only": true,
-          "options": ["Remove transparency", "Keep transparency"]
-        }
       }
     },
     "101": {
@@ -988,7 +1000,15 @@ the `resolve_derived_widgets` processor into concrete widget overrides.
   },
 
   "pipeline": [
-    { "kind": "mask_cropping", "mode": "crop" },
+    {
+      "kind": "mask_processing",
+      "cropping": { "mode": "crop" },
+      "source_video_treatment": {
+        "default": "preserve_transparency",
+        "expose_as_widget": true,
+        "label": "Transparency handling"
+      }
+    },
     {
       "kind": "aspect_ratio",
       "enabled": true,

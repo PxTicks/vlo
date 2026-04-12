@@ -5,6 +5,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from services.workflow_rules.derived_mask_video_treatment import (
+    DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+    DERIVED_MASK_SOURCE_VIDEO_TREATMENT_OPTIONS,
+    normalize_derived_mask_source_video_treatment,
+    normalize_derived_mask_source_video_treatment_widget_param,
+)
 from services.workflow_rules.schema import (
     AuthoredWorkflowRulesV1,
     AuthoredWorkflowRulesV2,
@@ -46,6 +52,16 @@ SUPPORTED_POSTPROCESS_ON_FAILURE = {
 SUPPORTED_MASK_CROPPING_MODES = {
     "crop",
     "full",
+}
+SUPPORTED_MASK_SOURCE_VIDEO_TREATMENTS = set(
+    DERIVED_MASK_SOURCE_VIDEO_TREATMENT_OPTIONS.keys()
+)
+SUPPORTED_MASK_SOURCE_VIDEO_TREATMENT_INPUTS = SUPPORTED_MASK_SOURCE_VIDEO_TREATMENTS | {
+    "keep transparency",
+    "preserve transparency",
+    "fill transparent with neutral gray",
+    "fill transparent with neutral grey",
+    "remove transparency",
 }
 SUPPORTED_AR_POSTPROCESS_MODES = {
     "stretch_exact",
@@ -494,12 +510,47 @@ def _normalize_rules_dict(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWar
             for widget_name, raw_widget in raw_widgets.items():
                 if not isinstance(widget_name, str) or not widget_name.strip():
                     continue
+                normalized_widget_name, used_deprecated_alias = (
+                    normalize_derived_mask_source_video_treatment_widget_param(
+                        widget_name
+                    )
+                )
                 if not isinstance(raw_widget, dict):
                     warnings.append(
                         _warning(
                             "invalid_widget_rule",
                             f"Widget rule for '{widget_name}' must be an object",
                             node_id=node_id,
+                        )
+                    )
+                    continue
+                if used_deprecated_alias:
+                    warnings.append(
+                        _warning(
+                            "deprecated_widget_param_alias",
+                            "Widget param '__derived_mask_video_treatment' is deprecated; use 'derived_mask_source_video_treatment'",
+                            node_id=node_id,
+                            details={
+                                "widget": widget_name,
+                                "replacement": DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+                            },
+                        )
+                    )
+                if (
+                    normalized_widget_name
+                    == DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM
+                    and normalized_widget_name in normalized_widgets
+                    and used_deprecated_alias
+                ):
+                    warnings.append(
+                        _warning(
+                            "duplicate_widget_param_alias",
+                            "Ignoring deprecated widget alias because the canonical widget param is already defined",
+                            node_id=node_id,
+                            details={
+                                "widget": widget_name,
+                                "replacement": DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
+                            },
                         )
                     )
                     continue
@@ -618,7 +669,7 @@ def _normalize_rules_dict(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWar
                             details={"widget": widget_name},
                         )
                     )
-                normalized_widgets[widget_name.strip()] = widget_rule
+                normalized_widgets[normalized_widget_name] = widget_rule
 
             if normalized_widgets:
                 node_rule["widgets"] = normalized_widgets
@@ -829,54 +880,131 @@ def _normalize_rules_dict(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWar
     if normalized_input_conditions:
         rules["input_conditions"] = normalized_input_conditions
 
-    raw_mask_cropping = raw.get("mask_cropping", {})
+    raw_mask_processing = raw.get("mask_processing")
+    if raw_mask_processing is None and "mask_cropping" in raw:
+        raw_mask_processing = {"cropping": raw.get("mask_cropping")}
+    if raw_mask_processing is None:
+        raw_mask_processing = {}
+    if not isinstance(raw_mask_processing, dict):
+        warnings.append(
+            _warning(
+                "invalid_mask_processing_rule",
+                "Rules 'mask_processing' must be an object",
+            )
+        )
+        raw_mask_processing = {}
+
+    mask_processing = deepcopy(default_rules()["mask_processing"])
+
+    raw_mask_cropping = raw_mask_processing.get("cropping", {})
     if raw_mask_cropping is None:
         raw_mask_cropping = {}
     if not isinstance(raw_mask_cropping, dict):
         warnings.append(
             _warning(
-                "invalid_mask_cropping_rule",
-                "Rules 'mask_cropping' must be an object",
+                "invalid_mask_processing_cropping_rule",
+                "mask_processing.cropping must be an object",
             )
         )
         raw_mask_cropping = {}
 
-    mask_cropping = deepcopy(default_rules()["mask_cropping"])
     raw_mode = raw_mask_cropping.get("mode")
     if isinstance(raw_mode, str):
         normalized_mode = raw_mode.strip()
         if normalized_mode in SUPPORTED_MASK_CROPPING_MODES:
-            mask_cropping["mode"] = normalized_mode
+            mask_processing["cropping"]["mode"] = normalized_mode
         else:
             warnings.append(
                 _warning(
-                    "invalid_mask_cropping_mode",
-                    "mask_cropping.mode must be 'crop' or 'full'; defaulting to crop",
+                    "invalid_mask_processing_cropping_mode",
+                    "mask_processing.cropping.mode must be 'crop' or 'full'; defaulting to crop",
                     details={"mode": raw_mode},
                 )
             )
     elif "mode" in raw_mask_cropping:
         warnings.append(
             _warning(
-                "invalid_mask_cropping_mode",
-                "mask_cropping.mode must be 'crop' or 'full'; defaulting to crop",
+                "invalid_mask_processing_cropping_mode",
+                "mask_processing.cropping.mode must be 'crop' or 'full'; defaulting to crop",
                 details={"mode": raw_mode},
             )
         )
     elif "enabled" in raw_mask_cropping:
         raw_enabled = raw_mask_cropping.get("enabled")
         if isinstance(raw_enabled, bool):
-            mask_cropping["mode"] = "crop" if raw_enabled else "full"
+            mask_processing["cropping"]["mode"] = "crop" if raw_enabled else "full"
         else:
             warnings.append(
                 _warning(
-                    "invalid_mask_cropping_enabled",
-                    "mask_cropping.enabled must be a boolean; defaulting to crop",
+                    "invalid_mask_processing_cropping_enabled",
+                    "mask_processing.cropping.enabled must be a boolean; defaulting to crop",
                     details={"enabled": raw_enabled},
                 )
             )
 
-    rules["mask_cropping"] = mask_cropping
+    raw_source_video_treatment = raw_mask_processing.get("source_video_treatment", {})
+    if raw_source_video_treatment is None:
+        raw_source_video_treatment = {}
+    if not isinstance(raw_source_video_treatment, dict):
+        warnings.append(
+            _warning(
+                "invalid_mask_processing_source_video_treatment_rule",
+                "mask_processing.source_video_treatment must be an object",
+            )
+        )
+        raw_source_video_treatment = {}
+
+    raw_default = raw_source_video_treatment.get("default")
+    if isinstance(raw_default, str):
+        normalized_default = raw_default.strip().lower()
+        if normalized_default in SUPPORTED_MASK_SOURCE_VIDEO_TREATMENT_INPUTS:
+            mask_processing["source_video_treatment"]["default"] = (
+                normalize_derived_mask_source_video_treatment(raw_default)
+            )
+        else:
+            warnings.append(
+                _warning(
+                    "invalid_mask_processing_source_video_treatment_default",
+                    "mask_processing.source_video_treatment.default is invalid; defaulting to preserve_transparency",
+                    details={"default": raw_default},
+                )
+            )
+    elif "default" in raw_source_video_treatment:
+        warnings.append(
+            _warning(
+                "invalid_mask_processing_source_video_treatment_default",
+                "mask_processing.source_video_treatment.default is invalid; defaulting to preserve_transparency",
+                details={"default": raw_default},
+            )
+        )
+
+    raw_expose_as_widget = raw_source_video_treatment.get("expose_as_widget")
+    if isinstance(raw_expose_as_widget, bool):
+        mask_processing["source_video_treatment"]["expose_as_widget"] = (
+            raw_expose_as_widget
+        )
+    elif "expose_as_widget" in raw_source_video_treatment:
+        warnings.append(
+            _warning(
+                "invalid_mask_processing_source_video_treatment_expose_as_widget",
+                "mask_processing.source_video_treatment.expose_as_widget must be a boolean; defaulting to true",
+                details={"expose_as_widget": raw_expose_as_widget},
+            )
+        )
+
+    raw_label = raw_source_video_treatment.get("label")
+    if isinstance(raw_label, str) and raw_label.strip():
+        mask_processing["source_video_treatment"]["label"] = raw_label.strip()
+    elif "label" in raw_source_video_treatment and raw_label is not None:
+        warnings.append(
+            _warning(
+                "invalid_mask_processing_source_video_treatment_label",
+                "mask_processing.source_video_treatment.label must be a non-empty string; defaulting to 'Transparency handling'",
+                details={"label": raw_label},
+            )
+        )
+
+    rules["mask_processing"] = mask_processing
 
     raw_postprocessing = raw.get("postprocessing", {})
     if raw_postprocessing is None:

@@ -134,30 +134,37 @@ describe("resolvePresentedInputs", () => {
     const defaultResult = normalizeWorkflowRules({
       version: 1,
     });
-    expect(defaultResult.rules.mask_cropping).toEqual({ mode: "crop" });
+    expect(defaultResult.rules.mask_processing?.cropping).toEqual({ mode: "crop" });
 
     const disabledResult = normalizeWorkflowRules({
       version: 1,
-      mask_cropping: {
-        mode: "full",
+      mask_processing: {
+        cropping: {
+          mode: "full",
+        },
       },
     });
     expect(disabledResult.warnings).toHaveLength(0);
-    expect(disabledResult.rules.mask_cropping).toEqual({ mode: "full" });
+    expect(disabledResult.rules.mask_processing?.cropping).toEqual({
+      mode: "full",
+    });
   });
 
   it("reports invalid mask cropping config and falls back to crop mode", () => {
     const { rules, warnings } = normalizeWorkflowRules({
       version: 1,
-      mask_cropping: {
-        mode: "zoom",
+      mask_processing: {
+        cropping: {
+          mode: "zoom",
+        },
       },
     });
 
-    expect(rules.mask_cropping).toEqual({ mode: "crop" });
+    expect(rules.mask_processing?.cropping).toEqual({ mode: "crop" });
     expect(
       warnings.some(
-        (warning) => warning.code === "invalid_mask_cropping_mode",
+        (warning) =>
+          warning.code === "invalid_mask_processing_cropping_mode",
       ),
     ).toBe(true);
   });
@@ -165,13 +172,15 @@ describe("resolvePresentedInputs", () => {
   it("supports legacy boolean mask cropping config", () => {
     const { rules, warnings } = normalizeWorkflowRules({
       version: 1,
-      mask_cropping: {
-        enabled: false,
+      mask_processing: {
+        cropping: {
+          enabled: false,
+        },
       },
     });
 
     expect(warnings).toHaveLength(0);
-    expect(rules.mask_cropping).toEqual({ mode: "full" });
+    expect(rules.mask_processing?.cropping).toEqual({ mode: "full" });
   });
 
   it("surfaces workflow-supported aspect ratio resolutions", () => {
@@ -1000,7 +1009,7 @@ describe("resolvePresentedInputs", () => {
         nodes: {
           "145": {
             widgets: {
-              __derived_mask_video_treatment: {
+              derived_mask_source_video_treatment: {
                 label: "Transparency handling",
                 value_type: "enum",
                 options: [
@@ -1022,6 +1031,40 @@ describe("resolvePresentedInputs", () => {
     expect(widgets).toHaveLength(1);
     expect(widgets[0]?.config.frontendOnly).toBe(true);
     expect(widgets[0]?.config.defaultValue).toBe("Keep transparency");
+    expect(widgets[0]?.param).toBe("derived_mask_source_video_treatment");
+  });
+
+  it("normalizes the legacy derived mask treatment widget alias", () => {
+    const { rules, warnings } = normalizeWorkflowRules({
+      version: 1,
+      nodes: {
+        "145": {
+          widgets: {
+            __derived_mask_video_treatment: {
+              label: "Transparency handling",
+              value_type: "enum",
+              default: "Keep transparency",
+              frontend_only: true,
+            },
+          },
+        },
+      },
+    });
+
+    expect(
+      rules.nodes?.["145"]?.widgets?.derived_mask_source_video_treatment,
+    ).toMatchObject({
+      label: "Transparency handling",
+      value_type: "enum",
+      default: "Keep transparency",
+      frontend_only: true,
+    });
+    expect(
+      rules.nodes?.["145"]?.widgets?.__derived_mask_video_treatment,
+    ).toBeUndefined();
+    expect(
+      warnings.some((warning) => warning.code === "deprecated_widget_param_alias"),
+    ).toBe(true);
   });
 
   it("resolves dual-sampler denoise as a derived slider and hides backing widgets", () => {

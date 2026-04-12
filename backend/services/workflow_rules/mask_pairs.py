@@ -13,7 +13,8 @@ def collect_mask_crop_pairs(
     """Return ``(source_node_id, mask_node_id)`` pairs for mask-crop preprocessing.
 
     Derived-mask relations remain the default source of truth. The workflow
-    sidecar can set ``mask_cropping.mode`` to ``full`` to skip preprocessing.
+    sidecar can set ``mask_processing.cropping.mode`` to ``full`` to skip
+    preprocessing.
     """
     if not isinstance(rules, dict):
         return []
@@ -21,11 +22,21 @@ def collect_mask_crop_pairs(
     if mode_override == "full":
         return []
 
-    mask_cropping = rules.get("mask_cropping", {})
+    mask_processing = rules.get("mask_processing", {})
+    legacy_mask_cropping = rules.get("mask_cropping", {})
     if (
         mode_override is None
-        and isinstance(mask_cropping, dict)
-        and mask_cropping.get("mode") == "full"
+        and (
+            (
+                isinstance(mask_processing, dict)
+                and isinstance(mask_processing.get("cropping"), dict)
+                and mask_processing["cropping"].get("mode") == "full"
+            )
+            or (
+                isinstance(legacy_mask_cropping, dict)
+                and legacy_mask_cropping.get("mode") == "full"
+            )
+        )
     ):
         return []
 

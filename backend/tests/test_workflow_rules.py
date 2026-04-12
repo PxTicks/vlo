@@ -1484,6 +1484,26 @@ def test_real_ltx_retake_rules_define_dual_masks_and_primary_seed():
     assert rules["nodes"]["644"]["present"]["param"] == "video"
     assert rules["nodes"]["644"].get("widgets", {}) == {}
     assert rules["nodes"]["626"]["present"]["enabled"] is False
+    assert rules["aspect_ratio_processing"]["enabled"] is True
+    assert rules["aspect_ratio_processing"]["stride"] == 32
+    assert rules["aspect_ratio_processing"]["resolutions"] == [480, 720, 1080]
+    assert rules["aspect_ratio_processing"]["target_nodes"] == [
+        {
+            "node_id": "512",
+            "width_param": "width",
+            "height_param": "height",
+        },
+        {
+            "node_id": "693",
+            "width_param": "resize_type.width",
+            "height_param": "resize_type.height",
+        },
+    ]
+    assert rules["aspect_ratio_processing"]["postprocess"] == {
+        "enabled": True,
+        "mode": "stretch_exact",
+        "apply_to": "all_visual_outputs",
+    }
 
     sampler_widgets = rules["nodes"]["115"]["widgets"]
     upscale_widgets = rules["nodes"]["243"]["widgets"]
@@ -1539,6 +1559,93 @@ def test_real_ltx_single_stage_discovers_resize_image_mask_node_as_ar_target():
         "width_param": "resize_type.width",
         "height_param": "resize_type.height",
     } in rules["aspect_ratio_processing"]["target_nodes"]
+
+
+def test_enrich_rules_with_object_info_preserves_explicit_ar_targets():
+    workflow = {
+        "nodes": [
+            {
+                "id": 7,
+                "type": "ResizeImageMaskNode",
+                "title": "Mask Resize",
+                "inputs": [
+                    {
+                        "name": "input",
+                        "type": "IMAGE,MASK",
+                        "link": 1,
+                    }
+                ],
+                "outputs": [],
+                "widgets_values": [
+                    "scale by multiplier",
+                    0.5,
+                    "area",
+                ],
+            },
+            {
+                "id": 8,
+                "type": "ResizeImageMaskNode",
+                "title": "Guide Resize",
+                "inputs": [
+                    {
+                        "name": "input",
+                        "type": "IMAGE,MASK",
+                        "link": 2,
+                    }
+                ],
+                "outputs": [],
+                "widgets_values": [
+                    "scale by multiplier",
+                    0.5,
+                    "area",
+                ],
+            },
+        ]
+    }
+    rules = {
+        "version": 1,
+        "nodes": {},
+        "output_injections": {},
+        "slots": {},
+        "mask_cropping": {"mode": "crop"},
+        "postprocessing": {
+            "mode": "auto",
+            "panel_preview": "raw_outputs",
+            "on_failure": "fallback_raw",
+        },
+        "aspect_ratio_processing": {
+            "enabled": True,
+            "stride": 32,
+            "search_steps": 2,
+            "resolutions": [720],
+            "target_nodes": [
+                {
+                    "node_id": "7",
+                    "width_param": "resize_type.width",
+                    "height_param": "resize_type.height",
+                }
+            ],
+            "postprocess": {
+                "enabled": True,
+                "mode": "stretch_exact",
+                "apply_to": "all_visual_outputs",
+            },
+        },
+    }
+
+    set_object_info_cache(None)
+    try:
+        enrich_rules_with_object_info(rules, workflow)
+    finally:
+        set_object_info_cache(None)
+
+    assert rules["aspect_ratio_processing"]["target_nodes"] == [
+        {
+            "node_id": "7",
+            "width_param": "resize_type.width",
+            "height_param": "resize_type.height",
+        }
+    ]
 
 
 def test_enrich_rules_with_object_info_auto_discovers_length_widget_for_video_nodes():

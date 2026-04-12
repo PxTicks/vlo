@@ -86,5 +86,28 @@
       "binary_audio_derived_mask_of": "644",
       "audio_derived_mask_fps": 25
     }
+  },
+  "aspect_ratio_processing": {
+    "enabled": true,
+    "stride": 32,
+    "resolutions": [480, 720, 1080],
+    "search_steps": 2,
+    "target_nodes": [
+      {
+        "node_id": "512",
+        "width_param": "width",
+        "height_param": "height"
+      },
+      {
+        "node_id": "693",
+        "width_param": "resize_type.width",
+        "height_param": "resize_type.height"
+      }
+    ],
+    "postprocess": {
+      "enabled": true,
+      "mode": "stretch_exact",
+      "apply_to": "all_visual_outputs"
+    }
   }
 }

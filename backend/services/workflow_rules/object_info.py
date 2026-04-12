@@ -636,9 +636,10 @@ def _apply_ar_target_policies(
     node_infos: dict[str, _NodeInfo],
     node_policies: dict[str, NodePolicy],
 ) -> None:
-    """Auto-add nodes with ``ar_target`` policy to aspect_ratio_processing.target_nodes.
+    """Auto-add nodes with ``ar_target`` policy when no explicit targets exist.
 
-    Nodes already listed in target_nodes (by node_id) are not duplicated.
+    Sidecars that declare ``aspect_ratio_processing.target_nodes`` are treated as
+    authoritative so auto-discovery does not silently retarget additional nodes.
     """
     ar_cfg = rules.get("aspect_ratio_processing")
     if not isinstance(ar_cfg, dict) or not ar_cfg.get("enabled"):
@@ -648,6 +649,8 @@ def _apply_ar_target_policies(
     if not isinstance(target_nodes, list):
         target_nodes = []
         ar_cfg["target_nodes"] = target_nodes
+    elif len(target_nodes) > 0:
+        return
 
     existing_ids = {
         entry.get("node_id")

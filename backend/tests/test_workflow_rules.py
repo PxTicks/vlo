@@ -1372,6 +1372,64 @@ def test_real_ltx_basic_i2v_core_workflow_rewrites_full_t2v_branch_when_image_mi
         assert node_id not in rewritten
 
 
+def test_real_ltx_basic_i2v_core_workflow_prunes_resize_node_that_loses_required_image_input():
+    base = Path(__file__).resolve().parents[1] / "assets" / ".config" / "default_workflows"
+    rules_path = base / "video_ltx2_3_i2v_t2v_basic.rules.json"
+    rules = json.loads(rules_path.read_text(encoding="utf-8"))
+
+    workflow = {
+        "165": {
+            "class_type": "ImageResizeKJv2",
+            "inputs": {
+                "image": ["167", 0],
+                "width": 768,
+                "height": 432,
+                "upscale_method": "lanczos",
+                "keep_proportion": "resize",
+                "pad_color": "0, 0, 0",
+                "crop_position": "center",
+                "divisible_by": 2,
+            },
+        },
+        "167": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "egyptian_queen.png"},
+        },
+    }
+    object_info = {
+        "ImageResizeKJv2": {
+            "input": {
+                "required": {
+                    "image": ["IMAGE"],
+                    "width": ["INT"],
+                    "height": ["INT"],
+                    "upscale_method": [["lanczos"]],
+                    "keep_proportion": [["resize"]],
+                    "pad_color": ["STRING"],
+                    "crop_position": [["center"]],
+                    "divisible_by": ["INT"],
+                }
+            }
+        }
+    }
+
+    set_object_info_cache(object_info)
+    try:
+        rewritten, warnings = apply_rules_to_workflow(
+            workflow,
+            rules,
+            provided_input_ids=set(),
+        )
+    finally:
+        set_object_info_cache(None)
+
+    assert all(
+        warning["code"] in {"injection_target_missing", "ignored_node_missing"}
+        for warning in warnings
+    )
+    assert rewritten == {}
+
+
 def test_core_ltx_workflows_do_not_include_gguf_or_debug_only_nodes():
     base = Path(__file__).resolve().parents[1] / "assets" / ".config" / "default_workflows"
 

@@ -828,10 +828,38 @@ def get_widget_value_index_map(
     return _get_widget_value_index_map_core(class_type, object_info)
 
 
+def get_required_input_params_for_class(
+    class_type: str,
+    object_info: dict[str, Any] | None = None,
+) -> set[str]:
+    """Return required input param names for a ComfyUI node class."""
+    if object_info is None:
+        object_info = _load_object_info()
+
+    class_info = object_info.get(class_type)
+    if not isinstance(class_info, dict):
+        return set()
+
+    input_spec = class_info.get("input")
+    if not isinstance(input_spec, dict):
+        return set()
+
+    required_spec = input_spec.get("required")
+    if not isinstance(required_spec, dict):
+        return set()
+
+    return {
+        param_name.strip()
+        for param_name in required_spec.keys()
+        if isinstance(param_name, str) and param_name.strip()
+    }
+
+
 __all__ = [
     "OBJECT_INFO_PATH",
     "build_input_node_map",
     "enrich_rules_with_object_info",
+    "get_required_input_params_for_class",
     "get_widget_value_index_map",
     "set_object_info_cache",
 ]

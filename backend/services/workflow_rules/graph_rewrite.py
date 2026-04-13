@@ -13,6 +13,7 @@ from services.workflow_rules.normalize import (
     _warning,
     normalize_rules,
 )
+from services.workflow_rules.object_info import get_required_input_params_for_class
 from services.workflow_rules.schema import ResolvedWorkflowRules, dump_resolved_rules
 
 
@@ -50,9 +51,9 @@ def _rewrite_output_links(
 def _disconnect_output_links_from_node(
     workflow: WorkflowPrompt,
     target_node_id: str,
-) -> int:
-    rewrites = 0
-    for node_data in workflow.values():
+) -> set[str]:
+    affected_consumers: set[str] = set()
+    for node_id, node_data in workflow.items():
         if not isinstance(node_data, dict):
             continue
         inputs = node_data.get("inputs")
@@ -65,8 +66,52 @@ def _disconnect_output_links_from_node(
                 and str(input_value[0]) == target_node_id
             ):
                 inputs.pop(input_key, None)
-                rewrites += 1
-    return rewrites
+                affected_consumers.add(str(node_id))
+    return affected_consumers
+
+
+def _collect_nodes_with_missing_required_inputs(
+    workflow: WorkflowPrompt,
+    seed_node_ids: set[str],
+    reachable_from_provided_inputs: set[str],
+) -> set[str]:
+    removable: set[str] = set()
+    required_inputs_cache: dict[str, set[str]] = {}
+    queue: deque[str] = deque(sorted(seed_node_ids))
+
+    while queue:
+        node_id = queue.popleft()
+        if node_id in removable:
+            continue
+
+        node_data = workflow.get(node_id)
+        if not isinstance(node_data, dict):
+            continue
+        if node_id in reachable_from_provided_inputs:
+            continue
+
+        class_type = node_data.get("class_type")
+        if not isinstance(class_type, str) or not class_type.strip():
+            continue
+
+        required_inputs = required_inputs_cache.get(class_type)
+        if required_inputs is None:
+            required_inputs = get_required_input_params_for_class(class_type)
+            required_inputs_cache[class_type] = required_inputs
+        if not required_inputs:
+            continue
+
+        inputs = node_data.get("inputs")
+        if not isinstance(inputs, dict):
+            inputs = {}
+
+        if all(param_name in inputs for param_name in required_inputs):
+            continue
+
+        removable.add(node_id)
+        queue.extend(sorted(_disconnect_output_links_from_node(workflow, node_id)))
+
+    return removable
 
 
 def _extract_dependencies(
@@ -98,6 +143,28 @@ def _extract_dependencies(
             parents.setdefault(parent_node, set())
             consumers.setdefault(current_node_id, set())
     return parents, consumers
+
+
+def _collect_reachable_descendants(
+    workflow: WorkflowPrompt,
+    seed_node_ids: set[str],
+) -> set[str]:
+    if not seed_node_ids:
+        return set()
+
+    _, consumers = _extract_dependencies(workflow)
+    reachable: set[str] = {node_id for node_id in seed_node_ids if node_id in workflow}
+    queue: deque[str] = deque(sorted(reachable))
+
+    while queue:
+        node_id = queue.popleft()
+        for consumer_id in sorted(consumers.get(node_id, set())):
+            if consumer_id in reachable or consumer_id not in workflow:
+                continue
+            reachable.add(consumer_id)
+            queue.append(consumer_id)
+
+    return reachable
 
 
 def _find_references_to_node(
@@ -419,6 +486,7 @@ def apply_rules_to_workflow(
 
     node_rules = normalized_rules.get("nodes", {})
     ignored_nodes: set[str] = set()
+    downstream_prune_roots: set[str] = set()
     if isinstance(node_rules, dict):
         _apply_widget_default_overrides(
             next_workflow,
@@ -457,8 +525,25 @@ def apply_rules_to_workflow(
                 )
                 continue
 
-            _disconnect_output_links_from_node(next_workflow, normalized_node_id)
+            downstream_prune_roots.update(
+                _disconnect_output_links_from_node(next_workflow, normalized_node_id)
+            )
             ignored_nodes.add(normalized_node_id)
+
+    ignored_nodes.update(
+        _collect_nodes_with_missing_required_inputs(
+            next_workflow,
+            downstream_prune_roots,
+            _collect_reachable_descendants(
+                next_workflow,
+                {
+                    input_id
+                    for input_id in normalized_provided_inputs
+                    if ":" not in input_id
+                },
+            ),
+        )
+    )
 
     removable_roots: set[str] = set()
     for node_id in sorted(ignored_nodes):

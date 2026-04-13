@@ -1,6 +1,12 @@
 import type { WorkflowInput } from "../types";
 import { useProjectStore } from "../../project";
-import { DEFAULT_GENERATION_TARGET_RESOLUTION } from "../services/workflowRules";
+import {
+  DEFAULT_GENERATION_TARGET_RESOLUTION,
+  getAspectRatioStage,
+  getMaskProcessingStage,
+  getWorkflowStageControl,
+} from "../services/workflowRules";
+import type { WorkflowRules } from "../services/workflowRules";
 import { runProcessors } from "./runner";
 import { FRONTEND_PREPROCESSORS } from "./preprocessors";
 import { throwIfAborted } from "./utils/abort";
@@ -12,6 +18,46 @@ import type {
   SlotValue,
 } from "./types";
 
+function buildPipelineInputs(
+  ctx: FrontendPreprocessContext,
+): Record<string, Record<string, unknown>> {
+  const pipelineInputs: Record<string, Record<string, unknown>> = {};
+
+  const aspectRatioStage = getAspectRatioStage(ctx.workflowRules);
+  if (aspectRatioStage) {
+    const stageInputs: Record<string, unknown> = {};
+    if (getWorkflowStageControl(aspectRatioStage, "target_aspect_ratio")) {
+      stageInputs.target_aspect_ratio = ctx.targetAspectRatio;
+    }
+    if (getWorkflowStageControl(aspectRatioStage, "target_resolution")) {
+      stageInputs.target_resolution = ctx.targetResolution;
+    }
+    if (Object.keys(stageInputs).length > 0) {
+      pipelineInputs[aspectRatioStage.id] = stageInputs;
+    }
+  }
+
+  const maskProcessingStage = getMaskProcessingStage(ctx.workflowRules);
+  if (maskProcessingStage && ctx.derivedMaskMappings.length > 0) {
+    const stageInputs: Record<string, unknown> = {};
+    if (getWorkflowStageControl(maskProcessingStage, "crop_mode")) {
+      stageInputs.crop_mode = ctx.maskCropMode ?? "crop";
+    }
+    if (
+      getWorkflowStageControl(maskProcessingStage, "crop_dilation") &&
+      ctx.maskCropMode !== "full" &&
+      ctx.maskCropDilation != null
+    ) {
+      stageInputs.crop_dilation = ctx.maskCropDilation;
+    }
+    if (Object.keys(stageInputs).length > 0) {
+      pipelineInputs[maskProcessingStage.id] = stageInputs;
+    }
+  }
+
+  return pipelineInputs;
+}
+
 /**
  * Builds a {@link FrontendPreprocessContext}, runs all frontend preprocessors,
  * and returns the assembled {@link GenerationRequest}.
@@ -22,6 +68,7 @@ import type {
 export async function runFrontendPreprocess(
   syncedWorkflow: Record<string, unknown> | null,
   workflowId: string | null,
+  workflowRules: WorkflowRules | null,
   workflowInputs: WorkflowInput[],
   slotValues: Record<string, SlotValue>,
   clientId: string,
@@ -37,6 +84,7 @@ export async function runFrontendPreprocess(
     syncedWorkflow,
     syncedGraphData,
     workflowId,
+    workflowRules,
     workflowInputs,
     slotValues,
     derivedMaskMappings,
@@ -58,29 +106,25 @@ export async function runFrontendPreprocess(
     imageInputs: {},
     audioInputs: {},
     videoInputs: {},
+    pipelineInputs: {},
   };
 
   throwIfAborted(ctx.signal);
   await runProcessors(FRONTEND_PREPROCESSORS, ctx);
   throwIfAborted(ctx.signal);
 
+  ctx.pipelineInputs = buildPipelineInputs(ctx);
+
   return {
     workflow: ctx.syncedWorkflow,
     graphData: ctx.syncedGraphData,
     workflowId: ctx.workflowId,
-    targetAspectRatio: ctx.targetAspectRatio,
     exactAspectRatio: ctx.exactAspectRatio,
-    targetResolution: ctx.targetResolution,
     textInputs: ctx.textInputs,
     imageInputs: ctx.imageInputs,
     videoInputs: ctx.videoInputs,
     audioInputs: ctx.audioInputs,
-    maskCropDilation:
-      ctx.derivedMaskMappings.length > 0 && ctx.maskCropMode !== "full"
-        ? ctx.maskCropDilation
-        : undefined,
-    maskCropMode:
-      ctx.derivedMaskMappings.length > 0 ? ctx.maskCropMode : undefined,
+    pipelineInputs: ctx.pipelineInputs,
     clientId: ctx.clientId,
   };
 }

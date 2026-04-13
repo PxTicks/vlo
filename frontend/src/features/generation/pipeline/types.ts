@@ -150,6 +150,7 @@ export interface FrontendPreprocessContext {
   readonly syncedWorkflow: Record<string, unknown> | null;
   readonly syncedGraphData: Record<string, unknown> | null;
   readonly workflowId: string | null;
+  readonly workflowRules: WorkflowRules | null;
   readonly workflowInputs: WorkflowInput[];
   readonly slotValues: Record<string, SlotValue>;
   readonly derivedMaskMappings: DerivedMaskMapping[];
@@ -167,6 +168,7 @@ export interface FrontendPreprocessContext {
   imageInputs: Record<string, File>;
   audioInputs: Record<string, File>;
   videoInputs: Record<string, File>;
+  pipelineInputs: Record<string, Record<string, unknown>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,9 +180,7 @@ export interface GenerationRequest {
   graphData: Record<string, unknown> | null;
   workflowId: string | null;
   workflowRules?: WorkflowRules | null;
-  targetAspectRatio: string;
   exactAspectRatio: boolean;
-  targetResolution: number;
   textInputs: Record<string, string>;
   imageInputs: Record<string, File>;
   videoInputs: Record<string, File>;
@@ -188,8 +188,7 @@ export interface GenerationRequest {
   widgetInputs?: Record<string, string>;
   derivedWidgetInputs?: Record<string, string>;
   widgetModes?: Record<string, "fixed" | "randomize">;
-  maskCropDilation?: number;
-  maskCropMode?: WorkflowMaskCroppingMode;
+  pipelineInputs: Record<string, Record<string, unknown>>;
   clientId: string;
 }
 

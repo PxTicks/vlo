@@ -1,3 +1,9 @@
+import type { WorkflowRules } from "./services/workflowRules/types";
+import {
+  getMaskProcessingStage,
+  getWorkflowStageControl,
+} from "./services/workflowRules/pipeline";
+
 export type DerivedMaskSourceVideoTreatment =
   | "preserve_transparency"
   | "fill_transparent_with_neutral_gray"
@@ -40,8 +46,11 @@ interface DerivedMaskSourceLike {
 }
 
 interface SourceVideoTreatmentConditionLike {
-  node_id?: unknown;
-  param?: unknown;
+  ref?: {
+    kind?: unknown;
+    node_id?: unknown;
+    param?: unknown;
+  };
   operator?: unknown;
   value?: unknown;
 }
@@ -49,15 +58,6 @@ interface SourceVideoTreatmentConditionLike {
 interface SourceVideoTreatmentDefaultOverrideLike {
   when?: SourceVideoTreatmentConditionLike;
   value?: unknown;
-}
-
-interface MaskProcessingRulesLike {
-  mask_processing?: {
-    source_video_treatment?: {
-      default?: unknown;
-      default_overrides?: readonly SourceVideoTreatmentDefaultOverrideLike[];
-    };
-  };
 }
 
 interface ResolveDefaultDerivedMaskSourceVideoTreatmentOptions {
@@ -208,21 +208,25 @@ export function parseDerivedMaskSourceVideoTreatment(
 }
 
 export function resolveDefaultDerivedMaskSourceVideoTreatment(
-  rules: MaskProcessingRulesLike | null | undefined,
+  rules: WorkflowRules | null | undefined,
   options: ResolveDefaultDerivedMaskSourceVideoTreatmentOptions = {},
 ): DerivedMaskSourceVideoTreatment {
-  const sourceVideoTreatment = rules?.mask_processing?.source_video_treatment;
+  const sourceVideoTreatment = getWorkflowStageControl(
+    getMaskProcessingStage(rules),
+    "source_video_treatment",
+  );
   const defaultTreatment = parseDerivedMaskSourceVideoTreatment(
     sourceVideoTreatment?.default,
   );
 
-  for (const override of sourceVideoTreatment?.default_overrides ?? []) {
+  for (const override of sourceVideoTreatment?.default_rules ?? []) {
     const when = override.when;
     if (
-      typeof when?.node_id !== "string" ||
-      when.node_id.trim().length === 0 ||
-      typeof when.param !== "string" ||
-      when.param.trim().length === 0 ||
+      when?.ref?.kind !== "workflow_param" ||
+      typeof when.ref.node_id !== "string" ||
+      when.ref.node_id.trim().length === 0 ||
+      typeof when.ref.param !== "string" ||
+      when.ref.param.trim().length === 0 ||
       typeof when.operator !== "string" ||
       !DERIVED_MASK_SOURCE_VIDEO_TREATMENT_OVERRIDE_OPERATORS.has(when.operator)
     ) {
@@ -230,8 +234,8 @@ export function resolveDefaultDerivedMaskSourceVideoTreatment(
     }
 
     const currentValue = resolveWorkflowParamValue(
-      when.node_id.trim(),
-      when.param.trim(),
+      when.ref.node_id.trim(),
+      when.ref.param.trim(),
       options,
     );
     if (!compareConditionValue(currentValue, when.operator, when.value)) {

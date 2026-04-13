@@ -5,7 +5,7 @@ from typing import Any
 
 from services.gen_pipeline.context import BackendPipelineContext
 from services.gen_pipeline.types import Processor, ProcessorMeta
-from services.workflow_rules.schema import has_pipeline_stage
+from services.workflow_rules.pipeline import find_pipeline_stage
 
 
 ApplyAspectRatioProcessingFn = Callable[
@@ -15,15 +15,15 @@ ApplyAspectRatioProcessingFn = Callable[
 
 
 class _AspectRatioProcessor:
+    backend_preprocess_checkpoint = "after_upload"
     meta = ProcessorMeta(
         name="aspect_ratio",
         reads=(
             "workflow",
             "rules",
-            "target_aspect_ratio",
-            "target_resolution",
+            "resolved_pipeline_controls",
         ),
-        writes=("aspect_ratio_metadata", "workflow", "warnings"),
+        writes=("pipeline_outputs", "workflow", "warnings"),
         description="Applies aspect ratio processing to the workflow and records the returned metadata",
     )
 
@@ -31,20 +31,30 @@ class _AspectRatioProcessor:
         self._apply_aspect_ratio_processing = apply_aspect_ratio_processing_fn
 
     def is_active(self, ctx: BackendPipelineContext) -> bool:
-        return has_pipeline_stage(ctx.rules_model, "aspect_ratio") and not ctx.aspect_ratio_applied
+        return find_pipeline_stage(ctx.rules, kind="aspect_ratio") is not None
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
+        stage = find_pipeline_stage(ctx.rules, kind="aspect_ratio")
+        if not isinstance(stage, dict):
+            return
+        stage_id = stage.get("id")
+        if not isinstance(stage_id, str) or not stage_id:
+            return
+        control_values = ctx.resolved_pipeline_controls.get(stage_id, {})
         (
-            ctx.aspect_ratio_metadata,
+            metadata,
             aspect_ratio_processing_warnings,
         ) = self._apply_aspect_ratio_processing(
             ctx.workflow,
             ctx.rules,
-            ctx.target_aspect_ratio,
-            ctx.target_resolution,
+            control_values.get("target_aspect_ratio"),
+            control_values.get("target_resolution"),
         )
         ctx.warnings.extend(aspect_ratio_processing_warnings)
-        ctx.aspect_ratio_applied = True
+        if metadata is not None:
+            ctx.pipeline_outputs.setdefault(stage_id, {})[
+                "aspect_ratio_processing"
+            ] = metadata
 
 
 def create_aspect_ratio_processor(

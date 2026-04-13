@@ -2,6 +2,7 @@ import math
 from typing import Any
 
 from services.gen_pipeline.processors.utils.warning import pipeline_warning
+from services.workflow_rules.pipeline import find_pipeline_stage
 
 _RESIZE_IMAGE_MASK_NODE_TYPES = frozenset(
     {"ResizeImageMaskNode", "RescaleImageMaskNode"}
@@ -216,13 +217,17 @@ def apply_aspect_ratio_processing(
     target_resolution_raw: Any,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     warnings: list[dict[str, Any]] = []
-    config = rules.get("aspect_ratio_processing")
-    if not isinstance(config, dict):
+    stage = find_pipeline_stage(rules, kind="aspect_ratio")
+    if not isinstance(stage, dict):
         return None, warnings
-    if not bool(config.get("enabled")):
+    if stage.get("enabled") is False:
         return None, warnings
 
-    target_nodes = config.get("target_nodes")
+    config = stage.get("config")
+    if not isinstance(config, dict):
+        config = {}
+
+    target_nodes = stage.get("targets")
     if not isinstance(target_nodes, list) or len(target_nodes) == 0:
         return None, warnings
 

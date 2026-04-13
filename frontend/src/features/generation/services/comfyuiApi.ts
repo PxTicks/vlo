@@ -1,8 +1,4 @@
 import { API_BASE_URL } from "../../../config";
-import type {
-  AspectRatioProcessingMetadata,
-  MaskCropMetadata,
-} from "../types";
 import type { GenerationRequest } from "../pipeline/types";
 import {
   createDefaultWorkflowRules,
@@ -29,9 +25,7 @@ export interface PromptResponse {
   node_errors: Record<string, unknown>;
   workflow_warnings?: WorkflowRuleWarning[];
   applied_widget_values?: Record<string, string>;
-  aspect_ratio_processing?: AspectRatioProcessingMetadata;
-  mask_crop_metadata?: MaskCropMetadata;
-  processed_mask_video?: string; // base64-encoded video bytes
+  pipeline_outputs?: Record<string, Record<string, unknown>>;
   comfyui_prompt?: Record<string, unknown>;
   comfyui_workflow?: Record<string, unknown>;
 }
@@ -259,8 +253,7 @@ export async function generate(
   if (request.workflowRules) {
     formData.append("workflow_rules", JSON.stringify(request.workflowRules));
   }
-  formData.append("target_aspect_ratio", request.targetAspectRatio);
-  formData.append("target_resolution", String(request.targetResolution));
+  formData.append("pipeline_inputs", JSON.stringify(request.pipelineInputs));
 
   for (const [nodeId, text] of Object.entries(request.textInputs)) {
     formData.append(`text_${nodeId}`, text);
@@ -283,13 +276,6 @@ export async function generate(
   for (const [key, value] of Object.entries(request.widgetModes ?? {})) {
     formData.append(key, value);
   }
-  if (request.maskCropMode) {
-    formData.append("mask_crop_mode", request.maskCropMode);
-  }
-  if (request.maskCropDilation != null) {
-    formData.append("mask_crop_dilation", String(request.maskCropDilation));
-  }
-
   const resp = await fetch(`${COMFY_API}/generate`, {
     method: "POST",
     body: formData,

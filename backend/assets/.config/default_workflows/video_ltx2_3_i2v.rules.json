@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "name": "LTX2.3 I2V / T2V",
   "nodes": {
     "269": {
@@ -47,35 +47,92 @@
       }
     }
   },
+  "validation": {
+    "inputs": []
+  },
+  "derived_widgets": [],
+  "output_injections": {},
+  "slots": {},
   "pipeline": [
     {
+      "id": "mask_processing",
       "kind": "mask_processing",
-      "cropping": {
-        "mode": "crop"
-      }
+      "targets": [],
+      "controls": [
+        {
+          "key": "crop_mode",
+          "label": "Mask crop mode",
+          "value_type": "enum",
+          "expose": "widget",
+          "options": [
+            "crop",
+            "full"
+          ],
+          "default": "crop"
+        },
+        {
+          "key": "crop_dilation",
+          "label": "Mask crop padding",
+          "value_type": "float",
+          "expose": "widget",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 0.5,
+          "step": 0.01,
+          "default": 0.1
+        }
+      ]
     },
     {
+      "id": "aspect_ratio",
       "kind": "aspect_ratio",
       "enabled": true,
-      "stride": 32,
-      "resolutions": [
-        480,
-        720,
-        1080
-      ],
-      "search_steps": 2,
-      "target_nodes": [
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolutions": [
+          480,
+          720,
+          1080
+        ],
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
         {
-          "node_id": "267",
-          "width_param": "value_2",
-          "height_param": "value_3"
+          "width": {
+            "node_id": "267",
+            "param": "value_2"
+          },
+          "height": {
+            "node_id": "267",
+            "param": "value_3"
+          }
         }
       ],
-      "postprocess": {
-        "enabled": true,
-        "mode": "stretch_exact",
-        "apply_to": "all_visual_outputs"
-      }
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "options": [
+            480,
+            720,
+            1080
+          ],
+          "default": 1080
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "expose": "hidden"
+        }
+      ]
     }
   ]
 }

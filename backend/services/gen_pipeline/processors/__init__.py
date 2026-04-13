@@ -17,6 +17,10 @@ from services.gen_pipeline.processors.aspect_ratio import create_aspect_ratio_pr
 from services.gen_pipeline.processors.inject_values import inject_values_processor
 from services.gen_pipeline.processors.load_rules import create_load_rules_processor
 from services.gen_pipeline.processors.mask_crop import create_mask_crop_processor
+from services.gen_pipeline.processors.pipeline_stage import create_pipeline_stage_processor
+from services.gen_pipeline.processors.resolve_pipeline_controls import (
+    resolve_pipeline_controls_processor,
+)
 from services.gen_pipeline.processors.resolve_derived_widgets import (
     resolve_derived_widgets_processor,
 )
@@ -84,18 +88,31 @@ def build_backend_preprocessors(
         validate_widgets_processor,
         create_apply_rules_processor(),
         widget_overrides_processor,
-        create_mask_crop_processor(
-            analyze_mask_video_bounds_fn,
-            crop_video_fn,
-            get_video_dimensions_fn,
-            apply_aspect_ratio_processing_fn,
+        resolve_pipeline_controls_processor,
+        create_pipeline_stage_processor(
+            checkpoint="before_upload",
+            stage_processors={
+                "mask_processing": create_mask_crop_processor(
+                    analyze_mask_video_bounds_fn,
+                    crop_video_fn,
+                    get_video_dimensions_fn,
+                    apply_aspect_ratio_processing_fn,
+                ),
+            },
         ),
         create_upload_media_processor(
             upload_video_bytes_fn,
             register_media_bytes_fn,
             input_node_map,
         ),
-        create_aspect_ratio_processor(apply_aspect_ratio_processing_fn),
+        create_pipeline_stage_processor(
+            checkpoint="after_upload",
+            stage_processors={
+                "aspect_ratio": create_aspect_ratio_processor(
+                    apply_aspect_ratio_processing_fn
+                ),
+            },
+        ),
     ]
 
 

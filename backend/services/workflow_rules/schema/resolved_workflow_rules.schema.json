@@ -3,65 +3,63 @@
     "AspectRatioTargetNode": {
       "properties": {
         "height": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WorkflowParamReference"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "height_param": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Height Param"
-        },
-        "node_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Node Id"
+          "$ref": "#/$defs/WorkflowParamReference"
         },
         "width": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WorkflowParamReference"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+          "$ref": "#/$defs/WorkflowParamReference"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "title": "AspectRatioTargetNode",
+      "type": "object"
+    },
+    "MaskProcessingTarget": {
+      "properties": {
+        "mask": {
+          "$ref": "#/$defs/WorkflowParamReference"
         },
-        "width_param": {
+        "mask_type": {
+          "default": "binary",
+          "enum": [
+            "binary",
+            "soft"
+          ],
+          "title": "Mask Type",
+          "type": "string"
+        },
+        "purpose": {
+          "default": "video",
+          "enum": [
+            "video",
+            "audio_timing"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        },
+        "render_fps": {
           "anyOf": [
             {
-              "type": "string"
+              "type": "integer"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Width Param"
+          "title": "Render Fps"
+        },
+        "source": {
+          "$ref": "#/$defs/WorkflowParamReference"
         }
       },
-      "title": "AspectRatioTargetNode",
+      "required": [
+        "source",
+        "mask"
+      ],
+      "title": "MaskProcessingTarget",
       "type": "object"
     },
     "NodeOutputSource": {
@@ -88,6 +86,390 @@
       "title": "NodeOutputSource",
       "type": "object"
     },
+    "PipelineControl": {
+      "properties": {
+        "bind": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "pipeline_control": "#/$defs/PipelineControlReference",
+                  "workflow_param": "#/$defs/WorkflowParamValueReference"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/WorkflowParamValueReference"
+                },
+                {
+                  "$ref": "#/$defs/PipelineControlReference"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bind"
+        },
+        "control": {
+          "anyOf": [
+            {
+              "const": "slider",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control"
+        },
+        "default": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "default_rules": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PipelineControlDefaultRule"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Rules"
+        },
+        "exclude_options": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclude Options"
+        },
+        "expose": {
+          "default": "widget",
+          "enum": [
+            "widget",
+            "hidden"
+          ],
+          "title": "Expose",
+          "type": "string"
+        },
+        "false_value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "False Value"
+        },
+        "include_options": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Include Options"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min"
+        },
+        "options": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Options"
+        },
+        "slider_display": {
+          "anyOf": [
+            {
+              "enum": [
+                "percent",
+                "number"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slider Display"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step"
+        },
+        "true_value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "True Value"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "value_type": {
+          "default": "unknown",
+          "enum": [
+            "int",
+            "float",
+            "string",
+            "boolean",
+            "enum",
+            "unknown"
+          ],
+          "title": "Value Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "PipelineControl",
+      "type": "object"
+    },
+    "PipelineControlCondition": {
+      "properties": {
+        "operator": {
+          "default": "eq",
+          "enum": [
+            "eq",
+            "neq",
+            "lt",
+            "lte",
+            "gt",
+            "gte"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "ref": {
+          "discriminator": {
+            "mapping": {
+              "pipeline_control": "#/$defs/PipelineControlReference",
+              "workflow_param": "#/$defs/WorkflowParamValueReference"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkflowParamValueReference"
+            },
+            {
+              "$ref": "#/$defs/PipelineControlReference"
+            }
+          ],
+          "title": "Ref"
+        },
+        "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "PipelineControlCondition",
+      "type": "object"
+    },
+    "PipelineControlDefaultRule": {
+      "properties": {
+        "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "when": {
+          "$ref": "#/$defs/PipelineControlCondition"
+        }
+      },
+      "required": [
+        "when"
+      ],
+      "title": "PipelineControlDefaultRule",
+      "type": "object"
+    },
+    "PipelineControlReference": {
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "const": "pipeline_control",
+          "default": "pipeline_control",
+          "title": "Kind",
+          "type": "string"
+        },
+        "stage_id": {
+          "title": "Stage Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage_id",
+        "key"
+      ],
+      "title": "PipelineControlReference",
+      "type": "object"
+    },
     "ResolvedOutputInjectionRule": {
       "properties": {
         "source": {
@@ -109,137 +491,6 @@
         "source"
       ],
       "title": "ResolvedOutputInjectionRule",
-      "type": "object"
-    },
-    "ResolvedWorkflowRuleNode": {
-      "properties": {
-        "audio_derived_mask_fps": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Audio Derived Mask Fps"
-        },
-        "binary_audio_derived_mask_of": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Binary Audio Derived Mask Of"
-        },
-        "binary_derived_mask_of": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Binary Derived Mask Of"
-        },
-        "ignore": {
-          "default": false,
-          "title": "Ignore",
-          "type": "boolean"
-        },
-        "ignore_overrides": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/WorkflowRuleBooleanOverride"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Ignore Overrides"
-        },
-        "node_title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Node Title"
-        },
-        "present": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WorkflowRuleNodePresent"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "selection": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WorkflowRuleSelectionConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "soft_derived_mask_of": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Soft Derived Mask Of"
-        },
-        "widgets": {
-          "additionalProperties": {
-            "$ref": "#/$defs/WorkflowRuleWidgetEntry"
-          },
-          "title": "Widgets",
-          "type": "object"
-        },
-        "widgets_mode": {
-          "anyOf": [
-            {
-              "enum": [
-                "control_after_generate",
-                "all"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Widgets Mode"
-        }
-      },
-      "title": "ResolvedWorkflowRuleNode",
       "type": "object"
     },
     "WorkflowAspectRatioPostprocessConfig": {
@@ -265,13 +516,61 @@
       "title": "WorkflowAspectRatioPostprocessConfig",
       "type": "object"
     },
-    "WorkflowAspectRatioProcessingConfig": {
+    "WorkflowAspectRatioStage": {
       "properties": {
+        "config": {
+          "$ref": "#/$defs/WorkflowAspectRatioStageConfig"
+        },
+        "controls": {
+          "items": {
+            "$ref": "#/$defs/PipelineControl"
+          },
+          "title": "Controls",
+          "type": "array"
+        },
         "enabled": {
           "default": true,
           "title": "Enabled",
           "type": "boolean"
         },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "aspect_ratio",
+          "default": "aspect_ratio",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/AspectRatioTargetNode"
+          },
+          "title": "Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "WorkflowAspectRatioStage",
+      "type": "object"
+    },
+    "WorkflowAspectRatioStageConfig": {
+      "properties": {
         "postprocess": {
           "$ref": "#/$defs/WorkflowAspectRatioPostprocessConfig"
         },
@@ -291,16 +590,9 @@
           "default": 16,
           "title": "Stride",
           "type": "integer"
-        },
-        "target_nodes": {
-          "items": {
-            "$ref": "#/$defs/AspectRatioTargetNode"
-          },
-          "title": "Target Nodes",
-          "type": "array"
         }
       },
-      "title": "WorkflowAspectRatioProcessingConfig",
+      "title": "WorkflowAspectRatioStageConfig",
       "type": "object"
     },
     "WorkflowAtLeastNInputValidationRule": {
@@ -458,183 +750,54 @@
       "title": "WorkflowInputCondition",
       "type": "object"
     },
-    "WorkflowMaskCroppingConfig": {
+    "WorkflowMaskProcessingStage": {
       "properties": {
-        "mode": {
-          "default": "crop",
-          "enum": [
-            "crop",
-            "full"
-          ],
-          "title": "Mode",
-          "type": "string"
-        }
-      },
-      "title": "WorkflowMaskCroppingConfig",
-      "type": "object"
-    },
-    "WorkflowMaskProcessingConfig": {
-      "properties": {
-        "cropping": {
-          "$ref": "#/$defs/WorkflowMaskCroppingConfig"
+        "controls": {
+          "items": {
+            "$ref": "#/$defs/PipelineControl"
+          },
+          "title": "Controls",
+          "type": "array"
         },
-        "source_video_treatment": {
-          "$ref": "#/$defs/WorkflowMaskSourceVideoTreatmentConfig"
-        }
-      },
-      "title": "WorkflowMaskProcessingConfig",
-      "type": "object"
-    },
-    "WorkflowMaskSourceVideoTreatmentCondition": {
-      "properties": {
-        "node_id": {
-          "title": "Node Id",
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
           "type": "string"
         },
-        "operator": {
-          "default": "eq",
-          "enum": [
-            "eq",
-            "neq",
-            "lt",
-            "lte",
-            "gt",
-            "gte"
-          ],
-          "title": "Operator",
+        "kind": {
+          "const": "mask_processing",
+          "default": "mask_processing",
+          "title": "Kind",
           "type": "string"
         },
-        "param": {
-          "title": "Param",
-          "type": "string"
-        },
-        "value": {
+        "label": {
           "anyOf": [
             {
               "type": "string"
             },
             {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
+              "type": "null"
             }
           ],
-          "title": "Value"
+          "default": null,
+          "title": "Label"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/MaskProcessingTarget"
+          },
+          "title": "Targets",
+          "type": "array"
         }
       },
       "required": [
-        "node_id",
-        "param",
-        "value"
+        "id"
       ],
-      "title": "WorkflowMaskSourceVideoTreatmentCondition",
-      "type": "object"
-    },
-    "WorkflowMaskSourceVideoTreatmentConfig": {
-      "properties": {
-        "default": {
-          "default": "preserve_transparency",
-          "enum": [
-            "preserve_transparency",
-            "fill_transparent_with_neutral_gray",
-            "remove_transparency"
-          ],
-          "title": "Default",
-          "type": "string"
-        },
-        "default_overrides": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/WorkflowMaskSourceVideoTreatmentDefaultOverride"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Default Overrides"
-        },
-        "exclude_options": {
-          "anyOf": [
-            {
-              "items": {
-                "enum": [
-                  "preserve_transparency",
-                  "fill_transparent_with_neutral_gray",
-                  "remove_transparency"
-                ],
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Exclude Options"
-        },
-        "expose_as_widget": {
-          "default": true,
-          "title": "Expose As Widget",
-          "type": "boolean"
-        },
-        "include_options": {
-          "anyOf": [
-            {
-              "items": {
-                "enum": [
-                  "preserve_transparency",
-                  "fill_transparent_with_neutral_gray",
-                  "remove_transparency"
-                ],
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Include Options"
-        },
-        "label": {
-          "default": "Transparency handling",
-          "title": "Label",
-          "type": "string"
-        }
-      },
-      "title": "WorkflowMaskSourceVideoTreatmentConfig",
-      "type": "object"
-    },
-    "WorkflowMaskSourceVideoTreatmentDefaultOverride": {
-      "properties": {
-        "value": {
-          "enum": [
-            "preserve_transparency",
-            "fill_transparent_with_neutral_gray",
-            "remove_transparency"
-          ],
-          "title": "Value",
-          "type": "string"
-        },
-        "when": {
-          "$ref": "#/$defs/WorkflowMaskSourceVideoTreatmentCondition"
-        }
-      },
-      "required": [
-        "when",
-        "value"
-      ],
-      "title": "WorkflowMaskSourceVideoTreatmentDefaultOverride",
+      "title": "WorkflowMaskProcessingStage",
       "type": "object"
     },
     "WorkflowOptionalInputValidationRule": {
@@ -668,25 +831,53 @@
       "title": "WorkflowOptionalInputValidationRule",
       "type": "object"
     },
-    "WorkflowParamReference": {
+    "WorkflowOutputAssemblyStage": {
       "properties": {
-        "node_id": {
-          "title": "Node Id",
+        "config": {
+          "$ref": "#/$defs/WorkflowOutputAssemblyStageConfig"
+        },
+        "controls": {
+          "items": {
+            "$ref": "#/$defs/PipelineControl"
+          },
+          "title": "Controls",
+          "type": "array"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
           "type": "string"
         },
-        "param": {
-          "title": "Param",
+        "kind": {
+          "const": "output_assembly",
+          "default": "output_assembly",
+          "title": "Kind",
           "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
         }
       },
       "required": [
-        "node_id",
-        "param"
+        "id"
       ],
-      "title": "WorkflowParamReference",
+      "title": "WorkflowOutputAssemblyStage",
       "type": "object"
     },
-    "WorkflowPostprocessingConfig": {
+    "WorkflowOutputAssemblyStageConfig": {
       "properties": {
         "mode": {
           "default": "auto",
@@ -729,7 +920,49 @@
           "title": "Stitch Fps"
         }
       },
-      "title": "WorkflowPostprocessingConfig",
+      "title": "WorkflowOutputAssemblyStageConfig",
+      "type": "object"
+    },
+    "WorkflowParamReference": {
+      "properties": {
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "param": {
+          "title": "Param",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "param"
+      ],
+      "title": "WorkflowParamReference",
+      "type": "object"
+    },
+    "WorkflowParamValueReference": {
+      "properties": {
+        "kind": {
+          "const": "workflow_param",
+          "default": "workflow_param",
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "param": {
+          "title": "Param",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "param"
+      ],
+      "title": "WorkflowParamValueReference",
       "type": "object"
     },
     "WorkflowRequiredInputValidationRule": {
@@ -778,6 +1011,89 @@
         "when"
       ],
       "title": "WorkflowRuleBooleanOverride",
+      "type": "object"
+    },
+    "WorkflowRuleNode": {
+      "properties": {
+        "ignore": {
+          "default": false,
+          "title": "Ignore",
+          "type": "boolean"
+        },
+        "ignore_overrides": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WorkflowRuleBooleanOverride"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ignore Overrides"
+        },
+        "node_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Node Title"
+        },
+        "present": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleNodePresent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleSelectionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "widgets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/WorkflowRuleWidgetEntry"
+          },
+          "title": "Widgets",
+          "type": "object"
+        },
+        "widgets_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "control_after_generate",
+                "all"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Widgets Mode"
+        }
+      },
+      "title": "WorkflowRuleNode",
       "type": "object"
     },
     "WorkflowRuleNodePresent": {
@@ -1385,8 +1701,21 @@
     }
   },
   "properties": {
-    "aspect_ratio_processing": {
-      "$ref": "#/$defs/WorkflowAspectRatioProcessingConfig"
+    "default_widgets_mode": {
+      "anyOf": [
+        {
+          "enum": [
+            "control_after_generate",
+            "all"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Default Widgets Mode"
     },
     "derived_widgets": {
       "items": {
@@ -1410,9 +1739,6 @@
       "default": null,
       "title": "Input Conditions"
     },
-    "mask_processing": {
-      "$ref": "#/$defs/WorkflowMaskProcessingConfig"
-    },
     "name": {
       "anyOf": [
         {
@@ -1427,7 +1753,7 @@
     },
     "nodes": {
       "additionalProperties": {
-        "$ref": "#/$defs/ResolvedWorkflowRuleNode"
+        "$ref": "#/$defs/WorkflowRuleNode"
       },
       "title": "Nodes",
       "type": "object"
@@ -1442,8 +1768,30 @@
       "title": "Output Injections",
       "type": "object"
     },
-    "postprocessing": {
-      "$ref": "#/$defs/WorkflowPostprocessingConfig"
+    "pipeline": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "aspect_ratio": "#/$defs/WorkflowAspectRatioStage",
+            "mask_processing": "#/$defs/WorkflowMaskProcessingStage",
+            "output_assembly": "#/$defs/WorkflowOutputAssemblyStage"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/WorkflowMaskProcessingStage"
+          },
+          {
+            "$ref": "#/$defs/WorkflowAspectRatioStage"
+          },
+          {
+            "$ref": "#/$defs/WorkflowOutputAssemblyStage"
+          }
+        ]
+      },
+      "title": "Pipeline",
+      "type": "array"
     },
     "slots": {
       "additionalProperties": {
@@ -1456,7 +1804,8 @@
       "$ref": "#/$defs/WorkflowValidationConfig"
     },
     "version": {
-      "default": 1,
+      "const": 3,
+      "default": 3,
       "title": "Version",
       "type": "integer"
     }

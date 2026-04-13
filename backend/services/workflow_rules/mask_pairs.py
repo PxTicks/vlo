@@ -1,6 +1,7 @@
 from typing import Literal
 
 from services.workflow_rules.normalize import WorkflowRules
+from services.workflow_rules.pipeline import find_pipeline_stage
 
 
 MaskCroppingMode = Literal["crop", "full"]
@@ -12,9 +13,9 @@ def collect_mask_crop_pairs(
 ) -> list[tuple[str, str]]:
     """Return ``(source_node_id, mask_node_id)`` pairs for mask-crop preprocessing.
 
-    Derived-mask relations remain the default source of truth. The workflow
-    sidecar can set ``mask_processing.cropping.mode`` to ``full`` to skip
-    preprocessing.
+    Mask-processing stage targets are the source of truth. The workflow sidecar
+    can set the `crop_mode` control default to ``full`` to skip preprocessing
+    when no request override is provided.
     """
     if not isinstance(rules, dict):
         return []
@@ -22,42 +23,41 @@ def collect_mask_crop_pairs(
     if mode_override == "full":
         return []
 
-    mask_processing = rules.get("mask_processing", {})
-    legacy_mask_cropping = rules.get("mask_cropping", {})
-    if (
-        mode_override is None
-        and (
-            (
-                isinstance(mask_processing, dict)
-                and isinstance(mask_processing.get("cropping"), dict)
-                and mask_processing["cropping"].get("mode") == "full"
-            )
-            or (
-                isinstance(legacy_mask_cropping, dict)
-                and legacy_mask_cropping.get("mode") == "full"
-            )
-        )
-    ):
+    mask_stage = find_pipeline_stage(rules, kind="mask_processing")
+    if not isinstance(mask_stage, dict):
         return []
 
-    nodes_rules = rules.get("nodes", {})
-    if not isinstance(nodes_rules, dict):
+    if mode_override is None:
+        controls = mask_stage.get("controls")
+        if isinstance(controls, list):
+            for control in controls:
+                if (
+                    isinstance(control, dict)
+                    and control.get("key") == "crop_mode"
+                    and control.get("default") == "full"
+                ):
+                    return []
+
+    targets = mask_stage.get("targets")
+    if not isinstance(targets, list):
         return []
 
     pairs: list[tuple[str, str]] = []
     seen_pairs: set[tuple[str, str]] = set()
-    for node_id, node_rule in nodes_rules.items():
-        if not isinstance(node_rule, dict):
+    for target in targets:
+        if not isinstance(target, dict):
             continue
-        source_id: str | None = None
-        for mask_key in ("binary_derived_mask_of", "soft_derived_mask_of"):
-            raw_source_id = node_rule.get(mask_key)
-            if isinstance(raw_source_id, str) and raw_source_id.strip():
-                source_id = raw_source_id.strip()
-                break
-        if source_id is None:
+        source = target.get("source")
+        mask = target.get("mask")
+        if not isinstance(source, dict) or not isinstance(mask, dict):
             continue
-        pair = (source_id, str(node_id))
+        source_id = source.get("node_id")
+        mask_node_id = mask.get("node_id")
+        if not isinstance(source_id, str) or not source_id.strip():
+            continue
+        if not isinstance(mask_node_id, str) or not mask_node_id.strip():
+            continue
+        pair = (source_id.strip(), mask_node_id.strip())
         if pair in seen_pairs:
             continue
         seen_pairs.add(pair)

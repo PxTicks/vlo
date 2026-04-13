@@ -5,11 +5,16 @@
 // Do not edit it manually.
 
 export interface AspectRatioTargetNode {
-  node_id?: string | null;
-  width_param?: string | null;
-  height_param?: string | null;
-  width?: WorkflowParamReference | null;
-  height?: WorkflowParamReference | null;
+  width: WorkflowParamReference;
+  height: WorkflowParamReference;
+}
+
+export interface MaskProcessingTarget {
+  source: WorkflowParamReference;
+  mask: WorkflowParamReference;
+  mask_type?: "binary" | "soft";
+  purpose?: "video" | "audio_timing";
+  render_fps?: number | null;
 }
 
 export interface NodeOutputSource {
@@ -18,23 +23,47 @@ export interface NodeOutputSource {
   output_index?: number;
 }
 
+export interface PipelineControl {
+  key: string;
+  label?: string | null;
+  value_type?: "int" | "float" | "string" | "boolean" | "enum" | "unknown";
+  expose?: "widget" | "hidden";
+  control?: "slider" | null;
+  slider_display?: "percent" | "number" | null;
+  unit?: string | null;
+  min?: number | null;
+  max?: number | null;
+  step?: number | null;
+  default?: unknown | null;
+  options?: Array<string | number | boolean> | null;
+  include_options?: Array<string | number | boolean> | null;
+  exclude_options?: Array<string | number | boolean> | null;
+  true_value?: unknown | null;
+  false_value?: unknown | null;
+  bind?: WorkflowParamValueReference | PipelineControlReference | null;
+  default_rules?: Array<PipelineControlDefaultRule> | null;
+}
+
+export interface PipelineControlCondition {
+  ref: WorkflowParamValueReference | PipelineControlReference;
+  operator?: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
+  value?: unknown | null;
+}
+
+export interface PipelineControlDefaultRule {
+  when: PipelineControlCondition;
+  value?: unknown | null;
+}
+
+export interface PipelineControlReference {
+  kind?: "pipeline_control";
+  stage_id: string;
+  key: string;
+}
+
 export interface ResolvedOutputInjectionRule {
   source: NodeOutputSource;
   when?: WorkflowRuleWidgetInputPresenceCondition | null;
-}
-
-export interface WorkflowRuleNode {
-  ignore?: boolean;
-  ignore_overrides?: Array<WorkflowRuleBooleanOverride> | null;
-  present?: WorkflowRuleNodePresent | null;
-  widgets_mode?: "control_after_generate" | "all" | null;
-  widgets?: Record<string, WorkflowRuleWidgetEntry>;
-  selection?: WorkflowRuleSelectionConfig | null;
-  binary_derived_mask_of?: string | null;
-  soft_derived_mask_of?: string | null;
-  binary_audio_derived_mask_of?: string | null;
-  audio_derived_mask_fps?: number | null;
-  node_title?: string | null;
 }
 
 export interface WorkflowAspectRatioPostprocessConfig {
@@ -43,12 +72,20 @@ export interface WorkflowAspectRatioPostprocessConfig {
   apply_to?: "all_visual_outputs";
 }
 
-export interface WorkflowAspectRatioProcessingConfig {
+export interface WorkflowAspectRatioStage {
+  id: string;
   enabled?: boolean;
+  label?: string | null;
+  controls?: Array<PipelineControl>;
+  kind?: "aspect_ratio";
+  config?: WorkflowAspectRatioStageConfig;
+  targets?: Array<AspectRatioTargetNode>;
+}
+
+export interface WorkflowAspectRatioStageConfig {
   stride?: number;
   search_steps?: number;
   resolutions?: Array<number>;
-  target_nodes?: Array<AspectRatioTargetNode>;
   postprocess?: WorkflowAspectRatioPostprocessConfig;
 }
 
@@ -78,34 +115,13 @@ export interface WorkflowInputCondition {
   message?: string | null;
 }
 
-export interface WorkflowMaskCroppingConfig {
-  mode?: "crop" | "full";
-}
-
-export interface WorkflowMaskProcessingConfig {
-  cropping?: WorkflowMaskCroppingConfig;
-  source_video_treatment?: WorkflowMaskSourceVideoTreatmentConfig;
-}
-
-export interface WorkflowMaskSourceVideoTreatmentCondition {
-  node_id: string;
-  param: string;
-  operator?: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
-  value: string | number | boolean;
-}
-
-export interface WorkflowMaskSourceVideoTreatmentConfig {
-  default?: "preserve_transparency" | "fill_transparent_with_neutral_gray" | "remove_transparency";
-  expose_as_widget?: boolean;
-  label?: string;
-  include_options?: Array<"preserve_transparency" | "fill_transparent_with_neutral_gray" | "remove_transparency"> | null;
-  exclude_options?: Array<"preserve_transparency" | "fill_transparent_with_neutral_gray" | "remove_transparency"> | null;
-  default_overrides?: Array<WorkflowMaskSourceVideoTreatmentDefaultOverride> | null;
-}
-
-export interface WorkflowMaskSourceVideoTreatmentDefaultOverride {
-  when: WorkflowMaskSourceVideoTreatmentCondition;
-  value: "preserve_transparency" | "fill_transparent_with_neutral_gray" | "remove_transparency";
+export interface WorkflowMaskProcessingStage {
+  id: string;
+  enabled?: boolean;
+  label?: string | null;
+  controls?: Array<PipelineControl>;
+  kind?: "mask_processing";
+  targets?: Array<MaskProcessingTarget>;
 }
 
 export interface WorkflowOptionalInputValidationRule {
@@ -114,16 +130,31 @@ export interface WorkflowOptionalInputValidationRule {
   message?: string | null;
 }
 
+export interface WorkflowOutputAssemblyStage {
+  id: string;
+  enabled?: boolean;
+  label?: string | null;
+  controls?: Array<PipelineControl>;
+  kind?: "output_assembly";
+  config?: WorkflowOutputAssemblyStageConfig;
+}
+
+export interface WorkflowOutputAssemblyStageConfig {
+  mode?: "auto" | "stitch_frames_with_audio" | "none";
+  panel_preview?: "raw_outputs" | "replace_outputs";
+  on_failure?: "fallback_raw" | "show_error";
+  stitch_fps?: number | null;
+}
+
 export interface WorkflowParamReference {
   node_id: string;
   param: string;
 }
 
-export interface WorkflowPostprocessingConfig {
-  mode?: "auto" | "stitch_frames_with_audio" | "none";
-  panel_preview?: "raw_outputs" | "replace_outputs";
-  on_failure?: "fallback_raw" | "show_error";
-  stitch_fps?: number | null;
+export interface WorkflowParamValueReference {
+  kind?: "workflow_param";
+  node_id: string;
+  param: string;
 }
 
 export interface WorkflowRequiredInputValidationRule {
@@ -135,6 +166,16 @@ export interface WorkflowRequiredInputValidationRule {
 export interface WorkflowRuleBooleanOverride {
   when: WorkflowRuleWidgetInputPresenceCondition;
   value?: boolean;
+}
+
+export interface WorkflowRuleNode {
+  ignore?: boolean;
+  ignore_overrides?: Array<WorkflowRuleBooleanOverride> | null;
+  present?: WorkflowRuleNodePresent | null;
+  widgets_mode?: "control_after_generate" | "all" | null;
+  widgets?: Record<string, WorkflowRuleWidgetEntry>;
+  selection?: WorkflowRuleSelectionConfig | null;
+  node_title?: string | null;
 }
 
 export interface WorkflowRuleNodePresent {
@@ -204,15 +245,14 @@ export interface WorkflowValidationConfig {
 }
 
 export interface WorkflowRules {
-  version?: number;
+  version?: 3;
   name?: string | null;
+  default_widgets_mode?: "control_after_generate" | "all" | null;
   nodes?: Record<string, WorkflowRuleNode>;
   validation?: WorkflowValidationConfig;
   input_conditions?: Array<WorkflowInputCondition> | null;
   derived_widgets?: Array<WorkflowDualSamplerDenoiseRule>;
   output_injections?: Record<string, Record<string, ResolvedOutputInjectionRule>>;
   slots?: Record<string, WorkflowRuleSlot>;
-  mask_processing?: WorkflowMaskProcessingConfig;
-  postprocessing?: WorkflowPostprocessingConfig;
-  aspect_ratio_processing?: WorkflowAspectRatioProcessingConfig;
+  pipeline?: Array<WorkflowMaskProcessingStage | WorkflowAspectRatioStage | WorkflowOutputAssemblyStage>;
 }

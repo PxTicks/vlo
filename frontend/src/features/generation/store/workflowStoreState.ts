@@ -2,6 +2,8 @@ import * as comfyApi from "../services/comfyuiApi";
 import {
   DEFAULT_GENERATION_TARGET_RESOLUTION,
   getClosestWorkflowResolution,
+  getMaskCropDilationDefault,
+  getMaskCropModeDefault,
   getSupportedWorkflowResolutions,
   type WorkflowRuleWarning,
 } from "../services/workflowRules";
@@ -469,7 +471,8 @@ export function buildWorkflowStoreState(
           activeWorkflowRules: rules,
           rulesWorkflowSourceId: rulesSourceId,
           activeRulesWarnings: rulesWarnings,
-          maskCropMode: rules.mask_processing?.cropping?.mode ?? "crop",
+          maskCropMode: getMaskCropModeDefault(rules),
+          maskCropDilation: getMaskCropDilationDefault(rules),
         });
 
         if (isTempWorkflow && tempWorkflow) {

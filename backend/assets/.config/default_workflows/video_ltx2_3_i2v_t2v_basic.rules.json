@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "name": "LTX2.3 Basic I2V / T2V",
   "nodes": {
     "114": {
@@ -227,100 +227,118 @@
       }
     }
   },
-  "output_injections": [
-    {
-      "target_node_id": "160",
-      "target_output_index": 0,
-      "source": {
-        "kind": "node_output",
-        "node_id": "118",
-        "output_index": 0
-      },
-      "when": {
-        "kind": "input_presence",
-        "inputs": [
-          "167"
-        ],
-        "match": "all_missing"
+  "validation": {
+    "inputs": [
+      {
+        "kind": "optional",
+        "input": "167"
+      }
+    ]
+  },
+  "derived_widgets": [],
+  "output_injections": {
+    "160": {
+      "0": {
+        "source": {
+          "kind": "node_output",
+          "node_id": "118",
+          "output_index": 0
+        },
+        "when": {
+          "kind": "input_presence",
+          "inputs": [
+            "167"
+          ],
+          "match": "all_missing"
+        }
       }
     },
-    {
-      "target_node_id": "161",
-      "target_output_index": 0,
-      "source": {
-        "kind": "node_output",
-        "node_id": "108",
-        "output_index": 0
-      },
-      "when": {
-        "kind": "input_presence",
-        "inputs": [
-          "167"
-        ],
-        "match": "all_missing"
+    "161": {
+      "0": {
+        "source": {
+          "kind": "node_output",
+          "node_id": "108",
+          "output_index": 0
+        },
+        "when": {
+          "kind": "input_presence",
+          "inputs": [
+            "167"
+          ],
+          "match": "all_missing"
+        }
       }
     },
-    {
-      "target_node_id": "236",
-      "target_output_index": 0,
-      "source": {
-        "kind": "node_output",
-        "node_id": "243",
-        "output_index": 0
-      },
-      "when": {
-        "kind": "input_presence",
-        "inputs": [
-          "167"
-        ],
-        "match": "all_missing"
+    "236": {
+      "0": {
+        "source": {
+          "kind": "node_output",
+          "node_id": "243",
+          "output_index": 0
+        },
+        "when": {
+          "kind": "input_presence",
+          "inputs": [
+            "167"
+          ],
+          "match": "all_missing"
+        }
       }
     },
-    {
-      "target_node_id": "237",
-      "target_output_index": 0,
-      "source": {
-        "kind": "node_output",
-        "node_id": "244",
-        "output_index": 0
-      },
-      "when": {
-        "kind": "input_presence",
-        "inputs": [
-          "167"
-        ],
-        "match": "all_missing"
+    "237": {
+      "0": {
+        "source": {
+          "kind": "node_output",
+          "node_id": "244",
+          "output_index": 0
+        },
+        "when": {
+          "kind": "input_presence",
+          "inputs": [
+            "167"
+          ],
+          "match": "all_missing"
+        }
       }
     },
-    {
-      "target_node_id": "349",
-      "target_output_index": 0,
-      "source": {
-        "kind": "node_output",
-        "node_id": "352",
-        "output_index": 0
-      },
-      "when": {
-        "kind": "input_presence",
-        "inputs": [
-          "167"
-        ],
-        "match": "all_missing"
+    "349": {
+      "0": {
+        "source": {
+          "kind": "node_output",
+          "node_id": "352",
+          "output_index": 0
+        },
+        "when": {
+          "kind": "input_presence",
+          "inputs": [
+            "167"
+          ],
+          "match": "all_missing"
+        }
       }
     }
-  ],
+  },
+  "slots": {},
   "pipeline": [
     {
+      "id": "aspect_ratio",
       "kind": "aspect_ratio",
       "enabled": true,
-      "stride": 32,
-      "search_steps": 2,
-      "resolutions": [
-        480,
-        720,
-        1080
-      ],
-      "target_nodes": [
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolutions": [
+          480,
+          720,
+          1080
+        ],
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
         {
           "width": {
             "node_id": "292",
@@ -332,21 +350,25 @@
           }
         }
       ],
-      "postprocess": {
-        "enabled": true,
-        "mode": "stretch_exact",
-        "apply_to": "all_visual_outputs"
-      }
-    }
-  ],
-  "validation": {
-    "inputs": [
-      {
-        "kind": "optional",
-        "input": {
-          "node_id": "167"
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "options": [
+            480,
+            720,
+            1080
+          ],
+          "default": 1080
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "expose": "hidden"
         }
-      }
-    ]
-  }
+      ]
+    }
+  ]
 }

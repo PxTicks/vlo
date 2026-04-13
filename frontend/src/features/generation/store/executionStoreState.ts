@@ -7,6 +7,7 @@ import {
   prepareGenerationPlan,
 } from "../pipeline/generationPlan";
 import type { GenerationPlan, SlotValue } from "../pipeline/types";
+import { getWorkflowPostprocessingConfig } from "../services/workflowRules";
 import { isAbortError } from "../pipeline/utils/abort";
 import type { WorkflowPostprocessingConfig } from "../types";
 import { createSubmissionErrorJob } from "./submission";
@@ -91,7 +92,7 @@ function buildGenerationPlanFromState(
     widgetModes,
     derivedWidgetInputs,
     postprocessConfig: resolvePostprocessConfig(
-      state.activeWorkflowRules?.postprocessing,
+      getWorkflowPostprocessingConfig(state.activeWorkflowRules),
     ),
     workflowWarnings: state.activeRulesWarnings,
     projectConfig: {

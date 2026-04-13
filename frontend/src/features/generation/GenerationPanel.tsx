@@ -37,6 +37,7 @@ import { ComfyUIEditor } from "./components/ComfyUIEditor";
 import { GenerationInputs } from "./components/GenerationInputs";
 import {
   DEFAULT_GENERATION_RESOLUTION_OPTIONS,
+  getAspectRatioStage,
   getSupportedWorkflowResolutions,
   type WorkflowRules,
 } from "./services/workflowRules";
@@ -288,12 +289,11 @@ export function GenerationPanel() {
   );
   const fetchWorkflows = useGenerationStore((s) => s.fetchWorkflows);
   const hasMaskMappings = derivedMaskMappings.length > 0;
-  const aspectRatioProcessingConfig =
-    activeWorkflowRules?.aspect_ratio_processing ?? null;
+  const aspectRatioProcessingConfig = getAspectRatioStage(activeWorkflowRules);
   const hasAspectRatioTargets =
-    (aspectRatioProcessingConfig?.target_nodes?.length ?? 0) > 0;
+    (aspectRatioProcessingConfig?.targets?.length ?? 0) > 0;
   const showResolutionSelector = Boolean(
-    aspectRatioProcessingConfig?.enabled && hasAspectRatioTargets,
+    aspectRatioProcessingConfig?.enabled !== false && hasAspectRatioTargets,
   );
   const showSmartResolutionSelector =
     workflowMode === "smart" && showResolutionSelector;

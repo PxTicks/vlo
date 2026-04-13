@@ -1,6 +1,6 @@
 {
+  "version": 3,
   "name": "LTX2.3 FLF2V",
-  "version": 1,
   "nodes": {
     "14": {
       "widgets": {
@@ -76,5 +76,9 @@
         "message": "Provide at least one frame input."
       }
     ]
-  }
+  },
+  "derived_widgets": [],
+  "output_injections": {},
+  "slots": {},
+  "pipeline": []
 }

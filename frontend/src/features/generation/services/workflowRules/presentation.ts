@@ -7,6 +7,7 @@ import type {
   WorkflowRules,
 } from "./types";
 import { normalizeWorkflowRules } from "./normalize";
+import { getMaskProcessingStage } from "./pipeline";
 import {
   toRulesWarning,
   toSelectionConfig,
@@ -237,6 +238,30 @@ export function resolvePresentedInputsFromRules(
   const resolved: WorkflowInput[] = [];
   const derivedMaskMappings: DerivedMaskMapping[] = [];
   const ruleNodes = rules.nodes ?? {};
+  const maskProcessingStage = getMaskProcessingStage(rules);
+  const derivedMaskTargets = new Map<
+    string,
+    {
+      sourceNodeId: string;
+      maskType: "binary" | "soft";
+      purpose?: "video" | "audio_timing";
+      renderFps?: number;
+    }
+  >();
+  for (const target of maskProcessingStage?.targets ?? []) {
+    const maskKey = `${target.mask.node_id}:${target.mask.param}`;
+    derivedMaskTargets.set(maskKey, {
+      sourceNodeId: target.source.node_id,
+      maskType: target.mask_type ?? "binary",
+      ...(target.purpose ? { purpose: target.purpose } : {}),
+      ...(typeof target.render_fps === "number"
+        ? { renderFps: target.render_fps }
+        : {}),
+    });
+  }
+  const derivedMaskNodeIds = new Set(
+    [...derivedMaskTargets.keys()].map((key) => key.split(":", 1)[0]),
+  );
 
   for (const inferred of inferredInputs) {
     const nodeRule = ruleNodes[inferred.nodeId];
@@ -251,24 +276,9 @@ export function resolvePresentedInputsFromRules(
 
     // Nodes with a derived mask rule are hidden from the UI; they are
     // auto-populated during preprocessing with the rendered mask.
-    const derivedMask = nodeRule?.binary_derived_mask_of
-      ? ({
-          sourceNodeId: nodeRule.binary_derived_mask_of,
-          maskType: "binary",
-        } as const)
-      : nodeRule?.soft_derived_mask_of
-        ? ({
-            sourceNodeId: nodeRule.soft_derived_mask_of,
-            maskType: "soft",
-          } as const)
-        : nodeRule?.binary_audio_derived_mask_of
-          ? ({
-              sourceNodeId: nodeRule.binary_audio_derived_mask_of,
-              maskType: "binary",
-              purpose: "audio_timing",
-              renderFps: nodeRule.audio_derived_mask_fps ?? undefined,
-            } as const)
-        : null;
+    const derivedMask = derivedMaskTargets.get(
+      `${inferred.nodeId}:${present?.param ?? inferred.param}`,
+    );
     if (derivedMask) {
       derivedMaskMappings.push({
         maskNodeId: inferred.nodeId,
@@ -348,6 +358,7 @@ export function resolvePresentedInputsFromRules(
     const present = nodeRule.present;
     const selectionConfig = toSelectionConfig(nodeRule.selection ?? undefined);
     if (!present || present.enabled === false) continue;
+    if (derivedMaskNodeIds.has(nodeId)) continue;
     if (!present.input_type) {
       presentationWarnings.push(
         toRulesWarning(

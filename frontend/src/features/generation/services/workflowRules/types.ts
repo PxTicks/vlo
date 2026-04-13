@@ -10,27 +10,32 @@ import type {
   DerivedMaskType,
 } from "../../pipeline/types";
 import type {
-  WorkflowAspectRatioProcessingConfig,
   WorkflowAtLeastNInputValidationRule,
   WorkflowDualSamplerDenoiseRule,
-  WorkflowMaskCroppingConfig,
-  WorkflowMaskProcessingConfig,
+  WorkflowOutputAssemblyStageConfig,
   WorkflowOptionalInputValidationRule,
-  WorkflowPostprocessingConfig,
   WorkflowRequiredInputValidationRule,
   WorkflowRules,
 } from "./generated";
 
 export type {
-  WorkflowAspectRatioProcessingConfig,
+  AspectRatioTargetNode,
+  MaskProcessingTarget,
+  PipelineControl,
+  PipelineControlCondition,
+  PipelineControlDefaultRule,
+  PipelineControlReference,
+  WorkflowAspectRatioPostprocessConfig,
+  WorkflowAspectRatioStage,
+  WorkflowAspectRatioStageConfig,
   WorkflowDualSamplerDenoiseRule,
   WorkflowInputCondition,
-  WorkflowMaskCroppingConfig,
-  WorkflowMaskProcessingConfig,
-  WorkflowMaskSourceVideoTreatmentConfig,
+  WorkflowMaskProcessingStage,
   WorkflowOptionalInputValidationRule,
+  WorkflowOutputAssemblyStage,
+  WorkflowOutputAssemblyStageConfig,
   WorkflowParamReference,
-  WorkflowPostprocessingConfig,
+  WorkflowParamValueReference,
   WorkflowRequiredInputValidationRule,
   WorkflowRuleNode,
   WorkflowRuleNodePresent,
@@ -40,6 +45,8 @@ export type {
   WorkflowRules,
   WorkflowValidationConfig,
 } from "./generated";
+
+export type WorkflowPostprocessingConfig = WorkflowOutputAssemblyStageConfig;
 
 export type WorkflowInputValidationRule =
   | WorkflowRequiredInputValidationRule
@@ -78,108 +85,32 @@ export const DEFAULT_WORKFLOW_POSTPROCESSING: WorkflowPostprocessingConfig = {
   on_failure: "fallback_raw",
 };
 
-export const DEFAULT_WORKFLOW_MASK_CROPPING: WorkflowMaskCroppingConfig = {
-  mode: "crop",
-};
-
-export const DEFAULT_WORKFLOW_MASK_PROCESSING: WorkflowMaskProcessingConfig = {
-  cropping: { ...DEFAULT_WORKFLOW_MASK_CROPPING },
-  source_video_treatment: {
-    default: "preserve_transparency",
-    expose_as_widget: true,
-    label: "Transparency handling",
-  },
-};
-
-export const DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING: WorkflowAspectRatioProcessingConfig =
-  {
-    enabled: true,
-    stride: 16,
-    search_steps: 2,
-    resolutions: [],
-    target_nodes: [],
-    postprocess: {
-      enabled: true,
-      mode: "stretch_exact",
-      apply_to: "all_visual_outputs",
-    },
-  };
-
 export function createDefaultWorkflowPostprocessing(): WorkflowPostprocessingConfig {
   return { ...DEFAULT_WORKFLOW_POSTPROCESSING };
 }
 
-export function createDefaultWorkflowMaskCropping(): WorkflowMaskCroppingConfig {
-  return { ...DEFAULT_WORKFLOW_MASK_CROPPING };
-}
-
-export function createDefaultWorkflowMaskProcessing(): WorkflowMaskProcessingConfig {
-  return {
-    cropping: { ...DEFAULT_WORKFLOW_MASK_PROCESSING.cropping },
-    source_video_treatment: {
-      ...DEFAULT_WORKFLOW_MASK_PROCESSING.source_video_treatment,
-    },
-  };
-}
-
-export function createDefaultWorkflowAspectRatioProcessing(): WorkflowAspectRatioProcessingConfig {
-  return {
-    ...DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING,
-    resolutions: [...(DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING.resolutions ?? [])],
-    target_nodes: [
-      ...(DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING.target_nodes ?? []),
-    ],
-    postprocess: {
-      ...(DEFAULT_WORKFLOW_ASPECT_RATIO_PROCESSING.postprocess ?? {}),
-    },
-  };
+function cloneJsonValue<T>(value: T): T {
+  return structuredClone(value);
 }
 
 export function createDefaultWorkflowRules(
   overrides: Partial<WorkflowRules> = {},
 ): WorkflowRules {
-  const aspectRatioProcessing = overrides.aspect_ratio_processing;
-  const maskProcessing = overrides.mask_processing;
-
   return {
-    version: overrides.version ?? 1,
+    version: 3,
     ...(overrides.name !== undefined ? { name: overrides.name } : {}),
-    nodes: overrides.nodes ?? {},
-    validation: overrides.validation ?? { inputs: [] },
-    ...(overrides.input_conditions !== undefined
-      ? { input_conditions: overrides.input_conditions }
+    ...(overrides.default_widgets_mode !== undefined
+      ? { default_widgets_mode: overrides.default_widgets_mode }
       : {}),
-    derived_widgets: overrides.derived_widgets ?? [],
-    output_injections: overrides.output_injections ?? {},
-    slots: overrides.slots ?? {},
-    mask_processing: maskProcessing
-      ? {
-          ...createDefaultWorkflowMaskProcessing(),
-          ...maskProcessing,
-          cropping: {
-            ...createDefaultWorkflowMaskProcessing().cropping,
-            ...(maskProcessing.cropping ?? {}),
-          },
-          source_video_treatment: {
-            ...createDefaultWorkflowMaskProcessing().source_video_treatment,
-            ...(maskProcessing.source_video_treatment ?? {}),
-          },
-        }
-      : createDefaultWorkflowMaskProcessing(),
-    postprocessing:
-      overrides.postprocessing ?? createDefaultWorkflowPostprocessing(),
-    aspect_ratio_processing: aspectRatioProcessing
-      ? {
-          ...createDefaultWorkflowAspectRatioProcessing(),
-          ...aspectRatioProcessing,
-          resolutions: [...(aspectRatioProcessing.resolutions ?? [])],
-          target_nodes: [...(aspectRatioProcessing.target_nodes ?? [])],
-          postprocess: {
-            ...createDefaultWorkflowAspectRatioProcessing().postprocess,
-            ...(aspectRatioProcessing.postprocess ?? {}),
-          },
-        }
-      : createDefaultWorkflowAspectRatioProcessing(),
+    nodes: cloneJsonValue(overrides.nodes ?? {}),
+    validation: cloneJsonValue(overrides.validation ?? { inputs: [] }),
+    ...(overrides.input_conditions !== undefined
+      ? { input_conditions: cloneJsonValue(overrides.input_conditions) }
+      : {}),
+    derived_widgets: cloneJsonValue(overrides.derived_widgets ?? []),
+    output_injections: cloneJsonValue(overrides.output_injections ?? {}),
+    slots: cloneJsonValue(overrides.slots ?? {}),
+    pipeline: cloneJsonValue(overrides.pipeline ?? []),
   };
 }
 

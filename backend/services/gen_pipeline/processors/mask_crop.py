@@ -5,19 +5,18 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-from services.gen_pipeline.processors.utils.aspect_ratio_processing import _parse_aspect_ratio
 from services.gen_pipeline.context import BackendPipelineContext
+from services.gen_pipeline.processors.utils.aspect_ratio_processing import _parse_aspect_ratio
 from services.gen_pipeline.types import Processor, ProcessorMeta
-from services.workflow_rules.schema import has_pipeline_stage, pipeline_stage_precedes
 from services.workflow_rules import collect_mask_crop_pairs
 from services.workflow_rules.mask_pairs import collect_mask_crop_pairs as _collect_pairs_raw
+from services.workflow_rules.pipeline import find_pipeline_stage
 
 
 log = logging.getLogger(__name__)
 
 
 def _has_mask_relations(rules: dict[str, Any] | None) -> bool:
-    """Check if rules contain any derived-mask relations (ignoring mode)."""
     return bool(_collect_pairs_raw(rules, mode_override="crop"))
 
 
@@ -40,15 +39,11 @@ def _find_buffered_video_key(
 
 
 class _MaskCropProcessor:
+    backend_preprocess_checkpoint = "before_upload"
     meta = ProcessorMeta(
         name="mask_crop",
-        reads=(
-            "buffered_media",
-            "rules",
-            "target_aspect_ratio",
-            "mask_crop_dilation",
-        ),
-        writes=("buffered_media", "mask_crop_metadata", "processed_mask_bytes"),
+        reads=("buffered_media", "rules", "resolved_pipeline_controls"),
+        writes=("buffered_media", "pipeline_outputs"),
         description="Crops buffered source and mask videos to the mask bounds before upload",
     )
 
@@ -57,54 +52,54 @@ class _MaskCropProcessor:
         analyze_mask_video_bounds_fn: Callable[..., Any],
         crop_video_fn: Callable[[bytes, tuple[int, int, int, int]], bytes],
         get_video_dimensions_fn: Callable[[bytes], tuple[int, int]],
-        apply_aspect_ratio_processing_fn: Callable[..., Any] | None = None,
+        _apply_aspect_ratio_processing_fn: Callable[..., Any] | None = None,
     ):
         self._analyze_mask_video_bounds = analyze_mask_video_bounds_fn
         self._crop_video = crop_video_fn
         self._get_video_dimensions = get_video_dimensions_fn
-        self._apply_aspect_ratio_processing = apply_aspect_ratio_processing_fn
 
     def is_active(self, ctx: BackendPipelineContext) -> bool:
         return bool(ctx.buffered_media) and _has_mask_relations(ctx.rules)
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
-        if (
-            self._apply_aspect_ratio_processing is not None
-            and has_pipeline_stage(ctx.rules_model, "aspect_ratio")
-            and has_pipeline_stage(ctx.rules_model, "mask_processing")
-            and pipeline_stage_precedes(ctx.rules_model, "aspect_ratio", "mask_processing")
-            and not ctx.aspect_ratio_applied
-        ):
-            (
-                ctx.aspect_ratio_metadata,
-                aspect_ratio_processing_warnings,
-            ) = self._apply_aspect_ratio_processing(
-                ctx.workflow,
-                ctx.rules,
-                ctx.target_aspect_ratio,
-                ctx.target_resolution,
-            )
-            ctx.warnings.extend(aspect_ratio_processing_warnings)
-            ctx.aspect_ratio_applied = True
+        mask_stage = find_pipeline_stage(ctx.rules, kind="mask_processing")
+        if not isinstance(mask_stage, dict):
+            return
+        mask_stage_id = mask_stage.get("id")
+        if not isinstance(mask_stage_id, str) or not mask_stage_id:
+            return
 
-        mask_stage_enabled = has_pipeline_stage(ctx.rules_model, "mask_processing")
+        mask_controls = ctx.resolved_pipeline_controls.get(mask_stage_id, {})
+        crop_mode = mask_controls.get("crop_mode")
+        crop_dilation = mask_controls.get("crop_dilation")
 
-        # Check if cropping is enabled (mode is "crop" and dilation is set)
+        aspect_stage = find_pipeline_stage(ctx.rules, kind="aspect_ratio")
+        aspect_control_values: dict[str, Any] = {}
+        if isinstance(aspect_stage, dict):
+            aspect_stage_id = aspect_stage.get("id")
+            if isinstance(aspect_stage_id, str) and aspect_stage_id:
+                aspect_control_values = ctx.resolved_pipeline_controls.get(
+                    aspect_stage_id,
+                    {},
+                )
+
         should_crop = (
-            mask_stage_enabled
-            and ctx.mask_crop_dilation is not None
-            and ctx.mask_crop_dilation >= 0
-            and bool(collect_mask_crop_pairs(ctx.rules, ctx.mask_crop_mode))
+            crop_mode != "full"
+            and isinstance(crop_dilation, (int, float))
+            and float(crop_dilation) >= 0
+            and bool(collect_mask_crop_pairs(ctx.rules, crop_mode))
         )
 
+        stage_outputs = ctx.pipeline_outputs.setdefault(mask_stage_id, {})
+
         if not should_crop:
-            ctx.mask_crop_metadata = {"mode": "full"}
-            # Capture unmodified mask bytes for frontend ingestion
-            all_pairs = _collect_pairs_raw(ctx.rules, mode_override="crop")
-            for _, mask_node_id in all_pairs:
+            stage_outputs["mask_crop_metadata"] = {"mode": "full"}
+            for _, mask_node_id in _collect_pairs_raw(ctx.rules, mode_override="crop"):
                 mask_buffered_key = _find_buffered_video_key(ctx.buffered_media, mask_node_id)
                 if mask_buffered_key is not None:
-                    ctx.processed_mask_bytes = ctx.buffered_media[mask_buffered_key]["bytes"]
+                    stage_outputs["processed_mask_bytes"] = ctx.buffered_media[
+                        mask_buffered_key
+                    ]["bytes"]
                     break
             return
 
@@ -112,25 +107,22 @@ class _MaskCropProcessor:
             (source_node_id, mask_node_id)
             for source_node_id, mask_node_id in collect_mask_crop_pairs(
                 ctx.rules,
-                ctx.mask_crop_mode,
+                crop_mode if isinstance(crop_mode, str) else None,
             )
             if _find_buffered_video_key(ctx.buffered_media, source_node_id) is not None
             and _find_buffered_video_key(ctx.buffered_media, mask_node_id) is not None
         ]
         if not mask_pairs:
-            ctx.mask_crop_metadata = {"mode": "full"}
+            stage_outputs["mask_crop_metadata"] = {"mode": "full"}
             return
 
-        parsed_ar = _parse_aspect_ratio(ctx.target_aspect_ratio)
+        parsed_ar = _parse_aspect_ratio(aspect_control_values.get("target_aspect_ratio"))
         target_ar = (parsed_ar[0] / parsed_ar[1]) if parsed_ar else None
         if target_ar is None:
-            ctx.mask_crop_metadata = {"mode": "full"}
+            stage_outputs["mask_crop_metadata"] = {"mode": "full"}
             return
 
         cropped_sources: set[str] = set()
-        # Future: support mask-batch metadata by returning per-pair crop entries
-        # keyed by source/mask node. The main complexity is that one source can
-        # be shared by multiple masks with different crop regions.
         last_successful_mask_crop_region: tuple[int, int, int, int] | None = None
         last_successful_mask_container_dims: tuple[int, int] | None = None
 
@@ -139,13 +131,14 @@ class _MaskCropProcessor:
             mask_buffered_key = _find_buffered_video_key(ctx.buffered_media, mask_node_id)
             if source_buffered_key is None or mask_buffered_key is None:
                 continue
+
             mask_data = ctx.buffered_media[mask_buffered_key]["bytes"]
             try:
                 container_dims = self._get_video_dimensions(mask_data)
                 crop_region = self._analyze_mask_video_bounds(
                     mask_data,
                     target_ar=target_ar,
-                    dilation=ctx.mask_crop_dilation,
+                    dilation=float(crop_dilation),
                 )
             except Exception as exc:
                 log.warning(
@@ -159,12 +152,6 @@ class _MaskCropProcessor:
             if crop_region is None:
                 continue
 
-            log.info(
-                "[mask-crop] Cropping video %s + mask %s to %s",
-                source_node_id,
-                mask_node_id,
-                crop_region,
-            )
             try:
                 ctx.buffered_media[mask_buffered_key]["bytes"] = self._crop_video(
                     mask_data,
@@ -181,27 +168,26 @@ class _MaskCropProcessor:
             last_successful_mask_crop_region = crop_region
             last_successful_mask_container_dims = container_dims
 
-            if source_node_id in cropped_sources:
-                continue
+            if source_node_id not in cropped_sources:
+                try:
+                    ctx.buffered_media[source_buffered_key]["bytes"] = self._crop_video(
+                        ctx.buffered_media[source_buffered_key]["bytes"],
+                        crop_region,
+                    )
+                    cropped_sources.add(source_node_id)
+                except Exception as exc:
+                    log.warning(
+                        "[mask-crop] Source crop encoding failed for %s: %s",
+                        source_node_id,
+                        exc,
+                    )
 
-            try:
-                ctx.buffered_media[source_buffered_key]["bytes"] = self._crop_video(
-                    ctx.buffered_media[source_buffered_key]["bytes"],
-                    crop_region,
-                )
-                cropped_sources.add(source_node_id)
-            except Exception as exc:
-                log.warning(
-                    "[mask-crop] Source crop encoding failed for %s: %s",
-                    source_node_id,
-                    exc,
-                )
-
-        # Capture processed mask bytes (cropped or original) for frontend ingestion
         for _, mask_node_id in mask_pairs:
             mask_buffered_key = _find_buffered_video_key(ctx.buffered_media, mask_node_id)
             if mask_buffered_key is not None:
-                ctx.processed_mask_bytes = ctx.buffered_media[mask_buffered_key]["bytes"]
+                stage_outputs["processed_mask_bytes"] = ctx.buffered_media[
+                    mask_buffered_key
+                ]["bytes"]
                 break
 
         if (
@@ -215,7 +201,7 @@ class _MaskCropProcessor:
             original_diag = math.sqrt(container_w ** 2 + container_h ** 2)
             cropped_diag = math.sqrt(crop_w ** 2 + crop_h ** 2)
             scale = cropped_diag / original_diag if original_diag > 0 else 1.0
-            ctx.mask_crop_metadata = {
+            stage_outputs["mask_crop_metadata"] = {
                 "mode": "cropped",
                 "crop_position": [x1, y1],
                 "crop_size": [crop_w, crop_h],
@@ -223,7 +209,7 @@ class _MaskCropProcessor:
                 "scale": round(scale, 6),
             }
         else:
-            ctx.mask_crop_metadata = {"mode": "full"}
+            stage_outputs["mask_crop_metadata"] = {"mode": "full"}
 
 
 def create_mask_crop_processor(

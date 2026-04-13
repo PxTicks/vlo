@@ -5,6 +5,10 @@ import type {
   WorkflowRules,
 } from "../services/workflowRules";
 import {
+  getAspectRatioStage,
+  getMaskProcessingStage,
+} from "../services/workflowRules";
+import {
   buildGeneratedCreationMetadata,
   findPreparedMaskFallback,
 } from "../store/metadata";
@@ -248,6 +252,7 @@ export async function prepareGenerationPlan(
   const request = await frontendPreprocess(
     plan.workflow.workflow,
     plan.workflow.workflowId,
+    plan.workflow.workflowRules,
     plan.workflow.workflowInputs,
     plan.preprocess.slotValues,
     options.clientId,
@@ -290,13 +295,34 @@ export function buildSubmittedGeneration(
     ? response.workflow_warnings
     : [];
   const appliedWidgetValues = response.applied_widget_values ?? {};
-  const aspectRatioProcessing = response.aspect_ratio_processing ?? null;
+  const pipelineOutputs = response.pipeline_outputs ?? {};
+  const aspectRatioStage = getAspectRatioStage(
+    prepared.plan.workflow.workflowRules,
+  );
+  const aspectRatioProcessing =
+    aspectRatioStage &&
+    typeof pipelineOutputs[aspectRatioStage.id] === "object" &&
+    pipelineOutputs[aspectRatioStage.id] !== null
+      ? ((pipelineOutputs[aspectRatioStage.id]?.aspect_ratio_processing ??
+          null) as SubmittedGeneration["aspectRatioProcessing"])
+      : null;
   const generationMetadata = structuredClone(
     prepared.plan.metadata.generationMetadata,
   );
 
-  if (response.mask_crop_metadata) {
-    generationMetadata.maskCropMetadata = response.mask_crop_metadata;
+  const maskProcessingStage = getMaskProcessingStage(
+    prepared.plan.workflow.workflowRules,
+  );
+  const maskPipelineOutput =
+    maskProcessingStage &&
+    typeof pipelineOutputs[maskProcessingStage.id] === "object" &&
+    pipelineOutputs[maskProcessingStage.id] !== null
+      ? pipelineOutputs[maskProcessingStage.id]
+      : null;
+
+  if (maskPipelineOutput?.mask_crop_metadata) {
+    generationMetadata.maskCropMetadata =
+      maskPipelineOutput.mask_crop_metadata as typeof generationMetadata.maskCropMetadata;
   }
   if (response.comfyui_prompt) {
     generationMetadata.comfyuiPrompt = response.comfyui_prompt;
@@ -312,8 +338,10 @@ export function buildSubmittedGeneration(
     prepared.plan.preprocess.derivedMaskMappings,
     prepared.plan.workflow.workflowInputs,
   );
-  if (response.processed_mask_video) {
-    preparedMaskFile = decodeProcessedMaskVideo(response.processed_mask_video);
+  if (typeof maskPipelineOutput?.processed_mask_video === "string") {
+    preparedMaskFile = decodeProcessedMaskVideo(
+      maskPipelineOutput.processed_mask_video,
+    );
   }
 
   const saveImageWebsocketNodeIds = getSaveImageWebsocketNodeIds(

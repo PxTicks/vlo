@@ -700,11 +700,6 @@ async def generate(request: Request):
     client_id = client_id_raw if isinstance(client_id_raw, str) else str(uuid.uuid4())
     workflow_id_raw = form.get("workflow_id")
     workflow_id = workflow_id_raw if isinstance(workflow_id_raw, str) else None
-    target_aspect_ratio_raw = form.get("target_aspect_ratio")
-    target_aspect_ratio = (
-        target_aspect_ratio_raw if isinstance(target_aspect_ratio_raw, str) else None
-    )
-    target_resolution_raw = form.get("target_resolution")
 
     # --- Load workflow (Expect frontend to provide it) ---
     workflow_json = form.get("workflow")
@@ -756,6 +751,31 @@ async def generate(request: Request):
             )
         workflow_rules = parsed_workflow_rules
 
+    pipeline_inputs: dict[str, dict[str, Any]] = {}
+    pipeline_inputs_json = form.get("pipeline_inputs")
+    if isinstance(pipeline_inputs_json, str) and pipeline_inputs_json.strip():
+        try:
+            parsed_pipeline_inputs = json.loads(pipeline_inputs_json)
+        except json.JSONDecodeError:
+            return error_response(
+                400,
+                "invalid_pipeline_inputs_payload",
+                "Pipeline inputs payload must be valid JSON",
+                retryable=False,
+            )
+        if not isinstance(parsed_pipeline_inputs, dict):
+            return error_response(
+                400,
+                "invalid_pipeline_inputs_payload",
+                "Pipeline inputs payload must be an object",
+                retryable=False,
+            )
+        pipeline_inputs = {
+            stage_id: values
+            for stage_id, values in parsed_pipeline_inputs.items()
+            if isinstance(stage_id, str) and isinstance(values, dict)
+        }
+
     # --- Collect injections from form fields ---
     injections: dict[str, dict[str, Any]] = {}
     workflow_warnings: list[dict[str, Any]] = []
@@ -768,21 +788,6 @@ async def generate(request: Request):
     # Media uploads are buffered so validation can run before dispatch, and
     # video-specific preprocessors can still mutate bytes before upload.
     buffered_media: dict[str, dict[str, Any]] = {}
-
-    mask_crop_dilation_raw = form.get("mask_crop_dilation")
-    mask_crop_dilation: float | None = None
-    if isinstance(mask_crop_dilation_raw, str) and mask_crop_dilation_raw.strip():
-        try:
-            mask_crop_dilation = float(mask_crop_dilation_raw)
-        except ValueError:
-            pass
-
-    mask_crop_mode_raw = form.get("mask_crop_mode")
-    mask_crop_mode: str | None = None
-    if isinstance(mask_crop_mode_raw, str):
-        normalized_mask_crop_mode = mask_crop_mode_raw.strip().lower()
-        if normalized_mask_crop_mode in {"crop", "full"}:
-            mask_crop_mode = normalized_mask_crop_mode
 
     node_map = _resolve_input_node_map()
 
@@ -942,10 +947,7 @@ async def generate(request: Request):
         workflow_id=workflow_id,
         rules=workflow_rules,
         rules_override_provided=workflow_rules is not None,
-        target_aspect_ratio=target_aspect_ratio,
-        target_resolution_raw=target_resolution_raw,
-        mask_crop_dilation=mask_crop_dilation,
-        mask_crop_mode=mask_crop_mode,
+        pipeline_inputs=pipeline_inputs,
         injections=injections,
         widget_overrides=widget_overrides,
         derived_widget_values=derived_widget_values,

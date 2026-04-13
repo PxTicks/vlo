@@ -9,11 +9,18 @@ describe("derivedMaskVideoTreatment", () => {
   it("reads the default source video treatment from mask_processing rules", () => {
     expect(
       resolveDefaultDerivedMaskSourceVideoTreatment({
-        mask_processing: {
-          source_video_treatment: {
-            default: "remove_transparency",
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            controls: [
+              {
+                key: "source_video_treatment",
+                default: "remove_transparency",
+              },
+            ],
           },
-        },
+        ],
       }),
     ).toBe("remove_transparency");
   });
@@ -22,22 +29,32 @@ describe("derivedMaskVideoTreatment", () => {
     expect(
       resolveDefaultDerivedMaskSourceVideoTreatment(
         {
-          mask_processing: {
-            source_video_treatment: {
-              default: "fill_transparent_with_neutral_gray",
-              default_overrides: [
+          pipeline: [
+            {
+              id: "mask_processing",
+              kind: "mask_processing",
+              controls: [
                 {
-                  when: {
-                    node_id: "92",
-                    param: "denoise",
-                    operator: "lt",
-                    value: 1,
-                  },
-                  value: "remove_transparency",
+                  key: "source_video_treatment",
+                  default: "fill_transparent_with_neutral_gray",
+                  default_rules: [
+                    {
+                      when: {
+                        ref: {
+                          kind: "workflow_param",
+                          node_id: "92",
+                          param: "denoise",
+                        },
+                        operator: "lt",
+                        value: 1,
+                      },
+                      value: "remove_transparency",
+                    },
+                  ],
                 },
               ],
             },
-          },
+          ],
         },
         {
           workflow: {

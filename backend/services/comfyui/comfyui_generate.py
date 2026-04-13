@@ -15,7 +15,6 @@ from services.gen_pipeline.processors import (
     build_backend_preprocessors,
 )
 from services.gen_pipeline.processors.utils.video_crop import analyze_mask_video_bounds, crop_video, get_video_dimensions
-from services.workflow_rules.mask_pairs import MaskCroppingMode
 from services.workflow_rules.object_info import build_input_node_map
 from services.workflow_rules.input_labels import default_input_label
 
@@ -47,10 +46,7 @@ class GenerationInput:
     workflow_id: str | None = None
     rules: dict[str, Any] | None = None
     rules_override_provided: bool = False
-    target_aspect_ratio: str | None = None
-    target_resolution_raw: Any = None
-    mask_crop_dilation: float | None = None
-    mask_crop_mode: MaskCroppingMode | None = None
+    pipeline_inputs: dict[str, dict[str, Any]] = field(default_factory=dict)
     injections: dict[str, dict[str, Any]] = field(default_factory=dict)
     widget_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     derived_widget_values: dict[str, Any] = field(default_factory=dict)
@@ -231,15 +227,13 @@ def _build_postprocess_response(
     comfyui_response: httpx.Response,
     workflow_warnings: list[dict[str, Any]] | None = None,
     applied_widget_values: dict[str, str] | None = None,
-    aspect_ratio_processing: dict[str, Any] | None = None,
-    mask_crop_metadata: dict[str, Any] | None = None,
-    processed_mask_bytes: bytes | None = None,
+    pipeline_outputs: dict[str, dict[str, Any]] | None = None,
     comfyui_prompt: dict[str, Any] | None = None,
     comfyui_workflow: dict[str, Any] | None = None,
 ) -> GenerationResult:
     """Wraps the ComfyUI response, optionally enriching JSON payloads with metadata."""
     media_type = comfyui_response.headers.get("content-type", "application/json")
-    if not workflow_warnings and not applied_widget_values and not aspect_ratio_processing and not mask_crop_metadata and not processed_mask_bytes and not comfyui_prompt and not comfyui_workflow:
+    if not workflow_warnings and not applied_widget_values and not pipeline_outputs and not comfyui_prompt and not comfyui_workflow:
         return GenerationResult(
             content=comfyui_response.content,
             status_code=comfyui_response.status_code,
@@ -267,12 +261,19 @@ def _build_postprocess_response(
             payload["workflow_warnings"] = workflow_warnings
         if applied_widget_values:
             payload["applied_widget_values"] = applied_widget_values
-        if aspect_ratio_processing:
-            payload["aspect_ratio_processing"] = aspect_ratio_processing
-        if mask_crop_metadata:
-            payload["mask_crop_metadata"] = mask_crop_metadata
-        if processed_mask_bytes:
-            payload["processed_mask_video"] = base64.b64encode(processed_mask_bytes).decode("ascii")
+        if pipeline_outputs:
+            serialized_outputs = {
+                stage_id: dict(values)
+                for stage_id, values in pipeline_outputs.items()
+            }
+            for values in serialized_outputs.values():
+                processed_mask_bytes = values.get("processed_mask_bytes")
+                if isinstance(processed_mask_bytes, bytes):
+                    values["processed_mask_video"] = base64.b64encode(
+                        processed_mask_bytes
+                    ).decode("ascii")
+                    values.pop("processed_mask_bytes", None)
+            payload["pipeline_outputs"] = serialized_outputs
         if comfyui_prompt:
             payload["comfyui_prompt"] = comfyui_prompt
         if comfyui_workflow:
@@ -297,10 +298,7 @@ def build_backend_context(
         workflow_id=gen_input.workflow_id,
         rules=gen_input.rules,
         rules_override_provided=gen_input.rules_override_provided,
-        target_aspect_ratio=gen_input.target_aspect_ratio,
-        target_resolution=gen_input.target_resolution_raw,
-        mask_crop_dilation=gen_input.mask_crop_dilation,
-        mask_crop_mode=gen_input.mask_crop_mode,
+        pipeline_inputs=gen_input.pipeline_inputs,
         injections=gen_input.injections,
         widget_overrides=gen_input.widget_overrides,
         derived_widget_values=gen_input.derived_widget_values,
@@ -359,7 +357,7 @@ async def dispatch_to_comfyui(ctx: BackendPipelineContext) -> None:
     await run_processors(dispatch_processors, ctx)
 
 
-def run_backend_postprocess(ctx: BackendPipelineContext) -> GenerationResult:
+def finalize_backend_response(ctx: BackendPipelineContext) -> GenerationResult:
     """Backend postprocess phase.
 
     This is intentionally a thin response-enrichment step today. It exists as a
@@ -373,12 +371,13 @@ def run_backend_postprocess(ctx: BackendPipelineContext) -> GenerationResult:
         ctx.comfyui_response,
         workflow_warnings=ctx.warnings or None,
         applied_widget_values=ctx.applied_widget_values or None,
-        aspect_ratio_processing=ctx.aspect_ratio_metadata,
-        mask_crop_metadata=ctx.mask_crop_metadata,
-        processed_mask_bytes=ctx.processed_mask_bytes,
+        pipeline_outputs=ctx.pipeline_outputs or None,
         comfyui_prompt=ctx.workflow or None,
         comfyui_workflow=ctx.graph_data,
     )
+
+
+run_backend_postprocess = finalize_backend_response
 
 
 async def execute_generation(
@@ -395,4 +394,4 @@ async def execute_generation(
     ctx = build_backend_context(gen_input, client)
     await run_backend_preprocess(ctx)
     await dispatch_to_comfyui(ctx)
-    return run_backend_postprocess(ctx)
+    return finalize_backend_response(ctx)

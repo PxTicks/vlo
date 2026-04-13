@@ -16,7 +16,6 @@ from services.workflow_rules.derived_mask_video_treatment import (
     DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
     DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_LABEL,
     LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
-    VISUAL_DERIVED_MASK_RULE_KEYS,
     create_derived_mask_source_video_treatment_widget_rule,
     normalize_derived_mask_source_video_treatment,
     normalize_derived_mask_source_video_treatment_list,
@@ -38,6 +37,7 @@ from services.workflow_rules.node_parsing import (
     resolve_widget_param_metadata,
 )
 from services.workflow_rules.normalize import WorkflowRules
+from services.workflow_rules.pipeline import find_pipeline_stage, find_stage_control
 from services.workflow_rules.schema import ResolvedWorkflowRules
 from services.workflow_rules.schema import dump_resolved_rules
 
@@ -321,18 +321,26 @@ def _apply_length_widget_policy(
 def _collect_visual_derived_mask_source_node_ids(
     rules: WorkflowRules,
 ) -> set[str]:
-    nodes = rules.get("nodes")
-    if not isinstance(nodes, dict):
+    mask_stage = find_pipeline_stage(rules, kind="mask_processing")
+    if not isinstance(mask_stage, dict):
         return set()
 
     source_node_ids: set[str] = set()
-    for node_rule in nodes.values():
-        if not isinstance(node_rule, dict):
+    targets = mask_stage.get("targets")
+    if not isinstance(targets, list):
+        return source_node_ids
+
+    for target in targets:
+        if not isinstance(target, dict):
             continue
-        for mask_key in VISUAL_DERIVED_MASK_RULE_KEYS:
-            raw_source_id = node_rule.get(mask_key)
-            if isinstance(raw_source_id, str) and raw_source_id.strip():
-                source_node_ids.add(raw_source_id.strip())
+        if target.get("purpose") == "audio_timing":
+            continue
+        source = target.get("source")
+        if not isinstance(source, dict):
+            continue
+        raw_source_id = source.get("node_id")
+        if isinstance(raw_source_id, str) and raw_source_id.strip():
+            source_node_ids.add(raw_source_id.strip())
     return source_node_ids
 
 
@@ -359,11 +367,11 @@ def _resolve_mask_processing_source_video_treatment_config(
     option_values: list[str] | None = None
     default_overrides: list[dict[str, Any]] | None = None
 
-    mask_processing = rules.get("mask_processing")
-    if not isinstance(mask_processing, dict):
+    mask_stage = find_pipeline_stage(rules, kind="mask_processing")
+    if not isinstance(mask_stage, dict):
         return default, label, expose_as_widget, option_values, default_overrides
 
-    source_video_treatment = mask_processing.get("source_video_treatment")
+    source_video_treatment = find_stage_control(mask_stage, "source_video_treatment")
     if not isinstance(source_video_treatment, dict):
         return default, label, expose_as_widget, option_values, default_overrides
 
@@ -375,9 +383,9 @@ def _resolve_mask_processing_source_video_treatment_config(
     if isinstance(raw_label, str) and raw_label.strip():
         label = raw_label.strip()
 
-    raw_expose_as_widget = source_video_treatment.get("expose_as_widget")
-    if isinstance(raw_expose_as_widget, bool):
-        expose_as_widget = raw_expose_as_widget
+    raw_expose_as_widget = source_video_treatment.get("expose")
+    if raw_expose_as_widget in {"widget", "hidden"}:
+        expose_as_widget = raw_expose_as_widget == "widget"
 
     include_options = normalize_derived_mask_source_video_treatment_list(
         source_video_treatment.get("include_options")
@@ -390,13 +398,30 @@ def _resolve_mask_processing_source_video_treatment_config(
         exclude_options=exclude_options or None,
     )
 
-    raw_default_overrides = source_video_treatment.get("default_overrides")
+    raw_default_overrides = source_video_treatment.get("default_rules")
     if isinstance(raw_default_overrides, list):
-        default_overrides = [
-            override
-            for override in raw_default_overrides
-            if isinstance(override, dict)
-        ]
+        translated_overrides: list[dict[str, Any]] = []
+        for override in raw_default_overrides:
+            if not isinstance(override, dict):
+                continue
+            when = override.get("when")
+            if not isinstance(when, dict):
+                continue
+            ref = when.get("ref")
+            if not isinstance(ref, dict) or ref.get("kind") != "workflow_param":
+                continue
+            translated_overrides.append(
+                {
+                    "when": {
+                        "node_id": ref.get("node_id"),
+                        "param": ref.get("param"),
+                        "operator": when.get("operator", "eq"),
+                        "value": when.get("value"),
+                    },
+                    "value": override.get("value"),
+                }
+            )
+        default_overrides = translated_overrides or None
 
     return default, label, expose_as_widget, option_values, default_overrides
 
@@ -539,6 +564,21 @@ def _apply_default_required_input_validation(
     if not isinstance(nodes, dict):
         return
 
+    derived_mask_node_ids: set[str] = set()
+    mask_stage = find_pipeline_stage(rules, kind="mask_processing")
+    if isinstance(mask_stage, dict):
+        targets = mask_stage.get("targets")
+        if isinstance(targets, list):
+            for target in targets:
+                if not isinstance(target, dict):
+                    continue
+                mask = target.get("mask")
+                if not isinstance(mask, dict):
+                    continue
+                node_id = mask.get("node_id")
+                if isinstance(node_id, str) and node_id.strip():
+                    derived_mask_node_ids.add(node_id.strip())
+
     for node_id, info in node_infos.items():
         node_policy = node_policies.get(node_id, {})
         if not has_any_input(node_policy):
@@ -549,11 +589,7 @@ def _apply_default_required_input_validation(
             continue
         if node_rule.get("ignore"):
             continue
-        if (
-            node_rule.get("binary_derived_mask_of")
-            or node_rule.get("soft_derived_mask_of")
-            or node_rule.get("binary_audio_derived_mask_of")
-        ):
+        if node_id in derived_mask_node_ids:
             continue
 
         present = node_rule.get("present")
@@ -626,20 +662,9 @@ def enrich_rules_with_object_info(
         return rules
 
     rules_model = rules if isinstance(rules, ResolvedWorkflowRules) else None
-    runtime_defaults = (
-        {
-            "default_widgets_mode": rules_model._default_widgets_mode,
-            "pipeline_stage_order": rules_model._pipeline_stage_order,
-            "has_explicit_pipeline": rules_model._has_explicit_pipeline,
-        }
-        if rules_model is not None
-        else None
-    )
     rules_dict = dump_resolved_rules(rules_model) if rules_model is not None else rules
     nodes_rules = rules_dict.setdefault("nodes", {})
-    default_widgets_mode = (
-        runtime_defaults["default_widgets_mode"] if runtime_defaults is not None else None
-    )
+    default_widgets_mode = rules_model.default_widgets_mode if rules_model is not None else None
     discovered_count = 0
     visual_derived_mask_source_node_ids = _collect_visual_derived_mask_source_node_ids(
         rules_dict
@@ -785,14 +810,8 @@ def enrich_rules_with_object_info(
 
     _apply_ar_target_policies(rules_dict, node_infos, node_policies)
 
-    if rules_model is not None and runtime_defaults is not None:
-        refreshed = ResolvedWorkflowRules.model_validate(rules_dict)
-        refreshed.set_runtime_defaults(
-            default_widgets_mode=runtime_defaults["default_widgets_mode"],
-            pipeline_stage_order=runtime_defaults["pipeline_stage_order"],
-            has_explicit_pipeline=runtime_defaults["has_explicit_pipeline"],
-        )
-        return refreshed
+    if rules_model is not None:
+        return ResolvedWorkflowRules.model_validate(rules_dict)
 
     return rules_dict
 
@@ -804,22 +823,22 @@ def _apply_ar_target_policies(
 ) -> None:
     """Auto-add nodes with ``ar_target`` policy when no explicit targets exist.
 
-    Sidecars that declare ``aspect_ratio_processing.target_nodes`` are treated as
+    Sidecars that declare explicit aspect-ratio stage targets are treated as
     authoritative so auto-discovery does not silently retarget additional nodes.
     """
-    ar_cfg = rules.get("aspect_ratio_processing")
-    if not isinstance(ar_cfg, dict) or not ar_cfg.get("enabled"):
+    ar_stage = find_pipeline_stage(rules, kind="aspect_ratio")
+    if not isinstance(ar_stage, dict) or ar_stage.get("enabled") is False:
         return
 
-    target_nodes = ar_cfg.get("target_nodes")
+    target_nodes = ar_stage.get("targets")
     if not isinstance(target_nodes, list):
         target_nodes = []
-        ar_cfg["target_nodes"] = target_nodes
+        ar_stage["targets"] = target_nodes
     elif len(target_nodes) > 0:
         return
 
     existing_ids = {
-        entry.get("node_id")
+        entry.get("width", {}).get("node_id")
         for entry in target_nodes
         if isinstance(entry, dict)
     }
@@ -834,9 +853,14 @@ def _apply_ar_target_policies(
 
         target_nodes.append(
             {
-                "node_id": node_id,
-                "width_param": policy.get("ar_width_param", "width"),
-                "height_param": policy.get("ar_height_param", "height"),
+                "width": {
+                    "node_id": node_id,
+                    "param": policy.get("ar_width_param", "width"),
+                },
+                "height": {
+                    "node_id": node_id,
+                    "param": policy.get("ar_height_param", "height"),
+                },
             }
         )
         discovered += 1
@@ -847,7 +871,7 @@ def _apply_ar_target_policies(
         )
 
     if discovered:
-        ar_cfg["target_nodes"] = target_nodes
+        ar_stage["targets"] = target_nodes
         log.info(
             "[enrich] Total auto-discovered AR target nodes: %d", discovered
         )

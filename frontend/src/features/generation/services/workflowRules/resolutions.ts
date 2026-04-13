@@ -1,15 +1,17 @@
 import { toPositiveInteger } from "./shared";
 import type { WorkflowRules } from "./types";
+import { getAspectRatioStage } from "./pipeline";
 
 export function getSupportedWorkflowResolutions(
   rules: WorkflowRules | null | undefined,
 ): number[] {
-  const rawResolutions = rules?.aspect_ratio_processing;
-  if (!rawResolutions?.enabled) return [];
+  const aspectRatioStage = getAspectRatioStage(rules);
+  if (!aspectRatioStage || aspectRatioStage.enabled === false) return [];
+  const rawResolutions = aspectRatioStage.config?.resolutions ?? [];
 
   const seen = new Set<number>();
   const supported: number[] = [];
-  for (const resolution of rawResolutions.resolutions ?? []) {
+  for (const resolution of rawResolutions) {
     const normalized = toPositiveInteger(resolution);
     if (normalized === null || seen.has(normalized)) continue;
     seen.add(normalized);

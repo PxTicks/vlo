@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 
 WidgetsMode = Literal["control_after_generate", "all"]
@@ -15,14 +15,12 @@ MaskSourceVideoTreatment = Literal[
     "fill_transparent_with_neutral_gray",
     "remove_transparency",
 ]
-MaskSourceVideoTreatmentComparisonOperator = Literal[
-    "eq",
-    "neq",
-    "lt",
-    "lte",
-    "gt",
-    "gte",
-]
+PipelineComparisonOperator = Literal["eq", "neq", "lt", "lte", "gt", "gte"]
+PipelineStageKind = Literal["mask_processing", "aspect_ratio", "output_assembly"]
+PipelineControlExposure = Literal["widget", "hidden"]
+PipelineControlValueType = Literal["int", "float", "string", "boolean", "enum", "unknown"]
+MaskProcessingTargetType = Literal["binary", "soft"]
+MaskProcessingTargetPurpose = Literal["video", "audio_timing"]
 PostprocessingMode = Literal["auto", "stitch_frames_with_audio", "none"]
 PostprocessingPanelPreview = Literal["raw_outputs", "replace_outputs"]
 PostprocessingOnFailure = Literal["fallback_raw", "show_error"]
@@ -54,29 +52,6 @@ class WorkflowRuleNodePresent(WorkflowRuleBaseModel):
     group_order: int | None = None
 
 
-class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
-    label: str | None = None
-    control_after_generate: bool = False
-    default_randomize: bool | None = None
-    frontend_only: bool | None = None
-    hidden: bool | None = None
-    control: WidgetControl | None = None
-    slider_display: WidgetSliderDisplay | None = None
-    unit: str | None = None
-    group_id: str | None = None
-    group_title: str | None = None
-    group_order: int | None = None
-    min: int | float | None = None
-    max: int | float | None = None
-    step: int | float | None = None
-    default: Any | None = None
-    value_type: Literal["int", "float", "string", "boolean", "enum", "unknown"] | None = None
-    options: list[str | int | float | bool] | None = None
-    true_value: Any | None = None
-    false_value: Any | None = None
-    default_overrides: list["WorkflowRuleWidgetDefaultOverride"] | None = None
-
-
 class WorkflowRuleWidgetInputPresenceCondition(WorkflowRuleBaseModel):
     kind: Literal["input_presence"] = "input_presence"
     inputs: list[str] = Field(default_factory=list)
@@ -93,6 +68,29 @@ class WorkflowRuleWidgetDefaultOverride(WorkflowRuleBaseModel):
     value: Any | None = None
 
 
+class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
+    label: str | None = None
+    control_after_generate: bool = False
+    default_randomize: bool | None = None
+    frontend_only: bool | None = None
+    hidden: bool | None = None
+    control: WidgetControl | None = None
+    slider_display: WidgetSliderDisplay | None = None
+    unit: str | None = None
+    group_id: str | None = None
+    group_title: str | None = None
+    group_order: int | None = None
+    min: int | float | None = None
+    max: int | float | None = None
+    step: int | float | None = None
+    default: Any | None = None
+    value_type: PipelineControlValueType | None = None
+    options: list[str | int | float | bool] | None = None
+    true_value: Any | None = None
+    false_value: Any | None = None
+    default_overrides: list[WorkflowRuleWidgetDefaultOverride] | None = None
+
+
 class WorkflowRuleBooleanOverride(WorkflowRuleBaseModel):
     when: WorkflowRuleWidgetInputPresenceCondition
     value: bool = True
@@ -104,24 +102,13 @@ class WorkflowRuleSelectionConfig(WorkflowRuleBaseModel):
     max_frames: int | None = None
 
 
-class WorkflowRuleNodeBase(WorkflowRuleBaseModel):
+class WorkflowRuleNode(WorkflowRuleBaseModel):
     ignore: bool = False
     ignore_overrides: list[WorkflowRuleBooleanOverride] | None = None
     present: WorkflowRuleNodePresent | None = None
     widgets_mode: WidgetsMode | None = None
     widgets: dict[str, WorkflowRuleWidgetEntry] = Field(default_factory=dict)
     selection: WorkflowRuleSelectionConfig | None = None
-    binary_derived_mask_of: str | None = None
-    soft_derived_mask_of: str | None = None
-    binary_audio_derived_mask_of: str | None = None
-    audio_derived_mask_fps: int | None = None
-
-
-class AuthoredWorkflowRuleNodeV1(WorkflowRuleNodeBase):
-    pass
-
-
-class ResolvedWorkflowRuleNode(WorkflowRuleNodeBase):
     node_title: str | None = None
 
 
@@ -133,47 +120,6 @@ class WorkflowRuleSlot(WorkflowRuleBaseModel):
     export_fps: int | None = None
     frame_step: int | None = None
     max_frames: int | None = None
-
-
-class WorkflowMaskCroppingConfig(WorkflowRuleBaseModel):
-    mode: MaskCroppingMode = "crop"
-
-
-class WorkflowMaskSourceVideoTreatmentCondition(WorkflowRuleBaseModel):
-    node_id: str
-    param: str
-    operator: MaskSourceVideoTreatmentComparisonOperator = "eq"
-    value: str | int | float | bool
-
-
-class WorkflowMaskSourceVideoTreatmentDefaultOverride(WorkflowRuleBaseModel):
-    when: WorkflowMaskSourceVideoTreatmentCondition
-    value: MaskSourceVideoTreatment
-
-
-class WorkflowMaskSourceVideoTreatmentConfig(WorkflowRuleBaseModel):
-    default: MaskSourceVideoTreatment = "preserve_transparency"
-    expose_as_widget: bool = True
-    label: str = "Transparency handling"
-    include_options: list[MaskSourceVideoTreatment] | None = None
-    exclude_options: list[MaskSourceVideoTreatment] | None = None
-    default_overrides: list[WorkflowMaskSourceVideoTreatmentDefaultOverride] | None = None
-
-
-class WorkflowMaskProcessingConfig(WorkflowRuleBaseModel):
-    cropping: WorkflowMaskCroppingConfig = Field(
-        default_factory=WorkflowMaskCroppingConfig
-    )
-    source_video_treatment: WorkflowMaskSourceVideoTreatmentConfig = Field(
-        default_factory=WorkflowMaskSourceVideoTreatmentConfig
-    )
-
-
-class WorkflowPostprocessingConfig(WorkflowRuleBaseModel):
-    mode: PostprocessingMode = "auto"
-    panel_preview: PostprocessingPanelPreview = "raw_outputs"
-    on_failure: PostprocessingOnFailure = "fallback_raw"
-    stitch_fps: int | None = None
 
 
 class WorkflowParamReference(WorkflowRuleBaseModel):
@@ -242,30 +188,73 @@ class ResolvedOutputInjectionRule(WorkflowRuleBaseModel):
     when: WorkflowRuleWidgetInputPresenceCondition | None = None
 
 
-class AspectRatioTargetNode(WorkflowRuleBaseModel):
-    node_id: str | None = None
-    width_param: str | None = None
-    height_param: str | None = None
-    width: WorkflowParamReference | None = None
-    height: WorkflowParamReference | None = None
+class WorkflowParamValueReference(WorkflowRuleBaseModel):
+    kind: Literal["workflow_param"] = "workflow_param"
+    node_id: str
+    param: str
+
+
+class PipelineControlReference(WorkflowRuleBaseModel):
+    kind: Literal["pipeline_control"] = "pipeline_control"
+    stage_id: str
+    key: str
+
+
+ControlValueReference = Annotated[
+    WorkflowParamValueReference | PipelineControlReference,
+    Field(discriminator="kind"),
+]
+
+
+class PipelineControlCondition(WorkflowRuleBaseModel):
+    ref: ControlValueReference
+    operator: PipelineComparisonOperator = "eq"
+    value: Any | None = None
+
+
+class PipelineControlDefaultRule(WorkflowRuleBaseModel):
+    when: PipelineControlCondition
+    value: Any | None = None
+
+
+class PipelineControl(WorkflowRuleBaseModel):
+    key: str
+    label: str | None = None
+    value_type: PipelineControlValueType = "unknown"
+    expose: PipelineControlExposure = "widget"
+    control: WidgetControl | None = None
+    slider_display: WidgetSliderDisplay | None = None
+    unit: str | None = None
+    min: int | float | None = None
+    max: int | float | None = None
+    step: int | float | None = None
+    default: Any | None = None
+    options: list[str | int | float | bool] | None = None
+    include_options: list[str | int | float | bool] | None = None
+    exclude_options: list[str | int | float | bool] | None = None
+    true_value: Any | None = None
+    false_value: Any | None = None
+    bind: ControlValueReference | None = None
+    default_rules: list[PipelineControlDefaultRule] | None = None
 
     @model_validator(mode="after")
-    def validate_target_shape(self) -> "AspectRatioTargetNode":
-        has_single_node_pair = (
-            isinstance(self.node_id, str)
-            and bool(self.node_id.strip())
-            and isinstance(self.width_param, str)
-            and bool(self.width_param.strip())
-            and isinstance(self.height_param, str)
-            and bool(self.height_param.strip())
-        )
-        has_split_refs = self.width is not None and self.height is not None
-        if not has_single_node_pair and not has_split_refs:
-            raise ValueError(
-                "Aspect ratio targets require either node_id/width_param/height_param "
-                "or width/height param references"
-            )
+    def validate_key(self) -> "PipelineControl":
+        if not self.key.strip():
+            raise ValueError("Pipeline control key must be non-empty")
         return self
+
+
+class MaskProcessingTarget(WorkflowRuleBaseModel):
+    source: WorkflowParamReference
+    mask: WorkflowParamReference
+    mask_type: MaskProcessingTargetType = "binary"
+    purpose: MaskProcessingTargetPurpose = "video"
+    render_fps: int | None = None
+
+
+class AspectRatioTargetNode(WorkflowRuleBaseModel):
+    width: WorkflowParamReference
+    height: WorkflowParamReference
 
 
 class WorkflowAspectRatioPostprocessConfig(WorkflowRuleBaseModel):
@@ -274,43 +263,68 @@ class WorkflowAspectRatioPostprocessConfig(WorkflowRuleBaseModel):
     apply_to: AspectRatioPostprocessApplyTo = "all_visual_outputs"
 
 
-class WorkflowAspectRatioProcessingConfig(WorkflowRuleBaseModel):
-    enabled: bool = True
+class WorkflowAspectRatioStageConfig(WorkflowRuleBaseModel):
     stride: int = 16
     search_steps: int = 2
     resolutions: list[int] = Field(default_factory=list)
-    target_nodes: list[AspectRatioTargetNode] = Field(default_factory=list)
     postprocess: WorkflowAspectRatioPostprocessConfig = Field(
         default_factory=WorkflowAspectRatioPostprocessConfig
     )
 
 
-class AuthoredWorkflowRulesV1(WorkflowRuleBaseModel):
-    version: int = 1
-    name: str | None = None
-    nodes: dict[str, AuthoredWorkflowRuleNodeV1] = Field(default_factory=dict)
-    validation: WorkflowValidationConfig = Field(default_factory=WorkflowValidationConfig)
-    input_conditions: list[WorkflowInputCondition] | None = None
-    derived_widgets: list[WorkflowDualSamplerDenoiseRule] = Field(default_factory=list)
-    output_injections: dict[str, dict[str, ResolvedOutputInjectionRule]] = Field(
-        default_factory=dict
+class WorkflowOutputAssemblyStageConfig(WorkflowRuleBaseModel):
+    mode: PostprocessingMode = "auto"
+    panel_preview: PostprocessingPanelPreview = "raw_outputs"
+    on_failure: PostprocessingOnFailure = "fallback_raw"
+    stitch_fps: int | None = None
+
+
+class WorkflowPipelineStageBase(WorkflowRuleBaseModel):
+    id: str
+    enabled: bool = True
+    label: str | None = None
+    controls: list[PipelineControl] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_id(self) -> "WorkflowPipelineStageBase":
+        if not self.id.strip():
+            raise ValueError("Pipeline stage id must be non-empty")
+        return self
+
+
+class WorkflowMaskProcessingStage(WorkflowPipelineStageBase):
+    kind: Literal["mask_processing"] = "mask_processing"
+    targets: list[MaskProcessingTarget] = Field(default_factory=list)
+
+
+class WorkflowAspectRatioStage(WorkflowPipelineStageBase):
+    kind: Literal["aspect_ratio"] = "aspect_ratio"
+    config: WorkflowAspectRatioStageConfig = Field(
+        default_factory=WorkflowAspectRatioStageConfig
     )
-    slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)
-    mask_processing: WorkflowMaskProcessingConfig = Field(
-        default_factory=WorkflowMaskProcessingConfig
+    targets: list[AspectRatioTargetNode] = Field(default_factory=list)
+
+
+class WorkflowOutputAssemblyStage(WorkflowPipelineStageBase):
+    kind: Literal["output_assembly"] = "output_assembly"
+    config: WorkflowOutputAssemblyStageConfig = Field(
+        default_factory=WorkflowOutputAssemblyStageConfig
     )
-    postprocessing: WorkflowPostprocessingConfig = Field(
-        default_factory=WorkflowPostprocessingConfig
-    )
-    aspect_ratio_processing: WorkflowAspectRatioProcessingConfig = Field(
-        default_factory=WorkflowAspectRatioProcessingConfig
-    )
+
+
+WorkflowPipelineStage = Annotated[
+    WorkflowMaskProcessingStage
+    | WorkflowAspectRatioStage
+    | WorkflowOutputAssemblyStage,
+    Field(discriminator="kind"),
+]
 
 
 class ResolvedWorkflowRules(WorkflowRuleBaseModel):
-    version: int = 1
+    version: Literal[3] = 3
     name: str | None = None
-    nodes: dict[str, ResolvedWorkflowRuleNode] = Field(default_factory=dict)
+    default_widgets_mode: WidgetsMode | None = None
+    nodes: dict[str, WorkflowRuleNode] = Field(default_factory=dict)
     validation: WorkflowValidationConfig = Field(default_factory=WorkflowValidationConfig)
     input_conditions: list[WorkflowInputCondition] | None = None
     derived_widgets: list[WorkflowDualSamplerDenoiseRule] = Field(default_factory=list)
@@ -318,33 +332,14 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
         default_factory=dict
     )
     slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)
-    mask_processing: WorkflowMaskProcessingConfig = Field(
-        default_factory=WorkflowMaskProcessingConfig
-    )
-    postprocessing: WorkflowPostprocessingConfig = Field(
-        default_factory=WorkflowPostprocessingConfig
-    )
-    aspect_ratio_processing: WorkflowAspectRatioProcessingConfig = Field(
-        default_factory=WorkflowAspectRatioProcessingConfig
-    )
+    pipeline: list[WorkflowPipelineStage] = Field(default_factory=list)
 
-    _default_widgets_mode: WidgetsMode | None = PrivateAttr(default=None)
-    _pipeline_stage_order: tuple[str, ...] = PrivateAttr(
-        default=("mask_processing", "aspect_ratio")
-    )
-    _has_explicit_pipeline: bool = PrivateAttr(default=False)
-
-    def set_runtime_defaults(
-        self,
-        *,
-        default_widgets_mode: WidgetsMode | None = None,
-        pipeline_stage_order: tuple[str, ...] | None = None,
-        has_explicit_pipeline: bool = False,
-    ) -> None:
-        self._default_widgets_mode = default_widgets_mode
-        if pipeline_stage_order is not None:
-            self._pipeline_stage_order = pipeline_stage_order
-        self._has_explicit_pipeline = has_explicit_pipeline
+    @model_validator(mode="after")
+    def validate_unique_stage_ids(self) -> "ResolvedWorkflowRules":
+        stage_ids = [stage.id for stage in self.pipeline]
+        if len(stage_ids) != len(set(stage_ids)):
+            raise ValueError("pipeline stage ids must be unique")
+        return self
 
 
 class WorkflowRulesResponse(WorkflowRuleBaseModel):
@@ -353,136 +348,27 @@ class WorkflowRulesResponse(WorkflowRuleBaseModel):
     warnings: list[WorkflowRuleWarningModel] = Field(default_factory=list)
 
 
-class NodeInputRef(WorkflowRuleBaseModel):
-    node_id: str
-    param: str | None = None
-
-
-V2InputRef = NodeInputRef
-
-
-class V2RequiredInputValidationRule(WorkflowRuleBaseModel):
-    kind: Literal["required"]
-    input: V2InputRef
-    message: str | None = None
-
-
-class V2AtLeastNInputValidationRule(WorkflowRuleBaseModel):
-    kind: Literal["at_least_n"]
-    inputs: list[V2InputRef] = Field(default_factory=list)
-    min: int
-    message: str | None = None
-
-
-class V2OptionalInputValidationRule(WorkflowRuleBaseModel):
-    kind: Literal["optional"]
-    input: V2InputRef
-    message: str | None = None
-
-
-V2InputValidationRule = Annotated[
-    V2RequiredInputValidationRule
-    | V2AtLeastNInputValidationRule
-    | V2OptionalInputValidationRule,
-    Field(discriminator="kind"),
-]
-
-
-class V2ValidationConfig(WorkflowRuleBaseModel):
-    inputs: list[V2InputValidationRule] = Field(default_factory=list)
-
-
-class AuthoredWorkflowRuleNodeV2(WorkflowRuleNodeBase):
-    present: WorkflowRuleNodePresent | None = None
-
-    @model_validator(mode="after")
-    def validate_present_input_type(self) -> "AuthoredWorkflowRuleNodeV2":
-        if self.present and self.present.input_type is not None:
-            if self.present.input_type not in {"text", "image", "video", "audio"}:
-                raise ValueError("present.input_type must be one of text|image|video|audio")
-        return self
-
-
-class NodeOutputSourceV2(WorkflowRuleBaseModel):
-    kind: Literal["node_output"] = "node_output"
-    node_id: str
-    output_index: int = 0
-
-
-class OutputInjectionRuleV2(WorkflowRuleBaseModel):
-    target_node_id: str
-    target_output_index: int = 0
-    source: NodeOutputSourceV2
-    when: WorkflowRuleWidgetInputPresenceCondition | None = None
-
-
-class MaskProcessingPipelineStageV2(WorkflowRuleBaseModel):
-    kind: Literal["mask_processing"] = "mask_processing"
-    cropping: WorkflowMaskCroppingConfig = Field(
-        default_factory=WorkflowMaskCroppingConfig
-    )
-    source_video_treatment: WorkflowMaskSourceVideoTreatmentConfig = Field(
-        default_factory=WorkflowMaskSourceVideoTreatmentConfig
-    )
-
-
-class AspectRatioPipelineStageV2(WorkflowRuleBaseModel):
-    kind: Literal["aspect_ratio"] = "aspect_ratio"
-    enabled: bool = True
-    stride: int = 16
-    search_steps: int = 2
-    resolutions: list[int] = Field(default_factory=list)
-    target_nodes: list[AspectRatioTargetNode] = Field(default_factory=list)
-    postprocess: WorkflowAspectRatioPostprocessConfig = Field(
-        default_factory=WorkflowAspectRatioPostprocessConfig
-    )
-
-
-WorkflowPipelineStageV2 = Annotated[
-    MaskProcessingPipelineStageV2 | AspectRatioPipelineStageV2,
-    Field(discriminator="kind"),
-]
-
-
-class AuthoredWorkflowRulesV2(WorkflowRuleBaseModel):
-    version: Literal[2] = 2
-    name: str | None = None
-    default_widgets_mode: WidgetsMode | None = None
-    nodes: dict[str, AuthoredWorkflowRuleNodeV2] = Field(default_factory=dict)
-    pipeline: list[WorkflowPipelineStageV2] | None = None
-    validation: V2ValidationConfig = Field(default_factory=V2ValidationConfig)
-    derived_widgets: list[WorkflowDualSamplerDenoiseRule] = Field(default_factory=list)
-    output_injections: list[OutputInjectionRuleV2] = Field(default_factory=list)
-    slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)
-    postprocessing: WorkflowPostprocessingConfig = Field(
-        default_factory=WorkflowPostprocessingConfig
-    )
-
-    @model_validator(mode="after")
-    def validate_unique_pipeline_kinds(self) -> "AuthoredWorkflowRulesV2":
-        if self.pipeline is None:
-            return self
-        kinds = [stage.kind for stage in self.pipeline]
-        if len(kinds) != len(set(kinds)):
-            raise ValueError("pipeline kinds must be unique")
-        return self
-
-
 def default_resolved_rules_model() -> ResolvedWorkflowRules:
-    model = ResolvedWorkflowRules()
-    model.set_runtime_defaults()
-    return model
+    return ResolvedWorkflowRules()
+
+
+def get_pipeline_stage(
+    rules: ResolvedWorkflowRules | None,
+    stage_name: str,
+) -> WorkflowPipelineStage | None:
+    if rules is None:
+        return None
+    for stage in rules.pipeline:
+        if stage.id == stage_name or stage.kind == stage_name:
+            return stage
+    return None
 
 
 def has_pipeline_stage(
     rules: ResolvedWorkflowRules | None,
     stage_name: str,
 ) -> bool:
-    if rules is None:
-        return False
-    if not rules._has_explicit_pipeline:
-        return stage_name in {"mask_processing", "aspect_ratio"}
-    return stage_name in rules._pipeline_stage_order
+    return get_pipeline_stage(rules, stage_name) is not None
 
 
 def pipeline_stage_precedes(
@@ -492,16 +378,16 @@ def pipeline_stage_precedes(
 ) -> bool:
     if rules is None:
         return False
-    if not rules._has_explicit_pipeline:
-        default_order = ("mask_processing", "aspect_ratio")
-        return default_order.index(left_stage) < default_order.index(right_stage)
 
-    try:
-        return rules._pipeline_stage_order.index(left_stage) < rules._pipeline_stage_order.index(
-            right_stage
-        )
-    except ValueError:
-        return False
+    left_index: int | None = None
+    right_index: int | None = None
+    for index, stage in enumerate(rules.pipeline):
+        if left_index is None and (stage.id == left_stage or stage.kind == left_stage):
+            left_index = index
+        if right_index is None and (stage.id == right_stage or stage.kind == right_stage):
+            right_index = index
+
+    return left_index is not None and right_index is not None and left_index < right_index
 
 
 def dump_resolved_rules(rules: ResolvedWorkflowRules) -> dict[str, Any]:
@@ -533,243 +419,3 @@ def validation_warnings_from_error(
             )
         )
     return warnings
-
-
-def compile_authored_v1_to_resolved(
-    authored: AuthoredWorkflowRulesV1,
-) -> ResolvedWorkflowRules:
-    resolved = ResolvedWorkflowRules.model_validate(
-        authored.model_dump(exclude_none=True)
-    )
-    resolved.set_runtime_defaults()
-    return resolved
-
-
-def _compile_v2_input_ref(ref: V2InputRef) -> str:
-    if ref.param:
-        return f"{ref.node_id}:{ref.param}"
-    return ref.node_id
-
-
-def _compile_v2_validation(
-    validation: V2ValidationConfig,
-) -> WorkflowValidationConfig:
-    compiled_rules: list[InputValidationRule] = []
-    for rule in validation.inputs:
-        if isinstance(rule, V2RequiredInputValidationRule):
-            compiled_rules.append(
-                WorkflowRequiredInputValidationRule(
-                    kind="required",
-                    input=_compile_v2_input_ref(rule.input),
-                    message=rule.message,
-                )
-            )
-            continue
-        if isinstance(rule, V2OptionalInputValidationRule):
-            compiled_rules.append(
-                WorkflowOptionalInputValidationRule(
-                    kind="optional",
-                    input=_compile_v2_input_ref(rule.input),
-                    message=rule.message,
-                )
-            )
-            continue
-        compiled_rules.append(
-            WorkflowAtLeastNInputValidationRule(
-                kind="at_least_n",
-                inputs=[_compile_v2_input_ref(ref) for ref in rule.inputs],
-                min=rule.min,
-                message=rule.message,
-            )
-        )
-    return WorkflowValidationConfig(inputs=compiled_rules)
-
-
-def _compile_v2_output_injections(
-    authored: AuthoredWorkflowRulesV2,
-) -> dict[str, dict[str, ResolvedOutputInjectionRule]]:
-    compiled: dict[str, dict[str, ResolvedOutputInjectionRule]] = {}
-    for injection in authored.output_injections:
-        source = NodeOutputSource(
-            kind="node_output",
-            node_id=injection.source.node_id,
-            output_index=injection.source.output_index,
-        )
-        compiled.setdefault(injection.target_node_id, {})[
-            str(injection.target_output_index)
-        ] = ResolvedOutputInjectionRule(source=source, when=injection.when)
-    return compiled
-
-
-def compile_authored_v2_to_resolved(
-    authored: AuthoredWorkflowRulesV2,
-) -> ResolvedWorkflowRules:
-    mask_processing = WorkflowMaskProcessingConfig()
-    aspect_ratio_processing = WorkflowAspectRatioProcessingConfig()
-    pipeline_stage_order: tuple[str, ...]
-    has_explicit_pipeline = authored.pipeline is not None
-
-    if authored.pipeline is None:
-        pipeline_stage_order = ("mask_processing", "aspect_ratio")
-    else:
-        pipeline_stage_order = tuple(stage.kind for stage in authored.pipeline)
-        mask_stage = next(
-            (
-                stage
-                for stage in authored.pipeline
-                if isinstance(stage, MaskProcessingPipelineStageV2)
-            ),
-            None,
-        )
-        if mask_stage is None:
-            mask_processing = WorkflowMaskProcessingConfig(
-                cropping=WorkflowMaskCroppingConfig(mode="full")
-            )
-        else:
-            mask_processing = WorkflowMaskProcessingConfig(
-                cropping=mask_stage.cropping,
-                source_video_treatment=mask_stage.source_video_treatment,
-            )
-
-        aspect_stage = next(
-            (stage for stage in authored.pipeline if isinstance(stage, AspectRatioPipelineStageV2)),
-            None,
-        )
-        if aspect_stage is None:
-            aspect_ratio_processing = WorkflowAspectRatioProcessingConfig(enabled=False)
-        else:
-            aspect_ratio_processing = WorkflowAspectRatioProcessingConfig(
-                enabled=aspect_stage.enabled,
-                stride=aspect_stage.stride,
-                search_steps=aspect_stage.search_steps,
-                resolutions=list(aspect_stage.resolutions),
-                target_nodes=list(aspect_stage.target_nodes),
-                postprocess=aspect_stage.postprocess,
-            )
-
-    resolved = ResolvedWorkflowRules(
-        version=2,
-        name=authored.name,
-        nodes={
-            node_id: ResolvedWorkflowRuleNode.model_validate(
-                node_rule.model_dump(exclude_none=True)
-            )
-            for node_id, node_rule in authored.nodes.items()
-        },
-        validation=_compile_v2_validation(authored.validation),
-        derived_widgets=list(authored.derived_widgets),
-        output_injections=_compile_v2_output_injections(authored),
-        slots=dict(authored.slots),
-        mask_processing=mask_processing,
-        postprocessing=authored.postprocessing,
-        aspect_ratio_processing=aspect_ratio_processing,
-    )
-    resolved.set_runtime_defaults(
-        default_widgets_mode=authored.default_widgets_mode,
-        pipeline_stage_order=pipeline_stage_order,
-        has_explicit_pipeline=has_explicit_pipeline,
-    )
-    return resolved
-
-
-def _parse_legacy_input_ref(value: str) -> V2InputRef:
-    if ":" in value:
-        node_id, param = value.split(":", 1)
-        return NodeInputRef(node_id=node_id, param=param)
-    return NodeInputRef(node_id=value)
-
-
-def migrate_authored_v1_to_v2(
-    authored: AuthoredWorkflowRulesV1,
-) -> AuthoredWorkflowRulesV2:
-    validation_inputs: list[V2InputValidationRule] = []
-    source_validation = authored.validation.inputs
-    if not source_validation and authored.input_conditions:
-        source_validation = [
-            WorkflowAtLeastNInputValidationRule(
-                kind="at_least_n",
-                inputs=condition.inputs,
-                min=1,
-                message=condition.message,
-            )
-            for condition in authored.input_conditions
-        ]
-
-    for rule in source_validation:
-        if isinstance(rule, WorkflowRequiredInputValidationRule):
-            validation_inputs.append(
-                V2RequiredInputValidationRule(
-                    kind="required",
-                    input=_parse_legacy_input_ref(rule.input),
-                    message=rule.message,
-                )
-            )
-            continue
-        if isinstance(rule, WorkflowOptionalInputValidationRule):
-            validation_inputs.append(
-                V2OptionalInputValidationRule(
-                    kind="optional",
-                    input=_parse_legacy_input_ref(rule.input),
-                    message=rule.message,
-                )
-            )
-            continue
-        validation_inputs.append(
-            V2AtLeastNInputValidationRule(
-                kind="at_least_n",
-                inputs=[_parse_legacy_input_ref(value) for value in rule.inputs],
-                min=rule.min,
-                message=rule.message,
-            )
-        )
-
-    output_injections: list[OutputInjectionRuleV2] = []
-    for target_node_id, outputs in authored.output_injections.items():
-        for output_index, injection_rule in outputs.items():
-            source = injection_rule.source
-            output_injections.append(
-                OutputInjectionRuleV2(
-                    target_node_id=target_node_id,
-                    target_output_index=int(output_index),
-                    source=NodeOutputSourceV2(
-                        kind="node_output",
-                        node_id=source.node_id,
-                        output_index=source.output_index,
-                    ),
-                    when=injection_rule.when,
-                )
-            )
-
-    pipeline: list[WorkflowPipelineStageV2] = [
-        MaskProcessingPipelineStageV2(
-            kind="mask_processing",
-            cropping=authored.mask_processing.cropping,
-            source_video_treatment=authored.mask_processing.source_video_treatment,
-        ),
-        AspectRatioPipelineStageV2(
-            kind="aspect_ratio",
-            enabled=authored.aspect_ratio_processing.enabled,
-            stride=authored.aspect_ratio_processing.stride,
-            search_steps=authored.aspect_ratio_processing.search_steps,
-            resolutions=list(authored.aspect_ratio_processing.resolutions),
-            target_nodes=list(authored.aspect_ratio_processing.target_nodes),
-            postprocess=authored.aspect_ratio_processing.postprocess,
-        ),
-    ]
-
-    return AuthoredWorkflowRulesV2(
-        version=2,
-        name=authored.name,
-        nodes={
-            node_id: AuthoredWorkflowRuleNodeV2.model_validate(
-                node_rule.model_dump(exclude_none=True)
-            )
-            for node_id, node_rule in authored.nodes.items()
-        },
-        pipeline=pipeline,
-        validation=V2ValidationConfig(inputs=validation_inputs),
-        derived_widgets=list(authored.derived_widgets),
-        output_injections=output_injections,
-        slots=dict(authored.slots),
-        postprocessing=authored.postprocessing,
-    )

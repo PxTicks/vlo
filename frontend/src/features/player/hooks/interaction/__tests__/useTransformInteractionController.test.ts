@@ -103,20 +103,14 @@ describe("useTransformInteractionController", () => {
     });
 
     const clipsBeforeDrop = useTimelineStore.getState().clips;
-    expect(clipsBeforeDrop[0].transformations?.length ?? 0).toBe(1);
-    expect(clipsBeforeDrop[0].transformations[0].type).toBe("position");
-    expect(clipsBeforeDrop[0].transformations[0].parameters.x).toBe(0);
-    expect(clipsBeforeDrop[0].transformations[0].parameters.y).toBe(0);
-    expect(notifySpy).toHaveBeenCalledWith(
-      clipsBeforeDrop[0].transformations[0].id,
-      "x",
-      30,
+    const positionBeforeDrop = clipsBeforeDrop[0].transformations?.find(
+      (t) => t.type === "position",
     );
-    expect(notifySpy).toHaveBeenCalledWith(
-      clipsBeforeDrop[0].transformations[0].id,
-      "y",
-      40,
-    );
+    expect(positionBeforeDrop).toBeDefined();
+    expect(positionBeforeDrop!.parameters.x).toBe(0);
+    expect(positionBeforeDrop!.parameters.y).toBe(0);
+    expect(notifySpy).toHaveBeenCalledWith(positionBeforeDrop!.id, "x", 30);
+    expect(notifySpy).toHaveBeenCalledWith(positionBeforeDrop!.id, "y", 40);
 
     const onPointerUp = getStageHandler("pointerup");
     expect(onPointerUp).toBeDefined();
@@ -131,9 +125,12 @@ describe("useTransformInteractionController", () => {
 
     const clipsAfterDrop = useTimelineStore.getState().clips;
     expect(clipsAfterDrop[0].transformations).toBeDefined();
-    expect(clipsAfterDrop[0].transformations.length).toBe(1);
-    expect(clipsAfterDrop[0].transformations[0].parameters.x).toBe(30);
-    expect(clipsAfterDrop[0].transformations[0].parameters.y).toBe(40);
+    const positionAfterDrop = clipsAfterDrop[0].transformations.find(
+      (t) => t.type === "position",
+    );
+    expect(positionAfterDrop).toBeDefined();
+    expect(positionAfterDrop!.parameters.x).toBe(30);
+    expect(positionAfterDrop!.parameters.y).toBe(40);
 
     notifySpy.mockRestore();
   });

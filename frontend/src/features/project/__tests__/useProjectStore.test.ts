@@ -252,7 +252,14 @@ describe("useProjectStore", () => {
     await useProjectStore.getState().loadProject(mockHandle);
 
     expect(useTimelineStore.getState().tracks).toEqual(timeline.tracks);
-    expect(useTimelineStore.getState().clips).toEqual(timeline.clips);
+    expect(useTimelineStore.getState().clips).toEqual([
+      expect.objectContaining({
+        ...timeline.clips[0],
+        transformations: [
+          expect.objectContaining({ type: "fitMode", isEnabled: true }),
+        ],
+      }),
+    ]);
   });
 
   it("should hydrate config from project.json when present", async () => {

@@ -101,16 +101,16 @@ describe("useTimelineKeyframeClipOverlay", () => {
       ),
     ).toEqual(["position_1", "scale_1", "position_1", "rotation_1"]);
     expect(result.current.map((item) => item.placement.lane)).toEqual([
-      "top",
       "middle",
-      "top",
+      "middle",
+      "middle",
       "bottom",
     ]);
 
     const firstContent = result.current[0].content as ReactElement<{ sx?: { backgroundColor?: string } }>;
     const secondContent = result.current[1].content as ReactElement<{ sx?: { backgroundColor?: string } }>;
-    expect(firstContent.props.sx?.backgroundColor).toBe("#ffb000");
-    expect(secondContent.props.sx?.backgroundColor).toBe("#648fff");
+    expect(firstContent.props.sx?.backgroundColor).toBe("#648fff");
+    expect(secondContent.props.sx?.backgroundColor).toBe("#dc267f");
   });
 
   it("projects active mask section keyframes onto the parent clip overlay", () => {

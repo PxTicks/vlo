@@ -111,7 +111,7 @@ function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
     return baseClip;
   }
 
-  const hasFitModeTransform = baseClip.transformations.some(
+  const hasFitModeTransform = (baseClip.transformations ?? []).some(
     (transform) => transform.type === "fitMode",
   );
   if (hasFitModeTransform) {

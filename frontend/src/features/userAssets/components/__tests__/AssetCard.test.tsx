@@ -29,6 +29,9 @@ vi.mock("../../../timeline", () => {
     createClipFromAsset: mocks.mockCreateClipFromAsset,
     insertAssetAtTime: mocks.mockInsertAssetAtTime,
     useTimelineClipCountForAsset: () => mocks.timelineClipCount,
+    useTimelineStore: {
+      getState: () => ({ clips: [] }),
+    },
   };
 });
 

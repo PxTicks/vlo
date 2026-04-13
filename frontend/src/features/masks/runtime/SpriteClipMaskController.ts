@@ -614,8 +614,22 @@ export class SpriteClipMaskController {
 
   public syncMaskSpriteTransform() {
     if (!this.maskSprite) return;
-    this.maskSprite.anchor.copyFrom(this.sprite.anchor);
-    this.maskSprite.pivot.copyFrom(this.sprite.pivot);
+    const copyPoint = (
+      target:
+        | { x: number; y: number; copyFrom?: (src: { x: number; y: number }) => void }
+        | undefined,
+      src: { x: number; y: number } | undefined,
+    ) => {
+      if (!target || !src) return;
+      if (typeof target.copyFrom === "function") {
+        target.copyFrom(src);
+      } else {
+        target.x = src.x;
+        target.y = src.y;
+      }
+    };
+    copyPoint(this.maskSprite.anchor, this.sprite.anchor);
+    copyPoint(this.maskSprite.pivot, this.sprite.pivot);
 
     const maskPosition = this.maskSprite.position as {
       x: number;

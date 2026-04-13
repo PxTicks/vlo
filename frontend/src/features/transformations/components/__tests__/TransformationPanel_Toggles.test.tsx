@@ -106,6 +106,7 @@ describe("TransformationPanel toggles", () => {
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
     expect(typed.map((transform) => transform.type)).toEqual([
+      "fitMode",
       "position",
       "scale",
       "rotation",
@@ -133,6 +134,7 @@ describe("TransformationPanel toggles", () => {
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
     expect(typed.map((transform) => transform.type)).toEqual([
+      "fitMode",
       "position",
       "scale",
       "rotation",
@@ -140,7 +142,7 @@ describe("TransformationPanel toggles", () => {
     ]);
     expect(
       typed
-        .slice(0, 3)
+        .slice(0, 4)
         .every((transform) => transform.isEnabled === false),
     ).toBe(true);
   });

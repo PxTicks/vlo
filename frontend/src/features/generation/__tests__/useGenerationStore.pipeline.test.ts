@@ -470,6 +470,7 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockFrontendPreprocess).toHaveBeenCalledWith(
       {},
       "wf.json",
+      expect.any(Object),
       [],
       {},
       "client-id",
@@ -503,6 +504,7 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockFrontendPreprocess).toHaveBeenCalledWith(
       {},
       "wan2_2_flf2v.json",
+      expect.any(Object),
       [],
       {},
       "client-id",
@@ -1077,6 +1079,7 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockFrontendPreprocess).toHaveBeenCalledWith(
       {},
       "wf.json",
+      expect.any(Object),
       [],
       {},
       "client-id",

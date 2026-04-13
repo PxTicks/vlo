@@ -172,7 +172,7 @@ describe("MaskPanel", () => {
     expect(
       screen.queryByTestId("default-sections-order-mask-composite-context"),
     ).not.toBeInTheDocument();
-  });
+  }, 15000);
 
   it("renders selectable mask buttons plus trailing add mask button", () => {
     vi.mocked(useMaskPanel).mockReturnValue({

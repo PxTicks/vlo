@@ -80,7 +80,8 @@
           "label": "Transparency handling",
           "description": "Maintainer note: derives from node 92 denoise. Values below 1 remove transparency; 1 fills transparent areas with neutral gray.",
           "value_type": "enum",
-          "expose": "hidden",
+          "expose": "none",
+          "source": "backend",
           "default": "fill_transparent_with_neutral_gray",
           "exclude_options": [
             "preserve_transparency"
@@ -168,7 +169,8 @@
         {
           "key": "target_aspect_ratio",
           "value_type": "string",
-          "expose": "hidden"
+          "expose": "none",
+          "source": "client"
         }
       ]
     }

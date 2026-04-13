@@ -28,8 +28,8 @@ export interface PipelineControl {
   label?: string | null;
   description?: string | null;
   value_type?: "int" | "float" | "string" | "boolean" | "enum" | "unknown";
-  expose?: "widget" | "hidden";
-  client_settable?: boolean | null;
+  expose?: "widget" | "none";
+  source?: "client" | "backend" | null;
   control?: "slider" | null;
   slider_display?: "percent" | "number" | null;
   unit?: string | null;

@@ -384,7 +384,7 @@ def _resolve_mask_processing_source_video_treatment_config(
         label = raw_label.strip()
 
     raw_expose_as_widget = source_video_treatment.get("expose")
-    if raw_expose_as_widget in {"widget", "hidden"}:
+    if raw_expose_as_widget in {"widget", "none"}:
         expose_as_widget = raw_expose_as_widget == "widget"
 
     include_options = normalize_derived_mask_source_video_treatment_list(

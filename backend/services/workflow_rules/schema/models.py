@@ -18,7 +18,8 @@ MaskSourceVideoTreatment = Literal[
 ]
 PipelineComparisonOperator = Literal["eq", "neq", "lt", "lte", "gt", "gte"]
 PipelineStageKind = Literal["mask_processing", "aspect_ratio", "output_assembly"]
-PipelineControlExposure = Literal["widget", "hidden"]
+PipelineControlExposure = Literal["widget", "none"]
+PipelineControlSource = Literal["client", "backend"]
 PipelineControlValueType = Literal["int", "float", "string", "boolean", "enum", "unknown"]
 MaskProcessingTargetType = Literal["binary", "soft"]
 MaskProcessingTargetPurpose = Literal["video", "audio_timing"]
@@ -231,7 +232,7 @@ class PipelineControl(WorkflowRuleBaseModel):
     description: str | None = None
     value_type: PipelineControlValueType = "unknown"
     expose: PipelineControlExposure = "widget"
-    client_settable: bool | None = None
+    source: PipelineControlSource | None = None
     control: WidgetControl | None = None
     slider_display: WidgetSliderDisplay | None = None
     unit: str | None = None
@@ -251,6 +252,29 @@ class PipelineControl(WorkflowRuleBaseModel):
     def validate_key(self) -> "PipelineControl":
         if not self.key.strip():
             raise ValueError("Pipeline control key must be non-empty")
+        return self
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "PipelineControl":
+        # `expose` is a purely presentational axis; `source` states who
+        # authors the value. Widgets are always client-authored. For
+        # non-widget controls, authorship is ambiguous and must be stated
+        # explicitly — this is the invariant whose absence previously let
+        # frontend-submitted `target_aspect_ratio` values be silently dropped.
+        if self.expose == "widget":
+            if self.source is None:
+                self.source = "client"
+            elif self.source != "client":
+                raise ValueError(
+                    f"pipeline control '{self.key}' is exposed as a widget "
+                    "but declares source != 'client'"
+                )
+        else:
+            if self.source is None:
+                raise ValueError(
+                    f"pipeline control '{self.key}' has expose='none' and "
+                    "must declare source as 'client' or 'backend'"
+                )
         return self
 
 

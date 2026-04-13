@@ -247,10 +247,17 @@ def compare_control_value(current: Any, operator: str, expected: Any) -> bool:
     return matches
 
 
-def _control_is_client_settable(control: dict[str, Any]) -> bool:
-    explicit = control.get("client_settable")
-    if isinstance(explicit, bool):
-        return explicit
+def _control_is_client_authored(control: dict[str, Any]) -> bool:
+    # Authorship is stated explicitly on every control (see `source` field on
+    # PipelineControl). Widgets always imply client authorship via the schema
+    # validator; non-widget controls must declare `source` explicitly.
+    source = control.get("source")
+    if source == "client":
+        return True
+    if source == "backend":
+        return False
+    # Fallback for raw dicts that bypass the model (tests, legacy): honour the
+    # widget shortcut so callers constructing minimal rules still work.
     return control.get("expose") == "widget"
 
 
@@ -425,7 +432,7 @@ def resolve_pipeline_control_values_with_warnings(
 
         value: Any = None
         submitted_present = key in stage_inputs
-        if submitted_present and _control_is_client_settable(control):
+        if submitted_present and _control_is_client_authored(control):
             is_valid, submitted_value = _validate_control_value(
                 stage_inputs[key],
                 control,

@@ -115,18 +115,6 @@
           "default": null,
           "title": "Bind"
         },
-        "client_settable": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Client Settable"
-        },
         "control": {
           "anyOf": [
             {
@@ -209,7 +197,7 @@
           "default": "widget",
           "enum": [
             "widget",
-            "hidden"
+            "none"
           ],
           "title": "Expose",
           "type": "string"
@@ -341,6 +329,22 @@
           ],
           "default": null,
           "title": "Slider Display"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "client",
+                "backend"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
         },
         "step": {
           "anyOf": [

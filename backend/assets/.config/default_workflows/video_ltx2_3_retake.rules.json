@@ -208,7 +208,8 @@
         {
           "key": "target_aspect_ratio",
           "value_type": "string",
-          "expose": "hidden"
+          "expose": "none",
+          "source": "client"
         }
       ]
     }

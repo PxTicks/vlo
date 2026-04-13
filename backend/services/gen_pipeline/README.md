@@ -670,7 +670,8 @@ on `aspect_ratio`.
     {
       "key": "source_video_treatment",
       "value_type": "enum",
-      "expose": "hidden",
+      "expose": "none",
+      "source": "backend",
       "default": "fill_transparent_with_neutral_gray"
     }
   ]

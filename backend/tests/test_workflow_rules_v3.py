@@ -47,7 +47,8 @@ def test_vace_inpaint_new_uses_v3_pipeline_stage_controls():
         if control.key == "source_video_treatment"
     )
     assert mask_stage.after == ["aspect_ratio"]
-    assert treatment_control.expose == "hidden"
+    assert treatment_control.expose == "none"
+    assert treatment_control.source == "backend"
     assert treatment_control.description is not None
     assert treatment_control.exclude_options == ["preserve_transparency"]
 
@@ -93,8 +94,8 @@ def test_vace_inpaint_hidden_target_aspect_ratio_accepts_frontend_submission():
         for control in aspect_stage.controls
         if control.key == "target_aspect_ratio"
     )
-    assert target_aspect_ratio_control.expose == "hidden"
-    assert target_aspect_ratio_control.client_settable is True
+    assert target_aspect_ratio_control.expose == "none"
+    assert target_aspect_ratio_control.source == "client"
 
     resolved, warnings = resolve_pipeline_control_values_with_warnings(
         dump_resolved_rules(rules_model),
@@ -176,7 +177,8 @@ def test_hidden_pipeline_controls_are_resolved_authoritatively():
                     {
                         "key": "source_video_treatment",
                         "value_type": "enum",
-                        "expose": "hidden",
+                        "expose": "none",
+                        "source": "backend",
                         "default": "fill_transparent_with_neutral_gray",
                         "exclude_options": ["preserve_transparency"],
                         "default_rules": [
@@ -381,3 +383,95 @@ def test_finalize_backend_response_serializes_pipeline_outputs():
         base64.b64encode(b"abc").decode("ascii")
     )
     assert "processed_mask_bytes" not in payload["pipeline_outputs"]["mask_processing"]
+
+
+def test_pipeline_control_source_defaults_to_client_for_widget():
+    rules_model, warnings = normalize_rules_model(
+        {
+            "version": 3,
+            "pipeline": [
+                {
+                    "id": "aspect_ratio",
+                    "kind": "aspect_ratio",
+                    "targets": [],
+                    "controls": [
+                        {
+                            "key": "target_resolution",
+                            "value_type": "int",
+                            "expose": "widget",
+                            "options": [480, 720],
+                            "default": 720,
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    stage = get_pipeline_stage(rules_model, "aspect_ratio")
+    assert stage is not None
+    control = stage.controls[0]
+    assert control.expose == "widget"
+    assert control.source == "client"
+    assert not any(w.code.startswith("invalid_") for w in warnings)
+
+
+def test_pipeline_control_source_required_when_not_widget():
+    _, warnings = normalize_rules_model(
+        {
+            "version": 3,
+            "pipeline": [
+                {
+                    "id": "aspect_ratio",
+                    "kind": "aspect_ratio",
+                    "targets": [],
+                    "controls": [
+                        {
+                            "key": "target_aspect_ratio",
+                            "value_type": "string",
+                            "expose": "none",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    # Control without explicit source on a non-widget control must fail
+    # validation — this is the invariant that prevents the previous
+    # target_aspect_ratio regression.
+    assert any(
+        warning.code == "invalid_workflow_rules"
+        and "must declare source" in warning.message
+        for warning in warnings
+    )
+
+
+def test_pipeline_control_rejects_widget_with_backend_source():
+    _, warnings = normalize_rules_model(
+        {
+            "version": 3,
+            "pipeline": [
+                {
+                    "id": "aspect_ratio",
+                    "kind": "aspect_ratio",
+                    "targets": [],
+                    "controls": [
+                        {
+                            "key": "target_resolution",
+                            "value_type": "int",
+                            "expose": "widget",
+                            "source": "backend",
+                            "options": [480, 720],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert any(
+        warning.code == "invalid_workflow_rules"
+        and "source != 'client'" in warning.message
+        for warning in warnings
+    )

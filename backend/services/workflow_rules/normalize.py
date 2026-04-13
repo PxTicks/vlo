@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
+from services.workflow_rules.derived_mask_video_treatment import (
+    parse_derived_mask_source_video_treatment,
+)
 from services.workflow_rules.schema import (
     ResolvedWorkflowRules,
     WorkflowRuleWarningModel,
@@ -64,6 +68,123 @@ def default_rules_model() -> ResolvedWorkflowRules:
     return default_resolved_rules_model()
 
 
+def _normalize_source_video_treatment_value(
+    value: Any,
+    *,
+    path: list[str],
+    warnings: list[WorkflowRuleWarningModel],
+) -> Any:
+    if not isinstance(value, str):
+        return value
+
+    normalized = parse_derived_mask_source_video_treatment(value)
+    if normalized is None:
+        warnings.append(
+            WorkflowRuleWarningModel(
+                code="invalid_source_video_treatment_value",
+                message=(
+                    "Mask source-video treatment value is invalid and may fall back at runtime"
+                ),
+                details={"path": path, "value": value},
+            )
+        )
+        return value
+
+    if normalized != value:
+        warnings.append(
+            WorkflowRuleWarningModel(
+                code="normalized_source_video_treatment_value",
+                message="Normalized legacy source-video treatment alias in workflow rules",
+                details={"path": path, "from": value, "to": normalized},
+            )
+        )
+    return normalized
+
+
+def _normalize_source_video_treatment_list(
+    value: Any,
+    *,
+    path: list[str],
+    warnings: list[WorkflowRuleWarningModel],
+) -> Any:
+    if not isinstance(value, list):
+        return value
+
+    normalized_items: list[Any] = []
+    for index, item in enumerate(value):
+        normalized = _normalize_source_video_treatment_value(
+            item,
+            path=[*path, str(index)],
+            warnings=warnings,
+        )
+        if normalized in normalized_items:
+            continue
+        normalized_items.append(normalized)
+    return normalized_items
+
+
+def _normalize_pipeline_control_aliases(
+    raw_rules: Any,
+) -> tuple[Any, list[WorkflowRuleWarningModel]]:
+    if not isinstance(raw_rules, dict):
+        return raw_rules, []
+
+    normalized_rules = deepcopy(raw_rules)
+    warnings: list[WorkflowRuleWarningModel] = []
+    pipeline = normalized_rules.get("pipeline")
+    if not isinstance(pipeline, list):
+        return normalized_rules, warnings
+
+    for stage_index, stage in enumerate(pipeline):
+        if not isinstance(stage, dict) or stage.get("kind") != "mask_processing":
+            continue
+        controls = stage.get("controls")
+        if not isinstance(controls, list):
+            continue
+
+        for control_index, control in enumerate(controls):
+            if not isinstance(control, dict):
+                continue
+            if control.get("key") != "source_video_treatment":
+                continue
+
+            control_path = ["pipeline", str(stage_index), "controls", str(control_index)]
+
+            if "default" in control:
+                control["default"] = _normalize_source_video_treatment_value(
+                    control.get("default"),
+                    path=[*control_path, "default"],
+                    warnings=warnings,
+                )
+
+            for list_key in ("options", "include_options", "exclude_options"):
+                if list_key in control:
+                    control[list_key] = _normalize_source_video_treatment_list(
+                        control.get(list_key),
+                        path=[*control_path, list_key],
+                        warnings=warnings,
+                    )
+
+            default_rules = control.get("default_rules")
+            if not isinstance(default_rules, list):
+                continue
+            for default_rule_index, default_rule in enumerate(default_rules):
+                if not isinstance(default_rule, dict) or "value" not in default_rule:
+                    continue
+                default_rule["value"] = _normalize_source_video_treatment_value(
+                    default_rule.get("value"),
+                    path=[
+                        *control_path,
+                        "default_rules",
+                        str(default_rule_index),
+                        "value",
+                    ],
+                    warnings=warnings,
+                )
+
+    return normalized_rules, warnings
+
+
 def sidecar_path_for_workflow(workflows_dir: Path, workflow_filename: str) -> Path:
     workflow_path = Path(workflow_filename)
     if workflow_path.suffix.lower() == ".json":
@@ -93,16 +214,21 @@ def normalize_rules_model(
             ],
         )
 
+    normalized_raw, normalization_warnings = _normalize_pipeline_control_aliases(raw)
+
     try:
-        return ResolvedWorkflowRules.model_validate(raw), []
+        return ResolvedWorkflowRules.model_validate(normalized_raw), normalization_warnings
     except ValidationError as exc:
         return (
             default_resolved_rules_model(),
-            validation_warnings_from_error(
-                exc,
-                code="invalid_workflow_rules",
-                message_prefix="Workflow rules are invalid",
-            ),
+            [
+                *normalization_warnings,
+                *validation_warnings_from_error(
+                    exc,
+                    code="invalid_workflow_rules",
+                    message_prefix="Workflow rules are invalid",
+                ),
+            ],
         )
 
 

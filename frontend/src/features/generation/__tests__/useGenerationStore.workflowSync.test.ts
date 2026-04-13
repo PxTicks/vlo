@@ -272,17 +272,27 @@ describe("useGenerationStore workflow editor sync", () => {
             },
           },
         },
-        aspect_ratio_processing: {
-          enabled: true,
-          resolutions: [480, 720],
-          target_nodes: [
-            {
-              node_id: "67",
-              width_param: "width",
-              height_param: "height",
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            config: {
+              resolutions: [480, 720],
             },
-          ],
-        },
+            targets: [
+              {
+                width: {
+                  node_id: "67",
+                  param: "width",
+                },
+                height: {
+                  node_id: "67",
+                  param: "height",
+                },
+              },
+            ],
+          },
+        ],
       }),
       warnings: [],
     });
@@ -303,17 +313,27 @@ describe("useGenerationStore workflow editor sync", () => {
             },
           },
         },
-        aspect_ratio_processing: {
-          enabled: true,
-          resolutions: [480, 720],
-          target_nodes: [
-            {
-              node_id: "67",
-              width_param: "width",
-              height_param: "height",
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            config: {
+              resolutions: [480, 720],
             },
-          ],
-        },
+            targets: [
+              {
+                width: {
+                  node_id: "67",
+                  param: "width",
+                },
+                height: {
+                  node_id: "67",
+                  param: "height",
+                },
+              },
+            ],
+          },
+        ],
       }),
       rulesWorkflowSourceId: "wan2_2_flf2v.json",
     });
@@ -355,12 +375,17 @@ describe("useGenerationStore workflow editor sync", () => {
     });
     expect(state.selectedWorkflowId).toBe("wan2_2_flf2v.json");
     expect(state.rulesWorkflowSourceId).toBe("wan2_2_flf2v.json");
-    expect(state.activeWorkflowRules?.aspect_ratio_processing?.enabled).toBe(true);
-    expect(state.activeWorkflowRules?.aspect_ratio_processing?.target_nodes).toEqual([
+    expect(state.activeWorkflowRules?.pipeline?.[0]?.kind).toBe("aspect_ratio");
+    expect(state.activeWorkflowRules?.pipeline?.[0]?.targets).toEqual([
       {
-        node_id: "67",
-        width_param: "width",
-        height_param: "height",
+        width: {
+          node_id: "67",
+          param: "width",
+        },
+        height: {
+          node_id: "67",
+          param: "height",
+        },
       },
     ]);
   });
@@ -372,11 +397,20 @@ describe("useGenerationStore workflow editor sync", () => {
         rules:
           workflowId === "vlo_VACE_inpaint.json"
             ? createDefaultWorkflowRules({
-                nodes: {
-                  "101": {
-                    binary_derived_mask_of: "98",
+                pipeline: [
+                  {
+                    id: "mask_processing",
+                    kind: "mask_processing",
+                    targets: [
+                      {
+                        source: { node_id: "98", param: "video" },
+                        mask: { node_id: "101", param: "video" },
+                        mask_type: "binary",
+                        purpose: "video",
+                      },
+                    ],
                   },
-                },
+                ],
               })
             : createDefaultWorkflowRules(),
         warnings: [],
@@ -390,11 +424,20 @@ describe("useGenerationStore workflow editor sync", () => {
       ],
       activeRulesWarnings: [],
       activeWorkflowRules: createDefaultWorkflowRules({
-        nodes: {
-          "101": {
-            binary_derived_mask_of: "98",
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [
+              {
+                source: { node_id: "98", param: "video" },
+                mask: { node_id: "101", param: "video" },
+                mask_type: "binary",
+                purpose: "video",
+              },
+            ],
           },
-        },
+        ],
       }),
       rulesWorkflowSourceId: "vlo_VACE_inpaint.json",
     });
@@ -444,13 +487,14 @@ describe("useGenerationStore workflow editor sync", () => {
     const state = useGenerationStore.getState();
     expect(state.rulesWorkflowSourceId).toBe("vlo_VACE_inpaint.json");
     expect(state.workflowInputs.map((input) => input.nodeId)).toEqual(["98"]);
-    expect(state.derivedMaskMappings).toEqual([
+    expect(state.derivedMaskMappings).toMatchObject([
       {
         maskNodeId: "101",
         maskParam: "video",
         sourceNodeId: "98",
         sourceInputId: "98:video",
         maskType: "binary",
+        purpose: "video",
       },
     ]);
   });
@@ -459,12 +503,21 @@ describe("useGenerationStore workflow editor sync", () => {
     vi.spyOn(comfyApi, "resolveWorkflowRules").mockResolvedValue({
       workflow_id: "ltx.json",
       rules: createDefaultWorkflowRules({
-        nodes: {
-          "202": {
-            binary_audio_derived_mask_of: "98",
-            audio_derived_mask_fps: 17,
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [
+              {
+                source: { node_id: "98", param: "video" },
+                mask: { node_id: "202", param: "video" },
+                mask_type: "binary",
+                purpose: "audio_timing",
+                render_fps: 17,
+              },
+            ],
           },
-        },
+        ],
       }),
       warnings: [],
     });
@@ -474,12 +527,21 @@ describe("useGenerationStore workflow editor sync", () => {
       availableWorkflows: [{ id: "ltx.json", name: "LTX" }],
       activeRulesWarnings: [],
       activeWorkflowRules: createDefaultWorkflowRules({
-        nodes: {
-          "202": {
-            binary_audio_derived_mask_of: "98",
-            audio_derived_mask_fps: 17,
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [
+              {
+                source: { node_id: "98", param: "video" },
+                mask: { node_id: "202", param: "video" },
+                mask_type: "binary",
+                purpose: "audio_timing",
+                render_fps: 17,
+              },
+            ],
           },
-        },
+        ],
       }),
       rulesWorkflowSourceId: "ltx.json",
     });

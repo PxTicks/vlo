@@ -181,10 +181,14 @@ export interface GenerationRequest {
   workflowId: string | null;
   workflowRules?: WorkflowRules | null;
   exactAspectRatio: boolean;
+  targetAspectRatio?: string;
+  targetResolution?: number;
   textInputs: Record<string, string>;
   imageInputs: Record<string, File>;
   videoInputs: Record<string, File>;
   audioInputs: Record<string, File>;
+  maskCropMode?: WorkflowMaskCroppingMode;
+  maskCropDilation?: number;
   widgetInputs?: Record<string, string>;
   derivedWidgetInputs?: Record<string, string>;
   widgetModes?: Record<string, "fixed" | "randomize">;

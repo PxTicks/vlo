@@ -34,49 +34,39 @@ emits warnings.
 Warnings are returned from `/workflow/rules` and may also be included as
 `workflow_warnings` in generation JSON responses.
 
-### Root-Level Structure (V2)
+### Root-Level Structure (V3)
 
-V2 sidecars (`"version": 2`) are the current authoring format. V1 sidecars are
-still accepted and automatically migrated to V2 during compilation.
+V3 sidecars (`"version": 3`) are the current authored format. The schema is
+strict: removed legacy fields such as top-level `mask_processing`,
+`aspect_ratio_processing`, `postprocessing`, and node-level
+`binary_derived_mask_of` / `soft_derived_mask_of` are rejected rather than
+silently migrated.
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "name": "Optional display name",
   "default_widgets_mode": "control_after_generate",
   "nodes": {},
   "pipeline": [],
   "validation": { "inputs": [] },
   "derived_widgets": [],
-  "output_injections": [],
-  "slots": {},
-  "postprocessing": {}
+  "output_injections": {},
+  "slots": {}
 }
 ```
 
 | Field                  | Type                                  | Default                                                                            |
 | ---------------------- | ------------------------------------- | ---------------------------------------------------------------------------------- |
-| `version`              | `2` (literal)                         | required                                                                           |
+| `version`              | `3` (literal)                         | required                                                                           |
 | `name`                 | string (optional)                     | none                                                                               |
 | `default_widgets_mode` | `"control_after_generate"` \| `"all"` | `"control_after_generate"`                                                         |
 | `nodes`                | object                                | `{}`                                                                               |
-| `pipeline`             | array (optional)                      | `null` (uses default pipeline)                                                     |
+| `pipeline`             | array                                 | `[]`                                                                               |
 | `validation`           | object                                | `{ "inputs": [] }`                                                                 |
 | `derived_widgets`      | array                                 | `[]`                                                                               |
-| `output_injections`    | array                                 | `[]`                                                                               |
+| `output_injections`    | object                                | `{}`                                                                               |
 | `slots`                | object                                | `{}`                                                                               |
-| `postprocessing`       | object                                | `{ "mode": "auto", "panel_preview": "raw_outputs", "on_failure": "fallback_raw" }` |
-
-### Key Differences from V1
-
-| Concern                | V1                                                                        | V2                                                                      |
-| ---------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Pipeline stages        | Separate `mask_processing` and `aspect_ratio_processing` top-level sections | Unified `pipeline` array with typed stages                              |
-| Output injections      | Nested dict keyed by target node ID → output index                        | Flat array of `{ target_node_id, target_output_index, source }` objects |
-| Validation refs        | Plain node ID strings (`"98"`)                                            | Structured `{ "node_id": "98", "param": "video" }` objects              |
-| `input_conditions`     | Top-level legacy field                                                    | Removed; use `validation.inputs` with `at_least_n` rules                |
-| `default_widgets_mode` | Not available                                                             | Root-level field; sets the fallback for all nodes                       |
-| `present.input_type`   | Any string                                                                | Restricted to `"text"`, `"image"`, `"video"`                            |
 
 ---
 
@@ -448,41 +438,36 @@ step = `1/T`).
 
 ### Derived Masks
 
-Derived masks define relationships where a mask node's content is
-auto-populated from a source input during preprocessing.
-
-| Field                    | Type             | Purpose                                   |
-| ------------------------ | ---------------- | ----------------------------------------- |
-| `binary_derived_mask_of` | string (node ID) | Source node for binary (black/white) mask |
-| `soft_derived_mask_of`   | string (node ID) | Source node for soft (grayscale) mask     |
-
-These are set on the mask node's rule entry, not the source node:
+Derived masks are declared by `pipeline[kind=mask_processing].targets`.
+Each target explicitly names the source input, the mask input, the mask type,
+and the purpose:
 
 ```json
 {
-  "nodes": {
-    "98": {
-      "present": { "input_type": "video", "label": "Source Video" },
-      "selection": { "export_fps": 16, "frame_step": 4 }
-    },
-    "101": {
-      "binary_derived_mask_of": "98"
+  "pipeline": [
+    {
+      "id": "mask_processing",
+      "kind": "mask_processing",
+      "targets": [
+        {
+          "source": { "node_id": "98", "param": "file" },
+          "mask": { "node_id": "101", "param": "file" },
+          "mask_type": "binary",
+          "purpose": "video"
+        }
+      ]
     }
-  }
+  ]
 }
 ```
 
 Behavior:
 
-- The mask node is always hidden from the UI input list.
-- Only one of `binary_derived_mask_of` / `soft_derived_mask_of` should be set
-  per node.
-- The mask crop processor uses these mappings to crop both source and mask
-  to the mask's bounding region.
-- Source nodes referenced by visual derived masks automatically expose a
-  frontend-only `derived_mask_source_video_treatment` widget based on
-  `mask_processing.source_video_treatment` unless the sidecar explicitly
-  overrides or hides it.
+- Targeted mask inputs are hidden from the user-facing input list.
+- The mask crop processor uses these target pairs to crop both source and mask
+  to the mask bounds when crop mode is enabled.
+- `mask_processing.controls.source_video_treatment` controls transparency
+  treatment for source videos used to render visual derived masks.
 
 ---
 
@@ -593,8 +578,6 @@ A `frontend_only` enum widget with no `options` is automatically hidden.
 | `widgets_mode`           | `"control_after_generate"` \| `"all"` | context-dependent | Widget auto-discovery mode                        |
 | `widgets`                | `Record<string, WidgetEntry>`         | `{}`              | Explicit widget definitions/overrides             |
 | `selection`              | object                                | none              | Video frame selection config                      |
-| `binary_derived_mask_of` | string                                | none              | Source node ID for binary mask derivation         |
-| `soft_derived_mask_of`   | string                                | none              | Source node ID for soft mask derivation           |
 
 ### `present`
 
@@ -644,80 +627,98 @@ Controls video frame selection for video input nodes.
 ## Section: `pipeline`
 
 **Type:** Array of pipeline stage objects (discriminated by `kind`).
-**Default:** `null` (uses default pipeline: mask_processing then aspect_ratio).
+**Default:** `[]`
 
-The `pipeline` array controls which backend processing stages run and in what
-order. Each stage kind can appear at most once. Omitting the `pipeline` field
-entirely uses the default pipeline. Providing an explicit `pipeline` means
-**only the listed stages run** — omitting a stage disables it.
+Each stage has:
+
+- `id`: required unique stage identifier used by `pipeline_inputs` /
+  `pipeline_outputs`
+- `kind`: stage type such as `mask_processing`, `aspect_ratio`, or
+  `output_assembly`
+- `enabled`: optional boolean
+- `label` / `description`: optional author-facing metadata
+- `after`: optional dependency list using stage IDs or unique stage kinds
+- `controls`: optional pipeline control list
+- stage-specific `targets` and/or `config`
+
+The array is authored order, but runtime ordering also respects `after`
+dependencies plus built-in stage contracts such as `mask_processing` depending
+on `aspect_ratio`.
 
 ### `mask_processing` Stage
 
 ```json
 {
+  "id": "mask_processing",
   "kind": "mask_processing",
-  "cropping": { "mode": "crop" },
-  "source_video_treatment": {
-    "default": "preserve_transparency",
-    "expose_as_widget": true,
-    "label": "Transparency handling"
-  }
+  "after": ["aspect_ratio"],
+  "targets": [
+    {
+      "source": { "node_id": "98", "param": "file" },
+      "mask": { "node_id": "101", "param": "file" },
+      "mask_type": "binary",
+      "purpose": "video"
+    }
+  ],
+  "controls": [
+    {
+      "key": "crop_mode",
+      "value_type": "enum",
+      "options": ["crop", "full"],
+      "default": "crop"
+    },
+    {
+      "key": "source_video_treatment",
+      "value_type": "enum",
+      "expose": "hidden",
+      "default": "fill_transparent_with_neutral_gray"
+    }
+  ]
 }
 ```
 
-| Field                               | Type    | Values                                                                 | Default                |
-| ----------------------------------- | ------- | ---------------------------------------------------------------------- | ---------------------- |
-| `cropping.mode`                     | string  | `"crop"`, `"full"`                                                     | `"crop"`               |
-| `source_video_treatment.default`    | string  | `"preserve_transparency"`, `"fill_transparent_with_neutral_gray"`, `"remove_transparency"` | `"preserve_transparency"` |
-| `source_video_treatment.expose_as_widget` | boolean | `true`, `false`                                                        | `true`                 |
-| `source_video_treatment.label`      | string  | any non-empty string                                                   | `"Transparency handling"` |
-
-- `cropping.mode = "crop"`: Analyze mask video bounds, determine a crop region,
-  and crop both source and mask videos. Returns `mask_crop_metadata`.
-- `cropping.mode = "full"`: Skip mask cropping; use full video dimensions.
-- `source_video_treatment` controls the default transparency handling for
-  source videos used to render visual derived masks, and whether that default
-  should be exposed as a widget on the source node.
-
-Mask cropping only activates when all of these are true:
-
-- `buffered_videos` contains entries.
-- Rules contain derived mask relations.
-- `mask_crop_dilation` is set (0.0–1.0 range).
-- Mode is `"crop"`.
+- `targets` define source/mask relationships.
+- `crop_mode` and `crop_dilation` control mask crop preprocessing.
+- `source_video_treatment` supports allowed-option filtering, hidden controls,
+  and conditional defaults driven by workflow params or other pipeline
+  controls.
 
 ### `aspect_ratio` Stage
 
 ```json
 {
+  "id": "aspect_ratio",
   "kind": "aspect_ratio",
-  "enabled": true,
-  "stride": 16,
-  "search_steps": 2,
-  "resolutions": [480, 720, 1080],
-  "target_nodes": [
-    { "node_id": "214", "width_param": "width", "height_param": "height" }
-  ],
-  "postprocess": {
-    "enabled": true,
-    "mode": "stretch_exact",
-    "apply_to": "all_visual_outputs"
-  }
+  "config": {
+    "stride": 16,
+    "search_steps": 2,
+    "resolutions": [480, 720, 1080],
+    "postprocess": {
+      "enabled": true,
+      "mode": "stretch_exact",
+      "apply_to": "all_visual_outputs"
+    }
+  },
+  "targets": [
+    {
+      "width": { "node_id": "214", "param": "width" },
+      "height": { "node_id": "214", "param": "height" }
+    }
+  ]
 }
 ```
 
-| Field          | Type                       | Default                                        | Purpose                                    |
-| -------------- | -------------------------- | ---------------------------------------------- | ------------------------------------------ |
-| `enabled`      | boolean                    | `false`                                        | Enable aspect ratio processing             |
-| `stride`       | positive integer           | `16`                                           | Dimension quantization unit                |
-| `search_steps` | non-negative integer       | `2`                                            | Search radius in strides                   |
-| `resolutions`  | array of positive integers | `[]`                                           | Allowed short-edge resolutions             |
-| `target_nodes` | array of objects           | `[]`                                           | Nodes to inject calculated dimensions into |
-| `postprocess`  | object                     | enabled, `stretch_exact`, `all_visual_outputs` | Frontend resize behavior                   |
+- `config` owns processor behavior such as stride and supported resolutions.
+- `targets` explicitly identify workflow params that receive resolved width and
+  height values.
+- Typical controls are `target_resolution` (widget) and
+  `target_aspect_ratio` (hidden derived control).
 
-Each `target_nodes` entry must declare `node_id`, `width_param`, and
-`height_param`. Resize nodes with `width`/`height` parameters are also
-auto-discovered by policy rules.
+### `output_assembly` Stage
+
+`output_assembly` replaces the old root `postprocessing` object. Its config
+drives workflow-owned frontend postprocess behavior such as stitch mode, panel
+preview policy, and failure behavior.
 
 ### Pipeline Example
 
@@ -828,12 +829,14 @@ Backend preprocess order (defined in
 | 1    | `inject_values`    | —                                                              |
 | 2    | `load_rules`       | all sidecar sections                                           |
 | 3    | `validate_inputs`  | `validation`                                                   |
-| 4    | `validate_widgets` | `nodes.*.widgets`                                              |
-| 5    | `apply_rules`      | `nodes`, `output_injections`, `slots`                          |
-| 6    | `widget_overrides` | `nodes.*.widgets`                                              |
-| 7    | `mask_crop`        | `pipeline[kind=mask_processing]`, derived mask fields in `nodes` |
-| 8    | `upload_media`     | —                                                              |
-| 9    | `aspect_ratio`     | `pipeline[kind=aspect_ratio]`                                  |
+| 4    | `resolve_derived_widgets` | `derived_widgets`                                      |
+| 5    | `validate_widgets` | `nodes.*.widgets`                                              |
+| 6    | `apply_rules`      | `nodes`, `output_injections`, `slots`                          |
+| 7    | `widget_overrides` | `nodes.*.widgets`                                              |
+| 8    | `resolve_pipeline_controls` | `pipeline[*].controls`                                 |
+| 9    | `pipeline_stages_before_upload` | enabled stage hooks registered for the `before_upload` checkpoint |
+| 10   | `upload_media`     | —                                                              |
+| 11   | `pipeline_stages_after_upload` | enabled stage hooks registered for the `after_upload` checkpoint |
 
 ### apply_rules
 
@@ -851,15 +854,15 @@ backend context.
 
 ### Backend Postprocess
 
-Backend postprocess is implemented by `run_backend_postprocess()` in
+Backend postprocess is implemented by `finalize_backend_response()` in
 `backend/services/comfyui/comfyui_generate.py`.
 
 Today this phase is intentionally lightweight:
 
 - pass through non-JSON ComfyUI responses unchanged
 - preserve raw JSON responses when there is no backend metadata to attach
-- enrich JSON responses with `workflow_warnings`, applied widget values,
-  aspect-ratio metadata, and mask-crop metadata when present
+- enrich JSON responses with `workflow_warnings`, applied widget values, and
+  `pipeline_outputs` when present
 
 ### widget_overrides
 
@@ -961,12 +964,12 @@ the `resolve_derived_widgets` processor into concrete widget overrides.
 }
 ```
 
-### Complete V2 Sidecar
+### Complete V3 Sidecar
 
 ```json
 {
   "name": "Video Inpaint & Stitch",
-  "version": 2,
+  "version": 3,
 
   "nodes": {
     "98": {
@@ -980,9 +983,7 @@ the `resolve_derived_widgets` processor into concrete widget overrides.
         "max_frames": 81
       }
     },
-    "101": {
-      "binary_derived_mask_of": "98"
-    },
+    "101": {},
     "269": {
       "ignore": true,
       "present": { "enabled": false }
@@ -1001,39 +1002,61 @@ the `resolve_derived_widgets` processor into concrete widget overrides.
 
   "pipeline": [
     {
+      "id": "mask_processing",
       "kind": "mask_processing",
-      "cropping": { "mode": "crop" },
-      "source_video_treatment": {
-        "default": "preserve_transparency",
-        "expose_as_widget": true,
-        "label": "Transparency handling"
-      }
-    },
-    {
-      "kind": "aspect_ratio",
-      "enabled": true,
-      "stride": 16,
-      "search_steps": 2,
-      "resolutions": [480, 720],
-      "target_nodes": [
+      "after": ["aspect_ratio"],
+      "targets": [
         {
-          "node_id": "104",
-          "width_param": "resize_type.width",
-          "height_param": "resize_type.height"
+          "source": { "node_id": "98", "param": "file" },
+          "mask": { "node_id": "101", "param": "file" },
+          "mask_type": "binary",
+          "purpose": "video"
         }
       ],
-      "postprocess": {
-        "enabled": true,
-        "mode": "stretch_exact",
-        "apply_to": "all_visual_outputs"
+      "controls": [
+        {
+          "key": "crop_mode",
+          "value_type": "enum",
+          "options": ["crop", "full"],
+          "default": "crop"
+        },
+        {
+          "key": "source_video_treatment",
+          "value_type": "enum",
+          "expose": "widget",
+          "default": "preserve_transparency"
+        }
+      ]
+    },
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "config": {
+        "stride": 16,
+        "search_steps": 2,
+        "resolutions": [480, 720],
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": { "node_id": "104", "param": "resize_type.width" },
+          "height": { "node_id": "104", "param": "resize_type.height" }
+        }
+      ]
+    },
+    {
+      "id": "output_assembly",
+      "kind": "output_assembly",
+      "config": {
+        "mode": "auto",
+        "panel_preview": "raw_outputs",
+        "on_failure": "fallback_raw"
       }
     }
-  ],
-
-  "postprocessing": {
-    "mode": "auto",
-    "panel_preview": "raw_outputs",
-    "on_failure": "fallback_raw"
-  }
+  ]
 }
 ```

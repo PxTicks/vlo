@@ -87,7 +87,13 @@ class _MaskCropProcessor:
             crop_mode != "full"
             and isinstance(crop_dilation, (int, float))
             and float(crop_dilation) >= 0
-            and bool(collect_mask_crop_pairs(ctx.rules, crop_mode))
+            and bool(
+                collect_mask_crop_pairs(
+                    ctx.rules,
+                    crop_mode,
+                    resolved_pipeline_controls=ctx.resolved_pipeline_controls,
+                )
+            )
         )
 
         stage_outputs = ctx.pipeline_outputs.setdefault(mask_stage_id, {})
@@ -108,6 +114,7 @@ class _MaskCropProcessor:
             for source_node_id, mask_node_id in collect_mask_crop_pairs(
                 ctx.rules,
                 crop_mode if isinstance(crop_mode, str) else None,
+                resolved_pipeline_controls=ctx.resolved_pipeline_controls,
             )
             if _find_buffered_video_key(ctx.buffered_media, source_node_id) is not None
             and _find_buffered_video_key(ctx.buffered_media, mask_node_id) is not None

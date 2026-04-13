@@ -31,6 +31,10 @@ import type {
   WorkflowRuleWarning,
   WorkflowRules,
 } from "../services/workflowRules";
+import {
+  buildWorkflowReplayPipelineInputs,
+  getWorkflowReplayPipelineValue,
+} from "../services/workflowRules";
 import type {
   GenerationMediaInputValue,
   WorkflowInput,
@@ -331,6 +335,7 @@ export function buildGeneratedCreationMetadata(
   options: {
     workflowName: string;
     workflowSourceId: string | null;
+    workflowRules: WorkflowRules | null;
     workflowInputs: WorkflowInput[];
     mediaInputs: Record<string, GenerationMediaInputValue | null>;
     slotValues: Record<string, import("../utils/pipeline").SlotValue>;
@@ -387,12 +392,14 @@ export function buildGeneratedCreationMetadata(
 
   const replayState = buildGeneratedCreationReplayState({
     workflowSourceId: options.workflowSourceId,
+    workflowRules: options.workflowRules,
     workflowInputs: options.workflowInputs,
     slotValues: options.slotValues,
     widgetInputs: options.widgetInputs,
     widgetModes: options.widgetModes,
     derivedWidgetInputs: options.derivedWidgetInputs,
     exactAspectRatio: options.exactAspectRatio,
+    targetResolution: options.targetResolution,
     maskCropMode: options.maskCropMode,
     maskCropDilation: options.maskCropDilation,
   });
@@ -596,12 +603,14 @@ function buildWorkflowInputSnapshot(
 
 function buildGeneratedCreationReplayState(options: {
   workflowSourceId: string | null;
+  workflowRules: WorkflowRules | null;
   workflowInputs: WorkflowInput[];
   slotValues: Record<string, import("../utils/pipeline").SlotValue>;
   widgetInputs: Record<string, string>;
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetInputs: Record<string, string>;
   exactAspectRatio: boolean;
+  targetResolution: number;
   maskCropMode: WorkflowMaskCroppingMode;
   maskCropDilation: number;
 }): GeneratedCreationReplayState | undefined {
@@ -618,12 +627,19 @@ function buildGeneratedCreationReplayState(options: {
     textValues[inputId] = slotValue.value;
   }
 
+  const pipelineInputs = buildWorkflowReplayPipelineInputs(options.workflowRules, {
+    targetResolution: options.targetResolution,
+    maskCropMode: options.maskCropMode,
+    maskCropDilation: options.maskCropDilation,
+  });
+
   const replayState: GeneratedCreationReplayState = {
-    version: 1,
+    version: 2,
     workflowInputs: options.workflowInputs.map(buildWorkflowInputSnapshot),
     exactAspectRatio: options.exactAspectRatio,
     maskCropMode: options.maskCropMode,
     maskCropDilation: options.maskCropDilation,
+    ...(Object.keys(pipelineInputs).length > 0 ? { pipelineInputs } : {}),
   };
 
   if (options.workflowSourceId) {
@@ -643,6 +659,56 @@ function buildGeneratedCreationReplayState(options: {
   }
 
   return replayState;
+}
+
+export function getReplayTargetResolution(
+  rules: WorkflowRules | null | undefined,
+  metadata: GeneratedCreationMetadata,
+): number | undefined {
+  const replayState = metadata.replayState;
+  const replayPipelineValue = getWorkflowReplayPipelineValue(
+    rules,
+    replayState?.pipelineInputs,
+    { stageKind: "aspect_ratio", key: "target_resolution" },
+  );
+  if (typeof replayPipelineValue === "number") {
+    return replayPipelineValue;
+  }
+  return typeof metadata.targetResolution === "number"
+    ? metadata.targetResolution
+    : undefined;
+}
+
+export function getReplayMaskCropMode(
+  rules: WorkflowRules | null | undefined,
+  replayState: GeneratedCreationReplayState | null | undefined,
+): WorkflowMaskCroppingMode | undefined {
+  const replayPipelineValue = getWorkflowReplayPipelineValue(
+    rules,
+    replayState?.pipelineInputs,
+    { stageKind: "mask_processing", key: "crop_mode" },
+  );
+  if (replayPipelineValue === "crop" || replayPipelineValue === "full") {
+    return replayPipelineValue;
+  }
+  return replayState?.maskCropMode;
+}
+
+export function getReplayMaskCropDilation(
+  rules: WorkflowRules | null | undefined,
+  replayState: GeneratedCreationReplayState | null | undefined,
+): number | undefined {
+  const replayPipelineValue = getWorkflowReplayPipelineValue(
+    rules,
+    replayState?.pipelineInputs,
+    { stageKind: "mask_processing", key: "crop_dilation" },
+  );
+  if (typeof replayPipelineValue === "number") {
+    return replayPipelineValue;
+  }
+  return typeof replayState?.maskCropDilation === "number"
+    ? replayState.maskCropDilation
+    : undefined;
 }
 
 function isWorkflowInputSnapshot(

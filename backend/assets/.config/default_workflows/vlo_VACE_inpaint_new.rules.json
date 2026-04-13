@@ -34,6 +34,9 @@
     {
       "id": "mask_processing",
       "kind": "mask_processing",
+      "after": [
+        "aspect_ratio"
+      ],
       "targets": [
         {
           "source": {
@@ -75,6 +78,7 @@
         {
           "key": "source_video_treatment",
           "label": "Transparency handling",
+          "description": "Maintainer note: derives from node 92 denoise. Values below 1 remove transparency; 1 fills transparent areas with neutral gray.",
           "value_type": "enum",
           "expose": "hidden",
           "default": "fill_transparent_with_neutral_gray",

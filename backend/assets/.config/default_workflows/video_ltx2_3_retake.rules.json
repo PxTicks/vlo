@@ -89,6 +89,9 @@
     {
       "id": "mask_processing",
       "kind": "mask_processing",
+      "after": [
+        "aspect_ratio"
+      ],
       "targets": [
         {
           "source": {

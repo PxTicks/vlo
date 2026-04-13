@@ -10,9 +10,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.comfyui.comfyui_generate import finalize_backend_response
 from services.gen_pipeline.context import BackendPipelineContext
-from services.workflow_rules import load_rules_model_for_workflow
+from services.workflow_rules import load_rules_model_for_workflow, normalize_rules_model
 from services.workflow_rules.mask_pairs import collect_mask_crop_pairs
-from services.workflow_rules.pipeline import resolve_pipeline_control_values
+from services.workflow_rules.pipeline import (
+    iter_pipeline_stages,
+    resolve_pipeline_control_values,
+    resolve_pipeline_control_values_with_warnings,
+)
 from services.workflow_rules.schema import dump_resolved_rules, get_pipeline_stage
 
 
@@ -40,7 +44,9 @@ def test_vace_inpaint_new_uses_v3_pipeline_stage_controls():
         for control in mask_stage.controls
         if control.key == "source_video_treatment"
     )
+    assert mask_stage.after == ["aspect_ratio"]
     assert treatment_control.expose == "hidden"
+    assert treatment_control.description is not None
     assert treatment_control.exclude_options == ["preserve_transparency"]
 
     aspect_stage = get_pipeline_stage(rules, "aspect_ratio")
@@ -70,6 +76,192 @@ def test_vace_inpaint_new_resolves_denoise_driven_source_video_treatment():
 
     assert resolved["mask_processing"]["source_video_treatment"] == "remove_transparency"
     assert collect_mask_crop_pairs(rules) == [("98", "101")]
+
+
+def test_hidden_pipeline_controls_are_resolved_authoritatively():
+    rules = {
+        "version": 3,
+        "pipeline": [
+            {
+                "id": "mask_processing",
+                "kind": "mask_processing",
+                "targets": [],
+                "controls": [
+                    {
+                        "key": "source_video_treatment",
+                        "value_type": "enum",
+                        "expose": "hidden",
+                        "default": "fill_transparent_with_neutral_gray",
+                        "exclude_options": ["preserve_transparency"],
+                        "default_rules": [
+                            {
+                                "when": {
+                                    "ref": {
+                                        "kind": "workflow_param",
+                                        "node_id": "92",
+                                        "param": "denoise",
+                                    },
+                                    "operator": "lt",
+                                    "value": 1,
+                                },
+                                "value": "remove_transparency",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    resolved, warnings = resolve_pipeline_control_values_with_warnings(
+        rules,
+        workflow={"92": {"inputs": {"denoise": 0.5}}},
+        pipeline_inputs={
+            "mask_processing": {
+                "source_video_treatment": "fill_transparent_with_neutral_gray",
+            }
+        },
+        control_option_fallbacks={
+            ("mask_processing", "source_video_treatment"): [
+                "preserve_transparency",
+                "fill_transparent_with_neutral_gray",
+                "remove_transparency",
+            ]
+        },
+    )
+
+    assert resolved["mask_processing"]["source_video_treatment"] == "remove_transparency"
+    assert any(
+        warning["code"] == "ignored_pipeline_control_submission"
+        for warning in warnings
+    )
+
+
+def test_schema_rejects_legacy_fields():
+    rules_model, warnings = normalize_rules_model(
+        {
+            "version": 3,
+            "nodes": {"2": {"binary_derived_mask_of": "1"}},
+        }
+    )
+
+    assert rules_model.version == 3
+    assert rules_model.pipeline == []
+    assert any(
+        warning.code == "invalid_workflow_rules"
+        and "Extra inputs are not permitted" in warning.message
+        for warning in warnings
+    )
+
+
+def test_schema_rejects_pipeline_control_cycles():
+    rules_model, warnings = normalize_rules_model(
+        {
+            "version": 3,
+            "pipeline": [
+                {
+                    "id": "mask_processing",
+                    "kind": "mask_processing",
+                    "targets": [],
+                    "controls": [
+                        {
+                            "key": "a",
+                            "value_type": "enum",
+                            "options": ["x"],
+                            "bind": {
+                                "kind": "pipeline_control",
+                                "stage_id": "mask_processing",
+                                "key": "b",
+                            },
+                        },
+                        {
+                            "key": "b",
+                            "value_type": "enum",
+                            "options": ["x"],
+                            "bind": {
+                                "kind": "pipeline_control",
+                                "stage_id": "mask_processing",
+                                "key": "a",
+                            },
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert rules_model.version == 3
+    assert rules_model.pipeline == []
+    assert any(
+        warning.code == "invalid_workflow_rules"
+        and "reference cycle" in warning.message.lower()
+        for warning in warnings
+    )
+
+
+def test_normalize_rules_model_normalizes_legacy_source_video_treatment_aliases():
+    rules_model, warnings = normalize_rules_model(
+        {
+            "version": 3,
+            "pipeline": [
+                {
+                    "id": "mask_processing",
+                    "kind": "mask_processing",
+                    "targets": [],
+                    "controls": [
+                        {
+                            "key": "source_video_treatment",
+                            "value_type": "enum",
+                            "default": "keep transparency",
+                            "options": [
+                                "keep transparency",
+                                "remove transparency",
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    mask_stage = get_pipeline_stage(rules_model, "mask_processing")
+    assert mask_stage is not None
+    control = next(
+        control for control in mask_stage.controls if control.key == "source_video_treatment"
+    )
+    assert control.default == "preserve_transparency"
+    assert control.options == ["preserve_transparency", "remove_transparency"]
+    assert any(
+        warning.code == "normalized_source_video_treatment_value"
+        for warning in warnings
+    )
+
+
+def test_iter_pipeline_stages_uses_explicit_after_dependencies():
+    ordered_stages = iter_pipeline_stages(
+        {
+            "version": 3,
+            "pipeline": [
+                {
+                    "id": "mask_processing",
+                    "kind": "mask_processing",
+                    "after": ["custom_aspect"],
+                    "targets": [],
+                    "controls": [],
+                },
+                {
+                    "id": "custom_aspect",
+                    "kind": "aspect_ratio",
+                    "targets": [],
+                    "controls": [],
+                },
+            ],
+        }
+    )
+
+    assert [stage["id"] for stage in ordered_stages] == [
+        "custom_aspect",
+        "mask_processing",
+    ]
 
 
 def test_finalize_backend_response_serializes_pipeline_outputs():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -26,6 +27,9 @@ PostprocessingPanelPreview = Literal["raw_outputs", "replace_outputs"]
 PostprocessingOnFailure = Literal["fallback_raw", "show_error"]
 AspectRatioPostprocessMode = Literal["stretch_exact"]
 AspectRatioPostprocessApplyTo = Literal["all_visual_outputs"]
+DEFAULT_PIPELINE_STAGE_AFTER_BY_KIND: dict[str, tuple[str, ...]] = {
+    "mask_processing": ("aspect_ratio",),
+}
 
 
 class WorkflowRuleBaseModel(BaseModel):
@@ -103,6 +107,8 @@ class WorkflowRuleSelectionConfig(WorkflowRuleBaseModel):
 
 
 class WorkflowRuleNode(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     ignore: bool = False
     ignore_overrides: list[WorkflowRuleBooleanOverride] | None = None
     present: WorkflowRuleNodePresent | None = None
@@ -218,10 +224,14 @@ class PipelineControlDefaultRule(WorkflowRuleBaseModel):
 
 
 class PipelineControl(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     key: str
     label: str | None = None
+    description: str | None = None
     value_type: PipelineControlValueType = "unknown"
     expose: PipelineControlExposure = "widget"
+    client_settable: bool | None = None
     control: WidgetControl | None = None
     slider_display: WidgetSliderDisplay | None = None
     unit: str | None = None
@@ -280,9 +290,13 @@ class WorkflowOutputAssemblyStageConfig(WorkflowRuleBaseModel):
 
 
 class WorkflowPipelineStageBase(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     enabled: bool = True
     label: str | None = None
+    description: str | None = None
+    after: list[str] = Field(default_factory=list)
     controls: list[PipelineControl] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -321,6 +335,8 @@ WorkflowPipelineStage = Annotated[
 
 
 class ResolvedWorkflowRules(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     version: Literal[3] = 3
     name: str | None = None
     default_widgets_mode: WidgetsMode | None = None
@@ -335,10 +351,122 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     pipeline: list[WorkflowPipelineStage] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_unique_stage_ids(self) -> "ResolvedWorkflowRules":
+    def validate_pipeline_graph(self) -> "ResolvedWorkflowRules":
         stage_ids = [stage.id for stage in self.pipeline]
         if len(stage_ids) != len(set(stage_ids)):
             raise ValueError("pipeline stage ids must be unique")
+
+        stage_id_set = set(stage_ids)
+        stages_by_kind: dict[str, list[WorkflowPipelineStage]] = defaultdict(list)
+        for stage in self.pipeline:
+            stages_by_kind[stage.kind].append(stage)
+
+        def resolve_stage_reference(ref: str) -> list[str]:
+            stripped = ref.strip()
+            if not stripped:
+                return []
+            if stripped in stage_id_set:
+                return [stripped]
+            by_kind = stages_by_kind.get(stripped, [])
+            return [stage.id for stage in by_kind]
+
+        stage_dependencies: dict[str, set[str]] = {stage.id: set() for stage in self.pipeline}
+        for stage in self.pipeline:
+            control_keys = [control.key for control in stage.controls]
+            if len(control_keys) != len(set(control_keys)):
+                raise ValueError(
+                    f"pipeline stage '{stage.id}' contains duplicate control keys"
+                )
+
+            for after_ref in stage.after:
+                resolved_ids = resolve_stage_reference(after_ref)
+                if not resolved_ids:
+                    raise ValueError(
+                        f"pipeline stage '{stage.id}' references unknown dependency '{after_ref}'"
+                    )
+                for dependency_id in resolved_ids:
+                    if dependency_id == stage.id:
+                        raise ValueError(
+                            f"pipeline stage '{stage.id}' cannot depend on itself"
+                        )
+                    stage_dependencies[stage.id].add(dependency_id)
+
+            for required_kind in DEFAULT_PIPELINE_STAGE_AFTER_BY_KIND.get(stage.kind, ()):
+                for dependency_stage in stages_by_kind.get(required_kind, []):
+                    if dependency_stage.id != stage.id:
+                        stage_dependencies[stage.id].add(dependency_stage.id)
+
+        visit_state: dict[str, int] = {}
+
+        def visit_stage(stage_id: str) -> None:
+            state = visit_state.get(stage_id, 0)
+            if state == 2:
+                return
+            if state == 1:
+                raise ValueError("pipeline stage dependency cycle detected")
+            visit_state[stage_id] = 1
+            for dependency_id in stage_dependencies.get(stage_id, set()):
+                visit_stage(dependency_id)
+            visit_state[stage_id] = 2
+
+        for stage_id in stage_ids:
+            visit_stage(stage_id)
+
+        control_ids = {
+            (stage.id, control.key)
+            for stage in self.pipeline
+            for control in stage.controls
+        }
+        control_dependencies: dict[tuple[str, str], set[tuple[str, str]]] = {
+            control_id: set() for control_id in control_ids
+        }
+
+        def register_control_reference(
+            *,
+            owner_stage_id: str,
+            owner_control_key: str,
+            ref: ControlValueReference | None,
+        ) -> None:
+            if ref is None or ref.kind != "pipeline_control":
+                return
+
+            target_control = (ref.stage_id, ref.key)
+            if target_control not in control_ids:
+                raise ValueError(
+                    "pipeline control reference points to an unknown stage/control"
+                )
+            control_dependencies[(owner_stage_id, owner_control_key)].add(target_control)
+
+        for stage in self.pipeline:
+            for control in stage.controls:
+                register_control_reference(
+                    owner_stage_id=stage.id,
+                    owner_control_key=control.key,
+                    ref=control.bind,
+                )
+                for default_rule in control.default_rules or []:
+                    register_control_reference(
+                        owner_stage_id=stage.id,
+                        owner_control_key=control.key,
+                        ref=default_rule.when.ref,
+                    )
+
+        control_visit_state: dict[tuple[str, str], int] = {}
+
+        def visit_control(control_id: tuple[str, str]) -> None:
+            state = control_visit_state.get(control_id, 0)
+            if state == 2:
+                return
+            if state == 1:
+                raise ValueError("pipeline control reference cycle detected")
+            control_visit_state[control_id] = 1
+            for dependency in control_dependencies.get(control_id, set()):
+                visit_control(dependency)
+            control_visit_state[control_id] = 2
+
+        for control_id in control_ids:
+            visit_control(control_id)
+
         return self
 
 

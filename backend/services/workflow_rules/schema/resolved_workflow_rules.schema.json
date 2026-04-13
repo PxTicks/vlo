@@ -87,6 +87,7 @@
       "type": "object"
     },
     "PipelineControl": {
+      "additionalProperties": false,
       "properties": {
         "bind": {
           "anyOf": [
@@ -113,6 +114,18 @@
           ],
           "default": null,
           "title": "Bind"
+        },
+        "client_settable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Settable"
         },
         "control": {
           "anyOf": [
@@ -151,6 +164,18 @@
           ],
           "default": null,
           "title": "Default Rules"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
         },
         "exclude_options": {
           "anyOf": [
@@ -517,7 +542,15 @@
       "type": "object"
     },
     "WorkflowAspectRatioStage": {
+      "additionalProperties": false,
       "properties": {
+        "after": {
+          "items": {
+            "type": "string"
+          },
+          "title": "After",
+          "type": "array"
+        },
         "config": {
           "$ref": "#/$defs/WorkflowAspectRatioStageConfig"
         },
@@ -527,6 +560,18 @@
           },
           "title": "Controls",
           "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
         },
         "enabled": {
           "default": true,
@@ -751,13 +796,33 @@
       "type": "object"
     },
     "WorkflowMaskProcessingStage": {
+      "additionalProperties": false,
       "properties": {
+        "after": {
+          "items": {
+            "type": "string"
+          },
+          "title": "After",
+          "type": "array"
+        },
         "controls": {
           "items": {
             "$ref": "#/$defs/PipelineControl"
           },
           "title": "Controls",
           "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
         },
         "enabled": {
           "default": true,
@@ -832,7 +897,15 @@
       "type": "object"
     },
     "WorkflowOutputAssemblyStage": {
+      "additionalProperties": false,
       "properties": {
+        "after": {
+          "items": {
+            "type": "string"
+          },
+          "title": "After",
+          "type": "array"
+        },
         "config": {
           "$ref": "#/$defs/WorkflowOutputAssemblyStageConfig"
         },
@@ -842,6 +915,18 @@
           },
           "title": "Controls",
           "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
         },
         "enabled": {
           "default": true,
@@ -1014,6 +1099,7 @@
       "type": "object"
     },
     "WorkflowRuleNode": {
+      "additionalProperties": false,
       "properties": {
         "ignore": {
           "default": false,
@@ -1700,6 +1786,7 @@
       "type": "object"
     }
   },
+  "additionalProperties": false,
   "properties": {
     "default_widgets_mode": {
       "anyOf": [

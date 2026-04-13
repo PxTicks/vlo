@@ -120,10 +120,15 @@ export async function runFrontendPreprocess(
     graphData: ctx.syncedGraphData,
     workflowId: ctx.workflowId,
     exactAspectRatio: ctx.exactAspectRatio,
+    targetAspectRatio: ctx.targetAspectRatio,
+    targetResolution: ctx.targetResolution,
     textInputs: ctx.textInputs,
     imageInputs: ctx.imageInputs,
     videoInputs: ctx.videoInputs,
     audioInputs: ctx.audioInputs,
+    maskCropMode: ctx.maskCropMode,
+    maskCropDilation:
+      ctx.maskCropMode === "full" ? undefined : ctx.maskCropDilation,
     pipelineInputs: ctx.pipelineInputs,
     clientId: ctx.clientId,
   };

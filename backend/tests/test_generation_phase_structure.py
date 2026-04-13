@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import sys
@@ -9,15 +8,14 @@ import httpx
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.comfyui.comfyui_generate import run_backend_postprocess  # noqa: E402
+from services.comfyui.comfyui_generate import finalize_backend_response  # noqa: E402
 from services.gen_pipeline.context import BackendPipelineContext  # noqa: E402
 from services.gen_pipeline.processors import (  # noqa: E402
     build_backend_dispatch_processors,
     build_backend_preprocessors,
     build_generation_processors,
 )
-from services.workflow_rules import normalize_rules_model  # noqa: E402
-from services.workflow_rules.schema import dump_resolved_rules  # noqa: E402
+from services.workflow_rules.pipeline import iter_pipeline_stages  # noqa: E402
 
 
 async def _noop_upload_video_bytes(
@@ -49,8 +47,8 @@ def _noop_aspect_ratio_processing(
     return None, []
 
 
-def _build_preprocessors():
-    return build_backend_preprocessors(
+def test_backend_generation_phase_builders_keep_dispatch_separate():
+    preprocessors = build_backend_preprocessors(
         workflows_dir=Path("."),
         fallback_workflow_dirs=None,
         input_node_map={},
@@ -61,10 +59,6 @@ def _build_preprocessors():
         register_media_bytes_fn=_noop_register_media_bytes,
         apply_aspect_ratio_processing_fn=_noop_aspect_ratio_processing,
     )
-
-
-def test_backend_generation_phase_builders_keep_dispatch_separate():
-    preprocessors = _build_preprocessors()
     dispatch_processors = build_backend_dispatch_processors(
         prompt_id_factory=lambda: "prompt-1"
     )
@@ -77,9 +71,10 @@ def test_backend_generation_phase_builders_keep_dispatch_separate():
         "validate_widgets",
         "apply_rules",
         "widget_overrides",
-        "mask_crop",
+        "resolve_pipeline_controls",
+        "pipeline_stages_before_upload",
         "upload_media",
-        "aspect_ratio",
+        "pipeline_stages_after_upload",
     ]
     assert [processor.meta.name for processor in dispatch_processors] == [
         "submit_prompt",
@@ -108,27 +103,37 @@ def test_build_generation_processors_flattens_preprocess_and_dispatch_phases():
         "validate_widgets",
         "apply_rules",
         "widget_overrides",
-        "mask_crop",
+        "resolve_pipeline_controls",
+        "pipeline_stages_before_upload",
         "upload_media",
-        "aspect_ratio",
+        "pipeline_stages_after_upload",
         "submit_prompt",
     ]
 
 
-def test_run_backend_postprocess_enriches_json_response_with_metadata():
+def test_finalize_backend_response_enriches_json_response_with_pipeline_outputs():
     ctx = BackendPipelineContext(
         client=cast(Any, None),
         client_id="client-1",
         workflow={},
         warnings=[{"code": "warning_code", "message": "Warning message"}],
         applied_widget_values={"145:seed": "123"},
-        aspect_ratio_metadata={"requested": {"aspect_ratio": "16:9"}},
-        mask_crop_metadata={"mode": "full"},
-        processed_mask_bytes=b"mask-bytes",
-        comfyui_response=httpx.Response(200, json={"prompt_id": "prompt-1"}),
+        pipeline_outputs={
+            "aspect_ratio": {
+                "aspect_ratio_processing": {"requested": {"aspect_ratio": "16:9"}}
+            },
+            "mask_processing": {
+                "mask_crop_metadata": {"mode": "full"},
+                "processed_mask_bytes": b"mask-bytes",
+            },
+        },
+        comfyui_response=httpx.Response(
+            200,
+            json={"prompt_id": "prompt-1", "number": 1, "node_errors": {}},
+        ),
     )
 
-    result = run_backend_postprocess(ctx)
+    result = finalize_backend_response(ctx)
 
     assert result.status_code == 200
     assert result.media_type == "application/json"
@@ -139,148 +144,39 @@ def test_run_backend_postprocess_enriches_json_response_with_metadata():
         {"code": "warning_code", "message": "Warning message"}
     ]
     assert payload["applied_widget_values"] == {"145:seed": "123"}
-    assert payload["aspect_ratio_processing"] == {
+    assert payload["pipeline_outputs"]["aspect_ratio"]["aspect_ratio_processing"] == {
         "requested": {"aspect_ratio": "16:9"}
     }
-    assert payload["mask_crop_metadata"] == {"mode": "full"}
-    assert isinstance(payload["processed_mask_video"], str)
+    assert payload["pipeline_outputs"]["mask_processing"]["mask_crop_metadata"] == {
+        "mode": "full"
+    }
+    assert isinstance(
+        payload["pipeline_outputs"]["mask_processing"]["processed_mask_video"],
+        str,
+    )
 
 
-def test_v2_pipeline_runs_aspect_ratio_during_mask_crop_when_declared_first():
-    call_log: list[str] = []
-
-    def apply_aspect_ratio_processing(
-        _workflow: dict[str, Any],
-        _rules: dict[str, Any],
-        _target_aspect_ratio: str | None,
-        _target_resolution: Any,
-    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
-        call_log.append("aspect_ratio")
-        return {"requested": {"aspect_ratio": "16:9"}}, []
-
-    rules_model, warnings = normalize_rules_model(
+def test_iter_pipeline_stages_applies_registry_dependency_contract():
+    ordered_stages = iter_pipeline_stages(
         {
-            "version": 2,
-            "nodes": {
-                "2": {
-                    "binary_derived_mask_of": "1",
-                }
-            },
             "pipeline": [
-                {"kind": "aspect_ratio", "enabled": True, "resolutions": [720]},
-                {"kind": "mask_processing", "cropping": {"mode": "crop"}},
-            ],
+                {
+                    "id": "mask_processing",
+                    "kind": "mask_processing",
+                    "targets": [],
+                    "controls": [],
+                },
+                {
+                    "id": "aspect_ratio",
+                    "kind": "aspect_ratio",
+                    "targets": [],
+                    "controls": [],
+                },
+            ]
         }
     )
-    assert warnings == []
 
-    processors = build_backend_preprocessors(
-        workflows_dir=Path("."),
-        fallback_workflow_dirs=None,
-        input_node_map={},
-        analyze_mask_video_bounds_fn=lambda *_args, **_kwargs: (0, 0, 1, 1),
-        crop_video_fn=lambda video_bytes, _crop: video_bytes,
-        get_video_dimensions_fn=lambda _video_bytes: (1, 1),
-        upload_video_bytes_fn=_noop_upload_video_bytes,
-        register_media_bytes_fn=_noop_register_media_bytes,
-        apply_aspect_ratio_processing_fn=apply_aspect_ratio_processing,
-    )
-    mask_processor = next(
-        processor for processor in processors if processor.meta.name == "mask_crop"
-    )
-    aspect_ratio_processor = next(
-        processor for processor in processors if processor.meta.name == "aspect_ratio"
-    )
-
-    ctx = BackendPipelineContext(
-        client=cast(Any, None),
-        client_id="client-1",
-        workflow={},
-        rules=dump_resolved_rules(rules_model),
-        rules_model=rules_model,
-        buffered_media={
-            "source": {"node_id": "1", "input_type": "video", "bytes": b"source"},
-            "mask": {"node_id": "2", "input_type": "video", "bytes": b"mask"},
-        },
-        target_aspect_ratio="16:9",
-        target_resolution=720,
-        mask_crop_dilation=0.2,
-    )
-
-    assert mask_processor.is_active(ctx) is True
-    assert aspect_ratio_processor.is_active(ctx) is True
-
-    asyncio.run(mask_processor.execute(ctx))
-
-    assert call_log == ["aspect_ratio"]
-    assert ctx.aspect_ratio_applied is True
-    assert ctx.aspect_ratio_metadata == {"requested": {"aspect_ratio": "16:9"}}
-    assert aspect_ratio_processor.is_active(ctx) is False
-
-
-def test_v2_pipeline_without_mask_stage_skips_mask_processing_effects():
-    call_log: list[str] = []
-
-    def apply_aspect_ratio_processing(
-        _workflow: dict[str, Any],
-        _rules: dict[str, Any],
-        _target_aspect_ratio: str | None,
-        _target_resolution: Any,
-    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
-        call_log.append("aspect_ratio")
-        return {"requested": {"aspect_ratio": "16:9"}}, []
-
-    rules_model, warnings = normalize_rules_model(
-        {
-            "version": 2,
-            "nodes": {
-                "2": {
-                    "binary_derived_mask_of": "1",
-                }
-            },
-            "pipeline": [
-                {"kind": "aspect_ratio", "enabled": True, "resolutions": [720]}
-            ],
-        }
-    )
-    assert warnings == []
-
-    processors = build_backend_preprocessors(
-        workflows_dir=Path("."),
-        fallback_workflow_dirs=None,
-        input_node_map={},
-        analyze_mask_video_bounds_fn=lambda *_args, **_kwargs: (0, 0, 1, 1),
-        crop_video_fn=lambda video_bytes, _crop: video_bytes,
-        get_video_dimensions_fn=lambda _video_bytes: (1, 1),
-        upload_video_bytes_fn=_noop_upload_video_bytes,
-        register_media_bytes_fn=_noop_register_media_bytes,
-        apply_aspect_ratio_processing_fn=apply_aspect_ratio_processing,
-    )
-    mask_processor = next(
-        processor for processor in processors if processor.meta.name == "mask_crop"
-    )
-    aspect_ratio_processor = next(
-        processor for processor in processors if processor.meta.name == "aspect_ratio"
-    )
-
-    ctx = BackendPipelineContext(
-        client=cast(Any, None),
-        client_id="client-1",
-        workflow={},
-        rules=dump_resolved_rules(rules_model),
-        rules_model=rules_model,
-        buffered_media={
-            "source": {"node_id": "1", "input_type": "video", "bytes": b"source"},
-            "mask": {"node_id": "2", "input_type": "video", "bytes": b"mask"},
-        },
-        target_aspect_ratio="16:9",
-        target_resolution=720,
-        mask_crop_dilation=0.2,
-    )
-
-    asyncio.run(mask_processor.execute(ctx))
-
-    assert call_log == []
-    assert ctx.mask_crop_metadata == {"mode": "full"}
-    assert ctx.aspect_ratio_applied is False
-    assert aspect_ratio_processor.is_active(ctx) is True
+    assert [stage["kind"] for stage in ordered_stages] == [
+        "aspect_ratio",
+        "mask_processing",
+    ]

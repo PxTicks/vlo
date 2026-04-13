@@ -267,24 +267,34 @@ describe("GenerationPanel workflow rule hints", () => {
   it("shows generation resolution only for workflows with aspect ratio processing", () => {
     useGenerationStore.setState({
       activeWorkflowRules: createDefaultWorkflowRules({
-        aspect_ratio_processing: {
-          enabled: true,
-          stride: 16,
-          search_steps: 2,
-          resolutions: [480, 720],
-          target_nodes: [
-            {
-              node_id: "49",
-              width_param: "width",
-              height_param: "height",
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            config: {
+              stride: 16,
+              search_steps: 2,
+              resolutions: [480, 720],
+              postprocess: {
+                enabled: true,
+                mode: "stretch_exact",
+                apply_to: "all_visual_outputs",
+              },
             },
-          ],
-          postprocess: {
-            enabled: true,
-            mode: "stretch_exact",
-            apply_to: "all_visual_outputs",
+            targets: [
+              {
+                width: {
+                  node_id: "49",
+                  param: "width",
+                },
+                height: {
+                  node_id: "49",
+                  param: "height",
+                },
+              },
+            ],
           },
-        },
+        ],
       }),
     });
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
@@ -549,24 +559,34 @@ describe("GenerationPanel workflow rule hints", () => {
     const setEditorOpen = vi.fn();
     useGenerationStore.setState({
       activeWorkflowRules: createDefaultWorkflowRules({
-        aspect_ratio_processing: {
-          enabled: true,
-          stride: 16,
-          search_steps: 2,
-          resolutions: [480, 720],
-          target_nodes: [
-            {
-              node_id: "49",
-              width_param: "width",
-              height_param: "height",
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            config: {
+              stride: 16,
+              search_steps: 2,
+              resolutions: [480, 720],
+              postprocess: {
+                enabled: true,
+                mode: "stretch_exact",
+                apply_to: "all_visual_outputs",
+              },
             },
-          ],
-          postprocess: {
-            enabled: true,
-            mode: "stretch_exact",
-            apply_to: "all_visual_outputs",
+            targets: [
+              {
+                width: {
+                  node_id: "49",
+                  param: "width",
+                },
+                height: {
+                  node_id: "49",
+                  param: "height",
+                },
+              },
+            ],
           },
-        },
+        ],
       }),
       derivedMaskMappings: [
         {

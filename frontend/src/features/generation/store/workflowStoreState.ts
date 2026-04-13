@@ -12,6 +12,9 @@ import { mergeRuleWarnings } from "../services/warnings";
 import { buildMediaInputActions } from "./mediaInputActions";
 import {
   extractReplayPanelState,
+  getReplayMaskCropDilation,
+  getReplayMaskCropMode,
+  getReplayTargetResolution,
   parseReplayWorkflowInputs,
   parseMetadataWorkflowInputs,
   resolveMetadataWorkflowMatch,
@@ -695,7 +698,10 @@ export function buildWorkflowStoreState(
           await get().loadWorkflow(resolvedWorkflow.matchedWorkflow.id);
         }
 
-        const savedTargetResolution = metadata.targetResolution;
+        const savedTargetResolution = getReplayTargetResolution(
+          get().activeWorkflowRules,
+          metadata,
+        );
         if (typeof savedTargetResolution === "number") {
           const supportedResolutions = getSupportedWorkflowResolutions(
             get().activeWorkflowRules,
@@ -713,12 +719,20 @@ export function buildWorkflowStoreState(
 
         const savedReplayState = metadata.replayState;
         if (savedReplayState) {
+          const replayMaskCropMode = getReplayMaskCropMode(
+            get().activeWorkflowRules,
+            savedReplayState,
+          );
+          const replayMaskCropDilation = getReplayMaskCropDilation(
+            get().activeWorkflowRules,
+            savedReplayState,
+          );
           set({
             exactAspectRatio: savedReplayState.exactAspectRatio ?? false,
-            maskCropMode: savedReplayState.maskCropMode ?? get().maskCropMode,
+            maskCropMode: replayMaskCropMode ?? get().maskCropMode,
             maskCropDilation:
-              typeof savedReplayState.maskCropDilation === "number"
-                ? Math.max(0, Math.min(0.5, savedReplayState.maskCropDilation))
+              typeof replayMaskCropDilation === "number"
+                ? Math.max(0, Math.min(0.5, replayMaskCropDilation))
                 : get().maskCropDilation,
             pendingReplayPanelState: extractReplayPanelState(metadata),
           });

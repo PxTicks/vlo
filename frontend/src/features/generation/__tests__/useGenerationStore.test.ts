@@ -172,18 +172,23 @@ describe("useGenerationStore workflow rules", () => {
   it("normalizes generation resolution to the closest workflow-supported value", async () => {
     useGenerationStore.setState({
       activeWorkflowRules: makeWorkflowRules({
-        aspect_ratio_processing: {
-          enabled: true,
-          stride: 16,
-          search_steps: 2,
-          resolutions: [480, 720],
-          target_nodes: [],
-          postprocess: {
-            enabled: true,
-            mode: "stretch_exact",
-            apply_to: "all_visual_outputs",
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            config: {
+              stride: 16,
+              search_steps: 2,
+              resolutions: [480, 720],
+              postprocess: {
+                enabled: true,
+                mode: "stretch_exact",
+                apply_to: "all_visual_outputs",
+              },
+            },
+            targets: [],
           },
-        },
+        ],
       }),
     });
 
@@ -221,7 +226,14 @@ describe("useGenerationStore workflow rules", () => {
       workflow_id: "wf.json",
       has_sidecar: true,
       rules: makeWorkflowRules({
-        mask_processing: { cropping: { mode: "full" } },
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            controls: [{ key: "crop_mode", default: "full" }],
+            targets: [],
+          },
+        ],
       }),
       warnings: [],
     });
@@ -488,11 +500,17 @@ describe("useGenerationStore workflow rules", () => {
         },
       },
       activeWorkflowRules: makeWorkflowRules({
-        postprocessing: {
-          mode: "stitch_frames_with_audio",
-          panel_preview: "replace_outputs",
-          on_failure: "show_error",
-        },
+        pipeline: [
+          {
+            id: "output_assembly",
+            kind: "output_assembly",
+            config: {
+              mode: "stitch_frames_with_audio",
+              panel_preview: "replace_outputs",
+              on_failure: "show_error",
+            },
+          },
+        ],
       }),
       isWorkflowLoading: false,
       workflowLoadState: "ready",
@@ -549,7 +567,7 @@ describe("useGenerationStore workflow rules", () => {
         ],
       },
       replayState: {
-        version: 1,
+        version: 2,
         workflowSourceId: "video_wan_vace_14B_v2v.json",
         workflowInputs: [
           {
@@ -593,7 +611,15 @@ describe("useGenerationStore workflow rules", () => {
       syncedWorkflow: {},
       workflowInputs: [],
       mediaInputs: {},
-      activeWorkflowRules: makeWorkflowRules(),
+      activeWorkflowRules: makeWorkflowRules({
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            targets: [],
+          },
+        ],
+      }),
       isWorkflowLoading: false,
       workflowLoadState: "ready",
       isWorkflowReady: true,
@@ -604,32 +630,36 @@ describe("useGenerationStore workflow rules", () => {
       prompt_id: "prompt-ar",
       number: 1,
       node_errors: {},
-      aspect_ratio_processing: {
-        enabled: true,
-        requested: {
-          aspect_ratio: "16:9",
-          resolution: 1080,
-          width: 1080,
-          height: 608,
-        },
-        strided: {
-          width: 1088,
-          height: 608,
-          aspect_ratio: 1.7894736842,
-          distortion: 1.00625,
-          error: 0.00625,
-          stride: 32,
-          search_steps: 2,
-        },
-        applied_nodes: [
-          { node_id: "49", width_param: "width", height_param: "height" },
-        ],
-        postprocess: {
-          enabled: true,
-          mode: "stretch_exact",
-          apply_to: "all_visual_outputs",
-          target_width: 1080,
-          target_height: 608,
+      pipeline_outputs: {
+        aspect_ratio: {
+          aspect_ratio_processing: {
+            enabled: true,
+            requested: {
+              aspect_ratio: "16:9",
+              resolution: 1080,
+              width: 1080,
+              height: 608,
+            },
+            strided: {
+              width: 1088,
+              height: 608,
+              aspect_ratio: 1.7894736842,
+              distortion: 1.00625,
+              error: 0.00625,
+              stride: 32,
+              search_steps: 2,
+            },
+            applied_nodes: [
+              { node_id: "49", width_param: "width", height_param: "height" },
+            ],
+            postprocess: {
+              enabled: true,
+              mode: "stretch_exact",
+              apply_to: "all_visual_outputs",
+              target_width: 1080,
+              target_height: 608,
+            },
+          },
         },
       },
     });

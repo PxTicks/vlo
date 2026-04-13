@@ -53,7 +53,7 @@ export interface GeneratedCreationWorkflowInputSnapshot {
 }
 
 export interface GeneratedCreationReplayState {
-  version: 1;
+  version: 1 | 2;
   workflowSourceId?: string | null;
   workflowInputs?: GeneratedCreationWorkflowInputSnapshot[];
   textValues?: Record<string, string>;
@@ -61,6 +61,7 @@ export interface GeneratedCreationReplayState {
   widgetModes?: Record<string, "fixed" | "randomize">;
   derivedWidgetValues?: Record<string, string>;
   exactAspectRatio?: boolean;
+  pipelineInputs?: Record<string, Record<string, unknown>>;
   maskCropMode?: "crop" | "full";
   maskCropDilation?: number;
 }

@@ -26,8 +26,10 @@ export interface NodeOutputSource {
 export interface PipelineControl {
   key: string;
   label?: string | null;
+  description?: string | null;
   value_type?: "int" | "float" | "string" | "boolean" | "enum" | "unknown";
   expose?: "widget" | "hidden";
+  client_settable?: boolean | null;
   control?: "slider" | null;
   slider_display?: "percent" | "number" | null;
   unit?: string | null;
@@ -76,6 +78,8 @@ export interface WorkflowAspectRatioStage {
   id: string;
   enabled?: boolean;
   label?: string | null;
+  description?: string | null;
+  after?: Array<string>;
   controls?: Array<PipelineControl>;
   kind?: "aspect_ratio";
   config?: WorkflowAspectRatioStageConfig;
@@ -119,6 +123,8 @@ export interface WorkflowMaskProcessingStage {
   id: string;
   enabled?: boolean;
   label?: string | null;
+  description?: string | null;
+  after?: Array<string>;
   controls?: Array<PipelineControl>;
   kind?: "mask_processing";
   targets?: Array<MaskProcessingTarget>;
@@ -134,6 +140,8 @@ export interface WorkflowOutputAssemblyStage {
   id: string;
   enabled?: boolean;
   label?: string | null;
+  description?: string | null;
+  after?: Array<string>;
   controls?: Array<PipelineControl>;
   kind?: "output_assembly";
   config?: WorkflowOutputAssemblyStageConfig;

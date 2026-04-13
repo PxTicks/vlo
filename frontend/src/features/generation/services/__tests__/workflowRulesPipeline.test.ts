@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildWorkflowReplayPipelineInputs,
   createDefaultWorkflowRules,
+  getWorkflowReplayPipelineValue,
   getMaskCropDilationDefault,
   getMaskCropModeDefault,
   getSupportedWorkflowResolutions,
@@ -72,5 +74,49 @@ describe("workflowRules pipeline helpers", () => {
       on_failure: "show_error",
       stitch_fps: 24,
     });
+  });
+
+  it("builds and reads replay pipeline inputs from stage ids", () => {
+    const rules = createDefaultWorkflowRules({
+      pipeline: [
+        {
+          id: "custom_aspect",
+          kind: "aspect_ratio",
+          controls: [{ key: "target_resolution", value_type: "int" }],
+          targets: [],
+        },
+        {
+          id: "custom_mask",
+          kind: "mask_processing",
+          controls: [
+            { key: "crop_mode", value_type: "enum" },
+            { key: "crop_dilation", value_type: "float" },
+          ],
+          targets: [],
+        },
+      ],
+    });
+
+    const replayPipelineInputs = buildWorkflowReplayPipelineInputs(rules, {
+      targetResolution: 720,
+      maskCropMode: "crop",
+      maskCropDilation: 0.2,
+    });
+
+    expect(replayPipelineInputs).toEqual({
+      custom_aspect: {
+        target_resolution: 720,
+      },
+      custom_mask: {
+        crop_mode: "crop",
+        crop_dilation: 0.2,
+      },
+    });
+    expect(
+      getWorkflowReplayPipelineValue(rules, replayPipelineInputs, {
+        stageKind: "aspect_ratio",
+        key: "target_resolution",
+      }),
+    ).toBe(720);
   });
 });

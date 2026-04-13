@@ -4,6 +4,7 @@ import {
   extractReplayPanelState,
   parseReplayWorkflowInputs,
 } from "../metadata";
+import { createDefaultWorkflowRules } from "../../services/workflowRules";
 import type { WorkflowInput } from "../../types";
 
 describe("generation metadata replay helpers", () => {
@@ -42,6 +43,25 @@ describe("generation metadata replay helpers", () => {
     const metadata = buildGeneratedCreationMetadata({
       workflowName: "Workflow",
       workflowSourceId: "wan2_2_flf2v.json",
+      workflowRules: createDefaultWorkflowRules({
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            controls: [{ key: "target_resolution", value_type: "int" }],
+            targets: [],
+          },
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            controls: [
+              { key: "crop_mode", value_type: "enum" },
+              { key: "crop_dilation", value_type: "float" },
+            ],
+            targets: [],
+          },
+        ],
+      }),
       workflowInputs,
       mediaInputs: {},
       slotValues: {
@@ -72,7 +92,7 @@ describe("generation metadata replay helpers", () => {
       inputs: [],
       targetResolution: 720,
       replayState: {
-        version: 1,
+        version: 2,
         workflowSourceId: "wan2_2_flf2v.json",
         workflowInputs: [
           {
@@ -115,6 +135,14 @@ describe("generation metadata replay helpers", () => {
           derived_widget_dual_sampler_denoise: "0.4",
         },
         exactAspectRatio: true,
+        pipelineInputs: {
+          aspect_ratio: {
+            target_resolution: 720,
+          },
+          mask_processing: {
+            crop_mode: "full",
+          },
+        },
         maskCropMode: "full",
         maskCropDilation: 0.2,
       },
@@ -212,6 +240,7 @@ describe("generation metadata replay helpers", () => {
     const metadata = buildGeneratedCreationMetadata({
       workflowName: "Workflow",
       workflowSourceId: "workflow.json",
+      workflowRules: null,
       workflowInputs,
       mediaInputs: {
         "145:image": {
@@ -293,6 +322,7 @@ describe("generation metadata replay helpers", () => {
     const metadata = buildGeneratedCreationMetadata({
       workflowName: "Workflow",
       workflowSourceId: "video_ltx2_3_flf2v.json",
+      workflowRules: null,
       workflowInputs,
       mediaInputs: {
         "45:image": {

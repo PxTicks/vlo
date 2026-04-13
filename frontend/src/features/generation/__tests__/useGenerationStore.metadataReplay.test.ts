@@ -615,10 +615,16 @@ describe("useGenerationStore metadata replay", () => {
       workflow_id: "wan2_2_flf2v.json",
       has_sidecar: true,
       rules: createDefaultWorkflowRules({
-        aspect_ratio_processing: {
-          enabled: true,
-          resolutions: [720, 1080],
-        },
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            config: {
+              resolutions: [720, 1080],
+            },
+            targets: [],
+          },
+        ],
       }),
       warnings: [],
     });

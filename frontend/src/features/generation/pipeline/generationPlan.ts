@@ -217,6 +217,7 @@ export function createGenerationPlan(
           {
             workflowName: options.workflowName,
             workflowSourceId: options.workflowId,
+            workflowRules: options.workflowRules,
             workflowInputs: options.workflowInputs,
             mediaInputs: options.mediaInputs,
             slotValues: options.slotValues,

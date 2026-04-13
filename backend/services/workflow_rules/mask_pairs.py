@@ -10,12 +10,15 @@ MaskCroppingMode = Literal["crop", "full"]
 def collect_mask_crop_pairs(
     rules: WorkflowRules | None,
     mode_override: MaskCroppingMode | None = None,
+    resolved_pipeline_controls: dict[str, dict[str, object]] | None = None,
 ) -> list[tuple[str, str]]:
     """Return ``(source_node_id, mask_node_id)`` pairs for mask-crop preprocessing.
 
     Mask-processing stage targets are the source of truth. The workflow sidecar
     can set the `crop_mode` control default to ``full`` to skip preprocessing
-    when no request override is provided.
+    when no request override is provided. Runtime callers should prefer passing
+    `resolved_pipeline_controls` or an explicit `mode_override`; default
+    inspection is kept for sidecar introspection and tests.
     """
     if not isinstance(rules, dict):
         return []
@@ -28,6 +31,14 @@ def collect_mask_crop_pairs(
         return []
 
     if mode_override is None:
+        mask_stage_id = mask_stage.get("id")
+        if isinstance(mask_stage_id, str):
+            stage_controls = (resolved_pipeline_controls or {}).get(mask_stage_id)
+            if isinstance(stage_controls, dict):
+                resolved_mode = stage_controls.get("crop_mode")
+                if resolved_mode == "full":
+                    return []
+
         controls = mask_stage.get("controls")
         if isinstance(controls, list):
             for control in controls:

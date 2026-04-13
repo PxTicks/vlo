@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -157,26 +157,22 @@ function useLocalActiveSection(
   activeContextId: string | undefined,
   sectionOrder: string[],
 ) {
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const activeSectionId = useMemo(() => {
     if (!activeContextId || sectionOrder.length === 0) {
-      setActiveSectionId(null);
-      return;
+      return null;
     }
-
-    setActiveSectionId((currentSectionId) => {
-      if (currentSectionId && sectionOrder.includes(currentSectionId)) {
-        return currentSectionId;
-      }
-      return sectionOrder[0] ?? null;
-    });
-  }, [activeContextId, sectionOrder]);
+    if (selectedSectionId && sectionOrder.includes(selectedSectionId)) {
+      return selectedSectionId;
+    }
+    return sectionOrder[0] ?? null;
+  }, [activeContextId, sectionOrder, selectedSectionId]);
 
   const activateSection = useCallback(
     (sectionId: string) => {
       if (!activeContextId) return;
-      setActiveSectionId(sectionId);
+      setSelectedSectionId(sectionId);
     },
     [activeContextId],
   );
@@ -243,6 +239,22 @@ export const MaskPanel = memo(function MaskPanel() {
     handleCommit: handleSelectedMaskCommit,
   } = useTransformationController({ target: "mask" });
 
+  const [clipIdForPanelView, setClipIdForPanelView] = useState<
+    string | undefined
+  >(selectedClipId);
+  if (clipIdForPanelView !== selectedClipId) {
+    setClipIdForPanelView(selectedClipId);
+    setPanelView("home");
+  }
+  const [hadSelectedMask, setHadSelectedMask] = useState(!!selectedMask);
+  const currentlyHasSelectedMask = !!selectedMask;
+  if (hadSelectedMask !== currentlyHasSelectedMask) {
+    setHadSelectedMask(currentlyHasSelectedMask);
+    if (!currentlyHasSelectedMask) {
+      setPanelView("home");
+    }
+  }
+
   const layoutDefinitions = useMemo(
     () =>
       getDefaultTransforms().filter(
@@ -307,16 +319,6 @@ export const MaskPanel = memo(function MaskPanel() {
   const handleModelsInstalled = useCallback(() => {
     void ensureSam2Available();
   }, [ensureSam2Available]);
-
-  useEffect(() => {
-    setPanelView("home");
-  }, [selectedClipId]);
-
-  useEffect(() => {
-    if (!selectedMask) {
-      setPanelView("home");
-    }
-  }, [selectedMask]);
 
   const handleSharedMaskEdgeInvertChange = useCallback(
     (_event: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {

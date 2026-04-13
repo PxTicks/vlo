@@ -45,21 +45,6 @@ interface DerivedMaskSourceLike {
   sourceNodeId: string;
 }
 
-interface SourceVideoTreatmentConditionLike {
-  ref?: {
-    kind?: unknown;
-    node_id?: unknown;
-    param?: unknown;
-  };
-  operator?: unknown;
-  value?: unknown;
-}
-
-interface SourceVideoTreatmentDefaultOverrideLike {
-  when?: SourceVideoTreatmentConditionLike;
-  value?: unknown;
-}
-
 interface ResolveDefaultDerivedMaskSourceVideoTreatmentOptions {
   workflow?: Record<string, unknown> | null;
   widgetInputs?: readonly DerivedMaskVideoTreatmentWidgetLike[];

@@ -5,6 +5,7 @@ import {
   act,
   waitFor,
 } from "@testing-library/react";
+import { useEffect } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   DndContext,
@@ -67,9 +68,9 @@ vi.mock("../utils/formatting", () => ({
 
 // --- TEST COMPONENT ---
 
-let latestAssetDragHandlers:
-  | ReturnType<typeof useAssetDrag>
-  | null = null;
+const latestAssetDragHandlersRef: {
+  current: ReturnType<typeof useAssetDrag> | null;
+} = { current: null };
 
 const TestDragApp = ({
   asset,
@@ -84,12 +85,14 @@ const TestDragApp = ({
     handleAssetDragEnd,
     scrollContainerRef,
   } = useAssetDrag();
-  latestAssetDragHandlers = {
-    handleAssetDragStart,
-    handleAssetDragMove,
-    handleAssetDragEnd,
-    scrollContainerRef,
-  };
+  useEffect(() => {
+    latestAssetDragHandlersRef.current = {
+      handleAssetDragStart,
+      handleAssetDragMove,
+      handleAssetDragEnd,
+      scrollContainerRef,
+    };
+  });
   const insertGapIndex = useInteractionStore(
     (state) => state.externalInsertGapIndex,
   );
@@ -149,7 +152,7 @@ describe("Asset Drag Integration", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    latestAssetDragHandlers = null;
+    latestAssetDragHandlersRef.current = null;
     useInteractionStore.setState({
       activeClip: null,
       operation: null,
@@ -247,14 +250,14 @@ describe("Asset Drag Integration", () => {
     render(<TestDragApp asset={mockAsset} forceNoCollision={true} />);
 
     const container = screen.getByTestId("timeline-container");
-    expect(latestAssetDragHandlers).not.toBeNull();
+    expect(latestAssetDragHandlersRef.current).not.toBeNull();
     const payloadClip = createClipFromAsset(mockAsset);
 
     mockRect(container, { left: 0, top: 0, width: 800, height: 600 });
 
     await act(async () => {
       fireEvent.pointerMove(window, { clientX: 250, clientY: 55, buttons: 1 });
-      latestAssetDragHandlers?.handleAssetDragStart({
+      latestAssetDragHandlersRef.current?.handleAssetDragStart({
         active: {
           id: `asset_${mockAsset.id}`,
           data: {
@@ -266,7 +269,7 @@ describe("Asset Drag Integration", () => {
           },
         },
       } as unknown as DragStartEvent);
-      latestAssetDragHandlers?.handleAssetDragEnd({
+      latestAssetDragHandlersRef.current?.handleAssetDragEnd({
         active: {
           id: `asset_${mockAsset.id}`,
           data: {

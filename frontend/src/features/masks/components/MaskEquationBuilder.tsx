@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState,
   type KeyboardEvent,
@@ -76,21 +75,16 @@ export function MaskEquationBuilder({
   onOpenMaskDetail,
   addAction,
 }: MaskEquationBuilderProps) {
-  const [selectedPath, setSelectedPath] = useState<MaskBooleanExpressionPath>(
-    [],
-  );
+  const [rawSelectedPath, setSelectedPath] =
+    useState<MaskBooleanExpressionPath>([]);
   const [draggedPath, setDraggedPath] = useState<MaskBooleanExpressionPath | null>(
     null,
   );
 
-  useEffect(() => {
-    if (!expression) {
-      setSelectedPath([]);
-      return;
-    }
-
-    setSelectedPath((currentPath) => coerceSelectedPath(expression, currentPath));
-  }, [expression]);
+  const selectedPath = useMemo<MaskBooleanExpressionPath>(() => {
+    if (!expression) return [];
+    return coerceSelectedPath(expression, rawSelectedPath);
+  }, [expression, rawSelectedPath]);
 
   const maskEntries = useMemo(
     () =>

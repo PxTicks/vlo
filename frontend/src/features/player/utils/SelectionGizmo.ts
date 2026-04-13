@@ -165,21 +165,27 @@ export class SelectionGizmo extends Container {
     this.lastScale = { x: this.scale.x, y: this.scale.y };
     // --- OPTIMIZATION END ---
 
-    // 2. Draw Border
-    this.border.clear();
-    this.border
-      .rect(bounds.x, bounds.y, bounds.width, bounds.height)
-      .stroke({ width: 2 / viewportScale, color: BORDER_COLOR });
-
-    // 3. Position and Draw Handles
     // Handle size should be constant in screen space, so we divide by (target.scale * viewportScale)
-    // Actually layoutApplicator handles target scale. Gizmo is scaled with target.
-    // So to keep handles constant size, we must invert the scale.
-
+    // Gizmo is scaled with target via syncContainerTransformToTarget, so we must invert that scale
+    // for both handles and the border stroke.
     const safeScaleX = Math.max(Math.abs(this.scale.x), 0.0001);
     const safeScaleY = Math.max(Math.abs(this.scale.y), 0.0001);
     const invScaleX = 1 / safeScaleX;
     const invScaleY = 1 / safeScaleY;
+    // Strokes take a uniform width; use the average of both axes so the border
+    // reads as roughly constant thickness even when scaleX != scaleY.
+    const invStrokeScale = (invScaleX + invScaleY) / 2;
+
+    // 2. Draw Border
+    this.border.clear();
+    this.border
+      .rect(bounds.x, bounds.y, bounds.width, bounds.height)
+      .stroke({
+        width: (2 / viewportScale) * invStrokeScale,
+        color: BORDER_COLOR,
+      });
+
+    // 3. Position and Draw Handles
     // Note: We also divide by viewportScale to stay constant on screen relative to zoom
     const handleSizeX = (HANDLE_SIZE / viewportScale) * invScaleX;
     const handleSizeY = (HANDLE_SIZE / viewportScale) * invScaleY;
@@ -191,7 +197,7 @@ export class SelectionGizmo extends Container {
       h.rect(-handleSizeX / 2, -handleSizeY / 2, handleSizeX, handleSizeY)
         .fill(HANDLE_COLOR)
         .stroke({
-          width: (1 / viewportScale) * invScaleX,
+          width: (1 / viewportScale) * invStrokeScale,
           color: HANDLE_STROKE,
         });
 

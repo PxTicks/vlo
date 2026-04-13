@@ -1067,6 +1067,56 @@ describe("resolvePresentedInputs", () => {
     ).toBe(true);
   });
 
+  it("normalizes extended mask source video treatment rules", () => {
+    const { rules, warnings } = normalizeWorkflowRules({
+      version: 1,
+      mask_processing: {
+        source_video_treatment: {
+          default: "fill transparent with neutral grey",
+          include_options: [
+            "remove transparency",
+            "fill_transparent_with_neutral_gray",
+          ],
+          exclude_options: ["remove_transparency"],
+          default_overrides: [
+            {
+              when: {
+                node_id: "92",
+                param: "denoise",
+                operator: "lt",
+                value: 1,
+              },
+              value: "remove transparency",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(warnings).toEqual([]);
+    expect(rules.mask_processing?.source_video_treatment).toEqual({
+      default: "fill_transparent_with_neutral_gray",
+      expose_as_widget: true,
+      label: "Transparency handling",
+      include_options: [
+        "remove_transparency",
+        "fill_transparent_with_neutral_gray",
+      ],
+      exclude_options: ["remove_transparency"],
+      default_overrides: [
+        {
+          when: {
+            node_id: "92",
+            param: "denoise",
+            operator: "lt",
+            value: 1,
+          },
+          value: "remove_transparency",
+        },
+      ],
+    });
+  });
+
   it("resolves dual-sampler denoise as a derived slider and hides backing widgets", () => {
     const widgets = resolveWidgetInputs(
       {

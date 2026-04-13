@@ -3,6 +3,7 @@ import {
   DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
   LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
   parseDerivedMaskSourceVideoTreatment,
+  type DerivedMaskSourceVideoTreatment,
 } from "../../derivedMaskVideoTreatment";
 import {
   createDefaultWorkflowRules,
@@ -667,6 +668,141 @@ const MASK_SOURCE_VIDEO_TREATMENT_INPUTS = new Set([
   "fill transparent with neutral grey",
   "remove transparency",
 ]);
+const MASK_SOURCE_VIDEO_TREATMENT_DEFAULT_OVERRIDE_OPERATORS = new Set([
+  "eq",
+  "neq",
+  "lt",
+  "lte",
+  "gt",
+  "gte",
+]);
+
+function normalizeMaskSourceVideoTreatmentOptionList(
+  rawValue: unknown,
+  warnings: WorkflowRuleWarning[],
+  fieldName: "include_options" | "exclude_options",
+): DerivedMaskSourceVideoTreatment[] | undefined {
+  if (rawValue == null) {
+    return undefined;
+  }
+  if (!Array.isArray(rawValue)) {
+    warnings.push(
+      toRulesWarning(
+        `invalid_mask_processing_source_video_treatment_${fieldName}`,
+        `mask_processing.source_video_treatment.${fieldName} must be an array of treatments; ignoring it`,
+      ),
+    );
+    return undefined;
+  }
+
+  const normalized: DerivedMaskSourceVideoTreatment[] = [];
+  const invalidValues = rawValue.filter(
+    (value) =>
+      typeof value !== "string" ||
+      !MASK_SOURCE_VIDEO_TREATMENT_INPUTS.has(value.trim().toLowerCase()),
+  );
+
+  for (const value of rawValue) {
+    if (
+      typeof value !== "string" ||
+      !MASK_SOURCE_VIDEO_TREATMENT_INPUTS.has(value.trim().toLowerCase())
+    ) {
+      continue;
+    }
+    const parsed = parseDerivedMaskSourceVideoTreatment(value);
+    if (!normalized.includes(parsed)) {
+      normalized.push(parsed);
+    }
+  }
+
+  if (invalidValues.length > 0) {
+    warnings.push(
+      toRulesWarning(
+        `invalid_mask_processing_source_video_treatment_${fieldName}`,
+        `mask_processing.source_video_treatment.${fieldName} contains invalid treatments; ignoring those entries`,
+      ),
+    );
+  }
+
+  return normalized;
+}
+
+function normalizeMaskSourceVideoTreatmentDefaultOverrides(
+  rawValue: unknown,
+  warnings: WorkflowRuleWarning[],
+): NonNullable<
+  WorkflowMaskProcessingConfig["source_video_treatment"]
+>["default_overrides"] {
+  if (rawValue == null) {
+    return undefined;
+  }
+  if (!Array.isArray(rawValue)) {
+    warnings.push(
+      toRulesWarning(
+        "invalid_mask_processing_source_video_treatment_default_overrides",
+        "mask_processing.source_video_treatment.default_overrides must be an array; ignoring it",
+      ),
+    );
+    return undefined;
+  }
+
+  const normalized: NonNullable<
+    WorkflowMaskProcessingConfig["source_video_treatment"]
+  >["default_overrides"] = [];
+
+  rawValue.forEach((rawOverride) => {
+    if (!isRecord(rawOverride) || !isRecord(rawOverride.when)) {
+      warnings.push(
+        toRulesWarning(
+          "invalid_mask_processing_source_video_treatment_default_override",
+          "mask_processing.source_video_treatment.default_overrides[*] is invalid; ignoring entry",
+        ),
+      );
+      return;
+    }
+
+    const { when } = rawOverride;
+    const rawNodeId = when.node_id;
+    const rawParam = when.param;
+    const rawOperator = when.operator ?? "eq";
+    const rawTreatmentValue = rawOverride.value;
+
+    if (
+      typeof rawNodeId !== "string" ||
+      rawNodeId.trim().length === 0 ||
+      typeof rawParam !== "string" ||
+      rawParam.trim().length === 0 ||
+      typeof rawOperator !== "string" ||
+      !MASK_SOURCE_VIDEO_TREATMENT_DEFAULT_OVERRIDE_OPERATORS.has(rawOperator) ||
+      Array.isArray(when.value) ||
+      isRecord(when.value) ||
+      typeof rawTreatmentValue !== "string" ||
+      !MASK_SOURCE_VIDEO_TREATMENT_INPUTS.has(
+        rawTreatmentValue.trim().toLowerCase(),
+      )
+    ) {
+      warnings.push(
+        toRulesWarning(
+          "invalid_mask_processing_source_video_treatment_default_override",
+          "mask_processing.source_video_treatment.default_overrides[*] is invalid; ignoring entry",
+        ),
+      );
+      return;
+    }
+
+    normalized.push({
+      when: {
+        node_id: rawNodeId.trim(),
+        param: rawParam.trim(),
+        operator: rawOperator,
+        value: when.value,
+      },
+      value: parseDerivedMaskSourceVideoTreatment(rawTreatmentValue),
+    });
+  });
+
+  return normalized;
+}
 
 function normalizeMaskProcessing(
   rawMaskProcessing: unknown,
@@ -766,6 +902,48 @@ function normalizeMaskProcessing(
               "mask_processing.source_video_treatment.label must be a non-empty string; defaulting to 'Transparency handling'",
             ),
           );
+        }
+      }
+
+      if ("include_options" in rawSourceVideoTreatment) {
+        const includeOptions = normalizeMaskSourceVideoTreatmentOptionList(
+          rawSourceVideoTreatment.include_options,
+          warnings,
+          "include_options",
+        );
+        if (includeOptions !== undefined) {
+          maskProcessing.source_video_treatment = {
+            ...maskProcessing.source_video_treatment,
+            include_options: includeOptions,
+          };
+        }
+      }
+
+      if ("exclude_options" in rawSourceVideoTreatment) {
+        const excludeOptions = normalizeMaskSourceVideoTreatmentOptionList(
+          rawSourceVideoTreatment.exclude_options,
+          warnings,
+          "exclude_options",
+        );
+        if (excludeOptions !== undefined) {
+          maskProcessing.source_video_treatment = {
+            ...maskProcessing.source_video_treatment,
+            exclude_options: excludeOptions,
+          };
+        }
+      }
+
+      if ("default_overrides" in rawSourceVideoTreatment) {
+        const defaultOverrides =
+          normalizeMaskSourceVideoTreatmentDefaultOverrides(
+            rawSourceVideoTreatment.default_overrides,
+            warnings,
+          );
+        if (defaultOverrides !== undefined) {
+          maskProcessing.source_video_treatment = {
+            ...maskProcessing.source_video_treatment,
+            default_overrides: defaultOverrides,
+          };
         }
       }
     } else {

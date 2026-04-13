@@ -8,8 +8,11 @@ from pydantic import ValidationError
 from services.workflow_rules.derived_mask_video_treatment import (
     DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
     DERIVED_MASK_SOURCE_VIDEO_TREATMENT_OPTIONS,
+    DERIVED_MASK_SOURCE_VIDEO_TREATMENT_OVERRIDE_OPERATORS,
     normalize_derived_mask_source_video_treatment,
+    normalize_derived_mask_source_video_treatment_list,
     normalize_derived_mask_source_video_treatment_widget_param,
+    parse_derived_mask_source_video_treatment,
 )
 from services.workflow_rules.schema import (
     AuthoredWorkflowRulesV1,
@@ -178,6 +181,110 @@ def _normalize_param_ref(value: Any) -> dict[str, str] | None:
         "node_id": normalized_node_id,
         "param": normalized_param,
     }
+
+
+def _normalize_mask_source_video_treatment_option_list(
+    raw_value: Any,
+    *,
+    field_name: str,
+    warnings: list[WorkflowRuleWarning],
+) -> list[str] | None:
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, list):
+        warnings.append(
+            _warning(
+                f"invalid_mask_processing_source_video_treatment_{field_name}",
+                f"mask_processing.source_video_treatment.{field_name} must be an array of treatments; ignoring it",
+                details={field_name: raw_value},
+            )
+        )
+        return None
+
+    normalized = normalize_derived_mask_source_video_treatment_list(raw_value)
+    invalid_values = [
+        value
+        for value in raw_value
+        if parse_derived_mask_source_video_treatment(value) is None
+    ]
+    if invalid_values:
+        warnings.append(
+            _warning(
+                f"invalid_mask_processing_source_video_treatment_{field_name}",
+                f"mask_processing.source_video_treatment.{field_name} contains invalid treatments; ignoring those entries",
+                details={"invalid_values": invalid_values},
+            )
+        )
+    return normalized
+
+
+def _normalize_mask_source_video_treatment_default_overrides(
+    raw_value: Any,
+    warnings: list[WorkflowRuleWarning],
+) -> list[dict[str, Any]] | None:
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, list):
+        warnings.append(
+            _warning(
+                "invalid_mask_processing_source_video_treatment_default_overrides",
+                "mask_processing.source_video_treatment.default_overrides must be an array; ignoring it",
+                details={"default_overrides": raw_value},
+            )
+        )
+        return None
+
+    normalized: list[dict[str, Any]] = []
+    for index, raw_override in enumerate(raw_value):
+        if not isinstance(raw_override, dict):
+            warnings.append(
+                _warning(
+                    "invalid_mask_processing_source_video_treatment_default_override",
+                    "mask_processing.source_video_treatment.default_overrides[*] must be an object; ignoring entry",
+                    details={"index": index},
+                )
+            )
+            continue
+
+        raw_when = raw_override.get("when")
+        raw_value_choice = raw_override.get("value")
+        when = raw_when if isinstance(raw_when, dict) else None
+        node_id = when.get("node_id") if when else None
+        param = when.get("param") if when else None
+        operator = when.get("operator") if when else "eq"
+        normalized_value = parse_derived_mask_source_video_treatment(raw_value_choice)
+
+        if (
+            not isinstance(node_id, str)
+            or not node_id.strip()
+            or not isinstance(param, str)
+            or not param.strip()
+            or operator not in DERIVED_MASK_SOURCE_VIDEO_TREATMENT_OVERRIDE_OPERATORS
+            or isinstance(when.get("value") if when else None, (dict, list, tuple, set))
+            or normalized_value is None
+        ):
+            warnings.append(
+                _warning(
+                    "invalid_mask_processing_source_video_treatment_default_override",
+                    "mask_processing.source_video_treatment.default_overrides[*] is invalid; ignoring entry",
+                    details={"index": index},
+                )
+            )
+            continue
+
+        normalized.append(
+            {
+                "when": {
+                    "node_id": node_id.strip(),
+                    "param": param.strip(),
+                    "operator": operator,
+                    "value": when.get("value"),
+                },
+                "value": normalized_value,
+            }
+        )
+
+    return normalized
 
 
 def _is_safe_workflow_filename(filename: str) -> bool:
@@ -956,8 +1063,8 @@ def _normalize_rules_dict(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWar
 
     raw_default = raw_source_video_treatment.get("default")
     if isinstance(raw_default, str):
-        normalized_default = raw_default.strip().lower()
-        if normalized_default in SUPPORTED_MASK_SOURCE_VIDEO_TREATMENT_INPUTS:
+        parsed_default = parse_derived_mask_source_video_treatment(raw_default)
+        if parsed_default is not None:
             mask_processing["source_video_treatment"]["default"] = (
                 normalize_derived_mask_source_video_treatment(raw_default)
             )
@@ -1003,6 +1110,40 @@ def _normalize_rules_dict(raw: Any) -> tuple[WorkflowRules, list[WorkflowRuleWar
                 details={"label": raw_label},
             )
         )
+
+    if "include_options" in raw_source_video_treatment:
+        normalized_include_options = _normalize_mask_source_video_treatment_option_list(
+            raw_source_video_treatment.get("include_options"),
+            field_name="include_options",
+            warnings=warnings,
+        )
+        if normalized_include_options is not None:
+            mask_processing["source_video_treatment"]["include_options"] = (
+                normalized_include_options
+            )
+
+    if "exclude_options" in raw_source_video_treatment:
+        normalized_exclude_options = _normalize_mask_source_video_treatment_option_list(
+            raw_source_video_treatment.get("exclude_options"),
+            field_name="exclude_options",
+            warnings=warnings,
+        )
+        if normalized_exclude_options is not None:
+            mask_processing["source_video_treatment"]["exclude_options"] = (
+                normalized_exclude_options
+            )
+
+    if "default_overrides" in raw_source_video_treatment:
+        normalized_default_overrides = (
+            _normalize_mask_source_video_treatment_default_overrides(
+                raw_source_video_treatment.get("default_overrides"),
+                warnings,
+            )
+        )
+        if normalized_default_overrides is not None:
+            mask_processing["source_video_treatment"]["default_overrides"] = (
+                normalized_default_overrides
+            )
 
     rules["mask_processing"] = mask_processing
 

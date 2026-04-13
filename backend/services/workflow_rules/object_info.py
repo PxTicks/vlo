@@ -19,6 +19,9 @@ from services.workflow_rules.derived_mask_video_treatment import (
     VISUAL_DERIVED_MASK_RULE_KEYS,
     create_derived_mask_source_video_treatment_widget_rule,
     normalize_derived_mask_source_video_treatment,
+    normalize_derived_mask_source_video_treatment_list,
+    resolve_derived_mask_source_video_treatment_default,
+    resolve_derived_mask_source_video_treatment_widget_options,
 )
 from services.workflow_rules.node_discovery import (
     NodePolicy,
@@ -333,20 +336,36 @@ def _collect_visual_derived_mask_source_node_ids(
     return source_node_ids
 
 
+def _get_workflow_input_value(
+    workflow: dict[str, Any],
+    node_id: str,
+    param: str,
+) -> Any:
+    node = workflow.get(node_id)
+    if not isinstance(node, dict):
+        return None
+    inputs = node.get("inputs")
+    if not isinstance(inputs, dict):
+        return None
+    return inputs.get(param)
+
+
 def _resolve_mask_processing_source_video_treatment_config(
     rules: WorkflowRules,
-) -> tuple[str, str, bool]:
+) -> tuple[str, str, bool, list[str] | None, list[dict[str, Any]] | None]:
     default = DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT
     label = DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_LABEL
     expose_as_widget = True
+    option_values: list[str] | None = None
+    default_overrides: list[dict[str, Any]] | None = None
 
     mask_processing = rules.get("mask_processing")
     if not isinstance(mask_processing, dict):
-        return default, label, expose_as_widget
+        return default, label, expose_as_widget, option_values, default_overrides
 
     source_video_treatment = mask_processing.get("source_video_treatment")
     if not isinstance(source_video_treatment, dict):
-        return default, label, expose_as_widget
+        return default, label, expose_as_widget, option_values, default_overrides
 
     default = normalize_derived_mask_source_video_treatment(
         source_video_treatment.get("default")
@@ -360,7 +379,26 @@ def _resolve_mask_processing_source_video_treatment_config(
     if isinstance(raw_expose_as_widget, bool):
         expose_as_widget = raw_expose_as_widget
 
-    return default, label, expose_as_widget
+    include_options = normalize_derived_mask_source_video_treatment_list(
+        source_video_treatment.get("include_options")
+    )
+    exclude_options = normalize_derived_mask_source_video_treatment_list(
+        source_video_treatment.get("exclude_options")
+    )
+    option_values = resolve_derived_mask_source_video_treatment_widget_options(
+        include_options=include_options or None,
+        exclude_options=exclude_options or None,
+    )
+
+    raw_default_overrides = source_video_treatment.get("default_overrides")
+    if isinstance(raw_default_overrides, list):
+        default_overrides = [
+            override
+            for override in raw_default_overrides
+            if isinstance(override, dict)
+        ]
+
+    return default, label, expose_as_widget, option_values, default_overrides
 
 
 def _apply_derived_mask_source_video_treatment_widget(
@@ -368,6 +406,7 @@ def _apply_derived_mask_source_video_treatment_widget(
     *,
     default: str,
     label: str,
+    option_values: list[str] | None,
 ) -> None:
     current_widgets = node_rule.get("widgets")
     if not isinstance(current_widgets, dict):
@@ -394,6 +433,7 @@ def _apply_derived_mask_source_video_treatment_widget(
         create_derived_mask_source_video_treatment_widget_rule(
             default=default,
             label=label,
+            option_values=option_values,
         )
     )
 
@@ -608,7 +648,18 @@ def enrich_rules_with_object_info(
         derived_mask_treatment_default,
         derived_mask_treatment_label,
         expose_derived_mask_treatment_widget,
+        derived_mask_treatment_option_values,
+        derived_mask_treatment_default_overrides,
     ) = _resolve_mask_processing_source_video_treatment_config(rules_dict)
+    derived_mask_treatment_default = resolve_derived_mask_source_video_treatment_default(
+        default=derived_mask_treatment_default,
+        default_overrides=derived_mask_treatment_default_overrides,
+        get_param_value=lambda node_id, param: _get_workflow_input_value(
+            workflow_data,
+            node_id,
+            param,
+        ),
+    )
 
     # Resolve node policies once — maps discovery to display/processing actions.
     node_policies: dict[str, NodePolicy] = {}
@@ -706,6 +757,7 @@ def enrich_rules_with_object_info(
                 existing,
                 default=derived_mask_treatment_default,
                 label=derived_mask_treatment_label,
+                option_values=derived_mask_treatment_option_values,
             )
 
         if existing.get("widgets"):

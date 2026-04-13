@@ -393,8 +393,13 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     [workflowInputs],
   );
   const derivedMaskDefaultVideoTreatment = useMemo(
-    () => resolveDefaultDerivedMaskSourceVideoTreatment(activeWorkflowRules),
-    [activeWorkflowRules],
+    () =>
+      resolveDefaultDerivedMaskSourceVideoTreatment(activeWorkflowRules, {
+        workflow: syncedWorkflow,
+        widgetInputs: smartWidgetInputs,
+        widgetValues,
+      }),
+    [activeWorkflowRules, smartWidgetInputs, syncedWorkflow, widgetValues],
   );
   const derivedMaskVideoTreatmentBySourceNodeId = useMemo(
     () =>

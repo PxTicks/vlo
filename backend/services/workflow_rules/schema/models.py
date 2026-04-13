@@ -15,6 +15,14 @@ MaskSourceVideoTreatment = Literal[
     "fill_transparent_with_neutral_gray",
     "remove_transparency",
 ]
+MaskSourceVideoTreatmentComparisonOperator = Literal[
+    "eq",
+    "neq",
+    "lt",
+    "lte",
+    "gt",
+    "gte",
+]
 PostprocessingMode = Literal["auto", "stitch_frames_with_audio", "none"]
 PostprocessingPanelPreview = Literal["raw_outputs", "replace_outputs"]
 PostprocessingOnFailure = Literal["fallback_raw", "show_error"]
@@ -131,10 +139,25 @@ class WorkflowMaskCroppingConfig(WorkflowRuleBaseModel):
     mode: MaskCroppingMode = "crop"
 
 
+class WorkflowMaskSourceVideoTreatmentCondition(WorkflowRuleBaseModel):
+    node_id: str
+    param: str
+    operator: MaskSourceVideoTreatmentComparisonOperator = "eq"
+    value: str | int | float | bool
+
+
+class WorkflowMaskSourceVideoTreatmentDefaultOverride(WorkflowRuleBaseModel):
+    when: WorkflowMaskSourceVideoTreatmentCondition
+    value: MaskSourceVideoTreatment
+
+
 class WorkflowMaskSourceVideoTreatmentConfig(WorkflowRuleBaseModel):
     default: MaskSourceVideoTreatment = "preserve_transparency"
     expose_as_widget: bool = True
     label: str = "Transparency handling"
+    include_options: list[MaskSourceVideoTreatment] | None = None
+    exclude_options: list[MaskSourceVideoTreatment] | None = None
+    default_overrides: list[WorkflowMaskSourceVideoTreatmentDefaultOverride] | None = None
 
 
 class WorkflowMaskProcessingConfig(WorkflowRuleBaseModel):

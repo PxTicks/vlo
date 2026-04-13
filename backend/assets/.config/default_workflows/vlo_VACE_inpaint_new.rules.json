@@ -1,0 +1,69 @@
+{
+  "name": "VACE inpaint/stitch (vlo) test",
+  "version": 1,
+  "mask_processing": {
+    "cropping": {
+      "mode": "crop"
+    },
+    "source_video_treatment": {
+      "default": "fill_transparent_with_neutral_gray",
+      "expose_as_widget": false,
+      "label": "Transparency handling",
+      "default_overrides": [
+        {
+          "when": {
+            "node_id": "92",
+            "param": "denoise",
+            "operator": "lt",
+            "value": 1
+          },
+          "value": "remove_transparency"
+        }
+      ]
+    }
+  },
+  "nodes": {
+    "98": {
+      "selection": {
+        "export_fps": 16,
+        "frame_step": 4,
+        "max_frames": 81
+      }
+    },
+    "101": {
+      "binary_derived_mask_of": "98"
+    },
+    "92": {
+      "widgets": {
+        "denoise": {
+          "label": "Denoise",
+          "control": "slider",
+          "slider_display": "number"
+        }
+      }
+    }
+  },
+  "aspect_ratio_processing": {
+    "enabled": true,
+    "stride": 16,
+    "resolutions": [480, 720],
+    "search_steps": 2,
+    "target_nodes": [
+      {
+        "node_id": "104",
+        "width_param": "resize_type.width",
+        "height_param": "resize_type.height"
+      },
+      {
+        "node_id": "105",
+        "width_param": "resize_type.width",
+        "height_param": "resize_type.height"
+      }
+    ],
+    "postprocess": {
+      "enabled": true,
+      "mode": "stretch_exact",
+      "apply_to": "all_visual_outputs"
+    }
+  }
+}

@@ -1553,6 +1553,54 @@ def test_real_vace_inpaint_discovers_seed_widget_for_ksampler():
     assert sampler_widgets["seed"]["control_after_generate"] is True
 
 
+def test_real_vace_inpaint_new_hides_transparency_widget_and_defaults_to_neutral_gray():
+    base = Path(__file__).resolve().parents[1] / "assets" / ".config" / "default_workflows"
+    workflow_path = base / "vlo_VACE_inpaint_new.json"
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+
+    set_object_info_cache(None)
+    try:
+        rules_model, warnings = load_rules_model_for_workflow(base, workflow_path.name)
+        assert warnings == []
+        rules_model = enrich_rules_with_object_info(rules_model, workflow)
+        rules = dump_resolved_rules(rules_model)
+    finally:
+        set_object_info_cache(None)
+
+    assert rules["name"] == "VACE inpaint/stitch (vlo) test"
+    assert rules["mask_processing"]["cropping"]["mode"] == "crop"
+    assert rules["mask_processing"]["source_video_treatment"] == {
+        "default": "fill_transparent_with_neutral_gray",
+        "expose_as_widget": False,
+        "label": "Transparency handling",
+        "default_overrides": [
+            {
+                "when": {
+                    "node_id": "92",
+                    "param": "denoise",
+                    "operator": "lt",
+                    "value": 1,
+                },
+                "value": "remove_transparency",
+            }
+        ],
+    }
+    assert rules["nodes"]["101"]["binary_derived_mask_of"] == "98"
+    assert rules["nodes"]["92"]["widgets"]["denoise"] == {
+        "label": "Denoise",
+        "control_after_generate": False,
+        "control": "slider",
+        "slider_display": "number",
+        "value_type": "float",
+        "min": 0,
+        "max": 1,
+        "default": 1,
+    }
+    assert "cfg" in rules["nodes"]["92"]["widgets"]
+    assert "seed" in rules["nodes"]["92"]["widgets"]
+    assert rules["nodes"].get("98", {}).get("widgets") in (None, {})
+
+
 def test_real_ltx_retake_rules_define_dual_masks_and_primary_seed():
     base = Path(__file__).resolve().parents[1] / "assets" / ".config" / "default_workflows"
     workflow_path = base / "video_ltx2_3_retake.json"
@@ -1742,6 +1790,73 @@ def test_enrich_rules_with_object_info_uses_mask_processing_source_video_treatme
                 "Keep transparency",
                 "Fill transparent with neutral gray",
                 "Remove transparency",
+            ],
+            "default": "Remove transparency",
+            "frontend_only": True,
+        }
+    }
+
+
+def test_enrich_rules_with_object_info_filters_and_overrides_mask_processing_source_video_treatment_widget():
+    workflow = {
+        "1": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "source.mov"},
+        },
+        "2": {
+            "class_type": "LoadVideo",
+            "inputs": {"video": "mask.mov"},
+        },
+        "92": {
+            "class_type": "KSampler",
+            "inputs": {"denoise": 0.7},
+        },
+    }
+    rules = {
+        "version": 1,
+        "mask_processing": {
+            "source_video_treatment": {
+                "default": "fill_transparent_with_neutral_gray",
+                "include_options": [
+                    "remove_transparency",
+                    "fill_transparent_with_neutral_gray",
+                    "preserve_transparency",
+                ],
+                "exclude_options": ["preserve_transparency"],
+                "default_overrides": [
+                    {
+                        "when": {
+                            "node_id": "92",
+                            "param": "denoise",
+                            "operator": "lt",
+                            "value": 1,
+                        },
+                        "value": "remove_transparency",
+                    }
+                ],
+                "expose_as_widget": True,
+            }
+        },
+        "nodes": {
+            "2": {
+                "binary_derived_mask_of": "1",
+            }
+        },
+    }
+
+    set_object_info_cache({"LoadVideo": {"input": {"required": {}, "optional": {}}}})
+    try:
+        enriched = enrich_rules_with_object_info(rules, workflow)
+    finally:
+        set_object_info_cache(None)
+
+    assert enriched["nodes"]["1"]["widgets"] == {
+        "derived_mask_source_video_treatment": {
+            "label": "Transparency handling",
+            "value_type": "enum",
+            "options": [
+                "Remove transparency",
+                "Fill transparent with neutral gray",
             ],
             "default": "Remove transparency",
             "frontend_only": True,
@@ -2864,6 +2979,66 @@ def test_load_rules_for_workflow_normalizes_mask_processing(tmp_path: Path):
     assert warnings == []
     assert rules["mask_processing"]["cropping"] == {"mode": "full"}
     assert collect_mask_crop_pairs(rules) == []
+
+
+def test_load_rules_for_workflow_normalizes_mask_source_video_treatment_extensions(
+    tmp_path: Path,
+):
+    workflow_path = tmp_path / "example.json"
+    workflow_path.write_text("{}")
+    sidecar_path = tmp_path / "example.rules.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "mask_processing": {
+                    "source_video_treatment": {
+                        "default": "fill transparent with neutral grey",
+                        "include_options": [
+                            "remove transparency",
+                            "fill_transparent_with_neutral_gray",
+                        ],
+                        "exclude_options": ["remove_transparency"],
+                        "default_overrides": [
+                            {
+                                "when": {
+                                    "node_id": "92",
+                                    "param": "denoise",
+                                    "operator": "lt",
+                                    "value": 1,
+                                },
+                                "value": "remove transparency",
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+    )
+
+    rules, warnings = load_rules_for_workflow(tmp_path, "example.json")
+    assert warnings == []
+    assert rules["mask_processing"]["source_video_treatment"] == {
+        "default": "fill_transparent_with_neutral_gray",
+        "expose_as_widget": True,
+        "label": "Transparency handling",
+        "include_options": [
+            "remove_transparency",
+            "fill_transparent_with_neutral_gray",
+        ],
+        "exclude_options": ["remove_transparency"],
+        "default_overrides": [
+            {
+                "when": {
+                    "node_id": "92",
+                    "param": "denoise",
+                    "operator": "lt",
+                    "value": 1,
+                },
+                "value": "remove_transparency",
+            }
+        ],
+    }
 
 
 def test_load_rules_for_workflow_supports_mask_processing_enabled_compat(tmp_path: Path):

@@ -87,10 +87,25 @@ export interface WorkflowMaskProcessingConfig {
   source_video_treatment?: WorkflowMaskSourceVideoTreatmentConfig;
 }
 
+export interface WorkflowMaskSourceVideoTreatmentCondition {
+  node_id: string;
+  param: string;
+  operator?: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
+  value: string | number | boolean;
+}
+
 export interface WorkflowMaskSourceVideoTreatmentConfig {
   default?: "preserve_transparency" | "fill_transparent_with_neutral_gray" | "remove_transparency";
   expose_as_widget?: boolean;
   label?: string;
+  include_options?: Array<"preserve_transparency" | "fill_transparent_with_neutral_gray" | "remove_transparency"> | null;
+  exclude_options?: Array<"preserve_transparency" | "fill_transparent_with_neutral_gray" | "remove_transparency"> | null;
+  default_overrides?: Array<WorkflowMaskSourceVideoTreatmentDefaultOverride> | null;
+}
+
+export interface WorkflowMaskSourceVideoTreatmentDefaultOverride {
+  when: WorkflowMaskSourceVideoTreatmentCondition;
+  value: "preserve_transparency" | "fill_transparent_with_neutral_gray" | "remove_transparency";
 }
 
 export interface WorkflowOptionalInputValidationRule {

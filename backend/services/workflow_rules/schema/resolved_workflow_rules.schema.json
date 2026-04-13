@@ -485,6 +485,55 @@
       "title": "WorkflowMaskProcessingConfig",
       "type": "object"
     },
+    "WorkflowMaskSourceVideoTreatmentCondition": {
+      "properties": {
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "operator": {
+          "default": "eq",
+          "enum": [
+            "eq",
+            "neq",
+            "lt",
+            "lte",
+            "gt",
+            "gte"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "param": {
+          "title": "Param",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "node_id",
+        "param",
+        "value"
+      ],
+      "title": "WorkflowMaskSourceVideoTreatmentCondition",
+      "type": "object"
+    },
     "WorkflowMaskSourceVideoTreatmentConfig": {
       "properties": {
         "default": {
@@ -497,10 +546,65 @@
           "title": "Default",
           "type": "string"
         },
+        "default_overrides": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WorkflowMaskSourceVideoTreatmentDefaultOverride"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Overrides"
+        },
+        "exclude_options": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "preserve_transparency",
+                  "fill_transparent_with_neutral_gray",
+                  "remove_transparency"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclude Options"
+        },
         "expose_as_widget": {
           "default": true,
           "title": "Expose As Widget",
           "type": "boolean"
+        },
+        "include_options": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "preserve_transparency",
+                  "fill_transparent_with_neutral_gray",
+                  "remove_transparency"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Include Options"
         },
         "label": {
           "default": "Transparency handling",
@@ -509,6 +613,28 @@
         }
       },
       "title": "WorkflowMaskSourceVideoTreatmentConfig",
+      "type": "object"
+    },
+    "WorkflowMaskSourceVideoTreatmentDefaultOverride": {
+      "properties": {
+        "value": {
+          "enum": [
+            "preserve_transparency",
+            "fill_transparent_with_neutral_gray",
+            "remove_transparency"
+          ],
+          "title": "Value",
+          "type": "string"
+        },
+        "when": {
+          "$ref": "#/$defs/WorkflowMaskSourceVideoTreatmentCondition"
+        }
+      },
+      "required": [
+        "when",
+        "value"
+      ],
+      "title": "WorkflowMaskSourceVideoTreatmentDefaultOverride",
       "type": "object"
     },
     "WorkflowOptionalInputValidationRule": {

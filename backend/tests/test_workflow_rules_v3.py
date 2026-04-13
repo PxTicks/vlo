@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import os
@@ -10,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.comfyui.comfyui_generate import finalize_backend_response
 from services.gen_pipeline.context import BackendPipelineContext
+from services.gen_pipeline.processors.mask_crop import create_mask_crop_processor
 from services.workflow_rules import load_rules_model_for_workflow, normalize_rules_model
 from services.workflow_rules.mask_pairs import collect_mask_crop_pairs
 from services.workflow_rules.pipeline import (
@@ -76,6 +78,90 @@ def test_vace_inpaint_new_resolves_denoise_driven_source_video_treatment():
 
     assert resolved["mask_processing"]["source_video_treatment"] == "remove_transparency"
     assert collect_mask_crop_pairs(rules) == [("98", "101")]
+
+
+def test_vace_inpaint_hidden_target_aspect_ratio_accepts_frontend_submission():
+    rules_model, _ = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_VACE_inpaint.json",
+    )
+    aspect_stage = get_pipeline_stage(rules_model, "aspect_ratio")
+
+    assert aspect_stage is not None
+    target_aspect_ratio_control = next(
+        control
+        for control in aspect_stage.controls
+        if control.key == "target_aspect_ratio"
+    )
+    assert target_aspect_ratio_control.expose == "hidden"
+    assert target_aspect_ratio_control.client_settable is True
+
+    resolved, warnings = resolve_pipeline_control_values_with_warnings(
+        dump_resolved_rules(rules_model),
+        workflow={},
+        pipeline_inputs={
+            "aspect_ratio": {
+                "target_aspect_ratio": "16:9",
+                "target_resolution": 720,
+            }
+        },
+    )
+
+    assert resolved["aspect_ratio"]["target_aspect_ratio"] == "16:9"
+    assert not any(
+        warning["code"] == "ignored_pipeline_control_submission"
+        and warning.get("control_key") == "target_aspect_ratio"
+        for warning in warnings
+    )
+
+
+def test_vace_inpaint_mask_crop_records_crop_metadata_from_pipeline_outputs():
+    rules_model, _ = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_VACE_inpaint.json",
+    )
+    rules = dump_resolved_rules(rules_model)
+    resolved_controls = resolve_pipeline_control_values(
+        rules,
+        workflow={},
+        pipeline_inputs={
+            "aspect_ratio": {
+                "target_aspect_ratio": "16:9",
+                "target_resolution": 720,
+            },
+            "mask_processing": {
+                "crop_mode": "crop",
+                "crop_dilation": 0.1,
+            },
+        },
+    )
+    ctx = BackendPipelineContext(
+        client=httpx.AsyncClient(base_url="http://example.test"),
+        client_id="client",
+        workflow={},
+        rules=rules,
+        buffered_media={
+            "source": {"node_id": "98", "input_type": "video", "bytes": b"source"},
+            "mask": {"node_id": "101", "input_type": "video", "bytes": b"mask"},
+        },
+        resolved_pipeline_controls=resolved_controls,
+    )
+    processor = create_mask_crop_processor(
+        lambda *_args, **_kwargs: (100, 50, 300, 150),
+        lambda video_bytes, _crop: video_bytes,
+        lambda _video_bytes: (1000, 500),
+    )
+
+    asyncio.run(processor.execute(ctx))
+
+    assert ctx.pipeline_outputs["mask_processing"]["mask_crop_metadata"] == {
+        "mode": "cropped",
+        "crop_position": [100, 50],
+        "crop_size": [200, 100],
+        "container_size": [1000, 500],
+        "scale": 0.2,
+    }
+    assert ctx.pipeline_outputs["mask_processing"]["processed_mask_bytes"] == b"mask"
 
 
 def test_hidden_pipeline_controls_are_resolved_authoritatively():

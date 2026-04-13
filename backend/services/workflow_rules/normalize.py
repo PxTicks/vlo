@@ -136,10 +136,28 @@ def _normalize_pipeline_control_aliases(
         return normalized_rules, warnings
 
     for stage_index, stage in enumerate(pipeline):
-        if not isinstance(stage, dict) or stage.get("kind") != "mask_processing":
+        if not isinstance(stage, dict):
             continue
+
         controls = stage.get("controls")
         if not isinstance(controls, list):
+            continue
+
+        if stage.get("kind") == "aspect_ratio":
+            for control in controls:
+                if not isinstance(control, dict):
+                    continue
+                if (
+                    control.get("key") == "target_aspect_ratio"
+                    and control.get("client_settable") is None
+                ):
+                    # This hidden control is populated by frontend preprocess,
+                    # so keep legacy authored rules working under the v3
+                    # client-settable contract.
+                    control["client_settable"] = True
+            continue
+
+        if stage.get("kind") != "mask_processing":
             continue
 
         for control_index, control in enumerate(controls):

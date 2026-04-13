@@ -682,6 +682,62 @@ describe("useGenerationStore workflow rules", () => {
     });
   });
 
+  it("stores mask crop metadata from nested pipeline outputs on the submitted job", async () => {
+    useGenerationStore.setState({
+      wsClient: {
+        currentClientId: "client-id",
+        isConnected: true,
+      } as unknown as ComfyUIWebSocket,
+      selectedWorkflowId: "wf.json",
+      availableWorkflows: [{ id: "wf.json", name: "Workflow Display Name" }],
+      syncedWorkflow: {},
+      workflowInputs: [],
+      mediaInputs: {},
+      activeWorkflowRules: makeWorkflowRules({
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [],
+          },
+        ],
+      }),
+      isWorkflowLoading: false,
+      workflowLoadState: "ready",
+      isWorkflowReady: true,
+      jobs: new Map(),
+    });
+
+    vi.spyOn(comfyApi, "generate").mockResolvedValue({
+      prompt_id: "prompt-mask-metadata",
+      number: 1,
+      node_errors: {},
+      pipeline_outputs: {
+        mask_processing: {
+          mask_crop_metadata: {
+            mode: "cropped",
+            crop_position: [100, 50],
+            crop_size: [200, 100],
+            container_size: [1000, 500],
+            scale: 0.2,
+          },
+        },
+      },
+    });
+
+    const jobId = await useGenerationStore.getState().submitGeneration({});
+    expect(jobId).toBe("prompt-mask-metadata");
+
+    const submittedJob = useGenerationStore.getState().jobs.get("prompt-mask-metadata");
+    expect(submittedJob?.generationMetadata.maskCropMetadata).toEqual({
+      mode: "cropped",
+      crop_position: [100, 50],
+      crop_size: [200, 100],
+      container_size: [1000, 500],
+      scale: 0.2,
+    });
+  });
+
   it("falls back to the prepared frontend mask when the backend does not echo one", async () => {
     const preparedVideoFile = new File(["video"], "prepared.webm", {
       type: "video/webm",

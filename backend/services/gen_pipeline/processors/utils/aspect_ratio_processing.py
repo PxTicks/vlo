@@ -370,6 +370,14 @@ def apply_aspect_ratio_processing(
                 )
                 continue
 
+            if width_node_id == height_node_id:
+                _normalize_resize_image_mask_target(
+                    width_node,
+                    width_inputs,
+                    best["width"],
+                    best["height"],
+                )
+
             width_inputs[width_param] = best["width"]
             height_inputs[height_param] = best["height"]
             applied_nodes.append(

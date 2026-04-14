@@ -1,6 +1,15 @@
 import { Sprite, Texture } from "pixi.js";
 import type { Asset } from "../../../types/Asset";
 import { DecoderWorker } from "../../renderer";
+import { hasEmbeddedAssetSource } from "../../renderer/utils/assetSource";
+import {
+  RetiredTextureQueue,
+  destroyTexture,
+} from "../../renderer/utils/retiredTextureQueue";
+import {
+  awaitStrictFrame,
+  type StrictFramePending,
+} from "../../renderer/utils/strictFrameRequest";
 import { ensureAssetSourceLoaded } from "../../userAssets";
 
 interface WorkerReadyMessage {
@@ -21,11 +30,6 @@ interface WorkerErrorMessage {
 }
 
 type WorkerMessage = WorkerReadyMessage | WorkerFrameMessage | WorkerErrorMessage;
-
-interface PendingStrictFrame {
-  resolve: () => void;
-  reject: (error: Error) => void;
-}
 
 function createMaskRenderAbortError(
   message: string = "Mask render cancelled",
@@ -68,14 +72,11 @@ export class MaskVideoFramePlayer {
   private resolvePrepare: (() => void) | null = null;
   private rejectPrepare: ((error: Error) => void) | null = null;
   private prepareTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
-  private pendingStrictFrame: PendingStrictFrame | null = null;
+  private pendingStrictFrame: StrictFramePending<void> | null = null;
   private strictRenderChain: Promise<void> = Promise.resolve();
-  private readonly retiredTextures = new Set<Texture>();
-  private retiredTextureFlushHandle:
-    | number
-    | ReturnType<typeof setTimeout>
-    | null = null;
-  private retiredTextureFlushKind: "raf" | "timeout" | null = null;
+  private readonly retiredTextures = new RetiredTextureQueue(
+    () => this.sprite.texture,
+  );
   private hasDecodedFrame = false;
   private disposed = false;
 
@@ -163,9 +164,9 @@ export class MaskVideoFramePlayer {
     this.disposed = true;
 
     this.disposeWorker();
-    this.cancelRetiredTextureFlush();
+    this.retiredTextures.cancel();
     this.resetSpriteFrameState();
-    this.flushRetiredTextures();
+    this.retiredTextures.flush();
 
     if (!this.sprite.destroyed) {
       this.sprite.destroy();
@@ -187,7 +188,6 @@ export class MaskVideoFramePlayer {
 
     if (message.type === "frame" && message.clipId === this.clipId) {
       const pendingStrict = this.pendingStrictFrame;
-      this.pendingStrictFrame = null;
 
       if (message.error) {
         pendingStrict?.reject(new Error(message.error));
@@ -214,17 +214,12 @@ export class MaskVideoFramePlayer {
         message.message || "Mask video decode worker error",
       );
       this.rejectPendingPrepare(error);
-      this.rejectPendingStrictFrame(error);
+      this.pendingStrictFrame?.reject(error);
     }
   }
 
   private async hydrateSourceAsset(asset: Asset): Promise<Asset> {
-    const needsSourceHydration =
-      !asset.file &&
-      !asset.src.startsWith("blob:") &&
-      !asset.src.startsWith("http://") &&
-      !asset.src.startsWith("https://");
-    if (!needsSourceHydration) {
+    if (hasEmbeddedAssetSource(asset)) {
       return asset;
     }
 
@@ -331,16 +326,6 @@ export class MaskVideoFramePlayer {
     this.rejectPrepare = null;
   }
 
-  private rejectPendingStrictFrame(error: Error): void {
-    if (!this.pendingStrictFrame) {
-      return;
-    }
-
-    const pendingStrictFrame = this.pendingStrictFrame;
-    this.pendingStrictFrame = null;
-    pendingStrictFrame.reject(error);
-  }
-
   private createWorker(): Worker {
     const worker = new DecoderWorker();
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
@@ -359,7 +344,7 @@ export class MaskVideoFramePlayer {
       abortReason = "Mask player disposed",
       preserveSource = false,
     } = options;
-    this.rejectPendingStrictFrame(
+    this.pendingStrictFrame?.reject(
       createMaskRenderAbortError(`${abortReason} during strict render`),
     );
     this.rejectPendingPrepare(
@@ -392,7 +377,7 @@ export class MaskVideoFramePlayer {
     this.sprite.visible = false;
     this.hasDecodedFrame = false;
     this.sprite.texture = Texture.EMPTY;
-    this.destroyTexture(currentTexture);
+    destroyTexture(currentTexture);
   }
 
   private swapSpriteTexture(nextTexture: Texture): void {
@@ -400,38 +385,7 @@ export class MaskVideoFramePlayer {
     if (previousTexture === nextTexture) return;
 
     this.sprite.texture = nextTexture;
-    this.retireTexture(previousTexture);
-  }
-
-  private retireTexture(texture: Texture | null | undefined): void {
-    if (!texture || texture === Texture.EMPTY || texture.destroyed) return;
-    if (texture === this.sprite.texture) return;
-
-    this.retiredTextures.add(texture);
-    this.scheduleRetiredTextureFlush();
-  }
-
-  private scheduleRetiredTextureFlush(): void {
-    if (this.retiredTextureFlushHandle !== null || this.retiredTextures.size === 0) {
-      return;
-    }
-
-    if (typeof requestAnimationFrame === "function") {
-      this.retiredTextureFlushKind = "raf";
-      this.retiredTextureFlushHandle = requestAnimationFrame(() => {
-        this.retiredTextureFlushHandle = null;
-        this.retiredTextureFlushKind = null;
-        this.flushRetiredTextures();
-      });
-      return;
-    }
-
-    this.retiredTextureFlushKind = "timeout";
-    this.retiredTextureFlushHandle = setTimeout(() => {
-      this.retiredTextureFlushHandle = null;
-      this.retiredTextureFlushKind = null;
-      this.flushRetiredTextures();
-    }, 0);
+    this.retiredTextures.retire(previousTexture);
   }
 
   private async renderStrictFrameWithRecovery(
@@ -443,9 +397,7 @@ export class MaskVideoFramePlayer {
       attempt += 1
     ) {
       try {
-        await this.requestStrictFrame(timeSeconds, {
-          timeoutMs: MaskVideoFramePlayer.STRICT_FRAME_TIMEOUT_MS,
-        });
+        await this.requestStrictFrame(timeSeconds);
         return;
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -471,10 +423,7 @@ export class MaskVideoFramePlayer {
     }
   }
 
-  private async requestStrictFrame(
-    timeSeconds: number,
-    options: { timeoutMs?: number } = {},
-  ): Promise<void> {
+  private async requestStrictFrame(timeSeconds: number): Promise<void> {
     if (this.disposed) {
       throw createMaskRenderAbortError("Mask player has been disposed");
     }
@@ -491,88 +440,30 @@ export class MaskVideoFramePlayer {
       throw createMaskRenderAbortError("Mask player has been disposed");
     }
 
-    if (!this.worker || !this.sourceAssetId || !this.sourcePrepared) {
+    const worker = this.worker;
+    if (!worker || !this.sourceAssetId || !this.sourcePrepared) {
       throw createMaskRenderAbortError("Mask player has no prepared source");
     }
 
-    const promise = new Promise<void>((resolve, reject) => {
-      const { timeoutMs } = options;
-      let isSettled = false;
-      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-      const settleResolve = () => {
-        if (isSettled) return;
-        isSettled = true;
-        if (timeoutHandle !== null) {
-          clearTimeout(timeoutHandle);
-        }
-        if (this.pendingStrictFrame === pendingStrictFrame) {
+    await awaitStrictFrame<void>({
+      timeoutMs: MaskVideoFramePlayer.STRICT_FRAME_TIMEOUT_MS,
+      createTimeoutError: createMaskFrameTimeoutError,
+      registerPending: (pending) => {
+        this.pendingStrictFrame = pending;
+      },
+      unregisterPending: (pending) => {
+        if (this.pendingStrictFrame === pending) {
           this.pendingStrictFrame = null;
         }
-        resolve();
-      };
-      const settleReject = (error: Error) => {
-        if (isSettled) return;
-        isSettled = true;
-        if (timeoutHandle !== null) {
-          clearTimeout(timeoutHandle);
-        }
-        if (this.pendingStrictFrame === pendingStrictFrame) {
-          this.pendingStrictFrame = null;
-        }
-        reject(error);
-      };
-
-      const pendingStrictFrame: PendingStrictFrame = {
-        resolve: settleResolve,
-        reject: settleReject,
-      };
-
-      this.pendingStrictFrame = pendingStrictFrame;
-      if (typeof timeoutMs === "number" && timeoutMs > 0) {
-        timeoutHandle = setTimeout(() => {
-          settleReject(createMaskFrameTimeoutError(timeoutMs));
-        }, timeoutMs);
-      }
-      this.worker?.postMessage({
-        type: "render",
-        clipId: this.clipId,
-        time: timeSeconds,
-        strict: true,
-      });
+      },
+      sendRequest: () => {
+        worker.postMessage({
+          type: "render",
+          clipId: this.clipId,
+          time: timeSeconds,
+          strict: true,
+        });
+      },
     });
-
-    await promise;
-  }
-
-  private cancelRetiredTextureFlush(): void {
-    if (this.retiredTextureFlushHandle === null) return;
-
-    if (
-      this.retiredTextureFlushKind === "raf" &&
-      typeof cancelAnimationFrame === "function"
-    ) {
-      cancelAnimationFrame(this.retiredTextureFlushHandle as number);
-    } else {
-      clearTimeout(
-        this.retiredTextureFlushHandle as ReturnType<typeof setTimeout>,
-      );
-    }
-
-    this.retiredTextureFlushHandle = null;
-    this.retiredTextureFlushKind = null;
-  }
-
-  private flushRetiredTextures(): void {
-    const activeTexture = this.sprite.texture;
-    for (const texture of this.retiredTextures) {
-      if (texture === activeTexture) continue;
-      this.destroyTexture(texture);
-      this.retiredTextures.delete(texture);
-    }
-  }
-
-  private destroyTexture(texture: Texture | null | undefined): void {
-    if (!texture || texture === Texture.EMPTY || texture.destroyed) return;
-    texture.destroy(true);
   }
 }

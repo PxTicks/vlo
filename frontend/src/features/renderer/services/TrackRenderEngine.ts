@@ -15,6 +15,15 @@ import { applyClipTransforms } from "../../transformations";
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
 import { TICKS_PER_SECOND } from "../../timeline";
 import { ensureAssetSourceLoaded } from "../../userAssets";
+import { hasEmbeddedAssetSource } from "../utils/assetSource";
+import {
+  RetiredTextureQueue,
+  destroyTexture,
+} from "../utils/retiredTextureQueue";
+import {
+  awaitStrictFrame,
+  type StrictFramePending,
+} from "../utils/strictFrameRequest";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -43,14 +52,13 @@ interface LiveRenderRequest {
   enqueuedAtMs: number;
 }
 
-interface PendingLiveFrame {
-  resolve: (payload: {
-    bitmap: ImageBitmap | null;
-    clipId: string;
-    transformTime: number | undefined;
-  }) => void;
-  reject: (error: Error) => void;
+interface LiveFramePayload {
+  bitmap: ImageBitmap | null;
+  clipId: string;
+  transformTime: number | undefined;
 }
+
+type PendingLiveFrame = StrictFramePending<LiveFramePayload>;
 
 interface InFlightSynchronizedRender {
   activeClip: TimelineClip;
@@ -106,12 +114,9 @@ export class TrackRenderEngine {
   private inFlightSynchronizedRender: InFlightSynchronizedRender | null = null;
 
   // Deferred texture cleanup to avoid null-source races during hot swaps
-  private readonly retiredTextures = new Set<Texture>();
-  private retiredTextureFlushHandle:
-    | number
-    | ReturnType<typeof setTimeout>
-    | null = null;
-  private retiredTextureFlushKind: "raf" | "timeout" | null = null;
+  private readonly retiredTextures = new RetiredTextureQueue(
+    () => this.sprite.texture,
+  );
   private disposed = false;
 
   // Live Mode Callback (to sync transforms immediately)
@@ -695,11 +700,7 @@ export class TrackRenderEngine {
       }
 
       const needsSourceHydration =
-        asset.type === "video" &&
-        !asset.file &&
-        !asset.src.startsWith("blob:") &&
-        !asset.src.startsWith("http://") &&
-        !asset.src.startsWith("https://");
+        asset.type === "video" && !hasEmbeddedAssetSource(asset);
       if (needsSourceHydration) {
         if (!this.pendingAssetHydrations.has(asset.id)) {
           this.pendingAssetHydrations.add(asset.id);
@@ -902,62 +903,30 @@ export class TrackRenderEngine {
     clipId: string,
     transformTime: number,
     options: { timeoutMs?: number } = {},
-  ): Promise<{
-    bitmap: ImageBitmap | null;
-    clipId: string;
-    transformTime: number | undefined;
-  }> {
+  ): Promise<LiveFramePayload> {
     this.rejectPendingLiveFrame(createRenderAbortError());
 
-    return new Promise((resolve, reject) => {
-      const { timeoutMs } = options;
-      let isSettled = false;
-      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-      const settleResolve = (payload: {
-        bitmap: ImageBitmap | null;
-        clipId: string;
-        transformTime: number | undefined;
-      }) => {
-        if (isSettled) return;
-        isSettled = true;
-        if (timeoutHandle !== null) {
-          clearTimeout(timeoutHandle);
-        }
-        if (this.pendingLiveFrame === pendingLiveFrame) {
+    return awaitStrictFrame<LiveFramePayload>({
+      timeoutMs: options.timeoutMs,
+      createTimeoutError: (timeoutMs) =>
+        createLiveFrameTimeoutError(timeoutMs, clipId),
+      registerPending: (pending) => {
+        this.pendingLiveFrame = pending;
+      },
+      unregisterPending: (pending) => {
+        if (this.pendingLiveFrame === pending) {
           this.pendingLiveFrame = null;
         }
-        resolve(payload);
-      };
-      const settleReject = (error: Error) => {
-        if (isSettled) return;
-        isSettled = true;
-        if (timeoutHandle !== null) {
-          clearTimeout(timeoutHandle);
-        }
-        if (this.pendingLiveFrame === pendingLiveFrame) {
-          this.pendingLiveFrame = null;
-        }
-        reject(error);
-      };
-
-      const pendingLiveFrame: PendingLiveFrame = {
-        resolve: (payload) => settleResolve(payload),
-        reject: (error) => settleReject(error),
-      };
-
-      this.pendingLiveFrame = pendingLiveFrame;
-      if (typeof timeoutMs === "number" && timeoutMs > 0) {
-        timeoutHandle = setTimeout(() => {
-          settleReject(createLiveFrameTimeoutError(timeoutMs, clipId));
-        }, timeoutMs);
-      }
-      this.worker.postMessage({
-        type: "render",
-        time: localTimeSeconds,
-        clipId,
-        transformTime,
-        strict: true,
-      });
+      },
+      sendRequest: () => {
+        this.worker.postMessage({
+          type: "render",
+          time: localTimeSeconds,
+          clipId,
+          transformTime,
+          strict: true,
+        });
+      },
     });
   }
 
@@ -1044,7 +1013,7 @@ export class TrackRenderEngine {
       previousWidth !== nextWidth || previousHeight !== nextHeight;
 
     this.sprite.texture = texture;
-    this.retireTexture(previousTexture);
+    this.retiredTextures.retire(previousTexture);
     this.sprite.visible = true;
     this.currentTextureClipId = clipId;
     return contentSizeChanged;
@@ -1123,11 +1092,11 @@ export class TrackRenderEngine {
     this.rejectPendingLiveFrame(createRenderAbortError());
     this.invalidateLivePipeline();
 
-    this.cancelRetiredTextureFlush();
+    this.retiredTextures.cancel();
     const currentTexture = this.sprite.texture;
     this.sprite.texture = Texture.EMPTY;
-    this.destroyTexture(currentTexture);
-    this.flushRetiredTextures();
+    destroyTexture(currentTexture);
+    this.retiredTextures.flush();
 
     this.maskController.dispose();
     this.worker.terminate();
@@ -1207,66 +1176,4 @@ export class TrackRenderEngine {
     rejectPending(error);
   }
 
-  private retireTexture(texture: Texture | null | undefined): void {
-    if (!texture || texture === Texture.EMPTY || texture.destroyed) return;
-    if (texture === this.sprite.texture) return;
-
-    this.retiredTextures.add(texture);
-    this.scheduleRetiredTextureFlush();
-  }
-
-  private scheduleRetiredTextureFlush(): void {
-    if (this.retiredTextureFlushHandle !== null || this.retiredTextures.size === 0) {
-      return;
-    }
-
-    if (typeof requestAnimationFrame === "function") {
-      this.retiredTextureFlushKind = "raf";
-      this.retiredTextureFlushHandle = requestAnimationFrame(() => {
-        this.retiredTextureFlushHandle = null;
-        this.retiredTextureFlushKind = null;
-        this.flushRetiredTextures();
-      });
-      return;
-    }
-
-    this.retiredTextureFlushKind = "timeout";
-    this.retiredTextureFlushHandle = setTimeout(() => {
-      this.retiredTextureFlushHandle = null;
-      this.retiredTextureFlushKind = null;
-      this.flushRetiredTextures();
-    }, 0);
-  }
-
-  private cancelRetiredTextureFlush(): void {
-    if (this.retiredTextureFlushHandle === null) return;
-
-    if (
-      this.retiredTextureFlushKind === "raf" &&
-      typeof cancelAnimationFrame === "function"
-    ) {
-      cancelAnimationFrame(this.retiredTextureFlushHandle as number);
-    } else {
-      clearTimeout(
-        this.retiredTextureFlushHandle as ReturnType<typeof setTimeout>,
-      );
-    }
-
-    this.retiredTextureFlushHandle = null;
-    this.retiredTextureFlushKind = null;
-  }
-
-  private flushRetiredTextures(): void {
-    const activeTexture = this.sprite.texture;
-    for (const texture of this.retiredTextures) {
-      if (texture === activeTexture) continue;
-      this.destroyTexture(texture);
-      this.retiredTextures.delete(texture);
-    }
-  }
-
-  private destroyTexture(texture: Texture | null | undefined): void {
-    if (!texture || texture === Texture.EMPTY || texture.destroyed) return;
-    texture.destroy(true);
-  }
 }

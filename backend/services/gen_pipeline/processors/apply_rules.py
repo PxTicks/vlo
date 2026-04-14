@@ -8,7 +8,7 @@ from services.workflow_rules import apply_rules_to_workflow
 class _ApplyRulesProcessor:
     meta = ProcessorMeta(
         name="apply_rules",
-        reads=("workflow", "rules", "provided_input_ids"),
+        reads=("workflow", "rules", "provided_input_ids", "graph_data"),
         writes=("workflow", "warnings"),
         description="Applies normalized workflow rules to the workflow graph",
     )
@@ -21,6 +21,7 @@ class _ApplyRulesProcessor:
             ctx.workflow,
             ctx.rules_model,
             provided_input_ids=ctx.provided_input_ids,
+            graph_data=ctx.graph_data,
             rules_already_resolved=True,
         )
         ctx.warnings.extend(rule_apply_warnings)

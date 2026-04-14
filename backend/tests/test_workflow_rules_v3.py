@@ -416,6 +416,54 @@ def test_apply_rules_globally_prunes_dangling_sampler_chain_missing_required_lat
     assert warnings == []
 
 
+def test_apply_rules_prunes_broken_descendant_reachable_from_provided_input():
+    workflow = {
+        "1": {"class_type": "ProvidedPrompt", "inputs": {}},
+        "2": {
+            "class_type": "PromptBranch",
+            "inputs": {
+                "prompt": ["1", 0],
+            },
+        },
+        "3": {"class_type": "NoiseBranch", "inputs": {}},
+        "4": {"class_type": "SamplerBranch", "inputs": {}},
+        "5": {"class_type": "SigmaBranch", "inputs": {}},
+        "113": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["3", 0],
+                "guider": ["2", 0],
+                "sampler": ["4", 0],
+                "sigmas": ["5", 0],
+            },
+        },
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        {"version": 3, "nodes": {}},
+        provided_input_ids={"1"},
+    )
+
+    assert rewritten == {}
+    assert warnings == []
+
+
+def test_apply_rules_preserves_direct_provided_input_node_pre_upload():
+    workflow = {
+        "167": {"class_type": "LoadImage", "inputs": {}},
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        {"version": 3, "nodes": {}},
+        provided_input_ids={"167"},
+    )
+
+    assert rewritten == workflow
+    assert warnings == []
+
+
 def test_flf2v_missing_custom_audio_forces_switch_to_ltx_audio():
     rules = json.loads(
         (DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_flf2v.rules.json").read_text(

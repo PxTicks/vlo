@@ -73,7 +73,7 @@ def _disconnect_output_links_from_node(
 def _collect_nodes_with_missing_required_inputs(
     workflow: WorkflowPrompt,
     seed_node_ids: set[str],
-    reachable_from_provided_inputs: set[str],
+    provided_input_node_ids: set[str],
 ) -> set[str]:
     removable: set[str] = set()
     required_inputs_cache: dict[str, set[str]] = {}
@@ -86,8 +86,6 @@ def _collect_nodes_with_missing_required_inputs(
 
         node_data = workflow.get(node_id)
         if not isinstance(node_data, dict):
-            continue
-        if node_id in reachable_from_provided_inputs:
             continue
 
         class_type = node_data.get("class_type")
@@ -106,6 +104,8 @@ def _collect_nodes_with_missing_required_inputs(
             inputs = {}
 
         if all(param_name in inputs for param_name in required_inputs):
+            continue
+        if node_id in provided_input_node_ids:
             continue
 
         removable.add(node_id)
@@ -143,28 +143,6 @@ def _extract_dependencies(
             parents.setdefault(parent_node, set())
             consumers.setdefault(current_node_id, set())
     return parents, consumers
-
-
-def _collect_reachable_descendants(
-    workflow: WorkflowPrompt,
-    seed_node_ids: set[str],
-) -> set[str]:
-    if not seed_node_ids:
-        return set()
-
-    _, consumers = _extract_dependencies(workflow)
-    reachable: set[str] = {node_id for node_id in seed_node_ids if node_id in workflow}
-    queue: deque[str] = deque(sorted(reachable))
-
-    while queue:
-        node_id = queue.popleft()
-        for consumer_id in sorted(consumers.get(node_id, set())):
-            if consumer_id in reachable or consumer_id not in workflow:
-                continue
-            reachable.add(consumer_id)
-            queue.append(consumer_id)
-
-    return reachable
 
 
 def _find_references_to_node(
@@ -530,19 +508,14 @@ def apply_rules_to_workflow(
             )
             ignored_nodes.add(normalized_node_id)
 
-    reachable_from_provided_inputs = _collect_reachable_descendants(
-        next_workflow,
-        {
-            input_id
-            for input_id in normalized_provided_inputs
-            if ":" not in input_id
-        },
-    )
+    provided_input_node_ids = {
+        input_id for input_id in normalized_provided_inputs if ":" not in input_id
+    }
     ignored_nodes.update(
         _collect_nodes_with_missing_required_inputs(
             next_workflow,
             set(next_workflow.keys()) | downstream_prune_roots,
-            reachable_from_provided_inputs,
+            provided_input_node_ids,
         )
     )
 

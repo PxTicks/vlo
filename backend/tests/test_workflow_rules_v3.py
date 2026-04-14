@@ -266,6 +266,156 @@ def test_i2v_t2v_basic_missing_image_returns_warnings_instead_of_crashing():
     )
 
 
+def test_i2v_t2v_basic_prunes_missing_image_branch_when_optional_input_node_is_omitted():
+    rules = json.loads(
+        (
+            DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_i2v_t2v_basic.rules.json"
+        ).read_text(encoding="utf-8")
+    )
+    workflow = {
+        "165": {
+            "class_type": "ImageResizeKJv2",
+            "inputs": {
+                "width": ["243", 0],
+                "height": ["244", 0],
+            },
+        },
+        "243": {"class_type": "GetNode", "inputs": {}},
+        "244": {"class_type": "GetNode", "inputs": {}},
+        "290": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": {"value": False},
+        },
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        rules,
+        provided_input_ids=set(),
+    )
+
+    assert rewritten["290"]["inputs"]["value"] is True
+    assert "165" not in rewritten
+    assert warnings == [
+        {
+            "code": "injection_target_missing",
+            "message": "Injection target node not found in workflow; skipping",
+            "node_id": "160",
+            "output_index": 0,
+        },
+        {
+            "code": "injection_target_missing",
+            "message": "Injection target node not found in workflow; skipping",
+            "node_id": "161",
+            "output_index": 0,
+        },
+        {
+            "code": "injection_target_missing",
+            "message": "Injection target node not found in workflow; skipping",
+            "node_id": "236",
+            "output_index": 0,
+        },
+        {
+            "code": "injection_target_missing",
+            "message": "Injection target node not found in workflow; skipping",
+            "node_id": "237",
+            "output_index": 0,
+        },
+        {
+            "code": "injection_target_missing",
+            "message": "Injection target node not found in workflow; skipping",
+            "node_id": "349",
+            "output_index": 0,
+        },
+        {
+            "code": "optional_input_node_missing",
+            "message": "Optional input node not found in workflow; skipping bypass",
+            "node_id": "167",
+        },
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "160",
+        },
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "161",
+        },
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "209",
+        },
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "211",
+        },
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "233",
+        },
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "234",
+        },
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "248",
+        },
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "349",
+        },
+    ]
+
+
+def test_apply_rules_globally_prunes_dangling_sampler_chain_missing_required_latent():
+    workflow = {
+        "1": {"class_type": "NoiseSource", "inputs": {}},
+        "2": {"class_type": "GuiderSource", "inputs": {}},
+        "3": {"class_type": "SamplerSource", "inputs": {}},
+        "4": {"class_type": "SigmaSource", "inputs": {}},
+        "5": {"class_type": "UpscaleSource", "inputs": {}},
+        "6": {"class_type": "VAESource", "inputs": {}},
+        "113": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["1", 0],
+                "guider": ["2", 0],
+                "sampler": ["3", 0],
+                "sigmas": ["4", 0],
+            },
+        },
+        "116": {
+            "class_type": "LTXVSeparateAVLatent",
+            "inputs": {"av_latent": ["113", 0]},
+        },
+        "118": {
+            "class_type": "LTXVLatentUpsampler",
+            "inputs": {
+                "samples": ["116", 0],
+                "upscale_model": ["5", 0],
+                "vae": ["6", 0],
+            },
+        },
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        {"version": 3, "nodes": {}},
+        provided_input_ids=set(),
+    )
+
+    assert rewritten == {}
+    assert warnings == []
+
+
 def test_flf2v_missing_custom_audio_forces_switch_to_ltx_audio():
     rules = json.loads(
         (DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_flf2v.rules.json").read_text(

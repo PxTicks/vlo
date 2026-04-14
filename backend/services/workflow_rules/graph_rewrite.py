@@ -530,18 +530,19 @@ def apply_rules_to_workflow(
             )
             ignored_nodes.add(normalized_node_id)
 
+    reachable_from_provided_inputs = _collect_reachable_descendants(
+        next_workflow,
+        {
+            input_id
+            for input_id in normalized_provided_inputs
+            if ":" not in input_id
+        },
+    )
     ignored_nodes.update(
         _collect_nodes_with_missing_required_inputs(
             next_workflow,
-            downstream_prune_roots,
-            _collect_reachable_descendants(
-                next_workflow,
-                {
-                    input_id
-                    for input_id in normalized_provided_inputs
-                    if ":" not in input_id
-                },
-            ),
+            set(next_workflow.keys()) | downstream_prune_roots,
+            reachable_from_provided_inputs,
         )
     )
 

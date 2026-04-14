@@ -12,6 +12,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.comfyui.comfyui_generate import finalize_backend_response
 from services.gen_pipeline.context import BackendPipelineContext
 from services.gen_pipeline.processors.mask_crop import create_mask_crop_processor
+from services.gen_pipeline.processors.utils.aspect_ratio_processing import (
+    apply_aspect_ratio_processing,
+)
 from services.workflow_rules import load_rules_model_for_workflow, normalize_rules_model
 from services.workflow_rules.mask_pairs import collect_mask_crop_pairs
 from services.workflow_rules.pipeline import (
@@ -163,6 +166,72 @@ def test_vace_inpaint_mask_crop_records_crop_metadata_from_pipeline_outputs():
         "scale": 0.2,
     }
     assert ctx.pipeline_outputs["mask_processing"]["processed_mask_bytes"] == b"mask"
+
+
+def test_aspect_ratio_processing_normalizes_resize_image_mask_targets_in_v3_schema():
+    workflow = {
+        "693": {
+            "class_type": "ResizeImageMaskNode",
+            "inputs": {
+                "resize_type": "scale by multiplier",
+                "scale_method": "area",
+                "input": ["690", 0],
+            },
+        }
+    }
+    rules = {
+        "version": 3,
+        "pipeline": [
+            {
+                "id": "aspect_ratio",
+                "kind": "aspect_ratio",
+                "config": {
+                    "stride": 32,
+                    "search_steps": 2,
+                    "resolutions": [720, 1080],
+                },
+                "targets": [
+                    {
+                        "width": {"node_id": "693", "param": "resize_type.width"},
+                        "height": {"node_id": "693", "param": "resize_type.height"},
+                    }
+                ],
+                "controls": [
+                    {
+                        "key": "target_resolution",
+                        "value_type": "int",
+                        "expose": "widget",
+                        "default": 1080,
+                    },
+                    {
+                        "key": "target_aspect_ratio",
+                        "value_type": "string",
+                        "expose": "none",
+                        "source": "client",
+                    },
+                ],
+            }
+        ],
+    }
+
+    metadata, warnings = apply_aspect_ratio_processing(
+        workflow,
+        rules,
+        "16:9",
+        1080,
+    )
+
+    assert warnings == []
+    assert metadata is not None
+    assert workflow["693"]["inputs"]["resize_type"] == "scale dimensions"
+    assert workflow["693"]["inputs"]["resize_type.crop"] == "disabled"
+    assert workflow["693"]["inputs"]["resize_type.width"] == metadata["strided"]["width"]
+    assert (
+        workflow["693"]["inputs"]["resize_type.height"]
+        == metadata["strided"]["height"]
+    )
+    assert workflow["693"]["inputs"]["resize_type.width"] % 32 == 0
+    assert workflow["693"]["inputs"]["resize_type.height"] % 32 == 0
 
 
 def test_hidden_pipeline_controls_are_resolved_authoritatively():

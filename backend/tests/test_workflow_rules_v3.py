@@ -266,7 +266,7 @@ def test_i2v_t2v_basic_missing_image_returns_warnings_instead_of_crashing():
     )
 
 
-def test_i2v_t2v_basic_prunes_missing_image_branch_when_optional_input_node_is_omitted():
+def test_i2v_t2v_basic_does_not_globally_prune_when_optional_input_node_is_omitted():
     rules = json.loads(
         (
             DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_i2v_t2v_basic.rules.json"
@@ -295,7 +295,10 @@ def test_i2v_t2v_basic_prunes_missing_image_branch_when_optional_input_node_is_o
     )
 
     assert rewritten["290"]["inputs"]["value"] is True
-    assert "165" not in rewritten
+    assert rewritten["165"]["inputs"] == {
+        "width": ["243", 0],
+        "height": ["244", 0],
+    }
     assert warnings == [
         {
             "code": "injection_target_missing",
@@ -375,48 +378,7 @@ def test_i2v_t2v_basic_prunes_missing_image_branch_when_optional_input_node_is_o
     ]
 
 
-def test_apply_rules_globally_prunes_dangling_sampler_chain_missing_required_latent():
-    workflow = {
-        "1": {"class_type": "NoiseSource", "inputs": {}},
-        "2": {"class_type": "GuiderSource", "inputs": {}},
-        "3": {"class_type": "SamplerSource", "inputs": {}},
-        "4": {"class_type": "SigmaSource", "inputs": {}},
-        "5": {"class_type": "UpscaleSource", "inputs": {}},
-        "6": {"class_type": "VAESource", "inputs": {}},
-        "113": {
-            "class_type": "SamplerCustomAdvanced",
-            "inputs": {
-                "noise": ["1", 0],
-                "guider": ["2", 0],
-                "sampler": ["3", 0],
-                "sigmas": ["4", 0],
-            },
-        },
-        "116": {
-            "class_type": "LTXVSeparateAVLatent",
-            "inputs": {"av_latent": ["113", 0]},
-        },
-        "118": {
-            "class_type": "LTXVLatentUpsampler",
-            "inputs": {
-                "samples": ["116", 0],
-                "upscale_model": ["5", 0],
-                "vae": ["6", 0],
-            },
-        },
-    }
-
-    rewritten, warnings = apply_rules_to_workflow(
-        workflow,
-        {"version": 3, "nodes": {}},
-        provided_input_ids=set(),
-    )
-
-    assert rewritten == {}
-    assert warnings == []
-
-
-def test_apply_rules_prunes_broken_descendant_reachable_from_provided_input():
+def test_apply_rules_does_not_globally_prune_broken_output_chain_without_roots():
     workflow = {
         "1": {"class_type": "ProvidedPrompt", "inputs": {}},
         "2": {
@@ -425,9 +387,9 @@ def test_apply_rules_prunes_broken_descendant_reachable_from_provided_input():
                 "prompt": ["1", 0],
             },
         },
-        "3": {"class_type": "NoiseBranch", "inputs": {}},
-        "4": {"class_type": "SamplerBranch", "inputs": {}},
-        "5": {"class_type": "SigmaBranch", "inputs": {}},
+        "3": {"class_type": "NoiseSource", "inputs": {}},
+        "4": {"class_type": "SamplerSource", "inputs": {}},
+        "5": {"class_type": "SigmaSource", "inputs": {}},
         "113": {
             "class_type": "SamplerCustomAdvanced",
             "inputs": {
@@ -437,11 +399,74 @@ def test_apply_rules_prunes_broken_descendant_reachable_from_provided_input():
                 "sigmas": ["5", 0],
             },
         },
+        "140": {
+            "class_type": "VHS_VideoCombine",
+            "inputs": {
+                "images": ["113", 0],
+                "frame_rate": 24,
+                "loop_count": 0,
+                "filename_prefix": "LTX-2",
+                "format": "video/h264-mp4",
+                "pingpong": False,
+                "save_output": True,
+            },
+        },
     }
 
     rewritten, warnings = apply_rules_to_workflow(
         workflow,
         {"version": 3, "nodes": {}},
+        provided_input_ids={"1"},
+    )
+
+    assert rewritten == workflow
+    assert warnings == []
+
+
+def test_apply_rules_prunes_broken_descendant_reachable_from_provided_input():
+    workflow = {
+        "1": {"class_type": "ProvidedPrompt", "inputs": {}},
+        "167": {"class_type": "LoadImage", "inputs": {"image": "stale.png"}},
+        "2": {
+            "class_type": "PromptBranch",
+            "inputs": {
+                "prompt": ["1", 0],
+            },
+        },
+        "3": {"class_type": "NoiseBranch", "inputs": {}},
+        "4": {"class_type": "SamplerBranch", "inputs": {}},
+        "5": {"class_type": "SigmaBranch", "inputs": {}},
+        "239": {
+            "class_type": "LTXVPreprocess",
+            "inputs": {
+                "image": ["167", 0],
+                "img_compression": 35,
+            },
+        },
+        "113": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["3", 0],
+                "guider": ["2", 0],
+                "sampler": ["4", 0],
+                "sigmas": ["5", 0],
+                "latent_image": ["239", 0],
+            },
+        },
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        {
+            "version": 3,
+            "nodes": {
+                "167": {
+                    "present": {
+                        "required": False,
+                    }
+                }
+            },
+        },
         provided_input_ids={"1"},
     )
 

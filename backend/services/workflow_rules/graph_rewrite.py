@@ -514,7 +514,7 @@ def apply_rules_to_workflow(
     ignored_nodes.update(
         _collect_nodes_with_missing_required_inputs(
             next_workflow,
-            set(next_workflow.keys()) | downstream_prune_roots,
+            downstream_prune_roots,
             provided_input_node_ids,
         )
     )

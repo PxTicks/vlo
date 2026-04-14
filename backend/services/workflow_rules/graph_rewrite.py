@@ -70,16 +70,6 @@ def _get_graph_variable_name(graph_node: dict[str, Any]) -> str | None:
     return raw_name.strip()
 
 
-def _workflow_has_output_nodes(workflow: WorkflowPrompt) -> bool:
-    for node_data in workflow.values():
-        if not isinstance(node_data, dict):
-            continue
-        class_type = node_data.get("class_type")
-        if isinstance(class_type, str) and is_output_node_class(class_type):
-            return True
-    return False
-
-
 def _build_prompt_node_from_graph_node(
     graph_node: dict[str, Any],
     graph_links_by_id: dict[int, list[Any]],
@@ -242,129 +232,6 @@ def _recover_output_reachable_prompt_from_graph_data(
             recovered_prompt[node_id] = prompt_node
 
     return recovered_prompt
-
-
-def _merge_recovered_prompt(
-    workflow: WorkflowPrompt,
-    recovered_prompt: WorkflowPrompt,
-) -> WorkflowPrompt:
-    merged_workflow: WorkflowPrompt = deepcopy(recovered_prompt)
-
-    for node_id, node_data in workflow.items():
-        normalized_node_id = str(node_id)
-        if not isinstance(node_data, dict):
-            merged_workflow[normalized_node_id] = deepcopy(node_data)
-            continue
-
-        existing_node = merged_workflow.get(normalized_node_id)
-        next_node = deepcopy(existing_node) if isinstance(existing_node, dict) else {}
-
-        for key, value in node_data.items():
-            if key == "inputs" and isinstance(value, dict):
-                existing_inputs = next_node.get("inputs")
-                if not isinstance(existing_inputs, dict):
-                    existing_inputs = {}
-                existing_inputs.update(deepcopy(value))
-                next_node["inputs"] = existing_inputs
-                continue
-
-            next_node[key] = deepcopy(value)
-
-        merged_workflow[normalized_node_id] = next_node
-
-    return merged_workflow
-
-
-def _build_graph_consumer_index(
-    graph_data: dict[str, Any] | None,
-) -> dict[tuple[str, int], list[tuple[str, str]]]:
-    if not isinstance(graph_data, dict):
-        return {}
-
-    raw_nodes = graph_data.get("nodes")
-    raw_links = graph_data.get("links")
-    if not isinstance(raw_nodes, list) or not isinstance(raw_links, list):
-        return {}
-
-    nodes_by_id: dict[str, dict[str, Any]] = {}
-    for raw_node in raw_nodes:
-        if not isinstance(raw_node, dict):
-            continue
-        node_id = str(raw_node.get("id")).strip()
-        if not node_id:
-            continue
-        nodes_by_id[node_id] = raw_node
-
-    consumer_index: dict[tuple[str, int], list[tuple[str, str]]] = {}
-    for raw_link in raw_links:
-        if not isinstance(raw_link, list) or len(raw_link) < 5:
-            continue
-
-        output_index = _to_int(raw_link[2])
-        input_index = _to_int(raw_link[4])
-        if output_index is None or input_index is None:
-            continue
-
-        source_node_id = str(raw_link[1]).strip()
-        consumer_node_id = str(raw_link[3]).strip()
-        if not source_node_id or not consumer_node_id:
-            continue
-
-        consumer_node = nodes_by_id.get(consumer_node_id)
-        if not isinstance(consumer_node, dict):
-            continue
-
-        raw_inputs = consumer_node.get("inputs")
-        if not isinstance(raw_inputs, list) or input_index >= len(raw_inputs):
-            continue
-
-        input_entry = raw_inputs[input_index]
-        if not isinstance(input_entry, dict):
-            continue
-
-        input_name = input_entry.get("name")
-        if not isinstance(input_name, str) or not input_name.strip():
-            continue
-
-        consumer_index.setdefault((source_node_id, output_index), []).append(
-            (consumer_node_id, input_name)
-        )
-
-    return consumer_index
-
-
-def _rewrite_output_links_from_graph_data(
-    workflow: WorkflowPrompt,
-    graph_consumer_index: dict[tuple[str, int], list[tuple[str, str]]],
-    target_node_id: str,
-    target_output_index: int,
-    replacement_node_id: str,
-    replacement_output_index: int,
-) -> int:
-    rewrites = 0
-    for consumer_node_id, input_name in graph_consumer_index.get(
-        (target_node_id, target_output_index), []
-    ):
-        node_data = workflow.get(consumer_node_id)
-        if not isinstance(node_data, dict):
-            continue
-
-        inputs = node_data.get("inputs")
-        if not isinstance(inputs, dict):
-            inputs = {}
-            node_data["inputs"] = inputs
-
-        current_value = inputs.get(input_name)
-        if isinstance(current_value, list) and len(current_value) == 2:
-            if _is_output_link_to(current_value, replacement_node_id, replacement_output_index):
-                continue
-            if not _is_output_link_to(current_value, target_node_id, target_output_index):
-                continue
-
-        inputs[input_name] = [replacement_node_id, replacement_output_index]
-        rewrites += 1
-
-    return rewrites
 
 
 def _disconnect_output_links_from_node(
@@ -683,15 +550,18 @@ def apply_rules_to_workflow(
         warnings.extend(normalize_warnings)
     next_workflow = deepcopy(workflow)
 
-    if not _workflow_has_output_nodes(next_workflow):
-        recovered_prompt = _recover_output_reachable_prompt_from_graph_data(graph_data)
-        if recovered_prompt:
-            # Rehydrate the authored output-connected graph when graphToPrompt()
-            # drops terminal branches before backend rules can repair them.
-            next_workflow = _merge_recovered_prompt(next_workflow, recovered_prompt)
+    # Rehydrate any output-reachable nodes that graphToPrompt dropped before
+    # submission. The submitted prompt always wins for nodes it already has;
+    # we only fill in gaps so injection targets and their consumers exist by
+    # the time rules run. Without this, frontend-side pruning can leave the
+    # prompt missing nodes the rules reference, yielding "Prompt has no
+    # outputs" or half-wired fallback paths.
+    recovered_prompt = _recover_output_reachable_prompt_from_graph_data(graph_data)
+    for recovered_node_id, recovered_node_data in recovered_prompt.items():
+        if recovered_node_id not in next_workflow:
+            next_workflow[recovered_node_id] = deepcopy(recovered_node_data)
 
     normalized_provided_inputs = _normalize_provided_input_ids(provided_input_ids)
-    graph_consumer_index = _build_graph_consumer_index(graph_data)
 
     output_injections = normalized_rules.get("output_injections", {})
     if isinstance(output_injections, dict):
@@ -714,14 +584,7 @@ def apply_rules_to_workflow(
                 output_index = _to_int(output_index_key)
                 if output_index is None:
                     continue
-                target_missing = target_node_id not in next_workflow
-                has_graph_consumers = bool(
-                    graph_consumer_index.get((target_node_id, output_index))
-                )
-                has_prompt_consumers = bool(
-                    _find_references_to_node(next_workflow, target_node_id)
-                )
-                if target_missing and not has_graph_consumers and not has_prompt_consumers:
+                if target_node_id not in next_workflow:
                     warnings.append(
                         _warning(
                             "injection_target_missing",
@@ -778,29 +641,11 @@ def apply_rules_to_workflow(
                         replacement_node_id=source_node_id,
                         replacement_output_index=source_output_index,
                     )
-                    rewrites += _rewrite_output_links_from_graph_data(
-                        next_workflow,
-                        graph_consumer_index,
-                        target_node_id=target_node_id,
-                        target_output_index=output_index,
-                        replacement_node_id=source_node_id,
-                        replacement_output_index=source_output_index,
-                    )
                     if rewrites == 0:
-                        warning_code = (
-                            "injection_target_missing"
-                            if target_node_id not in next_workflow
-                            else "injection_no_consumers"
-                        )
-                        warning_message = (
-                            "Injection target node not found in workflow; skipping"
-                            if target_node_id not in next_workflow
-                            else "No downstream links matched this injection target"
-                        )
                         warnings.append(
                             _warning(
-                                warning_code,
-                                warning_message,
+                                "injection_no_consumers",
+                                "No downstream links matched this injection target",
                                 node_id=target_node_id,
                                 output_index=output_index,
                             )

@@ -15,7 +15,7 @@ ApplyAspectRatioProcessingFn = Callable[
 
 
 class _AspectRatioProcessor:
-    backend_preprocess_checkpoint = "after_upload"
+    backend_preprocess_checkpoint = "before_upload"
     meta = ProcessorMeta(
         name="aspect_ratio",
         reads=(

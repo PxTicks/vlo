@@ -245,8 +245,8 @@ Currently registered:
 
 | Checkpoint      | Stage kind        | Processor                                                   |
 | --------------- | ----------------- | ----------------------------------------------------------- |
+| `before_upload` | `aspect_ratio`    | `aspect_ratio` — computes the nearest valid resolution within `config.resolutions` under `stride` and `search_steps`, writes `(width, height)` to every target pair |
 | `before_upload` | `mask_processing` | `mask_crop` — analyzes mask bounds, crops source and mask to the bounded region when `crop_mode = "crop"`, applies `source_video_treatment` |
-| `after_upload`  | `aspect_ratio`    | `aspect_ratio` — computes the nearest valid resolution within `config.resolutions` under `stride` and `search_steps`, writes `(width, height)` to every target pair |
 
 `output_assembly` is authored but has no backend-side processor — its
 `config` is surfaced to the frontend via `pipeline_outputs`.
@@ -255,7 +255,8 @@ Currently registered:
 
 Uploads every prepared input media buffer to ComfyUI and rewrites the
 corresponding node params to reference the returned filenames. Buffers may
-have been mutated by `before_upload` stages (e.g. cropped by `mask_crop`).
+have been mutated by `before_upload` stages (e.g. aspect-ratio-aware mask
+cropping by `mask_crop`).
 
 ---
 

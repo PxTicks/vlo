@@ -5,16 +5,21 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
+import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.comfyui.comfyui_generate import finalize_backend_response  # noqa: E402
 from services.gen_pipeline.context import BackendPipelineContext  # noqa: E402
+from services.gen_pipeline.processors.pipeline_stage import (  # noqa: E402
+    create_pipeline_stage_processor,
+)
 from services.gen_pipeline.processors import (  # noqa: E402
     build_backend_dispatch_processors,
     build_backend_preprocessors,
     build_generation_processors,
 )
+from services.gen_pipeline.types import ProcessorMeta  # noqa: E402
 from services.workflow_rules.pipeline import iter_pipeline_stages  # noqa: E402
 
 
@@ -180,3 +185,67 @@ def test_iter_pipeline_stages_applies_registry_dependency_contract():
         "aspect_ratio",
         "mask_processing",
     ]
+
+
+class _RecordingStageProcessor:
+    def __init__(self, name: str, checkpoint: str, calls: list[str]) -> None:
+        self.backend_preprocess_checkpoint = checkpoint
+        self._name = name
+        self._calls = calls
+        self.meta = ProcessorMeta(
+            name=name,
+            reads=(),
+            writes=(),
+            description=f"records {name}",
+        )
+
+    def is_active(self, _ctx: Any) -> bool:
+        return True
+
+    async def execute(self, _ctx: Any) -> None:
+        self._calls.append(self._name)
+
+
+@pytest.mark.asyncio
+async def test_pipeline_stage_before_upload_respects_aspect_ratio_dependency_order():
+    calls: list[str] = []
+    processor = create_pipeline_stage_processor(
+        checkpoint="before_upload",
+        stage_processors={
+            "mask_processing": _RecordingStageProcessor(
+                "mask_processing",
+                "before_upload",
+                calls,
+            ),
+            "aspect_ratio": _RecordingStageProcessor(
+                "aspect_ratio",
+                "before_upload",
+                calls,
+            ),
+        },
+    )
+    ctx = BackendPipelineContext(
+        client=cast(Any, None),
+        client_id="client-1",
+        workflow={},
+        rules={
+            "pipeline": [
+                {
+                    "id": "mask_processing",
+                    "kind": "mask_processing",
+                    "targets": [],
+                    "controls": [],
+                },
+                {
+                    "id": "aspect_ratio",
+                    "kind": "aspect_ratio",
+                    "targets": [],
+                    "controls": [],
+                },
+            ]
+        },
+    )
+
+    await processor.execute(ctx)
+
+    assert calls == ["aspect_ratio", "mask_processing"]

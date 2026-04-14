@@ -262,7 +262,7 @@ export interface WorkflowDualSamplerDenoiseSourceValues {
   baseSplitStep: number;
 }
 
-export interface DerivedWorkflowWidgetInput {
+export interface DualSamplerDenoiseDerivedWidgetInput {
   kind: "derived";
   deriveKind: "dual_sampler_denoise";
   derivedWidgetId: string;
@@ -272,6 +272,28 @@ export interface DerivedWorkflowWidgetInput {
   currentValue: number;
   sources: WorkflowDualSamplerDenoiseSourceValues;
 }
+
+export type VideoAudioRetakeMode = "Video & Audio" | "Video" | "Audio";
+
+export interface VideoAudioRetakeSourceValues {
+  videoBypass: boolean;
+  audioBypass: boolean;
+}
+
+export interface VideoAudioRetakeDerivedWidgetInput {
+  kind: "derived";
+  deriveKind: "video_audio_retake";
+  derivedWidgetId: string;
+  nodeId: string;
+  param: string;
+  config: WidgetInputConfig;
+  currentValue: VideoAudioRetakeMode;
+  sources: VideoAudioRetakeSourceValues;
+}
+
+export type DerivedWorkflowWidgetInput =
+  | DualSamplerDenoiseDerivedWidgetInput
+  | VideoAudioRetakeDerivedWidgetInput;
 
 export type WorkflowWidgetInput =
   | RawWorkflowWidgetInput

@@ -16,6 +16,7 @@ import type {
   WorkflowOptionalInputValidationRule,
   WorkflowRequiredInputValidationRule,
   WorkflowRules,
+  WorkflowVideoAudioRetakeRule,
 } from "./generated";
 
 export type {
@@ -44,6 +45,7 @@ export type {
   WorkflowRuleWidgetEntry,
   WorkflowRules,
   WorkflowValidationConfig,
+  WorkflowVideoAudioRetakeRule,
 } from "./generated";
 
 export type WorkflowPostprocessingConfig = WorkflowOutputAssemblyStageConfig;
@@ -53,7 +55,9 @@ export type WorkflowInputValidationRule =
   | WorkflowAtLeastNInputValidationRule
   | WorkflowOptionalInputValidationRule;
 
-export type WorkflowDerivedWidgetRule = WorkflowDualSamplerDenoiseRule;
+export type WorkflowDerivedWidgetRule =
+  | WorkflowDualSamplerDenoiseRule
+  | WorkflowVideoAudioRetakeRule;
 
 export interface WorkflowRuleWarning {
   code: string;

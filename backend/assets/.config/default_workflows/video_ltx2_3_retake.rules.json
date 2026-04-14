@@ -77,12 +77,50 @@
       }
     },
     "689": {},
-    "691": {}
+    "691": {},
+    "705": {
+      "widgets": {
+        "switch": {
+          "label": "Bypass video retake",
+          "value_type": "boolean",
+          "default": false,
+          "hidden": true
+        }
+      }
+    },
+    "714": {
+      "widgets": {
+        "switch": {
+          "label": "Bypass audio retake",
+          "value_type": "boolean",
+          "default": false,
+          "hidden": true
+        }
+      }
+    }
   },
   "validation": {
     "inputs": []
   },
-  "derived_widgets": [],
+  "derived_widgets": [
+    {
+      "id": "retake_mode",
+      "kind": "video_audio_retake",
+      "label": "Retake",
+      "group_id": "retake",
+      "group_title": "Retake",
+      "group_order": 0,
+      "default": "Video & Audio",
+      "video_bypass": {
+        "node_id": "705",
+        "param": "switch"
+      },
+      "audio_bypass": {
+        "node_id": "714",
+        "param": "switch"
+      }
+    }
+  ],
   "output_injections": {},
   "slots": {},
   "pipeline": [

@@ -1788,6 +1788,92 @@
       },
       "title": "WorkflowValidationConfig",
       "type": "object"
+    },
+    "WorkflowVideoAudioRetakeRule": {
+      "description": "Derived widget that exposes a 3-option retake-mode enum.\n\nThe selected mode drives two boolean bypass widgets: setting ``video_bypass``\nreplaces the video retake mask with a solid pass-through mask, and likewise\nfor ``audio_bypass``. Selecting \"both\" leaves both masks untouched.",
+      "properties": {
+        "audio_bypass": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        },
+        "default": {
+          "default": "Video & Audio",
+          "enum": [
+            "Video & Audio",
+            "Video",
+            "Audio"
+          ],
+          "title": "Default",
+          "type": "string"
+        },
+        "group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "video_audio_retake",
+          "default": "video_audio_retake",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "video_bypass": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        }
+      },
+      "required": [
+        "id",
+        "video_bypass",
+        "audio_bypass"
+      ],
+      "title": "WorkflowVideoAudioRetakeRule",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -1810,7 +1896,21 @@
     },
     "derived_widgets": {
       "items": {
-        "$ref": "#/$defs/WorkflowDualSamplerDenoiseRule"
+        "discriminator": {
+          "mapping": {
+            "dual_sampler_denoise": "#/$defs/WorkflowDualSamplerDenoiseRule",
+            "video_audio_retake": "#/$defs/WorkflowVideoAudioRetakeRule"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/WorkflowDualSamplerDenoiseRule"
+          },
+          {
+            "$ref": "#/$defs/WorkflowVideoAudioRetakeRule"
+          }
+        ]
       },
       "title": "Derived Widgets",
       "type": "array"

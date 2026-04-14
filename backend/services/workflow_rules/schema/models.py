@@ -7,7 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 
 WidgetsMode = Literal["control_after_generate", "all"]
-DerivedWidgetKind = Literal["dual_sampler_denoise"]
+DerivedWidgetKind = Literal["dual_sampler_denoise", "video_audio_retake"]
+VideoAudioRetakeMode = Literal["Video & Audio", "Video", "Audio"]
 WidgetControl = Literal["slider"]
 WidgetSliderDisplay = Literal["percent", "number"]
 MaskCroppingMode = Literal["crop", "full"]
@@ -136,7 +137,7 @@ class WorkflowParamReference(WorkflowRuleBaseModel):
 
 class WorkflowDualSamplerDenoiseRule(WorkflowRuleBaseModel):
     id: str
-    kind: DerivedWidgetKind = "dual_sampler_denoise"
+    kind: Literal["dual_sampler_denoise"] = "dual_sampler_denoise"
     label: str | None = None
     group_id: str | None = None
     group_title: str | None = None
@@ -145,6 +146,31 @@ class WorkflowDualSamplerDenoiseRule(WorkflowRuleBaseModel):
     start_step: WorkflowParamReference
     base_split_step: WorkflowParamReference
     split_step_targets: list[WorkflowParamReference] = Field(default_factory=list)
+
+
+class WorkflowVideoAudioRetakeRule(WorkflowRuleBaseModel):
+    """Derived widget that exposes a 3-option retake-mode enum.
+
+    The selected mode drives two boolean bypass widgets: setting ``video_bypass``
+    replaces the video retake mask with a solid pass-through mask, and likewise
+    for ``audio_bypass``. Selecting "both" leaves both masks untouched.
+    """
+
+    id: str
+    kind: Literal["video_audio_retake"] = "video_audio_retake"
+    label: str | None = None
+    group_id: str | None = None
+    group_title: str | None = None
+    group_order: int | None = None
+    default: VideoAudioRetakeMode = "Video & Audio"
+    video_bypass: WorkflowParamReference
+    audio_bypass: WorkflowParamReference
+
+
+WorkflowDerivedWidgetRule = Annotated[
+    WorkflowDualSamplerDenoiseRule | WorkflowVideoAudioRetakeRule,
+    Field(discriminator="kind"),
+]
 
 
 class WorkflowRequiredInputValidationRule(WorkflowRuleBaseModel):
@@ -367,7 +393,7 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     nodes: dict[str, WorkflowRuleNode] = Field(default_factory=dict)
     validation: WorkflowValidationConfig = Field(default_factory=WorkflowValidationConfig)
     input_conditions: list[WorkflowInputCondition] | None = None
-    derived_widgets: list[WorkflowDualSamplerDenoiseRule] = Field(default_factory=list)
+    derived_widgets: list[WorkflowDerivedWidgetRule] = Field(default_factory=list)
     output_injections: dict[str, dict[str, ResolvedOutputInjectionRule]] = Field(
         default_factory=dict
     )

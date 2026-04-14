@@ -912,6 +912,73 @@ describe("resolvePresentedInputs", () => {
     expect(widgets[0]?.currentValue).toBe(0.8);
   });
 
+  it("resolves the video-audio retake mode as a frontend-only enum widget", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "705": { inputs: { switch: false } },
+        "714": { inputs: { switch: true } },
+      },
+      {
+        version: 1,
+        nodes: {
+          "705": {
+            widgets: { switch: { value_type: "boolean", hidden: true } },
+          },
+          "714": {
+            widgets: { switch: { value_type: "boolean", hidden: true } },
+          },
+        },
+        derived_widgets: [
+          {
+            id: "retake_mode",
+            kind: "video_audio_retake",
+            label: "Retake",
+            default: "Video & Audio",
+            video_bypass: { node_id: "705", param: "switch" },
+            audio_bypass: { node_id: "714", param: "switch" },
+          },
+        ],
+        output_injections: {},
+        slots: {},
+      },
+    );
+
+    const derived = widgets.find((w) => w.kind === "derived");
+    expect(derived).toBeDefined();
+    expect(derived?.nodeId).toBe("derived:retake_mode");
+    expect(derived?.config.valueType).toBe("enum");
+    expect(derived?.config.options).toEqual(["Video & Audio", "Video", "Audio"]);
+    expect(derived?.config.frontendOnly).toBe(true);
+    expect(derived?.currentValue).toBe("Video");
+  });
+
+  it("falls back to the default when both retake bypass booleans are true", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "705": { inputs: { switch: true } },
+        "714": { inputs: { switch: true } },
+      },
+      {
+        version: 1,
+        nodes: {},
+        derived_widgets: [
+          {
+            id: "retake_mode",
+            kind: "video_audio_retake",
+            default: "Video & Audio",
+            video_bypass: { node_id: "705", param: "switch" },
+            audio_bypass: { node_id: "714", param: "switch" },
+          },
+        ],
+        output_injections: {},
+        slots: {},
+      },
+    );
+
+    const derived = widgets.find((w) => w.kind === "derived");
+    expect(derived?.currentValue).toBe("Video & Audio");
+  });
+
   it("preserves raw slider widget metadata for numeric controls", () => {
     const widgets = resolveWidgetInputs(
       {

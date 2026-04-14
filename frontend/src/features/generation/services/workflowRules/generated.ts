@@ -252,6 +252,18 @@ export interface WorkflowValidationConfig {
   inputs?: Array<WorkflowRequiredInputValidationRule | WorkflowAtLeastNInputValidationRule | WorkflowOptionalInputValidationRule>;
 }
 
+export interface WorkflowVideoAudioRetakeRule {
+  id: string;
+  kind?: "video_audio_retake";
+  label?: string | null;
+  group_id?: string | null;
+  group_title?: string | null;
+  group_order?: number | null;
+  default?: "Video & Audio" | "Video" | "Audio";
+  video_bypass: WorkflowParamReference;
+  audio_bypass: WorkflowParamReference;
+}
+
 export interface WorkflowRules {
   version?: 3;
   name?: string | null;
@@ -259,7 +271,7 @@ export interface WorkflowRules {
   nodes?: Record<string, WorkflowRuleNode>;
   validation?: WorkflowValidationConfig;
   input_conditions?: Array<WorkflowInputCondition> | null;
-  derived_widgets?: Array<WorkflowDualSamplerDenoiseRule>;
+  derived_widgets?: Array<WorkflowDualSamplerDenoiseRule | WorkflowVideoAudioRetakeRule>;
   output_injections?: Record<string, Record<string, ResolvedOutputInjectionRule>>;
   slots?: Record<string, WorkflowRuleSlot>;
   pipeline?: Array<WorkflowMaskProcessingStage | WorkflowAspectRatioStage | WorkflowOutputAssemblyStage>;

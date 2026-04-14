@@ -118,6 +118,53 @@ def _expand_dual_sampler_denoise(
     return overrides, denoise_steps / total_steps_int, None
 
 
+_VIDEO_AUDIO_RETAKE_OPTIONS: tuple[str, ...] = ("Video & Audio", "Video", "Audio")
+
+
+def _expand_video_audio_retake(
+    workflow: dict[str, Any],  # noqa: ARG001 (kept for signature symmetry)
+    rule: dict[str, Any],
+    raw_value: Any,
+) -> tuple[dict[str, dict[str, Any]] | None, str | None, str | None]:
+    """Map a retake-mode enum selection onto two boolean bypass widgets.
+
+    Returns (widget_overrides, applied_enum_value, error_message).
+    """
+
+    if isinstance(raw_value, str):
+        mode = raw_value
+    else:
+        mode = str(raw_value) if raw_value is not None else ""
+    if mode not in _VIDEO_AUDIO_RETAKE_OPTIONS:
+        return (
+            None,
+            None,
+            f"Retake mode must be one of: {', '.join(_VIDEO_AUDIO_RETAKE_OPTIONS)}.",
+        )
+
+    # "Video & Audio" bypasses neither; "Video" bypasses audio retake; "Audio"
+    # bypasses video retake. A bypassed side replaces its real mask with a
+    # SolidMask, so no retake occurs on that side.
+    video_bypass = mode == "Audio"
+    audio_bypass = mode == "Video"
+
+    video_ref = rule.get("video_bypass")
+    audio_ref = rule.get("audio_bypass")
+    for ref_name, ref in (("video_bypass", video_ref), ("audio_bypass", audio_ref)):
+        if not isinstance(ref, dict):
+            return None, None, f"{ref_name} must reference a workflow node parameter."
+        if not isinstance(ref.get("node_id"), str) or not isinstance(
+            ref.get("param"), str
+        ):
+            return None, None, f"{ref_name} must include node_id and param."
+
+    overrides: dict[str, dict[str, Any]] = {}
+    _apply_override(overrides, video_ref["node_id"], video_ref["param"], video_bypass)
+    _apply_override(overrides, audio_ref["node_id"], audio_ref["param"], audio_bypass)
+
+    return overrides, mode, None
+
+
 class _ResolveDerivedWidgetsProcessor:
     meta = ProcessorMeta(
         name="resolve_derived_widgets",
@@ -151,7 +198,20 @@ class _ResolveDerivedWidgetsProcessor:
                 continue
 
             kind = rule.get("kind")
-            if kind != "dual_sampler_denoise":
+            applied_value: Any
+            if kind == "dual_sampler_denoise":
+                overrides, applied_value, error_message = _expand_dual_sampler_denoise(
+                    ctx.workflow,
+                    rule,
+                    raw_value,
+                )
+            elif kind == "video_audio_retake":
+                overrides, applied_value, error_message = _expand_video_audio_retake(
+                    ctx.workflow,
+                    rule,
+                    raw_value,
+                )
+            else:
                 failures.append(
                     _failure(
                         derived_widget_id,
@@ -159,12 +219,6 @@ class _ResolveDerivedWidgetsProcessor:
                     )
                 )
                 continue
-
-            overrides, applied_value, error_message = _expand_dual_sampler_denoise(
-                ctx.workflow,
-                rule,
-                raw_value,
-            )
             if error_message:
                 failures.append(_failure(derived_widget_id, error_message))
                 continue

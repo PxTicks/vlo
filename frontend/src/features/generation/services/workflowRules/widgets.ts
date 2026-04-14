@@ -3,6 +3,9 @@ import { normalizeWorkflowRules } from "./normalize";
 import { toFiniteNumber, toPositiveInteger } from "./shared";
 import type {
   DerivedWorkflowWidgetInput,
+  DualSamplerDenoiseDerivedWidgetInput,
+  VideoAudioRetakeDerivedWidgetInput,
+  VideoAudioRetakeMode,
   WidgetInputConfig,
   WorkflowWidgetInput,
 } from "../../types";
@@ -10,6 +13,7 @@ import type {
   WorkflowDualSamplerDenoiseRule,
   WorkflowParamReference,
   WorkflowRules,
+  WorkflowVideoAudioRetakeRule,
 } from "./types";
 
 const DERIVED_WIDGET_NODE_ID_PREFIX = "derived:";
@@ -77,7 +81,7 @@ function hasOwnKey(record: Record<string, unknown>, key: string): boolean {
 function resolveDualSamplerDenoiseWidget(
   workflow: Record<string, unknown>,
   rule: WorkflowDualSamplerDenoiseRule,
-): DerivedWorkflowWidgetInput | null {
+): DualSamplerDenoiseDerivedWidgetInput | null {
   const totalSteps = toPositiveInteger(
     getWorkflowParamNumber(workflow, rule.total_steps),
   );
@@ -138,14 +142,74 @@ function resolveDualSamplerDenoiseWidget(
   };
 }
 
+const VIDEO_AUDIO_RETAKE_OPTIONS: VideoAudioRetakeMode[] = [
+  "Video & Audio",
+  "Video",
+  "Audio",
+];
+
+function toBooleanParamValue(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
+}
+
+function resolveVideoAudioRetakeWidget(
+  workflow: Record<string, unknown>,
+  rule: WorkflowVideoAudioRetakeRule,
+): VideoAudioRetakeDerivedWidgetInput | null {
+  const videoBypassRaw = getWorkflowParamValue(workflow, rule.video_bypass);
+  const audioBypassRaw = getWorkflowParamValue(workflow, rule.audio_bypass);
+  const videoBypass = toBooleanParamValue(videoBypassRaw);
+  const audioBypass = toBooleanParamValue(audioBypassRaw);
+
+  const defaultMode: VideoAudioRetakeMode = rule.default ?? "Video & Audio";
+  let currentValue: VideoAudioRetakeMode = defaultMode;
+  if (videoBypass !== null && audioBypass !== null) {
+    if (!videoBypass && !audioBypass) currentValue = "Video & Audio";
+    else if (!videoBypass && audioBypass) currentValue = "Video";
+    else if (videoBypass && !audioBypass) currentValue = "Audio";
+    else currentValue = defaultMode;
+  }
+
+  return {
+    kind: "derived",
+    deriveKind: "video_audio_retake",
+    derivedWidgetId: rule.id,
+    nodeId: getDerivedWidgetNodeId(rule.id),
+    param: DERIVED_WIDGET_VALUE_PARAM,
+    currentValue,
+    sources: {
+      videoBypass: videoBypass ?? false,
+      audioBypass: audioBypass ?? false,
+    },
+    config: {
+      label: rule.label ?? "Retake",
+      controlAfterGenerate: false,
+      frontendOnly: true,
+      valueType: "enum",
+      options: [...VIDEO_AUDIO_RETAKE_OPTIONS],
+      defaultValue: defaultMode,
+      groupId: toOptionalString(rule.group_id),
+      groupTitle: toOptionalString(rule.group_title) ?? rule.label ?? "Retake",
+      groupOrder: toOptionalNumber(rule.group_order),
+    },
+  };
+}
+
 function resolveDerivedWidgetInputs(
   workflow: Record<string, unknown>,
   rules: WorkflowRules,
 ): WorkflowWidgetInput[] {
   const result: WorkflowWidgetInput[] = [];
   for (const rule of rules.derived_widgets ?? []) {
-    if (rule.kind !== "dual_sampler_denoise") continue;
-    const widget = resolveDualSamplerDenoiseWidget(workflow, rule);
+    let widget: DerivedWorkflowWidgetInput | null = null;
+    if (rule.kind === "dual_sampler_denoise") {
+      widget = resolveDualSamplerDenoiseWidget(workflow, rule);
+    } else if (rule.kind === "video_audio_retake") {
+      widget = resolveVideoAudioRetakeWidget(workflow, rule);
+    }
     if (widget) {
       result.push(widget);
     }

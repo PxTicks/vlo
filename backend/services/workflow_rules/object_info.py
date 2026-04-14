@@ -931,11 +931,24 @@ def get_required_input_params_for_class(
     }
 
 
+def is_output_node_class(
+    class_type: str,
+    object_info: dict[str, Any] | None = None,
+) -> bool:
+    """Return whether a ComfyUI node class is marked as an output node."""
+    if object_info is None:
+        object_info = _load_object_info()
+
+    class_info = object_info.get(class_type)
+    return isinstance(class_info, dict) and bool(class_info.get("output_node"))
+
+
 __all__ = [
     "OBJECT_INFO_PATH",
     "build_input_node_map",
     "enrich_rules_with_object_info",
     "get_required_input_params_for_class",
     "get_widget_value_index_map",
+    "is_output_node_class",
     "set_object_info_cache",
 ]

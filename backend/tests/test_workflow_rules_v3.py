@@ -530,6 +530,52 @@ def test_i2v_t2v_basic_recovers_missing_injection_targets_from_graph_data():
     assert rewritten["140"]["inputs"]["images"] == ["127", 0]
 
 
+def test_i2v_t2v_basic_recovers_output_graph_from_graph_data_when_prompt_has_no_outputs():
+    rules = json.loads(
+        (
+            DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_i2v_t2v_basic.rules.json"
+        ).read_text(encoding="utf-8")
+    )
+    graph_data = json.loads(
+        (
+            DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_i2v_t2v_basic.json"
+        ).read_text(encoding="utf-8")
+    )
+    workflow = {
+        "290": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": {"value": False},
+        }
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        rules,
+        provided_input_ids=set(),
+        graph_data=graph_data,
+    )
+
+    assert rewritten["290"]["inputs"]["value"] is True
+    assert rewritten["109"]["inputs"]["video_latent"] == ["108", 0]
+    assert rewritten["117"]["inputs"]["video_latent"] == ["118", 0]
+    assert rewritten["121"]["inputs"]["text"] == ["352", 0]
+    assert rewritten["140"]["class_type"] == "VHS_VideoCombine"
+    assert rewritten["140"]["inputs"]["images"] == ["127", 0]
+    assert "167" not in rewritten
+    assert warnings == [
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "211",
+        },
+        {
+            "code": "ignored_node_missing",
+            "message": "Ignored node not found in workflow; skipping",
+            "node_id": "248",
+        },
+    ]
+
+
 def test_apply_rules_does_not_globally_prune_broken_output_chain_without_roots():
     workflow = {
         "1": {"class_type": "ProvidedPrompt", "inputs": {}},

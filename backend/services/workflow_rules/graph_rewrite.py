@@ -13,7 +13,11 @@ from services.workflow_rules.normalize import (
     _warning,
     normalize_rules,
 )
-from services.workflow_rules.object_info import get_required_input_params_for_class
+from services.workflow_rules.object_info import (
+    get_required_input_params_for_class,
+    get_widget_value_index_map,
+    is_output_node_class,
+)
 from services.workflow_rules.schema import ResolvedWorkflowRules, dump_resolved_rules
 
 
@@ -46,6 +50,229 @@ def _rewrite_output_links(
                 inputs[input_key] = [replacement_node_id, replacement_output_index]
                 rewrites += 1
     return rewrites
+
+
+def _is_scalar_graph_widget_value(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _get_graph_variable_name(graph_node: dict[str, Any]) -> str | None:
+    if graph_node.get("type") not in {"GetNode", "SetNode"}:
+        return None
+
+    raw_widgets = graph_node.get("widgets_values")
+    if not isinstance(raw_widgets, list) or not raw_widgets:
+        return None
+
+    raw_name = raw_widgets[0]
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        return None
+    return raw_name.strip()
+
+
+def _workflow_has_output_nodes(workflow: WorkflowPrompt) -> bool:
+    for node_data in workflow.values():
+        if not isinstance(node_data, dict):
+            continue
+        class_type = node_data.get("class_type")
+        if isinstance(class_type, str) and is_output_node_class(class_type):
+            return True
+    return False
+
+
+def _build_prompt_node_from_graph_node(
+    graph_node: dict[str, Any],
+    graph_links_by_id: dict[int, list[Any]],
+) -> dict[str, Any] | None:
+    class_type = graph_node.get("type")
+    if not isinstance(class_type, str) or not class_type.strip():
+        return None
+
+    inputs: dict[str, Any] = {}
+    raw_inputs = graph_node.get("inputs")
+    if isinstance(raw_inputs, list):
+        for input_entry in raw_inputs:
+            if not isinstance(input_entry, dict):
+                continue
+
+            input_name = input_entry.get("name")
+            if not isinstance(input_name, str) or not input_name.strip():
+                continue
+
+            link_id = input_entry.get("link")
+            if not isinstance(link_id, int):
+                continue
+
+            link_entry = graph_links_by_id.get(link_id)
+            if not isinstance(link_entry, list) or len(link_entry) < 5:
+                continue
+
+            output_index = _to_int(link_entry[2])
+            if output_index is None:
+                continue
+
+            source_node_id = str(link_entry[1]).strip()
+            if not source_node_id:
+                continue
+
+            inputs[input_name] = [source_node_id, output_index]
+
+    raw_widgets = graph_node.get("widgets_values")
+    if isinstance(raw_widgets, dict):
+        for param, value in raw_widgets.items():
+            if (
+                isinstance(param, str)
+                and param not in inputs
+                and _is_scalar_graph_widget_value(value)
+            ):
+                inputs[param] = value
+    elif isinstance(raw_widgets, list):
+        widget_index_map = get_widget_value_index_map(class_type)
+        for param, widget_index in widget_index_map.items():
+            if param in inputs:
+                continue
+            if not (0 <= widget_index < len(raw_widgets)):
+                continue
+
+            value = raw_widgets[widget_index]
+            if _is_scalar_graph_widget_value(value):
+                inputs[param] = value
+
+    prompt_node: dict[str, Any] = {
+        "class_type": class_type,
+        "inputs": inputs,
+    }
+
+    title = graph_node.get("title")
+    if isinstance(title, str) and title.strip():
+        prompt_node["_meta"] = {"title": title}
+
+    return prompt_node
+
+
+def _recover_output_reachable_prompt_from_graph_data(
+    graph_data: dict[str, Any] | None,
+) -> WorkflowPrompt:
+    if not isinstance(graph_data, dict):
+        return {}
+
+    raw_nodes = graph_data.get("nodes")
+    raw_links = graph_data.get("links")
+    if not isinstance(raw_nodes, list) or not isinstance(raw_links, list):
+        return {}
+
+    graph_nodes_by_id: dict[str, dict[str, Any]] = {}
+    graph_links_by_id: dict[int, list[Any]] = {}
+    graph_parents: dict[str, set[str]] = {}
+    set_nodes_by_name: dict[str, set[str]] = {}
+
+    for raw_node in raw_nodes:
+        if not isinstance(raw_node, dict):
+            continue
+        node_id = str(raw_node.get("id")).strip()
+        if not node_id:
+            continue
+
+        graph_nodes_by_id[node_id] = raw_node
+        graph_parents.setdefault(node_id, set())
+
+        variable_name = _get_graph_variable_name(raw_node)
+        if variable_name is not None and raw_node.get("type") == "SetNode":
+            set_nodes_by_name.setdefault(variable_name, set()).add(node_id)
+
+    for raw_link in raw_links:
+        if (
+            not isinstance(raw_link, list)
+            or len(raw_link) < 5
+            or not isinstance(raw_link[0], int)
+        ):
+            continue
+
+        link_id = raw_link[0]
+        source_node_id = str(raw_link[1]).strip()
+        consumer_node_id = str(raw_link[3]).strip()
+        if not source_node_id or not consumer_node_id:
+            continue
+
+        graph_links_by_id[link_id] = raw_link
+        graph_parents.setdefault(consumer_node_id, set()).add(source_node_id)
+        graph_parents.setdefault(source_node_id, set())
+
+    queue: deque[str] = deque(
+        sorted(
+            node_id
+            for node_id, raw_node in graph_nodes_by_id.items()
+            if isinstance(raw_node.get("type"), str)
+            and is_output_node_class(raw_node["type"])
+        )
+    )
+    if not queue:
+        return {}
+
+    keep_node_ids: set[str] = set()
+    while queue:
+        node_id = queue.popleft()
+        if node_id in keep_node_ids:
+            continue
+
+        keep_node_ids.add(node_id)
+        queue.extend(sorted(graph_parents.get(node_id, set())))
+
+        graph_node = graph_nodes_by_id.get(node_id)
+        if not isinstance(graph_node, dict):
+            continue
+
+        variable_name = _get_graph_variable_name(graph_node)
+        if variable_name is None or graph_node.get("type") != "GetNode":
+            continue
+
+        queue.extend(sorted(set_nodes_by_name.get(variable_name, set())))
+
+    recovered_prompt: WorkflowPrompt = {}
+    for node_id in sorted(keep_node_ids):
+        graph_node = graph_nodes_by_id.get(node_id)
+        if not isinstance(graph_node, dict):
+            continue
+
+        prompt_node = _build_prompt_node_from_graph_node(
+            graph_node,
+            graph_links_by_id,
+        )
+        if prompt_node is not None:
+            recovered_prompt[node_id] = prompt_node
+
+    return recovered_prompt
+
+
+def _merge_recovered_prompt(
+    workflow: WorkflowPrompt,
+    recovered_prompt: WorkflowPrompt,
+) -> WorkflowPrompt:
+    merged_workflow: WorkflowPrompt = deepcopy(recovered_prompt)
+
+    for node_id, node_data in workflow.items():
+        normalized_node_id = str(node_id)
+        if not isinstance(node_data, dict):
+            merged_workflow[normalized_node_id] = deepcopy(node_data)
+            continue
+
+        existing_node = merged_workflow.get(normalized_node_id)
+        next_node = deepcopy(existing_node) if isinstance(existing_node, dict) else {}
+
+        for key, value in node_data.items():
+            if key == "inputs" and isinstance(value, dict):
+                existing_inputs = next_node.get("inputs")
+                if not isinstance(existing_inputs, dict):
+                    existing_inputs = {}
+                existing_inputs.update(deepcopy(value))
+                next_node["inputs"] = existing_inputs
+                continue
+
+            next_node[key] = deepcopy(value)
+
+        merged_workflow[normalized_node_id] = next_node
+
+    return merged_workflow
 
 
 def _build_graph_consumer_index(
@@ -455,6 +682,14 @@ def apply_rules_to_workflow(
         normalized_rules, normalize_warnings = normalize_rules(rules)
         warnings.extend(normalize_warnings)
     next_workflow = deepcopy(workflow)
+
+    if not _workflow_has_output_nodes(next_workflow):
+        recovered_prompt = _recover_output_reachable_prompt_from_graph_data(graph_data)
+        if recovered_prompt:
+            # Rehydrate the authored output-connected graph when graphToPrompt()
+            # drops terminal branches before backend rules can repair them.
+            next_workflow = _merge_recovered_prompt(next_workflow, recovered_prompt)
+
     normalized_provided_inputs = _normalize_provided_input_ids(provided_input_ids)
     graph_consumer_index = _build_graph_consumer_index(graph_data)
 

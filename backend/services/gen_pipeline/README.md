@@ -1,1063 +1,401 @@
 # Generation Pipeline
 
-This document describes the workflow rules system — the `*.rules.json`
-sidecars that control what the user sees in the Generate panel and how the
-backend transforms the workflow before dispatching it to ComfyUI.
+This document describes the end-to-end generation pipeline — an ordered set
+of processors that spans the frontend and the backend. The frontend
+collects and normalizes user inputs, the backend rewrites the workflow
+graph and dispatches to ComfyUI, and the frontend finalizes the outputs
+into importable assets.
 
-For the runtime pipeline mechanics (processor ordering, dispatch, postprocess),
-see [Runtime Pipeline Integration](#runtime-pipeline-integration) at the end.
-
-## Workflow Sidecars
-
-Each workflow can have a companion sidecar file that configures input
-discovery, widget exposure, validation, and backend processing.
-
-- Workflow file: `backend/assets/workflows/<workflow>.json`
-- Sidecar file: `backend/assets/workflows/<workflow>.rules.json`
-- Resolution logic: `sidecar_path_for_workflow()` in
-  `backend/services/workflow_rules/normalize.py`
-
-Sidecars are loaded for:
-
-- `GET /comfy/workflow/rules/{filename}` to drive frontend presentation.
-- `POST /comfy/generate` to apply runtime graph rewrites and preprocessing rules.
-
-### If Sidecar Is Missing or Invalid
-
-The system does not fail generation. It falls back to normalized defaults and
-emits warnings.
-
-- Missing sidecar: defaults, no warnings.
-- Malformed JSON or read failure: defaults plus warning entries.
-- Invalid rule fields: field-level fallback plus warning entries.
-
-Warnings are returned from `/workflow/rules` and may also be included as
-`workflow_warnings` in generation JSON responses.
-
-### Root-Level Structure (V3)
-
-V3 sidecars (`"version": 3`) are the current authored format. The schema is
-strict: removed legacy fields such as top-level `mask_processing`,
-`aspect_ratio_processing`, `postprocessing`, and node-level
-`binary_derived_mask_of` / `soft_derived_mask_of` are rejected rather than
-silently migrated.
-
-```json
-{
-  "version": 3,
-  "name": "Optional display name",
-  "default_widgets_mode": "control_after_generate",
-  "nodes": {},
-  "pipeline": [],
-  "validation": { "inputs": [] },
-  "derived_widgets": [],
-  "output_injections": {},
-  "slots": {}
-}
-```
-
-| Field                  | Type                                  | Default                                                                            |
-| ---------------------- | ------------------------------------- | ---------------------------------------------------------------------------------- |
-| `version`              | `3` (literal)                         | required                                                                           |
-| `name`                 | string (optional)                     | none                                                                               |
-| `default_widgets_mode` | `"control_after_generate"` \| `"all"` | `"control_after_generate"`                                                         |
-| `nodes`                | object                                | `{}`                                                                               |
-| `pipeline`             | array                                 | `[]`                                                                               |
-| `validation`           | object                                | `{ "inputs": [] }`                                                                 |
-| `derived_widgets`      | array                                 | `[]`                                                                               |
-| `output_injections`    | object                                | `{}`                                                                               |
-| `slots`                | object                                | `{}`                                                                               |
+For sidecar authoring (how to write a `*.rules.json` file to control what
+the user sees in the Generate panel and how the workflow is transformed),
+see [AUTHORING.md](AUTHORING.md).
 
 ---
 
-## Input and Widget Discovery
+## End-to-End Phase Overview
 
-Discovery is the process by which the system determines what to show the user
-in the Generate panel — both the primary inputs (text prompts, images, videos)
-and the widget controls (seed, CFG, denoise, etc.). Discovery is driven by
-`object_info.json` metadata and can be overridden or supplemented by sidecar
-rules.
+A single generation passes through five phases:
 
-### Input Discovery
+1. **Frontend preprocess** — collect inputs from the UI, normalize
+   timeline selections, render derived masks, compute `target_aspect_ratio`,
+   assemble a `GenerationRequest` with `pipeline_inputs` for every
+   pipeline stage that owns client-authored controls.
+2. **Backend preprocess** — load rules, validate, resolve derived widgets
+   and pipeline controls, rewrite the graph, run stage processors, upload
+   media.
+3. **Dispatch** — submit the prepared workflow to ComfyUI.
+4. **Backend postprocess** — enrich the ComfyUI response with
+   `workflow_warnings`, applied widget values, and `pipeline_outputs`.
+5. **Frontend postprocess** — fetch generated files, optionally stitch
+   frames+audio, apply exact-aspect-ratio resize, and import the results
+   as assets.
 
-Inputs are the primary data the user provides: text prompts, images, and
-videos. They are auto-discovered from `object_info.json` by checking parameter
-flags on each node class:
+Each processor reads from and writes to a phase-specific context
+(`FrontendPreprocessContext`, `BackendPipelineContext`,
+`FrontendPostprocessContext`). Runners execute processors sequentially
+inside each phase.
 
-| Flag in object_info    | Detected input type | Additional constraint                        |
-| ---------------------- | ------------------- | -------------------------------------------- |
-| `image_upload: true`   | `"image"`           | Type spec must be a list (COMBO), not STRING |
-| `video_upload: true`   | `"video"`           | None                                         |
-| `dynamicPrompts: true` | `"text"`            | Type spec must be STRING                     |
+The two handoff envelopes between frontend and backend are both typed:
 
-The discovery logic lives in `build_input_node_map()` in
-`backend/services/workflow_rules/node_parsing.py`. Labels are generated
-automatically from parameter names using humanization rules (e.g. `clip_text` →
-"Clip Text Prompt").
-
-Sidecar rules can override any auto-discovered input via `present`:
-
-```json
-{
-  "nodes": {
-    "98": {
-      "present": {
-        "enabled": true,
-        "input_type": "video",
-        "param": "video",
-        "label": "Source Video"
-      }
-    }
-  }
-}
-```
-
-### Widget Discovery
-
-Widgets are the adjustable controls exposed in the Generate panel (sliders,
-dropdowns, text fields). They are auto-discovered from `object_info.json` based
-on parameter type. Only primitive types are eligible:
-
-| object_info type                                       | Resolved `value_type`        |
-| ------------------------------------------------------ | ---------------------------- |
-| `"INT"`                                                | `"int"`                      |
-| `"FLOAT"`                                              | `"float"`                    |
-| `"STRING"`                                             | `"string"`                   |
-| `"BOOLEAN"`                                            | `"boolean"`                  |
-| `[value1, value2, ...]`                                | `"enum"` (options extracted) |
-| Uppercase link types (`IMAGE`, `LATENT`, `MODEL`, ...) | Skipped (not a widget)       |
-
-Which widgets are discovered depends on the **widgets mode**:
-
-| Mode                       | Behavior                                                        | When applied                                                                   |
-| -------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `"control_after_generate"` | Only widgets with `control_after_generate: true` in object_info | Default for most nodes                                                         |
-| `"all"`                    | All editable widget parameters                                  | Default for `KSampler` and `KSamplerAdvanced`; can be set per-node or globally |
-
-The mode is resolved in priority order:
-
-1. Per-node `widgets_mode` in sidecar rules (highest priority)
-2. Node policy rules (e.g. KSampler defaults to `"all"`)
-3. Root-level `default_widgets_mode` in sidecar
-4. `"control_after_generate"` (fallback)
-
-Discovery and enrichment are orchestrated by `enrich_rules_with_object_info()`
-in `backend/services/workflow_rules/object_info.py`.
-
-### Proxy Node Discovery
-
-Workflows that use subgraph templates (ComfyUI component nodes) have an
-additional discovery layer. When a top-level node references a subgraph
-definition, the system:
-
-1. Reads the `proxyWidgets` array from the parent node's properties.
-2. Maps each `[target_node_id, param]` pair to the corresponding subgraph
-   internal node.
-3. Discovers widgets on those internal nodes, attaching group metadata from the
-   parent (see [Widget Display and Grouping](#widget-display-and-grouping)).
-
-Internal node IDs are prefixed with the parent ID (e.g. node `257` inside
-parent `267` becomes `267:257`).
+- **Frontend → backend**: `GenerationRequest.pipelineInputs: Record<stageId,
+  Record<controlKey, unknown>>`. Only controls declared in the sidecar with
+  `source: "client"` participate.
+- **Backend → frontend**: `PromptResponse.pipeline_outputs: Record<stageId,
+  Record<string, unknown>>`. Stage processors write here (e.g.
+  `aspect_ratio_processing`, `mask_crop_metadata`, `processed_mask_video`).
 
 ---
 
-## Automatic vs Manual Widget Specification
+## Frontend Preprocess
 
-### Fully Automatic (No Sidecar, or Empty Nodes)
+Implemented by `runFrontendPreprocess` in
+[`frontend/src/features/generation/pipeline/runPreprocess.ts`](../../../frontend/src/features/generation/pipeline/runPreprocess.ts)
+with processors listed in
+[`pipeline/preprocessors/index.ts`](../../../frontend/src/features/generation/pipeline/preprocessors/index.ts).
 
-With no sidecar or an empty `nodes` section, the system auto-discovers
-everything: inputs are found by flag detection, widgets are found by
-`control_after_generate` mode. KSampler nodes get all widgets exposed
-automatically via policy rules.
+Execution order:
 
-### Selecting Specific Widgets for a Node
+| Step | Processor                  | Purpose                                                                              |
+| ---- | -------------------------- | ------------------------------------------------------------------------------------ |
+| 1    | `collectTextInputs`        | Route text slot values onto `ctx.textInputs`                                         |
+| 2    | `collectImageInputs`       | Route image slot values onto `ctx.imageInputs`                                       |
+| 3    | `collectAudioInputs`       | Route audio slot values onto `ctx.audioInputs`                                       |
+| 4    | `collectVideoInputs`       | Normalize timeline selections to WebM; render derived masks alongside source videos  |
+| 5    | `prepareAspectRatioInputs` | Resolve effective `target_aspect_ratio`; optionally crop visual inputs to that ratio |
 
-Use the `widgets` dict to define exactly which parameters to expose. Explicit
-entries are merged on top of auto-discovered ones — explicit values always win:
+### `GenerationPlan` vs. prepare
 
-```json
-{
-  "nodes": {
-    "145": {
-      "widgets": {
-        "seed": {
-          "label": "Seed",
-          "control_after_generate": true,
-          "min": 0,
-          "max": 999999
-        },
-        "cfg": {
-          "label": "CFG Scale",
-          "min": 1,
-          "max": 30
-        }
-      }
-    }
-  }
-}
-```
+`createGenerationPlan` ([pipeline/generationPlan.ts](../../../frontend/src/features/generation/pipeline/generationPlan.ts))
+snapshots the UI state (workflow, slot values, derived mask mappings,
+widget inputs + modes, postprocess config, aspect-ratio choice, etc.) into
+a serializable `GenerationPlan` up front. `prepareGenerationPlan` then
+runs the preprocess phase against that snapshot to produce a
+`GenerationRequest`.
 
-Missing metadata (`value_type`, `options`, `min`/`max`) is filled from
-object_info when available.
+The split matters for **queued batches**: the plan carries
+`widgetModes` rather than realized random values, so each dequeued
+generation re-runs preprocess and the backend resolves `"randomize"` per
+request — queued generations get fresh seeds instead of a shared one.
 
-### Exposing All Widgets on a Node
+### Derived mask rendering
 
-Set `widgets_mode` to `"all"` to expose every editable parameter:
+`collectVideoInputs` is where the derived-mask mappings declared in the
+sidecar become real media. For each mapping it renders the mask video
+from the user's timeline selection, interleaved with the source video so
+both streams use the same frame timing. The rendered mask files are
+later uploaded through the normal video-input path.
 
-```json
-{
-  "nodes": {
-    "145": {
-      "widgets_mode": "all"
-    }
-  }
-}
-```
+### Aspect-ratio preflight
 
-Any explicit `widgets` entries are overlaid on the full discovered set.
+`prepareAspectRatioInputs`:
 
-### Exposing All Widgets Globally
+1. Resolves the `target_aspect_ratio` string (either the project's
+   configured AR, or the AR inferred from the first visual input — the
+   "exact" toggle in the UI).
+2. If exact-aspect-ratio is enabled, pre-crops uploaded images/videos to
+   that aspect. This ensures the backend's aspect stage picks a valid
+   `(width, height)` that matches what the user actually submitted.
 
-Set `default_widgets_mode` at the root level to change the default for all
-nodes that don't specify their own `widgets_mode`:
+### `pipeline_inputs` assembly
 
-```json
-{
-  "version": 2,
-  "default_widgets_mode": "all",
-  "nodes": {}
-}
-```
+After the processors run, `buildPipelineInputs` projects context values
+into the per-stage envelope the backend consumes. Today:
 
-### Hiding Auto-Discovered Widgets
+| Stage                 | Populated keys                                                                   |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `aspect_ratio`        | `target_aspect_ratio`, `target_resolution` (each included only if declared as a control on the stage) |
+| `mask_processing`     | `crop_mode`, `crop_dilation` (only when there are derived mask mappings)         |
 
-To suppress a widget from the UI, set `hidden: true` on it
-in the sidecar:
-
-```json
-{
-  "nodes": {
-    "145": {
-      "widgets_mode": "all",
-      "widgets": {
-        "unwanted_param": { "hidden": true }
-      }
-    }
-  }
-}
-```
-
-Hidden widgets are completely filtered out of the frontend display but the
-parameter still exists in the workflow and retains its default value.
-
-### Hiding an Entire Node
-
-Use `ignore: true` to remove a node from the workflow graph entirely. The node
-is removed if all its downstream consumers are also ignored or have been
-disconnected. Removal is recursive — once a node is removed, its parents are
-re-evaluated.
-
-```json
-{
-  "nodes": {
-    "269": { "ignore": true }
-  }
-}
-```
-
-To hide a node from the input list without removing it from the graph, use
-`present.enabled: false`:
-
-```json
-{
-  "nodes": {
-    "100": {
-      "present": { "enabled": false }
-    }
-  }
-}
-```
-
-### Widget Enrichment Pipeline
-
-After normalization, widgets are enriched from
-`backend/assets/.config/object_info.json`:
-
-1. Backend looks up the node's class type in object_info.
-2. If `widgets_mode` is `"all"`: all editable widgets are discovered.
-3. If `widgets_mode` is `"control_after_generate"`: only flagged widgets are
-   discovered.
-4. Explicit `widgets` entries are merged on top (explicit values win).
-5. Missing metadata (value_type, options, min/max) is filled from object_info.
-
-If object_info does not contain the node class, existing sidecar widget fields
-are used as-is.
+The frontend never hardcodes control keys onto arbitrary stages — it
+only writes values for controls that actually exist in the sidecar,
+which it probes via `getWorkflowStageControl`. A sidecar that omits
+`target_aspect_ratio` entirely will silently receive no client value.
 
 ---
 
-## Optional vs Required Inputs
+## Backend Preprocess Order
 
-Input optionality is controlled at two levels: **validation** (pre-generation
-checks) and **graph rewriting** (what happens to the workflow when an optional
-input is omitted).
+Defined by `build_backend_preprocessors` in
+[processors/__init__.py](processors/__init__.py):
 
-### Validation Rules
+| Step | Processor                         | Reads from sidecar                                        |
+| ---- | --------------------------------- | --------------------------------------------------------- |
+| 1    | `inject_values`                   | —                                                         |
+| 2    | `load_rules`                      | whole sidecar                                             |
+| 3    | `validate_inputs`                 | `validation.inputs`                                       |
+| 4    | `resolve_derived_widgets`         | `derived_widgets`                                         |
+| 5    | `validate_widgets`                | `nodes.*.widgets`                                         |
+| 6    | `apply_rules`                     | `nodes`, `output_injections`, `slots`                     |
+| 7    | `widget_overrides`                | `nodes.*.widgets`                                         |
+| 8    | `resolve_pipeline_controls`       | `pipeline[*].controls`                                    |
+| 9    | `pipeline_stages` (`before_upload`) | enabled stages registered at the `before_upload` checkpoint |
+| 10   | `upload_media`                    | —                                                         |
+| 11   | `pipeline_stages` (`after_upload`) | enabled stages registered at the `after_upload` checkpoint |
 
-The `validation` section declares pre-generation checks. Rules are evaluated
-before backend graph rewrites and before prompt submission. The overall result
-is the logical AND of all rules.
+### `inject_values`
 
-In V2, input references are structured objects:
+Reads form-submitted input values onto the context before any rules are
+loaded. No sidecar is required.
 
-| Kind           | Shape                                                  | Meaning                                                            |
-| -------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
-| `"required"`   | `{ "kind": "required", "input": { "node_id": "3" } }`  | The named input must be present                                    |
-| `"at_least_n"` | `{ "kind": "at_least_n", "inputs": [...], "min": 1 }`  | At least `min` of the listed inputs must be present                |
-| `"optional"`   | `{ "kind": "optional", "input": { "node_id": "99" } }` | Documents that an input may be omitted (skipped during validation) |
+### `load_rules`
 
-```json
-{
-  "validation": {
-    "inputs": [
-      {
-        "kind": "required",
-        "input": { "node_id": "3" },
-        "message": "Prompt is required."
-      },
-      {
-        "kind": "at_least_n",
-        "inputs": [{ "node_id": "68" }, { "node_id": "62" }],
-        "min": 1,
-        "message": "Provide at least one frame input."
-      },
-      {
-        "kind": "optional",
-        "input": { "node_id": "99" }
-      }
-    ]
-  }
-}
-```
+Loads and parses the sidecar via `load_rules_model_for_workflow` in
+[../workflow_rules/normalize.py](../workflow_rules/normalize.py):
 
-Input references can include a `param` field for nodes with multiple inputs:
-`{ "node_id": "98", "param": "video" }`.
+- Missing sidecar → defaults, no warnings.
+- Malformed JSON → defaults + `invalid_rules_json` warning.
+- Schema-invalid fields → defaults + pydantic-derived warnings. Generation
+  is not failed; field-level fallbacks are applied.
 
-### Graph Rewriting for Optional Inputs (`present.required`)
+Sidecar resolution order: `workflows_dir/<stem>.rules.json`, then each of
+`fallback_workflow_dirs` in order. In production these are wired to
+`backend/assets/workflows/` (user-authored + saved) and
+`backend/assets/.config/default_workflows/` (packaged) respectively — see
+[AUTHORING.md](AUTHORING.md) for the author-facing view.
 
-The `present.required` field on a node rule controls what happens to the
-workflow graph when the user omits an input:
+### `validate_inputs`
 
-- `required: true` (default): The node stays in the workflow regardless.
-  If the user omits a required input, validation catches it.
-- `required: false`: When the user omits this input, the node is
-  disconnected and removed from the workflow graph during rule application.
-  Removal cascades: parent nodes with no remaining consumers are also removed.
+Evaluates the three rule kinds in `validation.inputs` against the submitted
+inputs. References are compact strings of the form `"node_id"` or
+`"node_id:param"`.
 
-```json
-{
-  "nodes": {
-    "98": {
-      "present": {
-        "required": false,
-        "input_type": "video",
-        "label": "Optional Reference Video"
-      }
-    }
-  }
-}
-```
+| Kind           | Fails when                                                              |
+| -------------- | ----------------------------------------------------------------------- |
+| `required`     | The named input is missing                                              |
+| `at_least_n`   | Fewer than `min` of the listed inputs are present                       |
+| `optional`     | Never — documents that an input may be omitted                          |
 
-### Legacy Validation
+Failures produce warnings and abort the request before any graph rewrite.
 
-When no explicit `validation.inputs` rules exist, the frontend falls back to
-auto-requiring all non-text media inputs. This legacy behavior respects
-`present.required: false` to skip those inputs.
+### `resolve_derived_widgets`
 
-V1 `input_conditions` are automatically migrated to V2 `validation.inputs` as
-`at_least_n` rules with `min: 1`.
+Expands each entry in `derived_widgets` into concrete widget overrides. A
+derived widget is submitted as `derived_widget_<id>` and has a `kind`
+discriminator:
 
----
+- `dual_sampler_denoise` — maps a single 0–1 denoise value `d` with total
+  steps `T` to `start_step = T − round(d·T)` and
+  `split_step = max(base_split_step, start_step)`. Emits overrides for every
+  `split_step_targets` reference.
+- `video_audio_retake` — a three-option enum (`"Video & Audio" | "Video" |
+  "Audio"`) that drives two boolean bypass widgets. The unselected channels
+  have their bypass switch flipped; the selected channel is left alone.
 
-## Derived Features
+Expansion happens before `validate_widgets` so derived values participate in
+widget validation like any authored override.
 
-Derived features are synthetic controls that expand into multiple underlying
-widget overrides. They allow exposing a single high-level parameter (like
-"denoise strength") that maps to multiple workflow node parameters.
+### `validate_widgets`
 
-### Derived Widgets
+Cross-checks submitted widget values against the resolved widget schema
+(min/max/options/value_type). Violations produce warnings; out-of-range
+numeric values are clamped.
 
-Defined in the `derived_widgets` array at the sidecar root. Each entry has a
-`kind` that determines its expansion logic.
+### `apply_rules`
 
-#### `dual_sampler_denoise`
+Performs graph-level rewrites:
 
-Maps a single 0–1 denoise slider to step parameters across dual-sampler
-workflows.
+- **`output_injections`** — reroutes downstream consumers of a `target_node_id`
+  (at `target_output_index`) to read from a different `source`. Optional
+  `when` conditions gate the reroute by input presence. Emits warnings if the
+  source or target is missing, or no downstream consumer was matched.
+- **`ignore: true` nodes** — disconnected and removed. Removal cascades: a
+  parent whose last consumer just disappeared is also removed, recursively.
+- **Optional inputs (`present.required: false`)** — when the user did not
+  provide the input, the corresponding node is removed with the same cascade.
+- **`ignore_overrides`** — conditional `ignore` flips driven by input
+  presence.
 
-| Field                | Type                              | Required | Purpose                                                     |
-| -------------------- | --------------------------------- | -------- | ----------------------------------------------------------- |
-| `id`                 | string                            | yes      | Unique identifier (used in form key: `derived_widget_{id}`) |
-| `kind`               | `"dual_sampler_denoise"`          | yes      | Expansion type                                              |
-| `label`              | string                            | no       | UI display label (default: "Denoise")                       |
-| `group_id`           | string                            | no       | Widget group ID                                             |
-| `group_title`        | string                            | no       | Widget group title                                          |
-| `group_order`        | number                            | no       | Sort order within group                                     |
-| `total_steps`        | `{ "node_id", "param" }`          | yes      | Reference to total steps parameter                          |
-| `start_step`         | `{ "node_id", "param" }`          | yes      | Reference to start step parameter                           |
-| `base_split_step`    | `{ "node_id", "param" }`          | yes      | Reference to base split step parameter                      |
-| `split_step_targets` | array of `{ "node_id", "param" }` | yes      | Parameters to override with calculated split step           |
+### `widget_overrides`
 
-```json
-{
-  "derived_widgets": [
-    {
-      "id": "denoise",
-      "kind": "dual_sampler_denoise",
-      "label": "Denoise Strength",
-      "total_steps": { "node_id": "145", "param": "steps" },
-      "start_step": { "node_id": "145", "param": "start_step" },
-      "base_split_step": { "node_id": "145", "param": "split_step" },
-      "split_step_targets": [
-        { "node_id": "145", "param": "split_step" },
-        { "node_id": "146", "param": "start_at_step" }
-      ]
-    }
-  ]
-}
-```
+Applies form-submitted widget values (`widget_<nodeId>_<param>`) and
+randomization directives (`widget_mode_<nodeId>_<param>` = `"fixed" |
+"randomize"`) onto the workflow JSON. Ranges for randomization come from the
+resolved widget entry.
 
-**Expansion logic:** Given a denoise value `d` and `total_steps` `T`:
+### `resolve_pipeline_controls`
 
-- `denoise_steps = round(d × T)`
-- `start_step = T - denoise_steps`
-- `split_step = max(base_split_step, start_step)`
+Resolves the value of every `pipeline[*].controls[*]` entry for the current
+run. This is the single authority for how a control value is chosen:
 
-The frontend renders derived widgets as sliders with `control: "slider"`.
-The min/max and step are calculated from `total_steps` (min = `1/T`, max = 1,
-step = `1/T`).
+1. If `source == "client"` and a form submission is present
+   (`pipeline_input_<stage_id>_<key>`), use it.
+2. Otherwise walk `default_rules` top-down; the first rule whose `when`
+   condition matches contributes its `value`.
+3. Otherwise use the static `default`.
 
-### Derived Masks
+`when.ref` can point either at a workflow param (`workflow_param`) or at
+another pipeline control (`pipeline_control`). References between controls
+are validated at schema load for cycles, unknown targets, and duplicate
+keys.
 
-Derived masks are declared by `pipeline[kind=mask_processing].targets`.
-Each target explicitly names the source input, the mask input, the mask type,
-and the purpose:
+Resolved values land on the context keyed by `(stage_id, key)` and are
+consumed by stage processors in the `pipeline_stages` phases.
 
-```json
-{
-  "pipeline": [
-    {
-      "id": "mask_processing",
-      "kind": "mask_processing",
-      "targets": [
-        {
-          "source": { "node_id": "98", "param": "file" },
-          "mask": { "node_id": "101", "param": "file" },
-          "mask_type": "binary",
-          "purpose": "video"
-        }
-      ]
-    }
-  ]
-}
-```
+### `pipeline_stages` (checkpoints)
 
-Behavior:
+`create_pipeline_stage_processor` produces a processor bound to a named
+**checkpoint** (`before_upload` or `after_upload`) and a map of
+`stage_kind → stage_processor`. At run time it walks `rules.pipeline` in
+authored order, honoring `after` dependencies plus the built-in contract
+that `mask_processing` runs after `aspect_ratio`. For each enabled stage
+whose kind has a registered processor at the current checkpoint, it invokes
+the processor with the resolved controls for that stage.
 
-- Targeted mask inputs are hidden from the user-facing input list.
-- The mask crop processor uses these target pairs to crop both source and mask
-  to the mask bounds when crop mode is enabled.
-- `mask_processing.controls.source_video_treatment` controls transparency
-  treatment for source videos used to render visual derived masks.
+Currently registered:
+
+| Checkpoint      | Stage kind        | Processor                                                   |
+| --------------- | ----------------- | ----------------------------------------------------------- |
+| `before_upload` | `mask_processing` | `mask_crop` — analyzes mask bounds, crops source and mask to the bounded region when `crop_mode = "crop"`, applies `source_video_treatment` |
+| `after_upload`  | `aspect_ratio`    | `aspect_ratio` — computes the nearest valid resolution within `config.resolutions` under `stride` and `search_steps`, writes `(width, height)` to every target pair |
+
+`output_assembly` is authored but has no backend-side processor — its
+`config` is surfaced to the frontend via `pipeline_outputs`.
+
+### `upload_media`
+
+Uploads every prepared input media buffer to ComfyUI and rewrites the
+corresponding node params to reference the returned filenames. Buffers may
+have been mutated by `before_upload` stages (e.g. cropped by `mask_crop`).
 
 ---
 
-## Widget Display and Grouping
+## Dispatch
 
-The frontend renders widgets as collapsible sections in the Generate panel.
-Each section has a title and contains one or more widget controls.
-
-### Grouping Mechanism
-
-Widgets are grouped by `group_id`. All widgets sharing the same `group_id`
-appear under a single collapsible section with the `group_title` as header.
-Within a group, widgets are sorted by `group_order` (ascending), with original
-discovery order as a tiebreaker.
-
-| Field         | Type                 | Purpose                     |
-| ------------- | -------------------- | --------------------------- |
-| `group_id`    | string               | Logical group identifier    |
-| `group_title` | string               | Section header text         |
-| `group_order` | non-negative integer | Sort order within the group |
-
-Fallback behavior when grouping fields are absent:
-
-- `group_id` defaults to the node ID
-- `group_title` defaults to the node's `node_title`, then `"Node {id}"`
-
-This means widgets from the same node are grouped together by default. To
-group widgets from **different nodes** under a unified section header, give
-them the same `group_id` and `group_title`:
-
-```json
-{
-  "nodes": {
-    "145": {
-      "widgets": {
-        "seed": {
-          "label": "Seed",
-          "control_after_generate": true,
-          "group_id": "sampling",
-          "group_title": "Sampling Controls",
-          "group_order": 0
-        }
-      }
-    },
-    "200": {
-      "widgets": {
-        "cfg": {
-          "label": "CFG Scale",
-          "group_id": "sampling",
-          "group_title": "Sampling Controls",
-          "group_order": 1
-        }
-      }
-    }
-  }
-}
-```
-
-Both widgets appear under a single "Sampling Controls" section.
-
-### Automatic Grouping via Proxy Widgets
-
-For subgraph/template nodes, grouping is assigned automatically. The system
-reads the parent node's `proxyWidgets` array and assigns:
-
-- `group_id` = parent node ID (e.g. `"267"`)
-- `group_title` = parent node title or subgraph name (e.g. `"Video Generation (LTX-2.3)"`)
-- `group_order` = index in the `proxyWidgets` array (0, 1, 2, ...)
-
-Explicit sidecar `group_*` fields override auto-discovered proxy grouping.
-
-### Widget Display Types
-
-| `value_type`       | Rendered as                                   |
-| ------------------ | --------------------------------------------- |
-| `"int"`, `"float"` | Text input (or slider if `control: "slider"`) |
-| `"string"`         | Text input                                    |
-| `"boolean"`        | Dropdown (true/false)                         |
-| `"enum"`           | Dropdown with `options` list                  |
-
-The `control` field can override the default rendering. Currently the only
-supported value is `"slider"`, which renders a range slider showing a
-percentage. This is primarily used by derived widgets (e.g. denoise).
-
-### Hidden and Frontend-Only Widgets
-
-| Field                 | Behavior                                                              |
-| --------------------- | --------------------------------------------------------------------- |
-| `hidden: true`        | Widget is completely filtered from the UI                             |
-| `frontend_only: true` | Widget is rendered in the UI but its value is not sent to the backend |
-
-A `frontend_only` enum widget with no `options` is automatically hidden.
+Implemented by `create_submit_prompt_processor` in
+[processors/submit_prompt.py](processors/submit_prompt.py). Submits the
+prepared workflow to ComfyUI and stores the raw HTTP response on the
+context. This is modeled as a distinct phase so preprocess and dispatch
+have an explicit boundary.
 
 ---
 
-## Section: `nodes`
+## Backend Postprocess
 
-**Type:** `Record<string, NodeRule>`
-**Keys:** Node IDs (strings matching workflow node IDs).
-**Default:** `{}`
+Implemented by `finalize_backend_response()` in
+[../comfyui/comfyui_generate.py](../comfyui/comfyui_generate.py).
 
-### Per-Node Fields
+Intentionally lightweight:
 
-| Field                    | Type                                  | Default           | Purpose                                           |
-| ------------------------ | ------------------------------------- | ----------------- | ------------------------------------------------- |
-| `ignore`                 | boolean                               | `false`           | Remove node from workflow during rule application |
-| `present`                | object                                | none              | Control input presentation in UI                  |
-| `widgets_mode`           | `"control_after_generate"` \| `"all"` | context-dependent | Widget auto-discovery mode                        |
-| `widgets`                | `Record<string, WidgetEntry>`         | `{}`              | Explicit widget definitions/overrides             |
-| `selection`              | object                                | none              | Video frame selection config                      |
-
-### `present`
-
-Controls whether and how a node appears as a user-facing input.
-
-| Field        | Type    | Default       | Purpose                                                                               |
-| ------------ | ------- | ------------- | ------------------------------------------------------------------------------------- |
-| `enabled`    | boolean | `true`        | Show in UI input list                                                                 |
-| `required`   | boolean | `true`        | If `false`, node is optional; when user omits it the node is disconnected and removed |
-| `input_type` | string  | inferred      | Override input type: `"text"`, `"image"`, `"video"`                                   |
-| `param`      | string  | inferred      | Parameter name for value injection                                                    |
-| `label`      | string  | node title    | Custom display label                                                                  |
-| `class_type` | string  | `"RuleInput"` | Override class type for rule-defined inputs                                           |
-
-### `widgets`
-
-Per-widget fields (keyed by parameter name):
-
-| Field                    | Type    | Default          | Purpose                                                                    |
-| ------------------------ | ------- | ---------------- | -------------------------------------------------------------------------- |
-| `label`                  | string  | param name       | UI display label                                                           |
-| `control_after_generate` | boolean | `false`          | Expose for adjustment after generation                                     |
-| `default_randomize`      | boolean | `false`          | Randomize value by default (requires min/max)                              |
-| `frontend_only`          | boolean | `false`          | Not sent to backend; UI-side only                                          |
-| `hidden`                 | boolean | `false`          | Completely hidden from UI                                                  |
-| `group_id`               | string  | none             | Group widgets under a collapsible section                                  |
-| `group_title`            | string  | none             | Display title for widget group                                             |
-| `group_order`            | number  | none             | Sort order within group (non-negative)                                     |
-| `min`                    | number  | from object_info | Minimum value for numeric widgets                                          |
-| `max`                    | number  | from object_info | Maximum value for numeric widgets                                          |
-| `default`                | any     | from object_info | Default value                                                              |
-| `value_type`             | string  | inferred         | One of: `"int"`, `"float"`, `"string"`, `"boolean"`, `"enum"`, `"unknown"` |
-| `options`                | array   | from object_info | Allowed values for enum-type widgets                                       |
-
-### `selection`
-
-Controls video frame selection for video input nodes.
-
-| Field        | Type             | Constraint | Purpose                            |
-| ------------ | ---------------- | ---------- | ---------------------------------- |
-| `export_fps` | positive integer | > 0        | Frames per second for video export |
-| `frame_step` | positive integer | > 0        | Sample every Nth frame             |
-| `max_frames` | positive integer | > 0        | Maximum frames to process          |
+- Non-JSON ComfyUI responses pass through unchanged.
+- Raw JSON responses are preserved when there is no backend metadata to
+  attach.
+- JSON responses are enriched with `workflow_warnings`, the applied widget
+  values, and `pipeline_outputs` (e.g. `output_assembly` config, mask
+  crop rectangles) when present.
 
 ---
 
-## Section: `pipeline`
+## Frontend Postprocess
 
-**Type:** Array of pipeline stage objects (discriminated by `kind`).
-**Default:** `[]`
+Implemented by `runFrontendPostprocess` in
+[`frontend/src/features/generation/pipeline/runPostprocess.ts`](../../../frontend/src/features/generation/pipeline/runPostprocess.ts)
+with processors listed in
+[`pipeline/postprocessors/index.ts`](../../../frontend/src/features/generation/pipeline/postprocessors/index.ts).
 
-Each stage has:
+Execution order:
 
-- `id`: required unique stage identifier used by `pipeline_inputs` /
-  `pipeline_outputs`
-- `kind`: stage type such as `mask_processing`, `aspect_ratio`, or
-  `output_assembly`
-- `enabled`: optional boolean
-- `label` / `description`: optional author-facing metadata
-- `after`: optional dependency list using stage IDs or unique stage kinds
-- `controls`: optional pipeline control list
-- stage-specific `targets` and/or `config`
+| Step | Processor           | Purpose                                                                             |
+| ---- | ------------------- | ----------------------------------------------------------------------------------- |
+| 1    | `fetchOutputs`      | Download every generated file from ComfyUI; bucket into frames / audio / video      |
+| 2    | `frameAudioStitch`  | When `mode == "stitch_frames_with_audio"`, package frames + audio into one video    |
+| 3    | `aspectRatioResize` | Apply configured exact-dimension resize (`stretch_exact`) to visual outputs         |
+| 4    | `importAssets`      | Import the final files as project assets with generation metadata + auto-family key |
 
-The array is authored order, but runtime ordering also respects `after`
-dependencies plus built-in stage contracts such as `mask_processing` depending
-on `aspect_ratio`.
+### What it consumes from the backend
 
-### `mask_processing` Stage
+`buildSubmittedGeneration` ([pipeline/generationPlan.ts](../../../frontend/src/features/generation/pipeline/generationPlan.ts))
+is the seam where the backend response feeds into the postprocess
+context. From `PromptResponse` it reads:
 
-```json
-{
-  "id": "mask_processing",
-  "kind": "mask_processing",
-  "after": ["aspect_ratio"],
-  "targets": [
-    {
-      "source": { "node_id": "98", "param": "file" },
-      "mask": { "node_id": "101", "param": "file" },
-      "mask_type": "binary",
-      "purpose": "video"
-    }
-  ],
-  "controls": [
-    {
-      "key": "crop_mode",
-      "value_type": "enum",
-      "options": ["crop", "full"],
-      "default": "crop"
-    },
-    {
-      "key": "source_video_treatment",
-      "value_type": "enum",
-      "expose": "none",
-      "source": "backend",
-      "default": "fill_transparent_with_neutral_gray"
-    }
-  ]
-}
-```
+- `pipeline_outputs[aspectRatioStage.id].aspect_ratio_processing` —
+  drives `aspectRatioResize`.
+- `pipeline_outputs[maskProcessingStage.id].mask_crop_metadata` —
+  attached to generation metadata for downstream crop-aware tooling.
+- `pipeline_outputs[maskProcessingStage.id].processed_mask_video` —
+  base64 WebM of the post-processed mask; decoded into a `File` and
+  ingested as a standalone asset by `importAssets` so outputs can link
+  back to it via `generationMaskAssetId`.
+- `applied_widget_values`, `comfyui_prompt`, `comfyui_workflow` —
+  merged into the creation metadata.
+- `workflow_warnings` — surfaced in the generation record.
 
-- `targets` define source/mask relationships.
-- `crop_mode` and `crop_dilation` control mask crop preprocessing.
-- `source_video_treatment` supports allowed-option filtering, hidden controls,
-  and conditional defaults driven by workflow params or other pipeline
-  controls.
+### Stitch and on-failure behavior
 
-### `aspect_ratio` Stage
+`frameAudioStitch` honors the `output_assembly` config surfaced via
+`pipeline_outputs`:
 
-```json
-{
-  "id": "aspect_ratio",
-  "kind": "aspect_ratio",
-  "config": {
-    "stride": 16,
-    "search_steps": 2,
-    "resolutions": [480, 720, 1080],
-    "postprocess": {
-      "enabled": true,
-      "mode": "stretch_exact",
-      "apply_to": "all_visual_outputs"
-    }
-  },
-  "targets": [
-    {
-      "width": { "node_id": "214", "param": "width" },
-      "height": { "node_id": "214", "param": "height" }
-    }
-  ]
-}
-```
+- `mode: "auto"` — stitch if the workflow emitted a coherent
+  frame+audio set, otherwise pass frames and audio through separately.
+- `mode: "stitch_frames_with_audio"` — always stitch.
+- `mode: "none"` — skip stitching entirely.
+- `on_failure: "fallback_raw"` — on a stitch error, keep frames/audio as
+  separate imported assets.
+- `on_failure: "show_error"` — surface the error to the UI instead of
+  falling back.
+- `stitch_fps` — overrides the per-selection FPS when stitching.
 
-- `config` owns processor behavior such as stride and supported resolutions.
-- `targets` explicitly identify workflow params that receive resolved width and
-  height values.
-- Typical controls are `target_resolution` (widget) and
-  `target_aspect_ratio` (hidden derived control).
+### Exact-aspect resize
 
-### `output_assembly` Stage
+`aspectRatioResize` is only active when `aspect_ratio_processing.mode ==
+"stretch_exact"` and `apply_to == "all_visual_outputs"`. It resolves the
+target dimensions from `aspect_ratio_processing` and resizes every
+fetched visual file plus any packaged stitched video. The prepared mask
+is resized too so mask-aware tooling stays in sync.
 
-`output_assembly` replaces the old root `postprocessing` object. Its config
-drives workflow-owned frontend postprocess behavior such as stitch mode, panel
-preview policy, and failure behavior.
+### Import
 
-### Pipeline Example
-
-```json
-{
-  "pipeline": [
-    {
-      "kind": "mask_processing",
-      "cropping": { "mode": "crop" }
-    },
-    {
-      "kind": "aspect_ratio",
-      "enabled": true,
-      "stride": 16,
-      "resolutions": [480, 720],
-      "target_nodes": [
-        {
-          "node_id": "104",
-          "width_param": "resize_type.width",
-          "height_param": "resize_type.height"
-        }
-      ]
-    }
-  ]
-}
-```
-
-To disable mask cropping while keeping aspect ratio:
-
-```json
-{
-  "pipeline": [
-    { "kind": "aspect_ratio", "enabled": true, "target_nodes": [...] }
-  ]
-}
-```
+`importAssets` is the terminal step. It ingests the post-processed
+outputs (plus the prepared mask as a separate asset, if present) into
+the project, attaches the full `GeneratedCreationMetadata`, and computes
+the auto-family match key so subsequent generations from the same
+surface land in a consistent family.
 
 ---
 
-## Section: `output_injections`
+## Stage Contract
 
-**Type:** Array of injection objects.
-**Default:** `[]`
+A pipeline stage is an authored entry under `rules.pipeline`. The shared
+shape (see [`WorkflowPipelineStageBase`](../workflow_rules/schema/models.py)):
 
-Reroutes node outputs to different sources, enabling conditional graph rewrites.
+- `id` — unique within the sidecar, referenced by `pipeline_inputs` /
+  `pipeline_outputs` and by other stages' `after`.
+- `kind` — discriminator: `mask_processing`, `aspect_ratio`, or
+  `output_assembly`.
+- `enabled` — optional, defaults to `true`.
+- `label` / `description` — optional author-facing metadata.
+- `after` — optional dependency list. Entries may be stage `id`s or unique
+  stage `kind`s. The schema enforces no cycles, no unknown references, and
+  no self-dependencies.
+- `controls` — list of `PipelineControl` entries. Each control has a unique
+  `key` within its stage.
 
-```json
-{
-  "output_injections": [
-    {
-      "target_node_id": "102",
-      "target_output_index": 0,
-      "source": {
-        "kind": "node_output",
-        "node_id": "101",
-        "output_index": 0
-      }
-    }
-  ]
-}
-```
+Stage-kind-specific fields:
 
-| Field                 | Type            | Purpose                                       |
-| --------------------- | --------------- | --------------------------------------------- |
-| `target_node_id`      | string          | Node whose output to reroute                  |
-| `target_output_index` | integer         | Output slot index on the target (default `0`) |
-| `source.kind`         | `"node_output"` | Injection type                                |
-| `source.node_id`      | string          | Source node to reroute from                   |
-| `source.output_index` | integer         | Output slot index on the source (default `0`) |
-
-Warnings are emitted if the source or target node does not exist in the
-workflow, or if no downstream consumers were matched.
+- `mask_processing.targets: list[{ source, mask, mask_type, purpose,
+  render_fps? }]`.
+- `aspect_ratio.config: { stride, search_steps, resolutions, postprocess }`
+  and `aspect_ratio.targets: list[{ width, height }]`.
+- `output_assembly.config: { mode, panel_preview, on_failure, stitch_fps? }`.
 
 ---
 
-## Section: `postprocessing`
+## Pipeline Control Contract
 
-**Type:** Object.
-**Default:** `{ "mode": "auto", "panel_preview": "raw_outputs", "on_failure": "fallback_raw" }`
+Every control declares both how it is presented (`expose`) and who authors
+its value (`source`):
 
-Controls how outputs are processed after generation. Consumed by the frontend.
+| `expose`   | `source` allowed       | Notes                                                                  |
+| ---------- | ---------------------- | ---------------------------------------------------------------------- |
+| `"widget"` | `"client"` (enforced)  | Rendered as a widget; value comes from the form                        |
+| `"none"`   | `"client"` or `"backend"` | Hidden control; must state explicitly whether the client still submits it |
 
-| Field           | Type             | Values                                           | Default          | Purpose                                    |
-| --------------- | ---------------- | ------------------------------------------------ | ---------------- | ------------------------------------------ |
-| `mode`          | string           | `"auto"`, `"stitch_frames_with_audio"`, `"none"` | `"auto"`         | How to combine frame sequences into videos |
-| `panel_preview` | string           | `"raw_outputs"`, `"replace_outputs"`             | `"raw_outputs"`  | What to show in result panel               |
-| `on_failure`    | string           | `"fallback_raw"`, `"show_error"`                 | `"fallback_raw"` | Behavior when postprocessing fails         |
-| `stitch_fps`    | positive integer | —                                                | none             | FPS override for frame stitching           |
+Exposing a control as a widget with `source != "client"` is a schema error.
+Exposing as `"none"` with no `source` is also a schema error. This
+invariant exists to prevent the class of bug where a frontend-submitted
+value (e.g. `target_aspect_ratio`) is silently dropped because nothing
+declared who owns it.
 
----
-
-## Runtime Pipeline Integration
-
-The backend service codifies three backend-side phases after the router has
-assembled `GenerationInput`:
-
-1. Backend preprocess
-2. Dispatch to ComfyUI
-3. Backend postprocess
-
-### Backend Preprocess
-
-Backend preprocess order (defined in
-`backend/services/gen_pipeline/processors/__init__.py`):
-
-| Step | Processor          | Sidecar sections used                                          |
-| ---- | ------------------ | -------------------------------------------------------------- |
-| 1    | `inject_values`    | —                                                              |
-| 2    | `load_rules`       | all sidecar sections                                           |
-| 3    | `validate_inputs`  | `validation`                                                   |
-| 4    | `resolve_derived_widgets` | `derived_widgets`                                      |
-| 5    | `validate_widgets` | `nodes.*.widgets`                                              |
-| 6    | `apply_rules`      | `nodes`, `output_injections`, `slots`                          |
-| 7    | `widget_overrides` | `nodes.*.widgets`                                              |
-| 8    | `resolve_pipeline_controls` | `pipeline[*].controls`                                 |
-| 9    | `pipeline_stages_before_upload` | enabled stage hooks registered for the `before_upload` checkpoint |
-| 10   | `upload_media`     | —                                                              |
-| 11   | `pipeline_stages_after_upload` | enabled stage hooks registered for the `after_upload` checkpoint |
-
-### apply_rules
-
-Applies normalized graph rewrite rules after the dedicated validation phases:
-
-- `output_injections` reroute downstream links.
-- `ignore: true` nodes are disconnected and removed (recursively, if safe).
-- Optional inputs (`required: false`) that the user did not provide are removed.
-
-### Dispatch To ComfyUI
-
-Dispatch is a distinct phase implemented by `submit_prompt`. It submits the
-already-prepared workflow to ComfyUI and captures the raw HTTP response on the
-backend context.
-
-### Backend Postprocess
-
-Backend postprocess is implemented by `finalize_backend_response()` in
-`backend/services/comfyui/comfyui_generate.py`.
-
-Today this phase is intentionally lightweight:
-
-- pass through non-JSON ComfyUI responses unchanged
-- preserve raw JSON responses when there is no backend metadata to attach
-- enrich JSON responses with `workflow_warnings`, applied widget values, and
-  `pipeline_outputs` when present
-
-### widget_overrides
-
-Applies widget value overrides from the form (`widget_<nodeId>_<param>`) and
-randomization modes (`widget_mode_<nodeId>_<param>` = `"fixed"` |
-`"randomize"`). Widget definitions from the sidecar determine min/max bounds
-for randomization.
-
-Derived widget values are submitted as `derived_widget_{id}` and expanded by
-the `resolve_derived_widgets` processor into concrete widget overrides.
-
----
-
-## Examples
-
-### Minimal Sidecar
-
-```json
-{
-  "version": 2,
-  "nodes": {
-    "145": {
-      "present": {
-        "input_type": "video",
-        "label": "Source Video"
-      }
-    }
-  }
-}
-```
-
-### Selective Widget Exposure
-
-```json
-{
-  "version": 2,
-  "nodes": {
-    "145": {
-      "widgets": {
-        "seed": {
-          "label": "Seed",
-          "control_after_generate": true
-        },
-        "cfg": {
-          "label": "CFG",
-          "min": 1,
-          "max": 30
-        }
-      }
-    }
-  }
-}
-```
-
-### All Widgets with One Hidden
-
-```json
-{
-  "version": 2,
-  "nodes": {
-    "145": {
-      "widgets_mode": "all",
-      "widgets": {
-        "internal_param": { "hidden": true }
-      }
-    }
-  }
-}
-```
-
-### Cross-Node Widget Grouping
-
-```json
-{
-  "version": 2,
-  "nodes": {
-    "145": {
-      "widgets": {
-        "seed": {
-          "label": "Seed",
-          "control_after_generate": true,
-          "group_id": "generation",
-          "group_title": "Generation Settings",
-          "group_order": 0
-        }
-      }
-    },
-    "200": {
-      "widgets": {
-        "denoise": {
-          "label": "Denoise",
-          "group_id": "generation",
-          "group_title": "Generation Settings",
-          "group_order": 1
-        }
-      }
-    }
-  }
-}
-```
-
-### Complete V3 Sidecar
-
-```json
-{
-  "name": "Video Inpaint & Stitch",
-  "version": 3,
-
-  "nodes": {
-    "98": {
-      "present": {
-        "input_type": "video",
-        "label": "Source Video"
-      },
-      "selection": {
-        "export_fps": 16,
-        "frame_step": 4,
-        "max_frames": 81
-      }
-    },
-    "101": {},
-    "269": {
-      "ignore": true,
-      "present": { "enabled": false }
-    }
-  },
-
-  "validation": {
-    "inputs": [
-      {
-        "kind": "required",
-        "input": { "node_id": "98" },
-        "message": "Please provide a video input"
-      }
-    ]
-  },
-
-  "pipeline": [
-    {
-      "id": "mask_processing",
-      "kind": "mask_processing",
-      "after": ["aspect_ratio"],
-      "targets": [
-        {
-          "source": { "node_id": "98", "param": "file" },
-          "mask": { "node_id": "101", "param": "file" },
-          "mask_type": "binary",
-          "purpose": "video"
-        }
-      ],
-      "controls": [
-        {
-          "key": "crop_mode",
-          "value_type": "enum",
-          "options": ["crop", "full"],
-          "default": "crop"
-        },
-        {
-          "key": "source_video_treatment",
-          "value_type": "enum",
-          "expose": "widget",
-          "default": "preserve_transparency"
-        }
-      ]
-    },
-    {
-      "id": "aspect_ratio",
-      "kind": "aspect_ratio",
-      "config": {
-        "stride": 16,
-        "search_steps": 2,
-        "resolutions": [480, 720],
-        "postprocess": {
-          "enabled": true,
-          "mode": "stretch_exact",
-          "apply_to": "all_visual_outputs"
-        }
-      },
-      "targets": [
-        {
-          "width": { "node_id": "104", "param": "resize_type.width" },
-          "height": { "node_id": "104", "param": "resize_type.height" }
-        }
-      ]
-    },
-    {
-      "id": "output_assembly",
-      "kind": "output_assembly",
-      "config": {
-        "mode": "auto",
-        "panel_preview": "raw_outputs",
-        "on_failure": "fallback_raw"
-      }
-    }
-  ]
-}
-```
+Controls may `bind` to another value (`workflow_param` or
+`pipeline_control`). The bound value is the effective default unless
+overridden by `default_rules` or, for `client` controls, by a form
+submission.

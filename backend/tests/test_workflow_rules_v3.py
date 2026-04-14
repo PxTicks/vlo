@@ -15,7 +15,11 @@ from services.gen_pipeline.processors.mask_crop import create_mask_crop_processo
 from services.gen_pipeline.processors.utils.aspect_ratio_processing import (
     apply_aspect_ratio_processing,
 )
-from services.workflow_rules import load_rules_model_for_workflow, normalize_rules_model
+from services.workflow_rules import (
+    apply_rules_to_workflow,
+    load_rules_model_for_workflow,
+    normalize_rules_model,
+)
 from services.workflow_rules.mask_pairs import collect_mask_crop_pairs
 from services.workflow_rules.pipeline import (
     iter_pipeline_stages,
@@ -232,6 +236,84 @@ def test_aspect_ratio_processing_normalizes_resize_image_mask_targets_in_v3_sche
     )
     assert workflow["693"]["inputs"]["resize_type.width"] % 32 == 0
     assert workflow["693"]["inputs"]["resize_type.height"] % 32 == 0
+
+
+def test_i2v_t2v_basic_missing_image_returns_warnings_instead_of_crashing():
+    rules = json.loads(
+        (
+            DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_i2v_t2v_basic.rules.json"
+        ).read_text(encoding="utf-8")
+    )
+    workflow = {
+        "290": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": {"value": False},
+        }
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        rules,
+        provided_input_ids=set(),
+    )
+
+    assert rewritten["290"]["inputs"]["value"] is True
+    assert any(
+        warning["code"] == "injection_target_missing"
+        and warning.get("node_id") == "160"
+        and warning.get("output_index") == 0
+        for warning in warnings
+    )
+
+
+def test_flf2v_missing_custom_audio_forces_switch_to_ltx_audio():
+    rules = json.loads(
+        (DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_flf2v.rules.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    workflow = {
+        "45": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "first.png"},
+        },
+        "47": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "last.png"},
+        },
+        "232": {
+            "class_type": "LoadAudio",
+            "inputs": {"audio": "custom.wav"},
+        },
+        "233": {
+            "class_type": "GetNode",
+            "inputs": {},
+        },
+        "234": {
+            "class_type": "GetNode",
+            "inputs": {},
+        },
+        "235": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": True,
+                "on_false": ["234", 0],
+                "on_true": ["233", 0],
+            },
+        },
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        rules,
+        provided_input_ids={"45"},
+    )
+
+    assert warnings == []
+    assert "232" not in rewritten
+    assert rewritten["235"]["inputs"]["switch"] is False
+    assert rewritten["235"]["inputs"]["on_false"] == ["234", 0]
+    assert rewritten["235"]["inputs"]["on_true"] == ["233", 0]
 
 
 def test_hidden_pipeline_controls_are_resolved_authoritatively():

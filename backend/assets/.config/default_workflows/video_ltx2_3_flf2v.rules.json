@@ -51,6 +51,38 @@
         "required": false
       }
     },
+    "235": {
+      "widgets": {
+        "switch": {
+          "label": "Use custom audio",
+          "hidden": true,
+          "value_type": "boolean",
+          "default": false,
+          "default_overrides": [
+            {
+              "when": {
+                "kind": "input_presence",
+                "inputs": [
+                  "232"
+                ],
+                "match": "all_present"
+              },
+              "value": true
+            },
+            {
+              "when": {
+                "kind": "input_presence",
+                "inputs": [
+                  "232"
+                ],
+                "match": "all_missing"
+              },
+              "value": false
+            }
+          ]
+        }
+      }
+    },
     "239": {
       "widgets": {
         "switch": {

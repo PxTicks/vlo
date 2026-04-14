@@ -29,12 +29,18 @@ def _warning(
     code: str,
     message: str,
     *,
+    node_id: str | None = None,
+    output_index: int | None = None,
     details: dict[str, Any] | None = None,
 ) -> WorkflowRuleWarning:
     warning: WorkflowRuleWarning = {
         "code": code,
         "message": message,
     }
+    if node_id is not None:
+        warning["node_id"] = node_id
+    if output_index is not None:
+        warning["output_index"] = output_index
     if details:
         warning["details"] = details
     return warning

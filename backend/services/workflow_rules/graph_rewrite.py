@@ -70,12 +70,102 @@ def _get_graph_variable_name(graph_node: dict[str, Any]) -> str | None:
     return raw_name.strip()
 
 
+def _resolve_graph_link_source(
+    source_node_id: str,
+    output_index: int,
+    graph_nodes_by_id: dict[str, dict[str, Any]],
+    graph_links_by_id: dict[int, list[Any]],
+    set_nodes_by_name: dict[str, set[str]],
+    visited: set[str] | None = None,
+) -> tuple[str, int] | None:
+    # Follow SetNode/GetNode routing pairs to the first real-class node, mirroring
+    # ComfyUI graphToPrompt. Returns None if the chain dead-ends or loops.
+    seen = visited if visited is not None else set()
+    if source_node_id in seen:
+        return None
+    seen = seen | {source_node_id}
+
+    node = graph_nodes_by_id.get(source_node_id)
+    if not isinstance(node, dict):
+        return (source_node_id, output_index)
+
+    node_type = node.get("type")
+    if node_type not in {"GetNode", "SetNode"}:
+        return (source_node_id, output_index)
+
+    if node_type == "GetNode":
+        variable_name = _get_graph_variable_name(node)
+        if variable_name is None:
+            return None
+        for set_node_id in sorted(set_nodes_by_name.get(variable_name, set())):
+            set_node = graph_nodes_by_id.get(set_node_id)
+            if not isinstance(set_node, dict):
+                continue
+            resolved = _follow_set_node_upstream(
+                set_node,
+                graph_nodes_by_id,
+                graph_links_by_id,
+                set_nodes_by_name,
+                seen,
+            )
+            if resolved is not None:
+                return resolved
+        return None
+
+    return _follow_set_node_upstream(
+        node,
+        graph_nodes_by_id,
+        graph_links_by_id,
+        set_nodes_by_name,
+        seen,
+    )
+
+
+def _follow_set_node_upstream(
+    set_node: dict[str, Any],
+    graph_nodes_by_id: dict[str, dict[str, Any]],
+    graph_links_by_id: dict[int, list[Any]],
+    set_nodes_by_name: dict[str, set[str]],
+    visited: set[str],
+) -> tuple[str, int] | None:
+    raw_inputs = set_node.get("inputs")
+    if not isinstance(raw_inputs, list) or not raw_inputs:
+        return None
+    input_entry = raw_inputs[0]
+    if not isinstance(input_entry, dict):
+        return None
+    link_id = input_entry.get("link")
+    if not isinstance(link_id, int):
+        return None
+    link_entry = graph_links_by_id.get(link_id)
+    if not isinstance(link_entry, list) or len(link_entry) < 5:
+        return None
+    upstream_source = str(link_entry[1]).strip()
+    upstream_output = _to_int(link_entry[2])
+    if not upstream_source or upstream_output is None:
+        return None
+    return _resolve_graph_link_source(
+        upstream_source,
+        upstream_output,
+        graph_nodes_by_id,
+        graph_links_by_id,
+        set_nodes_by_name,
+        visited,
+    )
+
+
 def _build_prompt_node_from_graph_node(
     graph_node: dict[str, Any],
+    graph_nodes_by_id: dict[str, dict[str, Any]],
     graph_links_by_id: dict[int, list[Any]],
+    set_nodes_by_name: dict[str, set[str]],
 ) -> dict[str, Any] | None:
     class_type = graph_node.get("type")
     if not isinstance(class_type, str) or not class_type.strip():
+        return None
+    if class_type in {"GetNode", "SetNode"}:
+        # Routing-only UI constructs; graphToPrompt resolves these to direct
+        # links rather than emitting them as prompt nodes.
         return None
 
     inputs: dict[str, Any] = {}
@@ -105,7 +195,17 @@ def _build_prompt_node_from_graph_node(
             if not source_node_id:
                 continue
 
-            inputs[input_name] = [source_node_id, output_index]
+            resolved = _resolve_graph_link_source(
+                source_node_id,
+                output_index,
+                graph_nodes_by_id,
+                graph_links_by_id,
+                set_nodes_by_name,
+            )
+            if resolved is None:
+                continue
+            resolved_source_id, resolved_output_index = resolved
+            inputs[input_name] = [resolved_source_id, resolved_output_index]
 
     raw_widgets = graph_node.get("widgets_values")
     if isinstance(raw_widgets, dict):
@@ -140,21 +240,33 @@ def _build_prompt_node_from_graph_node(
     return prompt_node
 
 
-def _recover_output_reachable_prompt_from_graph_data(
-    graph_data: dict[str, Any] | None,
-) -> WorkflowPrompt:
+class _GraphIndex:
+    __slots__ = (
+        "nodes_by_id",
+        "links_by_id",
+        "parents",
+        "set_nodes_by_name",
+        "get_nodes_by_name",
+    )
+
+    def __init__(self) -> None:
+        self.nodes_by_id: dict[str, dict[str, Any]] = {}
+        self.links_by_id: dict[int, list[Any]] = {}
+        self.parents: dict[str, set[str]] = {}
+        self.set_nodes_by_name: dict[str, set[str]] = {}
+        self.get_nodes_by_name: dict[str, set[str]] = {}
+
+
+def _build_graph_index(graph_data: dict[str, Any] | None) -> _GraphIndex | None:
     if not isinstance(graph_data, dict):
-        return {}
+        return None
 
     raw_nodes = graph_data.get("nodes")
     raw_links = graph_data.get("links")
     if not isinstance(raw_nodes, list) or not isinstance(raw_links, list):
-        return {}
+        return None
 
-    graph_nodes_by_id: dict[str, dict[str, Any]] = {}
-    graph_links_by_id: dict[int, list[Any]] = {}
-    graph_parents: dict[str, set[str]] = {}
-    set_nodes_by_name: dict[str, set[str]] = {}
+    idx = _GraphIndex()
 
     for raw_node in raw_nodes:
         if not isinstance(raw_node, dict):
@@ -163,12 +275,16 @@ def _recover_output_reachable_prompt_from_graph_data(
         if not node_id:
             continue
 
-        graph_nodes_by_id[node_id] = raw_node
-        graph_parents.setdefault(node_id, set())
+        idx.nodes_by_id[node_id] = raw_node
+        idx.parents.setdefault(node_id, set())
 
         variable_name = _get_graph_variable_name(raw_node)
-        if variable_name is not None and raw_node.get("type") == "SetNode":
-            set_nodes_by_name.setdefault(variable_name, set()).add(node_id)
+        node_type = raw_node.get("type")
+        if variable_name is not None:
+            if node_type == "SetNode":
+                idx.set_nodes_by_name.setdefault(variable_name, set()).add(node_id)
+            elif node_type == "GetNode":
+                idx.get_nodes_by_name.setdefault(variable_name, set()).add(node_id)
 
     for raw_link in raw_links:
         if (
@@ -184,9 +300,97 @@ def _recover_output_reachable_prompt_from_graph_data(
         if not source_node_id or not consumer_node_id:
             continue
 
-        graph_links_by_id[link_id] = raw_link
-        graph_parents.setdefault(consumer_node_id, set()).add(source_node_id)
-        graph_parents.setdefault(source_node_id, set())
+        idx.links_by_id[link_id] = raw_link
+        idx.parents.setdefault(consumer_node_id, set()).add(source_node_id)
+        idx.parents.setdefault(source_node_id, set())
+
+    return idx
+
+
+def _resolve_graph_target_prompt_inputs(
+    target_node_id: str,
+    output_index: int,
+    graph_index: _GraphIndex,
+) -> list[tuple[str, str]]:
+    # Walk the visual graph forward from (target_node_id, output_index), following
+    # SetNode/GetNode routing pairs to collect the real (consumer_id, input_name)
+    # pairs that, after graphToPrompt resolution, end up reading from this target.
+    results: list[tuple[str, str]] = []
+    visited: set[tuple[str, int]] = set()
+
+    def walk(nid: str, out_idx: int) -> None:
+        key = (nid, out_idx)
+        if key in visited:
+            return
+        visited.add(key)
+        node = graph_index.nodes_by_id.get(nid)
+        if not isinstance(node, dict):
+            return
+
+        node_type = node.get("type")
+        if node_type == "SetNode":
+            variable_name = _get_graph_variable_name(node)
+            if variable_name is None:
+                return
+            for get_nid in sorted(graph_index.get_nodes_by_name.get(variable_name, set())):
+                walk(get_nid, 0)
+            return
+
+        outputs = node.get("outputs")
+        if not isinstance(outputs, list) or out_idx >= len(outputs):
+            return
+        output_entry = outputs[out_idx]
+        if not isinstance(output_entry, dict):
+            return
+        link_ids = output_entry.get("links")
+        if not isinstance(link_ids, list):
+            return
+
+        for link_id in link_ids:
+            link = graph_index.links_by_id.get(link_id)
+            if not isinstance(link, list) or len(link) < 5:
+                continue
+            consumer_id = str(link[3]).strip()
+            consumer_input_idx = _to_int(link[4])
+            if not consumer_id or consumer_input_idx is None:
+                continue
+            consumer = graph_index.nodes_by_id.get(consumer_id)
+            if not isinstance(consumer, dict):
+                continue
+            consumer_type = consumer.get("type")
+            if consumer_type == "SetNode":
+                variable_name = _get_graph_variable_name(consumer)
+                if variable_name is None:
+                    continue
+                for get_nid in sorted(graph_index.get_nodes_by_name.get(variable_name, set())):
+                    walk(get_nid, 0)
+            elif consumer_type == "GetNode":
+                walk(consumer_id, 0)
+            else:
+                consumer_inputs = consumer.get("inputs")
+                if not isinstance(consumer_inputs, list):
+                    continue
+                if 0 <= consumer_input_idx < len(consumer_inputs):
+                    input_entry = consumer_inputs[consumer_input_idx]
+                    if isinstance(input_entry, dict):
+                        input_name = input_entry.get("name")
+                        if isinstance(input_name, str) and input_name.strip():
+                            results.append((consumer_id, input_name.strip()))
+
+    walk(target_node_id, output_index)
+    return results
+
+
+def _recover_output_reachable_prompt_from_graph_data(
+    graph_index: _GraphIndex | None,
+) -> WorkflowPrompt:
+    if graph_index is None:
+        return {}
+
+    graph_nodes_by_id = graph_index.nodes_by_id
+    graph_links_by_id = graph_index.links_by_id
+    graph_parents = graph_index.parents
+    set_nodes_by_name = graph_index.set_nodes_by_name
 
     queue: deque[str] = deque(
         sorted(
@@ -226,7 +430,9 @@ def _recover_output_reachable_prompt_from_graph_data(
 
         prompt_node = _build_prompt_node_from_graph_node(
             graph_node,
+            graph_nodes_by_id,
             graph_links_by_id,
+            set_nodes_by_name,
         )
         if prompt_node is not None:
             recovered_prompt[node_id] = prompt_node
@@ -553,10 +759,9 @@ def apply_rules_to_workflow(
     # Rehydrate any output-reachable nodes that graphToPrompt dropped before
     # submission. The submitted prompt always wins for nodes it already has;
     # we only fill in gaps so injection targets and their consumers exist by
-    # the time rules run. Without this, frontend-side pruning can leave the
-    # prompt missing nodes the rules reference, yielding "Prompt has no
-    # outputs" or half-wired fallback paths.
-    recovered_prompt = _recover_output_reachable_prompt_from_graph_data(graph_data)
+    # the time rules run.
+    graph_index = _build_graph_index(graph_data)
+    recovered_prompt = _recover_output_reachable_prompt_from_graph_data(graph_index)
     for recovered_node_id, recovered_node_data in recovered_prompt.items():
         if recovered_node_id not in next_workflow:
             next_workflow[recovered_node_id] = deepcopy(recovered_node_data)
@@ -584,17 +789,6 @@ def apply_rules_to_workflow(
                 output_index = _to_int(output_index_key)
                 if output_index is None:
                     continue
-                if target_node_id not in next_workflow:
-                    warnings.append(
-                        _warning(
-                            "injection_target_missing",
-                            "Injection target node not found in workflow; skipping",
-                            node_id=target_node_id,
-                            output_index=output_index,
-                        )
-                    )
-                    continue
-
                 source = injection_rule.get("source")
                 if not isinstance(source, dict):
                     warnings.append(
@@ -622,7 +816,47 @@ def apply_rules_to_workflow(
                         )
                         continue
 
-                    if source_node_id not in next_workflow:
+                    # Resolve target through graph routing to the set of real
+                    # prompt-graph (consumer_id, input_name) inputs that
+                    # ultimately read from this target output. This matches
+                    # rules authored against visual-graph node IDs (including
+                    # GetNodes that graphToPrompt resolves away).
+                    consumer_inputs: list[tuple[str, str]] = []
+                    if graph_index is not None:
+                        consumer_inputs = _resolve_graph_target_prompt_inputs(
+                            target_node_id,
+                            output_index,
+                            graph_index,
+                        )
+
+                    if target_node_id not in next_workflow and not consumer_inputs:
+                        warnings.append(
+                            _warning(
+                                "injection_target_missing",
+                                "Injection target node not found in workflow; skipping",
+                                node_id=target_node_id,
+                                output_index=output_index,
+                            )
+                        )
+                        continue
+
+                    # Resolve source through graph routing (SetNode/GetNode) to
+                    # a real prompt node. If no graph_index, fall back to the
+                    # raw IDs from the rule.
+                    resolved_source_id = source_node_id
+                    resolved_source_output = source_output_index
+                    if graph_index is not None:
+                        resolved = _resolve_graph_link_source(
+                            source_node_id,
+                            source_output_index,
+                            graph_index.nodes_by_id,
+                            graph_index.links_by_id,
+                            graph_index.set_nodes_by_name,
+                        )
+                        if resolved is not None:
+                            resolved_source_id, resolved_source_output = resolved
+
+                    if resolved_source_id not in next_workflow:
                         warnings.append(
                             _warning(
                                 "injection_source_missing",
@@ -634,13 +868,33 @@ def apply_rules_to_workflow(
                         )
                         continue
 
-                    rewrites = _rewrite_output_links(
-                        next_workflow,
-                        target_node_id=target_node_id,
-                        target_output_index=output_index,
-                        replacement_node_id=source_node_id,
-                        replacement_output_index=source_output_index,
-                    )
+                    rewrites = 0
+                    for consumer_id, input_name in consumer_inputs:
+                        consumer_node = next_workflow.get(consumer_id)
+                        if not isinstance(consumer_node, dict):
+                            continue
+                        inputs = consumer_node.get("inputs")
+                        if not isinstance(inputs, dict):
+                            continue
+                        inputs[input_name] = [
+                            resolved_source_id,
+                            resolved_source_output,
+                        ]
+                        rewrites += 1
+
+                    # Fallback for rules that target real prompt nodes directly
+                    # (no graph_data or the target also appears as-is in the
+                    # prompt): rewrite any consumer still referencing the
+                    # original (target, output_index).
+                    if target_node_id in next_workflow:
+                        rewrites += _rewrite_output_links(
+                            next_workflow,
+                            target_node_id=target_node_id,
+                            target_output_index=output_index,
+                            replacement_node_id=resolved_source_id,
+                            replacement_output_index=resolved_source_output,
+                        )
+
                     if rewrites == 0:
                         warnings.append(
                             _warning(
@@ -721,6 +975,15 @@ def apply_rules_to_workflow(
     removable_roots: set[str] = set()
     for node_id in sorted(ignored_nodes):
         if node_id not in next_workflow:
+            # Rules may reference visual-graph-only routing nodes (Set/GetNode)
+            # that graphToPrompt resolved away. Skip those silently.
+            if graph_index is not None:
+                graph_node = graph_index.nodes_by_id.get(node_id)
+                if (
+                    isinstance(graph_node, dict)
+                    and graph_node.get("type") in {"SetNode", "GetNode"}
+                ):
+                    continue
             warnings.append(
                 _warning(
                     "ignored_node_missing",

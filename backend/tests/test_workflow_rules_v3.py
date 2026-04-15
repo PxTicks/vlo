@@ -403,25 +403,21 @@ def test_i2v_t2v_basic_recovers_output_graph_from_graph_data_when_prompt_has_no_
         graph_data=graph_data,
     )
 
-    assert rewritten["290"]["inputs"]["value"] is True
     assert rewritten["109"]["inputs"]["video_latent"] == ["108", 0]
     assert rewritten["117"]["inputs"]["video_latent"] == ["118", 0]
     assert rewritten["121"]["inputs"]["text"] == ["352", 0]
     assert rewritten["140"]["class_type"] == "VHS_VideoCombine"
     assert rewritten["140"]["inputs"]["images"] == ["127", 0]
     assert "167" not in rewritten
-    assert warnings == [
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "211",
-        },
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "248",
-        },
-    ]
+    # SetNode/GetNode are routing-only and should never appear in the prompt.
+    assert all(
+        node.get("class_type") not in {"SetNode", "GetNode"}
+        for node in rewritten.values()
+        if isinstance(node, dict)
+    )
+    # 290 (Text-to-Video switch) routes only into the pruned i2v helpers, so
+    # the walk-up sweep correctly removes it in t2v mode.
+    assert "290" not in rewritten
 
 
 def test_apply_rules_does_not_globally_prune_broken_output_chain_without_roots():

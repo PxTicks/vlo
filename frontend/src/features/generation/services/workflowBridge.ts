@@ -323,28 +323,31 @@ export async function readWorkflowFromIframe(
     const activeWorkflow = getIframeWorkflowApi(iframe)?.activeWorkflow ?? null;
     const graphToPrompt = app?.graphToPrompt;
     let apiWorkflow: Record<string, unknown> | null = null;
-    let graphData = getActiveWorkflowGraphData(activeWorkflow);
+    // Prefer the LIVE graph returned by graphToPrompt over
+    // activeWorkflow.activeState: activeState is a snapshot that may lag
+    // behind live widget edits (e.g. text typed into a prompt primitive).
+    // The backend uses graph_data to rehydrate nodes dropped from the prompt,
+    // so stale widget values there silently overwrite user input.
+    let graphData: Record<string, unknown> | null = null;
 
     if (typeof graphToPrompt === "function") {
       const rawResult = await graphToPrompt.call(app);
 
       if (Array.isArray(rawResult)) {
-        const rawGraphData = asRecord(rawResult[0]);
+        graphData = asRecord(rawResult[0]);
         apiWorkflow = asRecord(rawResult[1]);
-        if (!graphData) {
-          graphData = rawGraphData;
-        }
       } else if (isRecord(rawResult)) {
         apiWorkflow =
           asRecord(rawResult.output) ??
           asRecord(rawResult.prompt) ??
           asRecord(rawResult.apiWorkflow) ??
           null;
-
-        if (!graphData) {
-          graphData = asRecord(rawResult.workflow) ?? asRecord(rawResult.graph);
-        }
+        graphData = asRecord(rawResult.workflow) ?? asRecord(rawResult.graph);
       }
+    }
+
+    if (!graphData) {
+      graphData = getActiveWorkflowGraphData(activeWorkflow);
     }
 
     if (!apiWorkflow && graphData && looksLikeApiWorkflow(graphData)) {

@@ -8,6 +8,11 @@ import {
   prepareGenerationPlan,
 } from "../pipeline/generationPlan";
 import type { GenerationPlan, SlotValue } from "../pipeline/types";
+import {
+  evaluateRewrites,
+  type RewriteRule,
+} from "../services/evaluateRewrites";
+import { preResolvePrompt } from "../services/preResolvePrompt";
 import { getWorkflowPostprocessingConfig } from "../services/workflowRules";
 import { isAbortError } from "../pipeline/utils/abort";
 import type { WorkflowPostprocessingConfig } from "../types";
@@ -45,6 +50,30 @@ function resolvePostprocessConfig(
       ? { stitch_fps: postprocessing.stitch_fps }
       : {}),
   };
+}
+
+function collectProvidedInputIds(
+  plan: GenerationPlan,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const [id, value] of Object.entries(plan.preprocess.slotValues)) {
+    if (value.type === "text") {
+      if (typeof value.value === "string" && value.value.trim().length > 0) {
+        ids.add(id);
+      }
+    } else {
+      ids.add(id);
+    }
+  }
+  for (const input of plan.workflow.workflowInputs) {
+    const nodeId = input.nodeId;
+    if (!nodeId) continue;
+    const primaryId = input.id ?? `${nodeId}:${input.param}`;
+    if (ids.has(primaryId)) {
+      ids.add(nodeId);
+    }
+  }
+  return ids;
 }
 
 function isComfyReadyForDispatch(
@@ -174,9 +203,38 @@ export function buildExecutionStoreState(
         typeof plan.workflow.workflowId === "string" &&
         MIGRATED_WORKFLOW_IDS.has(plan.workflow.workflowId);
 
+      let resolvedWorkflow: Record<string, unknown> | null =
+        prepared.request.workflow;
+      if (shouldPreResolve) {
+        const iframe = state.editorRef;
+        if (!iframe) {
+          throw new Error(
+            "ComfyUI editor is not mounted; pre-resolved prompt requires an open editor iframe",
+          );
+        }
+        const rewrites: RewriteRule[] =
+          (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
+        const { bypass, widgetOverrides } = evaluateRewrites(
+          rewrites,
+          collectProvidedInputIds(plan),
+        );
+        const preResolved = await preResolvePrompt(
+          iframe,
+          bypass,
+          widgetOverrides,
+        );
+        if (!preResolved) {
+          throw new Error(
+            "Pre-resolved prompt generation failed; check that ComfyUI graphToPrompt is available",
+          );
+        }
+        resolvedWorkflow = preResolved.output;
+      }
+
       const response = await comfyApi.generate(
         {
           ...prepared.request,
+          workflow: resolvedWorkflow,
           workflowRules: plan.workflow.workflowRules ?? undefined,
           promptIsPreResolved: shouldPreResolve,
         },

@@ -109,7 +109,7 @@ export function buildWorkflowStoreState(
     derivedMaskMappings: [],
     targetResolution: DEFAULT_GENERATION_TARGET_RESOLUTION,
     setTargetResolution: (targetResolution) => set({ targetResolution }),
-    preResolvedPromptEnabled: false,
+    preResolvedPromptEnabled: true,
     setPreResolvedPromptEnabled: (preResolvedPromptEnabled) =>
       set({ preResolvedPromptEnabled }),
     exactAspectRatio: false,

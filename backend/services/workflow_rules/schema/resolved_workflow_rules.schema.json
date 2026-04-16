@@ -1085,6 +1085,79 @@
       "title": "WorkflowRequiredInputValidationRule",
       "type": "object"
     },
+    "WorkflowRewriteCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "title": "Input",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "input_missing",
+            "input_present"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "input"
+      ],
+      "title": "WorkflowRewriteCondition",
+      "type": "object"
+    },
+    "WorkflowRewriteRule": {
+      "additionalProperties": false,
+      "properties": {
+        "bypass": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Bypass",
+          "type": "array"
+        },
+        "set_widgets": {
+          "items": {
+            "$ref": "#/$defs/WorkflowRewriteWidgetOverride"
+          },
+          "title": "Set Widgets",
+          "type": "array"
+        },
+        "when": {
+          "$ref": "#/$defs/WorkflowRewriteCondition"
+        }
+      },
+      "required": [
+        "when"
+      ],
+      "title": "WorkflowRewriteRule",
+      "type": "object"
+    },
+    "WorkflowRewriteWidgetOverride": {
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "title": "Value"
+        },
+        "widget": {
+          "title": "Widget",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "widget"
+      ],
+      "title": "WorkflowRewriteWidgetOverride",
+      "type": "object"
+    },
     "WorkflowRuleBooleanOverride": {
       "properties": {
         "value": {
@@ -1982,6 +2055,13 @@
         ]
       },
       "title": "Pipeline",
+      "type": "array"
+    },
+    "rewrites": {
+      "items": {
+        "$ref": "#/$defs/WorkflowRewriteRule"
+      },
+      "title": "Rewrites",
       "type": "array"
     },
     "slots": {

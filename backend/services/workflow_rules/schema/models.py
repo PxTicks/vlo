@@ -384,6 +384,29 @@ WorkflowPipelineStage = Annotated[
 ]
 
 
+class WorkflowRewriteCondition(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["input_missing", "input_present"]
+    input: str
+
+
+class WorkflowRewriteWidgetOverride(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    node_id: str
+    widget: str
+    value: Any = None
+
+
+class WorkflowRewriteRule(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    when: WorkflowRewriteCondition
+    bypass: list[str] = Field(default_factory=list)
+    set_widgets: list[WorkflowRewriteWidgetOverride] = Field(default_factory=list)
+
+
 class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -397,6 +420,7 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     output_injections: dict[str, dict[str, ResolvedOutputInjectionRule]] = Field(
         default_factory=dict
     )
+    rewrites: list[WorkflowRewriteRule] = Field(default_factory=list)
     slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)
     pipeline: list[WorkflowPipelineStage] = Field(default_factory=list)
 

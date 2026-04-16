@@ -171,6 +171,23 @@ export interface WorkflowRequiredInputValidationRule {
   message?: string | null;
 }
 
+export interface WorkflowRewriteCondition {
+  kind: "input_missing" | "input_present";
+  input: string;
+}
+
+export interface WorkflowRewriteRule {
+  when: WorkflowRewriteCondition;
+  bypass?: Array<string>;
+  set_widgets?: Array<WorkflowRewriteWidgetOverride>;
+}
+
+export interface WorkflowRewriteWidgetOverride {
+  node_id: string;
+  widget: string;
+  value?: unknown;
+}
+
 export interface WorkflowRuleBooleanOverride {
   when: WorkflowRuleWidgetInputPresenceCondition;
   value?: boolean;
@@ -273,6 +290,7 @@ export interface WorkflowRules {
   input_conditions?: Array<WorkflowInputCondition> | null;
   derived_widgets?: Array<WorkflowDualSamplerDenoiseRule | WorkflowVideoAudioRetakeRule>;
   output_injections?: Record<string, Record<string, ResolvedOutputInjectionRule>>;
+  rewrites?: Array<WorkflowRewriteRule>;
   slots?: Record<string, WorkflowRuleSlot>;
   pipeline?: Array<WorkflowMaskProcessingStage | WorkflowAspectRatioStage | WorkflowOutputAssemblyStage>;
 }

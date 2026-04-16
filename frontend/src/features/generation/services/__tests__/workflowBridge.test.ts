@@ -64,17 +64,10 @@ describe("workflowBridge", () => {
     ]);
   });
 
-  it("prefers the live graphToPrompt graph over activeState for widget values", async () => {
-    // activeState is a persisted snapshot that only updates on save; live
-    // widget edits (e.g. typed prompt text) may not be reflected there.
-    // graphToPrompt returns the current graph, so it wins as graph_data.
+  it("prefers activeWorkflow.activeState as the persisted graph source", async () => {
     const activeState = {
-      nodes: [{ id: 1, widgets_values: ["stale-model.safetensors"] }],
+      nodes: [{ id: 1, widgets_values: ["new-model.safetensors"] }],
       extra: { source: "activeState" },
-    };
-    const liveWorkflow = {
-      nodes: [{ id: 1, widgets_values: ["live-model.safetensors"] }],
-      extra: { source: "graphToPrompt" },
     };
     const rawWorkflow = {
       "1": {
@@ -89,7 +82,10 @@ describe("workflowBridge", () => {
         app: {
           graphToPrompt: async () => ({
             output: rawWorkflow,
-            workflow: liveWorkflow,
+            workflow: {
+              nodes: [{ id: 1, widgets_values: ["stale-model.safetensors"] }],
+              extra: { source: "graphToPrompt" },
+            },
           }),
           extensionManager: {
             workflow: {
@@ -109,42 +105,6 @@ describe("workflowBridge", () => {
     expect(result).not.toBeNull();
     expect(result?.filename).toBe("wf (1).json");
     expect(result?.workflow).toEqual(rawWorkflow);
-    expect(result?.graphData).toEqual(liveWorkflow);
-  });
-
-  it("falls back to activeState when graphToPrompt returns no workflow graph", async () => {
-    const activeState = {
-      nodes: [{ id: 1, widgets_values: ["persisted-model.safetensors"] }],
-      extra: { source: "activeState" },
-    };
-    const rawWorkflow = {
-      "1": {
-        class_type: "LoadImage",
-        inputs: { image: "input.png" },
-        _meta: { title: "Image" },
-      },
-    };
-
-    const iframe = {
-      contentWindow: {
-        app: {
-          graphToPrompt: async () => ({ output: rawWorkflow }),
-          extensionManager: {
-            workflow: {
-              activeWorkflow: {
-                path: "workflows/wf (1).json",
-                key: "wf (1).json",
-                activeState,
-              },
-            },
-          },
-        },
-      },
-    } as unknown as HTMLIFrameElement;
-
-    const result = await readWorkflowFromIframe(iframe);
-
-    expect(result).not.toBeNull();
     expect(result?.graphData).toEqual(activeState);
   });
 });

@@ -876,6 +876,16 @@ def apply_rules_to_workflow(
                         inputs = consumer_node.get("inputs")
                         if not isinstance(inputs, dict):
                             continue
+                        # Preserve scalar values the user already supplied
+                        # (e.g. a prompt string injected directly into
+                        # CLIPTextEncode.text via Vlo's UI inputs). Only
+                        # rewire link references that currently point at
+                        # this target output — or fill in a missing input.
+                        current_value = inputs.get(input_name)
+                        if current_value is not None and not isinstance(
+                            current_value, list
+                        ):
+                            continue
                         inputs[input_name] = [
                             resolved_source_id,
                             resolved_source_output,

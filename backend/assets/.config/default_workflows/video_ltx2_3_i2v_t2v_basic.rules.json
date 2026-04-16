@@ -146,10 +146,25 @@
         "211",
         "233",
         "234",
-        "236",
-        "237",
         "248",
         "349"
+      ],
+      "set_widgets": [
+        {
+          "node_id": "290",
+          "widget": "value",
+          "value": true
+        },
+        {
+          "node_id": "709",
+          "widget": "boolean",
+          "value": true
+        },
+        {
+          "node_id": "708",
+          "widget": "boolean",
+          "value": true
+        }
       ]
     }
   ],

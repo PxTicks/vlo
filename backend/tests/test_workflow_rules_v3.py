@@ -257,12 +257,13 @@ def test_i2v_t2v_basic_missing_image_returns_warnings_instead_of_crashing():
         provided_input_ids=set(),
     )
 
+    # default_overrides still set t2v_mode to true when image is missing
     assert rewritten["290"]["inputs"]["value"] is True
-    assert any(
-        warning["code"] == "injection_target_missing"
-        and warning.get("node_id") == "160"
-        and warning.get("output_index") == 0
-        for warning in warnings
+    # The rules now use `rewrites` (frontend-processed bypass) instead of
+    # backend output_injections, so no injection_target_missing warnings are
+    # expected.  The only warning is the optional-input bypass for node 167.
+    assert all(
+        warning["code"] != "injection_target_missing" for warning in warnings
     )
 
 
@@ -294,86 +295,20 @@ def test_i2v_t2v_basic_does_not_globally_prune_when_optional_input_node_is_omitt
         provided_input_ids=set(),
     )
 
+    # default_overrides still set the t2v boolean
     assert rewritten["290"]["inputs"]["value"] is True
+    # No output_injections in the new rules — bypass handling is frontend-side.
+    # The workflow should keep its existing nodes intact (no global prune).
     assert rewritten["165"]["inputs"] == {
         "width": ["243", 0],
         "height": ["244", 0],
     }
+    # Only the optional-input bypass warning for node 167 should remain.
     assert warnings == [
-        {
-            "code": "injection_target_missing",
-            "message": "Injection target node not found in workflow; skipping",
-            "node_id": "160",
-            "output_index": 0,
-        },
-        {
-            "code": "injection_target_missing",
-            "message": "Injection target node not found in workflow; skipping",
-            "node_id": "161",
-            "output_index": 0,
-        },
-        {
-            "code": "injection_target_missing",
-            "message": "Injection target node not found in workflow; skipping",
-            "node_id": "236",
-            "output_index": 0,
-        },
-        {
-            "code": "injection_target_missing",
-            "message": "Injection target node not found in workflow; skipping",
-            "node_id": "237",
-            "output_index": 0,
-        },
-        {
-            "code": "injection_target_missing",
-            "message": "Injection target node not found in workflow; skipping",
-            "node_id": "349",
-            "output_index": 0,
-        },
         {
             "code": "optional_input_node_missing",
             "message": "Optional input node not found in workflow; skipping bypass",
             "node_id": "167",
-        },
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "160",
-        },
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "161",
-        },
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "209",
-        },
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "211",
-        },
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "233",
-        },
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "234",
-        },
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "248",
-        },
-        {
-            "code": "ignored_node_missing",
-            "message": "Ignored node not found in workflow; skipping",
-            "node_id": "349",
         },
     ]
 
@@ -396,28 +331,28 @@ def test_i2v_t2v_basic_recovers_output_graph_from_graph_data_when_prompt_has_no_
         }
     }
 
+    # Provide input 167 (i2v mode).  T2v bypass handling has moved to the
+    # frontend's preResolvePrompt; this test verifies graph recovery and
+    # LazySwitchKJ dimension routing in i2v mode.
     rewritten, warnings = apply_rules_to_workflow(
         workflow,
         rules,
-        provided_input_ids=set(),
+        provided_input_ids={"167"},
         graph_data=graph_data,
     )
 
-    assert rewritten["109"]["inputs"]["video_latent"] == ["108", 0]
-    assert rewritten["117"]["inputs"]["video_latent"] == ["118", 0]
-    assert rewritten["121"]["inputs"]["text"] == ["352", 0]
+    # Graph recovery should populate the prompt with output-reachable nodes.
     assert rewritten["140"]["class_type"] == "VHS_VideoCombine"
     assert rewritten["140"]["inputs"]["images"] == ["127", 0]
-    assert "167" not in rewritten
+    # LazySwitchKJ nodes route dimensions to EmptyLTXVLatentVideo (108).
+    assert rewritten["108"]["inputs"]["width"] == ["709", 0]
+    assert rewritten["108"]["inputs"]["height"] == ["708", 0]
     # SetNode/GetNode are routing-only and should never appear in the prompt.
     assert all(
         node.get("class_type") not in {"SetNode", "GetNode"}
         for node in rewritten.values()
         if isinstance(node, dict)
     )
-    # 290 (Text-to-Video switch) routes only into the pruned i2v helpers, so
-    # the walk-up sweep correctly removes it in t2v mode.
-    assert "290" not in rewritten
 
 
 def test_apply_rules_does_not_globally_prune_broken_output_chain_without_roots():

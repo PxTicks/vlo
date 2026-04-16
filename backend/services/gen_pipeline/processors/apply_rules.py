@@ -14,7 +14,7 @@ class _ApplyRulesProcessor:
     )
 
     def is_active(self, ctx: BackendPipelineContext) -> bool:
-        return True
+        return not ctx.skip_graph_rewrite
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
         ctx.workflow, rule_apply_warnings = apply_rules_to_workflow(

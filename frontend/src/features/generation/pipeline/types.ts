@@ -194,6 +194,7 @@ export interface GenerationRequest {
   widgetModes?: Record<string, "fixed" | "randomize">;
   pipelineInputs: Record<string, Record<string, unknown>>;
   clientId: string;
+  promptIsPreResolved?: boolean;
 }
 
 export interface PreparedGeneration {

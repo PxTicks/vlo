@@ -54,6 +54,7 @@ class GenerationInput:
     buffered_media: dict[str, dict[str, Any]] = field(default_factory=dict)
     graph_data: dict[str, Any] | None = None
     workflow_warnings: list[dict[str, Any]] = field(default_factory=list)
+    prompt_is_pre_resolved: bool = False
 
 
 @dataclass
@@ -306,6 +307,7 @@ def build_backend_context(
         buffered_media=gen_input.buffered_media,
         graph_data=gen_input.graph_data,
         warnings=gen_input.workflow_warnings,
+        skip_graph_rewrite=gen_input.prompt_is_pre_resolved,
     )
 
 
@@ -393,5 +395,12 @@ async def execute_generation(
     """
     ctx = build_backend_context(gen_input, client)
     await run_backend_preprocess(ctx)
+
+    # Optional prompt logging for manual equivalence testing.
+    from services.gen_pipeline.processors.utils.prompt_logging import maybe_log_prompt
+
+    path_label = "pre_resolved" if ctx.skip_graph_rewrite else "backend_rewrite"
+    maybe_log_prompt(ctx.workflow, label=path_label)
+
     await dispatch_to_comfyui(ctx)
     return finalize_backend_response(ctx)

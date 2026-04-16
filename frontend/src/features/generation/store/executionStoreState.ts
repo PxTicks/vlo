@@ -1,4 +1,5 @@
 import * as comfyApi from "../services/comfyuiApi";
+import { MIGRATED_WORKFLOW_IDS } from "../services/migratedWorkflows";
 import { useProjectStore } from "../../project";
 import { mergeRuleWarnings } from "../services/warnings";
 import {
@@ -168,10 +169,16 @@ export function buildExecutionStoreState(
         return null;
       }
 
+      const shouldPreResolve =
+        state.preResolvedPromptEnabled &&
+        typeof plan.workflow.workflowId === "string" &&
+        MIGRATED_WORKFLOW_IDS.has(plan.workflow.workflowId);
+
       const response = await comfyApi.generate(
         {
           ...prepared.request,
           workflowRules: plan.workflow.workflowRules ?? undefined,
+          promptIsPreResolved: shouldPreResolve,
         },
         {
           signal: preprocessAbortController.signal,

@@ -941,6 +941,13 @@ async def generate(request: Request):
     # --- Backend request assembly ends here ---
     # The generation service now runs the remaining backend phases explicitly:
     # backend preprocess -> dispatch to ComfyUI -> backend postprocess.
+    # --- Check if the frontend pre-resolved the prompt via graphToPrompt ---
+    prompt_is_pre_resolved_raw = form.get("prompt_is_pre_resolved")
+    prompt_is_pre_resolved = (
+        isinstance(prompt_is_pre_resolved_raw, str)
+        and prompt_is_pre_resolved_raw.strip().lower() in ("true", "1")
+    )
+
     gen_input = GenerationInput(
         client_id=client_id,
         workflow=workflow,
@@ -955,6 +962,7 @@ async def generate(request: Request):
         buffered_media=buffered_media,
         graph_data=graph_data,
         workflow_warnings=workflow_warnings,
+        prompt_is_pre_resolved=prompt_is_pre_resolved,
     )
 
     comfyui_generate_service.WORKFLOWS_DIR = WORKFLOWS_DIR

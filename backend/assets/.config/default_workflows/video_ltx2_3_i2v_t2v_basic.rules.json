@@ -30,104 +30,13 @@
         "required": false
       }
     },
-    "160": {
-      "ignore_overrides": [
-        {
-          "when": {
-            "kind": "input_presence",
-            "inputs": [
-              "167"
-            ],
-            "match": "all_missing"
-          },
-          "value": true
-        }
-      ]
-    },
-    "161": {
-      "ignore_overrides": [
-        {
-          "when": {
-            "kind": "input_presence",
-            "inputs": [
-              "167"
-            ],
-            "match": "all_missing"
-          },
-          "value": true
-        }
-      ]
-    },
-    "209": {
-      "ignore_overrides": [
-        {
-          "when": {
-            "kind": "input_presence",
-            "inputs": [
-              "167"
-            ],
-            "match": "all_missing"
-          },
-          "value": true
-        }
-      ]
-    },
-    "211": {
-      "ignore_overrides": [
-        {
-          "when": {
-            "kind": "input_presence",
-            "inputs": [
-              "167"
-            ],
-            "match": "all_missing"
-          },
-          "value": true
-        }
-      ]
-    },
-    "233": {
-      "ignore_overrides": [
-        {
-          "when": {
-            "kind": "input_presence",
-            "inputs": [
-              "167"
-            ],
-            "match": "all_missing"
-          },
-          "value": true
-        }
-      ]
-    },
-    "234": {
-      "ignore_overrides": [
-        {
-          "when": {
-            "kind": "input_presence",
-            "inputs": [
-              "167"
-            ],
-            "match": "all_missing"
-          },
-          "value": true
-        }
-      ]
-    },
-    "248": {
-      "ignore_overrides": [
-        {
-          "when": {
-            "kind": "input_presence",
-            "inputs": [
-              "167"
-            ],
-            "match": "all_missing"
-          },
-          "value": true
-        }
-      ]
-    },
+    "160": {},
+    "161": {},
+    "209": {},
+    "211": {},
+    "233": {},
+    "234": {},
+    "248": {},
     "290": {
       "widgets": {
         "value": {
@@ -160,18 +69,6 @@
       }
     },
     "349": {
-      "ignore_overrides": [
-        {
-          "when": {
-            "kind": "input_presence",
-            "inputs": [
-              "167"
-            ],
-            "match": "all_missing"
-          },
-          "value": true
-        }
-      ],
       "widgets": {
         "sampling_mode": {
           "label": "Enable prompt enhancer",
@@ -236,88 +133,26 @@
     ]
   },
   "derived_widgets": [],
-  "output_injections": {
-    "160": {
-      "0": {
-        "source": {
-          "kind": "node_output",
-          "node_id": "118",
-          "output_index": 0
-        },
-        "when": {
-          "kind": "input_presence",
-          "inputs": [
-            "167"
-          ],
-          "match": "all_missing"
-        }
-      }
-    },
-    "161": {
-      "0": {
-        "source": {
-          "kind": "node_output",
-          "node_id": "108",
-          "output_index": 0
-        },
-        "when": {
-          "kind": "input_presence",
-          "inputs": [
-            "167"
-          ],
-          "match": "all_missing"
-        }
-      }
-    },
-    "236": {
-      "0": {
-        "source": {
-          "kind": "node_output",
-          "node_id": "243",
-          "output_index": 0
-        },
-        "when": {
-          "kind": "input_presence",
-          "inputs": [
-            "167"
-          ],
-          "match": "all_missing"
-        }
-      }
-    },
-    "237": {
-      "0": {
-        "source": {
-          "kind": "node_output",
-          "node_id": "244",
-          "output_index": 0
-        },
-        "when": {
-          "kind": "input_presence",
-          "inputs": [
-            "167"
-          ],
-          "match": "all_missing"
-        }
-      }
-    },
-    "349": {
-      "0": {
-        "source": {
-          "kind": "node_output",
-          "node_id": "352",
-          "output_index": 0
-        },
-        "when": {
-          "kind": "input_presence",
-          "inputs": [
-            "167"
-          ],
-          "match": "all_missing"
-        }
-      }
+  "rewrites": [
+    {
+      "when": {
+        "kind": "input_missing",
+        "input": "167"
+      },
+      "bypass": [
+        "160",
+        "161",
+        "209",
+        "211",
+        "233",
+        "234",
+        "236",
+        "237",
+        "248",
+        "349"
+      ]
     }
-  },
+  ],
   "slots": {},
   "pipeline": [
     {

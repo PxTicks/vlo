@@ -276,6 +276,9 @@ export async function generate(
   for (const [key, value] of Object.entries(request.widgetModes ?? {})) {
     formData.append(key, value);
   }
+  if (request.promptIsPreResolved) {
+    formData.append("prompt_is_pre_resolved", "true");
+  }
   const resp = await fetch(`${COMFY_API}/generate`, {
     method: "POST",
     body: formData,

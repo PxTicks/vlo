@@ -13,6 +13,7 @@ import {
   isIframeAppReady,
   isIframeBackendConnected,
 } from "../services/workflowBridge";
+import { isGraphMutationInFlight } from "../services/preResolvePrompt";
 import {
   injectWorkflowAndRead,
   readWorkflowWithRetry,
@@ -334,6 +335,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   }, [editorReconnectSignal, recoverIframe]);
 
   const syncLatestWorkflowFromIframe = useCallback(async () => {
+    if (isGraphMutationInFlight()) return;
     const iframe = iframeRef.current;
     if (!iframe) return;
 
@@ -347,6 +349,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     if (pollingRef.current) return;
     pollingRef.current = true;
     try {
+      if (isGraphMutationInFlight()) return;
       const iframe = iframeRef.current;
       if (!iframe) return;
 
@@ -415,6 +418,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         recoverIframe("tab became visible with unhealthy iframe");
         return;
       }
+
+      if (isGraphMutationInFlight()) return;
 
       if (appReady) {
         pollWorkflow();

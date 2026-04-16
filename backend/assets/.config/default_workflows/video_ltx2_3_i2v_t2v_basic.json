@@ -1,8 +1,8 @@
 {
   "id": "d15f72da-ab9c-490d-9386-b750d889c6f8",
   "revision": 0,
-  "last_node_id": 360,
-  "last_link_id": 639,
+  "last_node_id": 709,
+  "last_link_id": 535,
   "nodes": [
     {
       "id": 218,
@@ -2363,6 +2363,78 @@
       "widgets_values": [24]
     },
     {
+      "id": 709,
+      "type": "LazySwitchKJ",
+      "pos": [-302.2175322476569, 4473.082717012376],
+      "size": [270, 80],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "on_false",
+          "type": "*",
+          "link": 472
+        },
+        {
+          "name": "on_true",
+          "type": "*",
+          "link": 460
+        }
+      ],
+      "outputs": [
+        {
+          "name": "*",
+          "type": "*",
+          "links": [464]
+        }
+      ],
+      "title": "Bypass Width Resize",
+      "properties": {
+        "cnr_id": "comfyui-kjnodes",
+        "ver": "f12007dd57bd539052d3a92597b35365a49e7b06",
+        "Node name for S&R": "LazySwitchKJ",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [false]
+    },
+    {
+      "id": 708,
+      "type": "LazySwitchKJ",
+      "pos": [-295.2175322476569, 4611.082717012376],
+      "size": [270, 80],
+      "flags": {},
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "on_false",
+          "type": "*",
+          "link": 473
+        },
+        {
+          "name": "on_true",
+          "type": "*",
+          "link": 459
+        }
+      ],
+      "outputs": [
+        {
+          "name": "*",
+          "type": "*",
+          "links": [463]
+        }
+      ],
+      "title": "Bypass Height Resize",
+      "properties": {
+        "cnr_id": "comfyui-kjnodes",
+        "ver": "f12007dd57bd539052d3a92597b35365a49e7b06",
+        "Node name for S&R": "LazySwitchKJ",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [false]
+    },
+    {
       "id": 108,
       "type": "EmptyLTXVLatentVideo",
       "pos": [-129.42226803816817, 3762.1968230460407],
@@ -3828,15 +3900,15 @@
     [460, 230, 0, 129, 1, "CONDITIONING"],
     [461, 163, 0, 233, 0, "INT"],
     [462, 163, 1, 234, 0, "INT"],
-    [463, 237, 0, 108, 1, "INT"],
-    [464, 236, 0, 108, 0, "INT"],
+    [463, 708, 0, 108, 1, "INT"],
+    [464, 709, 0, 108, 0, "INT"],
     [465, 109, 0, 238, 0, "LATENT"],
     [466, 239, 0, 206, 0, "LATENT"],
     [467, 239, 0, 113, 4, "LATENT"],
     [468, 199, 0, 240, 0, "LATENT"],
     [470, 242, 0, 118, 1, "LATENT_UPSCALE_MODEL"],
-    [472, 243, 0, 165, 2, "INT"],
-    [473, 244, 0, 165, 3, "INT"],
+    [472, 243, 0, 709, 0, "INT"],
+    [473, 244, 0, 708, 0, "INT"],
     [475, 116, 1, 117, 1, "LATENT"],
     [479, 165, 0, 246, 0, "IMAGE"],
     [480, 167, 0, 165, 0, "IMAGE"],
@@ -3851,7 +3923,8 @@
     [531, 287, 1, 286, 0, "INT"],
     [532, 291, 0, 287, 2, "FLOAT"],
     [533, 285, 0, 287, 3, "FLOAT"],
-    [534, 290, 0, 288, 0, "BOOLEAN"],
+    [534, 290, 0, 709, 1, "BOOLEAN"],
+    [535, 290, 0, 708, 1, "BOOLEAN"],
     [550, 190, 0, 213, 0, "CLIP"],
     [561, 307, 0, 140, 4, "FLOAT"],
     [562, 119, 0, 125, 0, "LATENT"],

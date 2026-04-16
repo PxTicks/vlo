@@ -80,6 +80,8 @@ export interface GenerationWorkflowState {
   maskCropMode: WorkflowMaskCroppingMode;
   targetResolution: number;
   setTargetResolution: (resolution: number) => void;
+  preResolvedPromptEnabled: boolean;
+  setPreResolvedPromptEnabled: (enabled: boolean) => void;
   exactAspectRatio: boolean;
   setExactAspectRatio: (exact: boolean) => void;
   setMaskCropMode: (mode: WorkflowMaskCroppingMode) => void;

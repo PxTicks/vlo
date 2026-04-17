@@ -248,6 +248,10 @@ def test_i2v_t2v_basic_missing_image_returns_warnings_instead_of_crashing():
         "290": {
             "class_type": "PrimitiveBoolean",
             "inputs": {"value": False},
+        },
+        "349": {
+            "class_type": "TextGenerateLTX2Prompt",
+            "inputs": {"sampling_mode": "off"},
         }
     }
 
@@ -259,12 +263,14 @@ def test_i2v_t2v_basic_missing_image_returns_warnings_instead_of_crashing():
 
     # default_overrides still set t2v_mode to true when image is missing
     assert rewritten["290"]["inputs"]["value"] is True
-    # The rules now use `rewrites` (frontend-processed bypass) instead of
-    # backend output_injections, so no injection_target_missing warnings are
-    # expected.  The only warning is the optional-input bypass for node 167.
-    assert all(
-        warning["code"] != "injection_target_missing" for warning in warnings
-    )
+    assert rewritten["349"]["inputs"]["sampling_mode"] == "on"
+    assert warnings == [
+        {
+            "code": "optional_input_node_missing",
+            "message": "Optional input node not found in workflow; skipping bypass",
+            "node_id": "167",
+        },
+    ]
 
 
 def test_i2v_t2v_basic_does_not_globally_prune_when_optional_input_node_is_omitted():
@@ -287,6 +293,10 @@ def test_i2v_t2v_basic_does_not_globally_prune_when_optional_input_node_is_omitt
             "class_type": "PrimitiveBoolean",
             "inputs": {"value": False},
         },
+        "349": {
+            "class_type": "TextGenerateLTX2Prompt",
+            "inputs": {"sampling_mode": "off"},
+        },
     }
 
     rewritten, warnings = apply_rules_to_workflow(
@@ -297,13 +307,11 @@ def test_i2v_t2v_basic_does_not_globally_prune_when_optional_input_node_is_omitt
 
     # default_overrides still set the t2v boolean
     assert rewritten["290"]["inputs"]["value"] is True
-    # No output_injections in the new rules — bypass handling is frontend-side.
-    # The workflow should keep its existing nodes intact (no global prune).
+    assert rewritten["349"]["inputs"]["sampling_mode"] == "on"
     assert rewritten["165"]["inputs"] == {
         "width": ["243", 0],
         "height": ["244", 0],
     }
-    # Only the optional-input bypass warning for node 167 should remain.
     assert warnings == [
         {
             "code": "optional_input_node_missing",
@@ -331,9 +339,8 @@ def test_i2v_t2v_basic_recovers_output_graph_from_graph_data_when_prompt_has_no_
         }
     }
 
-    # Provide input 167 (i2v mode).  T2v bypass handling has moved to the
-    # frontend's preResolvePrompt; this test verifies graph recovery and
-    # LazySwitchKJ dimension routing in i2v mode.
+    # Provide input 167 (i2v mode). Graph recovery should keep the working
+    # output-reachable graph from the workflow graph data.
     rewritten, warnings = apply_rules_to_workflow(
         workflow,
         rules,
@@ -344,9 +351,8 @@ def test_i2v_t2v_basic_recovers_output_graph_from_graph_data_when_prompt_has_no_
     # Graph recovery should populate the prompt with output-reachable nodes.
     assert rewritten["140"]["class_type"] == "VHS_VideoCombine"
     assert rewritten["140"]["inputs"]["images"] == ["127", 0]
-    # LazySwitchKJ nodes route dimensions to EmptyLTXVLatentVideo (108).
-    assert rewritten["108"]["inputs"]["width"] == ["709", 0]
-    assert rewritten["108"]["inputs"]["height"] == ["708", 0]
+    assert rewritten["108"]["inputs"]["width"] == ["163", 0]
+    assert rewritten["108"]["inputs"]["height"] == ["163", 1]
     # SetNode/GetNode are routing-only and should never appear in the prompt.
     assert all(
         node.get("class_type") not in {"SetNode", "GetNode"}

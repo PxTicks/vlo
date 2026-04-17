@@ -44,9 +44,21 @@ from routers.comfyui_compat import compat_router  # noqa: F401 -- re-exported fo
 
 WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
 DEFAULT_WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / ".config" / "default_workflows"
+DUMMY_PHOTO_PATH = DEFAULT_WORKFLOWS_DIR.parent / "dummy_photo.jpeg"
 WORKFLOW_MENU_CONFIG_PATH = (
     Path(__file__).parent.parent / "assets" / ".config" / "workflow_menu.json"
 )
+WORKFLOW_MEDIA_FALLBACKS: dict[str, list[dict[str, Any]]] = {
+    "video_ltx2_3_i2v_t2v_basic.json": [
+        {
+            "node_id": "167",
+            "input_type": "image",
+            "filename": "dummy_photo.jpeg",
+            "content_type": "image/jpeg",
+            "path": DUMMY_PHOTO_PATH,
+        },
+    ],
+}
 
 router = APIRouter(prefix="/comfy", tags=["comfyui"])
 
@@ -390,6 +402,78 @@ def _parse_node_input_form_key(raw_key: str) -> tuple[str, str | None]:
     if parsed is not None:
         return parsed[0], parsed[1]
     return raw_key, None
+
+
+def _apply_workflow_media_fallbacks(
+    *,
+    workflow_id: str | None,
+    workflow: dict[str, Any],
+    buffered_media: dict[str, dict[str, Any]],
+    workflow_warnings: list[dict[str, Any]],
+    node_map: dict[str, list[dict[str, Any]]],
+) -> None:
+    if not isinstance(workflow_id, str):
+        return
+
+    fallback_defs = WORKFLOW_MEDIA_FALLBACKS.get(workflow_id)
+    if not fallback_defs:
+        return
+
+    for fallback in fallback_defs:
+        node_id = fallback.get("node_id")
+        input_type = fallback.get("input_type")
+        fallback_path = fallback.get("path")
+        explicit_param = fallback.get("param")
+        if not isinstance(node_id, str) or not isinstance(input_type, str):
+            continue
+        if not isinstance(fallback_path, Path):
+            continue
+
+        node = workflow.get(node_id)
+        if not isinstance(node, dict):
+            continue
+
+        mapping = _find_node_input_mapping(
+            node_map.get(node.get("class_type", "")),
+            input_type=input_type,
+            param=explicit_param if isinstance(explicit_param, str) else None,
+        )
+        if mapping is None:
+            workflow_warnings.append(
+                {
+                    "code": "media_fallback_mapping_missing",
+                    "message": "Could not resolve media input mapping for workflow fallback media",
+                    "node_id": node_id,
+                    "details": {"received": input_type, "param": explicit_param},
+                }
+            )
+            continue
+
+        buffer_key = f"{node_id}:{mapping['param']}"
+        if buffer_key in buffered_media:
+            continue
+
+        if not fallback_path.is_file():
+            workflow_warnings.append(
+                {
+                    "code": "media_fallback_missing",
+                    "message": "Configured workflow fallback media file was not found",
+                    "node_id": node_id,
+                    "details": {"path": str(fallback_path)},
+                }
+            )
+            continue
+
+        buffered_media[buffer_key] = {
+            "node_id": node_id,
+            "param": mapping["param"],
+            "input_type": input_type,
+            "class_type": node.get("class_type", ""),
+            "bytes": fallback_path.read_bytes(),
+            "content_type": fallback.get("content_type", "application/octet-stream"),
+            "filename": fallback.get("filename", fallback_path.name),
+            "synthetic": True,
+        }
 
 
 def _parse_workflow_inputs(workflow: dict) -> list[dict]:
@@ -937,6 +1021,14 @@ async def generate(request: Request):
                 upload_file=value,
                 media_type="video",
             )
+
+    _apply_workflow_media_fallbacks(
+        workflow_id=workflow_id,
+        workflow=workflow,
+        buffered_media=buffered_media,
+        workflow_warnings=workflow_warnings,
+        node_map=node_map,
+    )
 
     # --- Backend request assembly ends here ---
     # The generation service now runs the remaining backend phases explicitly:

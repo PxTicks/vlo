@@ -33,6 +33,8 @@ def collect_provided_input_ids(
     for media_info in ctx.buffered_media.values():
         if not isinstance(media_info, dict):
             continue
+        if media_info.get("synthetic") is True:
+            continue
         node_id = media_info.get("node_id")
         param = media_info.get("param")
         if isinstance(node_id, str):

@@ -76,6 +76,28 @@
           "default": false,
           "true_value": "on",
           "false_value": "off",
+          "default_overrides": [
+            {
+              "when": {
+                "kind": "input_presence",
+                "inputs": [
+                  "167"
+                ],
+                "match": "all_missing"
+              },
+              "value": "on"
+            },
+            {
+              "when": {
+                "kind": "input_presence",
+                "inputs": [
+                  "167"
+                ],
+                "match": "all_present"
+              },
+              "value": "off"
+            }
+          ],
           "group_id": "prompt",
           "group_title": "Prompt",
           "group_order": 0
@@ -133,41 +155,6 @@
     ]
   },
   "derived_widgets": [],
-  "rewrites": [
-    {
-      "when": {
-        "kind": "input_missing",
-        "input": "167"
-      },
-      "bypass": [
-        "160",
-        "161",
-        "209",
-        "211",
-        "233",
-        "234",
-        "248",
-        "349"
-      ],
-      "set_widgets": [
-        {
-          "node_id": "290",
-          "widget": "value",
-          "value": true
-        },
-        {
-          "node_id": "709",
-          "widget": "boolean",
-          "value": true
-        },
-        {
-          "node_id": "708",
-          "widget": "boolean",
-          "value": true
-        }
-      ]
-    }
-  ],
   "slots": {},
   "pipeline": [
     {

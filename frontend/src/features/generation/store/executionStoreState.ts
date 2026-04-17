@@ -10,6 +10,7 @@ import {
 import type { GenerationPlan, SlotValue } from "../pipeline/types";
 import {
   evaluateRewrites,
+  evaluateWidgetDefaultOverrides,
   type RewriteRule,
 } from "../services/evaluateRewrites";
 import { preResolvePrompt } from "../services/preResolvePrompt";
@@ -214,14 +215,19 @@ export function buildExecutionStoreState(
         }
         const rewrites: RewriteRule[] =
           (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
-        const { bypass, widgetOverrides } = evaluateRewrites(
+        const providedInputIds = collectProvidedInputIds(plan);
+        const defaultWidgetOverrides = evaluateWidgetDefaultOverrides(
+          plan.workflow.workflowRules,
+          providedInputIds,
+        );
+        const { bypass, widgetOverrides: rewriteWidgetOverrides } = evaluateRewrites(
           rewrites,
-          collectProvidedInputIds(plan),
+          providedInputIds,
         );
         const preResolved = await preResolvePrompt(
           iframe,
           bypass,
-          widgetOverrides,
+          [...defaultWidgetOverrides, ...rewriteWidgetOverrides],
         );
         if (!preResolved) {
           throw new Error(

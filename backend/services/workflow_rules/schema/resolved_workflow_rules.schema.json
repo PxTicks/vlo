@@ -768,6 +768,280 @@
       "title": "WorkflowDualSamplerDenoiseRule",
       "type": "object"
     },
+    "WorkflowFrontendControl": {
+      "properties": {
+        "control": {
+          "anyOf": [
+            {
+              "const": "slider",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control"
+        },
+        "control_after_generate": {
+          "default": false,
+          "title": "Control After Generate",
+          "type": "boolean"
+        },
+        "default": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "default_overrides": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WorkflowRuleWidgetDefaultOverride"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Overrides"
+        },
+        "default_randomize": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Randomize"
+        },
+        "false_value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "False Value"
+        },
+        "frontend_only": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frontend Only"
+        },
+        "group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "hidden": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hidden"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min"
+        },
+        "options": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Options"
+        },
+        "slider_display": {
+          "anyOf": [
+            {
+              "enum": [
+                "percent",
+                "number"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slider Display"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step"
+        },
+        "true_value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "True Value"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "value_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "int",
+                "float",
+                "string",
+                "boolean",
+                "enum",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Type"
+        }
+      },
+      "title": "WorkflowFrontendControl",
+      "type": "object"
+    },
     "WorkflowInputCondition": {
       "properties": {
         "inputs": {
@@ -1085,29 +1359,6 @@
       "title": "WorkflowRequiredInputValidationRule",
       "type": "object"
     },
-    "WorkflowRewriteCondition": {
-      "additionalProperties": false,
-      "properties": {
-        "input": {
-          "title": "Input",
-          "type": "string"
-        },
-        "kind": {
-          "enum": [
-            "input_missing",
-            "input_present"
-          ],
-          "title": "Kind",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "input"
-      ],
-      "title": "WorkflowRewriteCondition",
-      "type": "object"
-    },
     "WorkflowRewriteRule": {
       "additionalProperties": false,
       "properties": {
@@ -1126,7 +1377,26 @@
           "type": "array"
         },
         "when": {
-          "$ref": "#/$defs/WorkflowRewriteCondition"
+          "discriminator": {
+            "mapping": {
+              "frontend_control_boolean": "#/$defs/WorkflowRuleBooleanFrontendControlCondition",
+              "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
+              "widget_boolean": "#/$defs/WorkflowRuleBooleanWidgetCondition"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+            },
+            {
+              "$ref": "#/$defs/WorkflowRuleBooleanWidgetCondition"
+            },
+            {
+              "$ref": "#/$defs/WorkflowRuleBooleanFrontendControlCondition"
+            }
+          ],
+          "title": "When"
         }
       },
       "required": [
@@ -1158,6 +1428,30 @@
       "title": "WorkflowRewriteWidgetOverride",
       "type": "object"
     },
+    "WorkflowRuleBooleanFrontendControlCondition": {
+      "properties": {
+        "control_id": {
+          "title": "Control Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "frontend_control_boolean",
+          "default": "frontend_control_boolean",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "default": true,
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "control_id"
+      ],
+      "title": "WorkflowRuleBooleanFrontendControlCondition",
+      "type": "object"
+    },
     "WorkflowRuleBooleanOverride": {
       "properties": {
         "value": {
@@ -1173,6 +1467,35 @@
         "when"
       ],
       "title": "WorkflowRuleBooleanOverride",
+      "type": "object"
+    },
+    "WorkflowRuleBooleanWidgetCondition": {
+      "properties": {
+        "kind": {
+          "const": "widget_boolean",
+          "default": "widget_boolean",
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "value": {
+          "default": true,
+          "title": "Value",
+          "type": "boolean"
+        },
+        "widget": {
+          "title": "Widget",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "widget"
+      ],
+      "title": "WorkflowRuleBooleanWidgetCondition",
       "type": "object"
     },
     "WorkflowRuleNode": {
@@ -1518,7 +1841,26 @@
           "title": "Value"
         },
         "when": {
-          "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+          "discriminator": {
+            "mapping": {
+              "frontend_control_boolean": "#/$defs/WorkflowRuleBooleanFrontendControlCondition",
+              "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
+              "widget_boolean": "#/$defs/WorkflowRuleBooleanWidgetCondition"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+            },
+            {
+              "$ref": "#/$defs/WorkflowRuleBooleanWidgetCondition"
+            },
+            {
+              "$ref": "#/$defs/WorkflowRuleBooleanFrontendControlCondition"
+            }
+          ],
+          "title": "When"
         }
       },
       "required": [
@@ -1987,6 +2329,13 @@
       },
       "title": "Derived Widgets",
       "type": "array"
+    },
+    "frontend_controls": {
+      "additionalProperties": {
+        "$ref": "#/$defs/WorkflowFrontendControl"
+      },
+      "title": "Frontend Controls",
+      "type": "object"
     },
     "input_conditions": {
       "anyOf": [

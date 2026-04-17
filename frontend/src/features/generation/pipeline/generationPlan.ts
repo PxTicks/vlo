@@ -37,6 +37,7 @@ interface CreateGenerationPlanOptions {
   maskCropMode: import("../types").WorkflowMaskCroppingMode;
   maskCropDilation: number;
   widgetInputs: Record<string, string>;
+  frontendStateWidgetValues: Record<string, unknown>;
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetInputs: Record<string, string>;
   postprocessConfig: import("../types").WorkflowPostprocessingConfig;
@@ -208,6 +209,9 @@ export function createGenerationPlan(
     },
     submission: {
       widgetInputs: { ...options.widgetInputs },
+      frontendStateWidgetValues: cloneSerializableValue(
+        options.frontendStateWidgetValues,
+      ),
       widgetModes: { ...options.widgetModes },
       derivedWidgetInputs: { ...options.derivedWidgetInputs },
     },
@@ -225,7 +229,7 @@ export function createGenerationPlan(
             exactAspectRatio: options.exactAspectRatio,
             maskCropMode: options.maskCropMode,
             maskCropDilation: options.maskCropDilation,
-            widgetInputs: options.widgetInputs,
+            frontendStateWidgetValues: options.frontendStateWidgetValues,
             widgetModes: options.widgetModes,
             derivedWidgetInputs: options.derivedWidgetInputs,
           },

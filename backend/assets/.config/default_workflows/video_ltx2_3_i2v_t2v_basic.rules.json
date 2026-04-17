@@ -68,42 +68,6 @@
         }
       }
     },
-    "349": {
-      "widgets": {
-        "sampling_mode": {
-          "label": "Enable prompt enhancer",
-          "value_type": "boolean",
-          "default": false,
-          "true_value": "on",
-          "false_value": "off",
-          "default_overrides": [
-            {
-              "when": {
-                "kind": "input_presence",
-                "inputs": [
-                  "167"
-                ],
-                "match": "all_missing"
-              },
-              "value": "on"
-            },
-            {
-              "when": {
-                "kind": "input_presence",
-                "inputs": [
-                  "167"
-                ],
-                "match": "all_present"
-              },
-              "value": "off"
-            }
-          ],
-          "group_id": "prompt",
-          "group_title": "Prompt",
-          "group_order": 0
-        }
-      }
-    },
     "291": {
       "widgets": {
         "value": {
@@ -154,7 +118,32 @@
       }
     ]
   },
+  "frontend_controls": {
+    "prompt_enhancer_enabled": {
+      "label": "Enable prompt enhancer",
+      "value_type": "boolean",
+      "default": false,
+      "group_id": "prompt",
+      "group_title": "Prompt",
+      "group_order": 0
+    }
+  },
   "derived_widgets": [],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "frontend_control_boolean",
+        "control_id": "prompt_enhancer_enabled",
+        "value": false
+      },
+      "bypass": [
+        "347",
+        "348",
+        "349",
+        "350"
+      ]
+    }
+  ],
   "slots": {},
   "pipeline": [
     {

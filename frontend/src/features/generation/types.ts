@@ -254,6 +254,7 @@ export interface RawWorkflowWidgetInput {
   param: string;
   config: WidgetInputConfig;
   currentValue: unknown;
+  frontendControlId?: string;
 }
 
 export interface WorkflowDualSamplerDenoiseSourceValues {
@@ -270,6 +271,7 @@ export interface DualSamplerDenoiseDerivedWidgetInput {
   param: string;
   config: WidgetInputConfig;
   currentValue: number;
+  frontendControlId?: string;
   sources: WorkflowDualSamplerDenoiseSourceValues;
 }
 
@@ -288,6 +290,7 @@ export interface VideoAudioRetakeDerivedWidgetInput {
   param: string;
   config: WidgetInputConfig;
   currentValue: VideoAudioRetakeMode;
+  frontendControlId?: string;
   sources: VideoAudioRetakeSourceValues;
 }
 

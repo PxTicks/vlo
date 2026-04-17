@@ -92,6 +92,7 @@ function buildGenerationPlanFromState(
   widgetInputs: Record<string, string>,
   widgetModes: Record<string, "fixed" | "randomize">,
   derivedWidgetInputs: Record<string, string>,
+  frontendStateWidgetValues: Record<string, unknown>,
 ): GenerationPlan {
   const workflowId =
     state.rulesWorkflowSourceId ??
@@ -120,6 +121,7 @@ function buildGenerationPlanFromState(
     maskCropMode: state.maskCropMode,
     maskCropDilation: state.maskCropDilation,
     widgetInputs,
+    frontendStateWidgetValues,
     widgetModes,
     derivedWidgetInputs,
     postprocessConfig: resolvePostprocessConfig(
@@ -219,10 +221,12 @@ export function buildExecutionStoreState(
         const defaultWidgetOverrides = evaluateWidgetDefaultOverrides(
           plan.workflow.workflowRules,
           providedInputIds,
+          plan.submission.frontendStateWidgetValues,
         );
         const { bypass, widgetOverrides: rewriteWidgetOverrides } = evaluateRewrites(
           rewrites,
           providedInputIds,
+          plan.submission.frontendStateWidgetValues,
         );
         const preResolved = await preResolvePrompt(
           iframe,
@@ -477,6 +481,7 @@ export function buildExecutionStoreState(
       widgetInputs = {},
       widgetModes = {},
       derivedWidgetInputs = {},
+      frontendStateWidgetValues = {},
     ) => {
       const currentState = get();
       const activeJob = currentState.activeJobId
@@ -503,6 +508,7 @@ export function buildExecutionStoreState(
         widgetInputs,
         widgetModes,
         derivedWidgetInputs,
+        frontendStateWidgetValues,
       );
       return dispatchGenerationPlan(plan);
     },
@@ -513,6 +519,7 @@ export function buildExecutionStoreState(
       widgetModes = {},
       derivedWidgetInputs = {},
       count = 1,
+      frontendStateWidgetValues = {},
     ) => {
       const safeCount = Math.max(1, Math.floor(count));
       const currentState = get();
@@ -528,6 +535,7 @@ export function buildExecutionStoreState(
           widgetInputs,
           widgetModes,
           derivedWidgetInputs,
+          frontendStateWidgetValues,
         ),
       );
 

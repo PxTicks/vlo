@@ -179,6 +179,7 @@ export interface GenerationExecutionState {
     widgetInputs?: Record<string, string>,
     widgetModes?: Record<string, "fixed" | "randomize">,
     derivedWidgetInputs?: Record<string, string>,
+    frontendStateWidgetValues?: Record<string, unknown>,
   ) => Promise<string | null>;
   queueGeneration: (
     slotValues: Record<string, SlotValue>,
@@ -186,6 +187,7 @@ export interface GenerationExecutionState {
     widgetModes?: Record<string, "fixed" | "randomize">,
     derivedWidgetInputs?: Record<string, string>,
     count?: number,
+    frontendStateWidgetValues?: Record<string, unknown>,
   ) => Promise<void>;
   processGenerationQueue: () => Promise<void>;
   clearGenerationQueue: () => void;

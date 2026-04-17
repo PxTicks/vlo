@@ -343,7 +343,7 @@ export function buildGeneratedCreationMetadata(
     exactAspectRatio: boolean;
     maskCropMode: WorkflowMaskCroppingMode;
     maskCropDilation: number;
-    widgetInputs: Record<string, string>;
+    frontendStateWidgetValues: Record<string, unknown>;
     widgetModes: Record<string, "fixed" | "randomize">;
     derivedWidgetInputs: Record<string, string>;
   },
@@ -395,7 +395,7 @@ export function buildGeneratedCreationMetadata(
     workflowRules: options.workflowRules,
     workflowInputs: options.workflowInputs,
     slotValues: options.slotValues,
-    widgetInputs: options.widgetInputs,
+    frontendStateWidgetValues: options.frontendStateWidgetValues,
     widgetModes: options.widgetModes,
     derivedWidgetInputs: options.derivedWidgetInputs,
     exactAspectRatio: options.exactAspectRatio,
@@ -606,7 +606,7 @@ function buildGeneratedCreationReplayState(options: {
   workflowRules: WorkflowRules | null;
   workflowInputs: WorkflowInput[];
   slotValues: Record<string, import("../utils/pipeline").SlotValue>;
-  widgetInputs: Record<string, string>;
+  frontendStateWidgetValues: Record<string, unknown>;
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetInputs: Record<string, string>;
   exactAspectRatio: boolean;
@@ -648,8 +648,13 @@ function buildGeneratedCreationReplayState(options: {
   if (Object.keys(textValues).length > 0) {
     replayState.textValues = textValues;
   }
-  if (Object.keys(options.widgetInputs).length > 0) {
-    replayState.widgetValues = { ...options.widgetInputs };
+  const serializedWidgetValues = Object.fromEntries(
+    Object.entries(options.frontendStateWidgetValues).flatMap(([key, value]) =>
+      value === undefined || value === null ? [] : [[key, String(value)]],
+    ),
+  );
+  if (Object.keys(serializedWidgetValues).length > 0) {
+    replayState.widgetValues = serializedWidgetValues;
   }
   if (Object.keys(options.widgetModes).length > 0) {
     replayState.widgetModes = { ...options.widgetModes };

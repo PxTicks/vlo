@@ -11,10 +11,16 @@ import type {
 } from "../../pipeline/types";
 import type {
   WorkflowAtLeastNInputValidationRule,
+  WorkflowFrontendControl,
+  WorkflowRewriteRule,
   WorkflowDualSamplerDenoiseRule,
+  WorkflowRuleBooleanFrontendControlCondition,
+  WorkflowRuleBooleanWidgetCondition,
+  WorkflowRuleWidgetDefaultOverride,
   WorkflowOutputAssemblyStageConfig,
   WorkflowOptionalInputValidationRule,
   WorkflowRequiredInputValidationRule,
+  WorkflowRuleWidgetInputPresenceCondition,
   WorkflowRules,
   WorkflowVideoAudioRetakeRule,
 } from "./generated";
@@ -30,6 +36,7 @@ export type {
   WorkflowAspectRatioStage,
   WorkflowAspectRatioStageConfig,
   WorkflowDualSamplerDenoiseRule,
+  WorkflowFrontendControl,
   WorkflowInputCondition,
   WorkflowMaskProcessingStage,
   WorkflowOptionalInputValidationRule,
@@ -38,11 +45,16 @@ export type {
   WorkflowParamReference,
   WorkflowParamValueReference,
   WorkflowRequiredInputValidationRule,
+  WorkflowRewriteRule,
+  WorkflowRuleBooleanFrontendControlCondition,
   WorkflowRuleNode,
+  WorkflowRuleBooleanWidgetCondition,
   WorkflowRuleNodePresent,
   WorkflowRuleSelectionConfig,
   WorkflowRuleSlot,
+  WorkflowRuleWidgetDefaultOverride,
   WorkflowRuleWidgetEntry,
+  WorkflowRuleWidgetInputPresenceCondition,
   WorkflowRules,
   WorkflowValidationConfig,
   WorkflowVideoAudioRetakeRule,
@@ -58,6 +70,11 @@ export type WorkflowInputValidationRule =
 export type WorkflowDerivedWidgetRule =
   | WorkflowDualSamplerDenoiseRule
   | WorkflowVideoAudioRetakeRule;
+
+export type WorkflowFrontendStateCondition =
+  | WorkflowRuleWidgetInputPresenceCondition
+  | WorkflowRuleBooleanWidgetCondition
+  | WorkflowRuleBooleanFrontendControlCondition;
 
 export interface WorkflowRuleWarning {
   code: string;
@@ -111,8 +128,10 @@ export function createDefaultWorkflowRules(
     ...(overrides.input_conditions !== undefined
       ? { input_conditions: cloneJsonValue(overrides.input_conditions) }
       : {}),
+    frontend_controls: cloneJsonValue(overrides.frontend_controls ?? {}),
     derived_widgets: cloneJsonValue(overrides.derived_widgets ?? []),
     output_injections: cloneJsonValue(overrides.output_injections ?? {}),
+    rewrites: cloneJsonValue(overrides.rewrites ?? []),
     slots: cloneJsonValue(overrides.slots ?? {}),
     pipeline: cloneJsonValue(overrides.pipeline ?? []),
   };

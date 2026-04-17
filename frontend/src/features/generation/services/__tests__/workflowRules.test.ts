@@ -650,6 +650,30 @@ describe("resolvePresentedInputs", () => {
     expect(widgets[0]?.currentValue).toBe("euler");
   });
 
+  it("resolves root-level frontend controls without attaching them to workflow nodes", () => {
+    const widgets = resolveWidgetInputs(
+      {},
+      {
+        version: 1,
+        frontend_controls: {
+          prompt_enhancer_enabled: {
+            label: "Enable prompt enhancer",
+            value_type: "boolean",
+            default: false,
+          },
+        },
+        output_injections: {},
+        slots: {},
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.param).toBe("prompt_enhancer_enabled");
+    expect(widgets[0]?.frontendControlId).toBe("prompt_enhancer_enabled");
+    expect(widgets[0]?.config.frontendOnly).toBe(true);
+    expect(widgets[0]?.currentValue).toBe(false);
+  });
+
   it("maps stored boolean widget values to custom workflow values", () => {
     const widgets = resolveWidgetInputs(
       {

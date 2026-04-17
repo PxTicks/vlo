@@ -74,7 +74,7 @@ describe("generation metadata replay helpers", () => {
       exactAspectRatio: true,
       maskCropMode: "full",
       maskCropDilation: 0.2,
-      widgetInputs: {
+      frontendStateWidgetValues: {
         widget_145_strength_model: "0.5",
       },
       widgetModes: {
@@ -255,7 +255,7 @@ describe("generation metadata replay helpers", () => {
       exactAspectRatio: false,
       maskCropMode: "crop",
       maskCropDilation: 0.1,
-      widgetInputs: {},
+      frontendStateWidgetValues: {},
       widgetModes: {},
       derivedWidgetInputs: {},
     });
@@ -350,7 +350,7 @@ describe("generation metadata replay helpers", () => {
       exactAspectRatio: false,
       maskCropMode: "crop",
       maskCropDilation: 0.1,
-      widgetInputs: {},
+      frontendStateWidgetValues: {},
       widgetModes: {},
       derivedWidgetInputs: {},
     });

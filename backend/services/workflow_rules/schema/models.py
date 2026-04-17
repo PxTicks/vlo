@@ -69,8 +69,29 @@ class WorkflowRuleWidgetInputPresenceCondition(WorkflowRuleBaseModel):
     ] = "all_present"
 
 
+class WorkflowRuleBooleanWidgetCondition(WorkflowRuleBaseModel):
+    kind: Literal["widget_boolean"] = "widget_boolean"
+    node_id: str
+    widget: str
+    value: bool = True
+
+
+class WorkflowRuleBooleanFrontendControlCondition(WorkflowRuleBaseModel):
+    kind: Literal["frontend_control_boolean"] = "frontend_control_boolean"
+    control_id: str
+    value: bool = True
+
+
+WorkflowFrontendStateCondition = Annotated[
+    WorkflowRuleWidgetInputPresenceCondition
+    | WorkflowRuleBooleanWidgetCondition
+    | WorkflowRuleBooleanFrontendControlCondition,
+    Field(discriminator="kind"),
+]
+
+
 class WorkflowRuleWidgetDefaultOverride(WorkflowRuleBaseModel):
-    when: WorkflowRuleWidgetInputPresenceCondition
+    when: WorkflowFrontendStateCondition
     value: Any | None = None
 
 
@@ -95,6 +116,10 @@ class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     true_value: Any | None = None
     false_value: Any | None = None
     default_overrides: list[WorkflowRuleWidgetDefaultOverride] | None = None
+
+
+class WorkflowFrontendControl(WorkflowRuleWidgetEntry):
+    pass
 
 
 class WorkflowRuleBooleanOverride(WorkflowRuleBaseModel):
@@ -384,13 +409,6 @@ WorkflowPipelineStage = Annotated[
 ]
 
 
-class WorkflowRewriteCondition(WorkflowRuleBaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["input_missing", "input_present"]
-    input: str
-
-
 class WorkflowRewriteWidgetOverride(WorkflowRuleBaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -402,7 +420,7 @@ class WorkflowRewriteWidgetOverride(WorkflowRuleBaseModel):
 class WorkflowRewriteRule(WorkflowRuleBaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    when: WorkflowRewriteCondition
+    when: WorkflowFrontendStateCondition
     bypass: list[str] = Field(default_factory=list)
     set_widgets: list[WorkflowRewriteWidgetOverride] = Field(default_factory=list)
 
@@ -416,6 +434,7 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     nodes: dict[str, WorkflowRuleNode] = Field(default_factory=dict)
     validation: WorkflowValidationConfig = Field(default_factory=WorkflowValidationConfig)
     input_conditions: list[WorkflowInputCondition] | None = None
+    frontend_controls: dict[str, WorkflowFrontendControl] = Field(default_factory=dict)
     derived_widgets: list[WorkflowDerivedWidgetRule] = Field(default_factory=list)
     output_injections: dict[str, dict[str, ResolvedOutputInjectionRule]] = Field(
         default_factory=dict

@@ -11,6 +11,7 @@ import type {
 } from "../../types";
 import type {
   WorkflowDualSamplerDenoiseRule,
+  WorkflowFrontendControl,
   WorkflowParamReference,
   WorkflowRules,
   WorkflowVideoAudioRetakeRule,
@@ -18,6 +19,8 @@ import type {
 
 const DERIVED_WIDGET_NODE_ID_PREFIX = "derived:";
 const DERIVED_WIDGET_VALUE_PARAM = "__value";
+const FRONTEND_CONTROLS_NODE_ID = "__frontend_controls__";
+const FRONTEND_CONTROLS_NODE_TITLE = "Workflow Controls";
 
 function getWorkflowParamValue(
   workflow: Record<string, unknown>,
@@ -217,6 +220,50 @@ function resolveDerivedWidgetInputs(
   return result;
 }
 
+function resolveFrontendControlInput(
+  controlId: string,
+  entry: WorkflowFrontendControl,
+): WorkflowWidgetInput {
+  const config: WidgetInputConfig = {
+    label: entry.label ?? controlId,
+    controlAfterGenerate: entry.control_after_generate ?? false,
+    defaultRandomize: toOptionalBoolean(entry.default_randomize),
+    frontendOnly: true,
+    hidden: toOptionalBoolean(entry.hidden),
+    groupId: toOptionalString(entry.group_id),
+    groupTitle: toOptionalString(entry.group_title),
+    groupOrder: toOptionalNumber(entry.group_order),
+    control: entry.control ?? undefined,
+    min: toOptionalNumber(entry.min),
+    max: toOptionalNumber(entry.max),
+    step: toOptionalNumber(entry.step),
+    defaultValue: entry.default,
+    trueValue: entry.true_value,
+    falseValue: entry.false_value,
+    sliderDisplay: entry.slider_display ?? undefined,
+    unit: toOptionalString(entry.unit),
+    nodeTitle: FRONTEND_CONTROLS_NODE_TITLE,
+    valueType: entry.value_type ?? undefined,
+    options: entry.options ?? undefined,
+  };
+
+  return {
+    nodeId: FRONTEND_CONTROLS_NODE_ID,
+    param: controlId,
+    frontendControlId: controlId,
+    config,
+    currentValue: mapStoredWidgetValue(entry.default ?? null, config),
+  };
+}
+
+function resolveFrontendControlInputs(rules: WorkflowRules): WorkflowWidgetInput[] {
+  const result: WorkflowWidgetInput[] = [];
+  for (const [controlId, entry] of Object.entries(rules.frontend_controls ?? {})) {
+    result.push(resolveFrontendControlInput(controlId, entry));
+  }
+  return result;
+}
+
 export function resolveWidgetInputsFromRules(
   workflow: Record<string, unknown> | null,
   rules: WorkflowRules,
@@ -249,22 +296,32 @@ export function resolveWidgetInputsFromRules(
     if (!widgetDefs) continue;
 
     const nodeData = workflow[nodeId];
-    if (!isRecord(nodeData)) {
+    const nodeExists = isRecord(nodeData);
+    if (!nodeExists) {
       console.debug(
         "[resolveWidgetInputs] Node %s has widget rules but is not in workflow (keys sample: %s)",
         nodeId,
         Object.keys(workflow).slice(0, 10),
       );
-      continue;
     }
-    const nodeInputs = isRecord(nodeData.inputs) ? nodeData.inputs : {};
+    const nodeInputs =
+      nodeExists && isRecord(nodeData.inputs) ? nodeData.inputs : {};
 
     for (const [param, entry] of Object.entries(widgetDefs)) {
-      const hasWorkflowParam = hasOwnKey(nodeInputs, param);
       const hasExplicitDefault = Object.prototype.hasOwnProperty.call(
         entry,
         "default",
       );
+      if (!nodeExists && !(entry.frontend_only === true && hasExplicitDefault)) {
+        console.debug(
+          "[resolveWidgetInputs] Skipping %s.%s: node is not present in workflow",
+          nodeId,
+          param,
+        );
+        continue;
+      }
+
+      const hasWorkflowParam = hasOwnKey(nodeInputs, param);
       if (!hasWorkflowParam && entry.frontend_only !== true && !hasExplicitDefault) {
         console.debug(
           "[resolveWidgetInputs] Skipping %s.%s: param is not present in workflow node inputs",
@@ -323,8 +380,9 @@ export function resolveWidgetInputsFromRules(
     }
   }
 
+  const frontendControls = resolveFrontendControlInputs(rules);
   const derivedWidgets = resolveDerivedWidgetInputs(workflow, rules);
-  const result = [...rawWidgets, ...derivedWidgets];
+  const result = [...frontendControls, ...rawWidgets, ...derivedWidgets];
 
   console.info("[resolveWidgetInputs] Resolved %d widget inputs", result.length);
   return result;

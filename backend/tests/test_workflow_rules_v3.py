@@ -263,7 +263,7 @@ def test_i2v_t2v_basic_missing_image_returns_warnings_instead_of_crashing():
 
     # default_overrides still set t2v_mode to true when image is missing
     assert rewritten["290"]["inputs"]["value"] is True
-    assert rewritten["349"]["inputs"]["sampling_mode"] == "on"
+    assert rewritten["349"]["inputs"]["sampling_mode"] == "off"
     assert warnings == [
         {
             "code": "optional_input_node_missing",
@@ -307,7 +307,7 @@ def test_i2v_t2v_basic_does_not_globally_prune_when_optional_input_node_is_omitt
 
     # default_overrides still set the t2v boolean
     assert rewritten["290"]["inputs"]["value"] is True
-    assert rewritten["349"]["inputs"]["sampling_mode"] == "on"
+    assert rewritten["349"]["inputs"]["sampling_mode"] == "off"
     assert rewritten["165"]["inputs"] == {
         "width": ["243", 0],
         "height": ["244", 0],
@@ -319,6 +319,25 @@ def test_i2v_t2v_basic_does_not_globally_prune_when_optional_input_node_is_omitt
             "node_id": "167",
         },
     ]
+
+
+def test_i2v_t2v_basic_rules_allow_widget_driven_prompt_enhancer_rewrites():
+    rules_model, warnings = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "video_ltx2_3_i2v_t2v_basic.json",
+    )
+
+    assert warnings == []
+    assert "prompt_enhancer_enabled" in rules_model.frontend_controls
+    assert len(rules_model.rewrites) == 1
+
+    off_rewrite = rules_model.rewrites[0]
+
+    assert off_rewrite.when.kind == "frontend_control_boolean"
+    assert off_rewrite.when.control_id == "prompt_enhancer_enabled"
+    assert off_rewrite.when.value is False
+    assert off_rewrite.bypass == ["347", "348", "349", "350"]
+    assert off_rewrite.set_widgets == []
 
 
 def test_i2v_t2v_basic_recovers_output_graph_from_graph_data_when_prompt_has_no_outputs():

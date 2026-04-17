@@ -3642,35 +3642,6 @@
       ]
     },
     {
-      "id": 354,
-      "type": "Fast Groups Bypasser (rgthree)",
-      "pos": [-144.63486635467095, 4811.218307029914],
-      "size": [301.1086891442927, 82],
-      "flags": {},
-      "order": 58,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "OPT_CONNECTION",
-          "type": "*",
-          "links": null
-        }
-      ],
-      "title": "ENABLE PROMPT ENHANCER",
-      "properties": {
-        "matchColors": "",
-        "matchTitle": "Prompt Enhancer *",
-        "showNav": true,
-        "showAllGraphs": true,
-        "sort": "position",
-        "customSortAlphabet": "",
-        "toggleRestriction": "default"
-      },
-      "color": "#008181",
-      "bgcolor": "rgba(24,24,27,.9)"
-    },
-    {
       "id": 290,
       "type": "PrimitiveBoolean",
       "pos": [-503.7454094734976, 4814.064169919061],

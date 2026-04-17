@@ -58,6 +58,7 @@ import { carryOverTextValues } from "../utils/workflowInputCarryover";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import { getObjectInfo } from "../services/comfyuiApi";
 import { resolveManualWidgetInputs } from "../services/manualWorkflowWidgets";
+import { buildFrontendStateValueKey } from "../services/frontendRuleState";
 
 function applySelectionConfigDefaults(
   selection: ReturnType<typeof createTimelineSelection>,
@@ -561,8 +562,13 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
             restoredValue = parseStoredWidgetValue(widget, storedValue);
           }
         } else {
-          const replayKey = `widget_${widget.nodeId}_${widget.param}`;
+          const replayKey = buildFrontendStateValueKey({
+            nodeId: widget.nodeId,
+            widget: widget.param,
+            frontendControlId: widget.frontendControlId,
+          });
           const legacyReplayKey =
+            !widget.frontendControlId &&
             widget.param === DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM
               ? `widget_${widget.nodeId}_${LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM}`
               : null;
@@ -734,6 +740,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     // Actual random number generation happens in the backend to preserve
     // precision for large integer domains (for example seed ranges).
     const widgetOverrides: Record<string, string> = {};
+    const frontendStateWidgetValues: Record<string, unknown> = {};
     const derivedWidgetInputs: Record<string, string> = {};
     const widgetModes: Record<string, "fixed" | "randomize"> = {};
     for (const w of widgetInputs) {
@@ -744,6 +751,18 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
             String(value);
         }
         continue;
+      }
+
+      if (value !== undefined && value !== null) {
+        const frontendStateKey = buildFrontendStateValueKey({
+          nodeId: w.nodeId,
+          widget: w.param,
+          frontendControlId: w.frontendControlId,
+        });
+        frontendStateWidgetValues[frontendStateKey] =
+          typeof value === "string"
+            ? parseStoredWidgetValue(w, value)
+            : value;
       }
 
       const key = `${w.nodeId}:${w.param}`;
@@ -779,6 +798,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       widgetModes,
       derivedWidgetInputs,
       count,
+      frontendStateWidgetValues,
     );
   }, [
     derivedMaskDefaultVideoTreatment,

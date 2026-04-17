@@ -113,6 +113,29 @@ export interface WorkflowDualSamplerDenoiseRule {
   split_step_targets?: Array<WorkflowParamReference>;
 }
 
+export interface WorkflowFrontendControl {
+  label?: string | null;
+  control_after_generate?: boolean;
+  default_randomize?: boolean | null;
+  frontend_only?: boolean | null;
+  hidden?: boolean | null;
+  control?: "slider" | null;
+  slider_display?: "percent" | "number" | null;
+  unit?: string | null;
+  group_id?: string | null;
+  group_title?: string | null;
+  group_order?: number | null;
+  min?: number | null;
+  max?: number | null;
+  step?: number | null;
+  default?: unknown | null;
+  value_type?: "int" | "float" | "string" | "boolean" | "enum" | "unknown" | null;
+  options?: Array<string | number | boolean> | null;
+  true_value?: unknown | null;
+  false_value?: unknown | null;
+  default_overrides?: Array<WorkflowRuleWidgetDefaultOverride> | null;
+}
+
 export interface WorkflowInputCondition {
   kind?: "at_least_one";
   inputs?: Array<string>;
@@ -171,13 +194,8 @@ export interface WorkflowRequiredInputValidationRule {
   message?: string | null;
 }
 
-export interface WorkflowRewriteCondition {
-  kind: "input_missing" | "input_present";
-  input: string;
-}
-
 export interface WorkflowRewriteRule {
-  when: WorkflowRewriteCondition;
+  when: WorkflowRuleWidgetInputPresenceCondition | WorkflowRuleBooleanWidgetCondition | WorkflowRuleBooleanFrontendControlCondition;
   bypass?: Array<string>;
   set_widgets?: Array<WorkflowRewriteWidgetOverride>;
 }
@@ -188,8 +206,21 @@ export interface WorkflowRewriteWidgetOverride {
   value?: unknown;
 }
 
+export interface WorkflowRuleBooleanFrontendControlCondition {
+  kind?: "frontend_control_boolean";
+  control_id: string;
+  value?: boolean;
+}
+
 export interface WorkflowRuleBooleanOverride {
   when: WorkflowRuleWidgetInputPresenceCondition;
+  value?: boolean;
+}
+
+export interface WorkflowRuleBooleanWidgetCondition {
+  kind?: "widget_boolean";
+  node_id: string;
+  widget: string;
   value?: boolean;
 }
 
@@ -232,7 +263,7 @@ export interface WorkflowRuleSlot {
 }
 
 export interface WorkflowRuleWidgetDefaultOverride {
-  when: WorkflowRuleWidgetInputPresenceCondition;
+  when: WorkflowRuleWidgetInputPresenceCondition | WorkflowRuleBooleanWidgetCondition | WorkflowRuleBooleanFrontendControlCondition;
   value?: unknown | null;
 }
 
@@ -288,6 +319,7 @@ export interface WorkflowRules {
   nodes?: Record<string, WorkflowRuleNode>;
   validation?: WorkflowValidationConfig;
   input_conditions?: Array<WorkflowInputCondition> | null;
+  frontend_controls?: Record<string, WorkflowFrontendControl>;
   derived_widgets?: Array<WorkflowDualSamplerDenoiseRule | WorkflowVideoAudioRetakeRule>;
   output_injections?: Record<string, Record<string, ResolvedOutputInjectionRule>>;
   rewrites?: Array<WorkflowRewriteRule>;

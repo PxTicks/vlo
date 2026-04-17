@@ -122,6 +122,7 @@ export interface GenerationPreprocessPlan {
 
 export interface GenerationSubmissionPlan {
   widgetInputs: Record<string, string>;
+  frontendStateWidgetValues: Record<string, unknown>;
   derivedWidgetInputs: Record<string, string>;
   widgetModes: Record<string, "fixed" | "randomize">;
 }

@@ -134,6 +134,38 @@ describe("evaluateRewrites", () => {
       widgetOverrides: [],
     });
   });
+
+  it("can rewrite workflow widgets from a frontend control", () => {
+    const rules = createDefaultWorkflowRules({
+      rewrites: [
+        {
+          when: {
+            kind: "frontend_control_boolean",
+            control_id: "prompt_enhancer_enabled",
+            value: false,
+          },
+          set_widgets: [
+            {
+              node_id: "594",
+              widget: "value",
+              value: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(
+      evaluateRewrites(rules.rewrites ?? [], new Set(), {
+        [buildFrontendStateControlKey("prompt_enhancer_enabled")]: false,
+      }),
+    ).toEqual({
+      bypass: [],
+      widgetOverrides: [
+        { node_id: "594", widget: "value", value: false },
+      ],
+    });
+  });
 });
 
 describe("evaluateFrontendStateCondition", () => {

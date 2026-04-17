@@ -47,18 +47,6 @@
         }
       }
     },
-    "594": {
-      "widgets": {
-        "value": {
-          "label": "Enable prompt enhancer",
-          "value_type": "boolean",
-          "default": false,
-          "group_id": "prompt",
-          "group_title": "Prompt",
-          "group_order": 1
-        }
-      }
-    },
     "626": {
       "present": {
         "enabled": false
@@ -102,6 +90,16 @@
   "validation": {
     "inputs": []
   },
+  "frontend_controls": {
+    "prompt_enhancer_enabled": {
+      "label": "Enable prompt enhancer",
+      "value_type": "boolean",
+      "default": false,
+      "group_id": "prompt",
+      "group_title": "Prompt",
+      "group_order": 1
+    }
+  },
   "derived_widgets": [
     {
       "id": "retake_mode",
@@ -122,6 +120,36 @@
     }
   ],
   "output_injections": {},
+  "rewrites": [
+    {
+      "when": {
+        "kind": "frontend_control_boolean",
+        "control_id": "prompt_enhancer_enabled",
+        "value": false
+      },
+      "set_widgets": [
+        {
+          "node_id": "594",
+          "widget": "value",
+          "value": false
+        }
+      ]
+    },
+    {
+      "when": {
+        "kind": "frontend_control_boolean",
+        "control_id": "prompt_enhancer_enabled",
+        "value": true
+      },
+      "set_widgets": [
+        {
+          "node_id": "594",
+          "widget": "value",
+          "value": true
+        }
+      ]
+    }
+  ],
   "slots": {},
   "pipeline": [
     {

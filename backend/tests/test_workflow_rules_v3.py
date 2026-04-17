@@ -372,6 +372,39 @@ def test_retake_rules_allow_frontend_control_prompt_enhancer_rewrites():
     assert true_rewrite.set_widgets[0].value is True
 
 
+def test_retake_workflow_emits_websocket_frames_and_preview_audio():
+    workflow_graph = json.loads(
+        (DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_retake.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    nodes_by_id = {str(node["id"]): node for node in workflow_graph["nodes"]}
+    links_by_id = {str(link[0]): link for link in workflow_graph["links"]}
+
+    save_frames = nodes_by_id["578"]
+    preview_audio = nodes_by_id["715"]
+
+    assert save_frames["type"] == "SaveImageWebsocket"
+    assert save_frames["inputs"] == [{"name": "images", "type": "IMAGE", "link": 1254}]
+    assert save_frames["outputs"] == []
+
+    assert preview_audio["type"] == "PreviewAudio"
+    assert preview_audio["inputs"] == [
+        {"name": "audio", "type": "AUDIO", "link": 1255}
+    ]
+    assert preview_audio["outputs"] == []
+
+    assert "580" not in nodes_by_id
+    assert "989" not in links_by_id
+    assert links_by_id["1254"][3:5] == [578, 0]
+    assert links_by_id["1255"][3:5] == [715, 0]
+
+    prompt_snapshot = workflow_graph["extra"]["prompt"]
+    assert prompt_snapshot["15"]["class_type"] == "SaveImageWebsocket"
+    assert prompt_snapshot["21"]["class_type"] == "PreviewAudio"
+
+
 def test_i2v_t2v_basic_recovers_output_graph_from_graph_data_when_prompt_has_no_outputs():
     rules = json.loads(
         (

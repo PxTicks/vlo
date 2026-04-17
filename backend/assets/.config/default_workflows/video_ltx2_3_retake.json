@@ -1,7 +1,7 @@
 {
   "id": "82bc7455-03a2-4033-a2c6-6d3ff45458a5",
   "revision": 0,
-  "last_node_id": 714,
+  "last_node_id": 715,
   "last_link_id": 1331,
   "nodes": [
     {
@@ -3673,51 +3673,15 @@
       "bgcolor": "#000"
     },
     {
-      "id": 580,
-      "type": "GetNode",
-      "pos": [
-        2940,
-        3620
-      ],
-      "size": [
-        210,
-        60
-      ],
-      "flags": {
-        "collapsed": true
-      },
-      "order": 36,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "FLOAT",
-          "type": "FLOAT",
-          "links": [
-            989
-          ]
-        }
-      ],
-      "title": "Get_fps",
-      "properties": {
-        "Node name for S&R": "GetNode",
-        "aux_id": "GetNode",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "fps"
-      ]
-    },
-    {
       "id": 578,
-      "type": "VHS_VideoCombine",
+      "type": "SaveImageWebsocket",
       "pos": [
         2630,
         3520
       ],
       "size": [
-        710,
-        334
+        190,
+        30
       ],
       "flags": {},
       "order": 130,
@@ -3727,77 +3691,46 @@
           "name": "images",
           "type": "IMAGE",
           "link": 1254
-        },
+        }
+      ],
+      "outputs": [],
+      "title": "RETAKE FRAMES",
+      "properties": {
+        "Node name for S&R": "SaveImageWebsocket",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 715,
+      "type": "PreviewAudio",
+      "pos": [
+        2630,
+        3840
+      ],
+      "size": [
+        210,
+        30
+      ],
+      "flags": {},
+      "order": 131,
+      "mode": 0,
+      "inputs": [
         {
           "name": "audio",
-          "shape": 7,
           "type": "AUDIO",
           "link": 1255
-        },
-        {
-          "name": "meta_batch",
-          "shape": 7,
-          "type": "VHS_BatchManager",
-          "link": null
-        },
-        {
-          "name": "vae",
-          "shape": 7,
-          "type": "VAE",
-          "link": null
-        },
-        {
-          "name": "frame_rate",
-          "type": "FLOAT",
-          "widget": {
-            "name": "frame_rate"
-          },
-          "link": 989
         }
       ],
-      "outputs": [
-        {
-          "name": "Filenames",
-          "type": "VHS_FILENAMES",
-          "links": null
-        }
-      ],
-      "title": "RETAKE VIDEO",
+      "outputs": [],
+      "title": "PreviewAudio",
       "properties": {
-        "cnr_id": "comfyui-videohelpersuite",
-        "ver": "8923bd836bdab8b7bbdf4ed104b7d045e70c66e2",
-        "Node name for S&R": "VHS_VideoCombine",
-        "widget_ue_connectable": {
-          "frame_rate": true
-        }
+        "Node name for S&R": "PreviewAudio",
+        "widget_ue_connectable": {}
       },
-      "widgets_values": {
-        "frame_rate": 24,
-        "loop_count": 0,
-        "filename_prefix": "LTX-2",
-        "format": "video/h264-mp4",
-        "pix_fmt": "yuv420p",
-        "crf": 19,
-        "save_metadata": true,
-        "trim_to_audio": false,
-        "pingpong": false,
-        "save_output": false,
-        "videopreview": {
-          "hidden": false,
-          "paused": true,
-          "params": {
-            "filename": "LTX-2_00003-audio.mp4",
-            "subfolder": "",
-            "type": "temp",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "LTX-2_00003.png",
-            "fullpath": "C:\\Users\\runeg\\AppData\\Local\\Temp\\latentsync_475fec20\\LTX-2_00003-audio.mp4"
-          }
-        }
-      },
-      "color": "#006691",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "widgets_values": [
+        ""
+      ]
     },
     {
       "id": 438,
@@ -6388,14 +6321,6 @@
       "LATENT"
     ],
     [
-      989,
-      580,
-      0,
-      578,
-      4,
-      "FLOAT"
-    ],
-    [
       1006,
       113,
       0,
@@ -6655,8 +6580,8 @@
       1255,
       425,
       0,
-      578,
-      1,
+      715,
+      0,
       "AUDIO"
     ],
     [
@@ -7788,31 +7713,14 @@
       },
       "15": {
         "inputs": {
-          "frame_rate": [
-            "23",
-            0
-          ],
-          "loop_count": 0,
-          "filename_prefix": "AnimateDiff",
-          "format": "video/h264-mp4",
-          "pix_fmt": "yuv420p",
-          "crf": 19,
-          "save_metadata": true,
-          "trim_to_audio": false,
-          "pingpong": false,
-          "save_output": true,
           "images": [
             "12",
             0
-          ],
-          "audio": [
-            "14",
-            0
           ]
         },
-        "class_type": "VHS_VideoCombine",
+        "class_type": "SaveImageWebsocket",
         "_meta": {
-          "title": "Video Combine 🎥🅥🅗🅢"
+          "title": "SaveImageWebsocket"
         }
       },
       "17": {

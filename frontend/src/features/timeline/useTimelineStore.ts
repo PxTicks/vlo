@@ -17,10 +17,10 @@ import type {
   TimelineClip,
   TimelineTrack,
   MaskTimelineClip,
-  RangeMask,
   StandardTimelineClip,
   TimelineClipComponentRef,
 } from "../../types/TimelineTypes";
+import type { DataComponent } from "../../types/DataComponents";
 import type { Asset } from "../../types/Asset";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import { useProjectStore } from "../project/useProjectStore";
@@ -866,14 +866,13 @@ interface TimelineState {
 
   removeClipMask: (clipId: string, maskId: string) => void;
 
-  addClipRangeMask: (clipId: string, rangeMask: RangeMask) => void;
-  updateClipRangeMask: (
+  addClipDataComponent: (clipId: string, component: DataComponent) => void;
+  updateClipDataComponent: (
     clipId: string,
-    rangeMaskId: string,
-    updates: Partial<Omit<RangeMask, "id">>,
+    componentId: string,
+    updater: (component: DataComponent) => DataComponent,
   ) => void;
-  removeClipRangeMask: (clipId: string, rangeMaskId: string) => void;
-  setClipActiveRangeMaskIds: (clipId: string, ids: string[]) => void;
+  removeClipDataComponent: (clipId: string, componentId: string) => void;
 
   toggleTrackVisibility: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
@@ -1749,7 +1748,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }
     },
 
-    addClipRangeMask: (clipId, rangeMask) => {
+    addClipDataComponent: (clipId, component) => {
       commitModelMutation((draft) => {
         const clip = draft.clips.find(
           (candidate): candidate is StandardTimelineClip =>
@@ -1757,62 +1756,35 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         );
         if (!clip) return;
 
-        const existing = clip.rangeMasks ?? [];
-        clip.rangeMasks = [...existing, { ...rangeMask }];
-        clip.activeRangeMaskIds = [
-          ...(clip.activeRangeMaskIds ?? []),
-          rangeMask.id,
-        ];
+        clip.dataComponents = [...(clip.dataComponents ?? []), component];
       });
     },
 
-    updateClipRangeMask: (clipId, rangeMaskId, updates) => {
+    updateClipDataComponent: (clipId, componentId, updater) => {
       commitModelMutation((draft) => {
         const clip = draft.clips.find(
           (candidate): candidate is StandardTimelineClip =>
             candidate.id === clipId && candidate.type !== "mask",
         );
-        if (!clip?.rangeMasks) return;
+        if (!clip?.dataComponents) return;
 
-        clip.rangeMasks = clip.rangeMasks.map((mask) =>
-          mask.id === rangeMaskId ? { ...mask, ...updates } : mask,
+        clip.dataComponents = clip.dataComponents.map((component) =>
+          component.id === componentId ? updater(component) : component,
         );
       });
     },
 
-    removeClipRangeMask: (clipId, rangeMaskId) => {
+    removeClipDataComponent: (clipId, componentId) => {
       commitModelMutation((draft) => {
         const clip = draft.clips.find(
           (candidate): candidate is StandardTimelineClip =>
             candidate.id === clipId && candidate.type !== "mask",
         );
-        if (!clip) return;
+        if (!clip?.dataComponents) return;
 
-        if (clip.rangeMasks) {
-          clip.rangeMasks = clip.rangeMasks.filter(
-            (mask) => mask.id !== rangeMaskId,
-          );
-        }
-        if (clip.activeRangeMaskIds) {
-          clip.activeRangeMaskIds = clip.activeRangeMaskIds.filter(
-            (id) => id !== rangeMaskId,
-          );
-        }
-      });
-    },
-
-    setClipActiveRangeMaskIds: (clipId, ids) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
+        clip.dataComponents = clip.dataComponents.filter(
+          (component) => component.id !== componentId,
         );
-        if (!clip) return;
-
-        const availableIds = new Set(
-          (clip.rangeMasks ?? []).map((mask) => mask.id),
-        );
-        clip.activeRangeMaskIds = ids.filter((id) => availableIds.has(id));
       });
     },
 

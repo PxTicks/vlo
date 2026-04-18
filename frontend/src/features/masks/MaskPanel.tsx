@@ -220,8 +220,7 @@ export const MaskPanel = memo(function MaskPanel() {
     isSam2Dirty,
     hasSam2MaskAsset,
     deleteSelectedMask,
-    rangeMasks,
-    activeRangeMaskIds,
+    rangeMaskComponents,
     startAddRangeMask,
     startEditRangeMask,
     removeRangeMask,
@@ -708,8 +707,7 @@ export const MaskPanel = memo(function MaskPanel() {
           <Divider sx={{ borderColor: "#2a2d33", mx: 2, mb: 1 }} />
 
           <RangeMaskSection
-            rangeMasks={rangeMasks}
-            activeRangeMaskIds={activeRangeMaskIds}
+            rangeMaskComponents={rangeMaskComponents}
             onAdd={startAddRangeMask}
             onEdit={startEditRangeMask}
             onRemove={removeRangeMask}

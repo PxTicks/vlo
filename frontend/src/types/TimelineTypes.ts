@@ -1,4 +1,5 @@
 import type { ClipComponentBase } from "./ClipComponents";
+import type { DataComponent } from "./DataComponents";
 
 export type TrackType = "visual" | "audio" | "prompt" | "effects" | "mask";
 
@@ -120,15 +121,6 @@ export interface TimelineClipComponentRef {
   componentType: TimelineClipComponentType;
 }
 
-export interface RangeMask {
-  id: string;
-  name?: string;
-  /** Clip-relative source time (ticks) — start of the transparent region. */
-  startSourceTicks: number;
-  /** Clip-relative source time (ticks) — end of the transparent region. */
-  endSourceTicks: number;
-}
-
 export interface StandardTimelineClip extends TimelineClipBase {
   type: Exclude<ClipType, "mask">;
   /**
@@ -148,11 +140,10 @@ export interface StandardTimelineClip extends TimelineClipBase {
    */
   clipComponents?: TimelineClipComponentRef[];
   /**
-   * Full-frame range masks: each defines a clip-source-time window during
-   * which the clip becomes transparent if the mask is in `activeRangeMaskIds`.
+   * Data-only attachments (range masks, etc.). Unlike clipComponents these
+   * are pure data, not references to subordinate clips.
    */
-  rangeMasks?: RangeMask[];
-  activeRangeMaskIds?: string[];
+  dataComponents?: DataComponent[];
 }
 
 export interface MaskTimelineClip extends TimelineClipBase {

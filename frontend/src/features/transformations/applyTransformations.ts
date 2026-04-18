@@ -205,20 +205,17 @@ export function applyClipTransforms(
     });
   }
 
-  // Range masks: evaluate at clip source time (post-speed). If any active
-  // range covers the current source tick, push a single alpha=0 filter op —
-  // the filter applicator will turn it into a PixiJS AlphaFilter.
-  if (
-    clip.type !== "mask" &&
-    clip.activeRangeMaskIds?.length &&
-    clip.rangeMasks?.length
-  ) {
-    const activeIds = new Set(clip.activeRangeMaskIds);
-    for (const mask of clip.rangeMasks) {
-      if (!activeIds.has(mask.id)) continue;
+  // Range-mask data components: evaluate at clip source time (post-speed).
+  // If any active range covers the current source tick, push a single alpha=0
+  // filter op — the filter applicator will turn it into a PixiJS AlphaFilter.
+  if (clip.type !== "mask" && clip.dataComponents?.length) {
+    for (const component of clip.dataComponents) {
+      if (component.type !== "range_mask") continue;
+      const { isActive, startSourceTicks, endSourceTicks } = component.parameters;
+      if (!isActive) continue;
       if (
-        sourceTimeTicks >= mask.startSourceTicks &&
-        sourceTimeTicks <= mask.endSourceTicks
+        sourceTimeTicks >= startSourceTicks &&
+        sourceTimeTicks <= endSourceTicks
       ) {
         state.filters.push({
           type: "AlphaFilter",

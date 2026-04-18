@@ -7,10 +7,10 @@ import type {
   ClipMaskMode,
   ClipMaskType,
   MaskTimelineClip,
-  RangeMask,
   StandardTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
+import type { RangeMaskDataComponent } from "../../../types/DataComponents";
 import {
   TICKS_PER_SECOND,
   countSam2MaskAssetConsumers,
@@ -160,8 +160,7 @@ export interface UseMaskPanelResult {
   isSam2Dirty: boolean;
   hasSam2MaskAsset: boolean;
   deleteSelectedMask: () => void;
-  rangeMasks: RangeMask[];
-  activeRangeMaskIds: string[];
+  rangeMaskComponents: RangeMaskDataComponent[];
   startAddRangeMask: () => void;
   startEditRangeMask: (rangeMaskId: string) => void;
   removeRangeMask: (rangeMaskId: string) => void;
@@ -1081,27 +1080,26 @@ export function useMaskPanel(): UseMaskPanelResult {
     updateClipMask,
   ]);
 
-  const addClipRangeMask = useTimelineStore((state) => state.addClipRangeMask);
-  const updateClipRangeMask = useTimelineStore(
-    (state) => state.updateClipRangeMask,
+  const addClipDataComponent = useTimelineStore(
+    (state) => state.addClipDataComponent,
   );
-  const removeClipRangeMask = useTimelineStore(
-    (state) => state.removeClipRangeMask,
+  const updateClipDataComponent = useTimelineStore(
+    (state) => state.updateClipDataComponent,
   );
-  const setClipActiveRangeMaskIds = useTimelineStore(
-    (state) => state.setClipActiveRangeMaskIds,
+  const removeClipDataComponent = useTimelineStore(
+    (state) => state.removeClipDataComponent,
   );
 
   const standardSelectedClip =
     selectedClip && selectedClip.type !== "mask"
       ? (selectedClip as StandardTimelineClip)
       : null;
-  const rangeMasks = useMemo(
-    () => standardSelectedClip?.rangeMasks ?? [],
-    [standardSelectedClip],
-  );
-  const activeRangeMaskIds = useMemo(
-    () => standardSelectedClip?.activeRangeMaskIds ?? [],
+  const rangeMaskComponents = useMemo<RangeMaskDataComponent[]>(
+    () =>
+      (standardSelectedClip?.dataComponents ?? []).filter(
+        (component): component is RangeMaskDataComponent =>
+          component.type === "range_mask",
+      ),
     [standardSelectedClip],
   );
 
@@ -1132,16 +1130,21 @@ export function useMaskPanel(): UseMaskPanelResult {
       const orderedStart = Math.min(startSourceTicks, endSourceTicks);
       const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
 
-      addClipRangeMask(selectedClipId, {
+      const newComponent: RangeMaskDataComponent = {
         id: `range_${crypto.randomUUID()}`,
-        startSourceTicks: orderedStart,
-        endSourceTicks: orderedEnd,
-      });
+        type: "range_mask",
+        parameters: {
+          startSourceTicks: orderedStart,
+          endSourceTicks: orderedEnd,
+          isActive: true,
+        },
+      };
+      addClipDataComponent(selectedClipId, newComponent);
 
       useTimelineSelectionStore.getState().exitSelectionMode();
       useExtractStore.getState().setOnConfirmSelection(null);
     });
-  }, [addClipRangeMask, selectedClipId, standardSelectedClip]);
+  }, [addClipDataComponent, selectedClipId, standardSelectedClip]);
 
   const startEditRangeMask = useCallback(
     (rangeMaskId: string) => {
@@ -1149,17 +1152,20 @@ export function useMaskPanel(): UseMaskPanelResult {
       if (!standardSelectedClip) return;
 
       const clip = standardSelectedClip;
-      const existing = (clip.rangeMasks ?? []).find(
-        (mask) => mask.id === rangeMaskId,
+      const existing = (clip.dataComponents ?? []).find(
+        (component): component is RangeMaskDataComponent =>
+          component.id === rangeMaskId && component.type === "range_mask",
       );
       if (!existing) return;
 
       const clipStart = clip.start;
       const clipEnd = clip.start + clip.timelineDuration;
       const rawStart =
-        clipStart + mapSourceTimeToVisualTime(clip, existing.startSourceTicks);
+        clipStart +
+        mapSourceTimeToVisualTime(clip, existing.parameters.startSourceTicks);
       const rawEnd =
-        clipStart + mapSourceTimeToVisualTime(clip, existing.endSourceTicks);
+        clipStart +
+        mapSourceTimeToVisualTime(clip, existing.parameters.endSourceTicks);
       const seededStart = Math.max(clipStart, Math.min(rawStart, clipEnd));
       const seededEnd = Math.max(clipStart, Math.min(rawEnd, clipEnd));
 
@@ -1177,36 +1183,48 @@ export function useMaskPanel(): UseMaskPanelResult {
         const orderedStart = Math.min(startSourceTicks, endSourceTicks);
         const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
 
-        updateClipRangeMask(selectedClipId, rangeMaskId, {
-          startSourceTicks: orderedStart,
-          endSourceTicks: orderedEnd,
+        updateClipDataComponent(selectedClipId, rangeMaskId, (component) => {
+          if (component.type !== "range_mask") return component;
+          return {
+            ...component,
+            parameters: {
+              ...component.parameters,
+              startSourceTicks: orderedStart,
+              endSourceTicks: orderedEnd,
+            },
+          };
         });
 
         useTimelineSelectionStore.getState().exitSelectionMode();
         useExtractStore.getState().setOnConfirmSelection(null);
       });
     },
-    [selectedClipId, standardSelectedClip, updateClipRangeMask],
+    [selectedClipId, standardSelectedClip, updateClipDataComponent],
   );
 
   const removeRangeMask = useCallback(
     (rangeMaskId: string) => {
       if (!selectedClipId) return;
-      removeClipRangeMask(selectedClipId, rangeMaskId);
+      removeClipDataComponent(selectedClipId, rangeMaskId);
     },
-    [removeClipRangeMask, selectedClipId],
+    [removeClipDataComponent, selectedClipId],
   );
 
   const toggleRangeMaskActive = useCallback(
     (rangeMaskId: string) => {
       if (!selectedClipId) return;
-      const current = activeRangeMaskIds;
-      const next = current.includes(rangeMaskId)
-        ? current.filter((id) => id !== rangeMaskId)
-        : [...current, rangeMaskId];
-      setClipActiveRangeMaskIds(selectedClipId, next);
+      updateClipDataComponent(selectedClipId, rangeMaskId, (component) => {
+        if (component.type !== "range_mask") return component;
+        return {
+          ...component,
+          parameters: {
+            ...component.parameters,
+            isActive: !component.parameters.isActive,
+          },
+        };
+      });
     },
-    [activeRangeMaskIds, selectedClipId, setClipActiveRangeMaskIds],
+    [selectedClipId, updateClipDataComponent],
   );
 
   const deleteSelectedMask = useCallback(() => {
@@ -1276,8 +1294,7 @@ export function useMaskPanel(): UseMaskPanelResult {
     isSam2Dirty,
     hasSam2MaskAsset,
     deleteSelectedMask,
-    rangeMasks,
-    activeRangeMaskIds,
+    rangeMaskComponents,
     startAddRangeMask,
     startEditRangeMask,
     removeRangeMask,

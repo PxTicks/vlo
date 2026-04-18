@@ -50,6 +50,11 @@ interface PrepareGenerationPlanOptions {
   signal?: AbortSignal;
 }
 
+const SAVE_IMAGE_WEBSOCKET_NODE_TYPES = new Set([
+  "SaveImageWebsocket",
+  "VLOSaveImageWebsocketBMP",
+]);
+
 function getSaveImageWebsocketNodeIds(
   workflow: Record<string, unknown> | null,
 ): Set<string> {
@@ -61,7 +66,10 @@ function getSaveImageWebsocketNodeIds(
       continue;
     }
     const nodeClassType = (node as { class_type?: unknown }).class_type;
-    if (nodeClassType === "SaveImageWebsocket") {
+    if (
+      typeof nodeClassType === "string" &&
+      SAVE_IMAGE_WEBSOCKET_NODE_TYPES.has(nodeClassType)
+    ) {
       ids.add(nodeId);
     }
   }

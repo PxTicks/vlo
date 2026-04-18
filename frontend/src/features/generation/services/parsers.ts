@@ -16,17 +16,34 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function resolveExplicitViewUrl(item: Record<string, unknown>): string | null {
+  const rawUrl =
+    typeof item.view_url === "string"
+      ? item.view_url
+      : typeof item.viewUrl === "string"
+        ? item.viewUrl
+        : typeof item.url === "string"
+          ? item.url
+          : null;
+
+  if (!rawUrl) return null;
+  if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+  if (rawUrl.startsWith("/")) return `${COMFY_API}${rawUrl}`;
+  return `${COMFY_API}/${rawUrl}`;
+}
+
 function toGenerationJobOutput(item: unknown): GenerationJobOutput | null {
   if (!isRecord(item) || typeof item.filename !== "string") return null;
 
   const subfolder = typeof item.subfolder === "string" ? item.subfolder : "";
   const type = typeof item.type === "string" ? item.type : "output";
+  const explicitViewUrl = resolveExplicitViewUrl(item);
 
   return {
     filename: item.filename,
     subfolder,
     type,
-    viewUrl: getOutputViewUrl(item.filename, subfolder, type),
+    viewUrl: explicitViewUrl ?? getOutputViewUrl(item.filename, subfolder, type),
   };
 }
 

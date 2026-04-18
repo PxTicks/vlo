@@ -23,6 +23,26 @@ describe("generation parsers", () => {
     );
   });
 
+  it("preserves explicit view urls for memory-backed outputs", () => {
+    const outputs = parseNodeOutputItems({
+      videos: [
+        {
+          filename: "clip.mp4",
+          subfolder: "video",
+          type: "output",
+          view_url: "/api/vlo-memory/view/media-123",
+        },
+      ],
+    });
+
+    expect(outputs).toEqual([
+      expect.objectContaining({
+        filename: "clip.mp4",
+        viewUrl: expect.stringContaining("/comfy/api/vlo-memory/view/media-123"),
+      }),
+    ]);
+  });
+
   it("returns empty outputs when prompt history entry is missing", () => {
     const result = parseHistoryOutputs({}, "prompt-1");
     expect(result.hasPromptEntry).toBe(false);

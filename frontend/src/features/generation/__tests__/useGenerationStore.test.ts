@@ -888,6 +888,46 @@ describe("useGenerationStore workflow rules", () => {
     expect(state.jobPreviewFrames.has(jobId)).toBe(false);
   });
 
+  it("collects websocket output frames for BMP websocket workflows", async () => {
+    useGenerationStore.setState({
+      wsClient: {
+        currentClientId: "client-id",
+        isConnected: true,
+      } as unknown as ComfyUIWebSocket,
+      selectedWorkflowId: "wf.json",
+      availableWorkflows: [{ id: "wf.json", name: "Workflow Display Name" }],
+      syncedWorkflow: {
+        "1": { class_type: "LoadVideo", inputs: {} },
+        "2": { class_type: "VLOSaveImageWebsocketBMP", inputs: {} },
+      },
+      workflowInputs: [],
+      mediaInputs: {},
+      activeWorkflowRules: makeWorkflowRules(),
+      isWorkflowLoading: false,
+      workflowLoadState: "ready",
+      isWorkflowReady: true,
+      jobs: new Map(),
+      jobPreviewFrames: new Map(),
+    });
+
+    vi.spyOn(comfyApi, "generate").mockResolvedValue({
+      prompt_id: "prompt-bmp-ws",
+      number: 1,
+      node_errors: {},
+    });
+
+    const jobId = await useGenerationStore.getState().submitGeneration({});
+    const state = useGenerationStore.getState();
+    expect(jobId).not.toBeNull();
+    if (!jobId) {
+      throw new Error("Expected a submitted job id");
+    }
+    const submittedJob = state.jobs.get(jobId);
+
+    expect(submittedJob?.usesSaveImageWebsocketOutputs).toBe(true);
+    expect(state.jobPreviewFrames.has(jobId)).toBe(true);
+  });
+
   it("marks active job as error and clears activeJobId when cancel fails", async () => {
     const runningJob = makeRunningJob("prompt-1");
     useGenerationStore.setState({

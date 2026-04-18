@@ -189,7 +189,7 @@ describe("AssetService", () => {
       duration: 0,
     };
 
-    const spyIngest = vi.spyOn(assetService, "ingestAsset");
+    const spyIngest = vi.spyOn(assetService, "ingestAssetWithResult");
 
     // Act
     const newAssets = await assetService.scanForNewAssets([existingAsset]);
@@ -229,7 +229,7 @@ describe("AssetService", () => {
       new Blob(["thumb"]),
     );
 
-    const spyIngest = vi.spyOn(assetService, "ingestAsset");
+    const spyIngest = vi.spyOn(assetService, "ingestAssetWithResult");
 
     // Act
     const newAssets = await assetService.scanForNewAssets([]);

@@ -11,6 +11,20 @@ import { fileSystemService } from "../../project";
 import { projectDocumentService } from "../../project/services/ProjectDocumentService";
 import { mediaProcessingService } from "./MediaProcessingService";
 
+export type AssetIngestResult =
+  | {
+      status: "created";
+      asset: Asset;
+    }
+  | {
+      status: "skipped_existing";
+      reason: "name" | "hash";
+    }
+  | {
+      status: "skipped";
+      reason: "unsupported" | "failed";
+    };
+
 export class AssetService {
   /**
    * Scans the project root for new assets, ingests them, and persists them to project.json.
@@ -83,15 +97,15 @@ export class AssetService {
 
         // Ingest without saving the file (already on disk, just renamed if needed)
         // AND without saving project (we batch it)
-        const newAsset = await this.ingestAsset(
+        const ingestResult = await this.ingestAssetWithResult(
           file,
           true,
           true,
           existingAssets,
         );
-        if (newAsset) {
-          newAssetsToPersist.push(newAsset);
-          existingAssets.push(newAsset); // Add to local check too so we don't add duplicates if logic fails
+        if (ingestResult.status === "created") {
+          newAssetsToPersist.push(ingestResult.asset);
+          existingAssets.push(ingestResult.asset); // Add to local check too so we don't add duplicates if logic fails
         }
       } catch (e) {
         console.warn(
@@ -159,7 +173,7 @@ export class AssetService {
    * Internal ingest logic.
    * Returns the new Asset if successful, or null.
    */
-  async ingestAsset(
+  async ingestAssetWithResult(
     file: File,
     skipFileSave: boolean,
     skipProjectSave: boolean,
@@ -167,7 +181,7 @@ export class AssetService {
     creationMetadata?: Asset["creationMetadata"],
     family?: Pick<AssetFamily, "id" | "compatibility">,
     compatibilityHint?: AssetFamilyCompatibility | null,
-  ): Promise<Asset | null> {
+  ): Promise<AssetIngestResult> {
     console.time(`[Ingest] ${file.name}`);
     // Use MediaFileProcessor for optimized access to the file
     const processor = mediaProcessingService.createProcessor(file);
@@ -205,7 +219,10 @@ export class AssetService {
       // Re-check duplications (double safety)
       if (existingAssets.some((a) => a.name === safeName)) {
         console.log(`[Ingest] Skipping duplicate asset by name: ${safeName}`);
-        return null; // Finally block will dispose
+        return {
+          status: "skipped_existing",
+          reason: "name",
+        };
       }
 
       const assetId = crypto.randomUUID();
@@ -216,7 +233,10 @@ export class AssetService {
       // Only process supported types
       if (!isImage && !isAudio && !isVideo) {
         console.warn("Skipping unsupported file type:", file.name, file.type);
-        return null; // Finally block will dispose
+        return {
+          status: "skipped",
+          reason: "unsupported",
+        };
       }
 
       const hash = await mediaProcessingService.computeChecksum(file);
@@ -229,7 +249,10 @@ export class AssetService {
       // outputs can keep a stable mask linkage for cleanup and timeline use.
       if (!allowDuplicateHash && existingAssets.some((a) => a.hash === hash)) {
         console.log("Skipping duplicate asset (hash match):", file.name);
-        return null; // Finally block will dispose
+        return {
+          status: "skipped_existing",
+          reason: "hash",
+        };
       }
 
       // 3. Prepare Paths variables
@@ -432,14 +455,42 @@ export class AssetService {
       })();
 
       console.timeEnd(`[Ingest] ${file.name}`);
-      return newAssetInMemory; // Return immediately!
+      return {
+        status: "created",
+        asset: newAssetInMemory,
+      };
     } catch (e) {
       console.error("Failed to ingest asset", e);
       console.timeEnd(`[Ingest] ${file.name}`);
-      return null;
+      return {
+        status: "skipped",
+        reason: "failed",
+      };
     } finally {
       processor.dispose();
     }
+  }
+
+  async ingestAsset(
+    file: File,
+    skipFileSave: boolean,
+    skipProjectSave: boolean,
+    existingAssets: Asset[],
+    creationMetadata?: Asset["creationMetadata"],
+    family?: Pick<AssetFamily, "id" | "compatibility">,
+    compatibilityHint?: AssetFamilyCompatibility | null,
+  ): Promise<Asset | null> {
+    const result = await this.ingestAssetWithResult(
+      file,
+      skipFileSave,
+      skipProjectSave,
+      existingAssets,
+      creationMetadata,
+      family,
+      compatibilityHint,
+    );
+
+    return result.status === "created" ? result.asset : null;
   }
 }
 

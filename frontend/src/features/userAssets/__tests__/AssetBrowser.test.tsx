@@ -132,7 +132,10 @@ describe("AssetBrowser Component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAddLocalAssets.mockReset();
-    mockAddLocalAssets.mockResolvedValue([]);
+    mockAddLocalAssets.mockResolvedValue({
+      assets: [],
+      skippedExistingFiles: 0,
+    });
     mockDeleteAsset.mockReset();
     useInteractionStore.getState().stopDrag();
     useAssetBrowserRevealStore.setState({ revealRequest: null });
@@ -351,16 +354,19 @@ describe("AssetBrowser Component", () => {
   });
 
   it("switches tabs to the uploaded asset type", async () => {
-    mockAddLocalAssets.mockResolvedValue([
-      {
-        id: "3",
-        type: "image",
-        name: "poster.png",
-        src: "poster.png",
-        hash: "3",
-        createdAt: 1,
-      } satisfies Asset,
-    ]);
+    mockAddLocalAssets.mockResolvedValue({
+      assets: [
+        {
+          id: "3",
+          type: "image",
+          name: "poster.png",
+          src: "poster.png",
+          hash: "3",
+          createdAt: 1,
+        } satisfies Asset,
+      ],
+      skippedExistingFiles: 0,
+    });
     mockStore({ assets: [] });
 
     render(<AssetBrowser />);
@@ -379,24 +385,27 @@ describe("AssetBrowser Component", () => {
   });
 
   it("prefers video, then image, then audio when multiple types upload", async () => {
-    mockAddLocalAssets.mockResolvedValue([
-      {
-        id: "4",
-        type: "image",
-        name: "frame.png",
-        src: "frame.png",
-        hash: "4",
-        createdAt: 1,
-      } satisfies Asset,
-      {
-        id: "5",
-        type: "video",
-        name: "clip.mp4",
-        src: "clip.mp4",
-        hash: "5",
-        createdAt: 2,
-      } satisfies Asset,
-    ]);
+    mockAddLocalAssets.mockResolvedValue({
+      assets: [
+        {
+          id: "4",
+          type: "image",
+          name: "frame.png",
+          src: "frame.png",
+          hash: "4",
+          createdAt: 1,
+        } satisfies Asset,
+        {
+          id: "5",
+          type: "video",
+          name: "clip.mp4",
+          src: "clip.mp4",
+          hash: "5",
+          createdAt: 2,
+        } satisfies Asset,
+      ],
+      skippedExistingFiles: 0,
+    });
     mockStore({ assets: [] });
 
     render(<AssetBrowser />);
@@ -429,6 +438,37 @@ describe("AssetBrowser Component", () => {
     expect(
       screen.getByRole("button", { name: /Import Asset/i }),
     ).toBeDisabled();
+  });
+
+  it("alerts when uploaded files are skipped because they already exist", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    mockAddLocalAssets.mockResolvedValue({
+      assets: [],
+      skippedExistingFiles: 1,
+    });
+    mockStore({ assets: [] });
+
+    render(<AssetBrowser />);
+
+    const input = screen.getByTestId("hidden-file-input") as HTMLInputElement;
+    const file = new File(["dummy"], "poster.png", { type: "image/png" });
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        "1 file was skipped because the asset already exists in this project.",
+      );
+    });
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "[AssetBrowser] Skipped preexisting uploaded assets",
+      {
+        skippedExistingFiles: 1,
+      },
+    );
   });
 
   it("locks the asset browser scroll region during an external asset drag", async () => {

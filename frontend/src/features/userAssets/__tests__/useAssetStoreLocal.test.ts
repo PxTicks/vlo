@@ -149,12 +149,41 @@ describe("useAssetStore - Local Assets", () => {
     expect(useAssetStore.getState().isUploading).toBe(true);
     expect(useAssetStore.getState().uploadingCount).toBe(1);
 
-    const newAssets = await uploadPromise;
+    const result = await uploadPromise;
 
-    expect(newAssets).toHaveLength(2);
-    expect(newAssets.map((asset) => asset.type)).toEqual(["video", "image"]);
+    expect(result.assets).toHaveLength(2);
+    expect(result.assets.map((asset) => asset.type)).toEqual(["video", "image"]);
+    expect(result.skippedExistingFiles).toBe(0);
     expect(useAssetStore.getState().isUploading).toBe(false);
     expect(useAssetStore.getState().uploadingCount).toBe(0);
+  });
+
+  it("counts preexisting files skipped during batch ingest", async () => {
+    const { mediaProcessingService } =
+      await import("../services/MediaProcessingService");
+
+    vi.mocked(mediaProcessingService.computeChecksum).mockResolvedValue("shared-hash");
+
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "existing-asset",
+          name: "clip.mp4",
+          src: "clip.mp4",
+          hash: "shared-hash",
+          type: "video",
+          createdAt: 1,
+        },
+      ],
+    });
+
+    const store = useAssetStore.getState();
+    const duplicateFile = new File(["video"], "clip.mp4", { type: "video/mp4" });
+
+    const result = await store.addLocalAssets([duplicateFile]);
+
+    expect(result.assets).toHaveLength(0);
+    expect(result.skippedExistingFiles).toBe(1);
   });
 
   it("assigns a family when the ingested asset matches the family contract", async () => {

@@ -13,6 +13,11 @@ import {
 } from "../project";
 import { mediaProcessingService } from "./services/MediaProcessingService";
 
+export interface AddLocalAssetsResult {
+  assets: Asset[];
+  skippedExistingFiles: number;
+}
+
 interface AssetStore {
   assets: Asset[];
   families: AssetFamily[];
@@ -31,7 +36,7 @@ interface AssetStore {
     files: readonly File[],
     creationMetadata?: Asset["creationMetadata"],
     familyId?: Asset["familyId"],
-  ) => Promise<Asset[]>;
+  ) => Promise<AddLocalAssetsResult>;
   addLocalAssetWithFamily: (
     file: File,
     creationMetadata?: Asset["creationMetadata"],
@@ -303,11 +308,15 @@ async function ingestLocalAssetsIntoStore(
   creationMetadata?: Asset["creationMetadata"],
   family?: Pick<AssetFamily, "id" | "compatibility">,
   compatibilityHint?: AssetFamilyCompatibility | null,
-): Promise<Asset[]> {
+): Promise<AddLocalAssetsResult> {
   const createdAssets: Asset[] = [];
+  let skippedExistingFiles = 0;
 
   if (files.length === 0) {
-    return createdAssets;
+    return {
+      assets: createdAssets,
+      skippedExistingFiles,
+    };
   }
 
   set((state) => ({
@@ -320,7 +329,7 @@ async function ingestLocalAssetsIntoStore(
     const assets = [...get().assets];
 
     for (const file of files) {
-      const newAsset = await assetService.ingestAsset(
+      const ingestResult = await assetService.ingestAssetWithResult(
         file,
         false,
         false,
@@ -330,12 +339,17 @@ async function ingestLocalAssetsIntoStore(
         compatibilityHint,
       );
 
-      if (!newAsset) {
+      if (ingestResult.status === "skipped_existing") {
+        skippedExistingFiles += 1;
         continue;
       }
 
-      assets.push(newAsset);
-      createdAssets.push(newAsset);
+      if (ingestResult.status !== "created") {
+        continue;
+      }
+
+      assets.push(ingestResult.asset);
+      createdAssets.push(ingestResult.asset);
     }
 
     if (createdAssets.length > 0) {
@@ -344,7 +358,10 @@ async function ingestLocalAssetsIntoStore(
       }));
     }
 
-    return createdAssets;
+    return {
+      assets: createdAssets,
+      skippedExistingFiles,
+    };
   } finally {
     set((state) => {
       const uploadingCount = Math.max(0, state.uploadingCount - 1);
@@ -591,14 +608,14 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       );
     }
 
-    const [asset] = await ingestLocalAssetsIntoStore(
+    const result = await ingestLocalAssetsIntoStore(
       get,
       set,
       [file],
       creationMetadata,
       family,
     );
-    return asset ?? null;
+    return result.assets[0] ?? null;
   },
 
   addLocalAssets: async (
@@ -631,7 +648,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     family?: Pick<AssetFamily, "id" | "compatibility">,
     compatibilityHint?: AssetFamilyCompatibility | null,
   ) => {
-    const [asset] = await ingestLocalAssetsIntoStore(
+    const result = await ingestLocalAssetsIntoStore(
       get,
       set,
       [file],
@@ -639,7 +656,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       family,
       compatibilityHint,
     );
-    return asset ?? null;
+    return result.assets[0] ?? null;
   },
 
   ensureAssetSourceLoaded: async (assetId: string) => {

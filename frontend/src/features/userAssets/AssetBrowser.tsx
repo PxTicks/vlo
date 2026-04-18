@@ -226,7 +226,21 @@ function AssetBrowserComponent() {
       return;
     }
 
-    const uploadedAssets = await addLocalAssets(files, { source: "uploaded" });
+    const { assets: uploadedAssets, skippedExistingFiles } = await addLocalAssets(
+      files,
+      { source: "uploaded" },
+    );
+
+    if (skippedExistingFiles > 0) {
+      const skippedLabel =
+        skippedExistingFiles === 1 ? "file was" : "files were";
+      const message = `${skippedExistingFiles} ${skippedLabel} skipped because the asset already exists in this project.`;
+      console.log("[AssetBrowser] Skipped preexisting uploaded assets", {
+        skippedExistingFiles,
+      });
+      window.alert(message);
+    }
+
     const nextTab = getPreferredUploadedAssetType(
       uploadedAssets.map((asset) => asset.type),
     );

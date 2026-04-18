@@ -37,7 +37,10 @@ import type {
 import {
   EMPTY_WORKFLOW_RULES,
   applyPresentationRules,
-  areWorkflowRulesCompatibleWithWorkflow,
+  areWorkflowRulesEffectivelyEmpty,
+  hasNodeLinkedWorkflowRules,
+  haveSubstantialWorkflowOverlap,
+  pruneWorkflowRulesForWorkflows,
 } from "./workflowState";
 import {
   formatWorkflowName,
@@ -167,9 +170,13 @@ export function buildWorkflowStoreState(
 
     syncWorkflow: (workflow, graphData, inputs) => {
       const state = get();
+      const applicableRules = pruneWorkflowRulesForWorkflows(
+        [graphData, workflow],
+        state.activeWorkflowRules,
+      );
       const presented = applyPresentationRules(
         inputs,
-        state.activeWorkflowRules,
+        applicableRules,
         workflow,
       );
       const workflowRuleWarnings = mergeRuleWarnings(
@@ -199,25 +206,45 @@ export function buildWorkflowStoreState(
     registerWorkflowFromEditor: async (workflow, graphData, inputs, filename) => {
       const state = get();
       const { availableWorkflows, selectedWorkflowId, tempWorkflow } = state;
+      const currentWorkflowContext = [graphData, workflow];
+      const previousWorkflowMatches = haveSubstantialWorkflowOverlap(
+        [
+          tempWorkflow?.graphData,
+          tempWorkflow?.workflow,
+          state.syncedGraphData,
+          state.syncedWorkflow,
+        ],
+        currentWorkflowContext,
+      );
+      const candidateRulesSourceId =
+        tempWorkflow?.rulesSourceId ?? state.rulesWorkflowSourceId;
+      const prunedCachedRules = pruneWorkflowRulesForWorkflows(
+        currentWorkflowContext,
+        state.activeWorkflowRules,
+      );
+      const hasRulelessWorkflowIdentity =
+        candidateRulesSourceId !== null &&
+        (
+          state.activeWorkflowRules === null ||
+          areWorkflowRulesEffectivelyEmpty(state.activeWorkflowRules)
+        );
       const hasCompatibleRules =
-        // Prefer whichever editor payload still has the full node set.
-        // ComfyUI can transiently report a partial visual graph even when the
-        // API workflow remains complete after simple widget edits.
-        (graphData
-          ? areWorkflowRulesCompatibleWithWorkflow(
-              graphData,
-              state.activeWorkflowRules,
+        candidateRulesSourceId !== null &&
+        (
+          hasRulelessWorkflowIdentity ||
+          (
+            !areWorkflowRulesEffectivelyEmpty(prunedCachedRules) &&
+            (
+              previousWorkflowMatches ||
+              hasNodeLinkedWorkflowRules(prunedCachedRules)
             )
-          : false) ||
-        areWorkflowRulesCompatibleWithWorkflow(
-          workflow,
-          state.activeWorkflowRules,
+          )
         );
       let resolvedRules = hasCompatibleRules
-        ? state.activeWorkflowRules
+        ? prunedCachedRules
         : EMPTY_WORKFLOW_RULES;
-      const resolvedRulesSourceId = hasCompatibleRules
-        ? (tempWorkflow?.rulesSourceId ?? state.rulesWorkflowSourceId)
+      let resolvedRulesSourceId = hasCompatibleRules
+        ? candidateRulesSourceId
         : null;
       let resolvedRulesWarnings = hasCompatibleRules
         ? state.activeRulesWarnings
@@ -229,8 +256,22 @@ export function buildWorkflowStoreState(
           graphData,
           workflowId: resolvedRulesSourceId,
         });
-        resolvedRules = resolved.rules;
+        resolvedRules = pruneWorkflowRulesForWorkflows(
+          currentWorkflowContext,
+          resolved.rules,
+        );
         resolvedRulesWarnings = resolved.warnings ?? [];
+        if (
+          !hasRulelessWorkflowIdentity &&
+          resolvedRulesSourceId &&
+          (
+            areWorkflowRulesEffectivelyEmpty(resolvedRules) ||
+            (!previousWorkflowMatches &&
+              !hasNodeLinkedWorkflowRules(resolvedRules))
+          )
+        ) {
+          resolvedRulesSourceId = null;
+        }
       } catch (error) {
         console.warn(
           "[Generation] Failed to resolve live workflow rules from editor sync; falling back to cached rules",
@@ -248,8 +289,20 @@ export function buildWorkflowStoreState(
         presented.presentationWarnings,
       );
 
-      const persistedWorkflowId = hasCompatibleRules
-        ? resolveWorkflowPersistenceId(selectedWorkflowId, filename)
+      const candidatePersistedWorkflowId = resolveWorkflowPersistenceId(
+        selectedWorkflowId,
+        filename,
+      );
+      const persistedWorkflowId =
+        candidatePersistedWorkflowId &&
+        candidatePersistedWorkflowId !== TEMP_WORKFLOW_ID &&
+        (
+          state.activeWorkflowRules === null ||
+          areWorkflowRulesEffectivelyEmpty(state.activeWorkflowRules) ||
+          hasCompatibleRules ||
+          previousWorkflowMatches
+        )
+          ? candidatePersistedWorkflowId
         : null;
 
       if (persistedWorkflowId) {

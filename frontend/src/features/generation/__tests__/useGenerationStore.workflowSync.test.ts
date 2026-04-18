@@ -592,6 +592,291 @@ describe("useGenerationStore workflow editor sync", () => {
     ]);
   });
 
+  it("keeps applicable retake mask rules when unrelated sidecar nodes are missing from the edited prompt", async () => {
+    vi.spyOn(comfyApi, "resolveWorkflowRules").mockResolvedValue({
+      workflow_id: "video_ltx2_3_retake.json",
+      rules: createDefaultWorkflowRules({
+        nodes: {
+          "115": {
+            widgets: {
+              noise_seed: {
+                label: "Noise seed",
+                value_type: "int",
+              },
+            },
+          },
+          "644": {
+            present: {
+              label: "Source video",
+              input_type: "video",
+              param: "video",
+              class_type: "VHS_LoadVideoFFmpeg",
+            },
+          },
+          "705": {
+            widgets: {
+              switch: {
+                label: "Bypass video retake",
+                value_type: "boolean",
+              },
+            },
+          },
+          "714": {
+            widgets: {
+              switch: {
+                label: "Bypass audio retake",
+                value_type: "boolean",
+              },
+            },
+          },
+        },
+        derived_widgets: [
+          {
+            id: "retake_mode",
+            kind: "video_audio_retake",
+            video_bypass: {
+              node_id: "705",
+              param: "switch",
+            },
+            audio_bypass: {
+              node_id: "714",
+              param: "switch",
+            },
+          },
+        ],
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [
+              {
+                source: { node_id: "644", param: "video" },
+                mask: { node_id: "689", param: "file" },
+                mask_type: "binary",
+                purpose: "video",
+              },
+              {
+                source: { node_id: "644", param: "video" },
+                mask: { node_id: "691", param: "file" },
+                mask_type: "binary",
+                purpose: "audio_timing",
+                render_fps: 25,
+              },
+            ],
+          },
+        ],
+      }),
+      warnings: [],
+    });
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "video_ltx2_3_retake.json",
+      availableWorkflows: [
+        { id: "video_ltx2_3_retake.json", name: "LTX2.3 ReTake" },
+      ],
+      activeRulesWarnings: [],
+      activeWorkflowRules: createDefaultWorkflowRules({
+        nodes: {
+          "115": {
+            widgets: {
+              noise_seed: {
+                label: "Noise seed",
+                value_type: "int",
+              },
+            },
+          },
+          "644": {
+            present: {
+              label: "Source video",
+              input_type: "video",
+              param: "video",
+              class_type: "VHS_LoadVideoFFmpeg",
+            },
+          },
+          "705": {
+            widgets: {
+              switch: {
+                label: "Bypass video retake",
+                value_type: "boolean",
+              },
+            },
+          },
+          "714": {
+            widgets: {
+              switch: {
+                label: "Bypass audio retake",
+                value_type: "boolean",
+              },
+            },
+          },
+        },
+        derived_widgets: [
+          {
+            id: "retake_mode",
+            kind: "video_audio_retake",
+            video_bypass: {
+              node_id: "705",
+              param: "switch",
+            },
+            audio_bypass: {
+              node_id: "714",
+              param: "switch",
+            },
+          },
+        ],
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [
+              {
+                source: { node_id: "644", param: "video" },
+                mask: { node_id: "689", param: "file" },
+                mask_type: "binary",
+                purpose: "video",
+              },
+              {
+                source: { node_id: "644", param: "video" },
+                mask: { node_id: "691", param: "file" },
+                mask_type: "binary",
+                purpose: "audio_timing",
+                render_fps: 25,
+              },
+            ],
+          },
+        ],
+      }),
+      rulesWorkflowSourceId: "video_ltx2_3_retake.json",
+      syncedWorkflow: {
+        "115": { class_type: "RandomNoise", inputs: { noise_seed: 1 } },
+        "644": { class_type: "VHS_LoadVideoFFmpeg", inputs: { video: "source.mov" } },
+        "689": { class_type: "VHS_LoadVideoFFmpeg", inputs: { file: "mask.mov" } },
+        "691": {
+          class_type: "VHS_LoadVideoFFmpeg",
+          inputs: { file: "audio-mask.mov" },
+        },
+        "705": { class_type: "BypassToggle", inputs: { switch: false } },
+        "714": { class_type: "BypassToggle", inputs: { switch: false } },
+      },
+      syncedGraphData: {
+        nodes: [
+          { id: 115, type: "RandomNoise" },
+          { id: 644, type: "VHS_LoadVideoFFmpeg" },
+          { id: 689, type: "VHS_LoadVideoFFmpeg" },
+          { id: 691, type: "VHS_LoadVideoFFmpeg" },
+          { id: 705, type: "BypassToggle" },
+          { id: 714, type: "BypassToggle" },
+          { id: 578, type: "SaveImageWebsocket" },
+          { id: 715, type: "PreviewAudio" },
+        ],
+      },
+    });
+
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      {
+        "644": { class_type: "VHS_LoadVideoFFmpeg", inputs: { video: "source.mov" } },
+        "689": { class_type: "VHS_LoadVideoFFmpeg", inputs: { file: "mask.mov" } },
+        "691": {
+          class_type: "VHS_LoadVideoFFmpeg",
+          inputs: { file: "audio-mask.mov" },
+        },
+        "705": { class_type: "BypassToggle", inputs: { switch: false } },
+        "714": { class_type: "BypassToggle", inputs: { switch: false } },
+        "900": { class_type: "SomeNewNode", inputs: {} },
+      },
+      {
+        nodes: [
+          { id: 644, type: "VHS_LoadVideoFFmpeg" },
+          { id: 689, type: "VHS_LoadVideoFFmpeg" },
+          { id: 691, type: "VHS_LoadVideoFFmpeg" },
+          { id: 705, type: "BypassToggle" },
+          { id: 714, type: "BypassToggle" },
+          { id: 900, type: "SomeNewNode" },
+        ],
+      },
+      [
+        {
+          nodeId: "644",
+          classType: "VHS_LoadVideoFFmpeg",
+          inputType: "video",
+          param: "video",
+          label: "Source video",
+          currentValue: null,
+          origin: "inferred",
+        },
+        {
+          nodeId: "689",
+          classType: "VHS_LoadVideoFFmpeg",
+          inputType: "video",
+          param: "file",
+          label: "Mask video",
+          currentValue: null,
+          origin: "inferred",
+        },
+        {
+          nodeId: "691",
+          classType: "VHS_LoadVideoFFmpeg",
+          inputType: "video",
+          param: "file",
+          label: "Audio mask video",
+          currentValue: null,
+          origin: "inferred",
+        },
+      ],
+      "__temp__.json",
+    );
+
+    expect(comfyApi.resolveWorkflowRules).toHaveBeenCalledWith({
+      workflow: {
+        "644": { class_type: "VHS_LoadVideoFFmpeg", inputs: { video: "source.mov" } },
+        "689": { class_type: "VHS_LoadVideoFFmpeg", inputs: { file: "mask.mov" } },
+        "691": {
+          class_type: "VHS_LoadVideoFFmpeg",
+          inputs: { file: "audio-mask.mov" },
+        },
+        "705": { class_type: "BypassToggle", inputs: { switch: false } },
+        "714": { class_type: "BypassToggle", inputs: { switch: false } },
+        "900": { class_type: "SomeNewNode", inputs: {} },
+      },
+      graphData: {
+        nodes: [
+          { id: 644, type: "VHS_LoadVideoFFmpeg" },
+          { id: 689, type: "VHS_LoadVideoFFmpeg" },
+          { id: 691, type: "VHS_LoadVideoFFmpeg" },
+          { id: 705, type: "BypassToggle" },
+          { id: 714, type: "BypassToggle" },
+          { id: 900, type: "SomeNewNode" },
+        ],
+      },
+      workflowId: "video_ltx2_3_retake.json",
+    });
+
+    const state = useGenerationStore.getState();
+    expect(state.selectedWorkflowId).toBe("video_ltx2_3_retake.json");
+    expect(state.rulesWorkflowSourceId).toBe("video_ltx2_3_retake.json");
+    expect(state.workflowInputs.map((input) => input.nodeId)).toEqual(["644"]);
+    expect(state.derivedMaskMappings).toEqual([
+      {
+        maskNodeId: "689",
+        maskParam: "file",
+        sourceNodeId: "644",
+        sourceInputId: "644:video",
+        maskType: "binary",
+        purpose: "video",
+      },
+      {
+        maskNodeId: "691",
+        maskParam: "file",
+        sourceNodeId: "644",
+        sourceInputId: "644:video",
+        maskType: "binary",
+        purpose: "audio_timing",
+        renderFps: 25,
+      },
+    ]);
+    expect(state.activeWorkflowRules?.nodes?.["115"]).toBeUndefined();
+  });
+
   it("drops incompatible persisted rules when a different workflow is loaded into the editor tab", async () => {
     useGenerationStore.setState({
       selectedWorkflowId: "video_ltx2_3_i2v.json",

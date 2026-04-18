@@ -160,6 +160,7 @@ describe("MaskPanel", () => {
       rangeMasks: [],
       activeRangeMaskIds: [],
       startAddRangeMask: vi.fn(),
+      startEditRangeMask: vi.fn(),
       removeRangeMask: vi.fn(),
       toggleRangeMaskActive: vi.fn(),
     };

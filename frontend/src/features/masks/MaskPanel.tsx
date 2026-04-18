@@ -223,6 +223,7 @@ export const MaskPanel = memo(function MaskPanel() {
     rangeMasks,
     activeRangeMaskIds,
     startAddRangeMask,
+    startEditRangeMask,
     removeRangeMask,
     toggleRangeMaskActive,
   } = useMaskPanel();
@@ -710,6 +711,7 @@ export const MaskPanel = memo(function MaskPanel() {
             rangeMasks={rangeMasks}
             activeRangeMaskIds={activeRangeMaskIds}
             onAdd={startAddRangeMask}
+            onEdit={startEditRangeMask}
             onRemove={removeRangeMask}
             onToggleActive={toggleRangeMaskActive}
           />

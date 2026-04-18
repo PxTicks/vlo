@@ -26,7 +26,10 @@ import { createMask } from "../model/maskFactory";
 import { resolveMaskBooleanExpression } from "../model/maskBooleanExpression";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
 import { playbackClock } from "../../player/services/PlaybackClock";
-import { calculateClipTime } from "../../transformations";
+import {
+  calculateClipTime,
+  mapSourceTimeToVisualTime,
+} from "../../transformations";
 import { useProjectStore } from "../../project/useProjectStore";
 import {
   clearSam2EditorSession,
@@ -160,6 +163,7 @@ export interface UseMaskPanelResult {
   rangeMasks: RangeMask[];
   activeRangeMaskIds: string[];
   startAddRangeMask: () => void;
+  startEditRangeMask: (rangeMaskId: string) => void;
   removeRangeMask: (rangeMaskId: string) => void;
   toggleRangeMaskActive: (rangeMaskId: string) => void;
 }
@@ -1078,6 +1082,9 @@ export function useMaskPanel(): UseMaskPanelResult {
   ]);
 
   const addClipRangeMask = useTimelineStore((state) => state.addClipRangeMask);
+  const updateClipRangeMask = useTimelineStore(
+    (state) => state.updateClipRangeMask,
+  );
   const removeClipRangeMask = useTimelineStore(
     (state) => state.removeClipRangeMask,
   );
@@ -1135,6 +1142,52 @@ export function useMaskPanel(): UseMaskPanelResult {
       useExtractStore.getState().setOnConfirmSelection(null);
     });
   }, [addClipRangeMask, selectedClipId, standardSelectedClip]);
+
+  const startEditRangeMask = useCallback(
+    (rangeMaskId: string) => {
+      if (!selectedClipId) return;
+      if (!standardSelectedClip) return;
+
+      const clip = standardSelectedClip;
+      const existing = (clip.rangeMasks ?? []).find(
+        (mask) => mask.id === rangeMaskId,
+      );
+      if (!existing) return;
+
+      const clipStart = clip.start;
+      const clipEnd = clip.start + clip.timelineDuration;
+      const rawStart =
+        clipStart + mapSourceTimeToVisualTime(clip, existing.startSourceTicks);
+      const rawEnd =
+        clipStart + mapSourceTimeToVisualTime(clip, existing.endSourceTicks);
+      const seededStart = Math.max(clipStart, Math.min(rawStart, clipEnd));
+      const seededEnd = Math.max(clipStart, Math.min(rawEnd, clipEnd));
+
+      const selectionStore = useTimelineSelectionStore.getState();
+      const extractStore = useExtractStore.getState();
+
+      selectionStore.clearSelectionRecommendations();
+      selectionStore.enterSelectionMode(seededStart, seededEnd);
+
+      extractStore.setOnConfirmSelection(() => {
+        const { selectionStartTick, selectionEndTick } =
+          useTimelineSelectionStore.getState();
+        const startSourceTicks = toClipInputTimeTicks(clip, selectionStartTick);
+        const endSourceTicks = toClipInputTimeTicks(clip, selectionEndTick);
+        const orderedStart = Math.min(startSourceTicks, endSourceTicks);
+        const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
+
+        updateClipRangeMask(selectedClipId, rangeMaskId, {
+          startSourceTicks: orderedStart,
+          endSourceTicks: orderedEnd,
+        });
+
+        useTimelineSelectionStore.getState().exitSelectionMode();
+        useExtractStore.getState().setOnConfirmSelection(null);
+      });
+    },
+    [selectedClipId, standardSelectedClip, updateClipRangeMask],
+  );
 
   const removeRangeMask = useCallback(
     (rangeMaskId: string) => {
@@ -1226,6 +1279,7 @@ export function useMaskPanel(): UseMaskPanelResult {
     rangeMasks,
     activeRangeMaskIds,
     startAddRangeMask,
+    startEditRangeMask,
     removeRangeMask,
     toggleRangeMaskActive,
   };

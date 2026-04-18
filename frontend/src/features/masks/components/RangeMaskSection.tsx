@@ -1,5 +1,5 @@
 import { Box, Chip, IconButton, Typography } from "@mui/material";
-import { Add, DeleteOutline } from "@mui/icons-material";
+import { Add, DeleteOutline, EditOutlined } from "@mui/icons-material";
 import type { RangeMask } from "../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../timeline";
 
@@ -7,6 +7,7 @@ interface RangeMaskSectionProps {
   rangeMasks: RangeMask[];
   activeRangeMaskIds: string[];
   onAdd: () => void;
+  onEdit: (rangeMaskId: string) => void;
   onRemove: (rangeMaskId: string) => void;
   onToggleActive: (rangeMaskId: string) => void;
 }
@@ -21,6 +22,7 @@ export function RangeMaskSection({
   rangeMasks,
   activeRangeMaskIds,
   onAdd,
+  onEdit,
   onRemove,
   onToggleActive,
 }: RangeMaskSectionProps) {
@@ -59,6 +61,20 @@ export function RangeMaskSection({
                 onClick={() => onToggleActive(mask.id)}
                 sx={{ height: 24 }}
               />
+              <IconButton
+                data-testid={`range-mask-edit-${mask.id}`}
+                aria-label={`Edit range mask ${index + 1}`}
+                size="small"
+                onClick={() => onEdit(mask.id)}
+                sx={{
+                  border: "1px solid",
+                  borderColor: "#2f333a",
+                  borderRadius: 999,
+                  p: 0.5,
+                }}
+              >
+                <EditOutlined sx={{ fontSize: 14 }} />
+              </IconButton>
               <IconButton
                 data-testid={`range-mask-remove-${mask.id}`}
                 aria-label={`Remove range mask ${index + 1}`}

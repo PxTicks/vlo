@@ -501,17 +501,6 @@ export const MaskPanel = memo(function MaskPanel() {
                   >
                     Preview
                   </Button>
-                  <Button
-                    data-testid="mask-mode-off"
-                    onClick={() => setMaskMode("off")}
-                    sx={
-                      selectedMaskMode === "off"
-                        ? selectedConnectedButtonSx
-                        : connectedButtonSx
-                    }
-                  >
-                    Off
-                  </Button>
                 </ButtonGroup>
 
                 <Typography

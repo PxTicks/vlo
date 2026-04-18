@@ -164,7 +164,7 @@ function createParentClip(
 
 function createMaskClip(
   localId: string,
-  mode: "apply" | "preview" | "off",
+  mode: "apply" | "preview",
 ): MaskTimelineClip {
   return {
     id: `clip_1::mask::${localId}`,
@@ -214,7 +214,6 @@ describe("TrackRenderEngine masks", () => {
     const clip = createParentClip();
     const maskApply = createMaskClip("mask_apply", "apply");
     const maskPreview = createMaskClip("mask_preview", "preview");
-    const maskOff = createMaskClip("mask_off", "off");
 
     const assets: Asset[] = [
       {
@@ -228,7 +227,7 @@ describe("TrackRenderEngine masks", () => {
     ];
 
     const masksByParent = new Map<string, MaskTimelineClip[]>([
-      [clip.id, [maskApply, maskPreview, maskOff]],
+      [clip.id, [maskApply, maskPreview]],
     ]);
 
     engine.update(

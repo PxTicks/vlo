@@ -38,7 +38,7 @@ function createMaskClip(
 }
 
 describe("maskBooleanExpression helpers", () => {
-  it("keeps explicit off masks in the editor expression but prunes them for rendering", () => {
+  it("renderable expression matches the resolved editor expression", () => {
     const parent: Pick<StandardTimelineClip, "maskBooleanExpression"> = {
       maskBooleanExpression: {
         kind: "operation",
@@ -54,9 +54,9 @@ describe("maskBooleanExpression helpers", () => {
       },
     };
     const maskA = createMaskClip("clip_1", "mask_a", "apply");
-    const maskB = createMaskClip("clip_1", "mask_b", "off");
+    const maskB = createMaskClip("clip_1", "mask_b", "preview");
 
-    expect(resolveMaskBooleanExpression(parent, [maskA, maskB])).toEqual({
+    const expected = {
       kind: "operation",
       operator: "intersect",
       left: {
@@ -67,11 +67,11 @@ describe("maskBooleanExpression helpers", () => {
         kind: "mask_ref",
         maskId: "mask_b",
       },
-    });
+    };
 
-    expect(resolveRenderableMaskBooleanExpression(parent, [maskA, maskB])).toEqual({
-      kind: "mask_ref",
-      maskId: "mask_a",
-    });
+    expect(resolveMaskBooleanExpression(parent, [maskA, maskB])).toEqual(expected);
+    expect(resolveRenderableMaskBooleanExpression(parent, [maskA, maskB])).toEqual(
+      expected,
+    );
   });
 });

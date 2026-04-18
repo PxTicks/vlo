@@ -33,7 +33,7 @@ export interface ClipTransform {
 }
 
 export type ClipMaskType = "circle" | "rectangle" | "triangle" | "sam2" | "generation";
-export type ClipMaskMode = "apply" | "preview" | "off";
+export type ClipMaskMode = "apply" | "preview";
 export type MaskBooleanOperator = "union" | "intersect" | "subtract";
 
 export interface MaskBooleanMaskRefExpression {

@@ -33,6 +33,7 @@ import {
 import { Sam2MaskPanel } from "./components/Sam2MaskPanel";
 import { Sam2ModelDownloadOverlay } from "./components/Sam2ModelDownloadOverlay";
 import { MaskEquationBuilder } from "./components/MaskEquationBuilder";
+import { RangeMaskSection } from "./components/RangeMaskSection";
 import type {
   ClipTransform,
   MaskTimelineClip,
@@ -219,6 +220,11 @@ export const MaskPanel = memo(function MaskPanel() {
     isSam2Dirty,
     hasSam2MaskAsset,
     deleteSelectedMask,
+    rangeMasks,
+    activeRangeMaskIds,
+    startAddRangeMask,
+    removeRangeMask,
+    toggleRangeMaskActive,
   } = useMaskPanel();
   const {
     activeContextId: sharedMaskContextId,
@@ -697,6 +703,16 @@ export const MaskPanel = memo(function MaskPanel() {
               </Typography>
             </Box>
           )}
+
+          <Divider sx={{ borderColor: "#2a2d33", mx: 2, mb: 1 }} />
+
+          <RangeMaskSection
+            rangeMasks={rangeMasks}
+            activeRangeMaskIds={activeRangeMaskIds}
+            onAdd={startAddRangeMask}
+            onRemove={removeRangeMask}
+            onToggleActive={toggleRangeMaskActive}
+          />
         </>
       )}
     </Box>

@@ -17,6 +17,7 @@ import type {
   TimelineClip,
   TimelineTrack,
   MaskTimelineClip,
+  RangeMask,
   StandardTimelineClip,
   TimelineClipComponentRef,
 } from "../../types/TimelineTypes";
@@ -864,6 +865,15 @@ interface TimelineState {
   ) => void;
 
   removeClipMask: (clipId: string, maskId: string) => void;
+
+  addClipRangeMask: (clipId: string, rangeMask: RangeMask) => void;
+  updateClipRangeMask: (
+    clipId: string,
+    rangeMaskId: string,
+    updates: Partial<Omit<RangeMask, "id">>,
+  ) => void;
+  removeClipRangeMask: (clipId: string, rangeMaskId: string) => void;
+  setClipActiveRangeMaskIds: (clipId: string, ids: string[]) => void;
 
   toggleTrackVisibility: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
@@ -1737,6 +1747,73 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (didCommit) {
         deleteSam2MaskAssets(sam2MaskAssetIdsToDelete);
       }
+    },
+
+    addClipRangeMask: (clipId, rangeMask) => {
+      commitModelMutation((draft) => {
+        const clip = draft.clips.find(
+          (candidate): candidate is StandardTimelineClip =>
+            candidate.id === clipId && candidate.type !== "mask",
+        );
+        if (!clip) return;
+
+        const existing = clip.rangeMasks ?? [];
+        clip.rangeMasks = [...existing, { ...rangeMask }];
+        clip.activeRangeMaskIds = [
+          ...(clip.activeRangeMaskIds ?? []),
+          rangeMask.id,
+        ];
+      });
+    },
+
+    updateClipRangeMask: (clipId, rangeMaskId, updates) => {
+      commitModelMutation((draft) => {
+        const clip = draft.clips.find(
+          (candidate): candidate is StandardTimelineClip =>
+            candidate.id === clipId && candidate.type !== "mask",
+        );
+        if (!clip?.rangeMasks) return;
+
+        clip.rangeMasks = clip.rangeMasks.map((mask) =>
+          mask.id === rangeMaskId ? { ...mask, ...updates } : mask,
+        );
+      });
+    },
+
+    removeClipRangeMask: (clipId, rangeMaskId) => {
+      commitModelMutation((draft) => {
+        const clip = draft.clips.find(
+          (candidate): candidate is StandardTimelineClip =>
+            candidate.id === clipId && candidate.type !== "mask",
+        );
+        if (!clip) return;
+
+        if (clip.rangeMasks) {
+          clip.rangeMasks = clip.rangeMasks.filter(
+            (mask) => mask.id !== rangeMaskId,
+          );
+        }
+        if (clip.activeRangeMaskIds) {
+          clip.activeRangeMaskIds = clip.activeRangeMaskIds.filter(
+            (id) => id !== rangeMaskId,
+          );
+        }
+      });
+    },
+
+    setClipActiveRangeMaskIds: (clipId, ids) => {
+      commitModelMutation((draft) => {
+        const clip = draft.clips.find(
+          (candidate): candidate is StandardTimelineClip =>
+            candidate.id === clipId && candidate.type !== "mask",
+        );
+        if (!clip) return;
+
+        const availableIds = new Set(
+          (clip.rangeMasks ?? []).map((mask) => mask.id),
+        );
+        clip.activeRangeMaskIds = ids.filter((id) => availableIds.has(id));
+      });
     },
 
     toggleTrackVisibility: (trackId) => {

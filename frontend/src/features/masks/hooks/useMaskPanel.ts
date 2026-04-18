@@ -7,6 +7,8 @@ import type {
   ClipMaskMode,
   ClipMaskType,
   MaskTimelineClip,
+  RangeMask,
+  StandardTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
 import {
@@ -17,6 +19,8 @@ import {
   parseMaskClipId,
   selectMaskClipsForParent,
 } from "../../timeline";
+import { useTimelineSelectionStore } from "../../timelineSelection";
+import { useExtractStore } from "../../player/useExtractStore";
 import { useMaskViewStore } from "../store/useMaskViewStore";
 import { createMask } from "../model/maskFactory";
 import { resolveMaskBooleanExpression } from "../model/maskBooleanExpression";
@@ -153,6 +157,11 @@ export interface UseMaskPanelResult {
   isSam2Dirty: boolean;
   hasSam2MaskAsset: boolean;
   deleteSelectedMask: () => void;
+  rangeMasks: RangeMask[];
+  activeRangeMaskIds: string[];
+  startAddRangeMask: () => void;
+  removeRangeMask: (rangeMaskId: string) => void;
+  toggleRangeMaskActive: (rangeMaskId: string) => void;
 }
 
 export function useMaskPanel(): UseMaskPanelResult {
@@ -1068,6 +1077,85 @@ export function useMaskPanel(): UseMaskPanelResult {
     updateClipMask,
   ]);
 
+  const addClipRangeMask = useTimelineStore((state) => state.addClipRangeMask);
+  const removeClipRangeMask = useTimelineStore(
+    (state) => state.removeClipRangeMask,
+  );
+  const setClipActiveRangeMaskIds = useTimelineStore(
+    (state) => state.setClipActiveRangeMaskIds,
+  );
+
+  const standardSelectedClip =
+    selectedClip && selectedClip.type !== "mask"
+      ? (selectedClip as StandardTimelineClip)
+      : null;
+  const rangeMasks = useMemo(
+    () => standardSelectedClip?.rangeMasks ?? [],
+    [standardSelectedClip],
+  );
+  const activeRangeMaskIds = useMemo(
+    () => standardSelectedClip?.activeRangeMaskIds ?? [],
+    [standardSelectedClip],
+  );
+
+  const startAddRangeMask = useCallback(() => {
+    if (!selectedClipId) return;
+    if (!standardSelectedClip) return;
+
+    const clip = standardSelectedClip;
+    const clipStart = clip.start;
+    const clipEnd = clip.start + clip.timelineDuration;
+    const defaultStart = Math.max(
+      clipStart,
+      Math.min(playbackClock.time, clipEnd),
+    );
+    const defaultEnd = Math.min(clipEnd, defaultStart + TICKS_PER_SECOND);
+
+    const selectionStore = useTimelineSelectionStore.getState();
+    const extractStore = useExtractStore.getState();
+
+    selectionStore.clearSelectionRecommendations();
+    selectionStore.enterSelectionMode(defaultStart, defaultEnd);
+
+    extractStore.setOnConfirmSelection(() => {
+      const { selectionStartTick, selectionEndTick } =
+        useTimelineSelectionStore.getState();
+      const startSourceTicks = toClipInputTimeTicks(clip, selectionStartTick);
+      const endSourceTicks = toClipInputTimeTicks(clip, selectionEndTick);
+      const orderedStart = Math.min(startSourceTicks, endSourceTicks);
+      const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
+
+      addClipRangeMask(selectedClipId, {
+        id: `range_${crypto.randomUUID()}`,
+        startSourceTicks: orderedStart,
+        endSourceTicks: orderedEnd,
+      });
+
+      useTimelineSelectionStore.getState().exitSelectionMode();
+      useExtractStore.getState().setOnConfirmSelection(null);
+    });
+  }, [addClipRangeMask, selectedClipId, standardSelectedClip]);
+
+  const removeRangeMask = useCallback(
+    (rangeMaskId: string) => {
+      if (!selectedClipId) return;
+      removeClipRangeMask(selectedClipId, rangeMaskId);
+    },
+    [removeClipRangeMask, selectedClipId],
+  );
+
+  const toggleRangeMaskActive = useCallback(
+    (rangeMaskId: string) => {
+      if (!selectedClipId) return;
+      const current = activeRangeMaskIds;
+      const next = current.includes(rangeMaskId)
+        ? current.filter((id) => id !== rangeMaskId)
+        : [...current, rangeMaskId];
+      setClipActiveRangeMaskIds(selectedClipId, next);
+    },
+    [activeRangeMaskIds, selectedClipId, setClipActiveRangeMaskIds],
+  );
+
   const deleteSelectedMask = useCallback(() => {
     if (!selectedClipId || !selectedMaskId) return;
 
@@ -1135,5 +1223,10 @@ export function useMaskPanel(): UseMaskPanelResult {
     isSam2Dirty,
     hasSam2MaskAsset,
     deleteSelectedMask,
+    rangeMasks,
+    activeRangeMaskIds,
+    startAddRangeMask,
+    removeRangeMask,
+    toggleRangeMaskActive,
   };
 }

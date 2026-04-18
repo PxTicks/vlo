@@ -157,6 +157,11 @@ describe("MaskPanel", () => {
       isSam2Dirty: false,
       hasSam2MaskAsset: false,
       deleteSelectedMask: mockDeleteSelectedMask,
+      rangeMasks: [],
+      activeRangeMaskIds: [],
+      startAddRangeMask: vi.fn(),
+      removeRangeMask: vi.fn(),
+      toggleRangeMaskActive: vi.fn(),
     };
     vi.mocked(useMaskPanel).mockReturnValue(baseHookValue);
   });

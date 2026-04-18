@@ -26,6 +26,7 @@ import { speedDefinition } from "./time/speed";
 import { volumeDefinition } from "./audio/volume";
 import { hslFilterDefinition } from "./filters/hslAdjustment";
 import { colorAdjustmentDefinition } from "./filters/colorAdjustment";
+import { alphaFilterDefinition } from "./filters/alpha";
 import { blurFilterDefinition } from "./filters/blur";
 import { bloomFilterDefinition } from "./filters/bloom";
 import { bulgePinchFilterDefinition } from "./filters/bulgePinch";
@@ -88,6 +89,7 @@ export const TransformationRegistry: TransformationDefinition[] = [
   { ...twistFilterDefinition, isDefault: false },
   { ...zoomBlurFilterDefinition, isDefault: false },
   { ...colorMatrixDefinition, isDefault: false, hidden: true },
+  { ...alphaFilterDefinition, isDefault: false, hidden: true },
 
   // Mask-only transforms
   { ...maskGrowDefinition, isDefault: false },

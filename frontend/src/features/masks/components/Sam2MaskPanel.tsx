@@ -372,6 +372,14 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
           >
             Preview
           </Button>
+          <Button
+            onClick={() => onSetMaskMode("off")}
+            sx={
+              maskMode === "off" ? selectedConnectedButtonSx : connectedButtonSx
+            }
+          >
+            Off
+          </Button>
         </ButtonGroup>
 
         <Typography

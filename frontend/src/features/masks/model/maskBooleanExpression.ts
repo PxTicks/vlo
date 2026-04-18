@@ -278,7 +278,20 @@ export function resolveRenderableMaskBooleanExpression(
   parentClip: Pick<StandardTimelineClip, "maskBooleanExpression">,
   maskClips: readonly MaskTimelineClip[],
 ): MaskBooleanExpression | null {
-  return resolveMaskBooleanExpression(parentClip, maskClips);
+  const resolvedExpression = resolveMaskBooleanExpression(parentClip, maskClips);
+  if (!resolvedExpression) {
+    return null;
+  }
+
+  const offMaskIds = maskClips
+    .filter((maskClip) => maskClip.maskMode === "off")
+    .map((maskClip) => getMaskLocalId(maskClip))
+    .filter((maskId): maskId is string => !!maskId);
+  if (offMaskIds.length === 0) {
+    return resolvedExpression;
+  }
+
+  return pruneMaskBooleanExpression(resolvedExpression, offMaskIds);
 }
 
 export function getMaskBooleanExpressionAtPath(

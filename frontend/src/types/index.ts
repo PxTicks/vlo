@@ -2,16 +2,6 @@
 export type { Asset, AssetType } from "./Asset";
 export type { Project } from "./ProjectState";
 export type { ClipComponentBase } from "./ClipComponents";
-export {
-  isDataComponentOfType,
-} from "./DataComponents";
-export type {
-  DataComponent,
-  DataComponentBase,
-  DataComponentType,
-  RangeMaskDataComponent,
-  RangeMaskDataComponentParameters,
-} from "./DataComponents";
 export type {
   RuntimeStatus,
   BackendRuntimeStatus,

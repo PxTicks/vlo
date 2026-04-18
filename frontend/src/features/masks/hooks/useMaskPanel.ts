@@ -7,10 +7,8 @@ import type {
   ClipMaskMode,
   ClipMaskType,
   MaskTimelineClip,
-  StandardTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
-import type { RangeMaskDataComponent } from "../../../types/DataComponents";
 import {
   TICKS_PER_SECOND,
   countSam2MaskAssetConsumers,
@@ -19,17 +17,12 @@ import {
   parseMaskClipId,
   selectMaskClipsForParent,
 } from "../../timeline";
-import { useTimelineSelectionStore } from "../../timelineSelection";
-import { useExtractStore } from "../../player/useExtractStore";
 import { useMaskViewStore } from "../store/useMaskViewStore";
 import { createMask } from "../model/maskFactory";
 import { resolveMaskBooleanExpression } from "../model/maskBooleanExpression";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
 import { playbackClock } from "../../player/services/PlaybackClock";
-import {
-  calculateClipTime,
-  mapSourceTimeToVisualTime,
-} from "../../transformations";
+import { calculateClipTime } from "../../transformations";
 import { useProjectStore } from "../../project/useProjectStore";
 import {
   clearSam2EditorSession,
@@ -160,11 +153,6 @@ export interface UseMaskPanelResult {
   isSam2Dirty: boolean;
   hasSam2MaskAsset: boolean;
   deleteSelectedMask: () => void;
-  rangeMaskComponents: RangeMaskDataComponent[];
-  startAddRangeMask: () => void;
-  startEditRangeMask: (rangeMaskId: string) => void;
-  removeRangeMask: (rangeMaskId: string) => void;
-  toggleRangeMaskActive: (rangeMaskId: string) => void;
 }
 
 export function useMaskPanel(): UseMaskPanelResult {
@@ -1080,153 +1068,6 @@ export function useMaskPanel(): UseMaskPanelResult {
     updateClipMask,
   ]);
 
-  const addClipDataComponent = useTimelineStore(
-    (state) => state.addClipDataComponent,
-  );
-  const updateClipDataComponent = useTimelineStore(
-    (state) => state.updateClipDataComponent,
-  );
-  const removeClipDataComponent = useTimelineStore(
-    (state) => state.removeClipDataComponent,
-  );
-
-  const standardSelectedClip =
-    selectedClip && selectedClip.type !== "mask"
-      ? (selectedClip as StandardTimelineClip)
-      : null;
-  const rangeMaskComponents = useMemo<RangeMaskDataComponent[]>(
-    () =>
-      (standardSelectedClip?.dataComponents ?? []).filter(
-        (component): component is RangeMaskDataComponent =>
-          component.type === "range_mask",
-      ),
-    [standardSelectedClip],
-  );
-
-  const startAddRangeMask = useCallback(() => {
-    if (!selectedClipId) return;
-    if (!standardSelectedClip) return;
-
-    const clip = standardSelectedClip;
-    const clipStart = clip.start;
-    const clipEnd = clip.start + clip.timelineDuration;
-    const defaultStart = Math.max(
-      clipStart,
-      Math.min(playbackClock.time, clipEnd),
-    );
-    const defaultEnd = Math.min(clipEnd, defaultStart + TICKS_PER_SECOND);
-
-    const selectionStore = useTimelineSelectionStore.getState();
-    const extractStore = useExtractStore.getState();
-
-    selectionStore.clearSelectionRecommendations();
-    selectionStore.enterSelectionMode(defaultStart, defaultEnd);
-
-    extractStore.setOnConfirmSelection(() => {
-      const { selectionStartTick, selectionEndTick } =
-        useTimelineSelectionStore.getState();
-      const startSourceTicks = toClipInputTimeTicks(clip, selectionStartTick);
-      const endSourceTicks = toClipInputTimeTicks(clip, selectionEndTick);
-      const orderedStart = Math.min(startSourceTicks, endSourceTicks);
-      const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
-
-      const newComponent: RangeMaskDataComponent = {
-        id: `range_${crypto.randomUUID()}`,
-        type: "range_mask",
-        parameters: {
-          startSourceTicks: orderedStart,
-          endSourceTicks: orderedEnd,
-          isActive: true,
-        },
-      };
-      addClipDataComponent(selectedClipId, newComponent);
-
-      useTimelineSelectionStore.getState().exitSelectionMode();
-      useExtractStore.getState().setOnConfirmSelection(null);
-    });
-  }, [addClipDataComponent, selectedClipId, standardSelectedClip]);
-
-  const startEditRangeMask = useCallback(
-    (rangeMaskId: string) => {
-      if (!selectedClipId) return;
-      if (!standardSelectedClip) return;
-
-      const clip = standardSelectedClip;
-      const existing = (clip.dataComponents ?? []).find(
-        (component): component is RangeMaskDataComponent =>
-          component.id === rangeMaskId && component.type === "range_mask",
-      );
-      if (!existing) return;
-
-      const clipStart = clip.start;
-      const clipEnd = clip.start + clip.timelineDuration;
-      const rawStart =
-        clipStart +
-        mapSourceTimeToVisualTime(clip, existing.parameters.startSourceTicks);
-      const rawEnd =
-        clipStart +
-        mapSourceTimeToVisualTime(clip, existing.parameters.endSourceTicks);
-      const seededStart = Math.max(clipStart, Math.min(rawStart, clipEnd));
-      const seededEnd = Math.max(clipStart, Math.min(rawEnd, clipEnd));
-
-      const selectionStore = useTimelineSelectionStore.getState();
-      const extractStore = useExtractStore.getState();
-
-      selectionStore.clearSelectionRecommendations();
-      selectionStore.enterSelectionMode(seededStart, seededEnd);
-
-      extractStore.setOnConfirmSelection(() => {
-        const { selectionStartTick, selectionEndTick } =
-          useTimelineSelectionStore.getState();
-        const startSourceTicks = toClipInputTimeTicks(clip, selectionStartTick);
-        const endSourceTicks = toClipInputTimeTicks(clip, selectionEndTick);
-        const orderedStart = Math.min(startSourceTicks, endSourceTicks);
-        const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
-
-        updateClipDataComponent(selectedClipId, rangeMaskId, (component) => {
-          if (component.type !== "range_mask") return component;
-          return {
-            ...component,
-            parameters: {
-              ...component.parameters,
-              startSourceTicks: orderedStart,
-              endSourceTicks: orderedEnd,
-            },
-          };
-        });
-
-        useTimelineSelectionStore.getState().exitSelectionMode();
-        useExtractStore.getState().setOnConfirmSelection(null);
-      });
-    },
-    [selectedClipId, standardSelectedClip, updateClipDataComponent],
-  );
-
-  const removeRangeMask = useCallback(
-    (rangeMaskId: string) => {
-      if (!selectedClipId) return;
-      removeClipDataComponent(selectedClipId, rangeMaskId);
-    },
-    [removeClipDataComponent, selectedClipId],
-  );
-
-  const toggleRangeMaskActive = useCallback(
-    (rangeMaskId: string) => {
-      if (!selectedClipId) return;
-      updateClipDataComponent(selectedClipId, rangeMaskId, (component) => {
-        if (component.type !== "range_mask") return component;
-        return {
-          ...component,
-          parameters: {
-            ...component.parameters,
-            isActive: !component.parameters.isActive,
-          },
-        };
-      });
-    },
-    [selectedClipId, updateClipDataComponent],
-  );
-
   const deleteSelectedMask = useCallback(() => {
     if (!selectedClipId || !selectedMaskId) return;
 
@@ -1294,10 +1135,5 @@ export function useMaskPanel(): UseMaskPanelResult {
     isSam2Dirty,
     hasSam2MaskAsset,
     deleteSelectedMask,
-    rangeMaskComponents,
-    startAddRangeMask,
-    startEditRangeMask,
-    removeRangeMask,
-    toggleRangeMaskActive,
   };
 }

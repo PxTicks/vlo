@@ -1,5 +1,4 @@
 import type { ClipComponentBase } from "./ClipComponents";
-import type { DataComponent } from "./DataComponents";
 
 export type TrackType = "visual" | "audio" | "prompt" | "effects" | "mask";
 
@@ -34,7 +33,7 @@ export interface ClipTransform {
 }
 
 export type ClipMaskType = "circle" | "rectangle" | "triangle" | "sam2" | "generation";
-export type ClipMaskMode = "apply" | "preview";
+export type ClipMaskMode = "apply" | "preview" | "off";
 export type MaskBooleanOperator = "union" | "intersect" | "subtract";
 
 export interface MaskBooleanMaskRefExpression {
@@ -139,11 +138,6 @@ export interface StandardTimelineClip extends TimelineClipBase {
    * Each component points to a subordinate clip and declares its component type.
    */
   clipComponents?: TimelineClipComponentRef[];
-  /**
-   * Data-only attachments (range masks, etc.). Unlike clipComponents these
-   * are pure data, not references to subordinate clips.
-   */
-  dataComponents?: DataComponent[];
 }
 
 export interface MaskTimelineClip extends TimelineClipBase {

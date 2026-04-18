@@ -20,7 +20,6 @@ import type {
   StandardTimelineClip,
   TimelineClipComponentRef,
 } from "../../types/TimelineTypes";
-import type { DataComponent } from "../../types/DataComponents";
 import type { Asset } from "../../types/Asset";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import { useProjectStore } from "../project/useProjectStore";
@@ -865,14 +864,6 @@ interface TimelineState {
   ) => void;
 
   removeClipMask: (clipId: string, maskId: string) => void;
-
-  addClipDataComponent: (clipId: string, component: DataComponent) => void;
-  updateClipDataComponent: (
-    clipId: string,
-    componentId: string,
-    updater: (component: DataComponent) => DataComponent,
-  ) => void;
-  removeClipDataComponent: (clipId: string, componentId: string) => void;
 
   toggleTrackVisibility: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
@@ -1746,46 +1737,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (didCommit) {
         deleteSam2MaskAssets(sam2MaskAssetIdsToDelete);
       }
-    },
-
-    addClipDataComponent: (clipId, component) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
-        );
-        if (!clip) return;
-
-        clip.dataComponents = [...(clip.dataComponents ?? []), component];
-      });
-    },
-
-    updateClipDataComponent: (clipId, componentId, updater) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
-        );
-        if (!clip?.dataComponents) return;
-
-        clip.dataComponents = clip.dataComponents.map((component) =>
-          component.id === componentId ? updater(component) : component,
-        );
-      });
-    },
-
-    removeClipDataComponent: (clipId, componentId) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
-        );
-        if (!clip?.dataComponents) return;
-
-        clip.dataComponents = clip.dataComponents.filter(
-          (component) => component.id !== componentId,
-        );
-      });
     },
 
     toggleTrackVisibility: (trackId) => {

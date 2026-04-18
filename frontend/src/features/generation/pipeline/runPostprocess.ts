@@ -72,10 +72,7 @@ export async function runFrontendPostprocess(
 
   await runProcessors(FRONTEND_POSTPROCESSORS, ctx);
 
-  ctx.postprocessError =
-    ctx.stitchFailure && ctx.postprocessingConfig.on_failure === "show_error"
-      ? ctx.stitchFailure
-      : ctx.stitchMessage;
+  ctx.postprocessError = ctx.stitchFailure ?? ctx.stitchMessage;
 
   return {
     postprocessedPreview: ctx.postprocessedPreview,

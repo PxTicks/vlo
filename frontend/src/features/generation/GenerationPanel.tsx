@@ -500,6 +500,10 @@ export function GenerationPanel() {
     replaceOutputsWithPostprocess &&
     displayPostprocessConfig?.on_failure === "show_error" &&
     Boolean(displayJob?.postprocessError);
+  const showPostprocessWarning =
+    displayJob?.status !== "error" &&
+    !showPostprocessErrorOnly &&
+    Boolean(displayJob?.postprocessError);
   const showRunningCancelControls = canInterruptCurrentGeneration;
   const shouldShowRawOutputs =
     displayJob && displayJob.outputs.length > 0
@@ -1250,6 +1254,15 @@ export function GenerationPanel() {
                 {displayJob?.status === "error"
                   ? displayJob.error
                   : displayJob?.postprocessError}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Warning */}
+          {showPostprocessWarning && (
+            <Box sx={{ px: 2, pb: 2 }}>
+              <Typography variant="caption" sx={{ color: "warning.main" }}>
+                Warning: {displayJob?.postprocessError}
               </Typography>
             </Box>
           )}

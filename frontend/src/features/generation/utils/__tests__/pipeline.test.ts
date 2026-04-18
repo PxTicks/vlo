@@ -953,6 +953,75 @@ describe("generation pipeline", () => {
     });
   });
 
+  it("returns raw outputs plus a stitch warning when fallback packaging fails", async () => {
+    const frameOne = new File(["frame-1"], "frame_0001.png", {
+      type: "image/png",
+    });
+    const frameTwo = new File(["frame-2"], "frame_0002.png", {
+      type: "image/png",
+    });
+    const audio = new File(["audio"], "sound.wav", { type: "audio/wav" });
+
+    mockFetchOutputAsFile
+      .mockResolvedValueOnce(frameOne)
+      .mockResolvedValueOnce(frameTwo)
+      .mockResolvedValueOnce(audio);
+    mockPackageFramesAndAudioToVideo.mockRejectedValue(
+      new Error("muxer exploded"),
+    );
+    mockAddLocalAsset
+      .mockResolvedValueOnce({ id: "asset-frame-1" })
+      .mockResolvedValueOnce({ id: "asset-frame-2" })
+      .mockResolvedValueOnce({ id: "asset-audio" });
+
+    const result = await frontendPostprocess(
+      [
+        {
+          filename: "frame_0001.png",
+          subfolder: "",
+          type: "output",
+          viewUrl: "/frame-1",
+        },
+        {
+          filename: "frame_0002.png",
+          subfolder: "",
+          type: "output",
+          viewUrl: "/frame-2",
+        },
+        {
+          filename: "sound.wav",
+          subfolder: "",
+          type: "output",
+          viewUrl: "/sound",
+        },
+      ],
+      {
+        postprocessing: {
+          mode: "stitch_frames_with_audio",
+          panel_preview: "raw_outputs",
+          on_failure: "fallback_raw",
+          stitch_fps: 12,
+        },
+        aspectRatioProcessing: null,
+        generationMetadata: makeGenerationMetadata(),
+        previewFrameFiles: null,
+      },
+    );
+
+    expect(mockPackageFramesAndAudioToVideo).toHaveBeenCalledWith(
+      [frameOne, frameTwo],
+      audio,
+      12,
+    );
+    expect(mockAddLocalAsset).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({
+      postprocessedPreview: null,
+      postprocessError:
+        "Postprocessing failed while stitching frames+audio: muxer exploded",
+      importedAssetIds: ["asset-frame-1", "asset-frame-2", "asset-audio"],
+    });
+  });
+
   it("reuses an existing compatible family when the request key matches a previous generation", async () => {
     const requestKey = "generation-family-request:v1:matching";
     const existingMatchKey = await buildGenerationFamilyAutoMatchKey(requestKey, {

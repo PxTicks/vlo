@@ -503,6 +503,32 @@ describe("GenerationPanel workflow rule hints", () => {
     expect(screen.getByAltText("raw-output.png")).toBeInTheDocument();
   });
 
+  it("shows a non-blocking stitch warning while preserving raw outputs", () => {
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        displayJob: makeCompletedJob({
+          postprocessConfig: {
+            mode: "stitch_frames_with_audio",
+            panel_preview: "raw_outputs",
+            on_failure: "fallback_raw",
+          },
+          postprocessError:
+            "Postprocessing failed while stitching frames+audio: muxer exploded",
+          postprocessedPreview: null,
+        }),
+      }),
+    );
+
+    render(<GenerationPanel />);
+    expect(
+      screen.getByText(
+        "Warning: Postprocessing failed while stitching frames+audio: muxer exploded",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Generated outputs")).toBeInTheDocument();
+    expect(screen.getByAltText("raw-output.png")).toBeInTheDocument();
+  });
+
   it("shows imported asset preview when ingested assets exist", () => {
     const { container } = renderWithImportedVideoPreview();
 

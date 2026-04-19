@@ -107,6 +107,18 @@
       }
     ]
   },
+  "media_fallbacks": [
+    {
+      "kind": "dummy",
+      "node_id": "167",
+      "input_type": "image",
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["167"],
+        "match": "all_missing"
+      }
+    }
+  ],
   "frontend_controls": {
     "prompt_enhancer_enabled": {
       "label": "Enable prompt enhancer",

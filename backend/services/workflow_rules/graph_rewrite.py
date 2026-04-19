@@ -19,6 +19,7 @@ from services.workflow_rules.object_info import (
     is_output_node_class,
 )
 from services.workflow_rules.schema import ResolvedWorkflowRules, dump_resolved_rules
+from services.workflow_rules.validation import matches_input_presence_condition
 
 
 def _is_output_link_to(value: Any, target_node_id: str, target_output_index: int) -> bool:
@@ -571,37 +572,7 @@ def _matches_input_presence_condition(
     raw_condition: Any,
     provided_input_ids: set[str],
 ) -> bool:
-    if not isinstance(raw_condition, dict):
-        return False
-
-    if raw_condition.get("kind") != "input_presence":
-        return False
-
-    raw_inputs = raw_condition.get("inputs")
-    if not isinstance(raw_inputs, list):
-        return False
-
-    inputs = [
-        str(input_id).strip()
-        for input_id in raw_inputs
-        if str(input_id).strip()
-    ]
-    if not inputs:
-        return False
-
-    match_mode = raw_condition.get("match")
-    if not isinstance(match_mode, str):
-        match_mode = "all_present"
-
-    if match_mode == "all_present":
-        return all(input_id in provided_input_ids for input_id in inputs)
-    if match_mode == "all_missing":
-        return all(input_id not in provided_input_ids for input_id in inputs)
-    if match_mode == "any_present":
-        return any(input_id in provided_input_ids for input_id in inputs)
-    if match_mode == "any_missing":
-        return any(input_id not in provided_input_ids for input_id in inputs)
-    return False
+    return matches_input_presence_condition(raw_condition, provided_input_ids)
 
 
 def _resolve_conditional_bool(

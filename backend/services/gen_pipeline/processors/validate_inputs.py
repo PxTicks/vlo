@@ -16,9 +16,16 @@ def is_provided_value(value: object) -> bool:
 def collect_provided_input_ids(
     ctx: BackendPipelineContext,
 ) -> set[str]:
+    return collect_provided_input_ids_from_sources(ctx.injections, ctx.buffered_media)
+
+
+def collect_provided_input_ids_from_sources(
+    injections: dict[str, dict[str, object]] | None,
+    buffered_media: dict[str, dict[str, object]] | None,
+) -> set[str]:
     provided_input_ids: set[str] = set()
 
-    for node_id, injection_values in ctx.injections.items():
+    for node_id, injection_values in (injections or {}).items():
         if not isinstance(injection_values, dict):
             continue
         node_was_provided = False
@@ -30,7 +37,7 @@ def collect_provided_input_ids(
         if node_was_provided:
             provided_input_ids.add(str(node_id))
 
-    for media_info in ctx.buffered_media.values():
+    for media_info in (buffered_media or {}).values():
         if not isinstance(media_info, dict):
             continue
         if media_info.get("synthetic") is True:
@@ -71,6 +78,7 @@ validate_inputs_processor: Processor = _ValidateInputsProcessor()
 
 __all__ = [
     "collect_provided_input_ids",
+    "collect_provided_input_ids_from_sources",
     "is_provided_value",
     "validate_inputs_processor",
 ]

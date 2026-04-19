@@ -9,12 +9,21 @@ import httpx
 from fastapi import APIRouter, Request, Response, UploadFile, WebSocket
 from fastapi.responses import JSONResponse
 from services.comfyui import comfyui_generate as comfyui_generate_service
-from services.gen_pipeline.processors.utils.video_crop import analyze_mask_video_bounds, crop_video, get_video_dimensions
+from services.gen_pipeline.processors.utils.video_crop import (
+    analyze_mask_video_bounds,
+    crop_video,
+    get_video_dimensions,
+)
 
 logger = logging.getLogger(__name__)
 
 from api_errors import error_response
-from services.comfyui.comfyui_client import close_http_client, get_http_client, set_comfyui_url, get_comfyui_url
+from services.comfyui.comfyui_client import (
+    close_http_client,
+    get_http_client,
+    get_comfyui_url,
+    set_comfyui_url,
+)
 from services.comfyui.comfyui_client import get_comfyui_url_error
 from services.comfyui.comfyui_generate import (
     INPUT_NODE_MAP,
@@ -35,11 +44,20 @@ from services.workflow_rules import (
     WorkflowValidationError,
     enrich_rules_with_object_info,
     load_rules_model_for_workflow,
+    matches_input_presence_condition,
+    normalize_rules_model,
     sidecar_path_for_workflow,
 )
 from services.workflow_rules.schema import dump_resolved_rules, dump_warning_models
-from services.workflow_rules.object_info import OBJECT_INFO_PATH, set_object_info_cache, build_input_node_map
+from services.workflow_rules.object_info import (
+    OBJECT_INFO_PATH,
+    build_input_node_map,
+    set_object_info_cache,
+)
 from services.workflow_rules.input_labels import default_input_label
+from services.gen_pipeline.processors.validate_inputs import (
+    collect_provided_input_ids_from_sources,
+)
 
 from routers.comfyui_compat import compat_router  # noqa: F401 -- re-exported for main.py
 from services.generation_delivery import generation_holding_service
@@ -50,16 +68,12 @@ DUMMY_PHOTO_PATH = DEFAULT_WORKFLOWS_DIR.parent / "dummy_photo.jpeg"
 WORKFLOW_MENU_CONFIG_PATH = (
     Path(__file__).parent.parent / "assets" / ".config" / "workflow_menu.json"
 )
-WORKFLOW_MEDIA_FALLBACKS: dict[str, list[dict[str, Any]]] = {
-    "video_ltx2_3_i2v_t2v_basic.json": [
-        {
-            "node_id": "167",
-            "input_type": "image",
-            "filename": "dummy_photo.jpeg",
-            "content_type": "image/jpeg",
-            "path": DUMMY_PHOTO_PATH,
-        },
-    ],
+WORKFLOW_MEDIA_FALLBACK_SPECS: dict[str, dict[str, Any]] = {
+    "dummy:image": {
+        "path": DUMMY_PHOTO_PATH,
+        "filename": "dummy_photo.jpeg",
+        "content_type": "image/jpeg",
+    }
 }
 
 router = APIRouter(prefix="/comfy", tags=["comfyui"])
@@ -331,6 +345,38 @@ def _resolve_workflow_sidecar_path(filename: str) -> Path | None:
     return None
 
 
+def _resolve_workflow_media_fallbacks(
+    *,
+    workflow_rules: dict[str, Any] | None,
+    workflow_id: str | None,
+    workflow_warnings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if isinstance(workflow_rules, dict):
+        rules_model, warning_models = normalize_rules_model(workflow_rules)
+        workflow_warnings.extend(dump_warning_models(warning_models))
+        rules = dump_resolved_rules(rules_model)
+        fallback_defs = rules.get("media_fallbacks")
+        if isinstance(fallback_defs, list):
+            return [entry for entry in fallback_defs if isinstance(entry, dict)]
+        return []
+
+    if not isinstance(workflow_id, str) or not _is_safe_workflow_filename(workflow_id):
+        return []
+
+    rules_model, warning_models = load_rules_model_for_workflow(
+        WORKFLOWS_DIR,
+        workflow_id,
+        fallback_dirs=[DEFAULT_WORKFLOWS_DIR],
+    )
+    workflow_warnings.extend(dump_warning_models(warning_models))
+    rules = dump_resolved_rules(rules_model)
+    fallback_defs = rules.get("media_fallbacks")
+    if not isinstance(fallback_defs, list):
+        return []
+
+    return [entry for entry in fallback_defs if isinstance(entry, dict)]
+
+
 def _load_workflow_menu_metadata() -> dict[str, dict[str, Any]]:
     if not WORKFLOW_MENU_CONFIG_PATH.exists():
         return {}
@@ -507,28 +553,60 @@ def _parse_node_input_form_key(raw_key: str) -> tuple[str, str | None]:
 
 def _apply_workflow_media_fallbacks(
     *,
+    workflow_rules: dict[str, Any] | None,
     workflow_id: str | None,
     workflow: dict[str, Any],
+    injections: dict[str, dict[str, Any]],
     buffered_media: dict[str, dict[str, Any]],
     workflow_warnings: list[dict[str, Any]],
     node_map: dict[str, list[dict[str, Any]]],
 ) -> None:
-    if not isinstance(workflow_id, str):
-        return
-
-    fallback_defs = WORKFLOW_MEDIA_FALLBACKS.get(workflow_id)
+    fallback_defs = _resolve_workflow_media_fallbacks(
+        workflow_rules=workflow_rules,
+        workflow_id=workflow_id,
+        workflow_warnings=workflow_warnings,
+    )
     if not fallback_defs:
         return
 
+    provided_input_ids = collect_provided_input_ids_from_sources(
+        injections,
+        buffered_media,
+    )
+
     for fallback in fallback_defs:
+        fallback_kind = fallback.get("kind")
         node_id = fallback.get("node_id")
         input_type = fallback.get("input_type")
-        fallback_path = fallback.get("path")
         explicit_param = fallback.get("param")
-        if not isinstance(node_id, str) or not isinstance(input_type, str):
+        if (
+            not isinstance(fallback_kind, str)
+            or not isinstance(node_id, str)
+            or not isinstance(input_type, str)
+        ):
             continue
-        if not isinstance(fallback_path, Path):
+        if fallback.get("when") is not None and not matches_input_presence_condition(
+            fallback.get("when"),
+            provided_input_ids,
+        ):
             continue
+        fallback_spec = WORKFLOW_MEDIA_FALLBACK_SPECS.get(
+            f"{fallback_kind}:{input_type}"
+        )
+        if fallback_spec is None:
+            workflow_warnings.append(
+                {
+                    "code": "media_fallback_unsupported",
+                    "message": "Workflow fallback media declaration is not supported",
+                    "node_id": node_id,
+                    "details": {
+                        "kind": fallback_kind,
+                        "input_type": input_type,
+                    },
+                }
+            )
+            continue
+        fallback_path = fallback_spec["path"]
 
         node = workflow.get(node_id)
         if not isinstance(node, dict):
@@ -571,9 +649,15 @@ def _apply_workflow_media_fallbacks(
             "input_type": input_type,
             "class_type": node.get("class_type", ""),
             "bytes": fallback_path.read_bytes(),
-            "content_type": fallback.get("content_type", "application/octet-stream"),
-            "filename": fallback.get("filename", fallback_path.name),
-            "synthetic": True,
+            "content_type": fallback.get(
+                "content_type",
+                fallback_spec.get("content_type", "application/octet-stream"),
+            ),
+            "filename": fallback.get(
+                "filename",
+                fallback_spec.get("filename", fallback_path.name),
+            ),
+            "synthetic": fallback.get("synthetic", True) is True,
         }
 
 
@@ -1160,8 +1244,10 @@ async def generate(request: Request):
             )
 
     _apply_workflow_media_fallbacks(
+        workflow_rules=workflow_rules,
         workflow_id=workflow_id,
         workflow=workflow,
+        injections=injections,
         buffered_media=buffered_media,
         workflow_warnings=workflow_warnings,
         node_map=node_map,

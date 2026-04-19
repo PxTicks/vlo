@@ -28,6 +28,10 @@ function resolveExplicitViewUrl(item: Record<string, unknown>): string | null {
 
   if (!rawUrl) return null;
   if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+  // App-root /api routes are already proxied by our backend and must keep the
+  // /api prefix intact. Prefixing them with /comfy/api would strip that /api
+  // segment when the request is proxied upstream.
+  if (rawUrl.startsWith("/api/")) return `${API_BASE_URL}${rawUrl}`;
   if (rawUrl.startsWith("/")) return `${COMFY_API}${rawUrl}`;
   return `${COMFY_API}/${rawUrl}`;
 }

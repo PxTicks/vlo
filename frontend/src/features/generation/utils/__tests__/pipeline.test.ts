@@ -742,7 +742,7 @@ describe("generation pipeline", () => {
           filename: "ComfyUI_00001_.mp4",
           subfolder: "video",
           type: "output",
-          viewUrl: "/comfy/api/vlo-memory/view/media-123",
+          viewUrl: "/api/vlo-memory/view/media-123",
         },
       ],
       {
@@ -761,7 +761,7 @@ describe("generation pipeline", () => {
       "ComfyUI_00001_.mp4",
       "video",
       "output",
-      "/comfy/api/vlo-memory/view/media-123",
+      "/api/vlo-memory/view/media-123",
     );
     expect(mockAddLocalAsset).toHaveBeenCalledWith(
       output,

@@ -335,8 +335,30 @@ export async function fetchOutputAsFile(
   viewUrl?: string,
 ): Promise<File> {
   const url = viewUrl ?? getOutputViewUrl(filename, subfolder, type);
+  console.debug("[Generation] Fetching output file", {
+    filename,
+    subfolder,
+    type,
+    viewUrl: viewUrl ?? null,
+    resolvedUrl: url,
+  });
   const resp = await fetch(url);
   if (!resp.ok) {
+    let responseBody: string | null = null;
+    try {
+      responseBody = (await resp.clone().text()).slice(0, 500);
+    } catch {
+      responseBody = null;
+    }
+    console.warn("[Generation] Output fetch failed", {
+      filename,
+      subfolder,
+      type,
+      viewUrl: viewUrl ?? null,
+      resolvedUrl: url,
+      status: resp.status,
+      responseBody,
+    });
     await throwRequestError("Output fetch", resp);
   }
   const blob = await resp.blob();

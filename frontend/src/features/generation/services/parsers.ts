@@ -38,6 +38,14 @@ function toGenerationJobOutput(item: unknown): GenerationJobOutput | null {
   const subfolder = typeof item.subfolder === "string" ? item.subfolder : "";
   const type = typeof item.type === "string" ? item.type : "output";
   const explicitViewUrl = resolveExplicitViewUrl(item);
+  if (explicitViewUrl) {
+    console.debug("[Generation] Parsed output with explicit view url", {
+      filename: item.filename,
+      subfolder,
+      type,
+      explicitViewUrl,
+    });
+  }
 
   return {
     filename: item.filename,

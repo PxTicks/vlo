@@ -3851,6 +3851,42 @@
       "bgcolor": "rgba(24,24,27,.9)"
     },
     {
+      "id": 687,
+      "type": "Fast Groups Bypasser (rgthree)",
+      "pos": [
+        320,
+        4790
+      ],
+      "size": [
+        350,
+        100
+      ],
+      "flags": {},
+      "order": 49,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "OPT_CONNECTION",
+          "type": "*",
+          "links": null
+        }
+      ],
+      "title": "FOR SINGLE PASS TURN OFF BOTH TOGGLES",
+      "properties": {
+        "matchColors": "",
+        "matchTitle": "2nd*",
+        "showNav": false,
+        "sort": "position",
+        "customSortAlphabet": "",
+        "toggleRestriction": "default",
+        "showAllGraphs": true,
+        "widget_ue_connectable": {}
+      },
+      "color": "#006691",
+      "bgcolor": "rgba(24,24,27,.9)"
+    },
+    {
       "id": 465,
       "type": "LatentUpscaleModelLoader",
       "pos": [

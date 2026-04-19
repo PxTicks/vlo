@@ -1,10 +1,20 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import type { StandardTimelineClip } from "../../../types/TimelineTypes";
+import type { MaskCompositionComponent } from "../../../types/Components";
 import { useTimelineStore } from "../../timeline";
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { createMaskLayoutTransforms } from "../../masks/model/maskFactory";
 import { useTransformationController } from "../hooks/useTransformationController";
 import { TICKS_PER_SECOND } from "../../timeline";
+
+function getCompositeTransforms(clip: StandardTimelineClip | undefined) {
+  const composition = (clip?.components ?? []).find(
+    (component): component is MaskCompositionComponent =>
+      component.type === "mask_composition",
+  );
+  return composition?.parameters.compositeTransformations ?? [];
+}
 
 const clipId = "clip-mask-target";
 const maskId = "mask-transform-target";
@@ -27,10 +37,11 @@ describe("useTransformationController mask target", () => {
           transformedDuration: 8 * TICKS_PER_SECOND,
           transformedOffset: 0,
           transformations: [],
-          clipComponents: [
+          components: [
             {
-              clipId: maskClipId,
-              componentType: "mask",
+              id: "mask_ref_1",
+              type: "mask_ref",
+              parameters: { maskClipId },
             },
           ],
         },
@@ -110,15 +121,14 @@ describe("useTransformationController mask target", () => {
     });
 
     const state = useTimelineStore.getState();
-    const parentClip = state.clips.find((clip) => clip.id === clipId);
+    const parentClip = state.clips.find(
+      (clip): clip is StandardTimelineClip =>
+        clip.id === clipId && clip.type !== "mask",
+    );
     const maskClip = state.clips.find((clip) => clip.id === maskClipId);
 
     expect(parentClip?.type).toBe("video");
-    expect(
-      parentClip?.type !== "mask"
-        ? parentClip.maskCompositeTransformations
-        : undefined,
-    ).toEqual([
+    expect(getCompositeTransforms(parentClip)).toEqual([
       expect.objectContaining({
         type: "mask_grow",
         parameters: {

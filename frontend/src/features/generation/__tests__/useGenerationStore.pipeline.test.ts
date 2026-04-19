@@ -16,7 +16,6 @@ const {
   mockGetHistoryOutputsWithRetry,
   mockInterrupt,
   mockListWorkflows,
-  mockPreResolvePrompt,
   mockWsInstances,
 } = vi.hoisted(() => ({
   mockFrontendPostprocess: vi.fn(),
@@ -29,7 +28,6 @@ const {
   mockGetHistoryOutputsWithRetry: vi.fn(),
   mockInterrupt: vi.fn(),
   mockListWorkflows: vi.fn(),
-  mockPreResolvePrompt: vi.fn(),
   mockWsInstances: [] as unknown[],
 }));
 
@@ -167,11 +165,6 @@ vi.mock("../utils/pipeline", async (importOriginal) => {
   };
 });
 
-vi.mock("../services/preResolvePrompt", () => ({
-  isGraphMutationInFlight: () => false,
-  preResolvePrompt: mockPreResolvePrompt,
-}));
-
 import { useGenerationStore } from "../useGenerationStore";
 
 function makeWorkflowRules(
@@ -301,7 +294,6 @@ describe("useGenerationStore pipeline phases", () => {
     mockGetHistoryOutputsWithRetry.mockReset();
     mockInterrupt.mockReset();
     mockListWorkflows.mockReset();
-    mockPreResolvePrompt.mockReset();
 
     mockFrontendPreprocess.mockImplementation(
       async (
@@ -370,15 +362,6 @@ describe("useGenerationStore pipeline phases", () => {
     });
     mockInterrupt.mockResolvedValue(undefined);
     mockListWorkflows.mockResolvedValue([]);
-    mockPreResolvePrompt.mockResolvedValue({
-      output: {
-        "999": {
-          class_type: "PreResolvedWorkflow",
-          inputs: {},
-        },
-      },
-      workflow: {},
-    });
 
     useGenerationStore.setState({
       wsClient: null,
@@ -645,246 +628,6 @@ describe("useGenerationStore pipeline phases", () => {
                 }),
               }),
             }),
-          }),
-        }),
-      }),
-    );
-    expect(
-      mockGenerate.mock.calls[0]?.[0]?.workflowRules?.nodes,
-    ).not.toHaveProperty("269");
-  });
-
-  it("captures a migrated workflow's pre-resolved prompt before preprocessing starts", async () => {
-    makeReadyStoreState();
-    const preprocessDeferred = createDeferred<{
-      workflow: Record<string, unknown> | null;
-      workflowId: string | null;
-      targetAspectRatio: string;
-      exactAspectRatio: boolean;
-      targetResolution: number;
-      textInputs: Record<string, string>;
-      imageInputs: Record<string, File>;
-      audioInputs: Record<string, File>;
-      videoInputs: Record<string, File>;
-      clientId: string;
-    }>();
-    mockFrontendPreprocess.mockReturnValue(preprocessDeferred.promise);
-
-    const queuedRules = makeWorkflowRules({
-      nodes: {
-        "167": {
-          present: {
-            label: "Source image",
-            required: false,
-          },
-        },
-      },
-    });
-    const switchedRules = makeWorkflowRules({
-      nodes: {
-        "269": {
-          present: {
-            label: "Source video",
-            required: false,
-          },
-        },
-      },
-    });
-
-    mockPreResolvePrompt.mockResolvedValueOnce({
-      output: {
-        "101": {
-          class_type: "CapturedPreResolvedWorkflow",
-          inputs: {
-            prompt: "captured-before-preprocess",
-          },
-        },
-      },
-      workflow: {},
-    });
-
-    useGenerationStore.setState({
-      selectedWorkflowId: "video_ltx2_3_retake.json",
-      availableWorkflows: [
-        { id: "video_ltx2_3_retake.json", name: "LTX2.3 ReTake" },
-        { id: "wf-switched.json", name: "Switched Workflow" },
-      ],
-      syncedWorkflow: {
-        "1": {
-          class_type: "OriginalWorkflow",
-          inputs: {},
-        },
-      },
-      activeWorkflowRules: queuedRules,
-      rulesWorkflowSourceId: "video_ltx2_3_retake.json",
-      editorRef: {} as HTMLIFrameElement,
-    });
-
-    const submitPromise = useGenerationStore.getState().submitGeneration({});
-    await flushMicrotasks();
-
-    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
-
-    useGenerationStore.setState({
-      selectedWorkflowId: "wf-switched.json",
-      syncedWorkflow: {
-        "2": {
-          class_type: "SwitchedWorkflow",
-          inputs: {},
-        },
-      },
-      activeWorkflowRules: switchedRules,
-      rulesWorkflowSourceId: "wf-switched.json",
-    });
-
-    preprocessDeferred.resolve({
-      workflow: {
-        "1": {
-          class_type: "OriginalWorkflow",
-          inputs: {},
-        },
-      },
-      workflowId: "video_ltx2_3_retake.json",
-      targetAspectRatio: "16:9",
-      exactAspectRatio: false,
-      targetResolution: 1080,
-      textInputs: {},
-      imageInputs: {},
-      audioInputs: {},
-      videoInputs: {},
-      clientId: "client-id",
-    });
-
-    await submitPromise;
-
-    expect(mockGenerate).toHaveBeenCalledTimes(1);
-    expect(mockGenerate.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({
-        workflowId: "video_ltx2_3_retake.json",
-        workflow: {
-          "101": {
-            class_type: "CapturedPreResolvedWorkflow",
-            inputs: {
-              prompt: "captured-before-preprocess",
-            },
-          },
-        },
-        promptIsPreResolved: true,
-        workflowRules: expect.objectContaining({
-          nodes: expect.objectContaining({
-            "167": expect.any(Object),
-          }),
-        }),
-      }),
-    );
-    expect(
-      mockGenerate.mock.calls[0]?.[0]?.workflowRules?.nodes,
-    ).not.toHaveProperty("269");
-  });
-
-  it("uses the queued pre-resolved workflow snapshot instead of the live editor workflow at dispatch time", async () => {
-    makeReadyStoreState();
-
-    const queuedRules = makeWorkflowRules({
-      nodes: {
-        "235": {
-          widgets: {
-            switch: {
-              label: "Use custom audio",
-              hidden: true,
-              value_type: "boolean",
-            },
-          },
-        },
-      },
-    });
-    const switchedRules = makeWorkflowRules({
-      nodes: {
-        "269": {
-          present: {
-            label: "Source image",
-            required: false,
-          },
-        },
-      },
-    });
-
-    mockPreResolvePrompt.mockResolvedValueOnce({
-      output: {
-        "202": {
-          class_type: "QueuedCapturedWorkflow",
-          inputs: {
-            prompt: "preserved-queued-workflow",
-          },
-        },
-      },
-      workflow: {},
-    });
-
-    useGenerationStore.setState({
-      selectedWorkflowId: "video_ltx2_3_retake.json",
-      availableWorkflows: [
-        { id: "video_ltx2_3_retake.json", name: "LTX2.3 ReTake" },
-        { id: "video_ltx2_3_i2v.json", name: "LTX2.3 I2V" },
-      ],
-      syncedWorkflow: {
-        "1": {
-          class_type: "OriginalQueuedWorkflow",
-          inputs: {},
-        },
-      },
-      activeWorkflowRules: queuedRules,
-      rulesWorkflowSourceId: "video_ltx2_3_retake.json",
-      editorRef: {} as HTMLIFrameElement,
-      jobs: new Map([
-        [
-          "active-job",
-          {
-            ...makeQueuedJob("active-job"),
-            status: "running",
-          },
-        ],
-      ]),
-      activeJobId: "active-job",
-    });
-
-    await useGenerationStore.getState().queueGeneration({});
-
-    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
-    expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
-
-    useGenerationStore.setState({
-      selectedWorkflowId: "video_ltx2_3_i2v.json",
-      syncedWorkflow: {
-        "2": {
-          class_type: "SwitchedWorkflow",
-          inputs: {},
-        },
-      },
-      activeWorkflowRules: switchedRules,
-      rulesWorkflowSourceId: "video_ltx2_3_i2v.json",
-      activeJobId: null,
-    });
-
-    await useGenerationStore.getState().processGenerationQueue();
-
-    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
-    expect(mockGenerate).toHaveBeenCalledTimes(1);
-    expect(mockGenerate.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({
-        workflowId: "video_ltx2_3_retake.json",
-        workflow: {
-          "202": {
-            class_type: "QueuedCapturedWorkflow",
-            inputs: {
-              prompt: "preserved-queued-workflow",
-            },
-          },
-        },
-        promptIsPreResolved: true,
-        workflowRules: expect.objectContaining({
-          nodes: expect.objectContaining({
-            "235": expect.any(Object),
           }),
         }),
       }),

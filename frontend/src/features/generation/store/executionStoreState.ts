@@ -135,131 +135,6 @@ function buildGenerationPlanFromState(
   });
 }
 
-function clonePreResolvedWorkflow(
-  workflow: Record<string, unknown>,
-): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(workflow)) as Record<string, unknown>;
-}
-
-function shouldCapturePreResolvedWorkflow(
-  state: ReturnType<GenerationStoreGet>,
-  workflowId: string | null,
-): boolean {
-  return (
-    state.preResolvedPromptEnabled &&
-    typeof workflowId === "string" &&
-    MIGRATED_WORKFLOW_IDS.has(workflowId)
-  );
-}
-
-async function capturePreResolvedWorkflow(
-  plan: GenerationPlan,
-  state: ReturnType<GenerationStoreGet>,
-): Promise<Record<string, unknown> | null> {
-  if (!shouldCapturePreResolvedWorkflow(state, plan.workflow.workflowId)) {
-    return null;
-  }
-
-  const iframe = state.editorRef;
-  if (!iframe) {
-    throw new Error(
-      "ComfyUI editor is not mounted; pre-resolved prompt requires an open editor iframe",
-    );
-  }
-
-  const rewrites: RewriteRule[] =
-    (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
-  const providedInputIds = collectProvidedInputIds(plan);
-  const defaultWidgetOverrides = evaluateWidgetDefaultOverrides(
-    plan.workflow.workflowRules,
-    providedInputIds,
-    plan.submission.frontendStateWidgetValues,
-  );
-  const { bypass, widgetOverrides: rewriteWidgetOverrides } = evaluateRewrites(
-    rewrites,
-    providedInputIds,
-    plan.submission.frontendStateWidgetValues,
-  );
-  const preResolved = await preResolvePrompt(iframe, bypass, [
-    ...defaultWidgetOverrides,
-    ...rewriteWidgetOverrides,
-  ]);
-  if (!preResolved) {
-    throw new Error(
-      "Pre-resolved prompt generation failed; check that ComfyUI graphToPrompt is available",
-    );
-  }
-
-  return clonePreResolvedWorkflow(preResolved.output);
-}
-
-async function attachPreResolvedWorkflowToPlan(
-  plan: GenerationPlan,
-  state: ReturnType<GenerationStoreGet>,
-): Promise<GenerationPlan> {
-  if (plan.workflow.preResolvedWorkflow != null) {
-    return plan;
-  }
-
-  const preResolvedWorkflow = await capturePreResolvedWorkflow(plan, state);
-  if (!preResolvedWorkflow) {
-    return plan;
-  }
-
-  return {
-    ...plan,
-    workflow: {
-      ...plan.workflow,
-      preResolvedWorkflow,
-    },
-  };
-}
-
-async function buildQueuedGenerationPlansFromState(
-  state: ReturnType<GenerationStoreGet>,
-  slotValues: Record<string, SlotValue>,
-  widgetInputs: Record<string, string>,
-  widgetModes: Record<string, "fixed" | "randomize">,
-  derivedWidgetInputs: Record<string, string>,
-  frontendStateWidgetValues: Record<string, unknown>,
-  count: number,
-): Promise<GenerationPlan[]> {
-  const plans = Array.from({ length: count }, () =>
-    buildGenerationPlanFromState(
-      state,
-      slotValues,
-      widgetInputs,
-      widgetModes,
-      derivedWidgetInputs,
-      frontendStateWidgetValues,
-    ),
-  );
-  const firstPlan = plans[0];
-  if (!firstPlan) {
-    return [];
-  }
-
-  const resolvedFirstPlan = await attachPreResolvedWorkflowToPlan(
-    firstPlan,
-    state,
-  );
-  const preResolvedWorkflow = resolvedFirstPlan.workflow.preResolvedWorkflow;
-  if (!preResolvedWorkflow) {
-    return [resolvedFirstPlan, ...plans.slice(1)];
-  }
-
-  return [
-    resolvedFirstPlan,
-    ...plans.slice(1).map((plan) => ({
-      ...plan,
-      workflow: {
-        ...plan.workflow,
-        preResolvedWorkflow: clonePreResolvedWorkflow(preResolvedWorkflow),
-      },
-    })),
-  ];
-}
-
 function buildSubmissionErrorPatch(
   get: GenerationStoreGet,
   set: GenerationStoreSet,
@@ -318,16 +193,7 @@ export function buildExecutionStoreState(
         );
       }
 
-      const resolvedPlan =
-        plan.workflow.preResolvedWorkflow != null ||
-        !shouldCapturePreResolvedWorkflow(state, plan.workflow.workflowId)
-          ? plan
-          : await attachPreResolvedWorkflowToPlan(plan, state);
-      if (get().pipelineRunToken !== pipelineRunToken) {
-        return null;
-      }
-
-      const prepared = await prepareGenerationPlan(resolvedPlan, {
+      const prepared = await prepareGenerationPlan(plan, {
         clientId: wsClient.currentClientId,
         signal: preprocessAbortController.signal,
       });
@@ -335,17 +201,52 @@ export function buildExecutionStoreState(
         return null;
       }
 
-      const usesPreResolvedWorkflow =
-        resolvedPlan.workflow.preResolvedWorkflow != null;
-      const resolvedWorkflow: Record<string, unknown> | null =
-        resolvedPlan.workflow.preResolvedWorkflow ?? prepared.request.workflow;
+      const shouldPreResolve =
+        state.preResolvedPromptEnabled &&
+        typeof plan.workflow.workflowId === "string" &&
+        MIGRATED_WORKFLOW_IDS.has(plan.workflow.workflowId);
+
+      let resolvedWorkflow: Record<string, unknown> | null =
+        prepared.request.workflow;
+      if (shouldPreResolve) {
+        const iframe = state.editorRef;
+        if (!iframe) {
+          throw new Error(
+            "ComfyUI editor is not mounted; pre-resolved prompt requires an open editor iframe",
+          );
+        }
+        const rewrites: RewriteRule[] =
+          (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
+        const providedInputIds = collectProvidedInputIds(plan);
+        const defaultWidgetOverrides = evaluateWidgetDefaultOverrides(
+          plan.workflow.workflowRules,
+          providedInputIds,
+          plan.submission.frontendStateWidgetValues,
+        );
+        const { bypass, widgetOverrides: rewriteWidgetOverrides } = evaluateRewrites(
+          rewrites,
+          providedInputIds,
+          plan.submission.frontendStateWidgetValues,
+        );
+        const preResolved = await preResolvePrompt(
+          iframe,
+          bypass,
+          [...defaultWidgetOverrides, ...rewriteWidgetOverrides],
+        );
+        if (!preResolved) {
+          throw new Error(
+            "Pre-resolved prompt generation failed; check that ComfyUI graphToPrompt is available",
+          );
+        }
+        resolvedWorkflow = preResolved.output;
+      }
 
       const response = await comfyApi.generate(
         {
           ...prepared.request,
           workflow: resolvedWorkflow,
-          workflowRules: resolvedPlan.workflow.workflowRules ?? undefined,
-          promptIsPreResolved: usesPreResolvedWorkflow,
+          workflowRules: plan.workflow.workflowRules ?? undefined,
+          promptIsPreResolved: shouldPreResolve,
         },
         {
           signal: preprocessAbortController.signal,
@@ -362,9 +263,9 @@ export function buildExecutionStoreState(
             prepared.plan.workflow.graphData ??
             response.comfyui_prompt ??
             prepared.request.workflow,
-          workflowInputs: resolvedPlan.workflow.workflowInputs,
-          slotValues: resolvedPlan.preprocess.slotValues,
-          generationInputs: resolvedPlan.metadata.generationMetadata.inputs,
+          workflowInputs: plan.workflow.workflowInputs,
+          slotValues: plan.preprocess.slotValues,
+          generationInputs: plan.metadata.generationMetadata.inputs,
         });
       } catch (error) {
         console.warn(
@@ -376,7 +277,7 @@ export function buildExecutionStoreState(
       const submitted = buildSubmittedGeneration(prepared, response);
       set({
         workflowRuleWarnings: mergeRuleWarnings(
-          resolvedPlan.metadata.workflowWarnings,
+          plan.metadata.workflowWarnings,
           submitted.responseWarnings,
         ),
         lastAppliedWidgetValues: submitted.appliedWidgetValues,
@@ -391,7 +292,7 @@ export function buildExecutionStoreState(
         error: null,
         submittedAt: Date.now(),
         completedAt: null,
-        postprocessConfig: resolvedPlan.postprocess.config,
+        postprocessConfig: plan.postprocess.config,
         aspectRatioProcessing: submitted.aspectRatioProcessing,
         generationMetadata: submitted.generationMetadata,
         postprocessedPreview: null,
@@ -627,21 +528,16 @@ export function buildExecutionStoreState(
         return;
       }
 
-      let plans: GenerationPlan[];
-      try {
-        plans = await buildQueuedGenerationPlansFromState(
+      const plans = Array.from({ length: safeCount }, () =>
+        buildGenerationPlanFromState(
           currentState,
           slotValues,
           widgetInputs,
           widgetModes,
           derivedWidgetInputs,
           frontendStateWidgetValues,
-          safeCount,
-        );
-      } catch (error) {
-        buildSubmissionErrorPatch(get, set, error);
-        return;
-      }
+        ),
+      );
 
       set((state) => ({
         generationQueue: [...state.generationQueue, ...plans],

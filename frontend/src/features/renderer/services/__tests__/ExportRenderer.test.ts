@@ -347,10 +347,11 @@ describe("ExportRenderer", () => {
           timelineDuration: 96000 * 2,
           offset: 0,
           type: "video",
-          clipComponents: [
+          components: [
             {
-              clipId: "c1::mask::m1",
-              componentType: "mask",
+              id: "mask_ref_1",
+              type: "mask_ref",
+              parameters: { maskClipId: "c1::mask::m1" },
             },
           ],
         },

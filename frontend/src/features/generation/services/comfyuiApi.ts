@@ -21,6 +21,7 @@ export interface PromptSubmission {
 
 export interface PromptResponse {
   prompt_id: string;
+  delivery_id?: string;
   number: number;
   node_errors: Record<string, unknown>;
   workflow_warnings?: WorkflowRuleWarning[];
@@ -237,8 +238,28 @@ export async function generate(
   request: GenerationRequest,
   options: { signal?: AbortSignal } = {},
 ): Promise<PromptResponse> {
+  if (!request.projectId || !request.deliveryContext) {
+    throw new Error("Generation request is missing backend delivery context");
+  }
+
+  const serializedDeliveryContext = {
+    plan_id: request.deliveryContext.planId,
+    workflow_name: request.deliveryContext.workflowName,
+    workflow_source_id: request.deliveryContext.workflowSourceId,
+    generation_metadata: request.deliveryContext.generationMetadata,
+    postprocess_config: request.deliveryContext.postprocessConfig,
+    auto_family_request_key: request.deliveryContext.autoFamilyRequestKey,
+    uses_save_image_websocket_outputs:
+      request.deliveryContext.usesSaveImageWebsocketOutputs,
+    replay_inputs: request.deliveryContext.replayInputs ?? null,
+  };
   const formData = new FormData();
   formData.append("client_id", request.clientId);
+  formData.append("project_id", request.projectId);
+  formData.append(
+    "delivery_context",
+    JSON.stringify(serializedDeliveryContext),
+  );
 
   if (request.workflowId) {
     formData.append("workflow_id", request.workflowId);

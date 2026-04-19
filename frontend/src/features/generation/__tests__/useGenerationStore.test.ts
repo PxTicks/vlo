@@ -70,8 +70,20 @@ describe("useGenerationStore workflow rules", () => {
         error: null,
       },
     });
+    vi.spyOn(comfyApi, "syncObjectInfo").mockResolvedValue({
+      synced: true,
+      node_classes: 0,
+      input_node_map: {},
+    });
 
     useProjectStore.setState({
+      project: {
+        id: "project-1",
+        title: "Project One",
+        createdAt: Date.now(),
+        lastModified: Date.now(),
+        rootAssetsFolder: "project-one",
+      },
       config: {
         aspectRatio: "16:9",
         fps: 30,

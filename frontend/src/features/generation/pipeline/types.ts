@@ -181,7 +181,9 @@ export interface GenerationRequest {
   workflow: Record<string, unknown> | null;
   graphData: Record<string, unknown> | null;
   workflowId: string | null;
+  projectId?: string;
   workflowRules?: WorkflowRules | null;
+  deliveryContext?: GenerationDeliveryContext;
   exactAspectRatio: boolean;
   targetAspectRatio?: string;
   targetResolution?: number;
@@ -204,13 +206,26 @@ export interface PreparedGeneration {
   request: GenerationRequest;
 }
 
+export interface GenerationDeliveryContext {
+  planId: string;
+  workflowName: string;
+  workflowSourceId: string | null;
+  generationMetadata: GeneratedCreationMetadata;
+  postprocessConfig: WorkflowPostprocessingConfig;
+  autoFamilyRequestKey: string | null;
+  usesSaveImageWebsocketOutputs: boolean;
+  replayInputs?: Record<string, unknown> | null;
+}
+
 export interface SubmittedGeneration {
   prepared: PreparedGeneration;
   promptId: string;
+  deliveryId: string | null;
   responseWarnings: WorkflowRuleWarning[];
   appliedWidgetValues: Record<string, string>;
   aspectRatioProcessing: AspectRatioProcessingMetadata | null;
   generationMetadata: GeneratedCreationMetadata;
+  autoFamilyRequestKey: string | null;
   preparedMaskFile: File | null;
   usesSaveImageWebsocketOutputs: boolean;
   saveImageWebsocketNodeIds: ReadonlySet<string>;

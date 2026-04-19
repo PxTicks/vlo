@@ -43,6 +43,7 @@ WIDGET_CONTROL_MODES = {"fixed", "randomize"}
 class GenerationInput:
     client_id: str
     workflow: dict
+    prompt_id: str | None = None
     workflow_id: str | None = None
     rules: dict[str, Any] | None = None
     rules_override_provided: bool = False
@@ -295,6 +296,7 @@ def build_backend_context(
     return BackendPipelineContext(
         client=client,
         client_id=gen_input.client_id,
+        prompt_id=gen_input.prompt_id,
         workflow=gen_input.workflow,
         workflow_id=gen_input.workflow_id,
         rules=gen_input.rules,

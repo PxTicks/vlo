@@ -24,7 +24,8 @@ class _SubmitPromptProcessor:
         return True
 
     async def execute(self, ctx: BackendPipelineContext) -> None:
-        ctx.prompt_id = self._prompt_id_factory()
+        if not isinstance(ctx.prompt_id, str) or not ctx.prompt_id.strip():
+            ctx.prompt_id = self._prompt_id_factory()
         body = {
             "prompt": ctx.workflow,
             "client_id": ctx.client_id,

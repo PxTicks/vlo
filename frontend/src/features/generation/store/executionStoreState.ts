@@ -5,9 +5,14 @@ import { mergeRuleWarnings } from "../services/warnings";
 import {
   buildSubmittedGeneration,
   createGenerationPlan,
+  getSaveImageWebsocketNodeIds,
   prepareGenerationPlan,
 } from "../pipeline/generationPlan";
-import type { GenerationPlan, SlotValue } from "../pipeline/types";
+import type {
+  GenerationDeliveryContext,
+  GenerationPlan,
+  SlotValue,
+} from "../pipeline/types";
 import {
   evaluateRewrites,
   evaluateWidgetDefaultOverrides,
@@ -50,6 +55,17 @@ function resolvePostprocessConfig(
     ...(postprocessing?.stitch_fps != null
       ? { stitch_fps: postprocessing.stitch_fps }
       : {}),
+  };
+}
+
+function clonePostprocessConfig(
+  config: WorkflowPostprocessingConfig,
+): WorkflowPostprocessingConfig {
+  return {
+    mode: config.mode,
+    panel_preview: config.panel_preview,
+    on_failure: config.on_failure,
+    ...(config.stitch_fps != null ? { stitch_fps: config.stitch_fps } : {}),
   };
 }
 
@@ -260,6 +276,31 @@ async function buildQueuedGenerationPlansFromState(
   ];
 }
 
+function buildGenerationDeliveryContext(
+  plan: GenerationPlan,
+  workflow: Record<string, unknown> | null,
+  autoFamilyRequestKey: string | null,
+): GenerationDeliveryContext {
+  return {
+    planId: plan.id,
+    workflowName: plan.metadata.generationMetadata.workflowName,
+    workflowSourceId:
+      plan.workflow.workflowId ??
+      plan.metadata.generationMetadata.workflowSourceId ??
+      null,
+    generationMetadata: structuredClone(plan.metadata.generationMetadata),
+    postprocessConfig: clonePostprocessConfig(plan.postprocess.config),
+    autoFamilyRequestKey,
+    usesSaveImageWebsocketOutputs:
+      getSaveImageWebsocketNodeIds(workflow).size > 0,
+    replayInputs: plan.metadata.generationMetadata.replayState
+      ? {
+          replayState: structuredClone(plan.metadata.generationMetadata.replayState),
+        }
+      : null,
+  };
+}
+
 function buildSubmissionErrorPatch(
   get: GenerationStoreGet,
   set: GenerationStoreSet,
@@ -340,9 +381,40 @@ export function buildExecutionStoreState(
       const resolvedWorkflow: Record<string, unknown> | null =
         resolvedPlan.workflow.preResolvedWorkflow ?? prepared.request.workflow;
 
+      const projectId = useProjectStore.getState().project?.id;
+      if (!projectId) {
+        throw new Error("No active project is loaded");
+      }
+
+      let autoFamilyRequestKey: string | null = null;
+      try {
+        autoFamilyRequestKey = await buildGenerationFamilyRequestKey({
+          workflow:
+            prepared.plan.workflow.graphData ??
+            resolvedWorkflow ??
+            prepared.request.workflow,
+          workflowInputs: resolvedPlan.workflow.workflowInputs,
+          slotValues: resolvedPlan.preprocess.slotValues,
+          generationInputs: resolvedPlan.metadata.generationMetadata.inputs,
+        });
+      } catch (error) {
+        console.warn(
+          "[Generation] Failed to build auto family request key for delivery context",
+          error,
+        );
+      }
+
+      const deliveryContext = buildGenerationDeliveryContext(
+        resolvedPlan,
+        resolvedWorkflow,
+        autoFamilyRequestKey,
+      );
+
       const response = await comfyApi.generate(
         {
           ...prepared.request,
+          projectId,
+          deliveryContext,
           workflow: resolvedWorkflow,
           workflowRules: resolvedPlan.workflow.workflowRules ?? undefined,
           promptIsPreResolved: usesPreResolvedWorkflow,
@@ -355,25 +427,9 @@ export function buildExecutionStoreState(
         return null;
       }
 
-      let autoFamilyRequestKey: string | null = null;
-      try {
-        autoFamilyRequestKey = await buildGenerationFamilyRequestKey({
-          workflow:
-            prepared.plan.workflow.graphData ??
-            response.comfyui_prompt ??
-            prepared.request.workflow,
-          workflowInputs: resolvedPlan.workflow.workflowInputs,
-          slotValues: resolvedPlan.preprocess.slotValues,
-          generationInputs: resolvedPlan.metadata.generationMetadata.inputs,
-        });
-      } catch (error) {
-        console.warn(
-          "[Generation] Failed to build auto family request key for generated asset",
-          error,
-        );
-      }
-
-      const submitted = buildSubmittedGeneration(prepared, response);
+      const submitted = buildSubmittedGeneration(prepared, response, {
+        autoFamilyRequestKey,
+      });
       set({
         workflowRuleWarnings: mergeRuleWarnings(
           resolvedPlan.metadata.workflowWarnings,
@@ -384,6 +440,7 @@ export function buildExecutionStoreState(
 
       const newJob: import("../types").GenerationJob = {
         id: submitted.promptId,
+        deliveryId: submitted.deliveryId,
         status: "queued",
         progress: 0,
         currentNode: null,

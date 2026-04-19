@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+import base64
 from pathlib import Path
 from typing import Any, cast
 
@@ -41,6 +42,7 @@ from services.workflow_rules.object_info import OBJECT_INFO_PATH, set_object_inf
 from services.workflow_rules.input_labels import default_input_label
 
 from routers.comfyui_compat import compat_router  # noqa: F401 -- re-exported for main.py
+from services.generation_delivery import generation_holding_service
 
 WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
 DEFAULT_WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / ".config" / "default_workflows"
@@ -61,6 +63,105 @@ WORKFLOW_MEDIA_FALLBACKS: dict[str, list[dict[str, Any]]] = {
 }
 
 router = APIRouter(prefix="/comfy", tags=["comfyui"])
+
+
+def _extract_stage_output_value(
+    pipeline_outputs: Any,
+    key: str,
+) -> Any | None:
+    if not isinstance(pipeline_outputs, dict):
+        return None
+
+    for stage_outputs in pipeline_outputs.values():
+        if not isinstance(stage_outputs, dict):
+            continue
+        if key in stage_outputs:
+            return stage_outputs[key]
+    return None
+
+
+def _enrich_generation_metadata(
+    base_metadata: Any,
+    response_payload: dict[str, Any],
+    workflow_graph_data: dict[str, Any] | None,
+) -> dict[str, Any]:
+    metadata = dict(base_metadata) if isinstance(base_metadata, dict) else {}
+    pipeline_outputs = response_payload.get("pipeline_outputs")
+
+    mask_crop_metadata = _extract_stage_output_value(
+        pipeline_outputs,
+        "mask_crop_metadata",
+    )
+    if isinstance(mask_crop_metadata, dict):
+        metadata["maskCropMetadata"] = mask_crop_metadata
+
+    comfyui_prompt = response_payload.get("comfyui_prompt")
+    if isinstance(comfyui_prompt, dict):
+        metadata["comfyuiPrompt"] = comfyui_prompt
+
+    if isinstance(workflow_graph_data, dict):
+        metadata["comfyuiWorkflow"] = workflow_graph_data
+    else:
+        comfyui_workflow = response_payload.get("comfyui_workflow")
+        if isinstance(comfyui_workflow, dict):
+            metadata["comfyuiWorkflow"] = comfyui_workflow
+
+    return metadata
+
+
+def _get_delivery_context_value(
+    delivery_context: dict[str, Any],
+    snake_case_key: str,
+    camel_case_key: str,
+) -> Any | None:
+    if snake_case_key in delivery_context:
+        return delivery_context[snake_case_key]
+    return delivery_context.get(camel_case_key)
+
+
+def _normalize_delivery_context(
+    delivery_context: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "plan_id": _get_delivery_context_value(delivery_context, "plan_id", "planId"),
+        "workflow_name": _get_delivery_context_value(
+            delivery_context,
+            "workflow_name",
+            "workflowName",
+        ),
+        "workflow_source_id": _get_delivery_context_value(
+            delivery_context,
+            "workflow_source_id",
+            "workflowSourceId",
+        ),
+        "generation_metadata": _get_delivery_context_value(
+            delivery_context,
+            "generation_metadata",
+            "generationMetadata",
+        ),
+        "postprocess_config": _get_delivery_context_value(
+            delivery_context,
+            "postprocess_config",
+            "postprocessConfig",
+        ),
+        "auto_family_request_key": _get_delivery_context_value(
+            delivery_context,
+            "auto_family_request_key",
+            "autoFamilyRequestKey",
+        ),
+        "uses_save_image_websocket_outputs": bool(
+            _get_delivery_context_value(
+                delivery_context,
+                "uses_save_image_websocket_outputs",
+                "usesSaveImageWebsocketOutputs",
+            )
+        ),
+        "replay_inputs": _get_delivery_context_value(
+            delivery_context,
+            "replay_inputs",
+            "replayInputs",
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -785,6 +886,42 @@ async def generate(request: Request):
     workflow_id_raw = form.get("workflow_id")
     workflow_id = workflow_id_raw if isinstance(workflow_id_raw, str) else None
 
+    project_id_raw = form.get("project_id")
+    project_id = project_id_raw.strip() if isinstance(project_id_raw, str) else ""
+    if not project_id:
+        return error_response(
+            400,
+            "invalid_project_id",
+            "Missing or invalid 'project_id'",
+            retryable=False,
+        )
+
+    delivery_context_json = form.get("delivery_context")
+    if not isinstance(delivery_context_json, str) or not delivery_context_json.strip():
+        return error_response(
+            400,
+            "invalid_delivery_context",
+            "Missing or invalid 'delivery_context' JSON",
+            retryable=False,
+        )
+    try:
+        delivery_context = json.loads(delivery_context_json)
+    except json.JSONDecodeError:
+        return error_response(
+            400,
+            "invalid_delivery_context",
+            "Delivery context payload must be valid JSON",
+            retryable=False,
+        )
+    if not isinstance(delivery_context, dict):
+        return error_response(
+            400,
+            "invalid_delivery_context",
+            "Delivery context payload must be an object",
+            retryable=False,
+        )
+    delivery_context = _normalize_delivery_context(delivery_context)
+
     # --- Load workflow (Expect frontend to provide it) ---
     workflow_json = form.get("workflow")
     if not workflow_json or not isinstance(workflow_json, str):
@@ -1041,7 +1178,8 @@ async def generate(request: Request):
     )
 
     gen_input = GenerationInput(
-        client_id=client_id,
+        client_id=str(uuid.uuid4()),
+        prompt_id=str(uuid.uuid4()),
         workflow=workflow,
         workflow_id=workflow_id,
         rules=workflow_rules,
@@ -1056,6 +1194,21 @@ async def generate(request: Request):
         workflow_warnings=workflow_warnings,
         prompt_is_pre_resolved=prompt_is_pre_resolved,
     )
+    delivery_id = str(uuid.uuid4())
+
+    await generation_holding_service.create_delivery(
+        project_id=project_id,
+        delivery_id=delivery_id,
+        prompt_id=gen_input.prompt_id or str(uuid.uuid4()),
+        client_id=gen_input.client_id,
+        delivery_context=delivery_context,
+    )
+    await generation_holding_service.start_monitor(
+        project_id=project_id,
+        delivery_id=delivery_id,
+        prompt_id=gen_input.prompt_id or "",
+        client_id=gen_input.client_id,
+    )
 
     comfyui_generate_service.WORKFLOWS_DIR = WORKFLOWS_DIR
     comfyui_generate_service.DEFAULT_WORKFLOWS_DIR = DEFAULT_WORKFLOWS_DIR
@@ -1066,6 +1219,8 @@ async def generate(request: Request):
     try:
         result = await execute_generation(gen_input, client)
     except httpx.RequestError as exc:
+        await generation_holding_service.cancel_monitor(delivery_id)
+        await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
         return error_response(
             503,
             "comfyui_unreachable",
@@ -1074,6 +1229,8 @@ async def generate(request: Request):
             details={"reason": str(exc)},
         )
     except ValueError as exc:
+        await generation_holding_service.cancel_monitor(delivery_id)
+        await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
         details = None
         if isinstance(exc, WorkflowValidationError) and exc.failures:
             details = {"validation_failures": exc.failures}
@@ -1085,12 +1242,86 @@ async def generate(request: Request):
             details=details,
         )
     except RuntimeError as exc:
+        await generation_holding_service.cancel_monitor(delivery_id)
+        await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
         return error_response(
             500,
             "generation_failed",
             str(exc),
             retryable=True,
         )
+
+    if result.media_type.lower().startswith("application/json"):
+        try:
+            payload = json.loads(result.content.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, dict):
+            node_errors = payload.get("node_errors")
+            if result.status_code >= 400 or (
+                isinstance(node_errors, dict) and len(node_errors) > 0
+            ):
+                await generation_holding_service.cancel_monitor(delivery_id)
+                await generation_holding_service.acknowledge_delivery(
+                    project_id,
+                    delivery_id,
+                )
+                return Response(
+                    content=result.content,
+                    status_code=result.status_code,
+                    media_type=result.media_type,
+                )
+            pipeline_outputs = payload.get("pipeline_outputs")
+            prepared_mask_video = _extract_stage_output_value(
+                pipeline_outputs,
+                "processed_mask_video",
+            )
+            prepared_mask_bytes = None
+            if isinstance(prepared_mask_video, str) and prepared_mask_video:
+                try:
+                    prepared_mask_bytes = base64.b64decode(prepared_mask_video)
+                except (ValueError, TypeError):
+                    prepared_mask_bytes = None
+
+            await generation_holding_service.update_submission_metadata(
+                delivery_id=delivery_id,
+                workflow_warnings=payload.get("workflow_warnings")
+                if isinstance(payload.get("workflow_warnings"), list)
+                else None,
+                applied_widget_values=payload.get("applied_widget_values")
+                if isinstance(payload.get("applied_widget_values"), dict)
+                else None,
+                aspect_ratio_processing=_extract_stage_output_value(
+                    pipeline_outputs,
+                    "aspect_ratio_processing",
+                )
+                if isinstance(
+                    _extract_stage_output_value(
+                        pipeline_outputs,
+                        "aspect_ratio_processing",
+                    ),
+                    dict,
+                )
+                else None,
+                generation_metadata=_enrich_generation_metadata(
+                    delivery_context.get("generation_metadata"),
+                    payload,
+                    graph_data,
+                ),
+                prepared_mask_bytes=prepared_mask_bytes,
+                prepared_mask_filename="generation-mask.webm"
+                if prepared_mask_bytes is not None
+                else None,
+                prepared_mask_content_type="video/webm"
+                if prepared_mask_bytes is not None
+                else None,
+            )
+            payload["delivery_id"] = delivery_id
+            result = comfyui_generate_service.GenerationResult(
+                content=json.dumps(payload).encode("utf-8"),
+                status_code=result.status_code,
+                media_type="application/json",
+            )
 
     return Response(
         content=result.content,

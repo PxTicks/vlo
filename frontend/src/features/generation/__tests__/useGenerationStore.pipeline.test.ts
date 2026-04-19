@@ -4,8 +4,10 @@ import {
   createDefaultWorkflowRules,
   type WorkflowRules,
 } from "../services/workflowRules";
+import { useProjectStore } from "../../project";
 
 const {
+  mockDeliveryWsInstances,
   mockFrontendPostprocess,
   mockFrontendPreprocess,
   mockGenerate,
@@ -19,6 +21,7 @@ const {
   mockPreResolvePrompt,
   mockWsInstances,
 } = vi.hoisted(() => ({
+  mockDeliveryWsInstances: [] as unknown[],
   mockFrontendPostprocess: vi.fn(),
   mockFrontendPreprocess: vi.fn(),
   mockGenerate: vi.fn(),
@@ -45,6 +48,16 @@ interface MockWsClient {
     frameRate?: number;
     totalFrames?: number;
   }) => void;
+  emitConnectionChange: (state: "connected" | "disconnected") => void;
+}
+
+interface MockDeliveryWsClient {
+  isConnected: boolean;
+  connect: () => void;
+  disconnect: () => void;
+  acknowledgeDelivery: (deliveryId: string) => void;
+  rejectDelivery: (deliveryId: string, error: string) => void;
+  emitMessage: (message: unknown) => void;
   emitConnectionChange: (state: "connected" | "disconnected") => void;
 }
 
@@ -125,6 +138,64 @@ vi.mock("../services/ComfyUIWebSocket", () => ({
     }): void {
       for (const handler of this.previewHandlers) {
         handler(preview);
+      }
+    }
+
+    emitConnectionChange(state: "connected" | "disconnected"): void {
+      for (const handler of this.connectionChangeHandlers) {
+        handler(state);
+      }
+    }
+  },
+}));
+
+vi.mock("../services/GenerationDeliveryWebSocket", () => ({
+  GenerationDeliveryWebSocket: class {
+    isConnected = false;
+    private readonly messageHandlers = new Set<(message: unknown) => void>();
+    private readonly connectionChangeHandlers = new Set<
+      (state: "connected" | "disconnected") => void
+    >();
+
+    constructor(...args: [string, string]) {
+      void args;
+      mockDeliveryWsInstances.push(this);
+    }
+
+    connect(): void {
+      this.isConnected = true;
+    }
+
+    disconnect(): void {
+      this.isConnected = false;
+      for (const handler of this.connectionChangeHandlers) {
+        handler("disconnected");
+      }
+    }
+
+    acknowledgeDelivery(_deliveryId: string): void {}
+
+    rejectDelivery(_deliveryId: string, _error: string): void {}
+
+    onMessage(handler: (message: unknown) => void): () => void {
+      this.messageHandlers.add(handler);
+      return () => {
+        this.messageHandlers.delete(handler);
+      };
+    }
+
+    onConnectionChange(
+      handler: (state: "connected" | "disconnected") => void,
+    ): () => void {
+      this.connectionChangeHandlers.add(handler);
+      return () => {
+        this.connectionChangeHandlers.delete(handler);
+      };
+    }
+
+    emitMessage(message: unknown): void {
+      for (const handler of this.messageHandlers) {
+        handler(message);
       }
     }
 
@@ -288,9 +359,18 @@ function getLatestClient(): MockWsClient {
   return latest as MockWsClient;
 }
 
+function getLatestDeliveryClient(): MockDeliveryWsClient {
+  const latest = mockDeliveryWsInstances[mockDeliveryWsInstances.length - 1];
+  if (!latest) {
+    throw new Error("Expected a delivery websocket client instance");
+  }
+  return latest as MockDeliveryWsClient;
+}
+
 describe("useGenerationStore pipeline phases", () => {
   beforeEach(() => {
     mockWsInstances.length = 0;
+    mockDeliveryWsInstances.length = 0;
     mockFrontendPreprocess.mockReset();
     mockFrontendPostprocess.mockReset();
     mockGenerate.mockReset();
@@ -380,9 +460,28 @@ describe("useGenerationStore pipeline phases", () => {
       workflow: {},
     });
 
+    useProjectStore.setState({
+      project: {
+        id: "project-1",
+        title: "Project One",
+        createdAt: Date.now(),
+        lastModified: Date.now(),
+        rootAssetsFolder: "project-one",
+      },
+      config: {
+        aspectRatio: "16:9",
+        fps: 30,
+        fitMode: "cover",
+        layoutMode: "compact",
+        assetBrowserDisplay: "grouped",
+      },
+    });
+
     useGenerationStore.setState({
       wsClient: null,
+      deliveryClient: null,
       connectionStatus: "disconnected",
+      deliveryConnectionStatus: "disconnected",
       pipelineStatus: {
         phase: "idle",
         message: null,
@@ -420,6 +519,9 @@ describe("useGenerationStore pipeline phases", () => {
 
   afterEach(() => {
     useGenerationStore.getState().disconnect();
+    useProjectStore.setState({
+      project: null,
+    });
     vi.restoreAllMocks();
   });
 

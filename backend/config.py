@@ -10,9 +10,11 @@ except ImportError:
 # This sets the root 'projects' folder relative to this backend directory
 # Adjust .parent.parent if you want it outside the backend folder
 PROJECTS_ROOT = Path(__file__).parent.parent / "projects"
+RUNTIME_ROOT = Path(__file__).parent.parent / "backend" / "runtime"
 
 # Ensure the root projects directory exists
 PROJECTS_ROOT.mkdir(exist_ok=True)
+RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
 
 # ComfyUI configuration
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188")

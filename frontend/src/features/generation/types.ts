@@ -98,6 +98,7 @@ export type { MaskCropMetadata } from "../../types/Asset";
 
 export interface GenerationJob {
   id: string;
+  deliveryId?: string | null;
   status: GenerationJobStatus;
   progress: number;
   currentNode: string | null;

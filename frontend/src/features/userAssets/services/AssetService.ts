@@ -11,6 +11,8 @@ import { fileSystemService } from "../../project";
 import { projectDocumentService } from "../../project/services/ProjectDocumentService";
 import { mediaProcessingService } from "./MediaProcessingService";
 
+const assetPersistencePromises = new Map<string, Promise<void>>();
+
 export type AssetIngestResult =
   | {
       status: "created";
@@ -26,6 +28,26 @@ export type AssetIngestResult =
     };
 
 export class AssetService {
+  async waitForAssetPersistence(assetId: string): Promise<void> {
+    const persistencePromise = assetPersistencePromises.get(assetId);
+    if (!persistencePromise) {
+      return;
+    }
+
+    try {
+      await persistencePromise;
+    } finally {
+      assetPersistencePromises.delete(assetId);
+    }
+  }
+
+  async waitForAssetsPersistence(assetIds: readonly string[]): Promise<void> {
+    const uniqueAssetIds = [...new Set(assetIds.filter(Boolean))];
+    await Promise.all(
+      uniqueAssetIds.map((assetId) => this.waitForAssetPersistence(assetId)),
+    );
+  }
+
   /**
    * Scans the project root for new assets, ingests them, and persists them to project.json.
    * Returns a list of the newly added assets.
@@ -397,7 +419,7 @@ export class AssetService {
       console.timeEnd(`[Ingest] Object Creation ${file.name}`);
 
       // 7. Fire-and-Forget (Background) Persistence
-      (async () => {
+      const persistencePromise = (async () => {
         try {
           console.log(
             `[Ingest-BG] Starting background writes for ${file.name}`,
@@ -451,8 +473,11 @@ export class AssetService {
           );
           // Note: Silent failure here means app assumes asset is safe but it's not on disk.
           // In a perfect world we'd update a 'sync status' store.
+          throw e;
         }
       })();
+      assetPersistencePromises.set(assetId, persistencePromise);
+      void persistencePromise.catch(() => {});
 
       console.timeEnd(`[Ingest] ${file.name}`);
       return {

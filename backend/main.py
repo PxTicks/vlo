@@ -19,6 +19,7 @@ from routers.comfyui import (
 )
 from routers.sam2 import router as sam2_router
 from routers.downloads import router as downloads_router
+from routers.generation_delivery import router as generation_delivery_router
 from pathlib import Path
 from typing import List
 
@@ -35,6 +36,7 @@ app.include_router(comfyui_router)
 app.include_router(comfyui_compat_router)
 app.include_router(sam2_router)
 app.include_router(downloads_router)
+app.include_router(generation_delivery_router)
 
 
 @app.on_event("shutdown")

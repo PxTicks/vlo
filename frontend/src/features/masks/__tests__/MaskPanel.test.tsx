@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MaskPanel } from "../MaskPanel";
 import { useMaskPanel } from "../hooks/useMaskPanel";
-import type { ClipTransform, MaskTimelineClip } from "../../../types/TimelineTypes";
+import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 
 vi.mock("../hooks/useMaskPanel");
 const mockSetSharedMaskTransforms = vi.fn();
@@ -77,7 +77,7 @@ function createMaskClip(
   parentClipId: string,
   localId: string,
   type: "circle" | "rectangle" | "triangle" | "sam2",
-): MaskTimelineClip {
+): TimelineClip {
   return {
     id: `${parentClipId}::mask::${localId}`,
     trackId: "track_1",
@@ -157,11 +157,6 @@ describe("MaskPanel", () => {
       isSam2Dirty: false,
       hasSam2MaskAsset: false,
       deleteSelectedMask: mockDeleteSelectedMask,
-      rangeMaskComponents: [],
-      startAddRangeMask: vi.fn(),
-      startEditRangeMask: vi.fn(),
-      removeRangeMask: vi.fn(),
-      toggleRangeMaskActive: vi.fn(),
     };
     vi.mocked(useMaskPanel).mockReturnValue(baseHookValue);
   });

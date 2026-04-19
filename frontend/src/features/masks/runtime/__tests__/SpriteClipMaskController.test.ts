@@ -5,12 +5,6 @@ import type {
   MaskTimelineClip,
   TimelineClip,
 } from "../../../../types/TimelineTypes";
-import type {
-  ClipTransform,
-  MaskBooleanExpression,
-  StandardTimelineClip,
-} from "../../../../types/TimelineTypes";
-import type { Component } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
 
 vi.mock("../MaskVideoFramePlayer", async () => {
@@ -52,34 +46,6 @@ function createParentClip(): TimelineClip {
     transformedOffset: 0,
     croppedSourceDuration: 500,
     transformations: [],
-  };
-}
-
-function withMaskComposition(
-  parent: TimelineClip,
-  options: {
-    expression?: MaskBooleanExpression | null;
-    compositeTransformations?: ClipTransform[];
-  },
-): TimelineClip {
-  if (parent.type === "mask") return parent;
-  const standardParent = parent as StandardTimelineClip;
-  const base = (standardParent.components ?? []).filter(
-    (component) => component.type !== "mask_composition",
-  );
-  const compositionComponent: Component = {
-    id: "mask_composition_test",
-    type: "mask_composition",
-    parameters: {
-      ...(options.expression !== undefined
-        ? { expression: options.expression }
-        : {}),
-      compositeTransformations: options.compositeTransformations ?? [],
-    },
-  };
-  return {
-    ...standardParent,
-    components: [...base, compositionComponent],
   };
 }
 
@@ -141,8 +107,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "grow_1",
           type: "mask_grow",
@@ -152,7 +119,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const mask = createMaskClip("mask_alpha_scene");
 
     await controller.syncMaskClips(
@@ -187,8 +154,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "feather_1",
           type: "feather",
@@ -199,7 +167,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const featheredMask = createMaskClip("mask_feathered");
 
     await controller.syncMaskClips(
@@ -248,8 +216,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "feather_1",
           type: "feather",
@@ -260,7 +229,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const featheredMask = createMaskClip("mask_hard_outer");
 
     await controller.syncMaskClips(
@@ -292,8 +261,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "feather_1",
           type: "feather",
@@ -304,7 +274,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const generationMask = createMaskClip("mask_generation_hard_outer", {
       maskType: "generation",
       generationMaskAssetId: "generation-mask-asset",
@@ -456,8 +426,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "grow_1",
           type: "mask_grow",
@@ -468,7 +439,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",
@@ -597,8 +568,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      expression: {
+    const parent = {
+      ...createParentClip(),
+      maskBooleanExpression: {
         kind: "operation",
         operator: "intersect",
         left: {
@@ -610,7 +582,7 @@ describe("SpriteClipMaskController mask composition", () => {
           maskId: "mask_b",
         },
       },
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",
@@ -666,8 +638,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      expression: {
+    const parent = {
+      ...createParentClip(),
+      maskBooleanExpression: {
         kind: "operation",
         operator: "union",
         left: {
@@ -679,7 +652,7 @@ describe("SpriteClipMaskController mask composition", () => {
           maskId: "mask_b",
         },
       },
-      compositeTransformations: [
+      maskCompositeTransformations: [
         {
           id: "grow_1",
           type: "mask_grow",
@@ -689,7 +662,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",
@@ -735,8 +708,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      expression: {
+    const parent = {
+      ...createParentClip(),
+      maskBooleanExpression: {
         kind: "operation",
         operator: "union",
         left: {
@@ -748,7 +722,7 @@ describe("SpriteClipMaskController mask composition", () => {
           maskId: "mask_b",
         },
       },
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",
@@ -812,8 +786,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      expression: {
+    const parent = {
+      ...createParentClip(),
+      maskBooleanExpression: {
         kind: "operation",
         operator: "subtract",
         left: {
@@ -833,7 +808,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       },
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",

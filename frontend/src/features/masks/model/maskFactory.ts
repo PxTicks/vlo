@@ -14,7 +14,7 @@ export const MASK_TYPES: ClipMaskType[] = [
   "triangle",
   "sam2",
 ];
-export const MASK_MODES: ClipMaskMode[] = ["apply", "preview"];
+export const MASK_MODES: ClipMaskMode[] = ["apply", "preview", "off"];
 
 export const DEFAULT_MASK_BASE_SIZE = 120;
 const CIRCLE_SEGMENTS = 32;
@@ -86,12 +86,17 @@ function normalizeMaskType(type: string | undefined): ClipMaskType {
 
 export function normalizeMaskMode(
   mode: string | undefined,
-  _isEnabled: boolean | undefined,
+  isEnabled: boolean | undefined,
 ): ClipMaskMode {
-  if (mode === "apply" || mode === "preview") {
+  if (mode === "apply" || mode === "preview" || mode === "off") {
     return mode;
   }
+  if (isEnabled === false) return "off";
   return "apply";
+}
+
+function resolveEnabledFromMode(mode: ClipMaskMode): boolean {
+  return mode !== "off";
 }
 
 function normalizeMaskParameters(
@@ -411,7 +416,7 @@ export function createMask(
     id: maskId,
     type,
     mode,
-    isEnabled: true,
+    isEnabled: resolveEnabledFromMode(mode),
     inverted: overrides.inverted ?? true,
     transformations,
     parameters,

@@ -1,17 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Asset } from "../../../../types/Asset";
-import type { StandardTimelineClip } from "../../../../types/TimelineTypes";
-import type { MaskCompositionComponent } from "../../../../types/Components";
 import { useTimelineStore } from "../../useTimelineStore";
 import { attachGenerationMask } from "../insertAssetToTimeline";
-
-function getCompositeTransforms(clip: StandardTimelineClip | undefined) {
-  const composition = (clip?.components ?? []).find(
-    (component): component is MaskCompositionComponent =>
-      component.type === "mask_composition",
-  );
-  return composition?.parameters.compositeTransformations ?? [];
-}
 
 function createParentClip() {
   return {
@@ -72,15 +62,16 @@ describe("insertAssetToTimeline", () => {
 
     const parentClip = useTimelineStore
       .getState()
-      .clips.find(
-        (clip): clip is StandardTimelineClip =>
-          clip.id === "clip_1" && clip.type !== "mask",
-      );
+      .clips.find((clip) => clip.id === "clip_1");
 
     expect(maskClip?.type).toBe("mask");
     expect(maskClip?.generationMaskAssetId).toBe("generation-mask-asset");
     expect(maskClip?.transformations).toEqual([]);
-    expect(getCompositeTransforms(parentClip)).toEqual([
+    expect(
+      parentClip?.type !== "mask"
+        ? parentClip.maskCompositeTransformations
+        : undefined,
+    ).toEqual([
       expect.objectContaining({
         type: "feather",
         isEnabled: true,

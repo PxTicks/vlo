@@ -30,6 +30,7 @@ export const fetchOutputs: Processor<FrontendPostprocessContext> = {
         output.filename,
         output.subfolder,
         output.type,
+        output.viewUrl,
       );
 
       ctx.fetchedFiles.push({ output, file });

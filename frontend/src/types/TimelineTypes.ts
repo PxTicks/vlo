@@ -1,5 +1,4 @@
 import type { ClipComponentBase } from "./ClipComponents";
-import type { Component } from "./Components";
 
 export type TrackType = "visual" | "audio" | "prompt" | "effects" | "mask";
 
@@ -34,7 +33,7 @@ export interface ClipTransform {
 }
 
 export type ClipMaskType = "circle" | "rectangle" | "triangle" | "sam2" | "generation";
-export type ClipMaskMode = "apply" | "preview";
+export type ClipMaskMode = "apply" | "preview" | "off";
 export type MaskBooleanOperator = "union" | "intersect" | "subtract";
 
 export interface MaskBooleanMaskRefExpression {
@@ -114,15 +113,31 @@ export interface TimelineClipBase extends BaseClip {
   start: number; // Global timeline start position
 }
 
+export type TimelineClipComponentType = "mask";
+
+export interface TimelineClipComponentRef {
+  clipId: string;
+  componentType: TimelineClipComponentType;
+}
+
 export interface StandardTimelineClip extends TimelineClipBase {
   type: Exclude<ClipType, "mask">;
   /**
-   * Typed attachments carried with this clip. Variants include:
-   *  - `mask_ref`: reference to a subordinate MaskTimelineClip
-   *  - `mask_composition`: boolean expression + composite edge transforms
-   *  - `range_mask`: source-time window of transparency
+   * Shared mask edge operations applied after all child masks are composited.
+   * Stores only local mask composite transforms such as grow/feather.
    */
-  components?: Component[];
+  maskCompositeTransformations?: ClipTransform[];
+  /**
+   * Explicit boolean-algebra expression over child mask clips.
+   * `undefined` preserves legacy union/subtract fallback behavior, while
+   * `null` intentionally disables composed masking for the parent clip.
+   */
+  maskBooleanExpression?: MaskBooleanExpression | null;
+  /**
+   * Clip components (masks, motion encodings, etc.) owned by this clip.
+   * Each component points to a subordinate clip and declares its component type.
+   */
+  clipComponents?: TimelineClipComponentRef[];
 }
 
 export interface MaskTimelineClip extends TimelineClipBase {

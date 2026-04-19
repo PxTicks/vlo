@@ -42,12 +42,11 @@ const createParentClip = (
     sourceDuration: 120,
     transformedDuration: 120,
     transformations: [],
-    components: maskClipId
+    clipComponents: maskClipId
       ? [
           {
-            id: `mask_ref_${id}`,
-            type: "mask_ref",
-            parameters: { maskClipId },
+            clipId: maskClipId,
+            componentType: "mask",
           },
         ]
       : [],

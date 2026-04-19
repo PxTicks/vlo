@@ -332,8 +332,9 @@ export async function fetchOutputAsFile(
   filename: string,
   subfolder = "",
   type = "output",
+  viewUrl?: string,
 ): Promise<File> {
-  const url = getOutputViewUrl(filename, subfolder, type);
+  const url = viewUrl ?? getOutputViewUrl(filename, subfolder, type);
   const resp = await fetch(url);
   if (!resp.ok) {
     await throwRequestError("Output fetch", resp);

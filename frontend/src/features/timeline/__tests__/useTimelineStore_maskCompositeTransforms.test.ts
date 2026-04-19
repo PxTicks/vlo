@@ -4,18 +4,7 @@ import type {
   StandardTimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import type { MaskCompositionComponent } from "../../../types/Components";
 import { useTimelineStore } from "../useTimelineStore";
-
-function getCompositeTransforms(
-  clip: StandardTimelineClip | undefined,
-) {
-  const composition = (clip?.components ?? []).find(
-    (component): component is MaskCompositionComponent =>
-      component.type === "mask_composition",
-  );
-  return composition?.parameters.compositeTransformations ?? [];
-}
 
 const createTrack = (id: string): TimelineTrack => ({
   id,
@@ -41,11 +30,10 @@ function createParentClip(maskClipId: string): StandardTimelineClip {
     transformedOffset: 0,
     croppedSourceDuration: 120,
     transformations: [],
-    components: [
+    clipComponents: [
       {
-        id: "mask_ref_1",
-        type: "mask_ref",
-        parameters: { maskClipId },
+        clipId: maskClipId,
+        componentType: "mask",
       },
     ],
   };
@@ -120,7 +108,7 @@ describe("useTimelineStore shared mask composite transforms", () => {
         clip.id === legacyMask.id && clip.type === "mask",
     );
 
-    expect(getCompositeTransforms(parentClip)).toEqual([
+    expect(parentClip?.maskCompositeTransformations).toEqual([
       expect.objectContaining({
         type: "mask_grow",
         parameters: {
@@ -160,7 +148,7 @@ describe("useTimelineStore shared mask composite transforms", () => {
         clip.id === "clip_1" && clip.type !== "mask",
     );
 
-    expect(getCompositeTransforms(parentClip)).toEqual([
+    expect(parentClip?.maskCompositeTransformations).toEqual([
       expect.objectContaining({
         type: "mask_grow",
         parameters: expect.objectContaining({
@@ -187,7 +175,7 @@ describe("useTimelineStore shared mask composite transforms", () => {
         clip.id === "clip_1" && clip.type !== "mask",
     );
 
-    expect(getCompositeTransforms(parentClip)).toEqual([
+    expect(parentClip?.maskCompositeTransformations).toEqual([
       expect.objectContaining({
         type: "mask_grow",
         parameters: expect.objectContaining({

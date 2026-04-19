@@ -5,22 +5,6 @@ import type {
   MaskTimelineClip,
   StandardTimelineClip,
 } from "../../../types/TimelineTypes";
-import type { MaskCompositionComponent } from "../../../types/Components";
-
-/**
- * Read the `mask_composition` component off a parent clip, if any.
- * Returns null for mask clips or when the component is absent.
- */
-export function getMaskCompositionComponent(
-  clip: Pick<StandardTimelineClip, "components"> | undefined | null,
-): MaskCompositionComponent | null {
-  if (!clip || !clip.components) return null;
-  const found = clip.components.find(
-    (component): component is MaskCompositionComponent =>
-      component.type === "mask_composition",
-  );
-  return found ?? null;
-}
 
 const MASK_CLIP_ID_SEPARATOR = "::mask::";
 const MASK_BOOLEAN_OPERATOR_ORDER: MaskBooleanOperator[] = [
@@ -270,31 +254,44 @@ export function resolveLegacyMaskBooleanExpression(
 }
 
 export function resolveMaskBooleanExpression(
-  parentClip: Pick<StandardTimelineClip, "components">,
+  parentClip: Pick<StandardTimelineClip, "maskBooleanExpression">,
   maskClips: readonly MaskTimelineClip[],
 ): MaskBooleanExpression | null {
-  const composition = getMaskCompositionComponent(parentClip);
-  const expression = composition?.parameters.expression;
-
-  if (expression === null) {
+  if (parentClip.maskBooleanExpression === null) {
     return null;
   }
 
-  if (expression !== undefined) {
+  if (parentClip.maskBooleanExpression !== undefined) {
     const availableMaskIds = maskClips
       .map((maskClip) => getMaskLocalId(maskClip))
       .filter((maskId): maskId is string => !!maskId);
-    return sanitizeMaskBooleanExpression(expression, availableMaskIds);
+    return sanitizeMaskBooleanExpression(
+      parentClip.maskBooleanExpression,
+      availableMaskIds,
+    );
   }
 
   return resolveLegacyMaskBooleanExpression(maskClips);
 }
 
 export function resolveRenderableMaskBooleanExpression(
-  parentClip: Pick<StandardTimelineClip, "components">,
+  parentClip: Pick<StandardTimelineClip, "maskBooleanExpression">,
   maskClips: readonly MaskTimelineClip[],
 ): MaskBooleanExpression | null {
-  return resolveMaskBooleanExpression(parentClip, maskClips);
+  const resolvedExpression = resolveMaskBooleanExpression(parentClip, maskClips);
+  if (!resolvedExpression) {
+    return null;
+  }
+
+  const offMaskIds = maskClips
+    .filter((maskClip) => maskClip.maskMode === "off")
+    .map((maskClip) => getMaskLocalId(maskClip))
+    .filter((maskId): maskId is string => !!maskId);
+  if (offMaskIds.length === 0) {
+    return resolvedExpression;
+  }
+
+  return pruneMaskBooleanExpression(resolvedExpression, offMaskIds);
 }
 
 export function getMaskBooleanExpressionAtPath(

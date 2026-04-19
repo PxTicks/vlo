@@ -108,6 +108,7 @@ export interface GenerationWorkflowSnapshot {
   workflowId: string | null;
   workflowRules: WorkflowRules | null;
   workflowInputs: WorkflowInput[];
+  preResolvedWorkflow?: Record<string, unknown> | null;
 }
 
 export interface GenerationPreprocessPlan {

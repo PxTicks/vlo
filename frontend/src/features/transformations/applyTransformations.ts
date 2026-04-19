@@ -115,15 +115,16 @@ export function applyClipTransforms(
   } as TransformState;
   const shouldNotifyLiveParams = options?.notifyLiveParams !== false;
 
-  const defaultTime = time || 0;
-  const sourceTimeOffset = clip.transformedOffset || 0;
-  let sourceTimeTicks = defaultTime + sourceTimeOffset;
-
   if (clip.transformations && clip.transformations.length > 0) {
     // REFACTOR: Logic entirely in Ticks
+    const defaultTime = time || 0;
+
+    // 1. Source Offset (Ticks)
+    // Simply add the crop duration. No conversion.
+    const sourceTimeOffset = clip.transformedOffset || 0;
 
     // 2. Initialize Pulled Time (Ticks)
-    let pulledTime = sourceTimeTicks;
+    let pulledTime = defaultTime + sourceTimeOffset;
 
     const effectiveTimes = new Array(clip.transformations.length).fill(
       pulledTime,
@@ -144,8 +145,6 @@ export function applyClipTransforms(
         pulledTime = getIdempotentTimeMap(params.factor, pulledTime);
       }
     }
-
-    sourceTimeTicks = pulledTime;
 
     if (shouldNotifyLiveParams) {
       // Notify speed-transform parameters for live UI display.
@@ -203,27 +202,6 @@ export function applyClipTransforms(
         }
       }
     });
-  }
-
-  // Range-mask components: evaluate at clip source time (post-speed).
-  // If any active range covers the current source tick, push a single alpha=0
-  // filter op — the filter applicator will turn it into a PixiJS AlphaFilter.
-  if (clip.type !== "mask" && clip.components?.length) {
-    for (const component of clip.components) {
-      if (component.type !== "range_mask") continue;
-      const { isActive, startSourceTicks, endSourceTicks } = component.parameters;
-      if (!isActive) continue;
-      if (
-        sourceTimeTicks >= startSourceTicks &&
-        sourceTimeTicks <= endSourceTicks
-      ) {
-        state.filters.push({
-          type: "AlphaFilter",
-          params: { alpha: 0 },
-        });
-        break;
-      }
-    }
   }
 
   TransformationSystem.applicators.forEach((apply) => apply(target, state));

@@ -16,7 +16,7 @@ function createAsset(overrides: Partial<Asset> = {}): Asset {
 }
 
 describe("resolveExistingAssetForExternalDrop", () => {
-  it("prefers a sanitized filename match before hashing", async () => {
+  it("returns an existing asset when the hash matches", async () => {
     const asset = createAsset({ name: "reference.png" });
     const computeChecksum = vi.fn(async () => "hash-1");
 
@@ -24,16 +24,31 @@ describe("resolveExistingAssetForExternalDrop", () => {
       new File(["image"], "reference.png", { type: "image/png" }),
       [asset],
       {
-        sanitizeFilename: (name) => name,
         computeChecksum,
       },
     );
 
     expect(result).toBe(asset);
-    expect(computeChecksum).not.toHaveBeenCalled();
+    expect(computeChecksum).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to a hash match when the filename differs", async () => {
+  it("returns null when the filename matches but the hash does not", async () => {
+    const asset = createAsset({ name: "reference.png" });
+    const computeChecksum = vi.fn(async () => "hash-2");
+
+    const result = await resolveExistingAssetForExternalDrop(
+      new File(["image"], "reference.png", { type: "image/png" }),
+      [asset],
+      {
+        computeChecksum,
+      },
+    );
+
+    expect(result).toBeNull();
+    expect(computeChecksum).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a hash match when the filename differs", async () => {
     const asset = createAsset({
       id: "asset-2",
       hash: "hash-2",
@@ -45,7 +60,6 @@ describe("resolveExistingAssetForExternalDrop", () => {
       new File(["image"], "external-name.png", { type: "image/png" }),
       [asset],
       {
-        sanitizeFilename: (name) => name,
         computeChecksum,
       },
     );

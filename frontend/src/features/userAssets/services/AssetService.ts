@@ -20,12 +20,48 @@ export type AssetIngestResult =
     }
   | {
       status: "skipped_existing";
-      reason: "name" | "hash";
+      reason: "hash";
     }
   | {
       status: "skipped";
       reason: "unsupported" | "failed";
     };
+
+function splitFilename(filename: string): { stem: string; extension: string } {
+  const extensionIndex = filename.lastIndexOf(".");
+  if (extensionIndex <= 0) {
+    return {
+      stem: filename,
+      extension: "",
+    };
+  }
+
+  return {
+    stem: filename.slice(0, extensionIndex),
+    extension: filename.slice(extensionIndex),
+  };
+}
+
+function resolveUniqueAssetFilename(
+  filename: string,
+  existingAssets: readonly Asset[],
+): string {
+  const takenNames = new Set(existingAssets.map((asset) => asset.name));
+  if (!takenNames.has(filename)) {
+    return filename;
+  }
+
+  const { stem, extension } = splitFilename(filename);
+  let suffix = 2;
+
+  while (true) {
+    const candidate = `${stem}_${suffix}${extension}`;
+    if (!takenNames.has(candidate)) {
+      return candidate;
+    }
+    suffix += 1;
+  }
+}
 
 export class AssetService {
   async waitForAssetPersistence(assetId: string): Promise<void> {
@@ -235,17 +271,8 @@ export class AssetService {
         }
       }
 
-      // Sanitize first to check against existing sanitized names
+      // Sanitize first so the on-disk filename is always safe.
       const safeName = mediaProcessingService.sanitizeFilename(file.name);
-
-      // Re-check duplications (double safety)
-      if (existingAssets.some((a) => a.name === safeName)) {
-        console.log(`[Ingest] Skipping duplicate asset by name: ${safeName}`);
-        return {
-          status: "skipped_existing",
-          reason: "name",
-        };
-      }
 
       const assetId = crypto.randomUUID();
       const isImage = file.type.startsWith("image/");
@@ -277,8 +304,14 @@ export class AssetService {
         };
       }
 
+      const assetFileName = resolveUniqueAssetFilename(safeName, existingAssets);
+      if (assetFileName !== safeName) {
+        console.log(
+          `[Ingest] Resolved asset name collision: '${safeName}' -> '${assetFileName}'`,
+        );
+      }
+
       // 3. Prepare Paths variables
-      const assetFileName = safeName;
       const storageSrc = assetFileName;
       let storageThumbnail: string | undefined;
       let storageProxy: string | undefined;

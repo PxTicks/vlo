@@ -1,7 +1,11 @@
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.generation_delivery.service import (
     GenerationHoldingService,
@@ -37,7 +41,7 @@ def _delivery_context() -> dict:
             "on_failure": "fallback_raw",
         },
         "auto_family_request_key": "generation-family-request:v1:test",
-        "uses_save_image_websocket_outputs": True,
+        "uses_save_image_websocket_outputs": False,
         "replay_inputs": {"replayState": {"version": 2}},
     }
 
@@ -76,11 +80,12 @@ async def test_generation_holding_service_persists_and_acknowledges_delivery(
     delivery = deliveries[0]
     assert delivery["delivery_id"] == "delivery-1"
     assert delivery["workflow_name"] == "Workflow One"
-    assert delivery["uses_save_image_websocket_outputs"] is True
+    assert delivery["uses_save_image_websocket_outputs"] is False
     assert delivery["workflow_warnings"] == [{"code": "warning"}]
     assert delivery["applied_widget_values"] == {"145:seed": "123"}
     assert delivery["aspect_ratio_processing"] == {"enabled": True}
     assert delivery["prepared_mask"]["filename"] == "prepared-mask.webm"
+    assert delivery["preview_frames"] == []
 
     stored_manifest = service._deliveries["delivery-1"]
     prepared_mask = stored_manifest["prepared_mask"]
@@ -152,7 +157,6 @@ async def test_generation_holding_service_marks_stale_inflight_delivery_on_load(
                 "applied_widget_values": {},
                 "aspect_ratio_processing": None,
                 "outputs": [],
-                "preview_frames": [],
                 "prepared_mask": None,
                 "last_delivery_error": None,
             }

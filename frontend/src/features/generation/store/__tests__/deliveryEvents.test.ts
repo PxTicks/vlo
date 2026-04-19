@@ -308,4 +308,5 @@ describe("deliveryEvents", () => {
     expect(errorState.activeJobId).toBeNull();
     expect(mockProcessGenerationQueue).toHaveBeenCalledTimes(1);
   });
+
 });

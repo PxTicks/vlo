@@ -27,11 +27,6 @@ GENERATION_HOLDING_ROOT.mkdir(parents=True, exist_ok=True)
 HISTORY_FETCH_ATTEMPTS = 4
 HISTORY_FETCH_RETRY_MS = 0.25
 
-BINARY_PREVIEW_IMAGE = 1
-BINARY_PREVIEW_IMAGE_WITH_METADATA = 4
-PNG_SIGNATURE = bytes((0x89, 0x50, 0x4E, 0x47))
-JPEG_SIGNATURE = bytes((0xFF, 0xD8, 0xFF))
-
 
 def _sanitize_filename(filename: str) -> str:
     sanitized = re.sub(r"[^A-Za-z0-9._ -]+", "_", filename).strip(" .")
@@ -251,11 +246,6 @@ class GenerationHoldingService:
             for entry in manifest.get("outputs", [])
             if isinstance(entry, dict) and isinstance(entry.get("storage_name"), str)
         ]
-        preview_frames = [
-            self._serialize_file_ref(project_id, delivery_id, "previews", entry)
-            for entry in manifest.get("preview_frames", [])
-            if isinstance(entry, dict)
-        ]
         prepared_mask = manifest.get("prepared_mask")
         serialized_mask = (
             self._serialize_file_ref(project_id, delivery_id, "mask", prepared_mask)
@@ -289,7 +279,7 @@ class GenerationHoldingService:
             "applied_widget_values": manifest.get("applied_widget_values", {}),
             "aspect_ratio_processing": manifest.get("aspect_ratio_processing"),
             "outputs": outputs,
-            "preview_frames": preview_frames,
+            "preview_frames": [],
             "prepared_mask": serialized_mask,
             "delivery_context": manifest.get("delivery_context"),
             "last_delivery_error": manifest.get("last_delivery_error"),
@@ -345,7 +335,6 @@ class GenerationHoldingService:
             "applied_widget_values": {},
             "aspect_ratio_processing": None,
             "outputs": [],
-            "preview_frames": [],
             "prepared_mask": None,
             "last_delivery_error": None,
         }
@@ -709,67 +698,6 @@ class GenerationHoldingService:
         (target_dir / storage_name).write_bytes(content)
         return storage_name
 
-    def _parse_preview_payload(self, message: bytes) -> tuple[bytes, str] | None:
-        if len(message) < 4:
-            return None
-        event_type = int.from_bytes(message[:4], byteorder="big", signed=False)
-        if event_type not in {BINARY_PREVIEW_IMAGE, BINARY_PREVIEW_IMAGE_WITH_METADATA}:
-            return None
-
-        if event_type == BINARY_PREVIEW_IMAGE_WITH_METADATA:
-            if len(message) < 8:
-                return None
-            metadata_length = int.from_bytes(message[4:8], byteorder="big", signed=False)
-            payload_offset = 8 + metadata_length
-            if payload_offset > len(message):
-                return None
-            payload = message[payload_offset:]
-            mime_type = "image/png" if payload.startswith(PNG_SIGNATURE) else "image/jpeg" if payload.startswith(JPEG_SIGNATURE) else "application/octet-stream"
-            return payload, mime_type
-
-        for payload_offset in (8, 4):
-            if payload_offset >= len(message):
-                continue
-            payload = message[payload_offset:]
-            if payload.startswith(PNG_SIGNATURE):
-                return payload, "image/png"
-            if payload.startswith(JPEG_SIGNATURE):
-                return payload, "image/jpeg"
-        return message[4:], "application/octet-stream"
-
-    async def _store_preview_frame(
-        self,
-        project_id: str,
-        delivery_id: str,
-        frame_index: int,
-        content: bytes,
-        content_type: str,
-    ) -> None:
-        extension = _guess_extension(content_type, "preview.png")
-        filename = f"ws-preview-{frame_index:06d}{extension}"
-        async with self._lock:
-            manifest = self._deliveries.get(delivery_id)
-            if not manifest:
-                return
-            storage_name = await self._write_file(
-                project_id,
-                delivery_id,
-                "previews",
-                filename,
-                content,
-            )
-            preview_frames = manifest.setdefault("preview_frames", [])
-            preview_frames.append(
-                {
-                    "filename": filename,
-                    "mime_type": content_type,
-                    "frame_index": frame_index,
-                    "storage_name": storage_name,
-                }
-            )
-            manifest["updated_at"] = _now_ms()
-            await self._persist_manifest(manifest)
-
     async def _fetch_history_outputs(
         self,
         prompt_id: str,
@@ -840,6 +768,12 @@ class GenerationHoldingService:
         prompt_id: str,
     ) -> None:
         outputs = await self._capture_history_outputs(project_id, delivery_id, prompt_id)
+        if not outputs:
+            await self.mark_error(
+                delivery_id,
+                "Generation completed without persisted final outputs for delivery",
+            )
+            return
         await self.mark_completed(delivery_id, outputs)
 
     async def _monitor_delivery(
@@ -850,7 +784,6 @@ class GenerationHoldingService:
         prompt_id: str,
         client_id: str,
     ) -> None:
-        preview_frame_index = 0
         finalized = False
         try:
             async with websockets.connect(
@@ -909,19 +842,6 @@ class GenerationHoldingService:
                         elif event_type == "execution_interrupted":
                             await self.mark_error(delivery_id, "Generation interrupted")
                             break
-                    else:
-                        parsed_preview = self._parse_preview_payload(bytes(message))
-                        if not parsed_preview:
-                            continue
-                        preview_bytes, content_type = parsed_preview
-                        await self._store_preview_frame(
-                            project_id,
-                            delivery_id,
-                            preview_frame_index,
-                            preview_bytes,
-                            content_type,
-                        )
-                        preview_frame_index += 1
         except asyncio.CancelledError:
             raise
         except Exception as exc:

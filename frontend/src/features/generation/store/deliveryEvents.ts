@@ -88,26 +88,6 @@ function buildJobFromDelivery(
   };
 }
 
-async function fetchPreviewFrameFiles(
-  manifest: GenerationDeliveryManifest,
-): Promise<File[]> {
-  const sortedFrames = [...manifest.preview_frames].sort((left, right) => {
-    const leftIndex =
-      typeof left.frame_index === "number" ? left.frame_index : Number.MAX_SAFE_INTEGER;
-    const rightIndex =
-      typeof right.frame_index === "number"
-        ? right.frame_index
-        : Number.MAX_SAFE_INTEGER;
-    if (leftIndex !== rightIndex) {
-      return leftIndex - rightIndex;
-    }
-    return left.filename.localeCompare(right.filename);
-  });
-
-  const files = await Promise.all(sortedFrames.map((frame) => fetchDeliveryFileAsFile(frame)));
-  return files.filter((file): file is File => file instanceof File);
-}
-
 export function attachDeliveryClientHandlers(
   client: GenerationDeliveryWebSocket,
   set: GenerationStoreSet,
@@ -171,17 +151,16 @@ export function attachDeliveryClientHandlers(
     let importedAssetIds: string[] | undefined;
 
     try {
-      const [previewFrameFiles, preparedMaskFile] = await Promise.all([
-        fetchPreviewFrameFiles(manifest),
-        fetchDeliveryFileAsFile(manifest.prepared_mask ?? null),
-      ]);
+      const preparedMaskFile = await fetchDeliveryFileAsFile(
+        manifest.prepared_mask ?? null,
+      );
 
       const postprocessResult = await frontendPostprocess(manifest.outputs, {
         postprocessing: manifest.postprocess_config ?? undefined,
         aspectRatioProcessing: manifest.aspect_ratio_processing ?? null,
         generationMetadata,
         autoFamilyRequestKey: manifest.auto_family_request_key ?? null,
-        previewFrameFiles,
+        previewFrameFiles: [],
         preparedMaskFile: preparedMaskFile ?? undefined,
       });
       importedAssetIds = postprocessResult.importedAssetIds;

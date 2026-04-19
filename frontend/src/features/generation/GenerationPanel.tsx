@@ -504,16 +504,17 @@ export function GenerationPanel() {
     displayJob?.status !== "error" &&
     !showPostprocessErrorOnly &&
     Boolean(displayJob?.postprocessError);
-  const showRunningCancelControls = canInterruptCurrentGeneration;
-  const shouldShowRawOutputs =
-    displayJob && displayJob.outputs.length > 0
-      ? !replaceOutputsWithPostprocess ||
-        (!displayJob?.postprocessedPreview && !showPostprocessErrorOnly)
-      : false;
   const importedPreviewAsset = importedAssets[0] ?? null;
   const importedPreviewSrc = importedPreviewAsset
     ? importedPreviewAsset.src
     : "";
+  const showRunningCancelControls = canInterruptCurrentGeneration;
+  const shouldShowRawOutputs =
+    displayJob && displayJob.outputs.length > 0
+      ? !importedPreviewAsset &&
+        (!replaceOutputsWithPostprocess ||
+          (!displayJob?.postprocessedPreview && !showPostprocessErrorOnly))
+      : false;
   const customGenerateCountValue = Number.parseInt(customGenerateCount, 10);
   const isCustomGenerateCountValid =
     Number.isFinite(customGenerateCountValue) && customGenerateCountValue > 0;

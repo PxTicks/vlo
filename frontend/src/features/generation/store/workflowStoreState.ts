@@ -311,9 +311,9 @@ export function buildWorkflowStoreState(
         );
         const nextAvailable = upsertWorkflowOption(
           removeWorkflowOption(availableWorkflows, TEMP_WORKFLOW_ID),
-          {
+          existingWorkflow ?? {
             id: persistedWorkflowId,
-            name: existingWorkflow?.name ?? formatWorkflowName(persistedWorkflowId),
+            name: formatWorkflowName(persistedWorkflowId),
           },
         );
 

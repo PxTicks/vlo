@@ -104,6 +104,40 @@ describe("useGenerationStore workflow editor sync", () => {
     expect(state.syncedGraphData).toEqual({ nodes: [{ id: 1 }] });
   });
 
+  it("preserves workflow group metadata when syncing editor changes", async () => {
+    useGenerationStore.setState({
+      selectedWorkflowId: "wf.json",
+      availableWorkflows: [
+        {
+          id: "wf.json",
+          name: "Workflow",
+          groupId: "core",
+          groupName: "Core",
+          groupOrder: 1,
+        },
+      ],
+      activeRulesWarnings: [],
+      activeWorkflowRules: null,
+    });
+
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      { "1": { class_type: "LoadImage", inputs: { image: "input.png" } } },
+      { nodes: [{ id: 1 }] },
+      makeInputs(),
+      null,
+    );
+
+    expect(useGenerationStore.getState().availableWorkflows).toEqual([
+      {
+        id: "wf.json",
+        name: "Workflow",
+        groupId: "core",
+        groupName: "Core",
+        groupOrder: 1,
+      },
+    ]);
+  });
+
   it("prefers the selected workflow id when ComfyUI exposes a temporary filename", async () => {
     useGenerationStore.setState({
       selectedWorkflowId: "wf.json",

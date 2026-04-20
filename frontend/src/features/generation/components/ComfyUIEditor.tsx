@@ -25,7 +25,9 @@ const POLL_INTERVAL_MS = 2000;
 const APP_READY_TIMEOUT_MS = 10_000;
 const RECOVERY_POLL_MS = 3000;
 const MAX_CONSECUTIVE_READ_FAILURES = 3;
+const MAX_CONSECUTIVE_BACKEND_DISCONNECTS = 3;
 const RECOVERY_RELOAD_COOLDOWN_MS = 2000;
+const VISIBILITY_RESUME_GRACE_MS = 5000;
 const CONNECTING_HELPER_TEXT = "Connecting to ComfyUI...";
 const RECONNECTING_HELPER_TEXT = "Reconnecting to ComfyUI...";
 
@@ -103,10 +105,12 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const lastDirectUrlRef = useRef<string | null>(comfyuiDirectUrl);
   const pollingRef = useRef(false);
   const consecutiveReadFailuresRef = useRef(0);
+  const consecutiveBackendDisconnectsRef = useRef(0);
   const initRunIdRef = useRef(0);
   const initPromiseRef = useRef<Promise<boolean> | null>(null);
   const lastRecoveryAtRef = useRef(0);
   const lastWorkflowSignatureRef = useRef<string | null>(null);
+  const visibilityResumeGraceUntilRef = useRef(0);
 
   const iframeUrl = comfyuiDirectUrl ? getSameOriginUrl() : null;
 
@@ -159,6 +163,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       initRunIdRef.current += 1;
       initPromiseRef.current = null;
       consecutiveReadFailuresRef.current = 0;
+      consecutiveBackendDisconnectsRef.current = 0;
       lastWorkflowSignatureRef.current = null;
       setAppReady(false);
       setLoading(true);
@@ -205,7 +210,11 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         !iframe.isConnected;
 
       // 1. Wait for the ComfyUI app object
-      const ready = await waitForAppReady(iframe, shouldAbort, APP_READY_TIMEOUT_MS);
+      const ready = await waitForAppReady(
+        iframe,
+        shouldAbort,
+        APP_READY_TIMEOUT_MS,
+      );
       if (!ready) {
         if (!shouldAbort()) {
           setEditorNeedsReconnect(true);
@@ -294,6 +303,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       if (shouldAbort()) return false;
 
       consecutiveReadFailuresRef.current = 0;
+      consecutiveBackendDisconnectsRef.current = 0;
       setAppReady(true);
       setLoading(false);
       setEditorNeedsReconnect(false);
@@ -314,6 +324,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       initRunIdRef.current += 1;
       initPromiseRef.current = null;
       consecutiveReadFailuresRef.current = 0;
+      consecutiveBackendDisconnectsRef.current = 0;
       lastWorkflowSignatureRef.current = null;
     };
   }, []);
@@ -339,7 +350,10 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     const iframe = iframeRef.current;
     if (!iframe) return;
 
-    const result = await readWorkflowFromIframe(iframe, useGenerationStore.getState().inputNodeMap);
+    const result = await readWorkflowFromIframe(
+      iframe,
+      useGenerationStore.getState().inputNodeMap,
+    );
     if (!result) return;
 
     await commitWorkflowResult(result, true);
@@ -353,23 +367,44 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       const iframe = iframeRef.current;
       if (!iframe) return;
 
-      if (!isIframeBackendConnected(iframe)) {
-        recoverIframe("backend socket disconnected");
+      const backendConnected = isIframeBackendConnected(iframe);
+
+      const result = await readWorkflowFromIframe(
+        iframe,
+        useGenerationStore.getState().inputNodeMap,
+      );
+      if (result) {
+        await commitWorkflowResult(result);
+        consecutiveReadFailuresRef.current = 0;
+        consecutiveBackendDisconnectsRef.current = 0;
+        setEditorNeedsReconnect(false);
         return;
       }
 
-      const result = await readWorkflowFromIframe(iframe, useGenerationStore.getState().inputNodeMap);
-      if (!result) {
-        consecutiveReadFailuresRef.current += 1;
+      consecutiveReadFailuresRef.current += 1;
+
+      if (!backendConnected) {
+        if (Date.now() < visibilityResumeGraceUntilRef.current) {
+          return;
+        }
+
+        consecutiveBackendDisconnectsRef.current += 1;
+        setEditorNeedsReconnect(true);
         if (
-          consecutiveReadFailuresRef.current >= MAX_CONSECUTIVE_READ_FAILURES
+          consecutiveBackendDisconnectsRef.current >=
+          MAX_CONSECUTIVE_BACKEND_DISCONNECTS
         ) {
-          recoverIframe("repeated workflow read failures");
+          recoverIframe("backend socket disconnected");
         }
         return;
       }
-      await commitWorkflowResult(result);
-      consecutiveReadFailuresRef.current = 0;
+
+      consecutiveBackendDisconnectsRef.current = 0;
+      if (
+        consecutiveReadFailuresRef.current >= MAX_CONSECUTIVE_READ_FAILURES
+      ) {
+        recoverIframe("repeated workflow read failures");
+      }
     } finally {
       pollingRef.current = false;
     }
@@ -404,18 +439,22 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     return () => clearInterval(timer);
   }, [open, appReady, initializeIframe, pollWorkflow]);
 
-  // When the user returns to the tab, do a quick health check. If the iframe
-  // has gone stale (e.g. browser suspended it), flip to init-retry mode.
-  // If healthy, trigger an immediate poll to sync any changes.
+  // When the user returns to the tab, do a quick health check. We give the
+  // iframe a short grace period because browsers can briefly suspend sockets
+  // while the page is backgrounded, and an immediate forced reload would wipe
+  // unsaved ComfyUI edits.
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible" || !open) return;
+      visibilityResumeGraceUntilRef.current =
+        Date.now() + VISIBILITY_RESUME_GRACE_MS;
 
       const iframe = iframeRef.current;
       if (!iframe) return;
 
-      if (!isIframeAppReady(iframe) || !isIframeBackendConnected(iframe)) {
-        recoverIframe("tab became visible with unhealthy iframe");
+      if (!isIframeAppReady(iframe)) {
+        setAppReady(false);
+        void initializeIframe();
         return;
       }
 
@@ -434,13 +473,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [
-    open,
-    appReady,
-    initializeIframe,
-    pollWorkflow,
-    recoverIframe,
-  ]);
+  }, [open, appReady, initializeIframe, pollWorkflow]);
 
   if (!iframeUrl) {
     if (!open) return null;

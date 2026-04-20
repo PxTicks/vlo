@@ -263,7 +263,9 @@ export function attachRuntimeClientHandlers(
             runtimeStatusError: null,
           }));
           void get().fetchWorkflows();
-          get().requestEditorReconnect();
+          if (get().editorNeedsReconnect) {
+            get().requestEditorReconnect();
+          }
         }
         resumeQueuedDispatch();
         break;

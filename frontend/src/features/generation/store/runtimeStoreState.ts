@@ -65,6 +65,7 @@ export function buildRuntimeStoreState(
     refreshRuntimeStatus: async () => {
       try {
         const runtimeStatus = await getRuntimeStatus();
+        let shouldReconnectEditor = false;
         set((state) => {
           const nextState = {
             runtimeStatus,
@@ -89,11 +90,14 @@ export function buildRuntimeStoreState(
             runtimeStatus.comfyui.status === "connected" &&
             state.connectionStatus !== "connected"
           ) {
-            get().requestEditorReconnect();
+            shouldReconnectEditor = state.editorNeedsReconnect;
           }
 
           return nextState;
         });
+        if (shouldReconnectEditor) {
+          get().requestEditorReconnect();
+        }
         return runtimeStatus;
       } catch (error) {
         const message =

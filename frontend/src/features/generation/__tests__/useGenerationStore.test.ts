@@ -232,6 +232,54 @@ describe("useGenerationStore workflow rules", () => {
     await loadPromise;
   });
 
+  it("does not request an editor reconnect when runtime recovers and the editor is healthy", async () => {
+    useGenerationStore.setState((state) => ({
+      connectionStatus: "disconnected",
+      editorNeedsReconnect: false,
+      editorReconnectSignal: 0,
+      runtimeStatus: state.runtimeStatus
+        ? {
+            ...state.runtimeStatus,
+            comfyui: {
+              ...state.runtimeStatus.comfyui,
+              status: "disconnected",
+            },
+          }
+        : null,
+    }));
+
+    await useGenerationStore.getState().refreshRuntimeStatus();
+
+    const state = useGenerationStore.getState();
+    expect(state.connectionStatus).toBe("connected");
+    expect(state.editorReconnectSignal).toBe(0);
+    expect(state.editorNeedsReconnect).toBe(false);
+  });
+
+  it("requests an editor reconnect when runtime recovers and the editor was marked unhealthy", async () => {
+    useGenerationStore.setState((state) => ({
+      connectionStatus: "disconnected",
+      editorNeedsReconnect: true,
+      editorReconnectSignal: 0,
+      runtimeStatus: state.runtimeStatus
+        ? {
+            ...state.runtimeStatus,
+            comfyui: {
+              ...state.runtimeStatus.comfyui,
+              status: "disconnected",
+            },
+          }
+        : null,
+    }));
+
+    await useGenerationStore.getState().refreshRuntimeStatus();
+
+    const state = useGenerationStore.getState();
+    expect(state.connectionStatus).toBe("connected");
+    expect(state.editorReconnectSignal).toBe(1);
+    expect(state.editorNeedsReconnect).toBe(false);
+  });
+
   it("adopts the workflow mask crop mode default when rules load", async () => {
     vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({});
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({

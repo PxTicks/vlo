@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildWorkflowFromGraphData,
+  buildWorkflowResultFromGraphData,
   parseWorkflowInputs,
   readActiveWorkflowFromIframe,
   readWorkflowFromIframe,
@@ -139,6 +141,114 @@ describe("workflowBridge", () => {
       graphData: activeState,
       filename: "live-edit.json",
       isModified: true,
+    });
+  });
+
+  it("builds workflow inputs from activeState widget values using object_info", () => {
+    const result = buildWorkflowResultFromGraphData(
+      {
+        nodes: [
+          {
+            id: 145,
+            type: "LoadImage",
+            title: "Source image",
+            widgets_values: ["source.png"],
+          },
+        ],
+        links: [],
+      },
+      "wf.json",
+      {
+        inputNodeMap: {
+          LoadImage: [
+            {
+              inputType: "image",
+              param: "image",
+            },
+          ],
+        },
+        objectInfo: {
+          LoadImage: {
+            input: {
+              required: {
+                image: ["STRING", {}],
+              },
+            },
+            input_order: {
+              required: ["image"],
+            },
+          },
+        },
+      },
+    );
+
+    expect(result.workflow).toEqual({
+      "145": {
+        class_type: "LoadImage",
+        inputs: { image: "source.png" },
+        _meta: { title: "Source image" },
+      },
+    });
+    expect(result.inputs).toEqual([
+      {
+        id: "145:image",
+        nodeId: "145",
+        classType: "LoadImage",
+        inputType: "image",
+        param: "image",
+        label: "Source image",
+        description: null,
+        currentValue: "source.png",
+        origin: "inferred",
+        dispatch: {
+          kind: "node",
+        },
+      },
+    ]);
+  });
+
+  it("preserves activeState links when deriving an API-like workflow", () => {
+    const workflow = buildWorkflowFromGraphData(
+      {
+        nodes: [
+          {
+            id: 1,
+            type: "LoadImage",
+            widgets_values: ["source.png"],
+          },
+          {
+            id: 2,
+            type: "PreviewImage",
+            inputs: [{ name: "images", link: 10 }],
+          },
+        ],
+        links: [[10, 1, 0, 2, 0, "IMAGE"]],
+      },
+      {
+        objectInfo: {
+          LoadImage: {
+            input: {
+              required: {
+                image: ["STRING", {}],
+              },
+            },
+            input_order: {
+              required: ["image"],
+            },
+          },
+        },
+      },
+    );
+
+    expect(workflow).toEqual({
+      "1": {
+        class_type: "LoadImage",
+        inputs: { image: "source.png" },
+      },
+      "2": {
+        class_type: "PreviewImage",
+        inputs: { images: ["1", 0] },
+      },
     });
   });
 

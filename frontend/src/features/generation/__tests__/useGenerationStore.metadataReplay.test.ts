@@ -1021,6 +1021,7 @@ describe("useGenerationStore metadata replay", () => {
       "original_workflow.json",
       expect.any(Function),
       null,
+      null,
     );
     expect(restoredInput).toMatchObject({
       kind: "asset",

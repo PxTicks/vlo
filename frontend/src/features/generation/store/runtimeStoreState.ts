@@ -49,6 +49,7 @@ export function buildRuntimeStoreState(
     deliveryClient: null,
     deliveryConnectionStatus: "disconnected",
     objectInfoSynced: false,
+    rawObjectInfo: null,
     inputNodeMap: null,
     editorNeedsReconnect: false,
     editorReconnectSignal: 0,
@@ -127,7 +128,11 @@ export function buildRuntimeStoreState(
         console.info("[Generation] Syncing object_info from ComfyUI...");
         const result = await comfyApi.syncObjectInfo();
         const inputNodeMap = mergeInputNodeMap(result.input_node_map);
-        set({ objectInfoSynced: true, inputNodeMap });
+        set({
+          objectInfoSynced: true,
+          rawObjectInfo: result.object_info ?? null,
+          inputNodeMap,
+        });
       } catch (err) {
         console.error("[Generation] Failed to sync object_info:", err);
       }
@@ -217,6 +222,7 @@ export function buildRuntimeStoreState(
         preprocessAbortController: null,
         pipelineRunToken: pipelineRunToken + 1,
         objectInfoSynced: false,
+        rawObjectInfo: null,
       });
     },
 

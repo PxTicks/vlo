@@ -128,7 +128,6 @@ export interface GenerationWorkflowState {
     graphData: Record<string, unknown>,
     inputs: WorkflowInput[],
   ) => void;
-  syncGraphDataFromEditor: (graphData: Record<string, unknown>) => void;
   registerWorkflowFromEditor: (
     workflow: Record<string, unknown>,
     graphData: Record<string, unknown>,
@@ -149,6 +148,7 @@ export interface GenerationRuntimeState {
   deliveryClient: GenerationDeliveryWebSocket | null;
   deliveryConnectionStatus: ComfyUIConnectionStatus;
   objectInfoSynced: boolean;
+  rawObjectInfo: Record<string, unknown> | null;
   inputNodeMap: import("../constants/inputNodeMap").InputNodeMap | null;
   editorNeedsReconnect: boolean;
   editorReconnectSignal: number;

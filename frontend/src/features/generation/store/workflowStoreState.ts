@@ -203,29 +203,6 @@ export function buildWorkflowStoreState(
       }));
     },
 
-    syncGraphDataFromEditor: (graphData) => {
-      set((state) => {
-        const patch: Partial<import("./types").GenerationWorkflowState> = {
-          syncedGraphData: graphData,
-          workflowLoadError: null,
-        };
-
-        if (state.selectedWorkflowId === TEMP_WORKFLOW_ID && state.tempWorkflow) {
-          const nextTempWorkflow: TempWorkflow = {
-            ...state.tempWorkflow,
-            graphData,
-          };
-          patch.tempWorkflow = nextTempWorkflow;
-          patch.availableWorkflows = upsertTempWorkflowOption(
-            state.availableWorkflows,
-            nextTempWorkflow,
-          );
-        }
-
-        return patch;
-      });
-    },
-
     registerWorkflowFromEditor: async (workflow, graphData, inputs, filename) => {
       const state = get();
       const { availableWorkflows, selectedWorkflowId, tempWorkflow } = state;
@@ -594,6 +571,7 @@ export function buildWorkflowStoreState(
             workflowId,
             isStale,
             get().inputNodeMap,
+            get().rawObjectInfo,
           );
           if (isStale()) return;
 

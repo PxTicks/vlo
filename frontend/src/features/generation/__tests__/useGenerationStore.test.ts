@@ -303,32 +303,6 @@ describe("useGenerationStore workflow rules", () => {
     expect(useGenerationStore.getState().maskCropMode).toBe("full");
   });
 
-  it("updates temp workflow graph data from editor polling without a full resolve", () => {
-    const nextGraphData = {
-      nodes: [{ id: 145, type: "LoadVideo" }, { id: 999, type: "Preview" }],
-      links: [],
-    };
-
-    useGenerationStore.setState((state) => ({
-      selectedWorkflowId: TEMP_WORKFLOW_ID,
-      tempWorkflow: state.tempWorkflow
-        ? {
-            ...state.tempWorkflow,
-            graphData: { nodes: [{ id: 145, type: "LoadVideo" }], links: [] },
-          }
-        : null,
-      syncedGraphData: { nodes: [{ id: 145, type: "LoadVideo" }], links: [] },
-    }));
-
-    useGenerationStore
-      .getState()
-      .syncGraphDataFromEditor(nextGraphData);
-
-    const state = useGenerationStore.getState();
-    expect(state.syncedGraphData).toEqual(nextGraphData);
-    expect(state.tempWorkflow?.graphData).toEqual(nextGraphData);
-  });
-
   it("loads generated asset metadata as a loaded workflow and applies matched sidecar rules", async () => {
     const asset = {
       id: "generated-asset",

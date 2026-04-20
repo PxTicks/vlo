@@ -9,11 +9,11 @@ import {
 import { Close, OpenInNew } from "@mui/icons-material";
 import { useGenerationStore } from "../useGenerationStore";
 import {
+  buildWorkflowResultFromGraphData,
   readActiveWorkflowFromIframe,
-  readWorkflowFromIframe,
-  readWorkflowFromIframeDetailed,
   isIframeAppReady,
   isIframeBackendConnected,
+  type WorkflowReadResult,
 } from "../services/workflowBridge";
 import { isGraphMutationInFlight } from "../services/preResolvePrompt";
 import {
@@ -30,7 +30,6 @@ const MAX_CONSECUTIVE_READ_FAILURES = 3;
 const MAX_CONSECUTIVE_BACKEND_DISCONNECTS = 3;
 const RECOVERY_RELOAD_COOLDOWN_MS = 2000;
 const VISIBILITY_RESUME_GRACE_MS = 5000;
-const RESOLVE_AFTER_IDLE_MS = 750;
 const CONNECTING_HELPER_TEXT = "Connecting to ComfyUI...";
 const RECONNECTING_HELPER_TEXT = "Reconnecting to ComfyUI...";
 
@@ -51,10 +50,6 @@ function getSameOriginUrl(): string {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-type ReadWorkflowResult = NonNullable<
-  Awaited<ReturnType<typeof readWorkflowFromIframe>>
->;
 
 function buildWorkflowSignature(
   graphData: Record<string, unknown> | null,
@@ -79,9 +74,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const registerWorkflowFromEditor = useGenerationStore(
     (s) => s.registerWorkflowFromEditor,
   );
-  const syncGraphDataFromEditor = useGenerationStore(
-    (s) => s.syncGraphDataFromEditor,
-  );
+  const inputNodeMap = useGenerationStore((s) => s.inputNodeMap);
+  const rawObjectInfo = useGenerationStore((s) => s.rawObjectInfo);
   const editorNeedsReconnect = useGenerationStore(
     (s) => s.editorNeedsReconnect,
   );
@@ -116,9 +110,6 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const initPromiseRef = useRef<Promise<boolean> | null>(null);
   const lastRecoveryAtRef = useRef(0);
   const lastWorkflowSignatureRef = useRef<string | null>(null);
-  const lastGraphSignatureRef = useRef<string | null>(null);
-  const pendingResolveSignatureRef = useRef<string | null>(null);
-  const resolveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibilityResumeGraceUntilRef = useRef(0);
 
   const iframeUrl = comfyuiDirectUrl ? getSameOriginUrl() : null;
@@ -130,27 +121,29 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     ) => {
       const signature = buildWorkflowSignature(graphData, workflowId);
       lastWorkflowSignatureRef.current = signature;
-      lastGraphSignatureRef.current = signature;
-      pendingResolveSignatureRef.current = null;
     },
     [],
   );
 
+  const buildWorkflowResult = useCallback(
+    (graphData: Record<string, unknown>, filename: string | null) =>
+      buildWorkflowResultFromGraphData(graphData, filename, {
+        inputNodeMap,
+        objectInfo: rawObjectInfo,
+      }),
+    [inputNodeMap, rawObjectInfo],
+  );
+
   const commitWorkflowResult = useCallback(
-    async (result: ReadWorkflowResult, force = false) => {
+    async (result: WorkflowReadResult, force = false) => {
       const workflowId =
         result.filename ?? useGenerationStore.getState().selectedWorkflowId;
-      const signature = buildWorkflowSignature(
-        result.graphData,
-        workflowId,
-      );
+      const signature = buildWorkflowSignature(result.graphData, workflowId);
       if (!force && signature === lastWorkflowSignatureRef.current) {
         return;
       }
 
       lastWorkflowSignatureRef.current = signature;
-      lastGraphSignatureRef.current = signature;
-      pendingResolveSignatureRef.current = null;
       await registerWorkflowFromEditor(
         result.workflow,
         result.graphData,
@@ -159,81 +152,6 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       );
     },
     [registerWorkflowFromEditor],
-  );
-
-  const clearPendingResolveTimer = useCallback(() => {
-    if (resolveTimerRef.current !== null) {
-      clearTimeout(resolveTimerRef.current);
-      resolveTimerRef.current = null;
-    }
-  }, []);
-
-  const syncGraphSnapshot = useCallback(
-    (
-      graphData: Record<string, unknown>,
-      filename: string | null,
-      force = false,
-    ): string | null => {
-      const workflowId =
-        filename ?? useGenerationStore.getState().selectedWorkflowId;
-      const signature = buildWorkflowSignature(graphData, workflowId);
-      if (!force && signature === lastGraphSignatureRef.current) {
-        return signature;
-      }
-
-      lastGraphSignatureRef.current = signature;
-      syncGraphDataFromEditor(graphData);
-      return signature;
-    },
-    [syncGraphDataFromEditor],
-  );
-
-  const resolveWorkflowAfterGraphSettles = useCallback(
-    async (expectedSignature: string | null, force = false) => {
-      if (isGraphMutationInFlight()) {
-        return;
-      }
-
-      const iframe = iframeRef.current;
-      if (!iframe) return;
-
-      if (!force) {
-        const activeWorkflow = readActiveWorkflowFromIframe(iframe);
-        if (!activeWorkflow) {
-          return;
-        }
-
-        const activeSignature = buildWorkflowSignature(
-          activeWorkflow.graphData,
-          activeWorkflow.filename ?? useGenerationStore.getState().selectedWorkflowId,
-        );
-        if (expectedSignature !== null && activeSignature !== expectedSignature) {
-          return;
-        }
-      }
-
-      const attempt = await readWorkflowFromIframeDetailed(
-        iframe,
-        useGenerationStore.getState().inputNodeMap,
-      );
-      if (!attempt.result) {
-        return;
-      }
-
-      await commitWorkflowResult(attempt.result, force);
-    },
-    [commitWorkflowResult],
-  );
-
-  const scheduleWorkflowResolve = useCallback(
-    (expectedSignature: string | null) => {
-      pendingResolveSignatureRef.current = expectedSignature;
-      clearPendingResolveTimer();
-      resolveTimerRef.current = setTimeout(() => {
-        void resolveWorkflowAfterGraphSettles(expectedSignature);
-      }, RESOLVE_AFTER_IDLE_MS);
-    },
-    [clearPendingResolveTimer, resolveWorkflowAfterGraphSettles],
   );
 
   const recoverIframe = useCallback(
@@ -251,9 +169,6 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       consecutiveReadFailuresRef.current = 0;
       consecutiveBackendDisconnectsRef.current = 0;
       lastWorkflowSignatureRef.current = null;
-      lastGraphSignatureRef.current = null;
-      pendingResolveSignatureRef.current = null;
-      clearPendingResolveTimer();
       setAppReady(false);
       setLoading(true);
       setEditorNeedsReconnect(false);
@@ -273,7 +188,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         }
       }
     },
-    [clearPendingResolveTimer, iframeUrl, setEditorNeedsReconnect],
+    [iframeUrl, setEditorNeedsReconnect],
   );
 
   const initializeIframe = useCallback(() => {
@@ -284,7 +199,6 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     setAppReady(false);
     setEditorNeedsReconnect(false);
     lastWorkflowSignatureRef.current = null;
-    lastGraphSignatureRef.current = null;
 
     const promise = (async () => {
       // Wait for the iframe element to mount
@@ -334,7 +248,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
             syncedGraphData,
             selectedWorkflowId,
             shouldAbort,
-            useGenerationStore.getState().inputNodeMap,
+            inputNodeMap,
+            rawObjectInfo,
           );
           if (shouldAbort()) return false;
 
@@ -372,7 +287,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           iframe,
           shouldAbort,
           APP_READY_TIMEOUT_MS,
-          useGenerationStore.getState().inputNodeMap,
+          inputNodeMap,
+          rawObjectInfo,
         );
         if (!firstResult) {
           if (!shouldAbort()) {
@@ -406,7 +322,13 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         initPromiseRef.current = null;
       }
     });
-  }, [recoverIframe, rememberWorkflowSignature, setEditorNeedsReconnect]);
+  }, [
+    inputNodeMap,
+    rawObjectInfo,
+    recoverIframe,
+    rememberWorkflowSignature,
+    setEditorNeedsReconnect,
+  ]);
 
   // Cleanup async guards on unmount
   useEffect(() => {
@@ -416,11 +338,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       consecutiveReadFailuresRef.current = 0;
       consecutiveBackendDisconnectsRef.current = 0;
       lastWorkflowSignatureRef.current = null;
-      lastGraphSignatureRef.current = null;
-      pendingResolveSignatureRef.current = null;
-      clearPendingResolveTimer();
     };
-  }, [clearPendingResolveTimer]);
+  }, []);
 
   // The iframe src stays constant (/comfyui-frame/), so explicitly reload when
   // the configured upstream ComfyUI URL changes.
@@ -444,12 +363,15 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     if (!iframe) return;
 
     const activeWorkflow = readActiveWorkflowFromIframe(iframe);
-    const expectedSignature = activeWorkflow
-      ? syncGraphSnapshot(activeWorkflow.graphData, activeWorkflow.filename, true)
-      : null;
+    if (!activeWorkflow) {
+      return;
+    }
 
-    await resolveWorkflowAfterGraphSettles(expectedSignature, true);
-  }, [resolveWorkflowAfterGraphSettles, syncGraphSnapshot]);
+    await commitWorkflowResult(
+      buildWorkflowResult(activeWorkflow.graphData, activeWorkflow.filename),
+      true,
+    );
+  }, [buildWorkflowResult, commitWorkflowResult]);
 
   const pollWorkflow = useCallback(async () => {
     if (pollingRef.current) return;
@@ -459,48 +381,20 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       const iframe = iframeRef.current;
       if (!iframe) return;
 
-      const backendConnected = isIframeBackendConnected(iframe);
       const activeWorkflow = readActiveWorkflowFromIframe(iframe);
 
       if (activeWorkflow) {
-        const signature = syncGraphSnapshot(
-          activeWorkflow.graphData,
-          activeWorkflow.filename,
+        await commitWorkflowResult(
+          buildWorkflowResult(activeWorkflow.graphData, activeWorkflow.filename),
         );
         consecutiveReadFailuresRef.current = 0;
         consecutiveBackendDisconnectsRef.current = 0;
         setEditorNeedsReconnect(false);
-
-        if (signature !== lastWorkflowSignatureRef.current) {
-          scheduleWorkflowResolve(signature);
-        }
-        return;
-      }
-
-      const attempt = await readWorkflowFromIframeDetailed(
-        iframe,
-        useGenerationStore.getState().inputNodeMap,
-      );
-      const result = attempt.result;
-      if (result) {
-        await commitWorkflowResult(result);
-        consecutiveReadFailuresRef.current = 0;
-        consecutiveBackendDisconnectsRef.current = 0;
-        setEditorNeedsReconnect(false);
-        return;
-      }
-
-      if (attempt.status === "invalid_graph") {
-        consecutiveReadFailuresRef.current = 0;
-        consecutiveBackendDisconnectsRef.current = 0;
-        setEditorNeedsReconnect(false);
-        if (pendingResolveSignatureRef.current !== null) {
-          scheduleWorkflowResolve(pendingResolveSignatureRef.current);
-        }
         return;
       }
 
       consecutiveReadFailuresRef.current += 1;
+      const backendConnected = isIframeBackendConnected(iframe);
 
       if (!backendConnected) {
         if (Date.now() < visibilityResumeGraceUntilRef.current) {
@@ -519,20 +413,13 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       }
 
       consecutiveBackendDisconnectsRef.current = 0;
-      if (
-        consecutiveReadFailuresRef.current >= MAX_CONSECUTIVE_READ_FAILURES
-      ) {
-        recoverIframe("repeated workflow read failures");
+      if (consecutiveReadFailuresRef.current >= MAX_CONSECUTIVE_READ_FAILURES) {
+        recoverIframe("repeated active workflow read failures");
       }
     } finally {
       pollingRef.current = false;
     }
-  }, [
-    commitWorkflowResult,
-    recoverIframe,
-    scheduleWorkflowResolve,
-    syncGraphSnapshot,
-  ]);
+  }, [buildWorkflowResult, commitWorkflowResult, recoverIframe]);
 
   // On close, always do one last read to capture unsynced edits.
   useEffect(() => {
@@ -562,6 +449,15 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     const timer = setInterval(tick, interval);
     return () => clearInterval(timer);
   }, [open, appReady, initializeIframe, pollWorkflow]);
+
+  useEffect(() => {
+    if (!open || !appReady) {
+      return;
+    }
+
+    lastWorkflowSignatureRef.current = null;
+    void pollWorkflow();
+  }, [open, appReady, inputNodeMap, rawObjectInfo, pollWorkflow]);
 
   // When the user returns to the tab, do a quick health check. We give the
   // iframe a short grace period because browsers can briefly suspend sockets

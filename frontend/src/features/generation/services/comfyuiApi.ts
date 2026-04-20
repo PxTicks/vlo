@@ -397,6 +397,7 @@ export async function getObjectInfo(): Promise<Record<string, unknown>> {
 export interface SyncObjectInfoResult {
   synced: boolean;
   node_classes: number;
+  object_info?: Record<string, unknown>;
   input_node_map?: Record<
     string,
     Array<{

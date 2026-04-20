@@ -303,7 +303,12 @@ async def sync_object_info():
         set_object_info_cache(data)
 
         input_node_map = build_input_node_map(data)
-        return {"synced": True, "node_classes": len(data), "input_node_map": input_node_map}
+        return {
+            "synced": True,
+            "node_classes": len(data),
+            "input_node_map": input_node_map,
+            "object_info": data,
+        }
     except (httpx.RequestError, ValueError) as exc:
         return error_response(
             503,

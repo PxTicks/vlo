@@ -638,7 +638,7 @@ describe("useGenerationStore pipeline phases", () => {
     );
   });
 
-  it("submits the active resolved workflow rules with the generate request", async () => {
+  it("submits the active resolved workflow rules with backend media fallbacks intact", async () => {
     makeReadyStoreState();
     useGenerationStore.setState({
       activeWorkflowRules: makeWorkflowRules({
@@ -650,6 +650,18 @@ describe("useGenerationStore pipeline phases", () => {
             },
           },
         },
+        media_fallbacks: [
+          {
+            kind: "dummy",
+            node_id: "167",
+            input_type: "image",
+            when: {
+              kind: "input_presence",
+              inputs: ["167"],
+              match: "all_missing",
+            },
+          },
+        ],
       }),
     });
 
@@ -660,6 +672,13 @@ describe("useGenerationStore pipeline phases", () => {
       expect.objectContaining({
         workflowId: "wf.json",
         workflowRules: expect.objectContaining({
+          media_fallbacks: [
+            expect.objectContaining({
+              kind: "dummy",
+              node_id: "167",
+              input_type: "image",
+            }),
+          ],
           nodes: expect.objectContaining({
             "167": expect.objectContaining({
               present: expect.objectContaining({

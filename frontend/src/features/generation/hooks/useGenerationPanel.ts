@@ -133,6 +133,13 @@ function parseStoredWidgetValue(
   return storedValue;
 }
 
+function isTransientGenerationError(message: string | null | undefined): boolean {
+  return (
+    message === "Generation interrupted" ||
+    message === "Generation cancelled by user"
+  );
+}
+
 interface AudioSelectionExtractionOptions {
   inputId: string;
   timelineSelection: ReturnType<typeof createTimelineSelection>;
@@ -341,6 +348,12 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const lastCompletedJob = useGenerationStore((s) => {
     let latest: ReturnType<typeof s.jobs.get> = undefined;
     for (const job of s.jobs.values()) {
+      if (
+        job.status === "error" &&
+        isTransientGenerationError(job.error)
+      ) {
+        continue;
+      }
       if (
         (job.status === "completed" || job.status === "error") &&
         (!latest || job.submittedAt > latest.submittedAt)

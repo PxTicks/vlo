@@ -82,6 +82,7 @@ type WorkflowTab = {
   key?: string;
   filename?: string;
   fullFilename?: string;
+  isModified?: boolean;
   pendingWarnings?: unknown;
   activeState?: Record<string, unknown> | null;
 };
@@ -126,6 +127,29 @@ type ComfyUIWindow = Window & {
 export interface WorkflowWarningSummary {
   missingNodeTypes: string[];
   missingModels: string[];
+}
+
+export type WorkflowReadStatus =
+  | "success"
+  | "invalid_graph"
+  | "unavailable";
+
+export interface WorkflowReadResult {
+  workflow: Record<string, unknown>;
+  graphData: Record<string, unknown>;
+  inputs: WorkflowInput[];
+  filename: string | null;
+}
+
+export interface WorkflowReadAttempt {
+  status: WorkflowReadStatus;
+  result: WorkflowReadResult | null;
+}
+
+export interface ActiveWorkflowReadResult {
+  graphData: Record<string, unknown>;
+  filename: string | null;
+  isModified: boolean;
 }
 
 export interface LoadWorkflowIntoIframeOptions {
@@ -222,6 +246,27 @@ function getActiveWorkflowGraphData(
   return cloneRecord(activeWorkflow.activeState);
 }
 
+export function readActiveWorkflowFromIframe(
+  iframe: HTMLIFrameElement,
+): ActiveWorkflowReadResult | null {
+  try {
+    const activeWorkflow = getIframeWorkflowApi(iframe)?.activeWorkflow ?? null;
+    const graphData = getActiveWorkflowGraphData(activeWorkflow);
+    if (!activeWorkflow || !graphData) {
+      return null;
+    }
+
+    return {
+      graphData,
+      filename: resolveWorkflowTabFilename(activeWorkflow),
+      isModified: activeWorkflow.isModified === true,
+    };
+  } catch (err) {
+    console.warn("[workflowBridge] readActiveWorkflowFromIframe failed:", err);
+    return null;
+  }
+}
+
 function looksLikeApiWorkflow(workflow: Record<string, unknown>): boolean {
   const entries = Object.entries(workflow);
   if (entries.length === 0) return false;
@@ -237,6 +282,24 @@ function looksLikeApiWorkflow(workflow: Record<string, unknown>): boolean {
 
 function toUnique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function isTransientInvalidGraphError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const name = error.name.trim();
+  const message = error.message.trim();
+
+  if (name === "InvalidLinkError") {
+    return true;
+  }
+
+  return (
+    message.includes("InvalidLinkError") ||
+    message.includes("No link found in parent graph")
+  );
 }
 
 function extractMissingNodeTypes(value: unknown): string[] {
@@ -311,12 +374,15 @@ function extractMissingModels(value: unknown): string[] {
 export async function readWorkflowFromIframe(
   iframe: HTMLIFrameElement,
   inputNodeMap?: InputNodeMap | null,
-): Promise<{
-  workflow: Record<string, unknown>;
-  graphData: Record<string, unknown>;
-  inputs: WorkflowInput[];
-  filename: string | null;
-} | null> {
+): Promise<WorkflowReadResult | null> {
+  const attempt = await readWorkflowFromIframeDetailed(iframe, inputNodeMap);
+  return attempt.result;
+}
+
+export async function readWorkflowFromIframeDetailed(
+  iframe: HTMLIFrameElement,
+  inputNodeMap?: InputNodeMap | null,
+): Promise<WorkflowReadAttempt> {
   try {
     const win = iframe.contentWindow as ComfyUIWindow | null;
     const app = win?.app;
@@ -351,7 +417,12 @@ export async function readWorkflowFromIframe(
       apiWorkflow = graphData;
     }
 
-    if (!apiWorkflow) return null;
+    if (!apiWorkflow) {
+      return {
+        status: "unavailable",
+        result: null,
+      };
+    }
     if (!graphData) {
       // Some ComfyUI variants do not return a dedicated visual workflow payload.
       // API-format JSON is still usable for sync + reload in our bridge.
@@ -360,10 +431,27 @@ export async function readWorkflowFromIframe(
 
     const inputs = parseWorkflowInputs(apiWorkflow, inputNodeMap);
     const filename = resolveWorkflowTabFilename(activeWorkflow);
-    return { workflow: apiWorkflow, graphData, inputs, filename };
+    return {
+      status: "success",
+      result: { workflow: apiWorkflow, graphData, inputs, filename },
+    };
   } catch (err) {
+    if (isTransientInvalidGraphError(err)) {
+      console.info(
+        "[workflowBridge] readWorkflowFromIframe skipped invalid graph state:",
+        err,
+      );
+      return {
+        status: "invalid_graph",
+        result: null,
+      };
+    }
+
     console.warn("[workflowBridge] readWorkflowFromIframe failed:", err);
-    return null;
+    return {
+      status: "unavailable",
+      result: null,
+    };
   }
 }
 

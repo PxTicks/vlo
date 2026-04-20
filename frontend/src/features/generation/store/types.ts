@@ -128,6 +128,7 @@ export interface GenerationWorkflowState {
     graphData: Record<string, unknown>,
     inputs: WorkflowInput[],
   ) => void;
+  syncGraphDataFromEditor: (graphData: Record<string, unknown>) => void;
   registerWorkflowFromEditor: (
     workflow: Record<string, unknown>,
     graphData: Record<string, unknown>,

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseWorkflowInputs, readWorkflowFromIframe } from "../workflowBridge";
+import {
+  parseWorkflowInputs,
+  readActiveWorkflowFromIframe,
+  readWorkflowFromIframe,
+  readWorkflowFromIframeDetailed,
+} from "../workflowBridge";
 
 describe("workflowBridge", () => {
   it("falls back to VHS_LoadVideoFFmpeg as a discoverable video input", () => {
@@ -106,5 +111,69 @@ describe("workflowBridge", () => {
     expect(result?.filename).toBe("wf (1).json");
     expect(result?.workflow).toEqual(rawWorkflow);
     expect(result?.graphData).toEqual(activeState);
+  });
+
+  it("reads the active workflow snapshot without resolving graphToPrompt", () => {
+    const activeState = {
+      nodes: [{ id: 1, type: "LoadImage" }],
+      links: [],
+    };
+    const iframe = {
+      contentWindow: {
+        app: {
+          extensionManager: {
+            workflow: {
+              activeWorkflow: {
+                path: "workflows/live-edit.json",
+                key: "live-edit.json",
+                isModified: true,
+                activeState,
+              },
+            },
+          },
+        },
+      },
+    } as unknown as HTMLIFrameElement;
+
+    expect(readActiveWorkflowFromIframe(iframe)).toEqual({
+      graphData: activeState,
+      filename: "live-edit.json",
+      isModified: true,
+    });
+  });
+
+  it("classifies InvalidLinkError graph reads as transient invalid graph states", async () => {
+    const error = new Error(
+      "No link found in parent graph for id [239] slot [0] on_false",
+    );
+    error.name = "InvalidLinkError";
+
+    const iframe = {
+      contentWindow: {
+        app: {
+          graphToPrompt: async () => {
+            throw error;
+          },
+          extensionManager: {
+            workflow: {
+              activeWorkflow: {
+                path: "workflows/wf.json",
+                key: "wf.json",
+                activeState: {
+                  nodes: [{ id: 239, type: "IfElse" }],
+                },
+              },
+            },
+          },
+        },
+      },
+    } as unknown as HTMLIFrameElement;
+
+    const detailed = await readWorkflowFromIframeDetailed(iframe);
+    const result = await readWorkflowFromIframe(iframe);
+
+    expect(detailed.status).toBe("invalid_graph");
+    expect(detailed.result).toBeNull();
+    expect(result).toBeNull();
   });
 });

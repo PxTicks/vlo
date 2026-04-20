@@ -4398,7 +4398,7 @@
     },
     {
       "id": 169,
-      "type": "INTConstant",
+      "type": "PrimitiveFloat",
       "pos": [
         638.6488474686196,
         4560.76893316159
@@ -4413,8 +4413,8 @@
       "inputs": [],
       "outputs": [
         {
-          "name": "value",
-          "type": "INT",
+          "name": "FLOAT",
+          "type": "FLOAT",
           "links": [
             242
           ]
@@ -4422,9 +4422,9 @@
       ],
       "title": "LENGTH (in seconds)",
       "properties": {
-        "cnr_id": "comfyui-kjnodes",
-        "ver": "c6ce76d00bb8177d1b0286cad891df08eff5226e",
-        "Node name for S&R": "INTConstant"
+        "cnr_id": "comfy-core",
+        "ver": "0.10.0",
+        "Node name for S&R": "PrimitiveFloat"
       },
       "widgets_values": [
         10

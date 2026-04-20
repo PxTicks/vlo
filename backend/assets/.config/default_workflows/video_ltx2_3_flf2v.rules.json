@@ -20,6 +20,24 @@
           "value_type": "int",
           "group_id": "video_generation",
           "group_title": "Video Generation",
+          "group_order": 3
+        }
+      }
+    },
+    "169": {
+      "widgets": {
+        "value": {
+          "label": "Duration",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "number",
+          "unit": "s",
+          "min": 0.3333333333,
+          "max": 20,
+          "step": 0.3333333333,
+          "default": 10,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
           "group_order": 0
         }
       }

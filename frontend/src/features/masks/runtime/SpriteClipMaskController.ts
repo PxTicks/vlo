@@ -190,6 +190,7 @@ export class SpriteClipMaskController {
     sprite: Sprite,
     renderer?: Renderer | null,
     maskRootContainer?: Container | null,
+    private readonly onAssetMaskFrameReady?: () => void,
   ) {
     this.sprite = sprite;
     this.renderer = renderer ?? null;
@@ -374,6 +375,12 @@ export class SpriteClipMaskController {
               console.warn("Mask video frame update failed", error);
             });
         }
+      } else if (!node.player.hasFrame()) {
+        void node.player
+          .renderAt(requestedMaskTimeSeconds)
+          .catch((error) => {
+            console.warn("Mask video frame update failed", error);
+          });
       }
 
       const maskSprite = node.player.sprite;
@@ -1479,7 +1486,10 @@ export class SpriteClipMaskController {
       const existing = this.assetMaskNodes.get(entry.maskId);
       if (existing) return;
       const root = new Container();
-      const player = new MaskVideoFramePlayer(entry.maskId);
+      const player = new MaskVideoFramePlayer(
+        entry.maskId,
+        this.onAssetMaskFrameReady,
+      );
       const thresholdFilter = createMaskBinaryThresholdFilter();
       player.sprite.filters = [thresholdFilter];
       root.addChild(player.sprite);

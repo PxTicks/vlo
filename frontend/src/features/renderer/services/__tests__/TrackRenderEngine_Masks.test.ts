@@ -49,6 +49,7 @@ vi.mock("../../../masks/runtime/MaskVideoFramePlayer", () => ({
     };
     setSource = sam2SetSourceSpy;
     renderAt = sam2RenderAtSpy;
+    hasFrame = vi.fn(() => true);
     dispose = sam2DisposeSpy;
   },
 }));

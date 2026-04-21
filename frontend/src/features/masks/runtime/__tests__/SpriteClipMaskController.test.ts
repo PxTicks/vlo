@@ -18,8 +18,12 @@ vi.mock("../MaskVideoFramePlayer", async () => {
 
   class MockMaskVideoFramePlayer {
     public readonly sprite: Sprite;
+    private decodedFrame = false;
     public readonly setSource = vi.fn(async () => undefined);
-    public readonly renderAt = vi.fn(async () => undefined);
+    public readonly renderAt = vi.fn(async () => {
+      this.decodedFrame = true;
+    });
+    public readonly hasFrame = vi.fn(() => this.decodedFrame);
     public readonly dispose = vi.fn(() => undefined);
 
     constructor(...args: [string]) {
@@ -964,6 +968,50 @@ describe("SpriteClipMaskController mask composition", () => {
     );
 
     expect(renderSpy).toHaveBeenCalledTimes(7);
+
+    controller.dispose();
+    warnSpy.mockRestore();
+  });
+
+  it("requests a missing SAM2 frame during transform-only mask sync", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = createParentClip();
+    const sam2Mask = createMaskClip("mask_sam2_skip", {
+      maskType: "sam2",
+      sam2MaskAssetId: "sam2-mask-asset-skip",
+    });
+    const sam2Asset = createMaskAsset("sam2-mask-asset-skip");
+
+    await controller.syncMaskClips(
+      [sam2Mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map([[sam2Asset.id, sam2Asset]]),
+      { skipSam2FrameRender: true },
+    );
+
+    const node = (
+      controller as unknown as {
+        assetMaskNodes: Map<
+          string,
+          {
+            player: {
+              renderAt: ReturnType<typeof vi.fn>;
+            };
+          }
+        >;
+      }
+    ).assetMaskNodes.get(sam2Mask.id);
+
+    expect(node?.player.renderAt).toHaveBeenCalledWith(expect.any(Number));
 
     controller.dispose();
     warnSpy.mockRestore();

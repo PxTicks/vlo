@@ -67,6 +67,7 @@ export class MaskVideoFramePlayer {
   public readonly sprite: Sprite;
 
   private readonly clipId: string;
+  private readonly onFrameReady: (() => void) | undefined;
   private worker: Worker | null = null;
   private sourceAsset: Asset | null = null;
   private sourceAssetId: string | null = null;
@@ -83,8 +84,9 @@ export class MaskVideoFramePlayer {
   private hasDecodedFrame = false;
   private disposed = false;
 
-  constructor(maskClipId: string) {
+  constructor(maskClipId: string, onFrameReady?: () => void) {
     this.clipId = `mask_video_${maskClipId}`;
+    this.onFrameReady = onFrameReady;
     this.sprite = new Sprite();
     this.sprite.anchor.set(0.5);
     this.sprite.visible = false;
@@ -162,6 +164,10 @@ export class MaskVideoFramePlayer {
     await nextStrictRender;
   }
 
+  public hasFrame(): boolean {
+    return this.hasDecodedFrame;
+  }
+
   public dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -203,6 +209,9 @@ export class MaskVideoFramePlayer {
         this.swapSpriteTexture(nextTexture);
         this.hasDecodedFrame = true;
         this.sprite.visible = true;
+        if (!pendingStrict) {
+          this.onFrameReady?.();
+        }
       } else if (!this.hasDecodedFrame) {
         // Before the first decoded frame, keep mask hidden.
         this.sprite.visible = false;

@@ -79,7 +79,7 @@ function getSharedMaskEdgeInvertState(
   const edgeTransforms = transforms.filter(isSharedMaskEdgeTransform);
   if (edgeTransforms.length === 0) {
     return {
-      checked: false,
+      checked: true,
       indeterminate: false,
     };
   }

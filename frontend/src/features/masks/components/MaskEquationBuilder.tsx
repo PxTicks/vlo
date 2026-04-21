@@ -4,8 +4,8 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Box, Chip, IconButton, Typography } from "@mui/material";
-import { EditOutlined } from "@mui/icons-material";
+import { Box, Chip, IconButton, Tooltip, Typography } from "@mui/material";
+import { ContentCopy, DeleteOutline, EditOutlined } from "@mui/icons-material";
 import type {
   MaskBooleanExpression,
   MaskBooleanOperator,
@@ -30,6 +30,8 @@ interface MaskEquationBuilderProps {
   expression: MaskBooleanExpression | null;
   onExpressionChange: (expression: MaskBooleanExpression | null) => void;
   onOpenMaskDetail: (maskId: string) => void;
+  onDuplicateMask: (maskId: string) => void;
+  onDeleteMask: (maskId: string) => void;
   addAction?: ReactNode;
 }
 
@@ -38,6 +40,18 @@ const OPERATOR_LABELS: Record<MaskBooleanOperator, string> = {
   intersect: "Intersect",
   subtract: "Minus",
 };
+
+function getMaskDisplayLabel(
+  mask: MaskTimelineClip,
+  localId: string,
+  index: number,
+): string {
+  const name = mask.name.trim();
+  if (!name || name === `Mask ${localId}`) {
+    return `Mask ${index + 1}`;
+  }
+  return name;
+}
 
 function arePathsEqual(
   left: MaskBooleanExpressionPath,
@@ -73,6 +87,8 @@ export function MaskEquationBuilder({
   expression,
   onExpressionChange,
   onOpenMaskDetail,
+  onDuplicateMask,
+  onDeleteMask,
   addAction,
 }: MaskEquationBuilderProps) {
   const [rawSelectedPath, setSelectedPath] =
@@ -99,7 +115,7 @@ export function MaskEquationBuilder({
             clip: mask,
             index,
             localId,
-            label: `Mask ${index + 1}`,
+            label: getMaskDisplayLabel(mask, localId, index),
           };
         })
         .filter(
@@ -273,6 +289,11 @@ export function MaskEquationBuilder({
           sx={{
             height: 24,
             borderStyle: isDropTarget ? "dashed" : "solid",
+            maxWidth: 160,
+            "& .MuiChip-label": {
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            },
           }}
         />
       );
@@ -353,11 +374,17 @@ export function MaskEquationBuilder({
         >
           Available Masks
         </Typography>
-        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, width: "100%" }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75, width: "100%" }}>
           {maskEntries.map((entry) => (
             <Box
               key={entry.clip.id}
-              sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 0.5,
+                minWidth: 0,
+                width: "100%",
+              }}
             >
               <Chip
                 data-testid={`mask-variable-chip-${entry.localId}`}
@@ -366,22 +393,65 @@ export function MaskEquationBuilder({
                 color={referencedMaskIds.has(entry.localId) ? "primary" : "default"}
                 variant={referencedMaskIds.has(entry.localId) ? "filled" : "outlined"}
                 onClick={() => handleUseMask(entry.localId)}
-                sx={{ height: 24 }}
-              />
-              <IconButton
-                data-testid={`mask-edit-button-${entry.localId}`}
-                aria-label={`Edit ${entry.label}`}
-                size="small"
-                onClick={() => onOpenMaskDetail(entry.localId)}
                 sx={{
-                  border: "1px solid",
-                  borderColor: "#2f333a",
-                  borderRadius: 999,
-                  p: 0.5,
+                  height: 24,
+                  minWidth: 0,
+                  maxWidth: "min(100%, 220px)",
+                  flex: "0 1 auto",
+                  "& .MuiChip-label": {
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  },
                 }}
-              >
-                <EditOutlined sx={{ fontSize: 14 }} />
-              </IconButton>
+              />
+              <Tooltip title="Edit mask">
+                <IconButton
+                  data-testid={`mask-edit-button-${entry.localId}`}
+                  aria-label={`Edit ${entry.label}`}
+                  size="small"
+                  onClick={() => onOpenMaskDetail(entry.localId)}
+                  sx={{
+                    border: "1px solid",
+                    borderColor: "#2f333a",
+                    borderRadius: 999,
+                    p: 0.5,
+                  }}
+                >
+                  <EditOutlined sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Duplicate mask">
+                <IconButton
+                  data-testid={`mask-duplicate-button-${entry.localId}`}
+                  aria-label={`Duplicate ${entry.label}`}
+                  size="small"
+                  onClick={() => onDuplicateMask(entry.localId)}
+                  sx={{
+                    border: "1px solid",
+                    borderColor: "#2f333a",
+                    borderRadius: 999,
+                    p: 0.5,
+                  }}
+                >
+                  <ContentCopy sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Delete mask">
+                <IconButton
+                  data-testid={`mask-delete-inline-button-${entry.localId}`}
+                  aria-label={`Delete ${entry.label}`}
+                  size="small"
+                  onClick={() => onDeleteMask(entry.localId)}
+                  sx={{
+                    border: "1px solid",
+                    borderColor: "#2f333a",
+                    borderRadius: 999,
+                    p: 0.5,
+                  }}
+                >
+                  <DeleteOutline sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Tooltip>
             </Box>
           ))}
           {addAction}

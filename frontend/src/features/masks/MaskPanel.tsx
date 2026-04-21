@@ -6,6 +6,7 @@ import {
   Checkbox,
   Menu,
   MenuItem,
+  TextField,
   Typography,
   Divider,
   Chip,
@@ -34,6 +35,7 @@ import { Sam2MaskPanel } from "./components/Sam2MaskPanel";
 import { Sam2ModelDownloadOverlay } from "./components/Sam2ModelDownloadOverlay";
 import { MaskEquationBuilder } from "./components/MaskEquationBuilder";
 import { RangeMaskSection } from "./components/RangeMaskSection";
+import { parseMaskClipId } from "../timeline";
 import type {
   ClipTransform,
   MaskTimelineClip,
@@ -66,6 +68,22 @@ const selectedConnectedButtonSx = {
 
 const SHARED_MASK_EDGE_TRANSFORM_TYPES = ["mask_grow", "feather"] as const;
 type MaskPanelView = "home" | "mask";
+
+function getMaskDisplayLabel(
+  mask: MaskTimelineClip | null,
+  fallbackLabel: string,
+): string {
+  if (!mask) {
+    return fallbackLabel;
+  }
+
+  const localId = parseMaskClipId(mask.id)?.maskId;
+  const name = mask.name.trim();
+  if (!name || (localId && name === `Mask ${localId}`)) {
+    return fallbackLabel;
+  }
+  return name;
+}
 
 function isSharedMaskEdgeTransform(transform: ClipTransform): boolean {
   return SHARED_MASK_EDGE_TRANSFORM_TYPES.includes(
@@ -199,6 +217,7 @@ export const MaskPanel = memo(function MaskPanel() {
     selectMask,
     setMaskMode,
     setMaskBooleanExpression,
+    setMaskName,
     maskInverted,
     setMaskInverted,
     sam2GrowAmount,
@@ -221,6 +240,8 @@ export const MaskPanel = memo(function MaskPanel() {
     sam2GenerateError,
     isSam2Dirty,
     hasSam2MaskAsset,
+    duplicateMask,
+    deleteMask,
     deleteSelectedMask,
     rangeMaskComponents,
     startAddRangeMask,
@@ -361,8 +382,14 @@ export const MaskPanel = memo(function MaskPanel() {
   const selectedMaskIndex = selectedMask
     ? masks.findIndex((mask) => mask.id === selectedMask.id)
     : -1;
-  const selectedMaskLabel =
+  const fallbackSelectedMaskLabel =
     selectedMaskIndex >= 0 ? `Mask ${selectedMaskIndex + 1}` : "Mask";
+  const selectedMaskLabel = getMaskDisplayLabel(
+    selectedMask?.type === "mask" ? selectedMask : null,
+    fallbackSelectedMaskLabel,
+  );
+  const selectedMaskNameValue =
+    selectedMask?.type === "mask" ? selectedMask.name : selectedMaskLabel;
   const selectedMaskMode =
     (selectedMask?.type === "mask" ? selectedMask.maskMode : undefined) ??
     "apply";
@@ -404,6 +431,15 @@ export const MaskPanel = memo(function MaskPanel() {
 
           {selectedMaskIsSam2 ? (
             <>
+              <Box sx={{ px: 2, pb: 1 }}>
+                <TextField
+                  label="Mask Name"
+                  size="small"
+                  fullWidth
+                  value={selectedMaskNameValue}
+                  onChange={(event) => setMaskName(event.target.value)}
+                />
+              </Box>
               <Sam2MaskPanel
                 maskMode={selectedMaskMode}
                 maskInverted={maskInverted}
@@ -447,6 +483,14 @@ export const MaskPanel = memo(function MaskPanel() {
           ) : (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
               <Box sx={{ px: 2 }}>
+                <TextField
+                  label="Mask Name"
+                  size="small"
+                  fullWidth
+                  value={selectedMaskNameValue}
+                  onChange={(event) => setMaskName(event.target.value)}
+                  sx={{ mb: 1 }}
+                />
                 <Typography
                   variant="caption"
                   sx={{ color: "text.secondary", display: "inline-block", mr: 1 }}
@@ -627,6 +671,8 @@ export const MaskPanel = memo(function MaskPanel() {
             expression={maskBooleanExpression}
             onExpressionChange={setMaskBooleanExpression}
             onOpenMaskDetail={handleOpenMaskDetail}
+            onDuplicateMask={duplicateMask}
+            onDeleteMask={deleteMask}
             addAction={
               <Chip
                 size="small"

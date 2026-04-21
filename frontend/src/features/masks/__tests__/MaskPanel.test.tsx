@@ -108,6 +108,7 @@ describe("MaskPanel", () => {
   const mockSelectMask = vi.fn();
   const mockSetMaskMode = vi.fn();
   const mockSetMaskBooleanExpression = vi.fn();
+  const mockSetMaskName = vi.fn();
   const mockSetMaskInverted = vi.fn();
   const mockSetSam2GrowAmount = vi.fn();
   const mockSetSam2PointMode = vi.fn();
@@ -115,6 +116,8 @@ describe("MaskPanel", () => {
   const mockClearSam2CurrentFramePoints = vi.fn();
   const mockGenerateSam2FramePreview = vi.fn();
   const mockGenerateSam2Mask = vi.fn();
+  const mockDuplicateMask = vi.fn();
+  const mockDeleteMask = vi.fn();
   const mockDeleteSelectedMask = vi.fn();
   const mockEnsureSam2Available = vi.fn(async () => true);
   let baseHookValue: ReturnType<typeof useMaskPanel>;
@@ -136,6 +139,7 @@ describe("MaskPanel", () => {
       selectMask: mockSelectMask,
       setMaskMode: mockSetMaskMode,
       setMaskBooleanExpression: mockSetMaskBooleanExpression,
+      setMaskName: mockSetMaskName,
       maskInverted: false,
       setMaskInverted: mockSetMaskInverted,
       sam2GrowAmount: 0,
@@ -159,6 +163,8 @@ describe("MaskPanel", () => {
       sam2GenerateError: null,
       isSam2Dirty: false,
       hasSam2MaskAsset: false,
+      duplicateMask: mockDuplicateMask,
+      deleteMask: mockDeleteMask,
       deleteSelectedMask: mockDeleteSelectedMask,
       rangeMaskComponents: [],
       startAddRangeMask: vi.fn(),
@@ -338,6 +344,49 @@ describe("MaskPanel", () => {
     expect(mockDeleteSelectedMask).toHaveBeenCalled();
   });
 
+  it("renames the selected mask from the detail view", () => {
+    vi.mocked(useMaskPanel).mockReturnValue({
+      ...baseHookValue,
+      masks: [
+        {
+          ...createMaskClip("clip_1", "mask_1", "triangle"),
+          name: "Foreground",
+        },
+      ],
+      selectedMaskId: "mask_1",
+      selectedMask: {
+        ...createMaskClip("clip_1", "mask_1", "triangle"),
+        name: "Foreground",
+      },
+    });
+
+    render(<MaskPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Foreground" }));
+    fireEvent.change(screen.getByLabelText("Mask Name"), {
+      target: { value: "Foreground refined" },
+    });
+
+    expect(mockSetMaskName).toHaveBeenCalledWith("Foreground refined");
+  });
+
+  it("shows duplicate and delete actions inline for available masks", () => {
+    vi.mocked(useMaskPanel).mockReturnValue({
+      ...baseHookValue,
+      masks: [createMaskClip("clip_1", "mask_1", "triangle")],
+      selectedMaskId: "mask_1",
+      selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
+    });
+
+    render(<MaskPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate Mask 1" }));
+    expect(mockDuplicateMask).toHaveBeenCalledWith("mask_1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Mask 1" }));
+    expect(mockDeleteMask).toHaveBeenCalledWith("mask_1");
+  });
+
   it("keeps shared mask edges on home and opens individual controls in detail view", () => {
     vi.mocked(useMaskPanel).mockReturnValue({
       ...baseHookValue,
@@ -434,13 +483,13 @@ describe("MaskPanel", () => {
       expect.objectContaining({
         type: "mask_grow",
         parameters: expect.objectContaining({
-          invert: true,
+          invert: false,
         }),
       }),
       expect.objectContaining({
         type: "feather",
         parameters: expect.objectContaining({
-          invert: true,
+          invert: false,
         }),
       }),
     ]);

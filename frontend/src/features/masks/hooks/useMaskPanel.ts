@@ -138,6 +138,7 @@ export interface UseMaskPanelResult {
   selectMask: (maskId: string) => void;
   setMaskMode: (mode: ClipMaskMode) => void;
   setMaskBooleanExpression: (expression: MaskBooleanExpression | null) => void;
+  setMaskName: (name: string) => void;
   maskInverted: boolean;
   setMaskInverted: (inverted: boolean) => void;
   sam2GrowAmount: number;
@@ -161,6 +162,8 @@ export interface UseMaskPanelResult {
   sam2GenerateError: string | null;
   isSam2Dirty: boolean;
   hasSam2MaskAsset: boolean;
+  duplicateMask: (maskId: string) => void;
+  deleteMask: (maskId: string) => void;
   deleteSelectedMask: () => void;
   rangeMaskComponents: RangeMaskComponent[];
   startAddRangeMask: () => void;
@@ -225,6 +228,7 @@ export function useMaskPanel(): UseMaskPanelResult {
   const selectedClip = useTimelineClip(selectedClipId) ?? null;
 
   const updateClipMask = useTimelineStore((state) => state.updateClipMask);
+  const duplicateClipMask = useTimelineStore((state) => state.duplicateClipMask);
   const removeClipMask = useTimelineStore((state) => state.removeClipMask);
   const addClipMask = useTimelineStore((state) => state.addClipMask);
   const setClipMaskBooleanExpression = useTimelineStore(
@@ -532,6 +536,14 @@ export function useMaskPanel(): UseMaskPanelResult {
     (mode: ClipMaskMode) => {
       if (!selectedClipId || !selectedMaskId) return;
       updateClipMask(selectedClipId, selectedMaskId, { maskMode: mode });
+    },
+    [selectedClipId, selectedMaskId, updateClipMask],
+  );
+
+  const setMaskName = useCallback(
+    (name: string) => {
+      if (!selectedClipId || !selectedMaskId) return;
+      updateClipMask(selectedClipId, selectedMaskId, { name });
     },
     [selectedClipId, selectedMaskId, updateClipMask],
   );
@@ -1253,28 +1265,49 @@ export function useMaskPanel(): UseMaskPanelResult {
     [selectedClipId, updateClipComponent],
   );
 
+  const duplicateMask = useCallback(
+    (maskId: string) => {
+      if (!selectedClipId) return;
+      const duplicatedMaskId = duplicateClipMask(selectedClipId, maskId);
+      if (duplicatedMaskId) {
+        setSelectedMask(selectedClipId, duplicatedMaskId);
+      }
+    },
+    [duplicateClipMask, selectedClipId, setSelectedMask],
+  );
+
+  const deleteMask = useCallback(
+    (maskId: string) => {
+      if (!selectedClipId) return;
+
+      const selectedIndex = masks.findIndex((m) => {
+        const parsed = parseMaskClipId(m.id);
+        return parsed?.maskId === maskId;
+      });
+      const fallbackMask =
+        masks[selectedIndex + 1] ?? masks[selectedIndex - 1] ?? null;
+      const fallbackId = fallbackMask
+        ? (parseMaskClipId(fallbackMask.id)?.maskId ?? null)
+        : null;
+
+      removeClipMask(selectedClipId, maskId);
+      if (selectedMaskId === maskId) {
+        setSelectedMask(selectedClipId, fallbackId);
+      }
+    },
+    [
+      masks,
+      removeClipMask,
+      selectedClipId,
+      selectedMaskId,
+      setSelectedMask,
+    ],
+  );
+
   const deleteSelectedMask = useCallback(() => {
-    if (!selectedClipId || !selectedMaskId) return;
-
-    const selectedIndex = masks.findIndex((m) => {
-      const parsed = parseMaskClipId(m.id);
-      return parsed?.maskId === selectedMaskId;
-    });
-    const fallbackMask =
-      masks[selectedIndex + 1] ?? masks[selectedIndex - 1] ?? null;
-    const fallbackId = fallbackMask
-      ? (parseMaskClipId(fallbackMask.id)?.maskId ?? null)
-      : null;
-
-    removeClipMask(selectedClipId, selectedMaskId);
-    setSelectedMask(selectedClipId, fallbackId);
-  }, [
-    masks,
-    removeClipMask,
-    selectedClipId,
-    selectedMaskId,
-    setSelectedMask,
-  ]);
+    if (!selectedMaskId) return;
+    deleteMask(selectedMaskId);
+  }, [deleteMask, selectedMaskId]);
 
   const hasSam2MaskAsset =
     selectedMask?.type === "mask" &&
@@ -1298,6 +1331,7 @@ export function useMaskPanel(): UseMaskPanelResult {
       if (!selectedClipId) return;
       setClipMaskBooleanExpression(selectedClipId, expression);
     },
+    setMaskName,
     maskInverted,
     setMaskInverted,
     sam2GrowAmount,
@@ -1321,6 +1355,8 @@ export function useMaskPanel(): UseMaskPanelResult {
     sam2GenerateError,
     isSam2Dirty,
     hasSam2MaskAsset,
+    duplicateMask,
+    deleteMask,
     deleteSelectedMask,
     rangeMaskComponents,
     startAddRangeMask,

@@ -479,6 +479,7 @@ function createMaskClip(
   parentClip: TimelineClip,
   opts: {
     maskLocalId?: string;
+    name?: string;
     maskType: ClipMaskType;
     maskMode: ClipMaskMode;
     maskInverted: boolean;
@@ -497,7 +498,7 @@ function createMaskClip(
     id: makeMaskClipId(parentClip.id, maskLocalId),
     trackId: parentClip.trackId,
     type: "mask",
-    name: `Mask ${maskLocalId}`,
+    name: opts.name ?? `Mask ${maskLocalId}`,
     assetId: undefined,
     sourceDuration: parentClip.sourceDuration,
     start: parentClip.start,
@@ -977,6 +978,7 @@ interface TimelineState {
   removeClipTransform: (clipId: string, effectId: string) => void;
 
   addClipMask: (clipId: string, mask: ClipMask) => void;
+  duplicateClipMask: (clipId: string, maskId: string) => string | null;
 
   updateClipMask: (
     clipId: string,
@@ -984,6 +986,7 @@ interface TimelineState {
     updates: Partial<
       Pick<
         MaskTimelineClip,
+        | "name"
         | "maskMode"
         | "maskInverted"
         | "sam2GrowAmount"
@@ -1779,6 +1782,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const existingMaskClips = getOrderedChildMaskClips(draft.clips, parent);
 
         const maskClip = maskToClip(parent, mask);
+        maskClip.name = `Mask ${existingMaskClips.length + 1}`;
         draft.clips.push(maskClip);
         addMaskClipComponent(parent, maskClip.id);
 
@@ -1796,12 +1800,78 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
     },
 
+    duplicateClipMask: (clipId, maskId) => {
+      let duplicatedMaskId: string | null = null;
+
+      const didCommit = commitModelMutation((draft) => {
+        const parent = draft.clips.find(
+          (clip): clip is StandardTimelineClip =>
+            clip.id === clipId && clip.type !== "mask",
+        );
+        if (!parent) return;
+
+        const sourceMaskClipId = makeMaskClipId(clipId, maskId);
+        const sourceMask = draft.clips.find(
+          (clip): clip is MaskTimelineClip =>
+            clip.id === sourceMaskClipId && clip.type === "mask",
+        );
+        if (!sourceMask) return;
+
+        const orderedMaskClips = getOrderedChildMaskClips(draft.clips, parent);
+        const sourceIndex = orderedMaskClips.findIndex(
+          (maskClip) => maskClip.id === sourceMaskClipId,
+        );
+        const nextLocalId = `mask_${crypto.randomUUID()}`;
+        const nextMaskClipId = makeMaskClipId(clipId, nextLocalId);
+        const storedSourceName = sourceMask.name.trim();
+        const sourceName =
+          storedSourceName && storedSourceName !== `Mask ${maskId}`
+            ? storedSourceName
+            : sourceIndex >= 0
+              ? `Mask ${sourceIndex + 1}`
+              : "Mask";
+        const duplicatedMask: MaskTimelineClip = {
+          ...structuredClone(sourceMask),
+          id: nextMaskClipId,
+          name: `${sourceName} copy`,
+          parentClipId: clipId,
+          trackId: parent.trackId,
+        };
+
+        draft.clips.push(duplicatedMask);
+
+        const currentMaskClipIds = getChildMaskClipIds(parent);
+        const insertIndex =
+          sourceIndex >= 0 ? sourceIndex + 1 : currentMaskClipIds.length;
+        const nextMaskClipIds = [
+          ...currentMaskClipIds.slice(0, insertIndex),
+          nextMaskClipId,
+          ...currentMaskClipIds.slice(insertIndex),
+        ];
+        setChildMaskClipIds(parent, nextMaskClipIds);
+
+        const resolved = resolveMaskBooleanExpression(parent, orderedMaskClips);
+        updateMaskCompositionOnDraft(parent, (current) => ({
+          ...current,
+          expression: appendMaskBooleanExpression(resolved, nextLocalId),
+        }));
+
+        duplicatedMaskId = nextLocalId;
+      });
+
+      return didCommit ? duplicatedMaskId : null;
+    },
+
     updateClipMask: (clipId, maskId, updates) => {
       commitModelMutation((draft) => {
         const maskClipId = makeMaskClipId(clipId, maskId);
         const maskClip = draft.clips.find((clip) => clip.id === maskClipId);
 
         if (!maskClip || maskClip.type !== "mask") return;
+
+        if (updates.name !== undefined) {
+          maskClip.name = updates.name;
+        }
 
         if (updates.maskMode !== undefined) {
           maskClip.maskMode = updates.maskMode;

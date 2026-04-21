@@ -200,6 +200,63 @@ describe("useTimelineStore SAM2 mask asset lifecycle", () => {
     });
   });
 
+  it("duplicates a SAM2 mask without copying or deleting the shared asset", async () => {
+    const parentClipId = "clip-duplicate";
+    const maskLocalId = "mask-source";
+    const maskClipId = `${parentClipId}::mask::${maskLocalId}`;
+    const sharedAssetId = "sam2-mask-duplicated";
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        createTrack("track_top_pad", "Track 1"),
+        createTrack("track_current", "Track 2"),
+        createTrack("track_bottom_pad", "Track 3"),
+      ],
+      clips: [
+        createParentClip(parentClipId, "track_current", maskClipId),
+        {
+          ...createSam2MaskClip(
+            parentClipId,
+            maskLocalId,
+            "track_current",
+            sharedAssetId,
+          ),
+          name: "Subject mask",
+        },
+      ],
+    });
+
+    let duplicatedMaskId: string | null = null;
+    act(() => {
+      duplicatedMaskId = useTimelineStore
+        .getState()
+        .duplicateClipMask(parentClipId, maskLocalId);
+    });
+
+    expect(duplicatedMaskId).toBeTruthy();
+    const masks = useTimelineStore
+      .getState()
+      .clips.filter((clip): clip is MaskTimelineClip => clip.type === "mask");
+    expect(masks).toHaveLength(2);
+    expect(masks.map((mask) => mask.sam2MaskAssetId)).toEqual([
+      sharedAssetId,
+      sharedAssetId,
+    ]);
+    expect(masks[1].name).toBe("Subject mask copy");
+
+    act(() => {
+      if (duplicatedMaskId) {
+        useTimelineStore
+          .getState()
+          .removeClipMask(parentClipId, duplicatedMaskId);
+      }
+    });
+
+    await waitFor(() => {
+      expect(mockDeleteAsset).not.toHaveBeenCalled();
+    });
+  });
+
   it("keeps a shared SAM2 mask asset when removing one duplicated parent clip", async () => {
     const sharedAssetId = "sam2-mask-shared-parent";
 

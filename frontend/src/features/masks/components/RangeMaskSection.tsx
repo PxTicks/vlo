@@ -35,20 +35,7 @@ export function RangeMaskSection({
     <Box
       sx={{ px: 2, pb: 2, display: "flex", flexDirection: "column", gap: 1.5 }}
     >
-      <Typography
-        variant="caption"
-        sx={{ color: "text.secondary", display: "block" }}
-      >
-        Range Masks
-      </Typography>
-
       <Box>
-        <Typography
-          variant="caption"
-          sx={{ color: "text.secondary", display: "block", mb: 1 }}
-        >
-          Available Ranges
-        </Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, width: "100%" }}>
           {rangeMaskComponents.map((component, index) => (
             <Box
@@ -115,14 +102,7 @@ export function RangeMaskSection({
         >
           Active Ranges
         </Typography>
-        {activeComponents.length === 0 ? (
-          <Typography
-            variant="caption"
-            sx={{ color: "text.secondary", display: "block", minHeight: 20 }}
-          >
-            No active ranges. Click a range chip to activate it.
-          </Typography>
-        ) : (
+        {activeComponents.length > 0 && (
           <Box
             data-testid="range-mask-active-list"
             sx={{
@@ -152,11 +132,6 @@ export function RangeMaskSection({
           </Box>
         )}
       </Box>
-
-      <Typography variant="caption" sx={{ color: "text.secondary" }}>
-        Active ranges make the clip transparent for their time window (union
-        semantics — any active range hides the clip there).
-      </Typography>
     </Box>
   );
 }

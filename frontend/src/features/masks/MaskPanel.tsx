@@ -6,6 +6,8 @@ import {
   Checkbox,
   Menu,
   MenuItem,
+  Tab,
+  Tabs,
   TextField,
   Typography,
   Divider,
@@ -63,6 +65,7 @@ const selectedConnectedButtonSx = {
 };
 
 type MaskPanelView = "home" | "mask";
+type MaskHomeSubTab = "clip" | "range";
 
 function getMaskDisplayLabel(
   mask: MaskTimelineClip | null,
@@ -118,6 +121,7 @@ function useLocalActiveSection(
 
 export const MaskPanel = memo(function MaskPanel() {
   const [panelView, setPanelView] = useState<MaskPanelView>("home");
+  const [homeSubTab, setHomeSubTab] = useState<MaskHomeSubTab>("clip");
   const {
     selectedClipId,
     masks,
@@ -522,160 +526,149 @@ export const MaskPanel = memo(function MaskPanel() {
         </>
       ) : (
         <>
-          <Box sx={{ px: 2, pt: 2, pb: 1 }}>
-            <Typography
-              variant="caption"
-              sx={{ color: "text.secondary", display: "block", mb: 1 }}
-            >
-              Clip Masks
-            </Typography>
-            {sharedMaskContextId && (
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 1,
-                  mb: 1,
-                }}
-              >
-                <FormControlLabel
-                  sx={{ mr: 0 }}
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={isMaskCompositionInverse}
-                      onChange={handleSharedMaskEdgeInvertChange}
-                    />
-                  }
-                  label="Inverse Masking"
-                />
-                <Tooltip
-                  title="Inverse masking performs operations on the mask 'holes', which is useful for inpainting, intuitively allowing union and intersection of areas to be replaced. Normal masking acts on opaque areas, which is useful for intuitively stacking parts which we want to remain visible."
-                  placement="top"
-                >
-                  <IconButton
-                    size="small"
-                    aria-label="Inverse masking information"
-                    sx={{ color: "text.secondary" }}
-                  >
-                    <InfoOutlined sx={{ fontSize: 18 }} />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            )}
-            <Menu
-              data-testid="mask-add-menu"
-              anchorEl={addMenuAnchorEl}
-              open={Boolean(addMenuAnchorEl)}
-              onClose={() => setAddMenuAnchorEl(null)}
-            >
-              {MASK_TYPES.map((shape) => (
-                <MenuItem key={shape} onClick={() => handleRequestDraw(shape)}>
-                  {shape[0].toUpperCase() + shape.slice(1)}
-                </MenuItem>
-              ))}
-            </Menu>
-          </Box>
+          <Tabs
+            data-testid="mask-panel-subtabs"
+            value={homeSubTab}
+            onChange={(_event, value: MaskHomeSubTab) => setHomeSubTab(value)}
+            variant="fullWidth"
+            sx={{
+              borderBottom: "1px solid #2a2d33",
+              minHeight: 36,
+              "& .MuiTab-root": {
+                minHeight: 36,
+                textTransform: "none",
+                fontSize: "0.8rem",
+              },
+            }}
+          >
+            <Tab value="clip" label="Clip Masks" />
+            <Tab value="range" label="Range Masks" />
+          </Tabs>
 
-          <MaskEquationBuilder
-            masks={masks as MaskTimelineClip[]}
-            expression={maskBooleanExpression}
-            onExpressionChange={setMaskBooleanExpression}
-            onOpenMaskDetail={handleOpenMaskDetail}
-            onDuplicateMask={duplicateMask}
-            onDeleteMask={deleteMask}
-            addAction={
-              <Chip
-                size="small"
-                data-testid="mask-add-chip"
-                label="Add mask"
-                variant="outlined"
-                icon={<Add sx={{ fontSize: "1rem !important" }} />}
-                onClick={(event) => setAddMenuAnchorEl(event.currentTarget)}
-                disabled={isAddDisabled}
-                sx={{
-                  fontSize: "0.75rem",
-                  height: 24,
-                  cursor: isAddDisabled ? "default" : "pointer",
-                }}
-              />
-            }
-          />
-
-          {addDisabledReason && (
-            <Box sx={{ px: 2, pb: 1 }}>
-              <Typography
-                variant="caption"
-                sx={{ color: "text.secondary", display: "block" }}
-              >
-                {addDisabledReason}
-              </Typography>
-            </Box>
-          )}
-
-          {showSam2DownloadOverlay && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Sam2ModelDownloadOverlay
-                onModelsInstalled={handleModelsInstalled}
-              />
-            </Box>
-          )}
-
-          {masks.length > 0 &&
-            sharedMaskContextId &&
-            sharedMaskOperationDefinitions.length > 0 && (
-              <>
+          {homeSubTab === "clip" ? (
+            <>
+              {sharedMaskContextId && (
                 <Box
                   sx={{
                     px: 2,
+                    pt: 2,
                     pb: 1,
                     display: "flex",
-                    justifyContent: "space-between",
                     alignItems: "center",
-                    gap: 2,
+                    justifyContent: "space-between",
+                    gap: 1,
                   }}
                 >
+                  <FormControlLabel
+                    sx={{ mr: 0 }}
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={isMaskCompositionInverse}
+                        onChange={handleSharedMaskEdgeInvertChange}
+                      />
+                    }
+                    label="Inverse Masking"
+                  />
+                  <Tooltip
+                    title="Inverse masking performs operations on the mask 'holes', which is useful for inpainting, intuitively allowing union and intersection of areas to be replaced. Normal masking acts on opaque areas, which is useful for intuitively stacking parts which we want to remain visible."
+                    placement="top"
+                  >
+                    <IconButton
+                      size="small"
+                      aria-label="Inverse masking information"
+                      sx={{ color: "text.secondary" }}
+                    >
+                      <InfoOutlined sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
+              <Menu
+                data-testid="mask-add-menu"
+                anchorEl={addMenuAnchorEl}
+                open={Boolean(addMenuAnchorEl)}
+                onClose={() => setAddMenuAnchorEl(null)}
+              >
+                {MASK_TYPES.map((shape) => (
+                  <MenuItem key={shape} onClick={() => handleRequestDraw(shape)}>
+                    {shape[0].toUpperCase() + shape.slice(1)}
+                  </MenuItem>
+                ))}
+              </Menu>
+
+              <MaskEquationBuilder
+                masks={masks as MaskTimelineClip[]}
+                expression={maskBooleanExpression}
+                onExpressionChange={setMaskBooleanExpression}
+                onOpenMaskDetail={handleOpenMaskDetail}
+                onDuplicateMask={duplicateMask}
+                onDeleteMask={deleteMask}
+                addAction={
+                  <Chip
+                    size="small"
+                    data-testid="mask-add-chip"
+                    label="Add mask"
+                    variant="outlined"
+                    icon={<Add sx={{ fontSize: "1rem !important" }} />}
+                    onClick={(event) => setAddMenuAnchorEl(event.currentTarget)}
+                    disabled={isAddDisabled}
+                    sx={{
+                      fontSize: "0.75rem",
+                      height: 24,
+                      cursor: isAddDisabled ? "default" : "pointer",
+                    }}
+                  />
+                }
+              />
+
+              {addDisabledReason && (
+                <Box sx={{ px: 2, pb: 1 }}>
                   <Typography
                     variant="caption"
                     sx={{ color: "text.secondary", display: "block" }}
                   >
-                    Shared Mask Edges
+                    {addDisabledReason}
                   </Typography>
                 </Box>
+              )}
 
-                <DefaultTransformationSections
-                  definitions={sharedMaskOperationDefinitions}
-                  activeTransforms={sharedMaskTransforms}
-                  activeContextId={sharedMaskContextId}
-                  activeSectionId={activeSharedSectionId}
-                  timelineClip={sharedMaskTimelineClip}
-                  onCommit={handleSharedMaskCommit}
-                  onSetDefaultGroupsEnabled={handleSetSharedMaskGroupsEnabled}
-                  onUpdateTransform={updateSharedMaskTransform}
-                  onSetTransforms={setSharedMaskTransforms}
-                  onActivateSection={activateSharedSection}
-                />
-              </>
-            )}
+              {showSam2DownloadOverlay && (
+                <Box sx={{ px: 2, pb: 2 }}>
+                  <Sam2ModelDownloadOverlay
+                    onModelsInstalled={handleModelsInstalled}
+                  />
+                </Box>
+              )}
 
-          {masks.length === 0 && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                Add a mask to start editing.
-              </Typography>
+              {masks.length > 0 &&
+                sharedMaskContextId &&
+                sharedMaskOperationDefinitions.length > 0 && (
+                  <DefaultTransformationSections
+                    definitions={sharedMaskOperationDefinitions}
+                    activeTransforms={sharedMaskTransforms}
+                    activeContextId={sharedMaskContextId}
+                    activeSectionId={activeSharedSectionId}
+                    timelineClip={sharedMaskTimelineClip}
+                    onCommit={handleSharedMaskCommit}
+                    onSetDefaultGroupsEnabled={handleSetSharedMaskGroupsEnabled}
+                    onUpdateTransform={updateSharedMaskTransform}
+                    onSetTransforms={setSharedMaskTransforms}
+                    onActivateSection={activateSharedSection}
+                  />
+                )}
+            </>
+          ) : (
+            <Box sx={{ pt: 2 }}>
+              <RangeMaskSection
+                rangeMaskComponents={rangeMaskComponents}
+                onAdd={startAddRangeMask}
+                onEdit={startEditRangeMask}
+                onRemove={removeRangeMask}
+                onToggleActive={toggleRangeMaskActive}
+              />
             </Box>
           )}
-
-          <Divider sx={{ borderColor: "#2a2d33", mx: 2, mb: 1 }} />
-
-          <RangeMaskSection
-            rangeMaskComponents={rangeMaskComponents}
-            onAdd={startAddRangeMask}
-            onEdit={startEditRangeMask}
-            onRemove={removeRangeMask}
-            onToggleActive={toggleRangeMaskActive}
-          />
         </>
       )}
     </Box>

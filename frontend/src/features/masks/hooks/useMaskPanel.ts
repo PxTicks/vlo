@@ -140,6 +140,8 @@ export interface UseMaskPanelResult {
   setMaskBooleanExpression: (expression: MaskBooleanExpression | null) => void;
   maskInverted: boolean;
   setMaskInverted: (inverted: boolean) => void;
+  sam2GrowAmount: number;
+  setSam2GrowAmount: (amount: number) => void;
   sam2PointMode: "add" | "remove";
   setSam2PointMode: (mode: "add" | "remove") => void;
   sam2Points: ClipMaskPoint[];
@@ -544,6 +546,30 @@ export function useMaskPanel(): UseMaskPanelResult {
 
   const maskInverted =
     selectedMask?.type === "mask" ? (selectedMask.maskInverted ?? false) : false;
+
+  const sam2GrowAmount =
+    selectedMask?.type === "mask" && selectedMask.maskType === "sam2"
+      ? (selectedMask.sam2GrowAmount ?? 0)
+      : 0;
+
+  const setSam2GrowAmount = useCallback(
+    (amount: number) => {
+      if (!selectedClipId || !selectedMaskId) return;
+      if (
+        !selectedMask ||
+        selectedMask.type !== "mask" ||
+        selectedMask.maskType !== "sam2"
+      ) {
+        return;
+      }
+
+      const nextAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0;
+      updateClipMask(selectedClipId, selectedMaskId, {
+        sam2GrowAmount: nextAmount,
+      });
+    },
+    [selectedClipId, selectedMask, selectedMaskId, updateClipMask],
+  );
 
   const clearSam2Points = useCallback(() => {
     if (!selectedClipId || !selectedMaskId) return;
@@ -1274,6 +1300,8 @@ export function useMaskPanel(): UseMaskPanelResult {
     },
     maskInverted,
     setMaskInverted,
+    sam2GrowAmount,
+    setSam2GrowAmount,
     sam2PointMode,
     setSam2PointMode,
     sam2Points,

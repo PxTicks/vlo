@@ -201,6 +201,8 @@ export const MaskPanel = memo(function MaskPanel() {
     setMaskBooleanExpression,
     maskInverted,
     setMaskInverted,
+    sam2GrowAmount,
+    setSam2GrowAmount,
     sam2PointMode,
     setSam2PointMode,
     sam2Points,
@@ -422,8 +424,10 @@ export const MaskPanel = memo(function MaskPanel() {
                 generateError={sam2GenerateError}
                 isDirty={isSam2Dirty}
                 hasMaskAsset={hasSam2MaskAsset}
+                sam2GrowAmount={sam2GrowAmount}
                 onSetMaskMode={setMaskMode}
                 onSetMaskInverted={setMaskInverted}
+                onSetSam2GrowAmount={setSam2GrowAmount}
                 onSetSam2PointMode={setSam2PointMode}
               />
               <Box sx={{ px: 2, pb: 2 }}>

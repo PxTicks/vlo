@@ -84,10 +84,7 @@ function normalizeMaskType(type: string | undefined): ClipMaskType {
   return "rectangle";
 }
 
-export function normalizeMaskMode(
-  mode: string | undefined,
-  _isEnabled: boolean | undefined,
-): ClipMaskMode {
+export function normalizeMaskMode(mode: string | undefined): ClipMaskMode {
   if (mode === "apply" || mode === "preview") {
     return mode;
   }
@@ -398,7 +395,7 @@ export function createMask(
   overrides: MaskCreateOverrides = {},
 ): ClipMask {
   const maskId = overrides.id ?? `mask_${crypto.randomUUID()}`;
-  const mode = normalizeMaskMode(overrides.mode, overrides.isEnabled);
+  const mode = normalizeMaskMode(overrides.mode);
   const parameters = normalizeMaskParameters(overrides.parameters);
   const layout = normalizeMaskLayoutState(overrides.parameters);
   const transformations =
@@ -415,6 +412,7 @@ export function createMask(
     inverted: overrides.inverted ?? true,
     transformations,
     parameters,
+    sam2GrowAmount: overrides.sam2GrowAmount,
     maskPoints: normalizedMaskPoints,
     sam2MaskAssetId: overrides.sam2MaskAssetId,
     sam2GeneratedPointsHash: overrides.sam2GeneratedPointsHash,

@@ -88,6 +88,7 @@ function createMaskClip(
   options: {
     inverted?: boolean;
     maskType?: MaskTimelineClip["maskType"];
+    sam2GrowAmount?: number;
     sam2MaskAssetId?: string;
     generationMaskAssetId?: string;
     transformations?: MaskTimelineClip["transformations"];
@@ -110,6 +111,7 @@ function createMaskClip(
     maskType: options.maskType ?? "rectangle",
     maskMode: "apply",
     maskInverted: options.inverted ?? false,
+    sam2GrowAmount: options.sam2GrowAmount,
     maskParameters: {
       baseWidth: 100,
       baseHeight: 100,
@@ -918,6 +920,50 @@ describe("SpriteClipMaskController mask composition", () => {
       node.assetMaskNodes.get(generationMask.id)?.player.renderAt,
     ).toHaveBeenCalledWith(expect.any(Number), { strict: true });
     expect(renderSpy).toHaveBeenCalledTimes(2);
+
+    controller.dispose();
+    warnSpy.mockRestore();
+  });
+
+  it("grows SAM2 leaf masks before boolean composition only when amount is non-zero", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderSpy = vi.fn();
+    const renderer = {
+      render: renderSpy,
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = createParentClip();
+    const sam2Mask = createMaskClip("mask_sam2", {
+      maskType: "sam2",
+      sam2MaskAssetId: "sam2-mask-asset",
+      sam2GrowAmount: 0,
+    });
+    const sam2Asset = createMaskAsset("sam2-mask-asset");
+
+    await controller.syncMaskClips(
+      [sam2Mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map([[sam2Asset.id, sam2Asset]]),
+      { waitForSam2: true },
+    );
+
+    expect(renderSpy).toHaveBeenCalledTimes(2);
+
+    await controller.syncMaskClips(
+      [{ ...sam2Mask, sam2GrowAmount: 10 }],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map([[sam2Asset.id, sam2Asset]]),
+      { waitForSam2: true },
+    );
+
+    expect(renderSpy).toHaveBeenCalledTimes(7);
 
     controller.dispose();
     warnSpy.mockRestore();

@@ -482,6 +482,7 @@ function createMaskClip(
     maskType: ClipMaskType;
     maskMode: ClipMaskMode;
     maskInverted: boolean;
+    sam2GrowAmount?: number;
     maskParameters: ClipMaskParameters;
     maskPoints?: ClipMaskPoint[];
     sam2MaskAssetId?: string;
@@ -513,6 +514,7 @@ function createMaskClip(
     maskType: opts.maskType,
     maskMode: opts.maskMode,
     maskInverted: opts.maskInverted,
+    sam2GrowAmount: opts.sam2GrowAmount,
     maskParameters: opts.maskParameters,
     maskPoints: opts.maskPoints ? structuredClone(opts.maskPoints) : undefined,
     sam2MaskAssetId: opts.sam2MaskAssetId,
@@ -529,6 +531,7 @@ function maskToClip(parentClip: TimelineClip, mask: ClipMask): TimelineClip {
     maskType: mask.type,
     maskMode: mask.mode,
     maskInverted: mask.inverted,
+    sam2GrowAmount: mask.sam2GrowAmount,
     maskParameters: mask.parameters,
     maskPoints: mask.maskPoints,
     sam2MaskAssetId: mask.sam2MaskAssetId,
@@ -983,6 +986,7 @@ interface TimelineState {
         MaskTimelineClip,
         | "maskMode"
         | "maskInverted"
+        | "sam2GrowAmount"
         | "maskParameters"
         | "maskPoints"
         | "sam2MaskAssetId"
@@ -1826,6 +1830,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
               }
             }
           }
+        }
+
+        if (updates.sam2GrowAmount !== undefined) {
+          maskClip.sam2GrowAmount = updates.sam2GrowAmount;
         }
 
         if (updates.maskParameters !== undefined) {

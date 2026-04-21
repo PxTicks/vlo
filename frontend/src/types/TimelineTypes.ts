@@ -70,6 +70,8 @@ export interface ClipMask extends ClipComponentBase<ClipMaskParameters> {
   type: ClipMaskType;
   mode: ClipMaskMode;
   inverted: boolean;
+  /** Optional per-mask growth applied to SAM2 masks before composition. */
+  sam2GrowAmount?: number;
   /** Optional point prompts for SAM2 masks. */
   maskPoints?: ClipMaskPoint[];
   /** Linked generated mask asset for SAM2 runtime masking. */
@@ -131,6 +133,8 @@ export interface MaskTimelineClip extends TimelineClipBase {
   maskType: ClipMaskType;
   maskMode: ClipMaskMode;
   maskInverted: boolean;
+  /** Optional per-mask growth applied to SAM2 masks before composition. */
+  sam2GrowAmount?: number;
   maskParameters: ClipMaskParameters;
   /** Optional point prompts for SAM2 masks. */
   maskPoints?: ClipMaskPoint[];

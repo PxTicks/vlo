@@ -95,6 +95,15 @@ function isAssetBackedMask(maskClip: MaskTimelineClip): boolean {
   return getAssetBackedMaskId(maskClip) !== null;
 }
 
+function getSam2MaskGrowAmount(maskClip: MaskTimelineClip): number {
+  if (maskClip.maskType !== "sam2") {
+    return 0;
+  }
+
+  const amount = maskClip.sam2GrowAmount ?? 0;
+  return Number.isFinite(amount) ? Math.max(0, amount) : 0;
+}
+
 function getMaskContentSize(clip: MaskTimelineClip): {
   width: number;
   height: number;
@@ -782,20 +791,55 @@ export class SpriteClipMaskController {
       }
 
       if (!maskClip.maskInverted) {
+        const growAmount = getSam2MaskGrowAmount(maskClip);
+        if (growAmount <= 0) {
+          this.renderMaskSubsetToTexture(
+            new Set<string>([maskClip.id]),
+            leafTexture,
+            transform,
+          );
+          return;
+        }
+
         this.renderMaskSubsetToTexture(
           new Set<string>([maskClip.id]),
           leafTexture,
           transform,
         );
+        const grownTexture = this.renderGrowPass(
+          leafTexture,
+          growAmount,
+          false,
+        );
+        if (grownTexture !== leafTexture) {
+          this.renderTextureToTarget(grownTexture, leafTexture, {
+            clear: true,
+          });
+        }
+        return;
+      }
+
+      const growAmount = getSam2MaskGrowAmount(maskClip);
+      if (growAmount <= 0) {
+        this.renderMaskSubsetToTexture(
+          new Set<string>([maskClip.id]),
+          perMaskRenderTexture,
+          transform,
+        );
+        this.renderTextureToTarget(perMaskRenderTexture, leafTexture, {
+          clear: true,
+          filters: [this.getMaskCoverageInvertFilter()],
+        });
         return;
       }
 
       this.renderMaskSubsetToTexture(
         new Set<string>([maskClip.id]),
-        perMaskRenderTexture,
+        leafTexture,
         transform,
       );
-      this.renderTextureToTarget(perMaskRenderTexture, leafTexture, {
+      const grownTexture = this.renderGrowPass(leafTexture, growAmount, false);
+      this.renderTextureToTarget(grownTexture, leafTexture, {
         clear: true,
         filters: [this.getMaskCoverageInvertFilter()],
       });
@@ -1017,6 +1061,10 @@ export class SpriteClipMaskController {
     amount: number,
     invert: boolean,
   ): Texture {
+    if (amount <= 0) {
+      return sourceTexture;
+    }
+
     if (!this.effectMaskRenderTexture || !this.perMaskRenderTexture) {
       return sourceTexture;
     }

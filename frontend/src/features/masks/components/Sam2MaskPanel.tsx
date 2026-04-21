@@ -1,5 +1,12 @@
 import { memo, useMemo } from "react";
-import { Box, Button, Typography, Divider, ButtonGroup } from "@mui/material";
+import {
+  Box,
+  Button,
+  Typography,
+  Divider,
+  ButtonGroup,
+  Slider,
+} from "@mui/material";
 import type { ClipMaskMode, ClipMaskPoint } from "../../../types/TimelineTypes";
 
 const connectedButtonSx = {
@@ -47,8 +54,10 @@ interface Sam2MaskPanelProps {
   generateError: string | null;
   isDirty: boolean;
   hasMaskAsset: boolean;
+  sam2GrowAmount: number;
   onSetMaskMode: (mode: ClipMaskMode) => void;
   onSetMaskInverted: (inverted: boolean) => void;
+  onSetSam2GrowAmount: (amount: number) => void;
   onSetSam2PointMode: (mode: "add" | "remove") => void;
 }
 
@@ -72,8 +81,10 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
   generateError,
   isDirty,
   hasMaskAsset,
+  sam2GrowAmount,
   onSetMaskMode,
   onSetMaskInverted,
+  onSetSam2GrowAmount,
   onSetSam2PointMode,
 }: Sam2MaskPanelProps) {
   const positiveCount = useMemo(
@@ -402,6 +413,50 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
             Inverted
           </Button>
         </ButtonGroup>
+
+        <Box sx={{ mt: 1.5, mb: 1 }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 1,
+              mb: 0.5,
+            }}
+          >
+            <Typography
+              variant="caption"
+              sx={{ color: "text.secondary", display: "block" }}
+            >
+              Grow
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ color: "text.disabled", display: "block" }}
+            >
+              {sam2GrowAmount}px
+            </Typography>
+          </Box>
+          <Slider
+            data-testid="sam2-grow-slider"
+            aria-label="SAM2 grow amount"
+            size="small"
+            value={sam2GrowAmount}
+            min={0}
+            max={100}
+            step={1}
+            onChange={(_event, value) => {
+              onSetSam2GrowAmount(Array.isArray(value) ? value[0] : value);
+            }}
+            sx={{
+              color: "#60a5fa",
+              "& .MuiSlider-thumb": {
+                width: 14,
+                height: 14,
+              },
+            }}
+          />
+        </Box>
       </Box>
     </Box>
   );

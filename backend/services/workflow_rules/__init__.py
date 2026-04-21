@@ -35,7 +35,6 @@ from services.workflow_rules.validation import (
     WorkflowValidationError,
     evaluate_input_validation,
     find_unsatisfied_input_conditions,
-    matches_input_presence_condition,
 )
 
 __all__ = [
@@ -60,7 +59,6 @@ __all__ = [
     "find_unsatisfied_input_conditions",
     "load_rules_model_for_workflow",
     "load_rules_for_workflow",
-    "matches_input_presence_condition",
     "normalize_rules_model",
     "normalize_rules",
     "sidecar_path_for_workflow",

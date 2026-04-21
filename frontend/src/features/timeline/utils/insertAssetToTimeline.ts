@@ -52,15 +52,20 @@ export function attachGenerationMask(
       clip.id === clipId && clip.type !== "mask",
   );
 
-  if (
-    parentClip &&
-    (!parentClip.maskCompositeTransformations ||
-      parentClip.maskCompositeTransformations.length === 0)
-  ) {
-    store.setClipMaskCompositeTransforms(
-      clipId,
-      createDefaultGeneratedMaskTransforms(),
+  if (parentClip) {
+    const existingComposition = (parentClip.components ?? []).find(
+      (component) => component.type === "mask_composition",
     );
+    const existingTransforms =
+      existingComposition?.type === "mask_composition"
+        ? existingComposition.parameters.compositeTransformations
+        : [];
+    if (existingTransforms.length === 0) {
+      store.setClipMaskCompositeTransforms(
+        clipId,
+        createDefaultGeneratedMaskTransforms(),
+      );
+    }
   }
 }
 

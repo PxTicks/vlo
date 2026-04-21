@@ -365,14 +365,6 @@ export function pruneWorkflowRulesForWorkflows(
   const rewrites = (rules.rewrites ?? []).filter((rewrite) =>
     isRuleFragmentApplicable(rewrite, workflowNodeIds),
   );
-  const mediaFallbacks = (rules.media_fallbacks ?? []).filter((fallback) => {
-    if (!workflowNodeIds.has(fallback.node_id)) {
-      return false;
-    }
-    return fallback.when == null
-      ? true
-      : isRuleFragmentApplicable(fallback.when, workflowNodeIds);
-  });
   const outputInjections = Object.fromEntries(
     Object.entries(rules.output_injections ?? {}).flatMap(
       ([targetNodeId, targetOutputs]) => {
@@ -446,7 +438,6 @@ export function pruneWorkflowRulesForWorkflows(
     rewrites,
     slots: rules.slots ?? {},
     pipeline,
-    ...(mediaFallbacks.length > 0 ? { media_fallbacks: mediaFallbacks } : {}),
   });
 }
 
@@ -460,7 +451,6 @@ export function hasNodeLinkedWorkflowRules(
     (rules?.derived_widgets?.length ?? 0) > 0 ||
     Object.keys(rules?.output_injections ?? {}).length > 0 ||
     (rules?.rewrites?.length ?? 0) > 0 ||
-    (rules?.media_fallbacks?.length ?? 0) > 0 ||
     (rules?.pipeline ?? []).some((stage) => stage.kind !== "output_assembly")
   );
 }
@@ -476,7 +466,6 @@ export function areWorkflowRulesEffectivelyEmpty(
     (rules?.derived_widgets?.length ?? 0) === 0 &&
     Object.keys(rules?.output_injections ?? {}).length === 0 &&
     (rules?.rewrites?.length ?? 0) === 0 &&
-    (rules?.media_fallbacks?.length ?? 0) === 0 &&
     Object.keys(rules?.slots ?? {}).length === 0 &&
     (rules?.pipeline?.length ?? 0) === 0
   );

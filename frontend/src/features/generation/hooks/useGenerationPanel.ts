@@ -56,6 +56,7 @@ import {
 } from "../utils/mediaInputAssets";
 import { carryOverTextValues } from "../utils/workflowInputCarryover";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
+import { getObjectInfo } from "../services/comfyuiApi";
 import { resolveManualWidgetInputs } from "../services/manualWorkflowWidgets";
 import { buildFrontendStateValueKey } from "../services/frontendRuleState";
 
@@ -131,13 +132,6 @@ function parseStoredWidgetValue(
   }
 
   return storedValue;
-}
-
-function isTransientGenerationError(message: string | null | undefined): boolean {
-  return (
-    message === "Generation interrupted" ||
-    message === "Generation cancelled by user"
-  );
 }
 
 interface AudioSelectionExtractionOptions {
@@ -266,6 +260,11 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const [editorOpen, setEditorOpen] = useState(false);
   const [urlAnchorEl, setUrlAnchorEl] = useState<null | HTMLElement>(null);
   const [urlInput, setUrlInput] = useState("");
+  const [manualObjectInfo, setManualObjectInfo] = useState<
+    Record<string, unknown> | null
+  >(null);
+  const [manualObjectInfoRequested, setManualObjectInfoRequested] =
+    useState(false);
 
   // Slot values keyed by workflow input ID
   const [textValues, setTextValues] = useState<Record<string, string>>({});
@@ -349,12 +348,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     let latest: ReturnType<typeof s.jobs.get> = undefined;
     for (const job of s.jobs.values()) {
       if (
-        job.status === "error" &&
-        isTransientGenerationError(job.error)
-      ) {
-        continue;
-      }
-      if (
         (job.status === "completed" || job.status === "error") &&
         (!latest || job.submittedAt > latest.submittedAt)
       ) {
@@ -371,7 +364,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const syncedGraphData = useGenerationStore((s) => s.syncedGraphData);
   const activeWorkflowRules = useGenerationStore((s) => s.activeWorkflowRules);
   const inputNodeMap = useGenerationStore((s) => s.inputNodeMap);
-  const rawObjectInfo = useGenerationStore((s) => s.rawObjectInfo);
   const lastAppliedWidgetValues = useGenerationStore(
     (s) => s.lastAppliedWidgetValues,
   );
@@ -388,10 +380,10 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     () =>
       resolveManualWidgetInputs(
         syncedWorkflow,
-        rawObjectInfo,
+        manualObjectInfo,
         syncedGraphData,
       ),
-    [rawObjectInfo, syncedGraphData, syncedWorkflow],
+    [manualObjectInfo, syncedGraphData, syncedWorkflow],
   );
   const workflowInputs =
     mode === "manual" ? manualWorkflowInputs : smartWorkflowInputs;
@@ -422,6 +414,46 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
           ),
     [derivedMaskDefaultVideoTreatment, derivedMaskMappings, mode, smartWidgetInputs, widgetValues],
   );
+
+  useEffect(() => {
+    if (
+      mode !== "manual" ||
+      manualObjectInfo ||
+      manualObjectInfoRequested ||
+      connectionStatus !== "connected"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setManualObjectInfoRequested(true);
+
+    void getObjectInfo()
+      .then((nextObjectInfo) => {
+        if (cancelled) {
+          return;
+        }
+        setManualObjectInfo(nextObjectInfo);
+      })
+      .catch((error) => {
+        if (!import.meta.env.DEV) {
+          return;
+        }
+        console.debug(
+          "[useGenerationPanel] Failed to fetch object_info for manual widget discovery",
+          error,
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    connectionStatus,
+    manualObjectInfo,
+    manualObjectInfoRequested,
+    mode,
+  ]);
 
   useEffect(() => {
     widgetValuesRef.current = widgetValues;

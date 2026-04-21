@@ -127,8 +127,26 @@
         "control_id": "prompt_enhancer_enabled",
         "value": false
       },
-      "bypass": [
-        "599"
+      "set_widgets": [
+        {
+          "node_id": "594",
+          "widget": "value",
+          "value": false
+        }
+      ]
+    },
+    {
+      "when": {
+        "kind": "frontend_control_boolean",
+        "control_id": "prompt_enhancer_enabled",
+        "value": true
+      },
+      "set_widgets": [
+        {
+          "node_id": "594",
+          "widget": "value",
+          "value": true
+        }
       ]
     }
   ],

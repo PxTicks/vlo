@@ -1,12 +1,8 @@
-import type {
-  WorkflowReadResult,
-  WorkflowWarningSummary,
-} from "./workflowBridge";
+import type { WorkflowWarningSummary } from "./workflowBridge";
 import {
-  buildWorkflowResultFromGraphData,
   isIframeAppReady,
   loadWorkflowIntoIframe,
-  readActiveWorkflowFromIframe,
+  readWorkflowFromIframe,
 } from "./workflowBridge";
 import type { InputNodeMap } from "../constants/inputNodeMap";
 import { normalizeWorkflowFilename } from "./workflowFilenames";
@@ -22,6 +18,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 export type ShouldAbort = () => boolean;
+
+type WorkflowReadResult = Awaited<ReturnType<typeof readWorkflowFromIframe>>;
 
 function matchesExpectedWorkflowResult(
   workflowResult: WorkflowReadResult,
@@ -71,7 +69,6 @@ export async function readWorkflowWithRetry(
   shouldAbort: ShouldAbort,
   timeoutMs = READ_RETRY_TIMEOUT_MS,
   inputNodeMap?: InputNodeMap | null,
-  objectInfo?: Record<string, unknown> | null,
   isAcceptableResult?: (
     result: NonNullable<WorkflowReadResult>,
   ) => boolean,
@@ -79,17 +76,7 @@ export async function readWorkflowWithRetry(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (shouldAbort()) return null;
-    const activeWorkflow = readActiveWorkflowFromIframe(iframe);
-    const result = activeWorkflow
-      ? buildWorkflowResultFromGraphData(
-          activeWorkflow.graphData,
-          activeWorkflow.filename,
-          {
-            inputNodeMap,
-            objectInfo,
-          },
-        )
-      : null;
+    const result = await readWorkflowFromIframe(iframe, inputNodeMap);
     if (result && (!isAcceptableResult || isAcceptableResult(result))) {
       return result;
     }
@@ -103,7 +90,7 @@ export interface InjectWorkflowAndReadResult {
   deferred: boolean;
   reason: string | null;
   warnings: WorkflowWarningSummary | null;
-  workflowResult: WorkflowReadResult | null;
+  workflowResult: Awaited<ReturnType<typeof readWorkflowFromIframe>>;
 }
 
 export async function injectWorkflowAndRead(
@@ -112,7 +99,6 @@ export async function injectWorkflowAndRead(
   workflowId: string,
   shouldAbort: ShouldAbort,
   inputNodeMap?: InputNodeMap | null,
-  objectInfo?: Record<string, unknown> | null,
 ): Promise<InjectWorkflowAndReadResult> {
   const appReady = await waitForAppReady(iframe, shouldAbort);
   if (!appReady) {
@@ -144,7 +130,6 @@ export async function injectWorkflowAndRead(
     shouldAbort,
     READ_RETRY_TIMEOUT_MS,
     inputNodeMap,
-    objectInfo,
     (result) =>
       matchesExpectedWorkflowResult(result, graphData, workflowId),
   );

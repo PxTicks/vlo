@@ -19,7 +19,6 @@ class BackendPipelineContext:
         *,
         client: httpx.AsyncClient,
         client_id: str,
-        prompt_id: str | None = None,
         workflow: dict[str, Any],
         workflow_id: str | None = None,
         pipeline_inputs: dict[str, dict[str, Any]] | None = None,
@@ -38,6 +37,7 @@ class BackendPipelineContext:
         pipeline_outputs: dict[str, dict[str, Any]] | None = None,
         resolved_pipeline_controls: dict[str, dict[str, Any]] | None = None,
         stage_state: dict[str, dict[str, Any]] | None = None,
+        prompt_id: str | None = None,
         comfyui_response: httpx.Response | None = None,
         skip_graph_rewrite: bool = False,
     ) -> None:
@@ -45,7 +45,6 @@ class BackendPipelineContext:
         self.client_id = client_id
         self.workflow = workflow
         self.workflow_id = workflow_id
-        self.prompt_id = prompt_id
         self.pipeline_inputs = {
             stage_id: dict(values)
             for stage_id, values in (pipeline_inputs or {}).items()
@@ -76,6 +75,7 @@ class BackendPipelineContext:
             for stage_id, values in (stage_state or {}).items()
             if isinstance(stage_id, str) and isinstance(values, dict)
         }
+        self.prompt_id = prompt_id
         self.comfyui_response = comfyui_response
         self.skip_graph_rewrite = skip_graph_rewrite
 

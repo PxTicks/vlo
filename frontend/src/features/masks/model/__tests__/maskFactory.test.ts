@@ -13,9 +13,9 @@ describe("maskFactory", () => {
     expect(enabled.mode).toBe("apply");
     expect(enabled.isEnabled).toBe(true);
 
-    const disabled = createMask("circle", { mode: "off" });
-    expect(disabled.mode).toBe("off");
-    expect(disabled.isEnabled).toBe(false);
+    const preview = createMask("circle", { mode: "preview" });
+    expect(preview.mode).toBe("preview");
+    expect(preview.isEnabled).toBe(true);
   });
 
   it("creates default layout transforms from parameters", () => {

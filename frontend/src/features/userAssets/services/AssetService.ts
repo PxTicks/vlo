@@ -11,8 +11,6 @@ import { fileSystemService } from "../../project";
 import { projectDocumentService } from "../../project/services/ProjectDocumentService";
 import { mediaProcessingService } from "./MediaProcessingService";
 
-const assetPersistencePromises = new Map<string, Promise<void>>();
-
 export type AssetIngestResult =
   | {
       status: "created";
@@ -20,70 +18,14 @@ export type AssetIngestResult =
     }
   | {
       status: "skipped_existing";
-      reason: "hash";
+      reason: "name" | "hash";
     }
   | {
       status: "skipped";
       reason: "unsupported" | "failed";
     };
 
-function splitFilename(filename: string): { stem: string; extension: string } {
-  const extensionIndex = filename.lastIndexOf(".");
-  if (extensionIndex <= 0) {
-    return {
-      stem: filename,
-      extension: "",
-    };
-  }
-
-  return {
-    stem: filename.slice(0, extensionIndex),
-    extension: filename.slice(extensionIndex),
-  };
-}
-
-function resolveUniqueAssetFilename(
-  filename: string,
-  existingAssets: readonly Asset[],
-): string {
-  const takenNames = new Set(existingAssets.map((asset) => asset.name));
-  if (!takenNames.has(filename)) {
-    return filename;
-  }
-
-  const { stem, extension } = splitFilename(filename);
-  let suffix = 2;
-
-  while (true) {
-    const candidate = `${stem}_${suffix}${extension}`;
-    if (!takenNames.has(candidate)) {
-      return candidate;
-    }
-    suffix += 1;
-  }
-}
-
 export class AssetService {
-  async waitForAssetPersistence(assetId: string): Promise<void> {
-    const persistencePromise = assetPersistencePromises.get(assetId);
-    if (!persistencePromise) {
-      return;
-    }
-
-    try {
-      await persistencePromise;
-    } finally {
-      assetPersistencePromises.delete(assetId);
-    }
-  }
-
-  async waitForAssetsPersistence(assetIds: readonly string[]): Promise<void> {
-    const uniqueAssetIds = [...new Set(assetIds.filter(Boolean))];
-    await Promise.all(
-      uniqueAssetIds.map((assetId) => this.waitForAssetPersistence(assetId)),
-    );
-  }
-
   /**
    * Scans the project root for new assets, ingests them, and persists them to project.json.
    * Returns a list of the newly added assets.
@@ -271,8 +213,17 @@ export class AssetService {
         }
       }
 
-      // Sanitize first so the on-disk filename is always safe.
+      // Sanitize first to check against existing sanitized names
       const safeName = mediaProcessingService.sanitizeFilename(file.name);
+
+      // Re-check duplications (double safety)
+      if (existingAssets.some((a) => a.name === safeName)) {
+        console.log(`[Ingest] Skipping duplicate asset by name: ${safeName}`);
+        return {
+          status: "skipped_existing",
+          reason: "name",
+        };
+      }
 
       const assetId = crypto.randomUUID();
       const isImage = file.type.startsWith("image/");
@@ -304,14 +255,8 @@ export class AssetService {
         };
       }
 
-      const assetFileName = resolveUniqueAssetFilename(safeName, existingAssets);
-      if (assetFileName !== safeName) {
-        console.log(
-          `[Ingest] Resolved asset name collision: '${safeName}' -> '${assetFileName}'`,
-        );
-      }
-
       // 3. Prepare Paths variables
+      const assetFileName = safeName;
       const storageSrc = assetFileName;
       let storageThumbnail: string | undefined;
       let storageProxy: string | undefined;
@@ -452,7 +397,7 @@ export class AssetService {
       console.timeEnd(`[Ingest] Object Creation ${file.name}`);
 
       // 7. Fire-and-Forget (Background) Persistence
-      const persistencePromise = (async () => {
+      (async () => {
         try {
           console.log(
             `[Ingest-BG] Starting background writes for ${file.name}`,
@@ -506,11 +451,8 @@ export class AssetService {
           );
           // Note: Silent failure here means app assumes asset is safe but it's not on disk.
           // In a perfect world we'd update a 'sync status' store.
-          throw e;
         }
       })();
-      assetPersistencePromises.set(assetId, persistencePromise);
-      void persistencePromise.catch(() => {});
 
       console.timeEnd(`[Ingest] ${file.name}`);
       return {

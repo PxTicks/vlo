@@ -674,7 +674,13 @@ export class SpriteClipMaskController {
       };
     }
 
-    const transforms = parentClip.maskCompositeTransformations ?? [];
+    const composition = (parentClip.components ?? []).find(
+      (component) => component.type === "mask_composition",
+    );
+    const transforms =
+      composition?.type === "mask_composition"
+        ? composition.parameters.compositeTransformations
+        : [];
     if (transforms.length === 0) {
       return {
         compositeInvert: false,

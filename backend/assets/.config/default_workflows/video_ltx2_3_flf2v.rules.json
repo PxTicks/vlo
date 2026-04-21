@@ -2,30 +2,22 @@
   "version": 3,
   "name": "LTX2.3 FLF2V",
   "nodes": {
+    "14": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Upscale noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
     "15": {
       "widgets": {
         "noise_seed": {
           "label": "Noise seed",
           "control_after_generate": true,
           "value_type": "int",
-          "group_id": "video_generation",
-          "group_title": "Video Generation",
-          "group_order": 3
-        }
-      }
-    },
-    "169": {
-      "widgets": {
-        "value": {
-          "label": "Duration",
-          "value_type": "float",
-          "control": "slider",
-          "slider_display": "number",
-          "unit": "s",
-          "min": 0.3333333333,
-          "max": 20,
-          "step": 0.3333333333,
-          "default": 10,
           "group_id": "video_generation",
           "group_title": "Video Generation",
           "group_order": 0
@@ -105,128 +97,20 @@
     }
   },
   "validation": {
-    "inputs": []
+    "inputs": [
+      {
+        "kind": "at_least_n",
+        "inputs": [
+          "45",
+          "47"
+        ],
+        "min": 1,
+        "message": "Provide at least one frame input."
+      }
+    ]
   },
   "derived_widgets": [],
   "output_injections": {},
-  "rewrites": [
-    {
-      "when": {
-        "kind": "input_presence",
-        "inputs": [
-          "45"
-        ],
-        "match": "all_missing"
-      },
-      "bypass": [
-        "45",
-        "42",
-        "70",
-        "71",
-        "44",
-        "31",
-        "75",
-        "114",
-        "152"
-      ]
-    },
-    {
-      "when": {
-        "kind": "input_presence",
-        "inputs": [
-          "47"
-        ],
-        "match": "all_missing"
-      },
-      "bypass": [
-        "47",
-        "49",
-        "48",
-        "50",
-        "78",
-        "116"
-      ]
-    },
-    {
-      "when": {
-        "kind": "input_presence",
-        "inputs": [
-          "232"
-        ],
-        "match": "all_missing"
-      },
-      "bypass": [
-        "232",
-        "229",
-        "228",
-        "227",
-        "221",
-        "222",
-        "223",
-        "224",
-        "219",
-        "217",
-        "218",
-        "226",
-        "225",
-        "231",
-        "235",
-        "239"
-      ]
-    }
-  ],
   "slots": {},
-  "pipeline": [
-    {
-      "id": "aspect_ratio",
-      "kind": "aspect_ratio",
-      "enabled": true,
-      "config": {
-        "stride": 32,
-        "search_steps": 2,
-        "resolutions": [
-          480,
-          720,
-          1080
-        ],
-        "postprocess": {
-          "enabled": true,
-          "mode": "stretch_exact",
-          "apply_to": "all_visual_outputs"
-        }
-      },
-      "targets": [
-        {
-          "width": {
-            "node_id": "166",
-            "param": "value"
-          },
-          "height": {
-            "node_id": "167",
-            "param": "value"
-          }
-        }
-      ],
-      "controls": [
-        {
-          "key": "target_resolution",
-          "label": "Resolution",
-          "value_type": "int",
-          "expose": "widget",
-          "options": [
-            480,
-            720,
-            1080
-          ],
-          "default": 1080
-        },
-        {
-          "key": "target_aspect_ratio",
-          "value_type": "string",
-          "expose": "none",
-          "source": "client"
-        }
-      ]
-    }
-  ]
+  "pipeline": []
 }

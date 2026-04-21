@@ -70,20 +70,8 @@ describe("useGenerationStore workflow rules", () => {
         error: null,
       },
     });
-    vi.spyOn(comfyApi, "syncObjectInfo").mockResolvedValue({
-      synced: true,
-      node_classes: 0,
-      input_node_map: {},
-    });
 
     useProjectStore.setState({
-      project: {
-        id: "project-1",
-        title: "Project One",
-        createdAt: Date.now(),
-        lastModified: Date.now(),
-        rootAssetsFolder: "project-one",
-      },
       config: {
         aspectRatio: "16:9",
         fps: 30,
@@ -230,54 +218,6 @@ describe("useGenerationStore workflow rules", () => {
 
     resolveGraph({});
     await loadPromise;
-  });
-
-  it("does not request an editor reconnect when runtime recovers and the editor is healthy", async () => {
-    useGenerationStore.setState((state) => ({
-      connectionStatus: "disconnected",
-      editorNeedsReconnect: false,
-      editorReconnectSignal: 0,
-      runtimeStatus: state.runtimeStatus
-        ? {
-            ...state.runtimeStatus,
-            comfyui: {
-              ...state.runtimeStatus.comfyui,
-              status: "disconnected",
-            },
-          }
-        : null,
-    }));
-
-    await useGenerationStore.getState().refreshRuntimeStatus();
-
-    const state = useGenerationStore.getState();
-    expect(state.connectionStatus).toBe("connected");
-    expect(state.editorReconnectSignal).toBe(0);
-    expect(state.editorNeedsReconnect).toBe(false);
-  });
-
-  it("requests an editor reconnect when runtime recovers and the editor was marked unhealthy", async () => {
-    useGenerationStore.setState((state) => ({
-      connectionStatus: "disconnected",
-      editorNeedsReconnect: true,
-      editorReconnectSignal: 0,
-      runtimeStatus: state.runtimeStatus
-        ? {
-            ...state.runtimeStatus,
-            comfyui: {
-              ...state.runtimeStatus.comfyui,
-              status: "disconnected",
-            },
-          }
-        : null,
-    }));
-
-    await useGenerationStore.getState().refreshRuntimeStatus();
-
-    const state = useGenerationStore.getState();
-    expect(state.connectionStatus).toBe("connected");
-    expect(state.editorReconnectSignal).toBe(1);
-    expect(state.editorNeedsReconnect).toBe(false);
   });
 
   it("adopts the workflow mask crop mode default when rules load", async () => {

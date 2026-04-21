@@ -9,5 +9,4 @@
 export const MIGRATED_WORKFLOW_IDS: ReadonlySet<string> = new Set([
   "video_ltx2_3_i2v_t2v_basic.json",
   "video_ltx2_3_retake.json",
-  "video_ltx2_3_flf2v.json",
 ]);

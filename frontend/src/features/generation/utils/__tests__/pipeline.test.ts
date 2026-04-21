@@ -686,27 +686,6 @@ describe("generation pipeline", () => {
       },
     );
 
-    expect(mockFetchOutputAsFile).toHaveBeenNthCalledWith(
-      1,
-      "frame_0001.png",
-      "",
-      "output",
-      "/frame-1",
-    );
-    expect(mockFetchOutputAsFile).toHaveBeenNthCalledWith(
-      2,
-      "frame_0002.png",
-      "",
-      "output",
-      "/frame-2",
-    );
-    expect(mockFetchOutputAsFile).toHaveBeenNthCalledWith(
-      3,
-      "sound.wav",
-      "",
-      "output",
-      "/sound",
-    );
     expect(mockPackageFramesAndAudioToVideo).toHaveBeenCalledWith(
       [frameOne, frameTwo],
       audio,
@@ -725,52 +704,6 @@ describe("generation pipeline", () => {
       },
       postprocessError: null,
       importedAssetIds: ["asset-packaged"],
-    });
-  });
-
-  it("fetches memory-backed outputs via their explicit view url", async () => {
-    const output = new File(["video"], "memory-output.mp4", {
-      type: "video/mp4",
-    });
-
-    mockFetchOutputAsFile.mockResolvedValue(output);
-    mockAddLocalAsset.mockResolvedValue({ id: "asset-memory-video" });
-
-    const result = await frontendPostprocess(
-      [
-        {
-          filename: "ComfyUI_00001_.mp4",
-          subfolder: "video",
-          type: "output",
-          viewUrl: "/api/vlo-memory/view/media-123",
-        },
-      ],
-      {
-        postprocessing: {
-          mode: "none",
-          panel_preview: "raw_outputs",
-          on_failure: "fallback_raw",
-        },
-        aspectRatioProcessing: null,
-        generationMetadata: makeGenerationMetadata(),
-        previewFrameFiles: null,
-      },
-    );
-
-    expect(mockFetchOutputAsFile).toHaveBeenCalledWith(
-      "ComfyUI_00001_.mp4",
-      "video",
-      "output",
-      "/api/vlo-memory/view/media-123",
-    );
-    expect(mockAddLocalAsset).toHaveBeenCalledWith(
-      output,
-      makeGenerationMetadata(),
-    );
-    expect(result).toEqual({
-      postprocessedPreview: null,
-      postprocessError: null,
-      importedAssetIds: ["asset-memory-video"],
     });
   });
 

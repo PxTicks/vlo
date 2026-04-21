@@ -26,44 +26,6 @@ def _normalize_provided_input_ids(
     }
 
 
-def matches_input_presence_condition(
-    raw_condition: Any,
-    provided_input_ids: set[str] | None,
-) -> bool:
-    normalized_provided = _normalize_provided_input_ids(provided_input_ids)
-    if not isinstance(raw_condition, dict):
-        return False
-
-    if raw_condition.get("kind") != "input_presence":
-        return False
-
-    raw_inputs = raw_condition.get("inputs")
-    if not isinstance(raw_inputs, list):
-        return False
-
-    inputs = [
-        str(input_id).strip()
-        for input_id in raw_inputs
-        if str(input_id).strip()
-    ]
-    if not inputs:
-        return False
-
-    match_mode = raw_condition.get("match")
-    if not isinstance(match_mode, str):
-        match_mode = "all_present"
-
-    if match_mode == "all_present":
-        return all(input_id in normalized_provided for input_id in inputs)
-    if match_mode == "all_missing":
-        return all(input_id not in normalized_provided for input_id in inputs)
-    if match_mode == "any_present":
-        return any(input_id in normalized_provided for input_id in inputs)
-    if match_mode == "any_missing":
-        return any(input_id not in normalized_provided for input_id in inputs)
-    return False
-
-
 def resolve_input_validation_rules(
     rules: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
@@ -206,6 +168,5 @@ __all__ = [
     "WorkflowValidationError",
     "evaluate_input_validation",
     "find_unsatisfied_input_conditions",
-    "matches_input_presence_condition",
     "resolve_input_validation_rules",
 ]

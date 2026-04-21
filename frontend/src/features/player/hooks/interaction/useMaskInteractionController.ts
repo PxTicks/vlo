@@ -641,7 +641,6 @@ export function useMaskInteractionController(
     }
 
     if (activeClip.id !== context.selectedClipId) return null;
-    if (context.selectedMaskClip.maskMode === "off") return null;
     if (
       context.selectedMaskClip.maskType === "sam2" ||
       context.selectedMaskClip.maskType === "generation"
@@ -1352,12 +1351,6 @@ export function useMaskInteractionController(
       syncSam2EditingCursor(false);
       renderSam2PointsToOverlay(null);
       clearSam2PreviewSprite();
-
-      if (selectedMaskClip.maskMode === "off") {
-        renderMaskToOverlay(null);
-        setIsMaskGizmoVisible((previous) => (previous ? false : previous));
-        return;
-      }
 
       const liveMaskLayoutPreview = liveMaskLayoutPreviewRef.current;
       const liveLayout =

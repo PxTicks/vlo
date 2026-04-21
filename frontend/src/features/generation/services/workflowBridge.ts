@@ -73,260 +73,6 @@ function resolveWorkflowInputLabel(
   return nodeTitle;
 }
 
-function resolveClassInfo(
-  objectInfo: Record<string, unknown> | null | undefined,
-  classType: string | undefined,
-): Record<string, unknown> | null {
-  if (!objectInfo || !classType) return null;
-  const classInfo = objectInfo[classType];
-  return isRecord(classInfo) ? classInfo : null;
-}
-
-function resolveInputSpec(
-  classInfo: Record<string, unknown> | null,
-): Record<string, unknown> | null {
-  return isRecord(classInfo?.input) ? classInfo.input : null;
-}
-
-function resolveParamDefinition(
-  inputSpec: Record<string, unknown> | null,
-  param: string,
-): [unknown, Record<string, unknown>] | null {
-  if (!inputSpec) return null;
-
-  for (const sectionKey of ["required", "optional"] as const) {
-    const section = inputSpec[sectionKey];
-    if (!isRecord(section)) continue;
-    const definition = section[param];
-    if (!Array.isArray(definition) || definition.length === 0) continue;
-    return [definition[0], isRecord(definition[1]) ? definition[1] : {}];
-  }
-
-  return null;
-}
-
-function getOrderedObjectInfoParams(
-  inputSpec: Record<string, unknown> | null,
-  classInfo: Record<string, unknown> | null,
-): string[] {
-  const ordered = new Set<string>();
-  if (!inputSpec) return [];
-
-  const rawOrder = classInfo?.input_order;
-  if (isRecord(rawOrder)) {
-    for (const sectionKey of ["required", "optional"] as const) {
-      const sectionOrder = rawOrder[sectionKey];
-      if (!Array.isArray(sectionOrder)) continue;
-      for (const param of sectionOrder) {
-        if (typeof param === "string" && param.trim().length > 0) {
-          ordered.add(param);
-        }
-      }
-    }
-  }
-
-  for (const sectionKey of ["required", "optional"] as const) {
-    const section = inputSpec[sectionKey];
-    if (!isRecord(section)) continue;
-    for (const param of Object.keys(section)) {
-      ordered.add(param);
-    }
-  }
-
-  return [...ordered];
-}
-
-function getWidgetValueTypeFromTypeSpec(
-  typeSpec: unknown,
-  opts: Record<string, unknown>,
-): "widget" | "non_widget" {
-  if (typeof typeSpec === "string") {
-    const normalized = typeSpec.trim().toUpperCase();
-    if (
-      normalized === "INT" ||
-      normalized === "FLOAT" ||
-      normalized === "STRING" ||
-      normalized === "BOOLEAN"
-    ) {
-      return "widget";
-    }
-    if (normalized === "COMBO" && Array.isArray(opts.options)) {
-      return "widget";
-    }
-    return "non_widget";
-  }
-
-  if (Array.isArray(typeSpec)) {
-    return "widget";
-  }
-
-  return "non_widget";
-}
-
-function getWidgetValueIndexMap(
-  classInfo: Record<string, unknown> | null,
-): Map<string, number> {
-  const inputSpec = resolveInputSpec(classInfo);
-  const orderedParams = getOrderedObjectInfoParams(inputSpec, classInfo);
-  const result = new Map<string, number>();
-
-  let index = 0;
-  for (const param of orderedParams) {
-    const definition = resolveParamDefinition(inputSpec, param);
-    if (!definition) continue;
-
-    const [typeSpec, opts] = definition;
-    if (getWidgetValueTypeFromTypeSpec(typeSpec, opts) !== "widget") {
-      continue;
-    }
-
-    result.set(param, index);
-    index += opts.control_after_generate === true ? 2 : 1;
-  }
-
-  return result;
-}
-
-interface GraphLinkReference {
-  sourceNodeId: string;
-  outputIndex: number;
-}
-
-function collectGraphLinkReferences(
-  graphData: Record<string, unknown>,
-): Map<number, GraphLinkReference> {
-  const result = new Map<number, GraphLinkReference>();
-  const links = graphData.links;
-  if (!Array.isArray(links)) return result;
-
-  for (const link of links) {
-    if (!Array.isArray(link) || link.length < 4) continue;
-
-    const [linkId, sourceNodeId, outputIndex] = link;
-    if (
-      typeof linkId !== "number" ||
-      (typeof sourceNodeId !== "string" && typeof sourceNodeId !== "number") ||
-      typeof outputIndex !== "number"
-    ) {
-      continue;
-    }
-
-    result.set(linkId, {
-      sourceNodeId: String(sourceNodeId),
-      outputIndex,
-    });
-  }
-
-  return result;
-}
-
-function normalizeNodeTitle(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function buildWorkflowEntryInputs(
-  graphNode: Record<string, unknown>,
-  graphLinks: ReadonlyMap<number, GraphLinkReference>,
-  classInfo: Record<string, unknown> | null,
-  mappedInputs: readonly InputNodeMapEntry[],
-): Record<string, unknown> {
-  const inputs: Record<string, unknown> = {};
-  const rawInputs = Array.isArray(graphNode.inputs) ? graphNode.inputs : [];
-
-  for (const input of rawInputs) {
-    if (!isRecord(input) || typeof input.name !== "string") continue;
-    const linkId = input.link;
-    if (typeof linkId !== "number") continue;
-
-    const link = graphLinks.get(linkId);
-    if (!link) continue;
-
-    inputs[input.name] = [link.sourceNodeId, link.outputIndex];
-  }
-
-  const widgetsValues = Array.isArray(graphNode.widgets_values)
-    ? graphNode.widgets_values
-    : [];
-  const widgetIndexMap = getWidgetValueIndexMap(classInfo);
-
-  for (const [param, widgetIndex] of widgetIndexMap.entries()) {
-    if (inputs[param] !== undefined) continue;
-    if (widgetIndex >= widgetsValues.length) continue;
-    inputs[param] = widgetsValues[widgetIndex];
-  }
-
-  if (widgetsValues.length > 0 && mappedInputs.length === 1) {
-    const [mapping] = mappedInputs;
-    if (mapping && inputs[mapping.param] === undefined) {
-      inputs[mapping.param] = widgetsValues[0];
-    }
-  }
-
-  return inputs;
-}
-
-export function buildWorkflowFromGraphData(
-  graphData: Record<string, unknown>,
-  options: {
-    inputNodeMap?: InputNodeMap | null;
-    objectInfo?: Record<string, unknown> | null;
-  } = {},
-): Record<string, unknown> {
-  const workflow: Record<string, unknown> = {};
-  const nodes = Array.isArray(graphData.nodes) ? graphData.nodes : [];
-  const graphLinks = collectGraphLinkReferences(graphData);
-  const nodeMap = options.inputNodeMap ?? INPUT_NODE_MAP;
-  const objectInfo = options.objectInfo ?? null;
-
-  for (const node of nodes) {
-    if (!isRecord(node) || node.id == null || typeof node.type !== "string") {
-      continue;
-    }
-
-    const nodeId = String(node.id);
-    const classType = node.type.trim();
-    if (!classType) continue;
-
-    const classInfo = resolveClassInfo(objectInfo, classType);
-    const inputs = buildWorkflowEntryInputs(
-      node,
-      graphLinks,
-      classInfo,
-      nodeMap[classType] ?? [],
-    );
-    const title = normalizeNodeTitle(node.title);
-
-    workflow[nodeId] = {
-      class_type: classType,
-      inputs,
-      ...(title ? { _meta: { title } } : {}),
-    };
-  }
-
-  return workflow;
-}
-
-export function buildWorkflowResultFromGraphData(
-  graphData: Record<string, unknown>,
-  filename: string | null,
-  options: {
-    inputNodeMap?: InputNodeMap | null;
-    objectInfo?: Record<string, unknown> | null;
-  } = {},
-): WorkflowReadResult {
-  const workflow = buildWorkflowFromGraphData(graphData, options);
-  const inputs = parseWorkflowInputs(workflow, options.inputNodeMap);
-
-  return {
-    workflow,
-    graphData,
-    inputs,
-    filename,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Iframe bridge
 // ---------------------------------------------------------------------------
@@ -336,7 +82,6 @@ type WorkflowTab = {
   key?: string;
   filename?: string;
   fullFilename?: string;
-  isModified?: boolean;
   pendingWarnings?: unknown;
   activeState?: Record<string, unknown> | null;
 };
@@ -381,29 +126,6 @@ type ComfyUIWindow = Window & {
 export interface WorkflowWarningSummary {
   missingNodeTypes: string[];
   missingModels: string[];
-}
-
-export type WorkflowReadStatus =
-  | "success"
-  | "invalid_graph"
-  | "unavailable";
-
-export interface WorkflowReadResult {
-  workflow: Record<string, unknown>;
-  graphData: Record<string, unknown>;
-  inputs: WorkflowInput[];
-  filename: string | null;
-}
-
-export interface WorkflowReadAttempt {
-  status: WorkflowReadStatus;
-  result: WorkflowReadResult | null;
-}
-
-export interface ActiveWorkflowReadResult {
-  graphData: Record<string, unknown>;
-  filename: string | null;
-  isModified: boolean;
 }
 
 export interface LoadWorkflowIntoIframeOptions {
@@ -500,27 +222,6 @@ function getActiveWorkflowGraphData(
   return cloneRecord(activeWorkflow.activeState);
 }
 
-export function readActiveWorkflowFromIframe(
-  iframe: HTMLIFrameElement,
-): ActiveWorkflowReadResult | null {
-  try {
-    const activeWorkflow = getIframeWorkflowApi(iframe)?.activeWorkflow ?? null;
-    const graphData = getActiveWorkflowGraphData(activeWorkflow);
-    if (!activeWorkflow || !graphData) {
-      return null;
-    }
-
-    return {
-      graphData,
-      filename: resolveWorkflowTabFilename(activeWorkflow),
-      isModified: activeWorkflow.isModified === true,
-    };
-  } catch (err) {
-    console.warn("[workflowBridge] readActiveWorkflowFromIframe failed:", err);
-    return null;
-  }
-}
-
 function looksLikeApiWorkflow(workflow: Record<string, unknown>): boolean {
   const entries = Object.entries(workflow);
   if (entries.length === 0) return false;
@@ -536,24 +237,6 @@ function looksLikeApiWorkflow(workflow: Record<string, unknown>): boolean {
 
 function toUnique(values: string[]): string[] {
   return [...new Set(values)];
-}
-
-function isTransientInvalidGraphError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const name = error.name.trim();
-  const message = error.message.trim();
-
-  if (name === "InvalidLinkError") {
-    return true;
-  }
-
-  return (
-    message.includes("InvalidLinkError") ||
-    message.includes("No link found in parent graph")
-  );
 }
 
 function extractMissingNodeTypes(value: unknown): string[] {
@@ -628,15 +311,12 @@ function extractMissingModels(value: unknown): string[] {
 export async function readWorkflowFromIframe(
   iframe: HTMLIFrameElement,
   inputNodeMap?: InputNodeMap | null,
-): Promise<WorkflowReadResult | null> {
-  const attempt = await readWorkflowFromIframeDetailed(iframe, inputNodeMap);
-  return attempt.result;
-}
-
-export async function readWorkflowFromIframeDetailed(
-  iframe: HTMLIFrameElement,
-  inputNodeMap?: InputNodeMap | null,
-): Promise<WorkflowReadAttempt> {
+): Promise<{
+  workflow: Record<string, unknown>;
+  graphData: Record<string, unknown>;
+  inputs: WorkflowInput[];
+  filename: string | null;
+} | null> {
   try {
     const win = iframe.contentWindow as ComfyUIWindow | null;
     const app = win?.app;
@@ -671,12 +351,7 @@ export async function readWorkflowFromIframeDetailed(
       apiWorkflow = graphData;
     }
 
-    if (!apiWorkflow) {
-      return {
-        status: "unavailable",
-        result: null,
-      };
-    }
+    if (!apiWorkflow) return null;
     if (!graphData) {
       // Some ComfyUI variants do not return a dedicated visual workflow payload.
       // API-format JSON is still usable for sync + reload in our bridge.
@@ -685,27 +360,10 @@ export async function readWorkflowFromIframeDetailed(
 
     const inputs = parseWorkflowInputs(apiWorkflow, inputNodeMap);
     const filename = resolveWorkflowTabFilename(activeWorkflow);
-    return {
-      status: "success",
-      result: { workflow: apiWorkflow, graphData, inputs, filename },
-    };
+    return { workflow: apiWorkflow, graphData, inputs, filename };
   } catch (err) {
-    if (isTransientInvalidGraphError(err)) {
-      console.info(
-        "[workflowBridge] readWorkflowFromIframe skipped invalid graph state:",
-        err,
-      );
-      return {
-        status: "invalid_graph",
-        result: null,
-      };
-    }
-
     console.warn("[workflowBridge] readWorkflowFromIframe failed:", err);
-    return {
-      status: "unavailable",
-      result: null,
-    };
+    return null;
   }
 }
 

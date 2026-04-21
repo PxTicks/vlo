@@ -106,14 +106,21 @@ export function useTransformationController(
     if (!activeClip) return null;
 
     if (targetMode === "maskComposite") {
+      const compositionComponent =
+        activeClip.type !== "mask"
+          ? (activeClip.components ?? []).find(
+              (component) => component.type === "mask_composition",
+            )
+          : undefined;
       return {
         kind: "maskComposite",
         clipId: activeClip.id,
         contextId: `${activeClip.id}::mask-composite`,
         timelineClip: activeClip,
-        transforms: activeClip.type === "mask"
-          ? EMPTY_TRANSFORMS
-          : activeClip.maskCompositeTransformations ?? EMPTY_TRANSFORMS,
+        transforms:
+          compositionComponent?.type === "mask_composition"
+            ? compositionComponent.parameters.compositeTransformations
+            : EMPTY_TRANSFORMS,
       };
     }
 

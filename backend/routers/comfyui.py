@@ -1,7 +1,6 @@
 import json
 import logging
 import uuid
-import base64
 from pathlib import Path
 from typing import Any, cast
 
@@ -9,21 +8,12 @@ import httpx
 from fastapi import APIRouter, Request, Response, UploadFile, WebSocket
 from fastapi.responses import JSONResponse
 from services.comfyui import comfyui_generate as comfyui_generate_service
-from services.gen_pipeline.processors.utils.video_crop import (
-    analyze_mask_video_bounds,
-    crop_video,
-    get_video_dimensions,
-)
+from services.gen_pipeline.processors.utils.video_crop import analyze_mask_video_bounds, crop_video, get_video_dimensions
 
 logger = logging.getLogger(__name__)
 
 from api_errors import error_response
-from services.comfyui.comfyui_client import (
-    close_http_client,
-    get_http_client,
-    get_comfyui_url,
-    set_comfyui_url,
-)
+from services.comfyui.comfyui_client import close_http_client, get_http_client, set_comfyui_url, get_comfyui_url
 from services.comfyui.comfyui_client import get_comfyui_url_error
 from services.comfyui.comfyui_generate import (
     INPUT_NODE_MAP,
@@ -44,23 +34,13 @@ from services.workflow_rules import (
     WorkflowValidationError,
     enrich_rules_with_object_info,
     load_rules_model_for_workflow,
-    matches_input_presence_condition,
-    normalize_rules_model,
     sidecar_path_for_workflow,
 )
 from services.workflow_rules.schema import dump_resolved_rules, dump_warning_models
-from services.workflow_rules.object_info import (
-    OBJECT_INFO_PATH,
-    build_input_node_map,
-    set_object_info_cache,
-)
+from services.workflow_rules.object_info import OBJECT_INFO_PATH, set_object_info_cache, build_input_node_map
 from services.workflow_rules.input_labels import default_input_label
-from services.gen_pipeline.processors.validate_inputs import (
-    collect_provided_input_ids_from_sources,
-)
 
 from routers.comfyui_compat import compat_router  # noqa: F401 -- re-exported for main.py
-from services.generation_delivery import generation_holding_service
 
 WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
 DEFAULT_WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / ".config" / "default_workflows"
@@ -68,114 +48,19 @@ DUMMY_PHOTO_PATH = DEFAULT_WORKFLOWS_DIR.parent / "dummy_photo.jpeg"
 WORKFLOW_MENU_CONFIG_PATH = (
     Path(__file__).parent.parent / "assets" / ".config" / "workflow_menu.json"
 )
-WORKFLOW_MEDIA_FALLBACK_SPECS: dict[str, dict[str, Any]] = {
-    "dummy:image": {
-        "path": DUMMY_PHOTO_PATH,
-        "filename": "dummy_photo.jpeg",
-        "content_type": "image/jpeg",
-    }
+WORKFLOW_MEDIA_FALLBACKS: dict[str, list[dict[str, Any]]] = {
+    "video_ltx2_3_i2v_t2v_basic.json": [
+        {
+            "node_id": "167",
+            "input_type": "image",
+            "filename": "dummy_photo.jpeg",
+            "content_type": "image/jpeg",
+            "path": DUMMY_PHOTO_PATH,
+        },
+    ],
 }
 
 router = APIRouter(prefix="/comfy", tags=["comfyui"])
-
-
-def _extract_stage_output_value(
-    pipeline_outputs: Any,
-    key: str,
-) -> Any | None:
-    if not isinstance(pipeline_outputs, dict):
-        return None
-
-    for stage_outputs in pipeline_outputs.values():
-        if not isinstance(stage_outputs, dict):
-            continue
-        if key in stage_outputs:
-            return stage_outputs[key]
-    return None
-
-
-def _enrich_generation_metadata(
-    base_metadata: Any,
-    response_payload: dict[str, Any],
-    workflow_graph_data: dict[str, Any] | None,
-) -> dict[str, Any]:
-    metadata = dict(base_metadata) if isinstance(base_metadata, dict) else {}
-    pipeline_outputs = response_payload.get("pipeline_outputs")
-
-    mask_crop_metadata = _extract_stage_output_value(
-        pipeline_outputs,
-        "mask_crop_metadata",
-    )
-    if isinstance(mask_crop_metadata, dict):
-        metadata["maskCropMetadata"] = mask_crop_metadata
-
-    comfyui_prompt = response_payload.get("comfyui_prompt")
-    if isinstance(comfyui_prompt, dict):
-        metadata["comfyuiPrompt"] = comfyui_prompt
-
-    if isinstance(workflow_graph_data, dict):
-        metadata["comfyuiWorkflow"] = workflow_graph_data
-    else:
-        comfyui_workflow = response_payload.get("comfyui_workflow")
-        if isinstance(comfyui_workflow, dict):
-            metadata["comfyuiWorkflow"] = comfyui_workflow
-
-    return metadata
-
-
-def _get_delivery_context_value(
-    delivery_context: dict[str, Any],
-    snake_case_key: str,
-    camel_case_key: str,
-) -> Any | None:
-    if snake_case_key in delivery_context:
-        return delivery_context[snake_case_key]
-    return delivery_context.get(camel_case_key)
-
-
-def _normalize_delivery_context(
-    delivery_context: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "plan_id": _get_delivery_context_value(delivery_context, "plan_id", "planId"),
-        "workflow_name": _get_delivery_context_value(
-            delivery_context,
-            "workflow_name",
-            "workflowName",
-        ),
-        "workflow_source_id": _get_delivery_context_value(
-            delivery_context,
-            "workflow_source_id",
-            "workflowSourceId",
-        ),
-        "generation_metadata": _get_delivery_context_value(
-            delivery_context,
-            "generation_metadata",
-            "generationMetadata",
-        ),
-        "postprocess_config": _get_delivery_context_value(
-            delivery_context,
-            "postprocess_config",
-            "postprocessConfig",
-        ),
-        "auto_family_request_key": _get_delivery_context_value(
-            delivery_context,
-            "auto_family_request_key",
-            "autoFamilyRequestKey",
-        ),
-        "uses_save_image_websocket_outputs": bool(
-            _get_delivery_context_value(
-                delivery_context,
-                "uses_save_image_websocket_outputs",
-                "usesSaveImageWebsocketOutputs",
-            )
-        ),
-        "replay_inputs": _get_delivery_context_value(
-            delivery_context,
-            "replay_inputs",
-            "replayInputs",
-        ),
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -303,12 +188,7 @@ async def sync_object_info():
         set_object_info_cache(data)
 
         input_node_map = build_input_node_map(data)
-        return {
-            "synced": True,
-            "node_classes": len(data),
-            "input_node_map": input_node_map,
-            "object_info": data,
-        }
+        return {"synced": True, "node_classes": len(data), "input_node_map": input_node_map}
     except (httpx.RequestError, ValueError) as exc:
         return error_response(
             503,
@@ -348,38 +228,6 @@ def _resolve_workflow_sidecar_path(filename: str) -> Path | None:
         return default
 
     return None
-
-
-def _resolve_workflow_media_fallbacks(
-    *,
-    workflow_rules: dict[str, Any] | None,
-    workflow_id: str | None,
-    workflow_warnings: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    if isinstance(workflow_rules, dict):
-        rules_model, warning_models = normalize_rules_model(workflow_rules)
-        workflow_warnings.extend(dump_warning_models(warning_models))
-        rules = dump_resolved_rules(rules_model)
-        fallback_defs = rules.get("media_fallbacks")
-        if isinstance(fallback_defs, list):
-            return [entry for entry in fallback_defs if isinstance(entry, dict)]
-        return []
-
-    if not isinstance(workflow_id, str) or not _is_safe_workflow_filename(workflow_id):
-        return []
-
-    rules_model, warning_models = load_rules_model_for_workflow(
-        WORKFLOWS_DIR,
-        workflow_id,
-        fallback_dirs=[DEFAULT_WORKFLOWS_DIR],
-    )
-    workflow_warnings.extend(dump_warning_models(warning_models))
-    rules = dump_resolved_rules(rules_model)
-    fallback_defs = rules.get("media_fallbacks")
-    if not isinstance(fallback_defs, list):
-        return []
-
-    return [entry for entry in fallback_defs if isinstance(entry, dict)]
 
 
 def _load_workflow_menu_metadata() -> dict[str, dict[str, Any]]:
@@ -558,60 +406,28 @@ def _parse_node_input_form_key(raw_key: str) -> tuple[str, str | None]:
 
 def _apply_workflow_media_fallbacks(
     *,
-    workflow_rules: dict[str, Any] | None,
     workflow_id: str | None,
     workflow: dict[str, Any],
-    injections: dict[str, dict[str, Any]],
     buffered_media: dict[str, dict[str, Any]],
     workflow_warnings: list[dict[str, Any]],
     node_map: dict[str, list[dict[str, Any]]],
 ) -> None:
-    fallback_defs = _resolve_workflow_media_fallbacks(
-        workflow_rules=workflow_rules,
-        workflow_id=workflow_id,
-        workflow_warnings=workflow_warnings,
-    )
+    if not isinstance(workflow_id, str):
+        return
+
+    fallback_defs = WORKFLOW_MEDIA_FALLBACKS.get(workflow_id)
     if not fallback_defs:
         return
 
-    provided_input_ids = collect_provided_input_ids_from_sources(
-        injections,
-        buffered_media,
-    )
-
     for fallback in fallback_defs:
-        fallback_kind = fallback.get("kind")
         node_id = fallback.get("node_id")
         input_type = fallback.get("input_type")
+        fallback_path = fallback.get("path")
         explicit_param = fallback.get("param")
-        if (
-            not isinstance(fallback_kind, str)
-            or not isinstance(node_id, str)
-            or not isinstance(input_type, str)
-        ):
+        if not isinstance(node_id, str) or not isinstance(input_type, str):
             continue
-        if fallback.get("when") is not None and not matches_input_presence_condition(
-            fallback.get("when"),
-            provided_input_ids,
-        ):
+        if not isinstance(fallback_path, Path):
             continue
-        fallback_spec = WORKFLOW_MEDIA_FALLBACK_SPECS.get(
-            f"{fallback_kind}:{input_type}"
-        )
-        if fallback_spec is None:
-            workflow_warnings.append(
-                {
-                    "code": "media_fallback_unsupported",
-                    "message": "Workflow fallback media declaration is not supported",
-                    "node_id": node_id,
-                    "details": {
-                        "kind": fallback_kind,
-                        "input_type": input_type,
-                    },
-                }
-            )
-            continue
-        fallback_path = fallback_spec["path"]
 
         node = workflow.get(node_id)
         if not isinstance(node, dict):
@@ -654,15 +470,9 @@ def _apply_workflow_media_fallbacks(
             "input_type": input_type,
             "class_type": node.get("class_type", ""),
             "bytes": fallback_path.read_bytes(),
-            "content_type": fallback.get(
-                "content_type",
-                fallback_spec.get("content_type", "application/octet-stream"),
-            ),
-            "filename": fallback.get(
-                "filename",
-                fallback_spec.get("filename", fallback_path.name),
-            ),
-            "synthetic": fallback.get("synthetic", True) is True,
+            "content_type": fallback.get("content_type", "application/octet-stream"),
+            "filename": fallback.get("filename", fallback_path.name),
+            "synthetic": True,
         }
 
 
@@ -975,42 +785,6 @@ async def generate(request: Request):
     workflow_id_raw = form.get("workflow_id")
     workflow_id = workflow_id_raw if isinstance(workflow_id_raw, str) else None
 
-    project_id_raw = form.get("project_id")
-    project_id = project_id_raw.strip() if isinstance(project_id_raw, str) else ""
-    if not project_id:
-        return error_response(
-            400,
-            "invalid_project_id",
-            "Missing or invalid 'project_id'",
-            retryable=False,
-        )
-
-    delivery_context_json = form.get("delivery_context")
-    if not isinstance(delivery_context_json, str) or not delivery_context_json.strip():
-        return error_response(
-            400,
-            "invalid_delivery_context",
-            "Missing or invalid 'delivery_context' JSON",
-            retryable=False,
-        )
-    try:
-        delivery_context = json.loads(delivery_context_json)
-    except json.JSONDecodeError:
-        return error_response(
-            400,
-            "invalid_delivery_context",
-            "Delivery context payload must be valid JSON",
-            retryable=False,
-        )
-    if not isinstance(delivery_context, dict):
-        return error_response(
-            400,
-            "invalid_delivery_context",
-            "Delivery context payload must be an object",
-            retryable=False,
-        )
-    delivery_context = _normalize_delivery_context(delivery_context)
-
     # --- Load workflow (Expect frontend to provide it) ---
     workflow_json = form.get("workflow")
     if not workflow_json or not isinstance(workflow_json, str):
@@ -1249,10 +1023,8 @@ async def generate(request: Request):
             )
 
     _apply_workflow_media_fallbacks(
-        workflow_rules=workflow_rules,
         workflow_id=workflow_id,
         workflow=workflow,
-        injections=injections,
         buffered_media=buffered_media,
         workflow_warnings=workflow_warnings,
         node_map=node_map,
@@ -1269,8 +1041,7 @@ async def generate(request: Request):
     )
 
     gen_input = GenerationInput(
-        client_id=str(uuid.uuid4()),
-        prompt_id=str(uuid.uuid4()),
+        client_id=client_id,
         workflow=workflow,
         workflow_id=workflow_id,
         rules=workflow_rules,
@@ -1285,21 +1056,6 @@ async def generate(request: Request):
         workflow_warnings=workflow_warnings,
         prompt_is_pre_resolved=prompt_is_pre_resolved,
     )
-    delivery_id = str(uuid.uuid4())
-
-    await generation_holding_service.create_delivery(
-        project_id=project_id,
-        delivery_id=delivery_id,
-        prompt_id=gen_input.prompt_id or str(uuid.uuid4()),
-        client_id=gen_input.client_id,
-        delivery_context=delivery_context,
-    )
-    await generation_holding_service.start_monitor(
-        project_id=project_id,
-        delivery_id=delivery_id,
-        prompt_id=gen_input.prompt_id or "",
-        client_id=gen_input.client_id,
-    )
 
     comfyui_generate_service.WORKFLOWS_DIR = WORKFLOWS_DIR
     comfyui_generate_service.DEFAULT_WORKFLOWS_DIR = DEFAULT_WORKFLOWS_DIR
@@ -1310,8 +1066,6 @@ async def generate(request: Request):
     try:
         result = await execute_generation(gen_input, client)
     except httpx.RequestError as exc:
-        await generation_holding_service.cancel_monitor(delivery_id)
-        await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
         return error_response(
             503,
             "comfyui_unreachable",
@@ -1320,8 +1074,6 @@ async def generate(request: Request):
             details={"reason": str(exc)},
         )
     except ValueError as exc:
-        await generation_holding_service.cancel_monitor(delivery_id)
-        await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
         details = None
         if isinstance(exc, WorkflowValidationError) and exc.failures:
             details = {"validation_failures": exc.failures}
@@ -1333,86 +1085,12 @@ async def generate(request: Request):
             details=details,
         )
     except RuntimeError as exc:
-        await generation_holding_service.cancel_monitor(delivery_id)
-        await generation_holding_service.acknowledge_delivery(project_id, delivery_id)
         return error_response(
             500,
             "generation_failed",
             str(exc),
             retryable=True,
         )
-
-    if result.media_type.lower().startswith("application/json"):
-        try:
-            payload = json.loads(result.content.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            payload = None
-        if isinstance(payload, dict):
-            node_errors = payload.get("node_errors")
-            if result.status_code >= 400 or (
-                isinstance(node_errors, dict) and len(node_errors) > 0
-            ):
-                await generation_holding_service.cancel_monitor(delivery_id)
-                await generation_holding_service.acknowledge_delivery(
-                    project_id,
-                    delivery_id,
-                )
-                return Response(
-                    content=result.content,
-                    status_code=result.status_code,
-                    media_type=result.media_type,
-                )
-            pipeline_outputs = payload.get("pipeline_outputs")
-            prepared_mask_video = _extract_stage_output_value(
-                pipeline_outputs,
-                "processed_mask_video",
-            )
-            prepared_mask_bytes = None
-            if isinstance(prepared_mask_video, str) and prepared_mask_video:
-                try:
-                    prepared_mask_bytes = base64.b64decode(prepared_mask_video)
-                except (ValueError, TypeError):
-                    prepared_mask_bytes = None
-
-            await generation_holding_service.update_submission_metadata(
-                delivery_id=delivery_id,
-                workflow_warnings=payload.get("workflow_warnings")
-                if isinstance(payload.get("workflow_warnings"), list)
-                else None,
-                applied_widget_values=payload.get("applied_widget_values")
-                if isinstance(payload.get("applied_widget_values"), dict)
-                else None,
-                aspect_ratio_processing=_extract_stage_output_value(
-                    pipeline_outputs,
-                    "aspect_ratio_processing",
-                )
-                if isinstance(
-                    _extract_stage_output_value(
-                        pipeline_outputs,
-                        "aspect_ratio_processing",
-                    ),
-                    dict,
-                )
-                else None,
-                generation_metadata=_enrich_generation_metadata(
-                    delivery_context.get("generation_metadata"),
-                    payload,
-                    graph_data,
-                ),
-                prepared_mask_bytes=prepared_mask_bytes,
-                prepared_mask_filename="generation-mask.webm"
-                if prepared_mask_bytes is not None
-                else None,
-                prepared_mask_content_type="video/webm"
-                if prepared_mask_bytes is not None
-                else None,
-            )
-            payload["delivery_id"] = delivery_id
-            result = comfyui_generate_service.GenerationResult(
-                content=json.dumps(payload).encode("utf-8"),
-                status_code=result.status_code,
-                media_type="application/json",
-            )
 
     return Response(
         content=result.content,

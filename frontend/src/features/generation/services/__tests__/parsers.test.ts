@@ -38,7 +38,7 @@ describe("generation parsers", () => {
     expect(outputs).toEqual([
       expect.objectContaining({
         filename: "clip.mp4",
-        viewUrl: expect.stringContaining("/api/vlo-memory/view/media-123"),
+        viewUrl: expect.stringContaining("/comfy/api/vlo-memory/view/media-123"),
       }),
     ]);
   });

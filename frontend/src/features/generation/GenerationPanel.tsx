@@ -283,7 +283,6 @@ export function GenerationPanel() {
   const setMaskCropDilation = useGenerationStore((s) => s.setMaskCropDilation);
   const syncedWorkflow = useGenerationStore((s) => s.syncedWorkflow);
   const syncedGraphData = useGenerationStore((s) => s.syncedGraphData);
-  const rawObjectInfo = useGenerationStore((s) => s.rawObjectInfo);
   const workflowMenuSections = useMemo(
     () => buildWorkflowMenuSections(availableWorkflows),
     [availableWorkflows],
@@ -394,7 +393,7 @@ export function GenerationPanel() {
 
     setIsBackendSavePending(true);
     try {
-      const objectInfo = rawObjectInfo ?? await getObjectInfo();
+      const objectInfo = await getObjectInfo();
       await saveWorkflowContent(filename, syncedGraphData, objectInfo);
       await fetchWorkflows();
       return true;
@@ -447,7 +446,7 @@ export function GenerationPanel() {
 
     setIsBackendSavePending(true);
     try {
-      const objectInfo = rawObjectInfo ?? await getObjectInfo();
+      const objectInfo = await getObjectInfo();
       await saveWorkflowContent(filename, syncedGraphData, objectInfo);
       await fetchWorkflows();
 
@@ -505,17 +504,16 @@ export function GenerationPanel() {
     displayJob?.status !== "error" &&
     !showPostprocessErrorOnly &&
     Boolean(displayJob?.postprocessError);
+  const showRunningCancelControls = canInterruptCurrentGeneration;
+  const shouldShowRawOutputs =
+    displayJob && displayJob.outputs.length > 0
+      ? !replaceOutputsWithPostprocess ||
+        (!displayJob?.postprocessedPreview && !showPostprocessErrorOnly)
+      : false;
   const importedPreviewAsset = importedAssets[0] ?? null;
   const importedPreviewSrc = importedPreviewAsset
     ? importedPreviewAsset.src
     : "";
-  const showRunningCancelControls = canInterruptCurrentGeneration;
-  const shouldShowRawOutputs =
-    displayJob && displayJob.outputs.length > 0
-      ? !importedPreviewAsset &&
-        (!replaceOutputsWithPostprocess ||
-          (!displayJob?.postprocessedPreview && !showPostprocessErrorOnly))
-      : false;
   const customGenerateCountValue = Number.parseInt(customGenerateCount, 10);
   const isCustomGenerateCountValid =
     Number.isFinite(customGenerateCountValue) && customGenerateCountValue > 0;

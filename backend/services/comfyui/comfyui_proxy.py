@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import urllib.parse
 import uuid
 
@@ -11,7 +10,6 @@ from starlette.websockets import WebSocketState
 from services.comfyui.comfyui_client import get_comfyui_url, get_http_client
 
 PROXY_HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-logger = logging.getLogger(__name__)
 
 
 def _normalize_upstream_path(path: str) -> str:
@@ -81,15 +79,6 @@ async def proxy_http_request(request: Request, upstream_path: str) -> Response:
             status_code=502,
             content=f"ComfyUI proxy request failed: {exc.__class__.__name__}",
             media_type="text/plain",
-        )
-
-    if "/api/vlo-memory/" in target_url and resp.status_code >= 400:
-        logger.warning(
-            "ComfyUI memory proxy request failed: method=%s target_url=%s status=%s body=%r",
-            request.method,
-            target_url,
-            resp.status_code,
-            resp.text[:500],
         )
 
     response_headers = {

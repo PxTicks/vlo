@@ -328,12 +328,6 @@ def test_i2v_t2v_basic_rules_allow_widget_driven_prompt_enhancer_rewrites():
     )
 
     assert warnings == []
-    assert len(rules_model.media_fallbacks) == 1
-    assert rules_model.media_fallbacks[0].kind == "dummy"
-    assert rules_model.media_fallbacks[0].node_id == "167"
-    assert rules_model.media_fallbacks[0].input_type == "image"
-    assert rules_model.media_fallbacks[0].when is not None
-    assert rules_model.media_fallbacks[0].when.match == "all_missing"
     assert "prompt_enhancer_enabled" in rules_model.frontend_controls
     assert len(rules_model.rewrites) == 1
 
@@ -354,15 +348,28 @@ def test_retake_rules_allow_frontend_control_prompt_enhancer_rewrites():
 
     assert warnings == []
     assert "prompt_enhancer_enabled" in rules_model.frontend_controls
-    assert len(rules_model.rewrites) == 1
+    assert len(rules_model.rewrites) == 2
 
     false_rewrite = rules_model.rewrites[0]
+    true_rewrite = rules_model.rewrites[1]
 
     assert false_rewrite.when.kind == "frontend_control_boolean"
     assert false_rewrite.when.control_id == "prompt_enhancer_enabled"
     assert false_rewrite.when.value is False
-    assert false_rewrite.bypass == ["599"]
-    assert false_rewrite.set_widgets == []
+    assert false_rewrite.bypass == []
+    assert len(false_rewrite.set_widgets) == 1
+    assert false_rewrite.set_widgets[0].node_id == "594"
+    assert false_rewrite.set_widgets[0].widget == "value"
+    assert false_rewrite.set_widgets[0].value is False
+
+    assert true_rewrite.when.kind == "frontend_control_boolean"
+    assert true_rewrite.when.control_id == "prompt_enhancer_enabled"
+    assert true_rewrite.when.value is True
+    assert true_rewrite.bypass == []
+    assert len(true_rewrite.set_widgets) == 1
+    assert true_rewrite.set_widgets[0].node_id == "594"
+    assert true_rewrite.set_widgets[0].widget == "value"
+    assert true_rewrite.set_widgets[0].value is True
 
 
 def test_retake_workflow_emits_websocket_frames_and_preview_audio():

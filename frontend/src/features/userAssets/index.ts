@@ -19,8 +19,6 @@ export {
   scanForNewAssets,
   setFamilyRepresentative,
   upsertFamily,
-  waitForAssetPersistence,
-  waitForAssetsPersistence,
   useAsset,
   useAssetSourceUrl,
   useFamily,

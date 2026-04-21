@@ -29,7 +29,10 @@ interface WorkerErrorMessage {
   message?: string;
 }
 
-type WorkerMessage = WorkerReadyMessage | WorkerFrameMessage | WorkerErrorMessage;
+type WorkerMessage =
+  | WorkerReadyMessage
+  | WorkerFrameMessage
+  | WorkerErrorMessage;
 
 function createMaskRenderAbortError(
   message: string = "Mask render cancelled",
@@ -56,9 +59,9 @@ function createMaskFrameTimeoutError(timeoutMs: number): Error {
 }
 
 export class MaskVideoFramePlayer {
-  private static readonly SOURCE_PREPARE_TIMEOUT_MS = 1500;
+  private static readonly SOURCE_PREPARE_TIMEOUT_MS = 5000;
   private static readonly SOURCE_PREPARE_RECOVERY_ATTEMPTS = 1;
-  private static readonly STRICT_FRAME_TIMEOUT_MS = 1500;
+  private static readonly STRICT_FRAME_TIMEOUT_MS = 5000;
   private static readonly STRICT_FRAME_RECOVERY_ATTEMPTS = 1;
 
   public readonly sprite: Sprite;
@@ -340,10 +343,8 @@ export class MaskVideoFramePlayer {
       preserveSource?: boolean;
     } = {},
   ): void {
-    const {
-      abortReason = "Mask player disposed",
-      preserveSource = false,
-    } = options;
+    const { abortReason = "Mask player disposed", preserveSource = false } =
+      options;
     this.pendingStrictFrame?.reject(
       createMaskRenderAbortError(`${abortReason} during strict render`),
     );

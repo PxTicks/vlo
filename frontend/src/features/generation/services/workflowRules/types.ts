@@ -21,7 +21,7 @@ import type {
   WorkflowOptionalInputValidationRule,
   WorkflowRequiredInputValidationRule,
   WorkflowRuleWidgetInputPresenceCondition,
-  WorkflowRules as GeneratedWorkflowRules,
+  WorkflowRules,
   WorkflowVideoAudioRetakeRule,
 } from "./generated";
 
@@ -55,6 +55,7 @@ export type {
   WorkflowRuleWidgetDefaultOverride,
   WorkflowRuleWidgetEntry,
   WorkflowRuleWidgetInputPresenceCondition,
+  WorkflowRules,
   WorkflowValidationConfig,
   WorkflowVideoAudioRetakeRule,
 } from "./generated";
@@ -74,21 +75,6 @@ export type WorkflowFrontendStateCondition =
   | WorkflowRuleWidgetInputPresenceCondition
   | WorkflowRuleBooleanWidgetCondition
   | WorkflowRuleBooleanFrontendControlCondition;
-
-export interface WorkflowMediaFallback {
-  kind: string;
-  node_id: string;
-  input_type: string;
-  param?: string | null;
-  when?: WorkflowRuleWidgetInputPresenceCondition | null;
-  content_type?: string | null;
-  filename?: string | null;
-  synthetic?: boolean | null;
-}
-
-export type WorkflowRules = GeneratedWorkflowRules & {
-  media_fallbacks?: WorkflowMediaFallback[];
-};
 
 export interface WorkflowRuleWarning {
   code: string;
@@ -148,9 +134,6 @@ export function createDefaultWorkflowRules(
     rewrites: cloneJsonValue(overrides.rewrites ?? []),
     slots: cloneJsonValue(overrides.slots ?? {}),
     pipeline: cloneJsonValue(overrides.pipeline ?? []),
-    ...(overrides.media_fallbacks !== undefined
-      ? { media_fallbacks: cloneJsonValue(overrides.media_fallbacks) }
-      : {}),
   };
 }
 

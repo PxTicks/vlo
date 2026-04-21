@@ -22,7 +22,6 @@ PipelineStageKind = Literal["mask_processing", "aspect_ratio", "output_assembly"
 PipelineControlExposure = Literal["widget", "none"]
 PipelineControlSource = Literal["client", "backend"]
 PipelineControlValueType = Literal["int", "float", "string", "boolean", "enum", "unknown"]
-WorkflowMediaFallbackKind = Literal["dummy"]
 MaskProcessingTargetType = Literal["binary", "soft"]
 MaskProcessingTargetPurpose = Literal["video", "audio_timing"]
 PostprocessingMode = Literal["auto", "stitch_frames_with_audio", "none"]
@@ -154,25 +153,6 @@ class WorkflowRuleSlot(WorkflowRuleBaseModel):
     export_fps: int | None = None
     frame_step: int | None = None
     max_frames: int | None = None
-
-
-class WorkflowMediaFallback(WorkflowRuleBaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: WorkflowMediaFallbackKind = "dummy"
-    node_id: str
-    input_type: str
-    param: str | None = None
-    filename: str | None = None
-    content_type: str | None = None
-    synthetic: bool = True
-    when: WorkflowRuleWidgetInputPresenceCondition | None = None
-
-    @model_validator(mode="after")
-    def validate_dummy_input_type(self) -> "WorkflowMediaFallback":
-        if self.kind == "dummy" and self.input_type != "image":
-            raise ValueError("dummy media fallbacks currently only support image inputs")
-        return self
 
 
 class WorkflowParamReference(WorkflowRuleBaseModel):
@@ -461,7 +441,6 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     )
     rewrites: list[WorkflowRewriteRule] = Field(default_factory=list)
     slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)
-    media_fallbacks: list[WorkflowMediaFallback] = Field(default_factory=list)
     pipeline: list[WorkflowPipelineStage] = Field(default_factory=list)
 
     @model_validator(mode="after")

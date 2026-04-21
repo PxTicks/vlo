@@ -42,7 +42,10 @@ async function ingestMaskAsset(
 
   const maskAsset = await addLocalAsset(ctx.preparedMaskFile, maskMeta);
   if (maskAsset) {
-    ctx.generationMetadata.generationMaskAssetId = maskAsset.id;
+    ctx.generationMetadata = {
+      ...ctx.generationMetadata,
+      generationMaskAssetId: maskAsset.id,
+    };
   }
 }
 

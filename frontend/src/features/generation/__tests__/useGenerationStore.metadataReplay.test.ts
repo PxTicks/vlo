@@ -32,19 +32,6 @@ vi.mock("../services/workflowSyncController", () => ({
   injectWorkflowAndRead: mocks.injectWorkflowAndRead,
 }));
 
-function makeReadyEditorRef(): HTMLIFrameElement {
-  return {
-    contentWindow: {
-      app: {
-        handleFile: vi.fn(),
-        extensionManager: {
-          workflow: {},
-        },
-      },
-    },
-  } as unknown as HTMLIFrameElement;
-}
-
 describe("useGenerationStore metadata replay", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -522,7 +509,7 @@ describe("useGenerationStore metadata replay", () => {
     };
 
     useGenerationStore.setState({
-      editorRef: makeReadyEditorRef(),
+      editorRef: {} as HTMLIFrameElement,
     });
 
     vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
@@ -962,7 +949,7 @@ describe("useGenerationStore metadata replay", () => {
 
     useAssetStore.setState({ assets: [sourceAsset, generatedAsset] });
     useGenerationStore.setState({
-      editorRef: makeReadyEditorRef(),
+      editorRef: {} as HTMLIFrameElement,
     });
 
     vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
@@ -1033,7 +1020,6 @@ describe("useGenerationStore metadata replay", () => {
       graphData,
       "original_workflow.json",
       expect.any(Function),
-      null,
       null,
     );
     expect(restoredInput).toMatchObject({

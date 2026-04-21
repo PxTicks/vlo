@@ -33,6 +33,7 @@ import {
 import { Sam2MaskPanel } from "./components/Sam2MaskPanel";
 import { Sam2ModelDownloadOverlay } from "./components/Sam2ModelDownloadOverlay";
 import { MaskEquationBuilder } from "./components/MaskEquationBuilder";
+import { RangeMaskSection } from "./components/RangeMaskSection";
 import type {
   ClipTransform,
   MaskTimelineClip,
@@ -219,6 +220,11 @@ export const MaskPanel = memo(function MaskPanel() {
     isSam2Dirty,
     hasSam2MaskAsset,
     deleteSelectedMask,
+    rangeMaskComponents,
+    startAddRangeMask,
+    startEditRangeMask,
+    removeRangeMask,
+    toggleRangeMaskActive,
   } = useMaskPanel();
   const {
     activeContextId: sharedMaskContextId,
@@ -239,11 +245,12 @@ export const MaskPanel = memo(function MaskPanel() {
     handleCommit: handleSelectedMaskCommit,
   } = useTransformationController({ target: "mask" });
 
+  const normalizedSelectedClipId = selectedClipId ?? undefined;
   const [clipIdForPanelView, setClipIdForPanelView] = useState<
     string | undefined
-  >(selectedClipId);
-  if (clipIdForPanelView !== selectedClipId) {
-    setClipIdForPanelView(selectedClipId);
+  >(normalizedSelectedClipId);
+  if (clipIdForPanelView !== normalizedSelectedClipId) {
+    setClipIdForPanelView(normalizedSelectedClipId);
     setPanelView("home");
   }
   const [hadSelectedMask, setHadSelectedMask] = useState(!!selectedMask);
@@ -501,17 +508,6 @@ export const MaskPanel = memo(function MaskPanel() {
                   >
                     Preview
                   </Button>
-                  <Button
-                    data-testid="mask-mode-off"
-                    onClick={() => setMaskMode("off")}
-                    sx={
-                      selectedMaskMode === "off"
-                        ? selectedConnectedButtonSx
-                        : connectedButtonSx
-                    }
-                  >
-                    Off
-                  </Button>
                 </ButtonGroup>
 
                 <Typography
@@ -708,6 +704,16 @@ export const MaskPanel = memo(function MaskPanel() {
               </Typography>
             </Box>
           )}
+
+          <Divider sx={{ borderColor: "#2a2d33", mx: 2, mb: 1 }} />
+
+          <RangeMaskSection
+            rangeMaskComponents={rangeMaskComponents}
+            onAdd={startAddRangeMask}
+            onEdit={startEditRangeMask}
+            onRemove={removeRangeMask}
+            onToggleActive={toggleRangeMaskActive}
+          />
         </>
       )}
     </Box>

@@ -30,6 +30,13 @@
         "required": false
       }
     },
+    "160": {},
+    "161": {},
+    "209": {},
+    "211": {},
+    "233": {},
+    "234": {},
+    "248": {},
     "290": {
       "widgets": {
         "value": {
@@ -40,7 +47,9 @@
             {
               "when": {
                 "kind": "input_presence",
-                "inputs": ["167"],
+                "inputs": [
+                  "167"
+                ],
                 "match": "all_missing"
               },
               "value": true
@@ -48,7 +57,9 @@
             {
               "when": {
                 "kind": "input_presence",
-                "inputs": ["167"],
+                "inputs": [
+                  "167"
+                ],
                 "match": "all_present"
               },
               "value": false
@@ -107,18 +118,6 @@
       }
     ]
   },
-  "media_fallbacks": [
-    {
-      "kind": "dummy",
-      "node_id": "167",
-      "input_type": "image",
-      "when": {
-        "kind": "input_presence",
-        "inputs": ["167"],
-        "match": "all_missing"
-      }
-    }
-  ],
   "frontend_controls": {
     "prompt_enhancer_enabled": {
       "label": "Enable prompt enhancer",
@@ -137,7 +136,12 @@
         "control_id": "prompt_enhancer_enabled",
         "value": false
       },
-      "bypass": ["347", "348", "349", "350"]
+      "bypass": [
+        "347",
+        "348",
+        "349",
+        "350"
+      ]
     }
   ],
   "slots": {},
@@ -149,7 +153,11 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [480, 720, 1080],
+        "resolutions": [
+          480,
+          720,
+          1080
+        ],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -174,7 +182,11 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [480, 720, 1080],
+          "options": [
+            480,
+            720,
+            1080
+          ],
           "default": 1080
         },
         {

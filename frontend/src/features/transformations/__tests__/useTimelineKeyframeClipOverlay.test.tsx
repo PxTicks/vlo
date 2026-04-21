@@ -117,10 +117,11 @@ describe("useTimelineKeyframeClipOverlay", () => {
     const maskClipId = `${baseClip.id}::mask::mask-a`;
     const parentClip: TimelineClip = {
       ...baseClip,
-      clipComponents: [
+      components: [
         {
-          clipId: maskClipId,
-          componentType: "mask",
+          id: "mask_ref_1",
+          type: "mask_ref",
+          parameters: { maskClipId },
         },
       ],
     };

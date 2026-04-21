@@ -55,7 +55,7 @@ const SAVE_IMAGE_WEBSOCKET_NODE_TYPES = new Set([
   "VLOSaveImageWebsocketBMP",
 ]);
 
-export function getSaveImageWebsocketNodeIds(
+function getSaveImageWebsocketNodeIds(
   workflow: Record<string, unknown> | null,
 ): Set<string> {
   const ids = new Set<string>();
@@ -202,7 +202,6 @@ export function createGenerationPlan(
       workflowId: options.workflowId,
       workflowRules: cloneSerializableValue(options.workflowRules),
       workflowInputs: cloneSerializableValue(options.workflowInputs),
-      preResolvedWorkflow: null,
     },
     preprocess: {
       slotValues: cloneSlotValues(options.slotValues),
@@ -304,9 +303,6 @@ export async function prepareGenerationPlan(
 export function buildSubmittedGeneration(
   prepared: PreparedGeneration,
   response: PromptResponse,
-  options: {
-    autoFamilyRequestKey?: string | null;
-  } = {},
 ): SubmittedGeneration {
   const responseWarnings = Array.isArray(response.workflow_warnings)
     ? response.workflow_warnings
@@ -368,13 +364,11 @@ export function buildSubmittedGeneration(
   return {
     prepared,
     promptId: response.prompt_id,
-    deliveryId: response.delivery_id ?? null,
     responseWarnings,
     appliedWidgetValues,
     aspectRatioProcessing,
     generationMetadata,
     preparedMaskFile,
-    autoFamilyRequestKey: options.autoFamilyRequestKey ?? null,
     usesSaveImageWebsocketOutputs: saveImageWebsocketNodeIds.size > 0,
     saveImageWebsocketNodeIds,
   };

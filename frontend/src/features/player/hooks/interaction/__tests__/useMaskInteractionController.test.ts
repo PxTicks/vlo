@@ -54,13 +54,13 @@ function createMaskClip(
 ): MaskTimelineClip {
   const id = `${parent.id}::mask::${localId}`;
 
-  // Register mask component on parent
   if (parent.type !== "mask") {
-    parent.clipComponents = [
-      ...(parent.clipComponents ?? []),
+    parent.components = [
+      ...(parent.components ?? []),
       {
-        clipId: id,
-        componentType: "mask",
+        id: `mask_ref_${localId}`,
+        type: "mask_ref",
+        parameters: { maskClipId: id },
       },
     ];
   }
@@ -155,9 +155,14 @@ describe("useMaskInteractionController", () => {
     const parentClip = state.clips.find((c) => c.id === parent.id);
     const maskChildIds = new Set(
       parentClip && parentClip.type !== "mask"
-        ? (parentClip.clipComponents ?? [])
-            .filter((component) => component.componentType === "mask")
-            .map((component) => component.clipId)
+        ? (parentClip.components ?? [])
+            .filter((component) => component.type === "mask_ref")
+            .map((component) =>
+              component.type === "mask_ref"
+                ? component.parameters.maskClipId
+                : null,
+            )
+            .filter((id): id is string => id !== null)
         : [],
     );
     const maskClips = state.clips.filter(

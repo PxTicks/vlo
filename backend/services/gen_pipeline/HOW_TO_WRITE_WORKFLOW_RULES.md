@@ -609,46 +609,6 @@ no downstream consumer matches.
 
 ---
 
-## Media Fallbacks
-
-`media_fallbacks` declares backend-supplied media assets that should be
-buffered when the request omits a corresponding user input. This is
-useful for workflows that intentionally treat an input as "missing" in
-their rules, but still need a placeholder asset at execution time.
-
-```json
-"media_fallbacks": [
-  {
-    "kind": "dummy",
-    "node_id": "167",
-    "input_type": "image",
-    "when": {
-      "kind": "input_presence",
-      "inputs": ["167"],
-      "match": "all_missing"
-    }
-  }
-]
-```
-
-| Field          | Purpose                                                        |
-| -------------- | -------------------------------------------------------------- |
-| `kind`         | Built-in fallback behavior, currently `"dummy"`                |
-| `node_id`      | Workflow node that should receive the fallback media           |
-| `input_type`   | Discoverable input type such as `"image"` or `"video"`         |
-| `param`        | Optional explicit node param if the class has multiple inputs  |
-| `filename`     | Optional uploaded filename override                            |
-| `content_type` | Optional MIME type override                                    |
-| `synthetic`    | When `true`, validation still treats the input as user-missing |
-| `when`         | Optional `input_presence` gate                                 |
-
-The sidecar declares only that a dummy fallback is needed; the backend
-owns the actual placeholder asset. Synthetic fallback media is excluded
-from `provided_input_ids`, so rules like `"match": "all_missing"` keep
-working even after the backend buffers the placeholder file.
-
----
-
 ## Slots
 
 `slots` declares synthetic input slots that the frontend groups into

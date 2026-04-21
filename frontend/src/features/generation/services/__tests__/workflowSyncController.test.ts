@@ -1,16 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../workflowBridge", async () => {
-  const actual = await vi.importActual<typeof import("../workflowBridge")>(
-    "../workflowBridge",
-  );
-  return {
-    ...actual,
-    isIframeAppReady: vi.fn(),
-    loadWorkflowIntoIframe: vi.fn(),
-    readActiveWorkflowFromIframe: vi.fn(),
-  };
-});
+vi.mock("../workflowBridge", () => ({
+  isIframeAppReady: vi.fn(),
+  loadWorkflowIntoIframe: vi.fn(),
+  readWorkflowFromIframe: vi.fn(),
+}));
 
 import {
   injectWorkflowAndRead,
@@ -20,7 +14,7 @@ import {
 import {
   isIframeAppReady,
   loadWorkflowIntoIframe,
-  readActiveWorkflowFromIframe,
+  readWorkflowFromIframe,
 } from "../workflowBridge";
 
 describe("workflowSyncController", () => {
@@ -40,39 +34,33 @@ describe("workflowSyncController", () => {
   });
 
   it("readWorkflowWithRetry returns first readable workflow", async () => {
-    vi.mocked(readActiveWorkflowFromIframe)
-      .mockReturnValueOnce(null)
-      .mockReturnValueOnce({
-        graphData: {
-          nodes: [{ id: 1, type: "LoadImage" }],
-          links: [],
-        },
-        filename: "wf.json",
-        isModified: true,
+    vi.mocked(readWorkflowFromIframe)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        workflow: {},
+        graphData: {},
+        inputs: [],
+        filename: null,
       });
 
     const result = await readWorkflowWithRetry(iframe, () => false, 300);
     expect(result).not.toBeNull();
-    expect(result?.filename).toBe("wf.json");
-    expect(result?.workflow).toEqual({
-      "1": {
-        class_type: "LoadImage",
-        inputs: {},
-      },
-    });
+    expect(result?.workflow).toEqual({});
   });
 
   it("readWorkflowWithRetry skips stale workflows until an acceptable result appears", async () => {
-    vi.mocked(readActiveWorkflowFromIframe)
-      .mockReturnValueOnce({
-        graphData: { nodes: [{ id: 1, type: "OldWorkflow" }], links: [] },
+    vi.mocked(readWorkflowFromIframe)
+      .mockResolvedValueOnce({
+        workflow: { old: true },
+        graphData: { nodes: [{ id: 1, type: "OldWorkflow" }] },
+        inputs: [],
         filename: "video_ltx2_3_i2v.json",
-        isModified: false,
       })
-      .mockReturnValueOnce({
-        graphData: { nodes: [{ id: 98, type: "LoadVideo" }], links: [] },
+      .mockResolvedValueOnce({
+        workflow: { fresh: true },
+        graphData: { nodes: [{ id: 98, type: "LoadVideo" }] },
+        inputs: [],
         filename: "__temp__.json",
-        isModified: true,
       });
 
     const result = await readWorkflowWithRetry(
@@ -80,13 +68,12 @@ describe("workflowSyncController", () => {
       () => false,
       300,
       undefined,
-      undefined,
       (candidate) => candidate.filename === "__temp__.json",
     );
 
     expect(result).not.toBeNull();
     expect(result?.filename).toBe("__temp__.json");
-    expect(readActiveWorkflowFromIframe).toHaveBeenCalledTimes(2);
+    expect(readWorkflowFromIframe).toHaveBeenCalledTimes(2);
   });
 
   it("injectWorkflowAndRead defers when app readiness fails", async () => {
@@ -110,10 +97,11 @@ describe("workflowSyncController", () => {
       ok: true,
       warnings: null,
     });
-    vi.mocked(readActiveWorkflowFromIframe).mockReturnValue({
-      graphData: { nodes: [{ id: 1, type: "LoadImage" }], links: [] },
+    vi.mocked(readWorkflowFromIframe).mockResolvedValue({
+      workflow: { "1": {} },
+      graphData: { nodes: [] },
+      inputs: [],
       filename: "wf.json",
-      isModified: true,
     });
 
     const result = await injectWorkflowAndRead(
@@ -134,16 +122,22 @@ describe("workflowSyncController", () => {
       ok: true,
       warnings: null,
     });
-    vi.mocked(readActiveWorkflowFromIframe)
-      .mockReturnValueOnce({
-        graphData: { nodes: [{ id: 1, type: "LoadImage" }], links: [] },
+    vi.mocked(readWorkflowFromIframe)
+      .mockResolvedValueOnce({
+        workflow: {
+          "1": { class_type: "LoadImage", inputs: { image: "old.png" } },
+        },
+        graphData: { nodes: [{ id: 1, type: "LoadImage" }] },
+        inputs: [],
         filename: "video_ltx2_3_i2v.json",
-        isModified: false,
       })
-      .mockReturnValueOnce({
-        graphData: { nodes: [{ id: 98, type: "LoadVideo" }], links: [] },
+      .mockResolvedValueOnce({
+        workflow: {
+          "98": { class_type: "LoadVideo", inputs: { file: "source.webm" } },
+        },
+        graphData: { nodes: [{ id: 98, type: "LoadVideo" }] },
+        inputs: [],
         filename: "__temp__.json",
-        isModified: true,
       });
 
     const result = await injectWorkflowAndRead(
@@ -156,6 +150,6 @@ describe("workflowSyncController", () => {
     expect(result.ok).toBe(true);
     expect(result.deferred).toBe(false);
     expect(result.workflowResult?.filename).toBe("__temp__.json");
-    expect(readActiveWorkflowFromIframe).toHaveBeenCalledTimes(2);
+    expect(readWorkflowFromIframe).toHaveBeenCalledTimes(2);
   });
 });

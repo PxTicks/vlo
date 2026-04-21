@@ -19,6 +19,7 @@ import type { Asset } from "../../../types/Asset";
 import {
   applyClipTransforms,
   calculateClipTime,
+  livePreviewParamStore,
 } from "../../transformations";
 import { dispatchTransform } from "../../transformations/catalogue/TransformationRegistry";
 import type { TransformState } from "../../transformations/catalogue/types";
@@ -183,6 +184,7 @@ export class SpriteClipMaskController {
   private alphaMaskEffect: AlphaMask | null = null;
   private currentMaskMode: MaskApplicationMode = "none";
   private currentInverse = false;
+  private currentMaskSignature = "";
   private lastContentWidth = 0;
   private lastContentHeight = 0;
 
@@ -417,6 +419,11 @@ export class SpriteClipMaskController {
     const shouldUseCompositedAlphaMask =
       this.renderer !== null &&
       (hasSharedEdgeOps || hasCompositeInvert || simpleUnionMasks === null);
+    const maskApplicationSignature = this.createMaskApplicationSignature(
+      resolvedMaskExpression,
+      activeMaskClips,
+      sharedMaskCompositeState,
+    );
     this.sanitizeAssetMaskSpriteVisibility();
 
     if (this.maskSprite && shouldUseCompositedAlphaMask) {
@@ -442,7 +449,7 @@ export class SpriteClipMaskController {
           sharedMaskCompositeState,
         );
         if (renderedTexture) {
-          this.applyAlphaMask(this.maskSprite, false);
+          this.applyAlphaMask(this.maskSprite, false, maskApplicationSignature);
         } else {
           this.removeMaskFromTarget();
         }
@@ -451,7 +458,12 @@ export class SpriteClipMaskController {
       }
     } else if (simpleUnionMasks) {
       const inverse = false;
-      this.applyMaskEffect(this.maskContainer, inverse, false);
+      this.applyMaskEffect(
+        this.maskContainer,
+        inverse,
+        false,
+        maskApplicationSignature,
+      );
     } else if (
       activeAssetMasks.length > 0 ||
       hasInvertedMask ||
@@ -460,11 +472,21 @@ export class SpriteClipMaskController {
     ) {
       // No renderer / no maskSprite (test fallback): Container-based AlphaMask
       const inverse = singleMask ? (singleMask.maskInverted ?? false) : false;
-      this.applyMaskEffect(this.maskContainer, inverse, true);
+      this.applyMaskEffect(
+        this.maskContainer,
+        inverse,
+        true,
+        maskApplicationSignature,
+      );
     } else {
       // Vector-only: stencil mask
       const inverse = singleMask ? (singleMask.maskInverted ?? false) : false;
-      this.applyMaskEffect(this.maskContainer, inverse, false);
+      this.applyMaskEffect(
+        this.maskContainer,
+        inverse,
+        false,
+        maskApplicationSignature,
+      );
     }
   }
 
@@ -718,7 +740,7 @@ export class SpriteClipMaskController {
 
     transforms.forEach((transform) => {
       if (!transform.isEnabled) return;
-      dispatchTransform(state, transform, {
+      dispatchTransform(state, this.applyLivePreviewOverrides(transform), {
         container: logicalDimensions,
         content: contentSize,
         time: transformTime,
@@ -735,6 +757,49 @@ export class SpriteClipMaskController {
       growInvert: state.maskGrow?.invert ?? false,
       feather: state.feather ?? null,
     };
+  }
+
+  private applyLivePreviewOverrides(transform: TimelineClip["transformations"][number]) {
+    let nextParameters: Record<string, unknown> | null = null;
+
+    for (const paramName of Object.keys(transform.parameters)) {
+      const previewValue = livePreviewParamStore.get(transform.id, paramName);
+      if (previewValue === undefined) {
+        continue;
+      }
+
+      nextParameters ??= { ...transform.parameters };
+      nextParameters[paramName] = previewValue;
+    }
+
+    return nextParameters
+      ? {
+          ...transform,
+          parameters: nextParameters,
+        }
+      : transform;
+  }
+
+  private createMaskApplicationSignature(
+    expression: MaskBooleanExpression | null,
+    activeMaskClips: MaskTimelineClip[],
+    compositeState: ResolvedMaskCompositeState,
+  ): string {
+    return JSON.stringify({
+      expression,
+      masks: activeMaskClips.map((maskClip) => ({
+        id: maskClip.id,
+        type: maskClip.maskType,
+        mode: maskClip.maskMode,
+        inverted: maskClip.maskInverted,
+        assetId: getAssetBackedMaskId(maskClip),
+        sam2GrowAmount: getSam2MaskGrowAmount(maskClip),
+      })),
+      compositeInvert: compositeState.compositeInvert,
+      growInvert: compositeState.growInvert,
+      featherMode: compositeState.feather?.mode ?? null,
+      featherInvert: compositeState.feather?.invert ?? null,
+    });
   }
 
   private resolveSimpleUnionMaskClips(
@@ -1238,7 +1303,7 @@ export class SpriteClipMaskController {
    * (`renderMaskToTexture = false`) — no intermediate texture or bounds
    * rounding by AlphaMaskPipe.
    */
-  private applyAlphaMask(target: Sprite, inverse: boolean) {
+  private applyAlphaMask(target: Sprite, inverse: boolean, signature = "") {
     const previousMode = this.currentMaskMode;
 
     if (previousMode === "regular") {
@@ -1251,7 +1316,8 @@ export class SpriteClipMaskController {
     if (
       this.currentMaskMode !== "alpha" ||
       this.currentInverse !== inverse ||
-      targetChanged
+      targetChanged ||
+      this.currentMaskSignature !== signature
     ) {
       if (previousMode === "alpha") {
         this.detachAlphaMaskEffect();
@@ -1267,6 +1333,7 @@ export class SpriteClipMaskController {
       this.attachAlphaMaskEffect();
       this.currentMaskMode = "alpha";
       this.currentInverse = inverse;
+      this.currentMaskSignature = signature;
     }
     this.syncOutputModeVisibility();
   }
@@ -1277,6 +1344,7 @@ export class SpriteClipMaskController {
     mask: Container | null,
     inverse: boolean,
     useAlphaMask: boolean,
+    signature = "",
   ) {
     const previousMode = this.currentMaskMode;
     const nextMode: MaskApplicationMode =
@@ -1284,7 +1352,8 @@ export class SpriteClipMaskController {
 
     if (
       this.currentMaskMode === nextMode &&
-      this.currentInverse === inverse
+      this.currentInverse === inverse &&
+      this.currentMaskSignature === signature
     ) {
       return;
     }
@@ -1295,6 +1364,7 @@ export class SpriteClipMaskController {
 
     this.currentMaskMode = nextMode;
     this.currentInverse = inverse;
+    this.currentMaskSignature = signature;
 
     if (!mask) {
       this.removeMaskFromTarget();
@@ -1862,6 +1932,7 @@ export class SpriteClipMaskController {
   private removeMaskFromTarget() {
     this.currentMaskMode = "none";
     this.currentInverse = false;
+    this.currentMaskSignature = "";
     if (this.perMaskSprite) {
       this.perMaskSprite.blendMode = "normal";
       this.perMaskSprite.filters = null;

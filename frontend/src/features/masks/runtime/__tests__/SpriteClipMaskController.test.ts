@@ -12,6 +12,7 @@ import type {
 } from "../../../../types/TimelineTypes";
 import type { Component } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
+import { livePreviewParamStore } from "../../../transformations";
 
 vi.mock("../MaskVideoFramePlayer", async () => {
   const { Sprite, Texture } = await import("pixi.js");
@@ -1013,6 +1014,89 @@ describe("SpriteClipMaskController mask composition", () => {
 
     expect(node?.player.renderAt).toHaveBeenCalledWith(expect.any(Number));
 
+    controller.dispose();
+    warnSpy.mockRestore();
+  });
+
+  it("rebinds the regular Pixi mask when the active mask set changes", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sprite = new Sprite(Texture.WHITE);
+    const setMaskSpy = vi.spyOn(
+      sprite as Sprite & {
+        setMask: (options: { mask: Container | null; inverse: boolean }) => void;
+      },
+      "setMask",
+    );
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, null, root);
+
+    const parent = createParentClip();
+    const firstMask = createMaskClip("mask_first");
+    const secondMask = createMaskClip("mask_second", {
+      maskType: "circle",
+    });
+
+    await controller.syncMaskClips(
+      [firstMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    await controller.syncMaskClips(
+      [firstMask, secondMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    expect(setMaskSpy).toHaveBeenCalledTimes(2);
+    expect(setMaskSpy).toHaveBeenLastCalledWith({
+      mask: expect.any(Container),
+      inverse: false,
+    });
+
+    controller.dispose();
+    warnSpy.mockRestore();
+  });
+
+  it("uses live preview values for shared mask edge operations", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderSpy = vi.fn();
+    const renderer = {
+      render: renderSpy,
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = withMaskComposition(createParentClip(), {
+      compositeTransformations: [
+        {
+          id: "grow_preview",
+          type: "mask_grow",
+          isEnabled: true,
+          parameters: {
+            amount: 0,
+          },
+        },
+      ],
+    });
+    const mask = createMaskClip("mask_live_preview");
+
+    livePreviewParamStore.set("grow_preview", "amount", 12);
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    expect(renderSpy).toHaveBeenCalled();
+
+    livePreviewParamStore.clear("grow_preview", "amount");
     controller.dispose();
     warnSpy.mockRestore();
   });

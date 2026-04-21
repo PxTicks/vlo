@@ -51,6 +51,11 @@ export type MaskRefComponent = ComponentBase<
 // mask_composition: how child masks are composited on this parent clip
 // ---------------------------------------------------------------------------
 
+export type MaskCompositionAlgebra = "normal" | "inverse";
+
+export const DEFAULT_MASK_COMPOSITION_ALGEBRA: MaskCompositionAlgebra =
+  "inverse";
+
 export interface MaskCompositionComponentParameters {
   /**
    * Tri-state:
@@ -59,8 +64,31 @@ export interface MaskCompositionComponentParameters {
    *  - object: explicit boolean expression
    */
   expression?: MaskBooleanExpression | null;
+  /**
+   * Controls whether boolean operations are evaluated in ordinary coverage
+   * space or in inverse/"hole" coverage space.
+   */
+  algebra?: MaskCompositionAlgebra;
   /** Post-composition edge operations (grow, feather). */
   compositeTransformations: ClipTransform[];
+}
+
+export function resolveMaskCompositionAlgebra(
+  parameters:
+    | Pick<MaskCompositionComponentParameters, "algebra">
+    | null
+    | undefined,
+): MaskCompositionAlgebra {
+  return parameters?.algebra ?? DEFAULT_MASK_COMPOSITION_ALGEBRA;
+}
+
+export function usesInverseMaskCompositionAlgebra(
+  parameters:
+    | Pick<MaskCompositionComponentParameters, "algebra">
+    | null
+    | undefined,
+): boolean {
+  return resolveMaskCompositionAlgebra(parameters) === "inverse";
 }
 
 export type MaskCompositionComponent = ComponentBase<

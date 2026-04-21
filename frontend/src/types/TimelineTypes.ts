@@ -121,7 +121,7 @@ export interface StandardTimelineClip extends TimelineClipBase {
   /**
    * Typed attachments carried with this clip. Variants include:
    *  - `mask_ref`: reference to a subordinate MaskTimelineClip
-   *  - `mask_composition`: boolean expression + composite edge transforms
+   *  - `mask_composition`: boolean expression, algebra, and edge transforms
    *  - `range_mask`: source-time window of transparency
    */
   components?: Component[];

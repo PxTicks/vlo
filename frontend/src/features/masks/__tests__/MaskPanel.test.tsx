@@ -119,6 +119,7 @@ describe("MaskPanel", () => {
   const mockDuplicateMask = vi.fn();
   const mockDeleteMask = vi.fn();
   const mockDeleteSelectedMask = vi.fn();
+  const mockSetMaskCompositionAlgebra = vi.fn();
   const mockEnsureSam2Available = vi.fn(async () => true);
   let baseHookValue: ReturnType<typeof useMaskPanel>;
 
@@ -166,6 +167,8 @@ describe("MaskPanel", () => {
       duplicateMask: mockDuplicateMask,
       deleteMask: mockDeleteMask,
       deleteSelectedMask: mockDeleteSelectedMask,
+      maskCompositionAlgebra: "inverse",
+      setMaskCompositionAlgebra: mockSetMaskCompositionAlgebra,
       rangeMaskComponents: [],
       startAddRangeMask: vi.fn(),
       startEditRangeMask: vi.fn(),
@@ -414,7 +417,7 @@ describe("MaskPanel", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shares one inverse toggle across grow and feather", () => {
+  it("sets the shared composition algebra from the inverse toggle", () => {
     mockSharedMaskTransforms = [
       {
         id: "grow_1",
@@ -449,23 +452,11 @@ describe("MaskPanel", () => {
       screen.getByRole("checkbox", { name: "Inverse Masking" }),
     );
 
-    expect(mockSetSharedMaskTransforms).toHaveBeenCalledWith([
-      expect.objectContaining({
-        type: "mask_grow",
-        parameters: expect.objectContaining({
-          invert: true,
-        }),
-      }),
-      expect.objectContaining({
-        type: "feather",
-        parameters: expect.objectContaining({
-          invert: true,
-        }),
-      }),
-    ]);
+    expect(mockSetMaskCompositionAlgebra).toHaveBeenCalledWith("normal");
+    expect(mockSetSharedMaskTransforms).not.toHaveBeenCalled();
   });
 
-  it("materializes both shared edge transforms when toggling inverse with none present", () => {
+  it("does not materialize edge transforms when toggling algebra with none present", () => {
     vi.mocked(useMaskPanel).mockReturnValue({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
@@ -479,20 +470,8 @@ describe("MaskPanel", () => {
       screen.getByRole("checkbox", { name: "Inverse Masking" }),
     );
 
-    expect(mockSetSharedMaskTransforms).toHaveBeenCalledWith([
-      expect.objectContaining({
-        type: "mask_grow",
-        parameters: expect.objectContaining({
-          invert: false,
-        }),
-      }),
-      expect.objectContaining({
-        type: "feather",
-        parameters: expect.objectContaining({
-          invert: false,
-        }),
-      }),
-    ]);
+    expect(mockSetMaskCompositionAlgebra).toHaveBeenCalledWith("normal");
+    expect(mockSetSharedMaskTransforms).not.toHaveBeenCalled();
   });
 
   it("returns from a mask detail view back to the shared home view", () => {

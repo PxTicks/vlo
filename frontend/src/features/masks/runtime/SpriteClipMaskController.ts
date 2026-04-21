@@ -15,6 +15,7 @@ import type {
   TimelineClip,
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
+import { usesInverseMaskCompositionAlgebra } from "../../../types/Components";
 import type { Asset } from "../../../types/Asset";
 import {
   applyClipTransforms,
@@ -407,7 +408,9 @@ export class SpriteClipMaskController {
     const hasSharedEdgeOps =
       sharedMaskCompositeState.growAmount > 0 ||
       (sharedMaskCompositeState.feather?.amount ?? 0) > 0;
-    const hasCompositeInvert = sharedMaskCompositeState.compositeInvert;
+    const hasCompositeInvert =
+      sharedMaskCompositeState.compositeInvert &&
+      resolvedMaskExpressionAnalysis.operationCount > 0;
     const hasInvertedMask = activeMaskClips.some((maskClip) => maskClip.maskInverted);
     const simpleUnionMasks =
       hasSharedEdgeOps || hasCompositeInvert
@@ -715,11 +718,7 @@ export class SpriteClipMaskController {
     const composition = (parentClip.components ?? []).find(
       (component) => component.type === "mask_composition",
     );
-    const transforms =
-      composition?.type === "mask_composition"
-        ? composition.parameters.compositeTransformations
-        : [];
-    if (transforms.length === 0) {
+    if (composition?.type !== "mask_composition") {
       return {
         compositeInvert: false,
         growAmount: 0,
@@ -727,6 +726,11 @@ export class SpriteClipMaskController {
         feather: null,
       };
     }
+
+    const transforms = composition.parameters.compositeTransformations;
+    const compositeInvert = usesInverseMaskCompositionAlgebra(
+      composition.parameters,
+    );
 
     const state: TransformState = {
       x: 0,
@@ -746,10 +750,6 @@ export class SpriteClipMaskController {
         time: transformTime,
       });
     });
-
-    const compositeInvert = transforms.some(
-      (transform) => transform.parameters.invert === true,
-    );
 
     return {
       compositeInvert,

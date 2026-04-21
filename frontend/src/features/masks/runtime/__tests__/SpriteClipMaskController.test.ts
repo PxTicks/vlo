@@ -10,7 +10,10 @@ import type {
   MaskBooleanExpression,
   StandardTimelineClip,
 } from "../../../../types/TimelineTypes";
-import type { Component } from "../../../../types/Components";
+import type {
+  Component,
+  MaskCompositionAlgebra,
+} from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
 import { livePreviewParamStore } from "../../../transformations";
 
@@ -64,6 +67,7 @@ function withMaskComposition(
   parent: TimelineClip,
   options: {
     expression?: MaskBooleanExpression | null;
+    algebra?: MaskCompositionAlgebra;
     compositeTransformations?: ClipTransform[];
   },
 ): TimelineClip {
@@ -79,6 +83,7 @@ function withMaskComposition(
       ...(options.expression !== undefined
         ? { expression: options.expression }
         : {}),
+      ...(options.algebra !== undefined ? { algebra: options.algebra } : {}),
       compositeTransformations: options.compositeTransformations ?? [],
     },
   };
@@ -617,6 +622,7 @@ describe("SpriteClipMaskController mask composition", () => {
           maskId: "mask_b",
         },
       },
+      algebra: "normal",
     });
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
@@ -732,7 +738,107 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
-  it("keeps explicit all-union vector expressions on the simple union fast path", async () => {
+  it("uses inverse algebra by default for explicit all-union vector expressions", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderSnapshots: Array<{
+      clear?: boolean;
+      transform?: unknown;
+      filters?: unknown;
+    }> = [];
+    const renderSpy = vi.fn((args: unknown) => {
+      const renderArgs = args as {
+        clear?: boolean;
+        transform?: unknown;
+        container?: { filters?: unknown };
+      };
+      renderSnapshots.push({
+        clear: renderArgs.clear,
+        transform: renderArgs.transform,
+        filters: renderArgs.container?.filters,
+      });
+    });
+    const renderer = {
+      render: renderSpy,
+    } as unknown as Renderer;
+    const sprite = new Sprite();
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = withMaskComposition(createParentClip(), {
+      expression: {
+        kind: "operation",
+        operator: "union",
+        left: {
+          kind: "mask_ref",
+          maskId: "mask_a",
+        },
+        right: {
+          kind: "mask_ref",
+          maskId: "mask_b",
+        },
+      },
+    });
+    const maskA = createMaskClip("mask_a", { inverted: true });
+    const maskB = createMaskClip("mask_b", {
+      inverted: true,
+      maskType: "circle",
+    });
+
+    await controller.syncMaskClips(
+      [maskA, maskB],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    const unionFilter = (
+      controller as unknown as {
+        currentMaskMode: "none" | "regular" | "alpha";
+        maskBooleanBlendFilters: Partial<
+          Record<
+            "union",
+            {
+              resources: {
+                filterUniforms: {
+                  uniforms: {
+                    uOperateOnInverseCoverage: number;
+                  };
+                };
+              };
+            }
+          >
+        >;
+      }
+    ).maskBooleanBlendFilters.union;
+
+    expect(
+      (
+        controller as unknown as {
+          currentMaskMode: "none" | "regular" | "alpha";
+        }
+      ).currentMaskMode,
+    ).toBe("alpha");
+    expect(unionFilter).toBeTruthy();
+    expect(
+      unionFilter?.resources.filterUniforms.uniforms.uOperateOnInverseCoverage,
+    ).toBe(1);
+    expect(renderSpy).toHaveBeenCalledTimes(6);
+    expect(
+      renderSnapshots.some(
+        (call) =>
+          call.clear === true &&
+          call.transform === undefined &&
+          Array.isArray(call.filters) &&
+          call.filters.includes(unionFilter),
+      ),
+    ).toBe(true);
+
+    controller.dispose();
+    warnSpy.mockRestore();
+  });
+
+  it("keeps explicit normal all-union vector expressions on the simple union fast path", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSpy = vi.fn();
     const renderer = {
@@ -755,6 +861,7 @@ describe("SpriteClipMaskController mask composition", () => {
           maskId: "mask_b",
         },
       },
+      algebra: "normal",
     });
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
@@ -840,6 +947,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       },
+      algebra: "normal",
     });
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {

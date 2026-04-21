@@ -46,6 +46,7 @@ export function attachGenerationMask(
     generationMaskAssetId: meta.generationMaskAssetId,
     transformations: [],
   });
+  store.setClipMaskCompositionAlgebra(clipId, "normal");
 
   const parentClip = store.clips.find(
     (clip): clip is Extract<TimelineClip, { type: Exclude<TimelineClip["type"], "mask"> }> =>

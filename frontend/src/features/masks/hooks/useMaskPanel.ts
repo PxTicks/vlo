@@ -10,7 +10,11 @@ import type {
   StandardTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
-import type { RangeMaskComponent } from "../../../types/Components";
+import {
+  resolveMaskCompositionAlgebra,
+  type MaskCompositionAlgebra,
+  type RangeMaskComponent,
+} from "../../../types/Components";
 import {
   TICKS_PER_SECOND,
   countSam2MaskAssetConsumers,
@@ -23,7 +27,10 @@ import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useExtractStore } from "../../player/useExtractStore";
 import { useMaskViewStore } from "../store/useMaskViewStore";
 import { createMask } from "../model/maskFactory";
-import { resolveMaskBooleanExpression } from "../model/maskBooleanExpression";
+import {
+  getMaskCompositionComponent,
+  resolveMaskBooleanExpression,
+} from "../model/maskBooleanExpression";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
 import { playbackClock } from "../../player/services/PlaybackClock";
 import {
@@ -165,6 +172,8 @@ export interface UseMaskPanelResult {
   duplicateMask: (maskId: string) => void;
   deleteMask: (maskId: string) => void;
   deleteSelectedMask: () => void;
+  maskCompositionAlgebra: MaskCompositionAlgebra;
+  setMaskCompositionAlgebra: (algebra: MaskCompositionAlgebra) => void;
   rangeMaskComponents: RangeMaskComponent[];
   startAddRangeMask: () => void;
   startEditRangeMask: (rangeMaskId: string) => void;
@@ -234,6 +243,9 @@ export function useMaskPanel(): UseMaskPanelResult {
   const setClipMaskBooleanExpression = useTimelineStore(
     (state) => state.setClipMaskBooleanExpression,
   );
+  const setClipMaskCompositionAlgebra = useTimelineStore(
+    (state) => state.setClipMaskCompositionAlgebra,
+  );
   const assets = useAssetStore((state) => state.assets);
   const addLocalAsset = useAssetStore((state) => state.addLocalAsset);
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
@@ -263,6 +275,15 @@ export function useMaskPanel(): UseMaskPanelResult {
 
     return resolveMaskBooleanExpression(selectedClip, masks);
   }, [masks, selectedClip]);
+  const maskCompositionAlgebra = useMemo(() => {
+    if (!selectedClip || selectedClip.type === "mask") {
+      return resolveMaskCompositionAlgebra(null);
+    }
+
+    return resolveMaskCompositionAlgebra(
+      getMaskCompositionComponent(selectedClip)?.parameters,
+    );
+  }, [selectedClip]);
 
   const selectedMask = useMemo(() => {
     if (!selectedMaskId) return null;
@@ -1358,6 +1379,11 @@ export function useMaskPanel(): UseMaskPanelResult {
     duplicateMask,
     deleteMask,
     deleteSelectedMask,
+    maskCompositionAlgebra,
+    setMaskCompositionAlgebra: (algebra) => {
+      if (!selectedClipId) return;
+      setClipMaskCompositionAlgebra(selectedClipId, algebra);
+    },
     rangeMaskComponents,
     startAddRangeMask,
     startEditRangeMask,

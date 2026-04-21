@@ -24,11 +24,9 @@ import { MASK_TYPES } from "./model/maskFactory";
 import { useMaskPanel } from "./hooks/useMaskPanel";
 import {
   DefaultTransformationSections,
-  createAddTransform,
   getDefaultTransforms,
   getEntryByType,
   getDefaultSectionId,
-  insertTransformRespectingDefaultOrder,
   useTransformationController,
 } from "../transformations";
 import { Sam2MaskPanel } from "./components/Sam2MaskPanel";
@@ -36,10 +34,8 @@ import { Sam2ModelDownloadOverlay } from "./components/Sam2ModelDownloadOverlay"
 import { MaskEquationBuilder } from "./components/MaskEquationBuilder";
 import { RangeMaskSection } from "./components/RangeMaskSection";
 import { parseMaskClipId } from "../timeline";
-import type {
-  ClipTransform,
-  MaskTimelineClip,
-} from "../../types/TimelineTypes";
+import type { MaskTimelineClip } from "../../types/TimelineTypes";
+import type { MaskCompositionAlgebra } from "../../types/Components";
 
 const connectedButtonSx = {
   textTransform: "none",
@@ -66,7 +62,6 @@ const selectedConnectedButtonSx = {
   },
 };
 
-const SHARED_MASK_EDGE_TRANSFORM_TYPES = ["mask_grow", "feather"] as const;
 type MaskPanelView = "home" | "mask";
 
 function getMaskDisplayLabel(
@@ -85,91 +80,10 @@ function getMaskDisplayLabel(
   return name;
 }
 
-function isSharedMaskEdgeTransform(transform: ClipTransform): boolean {
-  return SHARED_MASK_EDGE_TRANSFORM_TYPES.includes(
-    transform.type as (typeof SHARED_MASK_EDGE_TRANSFORM_TYPES)[number],
-  );
-}
-
-function getSharedMaskEdgeInvertState(
-  transforms: ClipTransform[],
-) {
-  const edgeTransforms = transforms.filter(isSharedMaskEdgeTransform);
-  if (edgeTransforms.length === 0) {
-    return {
-      checked: true,
-      indeterminate: false,
-    };
-  }
-
-  const hasInvertedEdge = edgeTransforms.some(
-    (transform) => transform.parameters.invert === true,
-  );
-  const hasNormalEdge = edgeTransforms.some(
-    (transform) => transform.parameters.invert !== true,
-  );
-
-  return {
-    checked: hasInvertedEdge,
-    indeterminate: hasInvertedEdge && hasNormalEdge,
-  };
-}
-
-function setSharedMaskEdgeInvert(
-  transforms: ClipTransform[],
-  invert: boolean,
-): ClipTransform[] {
-  let nextTransforms = transforms.map((transform) =>
-    isSharedMaskEdgeTransform(transform)
-      ? {
-          ...transform,
-          parameters: {
-            ...transform.parameters,
-            invert,
-          },
-        }
-      : transform,
-  );
-
-  SHARED_MASK_EDGE_TRANSFORM_TYPES.forEach((type) => {
-    if (nextTransforms.some((transform) => transform.type === type)) {
-      return;
-    }
-
-    const createdTransform = createAddTransform(type);
-    if (!createdTransform) {
-      return;
-    }
-
-    createdTransform.parameters = {
-      ...createdTransform.parameters,
-      invert,
-    };
-    nextTransforms = insertTransformRespectingDefaultOrder(
-      nextTransforms,
-      createdTransform,
-    );
-  });
-
-  return nextTransforms.sort((left, right) => {
-    const leftIndex = SHARED_MASK_EDGE_TRANSFORM_TYPES.indexOf(
-      left.type as (typeof SHARED_MASK_EDGE_TRANSFORM_TYPES)[number],
-    );
-    const rightIndex = SHARED_MASK_EDGE_TRANSFORM_TYPES.indexOf(
-      right.type as (typeof SHARED_MASK_EDGE_TRANSFORM_TYPES)[number],
-    );
-
-    if (leftIndex === -1 && rightIndex === -1) {
-      return 0;
-    }
-    if (leftIndex === -1) {
-      return -1;
-    }
-    if (rightIndex === -1) {
-      return 1;
-    }
-    return leftIndex - rightIndex;
-  });
+function getAlgebraForInverseChecked(
+  checked: boolean,
+): MaskCompositionAlgebra {
+  return checked ? "inverse" : "normal";
 }
 
 function useLocalActiveSection(
@@ -243,6 +157,8 @@ export const MaskPanel = memo(function MaskPanel() {
     duplicateMask,
     deleteMask,
     deleteSelectedMask,
+    maskCompositionAlgebra,
+    setMaskCompositionAlgebra,
     rangeMaskComponents,
     startAddRangeMask,
     startEditRangeMask,
@@ -304,10 +220,7 @@ export const MaskPanel = memo(function MaskPanel() {
     () => [...growDefinitions, ...featherDefinitions],
     [growDefinitions, featherDefinitions],
   );
-  const sharedMaskEdgeInvertState = useMemo(
-    () => getSharedMaskEdgeInvertState(sharedMaskTransforms),
-    [sharedMaskTransforms],
-  );
+  const isMaskCompositionInverse = maskCompositionAlgebra === "inverse";
 
   // SAM2 masks are point-based and don't use shape transformation sections.
   // Compute this before the section hook to pass an empty sectionOrder.
@@ -352,9 +265,9 @@ export const MaskPanel = memo(function MaskPanel() {
 
   const handleSharedMaskEdgeInvertChange = useCallback(
     (_event: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
-      setSharedMaskTransforms(setSharedMaskEdgeInvert(sharedMaskTransforms, checked));
+      setMaskCompositionAlgebra(getAlgebraForInverseChecked(checked));
     },
-    [setSharedMaskTransforms, sharedMaskTransforms],
+    [setMaskCompositionAlgebra],
   );
 
   const handleRequestDraw = useCallback(
@@ -631,8 +544,7 @@ export const MaskPanel = memo(function MaskPanel() {
                   control={
                     <Checkbox
                       size="small"
-                      checked={sharedMaskEdgeInvertState.checked}
-                      indeterminate={sharedMaskEdgeInvertState.indeterminate}
+                      checked={isMaskCompositionInverse}
                       onChange={handleSharedMaskEdgeInvertChange}
                     />
                   }

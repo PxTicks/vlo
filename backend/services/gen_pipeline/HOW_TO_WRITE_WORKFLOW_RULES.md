@@ -71,7 +71,9 @@ legacy node-level derived-mask fields (`binary_derived_mask_of`,
   "validation": { "inputs": [] },
   "derived_widgets": [],
   "output_injections": {},
+  "effect_switches": [],
   "slots": {},
+  "media_fallbacks": [],
   "pipeline": []
 }
 ```
@@ -85,7 +87,9 @@ legacy node-level derived-mask fields (`binary_derived_mask_of`,
 | `validation`           | object                                | `{ "inputs": [] }`         |
 | `derived_widgets`      | array                                 | `[]`                       |
 | `output_injections`    | nested object (see below)             | `{}`                       |
+| `effect_switches`      | array of first-match effect cases     | `[]`                       |
 | `slots`                | object keyed by slot id               | `{}`                       |
+| `media_fallbacks`      | array                                 | `[]`                       |
 | `pipeline`             | array of stages                       | `[]`                       |
 
 ---
@@ -365,7 +369,61 @@ you want "basically all controls, minus a few internal ones".
 | `options`                | Allowed values for enums                                          |
 | `control` / `slider_display` / `unit` | Presentation hints (e.g. `"slider"`)                 |
 | `true_value` / `false_value` | Custom booleans (e.g. mapping to enum strings)                |
-| `default_overrides`      | Conditional defaults driven by input presence                     |
+| `default_overrides`      | Conditional defaults driven by `ConditionExpression`              |
+
+---
+
+## Conditions
+
+Conditional rules use a shared `ConditionExpression` tree. The same shape is
+used by widget default overrides, node `ignore_overrides`, output injections,
+rewrites, and `effect_switches`.
+
+Leaf conditions:
+
+- `always` — matches unless `value` is explicitly `false`.
+- `input_presence` — checks submitted media/text inputs by id.
+- `compare` — resolves a `StateReference` and compares it with `eq`, `neq`,
+  `lt`, `lte`, `gt`, or `gte`.
+
+Combinators:
+
+- `all_of` — every nested condition must match.
+- `any_of` — at least one nested condition must match.
+- `not` — inverts one nested condition.
+
+`StateReference` has four kinds:
+
+| Kind               | Shape                                      | Resolves from                                  |
+| ------------------ | ------------------------------------------ | ---------------------------------------------- |
+| `workflow_param`   | `{ "node_id": "92", "param": "denoise" }`  | Current workflow node input/widget value       |
+| `pipeline_control` | `{ "stage_id": "mask_processing", "key": "crop_mode" }` | Resolved pipeline controls         |
+| `frontend_control` | `{ "control_id": "prompt_enhancer_enabled" }` | Frontend-only controls submitted by the panel |
+| `derived_widget`   | `{ "derived_widget_id": "single_sampler_denoise" }` | Derived widget values from the panel     |
+
+Example:
+
+```json
+{
+  "kind": "all_of",
+  "conditions": [
+    { "kind": "input_presence", "inputs": ["98"], "match": "all_present" },
+    {
+      "kind": "compare",
+      "ref": {
+        "kind": "derived_widget",
+        "derived_widget_id": "single_sampler_denoise"
+      },
+      "operator": "lt",
+      "value": 1
+    }
+  ]
+}
+```
+
+Legacy condition leaves `widget_boolean` and `frontend_control_boolean` are
+still accepted and auto-migrated to `compare` during schema parsing. New rules
+should author `compare` directly.
 
 ---
 
@@ -383,7 +441,8 @@ common source of bugs.
 
 `ignore: true` is cascading: once a node is removed, parents whose only
 consumers just disappeared are re-evaluated and may also be removed.
-Conditional removal can be driven by input presence via `ignore_overrides`.
+Conditional removal can be driven by `ConditionExpression` via
+`ignore_overrides`.
 
 ### Optional vs required inputs
 
@@ -523,7 +582,7 @@ recommended practice.
 ## Derived Widgets
 
 Derived widgets expose one high-level control that expands into multiple
-per-parameter overrides. Two kinds exist today:
+per-parameter overrides. Three kinds exist today:
 
 ### `dual_sampler_denoise`
 
@@ -551,6 +610,26 @@ Given a denoise value `d` and `total_steps` `T`:
 
 Rendered as a percent slider with min/max/step derived from `total_steps`.
 
+### `single_sampler_denoise`
+
+Maps a 0–1 slider to one sampler's `start_at_step` style parameter. Given a
+denoise value `d` and `total_steps` `T`:
+
+- `denoise_steps = round(d × T)`
+- `start_step = T − denoise_steps`
+
+```json
+{
+  "id": "single_sampler_denoise",
+  "kind": "single_sampler_denoise",
+  "label": "Denoise",
+  "total_steps": { "node_id": "115", "param": "steps" },
+  "start_step": { "node_id": "115", "param": "start_at_step" }
+}
+```
+
+Rendered as a percent slider from 0 to 1 with step derived from `total_steps`.
+
 ### `video_audio_retake`
 
 Three-option enum (`"Video & Audio" | "Video" | "Audio"`) that flips two
@@ -571,6 +650,61 @@ and flips `audio_bypass`; selecting "Audio" does the opposite; selecting
 
 The two target switches are typically authored as `hidden: true` so the
 derived widget is the only control the user sees.
+
+---
+
+## Effect Switches
+
+`effect_switches` are for panel-state-conditioned graph effects. They are
+similar to `rewrites`, but each switch is **first-match-wins**: within one
+switch, only the first matching case contributes effects. Separate switches
+are independent and compose.
+
+Each matching case can:
+
+- `bypass` node ids, which disconnects their outbound links and removes the
+  bypassed nodes when safe.
+- `set_widgets`, which writes scalar workflow widget values. Link references
+  like `["node_id", 0]` are intentionally left alone.
+
+Use `effect_switches` when a set of cases represents one mutually exclusive
+mode. Use `rewrites` when effects should accumulate across every matching
+rule.
+
+Example based on `vlo_VACE_inpaint_advanced`: the derived
+`single_sampler_denoise` widget controls whether the first sampler branch is
+active. Full denoise bypasses nodes `113` and `114`; partial denoise keeps the
+branch active and turns on node `114`'s boolean switch.
+
+```json
+{
+  "effect_switches": [
+    {
+      "id": "single_sampler_denoise",
+      "cases": [
+        {
+          "when": {
+            "kind": "compare",
+            "ref": {
+              "kind": "derived_widget",
+              "derived_widget_id": "single_sampler_denoise"
+            },
+            "operator": "eq",
+            "value": 1
+          },
+          "bypass": ["113", "114"]
+        },
+        {
+          "when": { "kind": "always" },
+          "set_widgets": [
+            { "node_id": "114", "widget": "value", "value": true }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
 
 ---
 
@@ -609,6 +743,46 @@ no downstream consumer matches.
 
 ---
 
+## Media Fallbacks
+
+`media_fallbacks` declares backend-supplied media assets that should be
+buffered when the request omits a corresponding user input. This is
+useful for workflows that intentionally treat an input as "missing" in
+their rules, but still need a placeholder asset at execution time.
+
+```json
+"media_fallbacks": [
+  {
+    "kind": "dummy",
+    "node_id": "167",
+    "input_type": "image",
+    "when": {
+      "kind": "input_presence",
+      "inputs": ["167"],
+      "match": "all_missing"
+    }
+  }
+]
+```
+
+| Field          | Purpose                                                        |
+| -------------- | -------------------------------------------------------------- |
+| `kind`         | Built-in fallback behavior, currently `"dummy"`                |
+| `node_id`      | Workflow node that should receive the fallback media           |
+| `input_type`   | Discoverable input type such as `"image"` or `"video"`         |
+| `param`        | Optional explicit node param if the class has multiple inputs  |
+| `filename`     | Optional uploaded filename override                            |
+| `content_type` | Optional MIME type override                                    |
+| `synthetic`    | When `true`, validation still treats the input as user-missing |
+| `when`         | Optional `input_presence` gate                                 |
+
+The sidecar declares only that a dummy fallback is needed; the backend
+owns the actual placeholder asset. Synthetic fallback media is excluded
+from `provided_input_ids`, so rules like `"match": "all_missing"` keep
+working even after the backend buffers the placeholder file.
+
+---
+
 ## Slots
 
 `slots` declares synthetic input slots that the frontend groups into
@@ -633,7 +807,7 @@ appear behind a slot rather than as its own top-level input.
 | Field              | Type                                  | Purpose                                                                 |
 | ------------------ | ------------------------------------- | ----------------------------------------------------------------------- |
 | `ignore`           | boolean                               | Remove from the graph entirely (cascading)                              |
-| `ignore_overrides` | array of `{ when, value }`            | Conditional `ignore` driven by input presence                           |
+| `ignore_overrides` | array of `{ when, value }`            | Conditional `ignore` driven by `ConditionExpression`                    |
 | `present`          | object                                | Primary-input presentation (see below)                                  |
 | `widgets_mode`     | `"control_after_generate"` \| `"all"` | Widget auto-discovery mode for this node                                |
 | `widgets`          | `{ <param>: WidgetEntry }`            | Explicit widget definitions and overrides                               |

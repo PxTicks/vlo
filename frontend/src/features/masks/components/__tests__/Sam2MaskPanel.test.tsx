@@ -22,10 +22,8 @@ const defaultProps = {
   generateError: null,
   isDirty: true,
   hasMaskAsset: false,
-  sam2GrowAmount: 0,
   onSetMaskMode: vi.fn(),
   onSetMaskInverted: vi.fn(),
-  onSetSam2GrowAmount: vi.fn(),
   onSetSam2PointMode: vi.fn(),
 };
 
@@ -76,25 +74,6 @@ describe("Sam2MaskPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Inverted" }));
     expect(onSetMaskInverted).toHaveBeenCalledWith(true);
-  });
-
-  it("shows and updates the individual grow amount", () => {
-    const onSetSam2GrowAmount = vi.fn();
-    render(
-      <Sam2MaskPanel
-        {...defaultProps}
-        sam2GrowAmount={12}
-        onSetSam2GrowAmount={onSetSam2GrowAmount}
-      />,
-    );
-
-    expect(screen.getByText("12px")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByRole("slider", { name: "SAM2 grow amount" }), {
-      target: { value: "24" },
-    });
-
-    expect(onSetSam2GrowAmount).toHaveBeenCalledWith(24);
   });
 
   it("does not re-set preview mode when already previewing", () => {

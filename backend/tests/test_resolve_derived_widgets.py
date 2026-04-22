@@ -40,6 +40,15 @@ RETAKE_RULE = {
 }
 
 
+SINGLE_SAMPLER_DENOISE_RULE = {
+    "id": "single_sampler_denoise",
+    "kind": "single_sampler_denoise",
+    "label": "Denoise",
+    "total_steps": {"node_id": "115", "param": "steps"},
+    "start_step": {"node_id": "115", "param": "start_at_step"},
+}
+
+
 def _retake_workflow() -> dict:
     return {
         "705": {"inputs": {"switch": False}},
@@ -72,6 +81,38 @@ def test_video_audio_retake_maps_enum_to_boolean_bypasses(
     assert ctx.widget_overrides["714"]["switch"] is audio_bypass
     assert (
         ctx.applied_widget_values["derived:retake_mode:__value"] == mode
+    )
+
+
+def test_single_sampler_denoise_maps_fraction_to_start_step():
+    ctx = _make_ctx(
+        workflow={"115": {"inputs": {"steps": 6, "start_at_step": 0}}},
+        rules={"derived_widgets": [SINGLE_SAMPLER_DENOISE_RULE]},
+        derived_widget_values={"single_sampler_denoise": "0.5"},
+    )
+
+    asyncio.run(resolve_derived_widgets_processor.execute(ctx))
+
+    assert ctx.widget_overrides["115"]["start_at_step"] == 3
+    assert (
+        ctx.applied_widget_values["derived:single_sampler_denoise:__value"]
+        == "0.5"
+    )
+
+
+def test_single_sampler_denoise_allows_full_denoise():
+    ctx = _make_ctx(
+        workflow={"115": {"inputs": {"steps": 6, "start_at_step": 3}}},
+        rules={"derived_widgets": [SINGLE_SAMPLER_DENOISE_RULE]},
+        derived_widget_values={"single_sampler_denoise": "1"},
+    )
+
+    asyncio.run(resolve_derived_widgets_processor.execute(ctx))
+
+    assert ctx.widget_overrides["115"]["start_at_step"] == 0
+    assert (
+        ctx.applied_widget_values["derived:single_sampler_denoise:__value"]
+        == "1.0"
     )
 
 

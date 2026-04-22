@@ -9,9 +9,11 @@ import {
 import { Close, OpenInNew } from "@mui/icons-material";
 import { useGenerationStore } from "../useGenerationStore";
 import {
-  readWorkflowFromIframe,
+  buildWorkflowResultFromGraphData,
+  readActiveWorkflowFromIframe,
   isIframeAppReady,
   isIframeBackendConnected,
+  type WorkflowReadResult,
 } from "../services/workflowBridge";
 import { isGraphMutationInFlight } from "../services/preResolvePrompt";
 import {
@@ -25,7 +27,9 @@ const POLL_INTERVAL_MS = 2000;
 const APP_READY_TIMEOUT_MS = 10_000;
 const RECOVERY_POLL_MS = 3000;
 const MAX_CONSECUTIVE_READ_FAILURES = 3;
+const MAX_CONSECUTIVE_BACKEND_DISCONNECTS = 3;
 const RECOVERY_RELOAD_COOLDOWN_MS = 2000;
+const VISIBILITY_RESUME_GRACE_MS = 5000;
 const CONNECTING_HELPER_TEXT = "Connecting to ComfyUI...";
 const RECONNECTING_HELPER_TEXT = "Reconnecting to ComfyUI...";
 
@@ -46,10 +50,6 @@ function getSameOriginUrl(): string {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-type ReadWorkflowResult = NonNullable<
-  Awaited<ReturnType<typeof readWorkflowFromIframe>>
->;
 
 function buildWorkflowSignature(
   graphData: Record<string, unknown> | null,
@@ -74,6 +74,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const registerWorkflowFromEditor = useGenerationStore(
     (s) => s.registerWorkflowFromEditor,
   );
+  const inputNodeMap = useGenerationStore((s) => s.inputNodeMap);
+  const rawObjectInfo = useGenerationStore((s) => s.rawObjectInfo);
   const editorNeedsReconnect = useGenerationStore(
     (s) => s.editorNeedsReconnect,
   );
@@ -103,10 +105,12 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const lastDirectUrlRef = useRef<string | null>(comfyuiDirectUrl);
   const pollingRef = useRef(false);
   const consecutiveReadFailuresRef = useRef(0);
+  const consecutiveBackendDisconnectsRef = useRef(0);
   const initRunIdRef = useRef(0);
   const initPromiseRef = useRef<Promise<boolean> | null>(null);
   const lastRecoveryAtRef = useRef(0);
   const lastWorkflowSignatureRef = useRef<string | null>(null);
+  const visibilityResumeGraceUntilRef = useRef(0);
 
   const iframeUrl = comfyuiDirectUrl ? getSameOriginUrl() : null;
 
@@ -115,22 +119,26 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       graphData: Record<string, unknown> | null,
       workflowId: string | null,
     ) => {
-      lastWorkflowSignatureRef.current = buildWorkflowSignature(
-        graphData,
-        workflowId,
-      );
+      const signature = buildWorkflowSignature(graphData, workflowId);
+      lastWorkflowSignatureRef.current = signature;
     },
     [],
   );
 
+  const buildWorkflowResult = useCallback(
+    (graphData: Record<string, unknown>, filename: string | null) =>
+      buildWorkflowResultFromGraphData(graphData, filename, {
+        inputNodeMap,
+        objectInfo: rawObjectInfo,
+      }),
+    [inputNodeMap, rawObjectInfo],
+  );
+
   const commitWorkflowResult = useCallback(
-    async (result: ReadWorkflowResult, force = false) => {
+    async (result: WorkflowReadResult, force = false) => {
       const workflowId =
         result.filename ?? useGenerationStore.getState().selectedWorkflowId;
-      const signature = buildWorkflowSignature(
-        result.graphData,
-        workflowId,
-      );
+      const signature = buildWorkflowSignature(result.graphData, workflowId);
       if (!force && signature === lastWorkflowSignatureRef.current) {
         return;
       }
@@ -159,6 +167,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       initRunIdRef.current += 1;
       initPromiseRef.current = null;
       consecutiveReadFailuresRef.current = 0;
+      consecutiveBackendDisconnectsRef.current = 0;
       lastWorkflowSignatureRef.current = null;
       setAppReady(false);
       setLoading(true);
@@ -205,7 +214,11 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         !iframe.isConnected;
 
       // 1. Wait for the ComfyUI app object
-      const ready = await waitForAppReady(iframe, shouldAbort, APP_READY_TIMEOUT_MS);
+      const ready = await waitForAppReady(
+        iframe,
+        shouldAbort,
+        APP_READY_TIMEOUT_MS,
+      );
       if (!ready) {
         if (!shouldAbort()) {
           setEditorNeedsReconnect(true);
@@ -235,7 +248,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
             syncedGraphData,
             selectedWorkflowId,
             shouldAbort,
-            useGenerationStore.getState().inputNodeMap,
+            inputNodeMap,
+            rawObjectInfo,
           );
           if (shouldAbort()) return false;
 
@@ -273,7 +287,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           iframe,
           shouldAbort,
           APP_READY_TIMEOUT_MS,
-          useGenerationStore.getState().inputNodeMap,
+          inputNodeMap,
+          rawObjectInfo,
         );
         if (!firstResult) {
           if (!shouldAbort()) {
@@ -294,6 +309,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       if (shouldAbort()) return false;
 
       consecutiveReadFailuresRef.current = 0;
+      consecutiveBackendDisconnectsRef.current = 0;
       setAppReady(true);
       setLoading(false);
       setEditorNeedsReconnect(false);
@@ -306,7 +322,13 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         initPromiseRef.current = null;
       }
     });
-  }, [recoverIframe, rememberWorkflowSignature, setEditorNeedsReconnect]);
+  }, [
+    inputNodeMap,
+    rawObjectInfo,
+    recoverIframe,
+    rememberWorkflowSignature,
+    setEditorNeedsReconnect,
+  ]);
 
   // Cleanup async guards on unmount
   useEffect(() => {
@@ -314,6 +336,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       initRunIdRef.current += 1;
       initPromiseRef.current = null;
       consecutiveReadFailuresRef.current = 0;
+      consecutiveBackendDisconnectsRef.current = 0;
       lastWorkflowSignatureRef.current = null;
     };
   }, []);
@@ -339,11 +362,16 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     const iframe = iframeRef.current;
     if (!iframe) return;
 
-    const result = await readWorkflowFromIframe(iframe, useGenerationStore.getState().inputNodeMap);
-    if (!result) return;
+    const activeWorkflow = readActiveWorkflowFromIframe(iframe);
+    if (!activeWorkflow) {
+      return;
+    }
 
-    await commitWorkflowResult(result, true);
-  }, [commitWorkflowResult]);
+    await commitWorkflowResult(
+      buildWorkflowResult(activeWorkflow.graphData, activeWorkflow.filename),
+      true,
+    );
+  }, [buildWorkflowResult, commitWorkflowResult]);
 
   const pollWorkflow = useCallback(async () => {
     if (pollingRef.current) return;
@@ -353,27 +381,45 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       const iframe = iframeRef.current;
       if (!iframe) return;
 
-      if (!isIframeBackendConnected(iframe)) {
-        recoverIframe("backend socket disconnected");
+      const activeWorkflow = readActiveWorkflowFromIframe(iframe);
+
+      if (activeWorkflow) {
+        await commitWorkflowResult(
+          buildWorkflowResult(activeWorkflow.graphData, activeWorkflow.filename),
+        );
+        consecutiveReadFailuresRef.current = 0;
+        consecutiveBackendDisconnectsRef.current = 0;
+        setEditorNeedsReconnect(false);
         return;
       }
 
-      const result = await readWorkflowFromIframe(iframe, useGenerationStore.getState().inputNodeMap);
-      if (!result) {
-        consecutiveReadFailuresRef.current += 1;
+      consecutiveReadFailuresRef.current += 1;
+      const backendConnected = isIframeBackendConnected(iframe);
+
+      if (!backendConnected) {
+        if (Date.now() < visibilityResumeGraceUntilRef.current) {
+          return;
+        }
+
+        consecutiveBackendDisconnectsRef.current += 1;
+        setEditorNeedsReconnect(true);
         if (
-          consecutiveReadFailuresRef.current >= MAX_CONSECUTIVE_READ_FAILURES
+          consecutiveBackendDisconnectsRef.current >=
+          MAX_CONSECUTIVE_BACKEND_DISCONNECTS
         ) {
-          recoverIframe("repeated workflow read failures");
+          recoverIframe("backend socket disconnected");
         }
         return;
       }
-      await commitWorkflowResult(result);
-      consecutiveReadFailuresRef.current = 0;
+
+      consecutiveBackendDisconnectsRef.current = 0;
+      if (consecutiveReadFailuresRef.current >= MAX_CONSECUTIVE_READ_FAILURES) {
+        recoverIframe("repeated active workflow read failures");
+      }
     } finally {
       pollingRef.current = false;
     }
-  }, [commitWorkflowResult, recoverIframe]);
+  }, [buildWorkflowResult, commitWorkflowResult, recoverIframe]);
 
   // On close, always do one last read to capture unsynced edits.
   useEffect(() => {
@@ -404,18 +450,31 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     return () => clearInterval(timer);
   }, [open, appReady, initializeIframe, pollWorkflow]);
 
-  // When the user returns to the tab, do a quick health check. If the iframe
-  // has gone stale (e.g. browser suspended it), flip to init-retry mode.
-  // If healthy, trigger an immediate poll to sync any changes.
+  useEffect(() => {
+    if (!open || !appReady) {
+      return;
+    }
+
+    lastWorkflowSignatureRef.current = null;
+    void pollWorkflow();
+  }, [open, appReady, inputNodeMap, rawObjectInfo, pollWorkflow]);
+
+  // When the user returns to the tab, do a quick health check. We give the
+  // iframe a short grace period because browsers can briefly suspend sockets
+  // while the page is backgrounded, and an immediate forced reload would wipe
+  // unsaved ComfyUI edits.
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible" || !open) return;
+      visibilityResumeGraceUntilRef.current =
+        Date.now() + VISIBILITY_RESUME_GRACE_MS;
 
       const iframe = iframeRef.current;
       if (!iframe) return;
 
-      if (!isIframeAppReady(iframe) || !isIframeBackendConnected(iframe)) {
-        recoverIframe("tab became visible with unhealthy iframe");
+      if (!isIframeAppReady(iframe)) {
+        setAppReady(false);
+        void initializeIframe();
         return;
       }
 
@@ -434,13 +493,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [
-    open,
-    appReady,
-    initializeIframe,
-    pollWorkflow,
-    recoverIframe,
-  ]);
+  }, [open, appReady, initializeIframe, pollWorkflow]);
 
   if (!iframeUrl) {
     if (!open) return null;

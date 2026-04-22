@@ -21,6 +21,7 @@ export interface PromptSubmission {
 
 export interface PromptResponse {
   prompt_id: string;
+  delivery_id?: string;
   number: number;
   node_errors: Record<string, unknown>;
   workflow_warnings?: WorkflowRuleWarning[];
@@ -237,8 +238,28 @@ export async function generate(
   request: GenerationRequest,
   options: { signal?: AbortSignal } = {},
 ): Promise<PromptResponse> {
+  if (!request.projectId || !request.deliveryContext) {
+    throw new Error("Generation request is missing backend delivery context");
+  }
+
+  const serializedDeliveryContext = {
+    plan_id: request.deliveryContext.planId,
+    workflow_name: request.deliveryContext.workflowName,
+    workflow_source_id: request.deliveryContext.workflowSourceId,
+    generation_metadata: request.deliveryContext.generationMetadata,
+    postprocess_config: request.deliveryContext.postprocessConfig,
+    auto_family_request_key: request.deliveryContext.autoFamilyRequestKey,
+    uses_save_image_websocket_outputs:
+      request.deliveryContext.usesSaveImageWebsocketOutputs,
+    replay_inputs: request.deliveryContext.replayInputs ?? null,
+  };
   const formData = new FormData();
   formData.append("client_id", request.clientId);
+  formData.append("project_id", request.projectId);
+  formData.append(
+    "delivery_context",
+    JSON.stringify(serializedDeliveryContext),
+  );
 
   if (request.workflowId) {
     formData.append("workflow_id", request.workflowId);
@@ -332,10 +353,33 @@ export async function fetchOutputAsFile(
   filename: string,
   subfolder = "",
   type = "output",
+  viewUrl?: string,
 ): Promise<File> {
-  const url = getOutputViewUrl(filename, subfolder, type);
+  const url = viewUrl ?? getOutputViewUrl(filename, subfolder, type);
+  console.debug("[Generation] Fetching output file", {
+    filename,
+    subfolder,
+    type,
+    viewUrl: viewUrl ?? null,
+    resolvedUrl: url,
+  });
   const resp = await fetch(url);
   if (!resp.ok) {
+    let responseBody: string | null = null;
+    try {
+      responseBody = (await resp.clone().text()).slice(0, 500);
+    } catch {
+      responseBody = null;
+    }
+    console.warn("[Generation] Output fetch failed", {
+      filename,
+      subfolder,
+      type,
+      viewUrl: viewUrl ?? null,
+      resolvedUrl: url,
+      status: resp.status,
+      responseBody,
+    });
     await throwRequestError("Output fetch", resp);
   }
   const blob = await resp.blob();
@@ -353,6 +397,7 @@ export async function getObjectInfo(): Promise<Record<string, unknown>> {
 export interface SyncObjectInfoResult {
   synced: boolean;
   node_classes: number;
+  object_info?: Record<string, unknown>;
   input_node_map?: Record<
     string,
     Array<{

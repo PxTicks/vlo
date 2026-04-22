@@ -43,6 +43,19 @@ function makeConditioningInputs(): WorkflowInput[] {
   ];
 }
 
+function makeReadyEditorRef(): HTMLIFrameElement {
+  return {
+    contentWindow: {
+      app: {
+        handleFile: vi.fn(),
+        extensionManager: {
+          workflow: {},
+        },
+      },
+    },
+  } as unknown as HTMLIFrameElement;
+}
+
 function resetGenerationStore() {
   useGenerationStore.setState({
     availableWorkflows: [],
@@ -102,6 +115,40 @@ describe("useGenerationStore workflow editor sync", () => {
       { id: "wf.json", name: "Workflow" },
     ]);
     expect(state.syncedGraphData).toEqual({ nodes: [{ id: 1 }] });
+  });
+
+  it("preserves workflow group metadata when syncing editor changes", async () => {
+    useGenerationStore.setState({
+      selectedWorkflowId: "wf.json",
+      availableWorkflows: [
+        {
+          id: "wf.json",
+          name: "Workflow",
+          groupId: "core",
+          groupName: "Core",
+          groupOrder: 1,
+        },
+      ],
+      activeRulesWarnings: [],
+      activeWorkflowRules: null,
+    });
+
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      { "1": { class_type: "LoadImage", inputs: { image: "input.png" } } },
+      { nodes: [{ id: 1 }] },
+      makeInputs(),
+      null,
+    );
+
+    expect(useGenerationStore.getState().availableWorkflows).toEqual([
+      {
+        id: "wf.json",
+        name: "Workflow",
+        groupId: "core",
+        groupName: "Core",
+        groupOrder: 1,
+      },
+    ]);
   });
 
   it("prefers the selected workflow id when ComfyUI exposes a temporary filename", async () => {
@@ -940,7 +987,7 @@ describe("useGenerationStore workflow editor sync", () => {
     });
   });
 
-  it("does not leave the previous workflow marked ready when a new sync fails", async () => {
+  it("keeps the backend-derived workflow ready when iframe sync fails", async () => {
     vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
       source: "backend",
     });
@@ -961,15 +1008,17 @@ describe("useGenerationStore workflow editor sync", () => {
       syncedWorkflow: { old: true },
       syncedGraphData: { old: true },
       workflowInputs: makeInputs(),
-      editorRef: {} as HTMLIFrameElement,
+      editorRef: makeReadyEditorRef(),
     });
 
     await useGenerationStore.getState().loadWorkflow("wf.json");
 
     const state = useGenerationStore.getState();
-    expect(state.syncedWorkflow).toBeNull();
-    expect(state.isWorkflowReady).toBe(false);
-    expect(state.workflowLoadState).toBe("error");
+    expect(workflowSyncController.injectWorkflowAndRead).toHaveBeenCalled();
+    expect(state.syncedWorkflow).toEqual({});
+    expect(state.syncedGraphData).toEqual({ source: "backend" });
+    expect(state.isWorkflowReady).toBe(true);
+    expect(state.workflowLoadState).toBe("ready");
   });
 
   it("refreshes the selector from backend workflows only", async () => {

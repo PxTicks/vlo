@@ -214,3 +214,17 @@ export async function inspectAssetFamilyCompatibility(
 
   return null;
 }
+
+export async function waitForAssetPersistence(assetId: string): Promise<void> {
+  await (await import("./services/AssetService")).assetService.waitForAssetPersistence(
+    assetId,
+  );
+}
+
+export async function waitForAssetsPersistence(
+  assetIds: readonly string[],
+): Promise<void> {
+  await (await import("./services/AssetService")).assetService.waitForAssetsPersistence(
+    assetIds,
+  );
+}

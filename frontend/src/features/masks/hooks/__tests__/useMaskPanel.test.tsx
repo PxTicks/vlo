@@ -40,7 +40,7 @@ function createParentClip(id: string): TimelineClip {
     transformedOffset: 0,
     croppedSourceDuration: duration,
     transformations: [],
-    components: [],
+    clipComponents: [],
   };
 }
 
@@ -52,12 +52,11 @@ function createSam2MaskClip(
   const id = `${parent.id}::mask::${localId}`;
 
   if (parent.type !== "mask") {
-    parent.components = [
-      ...(parent.components ?? []),
+    parent.clipComponents = [
+      ...(parent.clipComponents ?? []),
       {
-        id: `mask_ref_${localId}`,
-        type: "mask_ref",
-        parameters: { maskClipId: id },
+        clipId: id,
+        componentType: "mask",
       },
     ];
   }

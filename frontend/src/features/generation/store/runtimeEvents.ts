@@ -175,7 +175,7 @@ export function attachRuntimeClientHandlers(
     // Reconnects do not replay missed websocket events, so reconcile any
     // locally-known in-flight prompts against ComfyUI history/queue state.
     const incompleteJobs = Array.from(get().jobs.values()).filter((job) =>
-      isActiveGenerationJob(job),
+      isActiveGenerationJob(job) && !job.deliveryId,
     );
     if (incompleteJobs.length === 0) {
       return;
@@ -263,7 +263,9 @@ export function attachRuntimeClientHandlers(
             runtimeStatusError: null,
           }));
           void get().fetchWorkflows();
-          get().requestEditorReconnect();
+          if (get().editorNeedsReconnect) {
+            get().requestEditorReconnect();
+          }
         }
         resumeQueuedDispatch();
         break;

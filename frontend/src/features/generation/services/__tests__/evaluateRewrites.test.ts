@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultWorkflowRules } from "../workflowRules";
 import {
+  evaluateEffectSwitchesForState,
   evaluateRewrites,
   evaluateWidgetDefaultOverrides,
 } from "../evaluateRewrites";
 import {
   buildFrontendStateControlKey,
+  buildFrontendStateDerivedWidgetKey,
   createFrontendRuleState,
   evaluateFrontendStateCondition,
 } from "../frontendRuleState";
@@ -85,8 +87,12 @@ describe("evaluateWidgetDefaultOverrides", () => {
               default_overrides: [
                 {
                   when: {
-                    kind: "frontend_control_boolean",
-                    control_id: "prompt_enhancer_enabled",
+                    kind: "compare",
+                    ref: {
+                      kind: "frontend_control",
+                      control_id: "prompt_enhancer_enabled",
+                    },
+                    operator: "eq",
                     value: true,
                   },
                   value: "on",
@@ -116,8 +122,12 @@ describe("evaluateRewrites", () => {
       rewrites: [
         {
           when: {
-            kind: "frontend_control_boolean",
-            control_id: "prompt_enhancer_enabled",
+            kind: "compare",
+            ref: {
+              kind: "frontend_control",
+              control_id: "prompt_enhancer_enabled",
+            },
+            operator: "eq",
             value: false,
           },
           bypass: ["347", "348", "349", "350"],
@@ -140,8 +150,12 @@ describe("evaluateRewrites", () => {
       rewrites: [
         {
           when: {
-            kind: "frontend_control_boolean",
-            control_id: "prompt_enhancer_enabled",
+            kind: "compare",
+            ref: {
+              kind: "frontend_control",
+              control_id: "prompt_enhancer_enabled",
+            },
+            operator: "eq",
             value: false,
           },
           set_widgets: [
@@ -168,6 +182,164 @@ describe("evaluateRewrites", () => {
   });
 });
 
+describe("evaluateEffectSwitchesForState", () => {
+  it("uses the first matching case for each switch", () => {
+    const rules = createDefaultWorkflowRules({
+      effect_switches: [
+        {
+          id: "prompt_enhancer",
+          cases: [
+            {
+              when: {
+                kind: "compare",
+                ref: {
+                  kind: "frontend_control",
+                  control_id: "prompt_enhancer_enabled",
+                },
+                operator: "eq",
+                value: false,
+              },
+              bypass: ["347"],
+              set_widgets: [
+                { node_id: "594", widget: "value", value: false },
+              ],
+            },
+            {
+              when: { kind: "always" },
+              bypass: ["348"],
+              set_widgets: [
+                { node_id: "594", widget: "value", value: true },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(
+      evaluateEffectSwitchesForState(
+        rules.effect_switches ?? [],
+        new Set(),
+        { [buildFrontendStateControlKey("prompt_enhancer_enabled")]: false },
+      ),
+    ).toEqual({
+      bypass: ["347"],
+      widgetOverrides: [
+        { node_id: "594", widget: "value", value: false },
+      ],
+    });
+  });
+
+  it("falls through to an always catch-all when no earlier case matches", () => {
+    const rules = createDefaultWorkflowRules({
+      effect_switches: [
+        {
+          cases: [
+            {
+              when: {
+                kind: "compare",
+                ref: {
+                  kind: "frontend_control",
+                  control_id: "prompt_enhancer_enabled",
+                },
+                operator: "eq",
+                value: false,
+              },
+              bypass: ["347"],
+            },
+            {
+              when: { kind: "always" },
+              set_widgets: [
+                { node_id: "594", widget: "value", value: true },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(
+      evaluateEffectSwitchesForState(
+        rules.effect_switches ?? [],
+        new Set(),
+        { [buildFrontendStateControlKey("prompt_enhancer_enabled")]: true },
+      ),
+    ).toEqual({
+      bypass: [],
+      widgetOverrides: [
+        { node_id: "594", widget: "value", value: true },
+      ],
+    });
+  });
+
+  it("compares derived widget values with equality and numeric operators", () => {
+    const rules = createDefaultWorkflowRules({
+      effect_switches: [
+        {
+          id: "denoise_is_one",
+          cases: [
+            {
+              when: {
+                kind: "compare",
+                ref: {
+                  kind: "derived_widget",
+                  derived_widget_id: "single_sampler_denoise",
+                },
+                operator: "eq",
+                value: 1,
+              },
+              bypass: ["113", "114"],
+            },
+          ],
+        },
+        {
+          id: "denoise_partial",
+          cases: [
+            {
+              when: {
+                kind: "compare",
+                ref: {
+                  kind: "derived_widget",
+                  derived_widget_id: "single_sampler_denoise",
+                },
+                operator: "lt",
+                value: 1,
+              },
+              set_widgets: [
+                { node_id: "114", widget: "value", value: true },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(
+      evaluateEffectSwitchesForState(
+        rules.effect_switches ?? [],
+        new Set(),
+        { [buildFrontendStateDerivedWidgetKey("single_sampler_denoise")]: "0.5" },
+      ),
+    ).toEqual({
+      bypass: [],
+      widgetOverrides: [
+        { node_id: "114", widget: "value", value: true },
+      ],
+    });
+
+    expect(
+      evaluateEffectSwitchesForState(
+        rules.effect_switches ?? [],
+        new Set(),
+        { [buildFrontendStateDerivedWidgetKey("single_sampler_denoise")]: 1 },
+      ),
+    ).toEqual({
+      bypass: ["113", "114"],
+      widgetOverrides: [],
+    });
+  });
+});
+
 describe("evaluateFrontendStateCondition", () => {
   it("treats string-backed frontend control state as booleans", () => {
     const state = createFrontendRuleState(new Set(), {
@@ -177,12 +349,41 @@ describe("evaluateFrontendStateCondition", () => {
     expect(
       evaluateFrontendStateCondition(
         {
-          kind: "frontend_control_boolean",
-          control_id: "prompt_enhancer_enabled",
+          kind: "compare",
+          ref: {
+            kind: "frontend_control",
+            control_id: "prompt_enhancer_enabled",
+          },
+          operator: "eq",
           value: true,
         },
         state,
       ),
     ).toBe(true);
+  });
+
+  it("keeps input_presence behavior unchanged", () => {
+    const state = createFrontendRuleState(new Set(["167"]), {});
+
+    expect(
+      evaluateFrontendStateCondition(
+        {
+          kind: "input_presence",
+          inputs: ["167"],
+          match: "all_present",
+        },
+        state,
+      ),
+    ).toBe(true);
+    expect(
+      evaluateFrontendStateCondition(
+        {
+          kind: "input_presence",
+          inputs: ["167"],
+          match: "all_missing",
+        },
+        state,
+      ),
+    ).toBe(false);
   });
 });

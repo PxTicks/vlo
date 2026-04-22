@@ -4,31 +4,7 @@ import type {
   StandardTimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import {
-  resolveMaskCompositionAlgebra,
-  type MaskCompositionComponent,
-} from "../../../types/Components";
 import { useTimelineStore } from "../useTimelineStore";
-
-function getCompositeTransforms(
-  clip: StandardTimelineClip | undefined,
-) {
-  const composition = (clip?.components ?? []).find(
-    (component): component is MaskCompositionComponent =>
-      component.type === "mask_composition",
-  );
-  return composition?.parameters.compositeTransformations ?? [];
-}
-
-function getCompositeAlgebra(
-  clip: StandardTimelineClip | undefined,
-) {
-  const composition = (clip?.components ?? []).find(
-    (component): component is MaskCompositionComponent =>
-      component.type === "mask_composition",
-  );
-  return resolveMaskCompositionAlgebra(composition?.parameters);
-}
 
 const createTrack = (id: string): TimelineTrack => ({
   id,
@@ -54,11 +30,10 @@ function createParentClip(maskClipId: string): StandardTimelineClip {
     transformedOffset: 0,
     croppedSourceDuration: 120,
     transformations: [],
-    components: [
+    clipComponents: [
       {
-        id: "mask_ref_1",
-        type: "mask_ref",
-        parameters: { maskClipId },
+        clipId: maskClipId,
+        componentType: "mask",
       },
     ],
   };
@@ -133,12 +108,11 @@ describe("useTimelineStore shared mask composite transforms", () => {
         clip.id === legacyMask.id && clip.type === "mask",
     );
 
-    expect(getCompositeTransforms(parentClip)).toEqual([
+    expect(parentClip?.maskCompositeTransformations).toEqual([
       expect.objectContaining({
         type: "mask_grow",
         parameters: {
           amount: 18,
-          invert: false,
         },
       }),
       expect.objectContaining({
@@ -146,11 +120,9 @@ describe("useTimelineStore shared mask composite transforms", () => {
         parameters: {
           mode: "hard_outer",
           amount: 24,
-          invert: false,
         },
       }),
     ]);
-    expect(getCompositeAlgebra(parentClip)).toBe("normal");
     expect(
       maskClip?.transformations.some(
         (transform) =>
@@ -159,45 +131,7 @@ describe("useTimelineStore shared mask composite transforms", () => {
     ).toBe(false);
   });
 
-  it("syncs shared edge inversion from the composition algebra", () => {
-    const legacyMask = createLegacyMaskClip();
-
-    useTimelineStore.getState().replaceTimelineSnapshot({
-      tracks: [createTrack("track_1")],
-      clips: [createParentClip(legacyMask.id), legacyMask],
-    });
-
-    useTimelineStore
-      .getState()
-      .setClipMaskCompositionAlgebra("clip_1", "inverse");
-
-    const parentClip = useTimelineStore.getState().clips.find(
-      (clip): clip is StandardTimelineClip =>
-        clip.id === "clip_1" && clip.type !== "mask",
-    );
-
-    expect(getCompositeTransforms(parentClip)).toEqual([
-      expect.objectContaining({
-        type: "mask_grow",
-        parameters: expect.objectContaining({
-          amount: 18,
-          invert: true,
-        }),
-      }),
-      expect.objectContaining({
-        type: "feather",
-        parameters: expect.objectContaining({
-          mode: "hard_outer",
-          amount: 24,
-          invert: true,
-        }),
-      }),
-    ]);
-
-    expect(getCompositeAlgebra(parentClip)).toBe("inverse");
-  });
-
-  it("does not drive shared edge inversion from a mask inversion change", () => {
+  it("auto-syncs shared edge inversion when a mask inversion changes", () => {
     const legacyMask = createLegacyMaskClip();
 
     useTimelineStore.getState().replaceTimelineSnapshot({
@@ -209,12 +143,39 @@ describe("useTimelineStore shared mask composite transforms", () => {
       .getState()
       .updateClipMask("clip_1", "mask_1", { maskInverted: true });
 
-    const parentClip = useTimelineStore.getState().clips.find(
+    let parentClip = useTimelineStore.getState().clips.find(
       (clip): clip is StandardTimelineClip =>
         clip.id === "clip_1" && clip.type !== "mask",
     );
 
-    expect(getCompositeTransforms(parentClip)).toEqual([
+    expect(parentClip?.maskCompositeTransformations).toEqual([
+      expect.objectContaining({
+        type: "mask_grow",
+        parameters: expect.objectContaining({
+          amount: 18,
+          invert: true,
+        }),
+      }),
+      expect.objectContaining({
+        type: "feather",
+        parameters: expect.objectContaining({
+          mode: "hard_outer",
+          amount: 24,
+          invert: true,
+        }),
+      }),
+    ]);
+
+    useTimelineStore
+      .getState()
+      .updateClipMask("clip_1", "mask_1", { maskInverted: false });
+
+    parentClip = useTimelineStore.getState().clips.find(
+      (clip): clip is StandardTimelineClip =>
+        clip.id === "clip_1" && clip.type !== "mask",
+    );
+
+    expect(parentClip?.maskCompositeTransformations).toEqual([
       expect.objectContaining({
         type: "mask_grow",
         parameters: expect.objectContaining({
@@ -231,27 +192,5 @@ describe("useTimelineStore shared mask composite transforms", () => {
         }),
       }),
     ]);
-  });
-
-  it("preserves an explicit default algebra on legacy auto-union masks", () => {
-    const legacyMask = createLegacyMaskClip();
-    legacyMask.transformations = [];
-
-    useTimelineStore.getState().replaceTimelineSnapshot({
-      tracks: [createTrack("track_1")],
-      clips: [createParentClip(legacyMask.id), legacyMask],
-    });
-
-    useTimelineStore
-      .getState()
-      .setClipMaskCompositionAlgebra("clip_1", "inverse");
-
-    const parentClip = useTimelineStore.getState().clips.find(
-      (clip): clip is StandardTimelineClip =>
-        clip.id === "clip_1" && clip.type !== "mask",
-    );
-
-    expect(getCompositeAlgebra(parentClip)).toBe("inverse");
-    expect(getCompositeTransforms(parentClip)).toEqual([]);
   });
 });

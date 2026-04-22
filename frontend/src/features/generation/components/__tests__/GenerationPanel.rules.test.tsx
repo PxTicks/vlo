@@ -503,6 +503,38 @@ describe("GenerationPanel workflow rule hints", () => {
     expect(screen.getByAltText("raw-output.png")).toBeInTheDocument();
   });
 
+  it("prefers imported asset preview over raw outputs when both exist", () => {
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        displayJob: makeCompletedJob({
+          postprocessConfig: {
+            mode: "auto",
+            panel_preview: "raw_outputs",
+            on_failure: "fallback_raw",
+          },
+        }),
+        importedAssets: [
+          {
+            id: "asset-1",
+            name: "imported-output.png",
+            type: "image",
+            src: "blob:imported-output",
+            file: null,
+            size: 123,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+        ],
+      }),
+    );
+
+    render(<GenerationPanel />);
+    expect(screen.getByText("Imported asset preview")).toBeInTheDocument();
+    expect(screen.getByAltText("imported-output.png")).toBeInTheDocument();
+    expect(screen.queryByText("Generated outputs")).not.toBeInTheDocument();
+    expect(screen.queryByAltText("raw-output.png")).not.toBeInTheDocument();
+  });
+
   it("shows a non-blocking stitch warning while preserving raw outputs", () => {
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
       makeHookState({

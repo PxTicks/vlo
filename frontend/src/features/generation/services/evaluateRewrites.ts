@@ -1,9 +1,11 @@
 import type {
+  EffectSwitch,
   WorkflowRewriteRule,
   WorkflowRules,
 } from "./workflowRules/types";
 import {
   createFrontendRuleState,
+  evaluateEffectSwitches,
   evaluateRewriteEffects,
   evaluateWidgetDefaultOverridesFromState,
   type FrontendRuleState,
@@ -26,6 +28,17 @@ export function evaluateRewrites(
 ): EvaluateRewritesResult {
   return evaluateRewriteEffects(
     rewrites,
+    createFrontendRuleState(providedInputIds, widgetValues),
+  );
+}
+
+export function evaluateEffectSwitchesForState(
+  switches: ReadonlyArray<EffectSwitch>,
+  providedInputIds: ReadonlySet<string>,
+  widgetValues: Readonly<Record<string, unknown>> = {},
+): EvaluateRewritesResult {
+  return evaluateEffectSwitches(
+    switches,
     createFrontendRuleState(providedInputIds, widgetValues),
   );
 }

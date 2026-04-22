@@ -1,5 +1,7 @@
 import type {
-  WorkflowFrontendStateCondition,
+  ConditionExpression,
+  EffectSwitch,
+  StateReference,
   WorkflowRewriteRule,
   WorkflowRules,
 } from "./workflowRules/types";
@@ -12,7 +14,7 @@ export interface FrontendRuleState {
 export interface WidgetOverride {
   node_id: string;
   widget: string;
-  value: unknown;
+  value?: unknown;
 }
 
 export interface EvaluateFrontendRuleEffectsResult {
@@ -29,6 +31,12 @@ export function buildFrontendStateWidgetKey(
 
 export function buildFrontendStateControlKey(controlId: string): string {
   return `frontend_control_${controlId}`;
+}
+
+export function buildFrontendStateDerivedWidgetKey(
+  derivedWidgetId: string,
+): string {
+  return `derived_widget_${derivedWidgetId}`;
 }
 
 export function buildFrontendStateValueKey(options: {
@@ -52,8 +60,135 @@ export function createFrontendRuleState(
   };
 }
 
-function evaluateInputPresenceCondition(
-  condition: Extract<WorkflowFrontendStateCondition, { kind?: "input_presence" }>,
+function coerceNumeric(value: unknown): number | null {
+  if (typeof value === "boolean") {
+    return null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function coerceBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return null;
+}
+
+export function resolveStateReference(
+  ref: StateReference | null | undefined,
+  state: FrontendRuleState,
+): unknown {
+  if (!ref || typeof ref !== "object") {
+    return undefined;
+  }
+
+  const kind = (ref as { kind?: string }).kind;
+  if (kind === "workflow_param") {
+    const { node_id: nodeId, param } = ref as {
+      node_id: string;
+      param: string;
+    };
+    if (typeof nodeId !== "string" || typeof param !== "string") {
+      return undefined;
+    }
+    const key = buildFrontendStateWidgetKey(nodeId, param);
+    return Object.prototype.hasOwnProperty.call(state.widgetValues, key)
+      ? state.widgetValues[key]
+      : undefined;
+  }
+
+  if (kind === "frontend_control") {
+    const { control_id: controlId } = ref as { control_id: string };
+    if (typeof controlId !== "string") {
+      return undefined;
+    }
+    const key = buildFrontendStateControlKey(controlId);
+    return Object.prototype.hasOwnProperty.call(state.widgetValues, key)
+      ? state.widgetValues[key]
+      : undefined;
+  }
+
+  if (kind === "derived_widget") {
+    const { derived_widget_id: derivedId } = ref as {
+      derived_widget_id: string;
+    };
+    if (typeof derivedId !== "string") {
+      return undefined;
+    }
+    const key = buildFrontendStateDerivedWidgetKey(derivedId);
+    return Object.prototype.hasOwnProperty.call(state.widgetValues, key)
+      ? state.widgetValues[key]
+      : undefined;
+  }
+
+  // pipeline_control values are not known on the frontend — conditions
+  // authored against them simply never match here.
+  return undefined;
+}
+
+function compareValues(
+  current: unknown,
+  operator: string,
+  expected: unknown,
+): boolean {
+  if (
+    operator === "lt" ||
+    operator === "lte" ||
+    operator === "gt" ||
+    operator === "gte"
+  ) {
+    const currentNumber = coerceNumeric(current);
+    const expectedNumber = coerceNumeric(expected);
+    if (currentNumber === null || expectedNumber === null) {
+      return false;
+    }
+    if (operator === "lt") return currentNumber < expectedNumber;
+    if (operator === "lte") return currentNumber <= expectedNumber;
+    if (operator === "gt") return currentNumber > expectedNumber;
+    return currentNumber >= expectedNumber;
+  }
+
+  let matches: boolean;
+  const currentBoolean = coerceBoolean(current);
+  const expectedBoolean = coerceBoolean(expected);
+  if (currentBoolean !== null && expectedBoolean !== null) {
+    matches = currentBoolean === expectedBoolean;
+  } else {
+    const currentNumber = coerceNumeric(current);
+    const expectedNumber = coerceNumeric(expected);
+    if (currentNumber !== null && expectedNumber !== null) {
+      matches = Math.abs(currentNumber - expectedNumber) <= 1e-9;
+    } else if (typeof current === "string" && typeof expected === "string") {
+      matches = current.trim().toLowerCase() === expected.trim().toLowerCase();
+    } else {
+      matches = current === expected;
+    }
+  }
+
+  if (operator === "neq") {
+    return !matches;
+  }
+  return matches;
+}
+
+function evaluateInputPresence(
+  condition: { inputs?: string[]; match?: string | null },
   state: FrontendRuleState,
 ): boolean {
   const inputs = (condition.inputs ?? [])
@@ -77,74 +212,57 @@ function evaluateInputPresenceCondition(
   }
 }
 
-function coerceBooleanFrontendWidgetValue(value: unknown): boolean | null {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  if (value === "true") {
-    return true;
-  }
-  if (value === "false") {
-    return false;
-  }
-  return null;
-}
-
-function evaluateBooleanWidgetCondition(
-  condition: Extract<WorkflowFrontendStateCondition, { kind?: "widget_boolean" }>,
+export function evaluateCondition(
+  condition: ConditionExpression | null | undefined,
   state: FrontendRuleState,
 ): boolean {
-  const key = buildFrontendStateWidgetKey(condition.node_id, condition.widget);
-  if (!Object.prototype.hasOwnProperty.call(state.widgetValues, key)) {
+  if (!condition || typeof condition !== "object") {
     return false;
   }
 
-  const actual = coerceBooleanFrontendWidgetValue(state.widgetValues[key]);
-  if (actual === null) {
-    return false;
+  const kind = (condition as { kind?: string }).kind;
+  if (kind === "always") {
+    const value = (condition as { value?: unknown }).value;
+    return value === undefined ? true : Boolean(value);
   }
-
-  return actual === (condition.value ?? true);
+  if (kind === "input_presence") {
+    return evaluateInputPresence(
+      condition as { inputs?: string[]; match?: string | null },
+      state,
+    );
+  }
+  if (kind === "compare") {
+    const compare = condition as {
+      ref?: StateReference;
+      operator?: string;
+      value?: unknown;
+    };
+    const current = resolveStateReference(compare.ref, state);
+    return compareValues(current, compare.operator ?? "eq", compare.value);
+  }
+  if (kind === "all_of") {
+    const conditions =
+      (condition as { conditions?: ConditionExpression[] }).conditions ?? [];
+    return conditions.every((inner) => evaluateCondition(inner, state));
+  }
+  if (kind === "any_of") {
+    const conditions =
+      (condition as { conditions?: ConditionExpression[] }).conditions ?? [];
+    return conditions.some((inner) => evaluateCondition(inner, state));
+  }
+  if (kind === "not") {
+    const inner = (condition as { condition?: ConditionExpression }).condition;
+    return !evaluateCondition(inner, state);
+  }
+  return false;
 }
 
-function evaluateBooleanFrontendControlCondition(
-  condition: Extract<
-    WorkflowFrontendStateCondition,
-    { kind?: "frontend_control_boolean" }
-  >,
-  state: FrontendRuleState,
-): boolean {
-  const key = buildFrontendStateControlKey(condition.control_id);
-  if (!Object.prototype.hasOwnProperty.call(state.widgetValues, key)) {
-    return false;
-  }
-
-  const actual = coerceBooleanFrontendWidgetValue(state.widgetValues[key]);
-  if (actual === null) {
-    return false;
-  }
-
-  return actual === (condition.value ?? true);
-}
-
+/** @deprecated use {@link evaluateCondition} */
 export function evaluateFrontendStateCondition(
-  condition: WorkflowFrontendStateCondition | null | undefined,
+  condition: ConditionExpression | null | undefined,
   state: FrontendRuleState,
 ): boolean {
-  if (!condition?.kind) {
-    return false;
-  }
-
-  switch (condition.kind) {
-    case "input_presence":
-      return evaluateInputPresenceCondition(condition, state);
-    case "widget_boolean":
-      return evaluateBooleanWidgetCondition(condition, state);
-    case "frontend_control_boolean":
-      return evaluateBooleanFrontendControlCondition(condition, state);
-    default:
-      return false;
-  }
+  return evaluateCondition(condition, state);
 }
 
 export function evaluateRewriteEffects(
@@ -155,7 +273,7 @@ export function evaluateRewriteEffects(
   const widgetOverrides: WidgetOverride[] = [];
 
   for (const rule of rewrites) {
-    if (!evaluateFrontendStateCondition(rule.when, state)) {
+    if (!evaluateCondition(rule.when, state)) {
       continue;
     }
 
@@ -173,6 +291,35 @@ export function evaluateRewriteEffects(
   return { bypass, widgetOverrides };
 }
 
+export function evaluateEffectSwitches(
+  switches: ReadonlyArray<EffectSwitch>,
+  state: FrontendRuleState,
+): EvaluateFrontendRuleEffectsResult {
+  const bypass: string[] = [];
+  const widgetOverrides: WidgetOverride[] = [];
+
+  for (const effectSwitch of switches) {
+    for (const caseEntry of effectSwitch.cases ?? []) {
+      if (!evaluateCondition(caseEntry.when, state)) {
+        continue;
+      }
+
+      for (const nodeId of caseEntry.bypass ?? []) {
+        if (!bypass.includes(nodeId)) {
+          bypass.push(nodeId);
+        }
+      }
+
+      if (caseEntry.set_widgets) {
+        widgetOverrides.push(...caseEntry.set_widgets);
+      }
+      break;
+    }
+  }
+
+  return { bypass, widgetOverrides };
+}
+
 export function evaluateWidgetDefaultOverridesFromState(
   rules: WorkflowRules | null | undefined,
   state: FrontendRuleState,
@@ -182,7 +329,7 @@ export function evaluateWidgetDefaultOverridesFromState(
   for (const [nodeId, nodeRule] of Object.entries(rules?.nodes ?? {})) {
     for (const [widget, widgetRule] of Object.entries(nodeRule.widgets ?? {})) {
       for (const override of widgetRule.default_overrides ?? []) {
-        if (!evaluateFrontendStateCondition(override.when, state)) {
+        if (!evaluateCondition(override.when, state)) {
           continue;
         }
 

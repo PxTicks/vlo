@@ -1,11 +1,14 @@
 import { API_BASE_URL } from "../../../config";
 import { getRuntimeStatus } from "../../../services/runtimeApi";
 import { ComfyUIWebSocket } from "../services/ComfyUIWebSocket";
+import { GenerationDeliveryWebSocket } from "../services/GenerationDeliveryWebSocket";
 import * as comfyApi from "../services/comfyuiApi";
 import { mergeInputNodeMap } from "../constants/inputNodeMap";
 import { IDLE_PIPELINE_STATUS } from "./constants";
 import { revokeJobPostprocessPreview, revokePreviewAnimation } from "./previewState";
+import { attachDeliveryClientHandlers } from "./deliveryEvents";
 import { attachRuntimeClientHandlers } from "./runtimeEvents";
+import { useProjectStore } from "../../project";
 import type {
   ComfyUIConnectionStatus,
   GenerationRuntimeState,
@@ -26,13 +29,27 @@ export function buildRuntimeStoreState(
   set: GenerationStoreSet,
   get: GenerationStoreGet,
 ): GenerationRuntimeState {
+  function createDeliveryClient(projectId: string): GenerationDeliveryWebSocket {
+    const deliveryClient = new GenerationDeliveryWebSocket(API_BASE_URL, projectId);
+    attachDeliveryClientHandlers(deliveryClient, set, get);
+    deliveryClient.connect();
+    set({
+      deliveryClient,
+      deliveryConnectionStatus: "connecting",
+    });
+    return deliveryClient;
+  }
+
   return {
     connectionStatus: "disconnected",
     runtimeStatus: null,
     runtimeStatusError: null,
     comfyuiDirectUrl: null,
     wsClient: null,
+    deliveryClient: null,
+    deliveryConnectionStatus: "disconnected",
     objectInfoSynced: false,
+    rawObjectInfo: null,
     inputNodeMap: null,
     editorNeedsReconnect: false,
     editorReconnectSignal: 0,
@@ -49,6 +66,7 @@ export function buildRuntimeStoreState(
     refreshRuntimeStatus: async () => {
       try {
         const runtimeStatus = await getRuntimeStatus();
+        let shouldReconnectEditor = false;
         set((state) => {
           const nextState = {
             runtimeStatus,
@@ -73,11 +91,14 @@ export function buildRuntimeStoreState(
             runtimeStatus.comfyui.status === "connected" &&
             state.connectionStatus !== "connected"
           ) {
-            get().requestEditorReconnect();
+            shouldReconnectEditor = state.editorNeedsReconnect;
           }
 
           return nextState;
         });
+        if (shouldReconnectEditor) {
+          get().requestEditorReconnect();
+        }
         return runtimeStatus;
       } catch (error) {
         const message =
@@ -107,7 +128,11 @@ export function buildRuntimeStoreState(
         console.info("[Generation] Syncing object_info from ComfyUI...");
         const result = await comfyApi.syncObjectInfo();
         const inputNodeMap = mergeInputNodeMap(result.input_node_map);
-        set({ objectInfoSynced: true, inputNodeMap });
+        set({
+          objectInfoSynced: true,
+          rawObjectInfo: result.object_info ?? null,
+          inputNodeMap,
+        });
       } catch (err) {
         console.error("[Generation] Failed to sync object_info:", err);
       }
@@ -115,11 +140,31 @@ export function buildRuntimeStoreState(
 
     connect: () => {
       const existing = get().wsClient;
+      const existingDelivery = get().deliveryClient;
+      const projectId = useProjectStore.getState().project?.id ?? null;
       if (existing) {
         void get().refreshRuntimeStatus();
         if (!existing.isConnected) {
           set({ connectionStatus: "connecting" });
           existing.connect();
+        }
+        if (!projectId) {
+          if (existingDelivery) {
+            existingDelivery.disconnect();
+            set({
+              deliveryClient: null,
+              deliveryConnectionStatus: "disconnected",
+            });
+          }
+          return;
+        }
+        if (!existingDelivery) {
+          createDeliveryClient(projectId);
+          return;
+        }
+        if (!existingDelivery.isConnected) {
+          set({ deliveryConnectionStatus: "connecting" });
+          existingDelivery.connect();
         }
         return;
       }
@@ -131,13 +176,23 @@ export function buildRuntimeStoreState(
       attachRuntimeClientHandlers(client, set, get);
 
       client.connect();
-      set({ wsClient: client });
+      if (!projectId) {
+        set({ wsClient: client });
+        void get().fetchWorkflows();
+        return;
+      }
+
+      set({
+        wsClient: client,
+      });
+      createDeliveryClient(projectId);
       void get().fetchWorkflows();
     },
 
     disconnect: () => {
       const {
         wsClient,
+        deliveryClient,
         latestPreviewUrl,
         previewAnimation,
         jobs,
@@ -146,6 +201,7 @@ export function buildRuntimeStoreState(
       } = get();
       preprocessAbortController?.abort();
       wsClient?.disconnect();
+      deliveryClient?.disconnect();
       if (latestPreviewUrl) URL.revokeObjectURL(latestPreviewUrl);
       revokePreviewAnimation(previewAnimation);
       for (const job of jobs.values()) {
@@ -153,7 +209,9 @@ export function buildRuntimeStoreState(
       }
       set({
         wsClient: null,
+        deliveryClient: null,
         connectionStatus: "disconnected",
+        deliveryConnectionStatus: "disconnected",
         runtimeStatus: null,
         runtimeStatusError: null,
         latestPreviewUrl: null,
@@ -164,6 +222,7 @@ export function buildRuntimeStoreState(
         preprocessAbortController: null,
         pipelineRunToken: pipelineRunToken + 1,
         objectInfoSynced: false,
+        rawObjectInfo: null,
       });
     },
 

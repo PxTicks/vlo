@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MaskPanel } from "../MaskPanel";
 import { useMaskPanel } from "../hooks/useMaskPanel";
-import type { ClipTransform, MaskTimelineClip } from "../../../types/TimelineTypes";
+import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 
 vi.mock("../hooks/useMaskPanel");
 const mockSetSharedMaskTransforms = vi.fn();
@@ -77,7 +77,7 @@ function createMaskClip(
   parentClipId: string,
   localId: string,
   type: "circle" | "rectangle" | "triangle" | "sam2",
-): MaskTimelineClip {
+): TimelineClip {
   return {
     id: `${parentClipId}::mask::${localId}`,
     trackId: "track_1",
@@ -108,18 +108,13 @@ describe("MaskPanel", () => {
   const mockSelectMask = vi.fn();
   const mockSetMaskMode = vi.fn();
   const mockSetMaskBooleanExpression = vi.fn();
-  const mockSetMaskName = vi.fn();
   const mockSetMaskInverted = vi.fn();
-  const mockSetSam2GrowAmount = vi.fn();
   const mockSetSam2PointMode = vi.fn();
   const mockClearSam2Points = vi.fn();
   const mockClearSam2CurrentFramePoints = vi.fn();
   const mockGenerateSam2FramePreview = vi.fn();
   const mockGenerateSam2Mask = vi.fn();
-  const mockDuplicateMask = vi.fn();
-  const mockDeleteMask = vi.fn();
   const mockDeleteSelectedMask = vi.fn();
-  const mockSetMaskCompositionAlgebra = vi.fn();
   const mockEnsureSam2Available = vi.fn(async () => true);
   let baseHookValue: ReturnType<typeof useMaskPanel>;
 
@@ -140,11 +135,8 @@ describe("MaskPanel", () => {
       selectMask: mockSelectMask,
       setMaskMode: mockSetMaskMode,
       setMaskBooleanExpression: mockSetMaskBooleanExpression,
-      setMaskName: mockSetMaskName,
       maskInverted: false,
       setMaskInverted: mockSetMaskInverted,
-      sam2GrowAmount: 0,
-      setSam2GrowAmount: mockSetSam2GrowAmount,
       sam2PointMode: "add",
       setSam2PointMode: mockSetSam2PointMode,
       sam2Points: [],
@@ -164,16 +156,7 @@ describe("MaskPanel", () => {
       sam2GenerateError: null,
       isSam2Dirty: false,
       hasSam2MaskAsset: false,
-      duplicateMask: mockDuplicateMask,
-      deleteMask: mockDeleteMask,
       deleteSelectedMask: mockDeleteSelectedMask,
-      maskCompositionAlgebra: "inverse",
-      setMaskCompositionAlgebra: mockSetMaskCompositionAlgebra,
-      rangeMaskComponents: [],
-      startAddRangeMask: vi.fn(),
-      startEditRangeMask: vi.fn(),
-      removeRangeMask: vi.fn(),
-      toggleRangeMaskActive: vi.fn(),
     };
     vi.mocked(useMaskPanel).mockReturnValue(baseHookValue);
   });
@@ -182,6 +165,9 @@ describe("MaskPanel", () => {
     render(<MaskPanel />);
     expect(
       screen.getByRole("button", { name: "Add mask" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Add a mask to start editing."),
     ).toBeInTheDocument();
     expect(
       screen.queryByTestId("default-sections-order-mask-composite-context"),
@@ -281,24 +267,13 @@ describe("MaskPanel", () => {
     expect(screen.getByTestId("sam2-download-overlay")).toBeInTheDocument();
     expect(screen.queryByTestId("sam2-mask-panel")).not.toBeInTheDocument();
 
-    const availableChip = screen.getByTestId("mask-variable-chip-mask_sam2");
-    const equationArea = screen.getByTestId("mask-equation");
-    fireEvent.dragStart(availableChip, {
-      dataTransfer: { effectAllowed: "", setData: vi.fn() },
-    });
-    fireEvent.dragOver(equationArea, {
-      dataTransfer: { dropEffect: "" },
-    });
-    fireEvent.drop(equationArea);
+    fireEvent.click(screen.getByRole("button", { name: "Mask 1" }));
     expect(mockSetMaskBooleanExpression).toHaveBeenCalledWith({
       kind: "mask_ref",
       maskId: "mask_sam2",
     });
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Actions for Mask 1" }),
-    );
-    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Mask 1" }));
     expect(mockSelectMask).toHaveBeenCalledWith("mask_sam2");
     expect(screen.getByTestId("sam2-mask-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("sam2-download-overlay")).not.toBeInTheDocument();
@@ -342,10 +317,7 @@ describe("MaskPanel", () => {
 
     render(<MaskPanel />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Actions for Mask 1" }),
-    );
-    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Mask 1" }));
     expect(mockSelectMask).toHaveBeenCalledWith("mask_1");
 
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
@@ -356,78 +328,6 @@ describe("MaskPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete Mask" }));
     expect(mockDeleteSelectedMask).toHaveBeenCalled();
-  });
-
-  it("renames the selected mask from the detail view", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
-      ...baseHookValue,
-      masks: [
-        {
-          ...createMaskClip("clip_1", "mask_1", "triangle"),
-          name: "Foreground",
-        },
-      ],
-      selectedMaskId: "mask_1",
-      selectedMask: {
-        ...createMaskClip("clip_1", "mask_1", "triangle"),
-        name: "Foreground",
-      },
-    });
-
-    render(<MaskPanel />);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Actions for Foreground" }),
-    );
-    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
-    fireEvent.change(screen.getByLabelText("Mask Name"), {
-      target: { value: "Foreground refined" },
-    });
-
-    expect(mockSetMaskName).toHaveBeenCalledWith("Foreground refined");
-  });
-
-  it("duplicates and deletes an available mask via the chip actions menu", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
-      ...baseHookValue,
-      masks: [createMaskClip("clip_1", "mask_1", "triangle")],
-      selectedMaskId: "mask_1",
-      selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
-    });
-
-    render(<MaskPanel />);
-
-    expect(
-      screen.queryByTestId("mask-duplicate-selected-button"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("mask-delete-selected-button"),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Actions for Mask 1" }),
-    );
-    fireEvent.click(screen.getByTestId("mask-actions-menu-duplicate"));
-    expect(mockDuplicateMask).toHaveBeenCalledWith("mask_1");
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Actions for Mask 1" }),
-    );
-    fireEvent.click(screen.getByTestId("mask-actions-menu-delete"));
-    expect(mockDeleteMask).toHaveBeenCalledWith("mask_1");
-  });
-
-  it("does not expose an inline add-to-equation button on the home view", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
-      ...baseHookValue,
-      masks: [createMaskClip("clip_1", "mask_1", "triangle")],
-    });
-
-    render(<MaskPanel />);
-
-    expect(
-      screen.queryByTestId("mask-add-to-equation-button"),
-    ).not.toBeInTheDocument();
   });
 
   it("keeps shared mask edges on home and opens individual controls in detail view", () => {
@@ -447,10 +347,7 @@ describe("MaskPanel", () => {
       screen.queryByTestId("default-sections-order-mask-context"),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Actions for Mask 1" }),
-    );
-    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Mask 1" }));
 
     expect(screen.getByTestId("default-sections-order-mask-context")).toHaveTextContent(
       "layout",
@@ -460,7 +357,7 @@ describe("MaskPanel", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("sets the shared composition algebra from the inverse toggle", () => {
+  it("shares one inverse toggle across grow and feather", () => {
     mockSharedMaskTransforms = [
       {
         id: "grow_1",
@@ -495,11 +392,23 @@ describe("MaskPanel", () => {
       screen.getByRole("checkbox", { name: "Inverse Masking" }),
     );
 
-    expect(mockSetMaskCompositionAlgebra).toHaveBeenCalledWith("normal");
-    expect(mockSetSharedMaskTransforms).not.toHaveBeenCalled();
+    expect(mockSetSharedMaskTransforms).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: "mask_grow",
+        parameters: expect.objectContaining({
+          invert: true,
+        }),
+      }),
+      expect.objectContaining({
+        type: "feather",
+        parameters: expect.objectContaining({
+          invert: true,
+        }),
+      }),
+    ]);
   });
 
-  it("does not materialize edge transforms when toggling algebra with none present", () => {
+  it("materializes both shared edge transforms when toggling inverse with none present", () => {
     vi.mocked(useMaskPanel).mockReturnValue({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
@@ -513,8 +422,20 @@ describe("MaskPanel", () => {
       screen.getByRole("checkbox", { name: "Inverse Masking" }),
     );
 
-    expect(mockSetMaskCompositionAlgebra).toHaveBeenCalledWith("normal");
-    expect(mockSetSharedMaskTransforms).not.toHaveBeenCalled();
+    expect(mockSetSharedMaskTransforms).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: "mask_grow",
+        parameters: expect.objectContaining({
+          invert: true,
+        }),
+      }),
+      expect.objectContaining({
+        type: "feather",
+        parameters: expect.objectContaining({
+          invert: true,
+        }),
+      }),
+    ]);
   });
 
   it("returns from a mask detail view back to the shared home view", () => {
@@ -527,10 +448,7 @@ describe("MaskPanel", () => {
 
     render(<MaskPanel />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Actions for Mask 1" }),
-    );
-    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Mask 1" }));
     expect(screen.getByRole("button", { name: "Back To Masks" })).toBeInTheDocument();
     expect(screen.getByTestId("default-sections-order-mask-context")).toBeInTheDocument();
 
@@ -562,10 +480,7 @@ describe("MaskPanel", () => {
       screen.queryByTestId("default-sections-order-mask-context"),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Actions for Mask 1" }),
-    );
-    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Mask 1" }));
 
     const sam2Panel = screen.getByTestId("sam2-mask-panel");
     expect(sam2Panel).toBeInTheDocument();
@@ -580,32 +495,7 @@ describe("MaskPanel", () => {
     expect(screen.getByRole("button", { name: "Delete Mask" })).toBeInTheDocument();
   });
 
-  it("adds a mask to the equation by dragging its chip onto the equation area", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
-      ...baseHookValue,
-      masks: [createMaskClip("clip_1", "mask_1", "circle")],
-    });
-
-    render(<MaskPanel />);
-
-    const availableChip = screen.getByTestId("mask-variable-chip-mask_1");
-    const equationArea = screen.getByTestId("mask-equation");
-
-    fireEvent.dragStart(availableChip, {
-      dataTransfer: { effectAllowed: "", setData: vi.fn() },
-    });
-    fireEvent.dragOver(equationArea, {
-      dataTransfer: { dropEffect: "" },
-    });
-    fireEvent.drop(equationArea);
-
-    expect(mockSetMaskBooleanExpression).toHaveBeenCalledWith({
-      kind: "mask_ref",
-      maskId: "mask_1",
-    });
-  });
-
-  it("does not add a mask to the equation when simply clicking its chip", () => {
+  it("inserts masks into the boolean equation from the available mask row", () => {
     vi.mocked(useMaskPanel).mockReturnValue({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "circle")],
@@ -615,10 +505,13 @@ describe("MaskPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Mask 1" }));
 
-    expect(mockSetMaskBooleanExpression).not.toHaveBeenCalled();
+    expect(mockSetMaskBooleanExpression).toHaveBeenCalledWith({
+      kind: "mask_ref",
+      maskId: "mask_1",
+    });
   });
 
-  it("unions a dragged mask onto the end when dropped on the equation area", () => {
+  it("wraps the selected equation node with an operator when adding another mask", () => {
     vi.mocked(useMaskPanel).mockReturnValue({
       ...baseHookValue,
       masks: [
@@ -633,16 +526,7 @@ describe("MaskPanel", () => {
 
     render(<MaskPanel />);
 
-    const availableChip = screen.getByTestId("mask-variable-chip-mask_2");
-    const equationArea = screen.getByTestId("mask-equation");
-
-    fireEvent.dragStart(availableChip, {
-      dataTransfer: { effectAllowed: "", setData: vi.fn() },
-    });
-    fireEvent.dragOver(equationArea, {
-      dataTransfer: { dropEffect: "" },
-    });
-    fireEvent.drop(equationArea);
+    fireEvent.click(screen.getByRole("button", { name: "Mask 2" }));
 
     expect(mockSetMaskBooleanExpression).toHaveBeenCalledWith({
       kind: "operation",
@@ -658,7 +542,7 @@ describe("MaskPanel", () => {
     });
   });
 
-  it("unions a dragged mask onto the end when dropped on an operator chip", () => {
+  it("can nest another union into a selected subexpression", () => {
     vi.mocked(useMaskPanel).mockReturnValue({
       ...baseHookValue,
       masks: [
@@ -682,73 +566,8 @@ describe("MaskPanel", () => {
 
     render(<MaskPanel />);
 
-    const availableChip = screen.getByTestId("mask-variable-chip-mask_3");
-    const operatorChip = screen.getByRole("button", { name: "Union" });
-
-    fireEvent.dragStart(availableChip, {
-      dataTransfer: { effectAllowed: "", setData: vi.fn() },
-    });
-    fireEvent.dragOver(operatorChip, {
-      dataTransfer: { dropEffect: "" },
-    });
-    fireEvent.drop(operatorChip);
-
-    expect(mockSetMaskBooleanExpression).toHaveBeenCalledWith({
-      kind: "operation",
-      operator: "union",
-      left: {
-        kind: "operation",
-        operator: "union",
-        left: {
-          kind: "mask_ref",
-          maskId: "mask_1",
-        },
-        right: {
-          kind: "mask_ref",
-          maskId: "mask_2",
-        },
-      },
-      right: {
-        kind: "mask_ref",
-        maskId: "mask_3",
-      },
-    });
-  });
-
-  it("nests a dragged mask into a subexpression when dropped on that chip", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
-      ...baseHookValue,
-      masks: [
-        createMaskClip("clip_1", "mask_1", "circle"),
-        createMaskClip("clip_1", "mask_2", "rectangle"),
-        createMaskClip("clip_1", "mask_3", "triangle"),
-      ],
-      maskBooleanExpression: {
-        kind: "operation",
-        operator: "union",
-        left: {
-          kind: "mask_ref",
-          maskId: "mask_1",
-        },
-        right: {
-          kind: "mask_ref",
-          maskId: "mask_2",
-        },
-      },
-    });
-
-    render(<MaskPanel />);
-
-    const availableChip = screen.getByTestId("mask-variable-chip-mask_3");
-    const leftChip = screen.getByTestId("mask-equation-mask-left");
-
-    fireEvent.dragStart(availableChip, {
-      dataTransfer: { effectAllowed: "", setData: vi.fn() },
-    });
-    fireEvent.dragOver(leftChip, {
-      dataTransfer: { dropEffect: "" },
-    });
-    fireEvent.drop(leftChip);
+    fireEvent.click(screen.getByTestId("mask-equation-mask-left"));
+    fireEvent.click(screen.getByRole("button", { name: "Mask 3" }));
 
     expect(mockSetMaskBooleanExpression).toHaveBeenCalledWith({
       kind: "operation",

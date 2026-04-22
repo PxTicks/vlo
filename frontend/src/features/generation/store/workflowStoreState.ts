@@ -1,5 +1,9 @@
 import * as comfyApi from "../services/comfyuiApi";
 import {
+  buildWorkflowResultFromGraphData,
+  isIframeAppReady,
+} from "../services/workflowBridge";
+import {
   DEFAULT_GENERATION_TARGET_RESOLUTION,
   getClosestWorkflowResolution,
   getMaskCropDilationDefault,
@@ -311,9 +315,9 @@ export function buildWorkflowStoreState(
         );
         const nextAvailable = upsertWorkflowOption(
           removeWorkflowOption(availableWorkflows, TEMP_WORKFLOW_ID),
-          {
+          existingWorkflow ?? {
             id: persistedWorkflowId,
-            name: existingWorkflow?.name ?? formatWorkflowName(persistedWorkflowId),
+            name: formatWorkflowName(persistedWorkflowId),
           },
         );
 
@@ -562,15 +566,29 @@ export function buildWorkflowStoreState(
             syncedGraphData: graphData,
             workflowRuleWarnings: rulesWarnings,
           });
+          const initialWorkflowResult = buildWorkflowResultFromGraphData(
+            graphData,
+            workflowId,
+            {
+              inputNodeMap: get().inputNodeMap,
+              objectInfo: get().rawObjectInfo,
+            },
+          );
+          get().syncWorkflow(
+            initialWorkflowResult.workflow,
+            initialWorkflowResult.graphData,
+            initialWorkflowResult.inputs,
+          );
         }
 
-        if (editorRef) {
+        if (editorRef && isIframeAppReady(editorRef)) {
           const syncResult = await injectWorkflowAndRead(
             editorRef,
             graphData,
             workflowId,
             isStale,
             get().inputNodeMap,
+            get().rawObjectInfo,
           );
           if (isStale()) return;
 
@@ -592,15 +610,12 @@ export function buildWorkflowStoreState(
               syncResult.workflowResult.inputs,
             );
           } else if (!isTempWorkflow && syncResult.deferred) {
-            deferred = true;
             if (syncResult.reason === "inputs not found after injection") {
               scheduleRetry(syncResult.reason, 500);
             } else {
               scheduleRetry(syncResult.reason ?? "workflow sync deferred");
             }
           }
-        } else {
-          deferred = !isTempWorkflow;
         }
       } catch (err) {
         console.error("[Generation] Failed to load workflow:", err);

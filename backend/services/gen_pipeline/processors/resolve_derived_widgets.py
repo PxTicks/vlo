@@ -118,6 +118,41 @@ def _expand_dual_sampler_denoise(
     return overrides, denoise_steps / total_steps_int, None
 
 
+def _expand_single_sampler_denoise(
+    workflow: dict[str, Any],
+    rule: dict[str, Any],
+    raw_value: Any,
+) -> tuple[dict[str, dict[str, Any]] | None, float | None, str | None]:
+    total_steps = _read_param_ref_number(workflow, rule.get("total_steps"))
+    start_step_ref = rule.get("start_step")
+    denoise = coerce_float(raw_value)
+
+    if denoise is None:
+        return None, None, "Derived widget value must be numeric."
+    if total_steps is None or total_steps <= 0:
+        return None, None, "total_steps must resolve to a positive number."
+    if not isinstance(start_step_ref, dict):
+        return None, None, "start_step must reference a workflow node parameter."
+
+    total_steps_int = max(1, int(round(total_steps)))
+    if denoise < -1e-9 or denoise > 1 + 1e-9:
+        return None, None, "Denoise must be between 0 and 1."
+
+    bounded_denoise = max(0.0, min(1.0, denoise))
+    denoise_steps = int(round(bounded_denoise * total_steps_int))
+    denoise_steps = max(0, min(total_steps_int, denoise_steps))
+    start_step_int = total_steps_int - denoise_steps
+
+    start_node_id = start_step_ref.get("node_id")
+    start_param = start_step_ref.get("param")
+    if not isinstance(start_node_id, str) or not isinstance(start_param, str):
+        return None, None, "start_step must reference a workflow node parameter."
+
+    overrides: dict[str, dict[str, Any]] = {}
+    _apply_override(overrides, start_node_id, start_param, start_step_int)
+    return overrides, denoise_steps / total_steps_int, None
+
+
 _VIDEO_AUDIO_RETAKE_OPTIONS: tuple[str, ...] = ("Video & Audio", "Video", "Audio")
 
 
@@ -201,6 +236,16 @@ class _ResolveDerivedWidgetsProcessor:
             applied_value: Any
             if kind == "dual_sampler_denoise":
                 overrides, applied_value, error_message = _expand_dual_sampler_denoise(
+                    ctx.workflow,
+                    rule,
+                    raw_value,
+                )
+            elif kind == "single_sampler_denoise":
+                (
+                    overrides,
+                    applied_value,
+                    error_message,
+                ) = _expand_single_sampler_denoise(
                     ctx.workflow,
                     rule,
                     raw_value,

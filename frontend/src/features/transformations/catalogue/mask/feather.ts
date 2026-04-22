@@ -65,7 +65,7 @@ export const featherDefinition: TransformationDefinition = {
             label: "Apply To Inverse",
             name: "invert",
             hidden: true,
-            defaultValue: true,
+            defaultValue: false,
           },
         ],
       },

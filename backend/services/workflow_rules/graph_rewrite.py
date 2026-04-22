@@ -4,6 +4,10 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from services.workflow_rules.condition_eval import (
+    ConditionState,
+    evaluate_condition,
+)
 from services.workflow_rules.normalize import (
     WorkflowPrompt,
     WorkflowRuleWarning,
@@ -567,47 +571,30 @@ def _normalize_provided_input_ids(
     }
 
 
-def _matches_input_presence_condition(
-    raw_condition: Any,
+def _build_condition_state(
     provided_input_ids: set[str],
-) -> bool:
-    if not isinstance(raw_condition, dict):
-        return False
-
-    if raw_condition.get("kind") != "input_presence":
-        return False
-
-    raw_inputs = raw_condition.get("inputs")
-    if not isinstance(raw_inputs, list):
-        return False
-
-    inputs = [
-        str(input_id).strip()
-        for input_id in raw_inputs
-        if str(input_id).strip()
-    ]
-    if not inputs:
-        return False
-
-    match_mode = raw_condition.get("match")
-    if not isinstance(match_mode, str):
-        match_mode = "all_present"
-
-    if match_mode == "all_present":
-        return all(input_id in provided_input_ids for input_id in inputs)
-    if match_mode == "all_missing":
-        return all(input_id not in provided_input_ids for input_id in inputs)
-    if match_mode == "any_present":
-        return any(input_id in provided_input_ids for input_id in inputs)
-    if match_mode == "any_missing":
-        return any(input_id not in provided_input_ids for input_id in inputs)
-    return False
+    workflow: WorkflowPrompt | None,
+    pipeline_control_values: dict[str, dict[str, Any]] | None,
+    frontend_control_values: dict[str, Any] | None,
+    derived_widget_values: dict[str, Any] | None,
+) -> ConditionState:
+    return ConditionState(
+        provided_input_ids=frozenset(provided_input_ids),
+        workflow=workflow if isinstance(workflow, dict) else None,
+        pipeline_control_values={
+            stage_id: dict(values)
+            for stage_id, values in (pipeline_control_values or {}).items()
+            if isinstance(stage_id, str) and isinstance(values, dict)
+        },
+        frontend_control_values=dict(frontend_control_values or {}),
+        derived_widget_values=dict(derived_widget_values or {}),
+    )
 
 
-def _resolve_conditional_bool(
+def _resolve_conditioned_bool(
     default_value: bool,
     raw_overrides: Any,
-    provided_input_ids: set[str],
+    state: ConditionState,
 ) -> bool:
     if not isinstance(raw_overrides, list):
         return default_value
@@ -615,9 +602,7 @@ def _resolve_conditional_bool(
     for raw_override in raw_overrides:
         if not isinstance(raw_override, dict):
             continue
-        if not _matches_input_presence_condition(
-            raw_override.get("when"), provided_input_ids
-        ):
+        if not evaluate_condition(raw_override.get("when"), state):
             continue
         return _to_bool(raw_override.get("value"), default_value)
 
@@ -627,7 +612,7 @@ def _resolve_conditional_bool(
 def _apply_widget_default_overrides(
     workflow: WorkflowPrompt,
     node_rules: dict[str, Any],
-    provided_input_ids: set[str],
+    state: ConditionState,
 ) -> None:
     for node_id, node_rule in node_rules.items():
         if not isinstance(node_rule, dict):
@@ -664,12 +649,59 @@ def _apply_widget_default_overrides(
             for raw_override in raw_overrides:
                 if not isinstance(raw_override, dict):
                     continue
-                if not _matches_input_presence_condition(
-                    raw_override.get("when"), provided_input_ids
-                ):
+                if not evaluate_condition(raw_override.get("when"), state):
                     continue
                 inputs[param] = raw_override.get("value")
                 break
+
+
+def _apply_effect_switches(
+    workflow: WorkflowPrompt,
+    raw_switches: Any,
+    state: ConditionState,
+) -> set[str]:
+    """Apply first-match-wins `effect_switches`."""
+    bypass_from_switches: set[str] = set()
+    if not isinstance(raw_switches, list):
+        return bypass_from_switches
+
+    for raw_switch in raw_switches:
+        if not isinstance(raw_switch, dict):
+            continue
+        cases = raw_switch.get("cases")
+        if not isinstance(cases, list):
+            continue
+        for case in cases:
+            if not isinstance(case, dict):
+                continue
+            if not evaluate_condition(case.get("when"), state):
+                continue
+
+            for node_id in case.get("bypass") or []:
+                if isinstance(node_id, str) and node_id.strip():
+                    bypass_from_switches.add(node_id.strip())
+
+            for override in case.get("set_widgets") or []:
+                if not isinstance(override, dict):
+                    continue
+                target_node_id = override.get("node_id")
+                widget = override.get("widget")
+                if not isinstance(target_node_id, str) or not isinstance(widget, str):
+                    continue
+                node = workflow.get(target_node_id)
+                if not isinstance(node, dict):
+                    continue
+                inputs = node.get("inputs")
+                if not isinstance(inputs, dict):
+                    continue
+                current_value = inputs.get(widget)
+                if isinstance(current_value, list) and len(current_value) == 2:
+                    continue
+                inputs[widget] = override.get("value")
+
+            break
+
+    return bypass_from_switches
 
 
 def find_unsatisfied_input_conditions(
@@ -725,6 +757,9 @@ def apply_rules_to_workflow(
     graph_data: dict[str, Any] | None = None,
     *,
     rules_already_resolved: bool = False,
+    pipeline_control_values: dict[str, dict[str, Any]] | None = None,
+    frontend_control_values: dict[str, Any] | None = None,
+    derived_widget_values: dict[str, Any] | None = None,
 ) -> tuple[WorkflowPrompt, list[WorkflowRuleWarning]]:
     if not isinstance(workflow, dict):
         return workflow, [
@@ -767,6 +802,13 @@ def apply_rules_to_workflow(
             next_workflow[recovered_node_id] = deepcopy(recovered_node_data)
 
     normalized_provided_inputs = _normalize_provided_input_ids(provided_input_ids)
+    condition_state = _build_condition_state(
+        normalized_provided_inputs,
+        next_workflow,
+        pipeline_control_values,
+        frontend_control_values,
+        derived_widget_values,
+    )
 
     output_injections = normalized_rules.get("output_injections", {})
     if isinstance(output_injections, dict):
@@ -782,8 +824,8 @@ def apply_rules_to_workflow(
                 if not isinstance(injection_rule, dict):
                     continue
                 raw_when = injection_rule.get("when")
-                if raw_when is not None and not _matches_input_presence_condition(
-                    raw_when, normalized_provided_inputs
+                if raw_when is not None and not evaluate_condition(
+                    raw_when, condition_state
                 ):
                     continue
                 output_index = _to_int(output_index_key)
@@ -932,16 +974,16 @@ def apply_rules_to_workflow(
         _apply_widget_default_overrides(
             next_workflow,
             node_rules,
-            normalized_provided_inputs,
+            condition_state,
         )
 
         for node_id, node_rule in node_rules.items():
             if not isinstance(node_rule, dict):
                 continue
-            should_ignore = _resolve_conditional_bool(
+            should_ignore = _resolve_conditioned_bool(
                 _to_bool(node_rule.get("ignore"), False),
                 node_rule.get("ignore_overrides"),
-                normalized_provided_inputs,
+                condition_state,
             )
             if should_ignore:
                 ignored_nodes.add(str(node_id))
@@ -970,6 +1012,19 @@ def apply_rules_to_workflow(
                 _disconnect_output_links_from_node(next_workflow, normalized_node_id)
             )
             ignored_nodes.add(normalized_node_id)
+
+    switch_bypass = _apply_effect_switches(
+        next_workflow,
+        normalized_rules.get("effect_switches"),
+        condition_state,
+    )
+    for node_id in switch_bypass:
+        if node_id not in next_workflow:
+            continue
+        downstream_prune_roots.update(
+            _disconnect_output_links_from_node(next_workflow, node_id)
+        )
+        ignored_nodes.add(node_id)
 
     provided_input_node_ids = {
         input_id for input_id in normalized_provided_inputs if ":" not in input_id

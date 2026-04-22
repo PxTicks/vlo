@@ -9,6 +9,54 @@ export interface AspectRatioTargetNode {
   height: WorkflowParamReference;
 }
 
+export interface ConditionAllOf {
+  kind?: "all_of";
+  conditions?: Array<ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot>;
+}
+
+export interface ConditionAlways {
+  kind?: "always";
+  value?: boolean;
+}
+
+export interface ConditionAnyOf {
+  kind?: "any_of";
+  conditions?: Array<ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot>;
+}
+
+export interface ConditionCompare {
+  kind?: "compare";
+  ref: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference;
+  operator?: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
+  value?: unknown | null;
+}
+
+export interface ConditionNot {
+  kind?: "not";
+  condition: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot;
+}
+
+export interface DerivedWidgetStateReference {
+  kind?: "derived_widget";
+  derived_widget_id: string;
+}
+
+export interface EffectSwitch {
+  id?: string | null;
+  cases?: Array<EffectSwitchCase>;
+}
+
+export interface EffectSwitchCase {
+  when: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot;
+  bypass?: Array<string>;
+  set_widgets?: Array<WorkflowRewriteWidgetOverride>;
+}
+
+export interface FrontendControlStateReference {
+  kind?: "frontend_control";
+  control_id: string;
+}
+
 export interface MaskProcessingTarget {
   source: WorkflowParamReference;
   mask: WorkflowParamReference;
@@ -42,12 +90,12 @@ export interface PipelineControl {
   exclude_options?: Array<string | number | boolean> | null;
   true_value?: unknown | null;
   false_value?: unknown | null;
-  bind?: WorkflowParamValueReference | PipelineControlReference | null;
+  bind?: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference | null;
   default_rules?: Array<PipelineControlDefaultRule> | null;
 }
 
 export interface PipelineControlCondition {
-  ref: WorkflowParamValueReference | PipelineControlReference;
+  ref: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference;
   operator?: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
   value?: unknown | null;
 }
@@ -65,7 +113,7 @@ export interface PipelineControlReference {
 
 export interface ResolvedOutputInjectionRule {
   source: NodeOutputSource;
-  when?: WorkflowRuleWidgetInputPresenceCondition | null;
+  when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
 }
 
 export interface WorkflowAspectRatioPostprocessConfig {
@@ -98,6 +146,11 @@ export interface WorkflowAtLeastNInputValidationRule {
   inputs?: Array<string>;
   min: number;
   message?: string | null;
+}
+
+export interface WorkflowConditionalBooleanOverride {
+  when: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot;
+  value?: boolean;
 }
 
 export interface WorkflowDualSamplerDenoiseRule {
@@ -153,6 +206,17 @@ export interface WorkflowMaskProcessingStage {
   targets?: Array<MaskProcessingTarget>;
 }
 
+export interface WorkflowMediaFallback {
+  kind?: "dummy";
+  node_id: string;
+  input_type: string;
+  param?: string | null;
+  filename?: string | null;
+  content_type?: string | null;
+  synthetic?: boolean;
+  when?: WorkflowRuleWidgetInputPresenceCondition | null;
+}
+
 export interface WorkflowOptionalInputValidationRule {
   kind: "optional";
   input: string;
@@ -195,7 +259,7 @@ export interface WorkflowRequiredInputValidationRule {
 }
 
 export interface WorkflowRewriteRule {
-  when: WorkflowRuleWidgetInputPresenceCondition | WorkflowRuleBooleanWidgetCondition | WorkflowRuleBooleanFrontendControlCondition;
+  when: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot;
   bypass?: Array<string>;
   set_widgets?: Array<WorkflowRewriteWidgetOverride>;
 }
@@ -203,30 +267,12 @@ export interface WorkflowRewriteRule {
 export interface WorkflowRewriteWidgetOverride {
   node_id: string;
   widget: string;
-  value?: unknown;
-}
-
-export interface WorkflowRuleBooleanFrontendControlCondition {
-  kind?: "frontend_control_boolean";
-  control_id: string;
-  value?: boolean;
-}
-
-export interface WorkflowRuleBooleanOverride {
-  when: WorkflowRuleWidgetInputPresenceCondition;
-  value?: boolean;
-}
-
-export interface WorkflowRuleBooleanWidgetCondition {
-  kind?: "widget_boolean";
-  node_id: string;
-  widget: string;
-  value?: boolean;
+  value?: unknown | null;
 }
 
 export interface WorkflowRuleNode {
   ignore?: boolean;
-  ignore_overrides?: Array<WorkflowRuleBooleanOverride> | null;
+  ignore_overrides?: Array<WorkflowConditionalBooleanOverride> | null;
   present?: WorkflowRuleNodePresent | null;
   widgets_mode?: "control_after_generate" | "all" | null;
   widgets?: Record<string, WorkflowRuleWidgetEntry>;
@@ -263,7 +309,7 @@ export interface WorkflowRuleSlot {
 }
 
 export interface WorkflowRuleWidgetDefaultOverride {
-  when: WorkflowRuleWidgetInputPresenceCondition | WorkflowRuleBooleanWidgetCondition | WorkflowRuleBooleanFrontendControlCondition;
+  when: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot;
   value?: unknown | null;
 }
 
@@ -296,6 +342,17 @@ export interface WorkflowRuleWidgetInputPresenceCondition {
   match?: "all_present" | "all_missing" | "any_present" | "any_missing";
 }
 
+export interface WorkflowSingleSamplerDenoiseRule {
+  id: string;
+  kind?: "single_sampler_denoise";
+  label?: string | null;
+  group_id?: string | null;
+  group_title?: string | null;
+  group_order?: number | null;
+  total_steps: WorkflowParamReference;
+  start_step: WorkflowParamReference;
+}
+
 export interface WorkflowValidationConfig {
   inputs?: Array<WorkflowRequiredInputValidationRule | WorkflowAtLeastNInputValidationRule | WorkflowOptionalInputValidationRule>;
 }
@@ -320,9 +377,11 @@ export interface WorkflowRules {
   validation?: WorkflowValidationConfig;
   input_conditions?: Array<WorkflowInputCondition> | null;
   frontend_controls?: Record<string, WorkflowFrontendControl>;
-  derived_widgets?: Array<WorkflowDualSamplerDenoiseRule | WorkflowVideoAudioRetakeRule>;
+  derived_widgets?: Array<WorkflowDualSamplerDenoiseRule | WorkflowSingleSamplerDenoiseRule | WorkflowVideoAudioRetakeRule>;
   output_injections?: Record<string, Record<string, ResolvedOutputInjectionRule>>;
   rewrites?: Array<WorkflowRewriteRule>;
+  effect_switches?: Array<EffectSwitch>;
   slots?: Record<string, WorkflowRuleSlot>;
+  media_fallbacks?: Array<WorkflowMediaFallback>;
   pipeline?: Array<WorkflowMaskProcessingStage | WorkflowAspectRatioStage | WorkflowOutputAssemblyStage>;
 }

@@ -98,6 +98,7 @@ export type { MaskCropMetadata } from "../../types/Asset";
 
 export interface GenerationJob {
   id: string;
+  deliveryId?: string | null;
   status: GenerationJobStatus;
   progress: number;
   currentNode: string | null;
@@ -275,6 +276,23 @@ export interface DualSamplerDenoiseDerivedWidgetInput {
   sources: WorkflowDualSamplerDenoiseSourceValues;
 }
 
+export interface WorkflowSingleSamplerDenoiseSourceValues {
+  totalSteps: number;
+  startStep: number;
+}
+
+export interface SingleSamplerDenoiseDerivedWidgetInput {
+  kind: "derived";
+  deriveKind: "single_sampler_denoise";
+  derivedWidgetId: string;
+  nodeId: string;
+  param: string;
+  config: WidgetInputConfig;
+  currentValue: number;
+  frontendControlId?: string;
+  sources: WorkflowSingleSamplerDenoiseSourceValues;
+}
+
 export type VideoAudioRetakeMode = "Video & Audio" | "Video" | "Audio";
 
 export interface VideoAudioRetakeSourceValues {
@@ -296,6 +314,7 @@ export interface VideoAudioRetakeDerivedWidgetInput {
 
 export type DerivedWorkflowWidgetInput =
   | DualSamplerDenoiseDerivedWidgetInput
+  | SingleSamplerDenoiseDerivedWidgetInput
   | VideoAudioRetakeDerivedWidgetInput;
 
 export type WorkflowWidgetInput =

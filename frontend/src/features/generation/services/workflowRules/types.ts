@@ -10,23 +10,33 @@ import type {
   DerivedMaskType,
 } from "../../pipeline/types";
 import type {
+  ConditionAllOf,
+  ConditionAlways,
+  ConditionAnyOf,
+  ConditionCompare,
+  ConditionNot,
   WorkflowAtLeastNInputValidationRule,
-  WorkflowFrontendControl,
-  WorkflowRewriteRule,
   WorkflowDualSamplerDenoiseRule,
-  WorkflowRuleBooleanFrontendControlCondition,
-  WorkflowRuleBooleanWidgetCondition,
-  WorkflowRuleWidgetDefaultOverride,
   WorkflowOutputAssemblyStageConfig,
   WorkflowOptionalInputValidationRule,
   WorkflowRequiredInputValidationRule,
   WorkflowRuleWidgetInputPresenceCondition,
-  WorkflowRules,
+  WorkflowRules as GeneratedWorkflowRules,
+  WorkflowSingleSamplerDenoiseRule,
   WorkflowVideoAudioRetakeRule,
 } from "./generated";
 
 export type {
   AspectRatioTargetNode,
+  ConditionAllOf,
+  ConditionAlways,
+  ConditionAnyOf,
+  ConditionCompare,
+  ConditionNot,
+  DerivedWidgetStateReference,
+  EffectSwitch,
+  EffectSwitchCase,
+  FrontendControlStateReference,
   MaskProcessingTarget,
   PipelineControl,
   PipelineControlCondition,
@@ -39,6 +49,7 @@ export type {
   WorkflowFrontendControl,
   WorkflowInputCondition,
   WorkflowMaskProcessingStage,
+  WorkflowMediaFallback,
   WorkflowOptionalInputValidationRule,
   WorkflowOutputAssemblyStage,
   WorkflowOutputAssemblyStageConfig,
@@ -46,17 +57,15 @@ export type {
   WorkflowParamValueReference,
   WorkflowRequiredInputValidationRule,
   WorkflowRewriteRule,
-  WorkflowRuleBooleanFrontendControlCondition,
   WorkflowRuleNode,
-  WorkflowRuleBooleanWidgetCondition,
   WorkflowRuleNodePresent,
   WorkflowRuleSelectionConfig,
   WorkflowRuleSlot,
   WorkflowRuleWidgetDefaultOverride,
   WorkflowRuleWidgetEntry,
   WorkflowRuleWidgetInputPresenceCondition,
-  WorkflowRules,
   WorkflowValidationConfig,
+  WorkflowSingleSamplerDenoiseRule,
   WorkflowVideoAudioRetakeRule,
 } from "./generated";
 
@@ -69,12 +78,28 @@ export type WorkflowInputValidationRule =
 
 export type WorkflowDerivedWidgetRule =
   | WorkflowDualSamplerDenoiseRule
+  | WorkflowSingleSamplerDenoiseRule
   | WorkflowVideoAudioRetakeRule;
 
-export type WorkflowFrontendStateCondition =
+export type StateReference =
+  | import("./generated").WorkflowParamValueReference
+  | import("./generated").PipelineControlReference
+  | import("./generated").FrontendControlStateReference
+  | import("./generated").DerivedWidgetStateReference;
+
+export type ConditionExpression =
+  | ConditionAlways
   | WorkflowRuleWidgetInputPresenceCondition
-  | WorkflowRuleBooleanWidgetCondition
-  | WorkflowRuleBooleanFrontendControlCondition;
+  | ConditionCompare
+  | ConditionAllOf
+  | ConditionAnyOf
+  | ConditionNot;
+
+export type WorkflowFrontendStateCondition = ConditionExpression;
+
+export type WorkflowRules = GeneratedWorkflowRules & {
+  media_fallbacks?: import("./generated").WorkflowMediaFallback[];
+};
 
 export interface WorkflowRuleWarning {
   code: string;
@@ -132,8 +157,12 @@ export function createDefaultWorkflowRules(
     derived_widgets: cloneJsonValue(overrides.derived_widgets ?? []),
     output_injections: cloneJsonValue(overrides.output_injections ?? {}),
     rewrites: cloneJsonValue(overrides.rewrites ?? []),
+    effect_switches: cloneJsonValue(overrides.effect_switches ?? []),
     slots: cloneJsonValue(overrides.slots ?? {}),
     pipeline: cloneJsonValue(overrides.pipeline ?? []),
+    ...(overrides.media_fallbacks !== undefined
+      ? { media_fallbacks: cloneJsonValue(overrides.media_fallbacks) }
+      : {}),
   };
 }
 

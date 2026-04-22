@@ -10,16 +10,25 @@
       }
     },
     "101": {},
-    "92": {
+    "114": {
       "widgets": {
-        "denoise": {
-          "label": "Denoise",
-          "control": "slider",
-          "slider_display": "number",
-          "value_type": "float",
-          "min": 0,
-          "max": 1,
-          "step": 0.01
+        "value": {
+          "hidden": true,
+          "value_type": "boolean"
+        }
+      }
+    },
+    "115": {
+      "widgets": {
+        "steps": {
+          "hidden": true,
+          "value_type": "int",
+          "min": 1
+        },
+        "start_at_step": {
+          "hidden": true,
+          "value_type": "int",
+          "min": 0
         }
       }
     }
@@ -27,8 +36,56 @@
   "validation": {
     "inputs": []
   },
-  "derived_widgets": [],
+  "derived_widgets": [
+    {
+      "id": "single_sampler_denoise",
+      "kind": "single_sampler_denoise",
+      "label": "Denoise",
+      "total_steps": {
+        "node_id": "115",
+        "param": "steps"
+      },
+      "start_step": {
+        "node_id": "115",
+        "param": "start_at_step"
+      }
+    }
+  ],
   "output_injections": {},
+  "effect_switches": [
+    {
+      "id": "single_sampler_denoise",
+      "cases": [
+        {
+          "when": {
+            "kind": "compare",
+            "ref": {
+              "kind": "derived_widget",
+              "derived_widget_id": "single_sampler_denoise"
+            },
+            "operator": "eq",
+            "value": 1
+          },
+          "bypass": [
+            "113",
+            "114"
+          ]
+        },
+        {
+          "when": {
+            "kind": "always"
+          },
+          "set_widgets": [
+            {
+              "node_id": "114",
+              "widget": "value",
+              "value": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "slots": {},
   "pipeline": [
     {
@@ -78,39 +135,13 @@
         {
           "key": "source_video_treatment",
           "label": "Transparency handling",
-          "description": "Maintainer note: derives from node 92 denoise. Values below 1 remove transparency; 1 fills transparent areas with neutral gray.",
+          "description": "Maintainer note: advanced VACE inpaint always removes transparent source pixels before dispatch.",
           "value_type": "enum",
           "expose": "none",
           "source": "backend",
-          "default": "fill_transparent_with_neutral_gray",
+          "default": "remove_transparency",
           "exclude_options": [
             "preserve_transparency"
-          ],
-          "default_rules": [
-            {
-              "when": {
-                "ref": {
-                  "kind": "workflow_param",
-                  "node_id": "92",
-                  "param": "denoise"
-                },
-                "operator": "eq",
-                "value": 1
-              },
-              "value": "fill_transparent_with_neutral_gray"
-            },
-            {
-              "when": {
-                "ref": {
-                  "kind": "workflow_param",
-                  "node_id": "92",
-                  "param": "denoise"
-                },
-                "operator": "lt",
-                "value": 1
-              },
-              "value": "remove_transparency"
-            }
           ]
         }
       ]

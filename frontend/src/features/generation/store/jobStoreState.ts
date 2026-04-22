@@ -23,6 +23,7 @@ export function buildJobStoreState(
         output.filename,
         output.subfolder,
         output.type,
+        output.viewUrl,
       );
 
       const { addLocalAsset } = await import("../../userAssets");

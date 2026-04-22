@@ -7,7 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 
 WidgetsMode = Literal["control_after_generate", "all"]
-DerivedWidgetKind = Literal["dual_sampler_denoise", "video_audio_retake"]
+DerivedWidgetKind = Literal[
+    "dual_sampler_denoise",
+    "single_sampler_denoise",
+    "video_audio_retake",
+]
 VideoAudioRetakeMode = Literal["Video & Audio", "Video", "Audio"]
 WidgetControl = Literal["slider"]
 WidgetSliderDisplay = Literal["percent", "number"]
@@ -22,6 +26,7 @@ PipelineStageKind = Literal["mask_processing", "aspect_ratio", "output_assembly"
 PipelineControlExposure = Literal["widget", "none"]
 PipelineControlSource = Literal["client", "backend"]
 PipelineControlValueType = Literal["int", "float", "string", "boolean", "enum", "unknown"]
+WorkflowMediaFallbackKind = Literal["dummy"]
 MaskProcessingTargetType = Literal["binary", "soft"]
 MaskProcessingTargetPurpose = Literal["video", "audio_timing"]
 PostprocessingMode = Literal["auto", "stitch_frames_with_audio", "none"]
@@ -58,6 +63,41 @@ class WorkflowRuleNodePresent(WorkflowRuleBaseModel):
     group_order: int | None = None
 
 
+class WorkflowParamValueReference(WorkflowRuleBaseModel):
+    kind: Literal["workflow_param"] = "workflow_param"
+    node_id: str
+    param: str
+
+
+class PipelineControlReference(WorkflowRuleBaseModel):
+    kind: Literal["pipeline_control"] = "pipeline_control"
+    stage_id: str
+    key: str
+
+
+class FrontendControlStateReference(WorkflowRuleBaseModel):
+    kind: Literal["frontend_control"] = "frontend_control"
+    control_id: str
+
+
+class DerivedWidgetStateReference(WorkflowRuleBaseModel):
+    kind: Literal["derived_widget"] = "derived_widget"
+    derived_widget_id: str
+
+
+StateReference = Annotated[
+    WorkflowParamValueReference
+    | PipelineControlReference
+    | FrontendControlStateReference
+    | DerivedWidgetStateReference,
+    Field(discriminator="kind"),
+]
+
+# Legacy alias — pipeline controls only referenced workflow_param or pipeline_control.
+# Kept so external callers importing ControlValueReference keep working.
+ControlValueReference = StateReference
+
+
 class WorkflowRuleWidgetInputPresenceCondition(WorkflowRuleBaseModel):
     kind: Literal["input_presence"] = "input_presence"
     inputs: list[str] = Field(default_factory=list)
@@ -69,29 +109,86 @@ class WorkflowRuleWidgetInputPresenceCondition(WorkflowRuleBaseModel):
     ] = "all_present"
 
 
-class WorkflowRuleBooleanWidgetCondition(WorkflowRuleBaseModel):
-    kind: Literal["widget_boolean"] = "widget_boolean"
-    node_id: str
-    widget: str
+class ConditionAlways(WorkflowRuleBaseModel):
+    kind: Literal["always"] = "always"
     value: bool = True
 
 
-class WorkflowRuleBooleanFrontendControlCondition(WorkflowRuleBaseModel):
-    kind: Literal["frontend_control_boolean"] = "frontend_control_boolean"
-    control_id: str
-    value: bool = True
+class ConditionCompare(WorkflowRuleBaseModel):
+    kind: Literal["compare"] = "compare"
+    ref: StateReference
+    operator: PipelineComparisonOperator = "eq"
+    value: Any | None = None
 
 
-WorkflowFrontendStateCondition = Annotated[
-    WorkflowRuleWidgetInputPresenceCondition
-    | WorkflowRuleBooleanWidgetCondition
-    | WorkflowRuleBooleanFrontendControlCondition,
+class ConditionAllOf(WorkflowRuleBaseModel):
+    kind: Literal["all_of"] = "all_of"
+    conditions: list["ConditionExpression"] = Field(default_factory=list)
+
+
+class ConditionAnyOf(WorkflowRuleBaseModel):
+    kind: Literal["any_of"] = "any_of"
+    conditions: list["ConditionExpression"] = Field(default_factory=list)
+
+
+class ConditionNot(WorkflowRuleBaseModel):
+    kind: Literal["not"] = "not"
+    condition: "ConditionExpression"
+
+
+ConditionExpression = Annotated[
+    ConditionAlways
+    | WorkflowRuleWidgetInputPresenceCondition
+    | ConditionCompare
+    | ConditionAllOf
+    | ConditionAnyOf
+    | ConditionNot,
     Field(discriminator="kind"),
 ]
 
+# Legacy alias — same recursive union, kept so external callers that imported
+# WorkflowFrontendStateCondition continue to compile.
+WorkflowFrontendStateCondition = ConditionExpression
+
+
+def _normalize_legacy_condition_inplace(value: Any) -> None:
+    """Rewrite legacy condition shapes to the unified `compare` form."""
+    if isinstance(value, dict):
+        kind = value.get("kind")
+        if kind == "widget_boolean":
+            node_id = value.pop("node_id", None)
+            widget = value.pop("widget", None)
+            raw_value = value.pop("value", True)
+            value.clear()
+            value["kind"] = "compare"
+            value["ref"] = {
+                "kind": "workflow_param",
+                "node_id": str(node_id) if node_id is not None else "",
+                "param": str(widget) if widget is not None else "",
+            }
+            value["operator"] = "eq"
+            value["value"] = raw_value
+        elif kind == "frontend_control_boolean":
+            control_id = value.pop("control_id", None)
+            raw_value = value.pop("value", True)
+            value.clear()
+            value["kind"] = "compare"
+            value["ref"] = {
+                "kind": "frontend_control",
+                "control_id": str(control_id) if control_id is not None else "",
+            }
+            value["operator"] = "eq"
+            value["value"] = raw_value
+
+        for item in value.values():
+            _normalize_legacy_condition_inplace(item)
+    elif isinstance(value, list):
+        for item in value:
+            _normalize_legacy_condition_inplace(item)
+
 
 class WorkflowRuleWidgetDefaultOverride(WorkflowRuleBaseModel):
-    when: WorkflowFrontendStateCondition
+    when: ConditionExpression
     value: Any | None = None
 
 
@@ -122,8 +219,8 @@ class WorkflowFrontendControl(WorkflowRuleWidgetEntry):
     pass
 
 
-class WorkflowRuleBooleanOverride(WorkflowRuleBaseModel):
-    when: WorkflowRuleWidgetInputPresenceCondition
+class WorkflowConditionalBooleanOverride(WorkflowRuleBaseModel):
+    when: ConditionExpression
     value: bool = True
 
 
@@ -137,7 +234,7 @@ class WorkflowRuleNode(WorkflowRuleBaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ignore: bool = False
-    ignore_overrides: list[WorkflowRuleBooleanOverride] | None = None
+    ignore_overrides: list[WorkflowConditionalBooleanOverride] | None = None
     present: WorkflowRuleNodePresent | None = None
     widgets_mode: WidgetsMode | None = None
     widgets: dict[str, WorkflowRuleWidgetEntry] = Field(default_factory=dict)
@@ -153,6 +250,25 @@ class WorkflowRuleSlot(WorkflowRuleBaseModel):
     export_fps: int | None = None
     frame_step: int | None = None
     max_frames: int | None = None
+
+
+class WorkflowMediaFallback(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: WorkflowMediaFallbackKind = "dummy"
+    node_id: str
+    input_type: str
+    param: str | None = None
+    filename: str | None = None
+    content_type: str | None = None
+    synthetic: bool = True
+    when: WorkflowRuleWidgetInputPresenceCondition | None = None
+
+    @model_validator(mode="after")
+    def validate_dummy_input_type(self) -> "WorkflowMediaFallback":
+        if self.kind == "dummy" and self.input_type != "image":
+            raise ValueError("dummy media fallbacks currently only support image inputs")
+        return self
 
 
 class WorkflowParamReference(WorkflowRuleBaseModel):
@@ -171,6 +287,17 @@ class WorkflowDualSamplerDenoiseRule(WorkflowRuleBaseModel):
     start_step: WorkflowParamReference
     base_split_step: WorkflowParamReference
     split_step_targets: list[WorkflowParamReference] = Field(default_factory=list)
+
+
+class WorkflowSingleSamplerDenoiseRule(WorkflowRuleBaseModel):
+    id: str
+    kind: Literal["single_sampler_denoise"] = "single_sampler_denoise"
+    label: str | None = None
+    group_id: str | None = None
+    group_title: str | None = None
+    group_order: int | None = None
+    total_steps: WorkflowParamReference
+    start_step: WorkflowParamReference
 
 
 class WorkflowVideoAudioRetakeRule(WorkflowRuleBaseModel):
@@ -193,7 +320,9 @@ class WorkflowVideoAudioRetakeRule(WorkflowRuleBaseModel):
 
 
 WorkflowDerivedWidgetRule = Annotated[
-    WorkflowDualSamplerDenoiseRule | WorkflowVideoAudioRetakeRule,
+    WorkflowDualSamplerDenoiseRule
+    | WorkflowSingleSamplerDenoiseRule
+    | WorkflowVideoAudioRetakeRule,
     Field(discriminator="kind"),
 ]
 
@@ -243,29 +372,11 @@ class NodeOutputSource(WorkflowRuleBaseModel):
 
 class ResolvedOutputInjectionRule(WorkflowRuleBaseModel):
     source: NodeOutputSource
-    when: WorkflowRuleWidgetInputPresenceCondition | None = None
-
-
-class WorkflowParamValueReference(WorkflowRuleBaseModel):
-    kind: Literal["workflow_param"] = "workflow_param"
-    node_id: str
-    param: str
-
-
-class PipelineControlReference(WorkflowRuleBaseModel):
-    kind: Literal["pipeline_control"] = "pipeline_control"
-    stage_id: str
-    key: str
-
-
-ControlValueReference = Annotated[
-    WorkflowParamValueReference | PipelineControlReference,
-    Field(discriminator="kind"),
-]
+    when: ConditionExpression | None = None
 
 
 class PipelineControlCondition(WorkflowRuleBaseModel):
-    ref: ControlValueReference
+    ref: StateReference
     operator: PipelineComparisonOperator = "eq"
     value: Any | None = None
 
@@ -414,15 +525,30 @@ class WorkflowRewriteWidgetOverride(WorkflowRuleBaseModel):
 
     node_id: str
     widget: str
-    value: Any = None
+    value: Any | None = None
 
 
 class WorkflowRewriteRule(WorkflowRuleBaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    when: WorkflowFrontendStateCondition
+    when: ConditionExpression
     bypass: list[str] = Field(default_factory=list)
     set_widgets: list[WorkflowRewriteWidgetOverride] = Field(default_factory=list)
+
+
+class EffectSwitchCase(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    when: ConditionExpression
+    bypass: list[str] = Field(default_factory=list)
+    set_widgets: list[WorkflowRewriteWidgetOverride] = Field(default_factory=list)
+
+
+class EffectSwitch(WorkflowRuleBaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    cases: list[EffectSwitchCase] = Field(default_factory=list)
 
 
 class ResolvedWorkflowRules(WorkflowRuleBaseModel):
@@ -440,8 +566,17 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
         default_factory=dict
     )
     rewrites: list[WorkflowRewriteRule] = Field(default_factory=list)
+    effect_switches: list[EffectSwitch] = Field(default_factory=list)
     slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)
+    media_fallbacks: list[WorkflowMediaFallback] = Field(default_factory=list)
     pipeline: list[WorkflowPipelineStage] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_conditions(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            _normalize_legacy_condition_inplace(data)
+        return data
 
     @model_validator(mode="after")
     def validate_pipeline_graph(self) -> "ResolvedWorkflowRules":

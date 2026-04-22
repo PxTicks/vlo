@@ -8,6 +8,7 @@ import type {
   SlotValue,
 } from "../pipeline/types";
 import type { ComfyUIWebSocket } from "../services/ComfyUIWebSocket";
+import type { GenerationDeliveryWebSocket } from "../services/GenerationDeliveryWebSocket";
 import type { WorkflowWarningSummary } from "../services/workflowBridge";
 import type {
   GenerationJob,
@@ -144,7 +145,10 @@ export interface GenerationRuntimeState {
   runtimeStatusError: string | null;
   comfyuiDirectUrl: string | null;
   wsClient: ComfyUIWebSocket | null;
+  deliveryClient: GenerationDeliveryWebSocket | null;
+  deliveryConnectionStatus: ComfyUIConnectionStatus;
   objectInfoSynced: boolean;
+  rawObjectInfo: Record<string, unknown> | null;
   inputNodeMap: import("../constants/inputNodeMap").InputNodeMap | null;
   editorNeedsReconnect: boolean;
   editorReconnectSignal: number;

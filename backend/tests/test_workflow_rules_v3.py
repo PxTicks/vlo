@@ -26,7 +26,11 @@ from services.workflow_rules.pipeline import (
     resolve_pipeline_control_values,
     resolve_pipeline_control_values_with_warnings,
 )
-from services.workflow_rules.schema import dump_resolved_rules, get_pipeline_stage
+from services.workflow_rules.schema import (
+    ResolvedWorkflowRules,
+    dump_resolved_rules,
+    get_pipeline_stage,
+)
 
 
 DEFAULT_WORKFLOWS_DIR = (
@@ -58,13 +62,16 @@ def test_vace_inpaint_new_uses_v3_pipeline_stage_controls():
     assert treatment_control.source == "backend"
     assert treatment_control.description is not None
     assert treatment_control.exclude_options == ["preserve_transparency"]
+    assert rules.derived_widgets[0].kind == "single_sampler_denoise"
+    assert rules.derived_widgets[0].id == "single_sampler_denoise"
+    assert len(rules.effect_switches) == 1
 
     aspect_stage = get_pipeline_stage(rules, "aspect_ratio")
     assert aspect_stage is not None
     assert [target.width.node_id for target in aspect_stage.targets] == ["104", "105"]
 
 
-def test_vace_inpaint_new_resolves_denoise_driven_source_video_treatment():
+def test_vace_inpaint_new_always_removes_transparency():
     rules_model, _ = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
         "vlo_VACE_inpaint_new.json",
@@ -73,7 +80,7 @@ def test_vace_inpaint_new_resolves_denoise_driven_source_video_treatment():
 
     resolved = resolve_pipeline_control_values(
         rules,
-        workflow={"92": {"inputs": {"denoise": 0.6}}},
+        workflow={"115": {"inputs": {"steps": 6, "start_at_step": 0}}},
         pipeline_inputs={},
         control_option_fallbacks={
             ("mask_processing", "source_video_treatment"): [
@@ -328,13 +335,21 @@ def test_i2v_t2v_basic_rules_allow_widget_driven_prompt_enhancer_rewrites():
     )
 
     assert warnings == []
+    assert len(rules_model.media_fallbacks) == 1
+    assert rules_model.media_fallbacks[0].kind == "dummy"
+    assert rules_model.media_fallbacks[0].node_id == "167"
+    assert rules_model.media_fallbacks[0].input_type == "image"
+    assert rules_model.media_fallbacks[0].when is not None
+    assert rules_model.media_fallbacks[0].when.match == "all_missing"
     assert "prompt_enhancer_enabled" in rules_model.frontend_controls
     assert len(rules_model.rewrites) == 1
 
     off_rewrite = rules_model.rewrites[0]
 
-    assert off_rewrite.when.kind == "frontend_control_boolean"
-    assert off_rewrite.when.control_id == "prompt_enhancer_enabled"
+    assert off_rewrite.when.kind == "compare"
+    assert off_rewrite.when.ref.kind == "frontend_control"
+    assert off_rewrite.when.ref.control_id == "prompt_enhancer_enabled"
+    assert off_rewrite.when.operator == "eq"
     assert off_rewrite.when.value is False
     assert off_rewrite.bypass == ["347", "348", "349", "350"]
     assert off_rewrite.set_widgets == []
@@ -348,28 +363,17 @@ def test_retake_rules_allow_frontend_control_prompt_enhancer_rewrites():
 
     assert warnings == []
     assert "prompt_enhancer_enabled" in rules_model.frontend_controls
-    assert len(rules_model.rewrites) == 2
+    assert len(rules_model.rewrites) == 1
 
     false_rewrite = rules_model.rewrites[0]
-    true_rewrite = rules_model.rewrites[1]
 
-    assert false_rewrite.when.kind == "frontend_control_boolean"
-    assert false_rewrite.when.control_id == "prompt_enhancer_enabled"
+    assert false_rewrite.when.kind == "compare"
+    assert false_rewrite.when.ref.kind == "frontend_control"
+    assert false_rewrite.when.ref.control_id == "prompt_enhancer_enabled"
+    assert false_rewrite.when.operator == "eq"
     assert false_rewrite.when.value is False
-    assert false_rewrite.bypass == []
-    assert len(false_rewrite.set_widgets) == 1
-    assert false_rewrite.set_widgets[0].node_id == "594"
-    assert false_rewrite.set_widgets[0].widget == "value"
-    assert false_rewrite.set_widgets[0].value is False
-
-    assert true_rewrite.when.kind == "frontend_control_boolean"
-    assert true_rewrite.when.control_id == "prompt_enhancer_enabled"
-    assert true_rewrite.when.value is True
-    assert true_rewrite.bypass == []
-    assert len(true_rewrite.set_widgets) == 1
-    assert true_rewrite.set_widgets[0].node_id == "594"
-    assert true_rewrite.set_widgets[0].widget == "value"
-    assert true_rewrite.set_widgets[0].value is True
+    assert false_rewrite.bypass == ["599"]
+    assert false_rewrite.set_widgets == []
 
 
 def test_retake_workflow_emits_websocket_frames_and_preview_audio():
@@ -541,6 +545,121 @@ def test_apply_rules_prunes_broken_descendant_reachable_from_provided_input():
     assert warnings == []
 
 
+def test_effect_switches_apply_first_matching_case_and_compose():
+    workflow = {
+        "113": {"class_type": "BypassCandidate", "inputs": {"seed": 1}},
+        "114": {"class_type": "Switch", "inputs": {"value": False}},
+        "200": {
+            "class_type": "Consumer",
+            "inputs": {"samples": ["113", 0], "other": "kept"},
+        },
+        "300": {
+            "class_type": "LinkValuedWidget",
+            "inputs": {"value": ["999", 0]},
+        },
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        {
+            "version": 3,
+            "effect_switches": [
+                {
+                    "id": "denoise",
+                    "cases": [
+                        {
+                            "when": {
+                                "kind": "compare",
+                                "ref": {
+                                    "kind": "derived_widget",
+                                    "derived_widget_id": "single_sampler_denoise",
+                                },
+                                "operator": "eq",
+                                "value": 1,
+                            },
+                            "bypass": ["113"],
+                            "set_widgets": [
+                                {"node_id": "114", "widget": "value", "value": True},
+                            ],
+                        },
+                        {
+                            "when": {"kind": "always"},
+                            "set_widgets": [
+                                {"node_id": "114", "widget": "value", "value": False},
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "id": "link_guard",
+                    "cases": [
+                        {
+                            "when": {"kind": "always"},
+                            "set_widgets": [
+                                {
+                                    "node_id": "300",
+                                    "widget": "value",
+                                    "value": "must-not-overwrite-link",
+                                },
+                            ],
+                        }
+                    ],
+                },
+            ],
+        },
+        derived_widget_values={"single_sampler_denoise": 1},
+    )
+
+    assert warnings == []
+    assert "113" not in rewritten
+    assert rewritten["200"]["inputs"] == {"other": "kept"}
+    assert rewritten["114"]["inputs"]["value"] is True
+    assert rewritten["300"]["inputs"]["value"] == ["999", 0]
+
+
+def test_effect_switches_fall_through_to_later_case():
+    workflow = {
+        "113": {"class_type": "BypassCandidate", "inputs": {}},
+        "114": {"class_type": "Switch", "inputs": {"value": False}},
+    }
+
+    rewritten, warnings = apply_rules_to_workflow(
+        workflow,
+        {
+            "version": 3,
+            "effect_switches": [
+                {
+                    "cases": [
+                        {
+                            "when": {
+                                "kind": "compare",
+                                "ref": {
+                                    "kind": "derived_widget",
+                                    "derived_widget_id": "single_sampler_denoise",
+                                },
+                                "operator": "eq",
+                                "value": 1,
+                            },
+                            "bypass": ["113"],
+                        },
+                        {
+                            "when": {"kind": "always"},
+                            "set_widgets": [
+                                {"node_id": "114", "widget": "value", "value": True},
+                            ],
+                        },
+                    ],
+                }
+            ],
+        },
+        derived_widget_values={"single_sampler_denoise": 0.5},
+    )
+
+    assert warnings == []
+    assert "113" in rewritten
+    assert rewritten["114"]["inputs"]["value"] is True
+
+
 def test_apply_rules_preserves_direct_provided_input_node_pre_upload():
     workflow = {
         "167": {"class_type": "LoadImage", "inputs": {}},
@@ -554,6 +673,12 @@ def test_apply_rules_preserves_direct_provided_input_node_pre_upload():
 
     assert rewritten == workflow
     assert warnings == []
+
+
+def test_default_workflow_rules_parse_with_current_schema():
+    for rules_path in sorted(DEFAULT_WORKFLOWS_DIR.glob("*.rules.json")):
+        rules = json.loads(rules_path.read_text(encoding="utf-8"))
+        ResolvedWorkflowRules.model_validate(rules)
 
 
 def test_flf2v_missing_custom_audio_forces_switch_to_ltx_audio():

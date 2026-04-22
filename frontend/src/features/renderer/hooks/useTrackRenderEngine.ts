@@ -30,9 +30,9 @@ function buildMaskClipIndex(
 
   for (const clip of allTrackClips) {
     if (clip.type === "mask") continue;
-    const maskChildIds = (clip.components ?? [])
-      .filter((component) => component.type === "mask_ref")
-      .map((component) => component.parameters.maskClipId);
+    const maskChildIds = (clip.clipComponents ?? [])
+      .filter((component) => component.componentType === "mask")
+      .map((component) => component.clipId);
     if (maskChildIds.length === 0) continue;
 
     const masks: MaskTimelineClip[] = [];

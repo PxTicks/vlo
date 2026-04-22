@@ -1,8 +1,8 @@
 {
   "id": "f03ed8fc-5992-4896-960d-2e86db301bf7",
   "revision": 0,
-  "last_node_id": 107,
-  "last_link_id": 164,
+  "last_node_id": 115,
+  "last_link_id": 179,
   "nodes": [
     {
       "id": 98,
@@ -13,7 +13,7 @@
       ],
       "size": [
         290,
-        263.81818181818187
+        270
       ],
       "flags": {},
       "order": 0,
@@ -31,8 +31,8 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.15.1",
-        "Node name for S&R": "LoadVideo",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "Node name for S&R": "LoadVideo"
       },
       "widgets_values": [
         "0222.mov",
@@ -48,7 +48,7 @@
       ],
       "size": [
         290,
-        263.81818181818187
+        270
       ],
       "flags": {},
       "order": 1,
@@ -67,8 +67,8 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.15.1",
-        "Node name for S&R": "LoadVideo",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "Node name for S&R": "LoadVideo"
       },
       "widgets_values": [
         "0222.mov",
@@ -87,7 +87,7 @@
         70
       ],
       "flags": {},
-      "order": 6,
+      "order": 7,
       "mode": 0,
       "inputs": [
         {
@@ -118,8 +118,8 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.15.1",
-        "Node name for S&R": "GetVideoComponents",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "Node name for S&R": "GetVideoComponents"
       },
       "widgets_values": []
     },
@@ -135,7 +135,7 @@
         70
       ],
       "flags": {},
-      "order": 7,
+      "order": 8,
       "mode": 0,
       "inputs": [
         {
@@ -166,55 +166,10 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.15.1",
-        "Node name for S&R": "GetVideoComponents",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "Node name for S&R": "GetVideoComponents"
       },
       "widgets_values": []
-    },
-    {
-      "id": 104,
-      "type": "ResizeImageMaskNode",
-      "pos": [
-        3420,
-        -2520
-      ],
-      "size": [
-        270,
-        160
-      ],
-      "flags": {},
-      "order": 11,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "input",
-          "type": "IMAGE,MASK",
-          "link": 146
-        }
-      ],
-      "outputs": [
-        {
-          "name": "resized",
-          "type": "IMAGE",
-          "links": [
-            149,
-            164
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.15.1",
-        "Node name for S&R": "ResizeImageMaskNode",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "scale dimensions",
-        512,
-        512,
-        "center",
-        "area"
-      ]
     },
     {
       "id": 79,
@@ -228,7 +183,7 @@
         60
       ],
       "flags": {},
-      "order": 13,
+      "order": 15,
       "mode": 0,
       "inputs": [
         {
@@ -243,15 +198,15 @@
           "type": "MODEL",
           "slot_index": 0,
           "links": [
-            163
+            175
           ]
         }
       ],
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.3.45",
-        "Node name for S&R": "ModelSamplingSD3",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "Node name for S&R": "ModelSamplingSD3"
       },
       "widgets_values": [
         5
@@ -269,7 +224,7 @@
         90
       ],
       "flags": {},
-      "order": 10,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
@@ -292,8 +247,8 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.3.45",
-        "Node name for S&R": "CLIPTextEncode",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
         ""
@@ -313,7 +268,7 @@
         90
       ],
       "flags": {},
-      "order": 8,
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
@@ -334,8 +289,8 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.3.56",
-        "Node name for S&R": "LoraLoaderModelOnly",
         "widget_ue_connectable": {},
+        "Node name for S&R": "LoraLoaderModelOnly",
         "models": [
           {
             "name": "Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors",
@@ -361,7 +316,7 @@
         70
       ],
       "flags": {},
-      "order": 14,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {
@@ -396,8 +351,8 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.15.1",
-        "Node name for S&R": "GetImageSize",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "Node name for S&R": "GetImageSize"
       },
       "widgets_values": []
     },
@@ -429,8 +384,8 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.3.45",
-        "Node name for S&R": "UNETLoader",
         "widget_ue_connectable": {},
+        "Node name for S&R": "UNETLoader",
         "models": [
           {
             "name": "wan2.1_vace_14B_fp16.safetensors",
@@ -445,18 +400,390 @@
       ]
     },
     {
+      "id": 82,
+      "type": "VAEDecode",
+      "pos": [
+        4630,
+        -2430
+      ],
+      "size": [
+        140,
+        50
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 179
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 109
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            154
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.56",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "VAEDecode"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 72,
+      "type": "CLIPLoader",
+      "pos": [
+        2670,
+        -2860
+      ],
+      "size": [
+        350,
+        110
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "slot_index": 0,
+          "links": [
+            90,
+            91
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.45",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "CLIPLoader",
+        "models": [
+          {
+            "name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+            "directory": "text_encoders"
+          }
+        ]
+      },
+      "widgets_values": [
+        "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+        "wan",
+        "default"
+      ]
+    },
+    {
+      "id": 74,
+      "type": "CLIPTextEncode",
+      "pos": [
+        3360,
+        -3040
+      ],
+      "size": [
+        430,
+        170
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 90
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            94
+          ]
+        }
+      ],
+      "title": "Positive Prompt",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.45",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 61,
+      "type": "Note",
+      "pos": [
+        2590,
+        -2590
+      ],
+      "size": [
+        230,
+        180
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "For simplicity, we use two videos instead of just passing the alpha and extracting because sometimes we might want the underlying pixels to be retained. Most video encoding premultiplies alpha, crushing whatever would be 'below' the alpha, so we need two videos.\n\nEven if we are able to use straight alpha, there is a precision question; if we have two videos the mask video can efficiently be made lossless, so the additional overhead is small. "
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 95,
+      "type": "ImageToMask",
+      "pos": [
+        3430,
+        -2300
+      ],
+      "size": [
+        270,
+        60
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 141
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            147
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.15.1",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "ImageToMask"
+      },
+      "widgets_values": [
+        "red"
+      ]
+    },
+    {
+      "id": 105,
+      "type": "ResizeImageMaskNode",
+      "pos": [
+        3430,
+        -2190
+      ],
+      "size": [
+        270,
+        160
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "input",
+          "type": "IMAGE,MASK",
+          "link": 147
+        }
+      ],
+      "outputs": [
+        {
+          "name": "resized",
+          "type": "MASK",
+          "links": [
+            165
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.15.1",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "ResizeImageMaskNode"
+      },
+      "widgets_values": [
+        "scale dimensions",
+        512,
+        512,
+        "disabled",
+        "area"
+      ]
+    },
+    {
+      "id": 104,
+      "type": "ResizeImageMaskNode",
+      "pos": [
+        3420,
+        -2520
+      ],
+      "size": [
+        270,
+        160
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "input",
+          "type": "IMAGE,MASK",
+          "link": 146
+        }
+      ],
+      "outputs": [
+        {
+          "name": "resized",
+          "type": "IMAGE",
+          "links": [
+            149,
+            164,
+            166
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.15.1",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "ResizeImageMaskNode"
+      },
+      "widgets_values": [
+        "scale dimensions",
+        512,
+        512,
+        "disabled",
+        "area"
+      ]
+    },
+    {
+      "id": 109,
+      "type": "SetNode",
+      "pos": [
+        3750,
+        -2410
+      ],
+      "size": [
+        210,
+        60
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "link": 166
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "title": "Set_image",
+      "properties": {
+        "Node name for S&R": "SetNode",
+        "aux_id": "SetNode",
+        "previousName": "image",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "image"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
+    },
+    {
+      "id": 73,
+      "type": "VAELoader",
+      "pos": [
+        3030,
+        -2830
+      ],
+      "size": [
+        350,
+        60
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "slot_index": 0,
+          "links": [
+            96,
+            109,
+            171
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.45",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "VAELoader",
+        "models": [
+          {
+            "name": "wan_2.1_vae.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors",
+            "directory": "vae"
+          }
+        ]
+      },
+      "widgets_values": [
+        "wan_2.1_vae.safetensors"
+      ]
+    },
+    {
       "id": 80,
       "type": "WanVaceToVideo",
       "pos": [
-        4200,
-        -3000
+        4130,
+        -3040
       ],
       "size": [
         270,
         260
       ],
       "flags": {},
-      "order": 17,
+      "order": 19,
       "mode": 0,
       "inputs": [
         {
@@ -484,7 +811,7 @@
           "name": "control_masks",
           "shape": 7,
           "type": "MASK",
-          "link": 162
+          "link": 165
         },
         {
           "name": "reference_image",
@@ -522,21 +849,21 @@
           "name": "positive",
           "type": "CONDITIONING",
           "links": [
-            126
+            176
           ]
         },
         {
           "name": "negative",
           "type": "CONDITIONING",
           "links": [
-            125
+            177
           ]
         },
         {
           "name": "latent",
           "type": "LATENT",
           "links": [
-            124
+            173
           ]
         },
         {
@@ -548,8 +875,8 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.3.56",
-        "Node name for S&R": "WanVaceToVideo",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "Node name for S&R": "WanVaceToVideo"
       },
       "widgets_values": [
         832,
@@ -560,79 +887,18 @@
       ]
     },
     {
-      "id": 92,
-      "type": "KSampler",
-      "pos": [
-        4290,
-        -2510
-      ],
-      "size": [
-        270,
-        480
-      ],
-      "flags": {},
-      "order": 18,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 163
-        },
-        {
-          "name": "positive",
-          "type": "CONDITIONING",
-          "link": 126
-        },
-        {
-          "name": "negative",
-          "type": "CONDITIONING",
-          "link": 125
-        },
-        {
-          "name": "latent_image",
-          "type": "LATENT",
-          "link": 124
-        }
-      ],
-      "outputs": [
-        {
-          "name": "LATENT",
-          "type": "LATENT",
-          "links": [
-            128
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.56",
-        "Node name for S&R": "KSampler",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        87961706858217,
-        "randomize",
-        6,
-        1,
-        "uni_pc",
-        "simple",
-        1
-      ]
-    },
-    {
       "id": 106,
       "type": "SaveImageWebsocket",
       "pos": [
-        4630,
-        -2310
+        4620,
+        -2330
       ],
       "size": [
         190,
         30
       ],
       "flags": {},
-      "order": 20,
+      "order": 23,
       "mode": 0,
       "inputs": [
         {
@@ -643,334 +909,197 @@
       ],
       "outputs": [],
       "properties": {
-        "Node name for S&R": "SaveImageWebsocket",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "Node name for S&R": "SaveImageWebsocket"
       },
       "widgets_values": []
     },
     {
-      "id": 82,
-      "type": "VAEDecode",
+      "id": 114,
+      "type": "ComfySwitchNode",
       "pos": [
-        4630,
-        -2430
+        4640,
+        -2830
+      ],
+      "size": [
+        270,
+        80
+      ],
+      "flags": {},
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "on_false",
+          "type": "LATENT",
+          "link": 173
+        },
+        {
+          "name": "on_true",
+          "type": "LATENT",
+          "link": 172
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            178
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.17.0",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "ComfySwitchNode"
+      },
+      "widgets_values": [
+        false
+      ]
+    },
+    {
+      "id": 113,
+      "type": "VAEEncode",
+      "pos": [
+        4650,
+        -2930
       ],
       "size": [
         140,
         50
       ],
       "flags": {},
-      "order": 19,
+      "order": 12,
       "mode": 0,
       "inputs": [
         {
-          "name": "samples",
-          "type": "LATENT",
-          "link": 128
+          "name": "pixels",
+          "type": "IMAGE",
+          "link": 170
         },
         {
           "name": "vae",
           "type": "VAE",
-          "link": 109
+          "link": 171
         }
       ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            172
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.17.0",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "VAEEncode"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 112,
+      "type": "GetNode",
+      "pos": [
+        4630,
+        -3040
+      ],
+      "size": [
+        210,
+        60
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
       "outputs": [
         {
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            154
+            170
           ]
         }
       ],
+      "title": "Get_image",
       "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.56",
-        "Node name for S&R": "VAEDecode",
+        "Node name for S&R": "GetNode",
+        "aux_id": "GetNode",
         "widget_ue_connectable": {}
       },
-      "widgets_values": []
-    },
-    {
-      "id": 72,
-      "type": "CLIPLoader",
-      "pos": [
-        2670,
-        -2860
-      ],
-      "size": [
-        350,
-        110
-      ],
-      "flags": {},
-      "order": 3,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "CLIP",
-          "type": "CLIP",
-          "slot_index": 0,
-          "links": [
-            90,
-            91
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.45",
-        "Node name for S&R": "CLIPLoader",
-        "widget_ue_connectable": {},
-        "models": [
-          {
-            "name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-            "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-            "directory": "text_encoders"
-          }
-        ]
-      },
       "widgets_values": [
-        "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-        "wan",
-        "default"
-      ]
+        "image"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
     },
     {
-      "id": 74,
-      "type": "CLIPTextEncode",
+      "id": 115,
+      "type": "KSamplerAdvanced",
       "pos": [
-        3360,
-        -3040
+        4250,
+        -2490
       ],
       "size": [
-        430,
-        170
+        340,
+        370
       ],
       "flags": {},
-      "order": 9,
+      "order": 21,
       "mode": 0,
       "inputs": [
         {
-          "name": "clip",
-          "type": "CLIP",
-          "link": 90
-        }
-      ],
-      "outputs": [
+          "name": "model",
+          "type": "MODEL",
+          "link": 175
+        },
         {
-          "name": "CONDITIONING",
+          "name": "positive",
           "type": "CONDITIONING",
-          "slot_index": 0,
-          "links": [
-            94
-          ]
+          "link": 176
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 177
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 178
         }
       ],
-      "title": "Positive Prompt",
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.45",
-        "Node name for S&R": "CLIPTextEncode",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        ""
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
-      "id": 73,
-      "type": "VAELoader",
-      "pos": [
-        3030,
-        -2830
-      ],
-      "size": [
-        350,
-        60
-      ],
-      "flags": {},
-      "order": 4,
-      "mode": 0,
-      "inputs": [],
       "outputs": [
         {
-          "name": "VAE",
-          "type": "VAE",
-          "slot_index": 0,
+          "name": "LATENT",
+          "type": "LATENT",
           "links": [
-            96,
-            109
+            179
           ]
         }
       ],
       "properties": {
         "cnr_id": "comfy-core",
-        "ver": "0.3.45",
-        "Node name for S&R": "VAELoader",
+        "ver": "0.17.0",
         "widget_ue_connectable": {},
-        "models": [
-          {
-            "name": "wan_2.1_vae.safetensors",
-            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors",
-            "directory": "vae"
-          }
-        ]
+        "Node name for S&R": "KSamplerAdvanced"
       },
       "widgets_values": [
-        "wan_2.1_vae.safetensors"
-      ]
-    },
-    {
-      "id": 61,
-      "type": "Note",
-      "pos": [
-        2590,
-        -2590
-      ],
-      "size": [
-        230,
-        180
-      ],
-      "flags": {},
-      "order": 5,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "properties": {
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "For simplicity, we use two videos instead of just passing the alpha and extracting because sometimes we might want the underlying pixels to be retained. Most video encoding premultiplies alpha, crushing whatever would be 'below' the alpha, so we need two videos.\n\nEven if we are able to use straight alpha, there is a precision question; if we have two videos the mask video can efficiently be made lossless, so the additional overhead is small. "
-      ],
-      "color": "#432",
-      "bgcolor": "#653"
-    },
-    {
-      "id": 95,
-      "type": "ImageToMask",
-      "pos": [
-        3430,
-        -2300
-      ],
-      "size": [
-        270,
-        60
-      ],
-      "flags": {},
-      "order": 12,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "link": 141
-        }
-      ],
-      "outputs": [
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": [
-            147
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.15.1",
-        "Node name for S&R": "ImageToMask",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "red"
-      ]
-    },
-    {
-      "id": 105,
-      "type": "ResizeImageMaskNode",
-      "pos": [
-        3430,
-        -2180
-      ],
-      "size": [
-        270,
-        160
-      ],
-      "flags": {},
-      "order": 15,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "input",
-          "type": "IMAGE,MASK",
-          "link": 147
-        }
-      ],
-      "outputs": [
-        {
-          "name": "resized",
-          "type": "MASK",
-          "links": [
-            161
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.15.1",
-        "Node name for S&R": "ResizeImageMaskNode",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "scale dimensions",
-        512,
-        512,
-        "center",
-        "area"
-      ]
-    },
-    {
-      "id": 107,
-      "type": "GrowMask",
-      "pos": [
-        3770,
-        -2210
-      ],
-      "size": [
-        270,
-        90
-      ],
-      "flags": {},
-      "order": 16,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "mask",
-          "type": "MASK",
-          "link": 161
-        }
-      ],
-      "outputs": [
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": [
-            162
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.15.1",
-        "Node name for S&R": "GrowMask",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        15,
-        true
+        "enable",
+        6332,
+        "randomize",
+        6,
+        1,
+        "uni_pc",
+        "simple",
+        0,
+        10000,
+        "disable"
       ]
     }
   ],
@@ -1038,38 +1167,6 @@
       79,
       0,
       "MODEL"
-    ],
-    [
-      124,
-      80,
-      2,
-      92,
-      3,
-      "LATENT"
-    ],
-    [
-      125,
-      80,
-      1,
-      92,
-      2,
-      "CONDITIONING"
-    ],
-    [
-      126,
-      80,
-      0,
-      92,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      128,
-      92,
-      0,
-      82,
-      0,
-      "LATENT"
     ],
     [
       139,
@@ -1152,36 +1249,100 @@
       "INT"
     ],
     [
-      161,
-      105,
-      0,
-      107,
-      0,
-      "MASK"
-    ],
-    [
-      162,
-      107,
-      0,
-      80,
-      4,
-      "MASK"
-    ],
-    [
-      163,
-      79,
-      0,
-      92,
-      0,
-      "MODEL"
-    ],
-    [
       164,
       104,
       0,
       80,
       3,
       "IMAGE"
+    ],
+    [
+      165,
+      105,
+      0,
+      80,
+      4,
+      "MASK"
+    ],
+    [
+      166,
+      104,
+      0,
+      109,
+      0,
+      "IMAGE"
+    ],
+    [
+      170,
+      112,
+      0,
+      113,
+      0,
+      "IMAGE"
+    ],
+    [
+      171,
+      73,
+      0,
+      113,
+      1,
+      "VAE"
+    ],
+    [
+      172,
+      113,
+      0,
+      114,
+      1,
+      "LATENT"
+    ],
+    [
+      173,
+      80,
+      2,
+      114,
+      0,
+      "LATENT"
+    ],
+    [
+      175,
+      79,
+      0,
+      115,
+      0,
+      "MODEL"
+    ],
+    [
+      176,
+      80,
+      0,
+      115,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      177,
+      80,
+      1,
+      115,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      178,
+      114,
+      0,
+      115,
+      3,
+      "LATENT"
+    ],
+    [
+      179,
+      115,
+      0,
+      82,
+      0,
+      "LATENT"
     ]
   ],
   "groups": [
@@ -1236,6 +1397,19 @@
       "color": "#3f789e",
       "font_size": 24,
       "flags": {}
+    },
+    {
+      "id": 6,
+      "title": "Conditional Latent Replace",
+      "bounding": [
+        4540,
+        -3140,
+        390,
+        490
+      ],
+      "color": "#a1309b",
+      "font_size": 24,
+      "flags": {}
     }
   ],
   "config": {},
@@ -1243,10 +1417,10 @@
     "frontendVersion": "1.41.21",
     "ue_links": [],
     "ds": {
-      "scale": 0.2249225222748281,
+      "scale": 0.3324569286948289,
       "offset": [
-        -732.4825869159398,
-        3755.776336875598
+        -2773.5760322589786,
+        3143.394431947905
       ]
     },
     "links_added_by_ue": [],

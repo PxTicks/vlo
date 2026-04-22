@@ -4,6 +4,7 @@ import { toFiniteNumber, toPositiveInteger } from "./shared";
 import type {
   DerivedWorkflowWidgetInput,
   DualSamplerDenoiseDerivedWidgetInput,
+  SingleSamplerDenoiseDerivedWidgetInput,
   VideoAudioRetakeDerivedWidgetInput,
   VideoAudioRetakeMode,
   WidgetInputConfig,
@@ -14,6 +15,7 @@ import type {
   WorkflowFrontendControl,
   WorkflowParamReference,
   WorkflowRules,
+  WorkflowSingleSamplerDenoiseRule,
   WorkflowVideoAudioRetakeRule,
 } from "./types";
 
@@ -145,6 +147,63 @@ function resolveDualSamplerDenoiseWidget(
   };
 }
 
+function resolveSingleSamplerDenoiseWidget(
+  workflow: Record<string, unknown>,
+  rule: WorkflowSingleSamplerDenoiseRule,
+): SingleSamplerDenoiseDerivedWidgetInput | null {
+  const totalSteps = toPositiveInteger(
+    getWorkflowParamNumber(workflow, rule.total_steps),
+  );
+  const startStep = getWorkflowParamNumber(workflow, rule.start_step);
+
+  if (totalSteps === null || startStep === null) {
+    console.warn(
+      "[resolveWidgetInputs] Skipping derived widget '%s': missing numeric workflow params",
+      rule.id,
+    );
+    return null;
+  }
+
+  const normalizedStartStep = Math.min(
+    Math.max(0, Math.round(startStep)),
+    totalSteps,
+  );
+  const denoiseSteps = Math.min(
+    totalSteps,
+    Math.max(0, totalSteps - normalizedStartStep),
+  );
+  const step = 1 / totalSteps;
+  const currentValue = denoiseSteps / totalSteps;
+
+  return {
+    kind: "derived",
+    deriveKind: "single_sampler_denoise",
+    derivedWidgetId: rule.id,
+    nodeId: getDerivedWidgetNodeId(rule.id),
+    param: DERIVED_WIDGET_VALUE_PARAM,
+    currentValue,
+    sources: {
+      totalSteps,
+      startStep: normalizedStartStep,
+    },
+    config: {
+      label: rule.label ?? "Denoise",
+      controlAfterGenerate: false,
+      frontendOnly: true,
+      min: 0,
+      max: 1,
+      step,
+      control: "slider",
+      sliderDisplay: "percent",
+      valueType: "float",
+      groupId: toOptionalString(rule.group_id),
+      groupTitle:
+        toOptionalString(rule.group_title) ?? rule.label ?? "Denoise",
+      groupOrder: toOptionalNumber(rule.group_order),
+    },
+  };
+}
+
 const VIDEO_AUDIO_RETAKE_OPTIONS: VideoAudioRetakeMode[] = [
   "Video & Audio",
   "Video",
@@ -210,6 +269,8 @@ function resolveDerivedWidgetInputs(
     let widget: DerivedWorkflowWidgetInput | null = null;
     if (rule.kind === "dual_sampler_denoise") {
       widget = resolveDualSamplerDenoiseWidget(workflow, rule);
+    } else if (rule.kind === "single_sampler_denoise") {
+      widget = resolveSingleSamplerDenoiseWidget(workflow, rule);
     } else if (rule.kind === "video_audio_retake") {
       widget = resolveVideoAudioRetakeWidget(workflow, rule);
     }

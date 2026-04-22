@@ -16,6 +16,356 @@
       "title": "AspectRatioTargetNode",
       "type": "object"
     },
+    "ConditionAllOf": {
+      "properties": {
+        "conditions": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "all_of": "#/$defs/ConditionAllOf",
+                "always": "#/$defs/ConditionAlways",
+                "any_of": "#/$defs/ConditionAnyOf",
+                "compare": "#/$defs/ConditionCompare",
+                "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
+                "not": "#/$defs/ConditionNot"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ConditionAlways"
+              },
+              {
+                "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+              },
+              {
+                "$ref": "#/$defs/ConditionCompare"
+              },
+              {
+                "$ref": "#/$defs/ConditionAllOf"
+              },
+              {
+                "$ref": "#/$defs/ConditionAnyOf"
+              },
+              {
+                "$ref": "#/$defs/ConditionNot"
+              }
+            ]
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "all_of",
+          "default": "all_of",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "ConditionAllOf",
+      "type": "object"
+    },
+    "ConditionAlways": {
+      "properties": {
+        "kind": {
+          "const": "always",
+          "default": "always",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "default": true,
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "title": "ConditionAlways",
+      "type": "object"
+    },
+    "ConditionAnyOf": {
+      "properties": {
+        "conditions": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "all_of": "#/$defs/ConditionAllOf",
+                "always": "#/$defs/ConditionAlways",
+                "any_of": "#/$defs/ConditionAnyOf",
+                "compare": "#/$defs/ConditionCompare",
+                "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
+                "not": "#/$defs/ConditionNot"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ConditionAlways"
+              },
+              {
+                "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+              },
+              {
+                "$ref": "#/$defs/ConditionCompare"
+              },
+              {
+                "$ref": "#/$defs/ConditionAllOf"
+              },
+              {
+                "$ref": "#/$defs/ConditionAnyOf"
+              },
+              {
+                "$ref": "#/$defs/ConditionNot"
+              }
+            ]
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "any_of",
+          "default": "any_of",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "ConditionAnyOf",
+      "type": "object"
+    },
+    "ConditionCompare": {
+      "properties": {
+        "kind": {
+          "const": "compare",
+          "default": "compare",
+          "title": "Kind",
+          "type": "string"
+        },
+        "operator": {
+          "default": "eq",
+          "enum": [
+            "eq",
+            "neq",
+            "lt",
+            "lte",
+            "gt",
+            "gte"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "ref": {
+          "discriminator": {
+            "mapping": {
+              "derived_widget": "#/$defs/DerivedWidgetStateReference",
+              "frontend_control": "#/$defs/FrontendControlStateReference",
+              "pipeline_control": "#/$defs/PipelineControlReference",
+              "workflow_param": "#/$defs/WorkflowParamValueReference"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkflowParamValueReference"
+            },
+            {
+              "$ref": "#/$defs/PipelineControlReference"
+            },
+            {
+              "$ref": "#/$defs/FrontendControlStateReference"
+            },
+            {
+              "$ref": "#/$defs/DerivedWidgetStateReference"
+            }
+          ],
+          "title": "Ref"
+        },
+        "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "ConditionCompare",
+      "type": "object"
+    },
+    "ConditionNot": {
+      "properties": {
+        "condition": {
+          "discriminator": {
+            "mapping": {
+              "all_of": "#/$defs/ConditionAllOf",
+              "always": "#/$defs/ConditionAlways",
+              "any_of": "#/$defs/ConditionAnyOf",
+              "compare": "#/$defs/ConditionCompare",
+              "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
+              "not": "#/$defs/ConditionNot"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConditionAlways"
+            },
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+            },
+            {
+              "$ref": "#/$defs/ConditionCompare"
+            },
+            {
+              "$ref": "#/$defs/ConditionAllOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionAnyOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionNot"
+            }
+          ],
+          "title": "Condition"
+        },
+        "kind": {
+          "const": "not",
+          "default": "not",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "condition"
+      ],
+      "title": "ConditionNot",
+      "type": "object"
+    },
+    "DerivedWidgetStateReference": {
+      "properties": {
+        "derived_widget_id": {
+          "title": "Derived Widget Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "derived_widget",
+          "default": "derived_widget",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "derived_widget_id"
+      ],
+      "title": "DerivedWidgetStateReference",
+      "type": "object"
+    },
+    "EffectSwitch": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/EffectSwitchCase"
+          },
+          "title": "Cases",
+          "type": "array"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        }
+      },
+      "title": "EffectSwitch",
+      "type": "object"
+    },
+    "EffectSwitchCase": {
+      "additionalProperties": false,
+      "properties": {
+        "bypass": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Bypass",
+          "type": "array"
+        },
+        "set_widgets": {
+          "items": {
+            "$ref": "#/$defs/WorkflowRewriteWidgetOverride"
+          },
+          "title": "Set Widgets",
+          "type": "array"
+        },
+        "when": {
+          "discriminator": {
+            "mapping": {
+              "all_of": "#/$defs/ConditionAllOf",
+              "always": "#/$defs/ConditionAlways",
+              "any_of": "#/$defs/ConditionAnyOf",
+              "compare": "#/$defs/ConditionCompare",
+              "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
+              "not": "#/$defs/ConditionNot"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConditionAlways"
+            },
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+            },
+            {
+              "$ref": "#/$defs/ConditionCompare"
+            },
+            {
+              "$ref": "#/$defs/ConditionAllOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionAnyOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionNot"
+            }
+          ],
+          "title": "When"
+        }
+      },
+      "required": [
+        "when"
+      ],
+      "title": "EffectSwitchCase",
+      "type": "object"
+    },
+    "FrontendControlStateReference": {
+      "properties": {
+        "control_id": {
+          "title": "Control Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "frontend_control",
+          "default": "frontend_control",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "control_id"
+      ],
+      "title": "FrontendControlStateReference",
+      "type": "object"
+    },
     "MaskProcessingTarget": {
       "properties": {
         "mask": {
@@ -94,6 +444,8 @@
             {
               "discriminator": {
                 "mapping": {
+                  "derived_widget": "#/$defs/DerivedWidgetStateReference",
+                  "frontend_control": "#/$defs/FrontendControlStateReference",
                   "pipeline_control": "#/$defs/PipelineControlReference",
                   "workflow_param": "#/$defs/WorkflowParamValueReference"
                 },
@@ -105,6 +457,12 @@
                 },
                 {
                   "$ref": "#/$defs/PipelineControlReference"
+                },
+                {
+                  "$ref": "#/$defs/FrontendControlStateReference"
+                },
+                {
+                  "$ref": "#/$defs/DerivedWidgetStateReference"
                 }
               ]
             },
@@ -421,6 +779,8 @@
         "ref": {
           "discriminator": {
             "mapping": {
+              "derived_widget": "#/$defs/DerivedWidgetStateReference",
+              "frontend_control": "#/$defs/FrontendControlStateReference",
               "pipeline_control": "#/$defs/PipelineControlReference",
               "workflow_param": "#/$defs/WorkflowParamValueReference"
             },
@@ -432,6 +792,12 @@
             },
             {
               "$ref": "#/$defs/PipelineControlReference"
+            },
+            {
+              "$ref": "#/$defs/FrontendControlStateReference"
+            },
+            {
+              "$ref": "#/$defs/DerivedWidgetStateReference"
             }
           ],
           "title": "Ref"
@@ -507,13 +873,44 @@
         "when": {
           "anyOf": [
             {
-              "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+              "discriminator": {
+                "mapping": {
+                  "all_of": "#/$defs/ConditionAllOf",
+                  "always": "#/$defs/ConditionAlways",
+                  "any_of": "#/$defs/ConditionAnyOf",
+                  "compare": "#/$defs/ConditionCompare",
+                  "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
+                  "not": "#/$defs/ConditionNot"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ConditionAlways"
+                },
+                {
+                  "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+                },
+                {
+                  "$ref": "#/$defs/ConditionCompare"
+                },
+                {
+                  "$ref": "#/$defs/ConditionAllOf"
+                },
+                {
+                  "$ref": "#/$defs/ConditionAnyOf"
+                },
+                {
+                  "$ref": "#/$defs/ConditionNot"
+                }
+              ]
             },
             {
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "title": "When"
         }
       },
       "required": [
@@ -680,6 +1077,54 @@
         "min"
       ],
       "title": "WorkflowAtLeastNInputValidationRule",
+      "type": "object"
+    },
+    "WorkflowConditionalBooleanOverride": {
+      "properties": {
+        "value": {
+          "default": true,
+          "title": "Value",
+          "type": "boolean"
+        },
+        "when": {
+          "discriminator": {
+            "mapping": {
+              "all_of": "#/$defs/ConditionAllOf",
+              "always": "#/$defs/ConditionAlways",
+              "any_of": "#/$defs/ConditionAnyOf",
+              "compare": "#/$defs/ConditionCompare",
+              "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
+              "not": "#/$defs/ConditionNot"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConditionAlways"
+            },
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+            },
+            {
+              "$ref": "#/$defs/ConditionCompare"
+            },
+            {
+              "$ref": "#/$defs/ConditionAllOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionAnyOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionNot"
+            }
+          ],
+          "title": "When"
+        }
+      },
+      "required": [
+        "when"
+      ],
+      "title": "WorkflowConditionalBooleanOverride",
       "type": "object"
     },
     "WorkflowDualSamplerDenoiseRule": {
@@ -1143,6 +1588,83 @@
       "title": "WorkflowMaskProcessingStage",
       "type": "object"
     },
+    "WorkflowMediaFallback": {
+      "additionalProperties": false,
+      "properties": {
+        "content_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Type"
+        },
+        "filename": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Filename"
+        },
+        "input_type": {
+          "title": "Input Type",
+          "type": "string"
+        },
+        "kind": {
+          "const": "dummy",
+          "default": "dummy",
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "param": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Param"
+        },
+        "synthetic": {
+          "default": true,
+          "title": "Synthetic",
+          "type": "boolean"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "node_id",
+        "input_type"
+      ],
+      "title": "WorkflowMediaFallback",
+      "type": "object"
+    },
     "WorkflowOptionalInputValidationRule": {
       "properties": {
         "input": {
@@ -1379,21 +1901,33 @@
         "when": {
           "discriminator": {
             "mapping": {
-              "frontend_control_boolean": "#/$defs/WorkflowRuleBooleanFrontendControlCondition",
+              "all_of": "#/$defs/ConditionAllOf",
+              "always": "#/$defs/ConditionAlways",
+              "any_of": "#/$defs/ConditionAnyOf",
+              "compare": "#/$defs/ConditionCompare",
               "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
-              "widget_boolean": "#/$defs/WorkflowRuleBooleanWidgetCondition"
+              "not": "#/$defs/ConditionNot"
             },
             "propertyName": "kind"
           },
           "oneOf": [
             {
+              "$ref": "#/$defs/ConditionAlways"
+            },
+            {
               "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
             },
             {
-              "$ref": "#/$defs/WorkflowRuleBooleanWidgetCondition"
+              "$ref": "#/$defs/ConditionCompare"
             },
             {
-              "$ref": "#/$defs/WorkflowRuleBooleanFrontendControlCondition"
+              "$ref": "#/$defs/ConditionAllOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionAnyOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionNot"
             }
           ],
           "title": "When"
@@ -1413,6 +1947,12 @@
           "type": "string"
         },
         "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
           "default": null,
           "title": "Value"
         },
@@ -1428,76 +1968,6 @@
       "title": "WorkflowRewriteWidgetOverride",
       "type": "object"
     },
-    "WorkflowRuleBooleanFrontendControlCondition": {
-      "properties": {
-        "control_id": {
-          "title": "Control Id",
-          "type": "string"
-        },
-        "kind": {
-          "const": "frontend_control_boolean",
-          "default": "frontend_control_boolean",
-          "title": "Kind",
-          "type": "string"
-        },
-        "value": {
-          "default": true,
-          "title": "Value",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "control_id"
-      ],
-      "title": "WorkflowRuleBooleanFrontendControlCondition",
-      "type": "object"
-    },
-    "WorkflowRuleBooleanOverride": {
-      "properties": {
-        "value": {
-          "default": true,
-          "title": "Value",
-          "type": "boolean"
-        },
-        "when": {
-          "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
-        }
-      },
-      "required": [
-        "when"
-      ],
-      "title": "WorkflowRuleBooleanOverride",
-      "type": "object"
-    },
-    "WorkflowRuleBooleanWidgetCondition": {
-      "properties": {
-        "kind": {
-          "const": "widget_boolean",
-          "default": "widget_boolean",
-          "title": "Kind",
-          "type": "string"
-        },
-        "node_id": {
-          "title": "Node Id",
-          "type": "string"
-        },
-        "value": {
-          "default": true,
-          "title": "Value",
-          "type": "boolean"
-        },
-        "widget": {
-          "title": "Widget",
-          "type": "string"
-        }
-      },
-      "required": [
-        "node_id",
-        "widget"
-      ],
-      "title": "WorkflowRuleBooleanWidgetCondition",
-      "type": "object"
-    },
     "WorkflowRuleNode": {
       "additionalProperties": false,
       "properties": {
@@ -1510,7 +1980,7 @@
           "anyOf": [
             {
               "items": {
-                "$ref": "#/$defs/WorkflowRuleBooleanOverride"
+                "$ref": "#/$defs/WorkflowConditionalBooleanOverride"
               },
               "type": "array"
             },
@@ -1843,21 +2313,33 @@
         "when": {
           "discriminator": {
             "mapping": {
-              "frontend_control_boolean": "#/$defs/WorkflowRuleBooleanFrontendControlCondition",
+              "all_of": "#/$defs/ConditionAllOf",
+              "always": "#/$defs/ConditionAlways",
+              "any_of": "#/$defs/ConditionAnyOf",
+              "compare": "#/$defs/ConditionCompare",
               "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
-              "widget_boolean": "#/$defs/WorkflowRuleBooleanWidgetCondition"
+              "not": "#/$defs/ConditionNot"
             },
             "propertyName": "kind"
           },
           "oneOf": [
             {
+              "$ref": "#/$defs/ConditionAlways"
+            },
+            {
               "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
             },
             {
-              "$ref": "#/$defs/WorkflowRuleBooleanWidgetCondition"
+              "$ref": "#/$defs/ConditionCompare"
             },
             {
-              "$ref": "#/$defs/WorkflowRuleBooleanFrontendControlCondition"
+              "$ref": "#/$defs/ConditionAllOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionAnyOf"
+            },
+            {
+              "$ref": "#/$defs/ConditionNot"
             }
           ],
           "title": "When"
@@ -2173,6 +2655,81 @@
       "title": "WorkflowRuleWidgetInputPresenceCondition",
       "type": "object"
     },
+    "WorkflowSingleSamplerDenoiseRule": {
+      "properties": {
+        "group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "single_sampler_denoise",
+          "default": "single_sampler_denoise",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "start_step": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        },
+        "total_steps": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        }
+      },
+      "required": [
+        "id",
+        "total_steps",
+        "start_step"
+      ],
+      "title": "WorkflowSingleSamplerDenoiseRule",
+      "type": "object"
+    },
     "WorkflowValidationConfig": {
       "properties": {
         "inputs": {
@@ -2314,6 +2871,7 @@
         "discriminator": {
           "mapping": {
             "dual_sampler_denoise": "#/$defs/WorkflowDualSamplerDenoiseRule",
+            "single_sampler_denoise": "#/$defs/WorkflowSingleSamplerDenoiseRule",
             "video_audio_retake": "#/$defs/WorkflowVideoAudioRetakeRule"
           },
           "propertyName": "kind"
@@ -2323,11 +2881,21 @@
             "$ref": "#/$defs/WorkflowDualSamplerDenoiseRule"
           },
           {
+            "$ref": "#/$defs/WorkflowSingleSamplerDenoiseRule"
+          },
+          {
             "$ref": "#/$defs/WorkflowVideoAudioRetakeRule"
           }
         ]
       },
       "title": "Derived Widgets",
+      "type": "array"
+    },
+    "effect_switches": {
+      "items": {
+        "$ref": "#/$defs/EffectSwitch"
+      },
+      "title": "Effect Switches",
       "type": "array"
     },
     "frontend_controls": {
@@ -2351,6 +2919,13 @@
       ],
       "default": null,
       "title": "Input Conditions"
+    },
+    "media_fallbacks": {
+      "items": {
+        "$ref": "#/$defs/WorkflowMediaFallback"
+      },
+      "title": "Media Fallbacks",
+      "type": "array"
     },
     "name": {
       "anyOf": [

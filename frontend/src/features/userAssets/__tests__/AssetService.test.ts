@@ -362,4 +362,42 @@ describe("AssetService", () => {
       },
     });
   });
+
+  it("ingests a new asset with a suffixed name when the filename already exists but the hash differs", async () => {
+    const file = new File(["image"], "duplicate-name.png", {
+      type: "image/png",
+    });
+
+    (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
+      "new-hash",
+    );
+    (mediaProcessingService.generateImageThumbnail as Mock).mockResolvedValue(
+      new Blob(["thumb"]),
+    );
+
+    const newAsset = await assetService.ingestAsset(
+      file,
+      true,
+      true,
+      [
+        {
+          id: "existing-asset",
+          name: "duplicate-name.png",
+          hash: "existing-hash",
+          src: "duplicate-name.png",
+          type: "image",
+          createdAt: 1,
+        },
+      ],
+      {
+        source: "uploaded",
+      },
+    );
+
+    expect(newAsset).toMatchObject({
+      name: "duplicate-name_2.png",
+      hash: "new-hash",
+      type: "image",
+    });
+  });
 });

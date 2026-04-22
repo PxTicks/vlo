@@ -46,27 +46,21 @@ export function attachGenerationMask(
     generationMaskAssetId: meta.generationMaskAssetId,
     transformations: [],
   });
-  store.setClipMaskCompositionAlgebra(clipId, "normal");
 
   const parentClip = store.clips.find(
     (clip): clip is Extract<TimelineClip, { type: Exclude<TimelineClip["type"], "mask"> }> =>
       clip.id === clipId && clip.type !== "mask",
   );
 
-  if (parentClip) {
-    const existingComposition = (parentClip.components ?? []).find(
-      (component) => component.type === "mask_composition",
+  if (
+    parentClip &&
+    (!parentClip.maskCompositeTransformations ||
+      parentClip.maskCompositeTransformations.length === 0)
+  ) {
+    store.setClipMaskCompositeTransforms(
+      clipId,
+      createDefaultGeneratedMaskTransforms(),
     );
-    const existingTransforms =
-      existingComposition?.type === "mask_composition"
-        ? existingComposition.parameters.compositeTransformations
-        : [];
-    if (existingTransforms.length === 0) {
-      store.setClipMaskCompositeTransforms(
-        clipId,
-        createDefaultGeneratedMaskTransforms(),
-      );
-    }
   }
 }
 

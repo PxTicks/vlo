@@ -5,29 +5,15 @@ import type {
   MaskTimelineClip,
   TimelineClip,
 } from "../../../../types/TimelineTypes";
-import type {
-  ClipTransform,
-  MaskBooleanExpression,
-  StandardTimelineClip,
-} from "../../../../types/TimelineTypes";
-import type {
-  Component,
-  MaskCompositionAlgebra,
-} from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
-import { livePreviewParamStore } from "../../../transformations";
 
 vi.mock("../MaskVideoFramePlayer", async () => {
   const { Sprite, Texture } = await import("pixi.js");
 
   class MockMaskVideoFramePlayer {
     public readonly sprite: Sprite;
-    private decodedFrame = false;
     public readonly setSource = vi.fn(async () => undefined);
-    public readonly renderAt = vi.fn(async () => {
-      this.decodedFrame = true;
-    });
-    public readonly hasFrame = vi.fn(() => this.decodedFrame);
+    public readonly renderAt = vi.fn(async () => undefined);
     public readonly dispose = vi.fn(() => undefined);
 
     constructor(...args: [string]) {
@@ -63,42 +49,11 @@ function createParentClip(): TimelineClip {
   };
 }
 
-function withMaskComposition(
-  parent: TimelineClip,
-  options: {
-    expression?: MaskBooleanExpression | null;
-    algebra?: MaskCompositionAlgebra;
-    compositeTransformations?: ClipTransform[];
-  },
-): TimelineClip {
-  if (parent.type === "mask") return parent;
-  const standardParent = parent as StandardTimelineClip;
-  const base = (standardParent.components ?? []).filter(
-    (component) => component.type !== "mask_composition",
-  );
-  const compositionComponent: Component = {
-    id: "mask_composition_test",
-    type: "mask_composition",
-    parameters: {
-      ...(options.expression !== undefined
-        ? { expression: options.expression }
-        : {}),
-      ...(options.algebra !== undefined ? { algebra: options.algebra } : {}),
-      compositeTransformations: options.compositeTransformations ?? [],
-    },
-  };
-  return {
-    ...standardParent,
-    components: [...base, compositionComponent],
-  };
-}
-
 function createMaskClip(
   localId: string,
   options: {
     inverted?: boolean;
     maskType?: MaskTimelineClip["maskType"];
-    sam2GrowAmount?: number;
     sam2MaskAssetId?: string;
     generationMaskAssetId?: string;
     transformations?: MaskTimelineClip["transformations"];
@@ -121,7 +76,6 @@ function createMaskClip(
     maskType: options.maskType ?? "rectangle",
     maskMode: "apply",
     maskInverted: options.inverted ?? false,
-    sam2GrowAmount: options.sam2GrowAmount,
     maskParameters: {
       baseWidth: 100,
       baseHeight: 100,
@@ -153,8 +107,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "grow_1",
           type: "mask_grow",
@@ -164,7 +119,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const mask = createMaskClip("mask_alpha_scene");
 
     await controller.syncMaskClips(
@@ -199,8 +154,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "feather_1",
           type: "feather",
@@ -211,7 +167,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const featheredMask = createMaskClip("mask_feathered");
 
     await controller.syncMaskClips(
@@ -260,8 +216,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "feather_1",
           type: "feather",
@@ -272,7 +229,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const featheredMask = createMaskClip("mask_hard_outer");
 
     await controller.syncMaskClips(
@@ -304,8 +261,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "feather_1",
           type: "feather",
@@ -316,7 +274,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const generationMask = createMaskClip("mask_generation_hard_outer", {
       maskType: "generation",
       generationMaskAssetId: "generation-mask-asset",
@@ -468,8 +426,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
+    const parent = {
+      ...createParentClip(),
+      maskCompositeTransformations: [
         {
           id: "grow_1",
           type: "mask_grow",
@@ -480,7 +439,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",
@@ -609,8 +568,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      expression: {
+    const parent = {
+      ...createParentClip(),
+      maskBooleanExpression: {
         kind: "operation",
         operator: "intersect",
         left: {
@@ -622,8 +582,7 @@ describe("SpriteClipMaskController mask composition", () => {
           maskId: "mask_b",
         },
       },
-      algebra: "normal",
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",
@@ -679,8 +638,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      expression: {
+    const parent = {
+      ...createParentClip(),
+      maskBooleanExpression: {
         kind: "operation",
         operator: "union",
         left: {
@@ -692,7 +652,7 @@ describe("SpriteClipMaskController mask composition", () => {
           maskId: "mask_b",
         },
       },
-      compositeTransformations: [
+      maskCompositeTransformations: [
         {
           id: "grow_1",
           type: "mask_grow",
@@ -702,7 +662,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       ],
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",
@@ -738,107 +698,7 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
-  it("uses inverse algebra by default for explicit all-union vector expressions", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const renderSnapshots: Array<{
-      clear?: boolean;
-      transform?: unknown;
-      filters?: unknown;
-    }> = [];
-    const renderSpy = vi.fn((args: unknown) => {
-      const renderArgs = args as {
-        clear?: boolean;
-        transform?: unknown;
-        container?: { filters?: unknown };
-      };
-      renderSnapshots.push({
-        clear: renderArgs.clear,
-        transform: renderArgs.transform,
-        filters: renderArgs.container?.filters,
-      });
-    });
-    const renderer = {
-      render: renderSpy,
-    } as unknown as Renderer;
-    const sprite = new Sprite();
-    const root = new Container();
-    const controller = new SpriteClipMaskController(sprite, renderer, root);
-
-    const parent = withMaskComposition(createParentClip(), {
-      expression: {
-        kind: "operation",
-        operator: "union",
-        left: {
-          kind: "mask_ref",
-          maskId: "mask_a",
-        },
-        right: {
-          kind: "mask_ref",
-          maskId: "mask_b",
-        },
-      },
-    });
-    const maskA = createMaskClip("mask_a", { inverted: true });
-    const maskB = createMaskClip("mask_b", {
-      inverted: true,
-      maskType: "circle",
-    });
-
-    await controller.syncMaskClips(
-      [maskA, maskB],
-      parent,
-      { width: 1920, height: 1080 },
-      10,
-      new Map<string, Asset>(),
-    );
-
-    const unionFilter = (
-      controller as unknown as {
-        currentMaskMode: "none" | "regular" | "alpha";
-        maskBooleanBlendFilters: Partial<
-          Record<
-            "union",
-            {
-              resources: {
-                filterUniforms: {
-                  uniforms: {
-                    uOperateOnInverseCoverage: number;
-                  };
-                };
-              };
-            }
-          >
-        >;
-      }
-    ).maskBooleanBlendFilters.union;
-
-    expect(
-      (
-        controller as unknown as {
-          currentMaskMode: "none" | "regular" | "alpha";
-        }
-      ).currentMaskMode,
-    ).toBe("alpha");
-    expect(unionFilter).toBeTruthy();
-    expect(
-      unionFilter?.resources.filterUniforms.uniforms.uOperateOnInverseCoverage,
-    ).toBe(1);
-    expect(renderSpy).toHaveBeenCalledTimes(6);
-    expect(
-      renderSnapshots.some(
-        (call) =>
-          call.clear === true &&
-          call.transform === undefined &&
-          Array.isArray(call.filters) &&
-          call.filters.includes(unionFilter),
-      ),
-    ).toBe(true);
-
-    controller.dispose();
-    warnSpy.mockRestore();
-  });
-
-  it("keeps explicit normal all-union vector expressions on the simple union fast path", async () => {
+  it("keeps explicit all-union vector expressions on the simple union fast path", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSpy = vi.fn();
     const renderer = {
@@ -848,8 +708,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      expression: {
+    const parent = {
+      ...createParentClip(),
+      maskBooleanExpression: {
         kind: "operation",
         operator: "union",
         left: {
@@ -861,8 +722,7 @@ describe("SpriteClipMaskController mask composition", () => {
           maskId: "mask_b",
         },
       },
-      algebra: "normal",
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",
@@ -926,8 +786,9 @@ describe("SpriteClipMaskController mask composition", () => {
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
-    const parent = withMaskComposition(createParentClip(), {
-      expression: {
+    const parent = {
+      ...createParentClip(),
+      maskBooleanExpression: {
         kind: "operation",
         operator: "subtract",
         left: {
@@ -947,8 +808,7 @@ describe("SpriteClipMaskController mask composition", () => {
           },
         },
       },
-      algebra: "normal",
-    });
+    } as TimelineClip;
     const maskA = createMaskClip("mask_a");
     const maskB = createMaskClip("mask_b", {
       maskType: "circle",
@@ -1034,177 +894,6 @@ describe("SpriteClipMaskController mask composition", () => {
     ).toHaveBeenCalledWith(expect.any(Number), { strict: true });
     expect(renderSpy).toHaveBeenCalledTimes(2);
 
-    controller.dispose();
-    warnSpy.mockRestore();
-  });
-
-  it("grows SAM2 leaf masks before boolean composition only when amount is non-zero", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const renderSpy = vi.fn();
-    const renderer = {
-      render: renderSpy,
-    } as unknown as Renderer;
-    const sprite = new Sprite(Texture.WHITE);
-    const root = new Container();
-    const controller = new SpriteClipMaskController(sprite, renderer, root);
-
-    const parent = createParentClip();
-    const sam2Mask = createMaskClip("mask_sam2", {
-      maskType: "sam2",
-      sam2MaskAssetId: "sam2-mask-asset",
-      sam2GrowAmount: 0,
-    });
-    const sam2Asset = createMaskAsset("sam2-mask-asset");
-
-    await controller.syncMaskClips(
-      [sam2Mask],
-      parent,
-      { width: 1920, height: 1080 },
-      10,
-      new Map([[sam2Asset.id, sam2Asset]]),
-      { waitForSam2: true },
-    );
-
-    expect(renderSpy).toHaveBeenCalledTimes(2);
-
-    await controller.syncMaskClips(
-      [{ ...sam2Mask, sam2GrowAmount: 10 }],
-      parent,
-      { width: 1920, height: 1080 },
-      10,
-      new Map([[sam2Asset.id, sam2Asset]]),
-      { waitForSam2: true },
-    );
-
-    expect(renderSpy).toHaveBeenCalledTimes(7);
-
-    controller.dispose();
-    warnSpy.mockRestore();
-  });
-
-  it("requests a missing SAM2 frame during transform-only mask sync", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const renderer = {
-      render: vi.fn(),
-    } as unknown as Renderer;
-    const sprite = new Sprite(Texture.WHITE);
-    const root = new Container();
-    const controller = new SpriteClipMaskController(sprite, renderer, root);
-
-    const parent = createParentClip();
-    const sam2Mask = createMaskClip("mask_sam2_skip", {
-      maskType: "sam2",
-      sam2MaskAssetId: "sam2-mask-asset-skip",
-    });
-    const sam2Asset = createMaskAsset("sam2-mask-asset-skip");
-
-    await controller.syncMaskClips(
-      [sam2Mask],
-      parent,
-      { width: 1920, height: 1080 },
-      10,
-      new Map([[sam2Asset.id, sam2Asset]]),
-      { skipSam2FrameRender: true },
-    );
-
-    const node = (
-      controller as unknown as {
-        assetMaskNodes: Map<
-          string,
-          {
-            player: {
-              renderAt: ReturnType<typeof vi.fn>;
-            };
-          }
-        >;
-      }
-    ).assetMaskNodes.get(sam2Mask.id);
-
-    expect(node?.player.renderAt).toHaveBeenCalledWith(expect.any(Number));
-
-    controller.dispose();
-    warnSpy.mockRestore();
-  });
-
-  it("rebinds the regular Pixi mask when the active mask set changes", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const sprite = new Sprite(Texture.WHITE);
-    const setMaskSpy = vi.spyOn(
-      sprite as Sprite & {
-        setMask: (options: { mask: Container | null; inverse: boolean }) => void;
-      },
-      "setMask",
-    );
-    const root = new Container();
-    const controller = new SpriteClipMaskController(sprite, null, root);
-
-    const parent = createParentClip();
-    const firstMask = createMaskClip("mask_first");
-    const secondMask = createMaskClip("mask_second", {
-      maskType: "circle",
-    });
-
-    await controller.syncMaskClips(
-      [firstMask],
-      parent,
-      { width: 1920, height: 1080 },
-      10,
-      new Map<string, Asset>(),
-    );
-    await controller.syncMaskClips(
-      [firstMask, secondMask],
-      parent,
-      { width: 1920, height: 1080 },
-      10,
-      new Map<string, Asset>(),
-    );
-
-    expect(setMaskSpy).toHaveBeenCalledTimes(2);
-    expect(setMaskSpy).toHaveBeenLastCalledWith({
-      mask: expect.any(Container),
-      inverse: false,
-    });
-
-    controller.dispose();
-    warnSpy.mockRestore();
-  });
-
-  it("uses live preview values for shared mask edge operations", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const renderSpy = vi.fn();
-    const renderer = {
-      render: renderSpy,
-    } as unknown as Renderer;
-    const sprite = new Sprite(Texture.WHITE);
-    const root = new Container();
-    const controller = new SpriteClipMaskController(sprite, renderer, root);
-
-    const parent = withMaskComposition(createParentClip(), {
-      compositeTransformations: [
-        {
-          id: "grow_preview",
-          type: "mask_grow",
-          isEnabled: true,
-          parameters: {
-            amount: 0,
-          },
-        },
-      ],
-    });
-    const mask = createMaskClip("mask_live_preview");
-
-    livePreviewParamStore.set("grow_preview", "amount", 12);
-    await controller.syncMaskClips(
-      [mask],
-      parent,
-      { width: 1920, height: 1080 },
-      10,
-      new Map<string, Asset>(),
-    );
-
-    expect(renderSpy).toHaveBeenCalled();
-
-    livePreviewParamStore.clear("grow_preview", "amount");
     controller.dispose();
     warnSpy.mockRestore();
   });

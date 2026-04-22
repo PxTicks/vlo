@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from services.workflow_rules.condition_eval import compare_values
 from services.workflow_rules.normalize import WorkflowRules
 from services.workflow_rules.schema.models import (
     DEFAULT_PIPELINE_STAGE_AFTER_BY_KIND,
@@ -220,31 +221,7 @@ def resolve_control_options(
 
 
 def compare_control_value(current: Any, operator: str, expected: Any) -> bool:
-    if operator in {"lt", "lte", "gt", "gte"}:
-        current_number = _coerce_numeric(current)
-        expected_number = _coerce_numeric(expected)
-        if current_number is None or expected_number is None:
-            return False
-        if operator == "lt":
-            return current_number < expected_number
-        if operator == "lte":
-            return current_number <= expected_number
-        if operator == "gt":
-            return current_number > expected_number
-        return current_number >= expected_number
-
-    current_number = _coerce_numeric(current)
-    expected_number = _coerce_numeric(expected)
-    if current_number is not None and expected_number is not None:
-        matches = math.isclose(current_number, expected_number, rel_tol=0.0, abs_tol=1e-9)
-    elif isinstance(current, str) and isinstance(expected, str):
-        matches = current.strip().lower() == expected.strip().lower()
-    else:
-        matches = current == expected
-
-    if operator == "neq":
-        return not matches
-    return matches
+    return compare_values(current, operator, expected)
 
 
 def _control_is_client_authored(control: dict[str, Any]) -> bool:

@@ -7,14 +7,8 @@ import type {
   ClipMaskMode,
   ClipMaskType,
   MaskTimelineClip,
-  StandardTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
-import {
-  resolveMaskCompositionAlgebra,
-  type MaskCompositionAlgebra,
-  type RangeMaskComponent,
-} from "../../../types/Components";
 import {
   TICKS_PER_SECOND,
   countSam2MaskAssetConsumers,
@@ -23,20 +17,12 @@ import {
   parseMaskClipId,
   selectMaskClipsForParent,
 } from "../../timeline";
-import { useTimelineSelectionStore } from "../../timelineSelection";
-import { useExtractStore } from "../../player/useExtractStore";
 import { useMaskViewStore } from "../store/useMaskViewStore";
 import { createMask } from "../model/maskFactory";
-import {
-  getMaskCompositionComponent,
-  resolveMaskBooleanExpression,
-} from "../model/maskBooleanExpression";
+import { resolveMaskBooleanExpression } from "../model/maskBooleanExpression";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
 import { playbackClock } from "../../player/services/PlaybackClock";
-import {
-  calculateClipTime,
-  mapSourceTimeToVisualTime,
-} from "../../transformations";
+import { calculateClipTime } from "../../transformations";
 import { useProjectStore } from "../../project/useProjectStore";
 import {
   clearSam2EditorSession,
@@ -145,11 +131,8 @@ export interface UseMaskPanelResult {
   selectMask: (maskId: string) => void;
   setMaskMode: (mode: ClipMaskMode) => void;
   setMaskBooleanExpression: (expression: MaskBooleanExpression | null) => void;
-  setMaskName: (name: string) => void;
   maskInverted: boolean;
   setMaskInverted: (inverted: boolean) => void;
-  sam2GrowAmount: number;
-  setSam2GrowAmount: (amount: number) => void;
   sam2PointMode: "add" | "remove";
   setSam2PointMode: (mode: "add" | "remove") => void;
   sam2Points: ClipMaskPoint[];
@@ -169,16 +152,7 @@ export interface UseMaskPanelResult {
   sam2GenerateError: string | null;
   isSam2Dirty: boolean;
   hasSam2MaskAsset: boolean;
-  duplicateMask: (maskId: string) => void;
-  deleteMask: (maskId: string) => void;
   deleteSelectedMask: () => void;
-  maskCompositionAlgebra: MaskCompositionAlgebra;
-  setMaskCompositionAlgebra: (algebra: MaskCompositionAlgebra) => void;
-  rangeMaskComponents: RangeMaskComponent[];
-  startAddRangeMask: () => void;
-  startEditRangeMask: (rangeMaskId: string) => void;
-  removeRangeMask: (rangeMaskId: string) => void;
-  toggleRangeMaskActive: (rangeMaskId: string) => void;
 }
 
 export function useMaskPanel(): UseMaskPanelResult {
@@ -237,14 +211,10 @@ export function useMaskPanel(): UseMaskPanelResult {
   const selectedClip = useTimelineClip(selectedClipId) ?? null;
 
   const updateClipMask = useTimelineStore((state) => state.updateClipMask);
-  const duplicateClipMask = useTimelineStore((state) => state.duplicateClipMask);
   const removeClipMask = useTimelineStore((state) => state.removeClipMask);
   const addClipMask = useTimelineStore((state) => state.addClipMask);
   const setClipMaskBooleanExpression = useTimelineStore(
     (state) => state.setClipMaskBooleanExpression,
-  );
-  const setClipMaskCompositionAlgebra = useTimelineStore(
-    (state) => state.setClipMaskCompositionAlgebra,
   );
   const assets = useAssetStore((state) => state.assets);
   const addLocalAsset = useAssetStore((state) => state.addLocalAsset);
@@ -275,15 +245,6 @@ export function useMaskPanel(): UseMaskPanelResult {
 
     return resolveMaskBooleanExpression(selectedClip, masks);
   }, [masks, selectedClip]);
-  const maskCompositionAlgebra = useMemo(() => {
-    if (!selectedClip || selectedClip.type === "mask") {
-      return resolveMaskCompositionAlgebra(null);
-    }
-
-    return resolveMaskCompositionAlgebra(
-      getMaskCompositionComponent(selectedClip)?.parameters,
-    );
-  }, [selectedClip]);
 
   const selectedMask = useMemo(() => {
     if (!selectedMaskId) return null;
@@ -561,14 +522,6 @@ export function useMaskPanel(): UseMaskPanelResult {
     [selectedClipId, selectedMaskId, updateClipMask],
   );
 
-  const setMaskName = useCallback(
-    (name: string) => {
-      if (!selectedClipId || !selectedMaskId) return;
-      updateClipMask(selectedClipId, selectedMaskId, { name });
-    },
-    [selectedClipId, selectedMaskId, updateClipMask],
-  );
-
   const setMaskInverted = useCallback(
     (inverted: boolean) => {
       if (!selectedClipId || !selectedMaskId) return;
@@ -579,30 +532,6 @@ export function useMaskPanel(): UseMaskPanelResult {
 
   const maskInverted =
     selectedMask?.type === "mask" ? (selectedMask.maskInverted ?? false) : false;
-
-  const sam2GrowAmount =
-    selectedMask?.type === "mask" && selectedMask.maskType === "sam2"
-      ? (selectedMask.sam2GrowAmount ?? 0)
-      : 0;
-
-  const setSam2GrowAmount = useCallback(
-    (amount: number) => {
-      if (!selectedClipId || !selectedMaskId) return;
-      if (
-        !selectedMask ||
-        selectedMask.type !== "mask" ||
-        selectedMask.maskType !== "sam2"
-      ) {
-        return;
-      }
-
-      const nextAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0;
-      updateClipMask(selectedClipId, selectedMaskId, {
-        sam2GrowAmount: nextAmount,
-      });
-    },
-    [selectedClipId, selectedMask, selectedMaskId, updateClipMask],
-  );
 
   const clearSam2Points = useCallback(() => {
     if (!selectedClipId || !selectedMaskId) return;
@@ -1139,196 +1068,28 @@ export function useMaskPanel(): UseMaskPanelResult {
     updateClipMask,
   ]);
 
-  const addClipComponent = useTimelineStore(
-    (state) => state.addClipComponent,
-  );
-  const updateClipComponent = useTimelineStore(
-    (state) => state.updateClipComponent,
-  );
-  const removeClipComponent = useTimelineStore(
-    (state) => state.removeClipComponent,
-  );
-
-  const standardSelectedClip =
-    selectedClip && selectedClip.type !== "mask"
-      ? (selectedClip as StandardTimelineClip)
-      : null;
-  const rangeMaskComponents = useMemo<RangeMaskComponent[]>(
-    () =>
-      (standardSelectedClip?.components ?? []).filter(
-        (component): component is RangeMaskComponent =>
-          component.type === "range_mask",
-      ),
-    [standardSelectedClip],
-  );
-
-  const startAddRangeMask = useCallback(() => {
-    if (!selectedClipId) return;
-    if (!standardSelectedClip) return;
-
-    const clip = standardSelectedClip;
-    const clipStart = clip.start;
-    const clipEnd = clip.start + clip.timelineDuration;
-    const defaultStart = Math.max(
-      clipStart,
-      Math.min(playbackClock.time, clipEnd),
-    );
-    const defaultEnd = Math.min(clipEnd, defaultStart + TICKS_PER_SECOND);
-
-    const selectionStore = useTimelineSelectionStore.getState();
-    const extractStore = useExtractStore.getState();
-
-    selectionStore.clearSelectionRecommendations();
-    selectionStore.enterSelectionMode(defaultStart, defaultEnd);
-
-    extractStore.setOnConfirmSelection(() => {
-      const { selectionStartTick, selectionEndTick } =
-        useTimelineSelectionStore.getState();
-      const startSourceTicks = toClipInputTimeTicks(clip, selectionStartTick);
-      const endSourceTicks = toClipInputTimeTicks(clip, selectionEndTick);
-      const orderedStart = Math.min(startSourceTicks, endSourceTicks);
-      const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
-
-      const newComponent: RangeMaskComponent = {
-        id: `range_${crypto.randomUUID()}`,
-        type: "range_mask",
-        parameters: {
-          startSourceTicks: orderedStart,
-          endSourceTicks: orderedEnd,
-          isActive: true,
-        },
-      };
-      addClipComponent(selectedClipId, newComponent);
-
-      useTimelineSelectionStore.getState().exitSelectionMode();
-      useExtractStore.getState().setOnConfirmSelection(null);
-    });
-  }, [addClipComponent, selectedClipId, standardSelectedClip]);
-
-  const startEditRangeMask = useCallback(
-    (rangeMaskId: string) => {
-      if (!selectedClipId) return;
-      if (!standardSelectedClip) return;
-
-      const clip = standardSelectedClip;
-      const existing = (clip.components ?? []).find(
-        (component): component is RangeMaskComponent =>
-          component.id === rangeMaskId && component.type === "range_mask",
-      );
-      if (!existing) return;
-
-      const clipStart = clip.start;
-      const clipEnd = clip.start + clip.timelineDuration;
-      const rawStart =
-        clipStart +
-        mapSourceTimeToVisualTime(clip, existing.parameters.startSourceTicks);
-      const rawEnd =
-        clipStart +
-        mapSourceTimeToVisualTime(clip, existing.parameters.endSourceTicks);
-      const seededStart = Math.max(clipStart, Math.min(rawStart, clipEnd));
-      const seededEnd = Math.max(clipStart, Math.min(rawEnd, clipEnd));
-
-      const selectionStore = useTimelineSelectionStore.getState();
-      const extractStore = useExtractStore.getState();
-
-      selectionStore.clearSelectionRecommendations();
-      selectionStore.enterSelectionMode(seededStart, seededEnd);
-
-      extractStore.setOnConfirmSelection(() => {
-        const { selectionStartTick, selectionEndTick } =
-          useTimelineSelectionStore.getState();
-        const startSourceTicks = toClipInputTimeTicks(clip, selectionStartTick);
-        const endSourceTicks = toClipInputTimeTicks(clip, selectionEndTick);
-        const orderedStart = Math.min(startSourceTicks, endSourceTicks);
-        const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
-
-        updateClipComponent(selectedClipId, rangeMaskId, (component) => {
-          if (component.type !== "range_mask") return component;
-          return {
-            ...component,
-            parameters: {
-              ...component.parameters,
-              startSourceTicks: orderedStart,
-              endSourceTicks: orderedEnd,
-            },
-          };
-        });
-
-        useTimelineSelectionStore.getState().exitSelectionMode();
-        useExtractStore.getState().setOnConfirmSelection(null);
-      });
-    },
-    [selectedClipId, standardSelectedClip, updateClipComponent],
-  );
-
-  const removeRangeMask = useCallback(
-    (rangeMaskId: string) => {
-      if (!selectedClipId) return;
-      removeClipComponent(selectedClipId, rangeMaskId);
-    },
-    [removeClipComponent, selectedClipId],
-  );
-
-  const toggleRangeMaskActive = useCallback(
-    (rangeMaskId: string) => {
-      if (!selectedClipId) return;
-      updateClipComponent(selectedClipId, rangeMaskId, (component) => {
-        if (component.type !== "range_mask") return component;
-        return {
-          ...component,
-          parameters: {
-            ...component.parameters,
-            isActive: !component.parameters.isActive,
-          },
-        };
-      });
-    },
-    [selectedClipId, updateClipComponent],
-  );
-
-  const duplicateMask = useCallback(
-    (maskId: string) => {
-      if (!selectedClipId) return;
-      const duplicatedMaskId = duplicateClipMask(selectedClipId, maskId);
-      if (duplicatedMaskId) {
-        setSelectedMask(selectedClipId, duplicatedMaskId);
-      }
-    },
-    [duplicateClipMask, selectedClipId, setSelectedMask],
-  );
-
-  const deleteMask = useCallback(
-    (maskId: string) => {
-      if (!selectedClipId) return;
-
-      const selectedIndex = masks.findIndex((m) => {
-        const parsed = parseMaskClipId(m.id);
-        return parsed?.maskId === maskId;
-      });
-      const fallbackMask =
-        masks[selectedIndex + 1] ?? masks[selectedIndex - 1] ?? null;
-      const fallbackId = fallbackMask
-        ? (parseMaskClipId(fallbackMask.id)?.maskId ?? null)
-        : null;
-
-      removeClipMask(selectedClipId, maskId);
-      if (selectedMaskId === maskId) {
-        setSelectedMask(selectedClipId, fallbackId);
-      }
-    },
-    [
-      masks,
-      removeClipMask,
-      selectedClipId,
-      selectedMaskId,
-      setSelectedMask,
-    ],
-  );
-
   const deleteSelectedMask = useCallback(() => {
-    if (!selectedMaskId) return;
-    deleteMask(selectedMaskId);
-  }, [deleteMask, selectedMaskId]);
+    if (!selectedClipId || !selectedMaskId) return;
+
+    const selectedIndex = masks.findIndex((m) => {
+      const parsed = parseMaskClipId(m.id);
+      return parsed?.maskId === selectedMaskId;
+    });
+    const fallbackMask =
+      masks[selectedIndex + 1] ?? masks[selectedIndex - 1] ?? null;
+    const fallbackId = fallbackMask
+      ? (parseMaskClipId(fallbackMask.id)?.maskId ?? null)
+      : null;
+
+    removeClipMask(selectedClipId, selectedMaskId);
+    setSelectedMask(selectedClipId, fallbackId);
+  }, [
+    masks,
+    removeClipMask,
+    selectedClipId,
+    selectedMaskId,
+    setSelectedMask,
+  ]);
 
   const hasSam2MaskAsset =
     selectedMask?.type === "mask" &&
@@ -1352,11 +1113,8 @@ export function useMaskPanel(): UseMaskPanelResult {
       if (!selectedClipId) return;
       setClipMaskBooleanExpression(selectedClipId, expression);
     },
-    setMaskName,
     maskInverted,
     setMaskInverted,
-    sam2GrowAmount,
-    setSam2GrowAmount,
     sam2PointMode,
     setSam2PointMode,
     sam2Points,
@@ -1376,18 +1134,6 @@ export function useMaskPanel(): UseMaskPanelResult {
     sam2GenerateError,
     isSam2Dirty,
     hasSam2MaskAsset,
-    duplicateMask,
-    deleteMask,
     deleteSelectedMask,
-    maskCompositionAlgebra,
-    setMaskCompositionAlgebra: (algebra) => {
-      if (!selectedClipId) return;
-      setClipMaskCompositionAlgebra(selectedClipId, algebra);
-    },
-    rangeMaskComponents,
-    startAddRangeMask,
-    startEditRangeMask,
-    removeRangeMask,
-    toggleRangeMaskActive,
   };
 }

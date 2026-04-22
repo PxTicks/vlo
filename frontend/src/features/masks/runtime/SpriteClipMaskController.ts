@@ -15,12 +15,10 @@ import type {
   TimelineClip,
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
-import { usesInverseMaskCompositionAlgebra } from "../../../types/Components";
 import type { Asset } from "../../../types/Asset";
 import {
   applyClipTransforms,
   calculateClipTime,
-  livePreviewParamStore,
 } from "../../transformations";
 import { dispatchTransform } from "../../transformations/catalogue/TransformationRegistry";
 import type { TransformState } from "../../transformations/catalogue/types";
@@ -95,15 +93,6 @@ function getAssetBackedMaskId(maskClip: MaskTimelineClip): string | null {
 
 function isAssetBackedMask(maskClip: MaskTimelineClip): boolean {
   return getAssetBackedMaskId(maskClip) !== null;
-}
-
-function getSam2MaskGrowAmount(maskClip: MaskTimelineClip): number {
-  if (maskClip.maskType !== "sam2") {
-    return 0;
-  }
-
-  const amount = maskClip.sam2GrowAmount ?? 0;
-  return Number.isFinite(amount) ? Math.max(0, amount) : 0;
 }
 
 function getMaskContentSize(clip: MaskTimelineClip): {
@@ -185,7 +174,6 @@ export class SpriteClipMaskController {
   private alphaMaskEffect: AlphaMask | null = null;
   private currentMaskMode: MaskApplicationMode = "none";
   private currentInverse = false;
-  private currentMaskSignature = "";
   private lastContentWidth = 0;
   private lastContentHeight = 0;
 
@@ -193,7 +181,6 @@ export class SpriteClipMaskController {
     sprite: Sprite,
     renderer?: Renderer | null,
     maskRootContainer?: Container | null,
-    private readonly onAssetMaskFrameReady?: () => void,
   ) {
     this.sprite = sprite;
     this.renderer = renderer ?? null;
@@ -378,12 +365,6 @@ export class SpriteClipMaskController {
               console.warn("Mask video frame update failed", error);
             });
         }
-      } else if (!node.player.hasFrame()) {
-        void node.player
-          .renderAt(requestedMaskTimeSeconds)
-          .catch((error) => {
-            console.warn("Mask video frame update failed", error);
-          });
       }
 
       const maskSprite = node.player.sprite;
@@ -408,9 +389,7 @@ export class SpriteClipMaskController {
     const hasSharedEdgeOps =
       sharedMaskCompositeState.growAmount > 0 ||
       (sharedMaskCompositeState.feather?.amount ?? 0) > 0;
-    const hasCompositeInvert =
-      sharedMaskCompositeState.compositeInvert &&
-      resolvedMaskExpressionAnalysis.operationCount > 0;
+    const hasCompositeInvert = sharedMaskCompositeState.compositeInvert;
     const hasInvertedMask = activeMaskClips.some((maskClip) => maskClip.maskInverted);
     const simpleUnionMasks =
       hasSharedEdgeOps || hasCompositeInvert
@@ -422,11 +401,6 @@ export class SpriteClipMaskController {
     const shouldUseCompositedAlphaMask =
       this.renderer !== null &&
       (hasSharedEdgeOps || hasCompositeInvert || simpleUnionMasks === null);
-    const maskApplicationSignature = this.createMaskApplicationSignature(
-      resolvedMaskExpression,
-      activeMaskClips,
-      sharedMaskCompositeState,
-    );
     this.sanitizeAssetMaskSpriteVisibility();
 
     if (this.maskSprite && shouldUseCompositedAlphaMask) {
@@ -452,7 +426,7 @@ export class SpriteClipMaskController {
           sharedMaskCompositeState,
         );
         if (renderedTexture) {
-          this.applyAlphaMask(this.maskSprite, false, maskApplicationSignature);
+          this.applyAlphaMask(this.maskSprite, false);
         } else {
           this.removeMaskFromTarget();
         }
@@ -461,12 +435,7 @@ export class SpriteClipMaskController {
       }
     } else if (simpleUnionMasks) {
       const inverse = false;
-      this.applyMaskEffect(
-        this.maskContainer,
-        inverse,
-        false,
-        maskApplicationSignature,
-      );
+      this.applyMaskEffect(this.maskContainer, inverse, false);
     } else if (
       activeAssetMasks.length > 0 ||
       hasInvertedMask ||
@@ -475,21 +444,11 @@ export class SpriteClipMaskController {
     ) {
       // No renderer / no maskSprite (test fallback): Container-based AlphaMask
       const inverse = singleMask ? (singleMask.maskInverted ?? false) : false;
-      this.applyMaskEffect(
-        this.maskContainer,
-        inverse,
-        true,
-        maskApplicationSignature,
-      );
+      this.applyMaskEffect(this.maskContainer, inverse, true);
     } else {
       // Vector-only: stencil mask
       const inverse = singleMask ? (singleMask.maskInverted ?? false) : false;
-      this.applyMaskEffect(
-        this.maskContainer,
-        inverse,
-        false,
-        maskApplicationSignature,
-      );
+      this.applyMaskEffect(this.maskContainer, inverse, false);
     }
   }
 
@@ -715,10 +674,8 @@ export class SpriteClipMaskController {
       };
     }
 
-    const composition = (parentClip.components ?? []).find(
-      (component) => component.type === "mask_composition",
-    );
-    if (composition?.type !== "mask_composition") {
+    const transforms = parentClip.maskCompositeTransformations ?? [];
+    if (transforms.length === 0) {
       return {
         compositeInvert: false,
         growAmount: 0,
@@ -726,11 +683,6 @@ export class SpriteClipMaskController {
         feather: null,
       };
     }
-
-    const transforms = composition.parameters.compositeTransformations;
-    const compositeInvert = usesInverseMaskCompositionAlgebra(
-      composition.parameters,
-    );
 
     const state: TransformState = {
       x: 0,
@@ -744,12 +696,16 @@ export class SpriteClipMaskController {
 
     transforms.forEach((transform) => {
       if (!transform.isEnabled) return;
-      dispatchTransform(state, this.applyLivePreviewOverrides(transform), {
+      dispatchTransform(state, transform, {
         container: logicalDimensions,
         content: contentSize,
         time: transformTime,
       });
     });
+
+    const compositeInvert = transforms.some(
+      (transform) => transform.parameters.invert === true,
+    );
 
     return {
       compositeInvert,
@@ -757,49 +713,6 @@ export class SpriteClipMaskController {
       growInvert: state.maskGrow?.invert ?? false,
       feather: state.feather ?? null,
     };
-  }
-
-  private applyLivePreviewOverrides(transform: TimelineClip["transformations"][number]) {
-    let nextParameters: Record<string, unknown> | null = null;
-
-    for (const paramName of Object.keys(transform.parameters)) {
-      const previewValue = livePreviewParamStore.get(transform.id, paramName);
-      if (previewValue === undefined) {
-        continue;
-      }
-
-      nextParameters ??= { ...transform.parameters };
-      nextParameters[paramName] = previewValue;
-    }
-
-    return nextParameters
-      ? {
-          ...transform,
-          parameters: nextParameters,
-        }
-      : transform;
-  }
-
-  private createMaskApplicationSignature(
-    expression: MaskBooleanExpression | null,
-    activeMaskClips: MaskTimelineClip[],
-    compositeState: ResolvedMaskCompositeState,
-  ): string {
-    return JSON.stringify({
-      expression,
-      masks: activeMaskClips.map((maskClip) => ({
-        id: maskClip.id,
-        type: maskClip.maskType,
-        mode: maskClip.maskMode,
-        inverted: maskClip.maskInverted,
-        assetId: getAssetBackedMaskId(maskClip),
-        sam2GrowAmount: getSam2MaskGrowAmount(maskClip),
-      })),
-      compositeInvert: compositeState.compositeInvert,
-      growInvert: compositeState.growInvert,
-      featherMode: compositeState.feather?.mode ?? null,
-      featherInvert: compositeState.feather?.invert ?? null,
-    });
   }
 
   private resolveSimpleUnionMaskClips(
@@ -863,55 +776,20 @@ export class SpriteClipMaskController {
       }
 
       if (!maskClip.maskInverted) {
-        const growAmount = getSam2MaskGrowAmount(maskClip);
-        if (growAmount <= 0) {
-          this.renderMaskSubsetToTexture(
-            new Set<string>([maskClip.id]),
-            leafTexture,
-            transform,
-          );
-          return;
-        }
-
         this.renderMaskSubsetToTexture(
           new Set<string>([maskClip.id]),
           leafTexture,
           transform,
         );
-        const grownTexture = this.renderGrowPass(
-          leafTexture,
-          growAmount,
-          false,
-        );
-        if (grownTexture !== leafTexture) {
-          this.renderTextureToTarget(grownTexture, leafTexture, {
-            clear: true,
-          });
-        }
-        return;
-      }
-
-      const growAmount = getSam2MaskGrowAmount(maskClip);
-      if (growAmount <= 0) {
-        this.renderMaskSubsetToTexture(
-          new Set<string>([maskClip.id]),
-          perMaskRenderTexture,
-          transform,
-        );
-        this.renderTextureToTarget(perMaskRenderTexture, leafTexture, {
-          clear: true,
-          filters: [this.getMaskCoverageInvertFilter()],
-        });
         return;
       }
 
       this.renderMaskSubsetToTexture(
         new Set<string>([maskClip.id]),
-        leafTexture,
+        perMaskRenderTexture,
         transform,
       );
-      const grownTexture = this.renderGrowPass(leafTexture, growAmount, false);
-      this.renderTextureToTarget(grownTexture, leafTexture, {
+      this.renderTextureToTarget(perMaskRenderTexture, leafTexture, {
         clear: true,
         filters: [this.getMaskCoverageInvertFilter()],
       });
@@ -1133,10 +1011,6 @@ export class SpriteClipMaskController {
     amount: number,
     invert: boolean,
   ): Texture {
-    if (amount <= 0) {
-      return sourceTexture;
-    }
-
     if (!this.effectMaskRenderTexture || !this.perMaskRenderTexture) {
       return sourceTexture;
     }
@@ -1303,7 +1177,7 @@ export class SpriteClipMaskController {
    * (`renderMaskToTexture = false`) — no intermediate texture or bounds
    * rounding by AlphaMaskPipe.
    */
-  private applyAlphaMask(target: Sprite, inverse: boolean, signature = "") {
+  private applyAlphaMask(target: Sprite, inverse: boolean) {
     const previousMode = this.currentMaskMode;
 
     if (previousMode === "regular") {
@@ -1316,8 +1190,7 @@ export class SpriteClipMaskController {
     if (
       this.currentMaskMode !== "alpha" ||
       this.currentInverse !== inverse ||
-      targetChanged ||
-      this.currentMaskSignature !== signature
+      targetChanged
     ) {
       if (previousMode === "alpha") {
         this.detachAlphaMaskEffect();
@@ -1333,7 +1206,6 @@ export class SpriteClipMaskController {
       this.attachAlphaMaskEffect();
       this.currentMaskMode = "alpha";
       this.currentInverse = inverse;
-      this.currentMaskSignature = signature;
     }
     this.syncOutputModeVisibility();
   }
@@ -1344,7 +1216,6 @@ export class SpriteClipMaskController {
     mask: Container | null,
     inverse: boolean,
     useAlphaMask: boolean,
-    signature = "",
   ) {
     const previousMode = this.currentMaskMode;
     const nextMode: MaskApplicationMode =
@@ -1352,8 +1223,7 @@ export class SpriteClipMaskController {
 
     if (
       this.currentMaskMode === nextMode &&
-      this.currentInverse === inverse &&
-      this.currentMaskSignature === signature
+      this.currentInverse === inverse
     ) {
       return;
     }
@@ -1364,7 +1234,6 @@ export class SpriteClipMaskController {
 
     this.currentMaskMode = nextMode;
     this.currentInverse = inverse;
-    this.currentMaskSignature = signature;
 
     if (!mask) {
       this.removeMaskFromTarget();
@@ -1556,10 +1425,7 @@ export class SpriteClipMaskController {
       const existing = this.assetMaskNodes.get(entry.maskId);
       if (existing) return;
       const root = new Container();
-      const player = new MaskVideoFramePlayer(
-        entry.maskId,
-        this.onAssetMaskFrameReady,
-      );
+      const player = new MaskVideoFramePlayer(entry.maskId);
       const thresholdFilter = createMaskBinaryThresholdFilter();
       player.sprite.filters = [thresholdFilter];
       root.addChild(player.sprite);
@@ -1932,7 +1798,6 @@ export class SpriteClipMaskController {
   private removeMaskFromTarget() {
     this.currentMaskMode = "none";
     this.currentInverse = false;
-    this.currentMaskSignature = "";
     if (this.perMaskSprite) {
       this.perMaskSprite.blendMode = "normal";
       this.perMaskSprite.filters = null;

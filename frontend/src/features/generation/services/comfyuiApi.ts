@@ -251,6 +251,8 @@ export async function generate(
     auto_family_request_key: request.deliveryContext.autoFamilyRequestKey,
     uses_save_image_websocket_outputs:
       request.deliveryContext.usesSaveImageWebsocketOutputs,
+    save_image_websocket_node_ids:
+      request.deliveryContext.saveImageWebsocketNodeIds,
     replay_inputs: request.deliveryContext.replayInputs ?? null,
   };
   const formData = new FormData();

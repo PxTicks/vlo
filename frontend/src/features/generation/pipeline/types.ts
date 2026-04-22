@@ -214,6 +214,7 @@ export interface GenerationDeliveryContext {
   postprocessConfig: WorkflowPostprocessingConfig;
   autoFamilyRequestKey: string | null;
   usesSaveImageWebsocketOutputs: boolean;
+  saveImageWebsocketNodeIds: string[];
   replayInputs?: Record<string, unknown> | null;
 }
 

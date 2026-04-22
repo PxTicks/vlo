@@ -170,6 +170,18 @@ def _normalize_delivery_context(
                 "usesSaveImageWebsocketOutputs",
             )
         ),
+        "save_image_websocket_node_ids": [
+            node_id
+            for node_id in (
+                _get_delivery_context_value(
+                    delivery_context,
+                    "save_image_websocket_node_ids",
+                    "saveImageWebsocketNodeIds",
+                )
+                or []
+            )
+            if isinstance(node_id, str) and node_id
+        ],
         "replay_inputs": _get_delivery_context_value(
             delivery_context,
             "replay_inputs",

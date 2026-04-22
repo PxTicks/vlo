@@ -8,6 +8,7 @@ import pytest
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.generation_delivery.service import (
+    BINARY_PREVIEW_IMAGE,
     GenerationHoldingService,
     _ProjectConsumer,
 )
@@ -170,6 +171,90 @@ async def test_generation_holding_service_marks_stale_inflight_delivery_on_load(
     assert len(deliveries) == 1
     assert deliveries[0]["status"] == "error"
     assert deliveries[0]["error"] == "Backend restarted before delivery completed"
+
+
+@pytest.mark.asyncio
+async def test_generation_holding_service_captures_websocket_outputs_and_finalizes(
+    tmp_path: Path,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    context = _delivery_context()
+    context["uses_save_image_websocket_outputs"] = True
+    context["save_image_websocket_node_ids"] = ["42"]
+
+    await service.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        delivery_context=context,
+    )
+
+    png_bytes = b"\x89PNG\r\n\x1a\nbody"
+    frame = (
+        BINARY_PREVIEW_IMAGE.to_bytes(4, "big")
+        + (2).to_bytes(4, "big")
+        + png_bytes
+    )
+
+    captured_one = await service._capture_websocket_output(
+        "project-1", "delivery-1", frame, 0
+    )
+    captured_two = await service._capture_websocket_output(
+        "project-1", "delivery-1", frame, 1
+    )
+    assert captured_one is not None and captured_two is not None
+
+    captured_path = await service.get_delivery_file_path(
+        "project-1",
+        "delivery-1",
+        "outputs",
+        captured_one["storage_name"],
+    )
+    assert captured_path is not None
+    assert captured_path.read_bytes() == png_bytes
+    assert captured_one["mime_type"] == "image/png"
+
+    await service._finalize_delivery(
+        "project-1",
+        "delivery-1",
+        "prompt-1",
+        [captured_one, captured_two],
+    )
+
+    deliveries = await service.list_project_deliveries("project-1")
+    assert len(deliveries) == 1
+    delivery = deliveries[0]
+    assert delivery["status"] == "completed_pending_ack"
+    assert len(delivery["outputs"]) == 2
+    assert delivery["outputs"][0]["filename"].startswith("ws-000000")
+    assert delivery["outputs"][0]["viewUrl"].startswith(
+        "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/outputs/"
+    )
+
+
+@pytest.mark.asyncio
+async def test_generation_holding_service_errors_when_no_websocket_outputs_captured(
+    tmp_path: Path,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    context = _delivery_context()
+    context["uses_save_image_websocket_outputs"] = True
+    context["save_image_websocket_node_ids"] = ["42"]
+
+    await service.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        delivery_context=context,
+    )
+    await service._finalize_delivery(
+        "project-1", "delivery-1", "prompt-1", []
+    )
+    delivery = await service.get_delivery("project-1", "delivery-1")
+    assert delivery is not None
+    assert delivery["status"] == "error"
 
 
 @pytest.mark.asyncio

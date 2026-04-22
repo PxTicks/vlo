@@ -30,6 +30,8 @@ HISTORY_FETCH_RETRY_MS = 0.25
 BINARY_PREVIEW_IMAGE = 1
 BINARY_PREVIEW_IMAGE_WITH_METADATA = 4
 _PREVIEW_EVENT_TYPES = {BINARY_PREVIEW_IMAGE, BINARY_PREVIEW_IMAGE_WITH_METADATA}
+PNG_SIGNATURE = bytes((0x89, 0x50, 0x4E, 0x47))
+JPEG_SIGNATURE = bytes((0xFF, 0xD8, 0xFF))
 
 
 def _is_preview_binary_frame(message: bytes) -> bool:
@@ -37,6 +39,34 @@ def _is_preview_binary_frame(message: bytes) -> bool:
         return False
     event_type = int.from_bytes(message[:4], byteorder="big", signed=False)
     return event_type in _PREVIEW_EVENT_TYPES
+
+
+def _extract_image_bytes(message: bytes) -> tuple[bytes, str] | None:
+    if len(message) < 4:
+        return None
+    event_type = int.from_bytes(message[:4], byteorder="big", signed=False)
+    if event_type == BINARY_PREVIEW_IMAGE_WITH_METADATA:
+        if len(message) < 8:
+            return None
+        metadata_length = int.from_bytes(message[4:8], byteorder="big", signed=False)
+        payload_offset = 8 + metadata_length
+        if payload_offset > len(message):
+            return None
+        payload = message[payload_offset:]
+    elif event_type == BINARY_PREVIEW_IMAGE:
+        # ComfyUI PREVIEW_IMAGE frames carry a 4-byte image-type header after
+        # the event code, so payload starts at offset 8.
+        if len(message) < 8:
+            return None
+        payload = message[8:]
+    else:
+        return None
+
+    if payload.startswith(PNG_SIGNATURE):
+        return payload, "image/png"
+    if payload.startswith(JPEG_SIGNATURE):
+        return payload, "image/jpeg"
+    return payload, "application/octet-stream"
 
 
 def _sanitize_filename(filename: str) -> str:
@@ -340,6 +370,9 @@ class GenerationHoldingService:
             "uses_save_image_websocket_outputs": delivery_context.get(
                 "uses_save_image_websocket_outputs",
                 False,
+            ),
+            "save_image_websocket_node_ids": list(
+                delivery_context.get("save_image_websocket_node_ids") or []
             ),
             "delivery_context": delivery_context,
             "workflow_warnings": [],
@@ -787,13 +820,57 @@ class GenerationHoldingService:
             )
         return stored_outputs
 
+    async def _capture_websocket_output(
+        self,
+        project_id: str,
+        delivery_id: str,
+        frame: bytes,
+        frame_index: int,
+    ) -> dict[str, Any] | None:
+        extracted = _extract_image_bytes(frame)
+        if not extracted:
+            return None
+        image_bytes, mime_type = extracted
+        extension = _guess_extension(mime_type, "ws-output.png")
+        filename = f"ws-{frame_index:06d}{extension}"
+        storage_name = await self._write_file(
+            project_id,
+            delivery_id,
+            "outputs",
+            filename,
+            image_bytes,
+        )
+        return {
+            "filename": filename,
+            "subfolder": "",
+            "type": "output",
+            "mime_type": mime_type,
+            "storage_name": storage_name,
+        }
+
     async def _finalize_delivery(
         self,
         project_id: str,
         delivery_id: str,
         prompt_id: str,
+        websocket_outputs: list[dict[str, Any]] | None = None,
     ) -> None:
-        outputs = await self._capture_history_outputs(project_id, delivery_id, prompt_id)
+        uses_ws_outputs = False
+        async with self._lock:
+            manifest = self._deliveries.get(delivery_id)
+            if manifest is not None:
+                uses_ws_outputs = bool(
+                    manifest.get("uses_save_image_websocket_outputs")
+                )
+
+        captured = websocket_outputs or []
+        if uses_ws_outputs:
+            outputs = captured
+        else:
+            outputs = await self._capture_history_outputs(
+                project_id, delivery_id, prompt_id
+            )
+
         if not outputs:
             await self.mark_error(
                 delivery_id,
@@ -811,6 +888,21 @@ class GenerationHoldingService:
         client_id: str,
     ) -> None:
         finalized = False
+        current_node: str | None = None
+        save_node_ids: set[str] = set()
+        uses_ws_outputs = False
+        async with self._lock:
+            manifest = self._deliveries.get(delivery_id)
+            if manifest is not None:
+                uses_ws_outputs = bool(
+                    manifest.get("uses_save_image_websocket_outputs")
+                )
+                save_node_ids = {
+                    node_id
+                    for node_id in manifest.get("save_image_websocket_node_ids") or []
+                    if isinstance(node_id, str)
+                }
+        websocket_outputs: list[dict[str, Any]] = []
         try:
             async with websockets.connect(
                 _build_ws_url(client_id),
@@ -838,24 +930,39 @@ class GenerationHoldingService:
                             progress = 0
                             if isinstance(value, (int, float)) and isinstance(maximum, (int, float)) and maximum:
                                 progress = max(0, min(100, round((float(value) / float(maximum)) * 100)))
+                            progress_node = data.get("node")
+                            if isinstance(progress_node, str):
+                                current_node = progress_node
                             await self.mark_running(
                                 delivery_id,
                                 progress=progress,
-                                current_node=data.get("node") if isinstance(data.get("node"), str) else None,
+                                current_node=progress_node if isinstance(progress_node, str) else None,
                             )
                         elif event_type == "executing":
                             node = data.get("node")
                             if node is None:
+                                current_node = None
                                 if not finalized:
                                     finalized = True
-                                    await self._finalize_delivery(project_id, delivery_id, prompt_id)
+                                    await self._finalize_delivery(
+                                        project_id,
+                                        delivery_id,
+                                        prompt_id,
+                                        websocket_outputs,
+                                    )
                                 break
                             if isinstance(node, str):
+                                current_node = node
                                 await self.mark_running(delivery_id, current_node=node)
                         elif event_type == "execution_success":
                             if not finalized:
                                 finalized = True
-                                await self._finalize_delivery(project_id, delivery_id, prompt_id)
+                                await self._finalize_delivery(
+                                    project_id,
+                                    delivery_id,
+                                    prompt_id,
+                                    websocket_outputs,
+                                )
                             break
                         elif event_type == "execution_error":
                             await self.mark_error(
@@ -872,6 +979,20 @@ class GenerationHoldingService:
                         frame = bytes(message)
                         if not _is_preview_binary_frame(frame):
                             continue
+                        if (
+                            uses_ws_outputs
+                            and current_node is not None
+                            and current_node in save_node_ids
+                        ):
+                            captured = await self._capture_websocket_output(
+                                project_id,
+                                delivery_id,
+                                frame,
+                                len(websocket_outputs),
+                            )
+                            if captured is not None:
+                                websocket_outputs.append(captured)
+                            continue
                         await self._broadcast_binary(project_id, frame)
         except asyncio.CancelledError:
             raise
@@ -879,7 +1000,12 @@ class GenerationHoldingService:
             logger.warning("Generation delivery monitor failed for %s: %s", delivery_id, exc)
             if not finalized:
                 try:
-                    await self._finalize_delivery(project_id, delivery_id, prompt_id)
+                    await self._finalize_delivery(
+                        project_id,
+                        delivery_id,
+                        prompt_id,
+                        websocket_outputs,
+                    )
                 except Exception:
                     await self.mark_error(
                         delivery_id,

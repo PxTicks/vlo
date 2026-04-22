@@ -291,6 +291,7 @@ function buildGenerationDeliveryContext(
   workflow: Record<string, unknown> | null,
   autoFamilyRequestKey: string | null,
 ): GenerationDeliveryContext {
+  const saveImageWebsocketNodeIds = getSaveImageWebsocketNodeIds(workflow);
   return {
     planId: plan.id,
     workflowName: plan.metadata.generationMetadata.workflowName,
@@ -301,8 +302,8 @@ function buildGenerationDeliveryContext(
     generationMetadata: structuredClone(plan.metadata.generationMetadata),
     postprocessConfig: clonePostprocessConfig(plan.postprocess.config),
     autoFamilyRequestKey,
-    usesSaveImageWebsocketOutputs:
-      getSaveImageWebsocketNodeIds(workflow).size > 0,
+    usesSaveImageWebsocketOutputs: saveImageWebsocketNodeIds.size > 0,
+    saveImageWebsocketNodeIds: [...saveImageWebsocketNodeIds],
     replayInputs: plan.metadata.generationMetadata.replayState
       ? {
           replayState: structuredClone(plan.metadata.generationMetadata.replayState),

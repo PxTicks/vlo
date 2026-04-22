@@ -301,7 +301,7 @@ export class ExportRenderer {
       );
     const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
 
-    const relevantForAudio = tracks.filter((t) => !t.isMuted);
+    const relevantForAudio = tracks.filter((t) => !t.isMuted && t.isVisible);
     const shouldRenderAudio = hasAudioOutput && relevantForAudio.length > 0;
 
     const frameTexture = RenderTexture.create({

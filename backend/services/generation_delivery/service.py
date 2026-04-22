@@ -27,6 +27,59 @@ GENERATION_HOLDING_ROOT.mkdir(parents=True, exist_ok=True)
 HISTORY_FETCH_ATTEMPTS = 4
 HISTORY_FETCH_RETRY_MS = 0.25
 
+BINARY_PREVIEW_IMAGE = 1
+BINARY_PREVIEW_IMAGE_WITH_METADATA = 4
+PNG_SIGNATURE = bytes((0x89, 0x50, 0x4E, 0x47))
+JPEG_SIGNATURE = bytes((0xFF, 0xD8, 0xFF))
+
+
+def _parse_preview_payload(message: bytes) -> tuple[bytes, str] | None:
+    if len(message) < 4:
+        return None
+    event_type = int.from_bytes(message[:4], byteorder="big", signed=False)
+    if event_type not in {BINARY_PREVIEW_IMAGE, BINARY_PREVIEW_IMAGE_WITH_METADATA}:
+        return None
+
+    if event_type == BINARY_PREVIEW_IMAGE_WITH_METADATA:
+        if len(message) < 8:
+            return None
+        metadata_length = int.from_bytes(message[4:8], byteorder="big", signed=False)
+        payload_offset = 8 + metadata_length
+        if payload_offset > len(message):
+            return None
+        payload = message[payload_offset:]
+        if payload.startswith(PNG_SIGNATURE):
+            mime_type = "image/png"
+        elif payload.startswith(JPEG_SIGNATURE):
+            mime_type = "image/jpeg"
+        else:
+            mime_type = "application/octet-stream"
+        return payload, mime_type
+
+    for payload_offset in (8, 4):
+        if payload_offset >= len(message):
+            continue
+        payload = message[payload_offset:]
+        if payload.startswith(PNG_SIGNATURE):
+            return payload, "image/png"
+        if payload.startswith(JPEG_SIGNATURE):
+            return payload, "image/jpeg"
+    return message[4:], "application/octet-stream"
+
+
+def _build_preview_forward_frame(
+    prompt_id: str,
+    mime_type: str,
+    image_bytes: bytes,
+) -> bytes:
+    metadata = json.dumps(
+        {"prompt_id": prompt_id, "image_type": mime_type},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    header = BINARY_PREVIEW_IMAGE_WITH_METADATA.to_bytes(4, byteorder="big")
+    metadata_length = len(metadata).to_bytes(4, byteorder="big")
+    return header + metadata_length + metadata + image_bytes
+
 
 def _sanitize_filename(filename: str) -> str:
     sanitized = re.sub(r"[^A-Za-z0-9._ -]+", "_", filename).strip(" .")
@@ -676,6 +729,21 @@ class GenerationHoldingService:
         if not sent:
             await self._unregister_consumer(active_consumer)
 
+    async def _broadcast_binary(self, project_id: str, payload: bytes) -> None:
+        async with self._lock:
+            consumers = list(self._project_consumers.get(project_id, []))
+            active_id = self._active_consumer_id_by_project.get(project_id)
+            active_consumer = next(
+                (consumer for consumer in consumers if consumer.id == active_id),
+                None,
+            )
+        if active_consumer is None:
+            return
+        try:
+            await active_consumer.websocket.send_bytes(payload)
+        except Exception:
+            await self._unregister_consumer(active_consumer)
+
     async def _broadcast_delivery_update(self, project_id: str, manifest: dict[str, Any]) -> None:
         await self._broadcast_payload(
             project_id,
@@ -842,6 +910,17 @@ class GenerationHoldingService:
                         elif event_type == "execution_interrupted":
                             await self.mark_error(delivery_id, "Generation interrupted")
                             break
+                    else:
+                        parsed = _parse_preview_payload(bytes(message))
+                        if not parsed:
+                            continue
+                        image_bytes, mime_type = parsed
+                        forward_frame = _build_preview_forward_frame(
+                            prompt_id,
+                            mime_type,
+                            image_bytes,
+                        )
+                        await self._broadcast_binary(project_id, forward_frame)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

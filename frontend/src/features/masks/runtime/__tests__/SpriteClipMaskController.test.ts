@@ -838,6 +838,74 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
+  it.each([
+    { operator: "union", algebra: "normal" },
+    { operator: "union", algebra: "inverse" },
+    { operator: "intersect", algebra: "normal" },
+    { operator: "intersect", algebra: "inverse" },
+    { operator: "subtract", algebra: "normal" },
+    { operator: "subtract", algebra: "inverse" },
+  ] as const)(
+    "treats a pending SAM2 mask as an identity for $operator in $algebra algebra",
+    async ({ operator, algebra }) => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const renderSpy = vi.fn();
+      const renderer = {
+        render: renderSpy,
+      } as unknown as Renderer;
+      const sprite = new Sprite(Texture.WHITE);
+      const root = new Container();
+      const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+      const parent = withMaskComposition(createParentClip(), {
+        expression: {
+          kind: "operation",
+          operator,
+          left: {
+            kind: "mask_ref",
+            maskId: "mask_a",
+          },
+          right: {
+            kind: "mask_ref",
+            maskId: "mask_pending",
+          },
+        },
+        algebra,
+      });
+      const maskA = createMaskClip("mask_a");
+      const pendingSam2Mask = createMaskClip("mask_pending", {
+        maskType: "sam2",
+      });
+
+      await controller.syncMaskClips(
+        [maskA, pendingSam2Mask],
+        parent,
+        { width: 1920, height: 1080 },
+        10,
+        new Map<string, Asset>(),
+      );
+
+      const internals = controller as unknown as {
+        currentMaskMode: "none" | "regular" | "alpha";
+        maskBooleanBlendFilters: Partial<
+          Record<"union" | "intersect" | "subtract", unknown>
+        >;
+      };
+      const alphaMaskEffect = (sprite.effects?.find(
+        (effect) => effect instanceof AlphaMask,
+      ) ?? null) as AlphaMask | null;
+
+      expect(alphaMaskEffect).not.toBeNull();
+      expect(alphaMaskEffect?.inverse).toBe(false);
+      expect(internals.currentMaskMode).toBe("alpha");
+      expect(internals.maskBooleanBlendFilters[operator]).toBeUndefined();
+      expect(renderSpy).toHaveBeenCalledTimes(2);
+
+      controller.dispose();
+      warnSpy.mockRestore();
+    },
+  );
+
   it("keeps explicit normal all-union vector expressions on the simple union fast path", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSpy = vi.fn();

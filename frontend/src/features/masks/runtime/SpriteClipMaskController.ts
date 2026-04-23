@@ -858,7 +858,6 @@ export class SpriteClipMaskController {
         maskClip.maskMode !== "apply" ||
         !this.isMaskClipRenderable(maskClip)
       ) {
-        this.renderMaskSubsetToTexture(new Set<string>(), leafTexture, transform);
         return;
       }
 
@@ -922,20 +921,26 @@ export class SpriteClipMaskController {
     expression: MaskBooleanExpression,
     operationTextureIndex: { current: number },
     compositeInvert: boolean,
+    maskClipByLocalId: Map<string, MaskTimelineClip>,
   ): Texture | null {
     if (expression.kind === "mask_ref") {
-      return this.leafMaskRenderTextures.get(expression.maskId) ?? null;
+      return this.resolveRenderableLeafMaskTexture(
+        expression.maskId,
+        maskClipByLocalId,
+      );
     }
 
     const leftTexture = this.evaluateMaskBooleanExpression(
       expression.left,
       operationTextureIndex,
       compositeInvert,
+      maskClipByLocalId,
     );
     const rightTexture = this.evaluateMaskBooleanExpression(
       expression.right,
       operationTextureIndex,
       compositeInvert,
+      maskClipByLocalId,
     );
     const targetTexture =
       this.expressionRenderTextures[operationTextureIndex.current];
@@ -986,6 +991,24 @@ export class SpriteClipMaskController {
     maskBooleanSprite.filters = null;
   }
 
+  private resolveRenderableLeafMaskTexture(
+    maskId: string,
+    maskClipByLocalId: Map<string, MaskTimelineClip>,
+  ): Texture | null {
+    const maskClip = maskClipByLocalId.get(maskId);
+    if (
+      !maskClip ||
+      maskClip.maskMode !== "apply" ||
+      !this.isMaskClipRenderable(maskClip)
+    ) {
+      // Keep placeholder SAM2/generation masks neutral until they actually
+      // produce coverage, regardless of operator order or inverse algebra.
+      return null;
+    }
+
+    return this.leafMaskRenderTextures.get(maskId) ?? null;
+  }
+
   private renderMaskBooleanExpressionToTexture(
     expression: MaskBooleanExpression,
     expressionAnalysis: MaskBooleanExpressionAnalysis,
@@ -1019,7 +1042,7 @@ export class SpriteClipMaskController {
     this.renderLeafMaskTextures(referencedMaskIds, maskClipByLocalId, contentSize);
     const evaluatedTexture = this.evaluateMaskBooleanExpression(expression, {
       current: 0,
-    }, compositeState.compositeInvert);
+    }, compositeState.compositeInvert, maskClipByLocalId);
     if (!evaluatedTexture) {
       return null;
     }

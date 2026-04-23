@@ -540,6 +540,14 @@ export function applyPresentationRules(
 export function resolveWidgetInputs(
   workflow: Record<string, unknown> | null,
   rules: WorkflowRules | null,
+  options: {
+    graphData?: Record<string, unknown> | null;
+    objectInfo?: Record<string, unknown> | null;
+  } = {},
 ) {
-  return resolveWidgetInputsFromRules(workflow, rules ?? EMPTY_WORKFLOW_RULES);
+  return resolveWidgetInputsFromRules(
+    workflow,
+    rules ?? EMPTY_WORKFLOW_RULES,
+    options,
+  );
 }

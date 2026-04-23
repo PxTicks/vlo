@@ -650,6 +650,97 @@ describe("resolvePresentedInputs", () => {
     expect(widgets[0]?.currentValue).toBe("euler");
   });
 
+  it("prefers graph widget values over autodiscovered defaults", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "115": {
+          class_type: "KSamplerAdvanced",
+          inputs: {},
+        },
+      },
+      {
+        version: 1,
+        nodes: {
+          "115": {
+            widgets: {
+              noise_seed: {
+                label: "Noise seed",
+                value_type: "int",
+                default: 0,
+              },
+              cfg: {
+                label: "CFG",
+                value_type: "float",
+                default: 8,
+              },
+            },
+          },
+        },
+        output_injections: {},
+        slots: {},
+      },
+      {
+        graphData: {
+          nodes: [
+            {
+              id: 115,
+              type: "KSamplerAdvanced",
+              widgets_values: [
+                "enable",
+                6332,
+                "randomize",
+                6,
+                1,
+                "uni_pc",
+                "simple",
+                0,
+                10000,
+                "disable",
+              ],
+            },
+          ],
+        },
+        objectInfo: {
+          KSamplerAdvanced: {
+            input: {
+              required: {
+                add_noise: [["enable", "disable"], {}],
+                noise_seed: ["INT", { control_after_generate: true }],
+                steps: ["INT", {}],
+                cfg: ["FLOAT", {}],
+                sampler_name: [["uni_pc"], {}],
+                scheduler: [["simple"], {}],
+                start_at_step: ["INT", {}],
+                end_at_step: ["INT", {}],
+                return_with_leftover_noise: [["disable", "enable"], {}],
+              },
+            },
+            input_order: {
+              required: [
+                "add_noise",
+                "noise_seed",
+                "steps",
+                "cfg",
+                "sampler_name",
+                "scheduler",
+                "start_at_step",
+                "end_at_step",
+                "return_with_leftover_noise",
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    expect(widgets).toHaveLength(2);
+    expect(widgets.find((widget) => widget.param === "noise_seed")?.currentValue)
+      .toBe(6332);
+    expect(widgets.find((widget) => widget.param === "cfg")?.currentValue).toBe(
+      1,
+    );
+  });
+
   it("resolves root-level frontend controls without attaching them to workflow nodes", () => {
     const widgets = resolveWidgetInputs(
       {},

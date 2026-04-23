@@ -24,6 +24,149 @@ const DERIVED_WIDGET_VALUE_PARAM = "__value";
 const FRONTEND_CONTROLS_NODE_ID = "__frontend_controls__";
 const FRONTEND_CONTROLS_NODE_TITLE = "Workflow Controls";
 
+function resolveGraphNode(
+  graphData: Record<string, unknown> | null | undefined,
+  nodeId: string,
+): Record<string, unknown> | null {
+  const nodes = graphData?.nodes;
+  if (!Array.isArray(nodes)) return null;
+
+  const node = nodes.find((candidate) => {
+    if (!isRecord(candidate)) return false;
+    return String(candidate.id) === nodeId;
+  });
+  return isRecord(node) ? node : null;
+}
+
+function resolveClassInfo(
+  objectInfo: Record<string, unknown> | null | undefined,
+  classType: string | undefined,
+): Record<string, unknown> | null {
+  if (!objectInfo || !classType) return null;
+  const classInfo = objectInfo[classType];
+  return isRecord(classInfo) ? classInfo : null;
+}
+
+function resolveInputSpec(
+  classInfo: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  return isRecord(classInfo?.input) ? classInfo.input : null;
+}
+
+function resolveParamDefinition(
+  inputSpec: Record<string, unknown> | null,
+  param: string,
+): [unknown, Record<string, unknown>] | null {
+  if (!inputSpec) return null;
+
+  for (const sectionKey of ["required", "optional"] as const) {
+    const section = inputSpec[sectionKey];
+    if (!isRecord(section)) continue;
+    const definition = section[param];
+    if (!Array.isArray(definition) || definition.length === 0) continue;
+    return [definition[0], isRecord(definition[1]) ? definition[1] : {}];
+  }
+
+  return null;
+}
+
+function getOrderedObjectInfoParams(
+  inputSpec: Record<string, unknown> | null,
+  classInfo: Record<string, unknown> | null,
+): string[] {
+  const ordered = new Set<string>();
+  if (!inputSpec) return [];
+
+  const rawOrder = classInfo?.input_order;
+  if (isRecord(rawOrder)) {
+    for (const sectionKey of ["required", "optional"] as const) {
+      const sectionOrder = rawOrder[sectionKey];
+      if (!Array.isArray(sectionOrder)) continue;
+      for (const param of sectionOrder) {
+        if (typeof param === "string" && param.trim().length > 0) {
+          ordered.add(param);
+        }
+      }
+    }
+  }
+
+  for (const sectionKey of ["required", "optional"] as const) {
+    const section = inputSpec[sectionKey];
+    if (!isRecord(section)) continue;
+    for (const param of Object.keys(section)) {
+      ordered.add(param);
+    }
+  }
+
+  return [...ordered];
+}
+
+function isObjectInfoWidgetType(
+  typeSpec: unknown,
+  opts: Record<string, unknown>,
+): boolean {
+  if (typeof typeSpec === "string") {
+    const normalized = typeSpec.trim().toUpperCase();
+    if (
+      normalized === "INT" ||
+      normalized === "FLOAT" ||
+      normalized === "STRING" ||
+      normalized === "BOOLEAN"
+    ) {
+      return true;
+    }
+    return normalized === "COMBO" && Array.isArray(opts.options);
+  }
+
+  return Array.isArray(typeSpec);
+}
+
+function getWidgetValueIndexMap(
+  classInfo: Record<string, unknown> | null,
+): Map<string, number> {
+  const inputSpec = resolveInputSpec(classInfo);
+  const orderedParams = getOrderedObjectInfoParams(inputSpec, classInfo);
+  const result = new Map<string, number>();
+
+  let index = 0;
+  for (const param of orderedParams) {
+    const definition = resolveParamDefinition(inputSpec, param);
+    if (!definition) continue;
+
+    const [typeSpec, opts] = definition;
+    if (!isObjectInfoWidgetType(typeSpec, opts)) {
+      continue;
+    }
+
+    result.set(param, index);
+    index += opts.control_after_generate === true ? 2 : 1;
+  }
+
+  return result;
+}
+
+function resolveGraphWidgetValue(
+  graphData: Record<string, unknown> | null | undefined,
+  nodeId: string,
+  classType: string | undefined,
+  param: string,
+  objectInfo: Record<string, unknown> | null | undefined,
+): unknown {
+  const graphNode = resolveGraphNode(graphData, nodeId);
+  if (!graphNode) return undefined;
+
+  const widgetsValues = graphNode.widgets_values;
+  if (!Array.isArray(widgetsValues)) return undefined;
+
+  const classInfo = resolveClassInfo(objectInfo, classType);
+  const widgetIndex = getWidgetValueIndexMap(classInfo).get(param);
+  if (typeof widgetIndex !== "number" || widgetIndex >= widgetsValues.length) {
+    return undefined;
+  }
+
+  return widgetsValues[widgetIndex];
+}
+
 function getWorkflowParamValue(
   workflow: Record<string, unknown>,
   ref: WorkflowParamReference,
@@ -328,6 +471,10 @@ function resolveFrontendControlInputs(rules: WorkflowRules): WorkflowWidgetInput
 export function resolveWidgetInputsFromRules(
   workflow: Record<string, unknown> | null,
   rules: WorkflowRules,
+  options: {
+    graphData?: Record<string, unknown> | null;
+    objectInfo?: Record<string, unknown> | null;
+  } = {},
 ): WorkflowWidgetInput[] {
   if (!workflow) {
     console.debug("[resolveWidgetInputs] No workflow provided");
@@ -367,6 +514,10 @@ export function resolveWidgetInputsFromRules(
     }
     const nodeInputs =
       nodeExists && isRecord(nodeData.inputs) ? nodeData.inputs : {};
+    const classType =
+      nodeExists && typeof nodeData.class_type === "string"
+        ? nodeData.class_type
+        : undefined;
 
     for (const [param, entry] of Object.entries(widgetDefs)) {
       const hasExplicitDefault = Object.prototype.hasOwnProperty.call(
@@ -403,6 +554,17 @@ export function resolveWidgetInputsFromRules(
         continue;
       }
 
+      const graphValue =
+        !hasWorkflowParam && entry.frontend_only !== true
+          ? resolveGraphWidgetValue(
+              options.graphData,
+              nodeId,
+              classType,
+              param,
+              options.objectInfo,
+            )
+          : undefined;
+
       const config: WidgetInputConfig = {
         label: entry.label ?? param,
         controlAfterGenerate: entry.control_after_generate ?? false,
@@ -434,7 +596,7 @@ export function resolveWidgetInputsFromRules(
         param,
         config,
         currentValue: mapStoredWidgetValue(
-          rawValue ?? config.defaultValue ?? null,
+          rawValue ?? graphValue ?? config.defaultValue ?? null,
           config,
         ),
       });
@@ -459,7 +621,11 @@ export function resolveWidgetInputsFromRules(
 export function resolveWidgetInputs(
   workflow: Record<string, unknown> | null,
   rawRules: unknown,
+  options: {
+    graphData?: Record<string, unknown> | null;
+    objectInfo?: Record<string, unknown> | null;
+  } = {},
 ): WorkflowWidgetInput[] {
   const { rules } = normalizeWorkflowRules(rawRules);
-  return resolveWidgetInputsFromRules(workflow, rules);
+  return resolveWidgetInputsFromRules(workflow, rules, options);
 }

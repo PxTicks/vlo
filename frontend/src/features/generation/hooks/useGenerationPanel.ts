@@ -367,8 +367,12 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     (s) => s.lastAppliedWidgetValues,
   );
   const smartWidgetInputs = useMemo(
-    () => resolveWidgetInputs(syncedWorkflow, activeWorkflowRules),
-    [syncedWorkflow, activeWorkflowRules],
+    () =>
+      resolveWidgetInputs(syncedWorkflow, activeWorkflowRules, {
+        graphData: syncedGraphData,
+        objectInfo: rawObjectInfo,
+      }),
+    [syncedWorkflow, activeWorkflowRules, syncedGraphData, rawObjectInfo],
   );
   const manualWorkflowInputs = useMemo(
     () =>

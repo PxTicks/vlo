@@ -177,11 +177,41 @@ function getWorkflowParamValue(
   return inputs[ref.param];
 }
 
+function getRuleWidgetDefaultValue(
+  rules: WorkflowRules,
+  ref: WorkflowParamReference,
+): unknown {
+  const nodeRule = rules.nodes?.[ref.node_id];
+  if (!nodeRule || typeof nodeRule !== "object") return null;
+  const widgetEntry = nodeRule.widgets?.[ref.param];
+  if (!widgetEntry || typeof widgetEntry !== "object") return null;
+  return Object.prototype.hasOwnProperty.call(widgetEntry, "default")
+    ? widgetEntry.default
+    : null;
+}
+
+function getWorkflowParamValueWithRuleFallback(
+  workflow: Record<string, unknown>,
+  rules: WorkflowRules,
+  ref: WorkflowParamReference,
+): unknown {
+  const node = workflow[ref.node_id];
+  if (isRecord(node)) {
+    const inputs = isRecord(node.inputs) ? node.inputs : {};
+    if (Object.prototype.hasOwnProperty.call(inputs, ref.param)) {
+      return inputs[ref.param];
+    }
+  }
+
+  return getRuleWidgetDefaultValue(rules, ref);
+}
+
 function getWorkflowParamNumber(
   workflow: Record<string, unknown>,
+  rules: WorkflowRules,
   ref: WorkflowParamReference,
 ): number | null {
-  return toFiniteNumber(getWorkflowParamValue(workflow, ref));
+  return toFiniteNumber(getWorkflowParamValueWithRuleFallback(workflow, rules, ref));
 }
 
 function getDerivedWidgetNodeId(derivedWidgetId: string): string {
@@ -228,13 +258,18 @@ function hasOwnKey(record: Record<string, unknown>, key: string): boolean {
 
 function resolveDualSamplerDenoiseWidget(
   workflow: Record<string, unknown>,
+  rules: WorkflowRules,
   rule: WorkflowDualSamplerDenoiseRule,
 ): DualSamplerDenoiseDerivedWidgetInput | null {
   const totalSteps = toPositiveInteger(
-    getWorkflowParamNumber(workflow, rule.total_steps),
+    getWorkflowParamNumber(workflow, rules, rule.total_steps),
   );
-  const startStep = getWorkflowParamNumber(workflow, rule.start_step);
-  const baseSplitStep = getWorkflowParamNumber(workflow, rule.base_split_step);
+  const startStep = getWorkflowParamNumber(workflow, rules, rule.start_step);
+  const baseSplitStep = getWorkflowParamNumber(
+    workflow,
+    rules,
+    rule.base_split_step,
+  );
 
   if (
     totalSteps === null ||
@@ -292,12 +327,13 @@ function resolveDualSamplerDenoiseWidget(
 
 function resolveSingleSamplerDenoiseWidget(
   workflow: Record<string, unknown>,
+  rules: WorkflowRules,
   rule: WorkflowSingleSamplerDenoiseRule,
 ): SingleSamplerDenoiseDerivedWidgetInput | null {
   const totalSteps = toPositiveInteger(
-    getWorkflowParamNumber(workflow, rule.total_steps),
+    getWorkflowParamNumber(workflow, rules, rule.total_steps),
   );
-  const startStep = getWorkflowParamNumber(workflow, rule.start_step);
+  const startStep = getWorkflowParamNumber(workflow, rules, rule.start_step);
 
   if (totalSteps === null || startStep === null) {
     console.warn(
@@ -411,9 +447,9 @@ function resolveDerivedWidgetInputs(
   for (const rule of rules.derived_widgets ?? []) {
     let widget: DerivedWorkflowWidgetInput | null = null;
     if (rule.kind === "dual_sampler_denoise") {
-      widget = resolveDualSamplerDenoiseWidget(workflow, rule);
+      widget = resolveDualSamplerDenoiseWidget(workflow, rules, rule);
     } else if (rule.kind === "single_sampler_denoise") {
-      widget = resolveSingleSamplerDenoiseWidget(workflow, rule);
+      widget = resolveSingleSamplerDenoiseWidget(workflow, rules, rule);
     } else if (rule.kind === "video_audio_retake") {
       widget = resolveVideoAudioRetakeWidget(workflow, rule);
     }

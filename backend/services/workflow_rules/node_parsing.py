@@ -339,6 +339,23 @@ def get_widget_value_index_map(
     return widget_value_index
 
 
+def _resolve_widget_default_from_workflow_values(
+    param_name: str,
+    widget_value_index: dict[str, int],
+    widgets_values: list[Any] | None,
+    opts: dict[str, Any],
+) -> Any:
+    if isinstance(widgets_values, list):
+        widget_index = widget_value_index.get(param_name)
+        if widget_index is not None and widget_index < len(widgets_values):
+            return widgets_values[widget_index]
+
+    if "default" in opts:
+        return opts["default"]
+
+    return None
+
+
 def build_widget_entries_for_class(
     class_type: str,
     object_info: dict[str, Any],
@@ -408,8 +425,14 @@ def build_widget_entries_for_class(
                 val = opts.get(num_key)
                 if isinstance(val, (int, float)) and not isinstance(val, bool):
                     widget_entry[num_key] = val
-            if "default" in opts:
-                widget_entry["default"] = opts["default"]
+            default_value = _resolve_widget_default_from_workflow_values(
+                param_name,
+                widget_value_index,
+                widgets_values,
+                opts,
+            )
+            if default_value is not None or "default" in opts:
+                widget_entry["default"] = default_value
 
             if widgets_values:
                 widget_index = widget_value_index.get(param_name)
@@ -445,6 +468,8 @@ def resolve_widget_param_metadata(
     class_type: str,
     object_info: dict[str, Any],
     param_names: set[str],
+    *,
+    widgets_values: list[Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Resolve widget metadata for specific param names from raw object_info.
 
@@ -456,6 +481,7 @@ def resolve_widget_param_metadata(
     if not isinstance(class_info, dict):
         return {}
 
+    widget_value_index = get_widget_value_index_map(class_type, object_info)
     result: dict[str, dict[str, Any]] = {}
     for param_name, type_spec, opts in iter_all_params(class_info):
         if param_name not in param_names:
@@ -471,8 +497,14 @@ def resolve_widget_param_metadata(
             val = opts.get(num_key)
             if isinstance(val, (int, float)) and not isinstance(val, bool):
                 entry[num_key] = val
-        if "default" in opts:
-            entry["default"] = opts["default"]
+        default_value = _resolve_widget_default_from_workflow_values(
+            param_name,
+            widget_value_index,
+            widgets_values,
+            opts,
+        )
+        if default_value is not None or "default" in opts:
+            entry["default"] = default_value
         result[param_name] = entry
     return result
 

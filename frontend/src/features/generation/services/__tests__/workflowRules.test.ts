@@ -1082,6 +1082,57 @@ describe("resolvePresentedInputs", () => {
     expect(widgets[0]?.currentValue).toBe(0.5);
   });
 
+  it("resolves single-sampler denoise from widget defaults when workflow inputs are omitted", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "115": {
+          inputs: {},
+        },
+      },
+      {
+        version: 1,
+        nodes: {
+          "115": {
+            widgets: {
+              steps: {
+                value_type: "int",
+                hidden: true,
+                default: 6,
+              },
+              start_at_step: {
+                value_type: "int",
+                hidden: true,
+                default: 0,
+              },
+            },
+          },
+        },
+        derived_widgets: [
+          {
+            id: "single_sampler_denoise",
+            kind: "single_sampler_denoise",
+            label: "Denoise",
+            total_steps: {
+              node_id: "115",
+              param: "steps",
+            },
+            start_step: {
+              node_id: "115",
+              param: "start_at_step",
+            },
+          },
+        ],
+        output_injections: {},
+        slots: {},
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.kind).toBe("derived");
+    expect(widgets[0]?.nodeId).toBe("derived:single_sampler_denoise");
+    expect(widgets[0]?.currentValue).toBe(1);
+  });
+
   it("resolves the video-audio retake mode as a frontend-only enum widget", () => {
     const widgets = resolveWidgetInputs(
       {

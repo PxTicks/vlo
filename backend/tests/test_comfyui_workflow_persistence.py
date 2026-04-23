@@ -119,6 +119,7 @@ def test_list_workflows_applies_menu_groups_and_preserves_shadowing(
 
 def test_resolve_workflow_rules_uses_graph_data_for_randomized_control_after_generate():
     payload = {
+        "workflow_id": "wf.json",
         "workflow": {
             "4814": {
                 "class_type": "RandomNoise",
@@ -173,6 +174,140 @@ def test_resolve_workflow_rules_uses_graph_data_for_randomized_control_after_gen
     assert widget["control_after_generate"] is True
     assert widget["default_randomize"] is True
     assert widget["value_type"] == "int"
+
+
+def test_resolve_workflow_rules_prefers_graph_widget_values_over_object_info_defaults():
+    payload = {
+        "workflow_id": "vlo_VACE_inpaint_new.json",
+        "workflow": {
+            "115": {
+                "class_type": "KSamplerAdvanced",
+                "inputs": {},
+            }
+        },
+        "graph_data": {
+            "nodes": [
+                {
+                    "id": 115,
+                    "type": "KSamplerAdvanced",
+                    "title": "KSamplerAdvanced",
+                    "inputs": [],
+                    "widgets_values": [
+                        "enable",
+                        6332,
+                        "randomize",
+                        6,
+                        1,
+                        "uni_pc",
+                        "simple",
+                        0,
+                        10000,
+                        "disable",
+                    ],
+                }
+            ]
+        },
+    }
+    object_info = {
+        "KSamplerAdvanced": {
+            "input": {
+                "required": {
+                    "model": ["MODEL"],
+                    "add_noise": [["enable", "disable"], {}],
+                    "noise_seed": [
+                        "INT",
+                        {
+                            "default": 0,
+                            "min": 0,
+                            "max": 18446744073709551615,
+                            "control_after_generate": True,
+                        },
+                    ],
+                    "steps": [
+                        "INT",
+                        {
+                            "default": 20,
+                            "min": 1,
+                            "max": 10000,
+                        },
+                    ],
+                    "cfg": [
+                        "FLOAT",
+                        {
+                            "default": 8.0,
+                            "min": 0.0,
+                            "max": 100.0,
+                        },
+                    ],
+                    "sampler_name": [["uni_pc", "euler"], {}],
+                    "scheduler": [["simple", "karras"], {}],
+                    "positive": ["CONDITIONING"],
+                    "negative": ["CONDITIONING"],
+                    "latent_image": ["LATENT"],
+                    "start_at_step": [
+                        "INT",
+                        {
+                            "default": 0,
+                            "min": 0,
+                            "max": 10000,
+                        },
+                    ],
+                    "end_at_step": [
+                        "INT",
+                        {
+                            "default": 10000,
+                            "min": 0,
+                            "max": 10000,
+                        },
+                    ],
+                    "return_with_leftover_noise": [["disable", "enable"], {}],
+                }
+            },
+            "input_order": {
+                "required": [
+                    "model",
+                    "add_noise",
+                    "noise_seed",
+                    "steps",
+                    "cfg",
+                    "sampler_name",
+                    "scheduler",
+                    "positive",
+                    "negative",
+                    "latent_image",
+                    "start_at_step",
+                    "end_at_step",
+                    "return_with_leftover_noise",
+                ],
+            },
+        }
+    }
+
+    set_object_info_cache(object_info)
+    try:
+        result = asyncio.run(
+            comfyui.resolve_workflow_rules(
+                DummyRequest(payload)
+            )
+        )
+    finally:
+        set_object_info_cache(None)
+
+    node_115 = result["rules"]["nodes"]["115"]
+    assert node_115["widgets"]["noise_seed"]["default"] == 6332
+    assert node_115["widgets"]["cfg"]["default"] == 1
+    assert node_115["widgets"]["steps"]["default"] == 6
+    assert node_115["widgets"]["start_at_step"]["default"] == 0
+    assert result["rules"]["derived_widgets"][0]["id"] == "single_sampler_denoise"
+    assert result["rules"]["derived_widgets"][0]["kind"] == "single_sampler_denoise"
+    assert result["rules"]["derived_widgets"][0]["total_steps"] == {
+        "node_id": "115",
+        "param": "steps",
+    }
+    assert result["rules"]["derived_widgets"][0]["start_step"] == {
+        "node_id": "115",
+        "param": "start_at_step",
+    }
 
 
 def test_parse_workflow_inputs_includes_vhs_load_video_ffmpeg_static_fallback(

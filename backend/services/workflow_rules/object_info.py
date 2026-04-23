@@ -753,7 +753,12 @@ def enrich_rules_with_object_info(
             }
             if unenriched:
                 enrichment_source.update(
-                    resolve_widget_param_metadata(info.class_type, object_info, unenriched)
+                    resolve_widget_param_metadata(
+                        info.class_type,
+                        object_info,
+                        unenriched,
+                        widgets_values=info.widgets_values,
+                    )
                 )
             if merged_widgets:
                 existing["widgets"] = merge_widget_entries_with_object_info(

@@ -32,6 +32,7 @@ import {
   calculateClipTime,
   commitLayoutControlToTransforms,
   liveParamStore,
+  livePreviewParamStore,
 } from "../../../transformations";
 import { hasDragMovement } from "./transformInteraction";
 import { playbackClock } from "../../services/PlaybackClock";
@@ -142,13 +143,32 @@ function notifyLiveMaskLayout(
   if (transformIds.position) {
     liveParamStore.notify(transformIds.position, "x", layout.x);
     liveParamStore.notify(transformIds.position, "y", layout.y);
+    livePreviewParamStore.set(transformIds.position, "x", layout.x);
+    livePreviewParamStore.set(transformIds.position, "y", layout.y);
   }
   if (transformIds.scale) {
     liveParamStore.notify(transformIds.scale, "x", layout.scaleX);
     liveParamStore.notify(transformIds.scale, "y", layout.scaleY);
+    livePreviewParamStore.set(transformIds.scale, "x", layout.scaleX);
+    livePreviewParamStore.set(transformIds.scale, "y", layout.scaleY);
   }
   if (transformIds.rotation) {
     liveParamStore.notify(transformIds.rotation, "angle", layout.rotation);
+    livePreviewParamStore.set(transformIds.rotation, "angle", layout.rotation);
+  }
+}
+
+function clearLiveMaskLayoutPreviewParams(transformIds: MaskLayoutTransformIds) {
+  if (transformIds.position) {
+    livePreviewParamStore.clear(transformIds.position, "x");
+    livePreviewParamStore.clear(transformIds.position, "y");
+  }
+  if (transformIds.scale) {
+    livePreviewParamStore.clear(transformIds.scale, "x");
+    livePreviewParamStore.clear(transformIds.scale, "y");
+  }
+  if (transformIds.rotation) {
+    livePreviewParamStore.clear(transformIds.rotation, "angle");
   }
 }
 
@@ -641,7 +661,6 @@ export function useMaskInteractionController(
     }
 
     if (activeClip.id !== context.selectedClipId) return null;
-    if (context.selectedMaskClip.maskMode === "off") return null;
     if (
       context.selectedMaskClip.maskType === "sam2" ||
       context.selectedMaskClip.maskType === "generation"
@@ -913,6 +932,7 @@ export function useMaskInteractionController(
       }
 
       clearLiveMaskLayoutPreview();
+      clearLiveMaskLayoutPreviewParams(current.transformIds);
       resetInteractionState();
       unbindStageListeners();
     }
@@ -1352,12 +1372,6 @@ export function useMaskInteractionController(
       syncSam2EditingCursor(false);
       renderSam2PointsToOverlay(null);
       clearSam2PreviewSprite();
-
-      if (selectedMaskClip.maskMode === "off") {
-        renderMaskToOverlay(null);
-        setIsMaskGizmoVisible((previous) => (previous ? false : previous));
-        return;
-      }
 
       const liveMaskLayoutPreview = liveMaskLayoutPreviewRef.current;
       const liveLayout =

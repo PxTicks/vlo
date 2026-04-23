@@ -29,7 +29,10 @@ interface WorkerErrorMessage {
   message?: string;
 }
 
-type WorkerMessage = WorkerReadyMessage | WorkerFrameMessage | WorkerErrorMessage;
+type WorkerMessage =
+  | WorkerReadyMessage
+  | WorkerFrameMessage
+  | WorkerErrorMessage;
 
 function createMaskRenderAbortError(
   message: string = "Mask render cancelled",
@@ -56,14 +59,15 @@ function createMaskFrameTimeoutError(timeoutMs: number): Error {
 }
 
 export class MaskVideoFramePlayer {
-  private static readonly SOURCE_PREPARE_TIMEOUT_MS = 1500;
+  private static readonly SOURCE_PREPARE_TIMEOUT_MS = 5000;
   private static readonly SOURCE_PREPARE_RECOVERY_ATTEMPTS = 1;
-  private static readonly STRICT_FRAME_TIMEOUT_MS = 1500;
+  private static readonly STRICT_FRAME_TIMEOUT_MS = 5000;
   private static readonly STRICT_FRAME_RECOVERY_ATTEMPTS = 1;
 
   public readonly sprite: Sprite;
 
   private readonly clipId: string;
+  private readonly onFrameReady: (() => void) | undefined;
   private worker: Worker | null = null;
   private sourceAsset: Asset | null = null;
   private sourceAssetId: string | null = null;
@@ -80,8 +84,9 @@ export class MaskVideoFramePlayer {
   private hasDecodedFrame = false;
   private disposed = false;
 
-  constructor(maskClipId: string) {
+  constructor(maskClipId: string, onFrameReady?: () => void) {
     this.clipId = `mask_video_${maskClipId}`;
+    this.onFrameReady = onFrameReady;
     this.sprite = new Sprite();
     this.sprite.anchor.set(0.5);
     this.sprite.visible = false;
@@ -159,6 +164,10 @@ export class MaskVideoFramePlayer {
     await nextStrictRender;
   }
 
+  public hasFrame(): boolean {
+    return this.hasDecodedFrame;
+  }
+
   public dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -200,6 +209,9 @@ export class MaskVideoFramePlayer {
         this.swapSpriteTexture(nextTexture);
         this.hasDecodedFrame = true;
         this.sprite.visible = true;
+        if (!pendingStrict) {
+          this.onFrameReady?.();
+        }
       } else if (!this.hasDecodedFrame) {
         // Before the first decoded frame, keep mask hidden.
         this.sprite.visible = false;
@@ -340,10 +352,8 @@ export class MaskVideoFramePlayer {
       preserveSource?: boolean;
     } = {},
   ): void {
-    const {
-      abortReason = "Mask player disposed",
-      preserveSource = false,
-    } = options;
+    const { abortReason = "Mask player disposed", preserveSource = false } =
+      options;
     this.pendingStrictFrame?.reject(
       createMaskRenderAbortError(`${abortReason} during strict render`),
     );

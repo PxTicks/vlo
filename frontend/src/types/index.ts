@@ -2,6 +2,18 @@
 export type { Asset, AssetType } from "./Asset";
 export type { Project } from "./ProjectState";
 export type { ClipComponentBase } from "./ClipComponents";
+export { isComponentOfType } from "./Components";
+export type {
+  Component,
+  ComponentBase,
+  ComponentType,
+  RangeMaskComponent,
+  RangeMaskComponentParameters,
+  MaskRefComponent,
+  MaskRefComponentParameters,
+  MaskCompositionComponent,
+  MaskCompositionComponentParameters,
+} from "./Components";
 export type {
   RuntimeStatus,
   BackendRuntimeStatus,

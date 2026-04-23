@@ -6,6 +6,18 @@ import type {
   StandardTimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
+import type { MaskCompositionComponent } from "../../../types/Components";
+
+function getParentCompositionExpression(
+  clip: StandardTimelineClip | undefined,
+): MaskBooleanExpression | null | undefined {
+  const composition = (clip?.components ?? []).find(
+    (component): component is MaskCompositionComponent =>
+      component.type === "mask_composition",
+  );
+  return composition?.parameters.expression;
+}
+
 import { createMask } from "../../masks/model/maskFactory";
 import {
   selectMaskClipsForParent,
@@ -59,8 +71,31 @@ function createParentClip(
   id: string,
   trackId: string,
   maskLocalIds: string[],
-  overrides: Partial<StandardTimelineClip> = {},
+  options: {
+    maskBooleanExpression?: MaskBooleanExpression | null;
+    overrides?: Partial<StandardTimelineClip>;
+  } = {},
 ): StandardTimelineClip {
+  const maskRefs = maskLocalIds.map((maskLocalId, index) => ({
+    id: `mask_ref_${id}_${index}`,
+    type: "mask_ref" as const,
+    parameters: {
+      maskClipId: `${id}::mask::${maskLocalId}`,
+    },
+  }));
+
+  const compositionComponent: MaskCompositionComponent | null =
+    options.maskBooleanExpression !== undefined
+      ? {
+          id: `mask_composition_${id}`,
+          type: "mask_composition",
+          parameters: {
+            expression: options.maskBooleanExpression,
+            compositeTransformations: [],
+          },
+        }
+      : null;
+
   return {
     id,
     trackId,
@@ -75,11 +110,8 @@ function createParentClip(
     transformedOffset: 0,
     croppedSourceDuration: 120,
     transformations: [],
-    clipComponents: maskLocalIds.map((maskLocalId) => ({
-      clipId: `${id}::mask::${maskLocalId}`,
-      componentType: "mask",
-    })),
-    ...overrides,
+    components: compositionComponent ? [...maskRefs, compositionComponent] : maskRefs,
+    ...options.overrides,
   };
 }
 
@@ -175,14 +207,8 @@ describe("useTimelineStore mask boolean expressions", () => {
       maskBooleanExpression: {
         kind: "operation",
         operator: "subtract",
-        left: {
-          kind: "mask_ref",
-          maskId: "mask_1",
-        },
-        right: {
-          kind: "mask_ref",
-          maskId: "mask_2",
-        },
+        left: { kind: "mask_ref", maskId: "mask_1" },
+        right: { kind: "mask_ref", maskId: "mask_2" },
       },
     });
 
@@ -205,7 +231,7 @@ describe("useTimelineStore mask boolean expressions", () => {
         (clip): clip is StandardTimelineClip =>
           clip.id === "clip_1" && clip.type !== "mask",
       );
-    expect(updatedParent?.maskBooleanExpression).toEqual({
+    expect(getParentCompositionExpression(updatedParent)).toEqual({
       kind: "mask_ref",
       maskId: "mask_1",
     });
@@ -219,14 +245,8 @@ describe("useTimelineStore mask boolean expressions", () => {
       maskBooleanExpression: {
         kind: "operation",
         operator: "union",
-        left: {
-          kind: "mask_ref",
-          maskId: "mask_1",
-        },
-        right: {
-          kind: "mask_ref",
-          maskId: "mask_2",
-        },
+        left: { kind: "mask_ref", maskId: "mask_1" },
+        right: { kind: "mask_ref", maskId: "mask_2" },
       },
     });
 
@@ -255,9 +275,15 @@ describe("useTimelineStore mask boolean expressions", () => {
     expect(parentClips).toHaveLength(2);
 
     const pastedParent = parentClips.find((clip) => clip.id !== parent.id);
-    expect(pastedParent?.maskBooleanExpression).toEqual(parent.maskBooleanExpression);
+    expect(getParentCompositionExpression(pastedParent)).toEqual(
+      getParentCompositionExpression(parent),
+    );
     expect(
-      pastedParent?.clipComponents?.map((component) => component.clipId),
+      (pastedParent?.components ?? [])
+        .filter((component) => component.type === "mask_ref")
+        .map((component) =>
+          component.type === "mask_ref" ? component.parameters.maskClipId : null,
+        ),
     ).toEqual([
       `${pastedParent?.id}::mask::mask_1`,
       `${pastedParent?.id}::mask::mask_2`,
@@ -294,7 +320,7 @@ describe("useTimelineStore mask boolean expressions", () => {
           clip.id === parent.id && clip.type !== "mask",
       );
 
-    expect(updatedParent?.maskBooleanExpression).toEqual({
+    expect(getParentCompositionExpression(updatedParent)).toEqual({
       kind: "operation",
       operator: "union",
       left: {

@@ -69,6 +69,15 @@ interface InFlightSynchronizedRender {
   promise: Promise<void>;
 }
 
+interface LatestMaskSyncContext {
+  maskClips: MaskTimelineClip[];
+  clip: TimelineClip;
+  logicalDimensions: { width: number; height: number };
+  rawTimeTicks: number;
+  assetsById: Map<string, Asset>;
+  fps?: number;
+}
+
 /**
  * Encapsulates the rendering logic for a single track.
  * Manages the WebWorker, PIXI.Sprite, and frame synchronization.
@@ -122,6 +131,8 @@ export class TrackRenderEngine {
   // Live Mode Callback (to sync transforms immediately)
   private onFrameReady?: (clipId: string, transformTime: number) => void;
   private maskController: SpriteClipMaskController;
+  private latestMaskSyncContext: LatestMaskSyncContext | null = null;
+  private pendingAssetMaskFrameResync: Promise<void> | null = null;
 
   /**
    * @param zIndex The z-index of the sprite
@@ -146,6 +157,9 @@ export class TrackRenderEngine {
       this.sprite,
       renderer,
       this.container,
+      () => {
+        void this.resyncMasksForLatestAssetMaskFrame();
+      },
     );
     this.container.addChild(this.sprite);
     this.container.zIndex = zIndex;
@@ -219,6 +233,14 @@ export class TrackRenderEngine {
 
     // Sync masks from first-class mask clips
     const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
+    this.latestMaskSyncContext = {
+      maskClips,
+      clip: activeClip,
+      logicalDimensions,
+      rawTimeTicks: rawTimeSeconds,
+      assetsById: assetById,
+      fps,
+    };
 
     // 6. Send Render Request
     // Optimization: Don't request same frame twice (Live Mode only)
@@ -1043,6 +1065,35 @@ export class TrackRenderEngine {
     } catch (error) {
       console.warn("Failed to resync masks after texture update", error);
     }
+  }
+
+  private async resyncMasksForLatestAssetMaskFrame(): Promise<void> {
+    if (this.pendingAssetMaskFrameResync) {
+      return this.pendingAssetMaskFrameResync;
+    }
+
+    const context = this.latestMaskSyncContext;
+    if (!context || this.disposed) {
+      return;
+    }
+
+    this.pendingAssetMaskFrameResync = this.maskController
+      .syncMaskClips(
+        context.maskClips,
+        context.clip,
+        context.logicalDimensions,
+        context.rawTimeTicks,
+        context.assetsById,
+        { fps: context.fps, skipSam2FrameRender: true },
+      )
+      .catch((error) => {
+        console.warn("Failed to resync masks after mask frame update", error);
+      })
+      .finally(() => {
+        this.pendingAssetMaskFrameResync = null;
+      });
+
+    return this.pendingAssetMaskFrameResync;
   }
 
   /**

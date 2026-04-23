@@ -45,10 +45,11 @@ describe("inputSelection", () => {
           start: 0,
           timelineDuration: 24,
           offset: 0,
-          clipComponents: [
+          components: [
             {
-              clipId: "clip_1::mask::mask_1",
-              componentType: "mask",
+              id: "mask_ref_1",
+              type: "mask_ref",
+              parameters: { maskClipId: "clip_1::mask::mask_1" },
             },
           ],
         },

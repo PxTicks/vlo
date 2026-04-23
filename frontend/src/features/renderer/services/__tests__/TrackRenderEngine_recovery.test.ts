@@ -162,9 +162,9 @@ function createClip(overrides: Partial<TimelineClip> = {}): TimelineClip {
     transformedOffset: 0,
     croppedSourceDuration: 10 * TICKS_PER_SECOND,
     transformations: [],
-    clipComponents: [],
+    components: [],
     ...overrides,
-  } satisfies TimelineClip;
+  } as TimelineClip;
 }
 
 function createAsset(overrides: Partial<Asset> = {}): Asset {

@@ -49,6 +49,7 @@ vi.mock("../../../masks/runtime/MaskVideoFramePlayer", () => ({
     };
     setSource = sam2SetSourceSpy;
     renderAt = sam2RenderAtSpy;
+    hasFrame = vi.fn(() => true);
     dispose = sam2DisposeSpy;
   },
 }));
@@ -157,14 +158,14 @@ function createParentClip(
     transformedOffset: 0,
     croppedSourceDuration: 500,
     transformations: [],
-    clipComponents: [],
+    components: [],
     ...overrides,
   };
 }
 
 function createMaskClip(
   localId: string,
-  mode: "apply" | "preview" | "off",
+  mode: "apply" | "preview",
 ): MaskTimelineClip {
   return {
     id: `clip_1::mask::${localId}`,
@@ -214,7 +215,6 @@ describe("TrackRenderEngine masks", () => {
     const clip = createParentClip();
     const maskApply = createMaskClip("mask_apply", "apply");
     const maskPreview = createMaskClip("mask_preview", "preview");
-    const maskOff = createMaskClip("mask_off", "off");
 
     const assets: Asset[] = [
       {
@@ -228,7 +228,7 @@ describe("TrackRenderEngine masks", () => {
     ];
 
     const masksByParent = new Map<string, MaskTimelineClip[]>([
-      [clip.id, [maskApply, maskPreview, maskOff]],
+      [clip.id, [maskApply, maskPreview]],
     ]);
 
     engine.update(

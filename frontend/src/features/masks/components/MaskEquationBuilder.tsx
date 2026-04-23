@@ -1,11 +1,25 @@
 import {
+  useEffect,
   useMemo,
   useState,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Box, Chip, IconButton, Typography } from "@mui/material";
-import { EditOutlined } from "@mui/icons-material";
+import {
+  Box,
+  Chip,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Typography,
+} from "@mui/material";
+import {
+  ArrowDropDown,
+  ContentCopy,
+  DeleteOutline,
+  EditOutlined,
+} from "@mui/icons-material";
 import type {
   MaskBooleanExpression,
   MaskBooleanOperator,
@@ -30,6 +44,8 @@ interface MaskEquationBuilderProps {
   expression: MaskBooleanExpression | null;
   onExpressionChange: (expression: MaskBooleanExpression | null) => void;
   onOpenMaskDetail: (maskId: string) => void;
+  onDuplicateMask: (maskId: string) => void;
+  onDeleteMask: (maskId: string) => void;
   addAction?: ReactNode;
 }
 
@@ -38,6 +54,18 @@ const OPERATOR_LABELS: Record<MaskBooleanOperator, string> = {
   intersect: "Intersect",
   subtract: "Minus",
 };
+
+function getMaskDisplayLabel(
+  mask: MaskTimelineClip,
+  localId: string,
+  index: number,
+): string {
+  const name = mask.name.trim();
+  if (!name || name === `Mask ${localId}`) {
+    return `Mask ${index + 1}`;
+  }
+  return name;
+}
 
 function arePathsEqual(
   left: MaskBooleanExpressionPath,
@@ -73,6 +101,8 @@ export function MaskEquationBuilder({
   expression,
   onExpressionChange,
   onOpenMaskDetail,
+  onDuplicateMask,
+  onDeleteMask,
   addAction,
 }: MaskEquationBuilderProps) {
   const [rawSelectedPath, setSelectedPath] =
@@ -80,6 +110,20 @@ export function MaskEquationBuilder({
   const [draggedPath, setDraggedPath] = useState<MaskBooleanExpressionPath | null>(
     null,
   );
+  const [draggedMaskId, setDraggedMaskId] = useState<string | null>(null);
+  const [hoverDropKey, setHoverDropKey] = useState<string | null>(null);
+  const [selectedLocalId, setSelectedLocalId] = useState<string | null>(null);
+  const [menuState, setMenuState] = useState<{
+    localId: string;
+    label: string;
+    anchor: HTMLElement;
+  } | null>(null);
+
+  const resetDragState = () => {
+    setDraggedMaskId(null);
+    setDraggedPath(null);
+    setHoverDropKey(null);
+  };
 
   const selectedPath = useMemo<MaskBooleanExpressionPath>(() => {
     if (!expression) return [];
@@ -99,7 +143,7 @@ export function MaskEquationBuilder({
             clip: mask,
             index,
             localId,
-            label: `Mask ${index + 1}`,
+            label: getMaskDisplayLabel(mask, localId, index),
           };
         })
         .filter(
@@ -127,11 +171,27 @@ export function MaskEquationBuilder({
     [expression, selectedPath],
   );
 
+  const effectiveSelectedLocalId = useMemo(() => {
+    if (!selectedLocalId) return null;
+    return maskEntries.some((entry) => entry.localId === selectedLocalId)
+      ? selectedLocalId
+      : null;
+  }, [maskEntries, selectedLocalId]);
+
+  useEffect(() => {
+    if (selectedLocalId && !effectiveSelectedLocalId) {
+      setSelectedLocalId(null);
+    }
+  }, [effectiveSelectedLocalId, selectedLocalId]);
+
   const handleSelectPath = (path: MaskBooleanExpressionPath) => {
     setSelectedPath(path);
   };
 
-  const handleUseMask = (maskId: string) => {
+  const addMaskAtPath = (
+    maskId: string,
+    targetPath: MaskBooleanExpressionPath,
+  ) => {
     const maskRef = createMaskBooleanMaskRef(maskId);
 
     if (!expression) {
@@ -140,26 +200,24 @@ export function MaskEquationBuilder({
       return;
     }
 
-    const targetPath = selectedNode ? selectedPath : [];
-    const node =
-      getMaskBooleanExpressionAtPath(expression, targetPath) ?? expression;
-    if (!node) {
-      onExpressionChange(maskRef);
-      setSelectedPath([]);
-      return;
-    }
+    const nodeAtTarget = getMaskBooleanExpressionAtPath(
+      expression,
+      targetPath,
+    );
+    const node = nodeAtTarget ?? expression;
+    const effectivePath = nodeAtTarget !== null ? targetPath : [];
 
     onExpressionChange(
       replaceMaskBooleanExpressionAtPath(
         expression,
-        targetPath,
+        effectivePath,
         appendMaskBooleanExpression(node, maskId),
       ),
     );
-    setSelectedPath(targetPath);
+    setSelectedPath(effectivePath);
   };
 
-  const handleDeleteSelectedMask = () => {
+  const handleDeleteSelectedEquationNode = () => {
     if (!expression || selectedNode?.kind !== "mask_ref") {
       return;
     }
@@ -208,14 +266,67 @@ export function MaskEquationBuilder({
 
     event.preventDefault();
     event.stopPropagation();
-    handleDeleteSelectedMask();
+    handleDeleteSelectedEquationNode();
   };
 
-  const helperText = !expression
-    ? "Click a mask chip to start the equation."
-    : selectedNode?.kind === "operation"
-      ? "Click a mask chip to union it into the selected group. Click the operator chip to cycle it."
-      : "Select a mask chip, press Delete to remove it, or drag it onto another mask chip to swap them.";
+  const openMaskMenu = (
+    anchor: HTMLElement,
+    localId: string,
+    label: string,
+  ) => {
+    setMenuState({ anchor, localId, label });
+  };
+
+  const closeMaskMenu = () => {
+    setMenuState(null);
+  };
+
+  const handleMenuEdit = () => {
+    if (!menuState) return;
+    onOpenMaskDetail(menuState.localId);
+    closeMaskMenu();
+  };
+
+  const handleMenuDuplicate = () => {
+    if (!menuState) return;
+    onDuplicateMask(menuState.localId);
+    closeMaskMenu();
+  };
+
+  const handleMenuDelete = () => {
+    if (!menuState) return;
+    onDeleteMask(menuState.localId);
+    closeMaskMenu();
+  };
+
+  const handleEquationAreaDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!draggedMaskId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    if (hoverDropKey !== "__area__") {
+      setHoverDropKey("__area__");
+    }
+  };
+
+  const handleEquationAreaDragLeave = (
+    event: React.DragEvent<HTMLDivElement>,
+  ) => {
+    if (!draggedMaskId) return;
+    const related = event.relatedTarget as Node | null;
+    if (related && event.currentTarget.contains(related)) {
+      return;
+    }
+    if (hoverDropKey === "__area__") {
+      setHoverDropKey(null);
+    }
+  };
+
+  const handleEquationAreaDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!draggedMaskId) return;
+    event.preventDefault();
+    addMaskAtPath(draggedMaskId, []);
+    resetDragState();
+  };
 
   const renderNode = (
     node: MaskBooleanExpression,
@@ -225,20 +336,24 @@ export function MaskEquationBuilder({
     const isRootGroup = path.length === 0;
 
     if (node.kind === "mask_ref") {
-      const isDropTarget =
-        !!draggedPath &&
-        !arePathsEqual(draggedPath, path);
+      const pathKey = path.join("-") || "root";
+      const isPathDropTarget =
+        !!draggedPath && !arePathsEqual(draggedPath, path);
+      const isMaskDropTarget = !!draggedMaskId;
+      const isDropTarget = isPathDropTarget || isMaskDropTarget;
+      const isHovered = hoverDropKey === pathKey;
 
       return (
         <Chip
-          data-testid={`mask-equation-mask-${path.join("-") || "root"}`}
+          data-testid={`mask-equation-mask-${pathKey}`}
           label={maskLabelById.get(node.maskId) ?? `Mask ${node.maskId}`}
           size="small"
-          color={isSelected ? "primary" : "default"}
-          variant={isSelected ? "filled" : "outlined"}
+          color={isSelected || isHovered ? "primary" : "default"}
+          variant={isSelected || isHovered ? "filled" : "outlined"}
           onClick={(event) => {
             event.stopPropagation();
             handleSelectPath(path);
+            setSelectedLocalId(node.maskId);
           }}
           draggable
           onDragStart={(event) => {
@@ -252,27 +367,59 @@ export function MaskEquationBuilder({
             handleSelectPath(path);
           }}
           onDragOver={(event) => {
+            if (draggedMaskId) {
+              event.preventDefault();
+              event.stopPropagation();
+              event.dataTransfer.dropEffect = "copy";
+              if (hoverDropKey !== pathKey) {
+                setHoverDropKey(pathKey);
+              }
+              return;
+            }
             if (!draggedPath || arePathsEqual(draggedPath, path)) {
               return;
             }
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
           }}
+          onDragLeave={(event) => {
+            if (!draggedMaskId) return;
+            const related = event.relatedTarget as Node | null;
+            if (related && event.currentTarget.contains(related)) {
+              return;
+            }
+            if (hoverDropKey === pathKey) {
+              setHoverDropKey(null);
+            }
+          }}
           onDrop={(event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (draggedMaskId) {
+              addMaskAtPath(draggedMaskId, path);
+              resetDragState();
+              return;
+            }
             if (!draggedPath || arePathsEqual(draggedPath, path)) {
               return;
             }
             handleSwapMasks(draggedPath, path);
-            setDraggedPath(null);
+            resetDragState();
           }}
           onDragEnd={() => {
-            setDraggedPath(null);
+            resetDragState();
           }}
           sx={{
             height: 24,
             borderStyle: isDropTarget ? "dashed" : "solid",
+            outline: isHovered ? "2px solid" : "none",
+            outlineColor: "primary.light",
+            outlineOffset: 1,
+            maxWidth: 160,
+            "& .MuiChip-label": {
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            },
           }}
         />
       );
@@ -344,49 +491,101 @@ export function MaskEquationBuilder({
     );
   };
 
+  const isEquationDropTarget = !!draggedMaskId;
+  const isEquationAreaHovered = hoverDropKey === "__area__";
+
   return (
     <Box sx={{ px: 2, pb: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
       <Box>
-        <Typography
-          variant="caption"
-          sx={{ color: "text.secondary", display: "block", mb: 1 }}
-        >
-          Available Masks
-        </Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, width: "100%" }}>
-          {maskEntries.map((entry) => (
-            <Box
-              key={entry.clip.id}
-              sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
-            >
+          {maskEntries.map((entry) => {
+            const isSelectedEntry = entry.localId === effectiveSelectedLocalId;
+            const isReferenced = referencedMaskIds.has(entry.localId);
+            return (
               <Chip
+                key={entry.clip.id}
                 data-testid={`mask-variable-chip-${entry.localId}`}
+                aria-label={entry.label}
                 label={entry.label}
                 size="small"
-                color={referencedMaskIds.has(entry.localId) ? "primary" : "default"}
-                variant={referencedMaskIds.has(entry.localId) ? "filled" : "outlined"}
-                onClick={() => handleUseMask(entry.localId)}
-                sx={{ height: 24 }}
-              />
-              <IconButton
-                data-testid={`mask-edit-button-${entry.localId}`}
-                aria-label={`Edit ${entry.label}`}
-                size="small"
-                onClick={() => onOpenMaskDetail(entry.localId)}
-                sx={{
-                  border: "1px solid",
-                  borderColor: "#2f333a",
-                  borderRadius: 999,
-                  p: 0.5,
+                color={isSelectedEntry || isReferenced ? "primary" : "default"}
+                variant={isSelectedEntry ? "filled" : "outlined"}
+                onClick={() => setSelectedLocalId(entry.localId)}
+                onDelete={(event) =>
+                  openMaskMenu(
+                    event.currentTarget as HTMLElement,
+                    entry.localId,
+                    entry.label,
+                  )
+                }
+                deleteIcon={
+                  <ArrowDropDown
+                    role="button"
+                    aria-hidden={false}
+                    aria-label={`Actions for ${entry.label}`}
+                    data-testid={`mask-actions-button-${entry.localId}`}
+                    sx={{ fontSize: 18 }}
+                  />
+                }
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "copy";
+                  event.dataTransfer.setData(
+                    "text/plain",
+                    `mask:${entry.localId}`,
+                  );
+                  setDraggedMaskId(entry.localId);
                 }}
-              >
-                <EditOutlined sx={{ fontSize: 14 }} />
-              </IconButton>
-            </Box>
-          ))}
+                onDragEnd={resetDragState}
+                sx={{
+                  height: 24,
+                  maxWidth: "min(100%, 220px)",
+                  "& .MuiChip-label": {
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  },
+                }}
+              />
+            );
+          })}
           {addAction}
         </Box>
       </Box>
+
+      <Menu
+        data-testid="mask-actions-menu"
+        anchorEl={menuState?.anchor ?? null}
+        open={!!menuState}
+        onClose={closeMaskMenu}
+      >
+        <MenuItem
+          data-testid="mask-actions-menu-edit"
+          onClick={handleMenuEdit}
+        >
+          <ListItemIcon>
+            <EditOutlined fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Edit</ListItemText>
+        </MenuItem>
+        <MenuItem
+          data-testid="mask-actions-menu-duplicate"
+          onClick={handleMenuDuplicate}
+        >
+          <ListItemIcon>
+            <ContentCopy fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Duplicate</ListItemText>
+        </MenuItem>
+        <MenuItem
+          data-testid="mask-actions-menu-delete"
+          onClick={handleMenuDelete}
+        >
+          <ListItemIcon>
+            <DeleteOutline fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Delete</ListItemText>
+        </MenuItem>
+      </Menu>
 
       <Box>
         <Typography
@@ -395,35 +594,36 @@ export function MaskEquationBuilder({
         >
           Equation
         </Typography>
-        {expression ? (
-          <Box
-            data-testid="mask-equation"
-            onKeyDown={handleEquationKeyDown}
-            sx={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 1,
-              minHeight: 32,
-              alignItems: "center",
-              minWidth: 0,
-            }}
-          >
-            {renderNode(expression, [])}
-          </Box>
-        ) : (
-          <Typography
-            variant="caption"
-            sx={{ color: "text.secondary", display: "block", minHeight: 20 }}
-          >
-            No equation yet.
-          </Typography>
-        )}
-      </Box>
-
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        <Typography variant="caption" sx={{ color: "text.secondary" }}>
-          {helperText}
-        </Typography>
+        <Box
+          data-testid="mask-equation"
+          onKeyDown={handleEquationKeyDown}
+          onDragOver={handleEquationAreaDragOver}
+          onDragLeave={handleEquationAreaDragLeave}
+          onDrop={handleEquationAreaDrop}
+          sx={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 1,
+            minHeight: 32,
+            alignItems: "center",
+            minWidth: 0,
+            p: 0.5,
+            borderRadius: "8px",
+            border: "1px dashed",
+            borderColor: isEquationAreaHovered
+              ? "primary.main"
+              : isEquationDropTarget
+                ? "rgba(25, 118, 210, 0.4)"
+                : "transparent",
+            bgcolor: isEquationAreaHovered
+              ? "rgba(25, 118, 210, 0.12)"
+              : isEquationDropTarget
+                ? "rgba(25, 118, 210, 0.04)"
+                : "transparent",
+          }}
+        >
+          {expression && renderNode(expression, [])}
+        </Box>
       </Box>
     </Box>
   );

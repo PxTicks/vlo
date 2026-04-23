@@ -12,7 +12,7 @@
     "101": {},
     "114": {
       "widgets": {
-        "value": {
+        "switch": {
           "hidden": true,
           "value_type": "boolean"
         }
@@ -73,12 +73,18 @@
         },
         {
           "when": {
-            "kind": "always"
+            "kind": "compare",
+            "ref": {
+              "kind": "derived_widget",
+              "derived_widget_id": "single_sampler_denoise"
+            },
+            "operator": "lt",
+            "value": 1
           },
           "set_widgets": [
             {
               "node_id": "114",
-              "widget": "value",
+              "widget": "switch",
               "value": true
             }
           ]

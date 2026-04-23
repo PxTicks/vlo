@@ -675,6 +675,106 @@ def test_apply_rules_preserves_direct_provided_input_node_pre_upload():
     assert warnings == []
 
 
+def test_vace_inpaint_new_partial_denoise_enables_switch_branch():
+    rules_model, warnings = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_VACE_inpaint_new.json",
+    )
+
+    assert warnings == []
+
+    workflow = {
+        "113": {
+            "class_type": "VAEEncode",
+            "inputs": {
+                "pixels": ["112", 0],
+                "vae": ["73", 0],
+            },
+        },
+        "114": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": False,
+                "on_false": ["115", 0],
+                "on_true": ["113", 0],
+            },
+        },
+        "115": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "steps": 6,
+                "start_at_step": 0,
+            },
+        },
+        "200": {
+            "class_type": "Consumer",
+            "inputs": {"samples": ["114", 0]},
+        },
+    }
+
+    rewritten, apply_warnings = apply_rules_to_workflow(
+        workflow,
+        rules_model,
+        derived_widget_values={"single_sampler_denoise": 0.5},
+    )
+
+    assert apply_warnings == []
+    assert "113" in rewritten
+    assert rewritten["114"]["inputs"]["switch"] is True
+    assert rewritten["114"]["inputs"]["on_false"] == ["115", 0]
+    assert rewritten["114"]["inputs"]["on_true"] == ["113", 0]
+    assert rewritten["200"]["inputs"]["samples"] == ["114", 0]
+
+
+def test_vace_inpaint_new_full_denoise_bypasses_switch_branch():
+    rules_model, warnings = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_VACE_inpaint_new.json",
+    )
+
+    assert warnings == []
+
+    workflow = {
+        "113": {
+            "class_type": "VAEEncode",
+            "inputs": {
+                "pixels": ["112", 0],
+                "vae": ["73", 0],
+            },
+        },
+        "114": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": False,
+                "on_false": ["115", 0],
+                "on_true": ["113", 0],
+            },
+        },
+        "115": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "steps": 6,
+                "start_at_step": 0,
+            },
+        },
+        "200": {
+            "class_type": "Consumer",
+            "inputs": {"samples": ["114", 0]},
+        },
+    }
+
+    rewritten, apply_warnings = apply_rules_to_workflow(
+        workflow,
+        rules_model,
+        derived_widget_values={"single_sampler_denoise": 1},
+    )
+
+    assert apply_warnings == []
+    assert "113" not in rewritten
+    assert "114" not in rewritten
+    assert rewritten["200"]["inputs"] == {}
+
+
 def test_default_workflow_rules_parse_with_current_schema():
     for rules_path in sorted(DEFAULT_WORKFLOWS_DIR.glob("*.rules.json")):
         rules = json.loads(rules_path.read_text(encoding="utf-8"))

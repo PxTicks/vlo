@@ -1853,7 +1853,10 @@ export class SpriteClipMaskController {
     if (!this.blurFilter) {
       this.blurFilter = new BlurFilter();
     }
-    this.blurFilter.strength = amount * MASK_EDGE_BLUR_SCALE;
+    const strength = amount * MASK_EDGE_BLUR_SCALE;
+    this.blurFilter.strength = strength;
+    // Increase quality dynamically for large blurs to prevent saw-tooth banding artifacts when thresholding
+    this.blurFilter.quality = Math.max(4, Math.ceil(strength / 5));
     return this.blurFilter;
   }
 

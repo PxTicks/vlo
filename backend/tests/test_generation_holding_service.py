@@ -208,7 +208,7 @@ async def test_generation_holding_service_captures_websocket_outputs_and_finaliz
     captured_path = await service.get_delivery_file_path(
         "project-1",
         "delivery-1",
-        "outputs",
+        "preview_frames",
         captured_one["storage_name"],
     )
     assert captured_path is not None
@@ -226,11 +226,14 @@ async def test_generation_holding_service_captures_websocket_outputs_and_finaliz
     assert len(deliveries) == 1
     delivery = deliveries[0]
     assert delivery["status"] == "completed_pending_ack"
-    assert len(delivery["outputs"]) == 2
-    assert delivery["outputs"][0]["filename"].startswith("ws-000000")
+    assert len(delivery["outputs"]) == 1
+    assert delivery["outputs"][0]["filename"].startswith("ws-000001")
     assert delivery["outputs"][0]["viewUrl"].startswith(
-        "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/outputs/"
+        "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/preview_frames/"
     )
+    assert len(delivery["preview_frames"]) == 2
+    assert delivery["preview_frames"][0]["filename"].startswith("ws-000000")
+    assert delivery["preview_frames"][1]["filename"].startswith("ws-000001")
 
 
 @pytest.mark.asyncio

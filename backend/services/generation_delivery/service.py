@@ -277,7 +277,12 @@ class GenerationHoldingService:
                 "filename": entry.get("filename", ""),
                 "subfolder": entry.get("subfolder", ""),
                 "type": entry.get("type", "output"),
-                "viewUrl": self._file_url(project_id, delivery_id, "outputs", entry["storage_name"]),
+                "viewUrl": self._file_url(
+                    project_id,
+                    delivery_id,
+                    entry.get("category", "outputs"),
+                    entry["storage_name"],
+                ),
                 **(
                     {"mime_type": entry["mime_type"]}
                     if isinstance(entry.get("mime_type"), str)
@@ -285,6 +290,11 @@ class GenerationHoldingService:
                 ),
             }
             for entry in manifest.get("outputs", [])
+            if isinstance(entry, dict) and isinstance(entry.get("storage_name"), str)
+        ]
+        preview_frames = [
+            self._serialize_file_ref(project_id, delivery_id, "preview_frames", entry)
+            for entry in manifest.get("preview_frames", [])
             if isinstance(entry, dict) and isinstance(entry.get("storage_name"), str)
         ]
         prepared_mask = manifest.get("prepared_mask")
@@ -320,7 +330,7 @@ class GenerationHoldingService:
             "applied_widget_values": manifest.get("applied_widget_values", {}),
             "aspect_ratio_processing": manifest.get("aspect_ratio_processing"),
             "outputs": outputs,
-            "preview_frames": [],
+            "preview_frames": preview_frames,
             "prepared_mask": serialized_mask,
             "delivery_context": manifest.get("delivery_context"),
             "last_delivery_error": manifest.get("last_delivery_error"),
@@ -379,6 +389,7 @@ class GenerationHoldingService:
             "applied_widget_values": {},
             "aspect_ratio_processing": None,
             "outputs": [],
+            "preview_frames": [],
             "prepared_mask": None,
             "last_delivery_error": None,
         }
@@ -836,7 +847,7 @@ class GenerationHoldingService:
         storage_name = await self._write_file(
             project_id,
             delivery_id,
-            "outputs",
+            "preview_frames",
             filename,
             image_bytes,
         )
@@ -846,6 +857,20 @@ class GenerationHoldingService:
             "type": "output",
             "mime_type": mime_type,
             "storage_name": storage_name,
+            "frame_index": frame_index,
+        }
+
+    def _build_output_from_preview_frame(
+        self,
+        preview_frame: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "filename": preview_frame.get("filename", "ws-output.png"),
+            "subfolder": "",
+            "type": "output",
+            "mime_type": preview_frame.get("mime_type", "application/octet-stream"),
+            "storage_name": preview_frame["storage_name"],
+            "category": "preview_frames",
         }
 
     async def _finalize_delivery(
@@ -865,8 +890,14 @@ class GenerationHoldingService:
 
         captured = websocket_outputs or []
         if uses_ws_outputs:
-            outputs = captured
+            preview_frames = captured
+            outputs = (
+                [self._build_output_from_preview_frame(preview_frames[-1])]
+                if preview_frames
+                else []
+            )
         else:
+            preview_frames = []
             outputs = await self._capture_history_outputs(
                 project_id, delivery_id, prompt_id
             )
@@ -877,6 +908,11 @@ class GenerationHoldingService:
                 "Generation completed without persisted final outputs for delivery",
             )
             return
+        async with self._lock:
+            manifest = self._deliveries.get(delivery_id)
+            if manifest is not None:
+                manifest["preview_frames"] = preview_frames
+                await self._persist_manifest(manifest)
         await self.mark_completed(delivery_id, outputs)
 
     async def _monitor_delivery(
@@ -992,7 +1028,6 @@ class GenerationHoldingService:
                             )
                             if captured is not None:
                                 websocket_outputs.append(captured)
-                            continue
                         await self._broadcast_binary(project_id, frame)
         except asyncio.CancelledError:
             raise

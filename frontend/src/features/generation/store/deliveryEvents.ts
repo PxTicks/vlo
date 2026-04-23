@@ -149,18 +149,29 @@ export function attachDeliveryClientHandlers(
 
     const generationMetadata = structuredClone(manifest.generation_metadata);
     let importedAssetIds: string[] | undefined;
+    let previewFrameFiles: File[] = [];
 
     try {
       const preparedMaskFile = await fetchDeliveryFileAsFile(
         manifest.prepared_mask ?? null,
       );
+      previewFrameFiles =
+        Array.isArray(manifest.preview_frames) && manifest.preview_frames.length > 0
+          ? (
+              await Promise.all(
+                manifest.preview_frames.map((previewFrame) =>
+                  fetchDeliveryFileAsFile(previewFrame),
+                ),
+              )
+            ).filter((file): file is File => file !== null)
+          : get().jobPreviewFrames.get(manifest.prompt_id) ?? [];
 
       const postprocessResult = await frontendPostprocess(manifest.outputs, {
         postprocessing: manifest.postprocess_config ?? undefined,
         aspectRatioProcessing: manifest.aspect_ratio_processing ?? null,
         generationMetadata,
         autoFamilyRequestKey: manifest.auto_family_request_key ?? null,
-        previewFrameFiles: [],
+        previewFrameFiles,
         preparedMaskFile: preparedMaskFile ?? undefined,
       });
       importedAssetIds = postprocessResult.importedAssetIds;
@@ -188,9 +199,12 @@ export function attachDeliveryClientHandlers(
             generationMetadata,
           });
         }
+        const nextPreviewFrames = new Map(basePatch.jobPreviewFrames ?? state.jobPreviewFrames);
+        nextPreviewFrames.delete(manifest.prompt_id!);
         return {
           ...basePatch,
           jobs: nextJobs,
+          jobPreviewFrames: nextPreviewFrames,
           postprocessingJobIds: state.postprocessingJobIds.filter(
             (jobId) => jobId !== manifest.prompt_id,
           ),
@@ -208,8 +222,11 @@ export function attachDeliveryClientHandlers(
           postprocessError: message,
           ...(importedAssetIds ? { importedAssetIds } : {}),
         });
+        const nextPreviewFrames = new Map(basePatch.jobPreviewFrames ?? state.jobPreviewFrames);
+        nextPreviewFrames.delete(manifest.prompt_id!);
         return {
           ...basePatch,
+          jobPreviewFrames: nextPreviewFrames,
           postprocessingJobIds: state.postprocessingJobIds.filter(
             (jobId) => jobId !== manifest.prompt_id,
           ),

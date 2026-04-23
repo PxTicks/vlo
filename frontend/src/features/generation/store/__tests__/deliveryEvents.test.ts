@@ -326,4 +326,86 @@ describe("deliveryEvents", () => {
     expect(mockProcessGenerationQueue).toHaveBeenCalledTimes(1);
   });
 
+  it("uses held preview frames for websocket delivery postprocessing and clears cached previews", async () => {
+    mockFetchDeliveryFileAsFile
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(
+        new File(["frame-1"], "ws-000000.png", { type: "image/png" }),
+      )
+      .mockResolvedValueOnce(
+        new File(["frame-2"], "ws-000001.png", { type: "image/png" }),
+      );
+    mockFrontendPostprocess.mockResolvedValue({
+      postprocessedPreview: null,
+      postprocessError: null,
+      importedAssetIds: ["asset-1"],
+    });
+    mockWaitForAssetsPersistence.mockResolvedValue(undefined);
+
+    useGenerationStore.setState({
+      jobPreviewFrames: new Map([
+        [
+          "prompt-1",
+          [new File(["stale"], "stale.png", { type: "image/png" })],
+        ],
+      ]),
+    });
+
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: {
+        delivery: makeCompletedManifest({
+          outputs: [
+            {
+              filename: "ws-000001.png",
+              subfolder: "",
+              type: "output",
+              viewUrl:
+                "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/preview_frames/ws-000001.png",
+            },
+          ],
+          preview_frames: [
+            {
+              filename: "ws-000000.png",
+              download_url:
+                "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/preview_frames/ws-000000.png",
+              mime_type: "image/png",
+            },
+            {
+              filename: "ws-000001.png",
+              download_url:
+                "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/preview_frames/ws-000001.png",
+              mime_type: "image/png",
+            },
+          ],
+        }),
+      },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(mockFrontendPostprocess).toHaveBeenCalledWith(
+      [
+        {
+          filename: "ws-000001.png",
+          subfolder: "",
+          type: "output",
+          viewUrl:
+            "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/preview_frames/ws-000001.png",
+        },
+      ],
+      expect.objectContaining({
+        previewFrameFiles: [
+          expect.objectContaining({ name: "ws-000000.png" }),
+          expect.objectContaining({ name: "ws-000001.png" }),
+        ],
+      }),
+    );
+    expect(useGenerationStore.getState().jobPreviewFrames.has("prompt-1")).toBe(false);
+  });
+
 });

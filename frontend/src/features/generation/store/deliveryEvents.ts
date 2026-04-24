@@ -2,6 +2,7 @@ import { waitForAssetsPersistence } from "../../userAssets";
 import type { GenerationDeliveryWebSocket } from "../services/GenerationDeliveryWebSocket";
 import {
   fetchDeliveryFileAsFile,
+  type GenerationDeliveryFileRef,
   type GenerationDeliveryManifest,
   type GenerationDeliveryMessage,
 } from "../services/generationDeliveryApi";
@@ -98,6 +99,37 @@ function buildJobFromDelivery(
   };
 }
 
+function compactPreviewFrameFiles(frameFiles: File[] | undefined): File[] {
+  return (frameFiles ?? []).filter((file): file is File => file instanceof File);
+}
+
+function compareDeliveryPreviewFrames(
+  left: GenerationDeliveryFileRef,
+  right: GenerationDeliveryFileRef,
+): number {
+  const leftIndex =
+    typeof left.frame_index === "number" ? left.frame_index : Number.MAX_SAFE_INTEGER;
+  const rightIndex =
+    typeof right.frame_index === "number" ? right.frame_index : Number.MAX_SAFE_INTEGER;
+  if (leftIndex !== rightIndex) {
+    return leftIndex - rightIndex;
+  }
+  return left.filename.localeCompare(right.filename);
+}
+
+async function fetchDeliveryPreviewFrameFiles(
+  previewFrames: GenerationDeliveryFileRef[],
+): Promise<File[]> {
+  const files: File[] = [];
+  for (const previewFrame of [...previewFrames].sort(compareDeliveryPreviewFrames)) {
+    const file = await fetchDeliveryFileAsFile(previewFrame);
+    if (file) {
+      files.push(file);
+    }
+  }
+  return files;
+}
+
 export function attachDeliveryClientHandlers(
   client: GenerationDeliveryWebSocket,
   set: GenerationStoreSet,
@@ -165,16 +197,17 @@ export function attachDeliveryClientHandlers(
       const preparedMaskFile = await fetchDeliveryFileAsFile(
         manifest.prepared_mask ?? null,
       );
+      const cachedPreviewFrameFiles = compactPreviewFrameFiles(
+        get().jobPreviewFrames.get(manifest.prompt_id),
+      );
+      const heldPreviewFrames = Array.isArray(manifest.preview_frames)
+        ? manifest.preview_frames
+        : [];
       previewFrameFiles =
-        Array.isArray(manifest.preview_frames) && manifest.preview_frames.length > 0
-          ? (
-              await Promise.all(
-                manifest.preview_frames.map((previewFrame) =>
-                  fetchDeliveryFileAsFile(previewFrame),
-                ),
-              )
-            ).filter((file): file is File => file !== null)
-          : get().jobPreviewFrames.get(manifest.prompt_id) ?? [];
+        heldPreviewFrames.length === 0 ||
+        cachedPreviewFrameFiles.length >= heldPreviewFrames.length
+          ? cachedPreviewFrameFiles
+          : await fetchDeliveryPreviewFrameFiles(heldPreviewFrames);
 
       const postprocessResult = await frontendPostprocess(manifest.outputs, {
         postprocessing: manifest.postprocess_config ?? undefined,

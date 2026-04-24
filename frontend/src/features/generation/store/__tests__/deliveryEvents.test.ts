@@ -440,6 +440,70 @@ describe("deliveryEvents", () => {
     expect(useGenerationStore.getState().jobPreviewFrames.has("prompt-1")).toBe(false);
   });
 
+  it("uses complete cached websocket frames without refetching held preview files", async () => {
+    const cachedPreviewFrames = [
+      new File(["cached-frame-1"], "cached-000000.png", { type: "image/png" }),
+      new File(["cached-frame-2"], "cached-000001.png", { type: "image/png" }),
+    ];
+
+    useGenerationStore.setState({
+      jobPreviewFrames: new Map([["prompt-1", cachedPreviewFrames]]),
+    });
+    mockFrontendPostprocess.mockResolvedValue({
+      postprocessedPreview: null,
+      postprocessError: null,
+      importedAssetIds: ["asset-1"],
+    });
+    mockWaitForAssetsPersistence.mockResolvedValue(undefined);
+
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: {
+        delivery: makeCompletedManifest({
+          outputs: [
+            {
+              filename: "ws-000001.png",
+              subfolder: "",
+              type: "output",
+              viewUrl:
+                "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/preview_frames/ws-000001.png",
+            },
+          ],
+          preview_frames: [
+            {
+              filename: "ws-000000.png",
+              download_url:
+                "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/preview_frames/ws-000000.png",
+              mime_type: "image/png",
+            },
+            {
+              filename: "ws-000001.png",
+              download_url:
+                "/app/generation-delivery/projects/project-1/deliveries/delivery-1/files/preview_frames/ws-000001.png",
+              mime_type: "image/png",
+            },
+          ],
+        }),
+      },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(mockFetchDeliveryFileAsFile).toHaveBeenCalledTimes(1);
+    expect(mockFetchDeliveryFileAsFile).toHaveBeenCalledWith(null);
+    expect(mockFrontendPostprocess).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        previewFrameFiles: cachedPreviewFrames,
+      }),
+    );
+    expect(useGenerationStore.getState().jobPreviewFrames.has("prompt-1")).toBe(false);
+  });
+
   it("does not replace a user cancellation with a later delivery error", async () => {
     useGenerationStore.setState({
       jobs: new Map<string, GenerationJob>([

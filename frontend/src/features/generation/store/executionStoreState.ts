@@ -4,9 +4,14 @@ import { useProjectStore } from "../../project";
 import { mergeRuleWarnings } from "../services/warnings";
 import {
   buildSubmittedGeneration,
+  buildGenerationPreprocessCacheEntry,
+  buildGenerationPreprocessCacheKey,
   createGenerationPlan,
   getSaveImageWebsocketNodeIds,
+  mergeCachedPipelineOutputsIntoResponse,
   prepareGenerationPlan,
+  updateGenerationPreprocessCacheFromResponse,
+  type GenerationPreprocessCacheEntry,
 } from "../pipeline/generationPlan";
 import type {
   GenerationDeliveryContext,
@@ -339,6 +344,7 @@ export function buildExecutionStoreState(
   get: GenerationStoreGet,
 ): GenerationExecutionState {
   let isProcessingQueue = false;
+  let generationPreprocessCache: GenerationPreprocessCacheEntry | null = null;
 
   async function dispatchGenerationPlan(
     plan: GenerationPlan,
@@ -383,12 +389,26 @@ export function buildExecutionStoreState(
         return null;
       }
 
+      const preprocessCacheKey = buildGenerationPreprocessCacheKey(resolvedPlan);
+      const matchingPreprocessCache =
+        preprocessCacheKey !== null &&
+        generationPreprocessCache?.key === preprocessCacheKey
+          ? generationPreprocessCache
+          : null;
+
       const prepared = await prepareGenerationPlan(resolvedPlan, {
         clientId: wsClient.currentClientId,
         signal: preprocessAbortController.signal,
+        cacheEntry: matchingPreprocessCache,
       });
       if (get().pipelineRunToken !== pipelineRunToken) {
         return null;
+      }
+      if (preprocessCacheKey !== null && matchingPreprocessCache === null) {
+        generationPreprocessCache = buildGenerationPreprocessCacheEntry(
+          preprocessCacheKey,
+          prepared,
+        );
       }
 
       const usesPreResolvedWorkflow =
@@ -442,9 +462,30 @@ export function buildExecutionStoreState(
         return null;
       }
 
-      const submitted = buildSubmittedGeneration(prepared, response, {
-        autoFamilyRequestKey,
-      });
+      if (
+        preprocessCacheKey !== null &&
+        generationPreprocessCache?.key === preprocessCacheKey
+      ) {
+        generationPreprocessCache =
+          updateGenerationPreprocessCacheFromResponse(
+            generationPreprocessCache,
+            resolvedPlan,
+            response,
+          );
+      }
+
+      const responseWithCachedPipelineOutputs =
+        mergeCachedPipelineOutputsIntoResponse(
+          response,
+          matchingPreprocessCache,
+        );
+      const submitted = buildSubmittedGeneration(
+        prepared,
+        responseWithCachedPipelineOutputs,
+        {
+          autoFamilyRequestKey,
+        },
+      );
       set({
         workflowRuleWarnings: mergeRuleWarnings(
           resolvedPlan.metadata.workflowWarnings,
@@ -527,6 +568,7 @@ export function buildExecutionStoreState(
         return null;
       }
 
+      generationPreprocessCache = null;
       return buildSubmissionErrorPatch(get, set, error);
     }
   }

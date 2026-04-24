@@ -152,8 +152,30 @@ def test_generate_returns_structured_error_when_comfyui_is_unreachable(
                 FormData(
                     {
                         "client_id": "client-1",
+                        "project_id": "project-1",
                         "workflow_id": "wf.json",
                         "workflow": json.dumps({"1": {"class_type": "LoadImage", "inputs": {}}}),
+                        "delivery_context": json.dumps(
+                            {
+                                "plan_id": "plan-1",
+                                "workflow_name": "Workflow",
+                                "workflow_source_id": "wf.json",
+                                "generation_metadata": {
+                                    "source": "generated",
+                                    "workflowName": "Workflow",
+                                    "inputs": [],
+                                },
+                                "postprocess_config": {
+                                    "mode": "auto",
+                                    "panel_preview": "raw_outputs",
+                                    "on_failure": "fallback_raw",
+                                },
+                                "auto_family_request_key": None,
+                                "uses_save_image_websocket_outputs": False,
+                                "save_image_websocket_node_ids": [],
+                                "replay_inputs": None,
+                            }
+                        ),
                         "target_aspect_ratio": "16:9",
                         "target_resolution": "1080",
                     }

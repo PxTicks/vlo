@@ -290,6 +290,15 @@ export async function generate(
   for (const [nodeId, file] of Object.entries(request.videoInputs)) {
     formData.append(`video_${nodeId}`, file);
   }
+  if (
+    request.cachedMediaInputs &&
+    Object.keys(request.cachedMediaInputs).length > 0
+  ) {
+    formData.append(
+      "cached_media_inputs",
+      JSON.stringify(request.cachedMediaInputs),
+    );
+  }
   for (const [key, value] of Object.entries(request.widgetInputs ?? {})) {
     formData.append(key, value);
   }

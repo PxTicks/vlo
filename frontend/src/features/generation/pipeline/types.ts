@@ -191,6 +191,7 @@ export interface GenerationRequest {
   imageInputs: Record<string, File>;
   videoInputs: Record<string, File>;
   audioInputs: Record<string, File>;
+  cachedMediaInputs?: Record<string, Record<string, unknown>>;
   maskCropMode?: WorkflowMaskCroppingMode;
   maskCropDilation?: number;
   widgetInputs?: Record<string, string>;

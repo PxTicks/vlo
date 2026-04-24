@@ -1102,6 +1102,35 @@ async def generate(request: Request):
     injections: dict[str, dict[str, Any]] = {}
     workflow_warnings: list[dict[str, Any]] = []
 
+    cached_media_inputs_json = form.get("cached_media_inputs")
+    if isinstance(cached_media_inputs_json, str) and cached_media_inputs_json.strip():
+        try:
+            parsed_cached_media_inputs = json.loads(cached_media_inputs_json)
+        except json.JSONDecodeError:
+            return error_response(
+                400,
+                "invalid_cached_media_inputs_payload",
+                "Cached media inputs payload must be valid JSON",
+                retryable=False,
+            )
+        if not isinstance(parsed_cached_media_inputs, dict):
+            return error_response(
+                400,
+                "invalid_cached_media_inputs_payload",
+                "Cached media inputs payload must be an object",
+                retryable=False,
+            )
+        for node_id, values in parsed_cached_media_inputs.items():
+            if not isinstance(node_id, str) or not isinstance(values, dict):
+                continue
+            node = workflow.get(node_id)
+            if not isinstance(node, dict):
+                continue
+            for param, cached_value in values.items():
+                if not isinstance(param, str) or cached_value is None:
+                    continue
+                injections.setdefault(node_id, {})[param] = cached_value
+
     # --- Collect widget overrides from form fields ---
     widget_overrides: dict[str, dict[str, Any]] = {}
     derived_widget_values: dict[str, Any] = {}

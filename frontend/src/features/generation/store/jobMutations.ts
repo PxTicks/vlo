@@ -43,7 +43,7 @@ type JobClearState = Pick<GenerationStore, "jobs" | "jobPreviewFrames">;
 
 export function isActiveGenerationJob(
   job: GenerationJob | null | undefined,
-): boolean {
+): job is GenerationJob & { status: "queued" | "running" } {
   return job?.status === "queued" || job?.status === "running";
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GenerationJob } from "../types";
+import type { GenerationJob, WorkflowInput } from "../types";
 import {
   createDefaultWorkflowRules,
   type WorkflowRules,
@@ -332,6 +332,55 @@ function makeQueuedJob(id: string): GenerationJob {
     postprocessError: null,
     usesSaveImageWebsocketOutputs: false,
   };
+}
+
+function makeWorkflowInput(
+  overrides: Partial<WorkflowInput> & Pick<WorkflowInput, "nodeId" | "inputType" | "param">,
+): WorkflowInput {
+  return {
+    classType:
+      overrides.classType ??
+      (overrides.inputType === "text"
+        ? "CLIPTextEncode"
+        : overrides.inputType === "image"
+          ? "LoadImage"
+          : overrides.inputType === "audio"
+            ? "LoadAudio"
+            : "LoadVideo"),
+    currentValue: overrides.currentValue ?? null,
+    description: overrides.description ?? null,
+    inputType: overrides.inputType,
+    label: overrides.label ?? overrides.nodeId,
+    nodeId: overrides.nodeId,
+    origin: overrides.origin ?? "rule",
+    param: overrides.param,
+    ...(overrides.id ? { id: overrides.id } : {}),
+    ...(overrides.dispatch ? { dispatch: overrides.dispatch } : {}),
+    ...(overrides.presentation
+      ? { presentation: overrides.presentation }
+      : {}),
+  };
+}
+
+function makeTestFile(
+  content: string,
+  fileName: string,
+  options: FilePropertyBag,
+): File {
+  const file = new File([content], fileName, options);
+  if (typeof file.arrayBuffer !== "function") {
+    const bytes = new TextEncoder().encode(content);
+    Object.defineProperty(file, "arrayBuffer", {
+      value: () =>
+        Promise.resolve(
+          bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ),
+        ),
+    });
+  }
+  return file;
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -764,6 +813,438 @@ describe("useGenerationStore pipeline phases", () => {
     expect(
       mockGenerate.mock.calls[0]?.[0]?.workflowRules?.nodes,
     ).not.toHaveProperty("269");
+  });
+
+  it("reuses prepared media when only text and seed inputs change", async () => {
+    makeReadyStoreState();
+    const sourceVideo = makeTestFile("video", "source.mp4", {
+      type: "video/mp4",
+      lastModified: 1,
+    });
+    const preparedVideo = makeTestFile("prepared", "prepared.webm", {
+      type: "video/webm",
+      lastModified: 2,
+    });
+
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "10": {
+          class_type: "CLIPTextEncode",
+          inputs: {
+            text: "",
+          },
+        },
+        "20": {
+          class_type: "LoadVideo",
+          inputs: {
+            file: "",
+          },
+        },
+        "115": {
+          class_type: "RandomNoise",
+          inputs: {
+            noise_seed: 1,
+          },
+        },
+      },
+      workflowInputs: [
+        makeWorkflowInput({
+          id: "prompt",
+          nodeId: "10",
+          inputType: "text",
+          param: "text",
+        }),
+        makeWorkflowInput({
+          id: "source",
+          nodeId: "20",
+          inputType: "video",
+          param: "file",
+        }),
+      ],
+    });
+    mockFrontendPreprocess.mockImplementation(
+      async (
+        syncedWorkflow: Record<string, unknown> | null,
+        workflowId: string | null,
+        _workflowRules: unknown,
+        workflowInputs: WorkflowInput[],
+        slotValues: Record<string, import("../pipeline/types").SlotValue>,
+        clientId: string,
+      ) => {
+        const textInput = workflowInputs.find((input) => input.inputType === "text");
+        const promptValue = slotValues.prompt;
+        return {
+          workflow: syncedWorkflow,
+          workflowId,
+          targetAspectRatio: "16:9",
+          exactAspectRatio: false,
+          targetResolution: 1080,
+          textInputs:
+            textInput && promptValue?.type === "text"
+              ? { [textInput.nodeId]: promptValue.value }
+              : {},
+          imageInputs: {},
+          audioInputs: {},
+          videoInputs: {
+            "20": preparedVideo,
+          },
+          pipelineInputs: {
+            aspect_ratio: {
+              target_aspect_ratio: "16:9",
+              target_resolution: 1080,
+            },
+          },
+          clientId,
+        };
+      },
+    );
+    mockGenerate
+      .mockResolvedValueOnce({
+        prompt_id: "prompt-1",
+        number: 1,
+        node_errors: {},
+        comfyui_prompt: {
+          "20": {
+            class_type: "LoadVideo",
+            inputs: {
+              file: "cached-source.mp4",
+            },
+          },
+        },
+        pipeline_outputs: {
+          mask_processing: {
+            mask_crop_metadata: {
+              mode: "full",
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        prompt_id: "prompt-2",
+        number: 2,
+        node_errors: {},
+        comfyui_prompt: {
+          "10": {
+            class_type: "CLIPTextEncode",
+            inputs: {
+              text: "second prompt",
+            },
+          },
+          "20": {
+            class_type: "LoadVideo",
+            inputs: {
+              file: "cached-source.mp4",
+            },
+          },
+          "115": {
+            class_type: "RandomNoise",
+            inputs: {
+              noise_seed: 456,
+            },
+          },
+        },
+      });
+
+    await useGenerationStore.getState().submitGeneration(
+      {
+        prompt: {
+          type: "text",
+          value: "first prompt",
+        },
+        source: {
+          type: "video",
+          file: sourceVideo,
+        },
+      },
+      {
+        widget_115_noise_seed: "123",
+      },
+    );
+    useGenerationStore.setState({ activeJobId: null });
+
+    await useGenerationStore.getState().submitGeneration(
+      {
+        prompt: {
+          type: "text",
+          value: "second prompt",
+        },
+        source: {
+          type: "video",
+          file: sourceVideo,
+        },
+      },
+      {
+        widget_115_noise_seed: "456",
+      },
+    );
+
+    expect(mockFrontendPreprocess).toHaveBeenCalledTimes(1);
+    expect(mockGenerate).toHaveBeenCalledTimes(2);
+    expect(mockGenerate.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        textInputs: {
+          "10": "second prompt",
+        },
+        videoInputs: {},
+        cachedMediaInputs: {
+          "20": {
+            file: "cached-source.mp4",
+          },
+        },
+        widgetInputs: {
+          widget_115_noise_seed: "456",
+        },
+      }),
+    );
+  });
+
+  it("reruns media preprocessing when the source file changes", async () => {
+    makeReadyStoreState();
+    const firstVideo = makeTestFile("video-a", "source.mp4", {
+      type: "video/mp4",
+      lastModified: 1,
+    });
+    const secondVideo = makeTestFile("video-b", "source.mp4", {
+      type: "video/mp4",
+      lastModified: 2,
+    });
+    const workflowInputs = [
+      makeWorkflowInput({
+        id: "source",
+        nodeId: "20",
+        inputType: "video",
+        param: "file",
+      }),
+    ];
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "20": {
+          class_type: "LoadVideo",
+          inputs: {
+            file: "",
+          },
+        },
+      },
+      workflowInputs,
+    });
+    mockFrontendPreprocess.mockImplementation(
+      async (
+        syncedWorkflow: Record<string, unknown> | null,
+        workflowId: string | null,
+        _workflowRules: unknown,
+        _workflowInputs: WorkflowInput[],
+        slotValues: Record<string, import("../pipeline/types").SlotValue>,
+        clientId: string,
+      ) => ({
+        workflow: syncedWorkflow,
+        workflowId,
+        targetAspectRatio: "16:9",
+        exactAspectRatio: false,
+        targetResolution: 1080,
+        textInputs: {},
+        imageInputs: {},
+        audioInputs: {},
+        videoInputs: {
+          "20": slotValues.source?.type === "video" ? slotValues.source.file : firstVideo,
+        },
+        pipelineInputs: {},
+        clientId,
+      }),
+    );
+    mockGenerate
+      .mockResolvedValueOnce({
+        prompt_id: "prompt-1",
+        number: 1,
+        node_errors: {},
+        comfyui_prompt: {
+          "20": {
+            class_type: "LoadVideo",
+            inputs: {
+              file: "cached-source-a.mp4",
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        prompt_id: "prompt-2",
+        number: 2,
+        node_errors: {},
+        comfyui_prompt: {
+          "20": {
+            class_type: "LoadVideo",
+            inputs: {
+              file: "cached-source-b.mp4",
+            },
+          },
+        },
+      });
+
+    await useGenerationStore.getState().submitGeneration({
+      source: {
+        type: "video",
+        file: firstVideo,
+      },
+    });
+    useGenerationStore.setState({ activeJobId: null });
+
+    await useGenerationStore.getState().submitGeneration({
+      source: {
+        type: "video",
+        file: secondVideo,
+      },
+    });
+
+    expect(mockFrontendPreprocess).toHaveBeenCalledTimes(2);
+    expect(mockGenerate.mock.calls[1]?.[0]?.cachedMediaInputs).toBeUndefined();
+    expect(mockGenerate.mock.calls[1]?.[0]?.videoInputs).toEqual({
+      "20": secondVideo,
+    });
+  });
+
+  it("reruns media preprocessing when mask source treatment changes", async () => {
+    makeReadyStoreState();
+    const preparedVideo = makeTestFile("prepared", "prepared.webm", {
+      type: "video/webm",
+      lastModified: 1,
+    });
+    const preparedMask = makeTestFile("mask", "mask.webm", {
+      type: "video/webm",
+      lastModified: 1,
+    });
+    const selection = {
+      start: 0,
+      end: 30,
+      clips: [],
+      fps: 30,
+    };
+
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "20": {
+          class_type: "LoadVideo",
+          inputs: {
+            file: "",
+          },
+        },
+        "21": {
+          class_type: "LoadVideo",
+          inputs: {
+            file: "",
+          },
+        },
+      },
+      workflowInputs: [
+        makeWorkflowInput({
+          id: "source",
+          nodeId: "20",
+          inputType: "video",
+          param: "file",
+        }),
+      ],
+      derivedMaskMappings: [
+        {
+          sourceInputId: "source",
+          sourceNodeId: "20",
+          maskNodeId: "21",
+          maskParam: "file",
+          maskType: "binary",
+        },
+      ],
+    });
+    mockFrontendPreprocess.mockImplementation(
+      async (
+        syncedWorkflow: Record<string, unknown> | null,
+        workflowId: string | null,
+        _workflowRules: unknown,
+        _workflowInputs: WorkflowInput[],
+        _slotValues: Record<string, import("../pipeline/types").SlotValue>,
+        clientId: string,
+      ) => ({
+        workflow: syncedWorkflow,
+        workflowId,
+        targetAspectRatio: "16:9",
+        exactAspectRatio: false,
+        targetResolution: 1080,
+        textInputs: {},
+        imageInputs: {},
+        audioInputs: {},
+        videoInputs: {
+          "20": preparedVideo,
+          "21": preparedMask,
+        },
+        pipelineInputs: {},
+        clientId,
+      }),
+    );
+    mockGenerate
+      .mockResolvedValueOnce({
+        prompt_id: "prompt-1",
+        number: 1,
+        node_errors: {},
+        comfyui_prompt: {
+          "20": {
+            class_type: "LoadVideo",
+            inputs: {
+              file: "cached-source.webm",
+            },
+          },
+          "21": {
+            class_type: "LoadVideo",
+            inputs: {
+              file: "cached-mask.webm",
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        prompt_id: "prompt-2",
+        number: 2,
+        node_errors: {},
+        comfyui_prompt: {
+          "20": {
+            class_type: "LoadVideo",
+            inputs: {
+              file: "cached-source.webm",
+            },
+          },
+          "21": {
+            class_type: "LoadVideo",
+            inputs: {
+              file: "cached-mask.webm",
+            },
+          },
+        },
+      });
+
+    await useGenerationStore.getState().submitGeneration({
+      source: {
+        type: "video_selection",
+        selection,
+        preparedVideoFile: preparedVideo,
+        preparedMaskFile: preparedMask,
+        derivedMaskVideoTreatment: "remove_transparency",
+        preparedDerivedMaskVideoTreatment: "remove_transparency",
+      },
+    });
+    useGenerationStore.setState({ activeJobId: null });
+
+    await useGenerationStore.getState().submitGeneration({
+      source: {
+        type: "video_selection",
+        selection,
+        preparedVideoFile: preparedVideo,
+        preparedMaskFile: preparedMask,
+        derivedMaskVideoTreatment: "preserve_transparency",
+        preparedDerivedMaskVideoTreatment: "remove_transparency",
+      },
+    });
+
+    expect(mockFrontendPreprocess).toHaveBeenCalledTimes(2);
+    expect(mockGenerate.mock.calls[1]?.[0]?.cachedMediaInputs).toBeUndefined();
+    expect(mockGenerate.mock.calls[1]?.[0]?.videoInputs).toEqual({
+      "20": preparedVideo,
+      "21": preparedMask,
+    });
   });
 
   it("captures a migrated workflow's pre-resolved prompt before preprocessing starts", async () => {

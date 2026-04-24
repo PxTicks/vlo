@@ -75,7 +75,6 @@ describe("resolveExistingAssetForExternalDrop", () => {
       new File(["image"], "missing.png", { type: "image/png" }),
       [asset],
       {
-        sanitizeFilename: (name) => name,
         computeChecksum: async () => "hash-missing",
       },
     );

@@ -97,6 +97,11 @@ describe("featherApplicator", () => {
     rotation: 0,
     filters: [],
   });
+  const createFeather = (
+    mode: "hard_outer" | "soft_inner" | "two_way",
+    amount: number,
+  ) => ({ mode, amount, invert: false });
+  const createGrow = (amount: number) => ({ amount, invert: false });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -116,7 +121,7 @@ describe("featherApplicator", () => {
   it("should clean up the rig if feather amount drops to 0", () => {
     // 1. Setup the rig
     const state = createBaseState();
-    state.feather = { mode: "soft_inner", amount: 10 };
+    state.feather = createFeather("soft_inner", 10);
     featherApplicator(mockSprite as unknown as ClipTransformTarget, state);
 
     // Soft inner adds a non-renderable self-mask companion.
@@ -124,7 +129,7 @@ describe("featherApplicator", () => {
     expect(mockSprite.mask).not.toBeNull();
 
     // 2. Tear it down
-    state.feather.amount = 0;
+    state.feather!.amount = 0;
     featherApplicator(mockSprite as unknown as ClipTransformTarget, state);
 
     expect(mockSprite.mask).toBeNull();
@@ -135,7 +140,7 @@ describe("featherApplicator", () => {
 
   it("should apply Soft feather correctly", () => {
     const state = createBaseState();
-    state.feather = { mode: "soft_inner", amount: 20 };
+    state.feather = createFeather("soft_inner", 20);
 
     featherApplicator(mockSprite as unknown as ClipTransformTarget, state);
 
@@ -150,7 +155,7 @@ describe("featherApplicator", () => {
 
   it("should apply Hard Outer feather correctly", () => {
     const state = createBaseState();
-    state.feather = { mode: "hard_outer", amount: 15 };
+    state.feather = createFeather("hard_outer", 15);
 
     featherApplicator(mockSprite as unknown as ClipTransformTarget, state);
 
@@ -166,7 +171,7 @@ describe("featherApplicator", () => {
 
   it("should apply grow-only mask operation correctly", () => {
     const state = createBaseState();
-    state.maskGrow = { amount: 15 };
+    state.maskGrow = createGrow(15);
 
     featherApplicator(mockSprite as unknown as ClipTransformTarget, state);
 
@@ -180,8 +185,8 @@ describe("featherApplicator", () => {
 
   it("should allow grow + soft feather composition", () => {
     const state = createBaseState();
-    state.maskGrow = { amount: 10 };
-    state.feather = { mode: "soft_inner", amount: 12 };
+    state.maskGrow = createGrow(10);
+    state.feather = createFeather("soft_inner", 12);
 
     featherApplicator(mockSprite as unknown as ClipTransformTarget, state);
 
@@ -194,7 +199,7 @@ describe("featherApplicator", () => {
 
   it("should apply Two-way feather correctly", () => {
     const state = createBaseState();
-    state.feather = { mode: "two_way", amount: 15 };
+    state.feather = createFeather("two_way", 15);
 
     featherApplicator(mockSprite as unknown as ClipTransformTarget, state);
 

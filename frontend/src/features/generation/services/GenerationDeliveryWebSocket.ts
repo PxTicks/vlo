@@ -19,6 +19,8 @@ export type GenerationDeliveryConnectionChangeHandler = (
 ) => void;
 
 export class GenerationDeliveryWebSocket {
+  private readonly baseUrl: string;
+  private readonly projectId: string;
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
@@ -28,10 +30,10 @@ export class GenerationDeliveryWebSocket {
   private readonly connectionChangeHandlers =
     new Set<GenerationDeliveryConnectionChangeHandler>();
 
-  constructor(
-    private readonly baseUrl: string,
-    private readonly projectId: string,
-  ) {}
+  constructor(baseUrl: string, projectId: string) {
+    this.baseUrl = baseUrl;
+    this.projectId = projectId;
+  }
 
   get isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;

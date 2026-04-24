@@ -166,10 +166,14 @@ describe("useGenerationStore metadata replay", () => {
       workflow_id: "wan2_2_flf2v.json",
       has_sidecar: true,
       rules: createDefaultWorkflowRules({
-        aspect_ratio_processing: {
-          enabled: true,
-          resolutions: [480, 720, 1080],
-        },
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            enabled: true,
+            config: { resolutions: [480, 720, 1080] },
+          },
+        ],
         nodes: {
           "145": {
             present: {
@@ -430,10 +434,14 @@ describe("useGenerationStore metadata replay", () => {
       workflow_id: "wan2_2_flf2v.json",
       has_sidecar: true,
       rules: createDefaultWorkflowRules({
-        aspect_ratio_processing: {
-          enabled: true,
-          resolutions: [480, 720, 1080],
-        },
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            enabled: true,
+            config: { resolutions: [480, 720, 1080] },
+          },
+        ],
         nodes: {
           "145": {
             present: {
@@ -973,10 +981,14 @@ describe("useGenerationStore metadata replay", () => {
       workflow_id: "original_workflow.json",
       has_sidecar: true,
       rules: createDefaultWorkflowRules({
-        aspect_ratio_processing: {
-          enabled: true,
-          resolutions: [480, 720, 1080],
-        },
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            enabled: true,
+            config: { resolutions: [480, 720, 1080] },
+          },
+        ],
         nodes: {
           "145": {
             present: {

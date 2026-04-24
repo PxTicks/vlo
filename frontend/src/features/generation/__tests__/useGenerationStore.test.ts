@@ -789,7 +789,9 @@ describe("useGenerationStore workflow rules", () => {
     expect(jobId).toBe("prompt-mask-metadata");
 
     const submittedJob = useGenerationStore.getState().jobs.get("prompt-mask-metadata");
-    expect(submittedJob?.generationMetadata.maskCropMetadata).toEqual({
+    const generationMetadata = submittedJob?.generationMetadata;
+    expect(generationMetadata).toBeDefined();
+    expect(generationMetadata?.maskCropMetadata).toEqual({
       mode: "cropped",
       crop_position: [100, 50],
       crop_size: [200, 100],

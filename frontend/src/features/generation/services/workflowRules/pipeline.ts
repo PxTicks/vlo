@@ -7,9 +7,9 @@ import type {
   WorkflowRules,
 } from "./types";
 
-export function findWorkflowStageByKind<
-  TStage extends WorkflowRules["pipeline"] extends Array<infer U> ? U : never,
->(
+type WorkflowPipelineStage = NonNullable<WorkflowRules["pipeline"]>[number];
+
+export function findWorkflowStageByKind<TStage extends WorkflowPipelineStage>(
   rules: WorkflowRules | null | undefined,
   kind: string,
 ): TStage | null {
@@ -21,9 +21,7 @@ export function findWorkflowStageByKind<
   return null;
 }
 
-export function findWorkflowStageById<
-  TStage extends WorkflowRules["pipeline"] extends Array<infer U> ? U : never,
->(
+export function findWorkflowStageById<TStage extends WorkflowPipelineStage>(
   rules: WorkflowRules | null | undefined,
   stageId: string,
 ): TStage | null {

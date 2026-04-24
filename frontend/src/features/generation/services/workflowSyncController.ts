@@ -75,7 +75,7 @@ export async function readWorkflowWithRetry(
   isAcceptableResult?: (
     result: NonNullable<WorkflowReadResult>,
   ) => boolean,
-): Promise<WorkflowReadResult> {
+): Promise<WorkflowReadResult | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (shouldAbort()) return null;

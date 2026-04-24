@@ -28,12 +28,12 @@ export async function frontendPreprocess(
     | string,
   clientIdOrDerivedMaskMappings: string | DerivedMaskMapping[] = "",
   derivedMaskMappingsOrMaskCropDilation: DerivedMaskMapping[] | number | undefined = [],
-  maskCropDilationOrOptions: number | FrontendPreprocessOptions | undefined,
+  maskCropDilationOrOptions: number | FrontendPreprocessOptions | undefined = undefined,
   optionsOrGraphData:
     | FrontendPreprocessOptions
     | Record<string, unknown>
     | null
-    | undefined,
+    | undefined = undefined,
   syncedGraphDataArg?: Record<string, unknown> | null,
 ) {
   if (Array.isArray(workflowRulesOrInputs)) {

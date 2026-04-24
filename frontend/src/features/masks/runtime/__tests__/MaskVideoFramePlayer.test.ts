@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 
+type MockRenderStep =
+  | "error"
+  | "frame"
+  | "hang"
+  | {
+      bitmap: { width?: number; height?: number };
+    };
+
 const { mockWorkers, mockWorkerPlans } = vi.hoisted(() => {
-  type MockRenderStep =
-    | "error"
-    | "frame"
-    | "hang"
-    | {
-        bitmap: { width?: number; height?: number };
-      };
   const workers: Array<{
     onmessage: ((event: MessageEvent) => void) | null;
     postMessage: ReturnType<typeof vi.fn>;

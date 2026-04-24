@@ -166,7 +166,7 @@ function makeCompletedManifest(
 
 describe("deliveryEvents", () => {
   let client: FakeDeliveryClient;
-  let mockProcessGenerationQueue: ReturnType<typeof vi.fn>;
+  let mockProcessGenerationQueue: () => Promise<void>;
 
   beforeEach(() => {
     client = new FakeDeliveryClient();

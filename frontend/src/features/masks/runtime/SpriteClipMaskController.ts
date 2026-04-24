@@ -188,16 +188,18 @@ export class SpriteClipMaskController {
   private currentMaskSignature = "";
   private lastContentWidth = 0;
   private lastContentHeight = 0;
+  private readonly onAssetMaskFrameReady?: () => void;
 
   constructor(
     sprite: Sprite,
     renderer?: Renderer | null,
     maskRootContainer?: Container | null,
-    private readonly onAssetMaskFrameReady?: () => void,
+    onAssetMaskFrameReady?: () => void,
   ) {
     this.sprite = sprite;
     this.renderer = renderer ?? null;
     this.maskRootContainer = maskRootContainer ?? null;
+    this.onAssetMaskFrameReady = onAssetMaskFrameReady;
     this.maskTarget = sprite as unknown as Container;
     this.maskContainer = new Container();
 

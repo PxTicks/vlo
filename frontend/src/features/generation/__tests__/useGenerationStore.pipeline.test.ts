@@ -1670,6 +1670,7 @@ describe("useGenerationStore pipeline phases", () => {
             workflow: {},
             graphData: null,
             workflowId: "wf.json",
+            workflowRules: null,
             workflowInputs: [],
           },
           preprocess: {
@@ -1734,6 +1735,7 @@ describe("useGenerationStore pipeline phases", () => {
             workflow: {},
             graphData: null,
             workflowId: "wf.json",
+            workflowRules: null,
             workflowInputs: [],
           },
           preprocess: {
@@ -1796,6 +1798,7 @@ describe("useGenerationStore pipeline phases", () => {
             workflow: {},
             graphData: null,
             workflowId: "wf.json",
+            workflowRules: null,
             workflowInputs: [],
           },
           preprocess: {

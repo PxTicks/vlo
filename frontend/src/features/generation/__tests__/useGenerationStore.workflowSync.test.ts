@@ -422,8 +422,13 @@ describe("useGenerationStore workflow editor sync", () => {
     });
     expect(state.selectedWorkflowId).toBe("wan2_2_flf2v.json");
     expect(state.rulesWorkflowSourceId).toBe("wan2_2_flf2v.json");
-    expect(state.activeWorkflowRules?.pipeline?.[0]?.kind).toBe("aspect_ratio");
-    expect(state.activeWorkflowRules?.pipeline?.[0]?.targets).toEqual([
+    const aspectRatioStage = state.activeWorkflowRules?.pipeline?.[0];
+    expect(aspectRatioStage?.kind).toBe("aspect_ratio");
+    expect(
+      aspectRatioStage?.kind === "aspect_ratio"
+        ? aspectRatioStage.targets
+        : undefined,
+    ).toEqual([
       {
         width: {
           node_id: "67",

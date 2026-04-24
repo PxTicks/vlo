@@ -346,8 +346,9 @@ export async function renderTimelineSelectionToWebmWithDerivedMasks(
     masks[visualMaskKeys[0]] = options.preparedMaskFile;
   }
 
+  const preparedVideoFile = options.preparedVideoFile;
   const canReusePreparedVideo =
-    options.preparedVideoFile &&
+    !!preparedVideoFile &&
     (options.preparedDerivedMaskVideoTreatment ??
       DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT) === videoTreatment;
 
@@ -370,7 +371,7 @@ export async function renderTimelineSelectionToWebmWithDerivedMasks(
   }
 
   const video = canReusePreparedVideo
-    ? options.preparedVideoFile
+    ? preparedVideoFile
     : await renderTimelineSelectionToWebmWithVideoTreatment(timelineSelection, {
         signal: options.signal,
         videoTreatment,
@@ -423,7 +424,7 @@ export async function renderTimelineSelectionToWebmWithMask(
     options.videoTreatment ?? DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT;
   try {
     const maskOutput = createMaskOutputDefinition(maskType);
-    let videoBlob: Blob;
+    let videoBlob: Blob | undefined;
     let maskBlob: Blob | undefined;
 
     if (videoTreatment === "remove_transparency") {
@@ -472,6 +473,9 @@ export async function renderTimelineSelectionToWebmWithMask(
     }
 
     throwIfAborted(options.signal);
+    if (!videoBlob) {
+      throw new Error("Video output was requested but not produced");
+    }
     if (!maskBlob) {
       throw new Error("Mask output was requested but not produced");
     }

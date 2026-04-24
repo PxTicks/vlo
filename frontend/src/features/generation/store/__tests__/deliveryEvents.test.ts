@@ -323,7 +323,39 @@ describe("deliveryEvents", () => {
       error: "Generation failed",
     });
     expect(errorState.activeJobId).toBeNull();
+    expect(client.acknowledgedDeliveryIds).toEqual(["delivery-1"]);
     expect(mockProcessGenerationQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("acknowledges stale snapshot errors without surfacing them as jobs", async () => {
+    useGenerationStore.setState({
+      jobs: new Map(),
+      activeJobId: null,
+    });
+
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "snapshot",
+      data: {
+        project_id: "project-1",
+        deliveries: [
+          makeCompletedManifest({
+            delivery_id: "stale-delivery",
+            prompt_id: "stale-prompt",
+            status: "error",
+            error: "Old generation failed",
+            outputs: [],
+          }),
+        ],
+      },
+    });
+
+    expect(useGenerationStore.getState().jobs.has("stale-prompt")).toBe(false);
+    expect(client.acknowledgedDeliveryIds).toEqual(["stale-delivery"]);
+    expect(mockProcessGenerationQueue).not.toHaveBeenCalled();
   });
 
   it("uses held preview frames for websocket delivery postprocessing and clears cached previews", async () => {

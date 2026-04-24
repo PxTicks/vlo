@@ -106,7 +106,7 @@ export function attachDeliveryClientHandlers(
   const ackingDeliveryIds = new Set<string>();
   let hasActiveLease = false;
 
-  async function acknowledgeCompletedDelivery(
+  async function acknowledgeDeliveryOnce(
     manifest: GenerationDeliveryManifest,
   ): Promise<void> {
     if (ackingDeliveryIds.has(manifest.delivery_id)) {
@@ -136,7 +136,7 @@ export function attachDeliveryClientHandlers(
         existingJob.importedAssetIds.length > 0 &&
         !existingJob.postprocessError
       ) {
-        await acknowledgeCompletedDelivery(manifest);
+        await acknowledgeDeliveryOnce(manifest);
         return;
       }
       if (get().postprocessingJobIds.includes(manifest.prompt_id)) {
@@ -220,7 +220,7 @@ export function attachDeliveryClientHandlers(
           ),
         };
       });
-      await acknowledgeCompletedDelivery(manifest);
+      await acknowledgeDeliveryOnce(manifest);
     } catch (error) {
       const message =
         error instanceof Error
@@ -286,12 +286,14 @@ export function attachDeliveryClientHandlers(
     }
 
     if (shouldIgnoreTerminalInterruptedDelivery) {
-      void acknowledgeCompletedDelivery(manifest);
+      void acknowledgeDeliveryOnce(manifest);
       return;
     }
 
     if (manifest.status === "completed_pending_ack") {
       void processCompletedDelivery(manifest);
+    } else if (manifest.status === "error") {
+      void acknowledgeDeliveryOnce(manifest);
     }
   }
 
@@ -309,6 +311,14 @@ export function attachDeliveryClientHandlers(
           return;
         }
         for (const delivery of message.data.deliveries) {
+          if (
+            delivery.status === "error" &&
+            delivery.prompt_id &&
+            !get().jobs.has(delivery.prompt_id)
+          ) {
+            void acknowledgeDeliveryOnce(delivery);
+            continue;
+          }
           applyDeliveryUpdate(delivery);
         }
         break;

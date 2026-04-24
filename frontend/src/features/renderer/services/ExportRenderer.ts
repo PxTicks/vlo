@@ -88,11 +88,30 @@ function buildVisualRenderData(
   selectedClips: TimelineClip[],
   includeTimelineMasks: boolean,
 ): PreparedVisualRenderData {
+  // When timeline masks are excluded, also strip range_mask components.
+  // Spatial masks (mask_ref) and range masks both contribute timeline-driven
+  // transparency to the source output; range masks are applied via an
+  // AlphaFilter in applyClipTransforms, which doesn't otherwise see this flag.
+  const effectiveClips: TimelineClip[] = includeTimelineMasks
+    ? selectedClips
+    : selectedClips.map((clip) => {
+        if (
+          clip.type === "mask" ||
+          !clip.components?.some((c) => c.type === "range_mask")
+        ) {
+          return clip;
+        }
+        return {
+          ...clip,
+          components: clip.components.filter((c) => c.type !== "range_mask"),
+        };
+      });
+
   const trackClipsByTrackId = new Map(
     tracks.map((track) => [
       track.id,
       sortTrackClipsByStart(
-        selectedClips.filter(
+        effectiveClips.filter(
           (clip) => clip.trackId === track.id && clip.type !== "mask",
         ),
       ),

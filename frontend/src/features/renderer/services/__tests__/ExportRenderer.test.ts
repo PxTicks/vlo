@@ -5,9 +5,11 @@ import type { Mock } from "vitest";
 import { Application, Container } from "pixi.js";
 import { TrackRenderEngine } from "../TrackRenderEngine";
 import type {
+  StandardTimelineClip,
   TimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
+import type { Component } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
 
 // Type definitions for mocks
@@ -388,6 +390,149 @@ describe("ExportRenderer", () => {
     expect(renderFrameSpy.mock.calls.every(([, , , maskClips]) => {
       return Array.isArray(maskClips) && maskClips.length === 0;
     })).toBe(true);
+
+    updateSpy.mockRestore();
+    renderFrameSpy.mockRestore();
+    renderer.dispose();
+  });
+
+  it("strips range_mask components from clips when timeline masks are excluded", async () => {
+    const config = {
+      logicalWidth: 1920,
+      logicalHeight: 1080,
+      outputWidth: 1920,
+      outputHeight: 1080,
+    };
+
+    const projectData = {
+      tracks: [
+        { id: "t1", type: "visual", isVisible: true },
+      ] as TimelineTrack[],
+      clips: [
+        {
+          id: "c1",
+          trackId: "t1",
+          assetId: "a1",
+          start: 0,
+          timelineDuration: 96000 * 2,
+          offset: 0,
+          type: "video",
+          components: [
+            {
+              id: "range_mask_1",
+              type: "range_mask",
+              parameters: {
+                startSourceTicks: 0,
+                endSourceTicks: 96000,
+                isActive: true,
+              },
+            },
+            {
+              id: "mask_ref_1",
+              type: "mask_ref",
+              parameters: { maskClipId: "c1::mask::m1" },
+            },
+          ],
+        },
+        {
+          id: "c1::mask::m1",
+          trackId: "t1",
+          start: 0,
+          timelineDuration: 96000 * 2,
+          offset: 0,
+          type: "mask",
+          maskMode: "apply",
+          maskType: "rectangle",
+        },
+      ] as TimelineClip[],
+      assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
+      duration: 96000 * 0.1,
+      fps: 30,
+    };
+
+    const updateSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "update")
+      .mockImplementation(() => undefined);
+    const renderFrameSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "renderFrame")
+      .mockResolvedValue(undefined);
+
+    const renderer = await ExportRenderer.create(config);
+    await renderer.render(projectData as ProjectData, config, () => {}, {
+      includeTimelineMasks: false,
+    });
+
+    expect(renderFrameSpy).toHaveBeenCalled();
+    const activeClips = renderFrameSpy.mock.calls.map(([, clip]) => clip);
+    expect(activeClips.length).toBeGreaterThan(0);
+    for (const clip of activeClips) {
+      const components: Component[] =
+        (clip as StandardTimelineClip).components ?? [];
+      expect(components.some((c) => c.type === "range_mask")).toBe(false);
+    }
+
+    updateSpy.mockRestore();
+    renderFrameSpy.mockRestore();
+    renderer.dispose();
+  });
+
+  it("preserves range_mask components when timeline masks are included", async () => {
+    const config = {
+      logicalWidth: 1920,
+      logicalHeight: 1080,
+      outputWidth: 1920,
+      outputHeight: 1080,
+    };
+
+    const projectData = {
+      tracks: [
+        { id: "t1", type: "visual", isVisible: true },
+      ] as TimelineTrack[],
+      clips: [
+        {
+          id: "c1",
+          trackId: "t1",
+          assetId: "a1",
+          start: 0,
+          timelineDuration: 96000 * 2,
+          offset: 0,
+          type: "video",
+          components: [
+            {
+              id: "range_mask_1",
+              type: "range_mask",
+              parameters: {
+                startSourceTicks: 0,
+                endSourceTicks: 96000,
+                isActive: true,
+              },
+            },
+          ],
+        },
+      ] as TimelineClip[],
+      assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
+      duration: 96000 * 0.1,
+      fps: 30,
+    };
+
+    const updateSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "update")
+      .mockImplementation(() => undefined);
+    const renderFrameSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "renderFrame")
+      .mockResolvedValue(undefined);
+
+    const renderer = await ExportRenderer.create(config);
+    await renderer.render(projectData as ProjectData, config, () => {});
+
+    expect(renderFrameSpy).toHaveBeenCalled();
+    const activeClips = renderFrameSpy.mock.calls.map(([, clip]) => clip);
+    expect(activeClips.length).toBeGreaterThan(0);
+    for (const clip of activeClips) {
+      const components: Component[] =
+        (clip as StandardTimelineClip).components ?? [];
+      expect(components.some((c) => c.type === "range_mask")).toBe(true);
+    }
 
     updateSpy.mockRestore();
     renderFrameSpy.mockRestore();

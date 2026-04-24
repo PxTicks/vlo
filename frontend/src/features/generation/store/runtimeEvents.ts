@@ -21,6 +21,7 @@ import {
   markJobError,
   setJobPostprocessResult,
 } from "./jobMutations";
+import { GENERATION_INTERRUPTED_MESSAGE } from "./constants";
 import type { GenerationStoreGet, GenerationStoreSet } from "./types";
 
 export function attachRuntimeClientHandlers(
@@ -319,14 +320,19 @@ export function attachRuntimeClientHandlers(
       }
 
       case "execution_error": {
-        set((state) =>
-          markJobError(
+        set((state) => {
+          const job = state.jobs.get(event.data.prompt_id);
+          if (!job || job.status === "error" || job.status === "completed") {
+            return {};
+          }
+
+          return markJobError(
             state,
             event.data.prompt_id,
             event.data.exception_message,
             event.data.node_id,
-          ),
-        );
+          );
+        });
         resumeQueuedDispatch();
         break;
       }
@@ -341,7 +347,7 @@ export function attachRuntimeClientHandlers(
           return markJobError(
             state,
             event.data.prompt_id,
-            "Generation interrupted",
+            GENERATION_INTERRUPTED_MESSAGE,
             event.data.node_id,
             {
               clearActiveJob: state.activeJobId === event.data.prompt_id,

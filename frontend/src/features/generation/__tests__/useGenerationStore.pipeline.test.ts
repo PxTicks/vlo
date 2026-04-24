@@ -1782,6 +1782,50 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockInterrupt).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the user cancellation message when ComfyUI emits a late execution error", async () => {
+    const runningJob = {
+      ...makeQueuedJob("prompt-running"),
+      status: "running" as const,
+    };
+    const interruptDeferred = createDeferred<void>();
+    mockInterrupt.mockReturnValueOnce(interruptDeferred.promise);
+
+    useGenerationStore.setState({
+      jobs: new Map([[runningJob.id, runningJob]]),
+      activeJobId: runningJob.id,
+      wsClient: null,
+      connectionStatus: "disconnected",
+    });
+    useGenerationStore.getState().connect();
+    const client = getLatestClient();
+
+    const interruptPromise = useGenerationStore
+      .getState()
+      .interruptCurrentGeneration();
+    await flushMicrotasks();
+
+    client.emitEvent({
+      type: "execution_error",
+      data: {
+        prompt_id: runningJob.id,
+        node_id: "load-video",
+        node_type: "LoadVideo",
+        exception_message: "400: video is required",
+        exception_type: "ValidationError",
+        traceback: [],
+      },
+    });
+
+    interruptDeferred.resolve();
+    await interruptPromise;
+
+    expect(useGenerationStore.getState().jobs.get(runningJob.id)).toMatchObject({
+      status: "error",
+      error: "Generation cancelled by user",
+      currentNode: null,
+    });
+  });
+
   it("clears queued future generations without interrupting the active one", () => {
     const runningJob = {
       ...makeQueuedJob("prompt-running"),

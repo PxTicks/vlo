@@ -8,6 +8,7 @@ import {
 import { frontendPostprocess } from "../utils/pipeline";
 import type { GenerationJob } from "../types";
 import { applyPreviewUpdate, setJobPostprocessResult } from "./jobMutations";
+import { isGenerationInterruptionMessage } from "./constants";
 import type {
   GenerationStoreGet,
   GenerationStorePatch,
@@ -32,6 +33,15 @@ function buildJobFromDelivery(
 ): GenerationJob | null {
   if (!manifest.prompt_id) {
     return null;
+  }
+  if (
+    existingJob?.status === "error" &&
+    isGenerationInterruptionMessage(existingJob.error)
+  ) {
+    return {
+      ...existingJob,
+      deliveryId: manifest.delivery_id,
+    };
   }
 
   return {
@@ -240,6 +250,12 @@ export function attachDeliveryClientHandlers(
     if (!manifest.prompt_id) {
       return;
     }
+    const existingJob = get().jobs.get(manifest.prompt_id);
+    const shouldIgnoreTerminalInterruptedDelivery =
+      existingJob?.status === "error" &&
+      isGenerationInterruptionMessage(existingJob.error) &&
+      (manifest.status === "completed_pending_ack" ||
+        manifest.status === "error");
 
     set((state) => {
       const existingJob = state.jobs.get(manifest.prompt_id!);
@@ -262,8 +278,16 @@ export function attachDeliveryClientHandlers(
       return patch;
     });
 
-    if (manifest.status === "completed_pending_ack" || manifest.status === "error") {
+    if (
+      manifest.status === "completed_pending_ack" ||
+      manifest.status === "error"
+    ) {
       void get().processGenerationQueue();
+    }
+
+    if (shouldIgnoreTerminalInterruptedDelivery) {
+      void acknowledgeCompletedDelivery(manifest);
+      return;
     }
 
     if (manifest.status === "completed_pending_ack") {

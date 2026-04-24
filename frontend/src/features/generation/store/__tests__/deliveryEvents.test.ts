@@ -408,4 +408,43 @@ describe("deliveryEvents", () => {
     expect(useGenerationStore.getState().jobPreviewFrames.has("prompt-1")).toBe(false);
   });
 
+  it("does not replace a user cancellation with a later delivery error", async () => {
+    useGenerationStore.setState({
+      jobs: new Map<string, GenerationJob>([
+        [
+          "prompt-1",
+          {
+            ...makeQueuedJob("prompt-1"),
+            status: "error",
+            error: "Generation cancelled by user",
+            completedAt: Date.now(),
+          },
+        ],
+      ]),
+      activeJobId: null,
+    });
+
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: {
+        delivery: makeCompletedManifest({
+          status: "error",
+          error: "400: video is required",
+          outputs: [],
+        }),
+      },
+    });
+
+    expect(useGenerationStore.getState().jobs.get("prompt-1")).toMatchObject({
+      status: "error",
+      error: "Generation cancelled by user",
+    });
+    expect(client.acknowledgedDeliveryIds).toEqual(["delivery-1"]);
+    expect(mockFrontendPostprocess).not.toHaveBeenCalled();
+  });
+
 });

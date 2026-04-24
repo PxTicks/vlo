@@ -1,8 +1,12 @@
 import type { GenerationJob } from "../types";
+import {
+  GENERATION_CANCELLED_BY_USER_MESSAGE,
+  GENERATION_INTERRUPTED_MESSAGE,
+} from "../store/constants";
 
 const NON_PERSISTENT_GENERATION_ERRORS = new Set([
-  "Generation interrupted",
-  "Generation cancelled by user",
+  GENERATION_INTERRUPTED_MESSAGE,
+  GENERATION_CANCELLED_BY_USER_MESSAGE,
   "Generation completed without persisted final outputs for delivery",
 ]);
 

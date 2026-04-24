@@ -24,10 +24,14 @@ import { getWorkflowPostprocessingConfig } from "../services/workflowRules";
 import { isAbortError } from "../pipeline/utils/abort";
 import type { WorkflowPostprocessingConfig } from "../types";
 import { createSubmissionErrorJob } from "./submission";
-import { IDLE_PIPELINE_STATUS, TEMP_WORKFLOW_ID } from "./constants";
+import {
+  GENERATION_CANCELLED_BY_USER_MESSAGE,
+  IDLE_PIPELINE_STATUS,
+  TEMP_WORKFLOW_ID,
+} from "./constants";
 import {
   isActiveGenerationJob,
-  markActiveJobError,
+  markJobError,
 } from "./jobMutations";
 import { buildGenerationFamilyRequestKey } from "../utils/familyAssignment";
 import { resolveWorkflowDisplayName } from "./workflowCatalog";
@@ -610,20 +614,28 @@ export function buildExecutionStoreState(
       return;
     }
 
+    set((state) =>
+      markJobError(
+        state,
+        activeJob.id,
+        GENERATION_CANCELLED_BY_USER_MESSAGE,
+        null,
+        {
+          clearActiveJob: true,
+          completedAt: Date.now(),
+        },
+      ),
+    );
+
     try {
       await comfyApi.interrupt();
-      set((state) =>
-        markActiveJobError(state, "Generation cancelled by user", {
-          completedAt: Date.now(),
-        }),
-      );
     } catch (error) {
       const message =
         error instanceof Error
           ? `Cancel failed: ${error.message}`
           : "Cancel failed: ComfyUI is unreachable";
       set((state) =>
-        markActiveJobError(state, message, {
+        markJobError(state, activeJob.id, message, null, {
           nextConnectionStatus: "error",
           completedAt: Date.now(),
         }),

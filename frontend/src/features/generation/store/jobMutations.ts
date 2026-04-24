@@ -7,6 +7,7 @@ import {
   revokeJobPostprocessPreview,
   revokePreviewAnimation,
 } from "./previewState";
+import { isGenerationInterruptionMessage } from "./constants";
 import type {
   ComfyUIConnectionStatus,
   GenerationStore,
@@ -59,6 +60,15 @@ export function markJobError(
 ): GenerationStorePatch {
   const job = state.jobs.get(jobId);
   if (!job) {
+    return options?.nextConnectionStatus
+      ? { connectionStatus: options.nextConnectionStatus }
+      : {};
+  }
+  if (
+    job.status === "error" &&
+    isGenerationInterruptionMessage(job.error) &&
+    !errorMessage.startsWith("Cancel failed:")
+  ) {
     return options?.nextConnectionStatus
       ? { connectionStatus: options.nextConnectionStatus }
       : {};
@@ -151,7 +161,11 @@ export function completeGenerationJob(
   outputsOverride?: GenerationJob["outputs"],
 ): { patch: GenerationStorePatch; completedJob: GenerationJob | null } {
   const currentJob = state.jobs.get(promptId);
-  if (!currentJob) {
+  if (
+    !currentJob ||
+    currentJob.status === "error" ||
+    currentJob.status === "completed"
+  ) {
     return { patch: {}, completedJob: null };
   }
 
@@ -185,7 +199,7 @@ export function applyJobProgress(
   currentNode: string,
 ): GenerationStorePatch {
   const job = state.jobs.get(promptId);
-  if (!job) return {};
+  if (!isActiveGenerationJob(job)) return {};
 
   const updated = new Map(state.jobs);
   updated.set(promptId, {
@@ -203,7 +217,7 @@ export function applyExecutingNode(
   currentNode: string,
 ): GenerationStorePatch {
   const job = state.jobs.get(promptId);
-  if (!job) return {};
+  if (!isActiveGenerationJob(job)) return {};
 
   const updated = new Map(state.jobs);
   updated.set(promptId, {
@@ -220,7 +234,7 @@ export function appendJobOutputs(
   newOutputs: GenerationJobOutput[],
 ): GenerationStorePatch {
   const job = state.jobs.get(promptId);
-  if (!job || newOutputs.length === 0) return {};
+  if (!job || job.status === "error" || newOutputs.length === 0) return {};
 
   const updated = new Map(state.jobs);
   updated.set(promptId, {

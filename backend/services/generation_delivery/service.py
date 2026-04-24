@@ -30,6 +30,13 @@ HISTORY_FETCH_RETRY_MS = 0.25
 BINARY_PREVIEW_IMAGE = 1
 BINARY_PREVIEW_IMAGE_WITH_METADATA = 4
 _PREVIEW_EVENT_TYPES = {BINARY_PREVIEW_IMAGE, BINARY_PREVIEW_IMAGE_WITH_METADATA}
+PREVIEW_METADATA_FEATURE_FLAGS = json.dumps(
+    {
+        "type": "feature_flags",
+        "data": {"supports_preview_metadata": True},
+    },
+    separators=(",", ":"),
+)
 PNG_SIGNATURE = bytes((0x89, 0x50, 0x4E, 0x47))
 JPEG_SIGNATURE = bytes((0xFF, 0xD8, 0xFF))
 GIF87_SIGNATURE = b"GIF87a"
@@ -1041,6 +1048,7 @@ class GenerationHoldingService:
                 max_size=None,
                 max_queue=None,
             ) as comfy_ws:
+                await comfy_ws.send(PREVIEW_METADATA_FEATURE_FLAGS)
                 async for message in comfy_ws:
                     if isinstance(message, str):
                         try:

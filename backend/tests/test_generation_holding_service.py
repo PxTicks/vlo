@@ -7,9 +7,11 @@ import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import services.generation_delivery.service as delivery_service_module
 from services.generation_delivery.service import (
     BINARY_PREVIEW_IMAGE,
     GenerationHoldingService,
+    PREVIEW_METADATA_FEATURE_FLAGS,
     _ProjectConsumer,
 )
 
@@ -24,6 +26,36 @@ class _FakeWebSocket:
 
     async def send_json(self, payload: dict) -> None:
         self.sent_payloads.append(payload)
+
+
+class _FakeComfyWebSocket:
+    def __init__(self, messages: list[str | bytes]) -> None:
+        self.messages = messages
+        self.sent_messages: list[str | bytes] = []
+
+    async def send(self, message: str | bytes) -> None:
+        self.sent_messages.append(message)
+
+    def __aiter__(self):
+        self._message_iter = iter(self.messages)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._message_iter)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+class _FakeComfyConnect:
+    def __init__(self, websocket: _FakeComfyWebSocket) -> None:
+        self.websocket = websocket
+
+    async def __aenter__(self) -> _FakeComfyWebSocket:
+        return self.websocket
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
 
 
 def _delivery_context() -> dict:
@@ -334,6 +366,51 @@ async def test_generation_holding_service_errors_when_no_websocket_outputs_captu
     delivery = await service.get_delivery("project-1", "delivery-1")
     assert delivery is not None
     assert delivery["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_generation_monitor_requests_preview_metadata_feature_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    fake_comfy_ws = _FakeComfyWebSocket(
+        [
+            json.dumps(
+                {
+                    "type": "execution_interrupted",
+                    "data": {
+                        "prompt_id": "prompt-1",
+                        "node_id": "node-1",
+                        "node_type": "KSampler",
+                        "executed": [],
+                    },
+                }
+            )
+        ]
+    )
+
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        lambda *args, **kwargs: _FakeComfyConnect(fake_comfy_ws),
+    )
+
+    await service.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        delivery_context=_delivery_context(),
+    )
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+    )
+
+    assert fake_comfy_ws.sent_messages == [PREVIEW_METADATA_FEATURE_FLAGS]
 
 
 @pytest.mark.asyncio

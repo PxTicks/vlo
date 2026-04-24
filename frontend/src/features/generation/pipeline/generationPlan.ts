@@ -7,6 +7,7 @@ import type {
 import {
   getAspectRatioStage,
   getMaskProcessingStage,
+  workflowPipelineStageAffectsPreparedAssets,
 } from "../services/workflowRules";
 import {
   buildFrontendStateControlKey,
@@ -97,11 +98,6 @@ interface BackendPreprocessResponseData {
 const SAVE_IMAGE_WEBSOCKET_NODE_TYPES = new Set([
   "SaveImageWebsocket",
   "VLOSaveImageWebsocketBMP",
-]);
-
-const ASSET_PREPROCESSING_STAGE_KINDS = new Set([
-  "mask_processing",
-  "aspect_ratio",
 ]);
 
 function normalizeForStableStringify(value: unknown): JsonValue {
@@ -260,11 +256,7 @@ function buildAssetPipelineStageCacheDescriptor(
   rules: WorkflowRules | null | undefined,
 ): JsonValue {
   return (rules?.pipeline ?? [])
-    .filter(
-      (stage) =>
-        typeof stage.kind === "string" &&
-        ASSET_PREPROCESSING_STAGE_KINDS.has(stage.kind),
-    )
+    .filter((stage) => workflowPipelineStageAffectsPreparedAssets(stage.kind))
     .map((stage) => normalizeForStableStringify(stage));
 }
 
@@ -303,8 +295,7 @@ function collectPipelineConnectedFrontendStateKeys(
 
   for (const stage of rules?.pipeline ?? []) {
     if (
-      typeof stage.kind !== "string" ||
-      !ASSET_PREPROCESSING_STAGE_KINDS.has(stage.kind)
+      !workflowPipelineStageAffectsPreparedAssets(stage.kind)
     ) {
       continue;
     }

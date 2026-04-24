@@ -3,6 +3,12 @@ export const BINARY_PREVIEW_IMAGE_WITH_METADATA = 4;
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47];
 const JPEG_SIGNATURE = [0xff, 0xd8, 0xff];
+const GIF87_SIGNATURE = [0x47, 0x49, 0x46, 0x38, 0x37, 0x61];
+const GIF89_SIGNATURE = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61];
+const BMP_SIGNATURE = [0x42, 0x4d];
+const WEBP_RIFF_SIGNATURE = [0x52, 0x49, 0x46, 0x46];
+const WEBP_FORMAT_SIGNATURE_OFFSET = 8;
+const WEBP_FORMAT_SIGNATURE = [0x57, 0x45, 0x42, 0x50];
 const VHS_LATENT_PREVIEW_NODE_ID_OFFSET = 16;
 const VHS_LATENT_PREVIEW_NODE_ID_LENGTH = 16;
 const VHS_LATENT_PREVIEW_FRAME_INDEX_OFFSET = 12;
@@ -47,6 +53,52 @@ function detectMimeAtOffset(bytes: Uint8Array, offset: number): string | null {
   }
   if (matchesSignature(bytes, offset, JPEG_SIGNATURE)) {
     return "image/jpeg";
+  }
+  if (
+    matchesSignature(bytes, offset, GIF87_SIGNATURE) ||
+    matchesSignature(bytes, offset, GIF89_SIGNATURE)
+  ) {
+    return "image/gif";
+  }
+  if (matchesSignature(bytes, offset, BMP_SIGNATURE)) {
+    return "image/bmp";
+  }
+  if (
+    matchesSignature(bytes, offset, WEBP_RIFF_SIGNATURE) &&
+    matchesSignature(
+      bytes,
+      offset + WEBP_FORMAT_SIGNATURE_OFFSET,
+      WEBP_FORMAT_SIGNATURE,
+    )
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
+function normalizePreviewImageType(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "jpg" || normalized === "jpeg") {
+    return "image/jpeg";
+  }
+  if (
+    normalized === "png" ||
+    normalized === "webp" ||
+    normalized === "bmp" ||
+    normalized === "gif"
+  ) {
+    return `image/${normalized}`;
+  }
+  if (
+    normalized === "image/jpeg" ||
+    normalized === "image/jpg" ||
+    normalized === "image/png" ||
+    normalized === "image/webp" ||
+    normalized === "image/bmp" ||
+    normalized === "image/gif"
+  ) {
+    return normalized === "image/jpg" ? "image/jpeg" : normalized;
   }
   return null;
 }
@@ -130,8 +182,8 @@ function parsePreviewImageWithMetadataPayload(
   }
 
   const mimeType =
-    metadata?.image_type ??
     detectMimeAtOffset(bytes, payloadOffset) ??
+    normalizePreviewImageType(metadata?.image_type) ??
     "application/octet-stream";
 
   return buildPreview(data, payloadOffset, mimeType, {
@@ -218,6 +270,9 @@ export function parseBinaryPreviewPayload(
     }
     if (imageType === 2) {
       return buildPreview(data, 8, "image/png");
+    }
+    if (imageType === 3) {
+      return buildPreview(data, 8, "image/webp");
     }
     return buildPreview(data, 8, "application/octet-stream");
   }

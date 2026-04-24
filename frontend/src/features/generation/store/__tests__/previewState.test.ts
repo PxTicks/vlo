@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  getPreviewFrameExtension,
   getPreviewFrameIndex,
   replacePreviewAnimation,
   revokeJobPostprocessPreview,
@@ -38,6 +39,13 @@ describe("previewState", () => {
     expect(
       getPreviewFrameIndex({ blob: preview.blob }, [new File(["x"], "a.png")]),
     ).toBe(1);
+  });
+
+  it("keeps preview frame extensions aligned with image mime types", () => {
+    expect(getPreviewFrameExtension("image/jpeg")).toBe("jpg");
+    expect(getPreviewFrameExtension("image/webp")).toBe("webp");
+    expect(getPreviewFrameExtension("image/bmp")).toBe("bmp");
+    expect(getPreviewFrameExtension("image/gif")).toBe("gif");
   });
 
   it("revokes a postprocessed preview when clearing a job", () => {

@@ -32,6 +32,13 @@ BINARY_PREVIEW_IMAGE_WITH_METADATA = 4
 _PREVIEW_EVENT_TYPES = {BINARY_PREVIEW_IMAGE, BINARY_PREVIEW_IMAGE_WITH_METADATA}
 PNG_SIGNATURE = bytes((0x89, 0x50, 0x4E, 0x47))
 JPEG_SIGNATURE = bytes((0xFF, 0xD8, 0xFF))
+GIF87_SIGNATURE = b"GIF87a"
+GIF89_SIGNATURE = b"GIF89a"
+WEBP_RIFF_SIGNATURE = b"RIFF"
+WEBP_FORMAT_SIGNATURE = b"WEBP"
+BMP_SIGNATURE = b"BM"
+VHS_LATENT_PREVIEW_IMAGE_OFFSET = 32
+MAX_PREVIEW_SIGNATURE_OFFSET = 256
 
 
 def _is_preview_binary_frame(message: bytes) -> bool:
@@ -39,6 +46,67 @@ def _is_preview_binary_frame(message: bytes) -> bool:
         return False
     event_type = int.from_bytes(message[:4], byteorder="big", signed=False)
     return event_type in _PREVIEW_EVENT_TYPES
+
+
+def _detect_image_mime_at_offset(message: bytes, offset: int) -> str | None:
+    if offset < 0 or offset >= len(message):
+        return None
+    if message.startswith(PNG_SIGNATURE, offset):
+        return "image/png"
+    if message.startswith(JPEG_SIGNATURE, offset):
+        return "image/jpeg"
+    if message.startswith(GIF87_SIGNATURE, offset) or message.startswith(
+        GIF89_SIGNATURE,
+        offset,
+    ):
+        return "image/gif"
+    if message.startswith(BMP_SIGNATURE, offset):
+        return "image/bmp"
+    if (
+        offset + 12 <= len(message)
+        and message.startswith(WEBP_RIFF_SIGNATURE, offset)
+        and message[offset + 8 : offset + 12] == WEBP_FORMAT_SIGNATURE
+    ):
+        return "image/webp"
+    return None
+
+
+def _find_image_payload(message: bytes, start_offset: int) -> tuple[int, str] | None:
+    max_offset = min(
+        len(message),
+        max(start_offset, MAX_PREVIEW_SIGNATURE_OFFSET),
+    )
+    for offset in range(start_offset, max_offset):
+        mime_type = _detect_image_mime_at_offset(message, offset)
+        if mime_type:
+            return offset, mime_type
+    return None
+
+
+def _normalize_preview_image_type(value: Any) -> str | None:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"jpg", "jpeg"}:
+            return "image/jpeg"
+        if normalized in {"png", "webp", "bmp", "gif"}:
+            return f"image/{normalized}"
+        if normalized in {
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+            "image/webp",
+            "image/bmp",
+            "image/gif",
+        }:
+            return "image/jpeg" if normalized == "image/jpg" else normalized
+    if isinstance(value, int):
+        if value == 1:
+            return "image/jpeg"
+        if value == 2:
+            return "image/png"
+        if value == 3:
+            return "image/webp"
+    return None
 
 
 def _extract_image_bytes(message: bytes) -> tuple[bytes, str] | None:
@@ -52,21 +120,49 @@ def _extract_image_bytes(message: bytes) -> tuple[bytes, str] | None:
         payload_offset = 8 + metadata_length
         if payload_offset > len(message):
             return None
-        payload = message[payload_offset:]
+        metadata: dict[str, Any] | None = None
+        if metadata_length > 0:
+            try:
+                decoded = json.loads(message[8:payload_offset].decode("utf-8"))
+                metadata = decoded if isinstance(decoded, dict) else None
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                metadata = None
+
+        mime_type = _detect_image_mime_at_offset(message, payload_offset)
+        if mime_type:
+            return message[payload_offset:], mime_type
+
+        discovered = _find_image_payload(message, payload_offset)
+        if discovered:
+            discovered_offset, discovered_mime = discovered
+            return message[discovered_offset:], discovered_mime
+
+        metadata_mime = _normalize_preview_image_type(
+            metadata.get("image_type") if metadata else None
+        )
+        if metadata_mime:
+            return message[payload_offset:], metadata_mime
+        return None
     elif event_type == BINARY_PREVIEW_IMAGE:
-        # ComfyUI PREVIEW_IMAGE frames carry a 4-byte image-type header after
-        # the event code, so payload starts at offset 8.
         if len(message) < 8:
             return None
-        payload = message[8:]
+        for payload_offset in (8, 4, VHS_LATENT_PREVIEW_IMAGE_OFFSET):
+            mime_type = _detect_image_mime_at_offset(message, payload_offset)
+            if mime_type:
+                return message[payload_offset:], mime_type
+
+        discovered = _find_image_payload(message, 4)
+        if discovered:
+            discovered_offset, discovered_mime = discovered
+            return message[discovered_offset:], discovered_mime
+
+        image_type = int.from_bytes(message[4:8], byteorder="big", signed=False)
+        mime_type = _normalize_preview_image_type(image_type)
+        if mime_type:
+            return message[8:], mime_type
+        return None
     else:
         return None
-
-    if payload.startswith(PNG_SIGNATURE):
-        return payload, "image/png"
-    if payload.startswith(JPEG_SIGNATURE):
-        return payload, "image/jpeg"
-    return payload, "application/octet-stream"
 
 
 def _sanitize_filename(filename: str) -> str:

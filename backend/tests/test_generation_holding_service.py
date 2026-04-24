@@ -237,6 +237,82 @@ async def test_generation_holding_service_captures_websocket_outputs_and_finaliz
 
 
 @pytest.mark.asyncio
+async def test_generation_holding_service_captures_offset_four_websocket_images(
+    tmp_path: Path,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    context = _delivery_context()
+    context["uses_save_image_websocket_outputs"] = True
+
+    await service.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        delivery_context=context,
+    )
+
+    png_bytes = b"\x89PNG\r\n\x1a\noffset-four"
+    frame = BINARY_PREVIEW_IMAGE.to_bytes(4, "big") + png_bytes
+
+    captured = await service._capture_websocket_output(
+        "project-1", "delivery-1", frame, 0
+    )
+
+    assert captured is not None
+    assert captured["filename"] == "ws-000000.png"
+    assert captured["mime_type"] == "image/png"
+    captured_path = await service.get_delivery_file_path(
+        "project-1",
+        "delivery-1",
+        "preview_frames",
+        captured["storage_name"],
+    )
+    assert captured_path is not None
+    assert captured_path.read_bytes() == png_bytes
+
+
+@pytest.mark.asyncio
+async def test_generation_holding_service_scans_preview_header_for_image_payload(
+    tmp_path: Path,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    context = _delivery_context()
+    context["uses_save_image_websocket_outputs"] = True
+
+    await service.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        delivery_context=context,
+    )
+
+    jpeg_bytes = b"\xff\xd8\xff\xdbjpeg"
+    frame = (
+        BINARY_PREVIEW_IMAGE.to_bytes(4, "big")
+        + b"custom-preview-header"
+        + jpeg_bytes
+    )
+
+    captured = await service._capture_websocket_output(
+        "project-1", "delivery-1", frame, 0
+    )
+
+    assert captured is not None
+    assert captured["filename"] == "ws-000000.jpg"
+    assert captured["mime_type"] == "image/jpeg"
+    captured_path = await service.get_delivery_file_path(
+        "project-1",
+        "delivery-1",
+        "preview_frames",
+        captured["storage_name"],
+    )
+    assert captured_path is not None
+    assert captured_path.read_bytes() == jpeg_bytes
+
+
+@pytest.mark.asyncio
 async def test_generation_holding_service_errors_when_no_websocket_outputs_captured(
     tmp_path: Path,
 ) -> None:

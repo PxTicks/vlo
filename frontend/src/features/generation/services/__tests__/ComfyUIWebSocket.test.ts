@@ -70,6 +70,33 @@ describe("ComfyUIWebSocket preview parsing", () => {
     expect(previews[0]?.blob.size).toBe(pngBytes.length);
   });
 
+  it("parses offset-four websocket image packets", async () => {
+    const client = new ComfyUIWebSocket("/api");
+    const previews: Array<{ blob: Blob }> = [];
+
+    client.onPreview((preview) => {
+      previews.push(preview);
+    });
+
+    const bmpBytes = new Uint8Array([
+      0x42,
+      0x4d,
+      0x0a,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    ]);
+
+    (client as unknown as { handleBinaryMessage: (data: ArrayBuffer) => void })
+      .handleBinaryMessage(concatBytes(encodeUint32(1), bmpBytes));
+
+    expect(previews).toHaveLength(1);
+    expect(previews[0]?.blob.type).toBe("image/bmp");
+    expect(previews[0]?.blob.size).toBe(bmpBytes.length);
+  });
+
   it("parses VHS latent preview packets with frame metadata", async () => {
     const client = new ComfyUIWebSocket("/api");
     const previews: Array<{

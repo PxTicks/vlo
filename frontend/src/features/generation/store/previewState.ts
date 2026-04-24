@@ -36,6 +36,12 @@ export function getPreviewFrameExtension(mimeType: string): string {
   if (mimeType === "image/webp") {
     return "webp";
   }
+  if (mimeType === "image/bmp") {
+    return "bmp";
+  }
+  if (mimeType === "image/gif") {
+    return "gif";
+  }
   return "png";
 }
 

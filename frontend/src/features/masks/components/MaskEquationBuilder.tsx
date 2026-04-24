@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState,
   type KeyboardEvent,
@@ -177,12 +176,6 @@ export function MaskEquationBuilder({
       ? selectedLocalId
       : null;
   }, [maskEntries, selectedLocalId]);
-
-  useEffect(() => {
-    if (selectedLocalId && !effectiveSelectedLocalId) {
-      setSelectedLocalId(null);
-    }
-  }, [effectiveSelectedLocalId, selectedLocalId]);
 
   const handleSelectPath = (path: MaskBooleanExpressionPath) => {
     setSelectedPath(path);

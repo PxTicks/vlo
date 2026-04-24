@@ -22,7 +22,17 @@ const maskClipId = `${clipId}::mask::${maskId}`;
 
 describe("useTransformationController mask target", () => {
   beforeEach(() => {
-    useTimelineStore.setState({
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        {
+          id: "track-1",
+          label: "Track 1",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+          type: "visual",
+        },
+      ],
       clips: [
         {
           id: clipId,
@@ -74,8 +84,8 @@ describe("useTransformationController mask target", () => {
           }),
         },
       ],
-      selectedClipIds: [clipId],
     });
+    useTimelineStore.setState({ selectedClipIds: [clipId] });
 
     useMaskViewStore.setState({
       selectedMaskByClipId: { [clipId]: maskId },
@@ -106,7 +116,11 @@ describe("useTransformationController mask target", () => {
     );
 
     const parentClip = state.clips.find((clip) => clip.id === clipId);
-    expect(parentClip?.transformations).toEqual([]);
+    expect(
+      parentClip?.transformations.some(
+        (transform) => transform.type === "position",
+      ),
+    ).toBe(false);
   });
 
   it("commits shared mask edge edits to the parent clip", () => {

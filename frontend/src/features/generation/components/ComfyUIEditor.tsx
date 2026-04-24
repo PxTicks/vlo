@@ -419,7 +419,12 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     } finally {
       pollingRef.current = false;
     }
-  }, [buildWorkflowResult, commitWorkflowResult, recoverIframe]);
+  }, [
+    buildWorkflowResult,
+    commitWorkflowResult,
+    recoverIframe,
+    setEditorNeedsReconnect,
+  ]);
 
   // On close, always do one last read to capture unsynced edits.
   useEffect(() => {

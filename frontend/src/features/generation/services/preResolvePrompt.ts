@@ -66,7 +66,6 @@ export async function preResolvePrompt(
   bypassNodeIds: string[],
   widgetOverrides: WidgetOverride[],
 ): Promise<PreResolveResult | null> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const win = iframe.contentWindow as (Window & { app?: ComfyApp }) | null;
   const app = win?.app;
   if (!app?.graph || typeof app.graphToPrompt !== "function") {

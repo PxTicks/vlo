@@ -51,16 +51,6 @@ interface MockWsClient {
   emitConnectionChange: (state: "connected" | "disconnected") => void;
 }
 
-interface MockDeliveryWsClient {
-  isConnected: boolean;
-  connect: () => void;
-  disconnect: () => void;
-  acknowledgeDelivery: (deliveryId: string) => void;
-  rejectDelivery: (deliveryId: string, error: string) => void;
-  emitMessage: (message: unknown) => void;
-  emitConnectionChange: (state: "connected" | "disconnected") => void;
-}
-
 vi.mock("../services/ComfyUIWebSocket", () => ({
   ComfyUIWebSocket: class {
     currentClientId = "client-id";
@@ -174,9 +164,9 @@ vi.mock("../services/GenerationDeliveryWebSocket", () => ({
       }
     }
 
-    acknowledgeDelivery(_deliveryId: string): void {}
+    acknowledgeDelivery(): void {}
 
-    rejectDelivery(_deliveryId: string, _error: string): void {}
+    rejectDelivery(): void {}
 
     onMessage(handler: (message: unknown) => void): () => void {
       this.messageHandlers.add(handler);
@@ -365,14 +355,6 @@ function getLatestClient(): MockWsClient {
     throw new Error("Expected a websocket client instance");
   }
   return latest as MockWsClient;
-}
-
-function getLatestDeliveryClient(): MockDeliveryWsClient {
-  const latest = mockDeliveryWsInstances[mockDeliveryWsInstances.length - 1];
-  if (!latest) {
-    throw new Error("Expected a delivery websocket client instance");
-  }
-  return latest as MockDeliveryWsClient;
 }
 
 describe("useGenerationStore pipeline phases", () => {

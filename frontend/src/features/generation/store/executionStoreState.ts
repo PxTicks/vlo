@@ -1,5 +1,4 @@
 import * as comfyApi from "../services/comfyuiApi";
-import { MIGRATED_WORKFLOW_IDS } from "../services/migratedWorkflows";
 import { useProjectStore } from "../../project";
 import { mergeRuleWarnings } from "../services/warnings";
 import {
@@ -169,17 +168,13 @@ function cloneSubmittedWorkflow(
 
 interface CapturedSubmittedWorkflow {
   workflow: Record<string, unknown>;
-  frontendRulesApplied: boolean;
+  promptIsPreResolved: boolean;
 }
 
 // The submitted workflow ALWAYS comes from app.graphToPrompt() — never from
-// buildWorkflowFromGraphData. For migrated workflows we additionally mutate
-// the live graph (bypasses, widget overrides) so graphToPrompt resolves an
-// already-rewritten prompt and the backend can skip its own rewrite. For
-// every other workflow (including manually loaded ones with no rules), we
-// invoke graphToPrompt with no mutations so the payload faithfully reflects
-// what would execute in the editor, while still letting the backend apply
-// any authored rules it knows about.
+// buildWorkflowFromGraphData. We temporarily mutate the live graph using v3
+// frontend graph effects, let ComfyUI's graphToPrompt prune it, and submit
+// that already-resolved prompt so the backend never performs graph rewrites.
 async function captureSubmittedWorkflow(
   plan: GenerationPlan,
   state: ReturnType<GenerationStoreGet>,
@@ -195,41 +190,32 @@ async function captureSubmittedWorkflow(
     );
   }
 
-  const workflowId = plan.workflow.workflowId;
-  const isMigrated =
-    typeof workflowId === "string" && MIGRATED_WORKFLOW_IDS.has(workflowId);
-
-  let bypassNodeIds: string[] = [];
-  let widgetOverrides: Parameters<typeof preResolvePrompt>[2] = [];
-
-  if (isMigrated) {
-    const rewrites: RewriteRule[] =
-      (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
-    const providedInputIds = collectProvidedInputIds(plan);
-    const defaultWidgetOverrides = evaluateWidgetDefaultOverrides(
-      plan.workflow.workflowRules,
-      providedInputIds,
-      plan.submission.frontendStateWidgetValues,
-    );
-    const { bypass, widgetOverrides: rewriteWidgetOverrides } = evaluateRewrites(
-      rewrites,
-      providedInputIds,
-      plan.submission.frontendStateWidgetValues,
-    );
-    const effectSwitchEffects = evaluateEffectSwitchesForState(
-      plan.workflow.workflowRules?.effect_switches ?? [],
-      providedInputIds,
-      plan.submission.frontendStateWidgetValues,
-    );
-    bypassNodeIds = Array.from(
-      new Set([...bypass, ...effectSwitchEffects.bypass]),
-    );
-    widgetOverrides = [
-      ...defaultWidgetOverrides,
-      ...rewriteWidgetOverrides,
-      ...effectSwitchEffects.widgetOverrides,
-    ];
-  }
+  const rewrites: RewriteRule[] =
+    (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
+  const providedInputIds = collectProvidedInputIds(plan);
+  const defaultWidgetOverrides = evaluateWidgetDefaultOverrides(
+    plan.workflow.workflowRules,
+    providedInputIds,
+    plan.submission.frontendStateWidgetValues,
+  );
+  const { bypass, widgetOverrides: rewriteWidgetOverrides } = evaluateRewrites(
+    rewrites,
+    providedInputIds,
+    plan.submission.frontendStateWidgetValues,
+  );
+  const effectSwitchEffects = evaluateEffectSwitchesForState(
+    plan.workflow.workflowRules?.effect_switches ?? [],
+    providedInputIds,
+    plan.submission.frontendStateWidgetValues,
+  );
+  const bypassNodeIds = Array.from(
+    new Set([...bypass, ...effectSwitchEffects.bypass]),
+  );
+  const widgetOverrides: Parameters<typeof preResolvePrompt>[2] = [
+    ...defaultWidgetOverrides,
+    ...rewriteWidgetOverrides,
+    ...effectSwitchEffects.widgetOverrides,
+  ];
 
   const resolved = await preResolvePrompt(iframe, bypassNodeIds, widgetOverrides);
   if (!resolved) {
@@ -240,7 +226,7 @@ async function captureSubmittedWorkflow(
 
   return {
     workflow: cloneSubmittedWorkflow(resolved.output),
-    frontendRulesApplied: isMigrated,
+    promptIsPreResolved: true,
   };
 }
 
@@ -262,7 +248,7 @@ async function attachSubmittedWorkflowToPlan(
     workflow: {
       ...plan.workflow,
       submittedWorkflow: captured.workflow,
-      frontendRulesApplied: captured.frontendRulesApplied,
+      promptIsPreResolved: captured.promptIsPreResolved,
     },
   };
 }
@@ -300,8 +286,8 @@ async function buildQueuedGenerationPlansFromState(
     return [resolvedFirstPlan, ...plans.slice(1)];
   }
 
-  const frontendRulesApplied =
-    resolvedFirstPlan.workflow.frontendRulesApplied === true;
+  const promptIsPreResolved =
+    resolvedFirstPlan.workflow.promptIsPreResolved === true;
 
   return [
     resolvedFirstPlan,
@@ -310,7 +296,7 @@ async function buildQueuedGenerationPlansFromState(
       workflow: {
         ...plan.workflow,
         submittedWorkflow: cloneSubmittedWorkflow(submittedWorkflow),
-        frontendRulesApplied,
+        promptIsPreResolved,
       },
     })),
   ];
@@ -440,16 +426,13 @@ export function buildExecutionStoreState(
         );
       }
 
-      // `frontendRulesApplied` is the only thing that controls whether the
-      // backend skips its rewrite step. The submitted workflow itself is
-      // always the graphToPrompt output. `prepared.request.workflow` is a
-      // UI-only artifact (buildWorkflowFromGraphData) and must not be sent
-      // as a payload — fall back to it only as a last-ditch safety so a
-      // missing iframe doesn't silently corrupt this site, and only when
-      // the kill switch (`preResolvedPromptEnabled`) has been turned off.
+      // `promptIsPreResolved` tells the backend the prompt topology is already
+      // final. The submitted workflow itself is always graphToPrompt output;
+      // the prepared request workflow is only a last-ditch fallback when the
+      // kill switch is off and no iframe capture happened.
       const submittedWorkflow = resolvedPlan.workflow.submittedWorkflow;
       const usesPreResolvedWorkflow =
-        resolvedPlan.workflow.frontendRulesApplied === true;
+        resolvedPlan.workflow.promptIsPreResolved === true;
       const resolvedWorkflow: Record<string, unknown> | null =
         submittedWorkflow ?? prepared.request.workflow;
 

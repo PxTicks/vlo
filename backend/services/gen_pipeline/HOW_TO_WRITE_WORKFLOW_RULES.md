@@ -2,7 +2,7 @@
 
 A **sidecar** is a `*.rules.json` file that sits next to a ComfyUI workflow
 JSON and controls how that workflow is presented in the Generate panel and
-how the backend rewrites it before dispatch.
+how the frontend pre-resolves graph effects before dispatch.
 
 This document walks through authoring a sidecar, using the real
 [`video_ltx2_3_retake.rules.json`](../../assets/.config/default_workflows/video_ltx2_3_retake.rules.json)
@@ -46,7 +46,8 @@ the original in `.config/default_workflows/` is never mutated.
 Sidecars are loaded for:
 
 - `GET /comfy/workflow/rules/{filename}` — drives frontend presentation.
-- `POST /comfy/generate` — applies runtime rewrites and preprocessing rules.
+- `POST /comfy/generate` — accepts a frontend pre-resolved prompt and applies
+  preprocessing rules.
 
 If the sidecar is missing the system falls back to defaults with no
 warnings. If it is present but malformed or schema-invalid, defaults are
@@ -70,7 +71,6 @@ legacy node-level derived-mask fields (`binary_derived_mask_of`,
   "nodes": {},
   "validation": { "inputs": [] },
   "derived_widgets": [],
-  "output_injections": {},
   "effect_switches": [],
   "slots": {},
   "media_fallbacks": [],
@@ -86,7 +86,6 @@ legacy node-level derived-mask fields (`binary_derived_mask_of`,
 | `nodes`                | object keyed by node id               | `{}`                       |
 | `validation`           | object                                | `{ "inputs": [] }`         |
 | `derived_widgets`      | array                                 | `[]`                       |
-| `output_injections`    | nested object (see below)             | `{}`                       |
 | `effect_switches`      | array of first-match effect cases     | `[]`                       |
 | `slots`                | object keyed by slot id               | `{}`                       |
 | `media_fallbacks`      | array                                 | `[]`                       |
@@ -662,8 +661,8 @@ are independent and compose.
 
 Each matching case can:
 
-- `bypass` node ids, which disconnects their outbound links and removes the
-  bypassed nodes when safe.
+- `bypass` node ids by temporarily setting ComfyUI bypass mode before
+  `graphToPrompt`; ComfyUI performs the actual pruning.
 - `set_widgets`, which writes scalar workflow widget values. Link references
   like `["node_id", 0]` are intentionally left alone.
 
@@ -705,41 +704,6 @@ branch active and turns on node `114`'s boolean switch.
   ]
 }
 ```
-
----
-
-## Output Injections
-
-`output_injections` reroutes downstream consumers of one node's output
-slot to read from a different source. The shape is a **nested object**
-keyed `target_node_id → target_output_index → rule`:
-
-```json
-"output_injections": {
-  "160": {
-    "0": {
-      "source": { "kind": "node_output", "node_id": "118", "output_index": 0 },
-      "when": {
-        "kind": "input_presence",
-        "inputs": ["167"],
-        "match": "all_missing"
-      }
-    }
-  }
-}
-```
-
-| Field                    | Purpose                                              |
-| ------------------------ | ---------------------------------------------------- |
-| outer key                | `target_node_id` whose output is being rerouted      |
-| inner key                | `target_output_index` on the target                  |
-| `source.kind`            | `"node_output"` (currently the only kind)            |
-| `source.node_id`         | Source node to reroute from                          |
-| `source.output_index`    | Output slot on the source (default `0`)              |
-| `when`                   | Optional input-presence gate                         |
-
-The engine emits warnings if the target or source node is missing, or if
-no downstream consumer matches.
 
 ---
 

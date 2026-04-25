@@ -1251,7 +1251,7 @@ describe("useGenerationStore pipeline phases", () => {
     });
   });
 
-  it("captures a migrated workflow's pre-resolved prompt before preprocessing starts", async () => {
+  it("captures every workflow's pre-resolved prompt before preprocessing starts", async () => {
     makeReadyStoreState();
     const preprocessDeferred = createDeferred<{
       workflow: Record<string, unknown> | null;
@@ -1301,9 +1301,9 @@ describe("useGenerationStore pipeline phases", () => {
     });
 
     useGenerationStore.setState({
-      selectedWorkflowId: "video_ltx2_3_retake.json",
+      selectedWorkflowId: "unmigrated-workflow.json",
       availableWorkflows: [
-        { id: "video_ltx2_3_retake.json", name: "LTX2.3 ReTake" },
+        { id: "unmigrated-workflow.json", name: "Unmigrated Workflow" },
         { id: "wf-switched.json", name: "Switched Workflow" },
       ],
       syncedWorkflow: {
@@ -1313,7 +1313,7 @@ describe("useGenerationStore pipeline phases", () => {
         },
       },
       activeWorkflowRules: queuedRules,
-      rulesWorkflowSourceId: "video_ltx2_3_retake.json",
+      rulesWorkflowSourceId: "unmigrated-workflow.json",
       editorRef: {} as HTMLIFrameElement,
       // Re-enable for the test that exercises the graphToPrompt-based
       // submission capture; makeReadyStoreState defaults to disabled.
@@ -1344,7 +1344,7 @@ describe("useGenerationStore pipeline phases", () => {
           inputs: {},
         },
       },
-      workflowId: "video_ltx2_3_retake.json",
+      workflowId: "unmigrated-workflow.json",
       targetAspectRatio: "16:9",
       exactAspectRatio: false,
       targetResolution: 1080,
@@ -1360,7 +1360,7 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockGenerate).toHaveBeenCalledTimes(1);
     expect(mockGenerate.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
-        workflowId: "video_ltx2_3_retake.json",
+        workflowId: "unmigrated-workflow.json",
         workflow: {
           "101": {
             class_type: "CapturedPreResolvedWorkflow",

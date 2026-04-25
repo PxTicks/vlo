@@ -309,16 +309,14 @@ def build_backend_context(
         buffered_media=gen_input.buffered_media,
         graph_data=gen_input.graph_data,
         warnings=gen_input.workflow_warnings,
-        skip_graph_rewrite=gen_input.prompt_is_pre_resolved,
     )
 
 
 async def run_backend_preprocess(ctx: BackendPipelineContext) -> None:
     """Backend preprocess phase.
 
-    This phase validates request inputs, rewrites the workflow graph, and
-    prepares/uploads media so the dispatch step can submit a ready-to-run
-    ComfyUI prompt.
+    This phase validates request inputs and prepares/uploads media so the
+    dispatch step can submit the frontend pre-resolved ComfyUI prompt.
     """
     # Build dynamic input node map from object_info, with static fallbacks.
     dynamic_map = build_input_node_map()
@@ -401,8 +399,7 @@ async def execute_generation(
     # Optional prompt logging for manual equivalence testing.
     from services.gen_pipeline.processors.utils.prompt_logging import maybe_log_prompt
 
-    path_label = "pre_resolved" if ctx.skip_graph_rewrite else "backend_rewrite"
-    maybe_log_prompt(ctx.workflow, label=path_label)
+    maybe_log_prompt(ctx.workflow, label="pre_resolved")
 
     await dispatch_to_comfyui(ctx)
     return finalize_backend_response(ctx)

@@ -155,7 +155,6 @@ export function createDefaultWorkflowRules(
       : {}),
     frontend_controls: cloneJsonValue(overrides.frontend_controls ?? {}),
     derived_widgets: cloneJsonValue(overrides.derived_widgets ?? []),
-    output_injections: cloneJsonValue(overrides.output_injections ?? {}),
     rewrites: cloneJsonValue(overrides.rewrites ?? []),
     effect_switches: cloneJsonValue(overrides.effect_switches ?? []),
     slots: cloneJsonValue(overrides.slots ?? {}),

@@ -292,7 +292,6 @@ describe("resolvePresentedInputs", () => {
     const result = resolvePresentedInputs(makeInferredInputs(), {
       version: 1,
       nodes: {},
-      output_injections: {},
       slots: {},
     });
 
@@ -329,7 +328,6 @@ describe("resolvePresentedInputs", () => {
       {
         version: 1,
         nodes: {},
-        output_injections: {},
         slots: {},
       },
       makeConditioningWorkflow(),
@@ -366,7 +364,6 @@ describe("resolvePresentedInputs", () => {
       {
         version: 1,
         nodes: {},
-        output_injections: {},
         slots: {},
       },
       makeConditioningWorkflow(),
@@ -413,7 +410,6 @@ describe("resolvePresentedInputs", () => {
       {
         version: 1,
         nodes: {},
-        output_injections: {},
         slots: {},
       },
     );
@@ -439,7 +435,6 @@ describe("resolvePresentedInputs", () => {
           present: { enabled: false },
         },
       },
-      output_injections: {},
       slots: {},
     });
 
@@ -468,7 +463,6 @@ describe("resolvePresentedInputs", () => {
           },
         },
       },
-      output_injections: {},
       slots: {},
     });
 
@@ -504,7 +498,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
       makeConditioningWorkflow(),
@@ -525,7 +518,6 @@ describe("resolvePresentedInputs", () => {
           },
         },
       },
-      output_injections: {},
       slots: {},
     });
 
@@ -571,7 +563,6 @@ describe("resolvePresentedInputs", () => {
           },
         },
       },
-      output_injections: {},
       slots: {},
     });
 
@@ -611,7 +602,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
     );
@@ -640,7 +630,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
     );
@@ -676,7 +665,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
       {
@@ -762,7 +750,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
       {
@@ -842,7 +829,6 @@ describe("resolvePresentedInputs", () => {
             default: false,
           },
         },
-        output_injections: {},
         slots: {},
       },
     );
@@ -878,7 +864,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
     );
@@ -927,7 +912,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
     );
@@ -982,7 +966,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
     );
@@ -1021,7 +1004,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
     );
@@ -1101,7 +1083,6 @@ describe("resolvePresentedInputs", () => {
             ],
           },
         ],
-        output_injections: {},
         slots: {},
       },
     );
@@ -1157,7 +1138,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         ],
-        output_injections: {},
         slots: {},
       },
     );
@@ -1211,7 +1191,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         ],
-        output_injections: {},
         slots: {},
       },
     );
@@ -1248,7 +1227,6 @@ describe("resolvePresentedInputs", () => {
             audio_bypass: { node_id: "714", param: "switch" },
           },
         ],
-        output_injections: {},
         slots: {},
       },
     );
@@ -1280,7 +1258,6 @@ describe("resolvePresentedInputs", () => {
             audio_bypass: { node_id: "714", param: "switch" },
           },
         ],
-        output_injections: {},
         slots: {},
       },
     );
@@ -1316,7 +1293,6 @@ describe("resolvePresentedInputs", () => {
             },
           },
         },
-        output_injections: {},
         slots: {},
       },
     );

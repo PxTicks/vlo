@@ -15,7 +15,7 @@ class _LoadRulesProcessor:
         name="load_rules",
         reads=("workflow", "workflow_id"),
         writes=("rules", "warnings"),
-        description="Loads and enriches workflow-sidecar rules before validation and graph rewrites",
+        description="Loads and enriches workflow-sidecar rules before validation and preprocessing",
     )
 
     def __init__(self, workflows_dir: Path, fallback_dirs: list[Path] | None = None):

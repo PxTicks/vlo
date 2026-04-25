@@ -119,7 +119,6 @@
       }
     }
   ],
-  "output_injections": {},
   "rewrites": [
     {
       "when": {

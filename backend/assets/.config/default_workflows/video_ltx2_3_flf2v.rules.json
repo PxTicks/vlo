@@ -108,7 +108,6 @@
     "inputs": []
   },
   "derived_widgets": [],
-  "output_injections": {},
   "rewrites": [
     {
       "when": {

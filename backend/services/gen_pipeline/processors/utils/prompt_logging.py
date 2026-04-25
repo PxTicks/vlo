@@ -2,8 +2,8 @@
 
 When the environment variable ``VLO_LOG_SUBMITTED_PROMPT`` is set to ``1``,
 the final prompt JSON is written to ``/tmp/vlo_prompt_{label}_{timestamp}.json``
-on every generation dispatch.  This allows easy side-by-side diffing of the
-old (backend-rewrite) and new (frontend pre-resolve) paths.
+on every generation dispatch. This is useful when comparing submitted
+graphToPrompt payloads during workflow migration.
 
 Usage from a processor or the dispatch phase::
 

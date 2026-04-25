@@ -1,12 +1,9 @@
 """Workflow rules helpers.
 
-Provides rule normalization/loading, object_info enrichment, graph rewriting,
-and mask-crop pair collection.
+Provides rule normalization/loading, object_info enrichment, validation, and
+mask-crop pair collection.
 """
 
-from services.workflow_rules.graph_rewrite import (
-    apply_rules_to_workflow,
-)
 from services.workflow_rules.mask_pairs import collect_mask_crop_pairs
 from services.workflow_rules.normalize import (
     WorkflowPrompt,
@@ -51,7 +48,6 @@ __all__ = [
     "WorkflowMaskProcessingStage",
     "WorkflowOutputAssemblyStage",
     "WorkflowPipelineStage",
-    "apply_rules_to_workflow",
     "collect_mask_crop_pairs",
     "default_rules",
     "default_rules_model",

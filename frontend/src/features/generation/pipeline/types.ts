@@ -113,11 +113,10 @@ export interface GenerationWorkflowSnapshot {
   // time, never by buildWorkflowFromGraphData. `null` only until the
   // submission step has captured it.
   submittedWorkflow?: Record<string, unknown> | null;
-  // True iff the frontend evaluated workflow rules (bypasses, widget
-  // overrides) and mutated the live graph before graphToPrompt resolved
-  // it. Drives the backend's `prompt_is_pre_resolved` flag — when true
-  // the backend skips its own rule-driven rewrite step.
-  frontendRulesApplied?: boolean;
+  // True when `submittedWorkflow` is graphToPrompt output from the frontend
+  // pre-resolution transaction. Drives the backend's `prompt_is_pre_resolved`
+  // flag so the backend treats the prompt as topology-final.
+  promptIsPreResolved?: boolean;
 }
 
 export interface GenerationPreprocessPlan {

@@ -62,10 +62,7 @@ function collectReferencedRuleNodeIds(
     return;
   }
 
-  if (
-    (normalizedKey === "nodes" || normalizedKey === "output_injections") &&
-    Object.getPrototypeOf(value) === Object.prototype
-  ) {
+  if (normalizedKey === "nodes" && Object.getPrototypeOf(value) === Object.prototype) {
     for (const nodeId of Object.keys(value as Record<string, unknown>)) {
       result.add(nodeId);
     }
@@ -373,29 +370,6 @@ export function pruneWorkflowRulesForWorkflows(
       ? true
       : isRuleFragmentApplicable(fallback.when, workflowNodeIds);
   });
-  const outputInjections = Object.fromEntries(
-    Object.entries(rules.output_injections ?? {}).flatMap(
-      ([targetNodeId, targetOutputs]) => {
-        if (
-          !workflowNodeIds.has(targetNodeId) ||
-          !targetOutputs ||
-          typeof targetOutputs !== "object"
-        ) {
-          return [];
-        }
-
-        const filteredOutputs = Object.fromEntries(
-          Object.entries(targetOutputs).filter(([, injectionRule]) =>
-            isRuleFragmentApplicable(injectionRule, workflowNodeIds),
-          ),
-        );
-
-        return Object.keys(filteredOutputs).length > 0
-          ? [[targetNodeId, filteredOutputs]]
-          : [];
-      },
-    ),
-  );
   const pipeline = (rules.pipeline ?? [])
     .map((stage) => pruneStage(stage, workflowNodeIds))
     .filter(
@@ -409,7 +383,6 @@ export function pruneWorkflowRulesForWorkflows(
     {
       nodes,
       derived_widgets: derivedWidgets,
-      output_injections: outputInjections,
       rewrites,
       pipeline,
     },
@@ -442,7 +415,6 @@ export function pruneWorkflowRulesForWorkflows(
     ...(inputConditions.length > 0 ? { input_conditions: inputConditions } : {}),
     frontend_controls: frontendControls,
     derived_widgets: derivedWidgets,
-    output_injections: outputInjections,
     rewrites,
     slots: rules.slots ?? {},
     pipeline,
@@ -458,7 +430,6 @@ export function hasNodeLinkedWorkflowRules(
     (rules?.validation?.inputs?.length ?? 0) > 0 ||
     (rules?.input_conditions?.length ?? 0) > 0 ||
     (rules?.derived_widgets?.length ?? 0) > 0 ||
-    Object.keys(rules?.output_injections ?? {}).length > 0 ||
     (rules?.rewrites?.length ?? 0) > 0 ||
     (rules?.media_fallbacks?.length ?? 0) > 0 ||
     (rules?.pipeline ?? []).some((stage) => stage.kind !== "output_assembly")
@@ -474,7 +445,6 @@ export function areWorkflowRulesEffectivelyEmpty(
     (rules?.input_conditions?.length ?? 0) === 0 &&
     Object.keys(rules?.frontend_controls ?? {}).length === 0 &&
     (rules?.derived_widgets?.length ?? 0) === 0 &&
-    Object.keys(rules?.output_injections ?? {}).length === 0 &&
     (rules?.rewrites?.length ?? 0) === 0 &&
     (rules?.media_fallbacks?.length ?? 0) === 0 &&
     Object.keys(rules?.slots ?? {}).length === 0 &&

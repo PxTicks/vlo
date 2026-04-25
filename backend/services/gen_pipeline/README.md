@@ -2,9 +2,9 @@
 
 This document describes the end-to-end generation pipeline — an ordered set
 of processors that spans the frontend and the backend. The frontend
-collects and normalizes user inputs, the backend rewrites the workflow
-graph and dispatches to ComfyUI, and the frontend finalizes the outputs
-into importable assets.
+collects and normalizes user inputs, ComfyUI's `graphToPrompt` resolves the
+workflow graph in the frontend, the backend dispatches the prepared prompt to
+ComfyUI, and the frontend finalizes the outputs into importable assets.
 
 For sidecar authoring (how to write a `*.rules.json` file to control what
 the user sees in the Generate panel and how the workflow is transformed),
@@ -21,8 +21,7 @@ A single generation passes through five phases:
    assemble a `GenerationRequest` with `pipeline_inputs` for every
    pipeline stage that owns client-authored controls.
 2. **Backend preprocess** — load rules, validate, resolve derived widgets
-   and pipeline controls, rewrite the graph, run stage processors, upload
-   media.
+   and pipeline controls, run stage processors, upload media.
 3. **Dispatch** — submit the prepared workflow to ComfyUI.
 4. **Backend postprocess** — enrich the ComfyUI response with
    `workflow_warnings`, applied widget values, and `pipeline_outputs`.
@@ -125,12 +124,11 @@ Defined by `build_backend_preprocessors` in
 | 3    | `validate_inputs`                 | `validation.inputs`                                       |
 | 4    | `resolve_derived_widgets`         | `derived_widgets`                                         |
 | 5    | `validate_widgets`                | `nodes.*.widgets`                                         |
-| 6    | `apply_rules`                     | `nodes`, `output_injections`, `slots`                     |
-| 7    | `widget_overrides`                | `nodes.*.widgets`                                         |
-| 8    | `resolve_pipeline_controls`       | `pipeline[*].controls`                                    |
-| 9    | `pipeline_stages` (`before_upload`) | enabled stages registered at the `before_upload` checkpoint |
-| 10   | `upload_media`                    | —                                                         |
-| 11   | `pipeline_stages` (`after_upload`) | enabled stages registered at the `after_upload` checkpoint |
+| 6    | `widget_overrides`                | `nodes.*.widgets`                                         |
+| 7    | `resolve_pipeline_controls`       | `pipeline[*].controls`                                    |
+| 8    | `pipeline_stages` (`before_upload`) | enabled stages registered at the `before_upload` checkpoint |
+| 9    | `upload_media`                    | —                                                         |
+| 10   | `pipeline_stages` (`after_upload`) | enabled stages registered at the `after_upload` checkpoint |
 
 ### `inject_values`
 
@@ -165,7 +163,7 @@ inputs. References are compact strings of the form `"node_id"` or
 | `at_least_n`   | Fewer than `min` of the listed inputs are present                       |
 | `optional`     | Never — documents that an input may be omitted                          |
 
-Failures produce warnings and abort the request before any graph rewrite.
+Failures produce warnings and abort the request before dispatch.
 
 ### `resolve_derived_widgets`
 
@@ -190,20 +188,12 @@ Cross-checks submitted widget values against the resolved widget schema
 (min/max/options/value_type). Violations produce warnings; out-of-range
 numeric values are clamped.
 
-### `apply_rules`
+### Graph Effects
 
-Performs graph-level rewrites:
-
-- **`output_injections`** — reroutes downstream consumers of a `target_node_id`
-  (at `target_output_index`) to read from a different `source`. Optional
-  `when` conditions gate the reroute by input presence. Emits warnings if the
-  source or target is missing, or no downstream consumer was matched.
-- **`ignore: true` nodes** — disconnected and removed. Removal cascades: a
-  parent whose last consumer just disappeared is also removed, recursively.
-- **Optional inputs (`present.required: false`)** — when the user did not
-  provide the input, the corresponding node is removed with the same cascade.
-- **`ignore_overrides`** — conditional `ignore` flips driven by input
-  presence.
+Graph-level topology changes are resolved in the frontend by temporarily
+applying v3 bypass/widget effects to the live ComfyUI graph and calling
+`graphToPrompt`. Backend preprocessing treats the received prompt as
+topology-final and no longer rewrites links or prunes graph branches.
 
 ### `widget_overrides`
 

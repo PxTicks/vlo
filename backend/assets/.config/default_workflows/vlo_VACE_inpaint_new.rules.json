@@ -51,7 +51,6 @@
       }
     }
   ],
-  "output_injections": {},
   "effect_switches": [
     {
       "id": "single_sampler_denoise",

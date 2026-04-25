@@ -768,7 +768,7 @@ export function createGenerationPlan(
       workflowRules: cloneSerializableValue(options.workflowRules),
       workflowInputs: cloneSerializableValue(options.workflowInputs),
       submittedWorkflow: null,
-      frontendRulesApplied: false,
+      promptIsPreResolved: false,
     },
     preprocess: {
       slotValues: cloneSlotValues(options.slotValues),

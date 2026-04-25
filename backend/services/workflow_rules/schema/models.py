@@ -364,17 +364,6 @@ class WorkflowInputCondition(WorkflowRuleBaseModel):
     message: str | None = None
 
 
-class NodeOutputSource(WorkflowRuleBaseModel):
-    kind: Literal["node_output"] = "node_output"
-    node_id: str
-    output_index: int = 0
-
-
-class ResolvedOutputInjectionRule(WorkflowRuleBaseModel):
-    source: NodeOutputSource
-    when: ConditionExpression | None = None
-
-
 class PipelineControlCondition(WorkflowRuleBaseModel):
     ref: StateReference
     operator: PipelineComparisonOperator = "eq"
@@ -562,9 +551,6 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     input_conditions: list[WorkflowInputCondition] | None = None
     frontend_controls: dict[str, WorkflowFrontendControl] = Field(default_factory=dict)
     derived_widgets: list[WorkflowDerivedWidgetRule] = Field(default_factory=list)
-    output_injections: dict[str, dict[str, ResolvedOutputInjectionRule]] = Field(
-        default_factory=dict
-    )
     rewrites: list[WorkflowRewriteRule] = Field(default_factory=list)
     effect_switches: list[EffectSwitch] = Field(default_factory=list)
     slots: dict[str, WorkflowRuleSlot] = Field(default_factory=dict)

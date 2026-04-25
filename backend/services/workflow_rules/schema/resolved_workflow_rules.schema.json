@@ -2,10 +2,10 @@
   "$defs": {
     "AspectRatioTargetNode": {
       "properties": {
-        "height": {
+        "width": {
           "$ref": "#/$defs/WorkflowParamReference"
         },
-        "width": {
+        "height": {
           "$ref": "#/$defs/WorkflowParamReference"
         }
       },
@@ -18,6 +18,12 @@
     },
     "ConditionAllOf": {
       "properties": {
+        "kind": {
+          "const": "all_of",
+          "default": "all_of",
+          "title": "Kind",
+          "type": "string"
+        },
         "conditions": {
           "items": {
             "discriminator": {
@@ -54,12 +60,6 @@
           },
           "title": "Conditions",
           "type": "array"
-        },
-        "kind": {
-          "const": "all_of",
-          "default": "all_of",
-          "title": "Kind",
-          "type": "string"
         }
       },
       "title": "ConditionAllOf",
@@ -84,6 +84,12 @@
     },
     "ConditionAnyOf": {
       "properties": {
+        "kind": {
+          "const": "any_of",
+          "default": "any_of",
+          "title": "Kind",
+          "type": "string"
+        },
         "conditions": {
           "items": {
             "discriminator": {
@@ -120,12 +126,6 @@
           },
           "title": "Conditions",
           "type": "array"
-        },
-        "kind": {
-          "const": "any_of",
-          "default": "any_of",
-          "title": "Kind",
-          "type": "string"
         }
       },
       "title": "ConditionAnyOf",
@@ -137,19 +137,6 @@
           "const": "compare",
           "default": "compare",
           "title": "Kind",
-          "type": "string"
-        },
-        "operator": {
-          "default": "eq",
-          "enum": [
-            "eq",
-            "neq",
-            "lt",
-            "lte",
-            "gt",
-            "gte"
-          ],
-          "title": "Operator",
           "type": "string"
         },
         "ref": {
@@ -178,6 +165,19 @@
           ],
           "title": "Ref"
         },
+        "operator": {
+          "default": "eq",
+          "enum": [
+            "eq",
+            "neq",
+            "lt",
+            "lte",
+            "gt",
+            "gte"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
         "value": {
           "anyOf": [
             {},
@@ -197,6 +197,12 @@
     },
     "ConditionNot": {
       "properties": {
+        "kind": {
+          "const": "not",
+          "default": "not",
+          "title": "Kind",
+          "type": "string"
+        },
         "condition": {
           "discriminator": {
             "mapping": {
@@ -230,12 +236,6 @@
             }
           ],
           "title": "Condition"
-        },
-        "kind": {
-          "const": "not",
-          "default": "not",
-          "title": "Kind",
-          "type": "string"
         }
       },
       "required": [
@@ -246,14 +246,14 @@
     },
     "DerivedWidgetStateReference": {
       "properties": {
-        "derived_widget_id": {
-          "title": "Derived Widget Id",
-          "type": "string"
-        },
         "kind": {
           "const": "derived_widget",
           "default": "derived_widget",
           "title": "Kind",
+          "type": "string"
+        },
+        "derived_widget_id": {
+          "title": "Derived Widget Id",
           "type": "string"
         }
       },
@@ -266,13 +266,6 @@
     "EffectSwitch": {
       "additionalProperties": false,
       "properties": {
-        "cases": {
-          "items": {
-            "$ref": "#/$defs/EffectSwitchCase"
-          },
-          "title": "Cases",
-          "type": "array"
-        },
         "id": {
           "anyOf": [
             {
@@ -284,6 +277,13 @@
           ],
           "default": null,
           "title": "Id"
+        },
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/EffectSwitchCase"
+          },
+          "title": "Cases",
+          "type": "array"
         }
       },
       "title": "EffectSwitch",
@@ -292,20 +292,6 @@
     "EffectSwitchCase": {
       "additionalProperties": false,
       "properties": {
-        "bypass": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Bypass",
-          "type": "array"
-        },
-        "set_widgets": {
-          "items": {
-            "$ref": "#/$defs/WorkflowRewriteWidgetOverride"
-          },
-          "title": "Set Widgets",
-          "type": "array"
-        },
         "when": {
           "discriminator": {
             "mapping": {
@@ -339,6 +325,20 @@
             }
           ],
           "title": "When"
+        },
+        "bypass": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Bypass",
+          "type": "array"
+        },
+        "set_widgets": {
+          "items": {
+            "$ref": "#/$defs/WorkflowRewriteWidgetOverride"
+          },
+          "title": "Set Widgets",
+          "type": "array"
         }
       },
       "required": [
@@ -349,14 +349,14 @@
     },
     "FrontendControlStateReference": {
       "properties": {
-        "control_id": {
-          "title": "Control Id",
-          "type": "string"
-        },
         "kind": {
           "const": "frontend_control",
           "default": "frontend_control",
           "title": "Kind",
+          "type": "string"
+        },
+        "control_id": {
+          "title": "Control Id",
           "type": "string"
         }
       },
@@ -368,6 +368,9 @@
     },
     "MaskProcessingTarget": {
       "properties": {
+        "source": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        },
         "mask": {
           "$ref": "#/$defs/WorkflowParamReference"
         },
@@ -400,9 +403,6 @@
           ],
           "default": null,
           "title": "Render Fps"
-        },
-        "source": {
-          "$ref": "#/$defs/WorkflowParamReference"
         }
       },
       "required": [
@@ -412,33 +412,275 @@
       "title": "MaskProcessingTarget",
       "type": "object"
     },
-    "NodeOutputSource": {
-      "properties": {
-        "kind": {
-          "const": "node_output",
-          "default": "node_output",
-          "title": "Kind",
-          "type": "string"
-        },
-        "node_id": {
-          "title": "Node Id",
-          "type": "string"
-        },
-        "output_index": {
-          "default": 0,
-          "title": "Output Index",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "node_id"
-      ],
-      "title": "NodeOutputSource",
-      "type": "object"
-    },
     "PipelineControl": {
       "additionalProperties": false,
       "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "value_type": {
+          "default": "unknown",
+          "enum": [
+            "int",
+            "float",
+            "string",
+            "boolean",
+            "enum",
+            "unknown"
+          ],
+          "title": "Value Type",
+          "type": "string"
+        },
+        "expose": {
+          "default": "widget",
+          "enum": [
+            "widget",
+            "none"
+          ],
+          "title": "Expose",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "client",
+                "backend"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "control": {
+          "anyOf": [
+            {
+              "const": "slider",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control"
+        },
+        "slider_display": {
+          "anyOf": [
+            {
+              "enum": [
+                "percent",
+                "number"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slider Display"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step"
+        },
+        "default": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "options": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Options"
+        },
+        "include_options": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Include Options"
+        },
+        "exclude_options": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclude Options"
+        },
+        "true_value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "True Value"
+        },
+        "false_value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "False Value"
+        },
         "bind": {
           "anyOf": [
             {
@@ -473,29 +715,6 @@
           "default": null,
           "title": "Bind"
         },
-        "control": {
-          "anyOf": [
-            {
-              "const": "slider",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Control"
-        },
-        "default": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Default"
-        },
         "default_rules": {
           "anyOf": [
             {
@@ -510,249 +729,6 @@
           ],
           "default": null,
           "title": "Default Rules"
-        },
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Description"
-        },
-        "exclude_options": {
-          "anyOf": [
-            {
-              "items": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Exclude Options"
-        },
-        "expose": {
-          "default": "widget",
-          "enum": [
-            "widget",
-            "none"
-          ],
-          "title": "Expose",
-          "type": "string"
-        },
-        "false_value": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "False Value"
-        },
-        "include_options": {
-          "anyOf": [
-            {
-              "items": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Include Options"
-        },
-        "key": {
-          "title": "Key",
-          "type": "string"
-        },
-        "label": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Label"
-        },
-        "max": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Max"
-        },
-        "min": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Min"
-        },
-        "options": {
-          "anyOf": [
-            {
-              "items": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Options"
-        },
-        "slider_display": {
-          "anyOf": [
-            {
-              "enum": [
-                "percent",
-                "number"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Slider Display"
-        },
-        "source": {
-          "anyOf": [
-            {
-              "enum": [
-                "client",
-                "backend"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Source"
-        },
-        "step": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Step"
-        },
-        "true_value": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "True Value"
-        },
-        "unit": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Unit"
-        },
-        "value_type": {
-          "default": "unknown",
-          "enum": [
-            "int",
-            "float",
-            "string",
-            "boolean",
-            "enum",
-            "unknown"
-          ],
-          "title": "Value Type",
-          "type": "string"
         }
       },
       "required": [
@@ -763,19 +739,6 @@
     },
     "PipelineControlCondition": {
       "properties": {
-        "operator": {
-          "default": "eq",
-          "enum": [
-            "eq",
-            "neq",
-            "lt",
-            "lte",
-            "gt",
-            "gte"
-          ],
-          "title": "Operator",
-          "type": "string"
-        },
         "ref": {
           "discriminator": {
             "mapping": {
@@ -802,6 +765,19 @@
           ],
           "title": "Ref"
         },
+        "operator": {
+          "default": "eq",
+          "enum": [
+            "eq",
+            "neq",
+            "lt",
+            "lte",
+            "gt",
+            "gte"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
         "value": {
           "anyOf": [
             {},
@@ -821,6 +797,9 @@
     },
     "PipelineControlDefaultRule": {
       "properties": {
+        "when": {
+          "$ref": "#/$defs/PipelineControlCondition"
+        },
         "value": {
           "anyOf": [
             {},
@@ -830,9 +809,6 @@
           ],
           "default": null,
           "title": "Value"
-        },
-        "when": {
-          "$ref": "#/$defs/PipelineControlCondition"
         }
       },
       "required": [
@@ -843,10 +819,6 @@
     },
     "PipelineControlReference": {
       "properties": {
-        "key": {
-          "title": "Key",
-          "type": "string"
-        },
         "kind": {
           "const": "pipeline_control",
           "default": "pipeline_control",
@@ -855,6 +827,10 @@
         },
         "stage_id": {
           "title": "Stage Id",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
           "type": "string"
         }
       },
@@ -865,68 +841,8 @@
       "title": "PipelineControlReference",
       "type": "object"
     },
-    "ResolvedOutputInjectionRule": {
-      "properties": {
-        "source": {
-          "$ref": "#/$defs/NodeOutputSource"
-        },
-        "when": {
-          "anyOf": [
-            {
-              "discriminator": {
-                "mapping": {
-                  "all_of": "#/$defs/ConditionAllOf",
-                  "always": "#/$defs/ConditionAlways",
-                  "any_of": "#/$defs/ConditionAnyOf",
-                  "compare": "#/$defs/ConditionCompare",
-                  "input_presence": "#/$defs/WorkflowRuleWidgetInputPresenceCondition",
-                  "not": "#/$defs/ConditionNot"
-                },
-                "propertyName": "kind"
-              },
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/ConditionAlways"
-                },
-                {
-                  "$ref": "#/$defs/WorkflowRuleWidgetInputPresenceCondition"
-                },
-                {
-                  "$ref": "#/$defs/ConditionCompare"
-                },
-                {
-                  "$ref": "#/$defs/ConditionAllOf"
-                },
-                {
-                  "$ref": "#/$defs/ConditionAnyOf"
-                },
-                {
-                  "$ref": "#/$defs/ConditionNot"
-                }
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "When"
-        }
-      },
-      "required": [
-        "source"
-      ],
-      "title": "ResolvedOutputInjectionRule",
-      "type": "object"
-    },
     "WorkflowAspectRatioPostprocessConfig": {
       "properties": {
-        "apply_to": {
-          "const": "all_visual_outputs",
-          "default": "all_visual_outputs",
-          "title": "Apply To",
-          "type": "string"
-        },
         "enabled": {
           "default": true,
           "title": "Enabled",
@@ -937,6 +853,12 @@
           "default": "stretch_exact",
           "title": "Mode",
           "type": "string"
+        },
+        "apply_to": {
+          "const": "all_visual_outputs",
+          "default": "all_visual_outputs",
+          "title": "Apply To",
+          "type": "string"
         }
       },
       "title": "WorkflowAspectRatioPostprocessConfig",
@@ -945,22 +867,26 @@
     "WorkflowAspectRatioStage": {
       "additionalProperties": false,
       "properties": {
-        "after": {
-          "items": {
-            "type": "string"
-          },
-          "title": "After",
-          "type": "array"
+        "id": {
+          "title": "Id",
+          "type": "string"
         },
-        "config": {
-          "$ref": "#/$defs/WorkflowAspectRatioStageConfig"
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
         },
-        "controls": {
-          "items": {
-            "$ref": "#/$defs/PipelineControl"
-          },
-          "title": "Controls",
-          "type": "array"
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
         },
         "description": {
           "anyOf": [
@@ -974,14 +900,19 @@
           "default": null,
           "title": "Description"
         },
-        "enabled": {
-          "default": true,
-          "title": "Enabled",
-          "type": "boolean"
+        "after": {
+          "items": {
+            "type": "string"
+          },
+          "title": "After",
+          "type": "array"
         },
-        "id": {
-          "title": "Id",
-          "type": "string"
+        "controls": {
+          "items": {
+            "$ref": "#/$defs/PipelineControl"
+          },
+          "title": "Controls",
+          "type": "array"
         },
         "kind": {
           "const": "aspect_ratio",
@@ -989,17 +920,8 @@
           "title": "Kind",
           "type": "string"
         },
-        "label": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Label"
+        "config": {
+          "$ref": "#/$defs/WorkflowAspectRatioStageConfig"
         },
         "targets": {
           "items": {
@@ -1017,8 +939,15 @@
     },
     "WorkflowAspectRatioStageConfig": {
       "properties": {
-        "postprocess": {
-          "$ref": "#/$defs/WorkflowAspectRatioPostprocessConfig"
+        "stride": {
+          "default": 16,
+          "title": "Stride",
+          "type": "integer"
+        },
+        "search_steps": {
+          "default": 2,
+          "title": "Search Steps",
+          "type": "integer"
         },
         "resolutions": {
           "items": {
@@ -1027,15 +956,8 @@
           "title": "Resolutions",
           "type": "array"
         },
-        "search_steps": {
-          "default": 2,
-          "title": "Search Steps",
-          "type": "integer"
-        },
-        "stride": {
-          "default": 16,
-          "title": "Stride",
-          "type": "integer"
+        "postprocess": {
+          "$ref": "#/$defs/WorkflowAspectRatioPostprocessConfig"
         }
       },
       "title": "WorkflowAspectRatioStageConfig",
@@ -1043,6 +965,11 @@
     },
     "WorkflowAtLeastNInputValidationRule": {
       "properties": {
+        "kind": {
+          "const": "at_least_n",
+          "title": "Kind",
+          "type": "string"
+        },
         "inputs": {
           "items": {
             "type": "string"
@@ -1050,10 +977,9 @@
           "title": "Inputs",
           "type": "array"
         },
-        "kind": {
-          "const": "at_least_n",
-          "title": "Kind",
-          "type": "string"
+        "min": {
+          "title": "Min",
+          "type": "integer"
         },
         "message": {
           "anyOf": [
@@ -1066,10 +992,6 @@
           ],
           "default": null,
           "title": "Message"
-        },
-        "min": {
-          "title": "Min",
-          "type": "integer"
         }
       },
       "required": [
@@ -1081,11 +1003,6 @@
     },
     "WorkflowConditionalBooleanOverride": {
       "properties": {
-        "value": {
-          "default": true,
-          "title": "Value",
-          "type": "boolean"
-        },
         "when": {
           "discriminator": {
             "mapping": {
@@ -1119,6 +1036,11 @@
             }
           ],
           "title": "When"
+        },
+        "value": {
+          "default": true,
+          "title": "Value",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1129,45 +1051,6 @@
     },
     "WorkflowDualSamplerDenoiseRule": {
       "properties": {
-        "base_split_step": {
-          "$ref": "#/$defs/WorkflowParamReference"
-        },
-        "group_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Id"
-        },
-        "group_order": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Order"
-        },
-        "group_title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Title"
-        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -1190,108 +1073,6 @@
           "default": null,
           "title": "Label"
         },
-        "split_step_targets": {
-          "items": {
-            "$ref": "#/$defs/WorkflowParamReference"
-          },
-          "title": "Split Step Targets",
-          "type": "array"
-        },
-        "start_step": {
-          "$ref": "#/$defs/WorkflowParamReference"
-        },
-        "total_steps": {
-          "$ref": "#/$defs/WorkflowParamReference"
-        }
-      },
-      "required": [
-        "id",
-        "total_steps",
-        "start_step",
-        "base_split_step"
-      ],
-      "title": "WorkflowDualSamplerDenoiseRule",
-      "type": "object"
-    },
-    "WorkflowFrontendControl": {
-      "properties": {
-        "control": {
-          "anyOf": [
-            {
-              "const": "slider",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Control"
-        },
-        "control_after_generate": {
-          "default": false,
-          "title": "Control After Generate",
-          "type": "boolean"
-        },
-        "default": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Default"
-        },
-        "default_overrides": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/WorkflowRuleWidgetDefaultOverride"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Default Overrides"
-        },
-        "default_randomize": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Default Randomize"
-        },
-        "false_value": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "False Value"
-        },
-        "frontend_only": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Frontend Only"
-        },
         "group_id": {
           "anyOf": [
             {
@@ -1303,18 +1084,6 @@
           ],
           "default": null,
           "title": "Group Id"
-        },
-        "group_order": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Order"
         },
         "group_title": {
           "anyOf": [
@@ -1328,6 +1097,87 @@
           "default": null,
           "title": "Group Title"
         },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
+        },
+        "total_steps": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        },
+        "start_step": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        },
+        "base_split_step": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        },
+        "split_step_targets": {
+          "items": {
+            "$ref": "#/$defs/WorkflowParamReference"
+          },
+          "title": "Split Step Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "total_steps",
+        "start_step",
+        "base_split_step"
+      ],
+      "title": "WorkflowDualSamplerDenoiseRule",
+      "type": "object"
+    },
+    "WorkflowFrontendControl": {
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "control_after_generate": {
+          "default": false,
+          "title": "Control After Generate",
+          "type": "boolean"
+        },
+        "default_randomize": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Randomize"
+        },
+        "frontend_only": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frontend Only"
+        },
         "hidden": {
           "anyOf": [
             {
@@ -1340,7 +1190,36 @@
           "default": null,
           "title": "Hidden"
         },
-        "label": {
+        "control": {
+          "anyOf": [
+            {
+              "const": "slider",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control"
+        },
+        "slider_display": {
+          "anyOf": [
+            {
+              "enum": [
+                "percent",
+                "number"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slider Display"
+        },
+        "unit": {
           "anyOf": [
             {
               "type": "string"
@@ -1350,7 +1229,58 @@
             }
           ],
           "default": null,
-          "title": "Label"
+          "title": "Unit"
+        },
+        "group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min"
         },
         "max": {
           "anyOf": [
@@ -1367,7 +1297,7 @@
           "default": null,
           "title": "Max"
         },
-        "min": {
+        "step": {
           "anyOf": [
             {
               "type": "integer"
@@ -1380,7 +1310,37 @@
             }
           ],
           "default": null,
-          "title": "Min"
+          "title": "Step"
+        },
+        "default": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "value_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "int",
+                "float",
+                "string",
+                "boolean",
+                "enum",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Type"
         },
         "options": {
           "anyOf": [
@@ -1410,37 +1370,6 @@
           "default": null,
           "title": "Options"
         },
-        "slider_display": {
-          "anyOf": [
-            {
-              "enum": [
-                "percent",
-                "number"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Slider Display"
-        },
-        "step": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Step"
-        },
         "true_value": {
           "anyOf": [
             {},
@@ -1451,37 +1380,30 @@
           "default": null,
           "title": "True Value"
         },
-        "unit": {
+        "false_value": {
           "anyOf": [
-            {
-              "type": "string"
-            },
+            {},
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Unit"
+          "title": "False Value"
         },
-        "value_type": {
+        "default_overrides": {
           "anyOf": [
             {
-              "enum": [
-                "int",
-                "float",
-                "string",
-                "boolean",
-                "enum",
-                "unknown"
-              ],
-              "type": "string"
+              "items": {
+                "$ref": "#/$defs/WorkflowRuleWidgetDefaultOverride"
+              },
+              "type": "array"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Value Type"
+          "title": "Default Overrides"
         }
       },
       "title": "WorkflowFrontendControl",
@@ -1489,18 +1411,18 @@
     },
     "WorkflowInputCondition": {
       "properties": {
+        "kind": {
+          "const": "at_least_one",
+          "default": "at_least_one",
+          "title": "Kind",
+          "type": "string"
+        },
         "inputs": {
           "items": {
             "type": "string"
           },
           "title": "Inputs",
           "type": "array"
-        },
-        "kind": {
-          "const": "at_least_one",
-          "default": "at_least_one",
-          "title": "Kind",
-          "type": "string"
         },
         "message": {
           "anyOf": [
@@ -1521,6 +1443,39 @@
     "WorkflowMaskProcessingStage": {
       "additionalProperties": false,
       "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
         "after": {
           "items": {
             "type": "string"
@@ -1535,44 +1490,11 @@
           "title": "Controls",
           "type": "array"
         },
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Description"
-        },
-        "enabled": {
-          "default": true,
-          "title": "Enabled",
-          "type": "boolean"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
         "kind": {
           "const": "mask_processing",
           "default": "mask_processing",
           "title": "Kind",
           "type": "string"
-        },
-        "label": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Label"
         },
         "targets": {
           "items": {
@@ -1591,34 +1513,6 @@
     "WorkflowMediaFallback": {
       "additionalProperties": false,
       "properties": {
-        "content_type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Content Type"
-        },
-        "filename": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Filename"
-        },
-        "input_type": {
-          "title": "Input Type",
-          "type": "string"
-        },
         "kind": {
           "const": "dummy",
           "default": "dummy",
@@ -1627,6 +1521,10 @@
         },
         "node_id": {
           "title": "Node Id",
+          "type": "string"
+        },
+        "input_type": {
+          "title": "Input Type",
           "type": "string"
         },
         "param": {
@@ -1640,6 +1538,30 @@
           ],
           "default": null,
           "title": "Param"
+        },
+        "filename": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Filename"
+        },
+        "content_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Type"
         },
         "synthetic": {
           "default": true,
@@ -1667,13 +1589,13 @@
     },
     "WorkflowOptionalInputValidationRule": {
       "properties": {
-        "input": {
-          "title": "Input",
-          "type": "string"
-        },
         "kind": {
           "const": "optional",
           "title": "Kind",
+          "type": "string"
+        },
+        "input": {
+          "title": "Input",
           "type": "string"
         },
         "message": {
@@ -1699,22 +1621,26 @@
     "WorkflowOutputAssemblyStage": {
       "additionalProperties": false,
       "properties": {
-        "after": {
-          "items": {
-            "type": "string"
-          },
-          "title": "After",
-          "type": "array"
+        "id": {
+          "title": "Id",
+          "type": "string"
         },
-        "config": {
-          "$ref": "#/$defs/WorkflowOutputAssemblyStageConfig"
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
         },
-        "controls": {
-          "items": {
-            "$ref": "#/$defs/PipelineControl"
-          },
-          "title": "Controls",
-          "type": "array"
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
         },
         "description": {
           "anyOf": [
@@ -1728,14 +1654,19 @@
           "default": null,
           "title": "Description"
         },
-        "enabled": {
-          "default": true,
-          "title": "Enabled",
-          "type": "boolean"
+        "after": {
+          "items": {
+            "type": "string"
+          },
+          "title": "After",
+          "type": "array"
         },
-        "id": {
-          "title": "Id",
-          "type": "string"
+        "controls": {
+          "items": {
+            "$ref": "#/$defs/PipelineControl"
+          },
+          "title": "Controls",
+          "type": "array"
         },
         "kind": {
           "const": "output_assembly",
@@ -1743,17 +1674,8 @@
           "title": "Kind",
           "type": "string"
         },
-        "label": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Label"
+        "config": {
+          "$ref": "#/$defs/WorkflowOutputAssemblyStageConfig"
         }
       },
       "required": [
@@ -1774,15 +1696,6 @@
           "title": "Mode",
           "type": "string"
         },
-        "on_failure": {
-          "default": "fallback_raw",
-          "enum": [
-            "fallback_raw",
-            "show_error"
-          ],
-          "title": "On Failure",
-          "type": "string"
-        },
         "panel_preview": {
           "default": "raw_outputs",
           "enum": [
@@ -1790,6 +1703,15 @@
             "replace_outputs"
           ],
           "title": "Panel Preview",
+          "type": "string"
+        },
+        "on_failure": {
+          "default": "fallback_raw",
+          "enum": [
+            "fallback_raw",
+            "show_error"
+          ],
+          "title": "On Failure",
           "type": "string"
         },
         "stitch_fps": {
@@ -1852,13 +1774,13 @@
     },
     "WorkflowRequiredInputValidationRule": {
       "properties": {
-        "input": {
-          "title": "Input",
-          "type": "string"
-        },
         "kind": {
           "const": "required",
           "title": "Kind",
+          "type": "string"
+        },
+        "input": {
+          "title": "Input",
           "type": "string"
         },
         "message": {
@@ -1884,20 +1806,6 @@
     "WorkflowRewriteRule": {
       "additionalProperties": false,
       "properties": {
-        "bypass": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Bypass",
-          "type": "array"
-        },
-        "set_widgets": {
-          "items": {
-            "$ref": "#/$defs/WorkflowRewriteWidgetOverride"
-          },
-          "title": "Set Widgets",
-          "type": "array"
-        },
         "when": {
           "discriminator": {
             "mapping": {
@@ -1931,6 +1839,20 @@
             }
           ],
           "title": "When"
+        },
+        "bypass": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Bypass",
+          "type": "array"
+        },
+        "set_widgets": {
+          "items": {
+            "$ref": "#/$defs/WorkflowRewriteWidgetOverride"
+          },
+          "title": "Set Widgets",
+          "type": "array"
         }
       },
       "required": [
@@ -1946,6 +1868,10 @@
           "title": "Node Id",
           "type": "string"
         },
+        "widget": {
+          "title": "Widget",
+          "type": "string"
+        },
         "value": {
           "anyOf": [
             {},
@@ -1955,10 +1881,6 @@
           ],
           "default": null,
           "title": "Value"
-        },
-        "widget": {
-          "title": "Widget",
-          "type": "string"
         }
       },
       "required": [
@@ -1991,18 +1913,6 @@
           "default": null,
           "title": "Ignore Overrides"
         },
-        "node_title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Node Title"
-        },
         "present": {
           "anyOf": [
             {
@@ -2013,24 +1923,6 @@
             }
           ],
           "default": null
-        },
-        "selection": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WorkflowRuleSelectionConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "widgets": {
-          "additionalProperties": {
-            "$ref": "#/$defs/WorkflowRuleWidgetEntry"
-          },
-          "title": "Widgets",
-          "type": "object"
         },
         "widgets_mode": {
           "anyOf": [
@@ -2047,14 +1939,26 @@
           ],
           "default": null,
           "title": "Widgets Mode"
-        }
-      },
-      "title": "WorkflowRuleNode",
-      "type": "object"
-    },
-    "WorkflowRuleNodePresent": {
-      "properties": {
-        "class_type": {
+        },
+        "widgets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/WorkflowRuleWidgetEntry"
+          },
+          "title": "Widgets",
+          "type": "object"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleSelectionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "node_title": {
           "anyOf": [
             {
               "type": "string"
@@ -2064,8 +1968,14 @@
             }
           ],
           "default": null,
-          "title": "Class Type"
-        },
+          "title": "Node Title"
+        }
+      },
+      "title": "WorkflowRuleNode",
+      "type": "object"
+    },
+    "WorkflowRuleNodePresent": {
+      "properties": {
         "enabled": {
           "anyOf": [
             {
@@ -2078,41 +1988,17 @@
           "default": null,
           "title": "Enabled"
         },
-        "group_id": {
+        "required": {
           "anyOf": [
             {
-              "type": "string"
+              "type": "boolean"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Group Id"
-        },
-        "group_order": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Order"
-        },
-        "group_title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Title"
+          "title": "Required"
         },
         "input_type": {
           "anyOf": [
@@ -2126,18 +2012,6 @@
           "default": null,
           "title": "Input Type"
         },
-        "label": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Label"
-        },
         "param": {
           "anyOf": [
             {
@@ -2150,17 +2024,65 @@
           "default": null,
           "title": "Param"
         },
-        "required": {
+        "label": {
           "anyOf": [
             {
-              "type": "boolean"
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Required"
+          "title": "Label"
+        },
+        "class_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Class Type"
+        },
+        "group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
         }
       },
       "title": "WorkflowRuleNodePresent",
@@ -2210,6 +2132,42 @@
     },
     "WorkflowRuleSlot": {
       "properties": {
+        "input_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Type"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "param": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Param"
+        },
         "experimental": {
           "anyOf": [
             {
@@ -2246,30 +2204,6 @@
           "default": null,
           "title": "Frame Step"
         },
-        "input_type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Input Type"
-        },
-        "label": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Label"
-        },
         "max_frames": {
           "anyOf": [
             {
@@ -2281,18 +2215,6 @@
           ],
           "default": null,
           "title": "Max Frames"
-        },
-        "param": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Param"
         }
       },
       "title": "WorkflowRuleSlot",
@@ -2300,16 +2222,6 @@
     },
     "WorkflowRuleWidgetDefaultOverride": {
       "properties": {
-        "value": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Value"
-        },
         "when": {
           "discriminator": {
             "mapping": {
@@ -2343,6 +2255,16 @@
             }
           ],
           "title": "When"
+        },
+        "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
         }
       },
       "required": [
@@ -2353,10 +2275,9 @@
     },
     "WorkflowRuleWidgetEntry": {
       "properties": {
-        "control": {
+        "label": {
           "anyOf": [
             {
-              "const": "slider",
               "type": "string"
             },
             {
@@ -2364,37 +2285,12 @@
             }
           ],
           "default": null,
-          "title": "Control"
+          "title": "Label"
         },
         "control_after_generate": {
           "default": false,
           "title": "Control After Generate",
           "type": "boolean"
-        },
-        "default": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Default"
-        },
-        "default_overrides": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/WorkflowRuleWidgetDefaultOverride"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Default Overrides"
         },
         "default_randomize": {
           "anyOf": [
@@ -2408,16 +2304,6 @@
           "default": null,
           "title": "Default Randomize"
         },
-        "false_value": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "False Value"
-        },
         "frontend_only": {
           "anyOf": [
             {
@@ -2429,42 +2315,6 @@
           ],
           "default": null,
           "title": "Frontend Only"
-        },
-        "group_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Id"
-        },
-        "group_order": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Order"
-        },
-        "group_title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Title"
         },
         "hidden": {
           "anyOf": [
@@ -2478,7 +2328,36 @@
           "default": null,
           "title": "Hidden"
         },
-        "label": {
+        "control": {
+          "anyOf": [
+            {
+              "const": "slider",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control"
+        },
+        "slider_display": {
+          "anyOf": [
+            {
+              "enum": [
+                "percent",
+                "number"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slider Display"
+        },
+        "unit": {
           "anyOf": [
             {
               "type": "string"
@@ -2488,7 +2367,58 @@
             }
           ],
           "default": null,
-          "title": "Label"
+          "title": "Unit"
+        },
+        "group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min"
         },
         "max": {
           "anyOf": [
@@ -2505,7 +2435,7 @@
           "default": null,
           "title": "Max"
         },
-        "min": {
+        "step": {
           "anyOf": [
             {
               "type": "integer"
@@ -2518,7 +2448,37 @@
             }
           ],
           "default": null,
-          "title": "Min"
+          "title": "Step"
+        },
+        "default": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "value_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "int",
+                "float",
+                "string",
+                "boolean",
+                "enum",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Type"
         },
         "options": {
           "anyOf": [
@@ -2548,37 +2508,6 @@
           "default": null,
           "title": "Options"
         },
-        "slider_display": {
-          "anyOf": [
-            {
-              "enum": [
-                "percent",
-                "number"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Slider Display"
-        },
-        "step": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Step"
-        },
         "true_value": {
           "anyOf": [
             {},
@@ -2589,37 +2518,30 @@
           "default": null,
           "title": "True Value"
         },
-        "unit": {
+        "false_value": {
           "anyOf": [
-            {
-              "type": "string"
-            },
+            {},
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Unit"
+          "title": "False Value"
         },
-        "value_type": {
+        "default_overrides": {
           "anyOf": [
             {
-              "enum": [
-                "int",
-                "float",
-                "string",
-                "boolean",
-                "enum",
-                "unknown"
-              ],
-              "type": "string"
+              "items": {
+                "$ref": "#/$defs/WorkflowRuleWidgetDefaultOverride"
+              },
+              "type": "array"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Value Type"
+          "title": "Default Overrides"
         }
       },
       "title": "WorkflowRuleWidgetEntry",
@@ -2627,18 +2549,18 @@
     },
     "WorkflowRuleWidgetInputPresenceCondition": {
       "properties": {
+        "kind": {
+          "const": "input_presence",
+          "default": "input_presence",
+          "title": "Kind",
+          "type": "string"
+        },
         "inputs": {
           "items": {
             "type": "string"
           },
           "title": "Inputs",
           "type": "array"
-        },
-        "kind": {
-          "const": "input_presence",
-          "default": "input_presence",
-          "title": "Kind",
-          "type": "string"
         },
         "match": {
           "default": "all_present",
@@ -2657,42 +2579,6 @@
     },
     "WorkflowSingleSamplerDenoiseRule": {
       "properties": {
-        "group_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Id"
-        },
-        "group_order": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Order"
-        },
-        "group_title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Title"
-        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -2715,10 +2601,46 @@
           "default": null,
           "title": "Label"
         },
-        "start_step": {
-          "$ref": "#/$defs/WorkflowParamReference"
+        "group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
         },
         "total_steps": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        },
+        "start_step": {
           "$ref": "#/$defs/WorkflowParamReference"
         }
       },
@@ -2764,55 +2686,6 @@
     "WorkflowVideoAudioRetakeRule": {
       "description": "Derived widget that exposes a 3-option retake-mode enum.\n\nThe selected mode drives two boolean bypass widgets: setting ``video_bypass``\nreplaces the video retake mask with a solid pass-through mask, and likewise\nfor ``audio_bypass``. Selecting \"both\" leaves both masks untouched.",
       "properties": {
-        "audio_bypass": {
-          "$ref": "#/$defs/WorkflowParamReference"
-        },
-        "default": {
-          "default": "Video & Audio",
-          "enum": [
-            "Video & Audio",
-            "Video",
-            "Audio"
-          ],
-          "title": "Default",
-          "type": "string"
-        },
-        "group_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Id"
-        },
-        "group_order": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Order"
-        },
-        "group_title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Group Title"
-        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -2835,7 +2708,56 @@
           "default": null,
           "title": "Label"
         },
+        "group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
+        },
+        "default": {
+          "enum": [
+            "Video & Audio",
+            "Video",
+            "Audio"
+          ],
+          "type": "string",
+          "default": "Video & Audio",
+          "title": "Default"
+        },
         "video_bypass": {
+          "$ref": "#/$defs/WorkflowParamReference"
+        },
+        "audio_bypass": {
           "$ref": "#/$defs/WorkflowParamReference"
         }
       },
@@ -2850,6 +2772,24 @@
   },
   "additionalProperties": false,
   "properties": {
+    "version": {
+      "const": 3,
+      "default": 3,
+      "title": "Version",
+      "type": "integer"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Name"
+    },
     "default_widgets_mode": {
       "anyOf": [
         {
@@ -2865,6 +2805,38 @@
       ],
       "default": null,
       "title": "Default Widgets Mode"
+    },
+    "nodes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/WorkflowRuleNode"
+      },
+      "title": "Nodes",
+      "type": "object"
+    },
+    "validation": {
+      "$ref": "#/$defs/WorkflowValidationConfig"
+    },
+    "input_conditions": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/WorkflowInputCondition"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Input Conditions"
+    },
+    "frontend_controls": {
+      "additionalProperties": {
+        "$ref": "#/$defs/WorkflowFrontendControl"
+      },
+      "title": "Frontend Controls",
+      "type": "object"
     },
     "derived_widgets": {
       "items": {
@@ -2891,6 +2863,13 @@
       "title": "Derived Widgets",
       "type": "array"
     },
+    "rewrites": {
+      "items": {
+        "$ref": "#/$defs/WorkflowRewriteRule"
+      },
+      "title": "Rewrites",
+      "type": "array"
+    },
     "effect_switches": {
       "items": {
         "$ref": "#/$defs/EffectSwitch"
@@ -2898,27 +2877,12 @@
       "title": "Effect Switches",
       "type": "array"
     },
-    "frontend_controls": {
+    "slots": {
       "additionalProperties": {
-        "$ref": "#/$defs/WorkflowFrontendControl"
+        "$ref": "#/$defs/WorkflowRuleSlot"
       },
-      "title": "Frontend Controls",
+      "title": "Slots",
       "type": "object"
-    },
-    "input_conditions": {
-      "anyOf": [
-        {
-          "items": {
-            "$ref": "#/$defs/WorkflowInputCondition"
-          },
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Input Conditions"
     },
     "media_fallbacks": {
       "items": {
@@ -2926,35 +2890,6 @@
       },
       "title": "Media Fallbacks",
       "type": "array"
-    },
-    "name": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Name"
-    },
-    "nodes": {
-      "additionalProperties": {
-        "$ref": "#/$defs/WorkflowRuleNode"
-      },
-      "title": "Nodes",
-      "type": "object"
-    },
-    "output_injections": {
-      "additionalProperties": {
-        "additionalProperties": {
-          "$ref": "#/$defs/ResolvedOutputInjectionRule"
-        },
-        "type": "object"
-      },
-      "title": "Output Injections",
-      "type": "object"
     },
     "pipeline": {
       "items": {
@@ -2980,29 +2915,6 @@
       },
       "title": "Pipeline",
       "type": "array"
-    },
-    "rewrites": {
-      "items": {
-        "$ref": "#/$defs/WorkflowRewriteRule"
-      },
-      "title": "Rewrites",
-      "type": "array"
-    },
-    "slots": {
-      "additionalProperties": {
-        "$ref": "#/$defs/WorkflowRuleSlot"
-      },
-      "title": "Slots",
-      "type": "object"
-    },
-    "validation": {
-      "$ref": "#/$defs/WorkflowValidationConfig"
-    },
-    "version": {
-      "const": 3,
-      "default": 3,
-      "title": "Version",
-      "type": "integer"
     }
   },
   "title": "ResolvedWorkflowRules",

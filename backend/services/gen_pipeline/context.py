@@ -39,7 +39,6 @@ class BackendPipelineContext:
         resolved_pipeline_controls: dict[str, dict[str, Any]] | None = None,
         stage_state: dict[str, dict[str, Any]] | None = None,
         comfyui_response: httpx.Response | None = None,
-        skip_graph_rewrite: bool = False,
     ) -> None:
         self.client = client
         self.client_id = client_id
@@ -77,7 +76,6 @@ class BackendPipelineContext:
             if isinstance(stage_id, str) and isinstance(values, dict)
         }
         self.comfyui_response = comfyui_response
-        self.skip_graph_rewrite = skip_graph_rewrite
 
         self._rules_model = default_resolved_rules_model()
         if rules_model is not None:

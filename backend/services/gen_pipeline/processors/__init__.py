@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from services.gen_pipeline.types import Processor
-from services.gen_pipeline.processors.apply_rules import create_apply_rules_processor
 from services.gen_pipeline.processors.aspect_ratio import create_aspect_ratio_processor
 from services.gen_pipeline.processors.inject_values import inject_values_processor
 from services.gen_pipeline.processors.load_rules import create_load_rules_processor
@@ -74,8 +73,9 @@ def build_backend_preprocessors(
 ) -> list[Processor]:
     """Build the backend preprocess phase.
 
-    These processors prepare and validate the request, rewrite the workflow,
-    preprocess media, and upload prepared media before dispatch.
+    These processors prepare and validate the request, preprocess media, and
+    upload prepared media before dispatch. Prompt topology is finalized by the
+    frontend graphToPrompt pre-resolution path.
     """
     return [
         inject_values_processor,
@@ -86,7 +86,6 @@ def build_backend_preprocessors(
         validate_inputs_processor,
         resolve_derived_widgets_processor,
         validate_widgets_processor,
-        create_apply_rules_processor(),
         widget_overrides_processor,
         resolve_pipeline_controls_processor,
         create_pipeline_stage_processor(

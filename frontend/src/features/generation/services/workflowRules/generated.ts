@@ -63,12 +63,6 @@ export interface MaskProcessingTarget {
   render_fps?: number | null;
 }
 
-export interface NodeOutputSource {
-  kind?: "node_output";
-  node_id: string;
-  output_index?: number;
-}
-
 export interface PipelineControl {
   key: string;
   label?: string | null;
@@ -107,11 +101,6 @@ export interface PipelineControlReference {
   kind?: "pipeline_control";
   stage_id: string;
   key: string;
-}
-
-export interface ResolvedOutputInjectionRule {
-  source: NodeOutputSource;
-  when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
 }
 
 export interface WorkflowAspectRatioPostprocessConfig {
@@ -376,7 +365,6 @@ export interface WorkflowRules {
   input_conditions?: Array<WorkflowInputCondition> | null;
   frontend_controls?: Record<string, WorkflowFrontendControl>;
   derived_widgets?: Array<WorkflowDualSamplerDenoiseRule | WorkflowSingleSamplerDenoiseRule | WorkflowVideoAudioRetakeRule>;
-  output_injections?: Record<string, Record<string, ResolvedOutputInjectionRule>>;
   rewrites?: Array<WorkflowRewriteRule>;
   effect_switches?: Array<EffectSwitch>;
   slots?: Record<string, WorkflowRuleSlot>;

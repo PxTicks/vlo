@@ -14,7 +14,6 @@
         }
       }
     },
-    "output_injections": {},
     "slots": {},
     "mask_cropping": {
       "mode": "crop",

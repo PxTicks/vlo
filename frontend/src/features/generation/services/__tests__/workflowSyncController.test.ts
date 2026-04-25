@@ -54,11 +54,12 @@ describe("workflowSyncController", () => {
     const result = await readWorkflowWithRetry(iframe, () => false, 300);
     expect(result).not.toBeNull();
     expect(result?.filename).toBe("wf.json");
-    expect(result?.workflow).toEqual({
-      "1": {
-        class_type: "LoadImage",
-        inputs: {},
-      },
+    // Visual-graph reads no longer synthesize a fake API workflow; only
+    // graphToPrompt produces one, so this path leaves `workflow` null.
+    expect(result?.workflow).toBeNull();
+    expect(result?.graphData).toEqual({
+      nodes: [{ id: 1, type: "LoadImage" }],
+      links: [],
     });
   });
 

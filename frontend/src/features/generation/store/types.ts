@@ -30,7 +30,9 @@ export type ComfyUIConnectionStatus =
   | "error";
 
 export interface TempWorkflow {
-  workflow: Record<string, unknown>;
+  // `null` until graphToPrompt has produced an API workflow for this temp
+  // tab; in that window only `graphData` is authoritative.
+  workflow: Record<string, unknown> | null;
   graphData: Record<string, unknown>;
   inputs: WorkflowInput[];
   name?: string;
@@ -124,12 +126,12 @@ export interface GenerationWorkflowState {
   reassignMediaInput: (sourceInputId: string, targetInputId: string) => void;
   clearMediaInput: (inputId: string) => void;
   syncWorkflow: (
-    workflow: Record<string, unknown>,
+    workflow: Record<string, unknown> | null,
     graphData: Record<string, unknown>,
     inputs: WorkflowInput[],
   ) => void;
   registerWorkflowFromEditor: (
-    workflow: Record<string, unknown>,
+    workflow: Record<string, unknown> | null,
     graphData: Record<string, unknown>,
     inputs: WorkflowInput[],
     filename: string | null,

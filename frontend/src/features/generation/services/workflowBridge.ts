@@ -187,125 +187,102 @@ function getWidgetValueIndexMap(
   return result;
 }
 
-interface GraphLinkReference {
-  sourceNodeId: string;
-  outputIndex: number;
-}
-
-function collectGraphLinkReferences(
-  graphData: Record<string, unknown>,
-): Map<number, GraphLinkReference> {
-  const result = new Map<number, GraphLinkReference>();
-  const links = graphData.links;
-  if (!Array.isArray(links)) return result;
-
-  for (const link of links) {
-    if (!Array.isArray(link) || link.length < 4) continue;
-
-    const [linkId, sourceNodeId, outputIndex] = link;
-    if (
-      typeof linkId !== "number" ||
-      (typeof sourceNodeId !== "string" && typeof sourceNodeId !== "number") ||
-      typeof outputIndex !== "number"
-    ) {
-      continue;
-    }
-
-    result.set(linkId, {
-      sourceNodeId: String(sourceNodeId),
-      outputIndex,
-    });
-  }
-
-  return result;
-}
-
 function normalizeNodeTitle(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function buildWorkflowEntryInputs(
-  graphNode: Record<string, unknown>,
-  graphLinks: ReadonlyMap<number, GraphLinkReference>,
-  classInfo: Record<string, unknown> | null,
-  mappedInputs: readonly InputNodeMapEntry[],
-): Record<string, unknown> {
-  const inputs: Record<string, unknown> = {};
-  const rawInputs = Array.isArray(graphNode.inputs) ? graphNode.inputs : [];
-
-  for (const input of rawInputs) {
-    if (!isRecord(input) || typeof input.name !== "string") continue;
-    const linkId = input.link;
-    if (typeof linkId !== "number") continue;
-
-    const link = graphLinks.get(linkId);
-    if (!link) continue;
-
-    inputs[input.name] = [link.sourceNodeId, link.outputIndex];
+function collectLinkedInputNames(node: Record<string, unknown>): Set<string> {
+  const linked = new Set<string>();
+  const rawInputs = Array.isArray(node.inputs) ? node.inputs : [];
+  for (const entry of rawInputs) {
+    if (!isRecord(entry) || typeof entry.name !== "string") continue;
+    if (typeof entry.link === "number") linked.add(entry.name);
   }
-
-  const widgetsValues = Array.isArray(graphNode.widgets_values)
-    ? graphNode.widgets_values
-    : [];
-  const widgetIndexMap = getWidgetValueIndexMap(classInfo);
-
-  for (const [param, widgetIndex] of widgetIndexMap.entries()) {
-    if (inputs[param] !== undefined) continue;
-    if (widgetIndex >= widgetsValues.length) continue;
-    inputs[param] = widgetsValues[widgetIndex];
-  }
-
-  if (widgetsValues.length > 0 && mappedInputs.length === 1) {
-    const [mapping] = mappedInputs;
-    if (mapping && inputs[mapping.param] === undefined) {
-      inputs[mapping.param] = widgetsValues[0];
-    }
-  }
-
-  return inputs;
+  return linked;
 }
 
-export function buildWorkflowFromGraphData(
+/**
+ * Discover panel input nodes directly from a ComfyUI visual workflow graph.
+ *
+ * This walks the LiteGraph `nodes[]` array — class_type comes from
+ * `node.type`, the panel title from `node.title`, and the current widget
+ * value from `widgets_values` resolved via the object_info widget index map
+ * for the class. No API-shape projection happens; this is the cheap "I have
+ * a visual graph, populate the panel" path.
+ *
+ * The return shape mirrors `parseWorkflowInputs` so call sites can use
+ * either source interchangeably.
+ *
+ * NOTE: This is for input discovery only. It is NEVER a substitute for
+ * `app.graphToPrompt()` and MUST NEVER be the source of an execution
+ * payload — see `captureSubmittedWorkflow` in `executionStoreState.ts`,
+ * which is the single source of truth for workflows actually submitted to
+ * ComfyUI.
+ */
+export function parseInputsFromGraphData(
   graphData: Record<string, unknown>,
   options: {
     inputNodeMap?: InputNodeMap | null;
     objectInfo?: Record<string, unknown> | null;
   } = {},
-): Record<string, unknown> {
-  const workflow: Record<string, unknown> = {};
+): WorkflowInput[] {
   const nodes = Array.isArray(graphData.nodes) ? graphData.nodes : [];
-  const graphLinks = collectGraphLinkReferences(graphData);
   const nodeMap = options.inputNodeMap ?? INPUT_NODE_MAP;
   const objectInfo = options.objectInfo ?? null;
+  const inputs: WorkflowInput[] = [];
 
   for (const node of nodes) {
     if (!isRecord(node) || node.id == null || typeof node.type !== "string") {
       continue;
     }
-
-    const nodeId = String(node.id);
     const classType = node.type.trim();
     if (!classType) continue;
 
-    const classInfo = resolveClassInfo(objectInfo, classType);
-    const inputs = buildWorkflowEntryInputs(
-      node,
-      graphLinks,
-      classInfo,
-      nodeMap[classType] ?? [],
-    );
-    const title = normalizeNodeTitle(node.title);
+    const mappings = nodeMap[classType] ?? [];
+    if (mappings.length === 0) continue;
 
-    workflow[nodeId] = {
-      class_type: classType,
-      inputs,
-      ...(title ? { _meta: { title } } : {}),
-    };
+    const nodeId = String(node.id);
+    const nodeTitle = normalizeNodeTitle(node.title) ?? classType;
+    const hasMultipleMappings = mappings.length > 1;
+
+    const widgetsValues = Array.isArray(node.widgets_values)
+      ? node.widgets_values
+      : [];
+    const classInfo = resolveClassInfo(objectInfo, classType);
+    const widgetIndexMap = getWidgetValueIndexMap(classInfo);
+    const linkedParams = collectLinkedInputNames(node);
+
+    for (const mapping of mappings) {
+      let currentValue: unknown = null;
+      if (!linkedParams.has(mapping.param)) {
+        const widgetIndex = widgetIndexMap.get(mapping.param);
+        if (widgetIndex !== undefined && widgetIndex < widgetsValues.length) {
+          currentValue = widgetsValues[widgetIndex];
+        } else if (mappings.length === 1 && widgetsValues.length > 0) {
+          // Fallback for classes whose object_info we don't have:
+          // single-mapping nodes like LoadImage put the path at slot 0.
+          currentValue = widgetsValues[0];
+        }
+      }
+
+      inputs.push({
+        id: buildWorkflowInputId(nodeId, mapping.param),
+        nodeId,
+        classType,
+        inputType: mapping.inputType,
+        param: mapping.param,
+        label: resolveWorkflowInputLabel(nodeTitle, mapping, hasMultipleMappings),
+        description: mapping.description ?? null,
+        currentValue,
+        origin: "inferred",
+        dispatch: { kind: "node" },
+      });
+    }
   }
 
-  return workflow;
+  return inputs;
 }
 
 export function buildWorkflowResultFromGraphData(
@@ -316,13 +293,13 @@ export function buildWorkflowResultFromGraphData(
     objectInfo?: Record<string, unknown> | null;
   } = {},
 ): WorkflowReadResult {
-  const workflow = buildWorkflowFromGraphData(graphData, options);
-  const inputs = parseWorkflowInputs(workflow, options.inputNodeMap);
-
+  // No API-shape projection — `workflow` is null. Anything that genuinely
+  // needs an API workflow (i.e. the submission payload) must obtain it via
+  // `app.graphToPrompt()`, never through this path.
   return {
-    workflow,
+    workflow: null,
     graphData,
-    inputs,
+    inputs: parseInputsFromGraphData(graphData, options),
     filename,
   };
 }
@@ -389,7 +366,10 @@ export type WorkflowReadStatus =
   | "unavailable";
 
 export interface WorkflowReadResult {
-  workflow: Record<string, unknown>;
+  // Populated ONLY when produced by `app.graphToPrompt()` (the iframe
+  // round-trip path). `null` when the result was synthesized from the
+  // visual graph alone (input-discovery only). Never a fake API shape.
+  workflow: Record<string, unknown> | null;
   graphData: Record<string, unknown>;
   inputs: WorkflowInput[];
   filename: string | null;

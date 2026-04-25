@@ -503,17 +503,22 @@ export async function getWorkflowRules(
 }
 
 export async function resolveWorkflowRules(options: {
-  workflow: Record<string, unknown>;
+  workflow: Record<string, unknown> | null;
   graphData?: Record<string, unknown> | null;
   workflowId?: string | null;
 }): Promise<WorkflowRulesResponse> {
+  // Backend always prefers `graph_data` when provided. The `workflow`
+  // field on the wire is only a structural fallback, so when we don't have
+  // a graphToPrompt result yet we send `graph_data` under both keys
+  // rather than synthesizing a fake API workflow.
+  const workflowPayload = options.workflow ?? options.graphData ?? {};
   const resp = await fetch(`${COMFY_API}/workflow/rules/resolve`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      workflow: options.workflow,
+      workflow: workflowPayload,
       ...(options.graphData ? { graph_data: options.graphData } : {}),
       ...(options.workflowId ? { workflow_id: options.workflowId } : {}),
     }),

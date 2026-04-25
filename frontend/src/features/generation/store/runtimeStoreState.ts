@@ -80,8 +80,8 @@ export function buildRuntimeStoreState(
             state.isWorkflowLoading
           ) {
             nextState.isWorkflowLoading = false;
-            nextState.workflowLoadState = state.syncedWorkflow ? "ready" : "error";
-            nextState.isWorkflowReady = state.syncedWorkflow !== null;
+            nextState.workflowLoadState = state.syncedGraphData ? "ready" : "error";
+            nextState.isWorkflowReady = state.syncedGraphData !== null;
             nextState.workflowLoadError =
               runtimeStatus.comfyui.error ??
               "ComfyUI is unavailable. Start it and retry loading inputs.";
@@ -112,8 +112,8 @@ export function buildRuntimeStoreState(
           ...(state.isWorkflowLoading
             ? {
                 isWorkflowLoading: false,
-                workflowLoadState: state.syncedWorkflow ? "ready" : "error",
-                isWorkflowReady: state.syncedWorkflow !== null,
+                workflowLoadState: state.syncedGraphData ? "ready" : "error",
+                isWorkflowReady: state.syncedGraphData !== null,
                 workflowLoadError: message,
               }
             : {}),

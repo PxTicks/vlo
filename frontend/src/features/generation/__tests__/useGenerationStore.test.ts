@@ -95,6 +95,11 @@ describe("useGenerationStore workflow rules", () => {
 
     useGenerationStore.setState({
       editorRef: null,
+      // Tests don't mount the ComfyUI iframe, so disable the
+      // graphToPrompt-based submission capture and let the dispatch fall
+      // back to the workflow already on the plan. Production code keeps
+      // this enabled so submissions always go through graphToPrompt.
+      preResolvedPromptEnabled: false,
       connectionStatus: "connected",
       runtimeStatus: {
         backend: {

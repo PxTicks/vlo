@@ -155,7 +155,7 @@ export function buildWorkflowStoreState(
             ? "ready"
             : "idle",
         workflowLoadError: loading ? null : state.workflowLoadError,
-        isWorkflowReady: !loading && state.syncedWorkflow !== null,
+        isWorkflowReady: !loading && state.syncedGraphData !== null,
       })),
 
     setWorkflowLoadState: (workflowLoadState) =>
@@ -165,7 +165,7 @@ export function buildWorkflowStoreState(
         workflowLoadError:
           workflowLoadState === "loading" ? null : state.workflowLoadError,
         isWorkflowReady:
-          workflowLoadState === "ready" && state.syncedWorkflow !== null,
+          workflowLoadState === "ready" && state.syncedGraphData !== null,
       })),
 
     clearWorkflowWarning: () => set({ workflowWarning: null }),
@@ -424,8 +424,8 @@ export function buildWorkflowStoreState(
         set((state) => ({
           workflowLoadError: message,
           isWorkflowLoading: false,
-          workflowLoadState: state.syncedWorkflow ? "ready" : "error",
-          isWorkflowReady: state.syncedWorkflow !== null,
+          workflowLoadState: state.syncedGraphData ? "ready" : "error",
+          isWorkflowReady: state.syncedGraphData !== null,
         }));
       }
     },
@@ -637,8 +637,8 @@ export function buildWorkflowStoreState(
         if (!deferred && !stale) {
           set((state) => ({
             isWorkflowLoading: false,
-            workflowLoadState: state.syncedWorkflow ? "ready" : "error",
-            isWorkflowReady: state.syncedWorkflow !== null,
+            workflowLoadState: state.syncedGraphData ? "ready" : "error",
+            isWorkflowReady: state.syncedGraphData !== null,
           }));
         }
       }
@@ -835,8 +835,8 @@ export function buildWorkflowStoreState(
 
           set((currentState) => ({
             isWorkflowLoading: false,
-            workflowLoadState: currentState.syncedWorkflow ? "ready" : "error",
-            isWorkflowReady: currentState.syncedWorkflow !== null,
+            workflowLoadState: currentState.syncedGraphData ? "ready" : "error",
+            isWorkflowReady: currentState.syncedGraphData !== null,
           }));
         }
       } catch (error) {

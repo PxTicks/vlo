@@ -1020,7 +1020,9 @@ describe("useGenerationStore workflow editor sync", () => {
 
     const state = useGenerationStore.getState();
     expect(workflowSyncController.injectWorkflowAndRead).toHaveBeenCalled();
-    expect(state.syncedWorkflow).toEqual({});
+    // syncedWorkflow stays null until graphToPrompt produces an API
+    // workflow; the panel becomes ready off the graphData seed alone.
+    expect(state.syncedWorkflow).toBeNull();
     expect(state.syncedGraphData).toEqual({ source: "backend" });
     expect(state.isWorkflowReady).toBe(true);
     expect(state.workflowLoadState).toBe("ready");

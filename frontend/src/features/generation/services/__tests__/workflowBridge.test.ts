@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildWorkflowFromGraphData,
   buildWorkflowResultFromGraphData,
+  parseInputsFromGraphData,
   parseWorkflowInputs,
   readActiveWorkflowFromIframe,
   readWorkflowFromIframe,
@@ -182,13 +182,7 @@ describe("workflowBridge", () => {
       },
     );
 
-    expect(result.workflow).toEqual({
-      "145": {
-        class_type: "LoadImage",
-        inputs: { image: "source.png" },
-        _meta: { title: "Source image" },
-      },
-    });
+    expect(result.workflow).toBeNull();
     expect(result.inputs).toEqual([
       {
         id: "145:image",
@@ -207,13 +201,14 @@ describe("workflowBridge", () => {
     ]);
   });
 
-  it("preserves activeState links when deriving an API-like workflow", () => {
-    const workflow = buildWorkflowFromGraphData(
+  it("derives panel inputs directly from a visual graph without round-tripping API shape", () => {
+    const inputs = parseInputsFromGraphData(
       {
         nodes: [
           {
             id: 1,
             type: "LoadImage",
+            title: "Start frame",
             widgets_values: ["source.png"],
           },
           {
@@ -225,6 +220,14 @@ describe("workflowBridge", () => {
         links: [[10, 1, 0, 2, 0, "IMAGE"]],
       },
       {
+        inputNodeMap: {
+          LoadImage: [
+            {
+              inputType: "image",
+              param: "image",
+            },
+          ],
+        },
         objectInfo: {
           LoadImage: {
             input: {
@@ -240,16 +243,20 @@ describe("workflowBridge", () => {
       },
     );
 
-    expect(workflow).toEqual({
-      "1": {
-        class_type: "LoadImage",
-        inputs: { image: "source.png" },
+    expect(inputs).toEqual([
+      {
+        id: "1:image",
+        nodeId: "1",
+        classType: "LoadImage",
+        inputType: "image",
+        param: "image",
+        label: "Start frame",
+        description: null,
+        currentValue: "source.png",
+        origin: "inferred",
+        dispatch: { kind: "node" },
       },
-      "2": {
-        class_type: "PreviewImage",
-        inputs: { images: ["1", 0] },
-      },
-    });
+    ]);
   });
 
   it("classifies InvalidLinkError graph reads as transient invalid graph states", async () => {

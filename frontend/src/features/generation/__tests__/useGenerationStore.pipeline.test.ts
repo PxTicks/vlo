@@ -257,6 +257,10 @@ function makeReadyStoreState(): void {
       connect: () => {},
       disconnect: () => {},
     } as never,
+    // Disable the graphToPrompt-based submission capture for tests that
+    // don't mount a real ComfyUI iframe; tests that DO want to exercise the
+    // capture path set their own iframe-shaped editorRef and re-enable it.
+    preResolvedPromptEnabled: false,
     connectionStatus: "connected",
     runtimeStatus: {
       backend: {
@@ -1311,6 +1315,9 @@ describe("useGenerationStore pipeline phases", () => {
       activeWorkflowRules: queuedRules,
       rulesWorkflowSourceId: "video_ltx2_3_retake.json",
       editorRef: {} as HTMLIFrameElement,
+      // Re-enable for the test that exercises the graphToPrompt-based
+      // submission capture; makeReadyStoreState defaults to disabled.
+      preResolvedPromptEnabled: true,
     });
 
     const submitPromise = useGenerationStore.getState().submitGeneration({});
@@ -1429,6 +1436,7 @@ describe("useGenerationStore pipeline phases", () => {
       activeWorkflowRules: queuedRules,
       rulesWorkflowSourceId: "video_ltx2_3_retake.json",
       editorRef: {} as HTMLIFrameElement,
+      preResolvedPromptEnabled: true,
       jobs: new Map([
         [
           "active-job",

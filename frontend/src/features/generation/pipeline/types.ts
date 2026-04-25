@@ -108,7 +108,16 @@ export interface GenerationWorkflowSnapshot {
   workflowId: string | null;
   workflowRules: WorkflowRules | null;
   workflowInputs: WorkflowInput[];
-  preResolvedWorkflow?: Record<string, unknown> | null;
+  // The exact workflow payload to POST to the backend. Always produced by
+  // ComfyUI's `app.graphToPrompt()` (via preResolvePrompt) at submission
+  // time, never by buildWorkflowFromGraphData. `null` only until the
+  // submission step has captured it.
+  submittedWorkflow?: Record<string, unknown> | null;
+  // True iff the frontend evaluated workflow rules (bypasses, widget
+  // overrides) and mutated the live graph before graphToPrompt resolved
+  // it. Drives the backend's `prompt_is_pre_resolved` flag — when true
+  // the backend skips its own rule-driven rewrite step.
+  frontendRulesApplied?: boolean;
 }
 
 export interface GenerationPreprocessPlan {

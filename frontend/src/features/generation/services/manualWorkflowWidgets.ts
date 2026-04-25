@@ -35,6 +35,14 @@ function resolveGraphNode(
   return isRecord(node) ? node : null;
 }
 
+function resolveGraphNodes(
+  graphData: Record<string, unknown> | null,
+): Record<string, unknown>[] {
+  const nodes = graphData?.nodes;
+  if (!Array.isArray(nodes)) return [];
+  return nodes.filter(isRecord);
+}
+
 function resolveNodeTitle(
   nodeId: string,
   node: Record<string, unknown>,
@@ -244,6 +252,7 @@ function hasOwnProperty(record: Record<string, unknown>, key: string): boolean {
 function shouldIncludeObjectInfoWidget(
   param: string,
   nodeTitle: string,
+  classType: string | undefined,
   definition: [unknown, Record<string, unknown>] | null,
 ): boolean {
   if (!definition) {
@@ -256,6 +265,13 @@ function shouldIncludeObjectInfoWidget(
     return false;
   }
 
+  if (
+    param.trim().toLowerCase() === "cfg" &&
+    (classType === "KSampler" || classType === "KSamplerAdvanced")
+  ) {
+    return true;
+  }
+
   return opts.control_after_generate === true || isManualWidgetParam(param, nodeTitle);
 }
 
@@ -264,13 +280,34 @@ export function resolveManualWidgetInputs(
   objectInfo: Record<string, unknown> | null,
   graphData: Record<string, unknown> | null = null,
 ): WorkflowWidgetInput[] {
-  if (!workflow) {
+  if (!workflow && !graphData) {
     return [];
   }
 
   const widgets: WorkflowWidgetInput[] = [];
+  const graphOnlyNodes = !workflow
+    ? resolveGraphNodes(graphData).flatMap((node) => {
+        if (node.id == null) return [];
+        const nodeId = String(node.id);
+        const classType = typeof node.type === "string" ? node.type : undefined;
+        return [[
+          nodeId,
+          {
+            class_type: classType,
+            inputs: {},
+            _meta: {
+              title:
+                typeof node.title === "string"
+                  ? node.title
+                  : classType ?? `Node ${nodeId}`,
+            },
+          },
+        ] as const];
+      })
+    : [];
+  const workflowEntries = workflow ? Object.entries(workflow) : graphOnlyNodes;
 
-  for (const [nodeId, nodeData] of Object.entries(workflow)) {
+  for (const [nodeId, nodeData] of workflowEntries) {
     if (!isRecord(nodeData)) continue;
 
     const nodeInputs = isRecord(nodeData.inputs) ? nodeData.inputs : {};
@@ -283,7 +320,7 @@ export function resolveManualWidgetInputs(
 
     for (const param of getOrderedObjectInfoParams(inputSpec, classInfo)) {
       const definition = resolveParamDefinition(inputSpec, param);
-      if (shouldIncludeObjectInfoWidget(param, nodeTitle, definition)) {
+      if (shouldIncludeObjectInfoWidget(param, nodeTitle, classType, definition)) {
         candidateParams.add(param);
       }
     }

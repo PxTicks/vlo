@@ -31,7 +31,10 @@ import {
   extractAudioFromSelection,
 } from "../utils/manualSlotMedia";
 import { resolveWidgetInputs } from "../store/workflowState";
-import { parseWorkflowInputs } from "../services/workflowBridge";
+import {
+  parseInputsFromGraphData,
+  parseWorkflowInputs,
+} from "../services/workflowBridge";
 import {
   DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
   DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
@@ -376,8 +379,15 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   );
   const manualWorkflowInputs = useMemo(
     () =>
-      syncedWorkflow ? parseWorkflowInputs(syncedWorkflow, inputNodeMap) : [],
-    [inputNodeMap, syncedWorkflow],
+      syncedWorkflow
+        ? parseWorkflowInputs(syncedWorkflow, inputNodeMap)
+        : syncedGraphData
+          ? parseInputsFromGraphData(syncedGraphData, {
+              inputNodeMap,
+              objectInfo: rawObjectInfo,
+            })
+          : [],
+    [inputNodeMap, rawObjectInfo, syncedGraphData, syncedWorkflow],
   );
   const manualWidgetInputs = useMemo(
     () =>

@@ -89,6 +89,55 @@ describe("resolveManualWidgetInputs", () => {
     expect(widgets[1]?.config.valueType).toBe("float");
   });
 
+  it("discovers sampler controls directly from graph data", () => {
+    const widgets = resolveManualWidgetInputs(
+      null,
+      {
+        KSamplerAdvanced: {
+          input: {
+            required: {
+              add_noise: [["enable", "disable"], {}],
+              noise_seed: [
+                "INT",
+                {
+                  control_after_generate: true,
+                  default: 0,
+                },
+              ],
+              steps: ["INT", {}],
+              cfg: [
+                "FLOAT",
+                {
+                  default: 8,
+                },
+              ],
+            },
+          },
+          input_order: {
+            required: ["add_noise", "noise_seed", "steps", "cfg"],
+          },
+        },
+      },
+      {
+        nodes: [
+          {
+            id: 57,
+            type: "KSamplerAdvanced",
+            title: "KSampler 1",
+            widgets_values: ["enable", 6332, "randomize", 10, 2],
+          },
+        ],
+      },
+    );
+
+    expect(widgets.map((widget) => widget.param)).toEqual([
+      "noise_seed",
+      "cfg",
+    ]);
+    expect(widgets[0]?.currentValue).toBe(6332);
+    expect(widgets[1]?.currentValue).toBe(2);
+  });
+
   it("uses the node title for seed-like proxy value widgets", () => {
     const widgets = resolveManualWidgetInputs(
       {

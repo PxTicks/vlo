@@ -512,8 +512,9 @@ export function resolveWidgetInputsFromRules(
     objectInfo?: Record<string, unknown> | null;
   } = {},
 ): WorkflowWidgetInput[] {
-  if (!workflow) {
-    console.debug("[resolveWidgetInputs] No workflow provided");
+  const workflowNodes = workflow ?? {};
+  if (!workflow && !options.graphData) {
+    console.debug("[resolveWidgetInputs] No workflow or graph data provided");
     return [];
   }
 
@@ -528,8 +529,8 @@ export function resolveWidgetInputsFromRules(
   );
   console.info(
     "[resolveWidgetInputs] Workflow has %d node IDs: %s",
-    Object.keys(workflow).length,
-    Object.keys(workflow).slice(0, 20),
+    Object.keys(workflowNodes).length,
+    Object.keys(workflowNodes).slice(0, 20),
   );
 
   const rawWidgets: WorkflowWidgetInput[] = [];
@@ -539,27 +540,43 @@ export function resolveWidgetInputsFromRules(
     const widgetDefs = nodeRule.widgets;
     if (!widgetDefs) continue;
 
-    const nodeData = workflow[nodeId];
-    const nodeExists = isRecord(nodeData);
+    const nodeData = workflowNodes[nodeId];
+    const workflowNode = isRecord(nodeData) ? nodeData : null;
+    const graphNode = resolveGraphNode(options.graphData, nodeId);
+    const nodeExists = workflowNode !== null || graphNode !== null;
     if (!nodeExists) {
       console.debug(
         "[resolveWidgetInputs] Node %s has widget rules but is not in workflow (keys sample: %s)",
         nodeId,
-        Object.keys(workflow).slice(0, 10),
+        Object.keys(workflowNodes).slice(0, 10),
       );
     }
     const nodeInputs =
-      nodeExists && isRecord(nodeData.inputs) ? nodeData.inputs : {};
+      workflowNode && isRecord(workflowNode.inputs) ? workflowNode.inputs : {};
     const classType =
-      nodeExists && typeof nodeData.class_type === "string"
-        ? nodeData.class_type
-        : undefined;
+      workflowNode && typeof workflowNode.class_type === "string"
+        ? workflowNode.class_type
+        : typeof graphNode?.type === "string"
+          ? graphNode.type
+          : undefined;
 
     for (const [param, entry] of Object.entries(widgetDefs)) {
       const hasExplicitDefault = Object.prototype.hasOwnProperty.call(
         entry,
         "default",
       );
+      const hasWorkflowParam = hasOwnKey(nodeInputs, param);
+      const resolvedGraphValue =
+        !hasWorkflowParam && entry.frontend_only !== true
+          ? resolveGraphWidgetValue(
+              options.graphData,
+              nodeId,
+              classType,
+              param,
+              options.objectInfo,
+            )
+          : undefined;
+      const hasGraphValue = resolvedGraphValue !== undefined;
       if (!nodeExists && !(entry.frontend_only === true && hasExplicitDefault)) {
         console.debug(
           "[resolveWidgetInputs] Skipping %s.%s: node is not present in workflow",
@@ -569,8 +586,12 @@ export function resolveWidgetInputsFromRules(
         continue;
       }
 
-      const hasWorkflowParam = hasOwnKey(nodeInputs, param);
-      if (!hasWorkflowParam && entry.frontend_only !== true && !hasExplicitDefault) {
+      if (
+        !hasWorkflowParam &&
+        !hasGraphValue &&
+        entry.frontend_only !== true &&
+        !hasExplicitDefault
+      ) {
         console.debug(
           "[resolveWidgetInputs] Skipping %s.%s: param is not present in workflow node inputs",
           nodeId,
@@ -589,17 +610,6 @@ export function resolveWidgetInputsFromRules(
         );
         continue;
       }
-
-      const graphValue =
-        !hasWorkflowParam && entry.frontend_only !== true
-          ? resolveGraphWidgetValue(
-              options.graphData,
-              nodeId,
-              classType,
-              param,
-              options.objectInfo,
-            )
-          : undefined;
 
       const config: WidgetInputConfig = {
         label: entry.label ?? param,
@@ -632,7 +642,7 @@ export function resolveWidgetInputsFromRules(
         param,
         config,
         currentValue: mapStoredWidgetValue(
-          rawValue ?? graphValue ?? config.defaultValue ?? null,
+          rawValue ?? resolvedGraphValue ?? config.defaultValue ?? null,
           config,
         ),
       });
@@ -640,7 +650,7 @@ export function resolveWidgetInputsFromRules(
   }
 
   const frontendControls = resolveFrontendControlInputs(rules);
-  const derivedWidgets = resolveDerivedWidgetInputs(workflow, rules);
+  const derivedWidgets = resolveDerivedWidgetInputs(workflowNodes, rules);
   const result = [...frontendControls, ...rawWidgets, ...derivedWidgets];
 
   console.info("[resolveWidgetInputs] Resolved %d widget inputs", result.length);

@@ -58,9 +58,7 @@
           "label": "Length",
           "when": {
             "kind": "input_presence",
-            "inputs": [
-              "89"
-            ],
+            "inputs": ["89"],
             "match": "all_missing"
           },
           "value_type": "int",
@@ -131,10 +129,7 @@
     "inputs": [
       {
         "kind": "at_least_n",
-        "inputs": [
-          "68",
-          "62"
-        ],
+        "inputs": ["68", "62"],
         "min": 1,
         "message": "Provide at least one frame input."
       },
@@ -151,9 +146,7 @@
       "label": "Denoise",
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "89"
-        ],
+        "inputs": ["89"],
         "match": "all_present"
       },
       "group_id": "video_generation",
@@ -187,9 +180,7 @@
     {
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "89"
-        ],
+        "inputs": ["89"],
         "match": "all_present"
       },
       "set_widgets": [
@@ -203,17 +194,9 @@
     {
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "89"
-        ],
+        "inputs": ["89"],
         "match": "all_missing"
       },
-      "bypass": [
-        "89",
-        "90",
-        "88",
-        "80"
-      ],
       "set_widgets": [
         {
           "node_id": "91",
@@ -232,10 +215,7 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [
-          480,
-          720
-        ],
+        "resolutions": [480, 720],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -270,10 +250,7 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [
-            480,
-            720
-          ],
+          "options": [480, 720],
           "default": 720
         },
         {

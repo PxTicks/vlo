@@ -2,17 +2,10 @@ import type {
   GenerationDeliveryMessage,
 } from "./generationDeliveryApi";
 import { parseGenerationDeliveryMessage } from "./generationDeliveryApi";
-import {
-  parseBinaryPreviewPayload,
-  type ParsedBinaryPreview,
-} from "./previewBinary";
 
 export type GenerationDeliveryConnectionState = "connected" | "disconnected";
 export type GenerationDeliveryMessageHandler = (
   message: GenerationDeliveryMessage,
-) => void;
-export type GenerationDeliveryPreviewHandler = (
-  preview: ParsedBinaryPreview,
 ) => void;
 export type GenerationDeliveryConnectionChangeHandler = (
   state: GenerationDeliveryConnectionState,
@@ -25,8 +18,6 @@ export class GenerationDeliveryWebSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
   private readonly messageHandlers = new Set<GenerationDeliveryMessageHandler>();
-  private readonly previewHandlers =
-    new Set<GenerationDeliveryPreviewHandler>();
   private readonly connectionChangeHandlers =
     new Set<GenerationDeliveryConnectionChangeHandler>();
 
@@ -56,7 +47,6 @@ export class GenerationDeliveryWebSocket {
       `/app/generation-delivery/ws?${query.toString()}`;
 
     this.ws = new WebSocket(wsUrl);
-    this.ws.binaryType = "arraybuffer";
     this.ws.onopen = () => {
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
@@ -65,16 +55,6 @@ export class GenerationDeliveryWebSocket {
       this.notifyConnectionChange("connected");
     };
     this.ws.onmessage = (event: MessageEvent) => {
-      if (event.data instanceof ArrayBuffer) {
-        const parsed = parseBinaryPreviewPayload(event.data);
-        if (!parsed) {
-          return;
-        }
-        for (const handler of this.previewHandlers) {
-          handler(parsed);
-        }
-        return;
-      }
       if (typeof event.data !== "string") {
         return;
       }
@@ -137,13 +117,6 @@ export class GenerationDeliveryWebSocket {
     this.messageHandlers.add(handler);
     return () => {
       this.messageHandlers.delete(handler);
-    };
-  }
-
-  onPreview(handler: GenerationDeliveryPreviewHandler): () => void {
-    this.previewHandlers.add(handler);
-    return () => {
-      this.previewHandlers.delete(handler);
     };
   }
 

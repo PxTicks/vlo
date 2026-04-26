@@ -194,6 +194,7 @@ class WorkflowRuleWidgetDefaultOverride(WorkflowRuleBaseModel):
 
 class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     label: str | None = None
+    when: ConditionExpression | None = None
     control_after_generate: bool = False
     default_randomize: bool | None = None
     frontend_only: bool | None = None
@@ -280,6 +281,7 @@ class WorkflowDualSamplerDenoiseRule(WorkflowRuleBaseModel):
     id: str
     kind: Literal["dual_sampler_denoise"] = "dual_sampler_denoise"
     label: str | None = None
+    when: ConditionExpression | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
@@ -293,6 +295,7 @@ class WorkflowSingleSamplerDenoiseRule(WorkflowRuleBaseModel):
     id: str
     kind: Literal["single_sampler_denoise"] = "single_sampler_denoise"
     label: str | None = None
+    when: ConditionExpression | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
@@ -311,6 +314,7 @@ class WorkflowVideoAudioRetakeRule(WorkflowRuleBaseModel):
     id: str
     kind: Literal["video_audio_retake"] = "video_audio_retake"
     label: str | None = None
+    when: ConditionExpression | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None

@@ -144,6 +144,7 @@ export interface WorkflowDualSamplerDenoiseRule {
   id: string;
   kind?: "dual_sampler_denoise";
   label?: string | null;
+  when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -155,6 +156,7 @@ export interface WorkflowDualSamplerDenoiseRule {
 
 export interface WorkflowFrontendControl {
   label?: string | null;
+  when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
   control_after_generate?: boolean;
   default_randomize?: boolean | null;
   frontend_only?: boolean | null;
@@ -302,6 +304,7 @@ export interface WorkflowRuleWidgetDefaultOverride {
 
 export interface WorkflowRuleWidgetEntry {
   label?: string | null;
+  when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
   control_after_generate?: boolean;
   default_randomize?: boolean | null;
   frontend_only?: boolean | null;
@@ -333,6 +336,7 @@ export interface WorkflowSingleSamplerDenoiseRule {
   id: string;
   kind?: "single_sampler_denoise";
   label?: string | null;
+  when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -348,6 +352,7 @@ export interface WorkflowVideoAudioRetakeRule {
   id: string;
   kind?: "video_audio_retake";
   label?: string | null;
+  when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;

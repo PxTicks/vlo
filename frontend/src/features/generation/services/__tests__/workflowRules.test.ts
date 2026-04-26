@@ -1014,6 +1014,109 @@ describe("resolvePresentedInputs", () => {
     expect(widgets[0]?.param).toBe("derived_mask_source_video_treatment");
   });
 
+  it("filters conditional widgets and derived widgets from provided inputs", () => {
+    const workflow = {
+      "57": {
+        inputs: {
+          start_at_step: 1,
+          end_at_step: 4,
+        },
+      },
+      "58": {
+        inputs: {
+          start_at_step: 4,
+        },
+      },
+      "67": {
+        inputs: {
+          length: 81,
+        },
+      },
+      "85": {
+        inputs: {
+          value: 8,
+        },
+      },
+      "86": {
+        inputs: {
+          value: 4,
+        },
+      },
+    };
+    const rules = {
+      version: 3,
+      nodes: {
+        "67": {
+          widgets: {
+            length: {
+              label: "Length",
+              when: {
+                kind: "input_presence",
+                inputs: ["89"],
+                match: "all_missing",
+              },
+              value_type: "int",
+              control: "slider",
+              step: 4,
+            },
+          },
+        },
+      },
+      derived_widgets: [
+        {
+          id: "denoise",
+          kind: "dual_sampler_denoise",
+          label: "Denoise",
+          when: {
+            kind: "input_presence",
+            inputs: ["89"],
+            match: "all_present",
+          },
+          total_steps: {
+            node_id: "85",
+            param: "value",
+          },
+          start_step: {
+            node_id: "57",
+            param: "start_at_step",
+          },
+          base_split_step: {
+            node_id: "86",
+            param: "value",
+          },
+          split_step_targets: [
+            {
+              node_id: "57",
+              param: "end_at_step",
+            },
+            {
+              node_id: "58",
+              param: "start_at_step",
+            },
+          ],
+        },
+      ],
+      slots: {},
+    };
+
+    const withoutVideo = resolveWidgetInputs(workflow, rules, {
+      providedInputIds: new Set(),
+    });
+    const withVideo = resolveWidgetInputs(workflow, rules, {
+      providedInputIds: new Set(["89"]),
+    });
+
+    expect(withoutVideo.some((widget) => widget.param === "length")).toBe(true);
+    expect(withoutVideo.some((widget) => widget.kind === "derived")).toBe(false);
+    expect(withVideo.some((widget) => widget.param === "length")).toBe(false);
+    expect(
+      withVideo.some(
+        (widget) =>
+          widget.kind === "derived" && widget.derivedWidgetId === "denoise",
+      ),
+    ).toBe(true);
+  });
+
   it("resolves dual-sampler denoise as a derived slider and hides backing widgets", () => {
     const widgets = resolveWidgetInputs(
       {

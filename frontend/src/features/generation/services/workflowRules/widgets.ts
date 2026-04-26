@@ -1,4 +1,9 @@
 import { isRecord } from "../parsers";
+import {
+  createFrontendRuleState,
+  evaluateCondition,
+  type FrontendRuleState,
+} from "../frontendRuleState";
 import { normalizeWorkflowRules } from "./normalize";
 import { toFiniteNumber, toPositiveInteger } from "./shared";
 import type {
@@ -11,6 +16,7 @@ import type {
   WorkflowWidgetInput,
 } from "../../types";
 import type {
+  ConditionExpression,
   WorkflowDualSamplerDenoiseRule,
   WorkflowFrontendControl,
   WorkflowParamReference,
@@ -256,6 +262,13 @@ function hasOwnKey(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
+function isRuleVisible(
+  when: ConditionExpression | null | undefined,
+  state: FrontendRuleState,
+): boolean {
+  return when ? evaluateCondition(when, state) : true;
+}
+
 function resolveDualSamplerDenoiseWidget(
   workflow: Record<string, unknown>,
   rules: WorkflowRules,
@@ -442,9 +455,14 @@ function resolveVideoAudioRetakeWidget(
 function resolveDerivedWidgetInputs(
   workflow: Record<string, unknown>,
   rules: WorkflowRules,
+  state: FrontendRuleState,
 ): WorkflowWidgetInput[] {
   const result: WorkflowWidgetInput[] = [];
   for (const rule of rules.derived_widgets ?? []) {
+    if (!isRuleVisible(rule.when, state)) {
+      continue;
+    }
+
     let widget: DerivedWorkflowWidgetInput | null = null;
     if (rule.kind === "dual_sampler_denoise") {
       widget = resolveDualSamplerDenoiseWidget(workflow, rules, rule);
@@ -496,9 +514,16 @@ function resolveFrontendControlInput(
   };
 }
 
-function resolveFrontendControlInputs(rules: WorkflowRules): WorkflowWidgetInput[] {
+function resolveFrontendControlInputs(
+  rules: WorkflowRules,
+  state: FrontendRuleState,
+): WorkflowWidgetInput[] {
   const result: WorkflowWidgetInput[] = [];
   for (const [controlId, entry] of Object.entries(rules.frontend_controls ?? {})) {
+    if (!isRuleVisible(entry.when, state)) {
+      continue;
+    }
+
     result.push(resolveFrontendControlInput(controlId, entry));
   }
   return result;
@@ -510,6 +535,8 @@ export function resolveWidgetInputsFromRules(
   options: {
     graphData?: Record<string, unknown> | null;
     objectInfo?: Record<string, unknown> | null;
+    providedInputIds?: ReadonlySet<string>;
+    frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
   } = {},
 ): WorkflowWidgetInput[] {
   const workflowNodes = workflow ?? {};
@@ -518,6 +545,10 @@ export function resolveWidgetInputsFromRules(
     return [];
   }
 
+  const frontendState = createFrontendRuleState(
+    options.providedInputIds ?? new Set<string>(),
+    options.frontendStateWidgetValues ?? {},
+  );
   const ruleNodes = rules.nodes ?? {};
   const nodesWithWidgets = Object.entries(ruleNodes).filter(
     ([, nodeRule]) => nodeRule.widgets && Object.keys(nodeRule.widgets).length > 0,
@@ -561,6 +592,10 @@ export function resolveWidgetInputsFromRules(
           : undefined;
 
     for (const [param, entry] of Object.entries(widgetDefs)) {
+      if (!isRuleVisible(entry.when, frontendState)) {
+        continue;
+      }
+
       const hasExplicitDefault = Object.prototype.hasOwnProperty.call(
         entry,
         "default",
@@ -649,8 +684,12 @@ export function resolveWidgetInputsFromRules(
     }
   }
 
-  const frontendControls = resolveFrontendControlInputs(rules);
-  const derivedWidgets = resolveDerivedWidgetInputs(workflowNodes, rules);
+  const frontendControls = resolveFrontendControlInputs(rules, frontendState);
+  const derivedWidgets = resolveDerivedWidgetInputs(
+    workflowNodes,
+    rules,
+    frontendState,
+  );
   const result = [...frontendControls, ...rawWidgets, ...derivedWidgets];
 
   console.info("[resolveWidgetInputs] Resolved %d widget inputs", result.length);
@@ -670,6 +709,8 @@ export function resolveWidgetInputs(
   options: {
     graphData?: Record<string, unknown> | null;
     objectInfo?: Record<string, unknown> | null;
+    providedInputIds?: ReadonlySet<string>;
+    frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
   } = {},
 ): WorkflowWidgetInput[] {
   const { rules } = normalizeWorkflowRules(rawRules);

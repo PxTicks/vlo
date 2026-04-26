@@ -1,0 +1,288 @@
+{
+  "version": 3,
+  "name": "Wan2.2 14B I2V / FLF2V / V2V",
+  "nodes": {
+    "57": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 3
+        },
+        "start_at_step": {
+          "value_type": "int",
+          "hidden": true
+        },
+        "end_at_step": {
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "58": {
+      "widgets": {
+        "noise_seed": {
+          "control_after_generate": true,
+          "value_type": "int",
+          "hidden": true
+        },
+        "start_at_step": {
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "62": {
+      "present": {
+        "label": "End frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 1,
+        "required": false
+      }
+    },
+    "67": {
+      "widgets": {
+        "width": {
+          "value_type": "int",
+          "hidden": true
+        },
+        "height": {
+          "value_type": "int",
+          "hidden": true
+        },
+        "length": {
+          "label": "Length",
+          "when": {
+            "kind": "input_presence",
+            "inputs": [
+              "89"
+            ],
+            "match": "all_missing"
+          },
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 257,
+          "step": 4,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0
+        },
+        "batch_size": {
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "68": {
+      "present": {
+        "label": "Start frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 0,
+        "required": false
+      }
+    },
+    "85": {
+      "widgets": {
+        "value": {
+          "label": "Total Steps",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "86": {
+      "widgets": {
+        "value": {
+          "label": "Split Steps",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "89": {
+      "present": {
+        "label": "Source video",
+        "required": false
+      },
+      "selection": {
+        "export_fps": 16,
+        "frame_step": 4,
+        "max_frames": 81
+      }
+    },
+    "91": {
+      "widgets": {
+        "switch": {
+          "label": "V2V",
+          "value_type": "boolean",
+          "hidden": true
+        }
+      }
+    }
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "at_least_n",
+        "inputs": [
+          "68",
+          "62"
+        ],
+        "min": 1,
+        "message": "Provide at least one frame input."
+      },
+      {
+        "kind": "optional",
+        "input": "89"
+      }
+    ]
+  },
+  "derived_widgets": [
+    {
+      "id": "dual_sampler_denoise",
+      "kind": "dual_sampler_denoise",
+      "label": "Denoise",
+      "when": {
+        "kind": "input_presence",
+        "inputs": [
+          "89"
+        ],
+        "match": "all_present"
+      },
+      "group_id": "video_generation",
+      "group_title": "Video Generation",
+      "group_order": 1,
+      "total_steps": {
+        "node_id": "85",
+        "param": "value"
+      },
+      "start_step": {
+        "node_id": "57",
+        "param": "start_at_step"
+      },
+      "base_split_step": {
+        "node_id": "86",
+        "param": "value"
+      },
+      "split_step_targets": [
+        {
+          "node_id": "57",
+          "param": "end_at_step"
+        },
+        {
+          "node_id": "58",
+          "param": "start_at_step"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": [
+          "89"
+        ],
+        "match": "all_present"
+      },
+      "set_widgets": [
+        {
+          "node_id": "91",
+          "widget": "switch",
+          "value": true
+        }
+      ]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": [
+          "89"
+        ],
+        "match": "all_missing"
+      },
+      "bypass": [
+        "89",
+        "90",
+        "88",
+        "80"
+      ],
+      "set_widgets": [
+        {
+          "node_id": "91",
+          "widget": "switch",
+          "value": false
+        }
+      ]
+    }
+  ],
+  "slots": {},
+  "pipeline": [
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolutions": [
+          480,
+          720
+        ],
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": {
+            "node_id": "67",
+            "param": "width"
+          },
+          "height": {
+            "node_id": "67",
+            "param": "height"
+          }
+        },
+        {
+          "width": {
+            "node_id": "88",
+            "param": "resize_type.width"
+          },
+          "height": {
+            "node_id": "88",
+            "param": "resize_type.height"
+          }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "options": [
+            480,
+            720
+          ],
+          "default": 720
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "expose": "none",
+          "source": "client"
+        }
+      ]
+    }
+  ]
+}

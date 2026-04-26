@@ -66,6 +66,9 @@ import {
 } from "../services/frontendRuleState";
 import { shouldShowHistoricalGenerationJob } from "../utils/panelDisplayJob";
 
+const FRONTEND_CONTROLS_NODE_ID = "__frontend_controls__";
+const DERIVED_WIDGET_NODE_ID_PREFIX = "derived:";
+
 function applySelectionConfigDefaults(
   selection: ReturnType<typeof createTimelineSelection>,
   config: WorkflowSelectionConfig | undefined,
@@ -94,6 +97,40 @@ function setNodeParamValue(
     ...current,
     [nodeId]: { ...(current[nodeId] ?? {}), [param]: value },
   };
+}
+
+function flattenWidgetValuesForFrontendState(
+  values: Record<string, Record<string, unknown>>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  for (const [nodeId, nodeValues] of Object.entries(values)) {
+    for (const [param, value] of Object.entries(nodeValues)) {
+      if (nodeId === FRONTEND_CONTROLS_NODE_ID) {
+        result[
+          buildFrontendStateValueKey({
+            nodeId,
+            widget: param,
+            frontendControlId: param,
+          })
+        ] = value;
+        continue;
+      }
+
+      if (nodeId.startsWith(DERIVED_WIDGET_NODE_ID_PREFIX)) {
+        result[
+          buildFrontendStateDerivedWidgetKey(
+            nodeId.slice(DERIVED_WIDGET_NODE_ID_PREFIX.length),
+          )
+        ] = value;
+        continue;
+      }
+
+      result[buildFrontendStateValueKey({ nodeId, widget: param })] = value;
+    }
+  }
+
+  return result;
 }
 
 function parseStoredWidgetValue(
@@ -369,13 +406,9 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const lastAppliedWidgetValues = useGenerationStore(
     (s) => s.lastAppliedWidgetValues,
   );
-  const smartWidgetInputs = useMemo(
-    () =>
-      resolveWidgetInputs(syncedWorkflow, activeWorkflowRules, {
-        graphData: syncedGraphData,
-        objectInfo: rawObjectInfo,
-      }),
-    [syncedWorkflow, activeWorkflowRules, syncedGraphData, rawObjectInfo],
+  const currentFrontendStateWidgetValues = useMemo(
+    () => flattenWidgetValuesForFrontendState(widgetValues),
+    [widgetValues],
   );
   const manualWorkflowInputs = useMemo(
     () =>
@@ -389,6 +422,55 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
           : [],
     [inputNodeMap, rawObjectInfo, syncedGraphData, syncedWorkflow],
   );
+  const workflowInputs =
+    mode === "manual" ? manualWorkflowInputs : smartWorkflowInputs;
+  const workflowInputById = useMemo(
+    () => buildWorkflowInputLookup(workflowInputs),
+    [workflowInputs],
+  );
+  const providedInputIds = useMemo(() => {
+    const provided = new Set<string>();
+    for (const input of workflowInputs) {
+      const inputId = getWorkflowInputId(input);
+      if (input.inputType === "text") {
+        const value =
+          getWorkflowInputValue(textValues, input, workflowInputById) ?? "";
+        if (value.trim().length > 0) {
+          provided.add(inputId);
+          provided.add(input.nodeId);
+        }
+        continue;
+      }
+
+      if (
+        hasProvidedMediaInputValue(
+          input.inputType as "image" | "video" | "audio",
+          getWorkflowInputValue(mediaInputs, input, workflowInputById),
+        )
+      ) {
+        provided.add(inputId);
+        provided.add(input.nodeId);
+      }
+    }
+    return provided;
+  }, [mediaInputs, textValues, workflowInputById, workflowInputs]);
+  const smartWidgetInputs = useMemo(
+    () =>
+      resolveWidgetInputs(syncedWorkflow, activeWorkflowRules, {
+        graphData: syncedGraphData,
+        objectInfo: rawObjectInfo,
+        providedInputIds,
+        frontendStateWidgetValues: currentFrontendStateWidgetValues,
+      }),
+    [
+      syncedWorkflow,
+      activeWorkflowRules,
+      syncedGraphData,
+      rawObjectInfo,
+      providedInputIds,
+      currentFrontendStateWidgetValues,
+    ],
+  );
   const manualWidgetInputs = useMemo(
     () =>
       resolveManualWidgetInputs(
@@ -398,14 +480,8 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       ),
     [rawObjectInfo, syncedGraphData, syncedWorkflow],
   );
-  const workflowInputs =
-    mode === "manual" ? manualWorkflowInputs : smartWorkflowInputs;
   const widgetInputs =
     mode === "manual" ? manualWidgetInputs : smartWidgetInputs;
-  const workflowInputById = useMemo(
-    () => buildWorkflowInputLookup(workflowInputs),
-    [workflowInputs],
-  );
   const derivedMaskDefaultVideoTreatment = useMemo(
     () =>
       resolveDefaultDerivedMaskSourceVideoTreatment(activeWorkflowRules, {
@@ -1172,33 +1248,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const isExtractingSelection = Object.values(mediaInputs).some(
     (value) => value?.kind === "timelineSelection" && value.isExtracting,
   );
-
-  const providedInputIds = useMemo(() => {
-    const provided = new Set<string>();
-    for (const input of workflowInputs) {
-      const inputId = getWorkflowInputId(input);
-      if (input.inputType === "text") {
-        const value =
-          getWorkflowInputValue(textValues, input, workflowInputById) ?? "";
-        if (value.trim().length > 0) {
-          provided.add(inputId);
-          provided.add(input.nodeId);
-        }
-        continue;
-      }
-
-      if (
-        hasProvidedMediaInputValue(
-          input.inputType as "image" | "video" | "audio",
-          getWorkflowInputValue(mediaInputs, input, workflowInputById),
-        )
-      ) {
-        provided.add(inputId);
-        provided.add(input.nodeId);
-      }
-    }
-    return provided;
-  }, [mediaInputs, textValues, workflowInputById, workflowInputs]);
 
   const inputValidationFailures =
     mode === "manual"

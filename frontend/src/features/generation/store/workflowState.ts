@@ -513,6 +513,8 @@ export function resolveWidgetInputs(
   options: {
     graphData?: Record<string, unknown> | null;
     objectInfo?: Record<string, unknown> | null;
+    providedInputIds?: ReadonlySet<string>;
+    frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
   } = {},
 ) {
   return resolveWidgetInputsFromRules(

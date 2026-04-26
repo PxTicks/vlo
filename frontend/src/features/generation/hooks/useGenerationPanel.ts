@@ -66,9 +66,6 @@ import {
 } from "../services/frontendRuleState";
 import { shouldShowHistoricalGenerationJob } from "../utils/panelDisplayJob";
 
-const FRONTEND_CONTROLS_NODE_ID = "__frontend_controls__";
-const DERIVED_WIDGET_NODE_ID_PREFIX = "derived:";
-
 function applySelectionConfigDefaults(
   selection: ReturnType<typeof createTimelineSelection>,
   config: WorkflowSelectionConfig | undefined,
@@ -97,40 +94,6 @@ function setNodeParamValue(
     ...current,
     [nodeId]: { ...(current[nodeId] ?? {}), [param]: value },
   };
-}
-
-function flattenWidgetValuesForFrontendState(
-  values: Record<string, Record<string, unknown>>,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-
-  for (const [nodeId, nodeValues] of Object.entries(values)) {
-    for (const [param, value] of Object.entries(nodeValues)) {
-      if (nodeId === FRONTEND_CONTROLS_NODE_ID) {
-        result[
-          buildFrontendStateValueKey({
-            nodeId,
-            widget: param,
-            frontendControlId: param,
-          })
-        ] = value;
-        continue;
-      }
-
-      if (nodeId.startsWith(DERIVED_WIDGET_NODE_ID_PREFIX)) {
-        result[
-          buildFrontendStateDerivedWidgetKey(
-            nodeId.slice(DERIVED_WIDGET_NODE_ID_PREFIX.length),
-          )
-        ] = value;
-        continue;
-      }
-
-      result[buildFrontendStateValueKey({ nodeId, widget: param })] = value;
-    }
-  }
-
-  return result;
 }
 
 function parseStoredWidgetValue(
@@ -406,10 +369,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const lastAppliedWidgetValues = useGenerationStore(
     (s) => s.lastAppliedWidgetValues,
   );
-  const currentFrontendStateWidgetValues = useMemo(
-    () => flattenWidgetValuesForFrontendState(widgetValues),
-    [widgetValues],
-  );
   const manualWorkflowInputs = useMemo(
     () =>
       syncedWorkflow
@@ -460,7 +419,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
         graphData: syncedGraphData,
         objectInfo: rawObjectInfo,
         providedInputIds,
-        frontendStateWidgetValues: currentFrontendStateWidgetValues,
       }),
     [
       syncedWorkflow,
@@ -468,7 +426,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       syncedGraphData,
       rawObjectInfo,
       providedInputIds,
-      currentFrontendStateWidgetValues,
     ],
   );
   const manualWidgetInputs = useMemo(

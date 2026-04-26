@@ -7,14 +7,8 @@
     {
       "id": 70,
       "type": "Note",
-      "pos": [
-        410,
-        1060
-      ],
-      "size": [
-        450,
-        120
-      ],
+      "pos": [410, 1060],
+      "size": [450, 120],
       "flags": {},
       "order": 0,
       "mode": 0,
@@ -33,14 +27,8 @@
     {
       "id": 37,
       "type": "UNETLoader",
-      "pos": [
-        -180,
-        -100
-      ],
-      "size": [
-        350,
-        90
-      ],
+      "pos": [-180, -100],
+      "size": [350, 90],
       "flags": {},
       "order": 1,
       "mode": 0,
@@ -50,9 +38,7 @@
           "name": "MODEL",
           "type": "MODEL",
           "slot_index": 0,
-          "links": [
-            161
-          ]
+          "links": [161]
         }
       ],
       "properties": {
@@ -76,14 +62,8 @@
     {
       "id": 56,
       "type": "UNETLoader",
-      "pos": [
-        -180,
-        30
-      ],
-      "size": [
-        350,
-        90
-      ],
+      "pos": [-180, 30],
+      "size": [350, 90],
       "flags": {},
       "order": 2,
       "mode": 0,
@@ -93,9 +73,7 @@
           "name": "MODEL",
           "type": "MODEL",
           "slot_index": 0,
-          "links": [
-            162
-          ]
+          "links": [162]
         }
       ],
       "properties": {
@@ -119,14 +97,8 @@
     {
       "id": 38,
       "type": "CLIPLoader",
-      "pos": [
-        -170,
-        160
-      ],
-      "size": [
-        350,
-        110
-      ],
+      "pos": [-170, 160],
+      "size": [350, 110],
       "flags": {},
       "order": 3,
       "mode": 0,
@@ -136,11 +108,7 @@
           "name": "CLIP",
           "type": "CLIP",
           "slot_index": 0,
-          "links": [
-            74,
-            75,
-            164
-          ]
+          "links": [74, 75, 164]
         }
       ],
       "properties": {
@@ -165,14 +133,8 @@
     {
       "id": 58,
       "type": "KSamplerAdvanced",
-      "pos": [
-        900,
-        650
-      ],
-      "size": [
-        310,
-        550
-      ],
+      "pos": [900, 650],
+      "size": [310, 550],
       "flags": {},
       "order": 23,
       "mode": 0,
@@ -218,9 +180,7 @@
         {
           "name": "LATENT",
           "type": "LATENT",
-          "links": [
-            124
-          ]
+          "links": [124]
         }
       ],
       "properties": {
@@ -245,14 +205,8 @@
     {
       "id": 66,
       "type": "MarkdownNote",
-      "pos": [
-        -900,
-        -330
-      ],
-      "size": [
-        480,
-        350
-      ],
+      "pos": [-900, -330],
+      "size": [480, 350],
       "flags": {},
       "order": 4,
       "mode": 0,
@@ -271,14 +225,8 @@
     {
       "id": 69,
       "type": "Note",
-      "pos": [
-        -890,
-        120
-      ],
-      "size": [
-        480,
-        110
-      ],
+      "pos": [-890, 120],
+      "size": [480, 110],
       "flags": {},
       "order": 5,
       "mode": 0,
@@ -297,14 +245,8 @@
     {
       "id": 55,
       "type": "ModelSamplingSD3",
-      "pos": [
-        200,
-        80
-      ],
-      "size": [
-        210,
-        60
-      ],
+      "pos": [200, 80],
+      "size": [210, 60],
       "flags": {},
       "order": 18,
       "mode": 0,
@@ -320,9 +262,7 @@
           "name": "MODEL",
           "type": "MODEL",
           "slot_index": 0,
-          "links": [
-            186
-          ]
+          "links": [186]
         }
       ],
       "properties": {
@@ -331,21 +271,13 @@
         "Node name for S&R": "ModelSamplingSD3",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        8
-      ]
+      "widgets_values": [8]
     },
     {
       "id": 54,
       "type": "ModelSamplingSD3",
-      "pos": [
-        200,
-        -200
-      ],
-      "size": [
-        210,
-        60
-      ],
+      "pos": [200, -200],
+      "size": [210, 60],
       "flags": {},
       "order": 12,
       "mode": 0,
@@ -361,9 +293,7 @@
           "name": "MODEL",
           "type": "MODEL",
           "slot_index": 0,
-          "links": [
-            185
-          ]
+          "links": [185]
         }
       ],
       "properties": {
@@ -372,21 +302,13 @@
         "Node name for S&R": "ModelSamplingSD3",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        8.000000000000002
-      ]
+      "widgets_values": [8.000000000000002]
     },
     {
       "id": 72,
       "type": "LoraLoader",
-      "pos": [
-        200,
-        -90
-      ],
-      "size": [
-        240,
-        130
-      ],
+      "pos": [200, -90],
+      "size": [240, 130],
       "flags": {},
       "order": 15,
       "mode": 0,
@@ -406,9 +328,7 @@
         {
           "name": "MODEL",
           "type": "MODEL",
-          "links": [
-            163
-          ]
+          "links": [163]
         },
         {
           "name": "CLIP",
@@ -431,14 +351,8 @@
     {
       "id": 39,
       "type": "VAELoader",
-      "pos": [
-        -170,
-        320
-      ],
-      "size": [
-        350,
-        60
-      ],
+      "pos": [-170, 320],
+      "size": [350, 60],
       "flags": {},
       "order": 6,
       "mode": 0,
@@ -448,11 +362,7 @@
           "name": "VAE",
           "type": "VAE",
           "slot_index": 0,
-          "links": [
-            76,
-            156,
-            176
-          ]
+          "links": [76, 156, 176]
         }
       ],
       "properties": {
@@ -468,21 +378,13 @@
           }
         ]
       },
-      "widgets_values": [
-        "wan_2.1_vae.safetensors"
-      ]
+      "widgets_values": ["wan_2.1_vae.safetensors"]
     },
     {
       "id": 57,
       "type": "KSamplerAdvanced",
-      "pos": [
-        890,
-        -70
-      ],
-      "size": [
-        310,
-        550
-      ],
+      "pos": [890, -70],
+      "size": [310, 550],
       "flags": {},
       "order": 22,
       "mode": 0,
@@ -528,9 +430,7 @@
         {
           "name": "LATENT",
           "type": "LATENT",
-          "links": [
-            113
-          ]
+          "links": [113]
         }
       ],
       "properties": {
@@ -547,7 +447,7 @@
         2,
         "euler",
         "simple",
-        1,
+        0,
         4,
         "enable"
       ]
@@ -555,14 +455,8 @@
     {
       "id": 7,
       "type": "CLIPTextEncode",
-      "pos": [
-        420,
-        410
-      ],
-      "size": [
-        430,
-        190
-      ],
+      "pos": [420, 410],
+      "size": [430, 190],
       "flags": {},
       "order": 14,
       "mode": 0,
@@ -578,9 +472,7 @@
           "name": "CONDITIONING",
           "type": "CONDITIONING",
           "slot_index": 0,
-          "links": [
-            150
-          ]
+          "links": [150]
         }
       ],
       "title": "CLIP Text Encode (Negative Prompt)",
@@ -599,14 +491,8 @@
     {
       "id": 6,
       "type": "CLIPTextEncode",
-      "pos": [
-        420,
-        210
-      ],
-      "size": [
-        430,
-        170
-      ],
+      "pos": [420, 210],
+      "size": [430, 170],
       "flags": {},
       "order": 13,
       "mode": 0,
@@ -622,9 +508,7 @@
           "name": "CONDITIONING",
           "type": "CONDITIONING",
           "slot_index": 0,
-          "links": [
-            149
-          ]
+          "links": [149]
         }
       ],
       "title": "CLIP Text Encode (Positive Prompt)",
@@ -634,23 +518,15 @@
         "Node name for S&R": "CLIPTextEncode",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "A thing"
-      ],
+      "widgets_values": ["A thing"],
       "color": "#232",
       "bgcolor": "#353"
     },
     {
       "id": 85,
       "type": "PrimitiveInt",
-      "pos": [
-        900,
-        -200
-      ],
-      "size": [
-        270,
-        90
-      ],
+      "pos": [900, -200],
+      "size": [270, 90],
       "flags": {},
       "order": 7,
       "mode": 0,
@@ -659,10 +535,7 @@
         {
           "name": "INT",
           "type": "INT",
-          "links": [
-            187,
-            188
-          ]
+          "links": [187, 188]
         }
       ],
       "properties": {
@@ -671,22 +544,13 @@
         "Node name for S&R": "PrimitiveInt",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        8,
-        "fixed"
-      ]
+      "widgets_values": [8, "fixed"]
     },
     {
       "id": 86,
       "type": "PrimitiveInt",
-      "pos": [
-        920,
-        520
-      ],
-      "size": [
-        270,
-        90
-      ],
+      "pos": [920, 520],
+      "size": [270, 90],
       "flags": {},
       "order": 8,
       "mode": 0,
@@ -695,10 +559,7 @@
         {
           "name": "INT",
           "type": "INT",
-          "links": [
-            189,
-            190
-          ]
+          "links": [189, 190]
         }
       ],
       "properties": {
@@ -707,22 +568,13 @@
         "Node name for S&R": "PrimitiveInt",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        4,
-        "fixed"
-      ]
+      "widgets_values": [4, "fixed"]
     },
     {
       "id": 68,
       "type": "LoadImage",
-      "pos": [
-        -160,
-        500
-      ],
-      "size": [
-        320,
-        320
-      ],
+      "pos": [-160, 500],
+      "size": [320, 320],
       "flags": {},
       "order": 9,
       "mode": 0,
@@ -732,9 +584,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "slot_index": 0,
-          "links": [
-            157
-          ]
+          "links": [157]
         },
         {
           "name": "MASK",
@@ -750,22 +600,13 @@
         "Node name for S&R": "LoadImage",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "example.png",
-        "image"
-      ]
+      "widgets_values": ["example.png", "image"]
     },
     {
       "id": 62,
       "type": "LoadImage",
-      "pos": [
-        -160,
-        940
-      ],
-      "size": [
-        320,
-        320
-      ],
+      "pos": [-160, 940],
+      "size": [320, 320],
       "flags": {},
       "order": 10,
       "mode": 0,
@@ -775,9 +616,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "slot_index": 0,
-          "links": [
-            158
-          ]
+          "links": [158]
         },
         {
           "name": "MASK",
@@ -793,22 +632,13 @@
         "Node name for S&R": "LoadImage",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "example.png",
-        "image"
-      ]
+      "widgets_values": ["example.png", "image"]
     },
     {
       "id": 8,
       "type": "VAEDecode",
-      "pos": [
-        1240,
-        -70
-      ],
-      "size": [
-        210,
-        50
-      ],
+      "pos": [1240, -70],
+      "size": [210, 50],
       "flags": {},
       "order": 24,
       "mode": 0,
@@ -829,9 +659,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "slot_index": 0,
-          "links": [
-            191
-          ]
+          "links": [191]
         }
       ],
       "properties": {
@@ -845,14 +673,8 @@
     {
       "id": 87,
       "type": "SaveImageWebsocket",
-      "pos": [
-        1260,
-        60
-      ],
-      "size": [
-        190,
-        30
-      ],
+      "pos": [1260, 60],
+      "size": [190, 30],
       "flags": {},
       "order": 25,
       "mode": 0,
@@ -873,14 +695,8 @@
     {
       "id": 88,
       "type": "ResizeImageMaskNode",
-      "pos": [
-        720,
-        -600
-      ],
-      "size": [
-        270,
-        160
-      ],
+      "pos": [720, -600],
+      "size": [270, 160],
       "flags": {},
       "order": 19,
       "mode": 0,
@@ -895,9 +711,7 @@
         {
           "name": "resized",
           "type": "IMAGE",
-          "links": [
-            193
-          ]
+          "links": [193]
         }
       ],
       "properties": {
@@ -906,25 +720,13 @@
         "Node name for S&R": "ResizeImageMaskNode",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "scale dimensions",
-        1280,
-        720,
-        "center",
-        "area"
-      ]
+      "widgets_values": ["scale dimensions", 1280, 720, "center", "area"]
     },
     {
       "id": 89,
       "type": "LoadVideo",
-      "pos": [
-        260,
-        -800
-      ],
-      "size": [
-        290,
-        263.81818181818187
-      ],
+      "pos": [260, -800],
+      "size": [290, 263.81818181818187],
       "flags": {},
       "order": 11,
       "mode": 0,
@@ -933,9 +735,7 @@
         {
           "name": "VIDEO",
           "type": "VIDEO",
-          "links": [
-            194
-          ]
+          "links": [194]
         }
       ],
       "properties": {
@@ -944,22 +744,13 @@
         "Node name for S&R": "LoadVideo",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "0222.mov",
-        "image"
-      ]
+      "widgets_values": ["0222.mov", "image"]
     },
     {
       "id": 90,
       "type": "GetVideoComponents",
-      "pos": [
-        450,
-        -420
-      ],
-      "size": [
-        200,
-        70
-      ],
+      "pos": [450, -420],
+      "size": [200, 70],
       "flags": {},
       "order": 16,
       "mode": 0,
@@ -974,9 +765,7 @@
         {
           "name": "images",
           "type": "IMAGE",
-          "links": [
-            195
-          ]
+          "links": [195]
         },
         {
           "name": "audio",
@@ -1000,14 +789,8 @@
     {
       "id": 67,
       "type": "WanFirstLastFrameToVideo",
-      "pos": [
-        430,
-        720
-      ],
-      "size": [
-        410,
-        260
-      ],
+      "pos": [430, 720],
+      "size": [410, 260],
       "flags": {},
       "order": 17,
       "mode": 0,
@@ -1056,25 +839,17 @@
         {
           "name": "positive",
           "type": "CONDITIONING",
-          "links": [
-            151,
-            154
-          ]
+          "links": [151, 154]
         },
         {
           "name": "negative",
           "type": "CONDITIONING",
-          "links": [
-            152,
-            155
-          ]
+          "links": [152, 155]
         },
         {
           "name": "latent",
           "type": "LATENT",
-          "links": [
-            196
-          ]
+          "links": [196]
         }
       ],
       "properties": {
@@ -1083,24 +858,13 @@
         "Node name for S&R": "WanFirstLastFrameToVideo",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        1280,
-        720,
-        81,
-        1
-      ]
+      "widgets_values": [1280, 720, 81, 1]
     },
     {
       "id": 80,
       "type": "VAEEncode",
-      "pos": [
-        1030,
-        -540
-      ],
-      "size": [
-        140,
-        50
-      ],
+      "pos": [1030, -540],
+      "size": [140, 50],
       "flags": {},
       "order": 20,
       "mode": 0,
@@ -1120,9 +884,7 @@
         {
           "name": "LATENT",
           "type": "LATENT",
-          "links": [
-            197
-          ]
+          "links": [197]
         }
       ],
       "properties": {
@@ -1136,14 +898,8 @@
     {
       "id": 91,
       "type": "ComfySwitchNode",
-      "pos": [
-        520,
-        -270
-      ],
-      "size": [
-        270,
-        78
-      ],
+      "pos": [520, -270],
+      "size": [270, 78],
       "flags": {},
       "order": 21,
       "mode": 0,
@@ -1163,9 +919,7 @@
         {
           "name": "output",
           "type": "LATENT",
-          "links": [
-            198
-          ]
+          "links": [198]
         }
       ],
       "title": "V2V",
@@ -1175,279 +929,48 @@
         "widget_ue_connectable": {},
         "Node name for S&R": "ComfySwitchNode"
       },
-      "widgets_values": [
-        false
-      ]
+      "widgets_values": [false]
     }
   ],
   "links": [
-    [
-      74,
-      38,
-      0,
-      6,
-      0,
-      "CLIP"
-    ],
-    [
-      75,
-      38,
-      0,
-      7,
-      0,
-      "CLIP"
-    ],
-    [
-      76,
-      39,
-      0,
-      8,
-      1,
-      "VAE"
-    ],
-    [
-      113,
-      57,
-      0,
-      58,
-      3,
-      "LATENT"
-    ],
-    [
-      124,
-      58,
-      0,
-      8,
-      0,
-      "LATENT"
-    ],
-    [
-      149,
-      6,
-      0,
-      67,
-      0,
-      "CONDITIONING"
-    ],
-    [
-      150,
-      7,
-      0,
-      67,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      151,
-      67,
-      0,
-      57,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      152,
-      67,
-      1,
-      57,
-      2,
-      "CONDITIONING"
-    ],
-    [
-      154,
-      67,
-      0,
-      58,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      155,
-      67,
-      1,
-      58,
-      2,
-      "CONDITIONING"
-    ],
-    [
-      156,
-      39,
-      0,
-      67,
-      2,
-      "VAE"
-    ],
-    [
-      157,
-      68,
-      0,
-      67,
-      5,
-      "IMAGE"
-    ],
-    [
-      158,
-      62,
-      0,
-      67,
-      6,
-      "IMAGE"
-    ],
-    [
-      161,
-      37,
-      0,
-      54,
-      0,
-      "MODEL"
-    ],
-    [
-      162,
-      56,
-      0,
-      72,
-      0,
-      "MODEL"
-    ],
-    [
-      163,
-      72,
-      0,
-      55,
-      0,
-      "MODEL"
-    ],
-    [
-      164,
-      38,
-      0,
-      72,
-      1,
-      "CLIP"
-    ],
-    [
-      176,
-      39,
-      0,
-      80,
-      1,
-      "VAE"
-    ],
-    [
-      185,
-      54,
-      0,
-      57,
-      0,
-      "MODEL"
-    ],
-    [
-      186,
-      55,
-      0,
-      58,
-      0,
-      "MODEL"
-    ],
-    [
-      187,
-      85,
-      0,
-      57,
-      4,
-      "INT"
-    ],
-    [
-      188,
-      85,
-      0,
-      58,
-      4,
-      "INT"
-    ],
-    [
-      189,
-      86,
-      0,
-      58,
-      5,
-      "INT"
-    ],
-    [
-      190,
-      86,
-      0,
-      57,
-      5,
-      "INT"
-    ],
-    [
-      191,
-      8,
-      0,
-      87,
-      0,
-      "IMAGE"
-    ],
-    [
-      193,
-      88,
-      0,
-      80,
-      0,
-      "IMAGE"
-    ],
-    [
-      194,
-      89,
-      0,
-      90,
-      0,
-      "VIDEO"
-    ],
-    [
-      195,
-      90,
-      0,
-      88,
-      0,
-      "IMAGE"
-    ],
-    [
-      196,
-      67,
-      2,
-      91,
-      0,
-      "LATENT"
-    ],
-    [
-      197,
-      80,
-      0,
-      91,
-      1,
-      "LATENT"
-    ],
-    [
-      198,
-      91,
-      0,
-      57,
-      3,
-      "LATENT"
-    ]
+    [74, 38, 0, 6, 0, "CLIP"],
+    [75, 38, 0, 7, 0, "CLIP"],
+    [76, 39, 0, 8, 1, "VAE"],
+    [113, 57, 0, 58, 3, "LATENT"],
+    [124, 58, 0, 8, 0, "LATENT"],
+    [149, 6, 0, 67, 0, "CONDITIONING"],
+    [150, 7, 0, 67, 1, "CONDITIONING"],
+    [151, 67, 0, 57, 1, "CONDITIONING"],
+    [152, 67, 1, 57, 2, "CONDITIONING"],
+    [154, 67, 0, 58, 1, "CONDITIONING"],
+    [155, 67, 1, 58, 2, "CONDITIONING"],
+    [156, 39, 0, 67, 2, "VAE"],
+    [157, 68, 0, 67, 5, "IMAGE"],
+    [158, 62, 0, 67, 6, "IMAGE"],
+    [161, 37, 0, 54, 0, "MODEL"],
+    [162, 56, 0, 72, 0, "MODEL"],
+    [163, 72, 0, 55, 0, "MODEL"],
+    [164, 38, 0, 72, 1, "CLIP"],
+    [176, 39, 0, 80, 1, "VAE"],
+    [185, 54, 0, 57, 0, "MODEL"],
+    [186, 55, 0, 58, 0, "MODEL"],
+    [187, 85, 0, 57, 4, "INT"],
+    [188, 85, 0, 58, 4, "INT"],
+    [189, 86, 0, 58, 5, "INT"],
+    [190, 86, 0, 57, 5, "INT"],
+    [191, 8, 0, 87, 0, "IMAGE"],
+    [193, 88, 0, 80, 0, "IMAGE"],
+    [194, 89, 0, 90, 0, "VIDEO"],
+    [195, 90, 0, 88, 0, "IMAGE"],
+    [196, 67, 2, 91, 0, "LATENT"],
+    [197, 80, 0, 91, 1, "LATENT"],
+    [198, 91, 0, 57, 3, "LATENT"]
   ],
   "groups": [
     {
       "id": 1,
       "title": "Step1 - Load models",
-      "bounding": [
-        -190,
-        -180,
-        371.0310363769531,
-        571.3974609375
-      ],
+      "bounding": [-190, -180, 371.0310363769531, 571.3974609375],
       "color": "#3f789e",
       "font_size": 24,
       "flags": {}
@@ -1455,12 +978,7 @@
     {
       "id": 2,
       "title": "Step2.1 - Upload start_image",
-      "bounding": [
-        -190,
-        420,
-        370,
-        410
-      ],
+      "bounding": [-190, 420, 370, 410],
       "color": "#3f789e",
       "font_size": 24,
       "flags": {}
@@ -1468,12 +986,7 @@
     {
       "id": 3,
       "title": "Step4 -  Prompt",
-      "bounding": [
-        410,
-        140,
-        445.27801513671875,
-        464.2060852050781
-      ],
+      "bounding": [410, 140, 445.27801513671875, 464.2060852050781],
       "color": "#3f789e",
       "font_size": 24,
       "flags": {}
@@ -1481,12 +994,7 @@
     {
       "id": 4,
       "title": "Step3 - Video size & length",
-      "bounding": [
-        410,
-        620,
-        450,
-        390
-      ],
+      "bounding": [410, 620, 450, 390],
       "color": "#3f789e",
       "font_size": 24,
       "flags": {}
@@ -1494,12 +1002,7 @@
     {
       "id": 5,
       "title": "Step2.2 - Upload end_image",
-      "bounding": [
-        -190,
-        860,
-        370,
-        410
-      ],
+      "bounding": [-190, 860, 370, 410],
       "color": "#3f789e",
       "font_size": 24,
       "flags": {}
@@ -1509,10 +1012,7 @@
   "extra": {
     "ds": {
       "scale": 0.28675657795042697,
-      "offset": [
-        941.9056918197014,
-        1233.6527965141609
-      ]
+      "offset": [941.9056918197014, 1233.6527965141609]
     },
     "frontendVersion": "1.42.15",
     "VHS_latentpreview": true,

@@ -58,10 +58,11 @@ never failed by sidecar problems alone.
 
 ## Root Structure (V3)
 
-V3 is the current authored format and it is **strict**: legacy V1/V2 top-level
-fields (`mask_processing`, `aspect_ratio_processing`, `postprocessing`) and
-legacy node-level derived-mask fields (`binary_derived_mask_of`,
-`soft_derived_mask_of`, etc.) are rejected rather than silently migrated.
+The schema is **strict**: unrecognized legacy top-level fields
+(`mask_processing`, `aspect_ratio_processing`, `postprocessing`) and legacy
+node-level derived-mask fields (`binary_derived_mask_of`,
+`soft_derived_mask_of`, etc.) are rejected rather than silently migrated. New
+sidecars must declare `"version": 3` and use the shape below.
 
 ```json
 {
@@ -69,8 +70,11 @@ legacy node-level derived-mask fields (`binary_derived_mask_of`,
   "name": "Optional display name",
   "default_widgets_mode": "control_after_generate",
   "nodes": {},
+  "frontend_controls": {},
   "validation": { "inputs": [] },
+  "input_conditions": [],
   "derived_widgets": [],
+  "rewrites": [],
   "effect_switches": [],
   "slots": {},
   "media_fallbacks": [],
@@ -84,8 +88,11 @@ legacy node-level derived-mask fields (`binary_derived_mask_of`,
 | `name`                 | string                                | none                       |
 | `default_widgets_mode` | `"control_after_generate"` \| `"all"` | unset (per-node policy)    |
 | `nodes`                | object keyed by node id               | `{}`                       |
+| `frontend_controls`    | object keyed by control id            | `{}`                       |
 | `validation`           | object                                | `{ "inputs": [] }`         |
+| `input_conditions`     | array of `at_least_one` checks        | `[]`                       |
 | `derived_widgets`      | array                                 | `[]`                       |
+| `rewrites`             | array of conditional graph rewrites   | `[]`                       |
 | `effect_switches`      | array of first-match effect cases     | `[]`                       |
 | `slots`                | object keyed by slot id               | `{}`                       |
 | `media_fallbacks`      | array                                 | `[]`                       |
@@ -357,16 +364,17 @@ you want "basically all controls, minus a few internal ones".
 | Field                    | Purpose                                                           |
 | ------------------------ | ----------------------------------------------------------------- |
 | `label`                  | UI display label                                                  |
+| `when`                   | `ConditionExpression` that gates widget visibility (see [Conditional Display](#conditional-display)) |
 | `control_after_generate` | Expose for adjustment after generation                            |
 | `default_randomize`      | Randomize by default (requires `min`/`max`)                       |
-| `hidden`                 | Completely hidden from UI; value stays in the workflow            |
+| `hidden`                 | Unconditionally hidden from UI; value stays in the workflow       |
 | `frontend_only`          | Rendered in UI, value not sent to backend                         |
 | `group_id` / `group_title` / `group_order` | Cross-node grouping                              |
 | `min` / `max` / `step`   | Bounds; used by validation and randomization                      |
 | `default`                | Authored default; falls back to `object_info`                     |
 | `value_type`             | `"int" \| "float" \| "string" \| "boolean" \| "enum" \| "unknown"` |
 | `options`                | Allowed values for enums                                          |
-| `control` / `slider_display` / `unit` | Presentation hints (e.g. `"slider"`)                 |
+| `control` / `slider_display` / `unit` / `display_unit` | Presentation hints (e.g. `"slider"`; `display_unit` applies a linear `scale + offset` transform with optional `unit` and `precision` for slider value formatting) |
 | `true_value` / `false_value` | Custom booleans (e.g. mapping to enum strings)                |
 | `default_overrides`      | Conditional defaults driven by `ConditionExpression`              |
 
@@ -375,8 +383,9 @@ you want "basically all controls, minus a few internal ones".
 ## Conditions
 
 Conditional rules use a shared `ConditionExpression` tree. The same shape is
-used by widget default overrides, node `ignore_overrides`, output injections,
-rewrites, and `effect_switches`.
+used everywhere conditions appear: widget visibility (`when`), widget default
+overrides (`default_overrides`), node `ignore_overrides`, `rewrites`, and
+`effect_switches`.
 
 Leaf conditions:
 
@@ -419,10 +428,6 @@ Example:
   ]
 }
 ```
-
-Legacy condition leaves `widget_boolean` and `frontend_control_boolean` are
-still accepted and auto-migrated to `compare` during schema parsing. New rules
-should author `compare` directly.
 
 ---
 
@@ -471,6 +476,92 @@ Input presence at generation time is controlled two ways:
 
 If no `validation.inputs` rules exist the frontend falls back to
 auto-requiring all non-text media inputs, honoring `present.required: false`.
+
+---
+
+## Conditional Display
+
+Most authored controls accept an optional `when` field — a
+`ConditionExpression` that gates whether the control is shown. Use this to
+surface settings only when they actually apply, instead of leaving the user
+to wonder why a toggle has no effect.
+
+`when` is supported on:
+
+- **Widgets** — `nodes.<id>.widgets.<param>.when`
+- **Frontend controls** — `frontend_controls.<id>.when`
+- **Derived widgets** — `derived_widgets[].when`
+
+`when` is *dynamic*: it is re-evaluated whenever panel state changes (an
+input is added/removed, a referenced widget changes value, etc.). This is
+the key distinction from `hidden: true`, which is unconditional.
+
+While a control is hidden by `when`, its value is omitted from the submitted
+prompt — `default_overrides` or graph defaults take over. That makes `when`
+the right hook for "this control is meaningless until X happens" rather than
+"this control's default flips when X happens" (which is `default_overrides`).
+
+### Example: gate a widget on a media input being provided
+
+The LTX2.3 FLF2V "Voice only" toggle only matters when the optional
+custom-audio input is populated. Gate it with `input_presence`:
+
+```json
+"239": {
+  "widgets": {
+    "switch": {
+      "label": "Voice only",
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["232"],
+        "match": "all_present"
+      },
+      "value_type": "boolean",
+      "default": false,
+      "group_id": "audio",
+      "group_title": "Audio",
+      "group_order": 1
+    }
+  }
+}
+```
+
+Until the user drops audio into node `232`, the toggle is hidden. As soon
+as audio is provided, the toggle appears under the Audio section.
+
+### Example: gate a widget on another widget's value
+
+Use `compare` against a `workflow_param` reference to drive visibility from
+another widget:
+
+```json
+{
+  "label": "Refiner strength",
+  "when": {
+    "kind": "compare",
+    "ref": { "kind": "workflow_param", "node_id": "145", "param": "use_refiner" },
+    "operator": "eq",
+    "value": true
+  },
+  "value_type": "float",
+  "min": 0, "max": 1, "step": 0.01
+}
+```
+
+### Choosing the right mechanism
+
+| Goal                                                      | Use                                  |
+| --------------------------------------------------------- | ------------------------------------ |
+| Show/hide a control based on panel state                  | `when` on widget / derived widget / frontend control |
+| Keep control visible but flip its default on a condition  | `default_overrides`                  |
+| Hide unconditionally (developer-only / reserved)          | `hidden: true`                       |
+| Drop a node from the graph entirely on a condition        | `ignore_overrides`                   |
+| Bypass nodes or write widget values on a condition        | `rewrites` / `effect_switches`       |
+
+`when` is purely presentational: it does not modify the graph or what the
+backend executes — it only controls what the user sees. Pair it with
+`rewrites` if you also need to mutate the workflow (e.g. flip a bypass
+switch alongside hiding the related toggle).
 
 ---
 

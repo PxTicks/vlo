@@ -180,6 +180,22 @@
     {
       "when": {
         "kind": "input_presence",
+        "inputs": ["68"],
+        "match": "all_missing"
+      },
+      "bypass": ["68"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["62"],
+        "match": "all_missing"
+      },
+      "bypass": ["62"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
         "inputs": ["89"],
         "match": "all_present"
       },

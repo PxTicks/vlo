@@ -992,6 +992,98 @@ describe("useGenerationStore workflow editor sync", () => {
     });
   });
 
+  it("holds the workflow not-ready when the iframe injection defers", async () => {
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      source: "backend",
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "wf.json",
+      rules: createDefaultWorkflowRules(),
+      warnings: [],
+    });
+    vi.spyOn(workflowSyncController, "injectWorkflowAndRead").mockResolvedValue({
+      ok: false,
+      deferred: true,
+      workflowResult: null,
+      reason: "loaded workflow did not become active",
+      warnings: null,
+    });
+
+    useGenerationStore.setState({
+      syncedWorkflow: { old: true },
+      syncedGraphData: { old: true },
+      workflowInputs: makeInputs(),
+      editorRef: makeReadyEditorRef(),
+    });
+
+    await useGenerationStore.getState().loadWorkflow("wf.json");
+
+    const state = useGenerationStore.getState();
+    expect(workflowSyncController.injectWorkflowAndRead).toHaveBeenCalled();
+    // The iframe didn't confirm the new graph, so we must not let the panel
+    // claim it's ready — otherwise graphToPrompt at submit time would return
+    // the previous workflow's graph under the new workflow's name.
+    expect(state.isWorkflowReady).toBe(false);
+    expect(state.isWorkflowLoading).toBe(true);
+  });
+
+  it("holds the workflow not-ready when the iframe app is not yet ready", async () => {
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      source: "backend",
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "wf.json",
+      rules: createDefaultWorkflowRules(),
+      warnings: [],
+    });
+    const injectSpy = vi.spyOn(
+      workflowSyncController,
+      "injectWorkflowAndRead",
+    );
+
+    // editorRef present but no `app` on contentWindow → isIframeAppReady false
+    const editorRef = {
+      contentWindow: {},
+    } as unknown as HTMLIFrameElement;
+    useGenerationStore.setState({
+      syncedWorkflow: { old: true },
+      syncedGraphData: { old: true },
+      workflowInputs: makeInputs(),
+      editorRef,
+    });
+
+    await useGenerationStore.getState().loadWorkflow("wf.json");
+
+    const state = useGenerationStore.getState();
+    expect(injectSpy).not.toHaveBeenCalled();
+    expect(state.isWorkflowReady).toBe(false);
+    expect(state.isWorkflowLoading).toBe(true);
+  });
+
+  it("marks the workflow ready when no iframe is registered", async () => {
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      source: "backend",
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "wf.json",
+      rules: createDefaultWorkflowRules(),
+      warnings: [],
+    });
+
+    useGenerationStore.setState({
+      syncedWorkflow: { old: true },
+      syncedGraphData: { old: true },
+      workflowInputs: makeInputs(),
+      editorRef: null,
+    });
+
+    await useGenerationStore.getState().loadWorkflow("wf.json");
+
+    const state = useGenerationStore.getState();
+    expect(state.isWorkflowReady).toBe(true);
+    expect(state.workflowLoadState).toBe("ready");
+  });
+
   it("keeps the backend-derived workflow ready when iframe sync fails", async () => {
     vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
       source: "backend",

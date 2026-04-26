@@ -1398,6 +1398,124 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockPreResolvePrompt.mock.calls[0]?.[1]).toEqual(["62"]);
   });
 
+  it("refuses to submit when the iframe holds a different workflow than the panel", async () => {
+    makeReadyStoreState();
+
+    const expectedGraphData = {
+      "100": { class_type: "ExpectedNode", inputs: {} },
+      "101": { class_type: "AnotherExpectedNode", inputs: {} },
+    };
+    const iframeGraphData = {
+      "200": { class_type: "DriftedNode", inputs: {} },
+      "201": { class_type: "AnotherDriftedNode", inputs: {} },
+    };
+
+    // iframe-shaped editorRef whose activeWorkflow exposes a *different*
+    // graph + filename than what the panel thinks is selected.
+    const editorRef = {
+      contentWindow: {
+        app: {
+          extensionManager: {
+            workflow: {
+              activeWorkflow: {
+                filename: "drifted.json",
+                activeState: iframeGraphData,
+              },
+            },
+          },
+        },
+      },
+    } as unknown as HTMLIFrameElement;
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "wf.json",
+      rulesWorkflowSourceId: "wf.json",
+      syncedGraphData: expectedGraphData,
+      syncedWorkflow: expectedGraphData,
+      editorRef,
+      preResolvedPromptEnabled: true,
+    });
+
+    try {
+      await useGenerationStore.getState().submitGeneration({});
+
+      // graphToPrompt must NOT be called; we throw before producing a payload.
+      expect(mockPreResolvePrompt).not.toHaveBeenCalled();
+      expect(mockGenerate).not.toHaveBeenCalled();
+
+      const state = useGenerationStore.getState();
+      const errorJob = state.activeJobId
+        ? state.jobs.get(state.activeJobId)
+        : null;
+      expect(errorJob?.status).toBe("error");
+      expect(errorJob?.error ?? "").toContain("drifted.json");
+      expect(errorJob?.error ?? "").toContain("wf.json");
+    } finally {
+      // The store has no global beforeEach reset, and this test mutates state
+      // (editorRef, syncedGraphData, error job) that subsequent tests don't
+      // overwrite via makeReadyStoreState. Clean up explicitly so we don't
+      // bleed into queue-dispatch tests further down the file.
+      useGenerationStore.setState({
+        editorRef: null,
+        preResolvedPromptEnabled: false,
+        syncedGraphData: null,
+        jobs: new Map(),
+        activeJobId: null,
+      });
+    }
+  });
+
+  it("submits when the iframe filename matches the selected workflow even if widget edits diverge", async () => {
+    makeReadyStoreState();
+
+    const panelGraphData = {
+      "100": { class_type: "MatchingNode", inputs: { value: 1 } },
+    };
+    // Same filename, slightly different widget value — should NOT trip the
+    // guard. We rely on filename match for this case.
+    const iframeGraphData = {
+      "100": { class_type: "MatchingNode", inputs: { value: 999 } },
+    };
+
+    const editorRef = {
+      contentWindow: {
+        app: {
+          extensionManager: {
+            workflow: {
+              activeWorkflow: {
+                filename: "wf.json",
+                activeState: iframeGraphData,
+              },
+            },
+          },
+        },
+      },
+    } as unknown as HTMLIFrameElement;
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "wf.json",
+      rulesWorkflowSourceId: "wf.json",
+      syncedGraphData: panelGraphData,
+      syncedWorkflow: panelGraphData,
+      editorRef,
+      preResolvedPromptEnabled: true,
+    });
+
+    try {
+      await useGenerationStore.getState().submitGeneration({});
+
+      expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
+    } finally {
+      useGenerationStore.setState({
+        editorRef: null,
+        preResolvedPromptEnabled: false,
+        syncedGraphData: null,
+        jobs: new Map(),
+        activeJobId: null,
+      });
+    }
+  });
+
   it("uses the queued pre-resolved workflow snapshot instead of the live editor workflow at dispatch time", async () => {
     makeReadyStoreState();
 

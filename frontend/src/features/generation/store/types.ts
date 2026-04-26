@@ -129,6 +129,7 @@ export interface GenerationWorkflowState {
     workflow: Record<string, unknown> | null,
     graphData: Record<string, unknown>,
     inputs: WorkflowInput[],
+    options?: { markReady?: boolean },
   ) => void;
   registerWorkflowFromEditor: (
     workflow: Record<string, unknown> | null,

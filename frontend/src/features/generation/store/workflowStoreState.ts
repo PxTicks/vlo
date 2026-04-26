@@ -172,7 +172,8 @@ export function buildWorkflowStoreState(
     clearWorkflowLoadError: () => set({ workflowLoadError: null }),
     ...buildMediaInputActions(set, get),
 
-    syncWorkflow: (workflow, graphData, inputs) => {
+    syncWorkflow: (workflow, graphData, inputs, options) => {
+      const markReady = options?.markReady ?? true;
       const state = get();
       const applicableRules = pruneWorkflowRulesForWorkflows(
         [graphData, workflow],
@@ -201,9 +202,13 @@ export function buildWorkflowStoreState(
           currentState.mediaInputs,
           presented.inputs,
         ),
-        isWorkflowLoading: false,
-        workflowLoadState: "ready",
-        isWorkflowReady: true,
+        ...(markReady
+          ? {
+              isWorkflowLoading: false,
+              workflowLoadState: "ready" as const,
+              isWorkflowReady: true,
+            }
+          : {}),
       }));
     },
 
@@ -574,10 +579,17 @@ export function buildWorkflowStoreState(
               objectInfo: get().rawObjectInfo,
             },
           );
+          // Optimistic pre-iframe sync: populate panel state for input
+          // discovery, but do not mark ready — readiness must wait for the
+          // iframe to confirm it has the new graph loaded. Otherwise a
+          // deferred injection leaves the panel "ready" while the iframe
+          // still holds the previous workflow, and graphToPrompt at submit
+          // time returns the wrong graph.
           get().syncWorkflow(
             initialWorkflowResult.workflow,
             initialWorkflowResult.graphData,
             initialWorkflowResult.inputs,
+            { markReady: false },
           );
         }
 
@@ -610,12 +622,21 @@ export function buildWorkflowStoreState(
               syncResult.workflowResult.inputs,
             );
           } else if (!isTempWorkflow && syncResult.deferred) {
+            // Iframe didn't confirm the new graph. Hold isWorkflowReady
+            // false until the scheduled retry succeeds; the finally block
+            // checks `deferred` to suppress its readiness flip.
+            deferred = true;
             if (syncResult.reason === "inputs not found after injection") {
               scheduleRetry(syncResult.reason, 500);
             } else {
               scheduleRetry(syncResult.reason ?? "workflow sync deferred");
             }
           }
+        } else if (!isTempWorkflow && editorRef) {
+          // Iframe is mounted but not yet app-ready. Same hazard as a
+          // deferred inject — the iframe still has the previous graph.
+          deferred = true;
+          scheduleRetry("iframe app not ready");
         }
       } catch (err) {
         console.error("[Generation] Failed to load workflow:", err);

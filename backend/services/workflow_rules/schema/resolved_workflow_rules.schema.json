@@ -499,6 +499,17 @@
           "default": null,
           "title": "Description"
         },
+        "display_unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WidgetDisplayUnit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "exclude_options": {
           "anyOf": [
             {
@@ -839,6 +850,47 @@
         "key"
       ],
       "title": "PipelineControlReference",
+      "type": "object"
+    },
+    "WidgetDisplayUnit": {
+      "description": "Linear conversion applied when displaying a slider's value.\n\nDisplayed = stored * scale + offset, formatted to ``precision`` decimal\ndigits, suffixed with ``unit``. The stored/wire value is unchanged \u2014 the\ntransform is presentational only.",
+      "properties": {
+        "offset": {
+          "default": 0.0,
+          "title": "Offset",
+          "type": "number"
+        },
+        "precision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Precision"
+        },
+        "scale": {
+          "default": 1.0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "title": "WidgetDisplayUnit",
       "type": "object"
     },
     "WorkflowAspectRatioPostprocessConfig": {
@@ -1233,6 +1285,17 @@
           ],
           "default": null,
           "title": "Default Randomize"
+        },
+        "display_unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WidgetDisplayUnit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "false_value": {
           "anyOf": [
@@ -2413,6 +2476,17 @@
           ],
           "default": null,
           "title": "Default Randomize"
+        },
+        "display_unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WidgetDisplayUnit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "false_value": {
           "anyOf": [

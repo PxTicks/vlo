@@ -73,6 +73,7 @@ export interface PipelineControl {
   control?: "slider" | null;
   slider_display?: "percent" | "number" | null;
   unit?: string | null;
+  display_unit?: WidgetDisplayUnit | null;
   min?: number | null;
   max?: number | null;
   step?: number | null;
@@ -101,6 +102,13 @@ export interface PipelineControlReference {
   kind?: "pipeline_control";
   stage_id: string;
   key: string;
+}
+
+export interface WidgetDisplayUnit {
+  scale?: number;
+  offset?: number;
+  unit?: string | null;
+  precision?: number | null;
 }
 
 export interface WorkflowAspectRatioPostprocessConfig {
@@ -164,6 +172,7 @@ export interface WorkflowFrontendControl {
   control?: "slider" | null;
   slider_display?: "percent" | "number" | null;
   unit?: string | null;
+  display_unit?: WidgetDisplayUnit | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -312,6 +321,7 @@ export interface WorkflowRuleWidgetEntry {
   control?: "slider" | null;
   slider_display?: "percent" | "number" | null;
   unit?: string | null;
+  display_unit?: WidgetDisplayUnit | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;

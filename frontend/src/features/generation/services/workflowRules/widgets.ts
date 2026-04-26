@@ -238,6 +238,19 @@ function toOptionalBoolean(
   return value ?? undefined;
 }
 
+function toDisplayUnit(
+  entry: { display_unit?: { scale?: number; offset?: number; unit?: string | null; precision?: number | null } | null },
+): WidgetInputConfig["displayUnit"] {
+  const raw = entry.display_unit;
+  if (!raw) return undefined;
+  return {
+    scale: typeof raw.scale === "number" ? raw.scale : 1,
+    offset: typeof raw.offset === "number" ? raw.offset : 0,
+    unit: raw.unit ?? undefined,
+    precision: raw.precision ?? undefined,
+  };
+}
+
 function valuesMatch(left: unknown, right: unknown): boolean {
   return Object.is(left, right);
 }
@@ -500,6 +513,7 @@ function resolveFrontendControlInput(
     falseValue: entry.false_value,
     sliderDisplay: entry.slider_display ?? undefined,
     unit: toOptionalString(entry.unit),
+    displayUnit: toDisplayUnit(entry),
     nodeTitle: FRONTEND_CONTROLS_NODE_TITLE,
     valueType: entry.value_type ?? undefined,
     options: entry.options ?? undefined,
@@ -664,6 +678,7 @@ export function resolveWidgetInputsFromRules(
         falseValue: entry.false_value,
         sliderDisplay: entry.slider_display ?? undefined,
         unit: toOptionalString(entry.unit),
+        displayUnit: toDisplayUnit(entry),
         nodeTitle: toOptionalString(nodeRule.node_title),
         valueType: entry.value_type ?? undefined,
         options: entry.options ?? undefined,

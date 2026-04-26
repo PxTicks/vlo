@@ -192,6 +192,20 @@ class WorkflowRuleWidgetDefaultOverride(WorkflowRuleBaseModel):
     value: Any | None = None
 
 
+class WidgetDisplayUnit(WorkflowRuleBaseModel):
+    """Linear conversion applied when displaying a slider's value.
+
+    Displayed = stored * scale + offset, formatted to ``precision`` decimal
+    digits, suffixed with ``unit``. The stored/wire value is unchanged — the
+    transform is presentational only.
+    """
+
+    scale: float = 1.0
+    offset: float = 0.0
+    unit: str | None = None
+    precision: int | None = None
+
+
 class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     label: str | None = None
     when: ConditionExpression | None = None
@@ -202,6 +216,7 @@ class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     control: WidgetControl | None = None
     slider_display: WidgetSliderDisplay | None = None
     unit: str | None = None
+    display_unit: WidgetDisplayUnit | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
@@ -391,6 +406,7 @@ class PipelineControl(WorkflowRuleBaseModel):
     control: WidgetControl | None = None
     slider_display: WidgetSliderDisplay | None = None
     unit: str | None = None
+    display_unit: WidgetDisplayUnit | None = None
     min: int | float | None = None
     max: int | float | None = None
     step: int | float | None = None

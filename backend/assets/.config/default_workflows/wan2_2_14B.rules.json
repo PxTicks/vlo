@@ -65,8 +65,13 @@
           "control": "slider",
           "slider_display": "number",
           "min": 1,
-          "max": 257,
+          "max": 81,
           "step": 4,
+          "display_unit": {
+            "scale": 0.0625,
+            "unit": "s",
+            "precision": 1
+          },
           "group_id": "video_generation",
           "group_title": "Video Generation",
           "group_order": 0

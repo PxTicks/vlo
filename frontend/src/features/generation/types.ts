@@ -221,6 +221,13 @@ export type WidgetValueType =
 export type WidgetControlType = "slider";
 export type WidgetSliderDisplay = "percent" | "number";
 
+export interface WidgetDisplayUnit {
+  scale: number;
+  offset: number;
+  unit?: string;
+  precision?: number;
+}
+
 export interface WidgetInputConfig {
   label: string;
   controlAfterGenerate: boolean;
@@ -233,6 +240,7 @@ export interface WidgetInputConfig {
   defaultValue?: unknown;
   sliderDisplay?: WidgetSliderDisplay;
   unit?: string;
+  displayUnit?: WidgetDisplayUnit;
   nodeTitle?: string;
   groupId?: string;
   groupTitle?: string;

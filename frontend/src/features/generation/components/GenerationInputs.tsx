@@ -188,8 +188,9 @@ function formatSliderNumber(
   value: number,
   step: number | undefined,
   unit: string | undefined,
+  precisionOverride?: number,
 ): string {
-  const precision = inferSliderPrecision(step);
+  const precision = precisionOverride ?? inferSliderPrecision(step);
   const roundedValue =
     precision === 0 ? Math.round(value) : Number(value.toFixed(precision));
   const formatted =
@@ -203,6 +204,17 @@ function formatSliderValue(
   widget: WorkflowWidgetInput,
   value: number,
 ): string {
+  const { displayUnit } = widget.config;
+  if (displayUnit) {
+    const transformed = value * displayUnit.scale + displayUnit.offset;
+    return formatSliderNumber(
+      transformed,
+      undefined,
+      displayUnit.unit,
+      displayUnit.precision ?? 0,
+    );
+  }
+
   if (
     widget.config.sliderDisplay === "percent" ||
     (widget.config.sliderDisplay == null &&

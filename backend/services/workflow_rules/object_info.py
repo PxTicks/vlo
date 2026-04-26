@@ -53,6 +53,21 @@ OBJECT_INFO_PATH = (
 _object_info_cache: dict[str, Any] | None = None
 
 
+def _should_force_default_policy_widget(
+    param_name: str,
+    widget_entry: dict[str, Any],
+) -> bool:
+    normalized_param = param_name.strip().lower()
+    if normalized_param in _ALWAYS_DISCOVERED_WIDGET_PARAMS:
+        return True
+
+    return (
+        widget_entry.get("value_type") == "int"
+        and widget_entry.get("control_after_generate") is True
+        and widget_entry.get("default_randomize") is True
+    )
+
+
 def set_object_info_cache(object_info: dict[str, Any] | None) -> None:
     global _object_info_cache
     _object_info_cache = object_info
@@ -495,12 +510,7 @@ def _resolve_default_policy_widgets(
         if not isinstance(widget_entry, dict):
             continue
 
-        normalized_param = param_name.strip().lower()
-        should_force_include = normalized_param in _ALWAYS_DISCOVERED_WIDGET_PARAMS or (
-            widget_entry.get("control_after_generate") is True
-            and widget_entry.get("default_randomize") is True
-        )
-        if should_force_include:
+        if _should_force_default_policy_widget(param_name, widget_entry):
             selected_widgets.setdefault(param_name, widget_entry)
 
     return selected_widgets or None

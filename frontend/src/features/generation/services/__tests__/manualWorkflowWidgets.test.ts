@@ -85,8 +85,76 @@ describe("resolveManualWidgetInputs", () => {
     expect(widgets[0]?.config.valueType).toBe("int");
     expect(widgets[0]?.config.min).toBe(0);
     expect(widgets[0]?.config.max).toBe(999);
+    expect(widgets[0]?.config.controlAfterGenerate).toBe(true);
+    expect(widgets[0]?.config.defaultRandomize).toBe(true);
     expect(widgets[1]?.currentValue).toBe(0.65);
     expect(widgets[1]?.config.valueType).toBe("float");
+  });
+
+  it("only surfaces generic integer controls when the workflow randomizes them", () => {
+    const widgets = resolveManualWidgetInputs(
+      null,
+      {
+        CustomSampler: {
+          input: {
+            required: {
+              seed: [
+                "INT",
+                {
+                  control_after_generate: true,
+                  default: 0,
+                },
+              ],
+              batch_seed: [
+                "INT",
+                {
+                  control_after_generate: true,
+                  default: 0,
+                },
+              ],
+              fixed_counter: [
+                "INT",
+                {
+                  control_after_generate: true,
+                  default: 1,
+                },
+              ],
+              steps: ["INT", { default: 20 }],
+            },
+          },
+          input_order: {
+            required: ["seed", "batch_seed", "fixed_counter", "steps"],
+          },
+        },
+      },
+      {
+        nodes: [
+          {
+            id: 50,
+            type: "CustomSampler",
+            title: "Custom sampler",
+            widgets_values: [
+              123,
+              "fixed",
+              456,
+              "randomize",
+              7,
+              "fixed",
+              20,
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(widgets.map((widget) => widget.param)).toEqual([
+      "seed",
+      "batch_seed",
+    ]);
+    expect(widgets[0]?.config.controlAfterGenerate).toBe(true);
+    expect(widgets[0]?.config.defaultRandomize).toBe(false);
+    expect(widgets[1]?.config.controlAfterGenerate).toBe(true);
+    expect(widgets[1]?.config.defaultRandomize).toBe(true);
   });
 
   it("discovers sampler controls directly from graph data", () => {
@@ -135,6 +203,8 @@ describe("resolveManualWidgetInputs", () => {
       "cfg",
     ]);
     expect(widgets[0]?.currentValue).toBe(6332);
+    expect(widgets[0]?.config.controlAfterGenerate).toBe(true);
+    expect(widgets[0]?.config.defaultRandomize).toBe(true);
     expect(widgets[1]?.currentValue).toBe(2);
   });
 

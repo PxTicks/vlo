@@ -122,7 +122,7 @@ function getWidgetValueTypeFromTypeSpec(
 function isManualWidgetParam(param: string, nodeTitle: string): boolean {
   const normalizedParam = param.trim().toLowerCase();
   if (!normalizedParam) return false;
-  if (normalizedParam === "seed" || normalizedParam === "noise_seed") {
+  if (isSeedWidgetParam(param)) {
     return true;
   }
   if (normalizedParam.includes("seed") || normalizedParam.includes("random")) {
@@ -137,6 +137,11 @@ function isManualWidgetParam(param: string, nodeTitle: string): boolean {
   return (
     normalizedTitle.includes("seed") || normalizedTitle.includes("random")
   );
+}
+
+function isSeedWidgetParam(param: string): boolean {
+  const normalizedParam = param.trim().toLowerCase();
+  return normalizedParam === "seed" || normalizedParam === "noise_seed";
 }
 
 function resolveClassInfo(
@@ -245,6 +250,33 @@ function resolveGraphWidgetValue(
   return widgetsValues[widgetIndex];
 }
 
+function resolveGraphWidgetMode(
+  graphData: Record<string, unknown> | null,
+  nodeId: string,
+  param: string,
+  classInfo: Record<string, unknown> | null,
+  opts: Record<string, unknown>,
+): "fixed" | "randomize" | "increment" | "decrement" | null {
+  if (opts.control_after_generate !== true) return null;
+
+  const graphNode = resolveGraphNode(graphData, nodeId);
+  if (!graphNode) return null;
+
+  const widgetsValues = graphNode.widgets_values;
+  if (!Array.isArray(widgetsValues)) return null;
+
+  const widgetIndex = getWidgetValueIndexMap(classInfo).get(param);
+  if (typeof widgetIndex !== "number") return null;
+
+  const mode = widgetsValues[widgetIndex + 1];
+  return mode === "fixed" ||
+    mode === "randomize" ||
+    mode === "increment" ||
+    mode === "decrement"
+    ? mode
+    : null;
+}
+
 function hasOwnProperty(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
@@ -254,6 +286,7 @@ function shouldIncludeObjectInfoWidget(
   nodeTitle: string,
   classType: string | undefined,
   definition: [unknown, Record<string, unknown>] | null,
+  graphMode: ReturnType<typeof resolveGraphWidgetMode>,
 ): boolean {
   if (!definition) {
     return isManualWidgetParam(param, nodeTitle);
@@ -270,6 +303,10 @@ function shouldIncludeObjectInfoWidget(
     (classType === "KSampler" || classType === "KSamplerAdvanced")
   ) {
     return true;
+  }
+
+  if (valueType === "int") {
+    return isSeedWidgetParam(param) || graphMode === "randomize";
   }
 
   return opts.control_after_generate === true || isManualWidgetParam(param, nodeTitle);
@@ -320,7 +357,22 @@ export function resolveManualWidgetInputs(
 
     for (const param of getOrderedObjectInfoParams(inputSpec, classInfo)) {
       const definition = resolveParamDefinition(inputSpec, param);
-      if (shouldIncludeObjectInfoWidget(param, nodeTitle, classType, definition)) {
+      const graphMode = resolveGraphWidgetMode(
+        graphData,
+        nodeId,
+        param,
+        classInfo,
+        definition?.[1] ?? {},
+      );
+      if (
+        shouldIncludeObjectInfoWidget(
+          param,
+          nodeTitle,
+          classType,
+          definition,
+          graphMode,
+        )
+      ) {
         candidateParams.add(param);
       }
     }
@@ -336,6 +388,13 @@ export function resolveManualWidgetInputs(
       const typeSpec = definition?.[0];
       const opts = definition?.[1] ?? {};
       const graphValue = resolveGraphWidgetValue(graphData, nodeId, param, classInfo);
+      const graphMode = resolveGraphWidgetMode(
+        graphData,
+        nodeId,
+        param,
+        classInfo,
+        opts,
+      );
       const defaultValue = hasOwnProperty(opts, "default") ? opts.default : undefined;
       const rawValue = hasOwnProperty(nodeInputs, param)
         ? nodeInputs[param]
@@ -360,6 +419,8 @@ export function resolveManualWidgetInputs(
         explicitValueType ?? inferWidgetValueType(rawValue ?? defaultValue);
       const options = coerceWidgetOptions(typeSpec, opts);
       const label = param === "value" ? nodeTitle : param;
+      const supportsRandomize =
+        opts.control_after_generate === true || isSeedWidgetParam(param);
 
       widgets.push({
         nodeId,
@@ -367,7 +428,13 @@ export function resolveManualWidgetInputs(
         currentValue: rawValue ?? defaultValue ?? null,
         config: {
           label,
-          controlAfterGenerate: false,
+          controlAfterGenerate: supportsRandomize,
+          defaultRandomize:
+            graphMode === "randomize"
+              ? true
+              : graphMode
+                ? false
+                : undefined,
           defaultValue,
           nodeTitle,
           valueType: valueType ?? "unknown",

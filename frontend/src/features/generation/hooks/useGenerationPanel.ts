@@ -622,6 +622,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
 
     // Build slot values from current UI state
     const slotValues: Record<string, SlotValue> = {};
+    const bypassNodeIds = new Set<string>();
 
     for (const input of workflowInputs) {
       const inputId = getWorkflowInputId(input);
@@ -635,7 +636,12 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
           input,
           workflowInputById,
         );
-        if (!value) continue;
+        if (!value) {
+          if (mode === "manual") {
+            bypassNodeIds.add(input.nodeId);
+          }
+          continue;
+        }
 
         if (input.inputType === "image") {
           if (value.kind === "asset") {
@@ -776,6 +782,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       derivedWidgetInputs,
       count,
       frontendStateWidgetValues,
+      [...bypassNodeIds],
     );
   }, [
     derivedMaskDefaultVideoTreatment,

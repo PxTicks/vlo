@@ -1374,6 +1374,30 @@ describe("useGenerationStore pipeline phases", () => {
     ).not.toHaveProperty("269");
   });
 
+  it("passes empty manual media nodes through the pre-resolve bypass list", async () => {
+    makeReadyStoreState();
+
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "62": {
+          class_type: "LoadImage",
+          inputs: {
+            image: "default.png",
+          },
+        },
+      },
+      editorRef: {} as HTMLIFrameElement,
+      preResolvedPromptEnabled: true,
+    });
+
+    await useGenerationStore
+      .getState()
+      .submitGeneration({}, {}, {}, {}, {}, ["62"]);
+
+    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(mockPreResolvePrompt.mock.calls[0]?.[1]).toEqual(["62"]);
+  });
+
   it("uses the queued pre-resolved workflow snapshot instead of the live editor workflow at dispatch time", async () => {
     makeReadyStoreState();
 
@@ -2171,6 +2195,7 @@ describe("useGenerationStore pipeline phases", () => {
             frontendStateWidgetValues: {},
             widgetModes: {},
             derivedWidgetInputs: {},
+            bypassNodeIds: [],
           },
           metadata: {
             generationMetadata: {
@@ -2236,6 +2261,7 @@ describe("useGenerationStore pipeline phases", () => {
             frontendStateWidgetValues: {},
             widgetModes: {},
             derivedWidgetInputs: {},
+            bypassNodeIds: [],
           },
           metadata: {
             generationMetadata: {
@@ -2343,6 +2369,7 @@ describe("useGenerationStore pipeline phases", () => {
             frontendStateWidgetValues: {},
             widgetModes: {},
             derivedWidgetInputs: {},
+            bypassNodeIds: [],
           },
           metadata: {
             generationMetadata: {

@@ -118,6 +118,7 @@ function buildGenerationPlanFromState(
   widgetModes: Record<string, "fixed" | "randomize">,
   derivedWidgetInputs: Record<string, string>,
   frontendStateWidgetValues: Record<string, unknown>,
+  bypassNodeIds: string[] = [],
 ): GenerationPlan {
   const workflowId =
     state.rulesWorkflowSourceId ??
@@ -149,6 +150,7 @@ function buildGenerationPlanFromState(
     frontendStateWidgetValues,
     widgetModes,
     derivedWidgetInputs,
+    bypassNodeIds,
     postprocessConfig: resolvePostprocessConfig(
       getWorkflowPostprocessingConfig(state.activeWorkflowRules),
     ),
@@ -209,7 +211,11 @@ async function captureSubmittedWorkflow(
     plan.submission.frontendStateWidgetValues,
   );
   const bypassNodeIds = Array.from(
-    new Set([...bypass, ...effectSwitchEffects.bypass]),
+    new Set([
+      ...bypass,
+      ...effectSwitchEffects.bypass,
+      ...plan.submission.bypassNodeIds,
+    ]),
   );
   const widgetOverrides: Parameters<typeof preResolvePrompt>[2] = [
     ...defaultWidgetOverrides,
@@ -261,6 +267,7 @@ async function buildQueuedGenerationPlansFromState(
   derivedWidgetInputs: Record<string, string>,
   frontendStateWidgetValues: Record<string, unknown>,
   count: number,
+  bypassNodeIds: string[] = [],
 ): Promise<GenerationPlan[]> {
   const plans = Array.from({ length: count }, () =>
     buildGenerationPlanFromState(
@@ -270,6 +277,7 @@ async function buildQueuedGenerationPlansFromState(
       widgetModes,
       derivedWidgetInputs,
       frontendStateWidgetValues,
+      bypassNodeIds,
     ),
   );
   const firstPlan = plans[0];
@@ -723,6 +731,7 @@ export function buildExecutionStoreState(
       widgetModes = {},
       derivedWidgetInputs = {},
       frontendStateWidgetValues = {},
+      bypassNodeIds = [],
     ) => {
       const currentState = get();
       const activeJob = currentState.activeJobId
@@ -750,6 +759,7 @@ export function buildExecutionStoreState(
         widgetModes,
         derivedWidgetInputs,
         frontendStateWidgetValues,
+        bypassNodeIds,
       );
       return dispatchGenerationPlan(plan);
     },
@@ -761,6 +771,7 @@ export function buildExecutionStoreState(
       derivedWidgetInputs = {},
       count = 1,
       frontendStateWidgetValues = {},
+      bypassNodeIds = [],
     ) => {
       const safeCount = Math.max(1, Math.floor(count));
       const currentState = get();
@@ -779,6 +790,7 @@ export function buildExecutionStoreState(
           derivedWidgetInputs,
           frontendStateWidgetValues,
           safeCount,
+          bypassNodeIds,
         );
       } catch (error) {
         buildSubmissionErrorPatch(get, set, error);

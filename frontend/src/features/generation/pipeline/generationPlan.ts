@@ -52,6 +52,7 @@ interface CreateGenerationPlanOptions {
   frontendStateWidgetValues: Record<string, unknown>;
   widgetModes: Record<string, "fixed" | "randomize">;
   derivedWidgetInputs: Record<string, string>;
+  bypassNodeIds?: string[];
   postprocessConfig: import("../types").WorkflowPostprocessingConfig;
   workflowWarnings: WorkflowRuleWarning[];
   projectConfig: ProjectConfig;
@@ -789,6 +790,7 @@ export function createGenerationPlan(
       ),
       widgetModes: { ...options.widgetModes },
       derivedWidgetInputs: { ...options.derivedWidgetInputs },
+      bypassNodeIds: [...(options.bypassNodeIds ?? [])],
     },
     metadata: {
       generationMetadata: cloneSerializableValue(

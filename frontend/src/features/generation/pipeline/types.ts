@@ -134,6 +134,7 @@ export interface GenerationSubmissionPlan {
   frontendStateWidgetValues: Record<string, unknown>;
   derivedWidgetInputs: Record<string, string>;
   widgetModes: Record<string, "fixed" | "randomize">;
+  bypassNodeIds: string[];
 }
 
 export interface GenerationMetadataPlan {

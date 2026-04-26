@@ -95,6 +95,11 @@
       "widgets": {
         "switch": {
           "label": "Voice only",
+          "when": {
+            "kind": "input_presence",
+            "inputs": ["232"],
+            "match": "all_present"
+          },
           "value_type": "boolean",
           "default": false,
           "group_id": "audio",

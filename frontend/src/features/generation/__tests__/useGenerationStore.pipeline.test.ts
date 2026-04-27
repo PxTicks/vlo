@@ -143,6 +143,7 @@ vi.mock("../services/GenerationDeliveryWebSocket", () => ({
   GenerationDeliveryWebSocket: class {
     isConnected = false;
     private readonly messageHandlers = new Set<(message: unknown) => void>();
+    private readonly previewHandlers = new Set<(preview: unknown) => void>();
     private readonly connectionChangeHandlers = new Set<
       (state: "connected" | "disconnected") => void
     >();
@@ -171,6 +172,13 @@ vi.mock("../services/GenerationDeliveryWebSocket", () => ({
       this.messageHandlers.add(handler);
       return () => {
         this.messageHandlers.delete(handler);
+      };
+    }
+
+    onPreview(handler: (preview: unknown) => void): () => void {
+      this.previewHandlers.add(handler);
+      return () => {
+        this.previewHandlers.delete(handler);
       };
     }
 

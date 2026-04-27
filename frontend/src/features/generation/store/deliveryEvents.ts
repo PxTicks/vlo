@@ -8,7 +8,7 @@ import {
 } from "../services/generationDeliveryApi";
 import { frontendPostprocess } from "../utils/pipeline";
 import type { GenerationJob } from "../types";
-import { setJobPostprocessResult } from "./jobMutations";
+import { applyPreviewUpdate, setJobPostprocessResult } from "./jobMutations";
 import { isGenerationInterruptionMessage } from "./constants";
 import type {
   GenerationStoreGet,
@@ -368,6 +368,10 @@ export function attachDeliveryClientHandlers(
         break;
       }
     }
+  });
+
+  client.onPreview((preview) => {
+    set((state) => applyPreviewUpdate(state, preview));
   });
 
   client.onConnectionChange((connectionState) => {

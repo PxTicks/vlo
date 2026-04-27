@@ -35,11 +35,16 @@ import type {
   GenerationDeliveryManifest,
   GenerationDeliveryMessage,
 } from "../../services/generationDeliveryApi";
+import type { ParsedBinaryPreview } from "../../services/previewBinary";
+
 class FakeDeliveryClient {
   readonly acknowledgedDeliveryIds: string[] = [];
   readonly rejectedDeliveries: Array<{ deliveryId: string; error: string }> = [];
   private readonly messageHandlers = new Set<
     (message: GenerationDeliveryMessage) => void
+  >();
+  private readonly previewHandlers = new Set<
+    (preview: ParsedBinaryPreview) => void
   >();
   private readonly connectionChangeHandlers = new Set<
     (state: "connected" | "disconnected") => void
@@ -60,6 +65,13 @@ class FakeDeliveryClient {
     };
   }
 
+  onPreview(handler: (preview: ParsedBinaryPreview) => void): () => void {
+    this.previewHandlers.add(handler);
+    return () => {
+      this.previewHandlers.delete(handler);
+    };
+  }
+
   onConnectionChange(
     handler: (state: "connected" | "disconnected") => void,
   ): () => void {
@@ -72,6 +84,12 @@ class FakeDeliveryClient {
   emitMessage(message: GenerationDeliveryMessage): void {
     for (const handler of this.messageHandlers) {
       handler(message);
+    }
+  }
+
+  emitPreview(preview: ParsedBinaryPreview): void {
+    for (const handler of this.previewHandlers) {
+      handler(preview);
     }
   }
 

@@ -2,10 +2,18 @@ import type {
   GenerationDeliveryMessage,
 } from "./generationDeliveryApi";
 import { parseGenerationDeliveryMessage } from "./generationDeliveryApi";
+import {
+  parseBinaryPreviewPayload,
+  type ParsedBinaryPreview,
+  type PreviewSequenceMetadata,
+} from "./previewBinary";
 
 export type GenerationDeliveryConnectionState = "connected" | "disconnected";
 export type GenerationDeliveryMessageHandler = (
   message: GenerationDeliveryMessage,
+) => void;
+export type GenerationDeliveryPreviewHandler = (
+  preview: ParsedBinaryPreview,
 ) => void;
 export type GenerationDeliveryConnectionChangeHandler = (
   state: GenerationDeliveryConnectionState,
@@ -18,8 +26,14 @@ export class GenerationDeliveryWebSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
   private readonly messageHandlers = new Set<GenerationDeliveryMessageHandler>();
+  private readonly previewHandlers =
+    new Set<GenerationDeliveryPreviewHandler>();
   private readonly connectionChangeHandlers =
     new Set<GenerationDeliveryConnectionChangeHandler>();
+  private readonly previewSequenceMetadataByNodeId = new Map<
+    string,
+    PreviewSequenceMetadata
+  >();
 
   constructor(baseUrl: string, projectId: string) {
     this.baseUrl = baseUrl;
@@ -47,6 +61,7 @@ export class GenerationDeliveryWebSocket {
       `/app/generation-delivery/ws?${query.toString()}`;
 
     this.ws = new WebSocket(wsUrl);
+    this.ws.binaryType = "arraybuffer";
     this.ws.onopen = () => {
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
@@ -55,7 +70,22 @@ export class GenerationDeliveryWebSocket {
       this.notifyConnectionChange("connected");
     };
     this.ws.onmessage = (event: MessageEvent) => {
+      if (event.data instanceof ArrayBuffer) {
+        const parsed = parseBinaryPreviewPayload(event.data, (nodeId) =>
+          this.findPreviewSequenceMetadata(nodeId),
+        );
+        if (!parsed) {
+          return;
+        }
+        for (const handler of this.previewHandlers) {
+          handler(parsed);
+        }
+        return;
+      }
       if (typeof event.data !== "string") {
+        return;
+      }
+      if (this.tryAbsorbPreviewSequenceMetadata(event.data)) {
         return;
       }
       const message = parseGenerationDeliveryMessage(event.data);
@@ -120,6 +150,13 @@ export class GenerationDeliveryWebSocket {
     };
   }
 
+  onPreview(handler: GenerationDeliveryPreviewHandler): () => void {
+    this.previewHandlers.add(handler);
+    return () => {
+      this.previewHandlers.delete(handler);
+    };
+  }
+
   onConnectionChange(
     handler: GenerationDeliveryConnectionChangeHandler,
   ): () => void {
@@ -135,5 +172,58 @@ export class GenerationDeliveryWebSocket {
     for (const handler of this.connectionChangeHandlers) {
       handler(state);
     }
+  }
+
+  private tryAbsorbPreviewSequenceMetadata(data: string): boolean {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      return false;
+    }
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      (parsed as { type?: unknown }).type !== "VHS_latentpreview"
+    ) {
+      return false;
+    }
+    const payload = (parsed as { data?: unknown }).data;
+    if (!payload || typeof payload !== "object") {
+      return true;
+    }
+    const { id, rate, length } = payload as {
+      id?: unknown;
+      rate?: unknown;
+      length?: unknown;
+    };
+    if (
+      typeof id !== "string" ||
+      typeof rate !== "number" ||
+      typeof length !== "number"
+    ) {
+      return true;
+    }
+    this.previewSequenceMetadataByNodeId.set(id, {
+      frameRate: rate,
+      nodeId: id,
+      totalFrames: length,
+    });
+    return true;
+  }
+
+  private findPreviewSequenceMetadata(
+    nodeId: string,
+  ): PreviewSequenceMetadata | null {
+    const exactMatch = this.previewSequenceMetadataByNodeId.get(nodeId);
+    if (exactMatch) {
+      return exactMatch;
+    }
+    for (const [knownNodeId, metadata] of this.previewSequenceMetadataByNodeId) {
+      if (knownNodeId.startsWith(nodeId) || nodeId.startsWith(knownNodeId)) {
+        return metadata;
+      }
+    }
+    return null;
   }
 }

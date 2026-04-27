@@ -834,6 +834,36 @@ class GenerationHoldingService:
         if not sent:
             await self._unregister_consumer(active_consumer)
 
+    async def _broadcast_binary(self, project_id: str, payload: bytes) -> None:
+        async with self._lock:
+            consumers = list(self._project_consumers.get(project_id, []))
+            active_id = self._active_consumer_id_by_project.get(project_id)
+            active_consumer = next(
+                (consumer for consumer in consumers if consumer.id == active_id),
+                None,
+            )
+        if active_consumer is None:
+            return
+        try:
+            await active_consumer.websocket.send_bytes(payload)
+        except Exception:
+            await self._unregister_consumer(active_consumer)
+
+    async def _broadcast_text(self, project_id: str, payload: str) -> None:
+        async with self._lock:
+            consumers = list(self._project_consumers.get(project_id, []))
+            active_id = self._active_consumer_id_by_project.get(project_id)
+            active_consumer = next(
+                (consumer for consumer in consumers if consumer.id == active_id),
+                None,
+            )
+        if active_consumer is None:
+            return
+        try:
+            await active_consumer.websocket.send_text(payload)
+        except Exception:
+            await self._unregister_consumer(active_consumer)
+
     async def _broadcast_delivery_update(self, project_id: str, manifest: dict[str, Any]) -> None:
         await self._broadcast_payload(
             project_id,
@@ -1046,6 +1076,9 @@ class GenerationHoldingService:
                         data = event.get("data")
                         if not isinstance(data, dict):
                             continue
+                        if event_type == "VHS_latentpreview":
+                            await self._broadcast_text(project_id, message)
+                            continue
                         if data.get("prompt_id") != prompt_id:
                             continue
 
@@ -1117,6 +1150,7 @@ class GenerationHoldingService:
                             )
                             if captured is not None:
                                 websocket_outputs.append(captured)
+                        await self._broadcast_binary(project_id, frame)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

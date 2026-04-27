@@ -667,6 +667,38 @@ built-in default (`DEFAULT_PIPELINE_STAGE_AFTER_BY_KIND`) that enforces
 this even when `after` is omitted. Authoring it explicitly is the
 recommended practice.
 
+### Advanced Control Properties
+
+Controls across any pipeline stage also support:
+
+- `include_options` / `exclude_options` — Arrays to whitelist/blacklist specific options for enum controls.
+- `bind` — A `StateReference` (e.g., `workflow_param` or `frontend_control`) defining where the backend should fetch the value if the client omits it. Very useful for binding to an existing workflow node param so you don't duplicate inputs in the frontend.
+- `default_rules` — An array of rules `[{ when, value }]` to dynamically alter the control's default based on a `PipelineControlCondition`.
+
+---
+
+## Output Assembly
+
+`kind: "output_assembly"` is an additional pipeline stage type. It configures what outputs should be post-processed by the backend, such as stitching video frames back together with audio.
+
+### Config
+
+```json
+"config": {
+  "mode": "auto",
+  "panel_preview": "raw_outputs",
+  "on_failure": "fallback_raw",
+  "stitch_fps": 24
+}
+```
+
+| Field           | Purpose                                                           |
+| --------------- | ----------------------------------------------------------------- |
+| `mode`          | `"auto" \| "stitch_frames_with_audio" \| "none"`                  |
+| `panel_preview` | `"raw_outputs" \| "replace_outputs"`                              |
+| `on_failure`    | `"fallback_raw" \| "show_error"`                                  |
+| `stitch_fps`    | Optional integer override for the framerate used during stitching |
+
 ---
 
 ## Derived Widgets

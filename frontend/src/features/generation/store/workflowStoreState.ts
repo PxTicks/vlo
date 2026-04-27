@@ -183,6 +183,7 @@ export function buildWorkflowStoreState(
         inputs,
         applicableRules,
         workflow,
+        graphData,
       );
       const workflowRuleWarnings = mergeRuleWarnings(
         state.activeRulesWarnings,
@@ -292,6 +293,7 @@ export function buildWorkflowStoreState(
         inputs,
         resolvedRules,
         workflow,
+        graphData,
       );
       const workflowRuleWarnings = mergeRuleWarnings(
         resolvedRulesWarnings,
@@ -548,6 +550,7 @@ export function buildWorkflowStoreState(
             tempWorkflow.inputs,
             rules,
             tempWorkflow.workflow,
+            tempWorkflow.graphData ?? graphData,
           );
           const mergedWarnings = mergeRuleWarnings(
             rulesWarnings,

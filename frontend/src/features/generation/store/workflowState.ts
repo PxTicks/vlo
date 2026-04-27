@@ -499,11 +499,14 @@ export function applyPresentationRules(
   inferredInputs: WorkflowInput[],
   rules: WorkflowRules | null,
   workflow?: Record<string, unknown> | null,
+  graphData?: Record<string, unknown> | null,
 ) {
   return resolvePresentedInputsFromRules(
     inferredInputs,
     rules ?? EMPTY_WORKFLOW_RULES,
     workflow,
+    [],
+    graphData,
   );
 }
 

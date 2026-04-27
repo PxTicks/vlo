@@ -911,4 +911,32 @@ appear behind a slot rather than as its own top-level input.
 | `param`      | inferred      | Parameter name on the node for value injection                                        |
 | `label`      | node title    | Custom display label                                                                  |
 | `class_type` | node's class  | Override for rule-defined inputs                                                      |
-| `group_id` / `group_title` / `group_order` | —   | Grouping in the input list                                         |
+| `group_id` / `group_title` / `group_order` | —   | Grouping in the input list (see below)                             |
+
+#### Group ordering
+
+`group_order` is a single integer that drives **both** within-group and
+between-group sorting:
+
+- **Within a group** — members render in ascending `group_order`.
+- **Between groups** — each group sorts by the smallest `group_order` among
+  its members. Groups whose members declare no `group_order` fall back to
+  the index where the group first appeared in the inferred input list.
+
+The practical pattern is to assign each group a numeric *band* and place
+its members inside that band. For a workflow with Frames and Audio inputs:
+
+```json
+"45": { "present": { "label": "Start frame", "group_id": "frames", "group_order": 0 } },
+"47": { "present": { "label": "End frame",   "group_id": "frames", "group_order": 1 } },
+"232": { "present": { "label": "Custom audio", "group_id": "audio", "group_order": 10 } }
+```
+
+Frames sort first (`min(0, 1) = 0`) ahead of Audio (`min(10) = 10`), and
+within Frames the start frame renders above the end frame. Leaving gaps
+between bands (`0..9` for Frames, `10..19` for Audio) means later additions
+to a group don't accidentally collide with the next group's range.
+
+Without explicit `group_order`, groups fall back to first-occurrence order,
+which depends on the workflow's node ordering — author the orders if you
+care about layout.

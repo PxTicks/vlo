@@ -55,7 +55,7 @@
         "label": "Custom audio (optional)",
         "group_id": "audio",
         "group_title": "Audio",
-        "group_order": 0,
+        "group_order": 10,
         "required": false
       }
     },

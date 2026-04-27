@@ -228,7 +228,25 @@ export function parseInputsFromGraphData(
     objectInfo?: Record<string, unknown> | null;
   } = {},
 ): WorkflowInput[] {
-  const nodes = Array.isArray(graphData.nodes) ? graphData.nodes : [];
+  const rawNodes = Array.isArray(graphData.nodes) ? graphData.nodes : [];
+  // Iterate in numeric-id order so input ordering does not depend on the
+  // author's visual node placement. Pre-`df8ea99` the workflow was projected
+  // through an API-shape object keyed by node-id strings, which JS iterates
+  // numerically — code downstream (group ordering, sortConditioningInputs)
+  // implicitly relies on that.
+  const nodes = [...rawNodes].sort((left, right) => {
+    if (!isRecord(left) || !isRecord(right)) return 0;
+    const leftId = String(left.id ?? "");
+    const rightId = String(right.id ?? "");
+    const leftNum = /^-?\d+$/.test(leftId) ? Number.parseInt(leftId, 10) : NaN;
+    const rightNum = /^-?\d+$/.test(rightId) ? Number.parseInt(rightId, 10) : NaN;
+    if (Number.isFinite(leftNum) && Number.isFinite(rightNum)) {
+      return leftNum - rightNum;
+    }
+    if (Number.isFinite(leftNum)) return -1;
+    if (Number.isFinite(rightNum)) return 1;
+    return leftId.localeCompare(rightId);
+  });
   const nodeMap = options.inputNodeMap ?? INPUT_NODE_MAP;
   const objectInfo = options.objectInfo ?? null;
   const inputs: WorkflowInput[] = [];

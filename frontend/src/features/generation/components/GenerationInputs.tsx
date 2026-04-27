@@ -370,14 +370,15 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
     order?: number;
   };
 
+  type GroupAccumulator = {
+    title: string;
+    entries: GroupedInputEntry[];
+    minOrder?: number;
+    firstIndex: number;
+  };
+
   const blocks: RenderableInputBlock[] = [];
-  const groupedEntries = new Map<
-    string,
-    {
-      title: string;
-      entries: GroupedInputEntry[];
-    }
-  >();
+  const groupedEntries = new Map<string, GroupAccumulator>();
 
   for (const [index, input] of inputs.entries()) {
     if (input.inputType === "text") {
@@ -400,6 +401,12 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
     const existing = groupedEntries.get(group.id);
     if (existing) {
       existing.entries.push({ input: mediaInput, index, order: group.order });
+      if (
+        typeof group.order === "number" &&
+        (existing.minOrder === undefined || group.order < existing.minOrder)
+      ) {
+        existing.minOrder = group.order;
+      }
       if (!existing.title && group.title) {
         existing.title = group.title;
       }
@@ -409,6 +416,8 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
     groupedEntries.set(group.id, {
       title: group.title ?? mediaInput.label,
       entries: [{ input: mediaInput, index, order: group.order }],
+      minOrder: typeof group.order === "number" ? group.order : undefined,
+      firstIndex: index,
     });
     blocks.push({
       kind: "mediaGroup",
@@ -418,15 +427,33 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
     });
   }
 
+  // Sort key resolution:
+  //   - mediaGroup: smallest `group.order` declared by any member, falling
+  //     back to the index where the group first appeared. This lets rules
+  //     drive inter-group order via per-input `group_order` (e.g. Frames
+  //     members at 0,1 and Audio members at 10,11 → Frames first), while
+  //     un-rules'd workflows keep their original first-occurrence ordering.
+  //   - media / text: their position in the inferred input list.
+  const resolveSortKey = (
+    block: RenderableInputBlock,
+    fallbackIndex: number,
+  ): number => {
+    if (block.kind !== "mediaGroup") return fallbackIndex;
+    const group = groupedEntries.get(block.id);
+    if (!group) return fallbackIndex;
+    return group.minOrder ?? group.firstIndex;
+  };
+
   return blocks
     .map((block, index) => {
+      const sortKey = resolveSortKey(block, index);
       if (block.kind !== "mediaGroup") {
-        return { block, index };
+        return { block, index, sortKey };
       }
 
       const group = groupedEntries.get(block.id);
       if (!group) {
-        return { block, index };
+        return { block, index, sortKey };
       }
 
       const sortedInputs = [...group.entries]
@@ -448,6 +475,7 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
 
       return {
         index,
+        sortKey,
         block: {
           ...block,
           title: group.title || block.title,
@@ -460,6 +488,9 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
       const rightPriority = getRenderableInputBlockPriority(right.block);
       if (leftPriority !== rightPriority) {
         return leftPriority - rightPriority;
+      }
+      if (left.sortKey !== right.sortKey) {
+        return left.sortKey - right.sortKey;
       }
       return left.index - right.index;
     })

@@ -82,9 +82,72 @@ function applyConditioningRoleToLabel(
   return `${toConditioningLabel(role)} (${label})`;
 }
 
+function collectRoleAssignmentsFromApiWorkflow(
+  workflow: Record<string, unknown>,
+): Array<{ sourceNodeId: string; role: ConditioningRole }> {
+  const assignments: Array<{ sourceNodeId: string; role: ConditioningRole }> = [];
+  for (const node of Object.values(workflow)) {
+    if (!isRecord(node)) continue;
+    const nodeInputs = isRecord(node.inputs) ? node.inputs : {};
+
+    for (const [inputName, inputValue] of Object.entries(nodeInputs)) {
+      const role = toConditioningRole(inputName);
+      if (!role) continue;
+      if (!Array.isArray(inputValue) || inputValue.length === 0) continue;
+      const rawSource = inputValue[0];
+      if (typeof rawSource !== "string" && typeof rawSource !== "number") {
+        continue;
+      }
+      assignments.push({ sourceNodeId: String(rawSource), role });
+    }
+  }
+  return assignments;
+}
+
+function collectRoleAssignmentsFromGraphData(
+  graphData: Record<string, unknown>,
+): Array<{ sourceNodeId: string; role: ConditioningRole }> {
+  const nodes = Array.isArray(graphData.nodes) ? graphData.nodes : [];
+  const links = Array.isArray(graphData.links) ? graphData.links : [];
+  if (nodes.length === 0 || links.length === 0) return [];
+
+  // LiteGraph link tuple: [linkId, sourceNodeId, sourceSlot, destNodeId, destSlot, type]
+  const sourceByLinkId = new Map<number, string>();
+  for (const link of links) {
+    if (!Array.isArray(link) || link.length < 2) continue;
+    const linkId = link[0];
+    const sourceNodeId = link[1];
+    if (typeof linkId !== "number") continue;
+    if (typeof sourceNodeId !== "string" && typeof sourceNodeId !== "number") {
+      continue;
+    }
+    sourceByLinkId.set(linkId, String(sourceNodeId));
+  }
+
+  const assignments: Array<{ sourceNodeId: string; role: ConditioningRole }> = [];
+  for (const node of nodes) {
+    if (!isRecord(node)) continue;
+    const nodeInputs = Array.isArray(node.inputs) ? node.inputs : [];
+    for (const entry of nodeInputs) {
+      if (!isRecord(entry)) continue;
+      const role = toConditioningRole(
+        typeof entry.name === "string" ? entry.name : undefined,
+      );
+      if (!role) continue;
+      const linkId = entry.link;
+      if (typeof linkId !== "number") continue;
+      const sourceNodeId = sourceByLinkId.get(linkId);
+      if (!sourceNodeId) continue;
+      assignments.push({ sourceNodeId, role });
+    }
+  }
+  return assignments;
+}
+
 function resolveConditioningRoles(
   inferredInputs: WorkflowInput[],
   workflow: Record<string, unknown> | null | undefined,
+  graphData?: Record<string, unknown> | null,
 ): Map<string, ConditioningRole> {
   const roles = new Map<string, ConditioningRole>();
   const directlyResolvedNodeIds = new Set<string>();
@@ -98,36 +161,31 @@ function resolveConditioningRoles(
     }
   }
 
-  if (!workflow) return roles;
+  // Prefer API-shape workflow when available; fall back to LiteGraph
+  // graphData.links so role detection still works on the input-discovery
+  // path where the API workflow is null (post-`df8ea99`).
+  const assignments = workflow
+    ? collectRoleAssignmentsFromApiWorkflow(workflow)
+    : graphData
+      ? collectRoleAssignmentsFromGraphData(graphData)
+      : [];
 
-  for (const node of Object.values(workflow)) {
-    if (!isRecord(node)) continue;
-    const nodeInputs = isRecord(node.inputs) ? node.inputs : {};
+  for (const { sourceNodeId, role } of assignments) {
+    if (ambiguousDirectNodeIds.has(sourceNodeId)) continue;
 
-    for (const [inputName, inputValue] of Object.entries(nodeInputs)) {
-      const role = toConditioningRole(inputName);
-      if (!role) continue;
-      if (!Array.isArray(inputValue) || typeof inputValue[0] !== "string") {
-        continue;
-      }
-
-      const sourceNodeId = inputValue[0];
-      if (ambiguousDirectNodeIds.has(sourceNodeId)) continue;
-
-      const existing = roles.get(sourceNodeId);
-      if (
-        directlyResolvedNodeIds.has(sourceNodeId) &&
-        existing &&
-        existing !== role
-      ) {
-        roles.delete(sourceNodeId);
-        ambiguousDirectNodeIds.add(sourceNodeId);
-        continue;
-      }
-
-      roles.set(sourceNodeId, role);
-      directlyResolvedNodeIds.add(sourceNodeId);
+    const existing = roles.get(sourceNodeId);
+    if (
+      directlyResolvedNodeIds.has(sourceNodeId) &&
+      existing &&
+      existing !== role
+    ) {
+      roles.delete(sourceNodeId);
+      ambiguousDirectNodeIds.add(sourceNodeId);
+      continue;
     }
+
+    roles.set(sourceNodeId, role);
+    directlyResolvedNodeIds.add(sourceNodeId);
   }
 
   return roles;
@@ -223,6 +281,7 @@ export function resolvePresentedInputsFromRules(
   rules: WorkflowRules,
   workflow?: Record<string, unknown> | null,
   initialWarnings: WorkflowRuleWarning[] = [],
+  graphData?: Record<string, unknown> | null,
 ): ResolvePresentedInputsResult {
   const presentationWarnings: WorkflowRuleWarning[] = [...initialWarnings];
   const inferredMap = new Map(
@@ -234,7 +293,11 @@ export function resolvePresentedInputsFromRules(
     existing.push(input);
     inferredByNodeId.set(input.nodeId, existing);
   }
-  const conditioningRoles = resolveConditioningRoles(inferredInputs, workflow);
+  const conditioningRoles = resolveConditioningRoles(
+    inferredInputs,
+    workflow,
+    graphData,
+  );
   const resolved: WorkflowInput[] = [];
   const derivedMaskMappings: DerivedMaskMapping[] = [];
   const ruleNodes = rules.nodes ?? {};

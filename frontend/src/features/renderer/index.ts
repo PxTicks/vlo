@@ -20,6 +20,5 @@ export {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
-  createTransparentAreaNeutralGrayOutputColorMatrixFilter,
   DecoderWorker,
 } from "./publicApi";

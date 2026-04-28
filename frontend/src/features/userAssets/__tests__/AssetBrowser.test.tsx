@@ -79,8 +79,8 @@ describe("AssetBrowser Component", () => {
     {
       id: "mask-video",
       type: "video",
-      name: "vacation_sam2_mask.webm",
-      src: "mask.webm",
+      name: "vacation_sam2_mask.mp4",
+      src: "mask.mp4",
       hash: "mask-hash",
       createdAt: 0,
       creationMetadata: {
@@ -235,7 +235,7 @@ describe("AssetBrowser Component", () => {
     expect(screen.getByText("solo.mp4")).toBeInTheDocument();
     expect(screen.queryByText("b-roll.mp4")).not.toBeInTheDocument();
     expect(
-      screen.queryByText("vacation_sam2_mask.webm"),
+      screen.queryByText("vacation_sam2_mask.mp4"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("thumbnail.jpg")).not.toBeInTheDocument();
 
@@ -261,7 +261,7 @@ describe("AssetBrowser Component", () => {
 
     expect(screen.getByText(/No video assets/i)).toBeInTheDocument();
     expect(
-      screen.queryByText("vacation_sam2_mask.webm"),
+      screen.queryByText("vacation_sam2_mask.mp4"),
     ).not.toBeInTheDocument();
   });
 

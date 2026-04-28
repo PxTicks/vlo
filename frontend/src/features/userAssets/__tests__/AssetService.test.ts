@@ -314,8 +314,8 @@ describe("AssetService", () => {
   });
 
   it("allows generation masks to ingest even when the hash already exists", async () => {
-    const maskFile = new File(["mask"], "generation-mask.webm", {
-      type: "video/webm",
+    const maskFile = new File(["mask"], "generation-mask.mp4", {
+      type: "video/mp4",
     });
 
     (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
@@ -335,9 +335,9 @@ describe("AssetService", () => {
       [
         {
           id: "existing-mask",
-          name: "existing-mask.webm",
+          name: "existing-mask.mp4",
           hash: "shared-mask-hash",
-          src: "existing-mask.webm",
+          src: "existing-mask.mp4",
           type: "video",
           createdAt: 1,
           creationMetadata: {
@@ -353,7 +353,7 @@ describe("AssetService", () => {
     );
 
     expect(newAsset).toMatchObject({
-      name: "generation-mask.webm",
+      name: "generation-mask.mp4",
       hash: "shared-mask-hash",
       type: "video",
       creationMetadata: {

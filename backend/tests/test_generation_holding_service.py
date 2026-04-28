@@ -104,8 +104,8 @@ async def test_generation_holding_service_persists_and_acknowledges_delivery(
             "maskCropMetadata": {"mode": "crop"},
         },
         prepared_mask_bytes=b"mask-bytes",
-        prepared_mask_filename="prepared-mask.webm",
-        prepared_mask_content_type="video/webm",
+        prepared_mask_filename="prepared-mask.mp4",
+        prepared_mask_content_type="video/mp4",
     )
 
     deliveries = await service.list_project_deliveries("project-1")
@@ -117,7 +117,7 @@ async def test_generation_holding_service_persists_and_acknowledges_delivery(
     assert delivery["workflow_warnings"] == [{"code": "warning"}]
     assert delivery["applied_widget_values"] == {"145:seed": "123"}
     assert delivery["aspect_ratio_processing"] == {"enabled": True}
-    assert delivery["prepared_mask"]["filename"] == "prepared-mask.webm"
+    assert delivery["prepared_mask"]["filename"] == "prepared-mask.mp4"
     assert delivery["preview_frames"] == []
 
     stored_manifest = service._deliveries["delivery-1"]

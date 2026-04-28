@@ -5,7 +5,6 @@ import type {
   GeneratedCreationMetadata,
 } from "../../../../types/Asset";
 import { useProjectStore } from "../../../project";
-import { DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT } from "../../derivedMaskVideoTreatment";
 import * as inputSelection from "../../utils/inputSelection";
 import * as mediaUtils from "../../pipeline/utils/media";
 import { buildGenerationFamilyAutoMatchKey } from "../familyAssignment";
@@ -334,14 +333,14 @@ describe("generation pipeline", () => {
     expect(request.maskCropDilation).toBeUndefined();
   });
 
-  it("forwards derived-mask video treatment into the selection renderer", async () => {
+  it("forwards derived-mask renders into the selection renderer", async () => {
     const renderSpy = vi
-      .spyOn(inputSelection, "renderTimelineSelectionToWebmWithDerivedMasks")
+      .spyOn(inputSelection, "renderTimelineSelectionToMp4WithDerivedMasks")
       .mockResolvedValue({
-        video: new File(["video"], "selection.webm", { type: "video/webm" }),
+        video: new File(["video"], "selection.mp4", { type: "video/mp4" }),
         masks: {
-          video_binary: new File(["mask"], "selection-mask.webm", {
-            type: "video/webm",
+          video_binary: new File(["mask"], "selection-mask.mp4", {
+            type: "video/mp4",
           }),
         },
       });
@@ -369,7 +368,6 @@ describe("generation pipeline", () => {
             clips: [],
             fps: 24,
           },
-          derivedMaskVideoTreatment: "fill_transparent_with_neutral_gray",
         },
       },
       "client-id",
@@ -398,27 +396,25 @@ describe("generation pipeline", () => {
         },
       ],
       {
-        preparedDerivedMaskVideoTreatment: "preserve_transparency",
         preparedMaskFile: undefined,
         preparedVideoFile: undefined,
         signal: undefined,
-        videoTreatment: "fill_transparent_with_neutral_gray",
       },
     );
-    expect(request.videoInputs.video_input.name).toBe("selection.webm");
-    expect(request.videoInputs.mask_input.name).toBe("selection-mask.webm");
+    expect(request.videoInputs.video_input.name).toBe("selection.mp4");
+    expect(request.videoInputs.mask_input.name).toBe("selection-mask.mp4");
   });
 
-  it("reuses cached derived-mask renders when the requested treatment still matches", async () => {
+  it("reuses cached derived-mask renders when prepared files are available", async () => {
     const renderSpy = vi.spyOn(
       inputSelection,
-      "renderTimelineSelectionToWebmWithDerivedMasks",
+      "renderTimelineSelectionToMp4WithDerivedMasks",
     );
-    const preparedVideoFile = new File(["video"], "prepared.webm", {
-      type: "video/webm",
+    const preparedVideoFile = new File(["video"], "prepared.mp4", {
+      type: "video/mp4",
     });
-    const preparedMaskFile = new File(["mask"], "prepared-mask.webm", {
-      type: "video/webm",
+    const preparedMaskFile = new File(["mask"], "prepared-mask.mp4", {
+      type: "video/mp4",
     });
 
     const request = await frontendPreprocess(
@@ -446,10 +442,6 @@ describe("generation pipeline", () => {
           },
           preparedVideoFile,
           preparedMaskFile,
-          derivedMaskVideoTreatment:
-            DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
-          preparedDerivedMaskVideoTreatment:
-            DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
         },
       },
       "client-id",
@@ -471,17 +463,17 @@ describe("generation pipeline", () => {
   it("routes audio-timing derived masks to their own hidden video inputs", async () => {
     vi.spyOn(
       inputSelection,
-      "renderTimelineSelectionToWebmWithDerivedMasks",
+      "renderTimelineSelectionToMp4WithDerivedMasks",
     ).mockResolvedValue({
-      video: new File(["video"], "selection.webm", { type: "video/webm" }),
+      video: new File(["video"], "selection.mp4", { type: "video/mp4" }),
       masks: {
-        video_binary: new File(["visual-mask"], "selection-mask.webm", {
-          type: "video/webm",
+        video_binary: new File(["visual-mask"], "selection-mask.mp4", {
+          type: "video/mp4",
         }),
         audio_timing_binary_25: new File(
           ["audio-mask"],
-          "selection-audio-mask.webm",
-          { type: "video/webm" },
+          "selection-audio-mask.mp4",
+          { type: "video/mp4" },
         ),
       },
     });
@@ -529,18 +521,18 @@ describe("generation pipeline", () => {
       ],
     );
 
-    expect(request.videoInputs.video_input.name).toBe("selection.webm");
-    expect(request.videoInputs.mask_input.name).toBe("selection-mask.webm");
+    expect(request.videoInputs.video_input.name).toBe("selection.mp4");
+    expect(request.videoInputs.mask_input.name).toBe("selection-mask.mp4");
     expect(request.videoInputs.audio_mask_input.name).toBe(
-      "selection-audio-mask.webm",
+      "selection-audio-mask.mp4",
     );
   });
 
   it("forwards abort signals into timeline-selection render helpers", async () => {
     const renderSpy = vi
-      .spyOn(inputSelection, "renderTimelineSelectionToWebm")
+      .spyOn(inputSelection, "renderTimelineSelectionToMp4")
       .mockResolvedValue(
-        new File(["video"], "selection.webm", { type: "video/webm" }),
+        new File(["video"], "selection.mp4", { type: "video/mp4" }),
       );
     const controller = new AbortController();
 
@@ -586,7 +578,7 @@ describe("generation pipeline", () => {
   });
 
   it("propagates AbortError for cancelled preprocess without rendering outputs", async () => {
-    const renderSpy = vi.spyOn(inputSelection, "renderTimelineSelectionToWebm");
+    const renderSpy = vi.spyOn(inputSelection, "renderTimelineSelectionToMp4");
     const controller = new AbortController();
     controller.abort();
 
@@ -634,8 +626,8 @@ describe("generation pipeline", () => {
       type: "image/png",
     });
     const audio = new File(["audio"], "sound.wav", { type: "audio/wav" });
-    const packagedVideo = new File(["video"], "stitched.webm", {
-      type: "video/webm",
+    const packagedVideo = new File(["video"], "stitched.mp4", {
+      type: "video/mp4",
     });
 
     mockFetchOutputAsFile
@@ -721,7 +713,7 @@ describe("generation pipeline", () => {
       postprocessedPreview: {
         previewUrl: "blob:postprocessed-preview",
         mediaKind: "video",
-        filename: "stitched.webm",
+        filename: "stitched.mp4",
       },
       postprocessError: null,
       importedAssetIds: ["asset-packaged"],
@@ -824,8 +816,8 @@ describe("generation pipeline", () => {
     const frameTwo = new File(["frame-2"], "frame_0002.png", {
       type: "image/png",
     });
-    const packagedVideo = new File(["video"], "stitched-silent.webm", {
-      type: "video/webm",
+    const packagedVideo = new File(["video"], "stitched-silent.mp4", {
+      type: "video/mp4",
     });
 
     mockFetchOutputAsFile
@@ -883,7 +875,7 @@ describe("generation pipeline", () => {
       postprocessedPreview: {
         previewUrl: "blob:postprocessed-preview",
         mediaKind: "video",
-        filename: "stitched-silent.webm",
+        filename: "stitched-silent.mp4",
       },
       postprocessError: null,
       importedAssetIds: ["asset-packaged-silent"],
@@ -897,8 +889,8 @@ describe("generation pipeline", () => {
     const previewFrameTwo = new File(["frame-2"], "ws_0002.png", {
       type: "image/png",
     });
-    const packagedVideo = new File(["video"], "stitched-ws.webm", {
-      type: "video/webm",
+    const packagedVideo = new File(["video"], "stitched-ws.mp4", {
+      type: "video/mp4",
     });
 
     mockPackageFramesAndAudioToVideo.mockResolvedValue({
@@ -941,7 +933,7 @@ describe("generation pipeline", () => {
       postprocessedPreview: {
         previewUrl: "blob:postprocessed-preview",
         mediaKind: "video",
-        filename: "stitched-ws.webm",
+        filename: "stitched-ws.mp4",
       },
       postprocessError: null,
       importedAssetIds: ["asset-packaged-ws"],

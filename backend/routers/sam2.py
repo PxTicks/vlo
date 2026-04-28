@@ -162,7 +162,7 @@ async def generate_sam2_mask_video(request: Sam2GenerateMaskRequest) -> Response
     }
     return Response(
         content=generated.video_bytes,
-        media_type="video/webm",
+        media_type="video/mp4",
         headers=headers,
     )
 

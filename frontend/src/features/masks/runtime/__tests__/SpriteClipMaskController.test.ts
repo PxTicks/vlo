@@ -135,8 +135,8 @@ function createMaskAsset(id: string): Asset {
   return {
     id,
     type: "video",
-    name: `${id}.webm`,
-    src: `${id}.webm`,
+    name: `${id}.mp4`,
+    src: `${id}.mp4`,
     hash: `${id}-hash`,
     createdAt: 0,
   };

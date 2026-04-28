@@ -166,8 +166,8 @@ describe("useAssetStore - Deletion", () => {
         },
         {
           id: "mask-1",
-          name: "generation-mask-1.webm",
-          src: "mask-1.webm",
+          name: "generation-mask-1.mp4",
+          src: "mask-1.mp4",
           type: "video",
           hash: "mask-hash-1",
           createdAt: 3000,
@@ -195,8 +195,8 @@ describe("useAssetStore - Deletion", () => {
             },
             "mask-1": {
               id: "mask-1",
-              name: "generation-mask-1.webm",
-              src: "mask-1.webm",
+              name: "generation-mask-1.mp4",
+              src: "mask-1.mp4",
             },
           },
         }),
@@ -211,7 +211,7 @@ describe("useAssetStore - Deletion", () => {
     expect(mockRemoveClipsByAssetId).toHaveBeenCalledTimes(1);
     expect(mockRemoveClipsByAssetId).toHaveBeenCalledWith("generated-1");
     expect(fileSystemService.deleteFile).toHaveBeenCalledWith("generated-1.mp4");
-    expect(fileSystemService.deleteFile).not.toHaveBeenCalledWith("mask-1.webm");
+    expect(fileSystemService.deleteFile).not.toHaveBeenCalledWith("mask-1.mp4");
     expect(fileSystemService.writeFile).toHaveBeenLastCalledWith(
       ".vloproject/project.json",
       expect.stringContaining('"mask-1"'),
@@ -237,8 +237,8 @@ describe("useAssetStore - Deletion", () => {
         },
         {
           id: "mask-1",
-          name: "generation-mask-1.webm",
-          src: "mask-1.webm",
+          name: "generation-mask-1.mp4",
+          src: "mask-1.mp4",
           type: "video",
           hash: "mask-hash-1",
           createdAt: 3000,
@@ -295,8 +295,8 @@ describe("useAssetStore - Deletion", () => {
         },
         {
           id: "mask-1",
-          name: "generation-mask-1.webm",
-          src: "mask-1.webm",
+          name: "generation-mask-1.mp4",
+          src: "mask-1.mp4",
           type: "video",
           hash: "mask-hash-1",
           createdAt: 3000,
@@ -325,8 +325,8 @@ describe("useAssetStore - Deletion", () => {
             },
             "mask-1": {
               id: "mask-1",
-              name: "generation-mask-1.webm",
-              src: "mask-1.webm",
+              name: "generation-mask-1.mp4",
+              src: "mask-1.mp4",
             },
           },
         }),
@@ -337,7 +337,7 @@ describe("useAssetStore - Deletion", () => {
 
     expect(useAssetStore.getState().assets).toHaveLength(0);
     expect(fileSystemService.deleteFile).toHaveBeenCalledWith("generated-2.mp4");
-    expect(fileSystemService.deleteFile).toHaveBeenCalledWith("mask-1.webm");
+    expect(fileSystemService.deleteFile).toHaveBeenCalledWith("mask-1.mp4");
     expect(mockRemoveClipsByAssetId).toHaveBeenCalledWith("mask-1");
     expect(fileSystemService.writeFile).toHaveBeenLastCalledWith(
       ".vloproject/project.json",

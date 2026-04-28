@@ -183,10 +183,6 @@ function buildMediaSlotCacheDescriptor(
       return [
         inputId,
         {
-          derivedMaskVideoTreatment:
-            value.derivedMaskVideoTreatment ?? null,
-          preparedDerivedMaskVideoTreatment:
-            value.preparedDerivedMaskVideoTreatment ?? null,
           preparedMaskFile: describeFileForCache(value.preparedMaskFile),
           preparedVideoFile: describeFileForCache(value.preparedVideoFile),
           selection: normalizeForStableStringify(value.selection),
@@ -751,8 +747,8 @@ function decodeProcessedMaskVideo(processedMaskVideo: string): File {
     bytes[i] = binaryStr.charCodeAt(i);
   }
 
-  return new File([bytes], `generation-mask-${crypto.randomUUID()}.webm`, {
-    type: "video/webm",
+  return new File([bytes], `generation-mask-${crypto.randomUUID()}.mp4`, {
+    type: "video/mp4",
   });
 }
 

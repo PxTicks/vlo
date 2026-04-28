@@ -16,11 +16,6 @@ VideoAudioRetakeMode = Literal["Video & Audio", "Video", "Audio"]
 WidgetControl = Literal["slider"]
 WidgetSliderDisplay = Literal["percent", "number"]
 MaskCroppingMode = Literal["crop", "full"]
-MaskSourceVideoTreatment = Literal[
-    "preserve_transparency",
-    "fill_transparent_with_neutral_gray",
-    "remove_transparency",
-]
 PipelineComparisonOperator = Literal["eq", "neq", "lt", "lte", "gt", "gte"]
 PipelineStageKind = Literal["mask_processing", "aspect_ratio", "output_assembly"]
 PipelineControlExposure = Literal["widget", "none"]

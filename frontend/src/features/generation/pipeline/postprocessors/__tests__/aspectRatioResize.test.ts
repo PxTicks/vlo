@@ -81,11 +81,11 @@ describe("aspectRatioResize", () => {
   });
 
   it("resizes a prepared mask file to the exact output dimensions", async () => {
-    const preparedMaskFile = new File(["mask"], "mask.webm", {
-      type: "video/webm",
+    const preparedMaskFile = new File(["mask"], "mask.mp4", {
+      type: "video/mp4",
     });
-    const resizedMaskFile = new File(["resized-mask"], "mask.webm", {
-      type: "video/webm",
+    const resizedMaskFile = new File(["resized-mask"], "mask.mp4", {
+      type: "video/mp4",
     });
     const ctx = makeContext(preparedMaskFile);
 

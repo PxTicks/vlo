@@ -50,7 +50,7 @@ class _MaskCropProcessor:
     def __init__(
         self,
         analyze_mask_video_bounds_fn: Callable[..., Any],
-        crop_video_fn: Callable[[bytes, tuple[int, int, int, int]], bytes],
+        crop_video_fn: Callable[..., bytes],
         get_video_dimensions_fn: Callable[[bytes], tuple[int, int]],
         _apply_aspect_ratio_processing_fn: Callable[..., Any] | None = None,
     ):
@@ -163,6 +163,7 @@ class _MaskCropProcessor:
                 ctx.buffered_media[mask_buffered_key]["bytes"] = self._crop_video(
                     mask_data,
                     crop_region,
+                    lossless=True,
                 )
             except Exception as exc:
                 log.warning(
@@ -180,6 +181,7 @@ class _MaskCropProcessor:
                     ctx.buffered_media[source_buffered_key]["bytes"] = self._crop_video(
                         ctx.buffered_media[source_buffered_key]["bytes"],
                         crop_region,
+                        lossless=False,
                     )
                     cropped_sources.add(source_node_id)
                 except Exception as exc:
@@ -221,7 +223,7 @@ class _MaskCropProcessor:
 
 def create_mask_crop_processor(
     analyze_mask_video_bounds_fn: Callable[..., Any],
-    crop_video_fn: Callable[[bytes, tuple[int, int, int, int]], bytes],
+    crop_video_fn: Callable[..., bytes],
     get_video_dimensions_fn: Callable[[bytes], tuple[int, int]],
     apply_aspect_ratio_processing_fn: Callable[..., Any] | None = None,
 ) -> Processor:

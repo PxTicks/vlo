@@ -8,6 +8,5 @@ export {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
-  createTransparentAreaNeutralGrayOutputColorMatrixFilter,
 } from "./utils/outputTransformStack";
 export { default as DecoderWorker } from "./workers/decoder.worker?worker";

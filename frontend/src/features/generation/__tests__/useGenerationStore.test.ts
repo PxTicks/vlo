@@ -556,7 +556,6 @@ describe("useGenerationStore workflow rules", () => {
           extractionRequestId: 0,
           preparedVideoFile: null,
           preparedMaskFile: null,
-          preparedDerivedMaskVideoTreatment: null,
           extractionError: null,
         },
         node_dragged: {
@@ -806,11 +805,11 @@ describe("useGenerationStore workflow rules", () => {
   });
 
   it("falls back to the prepared frontend mask when the backend does not echo one", async () => {
-    const preparedVideoFile = new File(["video"], "prepared.webm", {
-      type: "video/webm",
+    const preparedVideoFile = new File(["video"], "prepared.mp4", {
+      type: "video/mp4",
     });
-    const preparedMaskFile = new File(["mask"], "prepared-mask.webm", {
-      type: "video/webm",
+    const preparedMaskFile = new File(["mask"], "prepared-mask.mp4", {
+      type: "video/mp4",
     });
 
     useGenerationStore.setState({
@@ -1066,7 +1065,7 @@ describe("useGenerationStore workflow rules", () => {
     completedJob.postprocessedPreview = {
       previewUrl: "blob:postprocessed-preview",
       mediaKind: "video",
-      filename: "preview.webm",
+      filename: "preview.mp4",
     };
     useGenerationStore.setState({
       jobs: new Map([[completedJob.id, completedJob]]),

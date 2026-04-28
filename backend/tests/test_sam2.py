@@ -275,7 +275,7 @@ def test_generate_endpoint_returns_404_for_missing_source(
     assert "missing source" in str(exc_info.value.detail)
 
 
-def test_generate_endpoint_returns_webm_with_headers(
+def test_generate_endpoint_returns_mp4_with_headers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def direct_threadpool(func, *args, **kwargs):
@@ -285,7 +285,7 @@ def test_generate_endpoint_returns_webm_with_headers(
 
     def fake_generate(*args, **kwargs):
         return Sam2GeneratedMaskVideo(
-            video_bytes=b"fake-webm-data",
+            video_bytes=b"fake-mp4-data",
             width=1280,
             height=720,
             fps=23.976,
@@ -302,8 +302,8 @@ def test_generate_endpoint_returns_webm_with_headers(
     )
     response = anyio.run(sam2_router.generate_sam2_mask_video, request)
 
-    assert response.body == b"fake-webm-data"
-    assert response.media_type == "video/webm"
+    assert response.body == b"fake-mp4-data"
+    assert response.media_type == "video/mp4"
     assert response.headers["x-sam2-width"] == "1280"
     assert response.headers["x-sam2-height"] == "720"
     assert response.headers["x-sam2-frame-count"] == "120"
@@ -323,7 +323,7 @@ def test_generate_endpoint_forwards_visible_source_range(
         captured_call["args"] = args
         captured_call["kwargs"] = kwargs
         return Sam2GeneratedMaskVideo(
-            video_bytes=b"fake-webm-data",
+            video_bytes=b"fake-mp4-data",
             width=640,
             height=360,
             fps=24.0,
@@ -857,8 +857,8 @@ def test_generate_mask_video_passes_visible_source_window_to_propagation(
     )
     monkeypatch.setattr(
         sam2_service,
-        "encode_binary_masks_to_red_webm",
-        lambda _frames, _fps: b"webm",
+        "encode_binary_masks_to_red_mp4",
+        lambda _frames, _fps: b"mp4",
     )
 
     generated = sam2_service.generate_mask_video(
@@ -870,7 +870,7 @@ def test_generate_mask_video_passes_visible_source_window_to_propagation(
         visible_source_duration_ticks=2_000,
     )
 
-    assert generated.video_bytes == b"webm"
+    assert generated.video_bytes == b"mp4"
     assert captured_window["value"] == (1, 1)
 
 

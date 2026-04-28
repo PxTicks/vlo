@@ -222,13 +222,6 @@ exposure, hiding, a derived widget, and both pipeline stages.
           "min": 0, "max": 0.5, "step": 0.01,
           "default": 0.1
         },
-        {
-          "key": "source_video_treatment",
-          "label": "Transparency handling",
-          "value_type": "enum",
-          "expose": "widget",
-          "default": "preserve_transparency"
-        }
       ]
     },
     {
@@ -573,8 +566,8 @@ Mask processing is authored as a `pipeline` stage of `kind:
 1. Marks mask input nodes so they are **not** shown as primary inputs.
 2. Crops source + mask to the mask's bounded region when the user picks
    `crop_mode: "crop"`.
-3. Applies a transparency treatment to the source video based on
-   `source_video_treatment`.
+3. Keeps the source-video and mask uploads aligned so crop mode can trim
+   both consistently before dispatch.
 
 ### Targets
 
@@ -596,7 +589,7 @@ extraction).
 
 ### Controls
 
-Three controls matter for a typical mask stage:
+Two controls matter for a typical mask stage:
 
 - `crop_mode` — enum `["crop", "full"]`. `"crop"` shrinks the source and
   mask to the mask's bounding box (with padding from `crop_dilation`) so
@@ -604,11 +597,6 @@ Three controls matter for a typical mask stage:
   cropping.
 - `crop_dilation` — fractional padding around the detected bounding box.
   Rendered as a percent slider.
-- `source_video_treatment` — enum over
-  `preserve_transparency | fill_transparent_with_neutral_gray |
-  remove_transparency`. Determines how transparent pixels in the source
-  video are handled before it is fed through the mask.
-
 Controls may be exposed as widgets (`"expose": "widget"`) or hidden
 (`"expose": "none"`). Hidden controls must declare `source: "client"` or
 `source: "backend"` so it is unambiguous who is responsible for the value.

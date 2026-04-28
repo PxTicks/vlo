@@ -9,13 +9,11 @@ import {
   Input,
   Mp4OutputFormat,
   Output,
-  WebMOutputFormat,
   BufferTarget,
 } from "mediabunny";
 import type { AspectRatioProcessingMetadata } from "../../types";
 import { getOutputMediaKindFromFile } from "../../constants/mediaKinds";
 import {
-  fileExtension,
   extensionForMimeType,
   renameWithExtension,
 } from "./files";
@@ -254,15 +252,10 @@ export function resolveImageOutputMimeType(input: File): string {
 export function resolveVideoOutputContainer(
   input: File,
 ): {
-  mimeType: "video/mp4" | "video/webm";
-  format: Mp4OutputFormat | WebMOutputFormat;
+  mimeType: "video/mp4";
+  format: Mp4OutputFormat;
 } {
-  if (fileExtension(input.name) === ".webm") {
-    return {
-      mimeType: "video/webm",
-      format: new WebMOutputFormat(),
-    };
-  }
+  void input;
   return {
     mimeType: "video/mp4",
     format: new Mp4OutputFormat({ fastStart: "in-memory" }),

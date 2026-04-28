@@ -52,7 +52,7 @@ describe("insertAssetToTimeline", () => {
     const asset: Asset = {
       id: "generated_asset",
       hash: "hash-generated",
-      name: "generated.webm",
+      name: "generated.mp4",
       type: "video",
       src: "blob:generated",
       createdAt: 0,

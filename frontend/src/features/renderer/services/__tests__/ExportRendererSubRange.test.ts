@@ -53,13 +53,6 @@ describe("ExportRenderer - RenderOptions interface", () => {
       expect(options.format).toBe("mp4");
     });
 
-    it("should accept format webm", () => {
-      const options: RenderOptions = {
-        format: "webm",
-      };
-      expect(options.format).toBe("webm");
-    });
-
     it("should accept combined options", () => {
       const options: RenderOptions = {
         timelineSelection: {
@@ -77,13 +70,8 @@ describe("ExportRenderer - RenderOptions interface", () => {
 
   describe("Format options", () => {
     it("should define mp4 format", () => {
-      const format: "mp4" | "webm" = "mp4";
+      const format: "mp4" = "mp4";
       expect(format).toBe("mp4");
-    });
-
-    it("should define webm format", () => {
-      const format: "mp4" | "webm" = "webm";
-      expect(format).toBe("webm");
     });
   });
 });

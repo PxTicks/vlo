@@ -1441,10 +1441,10 @@ async def generate(request: Request):
                     graph_data,
                 ),
                 prepared_mask_bytes=prepared_mask_bytes,
-                prepared_mask_filename="generation-mask.webm"
+                prepared_mask_filename="generation-mask.mp4"
                 if prepared_mask_bytes is not None
                 else None,
-                prepared_mask_content_type="video/webm"
+                prepared_mask_content_type="video/mp4"
                 if prepared_mask_bytes is not None
                 else None,
             )

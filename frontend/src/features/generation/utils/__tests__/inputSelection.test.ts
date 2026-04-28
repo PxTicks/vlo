@@ -6,9 +6,9 @@ import { useAssetStore } from "../../../userAssets";
 import {
   AUDIO_TIMING_MASK_OUTPUT_SIZE,
   DEFAULT_AUDIO_TIMING_MASK_EXPORT_FPS,
-  renderTimelineSelectionToMaskWebm,
-  renderTimelineSelectionToWebmWithDerivedMasks,
-  renderTimelineSelectionToWebmWithMask,
+  renderTimelineSelectionToMaskMp4,
+  renderTimelineSelectionToMp4WithDerivedMasks,
+  renderTimelineSelectionToMp4WithMask,
 } from "../inputSelection";
 
 describe("inputSelection", () => {
@@ -81,19 +81,19 @@ describe("inputSelection", () => {
     });
   });
 
-  it("renders remove_transparency as a separate maskless video pass", async () => {
+  it("renders derived masks as a separate maskless video pass", async () => {
     const renderSpy = vi
       .fn()
       .mockResolvedValueOnce({
-        video: new Blob(["mask"], { type: "video/webm" }),
+        video: new Blob(["mask"], { type: "video/mp4" }),
         outputs: {
-          mask: new Blob(["mask"], { type: "video/webm" }),
+          mask: new Blob(["mask"], { type: "video/mp4" }),
         },
       })
       .mockResolvedValueOnce({
-        video: new Blob(["video"], { type: "video/webm" }),
+        video: new Blob(["video"], { type: "video/mp4" }),
         outputs: {
-          video: new Blob(["video"], { type: "video/webm" }),
+          video: new Blob(["video"], { type: "video/mp4" }),
         },
       });
     const createSpy = vi
@@ -107,12 +107,9 @@ describe("inputSelection", () => {
       fps: 24,
     };
 
-    const result = await renderTimelineSelectionToWebmWithMask(
+    const result = await renderTimelineSelectionToMp4WithMask(
       timelineSelection,
       "binary",
-      {
-        videoTreatment: "remove_transparency",
-      },
     );
 
     expect(createSpy).toHaveBeenCalledTimes(2);
@@ -131,18 +128,17 @@ describe("inputSelection", () => {
     expect(videoRenderOptions?.outputs?.[0]).toMatchObject({
       id: "video",
       includeAudio: true,
-      preserveAlpha: false,
     });
 
-    expect(result.video.type).toBe("video/webm");
-    expect(result.mask.type).toBe("video/webm");
+    expect(result.video.type).toBe("video/mp4");
+    expect(result.mask.type).toBe("video/mp4");
   });
 
   it("renders mask-only outputs at explicit small dimensions when requested", async () => {
     const renderSpy = vi.fn().mockResolvedValue({
-      video: new Blob(["mask"], { type: "video/webm" }),
+      video: new Blob(["mask"], { type: "video/mp4" }),
       outputs: {
-        mask: new Blob(["mask"], { type: "video/webm" }),
+        mask: new Blob(["mask"], { type: "video/mp4" }),
       },
     });
     const createSpy = vi
@@ -156,7 +152,7 @@ describe("inputSelection", () => {
       fps: 25,
     };
 
-    const result = await renderTimelineSelectionToMaskWebm(
+    const result = await renderTimelineSelectionToMaskMp4(
       timelineSelection,
       "binary",
       {
@@ -182,15 +178,15 @@ describe("inputSelection", () => {
         outputs: [expect.objectContaining({ id: "mask" })],
       }),
     );
-    expect(result.type).toBe("video/webm");
+    expect(result.type).toBe("video/mp4");
   });
 
   it("uses the configured audio timing mask fps and defaults to 25 when omitted", async () => {
     const renderSpy = vi.fn().mockResolvedValue({
-      video: new Blob(["video"], { type: "video/webm" }),
+      video: new Blob(["video"], { type: "video/mp4" }),
       outputs: {
-        video: new Blob(["video"], { type: "video/webm" }),
-        mask: new Blob(["mask"], { type: "video/webm" }),
+        video: new Blob(["video"], { type: "video/mp4" }),
+        mask: new Blob(["mask"], { type: "video/mp4" }),
       },
     });
     vi.spyOn(ExportRenderer, "create").mockResolvedValue({
@@ -204,7 +200,7 @@ describe("inputSelection", () => {
       fps: 24,
     };
 
-    await renderTimelineSelectionToWebmWithDerivedMasks(timelineSelection, [
+    await renderTimelineSelectionToMp4WithDerivedMasks(timelineSelection, [
       {
         maskType: "binary",
         purpose: "audio_timing",
@@ -212,7 +208,7 @@ describe("inputSelection", () => {
       },
     ]);
 
-    await renderTimelineSelectionToWebmWithDerivedMasks(timelineSelection, [
+    await renderTimelineSelectionToMp4WithDerivedMasks(timelineSelection, [
       {
         maskType: "binary",
         purpose: "audio_timing",

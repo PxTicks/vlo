@@ -7,8 +7,8 @@ import type { Asset } from "../../../types/Asset";
 
 const mocks = vi.hoisted(() => ({
   captureFramePngAtTick: vi.fn(),
-  renderTimelineSelectionToWebm: vi.fn(),
-  renderTimelineSelectionToWebmWithDerivedMasks: vi.fn(),
+  renderTimelineSelectionToMp4: vi.fn(),
+  renderTimelineSelectionToMp4WithDerivedMasks: vi.fn(),
   pickPrimaryPreparedMaskFile: vi.fn(),
   extractAudioFromSelection: vi.fn(),
   createAudioSelectionPlaceholderFile: vi.fn(),
@@ -17,9 +17,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../utils/inputSelection", () => ({
   captureFramePngAtTick: mocks.captureFramePngAtTick,
-  renderTimelineSelectionToWebm: mocks.renderTimelineSelectionToWebm,
-  renderTimelineSelectionToWebmWithDerivedMasks:
-    mocks.renderTimelineSelectionToWebmWithDerivedMasks,
+  renderTimelineSelectionToMp4: mocks.renderTimelineSelectionToMp4,
+  renderTimelineSelectionToMp4WithDerivedMasks:
+    mocks.renderTimelineSelectionToMp4WithDerivedMasks,
   pickPrimaryPreparedMaskFile: mocks.pickPrimaryPreparedMaskFile,
 }));
 
@@ -49,8 +49,8 @@ describe("useGenerationStore metadata replay", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mocks.captureFramePngAtTick.mockReset();
-    mocks.renderTimelineSelectionToWebm.mockReset();
-    mocks.renderTimelineSelectionToWebmWithDerivedMasks.mockReset();
+    mocks.renderTimelineSelectionToMp4.mockReset();
+    mocks.renderTimelineSelectionToMp4WithDerivedMasks.mockReset();
     mocks.pickPrimaryPreparedMaskFile.mockReset();
     mocks.extractAudioFromSelection.mockReset();
     mocks.createAudioSelectionPlaceholderFile.mockReset();
@@ -82,20 +82,20 @@ describe("useGenerationStore metadata replay", () => {
     mocks.captureFramePngAtTick.mockResolvedValue(
       new File(["thumb"], "thumb.png", { type: "image/png" }),
     );
-    mocks.renderTimelineSelectionToWebm.mockResolvedValue(
-      new File(["video"], "selection.webm", { type: "video/webm" }),
+    mocks.renderTimelineSelectionToMp4.mockResolvedValue(
+      new File(["video"], "selection.mp4", { type: "video/mp4" }),
     );
-    mocks.renderTimelineSelectionToWebmWithDerivedMasks.mockResolvedValue({
-      video: new File(["video"], "selection.webm", { type: "video/webm" }),
+    mocks.renderTimelineSelectionToMp4WithDerivedMasks.mockResolvedValue({
+      video: new File(["video"], "selection.mp4", { type: "video/mp4" }),
       masks: {
-        video_binary: new File(["mask"], "selection-mask.webm", {
-          type: "video/webm",
+        video_binary: new File(["mask"], "selection-mask.mp4", {
+          type: "video/mp4",
         }),
       },
     });
     mocks.pickPrimaryPreparedMaskFile.mockReturnValue(
-      new File(["mask"], "selection-mask.webm", {
-        type: "video/webm",
+      new File(["mask"], "selection-mask.mp4", {
+        type: "video/mp4",
       }),
     );
     mocks.extractAudioFromSelection.mockResolvedValue(
@@ -658,8 +658,8 @@ describe("useGenerationStore metadata replay", () => {
   });
 
   it("restores prepared timeline selections so generation is immediately ready", async () => {
-    const preparedVideoFile = new File(["video"], "selection.webm", {
-      type: "video/webm",
+    const preparedVideoFile = new File(["video"], "selection.mp4", {
+      type: "video/mp4",
     });
     const thumbnailFile = new File(["thumb"], "thumb.png", {
       type: "image/png",
@@ -688,14 +688,14 @@ describe("useGenerationStore metadata replay", () => {
         comfyuiPrompt: {
           "145": {
             class_type: "LoadVideo",
-            inputs: { video: "selection.webm" },
+            inputs: { video: "selection.mp4" },
           },
         },
       },
     };
 
     mocks.captureFramePngAtTick.mockResolvedValue(thumbnailFile);
-    mocks.renderTimelineSelectionToWebm.mockResolvedValue(preparedVideoFile);
+    mocks.renderTimelineSelectionToMp4.mockResolvedValue(preparedVideoFile);
     vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([]);
 
     await useGenerationStore

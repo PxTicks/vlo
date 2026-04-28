@@ -14,7 +14,7 @@ describe("workflowBridge", () => {
       "644": {
         class_type: "VHS_LoadVideoFFmpeg",
         inputs: {
-          video: "source.webm",
+          video: "source.mp4",
         },
         _meta: {
           title: "Source video",
@@ -31,7 +31,7 @@ describe("workflowBridge", () => {
         param: "video",
         label: "Source video",
         description: null,
-        currentValue: "source.webm",
+        currentValue: "source.mp4",
         origin: "inferred",
         dispatch: {
           kind: "node",

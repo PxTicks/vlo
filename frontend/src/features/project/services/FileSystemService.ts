@@ -44,7 +44,6 @@ export class FileSystemService {
           description: "Video files",
           accept: {
             "video/mp4": [".mp4"],
-            "video/webm": [".webm"],
           },
         },
       ],

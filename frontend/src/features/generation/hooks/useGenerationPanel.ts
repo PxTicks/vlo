@@ -22,9 +22,9 @@ import type {
 import type { SlotValue } from "../utils/pipeline";
 import {
   captureFramePngAtTick,
-  renderTimelineSelectionToWebm,
+  renderTimelineSelectionToMp4,
   pickPrimaryPreparedMaskFile,
-  renderTimelineSelectionToWebmWithDerivedMasks,
+  renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
 import {
   createAudioSelectionPlaceholderFile,
@@ -35,13 +35,6 @@ import {
   parseInputsFromGraphData,
   parseWorkflowInputs,
 } from "../services/workflowBridge";
-import {
-  DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
-  DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
-  LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
-  resolveDefaultDerivedMaskSourceVideoTreatment,
-  resolveDerivedMaskVideoTreatments,
-} from "../derivedMaskVideoTreatment";
 import { addLocalAsset, useAssetStore } from "../../userAssets";
 import {
   findWorkflowInputValidationFailures,
@@ -187,10 +180,6 @@ interface VideoSelectionExtractionOptions {
   extractionRequestId: number;
   mode: "smart" | "manual";
   derivedMaskMappings: ReturnType<typeof useGenerationStore.getState>["derivedMaskMappings"];
-  derivedMaskVideoTreatmentBySourceNodeId: Record<
-    string,
-    import("../derivedMaskVideoTreatment").DerivedMaskSourceVideoTreatment
-  >;
   setMediaInputTimelineSelection: ReturnType<
     typeof useGenerationStore.getState
   >["setMediaInputTimelineSelection"];
@@ -205,7 +194,6 @@ async function extractVideoTimelineSelection({
   extractionRequestId,
   mode,
   derivedMaskMappings,
-  derivedMaskVideoTreatmentBySourceNodeId,
   setMediaInputTimelineSelection,
   selectionExtractionRequestIdsRef,
 }: VideoSelectionExtractionOptions): Promise<void> {
@@ -222,17 +210,9 @@ async function extractVideoTimelineSelection({
     const cachedVisualMasks = nodeMasks.filter(
       (mask) => mask.purpose !== "audio_timing",
     );
-    const videoTreatment =
-      derivedMaskVideoTreatmentBySourceNodeId[inputNodeId ?? inputId] ??
-      DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT;
-    const { video, masks } = await renderTimelineSelectionToWebmWithDerivedMasks(
+    const { video, masks } = await renderTimelineSelectionToMp4WithDerivedMasks(
       timelineSelection,
       cachedVisualMasks,
-      {
-        preparedVideoFile: undefined,
-        preparedMaskFile: undefined,
-        videoTreatment,
-      },
     );
     if (selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId) {
       return;
@@ -243,12 +223,11 @@ async function extractVideoTimelineSelection({
       extractionRequestId,
       preparedVideoFile: video,
       preparedMaskFile: pickPrimaryPreparedMaskFile(cachedVisualMasks, masks),
-      preparedDerivedMaskVideoTreatment: videoTreatment,
     });
     return;
   }
 
-  const preparedVideoFile = await renderTimelineSelectionToWebm(
+  const preparedVideoFile = await renderTimelineSelectionToMp4(
     timelineSelection,
   );
   if (selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId) {
@@ -439,27 +418,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   );
   const widgetInputs =
     mode === "manual" ? manualWidgetInputs : smartWidgetInputs;
-  const derivedMaskDefaultVideoTreatment = useMemo(
-    () =>
-      resolveDefaultDerivedMaskSourceVideoTreatment(activeWorkflowRules, {
-        workflow: syncedWorkflow,
-        widgetInputs: smartWidgetInputs,
-        widgetValues,
-      }),
-    [activeWorkflowRules, smartWidgetInputs, syncedWorkflow, widgetValues],
-  );
-  const derivedMaskVideoTreatmentBySourceNodeId = useMemo(
-    () =>
-      mode === "manual"
-        ? {}
-        : resolveDerivedMaskVideoTreatments(
-            derivedMaskMappings,
-            smartWidgetInputs,
-            widgetValues,
-            derivedMaskDefaultVideoTreatment,
-          ),
-    [derivedMaskDefaultVideoTreatment, derivedMaskMappings, mode, smartWidgetInputs, widgetValues],
-  );
 
   useEffect(() => {
     widgetValuesRef.current = widgetValues;
@@ -573,16 +531,8 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
             widget: widget.param,
             frontendControlId: widget.frontendControlId,
           });
-          const legacyReplayKey =
-            !widget.frontendControlId &&
-            widget.param === DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM
-              ? `widget_${widget.nodeId}_${LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM}`
-              : null;
           const storedValue =
-            pendingReplayPanelState.widgetValues[replayKey] ??
-            (legacyReplayKey
-              ? pendingReplayPanelState.widgetValues[legacyReplayKey]
-              : undefined);
+            pendingReplayPanelState.widgetValues[replayKey];
           if (typeof storedValue === "string") {
             restoredValue = parseStoredWidgetValue(widget, storedValue);
           }
@@ -638,15 +588,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const handleGenerate = useCallback(async (count = 1) => {
     const store = useGenerationStore.getState();
     const currentWidgetValues = widgetValuesRef.current;
-    const currentDerivedMaskVideoTreatmentBySourceNodeId =
-      mode === "manual"
-        ? {}
-        : resolveDerivedMaskVideoTreatments(
-            derivedMaskMappings,
-            smartWidgetInputs,
-            currentWidgetValues,
-            derivedMaskDefaultVideoTreatment,
-          );
 
     if (store.connectionStatus !== "connected") {
       store.connect();
@@ -736,13 +677,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
             selection: value.timelineSelection,
             preparedVideoFile: value.preparedVideoFile ?? undefined,
             preparedMaskFile: value.preparedMaskFile ?? undefined,
-            derivedMaskVideoTreatment:
-              mode === "manual"
-                ? undefined
-                : currentDerivedMaskVideoTreatmentBySourceNodeId[input.nodeId] ??
-                  undefined,
-            preparedDerivedMaskVideoTreatment:
-              value.preparedDerivedMaskVideoTreatment ?? undefined,
           };
         }
       }
@@ -818,7 +752,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       [...bypassNodeIds],
     );
   }, [
-    derivedMaskDefaultVideoTreatment,
     mode,
     queueGeneration,
     workflowInputById,
@@ -827,7 +760,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     widgetInputs,
     derivedMaskMappings,
     randomizeToggles,
-    smartWidgetInputs,
   ]);
 
   const handleClearQueue = useCallback(() => {
@@ -1089,7 +1021,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
               extractionRequestId,
               mode,
               derivedMaskMappings,
-              derivedMaskVideoTreatmentBySourceNodeId,
               setMediaInputTimelineSelection,
               selectionExtractionRequestIdsRef,
             });
@@ -1135,7 +1066,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     },
     [
       derivedMaskMappings,
-      derivedMaskVideoTreatmentBySourceNodeId,
       mode,
       setMediaInputFrameWithSelection,
       setMediaInputTimelineSelection,

@@ -136,18 +136,6 @@
           "max": 0.5,
           "step": 0.01,
           "default": 0.1
-        },
-        {
-          "key": "source_video_treatment",
-          "label": "Transparency handling",
-          "description": "Maintainer note: advanced VACE inpaint always removes transparent source pixels before dispatch.",
-          "value_type": "enum",
-          "expose": "none",
-          "source": "backend",
-          "default": "remove_transparency",
-          "exclude_options": [
-            "preserve_transparency"
-          ]
         }
       ]
     },

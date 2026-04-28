@@ -6,7 +6,6 @@ import type {
   WorkflowMaskCroppingMode,
   WorkflowPostprocessingConfig,
 } from "../types";
-import type { DerivedMaskSourceVideoTreatment } from "../derivedMaskVideoTreatment";
 import type {
   AssetFamilyCompatibility,
   GeneratedCreationMetadata,
@@ -54,8 +53,6 @@ export type SlotValue =
       selection: TimelineSelection;
       preparedVideoFile?: File;
       preparedMaskFile?: File;
-      derivedMaskVideoTreatment?: DerivedMaskSourceVideoTreatment;
-      preparedDerivedMaskVideoTreatment?: DerivedMaskSourceVideoTreatment;
     };
 
 // ---------------------------------------------------------------------------

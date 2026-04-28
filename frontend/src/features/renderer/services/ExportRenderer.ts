@@ -51,13 +51,9 @@ function resolveOutputDefinitions(
 
   if (options.outputs && options.outputs.length > 0) {
     const definitions = options.outputs.map((definition, index) => {
-      const format = definition.format ?? fallbackFormat;
       return {
         ...definition,
-        format,
         includeAudio: definition.includeAudio ?? index === 0,
-        preserveAlpha:
-          definition.preserveAlpha ?? (format === "webm" && index === 0),
       };
     });
     ensureUniqueIds(definitions);
@@ -69,7 +65,6 @@ function resolveOutputDefinitions(
       id: "video",
       format: fallbackFormat,
       includeAudio: true,
-      preserveAlpha: fallbackFormat === "webm",
     },
   ];
 
@@ -192,7 +187,7 @@ export interface ProjectData {
 
 export interface RenderOptions {
   timelineSelection?: TimelineSelection;
-  format?: "mp4" | "webm";
+  format?: "mp4";
   outputs?: OutputVideoDefinition[];
   includeTimelineMasks?: boolean;
   signal?: AbortSignal;
@@ -323,17 +318,6 @@ export class ExportRenderer {
     const relevantForAudio = tracks.filter((t) => !t.isMuted && t.isVisible);
     const shouldRenderAudio = hasAudioOutput && relevantForAudio.length > 0;
 
-    console.log("[render]", {
-      shouldRenderAudio,
-      hasAudioOutput,
-      relevantForAudio: relevantForAudio.map((t) => `${t.id}/${t.type}`),
-      rangeDurationSec: rangeDurationTicks / TICKS_PER_SECOND,
-      outputs: outputDefinitions.map((o) => ({
-        id: o.id,
-        includeAudio: o.includeAudio,
-      })),
-    });
-
     const frameTexture = RenderTexture.create({
       width: outputWidth,
       height: outputHeight,
@@ -408,11 +392,6 @@ export class ExportRenderer {
             this.throwIfCancelled();
 
             await outputEncoder.addAudioChunk(renderedBuffer);
-            console.log("[render] audio chunk added", {
-              chunkStartSec,
-              chunkDuration,
-              samples: renderedBuffer.length,
-            });
             this.throwIfCancelled();
 
             const audioProgress =

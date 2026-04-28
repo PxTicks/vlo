@@ -536,12 +536,12 @@ class GenerationHoldingService:
                     manifest["project_id"],
                     delivery_id,
                     "mask",
-                    prepared_mask_filename or "generation-mask.webm",
+                    prepared_mask_filename or "generation-mask.mp4",
                     prepared_mask_bytes,
                 )
                 manifest["prepared_mask"] = {
-                    "filename": prepared_mask_filename or "generation-mask.webm",
-                    "mime_type": prepared_mask_content_type or "video/webm",
+                    "filename": prepared_mask_filename or "generation-mask.mp4",
+                    "mime_type": prepared_mask_content_type or "video/mp4",
                     "storage_name": storage_name,
                 }
             await self._persist_manifest(manifest)

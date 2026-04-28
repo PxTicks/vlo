@@ -990,15 +990,11 @@ describe("resolvePresentedInputs", () => {
         nodes: {
           "145": {
             widgets: {
-              derived_mask_source_video_treatment: {
-                label: "Transparency handling",
+              ui_only_mode: {
+                label: "UI-only mode",
                 value_type: "enum",
-                options: [
-                  "Keep transparency",
-                  "Fill transparent with neutral gray",
-                  "Remove transparency",
-                ],
-                default: "Keep transparency",
+                options: ["Automatic", "Manual"],
+                default: "Automatic",
                 frontend_only: true,
               },
             },
@@ -1010,8 +1006,8 @@ describe("resolvePresentedInputs", () => {
 
     expect(widgets).toHaveLength(1);
     expect(widgets[0]?.config.frontendOnly).toBe(true);
-    expect(widgets[0]?.config.defaultValue).toBe("Keep transparency");
-    expect(widgets[0]?.param).toBe("derived_mask_source_video_treatment");
+    expect(widgets[0]?.config.defaultValue).toBe("Automatic");
+    expect(widgets[0]?.param).toBe("ui_only_mode");
   });
 
   it("filters conditional widgets and derived widgets from provided inputs", () => {

@@ -11,8 +11,8 @@ import type { DerivedMaskMapping } from "../pipeline/types";
 import {
   captureFramePngAtTick,
   pickPrimaryPreparedMaskFile,
-  renderTimelineSelectionToWebm,
-  renderTimelineSelectionToWebmWithDerivedMasks,
+  renderTimelineSelectionToMp4,
+  renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
 import {
   createAudioSelectionPlaceholderFile,
@@ -24,7 +24,6 @@ import {
   getWorkflowInputValue,
 } from "../utils/workflowInputs";
 import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
-import { DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT } from "../derivedMaskVideoTreatment";
 import * as comfyApi from "../services/comfyuiApi";
 import { parseWorkflowInputs } from "../services/workflowBridge";
 import type {
@@ -291,12 +290,9 @@ export async function restoreMediaInputsFromMetadata(
       const cachedVisualMasks = sourceMappings.filter(
         (mapping) => mapping.purpose !== "audio_timing",
       );
-      const { video, masks } = await renderTimelineSelectionToWebmWithDerivedMasks(
+      const { video, masks } = await renderTimelineSelectionToMp4WithDerivedMasks(
         timelineSelection,
         cachedVisualMasks,
-        {
-          videoTreatment: DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
-        },
       );
 
       actions.setMediaInputTimelineSelection(
@@ -309,14 +305,12 @@ export async function restoreMediaInputsFromMetadata(
           extractionRequestId: 1,
           preparedVideoFile: video,
           preparedMaskFile: pickPrimaryPreparedMaskFile(cachedVisualMasks, masks),
-          preparedDerivedMaskVideoTreatment:
-            DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
         },
       );
       continue;
     }
 
-    const preparedVideoFile = await renderTimelineSelectionToWebm(timelineSelection);
+    const preparedVideoFile = await renderTimelineSelectionToMp4(timelineSelection);
     actions.setMediaInputTimelineSelection(
       inputId,
       timelineSelection,

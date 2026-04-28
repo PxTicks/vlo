@@ -1,10 +1,9 @@
 import type { TimelineSelection } from "../../../../types/TimelineTypes";
 import type { WorkflowSelectionConfig } from "../../types";
-import { DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT } from "../../derivedMaskVideoTreatment";
 import {
-  renderTimelineSelectionToWebm,
+  renderTimelineSelectionToMp4,
   getDerivedMaskRenderKey,
-  renderTimelineSelectionToWebmWithDerivedMasks,
+  renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../../utils/inputSelection";
 import {
   buildWorkflowInputLookup,
@@ -20,7 +19,7 @@ import type {
 
 /**
  * Collects video and video_selection slot values, normalizes timeline
- * selections into WebM files, and renders derived masks alongside
+ * selections into MP4 files, and renders derived masks alongside
  * their source videos.
  *
  * Handles both direct node video inputs and manual slot video inputs.
@@ -36,7 +35,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
     ],
     writes: ["videoInputs"],
     description:
-      "Normalizes video selections into WebM files, renders derived masks, and routes video inputs",
+      "Normalizes video selections into MP4 files, renders derived masks, and routes video inputs",
   },
 
   isActive() {
@@ -68,7 +67,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
     ): Promise<File> {
       if (preparedVideoFile) return preparedVideoFile;
       throwIfAborted(ctx.signal);
-      return renderTimelineSelectionToWebm(
+      return renderTimelineSelectionToMp4(
         prepareNormalizedSelection(selection, projectFps, config),
         { signal: ctx.signal },
       );
@@ -77,10 +76,8 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
     async function normalizeVideoSelectionWithDerivedMasks(
       selection: TimelineSelection,
       masks: readonly DerivedMaskMapping[],
-      videoTreatment = DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
       preparedVideoFile?: File,
       preparedMaskFile?: File,
-      preparedVideoTreatment = DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
       config?: WorkflowSelectionConfig,
     ) {
       const visualMasks = masks.filter((mask) => mask.purpose !== "audio_timing");
@@ -92,8 +89,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
         !hasAudioTimingMasks &&
         uniqueVisualMaskKeys.size === 1 &&
         preparedVideoFile &&
-        preparedMaskFile &&
-        preparedVideoTreatment === videoTreatment
+        preparedMaskFile
       ) {
         const [visualMaskKey] = [...uniqueVisualMaskKeys];
         return {
@@ -104,15 +100,13 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
         };
       }
       throwIfAborted(ctx.signal);
-      return renderTimelineSelectionToWebmWithDerivedMasks(
+      return renderTimelineSelectionToMp4WithDerivedMasks(
         prepareNormalizedSelection(selection, projectFps, config),
         masks,
         {
           signal: ctx.signal,
-          videoTreatment,
           preparedVideoFile,
           preparedMaskFile,
-          preparedDerivedMaskVideoTreatment: preparedVideoTreatment,
         },
       );
     }
@@ -132,17 +126,11 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
         const masks =
           masksBySource.get(inputId) ?? masksBySource.get(input.nodeId);
         if (masks && masks.length > 0) {
-          const videoTreatment =
-            value.derivedMaskVideoTreatment ??
-            DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT;
           const result = await normalizeVideoSelectionWithDerivedMasks(
             value.selection,
             masks,
-            videoTreatment,
             value.preparedVideoFile,
             value.preparedMaskFile,
-            value.preparedDerivedMaskVideoTreatment ??
-              DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
           );
           throwIfAborted(ctx.signal);
           ctx.videoInputs[getNodeInputRequestKey(input, inputById)] =

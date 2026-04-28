@@ -320,7 +320,7 @@ def test_parse_workflow_inputs_includes_vhs_load_video_ffmpeg_static_fallback(
             "644": {
                 "class_type": "VHS_LoadVideoFFmpeg",
                 "inputs": {
-                    "video": "source.webm",
+                    "video": "source.mp4",
                 },
                 "_meta": {
                     "title": "Source video",
@@ -338,6 +338,6 @@ def test_parse_workflow_inputs_includes_vhs_load_video_ffmpeg_static_fallback(
             "param": "video",
             "label": "Source video",
             "description": None,
-            "currentValue": "source.webm",
+            "currentValue": "source.mp4",
         }
     ]

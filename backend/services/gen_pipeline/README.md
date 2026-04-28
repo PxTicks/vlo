@@ -235,7 +235,7 @@ Currently registered:
 
 | Checkpoint      | Stage kind        | Processor                                                   |
 | --------------- | ----------------- | ----------------------------------------------------------- |
-| `before_upload` | `mask_processing` | `mask_crop` — analyzes mask bounds, crops source and mask to the bounded region when `crop_mode = "crop"`, applies `source_video_treatment` |
+| `before_upload` | `mask_processing` | `mask_crop` — analyzes mask bounds, crops source and mask to the bounded region when `crop_mode = "crop"` |
 | `after_upload`  | `aspect_ratio`    | `aspect_ratio` — computes the nearest valid resolution within `config.resolutions` under `stride` and `search_steps`, writes `(width, height)` to every target pair |
 
 `output_assembly` is authored but has no backend-side processor — its

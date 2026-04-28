@@ -5,7 +5,6 @@ import {
   CanvasSource,
   Mp4OutputFormat,
   Output,
-  WebMOutputFormat,
   StreamTarget,
   type StreamTargetChunk,
 } from "mediabunny";
@@ -14,13 +13,12 @@ import {
   type OutputTransform,
 } from "../utils/outputTransformStack";
 
-export type OutputVideoFormat = "mp4" | "webm";
+export type OutputVideoFormat = "mp4";
 
 export interface OutputVideoDefinition {
   id: string;
   format?: OutputVideoFormat;
   includeAudio?: boolean;
-  preserveAlpha?: boolean;
   bitrate?: number;
   audioBitrate?: number;
   transformStack?: OutputTransform[];
@@ -29,30 +27,12 @@ export interface OutputVideoDefinition {
 
 interface ManagedOutput {
   definition: OutputVideoDefinition;
-  mimeType: "video/mp4" | "video/webm";
+  mimeType: "video/mp4";
   output: Output;
   target: BufferTarget | StreamTarget;
   videoSource: CanvasSource;
   audioSource: AudioBufferSource | null;
   fileStream?: FileSystemWritableFileStream;
-}
-
-function resolveVideoSourceCodec(
-  format: OutputVideoFormat,
-): "avc" | "vp9" {
-  return format === "webm" ? "vp9" : "avc";
-}
-
-function resolveAudioSourceCodec(
-  format: OutputVideoFormat,
-): "aac" | "opus" {
-  return format === "webm" ? "opus" : "aac";
-}
-
-function resolveMimeType(
-  format: OutputVideoFormat,
-): "video/mp4" | "video/webm" {
-  return format === "webm" ? "video/webm" : "video/mp4";
 }
 
 export class TextureOutputEncoder {
@@ -89,9 +69,8 @@ export class TextureOutputEncoder {
 
     this.outputs = await Promise.all(
       this.definitions.map(async (definition) => {
-        const format = definition.format ?? "mp4";
-        const mimeType = resolveMimeType(format);
-        
+        const mimeType = "video/mp4";
+
         let target: BufferTarget | StreamTarget;
         let fileStream: FileSystemWritableFileStream | undefined;
 
@@ -110,27 +89,21 @@ export class TextureOutputEncoder {
         }
 
         const output = new Output({
-          format:
-            format === "webm"
-              ? new WebMOutputFormat()
-              : new Mp4OutputFormat({ fastStart: definition.fileHandle ? "in-memory" : "in-memory" }),
+          format: new Mp4OutputFormat({ fastStart: "in-memory" }),
           target,
         });
 
         const videoSource = new CanvasSource(this.app.canvas, {
-          codec: resolveVideoSourceCodec(format),
+          codec: "avc",
           bitrate: definition.bitrate ?? 6_000_000,
           latencyMode: "quality",
-          ...(format === "webm" && definition.preserveAlpha
-            ? { alpha: "keep" as const }
-            : {}),
         });
         output.addVideoTrack(videoSource, { frameRate: this.frameRate });
 
         let audioSource: AudioBufferSource | null = null;
         if (definition.includeAudio) {
           audioSource = new AudioBufferSource({
-            codec: resolveAudioSourceCodec(format),
+            codec: "aac",
             bitrate: definition.audioBitrate ?? 128_000,
           });
           output.addAudioTrack(audioSource);
@@ -155,13 +128,6 @@ export class TextureOutputEncoder {
   }
 
   public async addAudioChunk(audioBuffer: AudioBuffer): Promise<void> {
-    console.log(
-      "[encoder] addAudioChunk",
-      this.outputs.map((o) => ({
-        id: o.definition.id,
-        hasAudioSource: !!o.audioSource,
-      })),
-    );
     for (const output of this.outputs) {
       if (output.audioSource) {
         await output.audioSource.add(audioBuffer);
@@ -170,7 +136,6 @@ export class TextureOutputEncoder {
   }
 
   public async closeAudioTracks(): Promise<void> {
-    console.log("[encoder] closeAudioTracks");
     if (this.audioClosed) return;
     for (const output of this.outputs) {
       if (output.audioSource) {

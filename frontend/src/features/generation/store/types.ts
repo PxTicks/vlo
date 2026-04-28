@@ -1,7 +1,6 @@
 import type { Asset } from "../../../types/Asset";
 import type { RuntimeStatus } from "../../../types/RuntimeStatus";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
-import type { DerivedMaskSourceVideoTreatment } from "../derivedMaskVideoTreatment";
 import type {
   DerivedMaskMapping,
   GenerationPlan,
@@ -119,7 +118,6 @@ export interface GenerationWorkflowState {
       preparedVideoFile?: File | null;
       preparedAudioFile?: File | null;
       preparedMaskFile?: File | null;
-      preparedDerivedMaskVideoTreatment?: DerivedMaskSourceVideoTreatment | null;
       extractionError?: string | null;
     },
   ) => void;

@@ -1075,9 +1075,9 @@ export function useMaskPanel(): UseMaskPanelResult {
 
       const outputFile = new File(
         [generated.blob],
-        `${parentAsset.name}_sam2_${selectedMaskId}_${now}.webm`,
+        `${parentAsset.name}_sam2_${selectedMaskId}_${now}.mp4`,
         {
-          type: "video/webm",
+          type: "video/mp4",
           lastModified: now,
         },
       );

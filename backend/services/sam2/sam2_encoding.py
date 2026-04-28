@@ -32,9 +32,9 @@ def _validate_mask_frames(mask_frames: np.ndarray) -> tuple[int, int, int]:
     return frame_count, height, width
 
 
-def encode_binary_masks_to_red_webm(mask_frames: np.ndarray, fps: float) -> bytes:
+def encode_binary_masks_to_red_mp4(mask_frames: np.ndarray, fps: float) -> bytes:
     """
-    Encode binary mask frames into a VP9 WebM without alpha.
+    Encode binary mask frames into an H.264 MP4 without alpha.
 
     Each frame stores mask coverage in the red channel only:
     - R: 0 for background, 255 for mask
@@ -52,15 +52,14 @@ def encode_binary_masks_to_red_webm(mask_frames: np.ndarray, fps: float) -> byte
 
     buf = BytesIO()
     try:
-        output = av.open(buf, mode="w", format="webm")
-        stream = cast(VideoStream, output.add_stream("libvpx-vp9", rate=av_rate))
+        output = av.open(buf, mode="w", format="mp4")
+        stream = cast(VideoStream, output.add_stream("libx264", rate=av_rate))
         stream.width = width
         stream.height = height
         stream.pix_fmt = "yuv420p"
         stream.options = {
-            "lossless": "1",
-            "row-mt": "1",
-            "auto-alt-ref": "0",
+            "crf": "0",
+            "preset": "ultrafast",
         }
 
         for i in range(frame_count):
@@ -82,6 +81,6 @@ def encode_binary_masks_to_red_webm(mask_frames: np.ndarray, fps: float) -> byte
     return buf.getvalue()
 
 
-def encode_binary_masks_to_transparent_webm(mask_frames: np.ndarray, fps: float) -> bytes:
+def encode_binary_masks_to_transparent_mp4(mask_frames: np.ndarray, fps: float) -> bytes:
     """Backward-compatible wrapper for older call sites."""
-    return encode_binary_masks_to_red_webm(mask_frames, fps)
+    return encode_binary_masks_to_red_mp4(mask_frames, fps)

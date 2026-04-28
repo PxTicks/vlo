@@ -132,7 +132,6 @@ vi.mock("mediabunny", () => {
       finalize = vi.fn();
     },
     Mp4OutputFormat: class {},
-    WebMOutputFormat: class {},
     BufferTarget: class {
       buffer = new ArrayBuffer(1);
     },
@@ -315,8 +314,8 @@ describe("ExportRenderer", () => {
       () => {},
       {
         outputs: [
-          { id: "video", format: "webm", includeAudio: true },
-          { id: "aux", format: "webm", includeAudio: false, transformStack: [null] },
+          { id: "video", format: "mp4", includeAudio: true },
+          { id: "aux", format: "mp4", includeAudio: false, transformStack: [null] },
         ],
       },
     );

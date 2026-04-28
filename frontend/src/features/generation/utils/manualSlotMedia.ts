@@ -8,7 +8,7 @@ import {
   WavOutputFormat,
 } from "mediabunny";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
-import { renderTimelineSelectionToWebm } from "./inputSelection";
+import { renderTimelineSelectionToMp4 } from "./inputSelection";
 import { throwIfAborted } from "../pipeline/utils/abort";
 
 function toPositiveInt(
@@ -89,7 +89,7 @@ export async function extractAudioFromSelection(
       normalizedSelection.fps = exportFps;
     }
   }
-  const renderedVideo = await renderTimelineSelectionToWebm(normalizedSelection, {
+  const renderedVideo = await renderTimelineSelectionToMp4(normalizedSelection, {
     signal: options.signal,
   });
   throwIfAborted(options.signal);

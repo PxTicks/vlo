@@ -21,8 +21,8 @@ def test_media_registry_registers_and_marks_access() -> None:
 
     item = registry.register(
         kind="video",
-        filename="clip.webm",
-        content_type="video/webm",
+        filename="clip.mp4",
+        content_type="video/mp4",
         data=b"1234",
     )
 
@@ -87,16 +87,16 @@ def test_media_registry_evicts_oldest_unread_item_first() -> None:
 
     oldest_unread = registry.register(
         kind="video",
-        filename="old.webm",
-        content_type="video/webm",
+        filename="old.mp4",
+        content_type="video/mp4",
         data=b"1234",
     )
 
     now = 201.0
     kept_accessed = registry.register(
         kind="video",
-        filename="kept.webm",
-        content_type="video/webm",
+        filename="kept.mp4",
+        content_type="video/mp4",
         data=b"5678",
     )
     assert registry.get(kept_accessed.media_id) is not None
@@ -104,8 +104,8 @@ def test_media_registry_evicts_oldest_unread_item_first() -> None:
     now = 202.0
     newest = registry.register(
         kind="video",
-        filename="new.webm",
-        content_type="video/webm",
+        filename="new.mp4",
+        content_type="video/mp4",
         data=b"9012",
     )
 

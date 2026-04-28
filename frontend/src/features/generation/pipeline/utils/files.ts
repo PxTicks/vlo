@@ -17,7 +17,6 @@ export function extensionForMimeType(mimeType: string): string {
   if (mimeType === "image/webp") return ".webp";
   if (mimeType === "image/bmp") return ".bmp";
   if (mimeType === "image/png") return ".png";
-  if (mimeType === "video/webm") return ".webm";
   if (mimeType === "video/mp4") return ".mp4";
   return "";
 }

@@ -5,7 +5,6 @@ import {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
-  createTransparentAreaNeutralGrayOutputColorMatrixFilter,
   renderProjectFrameFileAtTick,
 } from "../../renderer";
 import {
@@ -14,10 +13,6 @@ import {
   resolveSelectionFrameStep,
   snapFrameCountToStep,
 } from "../../timelineSelection";
-import {
-  DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
-  type DerivedMaskSourceVideoTreatment,
-} from "../derivedMaskVideoTreatment";
 import type {
   DerivedMaskMapping,
   DerivedMaskPurpose,
@@ -38,9 +33,12 @@ export async function captureFramePngAtTick(
   });
 }
 
-export async function renderTimelineSelectionToWebm(
+export async function renderTimelineSelectionToMp4(
   timelineSelection: TimelineSelection,
-  options: { signal?: AbortSignal } = {},
+  options: {
+    includeTimelineMasks?: boolean;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<File> {
   throwIfAborted(options.signal);
   const { exportConfig, projectData } = buildProjectRenderInputs();
@@ -49,13 +47,14 @@ export async function renderTimelineSelectionToWebm(
   try {
     const result = await renderer.render(projectData, exportConfig, () => {}, {
       timelineSelection,
-      format: "webm",
+      format: "mp4",
+      includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,
     });
     throwIfAborted(options.signal);
 
-    return new File([result.video], `generation-selection-${Date.now()}.webm`, {
-      type: "video/webm",
+    return new File([result.video], `generation-selection-${Date.now()}.mp4`, {
+      type: "video/mp4",
       lastModified: Date.now(),
     });
   } catch (error) {
@@ -141,55 +140,22 @@ function createMaskFilter(maskType: DerivedMaskType) {
   }
 }
 
-function createVideoTreatmentFilter(
-  treatment: DerivedMaskSourceVideoTreatment,
-) {
-  switch (treatment) {
-    case "fill_transparent_with_neutral_gray":
-      return createTransparentAreaNeutralGrayOutputColorMatrixFilter();
-    case "preserve_transparency":
-    case "remove_transparency":
-      return null;
-  }
-}
-
-function createVideoOutputDefinition(
-  treatment: DerivedMaskSourceVideoTreatment,
-) {
-  const filter = createVideoTreatmentFilter(treatment);
-
+function createVideoOutputDefinition() {
   return {
     id: "video",
-    format: "webm" as const,
+    format: "mp4" as const,
     includeAudio: true,
-    preserveAlpha: treatment === "preserve_transparency",
-    ...(filter
-      ? {
-          transformStack: [createFilterStackTransform([filter])],
-        }
-      : {}),
   };
 }
 
 function createMaskOutputDefinition(maskType: DerivedMaskType) {
   return {
     id: "mask",
-    format: "webm" as const,
+    format: "mp4" as const,
     includeAudio: false,
-    preserveAlpha: false,
     bitrate: 20_000_000,
     transformStack: [createFilterStackTransform([createMaskFilter(maskType)])],
   };
-}
-
-interface RenderTimelineSelectionToWebmWithMaskOptions {
-  signal?: AbortSignal;
-  videoTreatment?: DerivedMaskSourceVideoTreatment;
-}
-
-interface RenderTimelineSelectionVideoOptions {
-  signal?: AbortSignal;
-  videoTreatment?: DerivedMaskSourceVideoTreatment;
 }
 
 interface RenderTimelineSelectionMaskOptions {
@@ -201,7 +167,7 @@ interface RenderTimelineSelectionMaskOptions {
 function createOutputFile(blob: Blob, filename: string): File {
   const now = Date.now();
   return new File([blob], filename, {
-    type: "video/webm",
+    type: "video/mp4",
     lastModified: now,
   });
 }
@@ -245,41 +211,7 @@ async function renderTimelineSelectionToOutputs(
   return result.outputs;
 }
 
-export async function renderTimelineSelectionToWebmWithVideoTreatment(
-  timelineSelection: TimelineSelection,
-  options: RenderTimelineSelectionVideoOptions = {},
-): Promise<File> {
-  throwIfAborted(options.signal);
-  const videoTreatment =
-    options.videoTreatment ?? DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT;
-
-  try {
-    const outputs = await renderTimelineSelectionToOutputs(
-      timelineSelection,
-      [createVideoOutputDefinition(videoTreatment)],
-      {
-        signal: options.signal,
-        includeTimelineMasks:
-          videoTreatment === "remove_transparency" ? false : undefined,
-      },
-    );
-    const videoBlob = outputs.video;
-    if (!videoBlob) {
-      throw new Error("Video output was requested but not produced");
-    }
-    return createOutputFile(
-      videoBlob,
-      `generation-selection-${Date.now()}.webm`,
-    );
-  } catch (error) {
-    if (options.signal?.aborted && error instanceof Error) {
-      throw createGenerationAbortError(error.message);
-    }
-    throw error;
-  }
-}
-
-export async function renderTimelineSelectionToMaskWebm(
+export async function renderTimelineSelectionToMaskMp4(
   timelineSelection: TimelineSelection,
   maskType: DerivedMaskType = "binary",
   options: RenderTimelineSelectionMaskOptions = {},
@@ -302,7 +234,7 @@ export async function renderTimelineSelectionToMaskWebm(
     }
     return createOutputFile(
       maskBlob,
-      `generation-selection-mask-${Date.now()}.webm`,
+      `generation-selection-mask-${Date.now()}.mp4`,
     );
   } catch (error) {
     if (options.signal?.aborted && error instanceof Error) {
@@ -312,20 +244,18 @@ export async function renderTimelineSelectionToMaskWebm(
   }
 }
 
-export async function renderTimelineSelectionToWebmWithDerivedMasks(
+export async function renderTimelineSelectionToMp4WithDerivedMasks(
   timelineSelection: TimelineSelection,
   derivedMaskMappings: readonly Pick<
     DerivedMaskMapping,
     "maskType" | "purpose" | "renderFps"
   >[],
-  options: RenderTimelineSelectionToWebmWithMaskOptions & {
+  options: {
+    signal?: AbortSignal;
     preparedVideoFile?: File;
     preparedMaskFile?: File | null;
-    preparedDerivedMaskVideoTreatment?: DerivedMaskSourceVideoTreatment;
   } = {},
 ): Promise<TimelineSelectionWithDerivedMasksResult> {
-  const videoTreatment =
-    options.videoTreatment ?? DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT;
   const masks: Partial<Record<DerivedMaskRenderKey, File>> = {};
   const requiredMasksByKey = new Map<
     DerivedMaskRenderKey,
@@ -347,10 +277,7 @@ export async function renderTimelineSelectionToWebmWithDerivedMasks(
   }
 
   const preparedVideoFile = options.preparedVideoFile;
-  const canReusePreparedVideo =
-    !!preparedVideoFile &&
-    (options.preparedDerivedMaskVideoTreatment ??
-      DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT) === videoTreatment;
+  const canReusePreparedVideo = !!preparedVideoFile;
 
   if (
     !canReusePreparedVideo &&
@@ -358,13 +285,10 @@ export async function renderTimelineSelectionToWebmWithDerivedMasks(
     visualMaskKeys.length === 1 &&
     !masks[visualMaskKeys[0]]
   ) {
-    const { video, mask } = await renderTimelineSelectionToWebmWithMask(
+    const { video, mask } = await renderTimelineSelectionToMp4WithMask(
       timelineSelection,
       visualMaskKeys[0] === "video_soft" ? "soft" : "binary",
-      {
-        signal: options.signal,
-        videoTreatment,
-      },
+      { signal: options.signal },
     );
     masks[visualMaskKeys[0]] = mask;
     return { video, masks };
@@ -372,9 +296,9 @@ export async function renderTimelineSelectionToWebmWithDerivedMasks(
 
   const video = canReusePreparedVideo
     ? preparedVideoFile
-    : await renderTimelineSelectionToWebmWithVideoTreatment(timelineSelection, {
+    : await renderTimelineSelectionToMp4(timelineSelection, {
+        includeTimelineMasks: false,
         signal: options.signal,
-        videoTreatment,
       });
 
   for (const key of requiredMaskKeys) {
@@ -386,7 +310,7 @@ export async function renderTimelineSelectionToWebmWithDerivedMasks(
       continue;
     }
     if (getDerivedMaskPurpose(mapping) === "audio_timing") {
-      masks[key] = await renderTimelineSelectionToMaskWebm(
+      masks[key] = await renderTimelineSelectionToMaskMp4(
         {
           ...timelineSelection,
           fps: resolveAudioTimingMaskExportFps(mapping.renderFps),
@@ -401,7 +325,7 @@ export async function renderTimelineSelectionToWebmWithDerivedMasks(
       );
       continue;
     }
-    masks[key] = await renderTimelineSelectionToMaskWebm(
+    masks[key] = await renderTimelineSelectionToMaskMp4(
       timelineSelection,
       key === "video_soft" ? "soft" : "binary",
       {
@@ -413,64 +337,44 @@ export async function renderTimelineSelectionToWebmWithDerivedMasks(
   return { video, masks };
 }
 
-export async function renderTimelineSelectionToWebmWithMask(
+export async function renderTimelineSelectionToMp4WithMask(
   timelineSelection: TimelineSelection,
   maskType: DerivedMaskType = "binary",
-  options: RenderTimelineSelectionToWebmWithMaskOptions = {},
+  options: {
+    signal?: AbortSignal;
+  } = {},
 ): Promise<TimelineSelectionWithMaskResult> {
   throwIfAborted(options.signal);
   const { exportConfig, projectData } = buildProjectRenderInputs();
-  const videoTreatment =
-    options.videoTreatment ?? DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT;
   try {
     const maskOutput = createMaskOutputDefinition(maskType);
-    let videoBlob: Blob | undefined;
-    let maskBlob: Blob | undefined;
-
-    if (videoTreatment === "remove_transparency") {
-      // The derived mask must still be extracted from the masked timeline
-      // output, but the backend video should come from a pass that ignores
-      // timeline masks entirely rather than trying to flatten alpha later.
-      const maskRenderer = await ExportRenderer.create(exportConfig);
-      const maskResult = await maskRenderer.render(
-        projectData,
-        exportConfig,
-        () => {},
-        {
-          timelineSelection,
-          outputs: [maskOutput],
-          signal: options.signal,
-        },
-      );
-      maskBlob = maskResult.outputs.mask ?? maskResult.mask ?? maskResult.video;
-      throwIfAborted(options.signal);
-
-      const videoRenderer = await ExportRenderer.create(exportConfig);
-      const videoResult = await videoRenderer.render(
-        projectData,
-        exportConfig,
-        () => {},
-        {
-          timelineSelection,
-          outputs: [createVideoOutputDefinition(videoTreatment)],
-          includeTimelineMasks: false,
-          signal: options.signal,
-        },
-      );
-      videoBlob = videoResult.outputs.video ?? videoResult.video;
-    } else {
-      const renderer = await ExportRenderer.create(exportConfig);
-      const result = await renderer.render(projectData, exportConfig, () => {}, {
+    const maskRenderer = await ExportRenderer.create(exportConfig);
+    const maskResult = await maskRenderer.render(
+      projectData,
+      exportConfig,
+      () => {},
+      {
         timelineSelection,
-        outputs: [
-          createVideoOutputDefinition(videoTreatment),
-          maskOutput,
-        ],
+        outputs: [maskOutput],
         signal: options.signal,
-      });
-      videoBlob = result.outputs.video ?? result.video;
-      maskBlob = result.outputs.mask ?? result.mask;
-    }
+      },
+    );
+    const maskBlob = maskResult.outputs.mask ?? maskResult.mask ?? maskResult.video;
+    throwIfAborted(options.signal);
+
+    const videoRenderer = await ExportRenderer.create(exportConfig);
+    const videoResult = await videoRenderer.render(
+      projectData,
+      exportConfig,
+      () => {},
+      {
+        timelineSelection,
+        outputs: [createVideoOutputDefinition()],
+        includeTimelineMasks: false,
+        signal: options.signal,
+      },
+    );
+    const videoBlob = videoResult.outputs.video ?? videoResult.video;
 
     throwIfAborted(options.signal);
     if (!videoBlob) {
@@ -482,8 +386,8 @@ export async function renderTimelineSelectionToWebmWithMask(
 
     const now = Date.now();
     return {
-      video: createOutputFile(videoBlob, `generation-selection-${now}.webm`),
-      mask: createOutputFile(maskBlob, `generation-selection-mask-${now}.webm`),
+      video: createOutputFile(videoBlob, `generation-selection-${now}.mp4`),
+      mask: createOutputFile(maskBlob, `generation-selection-mask-${now}.mp4`),
     };
   } catch (error) {
     if (options.signal?.aborted && error instanceof Error) {

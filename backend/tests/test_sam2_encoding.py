@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.sam2.sam2_encoding import encode_binary_masks_to_red_webm
+from services.sam2.sam2_encoding import encode_binary_masks_to_red_mp4
 
 
 def _decode_first_frame(video_bytes: bytes) -> tuple[str, np.ndarray]:
@@ -20,11 +20,11 @@ def _decode_first_frame(video_bytes: bytes) -> tuple[str, np.ndarray]:
         container.close()
 
 
-def test_encode_binary_masks_to_red_webm_uses_non_alpha_video() -> None:
+def test_encode_binary_masks_to_red_mp4_uses_non_alpha_video() -> None:
     frames = np.zeros((1, 16, 16), dtype=np.uint8)
     frames[0, 4:12, 4:12] = 255
 
-    encoded = encode_binary_masks_to_red_webm(frames, 24.0)
+    encoded = encode_binary_masks_to_red_mp4(frames, 24.0)
     pix_fmt, decoded = _decode_first_frame(encoded)
 
     assert "a" not in pix_fmt
@@ -32,11 +32,11 @@ def test_encode_binary_masks_to_red_webm_uses_non_alpha_video() -> None:
     assert np.all(decoded[:4, :, 0] <= 32)
 
 
-def test_encode_binary_masks_to_red_webm_preserves_binary_coverage_in_red() -> None:
+def test_encode_binary_masks_to_red_mp4_preserves_binary_coverage_in_red() -> None:
     frames = np.zeros((1, 16, 16), dtype=np.uint8)
     frames[0, 2:14, 6:10] = 1
 
-    encoded = encode_binary_masks_to_red_webm(frames, 12.0)
+    encoded = encode_binary_masks_to_red_mp4(frames, 12.0)
     _, decoded = _decode_first_frame(encoded)
     recovered_mask = decoded[:, :, 0] > 32
 

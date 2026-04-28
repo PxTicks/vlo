@@ -319,7 +319,7 @@ describe("GenerationPanel workflow rule hints", () => {
           postprocessedPreview: {
             previewUrl: "blob:postprocessed",
             mediaKind: "video",
-            filename: "postprocessed.webm",
+            filename: "postprocessed.mp4",
           },
         }),
       }),
@@ -565,7 +565,7 @@ describe("GenerationPanel workflow rule hints", () => {
     const { container } = renderWithImportedVideoPreview();
 
     expect(screen.getByText("Imported asset preview")).toBeInTheDocument();
-    expect(screen.getByText("stitched.webm")).toBeInTheDocument();
+    expect(screen.getByText("stitched.mp4")).toBeInTheDocument();
     expect(container.querySelector("video")).toHaveAttribute("src", "blob:video");
   });
 
@@ -592,7 +592,7 @@ describe("GenerationPanel workflow rule hints", () => {
           {
             id: "asset-1",
             hash: "hash-1",
-            name: "clip.webm",
+            name: "clip.mp4",
             type: "video",
             src: "blob:video",
             createdAt: Date.now(),
@@ -729,7 +729,7 @@ function renderWithImportedVideoPreview(
           {
             id: "asset-1",
             hash: "hash-1",
-            name: "stitched.webm",
+            name: "stitched.mp4",
             type: "video",
             src: "blob:video",
             createdAt: Date.now(),

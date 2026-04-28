@@ -11,17 +11,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from services.workflow_rules.derived_mask_video_treatment import (
-    DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
-    DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
-    DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_LABEL,
-    LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
-    create_derived_mask_source_video_treatment_widget_rule,
-    normalize_derived_mask_source_video_treatment,
-    normalize_derived_mask_source_video_treatment_list,
-    resolve_derived_mask_source_video_treatment_default,
-    resolve_derived_mask_source_video_treatment_widget_options,
-)
 from services.workflow_rules.node_discovery import (
     NodePolicy,
     WIDGETS_MODE_ALL,
@@ -37,7 +26,7 @@ from services.workflow_rules.node_parsing import (
     resolve_widget_param_metadata,
 )
 from services.workflow_rules.normalize import WorkflowRules
-from services.workflow_rules.pipeline import find_pipeline_stage, find_stage_control
+from services.workflow_rules.pipeline import find_pipeline_stage
 from services.workflow_rules.schema import ResolvedWorkflowRules
 from services.workflow_rules.schema import dump_resolved_rules
 
@@ -333,151 +322,6 @@ def _apply_length_widget_policy(
     }
 
 
-def _collect_visual_derived_mask_source_node_ids(
-    rules: WorkflowRules,
-) -> set[str]:
-    mask_stage = find_pipeline_stage(rules, kind="mask_processing")
-    if not isinstance(mask_stage, dict):
-        return set()
-
-    source_node_ids: set[str] = set()
-    targets = mask_stage.get("targets")
-    if not isinstance(targets, list):
-        return source_node_ids
-
-    for target in targets:
-        if not isinstance(target, dict):
-            continue
-        if target.get("purpose") == "audio_timing":
-            continue
-        source = target.get("source")
-        if not isinstance(source, dict):
-            continue
-        raw_source_id = source.get("node_id")
-        if isinstance(raw_source_id, str) and raw_source_id.strip():
-            source_node_ids.add(raw_source_id.strip())
-    return source_node_ids
-
-
-def _get_workflow_input_value(
-    workflow: dict[str, Any],
-    node_id: str,
-    param: str,
-) -> Any:
-    node = workflow.get(node_id)
-    if not isinstance(node, dict):
-        return None
-    inputs = node.get("inputs")
-    if not isinstance(inputs, dict):
-        return None
-    return inputs.get(param)
-
-
-def _resolve_mask_processing_source_video_treatment_config(
-    rules: WorkflowRules,
-) -> tuple[str, str, bool, list[str] | None, list[dict[str, Any]] | None]:
-    default = DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT
-    label = DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_LABEL
-    expose_as_widget = True
-    option_values: list[str] | None = None
-    default_overrides: list[dict[str, Any]] | None = None
-
-    mask_stage = find_pipeline_stage(rules, kind="mask_processing")
-    if not isinstance(mask_stage, dict):
-        return default, label, expose_as_widget, option_values, default_overrides
-
-    source_video_treatment = find_stage_control(mask_stage, "source_video_treatment")
-    if not isinstance(source_video_treatment, dict):
-        return default, label, expose_as_widget, option_values, default_overrides
-
-    default = normalize_derived_mask_source_video_treatment(
-        source_video_treatment.get("default")
-    )
-
-    raw_label = source_video_treatment.get("label")
-    if isinstance(raw_label, str) and raw_label.strip():
-        label = raw_label.strip()
-
-    raw_expose_as_widget = source_video_treatment.get("expose")
-    if raw_expose_as_widget in {"widget", "none"}:
-        expose_as_widget = raw_expose_as_widget == "widget"
-
-    include_options = normalize_derived_mask_source_video_treatment_list(
-        source_video_treatment.get("include_options")
-    )
-    exclude_options = normalize_derived_mask_source_video_treatment_list(
-        source_video_treatment.get("exclude_options")
-    )
-    option_values = resolve_derived_mask_source_video_treatment_widget_options(
-        include_options=include_options or None,
-        exclude_options=exclude_options or None,
-    )
-
-    raw_default_overrides = source_video_treatment.get("default_rules")
-    if isinstance(raw_default_overrides, list):
-        translated_overrides: list[dict[str, Any]] = []
-        for override in raw_default_overrides:
-            if not isinstance(override, dict):
-                continue
-            when = override.get("when")
-            if not isinstance(when, dict):
-                continue
-            ref = when.get("ref")
-            if not isinstance(ref, dict) or ref.get("kind") != "workflow_param":
-                continue
-            translated_overrides.append(
-                {
-                    "when": {
-                        "node_id": ref.get("node_id"),
-                        "param": ref.get("param"),
-                        "operator": when.get("operator", "eq"),
-                        "value": when.get("value"),
-                    },
-                    "value": override.get("value"),
-                }
-            )
-        default_overrides = translated_overrides or None
-
-    return default, label, expose_as_widget, option_values, default_overrides
-
-
-def _apply_derived_mask_source_video_treatment_widget(
-    node_rule: dict[str, Any],
-    *,
-    default: str,
-    label: str,
-    option_values: list[str] | None,
-) -> None:
-    current_widgets = node_rule.get("widgets")
-    if not isinstance(current_widgets, dict):
-        current_widgets = {}
-        node_rule["widgets"] = current_widgets
-
-    if (
-        LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM in current_widgets
-        and DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM not in current_widgets
-    ):
-        current_widgets[DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM] = (
-            current_widgets.pop(LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM)
-        )
-    else:
-        current_widgets.pop(
-            LEGACY_DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM,
-            None,
-        )
-
-    if DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM in current_widgets:
-        return
-
-    current_widgets[DERIVED_MASK_SOURCE_VIDEO_TREATMENT_WIDGET_PARAM] = (
-        create_derived_mask_source_video_treatment_widget_rule(
-            default=default,
-            label=label,
-            option_values=option_values,
-        )
-    )
-
-
 def _resolve_default_policy_widgets(
     node_info: _NodeInfo,
     node_policy: NodePolicy,
@@ -676,25 +520,6 @@ def enrich_rules_with_object_info(
     nodes_rules = rules_dict.setdefault("nodes", {})
     default_widgets_mode = rules_model.default_widgets_mode if rules_model is not None else None
     discovered_count = 0
-    visual_derived_mask_source_node_ids = _collect_visual_derived_mask_source_node_ids(
-        rules_dict
-    )
-    (
-        derived_mask_treatment_default,
-        derived_mask_treatment_label,
-        expose_derived_mask_treatment_widget,
-        derived_mask_treatment_option_values,
-        derived_mask_treatment_default_overrides,
-    ) = _resolve_mask_processing_source_video_treatment_config(rules_dict)
-    derived_mask_treatment_default = resolve_derived_mask_source_video_treatment_default(
-        default=derived_mask_treatment_default,
-        default_overrides=derived_mask_treatment_default_overrides,
-        get_param_value=lambda node_id, param: _get_workflow_input_value(
-            workflow_data,
-            node_id,
-            param,
-        ),
-    )
 
     # Resolve node policies once — maps discovery to display/processing actions.
     node_policies: dict[str, NodePolicy] = {}
@@ -784,21 +609,6 @@ def enrich_rules_with_object_info(
             node_policies[node_id],
             object_info,
         )
-
-        present = existing.get("present")
-        is_input_hidden = isinstance(present, dict) and present.get("enabled") is False
-        if (
-            node_id in visual_derived_mask_source_node_ids
-            and not existing.get("ignore")
-            and not is_input_hidden
-            and expose_derived_mask_treatment_widget
-        ):
-            _apply_derived_mask_source_video_treatment_widget(
-                existing,
-                default=derived_mask_treatment_default,
-                label=derived_mask_treatment_label,
-                option_values=derived_mask_treatment_option_values,
-            )
 
         if existing.get("widgets"):
             existing["node_title"] = info.title

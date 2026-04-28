@@ -163,13 +163,13 @@ export function useExportJobController({
           (progress) => onProgress?.(progress),
           {
             timelineSelection: selectionTimelineSelection,
-            format: "webm",
+            format: "mp4",
           },
         );
 
-        const filename = `selection-${Date.now()}.webm`;
+        const filename = `selection-${Date.now()}.mp4`;
         const file = new File([result.video], filename, {
-          type: "video/webm",
+          type: "video/mp4",
           lastModified: Date.now(),
         });
 

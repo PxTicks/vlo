@@ -20,7 +20,7 @@ from config import (
     SAM2_CACHE_DIR,
     SAM2_DEVICE,
 )
-from services.sam2.sam2_encoding import Sam2EncodingError, encode_binary_masks_to_red_webm
+from services.sam2.sam2_encoding import Sam2EncodingError, encode_binary_masks_to_red_mp4
 from services.sam2.sam2_discovery import discover_sam2_models, Sam2ModelInfo
 
 
@@ -1534,7 +1534,7 @@ def generate_mask_video(
         frame_window=frame_window,
     )
     try:
-        video_bytes = encode_binary_masks_to_red_webm(frames, source.fps)
+        video_bytes = encode_binary_masks_to_red_mp4(frames, source.fps)
     except Sam2EncodingError as exc:
         raise Sam2RuntimeError(str(exc)) from exc
 

@@ -4,7 +4,6 @@ import type {
   GeneratedCreationMetadata,
 } from "../../types/Asset";
 import type { TimelineSelection } from "../../types/TimelineTypes";
-import type { DerivedMaskSourceVideoTreatment } from "./derivedMaskVideoTreatment";
 
 export type GenerationMode = "image" | "video";
 export type WorkflowLoadState = "idle" | "loading" | "ready" | "error";
@@ -198,7 +197,6 @@ export interface GenerationVideoTimelineSelectionInputValue
   mediaType: "video";
   preparedVideoFile: File | null;
   preparedMaskFile: File | null;
-  preparedDerivedMaskVideoTreatment: DerivedMaskSourceVideoTreatment | null;
 }
 
 export type GenerationTimelineSelectionInputValue =

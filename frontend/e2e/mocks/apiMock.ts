@@ -343,7 +343,7 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
         // Return a minimal WebM-like blob for mask video
         await route.fulfill({
             status: 200,
-            contentType: 'video/webm',
+            contentType: 'video/mp4',
             body: Buffer.alloc(64), // placeholder bytes
             headers: {
                 'X-Sam2-Width': '1280',

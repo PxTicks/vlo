@@ -14,7 +14,7 @@ const AUDIO_EXTENSIONS = new Set([
   ".m4a",
   ".aac",
 ]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".mkv"]);
+const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".mkv"]);
 
 export type OutputMediaKind = "image" | "video" | "audio" | "unknown";
 

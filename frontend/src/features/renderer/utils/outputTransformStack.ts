@@ -119,19 +119,6 @@ export function createNonBinaryMaskOutputColorMatrixFilter(): ColorMatrixFilter 
   return filter;
 }
 
-export function createTransparentAreaNeutralGrayOutputColorMatrixFilter(): ColorMatrixFilter {
-  const filter = new ColorMatrixFilter();
-  // Export textures are premultiplied, so adding 0.5 * (1 - alpha) composites
-  // the transparent region over a neutral gray matte and forces full opacity.
-  filter.matrix = [
-    1, 0, 0, -0.5, 0.5,
-    0, 1, 0, -0.5, 0.5,
-    0, 0, 1, -0.5, 0.5,
-    0, 0, 0, 0, 1,
-  ];
-  return filter;
-}
-
 export function createOpaqueOutputColorMatrixFilter(): ColorMatrixFilter {
   const filter = new ColorMatrixFilter();
   filter.matrix = [

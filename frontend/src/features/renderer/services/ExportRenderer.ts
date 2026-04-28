@@ -323,6 +323,17 @@ export class ExportRenderer {
     const relevantForAudio = tracks.filter((t) => !t.isMuted && t.isVisible);
     const shouldRenderAudio = hasAudioOutput && relevantForAudio.length > 0;
 
+    console.log("[render]", {
+      shouldRenderAudio,
+      hasAudioOutput,
+      relevantForAudio: relevantForAudio.map((t) => `${t.id}/${t.type}`),
+      rangeDurationSec: rangeDurationTicks / TICKS_PER_SECOND,
+      outputs: outputDefinitions.map((o) => ({
+        id: o.id,
+        includeAudio: o.includeAudio,
+      })),
+    });
+
     const frameTexture = RenderTexture.create({
       width: outputWidth,
       height: outputHeight,
@@ -397,6 +408,11 @@ export class ExportRenderer {
             this.throwIfCancelled();
 
             await outputEncoder.addAudioChunk(renderedBuffer);
+            console.log("[render] audio chunk added", {
+              chunkStartSec,
+              chunkDuration,
+              samples: renderedBuffer.length,
+            });
             this.throwIfCancelled();
 
             const audioProgress =

@@ -155,6 +155,13 @@ export class TextureOutputEncoder {
   }
 
   public async addAudioChunk(audioBuffer: AudioBuffer): Promise<void> {
+    console.log(
+      "[encoder] addAudioChunk",
+      this.outputs.map((o) => ({
+        id: o.definition.id,
+        hasAudioSource: !!o.audioSource,
+      })),
+    );
     for (const output of this.outputs) {
       if (output.audioSource) {
         await output.audioSource.add(audioBuffer);
@@ -163,6 +170,7 @@ export class TextureOutputEncoder {
   }
 
   public async closeAudioTracks(): Promise<void> {
+    console.log("[encoder] closeAudioTracks");
     if (this.audioClosed) return;
     for (const output of this.outputs) {
       if (output.audioSource) {

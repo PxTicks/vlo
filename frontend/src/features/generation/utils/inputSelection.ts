@@ -26,10 +26,12 @@ import {
 export async function captureFramePngAtTick(
   tick: number,
   filenamePrefix: string,
+  timelineSelection?: TimelineSelection,
 ): Promise<File> {
   return renderProjectFrameFileAtTick(tick, {
     filenamePrefix,
     mimeType: "image/png",
+    timelineSelection,
   });
 }
 
@@ -441,13 +443,14 @@ export async function renderTimelineSelectionToFrameBatch(
     const frame = await captureFramePngAtTick(
       tick,
       `generation-selection-frame-${frameIndex}`,
+      timelineSelection,
     );
     frames.push(frame);
   }
 
   if (frames.length === 0) {
     frames.push(
-      await captureFramePngAtTick(startTick, "generation-selection-frame-0"),
+      await captureFramePngAtTick(startTick, "generation-selection-frame-0", timelineSelection),
     );
   }
 

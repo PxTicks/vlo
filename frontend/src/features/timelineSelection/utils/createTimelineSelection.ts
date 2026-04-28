@@ -19,6 +19,7 @@ export function createTimelineSelection(
   endTick: number,
 ): TimelineSelection {
   const clips = useTimelineStore.getState().clips;
+  const tracks = useTimelineStore.getState().tracks;
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
   const { selectionFpsOverride, selectionFrameStep } =
     useTimelineSelectionStore.getState();
@@ -35,6 +36,7 @@ export function createTimelineSelection(
       end: endTick,
       clips: [],
     }),
+    tracks,
     fps: selectionFps,
     frameStep: selectionFrameStep,
   };
@@ -44,6 +46,7 @@ export function createPointTimelineSelection(
   tick: number,
 ): TimelineSelection {
   const clips = useTimelineStore.getState().clips;
+  const tracks = useTimelineStore.getState().tracks;
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
 
   return {
@@ -52,6 +55,7 @@ export function createPointTimelineSelection(
       start: tick,
       clips: [],
     }),
+    tracks,
     fps: projectFps,
   };
 }

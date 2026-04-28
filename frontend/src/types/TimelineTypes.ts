@@ -9,6 +9,7 @@ export interface TimelineSelection {
   start: number;
   end?: number;
   clips: TimelineClip[];
+  tracks?: TimelineTrack[];
   /**
    * Effective FPS used for renders/extractions from this selection.
    * When omitted, consumers fall back to project FPS.

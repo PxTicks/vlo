@@ -226,6 +226,7 @@ export async function restoreMediaInputsFromMetadata(
       const frameFile = await captureFramePngAtTick(
         timelineSelection.start,
         "generation-frame",
+        timelineSelection,
       );
       actions.setMediaInputFrameWithSelection(
         inputId,
@@ -241,6 +242,7 @@ export async function restoreMediaInputsFromMetadata(
         : await captureFramePngAtTick(
             timelineSelection.start,
             "generation-selection-thumb",
+            timelineSelection,
           );
     actions.setMediaInputTimelineSelection(
       inputId,

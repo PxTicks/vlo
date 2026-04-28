@@ -194,6 +194,7 @@ export interface RenderOptions {
 }
 
 export interface RenderStillOptions {
+  timelineSelection?: TimelineSelection;
   includeTimelineMasks?: boolean;
   signal?: AbortSignal;
   mimeType?: "image/png" | "image/webp";
@@ -280,8 +281,10 @@ export class ExportRenderer {
       start: 0,
       end: projectData.duration,
       clips,
+      tracks,
     };
     const selectedClips = timelineSelection.clips;
+    const effectiveTracks = timelineSelection.tracks ?? tracks;
     const startTick = timelineSelection.start;
     const inferredEndTick = selectedClips.reduce(
       (max, clip) => Math.max(max, clip.start + clip.timelineDuration),
@@ -309,13 +312,13 @@ export class ExportRenderer {
 
     const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
       buildVisualRenderData(
-        tracks,
+        effectiveTracks,
         selectedClips,
         options.includeTimelineMasks !== false,
       );
     const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
 
-    const relevantForAudio = tracks.filter((t) => !t.isMuted && t.isVisible);
+    const relevantForAudio = effectiveTracks.filter((t) => !t.isMuted && t.isVisible);
     const shouldRenderAudio = hasAudioOutput && relevantForAudio.length > 0;
 
     const frameTexture = RenderTexture.create({
@@ -522,7 +525,9 @@ export class ExportRenderer {
     const onAbort = () => this.cancel();
     options.signal?.addEventListener("abort", onAbort, { once: true });
 
-    const { tracks, clips, assets, fps } = projectData;
+    const { assets, fps } = projectData;
+    const tracks = options.timelineSelection?.tracks ?? projectData.tracks;
+    const clips = options.timelineSelection?.clips ?? projectData.clips;
     const { logicalWidth, logicalHeight } = config;
     const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
       buildVisualRenderData(

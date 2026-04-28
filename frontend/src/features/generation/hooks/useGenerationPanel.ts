@@ -982,6 +982,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
                 : await captureFramePngAtTick(
                     selectionStartTick,
                     "generation-selection-thumb",
+                    timelineSelection,
                   );
             const extractionRequestId =
               (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;

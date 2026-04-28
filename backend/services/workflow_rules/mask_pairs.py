@@ -58,6 +58,9 @@ def collect_mask_crop_pairs(
     for target in targets:
         if not isinstance(target, dict):
             continue
+        purpose = target.get("purpose", "video")
+        if purpose != "video":
+            continue
         source = target.get("source")
         mask = target.get("mask")
         if not isinstance(source, dict) or not isinstance(mask, dict):

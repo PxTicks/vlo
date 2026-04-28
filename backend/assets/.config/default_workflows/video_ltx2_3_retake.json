@@ -2517,30 +2517,6 @@
       "widgets_values": [0, 512, 512]
     },
     {
-      "id": 722,
-      "type": "VLOSaveVideoWebsocket",
-      "pos": [2250, 3580],
-      "size": [290, 110],
-      "flags": {},
-      "order": 118,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "video",
-          "type": "VIDEO",
-          "link": 1351
-        }
-      ],
-      "outputs": [],
-      "properties": {
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "9023e3dba0e3e356c3b68ea5d2d26c4cde87a6f3",
-        "Node name for S&R": "VLOSaveVideoWebsocket",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["video/ComfyUI", "auto", "auto"]
-    },
-    {
       "id": 711,
       "type": "VHS_DuplicateMasks",
       "pos": [310, 3340],
@@ -3179,7 +3155,7 @@
         {
           "name": "VIDEO",
           "type": "VIDEO",
-          "links": [1351]
+          "links": []
         }
       ],
       "properties": {
@@ -3300,78 +3276,6 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": []
-    },
-    {
-      "id": 745,
-      "type": "VHS_VideoCombine",
-      "pos": [1990, 4010],
-      "size": [230, 334],
-      "flags": {},
-      "order": 117,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 1410
-        },
-        {
-          "name": "audio",
-          "shape": 7,
-          "type": "AUDIO",
-          "link": 1411
-        },
-        {
-          "name": "meta_batch",
-          "shape": 7,
-          "type": "VHS_BatchManager",
-          "link": null
-        },
-        {
-          "name": "vae",
-          "shape": 7,
-          "type": "VAE",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "Filenames",
-          "type": "VHS_FILENAMES",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfyui-videohelpersuite",
-        "ver": "449839959f0153fb8a57211a9364c55163935ca9",
-        "Node name for S&R": "VHS_VideoCombine",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": {
-        "frame_rate": 24,
-        "loop_count": 0,
-        "filename_prefix": "AnimateDiff",
-        "format": "video/h264-mp4",
-        "pix_fmt": "yuv420p",
-        "crf": 19,
-        "save_metadata": true,
-        "trim_to_audio": false,
-        "pingpong": false,
-        "save_output": false,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "AnimateDiff_00018-audio.mp4",
-            "subfolder": "",
-            "type": "temp",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "AnimateDiff_00018.png",
-            "fullpath": "/notebooks/ComfyUI/temp/AnimateDiff_00018-audio.mp4"
-          }
-        }
-      }
     },
     {
       "id": 702,
@@ -3859,7 +3763,7 @@
     {
       "id": 750,
       "type": "GetNode",
-      "pos": [-435.97730140746313, 2782.4162871716962],
+      "pos": [-440, 2780],
       "size": [210, 60],
       "flags": {},
       "order": 42,
@@ -3875,7 +3779,8 @@
       "title": "Get_width",
       "properties": {
         "Node name for S&R": "GetNode",
-        "aux_id": "GetNode"
+        "aux_id": "GetNode",
+        "widget_ue_connectable": {}
       },
       "widgets_values": ["width"],
       "color": "#1b4669",
@@ -3900,7 +3805,8 @@
       "title": "Get_height",
       "properties": {
         "Node name for S&R": "GetNode",
-        "aux_id": "GetNode"
+        "aux_id": "GetNode",
+        "widget_ue_connectable": {}
       },
       "widgets_values": ["height"],
       "color": "#1b4669",
@@ -4240,6 +4146,78 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [true]
+    },
+    {
+      "id": 745,
+      "type": "VHS_VideoCombine",
+      "pos": [2280, 3550],
+      "size": [230, 334],
+      "flags": {},
+      "order": 117,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 1410
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 1411
+        },
+        {
+          "name": "meta_batch",
+          "shape": 7,
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Filenames",
+          "type": "VHS_FILENAMES",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "449839959f0153fb8a57211a9364c55163935ca9",
+        "Node name for S&R": "VHS_VideoCombine",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": {
+        "frame_rate": 24,
+        "loop_count": 0,
+        "filename_prefix": "vlo_ltx_retake",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "trim_to_audio": false,
+        "pingpong": false,
+        "save_output": false,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "AnimateDiff_00018-audio.mp4",
+            "subfolder": "",
+            "type": "temp",
+            "format": "video/h264-mp4",
+            "frame_rate": 24,
+            "workflow": "AnimateDiff_00018.png",
+            "fullpath": "/notebooks/ComfyUI/temp/AnimateDiff_00018-audio.mp4"
+          }
+        }
+      }
     }
   ],
   "links": [
@@ -4342,7 +4320,6 @@
     [1348, 721, 0, 716, 2, "FLOAT"],
     [1349, 425, 0, 716, 1, "AUDIO"],
     [1350, 527, 0, 716, 0, "IMAGE"],
-    [1351, 716, 0, 722, 0, "VIDEO"],
     [1356, 644, 0, 724, 0, "IMAGE"],
     [1357, 724, 3, 725, 0, "INT"],
     [1358, 726, 0, 723, 0, "INT"],
@@ -4914,8 +4891,8 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.5284434711609505,
-      "offset": [346.52483161802456, -3010.353578920625]
+      "scale": 0.1325609252253673,
+      "offset": [1731.17828832104, -1779.7378629179723]
     },
     "frontendVersion": "1.42.15",
     "workflowRendererVersion": "LG",

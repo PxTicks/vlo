@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from "vitest";
 import { useAssetStore } from "../useAssetStore";
 import { fileSystemService } from "../../project/services/FileSystemService";
-import { projectDocumentService } from "../../project/services/ProjectDocumentService";
+import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
 
 const { mockRemoveClipsByAssetId } = vi.hoisted(() => ({
   mockRemoveClipsByAssetId: vi.fn(),
@@ -44,6 +44,19 @@ if (globalThis.URL) {
 }
 
 describe("useAssetStore - Deletion", () => {
+  function makeAssetIndex(
+    assets: Record<string, unknown>,
+    assetFamilies: Record<string, unknown> = {},
+  ): string {
+    return JSON.stringify({
+      documentType: "vlo.assets",
+      schemaVersion: 1,
+      updated_at: 1,
+      assets,
+      assetFamilies,
+    });
+  }
+
   beforeEach(() => {
     useAssetStore.setState({
       assets: [
@@ -70,24 +83,32 @@ describe("useAssetStore - Deletion", () => {
     });
     vi.clearAllMocks();
     mockRemoveClipsByAssetId.mockReset();
-    projectDocumentService.resetProjectDocumentCache();
+    projectPersistenceService.resetCaches();
   });
 
-  it("should delete an asset from store, file system, and project.json", async () => {
-    // Arrange: Mock reading project.json
-    const initialProjectData = {
-      assets: {
+  it("should delete an asset from store, file system, and assets.json", async () => {
+    // Arrange: Mock reading assets.json
+    const initialAssetIndex = makeAssetIndex({
         "asset-1": {
           id: "asset-1",
           name: "video.mp4",
+          hash: "123",
           src: "video.mp4",
+          type: "video",
           thumbnail: ".vloproject/thumbnails/video.mp4_thumb.webp",
+          createdAt: 1000,
         },
-        "asset-2": { id: "asset-2", name: "image.png", src: "image.png" },
-      },
-    };
+        "asset-2": {
+          id: "asset-2",
+          name: "image.png",
+          hash: "456",
+          src: "image.png",
+          type: "image",
+          createdAt: 2000,
+        },
+    });
     (fileSystemService.readFile as Mock).mockResolvedValue({
-      text: async () => JSON.stringify(initialProjectData),
+      text: async () => initialAssetIndex,
     });
 
     // Act
@@ -107,18 +128,18 @@ describe("useAssetStore - Deletion", () => {
       ".vloproject/thumbnails/video.mp4_thumb.webp",
     );
 
-    // Assert: Project JSON Update
+    // Assert: assets.json Update
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.stringContaining('"asset-2"'),
     );
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.not.stringContaining('"asset-1"'),
     );
   });
 
-  it("should handle deletion gracefully if project.json read fails", async () => {
+  it("should handle deletion gracefully if assets.json read fails", async () => {
     // Arrange
     (fileSystemService.readFile as Mock).mockRejectedValue(
       new Error("Read Error"),
@@ -181,24 +202,31 @@ describe("useAssetStore - Deletion", () => {
     });
     (fileSystemService.readFile as Mock).mockResolvedValue({
       text: async () =>
-        JSON.stringify({
-          assets: {
+        makeAssetIndex({
             "generated-1": {
               id: "generated-1",
               name: "generated-1.mp4",
+              hash: "generated-hash-1",
               src: "generated-1.mp4",
+              type: "video",
+              createdAt: 1000,
             },
             "generated-2": {
               id: "generated-2",
               name: "generated-2.mp4",
+              hash: "generated-hash-2",
               src: "generated-2.mp4",
+              type: "video",
+              createdAt: 2000,
             },
             "mask-1": {
               id: "mask-1",
               name: "generation-mask-1.mp4",
+              hash: "mask-hash-1",
               src: "mask-1.mp4",
+              type: "video",
+              createdAt: 3000,
             },
-          },
         }),
     });
 
@@ -213,7 +241,7 @@ describe("useAssetStore - Deletion", () => {
     expect(fileSystemService.deleteFile).toHaveBeenCalledWith("generated-1.mp4");
     expect(fileSystemService.deleteFile).not.toHaveBeenCalledWith("mask-1.mp4");
     expect(fileSystemService.writeFile).toHaveBeenLastCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.stringContaining('"mask-1"'),
     );
   });
@@ -311,24 +339,31 @@ describe("useAssetStore - Deletion", () => {
     });
     (fileSystemService.readFile as Mock).mockResolvedValue({
       text: async () =>
-        JSON.stringify({
-          assets: {
+        makeAssetIndex({
             "generated-1": {
               id: "generated-1",
               name: "generated-1.mp4",
+              hash: "generated-hash-1",
               src: "generated-1.mp4",
+              type: "video",
+              createdAt: 1000,
             },
             "generated-2": {
               id: "generated-2",
               name: "generated-2.mp4",
+              hash: "generated-hash-2",
               src: "generated-2.mp4",
+              type: "video",
+              createdAt: 2000,
             },
             "mask-1": {
               id: "mask-1",
               name: "generation-mask-1.mp4",
+              hash: "mask-hash-1",
               src: "mask-1.mp4",
+              type: "video",
+              createdAt: 3000,
             },
-          },
         }),
     });
 
@@ -340,7 +375,7 @@ describe("useAssetStore - Deletion", () => {
     expect(fileSystemService.deleteFile).toHaveBeenCalledWith("mask-1.mp4");
     expect(mockRemoveClipsByAssetId).toHaveBeenCalledWith("mask-1");
     expect(fileSystemService.writeFile).toHaveBeenLastCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.not.stringContaining('"mask-1"'),
     );
   });
@@ -389,20 +424,26 @@ describe("useAssetStore - Deletion", () => {
     });
     (fileSystemService.readFile as Mock).mockResolvedValue({
       text: async () =>
-        JSON.stringify({
-          assets: {
+        makeAssetIndex(
+          {
             "asset-1": {
               id: "asset-1",
               name: "video-a.mp4",
+              hash: "hash-a",
               src: "video-a.mp4",
+              type: "video",
+              createdAt: 1000,
             },
             "asset-2": {
               id: "asset-2",
               name: "video-b.mp4",
+              hash: "hash-b",
               src: "video-b.mp4",
+              type: "video",
+              createdAt: 2000,
             },
           },
-          assetFamilies: {
+          {
             "family-1": {
               id: "family-1",
               representativeAssetId: "asset-2",
@@ -415,7 +456,7 @@ describe("useAssetStore - Deletion", () => {
               updatedAt: 1,
             },
           },
-        }),
+        ),
     });
 
     await useAssetStore.getState().deleteAsset("asset-2");
@@ -427,7 +468,7 @@ describe("useAssetStore - Deletion", () => {
       }),
     ]);
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.stringContaining('"representativeAssetId": "asset-1"'),
     );
   });
@@ -465,15 +506,18 @@ describe("useAssetStore - Deletion", () => {
     });
     (fileSystemService.readFile as Mock).mockResolvedValue({
       text: async () =>
-        JSON.stringify({
-          assets: {
+        makeAssetIndex(
+          {
             "asset-1": {
               id: "asset-1",
               name: "video-a.mp4",
+              hash: "hash-a",
               src: "video-a.mp4",
+              type: "video",
+              createdAt: 1000,
             },
           },
-          assetFamilies: {
+          {
             "family-1": {
               id: "family-1",
               representativeAssetId: "asset-1",
@@ -486,15 +530,15 @@ describe("useAssetStore - Deletion", () => {
               updatedAt: 1,
             },
           },
-        }),
+        ),
     });
 
     await useAssetStore.getState().deleteAsset("asset-1");
 
     expect(useAssetStore.getState().families).toEqual([]);
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
-      expect.not.stringContaining('"assetFamilies"'),
+      ".vloproject/assets.json",
+      expect.stringContaining('"assetFamilies": {}'),
     );
   });
 });

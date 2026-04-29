@@ -669,7 +669,19 @@ export function buildWorkflowStoreState(
     },
 
     loadWorkflowFromAssetMetadata: async (asset) => {
-      const metadata = asset.creationMetadata;
+      let assetWithMetadata = asset;
+      try {
+        const { ensureAssetMetadataLoaded } = await import("../../userAssets");
+        assetWithMetadata =
+          (await ensureAssetMetadataLoaded(asset.id)) ?? assetWithMetadata;
+      } catch (error) {
+        console.warn(
+          "[Generation] Failed to hydrate asset metadata sidecar before replay:",
+          error,
+        );
+      }
+
+      const metadata = assetWithMetadata.creationMetadata;
       if (!canRegenerateFromAssetMetadata(metadata)) {
         throw new Error(
           "This asset does not include saved workflow information for regeneration",

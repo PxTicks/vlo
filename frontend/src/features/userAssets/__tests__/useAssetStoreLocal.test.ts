@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { useAssetStore } from "../useAssetStore";
+import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
 import type { MediaFileProcessor } from "../services/MediaProcessingService";
 
 // import { useProjectStore } from '../../project/useProjectStore';
@@ -38,9 +39,16 @@ vi.mock("mediabunny", () => {
 vi.mock("../../project/services/FileSystemService", () => ({
   fileSystemService: {
     saveAssetFile: vi.fn(),
-    readFile: vi
-      .fn()
-      .mockResolvedValue(new File(["{}"], "project.json", { type: "application/json" })),
+    readFile: vi.fn().mockResolvedValue({
+      text: async () =>
+        JSON.stringify({
+          documentType: "vlo.assets",
+          schemaVersion: 1,
+          updated_at: 1,
+          assets: {},
+          assetFamilies: {},
+        }),
+    }),
     writeFile: vi.fn(),
   },
 }));
@@ -69,6 +77,7 @@ vi.mock("../services/MediaProcessingService", () => ({
 
 describe("useAssetStore - Local Assets", () => {
   beforeEach(() => {
+    projectPersistenceService.resetCaches();
     useAssetStore.setState({
       assets: [],
       families: [],

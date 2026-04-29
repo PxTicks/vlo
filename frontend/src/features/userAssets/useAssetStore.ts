@@ -9,8 +9,7 @@ import { doesAssetBelongToFamily } from "../../shared/utils/assetFamilies";
 import {
   useProjectStore,
   fileSystemService,
-  projectPersistenceService,
-  type PersistedAssetIndexEntry,
+  projectDocumentService,
 } from "../project";
 import { mediaProcessingService } from "./services/MediaProcessingService";
 
@@ -53,7 +52,6 @@ interface AssetStore {
   fetchAssets: () => Promise<void>;
   scanForNewAssets: () => Promise<void>;
   ensureAssetSourceLoaded: (assetId: string) => Promise<Asset | null>;
-  ensureAssetMetadataLoaded: (assetId: string) => Promise<Asset | null>;
   getInput: (assetId: string) => Promise<Input | null>;
   deleteAsset: (id: string) => Promise<void>;
 }
@@ -119,7 +117,6 @@ function disposeAssetCollectionRuntimeResources(
 }
 
 const sourceHydrationPromises = new Map<string, Promise<Asset | null>>();
-const metadataHydrationPromises = new Map<string, Promise<Asset | null>>();
 
 function toAssetFamilyRecordMap(
   families: readonly AssetFamily[],
@@ -209,9 +206,7 @@ function setRepresentativeAssetIdForFamily(
 }
 
 function syncAssetFamilyIdsToDraftAssets(
-  draftAssets:
-    | Record<string, Pick<PersistedAssetIndexEntry, "familyId">>
-    | undefined,
+  draftAssets: Record<string, Asset> | undefined,
   assets: readonly Asset[],
 ): void {
   if (!draftAssets) {
@@ -228,10 +223,14 @@ function syncAssetFamilyIdsToDraftAssets(
 }
 
 function syncFamiliesToDraft(
-  draft: { assetFamilies: Record<string, AssetFamily> },
+  draft: { assetFamilies?: Record<string, AssetFamily> },
   families: readonly AssetFamily[],
 ): void {
-  draft.assetFamilies = toAssetFamilyRecordMap(families);
+  if (families.length > 0) {
+    draft.assetFamilies = toAssetFamilyRecordMap(families);
+  } else {
+    delete draft.assetFamilies;
+  }
 }
 
 function clearInvalidFamilyReferences(
@@ -433,9 +432,12 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     try {
       const previousAssets = get().assets;
       const previousInputCache = new Map(get().inputCache);
-      const data = await projectPersistenceService.readAssetIndex();
-      const assetsMap = data.assets;
-      const assetFamiliesMap = data.assetFamilies;
+      const data = await projectDocumentService.readProjectDocument();
+      const assetsMap = (data.assets || {}) as Record<string, Asset>;
+      const assetFamiliesMap = (data.assetFamilies || {}) as Record<
+        string,
+        AssetFamily
+      >;
       const durationRepairs: AssetDurationRepair[] = [];
 
       // Hydrate paths to Blob URLs
@@ -512,8 +514,6 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
               thumbnailPath,
               proxySrc,
               proxyPath,
-              metadataRef: rawAsset.metadataRef,
-              metadataLoaded: !rawAsset.metadataRef,
               proxyFile,
               file: fileObj,
               duration: repairedDuration ?? rawAsset.duration,
@@ -530,7 +530,9 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
 
       if (durationRepairs.length > 0) {
         try {
-          await projectPersistenceService.updateAssetIndex((draft) => {
+          await projectDocumentService.updateProjectDocument((draft) => {
+            if (!draft.assets) return;
+
             for (const repair of durationRepairs) {
               const asset = draft.assets[repair.id];
               if (!asset) continue;
@@ -552,7 +554,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       });
       disposeAssetCollectionRuntimeResources(previousAssets, previousInputCache);
     } catch (err) {
-      console.error("Failed to load assets from assets.json", err);
+      console.error("Failed to load assets from project.json", err);
     } finally {
       set({ isLoading: false });
     }
@@ -732,67 +734,6 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     return hydrationPromise;
   },
 
-  ensureAssetMetadataLoaded: async (assetId: string) => {
-    const existingAsset = get().assets.find((asset) => asset.id === assetId);
-    if (!existingAsset) {
-      return null;
-    }
-
-    if (!existingAsset.metadataRef || existingAsset.metadataLoaded) {
-      return existingAsset;
-    }
-
-    const existingPromise = metadataHydrationPromises.get(assetId);
-    if (existingPromise) {
-      return existingPromise;
-    }
-
-    const hydrationPromise = (async () => {
-      const currentAsset = get().assets.find((asset) => asset.id === assetId);
-      if (!currentAsset) {
-        return null;
-      }
-
-      if (!currentAsset.metadataRef || currentAsset.metadataLoaded) {
-        return currentAsset;
-      }
-
-      const metadataDocument = await projectPersistenceService.readAssetMetadata(
-        currentAsset.id,
-        currentAsset.metadataRef,
-      );
-      let hydratedAsset: Asset | null = null;
-
-      set((state) => {
-        const nextAssets = state.assets.map((asset) => {
-          if (asset.id !== assetId) {
-            return asset;
-          }
-
-          const nextAsset: Asset = {
-            ...asset,
-            creationMetadata:
-              metadataDocument?.creationMetadata ?? asset.creationMetadata,
-            metadataLoaded: true,
-          };
-          hydratedAsset = nextAsset;
-          return nextAsset;
-        });
-
-        return {
-          assets: nextAssets,
-        };
-      });
-
-      return hydratedAsset ?? get().assets.find((asset) => asset.id === assetId) ?? null;
-    })().finally(() => {
-      metadataHydrationPromises.delete(assetId);
-    });
-
-    metadataHydrationPromises.set(assetId, hydrationPromise);
-    return hydrationPromise;
-  },
-
   upsertFamily: async (family: AssetFamily) => {
     const previousAssets = get().assets;
     const previousFamilies = get().families;
@@ -803,7 +744,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     set(sanitizedState);
 
     try {
-      await projectPersistenceService.updateAssetIndex((draft) => {
+      await projectDocumentService.updateProjectDocument((draft) => {
         syncAssetFamilyIdsToDraftAssets(draft.assets, sanitizedState.assets);
         syncFamiliesToDraft(draft, sanitizedState.families);
       });
@@ -843,7 +784,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     set(sanitizedState);
 
     try {
-      await projectPersistenceService.updateAssetIndex((draft) => {
+      await projectDocumentService.updateProjectDocument((draft) => {
         syncAssetFamilyIdsToDraftAssets(draft.assets, sanitizedState.assets);
         syncFamiliesToDraft(draft, sanitizedState.families);
       });
@@ -888,25 +829,18 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     set(sanitizedState);
 
     try {
-      const nextAsset = sanitizedState.assets.find((asset) => asset.id === id);
-      let persistedEntry: PersistedAssetIndexEntry | null = null;
-      if (nextAsset) {
-        persistedEntry = await projectPersistenceService.persistAssetEntry(nextAsset);
-      }
-
-      await projectPersistenceService.updateAssetIndex((draft) => {
-        if (!draft.assets[id]) {
+      await projectDocumentService.updateProjectDocument((draft) => {
+        if (!draft.assets?.[id]) {
           return;
         }
 
         syncAssetFamilyIdsToDraftAssets(draft.assets, sanitizedState.assets);
 
-        if (nextAsset && persistedEntry) {
-          draft.assets[id] = {
-            ...draft.assets[id],
-            ...persistedEntry,
+        const nextAsset = sanitizedState.assets.find((asset) => asset.id === id);
+        if (nextAsset) {
+          Object.assign(draft.assets[id], updates, {
             familyId: nextAsset.familyId,
-          };
+          });
         }
 
         syncFamiliesToDraft(draft, sanitizedState.families);
@@ -977,19 +911,19 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       );
     }
 
-    // 1. Remove the live index entry first so failed physical cleanup leaves an orphan file, not a broken asset.
+    // 1. Get asset details from project.json to find exact paths
+    // We cannot rely solely on memory store because partial updates or Blob URLs might obscure original paths.
     let pathsToDelete: {
       src?: string;
       thumbnail?: string;
       proxySrc?: string;
     } = {};
-    let metadataRefToDelete: string | undefined;
     const nextAssets = get().assets.filter((asset) => asset.id !== id);
     const sanitizedState = sanitizeAssetFamilyState(nextAssets, get().families);
 
     try {
-      await projectPersistenceService.updateAssetIndex((draft) => {
-        if (!draft.assets[id]) return;
+      await projectDocumentService.updateProjectDocument((draft) => {
+        if (!draft.assets || !draft.assets[id]) return;
 
         const storedAsset = draft.assets[id];
         pathsToDelete = {
@@ -997,7 +931,6 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
           thumbnail: storedAsset.thumbnail,
           proxySrc: storedAsset.proxySrc,
         };
-        metadataRefToDelete = storedAsset.metadataRef;
 
         delete draft.assets[id];
 
@@ -1005,8 +938,8 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
         syncFamiliesToDraft(draft, sanitizedState.families);
       });
     } catch (e) {
-      console.error("Failed to update assets.json during deletion", e);
-      // If we can't read/write assets.json, we might fail to get paths,
+      console.error("Failed to update project.json during deletion", e);
+      // If we can't read/write project.json, we might fail to get paths,
       // but we should still try to clean up memory.
     }
 
@@ -1023,15 +956,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     disposeInput(cachedInput);
     disposeAssetRuntimeResources(assetToDelete);
 
-    if (metadataRefToDelete) {
-      try {
-        await projectPersistenceService.deleteAssetMetadata(id, metadataRefToDelete);
-      } catch (e) {
-        console.warn("Failed to delete asset metadata sidecar", e);
-      }
-    }
-
-    // 3. Delete files from disk using paths found in the index
+    // 3. Delete files from disk using paths found in JSON
     if (pathsToDelete.src) {
       // Only delete if it looks like a local path (not http/blob)
       if (

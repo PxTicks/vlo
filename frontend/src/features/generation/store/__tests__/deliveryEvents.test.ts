@@ -257,9 +257,11 @@ describe("deliveryEvents", () => {
 
   it("preserves frontend-only metadata fields when the manifest doesn't carry them", async () => {
     // Repro: on cached preprocess runs the backend's mask_crop is inactive,
-    // so the manifest's generation_metadata is missing maskCropMetadata.
-    // The frontend computed it at submission time via the merged response —
-    // applyDeliveryUpdate must not clobber that.
+    // so the manifest's generation_metadata is missing maskCropMetadata and
+    // its prepared_mask is null. The frontend computed both at submission
+    // time via the merged response — applyDeliveryUpdate must not clobber
+    // them, and processCompletedDelivery must fall back to the job's local
+    // preparedMaskFile.
     const cachedMaskCropMetadata = {
       mode: "cropped",
       crop_position: [10, 20],
@@ -267,6 +269,9 @@ describe("deliveryEvents", () => {
       container_size: [400, 300],
       scale: 0.25,
     };
+    const cachedMaskFile = new File(["mask"], "generation-mask.mp4", {
+      type: "video/mp4",
+    });
     useGenerationStore.setState({
       jobs: new Map<string, GenerationJob>([
         [
@@ -279,6 +284,7 @@ describe("deliveryEvents", () => {
               inputs: [],
               maskCropMetadata: cachedMaskCropMetadata,
             } as never,
+            preparedMaskFile: cachedMaskFile,
           },
         ],
       ]),
@@ -321,6 +327,7 @@ describe("deliveryEvents", () => {
         generationMetadata: expect.objectContaining({
           maskCropMetadata: cachedMaskCropMetadata,
         }),
+        preparedMaskFile: cachedMaskFile,
       }),
     );
 

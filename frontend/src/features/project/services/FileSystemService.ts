@@ -129,24 +129,6 @@ export class FileSystemService {
   }
 
   /**
-   * Checks whether a file exists at the given project-relative path.
-   */
-  async fileExists(path: string): Promise<boolean> {
-    try {
-      await this.readFile(path);
-      return true;
-    } catch (e) {
-      if ((e as DOMException).name === "NotFoundError") {
-        return false;
-      }
-      if (e instanceof Error && /not found|missing/i.test(e.message)) {
-        return false;
-      }
-      throw e;
-    }
-  }
-
-  /**
    * Writes content to a file in the project.
    * Creates parent directories if they don't exist.
    */

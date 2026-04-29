@@ -121,12 +121,6 @@ export async function ensureAssetSourceLoaded(
   return useAssetStore.getState().ensureAssetSourceLoaded(assetId);
 }
 
-export async function ensureAssetMetadataLoaded(
-  assetId: string,
-): Promise<Asset | null> {
-  return useAssetStore.getState().ensureAssetMetadataLoaded(assetId);
-}
-
 export async function ensureAssetFileLoaded(
   assetId: string,
 ): Promise<File | null> {
@@ -233,8 +227,4 @@ export async function waitForAssetsPersistence(
   await (await import("./services/AssetService")).assetService.waitForAssetsPersistence(
     assetIds,
   );
-}
-
-export async function flushAllAssetPersistence(): Promise<void> {
-  await (await import("./services/AssetService")).assetService.waitForAllAssetPersistence();
 }

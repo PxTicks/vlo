@@ -212,19 +212,19 @@ export function attachDeliveryClientHandlers(
       get().jobs.get(manifest.prompt_id)?.generationMetadata,
       manifest.generation_metadata,
     );
-    if (!mergedGenerationMetadata) {
-      await rejectCompletedDelivery(manifest, "Missing generation metadata");
-      return;
-    }
-
     const generationMetadata = structuredClone(mergedGenerationMetadata);
     let importedAssetIds: string[] | undefined;
     let previewFrameFiles: File[] = [];
 
     try {
-      const preparedMaskFile = await fetchDeliveryFileAsFile(
-        manifest.prepared_mask ?? null,
-      );
+      // On cached preprocess runs the backend's mask_crop is inactive, so it
+      // can't stamp prepared_mask onto the manifest. Fall back to the job's
+      // own preparedMaskFile, which the frontend already decoded from the
+      // cached pipeline_outputs at submission time.
+      const preparedMaskFile =
+        (await fetchDeliveryFileAsFile(manifest.prepared_mask ?? null)) ??
+        get().jobs.get(manifest.prompt_id)?.preparedMaskFile ??
+        null;
       const cachedPreviewFrameFiles = compactPreviewFrameFiles(
         get().jobPreviewFrames.get(manifest.prompt_id),
       );

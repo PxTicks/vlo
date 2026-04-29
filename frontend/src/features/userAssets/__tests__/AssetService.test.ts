@@ -9,7 +9,7 @@ import {
 } from "vitest";
 import { assetService } from "../services/AssetService";
 import { fileSystemService } from "../../project/services/FileSystemService";
-import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
+import { projectDocumentService } from "../../project/services/ProjectDocumentService";
 import { mediaProcessingService } from "../services/MediaProcessingService";
 import type { Asset } from "../../../types/Asset";
 import type { MediaFileProcessor } from "../services/MediaProcessingService";
@@ -60,17 +60,9 @@ if (globalThis.URL) {
 }
 
 describe("AssetService", () => {
-  const emptyAssetIndex = {
-    documentType: "vlo.assets",
-    schemaVersion: 1,
-    updated_at: 1,
-    assets: {},
-    assetFamilies: {},
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    projectPersistenceService.resetCaches();
+    projectDocumentService.resetProjectDocumentCache();
     vi.mocked(mediaProcessingService.createProcessor).mockReturnValue(
       mockProcessor as unknown as MediaFileProcessor,
     );
@@ -93,10 +85,10 @@ describe("AssetService", () => {
     (fileSystemService.readFile as Mock).mockImplementation(
       async (path: string) => {
         if (path === "new_image.png") return mockFileContent;
-        if (path === ".vloproject/assets.json") {
+        if (path === ".vloproject/project.json") {
           return {
-            text: async () => JSON.stringify(emptyAssetIndex),
-            name: "assets.json",
+            text: async () => JSON.stringify({ assets: {} }),
+            name: "project.json",
           };
         }
         return new File([""], "unknown");
@@ -137,9 +129,9 @@ describe("AssetService", () => {
     const newAsset = newAssets[0];
     expect(newAsset.name).toBe("new_image.png");
 
-    // Verify assets.json write happened (Batched)
+    // Verify PROJECT.JSON write happened (Batched)
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/assets.json",
+      ".vloproject/project.json",
       expect.stringContaining("new_image.png"),
     );
 
@@ -159,8 +151,8 @@ describe("AssetService", () => {
     (fileSystemService.readFile as Mock).mockImplementation(
       async (path: string) => {
         if (path === "inferred.png") return mockFileContent;
-        if (path === ".vloproject/assets.json")
-          return { text: async () => JSON.stringify(emptyAssetIndex) };
+        if (path === ".vloproject/project.json")
+          return { text: async () => "{}" };
         return new File([""], "unknown");
       },
     );
@@ -221,8 +213,8 @@ describe("AssetService", () => {
     (fileSystemService.readFile as Mock).mockImplementation(
       async (path: string) => {
         if (path === "fresh_file.png") return mockFileContent;
-        if (path === ".vloproject/assets.json")
-          return { text: async () => JSON.stringify(emptyAssetIndex) };
+        if (path === ".vloproject/project.json")
+          return { text: async () => "{}" };
         return new File([""], "unknown");
       },
     );
@@ -263,10 +255,10 @@ describe("AssetService", () => {
     (fileSystemService.readFile as Mock).mockImplementation(
       async (path: string) => {
         if (path === "test.mp4") return videoFile;
-        if (path === ".vloproject/assets.json") {
+        if (path === ".vloproject/project.json") {
           return {
-            text: async () => JSON.stringify(emptyAssetIndex),
-            name: "assets.json",
+            text: async () => "{}",
+            name: "project.json",
           };
         }
         return new File([""], "unknown");
@@ -300,10 +292,10 @@ describe("AssetService", () => {
     (fileSystemService.listDirectory as Mock).mockResolvedValue(["song.mp3"]);
     (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
       if (path === "song.mp3") return audioFile;
-      if (path === ".vloproject/assets.json") {
+      if (path === ".vloproject/project.json") {
         return {
-          text: async () => JSON.stringify(emptyAssetIndex),
-          name: "assets.json",
+          text: async () => "{}",
+          name: "project.json",
         };
       }
       return new File([""], "unknown");

@@ -30,12 +30,3 @@ export interface ProjectDocument {
   timeline?: TimelineSnapshot;
   [key: string]: unknown;
 }
-
-export type {
-  AssetIndexDocument,
-  AssetMetadataDocument,
-  LegacyProjectDocument,
-  PersistedAssetIndexEntry,
-  ProjectManifestDocument,
-  TimelineDocument,
-} from "../schemas/projectPersistenceSchemas";

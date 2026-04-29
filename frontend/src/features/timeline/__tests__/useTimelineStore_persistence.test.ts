@@ -1,7 +1,7 @@
 import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useTimelineStore } from "../useTimelineStore";
-import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
+import { projectDocumentService } from "../../project/services/ProjectDocumentService";
 import { fileSystemService } from "../../project/services/FileSystemService";
 import type { Patch } from "../../../lib/immerLite";
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
@@ -36,21 +36,15 @@ describe("useTimelineStore persistence", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    projectPersistenceService.resetCaches();
+    projectDocumentService.resetProjectDocumentCache();
 
     getHandleSpy = vi
       .spyOn(fileSystemService, "getHandle")
       .mockReturnValue({} as FileSystemDirectoryHandle);
 
     applyPatchesSpy = vi
-      .spyOn(projectPersistenceService, "applyTimelinePatches")
-      .mockResolvedValue({
-        documentType: "vlo.timeline",
-        schemaVersion: 1,
-        updated_at: Date.now(),
-        tracks: [],
-        clips: [],
-      });
+      .spyOn(projectDocumentService, "applyProjectDocumentPatches")
+      .mockResolvedValue({});
 
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [createTrack("track-1", "Track 1")],
@@ -79,7 +73,7 @@ describe("useTimelineStore persistence", () => {
 
     const [patches] = applyPatchesSpy.mock.calls[0] as [Patch[]];
     expect(patches.length).toBeGreaterThan(0);
-    expect(patches.every((patch) => patch.path[0] !== "timeline")).toBe(true);
+    expect(patches.every((patch) => patch.path[0] === "timeline")).toBe(true);
   });
 
   it("persists undo and redo mutations", async () => {
@@ -102,3 +96,4 @@ describe("useTimelineStore persistence", () => {
     expect(applyPatchesSpy).toHaveBeenCalledTimes(3);
   });
 });
+

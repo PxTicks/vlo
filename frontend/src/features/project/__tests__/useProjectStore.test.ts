@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from "vitest";
 import { useProjectStore } from "../useProjectStore";
 import { fileSystemService } from "../services/FileSystemService";
-import { projectPersistenceService } from "../services/ProjectPersistenceService";
+import { projectDocumentService } from "../services/ProjectDocumentService";
 import { recentProjectsService } from "../services/RecentProjectsService";
 import {
-  PROJECT_MANIFEST_SCHEMA_VERSION,
+  CURRENT_PROJECT_SCHEMA_VERSION,
   VLO_APP_VERSION,
 } from "../constants";
 import { useTimelineStore } from "../../timeline";
@@ -29,7 +29,6 @@ vi.mock("../services/RecentProjectsService", () => ({
 }));
 
 vi.mock("../../userAssets", () => ({
-  flushAllAssetPersistence: vi.fn(),
   scanForNewAssets: mockScanForNewAssets,
 }));
 
@@ -56,64 +55,8 @@ describe("useProjectStore", () => {
     useTimelineStore.getState().replaceTimelineSnapshot(null);
     vi.clearAllMocks();
     (fileSystemService.checkDirectoryExists as Mock).mockResolvedValue(false);
-    projectPersistenceService.resetCaches();
+    projectDocumentService.resetProjectDocumentCache();
   });
-
-  function getLastWrittenJson(path: string): Record<string, unknown> {
-    const matchingCalls = (fileSystemService.writeFile as Mock).mock.calls.filter(
-      ([fileName]) => fileName === path,
-    );
-    expect(matchingCalls.length).toBeGreaterThan(0);
-    return JSON.parse(matchingCalls[matchingCalls.length - 1][1] as string);
-  }
-
-  function mockSplitProjectReadFiles(options: {
-    manifest?: Record<string, unknown>;
-    timeline?: Record<string, unknown>;
-    assets?: Record<string, unknown>;
-  }) {
-    const manifest = options.manifest ?? {
-      documentType: "vlo.project",
-      schemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION,
-      id: "project-id",
-      title: "Loaded Project",
-      created_at: 1000,
-      last_modified: 1000,
-      config: {},
-      files: {
-        timeline: "timeline.json",
-        assets: "assets.json",
-        assetMetadataDir: "asset-metadata",
-      },
-    };
-    const timeline = options.timeline ?? {
-      documentType: "vlo.timeline",
-      schemaVersion: 1,
-      updated_at: 1000,
-      tracks: [],
-      clips: [],
-    };
-    const assets = options.assets ?? {
-      documentType: "vlo.assets",
-      schemaVersion: 1,
-      updated_at: 1000,
-      assets: {},
-      assetFamilies: {},
-    };
-
-    (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
-      if (path === ".vloproject/project.json") {
-        return { text: async () => JSON.stringify(manifest) };
-      }
-      if (path === ".vloproject/timeline.json") {
-        return { text: async () => JSON.stringify(timeline) };
-      }
-      if (path === ".vloproject/assets.json") {
-        return { text: async () => JSON.stringify(assets) };
-      }
-      throw new Error(`File not found: ${path}`);
-    });
-  }
 
   it("should initialize with no project", () => {
     const { project } = useProjectStore.getState();
@@ -136,24 +79,13 @@ describe("useProjectStore", () => {
 
     // Verify services called
     expect(fileSystemService.setHandle).toHaveBeenCalled();
-    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/assets.json",
-      expect.any(String),
-    );
-    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/timeline.json",
-      expect.any(String),
-    );
-    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
-      expect.any(String),
-    );
+    expect(fileSystemService.writeFile).toHaveBeenCalledWith(".vloproject/project.json", expect.any(String));
     expect(recentProjectsService.addRecent).toHaveBeenCalled();
 
-    const writtenData = getLastWrittenJson(".vloproject/project.json");
+    const [, content] = (fileSystemService.writeFile as Mock).mock.calls[0];
+    const writtenData = JSON.parse(content as string);
 
-    expect(writtenData.documentType).toBe("vlo.project");
-    expect(writtenData.schemaVersion).toBe(PROJECT_MANIFEST_SCHEMA_VERSION);
+    expect(writtenData.schemaVersion).toBe(CURRENT_PROJECT_SCHEMA_VERSION);
     expect(writtenData.createdWithVloVersion).toBe(VLO_APP_VERSION);
     expect(writtenData.lastSavedWithVloVersion).toBe(VLO_APP_VERSION);
   });
@@ -169,10 +101,7 @@ describe("useProjectStore", () => {
     const { project } = useProjectStore.getState();
     expect(project?.title).toBe("New Title");
     // Should verify save was called again
-    const projectWrites = (fileSystemService.writeFile as Mock).mock.calls.filter(
-      ([path]) => path === ".vloproject/project.json",
-    );
-    expect(projectWrites).toHaveLength(2); // Create + title update
+    expect(fileSystemService.writeFile).toHaveBeenCalledTimes(2); // Create + Update
   });
 
   it("should not update title if no project exists", async () => {
@@ -184,18 +113,59 @@ describe("useProjectStore", () => {
     expect(project).toBeNull();
   });
 
-  it("should update title by writing only the project manifest", async () => {
-      await useProjectStore.getState().createProject("Original Title", mockHandle);
-      vi.mocked(fileSystemService.writeFile).mockClear();
+  it("should preserve existing extra data (assets) in project.json when updating title", async () => {
+      // 1. Simulate an existing project is loaded
+      const initialProjectData = {
+          id: "test-id",
+          title: "Original Title",
+          created_at: 1000,
+          last_modified: 1000,
+          assets: {
+              "asset-1": { id: "asset-1", name: "video.mp4" }
+          }
+      };
 
+      // Mock readFile to return the CURRENT state of the file on disk
+      (fileSystemService.readFile as Mock).mockResolvedValue({
+          text: async () => JSON.stringify(initialProjectData)
+      });
+
+      // Initialize Store State
+      useProjectStore.setState({
+          project: {
+              id: initialProjectData.id,
+              title: initialProjectData.title,
+              createdAt: initialProjectData.created_at,
+              lastModified: initialProjectData.last_modified,
+              rootAssetsFolder: "root"
+          },
+          rootHandle: mockHandle
+      });
+
+      // 2. Perform Update
       await useProjectStore.getState().updateTitle("New Title");
 
-      expect(fileSystemService.writeFile).toHaveBeenCalledTimes(1);
-      expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-        ".vloproject/project.json",
-        expect.any(String),
-      );
-      expect(getLastWrittenJson(".vloproject/project.json").title).toBe("New Title");
+      // 3. Verify what was written back
+      expect(fileSystemService.writeFile).toHaveBeenCalled();
+      
+      const calls = (fileSystemService.writeFile as Mock).mock.calls;
+      const lastCall = calls[calls.length - 1];
+      const [fileName, content] = lastCall;
+      
+      expect(fileName).toBe(".vloproject/project.json");
+      
+      const writtenData = JSON.parse(content as string);
+      
+      // CHECK: Title is updated
+      expect(writtenData.title).toBe("New Title");
+
+      // CHECK: Assets are preserved
+      expect(writtenData.assets).toBeDefined();
+      expect(writtenData.assets["asset-1"]).toBeDefined();
+
+      // CHECK: Legacy projects only get the last saved app version stamp.
+      expect(writtenData.createdWithVloVersion).toBeUndefined();
+      expect(writtenData.lastSavedWithVloVersion).toBe(VLO_APP_VERSION);
   });
   it("should initialize a new project and scan assets if project.json is missing", async () => {
     // 1. Simulate NO project.json (fail to read)
@@ -212,18 +182,10 @@ describe("useProjectStore", () => {
     expect(project).not.toBeNull();
     expect(project?.rootAssetsFolder).toBe("MockProject"); // From mockHandle.name
     
-    // Should persist the new split project files
+    // Should persist the new project.json
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
         ".vloproject/project.json",
         expect.stringContaining('"title": "MockProject"')
-    );
-    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-        ".vloproject/timeline.json",
-        expect.any(String)
-    );
-    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-        ".vloproject/assets.json",
-        expect.any(String)
     );
 
     // Should scan for assets
@@ -248,7 +210,7 @@ describe("useProjectStore", () => {
     expect(recentProjectsService.addRecent).not.toHaveBeenCalled();
   });
 
-  it("should hydrate timeline snapshot from timeline.json when present", async () => {
+  it("should hydrate timeline snapshot from project.json when present", async () => {
     const timeline = {
       tracks: [
         {
@@ -277,13 +239,14 @@ describe("useProjectStore", () => {
       ],
     };
 
-    mockSplitProjectReadFiles({
-      timeline: {
-        documentType: "vlo.timeline",
-        schemaVersion: 1,
-        updated_at: 1000,
-        ...timeline,
-      },
+    (fileSystemService.readFile as Mock).mockResolvedValue({
+      text: async () =>
+        JSON.stringify({
+          id: "project-id",
+          title: "Loaded Project",
+          created_at: 1000,
+          timeline,
+        }),
     });
 
     await useProjectStore.getState().loadProject(mockHandle);
@@ -299,27 +262,20 @@ describe("useProjectStore", () => {
     ]);
   });
 
-  it("should hydrate config from project manifest when present", async () => {
-    mockSplitProjectReadFiles({
-      manifest: {
-        documentType: "vlo.project",
-        schemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION,
-        id: "project-id",
-        title: "Loaded Project",
-        created_at: 1000,
-        last_modified: 1000,
-        config: {
-          aspectRatio: "9:16",
-          fps: 24,
-          layoutMode: "full-height",
-          assetBrowserDisplay: "ungrouped",
-        },
-        files: {
-          timeline: "timeline.json",
-          assets: "assets.json",
-          assetMetadataDir: "asset-metadata",
-        },
-      },
+  it("should hydrate config from project.json when present", async () => {
+    (fileSystemService.readFile as Mock).mockResolvedValue({
+      text: async () =>
+        JSON.stringify({
+          id: "project-id",
+          title: "Loaded Project",
+          created_at: 1000,
+          config: {
+            aspectRatio: "9:16",
+            fps: 24,
+            layoutMode: "full-height",
+            assetBrowserDisplay: "ungrouped",
+          },
+        }),
     });
 
     await useProjectStore.getState().loadProject(mockHandle);
@@ -356,7 +312,7 @@ describe("useProjectStore", () => {
 
     const writtenData = JSON.parse(persisted);
 
-    expect(writtenData.schemaVersion).toBe(PROJECT_MANIFEST_SCHEMA_VERSION);
+    expect(writtenData.schemaVersion).toBe(CURRENT_PROJECT_SCHEMA_VERSION);
     expect(writtenData.createdWithVloVersion).toBe(VLO_APP_VERSION);
     expect(writtenData.lastSavedWithVloVersion).toBe(VLO_APP_VERSION);
     expect(writtenData.config).toEqual({
@@ -368,7 +324,7 @@ describe("useProjectStore", () => {
     });
   });
 
-  it("should migrate legacy projects and default timeline snapshot when legacy project.json has no timeline", async () => {
+  it("should default timeline snapshot when project.json has no timeline", async () => {
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [
         {
@@ -397,18 +353,13 @@ describe("useProjectStore", () => {
       ],
     });
 
-    (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
-      if (path === ".vloproject/project.json") {
-        return {
-          text: async () =>
-            JSON.stringify({
-              id: "project-id",
-              title: "Loaded Project",
-              created_at: 1000,
-            }),
-        };
-      }
-      throw new Error(`File not found: ${path}`);
+    (fileSystemService.readFile as Mock).mockResolvedValue({
+      text: async () =>
+        JSON.stringify({
+          id: "project-id",
+          title: "Loaded Project",
+          created_at: 1000,
+        }),
     });
 
     await useProjectStore.getState().loadProject(mockHandle);

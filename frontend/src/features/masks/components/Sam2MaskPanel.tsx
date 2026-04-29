@@ -443,7 +443,7 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
             size="small"
             value={sam2GrowAmount}
             min={0}
-            max={100}
+            max={200}
             step={1}
             onChange={(_event, value) => {
               onSetSam2GrowAmount(Array.isArray(value) ? value[0] : value);

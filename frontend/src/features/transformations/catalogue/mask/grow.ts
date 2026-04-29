@@ -38,7 +38,7 @@ export const maskGrowDefinition: TransformationDefinition = {
             name: "amount",
             defaultValue: 0,
             min: 0,
-            max: 100,
+            max: 200,
             step: 1,
             supportsSpline: true,
           },

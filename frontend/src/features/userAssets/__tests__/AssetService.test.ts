@@ -313,13 +313,54 @@ describe("AssetService", () => {
     expect(mockProcessor.computeDuration).toHaveBeenCalledTimes(1);
   });
 
-  it("allows generation masks to ingest even when the hash already exists", async () => {
+  it("reuses an existing generation mask asset when the hash matches", async () => {
     const maskFile = new File(["mask"], "generation-mask.mp4", {
       type: "video/mp4",
     });
 
     (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
       "shared-mask-hash",
+    );
+
+    const existingMask: Asset = {
+      id: "existing-mask",
+      name: "existing-mask.mp4",
+      hash: "shared-mask-hash",
+      src: "existing-mask.mp4",
+      type: "video",
+      createdAt: 1,
+      creationMetadata: {
+        source: "generation_mask",
+        parentGeneratedAssetId: "generated-1",
+      },
+    };
+
+    const result = await assetService.ingestAssetWithResult(
+      maskFile,
+      true,
+      true,
+      [existingMask],
+      {
+        source: "generation_mask",
+        parentGeneratedAssetId: "generated-2",
+      },
+    );
+
+    expect(result).toEqual({
+      status: "reused_existing",
+      asset: existingMask,
+      reason: "hash",
+    });
+    expect(mockProcessor.generateVideoMetadata).not.toHaveBeenCalled();
+  });
+
+  it("creates a fresh generation mask when the matching hash belongs to a non-mask asset", async () => {
+    const maskFile = new File(["mask"], "generation-mask.mp4", {
+      type: "video/mp4",
+    });
+
+    (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
+      "shared-hash",
     );
     mockProcessor.generateVideoMetadata.mockResolvedValue({
       duration: 10,
@@ -334,16 +375,12 @@ describe("AssetService", () => {
       true,
       [
         {
-          id: "existing-mask",
-          name: "existing-mask.mp4",
-          hash: "shared-mask-hash",
-          src: "existing-mask.mp4",
+          id: "existing-upload",
+          name: "user-upload.mp4",
+          hash: "shared-hash",
+          src: "user-upload.mp4",
           type: "video",
           createdAt: 1,
-          creationMetadata: {
-            source: "generation_mask",
-            parentGeneratedAssetId: "generated-1",
-          },
         },
       ],
       {
@@ -354,7 +391,7 @@ describe("AssetService", () => {
 
     expect(newAsset).toMatchObject({
       name: "generation-mask.mp4",
-      hash: "shared-mask-hash",
+      hash: "shared-hash",
       type: "video",
       creationMetadata: {
         source: "generation_mask",

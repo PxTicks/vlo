@@ -309,12 +309,13 @@ async function ingestLocalAssetsIntoStore(
   family?: Pick<AssetFamily, "id" | "compatibility">,
   compatibilityHint?: AssetFamilyCompatibility | null,
 ): Promise<AddLocalAssetsResult> {
-  const createdAssets: Asset[] = [];
+  const returnedAssets: Asset[] = [];
+  const newlyCreatedAssets: Asset[] = [];
   let skippedExistingFiles = 0;
 
   if (files.length === 0) {
     return {
-      assets: createdAssets,
+      assets: returnedAssets,
       skippedExistingFiles,
     };
   }
@@ -344,22 +345,30 @@ async function ingestLocalAssetsIntoStore(
         continue;
       }
 
+      if (ingestResult.status === "reused_existing") {
+        // Existing record stays in the store; surface it so callers can link
+        // (e.g. a generated asset pointing to a shared generation mask).
+        returnedAssets.push(ingestResult.asset);
+        continue;
+      }
+
       if (ingestResult.status !== "created") {
         continue;
       }
 
       assets.push(ingestResult.asset);
-      createdAssets.push(ingestResult.asset);
+      newlyCreatedAssets.push(ingestResult.asset);
+      returnedAssets.push(ingestResult.asset);
     }
 
-    if (createdAssets.length > 0) {
+    if (newlyCreatedAssets.length > 0) {
       set((state) => ({
-        assets: [...state.assets, ...createdAssets],
+        assets: [...state.assets, ...newlyCreatedAssets],
       }));
     }
 
     return {
-      assets: createdAssets,
+      assets: returnedAssets,
       skippedExistingFiles,
     };
   } finally {

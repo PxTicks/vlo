@@ -19,6 +19,11 @@ export type AssetIngestResult =
       asset: Asset;
     }
   | {
+      status: "reused_existing";
+      asset: Asset;
+      reason: "hash";
+    }
+  | {
       status: "skipped_existing";
       reason: "hash";
     }
@@ -290,18 +295,34 @@ export class AssetService {
 
       const hash = await mediaProcessingService.computeChecksum(file);
 
-      const allowDuplicateHash =
-        creationMetadata?.source === "generation_mask";
+      const isIncomingMask = creationMetadata?.source === "generation_mask";
+      const matchingAsset = existingAssets.find((a) => a.hash === hash);
 
-      // Generation masks are hidden child assets: even if their bytes match an
-      // existing asset, they still need their own asset record so generated
-      // outputs can keep a stable mask linkage for cleanup and timeline use.
-      if (!allowDuplicateHash && existingAssets.some((a) => a.hash === hash)) {
-        console.log("Skipping duplicate asset (hash match):", file.name);
-        return {
-          status: "skipped_existing",
-          reason: "hash",
-        };
+      if (matchingAsset) {
+        // Generation masks frequently produce identical bytes across runs (same
+        // source + mask + crop). Reuse the existing mask asset so multiple
+        // generated outputs can share one mask record via generationMaskAssetId.
+        if (
+          isIncomingMask &&
+          matchingAsset.creationMetadata?.source === "generation_mask"
+        ) {
+          return {
+            status: "reused_existing",
+            asset: matchingAsset,
+            reason: "hash",
+          };
+        }
+
+        if (!isIncomingMask) {
+          console.log("Skipping duplicate asset (hash match):", file.name);
+          return {
+            status: "skipped_existing",
+            reason: "hash",
+          };
+        }
+
+        // Incoming mask, but the hash match is a non-mask asset — fall through
+        // to create a fresh mask record so the asset linkage stays well-typed.
       }
 
       const assetFileName = resolveUniqueAssetFilename(safeName, existingAssets);

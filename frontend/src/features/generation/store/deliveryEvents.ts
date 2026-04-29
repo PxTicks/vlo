@@ -28,6 +28,20 @@ function toJobStatus(
   return deliveryStatus;
 }
 
+// The backend can only stamp the manifest with metadata it derives from the
+// current request's pipeline_outputs. On cached preprocess runs, mask_crop is
+// inactive so the manifest is missing maskCropMetadata / generationMaskAssetId.
+// Merge instead of replacing so values the frontend already populated at
+// submission time (via mergeCachedPipelineOutputsIntoResponse) are kept.
+function mergeGenerationMetadata(
+  existing: GenerationJob["generationMetadata"] | undefined,
+  fromManifest: GenerationJob["generationMetadata"] | undefined,
+): GenerationJob["generationMetadata"] | undefined {
+  if (!existing) return fromManifest;
+  if (!fromManifest) return existing;
+  return { ...existing, ...fromManifest };
+}
+
 function buildJobFromDelivery(
   manifest: GenerationDeliveryManifest,
   existingJob: GenerationJob | undefined,
@@ -84,8 +98,10 @@ function buildJobFromDelivery(
       manifest.postprocess_config ?? existingJob?.postprocessConfig,
     aspectRatioProcessing:
       manifest.aspect_ratio_processing ?? existingJob?.aspectRatioProcessing ?? null,
-    generationMetadata:
-      manifest.generation_metadata ?? existingJob?.generationMetadata,
+    generationMetadata: mergeGenerationMetadata(
+      existingJob?.generationMetadata,
+      manifest.generation_metadata,
+    ),
     autoFamilyRequestKey:
       manifest.auto_family_request_key ??
       existingJob?.autoFamilyRequestKey ??
@@ -189,7 +205,14 @@ export function attachDeliveryClientHandlers(
       };
     });
 
-    const generationMetadata = structuredClone(manifest.generation_metadata);
+    // Pull from the merged job state, not raw manifest, so frontend-side
+    // metadata (e.g. maskCropMetadata recovered from preprocess cache) isn't
+    // dropped on cached gens where the manifest is missing those fields.
+    const mergedGenerationMetadata = mergeGenerationMetadata(
+      get().jobs.get(manifest.prompt_id)?.generationMetadata,
+      manifest.generation_metadata,
+    );
+    const generationMetadata = structuredClone(mergedGenerationMetadata);
     let importedAssetIds: string[] | undefined;
     let previewFrameFiles: File[] = [];
 

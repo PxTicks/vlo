@@ -255,6 +255,79 @@ describe("deliveryEvents", () => {
     ]);
   });
 
+  it("preserves frontend-only metadata fields when the manifest doesn't carry them", async () => {
+    // Repro: on cached preprocess runs the backend's mask_crop is inactive,
+    // so the manifest's generation_metadata is missing maskCropMetadata.
+    // The frontend computed it at submission time via the merged response —
+    // applyDeliveryUpdate must not clobber that.
+    const cachedMaskCropMetadata = {
+      mode: "cropped",
+      crop_position: [10, 20],
+      crop_size: [100, 100],
+      container_size: [400, 300],
+      scale: 0.25,
+    };
+    useGenerationStore.setState({
+      jobs: new Map<string, GenerationJob>([
+        [
+          "prompt-1",
+          {
+            ...makeQueuedJob("prompt-1"),
+            generationMetadata: {
+              source: "generated",
+              workflowName: "Workflow One",
+              inputs: [],
+              maskCropMetadata: cachedMaskCropMetadata,
+            } as never,
+          },
+        ],
+      ]),
+    });
+
+    let resolvePersistence!: () => void;
+    mockFrontendPostprocess.mockResolvedValue({
+      postprocessedPreview: null,
+      postprocessError: null,
+      importedAssetIds: ["asset-1"],
+    });
+    mockWaitForAssetsPersistence.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePersistence = resolve;
+        }),
+    );
+
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: { delivery: makeCompletedManifest() },
+    });
+    await flushMicrotasks();
+
+    const postMergedJob = useGenerationStore
+      .getState()
+      .jobs.get("prompt-1");
+    expect(
+      (postMergedJob?.generationMetadata as { maskCropMetadata?: unknown })
+        ?.maskCropMetadata,
+    ).toEqual(cachedMaskCropMetadata);
+
+    expect(mockFrontendPostprocess).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        generationMetadata: expect.objectContaining({
+          maskCropMetadata: cachedMaskCropMetadata,
+        }),
+      }),
+    );
+
+    resolvePersistence();
+    await flushMicrotasks();
+  });
+
   it("rejects completed deliveries when ingestion fails", async () => {
     mockFrontendPostprocess.mockRejectedValue(new Error("Held ingest failed"));
     mockWaitForAssetsPersistence.mockResolvedValue(undefined);

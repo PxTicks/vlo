@@ -731,12 +731,31 @@ export function mergeCachedPipelineOutputsIntoResponse<
     return response;
   }
 
+  const cachedStages = cloneUnknownRecord(cachedPipelineOutputs);
+  const responseStages = (response.pipeline_outputs ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const merged: Record<string, unknown> = { ...cachedStages };
+
+  for (const [stageId, value] of Object.entries(responseStages)) {
+    // Cached preprocess paths leave inactive stages emitting an empty `{}`
+    // (the backend pipeline runner pre-allocates a slot per stage). Keep the
+    // cached value in that case so e.g. mask_crop_metadata survives reruns.
+    const isEmptyObject =
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value as Record<string, unknown>).length === 0;
+    if (isEmptyObject && stageId in cachedStages) {
+      continue;
+    }
+    merged[stageId] = value;
+  }
+
   return {
     ...response,
-    pipeline_outputs: {
-      ...cloneUnknownRecord(cachedPipelineOutputs),
-      ...(response.pipeline_outputs ?? {}),
-    },
+    pipeline_outputs: merged,
   };
 }
 

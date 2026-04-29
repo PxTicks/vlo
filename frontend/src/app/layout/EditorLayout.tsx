@@ -13,6 +13,7 @@ import {
   Timeline,
   useAssetDrag,
   AssetDragOverlay,
+  useTimelineStore,
 } from "../../features/timeline";
 import { useTimelineSelectionStore } from "../../features/timelineSelection";
 import { useTimelineKeyframeClipOverlay } from "../../features/transformations";
@@ -167,6 +168,7 @@ export function EditorLayout() {
     >
       <CssBaseline />
       <Box
+        onMouseDownCapture={() => useTimelineStore.getState().setFocused(false)}
         sx={{
           display: "grid",
           gridTemplateColumns,
@@ -252,6 +254,7 @@ export function EditorLayout() {
 
         {/* --- TIMELINE (BOTTOM) --- */}
         <Box
+          onMouseDownCapture={() => useTimelineStore.getState().setFocused(true)}
           sx={{
             gridArea: "bottom",
             bgcolor: "#000",

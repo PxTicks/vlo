@@ -285,6 +285,10 @@ function TimelineContainerComponent({
         return;
       }
 
+      if (!useTimelineStore.getState().isFocused) {
+        return;
+      }
+
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||

@@ -1001,6 +1001,8 @@ interface TimelineState {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
 
+  isFocused: boolean;
+
   selectedClipIds: string[];
   copiedClips: TimelineClip[];
 
@@ -1008,6 +1010,8 @@ interface TimelineState {
   canRedo: boolean;
 
   // ACTIONS
+  setFocused: (focused: boolean) => void;
+
   duplicateClip: (clip: TimelineClip) => TimelineClip;
   copySelectedClip: () => boolean;
   pasteCopiedClipAbove: () => boolean;
@@ -1305,10 +1309,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   return {
     tracks: initial.tracks,
     clips: initial.clips,
+    isFocused: false,
     selectedClipIds: [],
     copiedClips: [],
     canUndo: false,
     canRedo: false,
+
+    setFocused: (focused) => set({ isFocused: focused }),
 
     addTrack: () => {
       commitModelMutation((draft) => {

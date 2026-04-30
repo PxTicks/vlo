@@ -550,7 +550,8 @@ export class TrackAudioRenderer {
 
       if (
         !activeClip ||
-        (activeClip.type !== "video" && activeClip.type !== "audio")
+        (activeClip.type !== "video" && activeClip.type !== "audio") ||
+        activeClip.isMuted
       ) {
         await flushStagingBuffer();
         this.nextScheduleTime += 0.1;

@@ -119,6 +119,8 @@ export interface TimelineClipBase extends BaseClip {
 
 export interface StandardTimelineClip extends TimelineClipBase {
   type: Exclude<ClipType, "mask">;
+  /** Per-clip audio mute. When true, the audio renderer bypasses this clip. */
+  isMuted?: boolean;
   /**
    * Typed attachments carried with this clip. Variants include:
    *  - `mask_ref`: reference to a subordinate MaskTimelineClip

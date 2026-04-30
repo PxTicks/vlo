@@ -14,6 +14,7 @@ import {
   useAssetDrag,
   AssetDragOverlay,
   useTimelineStore,
+  useTimelineClipMuteOverlay,
 } from "../../features/timeline";
 import { useTimelineSelectionStore } from "../../features/timelineSelection";
 import { useTimelineKeyframeClipOverlay } from "../../features/transformations";
@@ -103,12 +104,13 @@ export function EditorLayout() {
   const selectionOverlayActive = selectionMode || frameSelectionMode;
   const keyframeClipOverlay = useTimelineKeyframeClipOverlay();
   const assetRevealClipOverlay = useTimelineAssetRevealClipOverlay();
+  const muteClipOverlay = useTimelineClipMuteOverlay();
 
   // Default to compact if not set
   const layoutMode = config.layoutMode || "compact";
   const clipOverlays = useMemo(
-    () => [keyframeClipOverlay, assetRevealClipOverlay],
-    [assetRevealClipOverlay, keyframeClipOverlay],
+    () => [keyframeClipOverlay, assetRevealClipOverlay, muteClipOverlay],
+    [assetRevealClipOverlay, keyframeClipOverlay, muteClipOverlay],
   );
 
   // Use the Asset Drag Hook

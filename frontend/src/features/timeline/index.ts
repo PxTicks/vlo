@@ -37,6 +37,7 @@ export type {
   TimelineClipOverlayVisibility,
 } from "./clipOverlayApi";
 export { useAssetDrag } from "./hooks/dnd/useAssetDrag";
+export { useTimelineClipMuteOverlay } from "./hooks/useTimelineClipMuteOverlay";
 export { insertAssetAtTime } from "./utils/insertAssetToTimeline";
 export { createClipFromAsset } from "./utils/clipFactory";
 export {

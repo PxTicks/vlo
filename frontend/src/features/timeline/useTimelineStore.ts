@@ -1111,6 +1111,7 @@ interface TimelineState {
 
   toggleTrackVisibility: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
+  toggleClipMute: (clipId: string) => void;
   trimAndPadTracks: () => void;
 
   undo: () => boolean;
@@ -2125,6 +2126,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         draft.tracks = draft.tracks.map((track) =>
           track.id === trackId ? { ...track, isMuted: !track.isMuted } : track,
         );
+      });
+    },
+
+    toggleClipMute: (clipId) => {
+      commitModelMutation((draft) => {
+        draft.clips = draft.clips.map((clip) => {
+          if (clip.id !== clipId || clip.type === "mask") return clip;
+          return { ...clip, isMuted: !clip.isMuted };
+        });
       });
     },
 

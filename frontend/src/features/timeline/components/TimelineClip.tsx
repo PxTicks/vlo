@@ -1,6 +1,10 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { Box, Typography, Paper } from "@mui/material";
+import { Box, Typography, Paper, Menu, MenuItem, ListItemIcon, ListItemText } from "@mui/material";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import VolumeOffIcon from "@mui/icons-material/VolumeOff";
+import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 
 import { styled } from "@mui/material/styles";
 import {
@@ -95,9 +99,17 @@ function TimelineClipComponent({
   clipOverlays = [],
 }: TimelineClipProps) {
   const domRef = useRef<HTMLElement | null>(null);
+  const [contextMenuPos, setContextMenuPos] = useState<
+    { x: number; y: number } | null
+  >(null);
 
   const startTime = "start" in clip ? (clip as TimelineClipType).start : 0;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
+  const isClipMuted =
+    timelineClip !== null && timelineClip.type !== "mask"
+      ? timelineClip.isMuted === true
+      : false;
+  const canMute = timelineClip !== null && timelineClip.type !== "mask";
 
   // --- SELECTORS ---
   const isSelected = useTimelineStore((state) =>
@@ -234,12 +246,47 @@ function TimelineClipComponent({
     domRef.current = node;
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (isOverlay) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const store = useTimelineStore.getState();
+    if (!store.selectedClipIds.includes(clip.id)) {
+      store.selectClip(clip.id);
+    }
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+  };
+
+  const closeContextMenu = () => setContextMenuPos(null);
+
+  const handleContextDelete = () => {
+    const store = useTimelineStore.getState();
+    const ids =
+      store.selectedClipIds.length > 0 ? store.selectedClipIds : [clip.id];
+    ids.forEach((id) => store.removeClip(id));
+    store.selectClip(null);
+    closeContextMenu();
+  };
+
+  const handleContextCopy = () => {
+    useTimelineStore.getState().copySelectedClip();
+    closeContextMenu();
+  };
+
+  const handleContextMute = () => {
+    if (canMute) {
+      useTimelineStore.getState().toggleClipMute(clip.id);
+    }
+    closeContextMenu();
+  };
+
   return (
     <ClipRoot
       ref={setRefs}
       {...listeners}
       {...attributes}
       onMouseDown={(e) => e.stopPropagation()}
+      onContextMenu={handleContextMenu}
       onClick={(e) => {
         e.stopPropagation();
         const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
@@ -322,6 +369,42 @@ function TimelineClipComponent({
       >
         {(clip.timelineDuration / TICKS_PER_SECOND).toFixed(2)}s
       </Typography>
+      <Menu
+        open={contextMenuPos !== null}
+        onClose={closeContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          contextMenuPos
+            ? { top: contextMenuPos.y, left: contextMenuPos.x }
+            : undefined
+        }
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <MenuItem onClick={handleContextDelete}>
+          <ListItemIcon>
+            <DeleteOutlineIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Delete</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={handleContextCopy}>
+          <ListItemIcon>
+            <ContentCopyIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Copy</ListItemText>
+        </MenuItem>
+        {canMute && (
+          <MenuItem onClick={handleContextMute}>
+            <ListItemIcon>
+              {isClipMuted ? (
+                <VolumeUpIcon fontSize="small" />
+              ) : (
+                <VolumeOffIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>{isClipMuted ? "Unmute" : "Mute"}</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
     </ClipRoot>
   );
 }

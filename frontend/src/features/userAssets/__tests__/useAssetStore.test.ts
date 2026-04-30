@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useAssetStore } from "../useAssetStore";
 import { fileSystemService } from "../../project/services/FileSystemService";
-import { projectDocumentService } from "../../project/services/ProjectDocumentService";
+import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
 import { useProjectStore } from "../../project/useProjectStore";
 import { mediaProcessingService } from "../services/MediaProcessingService";
 import type { Mock } from "vitest";
@@ -59,10 +59,23 @@ if (globalThis.URL) {
 }
 
 describe("useAssetStore", () => {
+  function makeAssetIndex(
+    assets: Record<string, unknown>,
+    assetFamilies: Record<string, unknown> = {},
+  ): string {
+    return JSON.stringify({
+      documentType: "vlo.assets",
+      schemaVersion: 1,
+      updated_at: 1,
+      assets,
+      assetFamilies,
+    });
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockRemoveClipsByAssetId.mockReset();
-    projectDocumentService.resetProjectDocumentCache();
+    projectPersistenceService.resetCaches();
     useAssetStore.setState({
       assets: [],
       families: [],
@@ -75,23 +88,24 @@ describe("useAssetStore", () => {
     // Arrange
     (useProjectStore.getState as Mock).mockReturnValue({ rootHandle: {} });
 
-    const mockProjectJson = JSON.stringify({
-      assets: {
+    const mockAssetIndex = makeAssetIndex({
         "asset-1": {
           id: "asset-1",
+          name: "video.mp4",
+          hash: "video-hash",
           src: "video.mp4",
           proxySrc: ".vloproject/proxies/video_proxy.mp4",
           type: "video",
+          createdAt: 1,
         },
-      },
     });
 
     const mockProxyBlob = new Blob(["proxy-data"], { type: "video/mp4" });
 
     (fileSystemService.readFile as Mock).mockImplementation(
       async (path: string) => {
-        if (path === ".vloproject/project.json") {
-          return { text: async () => mockProjectJson };
+        if (path === ".vloproject/assets.json") {
+          return { text: async () => mockAssetIndex };
         }
         if (path === ".vloproject/proxies/video_proxy.mp4")
           return mockProxyBlob;
@@ -119,8 +133,7 @@ describe("useAssetStore", () => {
   it("ensureAssetSourceLoaded hydrates a lazy video source on demand", async () => {
     (useProjectStore.getState as Mock).mockReturnValue({ rootHandle: {} });
 
-    const mockProjectJson = JSON.stringify({
-      assets: {
+    const mockAssetIndex = makeAssetIndex({
         "asset-1": {
           id: "asset-1",
           name: "video.mp4",
@@ -129,13 +142,12 @@ describe("useAssetStore", () => {
           type: "video",
           createdAt: 1,
         },
-      },
     });
 
     const mockFile = new File(["video"], "video.mp4", { type: "video/mp4" });
     (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
-      if (path === ".vloproject/project.json") {
-        return { text: async () => mockProjectJson };
+      if (path === ".vloproject/assets.json") {
+        return { text: async () => mockAssetIndex };
       }
       if (path === "video.mp4") {
         return mockFile;
@@ -152,7 +164,7 @@ describe("useAssetStore", () => {
     expect(fileSystemService.readFile).toHaveBeenCalledWith("video.mp4");
   });
 
-  it("deleteAsset should remove entries from project.json and delete files from disk", async () => {
+  it("deleteAsset should remove entries from assets.json and delete files from disk", async () => {
     // Arrange
     // 1. Setup initial state with an asset
     const assetId = "asset-to-delete";
@@ -166,26 +178,32 @@ describe("useAssetStore", () => {
     // @ts-expect-error - Partial mock for testing purposes
     useAssetStore.setState({ assets: initialAssets });
 
-    // 2. Mock project.json content
-    const mockProjectJson = JSON.stringify({
-      assets: {
+    // 2. Mock assets.json content
+    const mockAssetIndex = makeAssetIndex({
         [assetId]: {
           id: assetId,
+          name: "test.mp4",
+          hash: "hash-delete",
           src: "test.mp4",
           thumbnail: ".vloproject/thumbnails/test_thumb.webp",
           proxySrc: ".vloproject/proxies/test_proxy.mp4",
+          type: "video",
+          createdAt: 1,
         },
         "other-asset": {
           id: "other-asset",
+          name: "other.mp4",
+          hash: "hash-other",
           src: "other.mp4",
+          type: "video",
+          createdAt: 2,
         },
-      },
     });
 
     (fileSystemService.readFile as Mock).mockImplementation(
       async (path: string) => {
-        if (path === ".vloproject/project.json") {
-          return { text: async () => mockProjectJson };
+        if (path === ".vloproject/assets.json") {
+          return { text: async () => mockAssetIndex };
         }
         throw new Error("File not found");
       },
@@ -198,13 +216,13 @@ describe("useAssetStore", () => {
     // 1. Check memory update
     expect(useAssetStore.getState().assets).toHaveLength(0);
 
-    // 2. Check project.json update
+    // 2. Check assets.json update
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.stringContaining('"other-asset"'), // Should keep other asset
     );
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.not.stringContaining(assetId), // Should remove deleted asset
     );
 
@@ -222,8 +240,7 @@ describe("useAssetStore", () => {
   it("fetchAssets repairs persisted audio durations when metadata is missing", async () => {
     (useProjectStore.getState as Mock).mockReturnValue({ rootHandle: {} });
 
-    const mockProjectJson = JSON.stringify({
-      assets: {
+    const mockAssetIndex = makeAssetIndex({
         "asset-audio": {
           id: "asset-audio",
           name: "song.mp3",
@@ -233,14 +250,13 @@ describe("useAssetStore", () => {
           duration: 0,
           createdAt: 1,
         },
-      },
     });
 
     const audioFile = new File(["audio"], "song.mp3", { type: "audio/mpeg" });
     vi.mocked(mediaProcessingService.computeDuration).mockResolvedValue(42.75);
     (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
-      if (path === ".vloproject/project.json") {
-        return { text: async () => mockProjectJson };
+      if (path === ".vloproject/assets.json") {
+        return { text: async () => mockAssetIndex };
       }
       if (path === "song.mp3") {
         return audioFile;
@@ -257,7 +273,7 @@ describe("useAssetStore", () => {
       audioFile,
     );
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.stringContaining('"duration": 42.75'),
     );
   });
@@ -265,8 +281,8 @@ describe("useAssetStore", () => {
   it("fetchAssets clears incompatible family references and drops empty families", async () => {
     (useProjectStore.getState as Mock).mockReturnValue({ rootHandle: {} });
 
-    const mockProjectJson = JSON.stringify({
-      assets: {
+    const mockAssetIndex = makeAssetIndex(
+      {
         "asset-image": {
           id: "asset-image",
           name: "poster.png",
@@ -277,7 +293,7 @@ describe("useAssetStore", () => {
           createdAt: 1,
         },
       },
-      assetFamilies: {
+      {
         "family-1": {
           id: "family-1",
           representativeAssetId: "asset-image",
@@ -291,11 +307,11 @@ describe("useAssetStore", () => {
           updatedAt: 1,
         },
       },
-    });
+    );
 
     (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
-      if (path === ".vloproject/project.json") {
-        return { text: async () => mockProjectJson };
+      if (path === ".vloproject/assets.json") {
+        return { text: async () => mockAssetIndex };
       }
       if (path === "poster.png") {
         return new File(["image"], "poster.png", { type: "image/png" });
@@ -314,7 +330,7 @@ describe("useAssetStore", () => {
     expect(useAssetStore.getState().families).toEqual([]);
   });
 
-  it("updateAsset persists favourite changes to project.json", async () => {
+  it("updateAsset persists favourite changes to assets.json", async () => {
     (useProjectStore.getState as Mock).mockReturnValue({ rootHandle: {} });
 
     useAssetStore.setState({
@@ -324,6 +340,7 @@ describe("useAssetStore", () => {
           name: "clip.mp4",
           hash: "hash-1",
           src: "blob:clip",
+          sourcePath: "clip.mp4",
           type: "video",
           createdAt: 1,
           favourite: false,
@@ -331,8 +348,7 @@ describe("useAssetStore", () => {
       ],
     });
 
-    const mockProjectJson = JSON.stringify({
-      assets: {
+    const mockAssetIndex = makeAssetIndex({
         "asset-1": {
           id: "asset-1",
           name: "clip.mp4",
@@ -342,12 +358,11 @@ describe("useAssetStore", () => {
           createdAt: 1,
           favourite: false,
         },
-      },
     });
 
     (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
-      if (path === ".vloproject/project.json") {
-        return { text: async () => mockProjectJson };
+      if (path === ".vloproject/assets.json") {
+        return { text: async () => mockAssetIndex };
       }
       throw new Error("File not found: " + path);
     });
@@ -356,7 +371,7 @@ describe("useAssetStore", () => {
 
     expect(useAssetStore.getState().assets[0].favourite).toBe(true);
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.stringContaining('"favourite": true'),
     );
   });
@@ -371,6 +386,7 @@ describe("useAssetStore", () => {
           name: "clip-a.mp4",
           hash: "hash-1",
           src: "blob:clip-a",
+          sourcePath: "clip-a.mp4",
           type: "video",
           familyId: "family-1",
           duration: 5,
@@ -382,6 +398,7 @@ describe("useAssetStore", () => {
           name: "clip-b.mp4",
           hash: "hash-2",
           src: "blob:clip-b",
+          sourcePath: "clip-b.mp4",
           type: "video",
           familyId: "family-1",
           duration: 5,
@@ -405,8 +422,8 @@ describe("useAssetStore", () => {
       ],
     });
 
-    const mockProjectJson = JSON.stringify({
-      assets: {
+    const mockAssetIndex = makeAssetIndex(
+      {
         "asset-1": {
           id: "asset-1",
           name: "clip-a.mp4",
@@ -426,7 +443,7 @@ describe("useAssetStore", () => {
           createdAt: 2,
         },
       },
-      assetFamilies: {
+      {
         "family-1": {
           id: "family-1",
           representativeAssetId: "asset-1",
@@ -439,11 +456,11 @@ describe("useAssetStore", () => {
           updatedAt: 1,
         },
       },
-    });
+    );
 
     (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
-      if (path === ".vloproject/project.json") {
-        return { text: async () => mockProjectJson };
+      if (path === ".vloproject/assets.json") {
+        return { text: async () => mockAssetIndex };
       }
       throw new Error("File not found: " + path);
     });
@@ -459,7 +476,7 @@ describe("useAssetStore", () => {
       }),
     ]);
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.stringContaining('"representativeAssetId": "asset-2"'),
     );
   });
@@ -474,6 +491,7 @@ describe("useAssetStore", () => {
           name: "clip-a.mp4",
           hash: "hash-1",
           src: "blob:clip-a",
+          sourcePath: "clip-a.mp4",
           type: "video",
           familyId: "family-1",
           duration: 5,
@@ -486,6 +504,7 @@ describe("useAssetStore", () => {
           name: "clip-b.mp4",
           hash: "hash-2",
           src: "blob:clip-b",
+          sourcePath: "clip-b.mp4",
           type: "video",
           familyId: "family-1",
           duration: 5,
@@ -510,8 +529,8 @@ describe("useAssetStore", () => {
       ],
     });
 
-    const mockProjectJson = JSON.stringify({
-      assets: {
+    const mockAssetIndex = makeAssetIndex(
+      {
         "asset-1": {
           id: "asset-1",
           name: "clip-a.mp4",
@@ -533,7 +552,7 @@ describe("useAssetStore", () => {
           favourite: false,
         },
       },
-      assetFamilies: {
+      {
         "family-1": {
           id: "family-1",
           representativeAssetId: "asset-1",
@@ -546,11 +565,11 @@ describe("useAssetStore", () => {
           updatedAt: 1,
         },
       },
-    });
+    );
 
     (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
-      if (path === ".vloproject/project.json") {
-        return { text: async () => mockProjectJson };
+      if (path === ".vloproject/assets.json") {
+        return { text: async () => mockAssetIndex };
       }
       throw new Error("File not found: " + path);
     });
@@ -568,7 +587,7 @@ describe("useAssetStore", () => {
       }),
     ]);
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/project.json",
+      ".vloproject/assets.json",
       expect.stringContaining('"representativeAssetId": "asset-2"'),
     );
   });
@@ -585,6 +604,7 @@ describe("useAssetStore", () => {
           name: "clip.mp4",
           hash: "hash-1",
           src: "blob:clip",
+          sourcePath: "clip.mp4",
           type: "video",
           createdAt: 1,
           favourite: false,
@@ -593,11 +613,10 @@ describe("useAssetStore", () => {
     });
 
     (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
-      if (path === ".vloproject/project.json") {
+      if (path === ".vloproject/assets.json") {
         return {
           text: async () =>
-            JSON.stringify({
-              assets: {
+            makeAssetIndex({
                 "asset-1": {
                   id: "asset-1",
                   name: "clip.mp4",
@@ -607,7 +626,6 @@ describe("useAssetStore", () => {
                   createdAt: 1,
                   favourite: false,
                 },
-              },
             }),
         };
       }

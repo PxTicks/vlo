@@ -200,6 +200,7 @@ describe("AssetBrowser Component", () => {
       updateAsset: vi.fn(),
       scanForNewAssets: vi.fn(),
       ensureAssetSourceLoaded: vi.fn(),
+      ensureAssetMetadataLoaded: vi.fn(),
       _ingestAsset: vi.fn(),
       isScanning: false,
       deleteAsset: mockDeleteAsset,

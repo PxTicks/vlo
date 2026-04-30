@@ -3,17 +3,11 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { Project } from "../../types/ProjectState";
 import { useTimelineStore } from "../timeline";
 import { fileSystemService } from "./services/FileSystemService";
-import { projectDocumentService } from "./services/ProjectDocumentService";
+import { projectPersistenceService } from "./services/ProjectPersistenceService";
 import { recentProjectsService } from "./services/RecentProjectsService";
-import {
-  CURRENT_PROJECT_SCHEMA_VERSION,
-  VLO_APP_VERSION,
-} from "./constants";
+import { VLO_APP_VERSION } from "./constants";
 import { PROJECT_ASPECT_RATIOS } from "./aspectRatioOptions";
-import type {
-  ProjectDocumentConfig,
-  TimelineSnapshot,
-} from "./types/ProjectDocument";
+import type { ProjectDocumentConfig } from "./types/ProjectDocument";
 
 export type AspectRatio = "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
 export type AssetBrowserDisplay = "grouped" | "ungrouped";
@@ -46,12 +40,6 @@ const VALID_ASSET_BROWSER_DISPLAY_MODES = new Set<AssetBrowserDisplay>([
   "grouped",
   "ungrouped",
 ]);
-
-const isTimelineSnapshot = (value: unknown): value is TimelineSnapshot => {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<TimelineSnapshot>;
-  return Array.isArray(candidate.tracks) && Array.isArray(candidate.clips);
-};
 
 const getProjectConfigFromDocument = (
   value: ProjectDocumentConfig | undefined,
@@ -101,6 +89,18 @@ const hasProjectConfigChanged = (
   current.layoutMode !== next.layoutMode ||
   current.assetBrowserDisplay !== next.assetBrowserDisplay;
 
+async function flushOpenProjectPersistence(): Promise<void> {
+  await useTimelineStore.getState().flushPendingPersistence();
+  await projectPersistenceService.flushAll();
+
+  try {
+    const { flushAllAssetPersistence } = await import("../userAssets");
+    await flushAllAssetPersistence();
+  } catch (error) {
+    console.warn("Failed to flush pending asset persistence", error);
+  }
+}
+
 export interface ProjectState {
   project: Project | null;
   rootHandle: FileSystemDirectoryHandle | null;
@@ -131,7 +131,7 @@ export const useProjectStore = create<ProjectState>()(
         configOverrides?: Partial<ProjectConfig>,
       ) => {
         try {
-          await useTimelineStore.getState().flushPendingPersistence();
+          await flushOpenProjectPersistence();
 
           const exists = await fileSystemService.checkDirectoryExists(
             parentHandle,
@@ -146,7 +146,7 @@ export const useProjectStore = create<ProjectState>()(
           });
 
           fileSystemService.setHandle(projectHandle);
-          projectDocumentService.resetProjectDocumentCache();
+          projectPersistenceService.resetCaches();
 
           const newProject: Project = {
             id: crypto.randomUUID(),
@@ -163,7 +163,17 @@ export const useProjectStore = create<ProjectState>()(
           });
 
           useTimelineStore.getState().replaceTimelineSnapshot(null);
-          await get().saveProject();
+          const timelineState = useTimelineStore.getState();
+          await projectPersistenceService.initializeProjectDocuments({
+            id: newProject.id,
+            title: newProject.title,
+            createdAt: newProject.createdAt,
+            config: get().config,
+            timeline: {
+              tracks: structuredClone(timelineState.tracks),
+              clips: structuredClone(timelineState.clips),
+            },
+          });
 
           await recentProjectsService.addRecent(
             newProject.id,
@@ -178,16 +188,17 @@ export const useProjectStore = create<ProjectState>()(
 
       loadProject: async (handle: FileSystemDirectoryHandle) => {
         try {
-          await useTimelineStore.getState().flushPendingPersistence();
+          await flushOpenProjectPersistence();
 
           fileSystemService.setHandle(handle);
-          projectDocumentService.resetProjectDocumentCache();
+          projectPersistenceService.resetCaches();
 
-          const data = await projectDocumentService.readProjectDocument();
-          const projectId = data.id;
-          const projectTitle = data.title;
-          const projectCreatedAt = data.created_at;
-          const projectConfig = getProjectConfigFromDocument(data.config);
+          const loaded = await projectPersistenceService.loadOrMigrateProject();
+          const data = loaded.manifest;
+          const projectId = data?.id;
+          const projectTitle = data?.title;
+          const projectCreatedAt = data?.created_at;
+          const projectConfig = getProjectConfigFromDocument(data?.config);
 
           const hasCoreProjectData =
             typeof projectId === "string" &&
@@ -210,7 +221,17 @@ export const useProjectStore = create<ProjectState>()(
             });
 
             useTimelineStore.getState().replaceTimelineSnapshot(null);
-            await get().saveProject();
+            const timelineState = useTimelineStore.getState();
+            await projectPersistenceService.initializeProjectDocuments({
+              id: newProject.id,
+              title: newProject.title,
+              createdAt: newProject.createdAt,
+              config: projectConfig,
+              timeline: {
+                tracks: structuredClone(timelineState.tracks),
+                clips: structuredClone(timelineState.clips),
+              },
+            });
 
             const { scanForNewAssets } = await import("../userAssets");
             await scanForNewAssets();
@@ -228,15 +249,18 @@ export const useProjectStore = create<ProjectState>()(
               id: projectId,
               title: projectTitle,
               createdAt: projectCreatedAt,
-              lastModified: data.last_modified || Date.now(),
+              lastModified: data?.last_modified || Date.now(),
               rootAssetsFolder: handle.name,
             },
             rootHandle: handle,
             config: projectConfig,
           });
 
-          const timeline = isTimelineSnapshot(data.timeline)
-            ? data.timeline
+          const timeline = loaded.timeline
+            ? {
+                tracks: loaded.timeline.tracks,
+                clips: loaded.timeline.clips,
+              }
             : null;
           useTimelineStore.getState().replaceTimelineSnapshot(timeline);
 
@@ -287,41 +311,23 @@ export const useProjectStore = create<ProjectState>()(
         if (!project) return null;
 
         try {
-          const timelineState = useTimelineStore.getState();
-
-          await projectDocumentService.updateProjectDocument((draft) => {
-            const hasExistingProjectIdentity =
-              typeof draft.id === "string" ||
-              typeof draft.title === "string" ||
-              typeof draft.created_at === "number";
-
+          await projectPersistenceService.updateManifest((draft) => {
             draft.id = project.id;
             draft.title = project.title;
             draft.created_at = project.createdAt;
-            draft.schemaVersion = CURRENT_PROJECT_SCHEMA_VERSION;
-            if (!hasExistingProjectIdentity) {
-              draft.createdWithVloVersion = VLO_APP_VERSION;
-            }
             draft.lastSavedWithVloVersion = VLO_APP_VERSION;
             draft.config = structuredClone(config);
-
-            if (!isTimelineSnapshot(draft.timeline)) {
-              draft.timeline = {
-                tracks: structuredClone(timelineState.tracks),
-                clips: structuredClone(timelineState.clips),
-              };
-            }
           });
 
           return project.id;
         } catch (e) {
-          console.error("Failed to save project.json", e);
+          console.error("Failed to save project manifest", e);
           return null;
         }
       },
 
       resetProject: () => {
-        projectDocumentService.resetProjectDocumentCache();
+        projectPersistenceService.resetCaches();
         useTimelineStore.getState().replaceTimelineSnapshot(null);
         set({ project: null, rootHandle: null, config: { ...DEFAULT_PROJECT_CONFIG } });
       },

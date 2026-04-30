@@ -7,8 +7,7 @@ import {
   doesAssetMatchFamilyCompatibility,
   isAssetFamilyCompatibilityComplete,
 } from "../../../shared/utils/assetFamilies";
-import { fileSystemService } from "../../project";
-import { projectDocumentService } from "../../project/services/ProjectDocumentService";
+import { fileSystemService, projectPersistenceService } from "../../project";
 import { mediaProcessingService } from "./MediaProcessingService";
 
 const assetPersistencePromises = new Map<string, Promise<void>>();
@@ -89,8 +88,13 @@ export class AssetService {
     );
   }
 
+  async waitForAllAssetPersistence(): Promise<void> {
+    const assetIds = [...assetPersistencePromises.keys()];
+    await this.waitForAssetsPersistence(assetIds);
+  }
+
   /**
-   * Scans the project root for new assets, ingests them, and persists them to project.json.
+   * Scans the project root for new assets, ingests them, and persists them to assets.json.
    * Returns a list of the newly added assets.
    */
   async scanForNewAssets(existingAssets: Asset[]): Promise<Asset[]> {
@@ -181,55 +185,19 @@ export class AssetService {
     // Batch Persist to JSON
     if (newAssetsToPersist.length > 0) {
       console.log(
-        `[Scanner] Persisting ${newAssetsToPersist.length} new assets to project.json`,
+        `[Scanner] Persisting ${newAssetsToPersist.length} new assets to assets.json`,
       );
       try {
-        await projectDocumentService.updateProjectDocument((draft) => {
-          if (!draft.assets) draft.assets = {};
-
-          for (const asset of newAssetsToPersist) {
-            // Convert in-memory asset (blob URLs) to persisted asset (file paths)
-            const persistedAsset = this.toPersisted(asset);
-            draft.assets[asset.id] = persistedAsset;
-          }
-        });
+        await projectPersistenceService.persistAssetEntries(newAssetsToPersist);
         console.log("[Scanner] Project updated successfully.");
       } catch (e) {
-        console.error("[Scanner] Failed to batch save project.json", e);
+        console.error("[Scanner] Failed to batch save assets.json", e);
       }
     } else {
       console.log("[Scanner] No new assets to persist.");
     }
 
     return newAssetsToPersist;
-  }
-
-  /**
-   * Converts an in-memory asset (with blob URLs) to a persisted asset (with file paths).
-   * This is needed when batch-saving assets during scanning.
-   */
-  private toPersisted(asset: Asset): Asset {
-    const persistedAsset: Asset = {
-      id: asset.id,
-      hash: asset.hash,
-      familyId: asset.familyId,
-      name: asset.name,
-      type: asset.type,
-      favourite: asset.favourite,
-      src: asset.name, // Main source is stored at project root
-      thumbnail: asset.thumbnail
-        ? `.vloproject/thumbnails/${asset.name}_thumb.webp`
-        : undefined,
-      proxySrc: asset.proxySrc
-        ? `.vloproject/proxies/${asset.name}_proxy.mp4`
-        : undefined,
-      duration: asset.duration,
-      fps: asset.fps,
-      hasAudio: asset.hasAudio,
-      createdAt: asset.createdAt,
-      creationMetadata: asset.creationMetadata,
-    };
-    return persistedAsset;
   }
 
   /**
@@ -506,12 +474,9 @@ export class AssetService {
 
           // Save Project JSON
           if (!skipProjectSave) {
-            console.time(`[Ingest-BG] Project Save ${file.name}`);
-            await projectDocumentService.updateProjectDocument((draft) => {
-              if (!draft.assets) draft.assets = {};
-              draft.assets[assetId] = newAssetPersisted;
-            });
-            console.timeEnd(`[Ingest-BG] Project Save ${file.name}`);
+            console.time(`[Ingest-BG] Asset Index Save ${file.name}`);
+            await projectPersistenceService.persistAssetEntry(newAssetPersisted);
+            console.timeEnd(`[Ingest-BG] Asset Index Save ${file.name}`);
           }
 
           console.log(`[Ingest-BG] All writes complete for ${file.name}`);

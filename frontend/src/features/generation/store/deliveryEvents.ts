@@ -212,6 +212,11 @@ export function attachDeliveryClientHandlers(
       get().jobs.get(manifest.prompt_id)?.generationMetadata,
       manifest.generation_metadata,
     );
+    if (!mergedGenerationMetadata) {
+      await rejectCompletedDelivery(manifest, "Missing generation metadata");
+      return;
+    }
+
     const generationMetadata = structuredClone(mergedGenerationMetadata);
     let importedAssetIds: string[] | undefined;
     let previewFrameFiles: File[] = [];

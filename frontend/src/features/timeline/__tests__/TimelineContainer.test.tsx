@@ -157,6 +157,7 @@ describe("TimelineContainer", () => {
       ],
       clips: [],
       selectedClipIds: ["c1"],
+      isFocused: true,
     });
 
     // Reset View Store Mock Defaults

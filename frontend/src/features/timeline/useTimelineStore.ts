@@ -32,7 +32,7 @@ import type { Asset } from "../../types/Asset";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import { useProjectStore } from "../project/useProjectStore";
 import { fileSystemService } from "../project/services/FileSystemService";
-import { projectDocumentService } from "../project/services/ProjectDocumentService";
+import { projectPersistenceService } from "../project/services/ProjectPersistenceService";
 import { TICKS_PER_SECOND } from "./constants";
 import { getTrackTypeFromClipType } from "./utils/formatting";
 import { getResizedClipLeft, getResizedClipRight } from "./utils/clipMath";
@@ -1131,18 +1131,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   let pendingPersistTimer: ReturnType<typeof setTimeout> | null = null;
   let flushInFlight: Promise<void> | null = null;
 
-  const toDocumentTimelinePatches = (timelinePatches: Patch[]): Patch[] => {
-    return timelinePatches.map((patch) => ({
-      ...patch,
-      path: ["timeline", ...patch.path],
-    }));
-  };
-
   const queueTimelinePatchesForPersistence = (timelinePatches: Patch[]): void => {
     if (timelinePatches.length === 0) return;
     if (!fileSystemService.getHandle()) return;
 
-    pendingDocumentPatches.push(...toDocumentTimelinePatches(timelinePatches));
+    pendingDocumentPatches.push(...timelinePatches);
 
     if (pendingPersistTimer !== null) return;
 
@@ -1176,10 +1169,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       clips: structuredClone(get().clips),
     };
 
-    flushInFlight = projectDocumentService
-      .applyProjectDocumentPatches(patchesToApply, (draft) => {
-        draft.timeline = structuredClone(fallbackSnapshot);
-      })
+    flushInFlight = projectPersistenceService
+      .applyTimelinePatches(patchesToApply, fallbackSnapshot)
       .then(() => undefined)
       .catch(async (error) => {
         console.error(
@@ -1187,8 +1178,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           error,
         );
 
-        await projectDocumentService.updateProjectDocument((draft) => {
-          draft.timeline = structuredClone(fallbackSnapshot);
+        await projectPersistenceService.updateTimeline((draft) => {
+          draft.tracks = structuredClone(fallbackSnapshot.tracks);
+          draft.clips = structuredClone(fallbackSnapshot.clips);
         });
       })
       .finally(() => {

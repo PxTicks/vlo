@@ -130,6 +130,10 @@ export interface Asset {
   proxySrc?: string; // Server URL for the proxy video
   /** Runtime-only persisted proxy path retained for cleanup. */
   proxyPath?: string;
+  /** Persisted sidecar path for heavy asset metadata, relative to .vloproject. */
+  metadataRef?: string;
+  /** Runtime-only flag indicating whether metadataRef has been merged. */
+  metadataLoaded?: boolean;
   proxyFile?: Blob; // Need Blob instead of File for when first ingested
   duration?: number;
   fps?: number;

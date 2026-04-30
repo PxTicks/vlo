@@ -584,6 +584,16 @@ export function buildExecutionStoreState(
         return null;
       }
 
+      // Merge first so the cache accumulates good pipeline_outputs across
+      // cached runs. If we cached the raw response, an empty stage output
+      // (cached preprocess → mask_crop inactive → `mask_processing: {}`)
+      // would clobber the cached metadata for every subsequent generation.
+      const responseWithCachedPipelineOutputs =
+        mergeCachedPipelineOutputsIntoResponse(
+          response,
+          matchingPreprocessCache,
+        );
+
       if (
         preprocessCacheKey !== null &&
         generationPreprocessCache?.key === preprocessCacheKey
@@ -592,15 +602,9 @@ export function buildExecutionStoreState(
           updateGenerationPreprocessCacheFromResponse(
             generationPreprocessCache,
             resolvedPlan,
-            response,
+            responseWithCachedPipelineOutputs,
           );
       }
-
-      const responseWithCachedPipelineOutputs =
-        mergeCachedPipelineOutputsIntoResponse(
-          response,
-          matchingPreprocessCache,
-        );
       const submitted = buildSubmittedGeneration(
         prepared,
         responseWithCachedPipelineOutputs,

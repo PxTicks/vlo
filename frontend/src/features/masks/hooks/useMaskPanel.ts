@@ -345,7 +345,7 @@ export function useMaskPanel(): UseMaskPanelResult {
     selectedMask?.type === "mask" && selectedMask.maskType === "sam2";
 
   const ensureSam2Available = useCallback(async (): Promise<boolean> => {
-    setSam2AvailabilityStatus("checking");
+    setSam2AvailabilityStatus((prev) => (prev === "available" ? "available" : "checking"));
     try {
       const runtimeStatus = await getRuntimeStatus();
       if (runtimeStatus.sam2.status === "available") {

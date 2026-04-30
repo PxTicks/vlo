@@ -32,4 +32,5 @@ export type {
   ClipMaskMode,
   ClipMaskParameters,
   ClipMaskPoint,
+  MaskActiveRange,
 } from "./TimelineTypes";

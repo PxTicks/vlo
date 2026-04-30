@@ -1276,4 +1276,109 @@ describe("SpriteClipMaskController mask composition", () => {
     controller.dispose();
     warnSpy.mockRestore();
   });
+
+  it("treats a vector mask outside its activeRange as a no-op", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = createParentClip();
+    const ranged: MaskTimelineClip = {
+      ...createMaskClip("mask_range", { maskType: "circle" }),
+      activeRange: { startSourceTicks: 100, endSourceTicks: 200 },
+    };
+    const internals = controller as unknown as { currentMaskMode: string };
+
+    // Outside the range the mask is dropped entirely.
+    await controller.syncMaskClips(
+      [ranged],
+      parent,
+      { width: 1920, height: 1080 },
+      50,
+      new Map<string, Asset>(),
+    );
+    expect(internals.currentMaskMode).toBe("none");
+    expect(sprite.mask ?? null).toBeNull();
+
+    // Inside the range, the mask applies (stencil-mask path for a single
+    // non-inverted vector mask).
+    await controller.syncMaskClips(
+      [ranged],
+      parent,
+      { width: 1920, height: 1080 },
+      150,
+      new Map<string, Asset>(),
+    );
+    expect(internals.currentMaskMode).toBe("regular");
+    expect(sprite.mask).not.toBeNull();
+
+    // Step back outside — the mask becomes a no-op again.
+    await controller.syncMaskClips(
+      [ranged],
+      parent,
+      { width: 1920, height: 1080 },
+      300,
+      new Map<string, Asset>(),
+    );
+    expect(internals.currentMaskMode).toBe("none");
+
+    controller.dispose();
+    warnSpy.mockRestore();
+  });
+
+  it("respects activeRange in source ticks across speed transforms", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    // Parent runs at 2x speed: visual time t maps to source time 2t.
+    const baseParent = createParentClip();
+    const parent: TimelineClip = {
+      ...baseParent,
+      transformations: [
+        {
+          id: "speed_1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 2 },
+        },
+      ],
+    };
+    const ranged: MaskTimelineClip = {
+      ...createMaskClip("mask_speed_range", { maskType: "circle" }),
+      activeRange: { startSourceTicks: 100, endSourceTicks: 200 },
+    };
+    const internals = controller as unknown as { currentMaskMode: string };
+
+    // Visual t=40 → source 80, outside [100,200] → no-op.
+    await controller.syncMaskClips(
+      [ranged],
+      parent,
+      { width: 1920, height: 1080 },
+      40,
+      new Map<string, Asset>(),
+    );
+    expect(internals.currentMaskMode).toBe("none");
+
+    // Visual t=60 → source 120, inside [100,200] → mask applies.
+    await controller.syncMaskClips(
+      [ranged],
+      parent,
+      { width: 1920, height: 1080 },
+      60,
+      new Map<string, Asset>(),
+    );
+    expect(internals.currentMaskMode).toBe("regular");
+
+    controller.dispose();
+    warnSpy.mockRestore();
+  });
 });

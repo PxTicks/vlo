@@ -33,7 +33,7 @@ import {
 import { createMaskCoverageBoostFilter } from "../../transformations/catalogue/mask/maskCoverageBoostFilter";
 import { createMaskCoverageInvertFilter } from "../../transformations/catalogue/mask/maskCoverageInvertFilter";
 import { createMaskRedToAlphaFilter } from "../../transformations/catalogue/mask/maskRedToAlphaFilter";
-import { drawMaskBaseShape } from "../model/maskFactory";
+import { drawMaskBaseShape, isMaskActiveAtSourceTime } from "../model/maskFactory";
 import type { MaskBooleanExpressionAnalysis } from "../model/maskBooleanExpression";
 import {
   analyzeMaskBooleanExpression,
@@ -268,10 +268,21 @@ export class SpriteClipMaskController {
       maskClipByLocalId.set(maskId, clip);
     });
 
+    // Per-mask active-range gates compositing in source-tick space (parent
+    // clip). Outside its range the mask is treated as a no-op, mirroring how
+    // a pre-generation SAM2 mask behaves.
+    const parentSourceTimeTicks =
+      parentClip.type === "mask"
+        ? rawTimeTicks
+        : calculateClipTime(parentClip, rawTimeTicks, true);
+
     // These legacy option names now gate all asset-backed mask video decoding.
     // Generation masks intentionally share the same render path as SAM2 masks.
     const activeMaskClips = referencedMaskClips.filter((clip) => {
       if (clip.maskMode !== "apply") return false;
+      if (!isMaskActiveAtSourceTime(clip.activeRange, parentSourceTimeTicks)) {
+        return false;
+      }
       const assetMaskId = getAssetBackedMaskId(clip);
       return assetMaskId === null || assetsById.has(assetMaskId);
     });

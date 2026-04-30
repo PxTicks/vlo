@@ -6,6 +6,7 @@ import type {
   ClipMaskPoint,
   ClipMaskType,
   ClipTransform,
+  MaskActiveRange,
 } from "../../../types/TimelineTypes";
 
 export const MASK_TYPES: ClipMaskType[] = [
@@ -115,6 +116,43 @@ function normalizeMaskPointCoordinate(
 ): number {
   const numeric = toFiniteNumber(value, fallback);
   return Math.min(1, Math.max(0, numeric));
+}
+
+export function normalizeMaskActiveRange(
+  range: unknown,
+): MaskActiveRange | undefined {
+  if (!isRecord(range)) return undefined;
+  const start = range.startSourceTicks;
+  const end = range.endSourceTicks;
+  if (
+    typeof start !== "number" ||
+    !Number.isFinite(start) ||
+    typeof end !== "number" ||
+    !Number.isFinite(end)
+  ) {
+    return undefined;
+  }
+  const orderedStart = Math.min(start, end);
+  const orderedEnd = Math.max(start, end);
+  return {
+    startSourceTicks: orderedStart,
+    endSourceTicks: orderedEnd,
+  };
+}
+
+/**
+ * Returns true when the mask should contribute to compositing at the given
+ * source time. Masks with no `activeRange` are always active.
+ */
+export function isMaskActiveAtSourceTime(
+  activeRange: MaskActiveRange | undefined,
+  sourceTimeTicks: number,
+): boolean {
+  if (!activeRange) return true;
+  return (
+    sourceTimeTicks >= activeRange.startSourceTicks &&
+    sourceTimeTicks <= activeRange.endSourceTicks
+  );
 }
 
 function normalizeMaskPoints(points: unknown): ClipMaskPoint[] | undefined {
@@ -403,6 +441,7 @@ export function createMask(
       ? overrides.transformations
       : createMaskLayoutTransforms(maskId, layout);
   const normalizedMaskPoints = normalizeMaskPoints(overrides.maskPoints);
+  const normalizedActiveRange = normalizeMaskActiveRange(overrides.activeRange);
 
   return {
     id: maskId,
@@ -417,6 +456,7 @@ export function createMask(
     sam2MaskAssetId: overrides.sam2MaskAssetId,
     sam2GeneratedPointsHash: overrides.sam2GeneratedPointsHash,
     sam2LastGeneratedAt: overrides.sam2LastGeneratedAt,
+    activeRange: normalizedActiveRange,
   };
 }
 

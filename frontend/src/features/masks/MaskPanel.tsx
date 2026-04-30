@@ -34,6 +34,7 @@ import {
 import { Sam2MaskPanel } from "./components/Sam2MaskPanel";
 import { Sam2ModelDownloadOverlay } from "./components/Sam2ModelDownloadOverlay";
 import { MaskEquationBuilder } from "./components/MaskEquationBuilder";
+import { MaskActiveRangeSection } from "./components/MaskActiveRangeSection";
 import { RangeMaskSection } from "./components/RangeMaskSection";
 import { parseMaskClipId } from "../timeline";
 import type { MaskTimelineClip } from "../../types/TimelineTypes";
@@ -168,6 +169,9 @@ export const MaskPanel = memo(function MaskPanel() {
     startEditRangeMask,
     removeRangeMask,
     toggleRangeMaskActive,
+    selectedMaskActiveRange,
+    startSetSelectedMaskActiveRange,
+    clearSelectedMaskActiveRange,
   } = useMaskPanel();
   const {
     activeContextId: sharedMaskContextId,
@@ -385,6 +389,14 @@ export const MaskPanel = memo(function MaskPanel() {
               />
               <Box sx={{ px: 2, pb: 2 }}>
                 <Divider sx={{ borderColor: "#2a2d33", mb: 2 }} />
+                <Box sx={{ mb: 2 }}>
+                  <MaskActiveRangeSection
+                    activeRange={selectedMaskActiveRange}
+                    onAdd={startSetSelectedMaskActiveRange}
+                    onEdit={startSetSelectedMaskActiveRange}
+                    onRemove={clearSelectedMaskActiveRange}
+                  />
+                </Box>
                 <Button
                   data-testid="mask-delete-button"
                   variant="outlined"
@@ -509,6 +521,15 @@ export const MaskPanel = memo(function MaskPanel() {
                     Inverted
                   </Button>
                 </ButtonGroup>
+
+                <Box sx={{ mb: 2 }}>
+                  <MaskActiveRangeSection
+                    activeRange={selectedMaskActiveRange}
+                    onAdd={startSetSelectedMaskActiveRange}
+                    onEdit={startSetSelectedMaskActiveRange}
+                    onRemove={clearSelectedMaskActiveRange}
+                  />
+                </Box>
 
                 <Button
                   data-testid="mask-delete-button"

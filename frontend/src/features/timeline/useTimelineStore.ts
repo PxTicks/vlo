@@ -22,6 +22,7 @@ import type {
   ClipMaskMode,
   ClipMaskParameters,
   ClipMaskPoint,
+  MaskActiveRange,
   MaskBooleanExpression,
   TimelineClip,
   TimelineTrack,
@@ -553,6 +554,7 @@ function createMaskClip(
     sam2GeneratedPointsHash?: string;
     sam2LastGeneratedAt?: number;
     generationMaskAssetId?: string;
+    activeRange?: MaskActiveRange;
     transformations: ClipTransform[];
   },
 ): TimelineClip {
@@ -585,6 +587,7 @@ function createMaskClip(
     sam2GeneratedPointsHash: opts.sam2GeneratedPointsHash,
     sam2LastGeneratedAt: opts.sam2LastGeneratedAt,
     generationMaskAssetId: opts.generationMaskAssetId,
+    activeRange: opts.activeRange,
   };
 }
 
@@ -602,6 +605,7 @@ function maskToClip(parentClip: TimelineClip, mask: ClipMask): TimelineClip {
     sam2GeneratedPointsHash: mask.sam2GeneratedPointsHash,
     sam2LastGeneratedAt: mask.sam2LastGeneratedAt,
     generationMaskAssetId: mask.generationMaskAssetId,
+    activeRange: mask.activeRange,
     transformations: mask.transformations ?? [],
   });
 }
@@ -1096,6 +1100,11 @@ interface TimelineState {
       >
     > & {
       transformations?: ClipTransform[];
+      /**
+       * Pass `null` to clear the active range (mask becomes always-active),
+       * or an object to set/replace it. Omit to leave unchanged.
+       */
+      activeRange?: MaskActiveRange | null;
     },
   ) => void;
 
@@ -2039,6 +2048,25 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
         if (updates.sam2LastGeneratedAt !== undefined) {
           maskClip.sam2LastGeneratedAt = updates.sam2LastGeneratedAt;
+        }
+
+        if (updates.activeRange !== undefined) {
+          if (updates.activeRange === null) {
+            maskClip.activeRange = undefined;
+          } else {
+            const start = Math.min(
+              updates.activeRange.startSourceTicks,
+              updates.activeRange.endSourceTicks,
+            );
+            const end = Math.max(
+              updates.activeRange.startSourceTicks,
+              updates.activeRange.endSourceTicks,
+            );
+            maskClip.activeRange = {
+              startSourceTicks: start,
+              endSourceTicks: end,
+            };
+          }
         }
 
         if (updates.transformations !== undefined) {

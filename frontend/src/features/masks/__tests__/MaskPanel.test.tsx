@@ -174,6 +174,9 @@ describe("MaskPanel", () => {
       startEditRangeMask: vi.fn(),
       removeRangeMask: vi.fn(),
       toggleRangeMaskActive: vi.fn(),
+      selectedMaskActiveRange: null,
+      startSetSelectedMaskActiveRange: vi.fn(),
+      clearSelectedMaskActiveRange: vi.fn(),
     };
     vi.mocked(useMaskPanel).mockReturnValue(baseHookValue);
   });
@@ -356,6 +359,55 @@ describe("MaskPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete Mask" }));
     expect(mockDeleteSelectedMask).toHaveBeenCalled();
+  });
+
+  it("shows an Add affordance for the active range when none is set and triggers the setter", () => {
+    const mockStartSet = vi.fn();
+    vi.mocked(useMaskPanel).mockReturnValue({
+      ...baseHookValue,
+      masks: [createMaskClip("clip_1", "mask_1", "triangle")],
+      selectedMaskId: "mask_1",
+      selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
+      selectedMaskActiveRange: null,
+      startSetSelectedMaskActiveRange: mockStartSet,
+    });
+
+    render(<MaskPanel />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Mask 1" }),
+    );
+    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+
+    expect(
+      screen.queryByTestId("mask-active-range-chip"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("mask-active-range-add"));
+    expect(mockStartSet).toHaveBeenCalled();
+  });
+
+  it("shows the configured active range and clears it on remove", () => {
+    const mockClear = vi.fn();
+    vi.mocked(useMaskPanel).mockReturnValue({
+      ...baseHookValue,
+      masks: [createMaskClip("clip_1", "mask_1", "triangle")],
+      selectedMaskId: "mask_1",
+      selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
+      selectedMaskActiveRange: {
+        startSourceTicks: 0,
+        endSourceTicks: 480_000,
+      },
+      clearSelectedMaskActiveRange: mockClear,
+    });
+
+    render(<MaskPanel />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Mask 1" }),
+    );
+    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+
+    expect(screen.getByTestId("mask-active-range-chip")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("mask-active-range-remove"));
+    expect(mockClear).toHaveBeenCalled();
   });
 
   it("renames the selected mask from the detail view", () => {

@@ -67,6 +67,17 @@ export interface ClipMaskPoint {
   timeTicks: number;
 }
 
+/**
+ * Optional source-time window in which a spatial mask is active. Outside the
+ * window the mask becomes a no-op (rendered as if absent / pre-generation
+ * SAM2). Times are stored in the parent clip's source-tick domain so they
+ * survive speed/time transforms.
+ */
+export interface MaskActiveRange {
+  startSourceTicks: number;
+  endSourceTicks: number;
+}
+
 export interface ClipMask extends ClipComponentBase<ClipMaskParameters> {
   type: ClipMaskType;
   mode: ClipMaskMode;
@@ -83,6 +94,11 @@ export interface ClipMask extends ClipComponentBase<ClipMaskParameters> {
   sam2LastGeneratedAt?: number;
   /** Linked mask asset from generation pipeline. */
   generationMaskAssetId?: string;
+  /**
+   * When set, the mask is only active inside this source-time window.
+   * Absent means active for the entire clip.
+   */
+  activeRange?: MaskActiveRange;
   /**
    * Optional transform stack so a mask can be treated as a clip-like entity.
    * Timing is inherited from its parent clip at runtime.
@@ -149,6 +165,12 @@ export interface MaskTimelineClip extends TimelineClipBase {
   sam2LastGeneratedAt?: number;
   /** Linked mask asset from generation pipeline. */
   generationMaskAssetId?: string;
+  /**
+   * When set, the mask is only active inside this source-time window
+   * (parent-clip source ticks). Outside the window the mask is treated as a
+   * no-op, similar to a SAM2 mask before its asset has been generated.
+   */
+  activeRange?: MaskActiveRange;
 }
 
 export type TimelineClip = StandardTimelineClip | MaskTimelineClip;

@@ -3,7 +3,9 @@ import {
   createMask,
   createMaskLayoutTransforms,
   getMaskLayoutState,
+  isMaskActiveAtSourceTime,
   isPointInsideMask,
+  normalizeMaskActiveRange,
   setMaskLayoutState,
 } from "../maskFactory";
 
@@ -96,5 +98,40 @@ describe("maskFactory", () => {
       }),
     };
     expect(isPointInsideMask({ x: 10, y: 10 }, maskClipShape)).toBe(true);
+  });
+
+  it("treats masks without activeRange as always active", () => {
+    expect(isMaskActiveAtSourceTime(undefined, 0)).toBe(true);
+    expect(isMaskActiveAtSourceTime(undefined, 999_999)).toBe(true);
+  });
+
+  it("respects activeRange bounds inclusively", () => {
+    const range = { startSourceTicks: 100, endSourceTicks: 200 };
+    expect(isMaskActiveAtSourceTime(range, 99)).toBe(false);
+    expect(isMaskActiveAtSourceTime(range, 100)).toBe(true);
+    expect(isMaskActiveAtSourceTime(range, 150)).toBe(true);
+    expect(isMaskActiveAtSourceTime(range, 200)).toBe(true);
+    expect(isMaskActiveAtSourceTime(range, 201)).toBe(false);
+  });
+
+  it("normalizes inverted activeRange inputs and rejects malformed values", () => {
+    expect(
+      normalizeMaskActiveRange({ startSourceTicks: 500, endSourceTicks: 100 }),
+    ).toEqual({ startSourceTicks: 100, endSourceTicks: 500 });
+    expect(normalizeMaskActiveRange(null)).toBeUndefined();
+    expect(
+      normalizeMaskActiveRange({ startSourceTicks: "0", endSourceTicks: 1 }),
+    ).toBeUndefined();
+  });
+
+  it("propagates activeRange through createMask", () => {
+    const mask = createMask("rectangle", {
+      activeRange: { startSourceTicks: 250, endSourceTicks: 50 },
+    });
+    expect(mask.activeRange).toEqual({
+      startSourceTicks: 50,
+      endSourceTicks: 250,
+    });
+    expect(createMask("rectangle").activeRange).toBeUndefined();
   });
 });

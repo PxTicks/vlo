@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { getRuntimeStatus } from "../../../services/runtimeApi";
 import type {
   ClipMaskPoint,
+  MaskActiveRange,
   MaskBooleanExpression,
   ClipMaskMode,
   ClipMaskType,
@@ -179,6 +180,9 @@ export interface UseMaskPanelResult {
   startEditRangeMask: (rangeMaskId: string) => void;
   removeRangeMask: (rangeMaskId: string) => void;
   toggleRangeMaskActive: (rangeMaskId: string) => void;
+  selectedMaskActiveRange: MaskActiveRange | null;
+  startSetSelectedMaskActiveRange: () => void;
+  clearSelectedMaskActiveRange: () => void;
 }
 
 export function useMaskPanel(): UseMaskPanelResult {
@@ -1286,6 +1290,80 @@ export function useMaskPanel(): UseMaskPanelResult {
     [selectedClipId, updateClipComponent],
   );
 
+  const selectedMaskActiveRange = useMemo<MaskActiveRange | null>(() => {
+    if (!selectedMask || selectedMask.type !== "mask") return null;
+    return selectedMask.activeRange ?? null;
+  }, [selectedMask]);
+
+  const startSetSelectedMaskActiveRange = useCallback(() => {
+    if (!selectedClipId || !selectedMaskId) return;
+    if (!standardSelectedClip) return;
+    if (!selectedMask || selectedMask.type !== "mask") return;
+
+    const clip = standardSelectedClip;
+    const clipStart = clip.start;
+    const clipEnd = clip.start + clip.timelineDuration;
+
+    let seededStart: number;
+    let seededEnd: number;
+    if (selectedMaskActiveRange) {
+      const rawStart =
+        clipStart +
+        mapSourceTimeToVisualTime(
+          clip,
+          selectedMaskActiveRange.startSourceTicks,
+        );
+      const rawEnd =
+        clipStart +
+        mapSourceTimeToVisualTime(clip, selectedMaskActiveRange.endSourceTicks);
+      seededStart = Math.max(clipStart, Math.min(rawStart, clipEnd));
+      seededEnd = Math.max(clipStart, Math.min(rawEnd, clipEnd));
+    } else {
+      seededStart = Math.max(
+        clipStart,
+        Math.min(playbackClock.time, clipEnd),
+      );
+      seededEnd = Math.min(clipEnd, seededStart + TICKS_PER_SECOND);
+    }
+
+    const selectionStore = useTimelineSelectionStore.getState();
+    const extractStore = useExtractStore.getState();
+
+    selectionStore.clearSelectionRecommendations();
+    selectionStore.enterSelectionMode(seededStart, seededEnd);
+
+    extractStore.setOnConfirmSelection(() => {
+      const { selectionStartTick, selectionEndTick } =
+        useTimelineSelectionStore.getState();
+      const startSourceTicks = toClipInputTimeTicks(clip, selectionStartTick);
+      const endSourceTicks = toClipInputTimeTicks(clip, selectionEndTick);
+      const orderedStart = Math.min(startSourceTicks, endSourceTicks);
+      const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
+
+      updateClipMask(selectedClipId, selectedMaskId, {
+        activeRange: {
+          startSourceTicks: orderedStart,
+          endSourceTicks: orderedEnd,
+        },
+      });
+
+      useTimelineSelectionStore.getState().exitSelectionMode();
+      useExtractStore.getState().setOnConfirmSelection(null);
+    });
+  }, [
+    selectedClipId,
+    selectedMask,
+    selectedMaskActiveRange,
+    selectedMaskId,
+    standardSelectedClip,
+    updateClipMask,
+  ]);
+
+  const clearSelectedMaskActiveRange = useCallback(() => {
+    if (!selectedClipId || !selectedMaskId) return;
+    updateClipMask(selectedClipId, selectedMaskId, { activeRange: null });
+  }, [selectedClipId, selectedMaskId, updateClipMask]);
+
   const duplicateMask = useCallback(
     (maskId: string) => {
       if (!selectedClipId) return;
@@ -1389,5 +1467,8 @@ export function useMaskPanel(): UseMaskPanelResult {
     startEditRangeMask,
     removeRangeMask,
     toggleRangeMaskActive,
+    selectedMaskActiveRange,
+    startSetSelectedMaskActiveRange,
+    clearSelectedMaskActiveRange,
   };
 }

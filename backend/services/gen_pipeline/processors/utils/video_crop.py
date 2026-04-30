@@ -132,7 +132,7 @@ def crop_video(
             out_stream.options = (
                 {"crf": "0", "preset": "ultrafast"}
                 if lossless
-                else {"crf": "18", "preset": "medium"}
+                else {"crf": "23", "preset": "ultrafast"}
             )
             out_stream.time_base = in_stream.time_base
 

@@ -97,6 +97,7 @@ export class TextureOutputEncoder {
           codec: "avc",
           bitrate: definition.bitrate ?? 6_000_000,
           latencyMode: "quality",
+          hardwareAcceleration: "prefer-hardware",
         });
         output.addVideoTrack(videoSource, { frameRate: this.frameRate });
 

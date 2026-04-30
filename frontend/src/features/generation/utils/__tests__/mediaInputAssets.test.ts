@@ -51,6 +51,44 @@ describe("mediaInputAssets", () => {
     ).toBe(true);
   });
 
+  it("treats an in-flight video timeline-selection extraction as a provided input", () => {
+    const baseSelection = {
+      kind: "timelineSelection" as const,
+      mediaType: "video" as const,
+      timelineSelection: {
+        start: 0,
+        end: 100,
+        clips: [],
+      } as never,
+      thumbnailFile: new File([""], "thumb.png", { type: "image/png" }),
+      thumbnailUrl: "blob:thumb",
+      isExtracting: true,
+      extractionRequestId: 1,
+      extractionError: null,
+      preparedVideoFile: null,
+      preparedMaskFile: null,
+    };
+
+    expect(hasProvidedMediaInputValue("video", baseSelection)).toBe(true);
+
+    expect(
+      hasProvidedMediaInputValue("video", {
+        ...baseSelection,
+        isExtracting: false,
+        preparedVideoFile: new File([""], "v.mp4", { type: "video/mp4" }),
+      }),
+    ).toBe(true);
+
+    expect(
+      hasProvidedMediaInputValue("video", {
+        ...baseSelection,
+        isExtracting: false,
+        preparedVideoFile: null,
+        extractionError: "boom",
+      }),
+    ).toBe(false);
+  });
+
   it("does not treat ambiguous asset metadata as a valid filled input", () => {
     expect(
       hasProvidedMediaInputValue("image", {

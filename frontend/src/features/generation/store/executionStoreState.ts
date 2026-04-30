@@ -28,7 +28,10 @@ import { readActiveWorkflowFromIframe } from "../services/workflowBridge";
 import { normalizeWorkflowFilename } from "../services/workflowFilenames";
 import { getWorkflowPostprocessingConfig } from "../services/workflowRules";
 import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
-import { isAbortError } from "../pipeline/utils/abort";
+import {
+  createGenerationAbortError,
+  isAbortError,
+} from "../pipeline/utils/abort";
 import type { WorkflowPostprocessingConfig } from "../types";
 import { createSubmissionErrorJob } from "./submission";
 import {
@@ -112,6 +115,105 @@ function isComfyReadyForDispatch(
     state.runtimeStatus?.comfyui.status === "connected" ||
     state.connectionStatus === "connected"
   );
+}
+
+interface PendingExtractionEntry {
+  inputId: string;
+  expectedRequestId: number;
+}
+
+function collectPendingExtractions(
+  plan: GenerationPlan,
+): PendingExtractionEntry[] {
+  const pending: PendingExtractionEntry[] = [];
+  for (const [inputId, value] of Object.entries(plan.preprocess.slotValues)) {
+    if (
+      value.type === "video_selection" &&
+      typeof value.pendingExtractionRequestId === "number"
+    ) {
+      pending.push({
+        inputId,
+        expectedRequestId: value.pendingExtractionRequestId,
+      });
+    }
+  }
+  return pending;
+}
+
+function isExtractionResolved(
+  state: ReturnType<GenerationStoreGet>,
+  entry: PendingExtractionEntry,
+): boolean {
+  const value = state.mediaInputs[entry.inputId];
+  // Input cleared, replaced by an asset/frame, or wrong media kind: stop
+  // waiting. The slot keeps its captured selection and `collectVideoInputs`
+  // will fall back to a render-on-submit if `preparedVideoFile` stays unset.
+  if (!value || value.kind !== "timelineSelection") return true;
+  if (value.mediaType !== "video") return true;
+  // Selection was superseded (a fresher extraction is now active or has
+  // completed). Same fallback applies.
+  if (value.extractionRequestId !== entry.expectedRequestId) return true;
+  return !value.isExtracting;
+}
+
+async function waitForPendingExtractions(
+  get: GenerationStoreGet,
+  pending: PendingExtractionEntry[],
+  signal: AbortSignal,
+): Promise<void> {
+  if (pending.length === 0) return;
+
+  const POLL_MS = 100;
+  while (true) {
+    if (signal.aborted) {
+      throw createGenerationAbortError("Generation cancelled");
+    }
+    const state = get();
+    const allResolved = pending.every((entry) =>
+      isExtractionResolved(state, entry),
+    );
+    if (allResolved) return;
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timeoutId);
+        signal.removeEventListener("abort", onAbort);
+        reject(createGenerationAbortError("Generation cancelled"));
+      };
+      const timeoutId = setTimeout(() => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, POLL_MS);
+      signal.addEventListener("abort", onAbort);
+    });
+  }
+}
+
+function applyExtractedFilesToPlan(
+  state: ReturnType<GenerationStoreGet>,
+  plan: GenerationPlan,
+  pending: PendingExtractionEntry[],
+): void {
+  for (const entry of pending) {
+    const slot = plan.preprocess.slotValues[entry.inputId];
+    if (!slot || slot.type !== "video_selection") continue;
+    slot.pendingExtractionRequestId = undefined;
+
+    const value = state.mediaInputs[entry.inputId];
+    if (
+      !value ||
+      value.kind !== "timelineSelection" ||
+      value.mediaType !== "video" ||
+      value.extractionRequestId !== entry.expectedRequestId
+    ) {
+      continue;
+    }
+    if (value.preparedVideoFile) {
+      slot.preparedVideoFile = value.preparedVideoFile;
+    }
+    if (value.preparedMaskFile) {
+      slot.preparedMaskFile = value.preparedMaskFile;
+    }
+  }
 }
 
 function buildGenerationPlanFromState(
@@ -504,6 +606,23 @@ export function buildExecutionStoreState(
           : await attachSubmittedWorkflowToPlan(plan, state);
       if (get().pipelineRunToken !== pipelineRunToken) {
         return null;
+      }
+
+      // If the user clicked Generate while a timeline-selection extraction was
+      // still in flight, wait for it now and patch the plan's slot with the
+      // resulting prepared files. The cache key below depends on these files,
+      // so this must happen before `buildGenerationPreprocessCacheKey`.
+      const pendingExtractions = collectPendingExtractions(resolvedPlan);
+      if (pendingExtractions.length > 0) {
+        await waitForPendingExtractions(
+          get,
+          pendingExtractions,
+          preprocessAbortController.signal,
+        );
+        if (get().pipelineRunToken !== pipelineRunToken) {
+          return null;
+        }
+        applyExtractedFilesToPlan(get(), resolvedPlan, pendingExtractions);
       }
 
       const preprocessCacheKey = buildGenerationPreprocessCacheKey(resolvedPlan);

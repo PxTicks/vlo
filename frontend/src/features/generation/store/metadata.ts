@@ -255,75 +255,133 @@ export async function restoreMediaInputsFromMetadata(
       },
     );
 
+    // Extraction renders run in the background — the caller observes
+    // completion via the mediaInputs `isExtracting` flag. Holding the
+    // workflow-loading state through extraction would block panel edits
+    // and re-submissions for the entire render duration.
     if (workflowInput.inputType === "audio") {
-      const preparedAudioFile = await extractAudioFromSelection(timelineSelection, {
+      void extractAudioFromSelection(timelineSelection, {
         exportFps: workflowInput.dispatch?.selectionConfig?.exportFps,
-      });
-      actions.setMediaInputTimelineSelection(
-        inputId,
-        timelineSelection,
-        thumbnailFile,
-        {
-          mediaType: "audio",
-          isExtracting: false,
-          extractionRequestId: 1,
-          preparedAudioFile,
-          extractionError:
-            preparedAudioFile === null
-              ? "No audio track was found in the selected timeline range"
-              : null,
-        },
-      );
+      })
+        .then((preparedAudioFile) => {
+          actions.setMediaInputTimelineSelection(
+            inputId,
+            timelineSelection,
+            thumbnailFile,
+            {
+              mediaType: "audio",
+              isExtracting: false,
+              extractionRequestId: 1,
+              preparedAudioFile,
+              extractionError:
+                preparedAudioFile === null
+                  ? "No audio track was found in the selected timeline range"
+                  : null,
+            },
+          );
+        })
+        .catch((error) => {
+          actions.setMediaInputTimelineSelection(
+            inputId,
+            timelineSelection,
+            thumbnailFile,
+            {
+              mediaType: "audio",
+              isExtracting: false,
+              extractionRequestId: 1,
+              preparedAudioFile: null,
+              extractionError:
+                error instanceof Error
+                  ? error.message
+                  : "Failed to extract audio for timeline selection",
+            },
+          );
+        });
       continue;
     }
 
-    const derivedMaskMapping = derivedMaskMappings.find(
+    const sourceMappings = derivedMaskMappings.filter(
       (mapping) =>
         mapping.sourceInputId === inputId ||
         (!mapping.sourceInputId && mapping.sourceNodeId === workflowInput.nodeId),
     );
 
-    if (derivedMaskMapping) {
-      const sourceMappings = derivedMaskMappings.filter(
-        (mapping) =>
-          mapping.sourceInputId === inputId ||
-          (!mapping.sourceInputId && mapping.sourceNodeId === workflowInput.nodeId),
-      );
+    if (sourceMappings.length > 0) {
       const cachedVisualMasks = sourceMappings.filter(
         (mapping) => mapping.purpose !== "audio_timing",
       );
-      const { video, masks } = await renderTimelineSelectionToMp4WithDerivedMasks(
+      void renderTimelineSelectionToMp4WithDerivedMasks(
         timelineSelection,
         cachedVisualMasks,
-      );
-
-      actions.setMediaInputTimelineSelection(
-        inputId,
-        timelineSelection,
-        thumbnailFile,
-        {
-          mediaType: "video",
-          isExtracting: false,
-          extractionRequestId: 1,
-          preparedVideoFile: video,
-          preparedMaskFile: pickPrimaryPreparedMaskFile(cachedVisualMasks, masks),
-        },
-      );
+      )
+        .then(({ video, masks }) => {
+          actions.setMediaInputTimelineSelection(
+            inputId,
+            timelineSelection,
+            thumbnailFile,
+            {
+              mediaType: "video",
+              isExtracting: false,
+              extractionRequestId: 1,
+              preparedVideoFile: video,
+              preparedMaskFile: pickPrimaryPreparedMaskFile(
+                cachedVisualMasks,
+                masks,
+              ),
+            },
+          );
+        })
+        .catch((error) => {
+          actions.setMediaInputTimelineSelection(
+            inputId,
+            timelineSelection,
+            thumbnailFile,
+            {
+              mediaType: "video",
+              isExtracting: false,
+              extractionRequestId: 1,
+              preparedVideoFile: null,
+              extractionError:
+                error instanceof Error
+                  ? error.message
+                  : "Failed to extract timeline selection",
+            },
+          );
+        });
       continue;
     }
 
-    const preparedVideoFile = await renderTimelineSelectionToMp4(timelineSelection);
-    actions.setMediaInputTimelineSelection(
-      inputId,
-      timelineSelection,
-      thumbnailFile,
-      {
-        mediaType: "video",
-        isExtracting: false,
-        extractionRequestId: 1,
-        preparedVideoFile,
-      },
-    );
+    void renderTimelineSelectionToMp4(timelineSelection)
+      .then((preparedVideoFile) => {
+        actions.setMediaInputTimelineSelection(
+          inputId,
+          timelineSelection,
+          thumbnailFile,
+          {
+            mediaType: "video",
+            isExtracting: false,
+            extractionRequestId: 1,
+            preparedVideoFile,
+          },
+        );
+      })
+      .catch((error) => {
+        actions.setMediaInputTimelineSelection(
+          inputId,
+          timelineSelection,
+          thumbnailFile,
+          {
+            mediaType: "video",
+            isExtracting: false,
+            extractionRequestId: 1,
+            preparedVideoFile: null,
+            extractionError:
+              error instanceof Error
+                ? error.message
+                : "Failed to extract timeline selection",
+          },
+        );
+      });
   }
 }
 

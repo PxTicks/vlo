@@ -51,8 +51,6 @@ function makeHookState(overrides: Record<string, unknown> = {}) {
     isPipelineInterruptible: false,
     isPostprocessing: false,
     pipelineStatusText: null,
-    isExtractingSelection: false,
-    generateButtonLabel: "Generate",
     canGenerate: false,
     connectionChipLabel: "Connected",
     connectionChipColor: "success",

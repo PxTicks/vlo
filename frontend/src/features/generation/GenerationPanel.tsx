@@ -242,8 +242,6 @@ export function GenerationPanel() {
     canInterruptCurrentGeneration,
     canClearQueuedGenerations,
     pipelineStatusText,
-    isExtractingSelection,
-    generateButtonLabel,
     canGenerate,
     connectionChipLabel,
     connectionChipColor,
@@ -952,9 +950,7 @@ export function GenerationPanel() {
                       data-testid="generation-generate-button"
                       fullWidth
                       variant="contained"
-                      startIcon={
-                        isExtractingSelection ? undefined : <PlayArrow />
-                      }
+                      startIcon={<PlayArrow />}
                       disabled={!canGenerate}
                       onPointerDown={blurActiveElement}
                       onClick={() => handleGenerateCount(1)}
@@ -964,7 +960,7 @@ export function GenerationPanel() {
                         textTransform: "none",
                       }}
                     >
-                      {generateButtonLabel}
+                      Generate
                     </Button>
                     <Button
                       aria-label="Queue multiple generations"

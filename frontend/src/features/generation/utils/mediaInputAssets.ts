@@ -39,12 +39,14 @@ export function hasProvidedMediaInputValue(
     );
   }
 
-  return (
-    value.kind === "timelineSelection" &&
-    value.mediaType === "video" &&
-    value.preparedVideoFile !== null &&
-    !value.isExtracting
-  );
+  if (
+    value.kind !== "timelineSelection" ||
+    value.mediaType !== "video"
+  ) {
+    return false;
+  }
+  if (value.extractionError) return false;
+  return value.isExtracting || value.preparedVideoFile !== null;
 }
 
 export async function resolveAssetFileForGeneration(

@@ -677,6 +677,9 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
             selection: value.timelineSelection,
             preparedVideoFile: value.preparedVideoFile ?? undefined,
             preparedMaskFile: value.preparedMaskFile ?? undefined,
+            pendingExtractionRequestId: value.isExtracting
+              ? value.extractionRequestId
+              : undefined,
           };
         }
       }
@@ -1133,10 +1136,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     ? pipelineStatus.message
     : [queueStatusText, postprocessingStatusText].filter(Boolean).join(" • ") ||
       null;
-  const isExtractingSelection = Object.values(mediaInputs).some(
-    (value) => value?.kind === "timelineSelection" && value.isExtracting,
-  );
-
   const inputValidationFailures =
     mode === "manual"
       ? []
@@ -1155,12 +1154,8 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     comfyConnected &&
     isWorkflowReady &&
     !isWorkflowLoading &&
-    !isExtractingSelection &&
     (workflowInputs.length > 0 || widgetInputs.length > 0) &&
     inputValidationSatisfied;
-  const generateButtonLabel = isExtractingSelection
-    ? "Extracting selection"
-    : "Generate";
 
   const connectionChipLabel = runtimeStatusError
     ? "Backend unavailable"
@@ -1266,9 +1261,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     isPipelineInterruptible,
     isPostprocessing,
     pipelineStatusText,
-    isExtractingSelection,
     canGenerate,
-    generateButtonLabel,
     connectionChipLabel,
     connectionChipColor,
     connectionSummary,

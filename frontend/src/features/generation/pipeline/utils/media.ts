@@ -311,6 +311,10 @@ export async function resizeImageToExactDimensions(
 ): Promise<File> {
   const bitmap = await createImageBitmap(file);
   try {
+    if (bitmap.width === target.width && bitmap.height === target.height) {
+      return file;
+    }
+
     const canvas = createOutputCanvas(target.width, target.height);
     const context2dRaw = canvas.getContext("2d");
     if (!isCanvas2DContext(context2dRaw)) {
@@ -405,6 +409,15 @@ export async function resizeVideoToExactDimensions(
     formats: ALL_FORMATS,
   });
   try {
+    const videoTrack = await input.getPrimaryVideoTrack();
+    if (
+      videoTrack &&
+      videoTrack.displayWidth === target.width &&
+      videoTrack.displayHeight === target.height
+    ) {
+      return file;
+    }
+
     const { mimeType, format } = resolveVideoOutputContainer(file);
     const outputTarget = new BufferTarget();
     const output = new Output({
@@ -418,6 +431,7 @@ export async function resizeVideoToExactDimensions(
         width: target.width,
         height: target.height,
         fit: "fill",
+        hardwareAcceleration: "prefer-hardware",
       },
     });
     await conversion.execute();
@@ -483,6 +497,7 @@ export async function cropVideoToAspectRatio(
         width: cropTarget.width,
         height: cropTarget.height,
         fit: "cover",
+        hardwareAcceleration: "prefer-hardware",
       },
     });
     await conversion.execute();

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "custom",
+      "name": "Custom Workflows",
+      "order": 0,
+      "workflow_ids": [
+        "example_custom_workflow.json"
+      ]
+    }
+  ],
+  "hidden_workflows": [
+    "example_hidden_workflow.json"
+  ]
+}

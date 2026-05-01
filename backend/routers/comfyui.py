@@ -68,6 +68,9 @@ DUMMY_PHOTO_PATH = DEFAULT_WORKFLOWS_DIR.parent / "dummy_photo.jpeg"
 WORKFLOW_MENU_CONFIG_PATH = (
     Path(__file__).parent.parent / "assets" / ".config" / "workflow_menu.json"
 )
+CUSTOM_WORKFLOW_MENU_PATH = (
+    Path(__file__).parent.parent / "assets" / "workflows" / "workflow_menu.json"
+)
 WORKFLOW_MEDIA_FALLBACK_SPECS: dict[str, dict[str, Any]] = {
     "dummy:image": {
         "path": DUMMY_PHOTO_PATH,
@@ -394,56 +397,69 @@ def _resolve_workflow_media_fallbacks(
     return [entry for entry in fallback_defs if isinstance(entry, dict)]
 
 
-def _load_workflow_menu_metadata() -> dict[str, dict[str, Any]]:
-    if not WORKFLOW_MENU_CONFIG_PATH.exists():
-        return {}
+def _parse_workflow_menu(path: Path, metadata_by_workflow_id: dict[str, dict[str, Any]]) -> None:
+    if not path.exists():
+        return
 
     try:
-        raw = json.loads(WORKFLOW_MENU_CONFIG_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("Failed to load workflow menu config: %s", exc)
-        return {}
+        logger.warning("Failed to load workflow menu config from %s: %s", path, exc)
+        return
 
     if not isinstance(raw, dict):
-        return {}
+        return
 
     raw_groups = raw.get("groups")
-    if not isinstance(raw_groups, list):
-        return {}
+    if isinstance(raw_groups, list):
+        for index, raw_group in enumerate(raw_groups):
+            if not isinstance(raw_group, dict):
+                continue
 
-    metadata_by_workflow_id: dict[str, dict[str, Any]] = {}
-    for index, raw_group in enumerate(raw_groups):
-        if not isinstance(raw_group, dict):
-            continue
+            raw_group_id = raw_group.get("id")
+            if not isinstance(raw_group_id, str) or not raw_group_id.strip():
+                continue
+            group_id = raw_group_id.strip()
 
-        raw_group_id = raw_group.get("id")
-        if not isinstance(raw_group_id, str) or not raw_group_id.strip():
-            continue
-        group_id = raw_group_id.strip()
+            raw_group_name = raw_group.get("name")
+            group_name = (
+                raw_group_name.strip()
+                if isinstance(raw_group_name, str) and raw_group_name.strip()
+                else group_id.title()
+            )
 
-        raw_group_name = raw_group.get("name")
-        group_name = (
-            raw_group_name.strip()
-            if isinstance(raw_group_name, str) and raw_group_name.strip()
-            else group_id.title()
-        )
+            raw_group_order = raw_group.get("order")
+            group_order = raw_group_order if isinstance(raw_group_order, int) else index
 
-        raw_group_order = raw_group.get("order")
-        group_order = raw_group_order if isinstance(raw_group_order, int) else index
+            raw_workflow_ids = raw_group.get("workflow_ids")
+            if isinstance(raw_workflow_ids, list):
+                for raw_workflow_id in raw_workflow_ids:
+                    if not isinstance(raw_workflow_id, str) or not raw_workflow_id.strip():
+                        continue
+                    w_id = raw_workflow_id.strip()
+                    if w_id not in metadata_by_workflow_id:
+                        metadata_by_workflow_id[w_id] = {}
+                    metadata_by_workflow_id[w_id].update({
+                        "group_id": group_id,
+                        "group_name": group_name,
+                        "group_order": group_order,
+                    })
 
-        raw_workflow_ids = raw_group.get("workflow_ids")
-        if not isinstance(raw_workflow_ids, list):
-            continue
-
-        for raw_workflow_id in raw_workflow_ids:
+    hidden_workflows = raw.get("hidden_workflows")
+    if isinstance(hidden_workflows, list):
+        for raw_workflow_id in hidden_workflows:
             if not isinstance(raw_workflow_id, str) or not raw_workflow_id.strip():
                 continue
-            metadata_by_workflow_id[raw_workflow_id.strip()] = {
-                "group_id": group_id,
-                "group_name": group_name,
-                "group_order": group_order,
-            }
+            w_id = raw_workflow_id.strip()
+            if w_id not in metadata_by_workflow_id:
+                metadata_by_workflow_id[w_id] = {}
+            metadata_by_workflow_id[w_id]["hidden"] = True
 
+
+def _load_workflow_menu_metadata() -> dict[str, dict[str, Any]]:
+    metadata_by_workflow_id: dict[str, dict[str, Any]] = {}
+    _parse_workflow_menu(WORKFLOW_MENU_CONFIG_PATH, metadata_by_workflow_id)
+    _parse_workflow_menu(CUSTOM_WORKFLOW_MENU_PATH, metadata_by_workflow_id)
     return metadata_by_workflow_id
 
 
@@ -755,6 +771,8 @@ async def list_workflows():
                     name = rules.name
                 workflow_item: dict[str, Any] = {"id": path.name, "name": name}
                 workflow_item.update(workflow_menu_metadata.get(path.name, {}))
+                if workflow_item.get("hidden"):
+                    continue
                 workflows.append(workflow_item)
 
         # Default dir – only add workflows not already seen.
@@ -770,6 +788,8 @@ async def list_workflows():
                     name = rules.name
                 workflow_item = {"id": path.name, "name": name}
                 workflow_item.update(workflow_menu_metadata.get(path.name, {}))
+                if workflow_item.get("hidden"):
+                    continue
                 workflows.append(workflow_item)
 
         workflows.sort(key=_workflow_list_sort_key)

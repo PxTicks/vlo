@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "name": "LTX2.3 FLF2V",
+  "name": "LTX2.3",
   "nodes": {
     "15": {
       "widgets": {
@@ -70,9 +70,7 @@
             {
               "when": {
                 "kind": "input_presence",
-                "inputs": [
-                  "232"
-                ],
+                "inputs": ["232"],
                 "match": "all_present"
               },
               "value": true
@@ -80,9 +78,7 @@
             {
               "when": {
                 "kind": "input_presence",
-                "inputs": [
-                  "232"
-                ],
+                "inputs": ["232"],
                 "match": "all_missing"
               },
               "value": false
@@ -117,46 +113,23 @@
     {
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "45"
-        ],
+        "inputs": ["45"],
         "match": "all_missing"
       },
-      "bypass": [
-        "45",
-        "42",
-        "70",
-        "71",
-        "44",
-        "31",
-        "75",
-        "114",
-        "152"
-      ]
+      "bypass": ["45", "42", "70", "71", "44", "31", "75", "114", "152"]
     },
     {
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "47"
-        ],
+        "inputs": ["47"],
         "match": "all_missing"
       },
-      "bypass": [
-        "47",
-        "49",
-        "48",
-        "50",
-        "78",
-        "116"
-      ]
+      "bypass": ["47", "49", "48", "50", "78", "116"]
     },
     {
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "232"
-        ],
+        "inputs": ["232"],
         "match": "all_missing"
       },
       "bypass": [
@@ -188,11 +161,7 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [
-          480,
-          720,
-          1080
-        ],
+        "resolutions": [480, 720, 1080],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -217,11 +186,7 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [
-            480,
-            720,
-            1080
-          ],
+          "options": [480, 720, 1080],
           "default": 1080
         },
         {

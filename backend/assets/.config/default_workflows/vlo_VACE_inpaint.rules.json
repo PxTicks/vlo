@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "name": "VACE inpaint/stitch (vlo) test",
+  "name": "VACE inpaint and stitch",
   "nodes": {
     "98": {
       "selection": {
@@ -65,10 +65,7 @@
             "operator": "eq",
             "value": 1
           },
-          "bypass": [
-            "113",
-            "114"
-          ]
+          "bypass": ["113", "114"]
         },
         {
           "when": {
@@ -96,9 +93,7 @@
     {
       "id": "mask_processing",
       "kind": "mask_processing",
-      "after": [
-        "aspect_ratio"
-      ],
+      "after": ["aspect_ratio"],
       "targets": [
         {
           "source": {
@@ -119,10 +114,7 @@
           "label": "Mask crop mode",
           "value_type": "enum",
           "expose": "widget",
-          "options": [
-            "crop",
-            "full"
-          ],
+          "options": ["crop", "full"],
           "default": "crop"
         },
         {
@@ -146,10 +138,7 @@
       "config": {
         "stride": 16,
         "search_steps": 2,
-        "resolutions": [
-          480,
-          720
-        ],
+        "resolutions": [480, 720],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -184,10 +173,7 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [
-            480,
-            720
-          ],
+          "options": [480, 720],
           "default": 720
         },
         {

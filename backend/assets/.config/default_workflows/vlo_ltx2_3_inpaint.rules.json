@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "name": "LTX2.3 ReTake",
+  "name": "LTX2.3 inpaint and stitch",
   "nodes": {
     "115": {
       "widgets": {
@@ -126,9 +126,7 @@
         "control_id": "prompt_enhancer_enabled",
         "value": false
       },
-      "bypass": [
-        "599"
-      ]
+      "bypass": ["599"]
     }
   ],
   "slots": {},
@@ -136,9 +134,7 @@
     {
       "id": "mask_processing",
       "kind": "mask_processing",
-      "after": [
-        "aspect_ratio"
-      ],
+      "after": ["aspect_ratio"],
       "targets": [
         {
           "source": {
@@ -172,10 +168,7 @@
           "label": "Mask crop mode",
           "value_type": "enum",
           "expose": "widget",
-          "options": [
-            "crop",
-            "full"
-          ],
+          "options": ["crop", "full"],
           "default": "crop"
         },
         {
@@ -199,11 +192,7 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [
-          480,
-          720,
-          1080
-        ],
+        "resolutions": [480, 720, 1080],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -238,11 +227,7 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [
-            480,
-            720,
-            1080
-          ],
+          "options": [480, 720, 1080],
           "default": 1080
         },
         {

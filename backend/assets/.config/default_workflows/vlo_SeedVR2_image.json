@@ -1,0 +1,500 @@
+{
+  "id": "e2c8e6ec-9e8a-4a81-a240-7e7d2befc2bf",
+  "revision": 0,
+  "last_node_id": 22,
+  "last_link_id": 22,
+  "nodes": [
+    {
+      "id": 18,
+      "type": "Note",
+      "pos": [
+        420,
+        -80
+      ],
+      "size": [
+        210,
+        100
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "Enable to upscale alpha/mask channel along with RGB channel (for RGBA inputs)"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 13,
+      "type": "SeedVR2LoadVAEModel",
+      "pos": [
+        60,
+        500
+      ],
+      "size": [
+        320,
+        300
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "torch_compile_args",
+          "shape": 7,
+          "type": "TORCH_COMPILE_ARGS",
+          "link": 19
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SEEDVR2_VAE",
+          "type": "SEEDVR2_VAE",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "seedvr2_videoupscaler",
+        "ver": "690cc39379c1481159ddd451368dbf2295930fc6",
+        "Node name for S&R": "SeedVR2LoadVAEModel",
+        "aux_id": "ainvfx/ComfyUI-SeedVR2_VideoUpscaler",
+        "widget_ue_connectable": {
+          "model": true,
+          "device": true,
+          "encode_tiled": true,
+          "encode_tile_size": true,
+          "encode_tile_overlap": true,
+          "decode_tiled": true,
+          "decode_tile_size": true,
+          "decode_tile_overlap": true,
+          "tile_debug": true,
+          "offload_device": true,
+          "cache_model": true
+        }
+      },
+      "widgets_values": [
+        "ema_vae_fp16.safetensors",
+        "cuda:0",
+        true,
+        1024,
+        128,
+        true,
+        1024,
+        128,
+        "false",
+        "cpu",
+        false
+      ]
+    },
+    {
+      "id": 17,
+      "type": "JoinImageWithAlpha",
+      "pos": [
+        450,
+        -180
+      ],
+      "size": [
+        190,
+        50
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 21
+        },
+        {
+          "name": "alpha",
+          "type": "MASK",
+          "link": 22
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.68",
+        "Node name for S&R": "JoinImageWithAlpha",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 20,
+      "type": "Note",
+      "pos": [
+        -350,
+        640
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "Enable torch.compile optimization. First batch has compilation overhead, but speeds up subsequent batches. Best for long videos, not single images."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 19,
+      "type": "SeedVR2TorchCompileSettings",
+      "pos": [
+        -370,
+        400
+      ],
+      "size": [
+        310,
+        180
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 4,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "TORCH_COMPILE_ARGS",
+          "type": "TORCH_COMPILE_ARGS",
+          "links": [
+            18,
+            19
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "seedvr2_videoupscaler",
+        "ver": "690cc39379c1481159ddd451368dbf2295930fc6",
+        "Node name for S&R": "SeedVR2TorchCompileSettings",
+        "aux_id": "ainvfx/ComfyUI-SeedVR2_VideoUpscaler",
+        "widget_ue_connectable": {
+          "backend": true,
+          "mode": true,
+          "fullgraph": true,
+          "dynamic": true,
+          "dynamo_cache_size_limit": true,
+          "dynamo_recompile_limit": true
+        }
+      },
+      "widgets_values": [
+        "inductor",
+        "default",
+        false,
+        false,
+        64,
+        128
+      ]
+    },
+    {
+      "id": 10,
+      "type": "SeedVR2VideoUpscaler",
+      "pos": [
+        610,
+        190
+      ],
+      "size": [
+        270,
+        390
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 16
+        },
+        {
+          "name": "dit",
+          "type": "SEEDVR2_DIT",
+          "link": 11
+        },
+        {
+          "name": "vae",
+          "type": "SEEDVR2_VAE",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            20
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "seedvr2_videoupscaler",
+        "ver": "690cc39379c1481159ddd451368dbf2295930fc6",
+        "Node name for S&R": "SeedVR2VideoUpscaler",
+        "aux_id": "ainvfx/ComfyUI-SeedVR2_VideoUpscaler",
+        "widget_ue_connectable": {
+          "seed": true,
+          "resolution": true,
+          "max_resolution": true,
+          "batch_size": true,
+          "uniform_batch_size": true,
+          "color_correction": true,
+          "temporal_overlap": true,
+          "prepend_frames": true,
+          "input_noise_scale": true,
+          "latent_noise_scale": true,
+          "offload_device": true,
+          "enable_debug": true
+        }
+      },
+      "widgets_values": [
+        6332,
+        "randomize",
+        4096,
+        4096,
+        1,
+        false,
+        "lab",
+        0,
+        0,
+        0,
+        0,
+        "cpu",
+        false
+      ]
+    },
+    {
+      "id": 21,
+      "type": "SaveImageWebsocket",
+      "pos": [
+        1010,
+        190
+      ],
+      "size": [
+        185.929296875,
+        26
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 20
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "widget_ue_connectable": {},
+        "Node name for S&R": "SaveImageWebsocket"
+      }
+    },
+    {
+      "id": 22,
+      "type": "VLOMemoryLoadImage",
+      "pos": [
+        60,
+        -180
+      ],
+      "size": [
+        270,
+        150
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            21
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            22
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "PxTicks/ComfyUI-vlo",
+        "ver": "b9f40e0df896fb96cf036b74c20260711aad6616",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "VLOMemoryLoadImage"
+      },
+      "widgets_values": [
+        "Loading...",
+        false,
+        "refresh",
+        "image"
+      ]
+    },
+    {
+      "id": 14,
+      "type": "SeedVR2LoadDiTModel",
+      "pos": [
+        60,
+        210
+      ],
+      "size": [
+        310,
+        210
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "torch_compile_args",
+          "shape": 7,
+          "type": "TORCH_COMPILE_ARGS",
+          "link": 18
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SEEDVR2_DIT",
+          "type": "SEEDVR2_DIT",
+          "links": [
+            11
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "seedvr2_videoupscaler",
+        "ver": "690cc39379c1481159ddd451368dbf2295930fc6",
+        "Node name for S&R": "SeedVR2LoadDiTModel",
+        "aux_id": "ainvfx/ComfyUI-SeedVR2_VideoUpscaler",
+        "widget_ue_connectable": {
+          "model": true,
+          "device": true,
+          "blocks_to_swap": true,
+          "swap_io_components": true,
+          "offload_device": true,
+          "cache_model": true,
+          "attention_mode": true
+        }
+      },
+      "widgets_values": [
+        "seedvr2_ema_7b_fp16.safetensors",
+        "cuda:0",
+        36,
+        false,
+        "cpu",
+        false,
+        "sdpa"
+      ]
+    }
+  ],
+  "links": [
+    [
+      10,
+      13,
+      0,
+      10,
+      2,
+      "SEEDVR2_VAE"
+    ],
+    [
+      11,
+      14,
+      0,
+      10,
+      1,
+      "SEEDVR2_DIT"
+    ],
+    [
+      16,
+      17,
+      0,
+      10,
+      0,
+      "IMAGE"
+    ],
+    [
+      18,
+      19,
+      0,
+      14,
+      0,
+      "TORCH_COMPILE_ARGS"
+    ],
+    [
+      19,
+      19,
+      0,
+      13,
+      0,
+      "TORCH_COMPILE_ARGS"
+    ],
+    [
+      20,
+      10,
+      0,
+      21,
+      0,
+      "IMAGE"
+    ],
+    [
+      21,
+      22,
+      0,
+      17,
+      0,
+      "IMAGE"
+    ],
+    [
+      22,
+      22,
+      1,
+      17,
+      1,
+      "MASK"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.31774221806156494,
+      "offset": [
+        930.3544624023313,
+        1076.9167681632016
+      ]
+    },
+    "ue_links": [],
+    "frontendVersion": "1.42.15",
+    "VHS_latentpreview": true,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

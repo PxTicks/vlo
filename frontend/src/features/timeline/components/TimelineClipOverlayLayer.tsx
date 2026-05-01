@@ -517,7 +517,15 @@ function TimelineClipOverlayItemCollection({
             item={item}
             style={{
               position: "absolute",
-              left: `calc((${baseLeftPx}px * var(--timeline-zoom, 1)) + ${offsetPx}px)`,
+              // Subtract the parent clip's `--drag-delta-x` so source-time
+              // and layer-time items stay anchored to their committed
+              // content position during a live left-edge resize. The clip's
+              // `left` is shifted by `+var(--drag-delta-x)` while the model
+              // is unchanged, so without this cancellation the marker would
+              // ride along with the clip and snap back only on commit.
+              // Same trick used by ThumbnailCanvas to keep thumbnails
+              // screen-stable during a crop.
+              left: `calc((${baseLeftPx}px * var(--timeline-zoom, 1)) + ${offsetPx}px - var(--drag-delta-x, 0px))`,
               top: `calc(${top} + ${verticalOffsetPx}px)`,
               transform: `translate(calc(-50% + var(--overlay-drag-dx, 0px)), ${translateY})`,
             }}

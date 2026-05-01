@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { TimelineClip } from "../../types/TimelineTypes";
 
 export type TimelineClipOverlayVisibility = "always" | "selected";
@@ -18,6 +18,7 @@ export interface TimelineSourceTimeOverlayPlacement {
   sourceTimeTicks: number;
   lane: TimelineClipOverlayLane;
   offsetPx: number;
+  verticalOffsetPx: number;
 }
 
 export interface TimelineLayerTimeOverlayPlacement {
@@ -26,6 +27,7 @@ export interface TimelineLayerTimeOverlayPlacement {
   layerInputTicks: number;
   lane: TimelineClipOverlayLane;
   offsetPx: number;
+  verticalOffsetPx: number;
 }
 
 export type TimelineClipOverlayPlacement =
@@ -42,6 +44,9 @@ export interface TimelineClipOverlayRenderContext {
 export interface TimelineClipOverlayDragContext
   extends TimelineClipOverlayRenderContext {
   event: PointerEvent;
+  /** The overlay item's root DOM element. Use this for direct DOM
+   *  effects during drag (e.g. setting CSS variables). */
+  targetElement: HTMLElement;
   clipLocalX: number;
   visualTimeTicks: number;
   sourceTimeTicks: number;
@@ -63,6 +68,7 @@ export interface TimelineClipOverlayItem {
   placement: TimelineClipOverlayPlacement;
   minClipWidthPx?: number;
   onClick?: () => void;
+  onContextMenu?: (event: ReactMouseEvent<HTMLDivElement>) => void;
   drag?: TimelineClipOverlayItemDrag;
 }
 
@@ -84,6 +90,7 @@ interface TimelineClipOverlayItemBaseInput {
   visibility?: TimelineClipOverlayVisibility;
   minClipWidthPx?: number;
   onClick?: () => void;
+  onContextMenu?: (event: ReactMouseEvent<HTMLDivElement>) => void;
   drag?: TimelineClipOverlayItemDrag;
 }
 
@@ -100,6 +107,7 @@ interface CreateSourceTimeOverlayItemInput
   sourceTimeTicks: number;
   lane?: TimelineClipOverlayLane;
   offsetPx?: number;
+  verticalOffsetPx?: number;
 }
 
 interface CreateLayerTimeOverlayItemInput
@@ -108,6 +116,7 @@ interface CreateLayerTimeOverlayItemInput
   layerInputTicks: number;
   lane?: TimelineClipOverlayLane;
   offsetPx?: number;
+  verticalOffsetPx?: number;
 }
 
 function withSharedDefaults(
@@ -128,6 +137,7 @@ export function createEndpointOverlayItem(
     visibility: input.visibility ?? "always",
     minClipWidthPx: input.minClipWidthPx,
     onClick: input.onClick,
+    onContextMenu: input.onContextMenu,
     drag: input.drag,
     placement: {
       kind: "endpoint",
@@ -148,12 +158,14 @@ export function createSourceTimeOverlayItem(
     visibility: input.visibility ?? "always",
     minClipWidthPx: input.minClipWidthPx,
     onClick: input.onClick,
+    onContextMenu: input.onContextMenu,
     drag: input.drag,
     placement: {
       kind: "sourceTime",
       sourceTimeTicks: input.sourceTimeTicks,
       lane: input.lane ?? "middle",
       offsetPx: input.offsetPx ?? 0,
+      verticalOffsetPx: input.verticalOffsetPx ?? 0,
     },
   });
 }
@@ -167,6 +179,7 @@ export function createLayerTimeOverlayItem(
     visibility: input.visibility ?? "always",
     minClipWidthPx: input.minClipWidthPx,
     onClick: input.onClick,
+    onContextMenu: input.onContextMenu,
     drag: input.drag,
     placement: {
       kind: "layerTime",
@@ -174,6 +187,7 @@ export function createLayerTimeOverlayItem(
       layerInputTicks: input.layerInputTicks,
       lane: input.lane ?? "middle",
       offsetPx: input.offsetPx ?? 0,
+      verticalOffsetPx: input.verticalOffsetPx ?? 0,
     },
   });
 }

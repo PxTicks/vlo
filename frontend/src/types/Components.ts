@@ -97,13 +97,30 @@ export type MaskCompositionComponent = ComponentBase<
 >;
 
 // ---------------------------------------------------------------------------
+// markers: list of source-time-encoded markers carried with the clip
+// ---------------------------------------------------------------------------
+
+export interface MarkerEntry {
+  id: string;
+  sourceTimeTicks: number;
+  name?: string;
+}
+
+export interface MarkersComponentParameters {
+  markers: MarkerEntry[];
+}
+
+export type MarkersComponent = ComponentBase<"markers", MarkersComponentParameters>;
+
+// ---------------------------------------------------------------------------
 // Discriminated union
 // ---------------------------------------------------------------------------
 
 export type Component =
   | RangeMaskComponent
   | MaskRefComponent
-  | MaskCompositionComponent;
+  | MaskCompositionComponent
+  | MarkersComponent;
 
 export type ComponentType = Component["type"];
 

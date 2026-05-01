@@ -3,10 +3,18 @@ import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
 import VerticalAlignCenterIcon from "@mui/icons-material/VerticalAlignCenter";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useTimelineStore } from "../useTimelineStore";
 import { playbackClock } from "../../player/services/PlaybackClock";
+import { useProjectStore } from "../../project/useProjectStore";
+import { calculateClipTime } from "../../transformations";
+import { getTicksPerFrame, snapTickToFrame } from "../../timelineSelection";
+import type {
+  MarkerEntry,
+  MarkersComponent,
+} from "../../../types/Components";
 import { MIN_ZOOM, MAX_ZOOM } from "../constants";
 
 export const TimelineToolbar = () => {
@@ -51,6 +59,97 @@ export const TimelineToolbar = () => {
               fontSize="small"
               sx={{ transform: "rotate(90deg)" }}
             />
+          </IconButton>
+        </Tooltip>
+
+        <Tooltip title="Add Marker at Playhead">
+          <IconButton
+            size="small"
+            data-testid="timeline-add-marker"
+            aria-label="Add marker at playhead"
+            onClick={() => {
+              const fps = useProjectStore.getState().config.fps;
+              const ticksPerFrame = getTicksPerFrame(fps);
+              const snappedTick = snapTickToFrame(
+                playbackClock.time,
+                ticksPerFrame,
+              );
+
+              const state = useTimelineStore.getState();
+              let targetIds = state.selectedClipIds.filter((id) => {
+                const clip = state.clips.find((candidate) => candidate.id === id);
+                return (
+                  clip &&
+                  clip.type !== "mask" &&
+                  clip.start <= snappedTick &&
+                  clip.start + clip.timelineDuration > snappedTick
+                );
+              });
+
+              if (targetIds.length === 0) {
+                targetIds = state.clips
+                  .filter(
+                    (clip) =>
+                      clip.type !== "mask" &&
+                      clip.start <= snappedTick &&
+                      clip.start + clip.timelineDuration > snappedTick,
+                  )
+                  .map((clip) => clip.id);
+              }
+
+              targetIds.forEach((id) => {
+                const clip = useTimelineStore
+                  .getState()
+                  .clips.find((candidate) => candidate.id === id);
+                if (!clip || clip.type === "mask") return;
+
+                const localVisualTicks = snappedTick - clip.start;
+                const sourceTimeTicks = calculateClipTime(
+                  clip,
+                  localVisualTicks,
+                );
+
+                const markersComponent = (clip.components ?? []).find(
+                  (component): component is MarkersComponent =>
+                    component.type === "markers",
+                );
+
+                const newMarker: MarkerEntry = {
+                  id: crypto.randomUUID(),
+                  sourceTimeTicks,
+                };
+
+                if (markersComponent) {
+                  useTimelineStore.getState().updateClipComponent(
+                    id,
+                    markersComponent.id,
+                    (component) => {
+                      if (component.type !== "markers") return component;
+                      return {
+                        ...component,
+                        parameters: {
+                          ...component.parameters,
+                          markers: [
+                            ...component.parameters.markers,
+                            newMarker,
+                          ],
+                        },
+                      };
+                    },
+                  );
+                } else {
+                  const newComponent: MarkersComponent = {
+                    id: crypto.randomUUID(),
+                    type: "markers",
+                    parameters: { markers: [newMarker] },
+                  };
+                  useTimelineStore.getState().addClipComponent(id, newComponent);
+                }
+              });
+            }}
+            sx={{ color: "#fbc02d" }}
+          >
+            <ArrowDropDownIcon fontSize="small" />
           </IconButton>
         </Tooltip>
 

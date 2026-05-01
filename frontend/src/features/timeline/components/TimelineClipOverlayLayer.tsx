@@ -134,6 +134,7 @@ function buildDragContext(
   isSelected: boolean,
   item: TimelineClipOverlayItem,
   event: PointerEvent,
+  targetElement: HTMLElement,
   startClipLocalX: number,
   startVisualTimeTicks: number,
   startSourceTimeTicks: number,
@@ -146,6 +147,7 @@ function buildDragContext(
   return {
     ...createRenderContext(clip, isSelected, item),
     event,
+    targetElement,
     clipLocalX,
     visualTimeTicks,
     sourceTimeTicks,
@@ -175,7 +177,10 @@ function TimelineClipOverlayItemNode({
   item,
   style,
 }: TimelineClipOverlayItemNodeProps) {
-  const isInteractive = item.onClick !== undefined || item.drag !== undefined;
+  const isInteractive =
+    item.onClick !== undefined ||
+    item.drag !== undefined ||
+    item.onContextMenu !== undefined;
   const zoomScale = useTimelineViewStore((state) =>
     item.drag ? state.zoomScale : 1,
   );
@@ -216,6 +221,7 @@ function TimelineClipOverlayItemNode({
           isSelected,
           item,
           event.nativeEvent,
+          event.currentTarget,
           clipLocalX,
           visualTimeTicks,
           sourceTimeTicks,
@@ -250,6 +256,7 @@ function TimelineClipOverlayItemNode({
         isSelected,
         item,
         event.nativeEvent,
+        event.currentTarget,
         dragStart.clipLocalX,
         dragStart.visualTimeTicks,
         dragStart.sourceTimeTicks,
@@ -279,6 +286,7 @@ function TimelineClipOverlayItemNode({
         isSelected,
         item,
         event.nativeEvent,
+        event.currentTarget,
         dragStart.clipLocalX,
         dragStart.visualTimeTicks,
         dragStart.sourceTimeTicks,
@@ -304,6 +312,7 @@ function TimelineClipOverlayItemNode({
         isSelected,
         item,
         event.nativeEvent,
+        event.currentTarget,
         dragStart.clipLocalX,
         dragStart.visualTimeTicks,
         dragStart.sourceTimeTicks,
@@ -313,6 +322,13 @@ function TimelineClipOverlayItemNode({
     );
 
     dragStartRef.current = null;
+  };
+
+  const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!item.onContextMenu) return;
+    event.preventDefault();
+    event.stopPropagation();
+    item.onContextMenu(event);
   };
 
   const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -339,6 +355,7 @@ function TimelineClipOverlayItemNode({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       style={style}
       sx={{
         pointerEvents: isInteractive ? "auto" : "none",
@@ -472,10 +489,12 @@ function TimelineClipOverlayItemCollection({
         const { top, translateY } = getLanePosition(placement.lane);
         let visualTicks: number;
         let offsetPx: number;
+        let verticalOffsetPx: number;
 
         if (placement.kind === "sourceTime") {
           visualTicks = mapSourceTimeToVisualTime(clip, placement.sourceTimeTicks);
           offsetPx = placement.offsetPx;
+          verticalOffsetPx = placement.verticalOffsetPx;
         } else if (placement.kind === "layerTime") {
           visualTicks = mapLayerInputToVisualTime(
             clip,
@@ -483,6 +502,7 @@ function TimelineClipOverlayItemCollection({
             placement.layerInputTicks,
           );
           offsetPx = placement.offsetPx;
+          verticalOffsetPx = placement.verticalOffsetPx;
         } else {
           return null;
         }
@@ -498,8 +518,8 @@ function TimelineClipOverlayItemCollection({
             style={{
               position: "absolute",
               left: `calc((${baseLeftPx}px * var(--timeline-zoom, 1)) + ${offsetPx}px)`,
-              top,
-              transform: `translate(-50%, ${translateY})`,
+              top: `calc(${top} + ${verticalOffsetPx}px)`,
+              transform: `translate(calc(-50% + var(--overlay-drag-dx, 0px)), ${translateY})`,
             }}
           />
         );

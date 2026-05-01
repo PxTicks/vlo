@@ -2,25 +2,16 @@
   "version": 1,
   "groups": [
     {
-      "id": "default",
-      "name": "Default",
+      "id": "generate",
+      "name": "Generate",
       "order": 0,
-      "workflow_ids": [
-        "video_ltx2_3_i2v.json",
-        "video_wan2_2_14B_flfv2v_vlo.json",
-        "vlo_VACE_inpaint.json",
-        "wan2_2_flf2v.json",
-        "wan2_2_14B.json"
-      ]
+      "workflow_ids": ["vlo_ltx2_3.json", "vlo_wan2_2.json"]
     },
     {
-      "id": "core",
-      "name": "Core",
+      "id": "edit",
+      "name": "Inpaint",
       "order": 1,
-      "workflow_ids": [
-        "video_ltx2_3_flf2v.json",
-        "video_ltx2_3_i2v_t2v_basic.json"
-      ]
+      "workflow_ids": ["vlo_VACE_inpaint.json", "vlo_ltx2_3_inpaint.json"]
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "name": "VACE inpaint/stitch (vlo)",
+  "name": "VACE inpaint/stitch (vlo) test",
   "nodes": {
     "98": {
       "selection": {
@@ -9,12 +9,88 @@
         "max_frames": 81
       }
     },
-    "101": {}
+    "101": {},
+    "114": {
+      "widgets": {
+        "switch": {
+          "hidden": true,
+          "value_type": "boolean"
+        }
+      }
+    },
+    "115": {
+      "widgets": {
+        "steps": {
+          "hidden": true,
+          "value_type": "int",
+          "min": 1
+        },
+        "start_at_step": {
+          "hidden": true,
+          "value_type": "int",
+          "min": 0
+        }
+      }
+    }
   },
   "validation": {
     "inputs": []
   },
-  "derived_widgets": [],
+  "derived_widgets": [
+    {
+      "id": "single_sampler_denoise",
+      "kind": "single_sampler_denoise",
+      "label": "Denoise",
+      "total_steps": {
+        "node_id": "115",
+        "param": "steps"
+      },
+      "start_step": {
+        "node_id": "115",
+        "param": "start_at_step"
+      }
+    }
+  ],
+  "effect_switches": [
+    {
+      "id": "single_sampler_denoise",
+      "cases": [
+        {
+          "when": {
+            "kind": "compare",
+            "ref": {
+              "kind": "derived_widget",
+              "derived_widget_id": "single_sampler_denoise"
+            },
+            "operator": "eq",
+            "value": 1
+          },
+          "bypass": [
+            "113",
+            "114"
+          ]
+        },
+        {
+          "when": {
+            "kind": "compare",
+            "ref": {
+              "kind": "derived_widget",
+              "derived_widget_id": "single_sampler_denoise"
+            },
+            "operator": "lt",
+            "value": 1
+          },
+          "set_widgets": [
+            {
+              "node_id": "114",
+              "widget": "switch",
+              "value": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "slots": {},
   "pipeline": [
     {

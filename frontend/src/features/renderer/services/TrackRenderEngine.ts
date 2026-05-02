@@ -161,6 +161,14 @@ export class TrackRenderEngine {
         void this.resyncMasksForLatestAssetMaskFrame();
       },
     );
+    if (renderer) {
+      // Brush masks render their painted bitmap into a Pixi RenderTexture via
+      // this shared renderer. Wiring it once here keeps the registry decoupled
+      // from React.
+      void import("../../masks/runtime/brushBufferRegistry").then(
+        ({ setBrushRenderer }) => setBrushRenderer(renderer),
+      );
+    }
     this.container.addChild(this.sprite);
     this.container.zIndex = zIndex;
   }
@@ -233,20 +241,24 @@ export class TrackRenderEngine {
 
     // Sync masks from first-class mask clips
     const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
+
+    const asset = activeClip.assetId ? assetById.get(activeClip.assetId) : undefined;
+    const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
+
     this.latestMaskSyncContext = {
       maskClips,
       clip: activeClip,
       logicalDimensions,
       rawTimeTicks: rawTimeSeconds,
       assetsById: assetById,
-      fps,
+      fps: clipFps,
     };
 
     // 6. Send Render Request
     // Optimization: Don't request same frame twice (Live Mode only)
     // For Export, we usually force request or trust the caller loop
-    const renderTimeSeconds = snapFrameTimeSeconds(localTimeSeconds, fps);
-    const currentFrameIndex = this.getFrameIndex(renderTimeSeconds, fps);
+    const renderTimeSeconds = snapFrameTimeSeconds(localTimeSeconds, clipFps);
+    const currentFrameIndex = this.getFrameIndex(renderTimeSeconds, clipFps);
 
     const shouldSend =
       this.shouldRequestFrame(
@@ -284,7 +296,7 @@ export class TrackRenderEngine {
           logicalDimensions,
           rawTimeSeconds,
           assetById,
-          { fps, skipSam2FrameRender: true },
+          { fps: clipFps, skipSam2FrameRender: true },
         )
         .catch((error) => {
           console.warn("Failed to sync live masks", error);
@@ -404,8 +416,6 @@ export class TrackRenderEngine {
       maskClips,
       rawTimeSeconds,
     } = request;
-    const renderTimeSeconds = snapFrameTimeSeconds(localTimeSeconds, fps);
-    const currentFrameIndex = this.getFrameIndex(renderTimeSeconds, fps);
     for (
       let attempt = 0;
       attempt <= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS;
@@ -419,6 +429,12 @@ export class TrackRenderEngine {
         nowMs,
         false,
       );
+
+      const asset = activeClip.assetId ? assetById.get(activeClip.assetId) : undefined;
+      const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
+
+      const renderTimeSeconds = snapFrameTimeSeconds(localTimeSeconds, clipFps);
+      const currentFrameIndex = this.getFrameIndex(renderTimeSeconds, clipFps);
 
       this.invalidateLivePipeline();
 
@@ -450,7 +466,7 @@ export class TrackRenderEngine {
               logicalDimensions,
               rawTimeSeconds,
               assetById,
-              { fps, waitForSam2: true },
+              { fps: clipFps, waitForSam2: true },
             ),
           ]);
 
@@ -464,7 +480,7 @@ export class TrackRenderEngine {
                 logicalDimensions,
                 rawTimeSeconds,
                 assetById,
-                fps,
+                clipFps,
               );
             }
           } else if (this.currentTextureClipId !== activeClip.id) {
@@ -500,7 +516,7 @@ export class TrackRenderEngine {
             logicalDimensions,
             rawTimeSeconds,
             assetById,
-            { fps, skipSam2FrameRender: true },
+            { fps: clipFps, skipSam2FrameRender: true },
           );
         } catch (error) {
           console.warn("Failed to sync synchronized playback masks", error);
@@ -534,6 +550,9 @@ export class TrackRenderEngine {
   ): Promise<void> {
     this.invalidateLivePipeline();
 
+    const asset = activeClip.assetId ? assetsById.get(activeClip.assetId) : undefined;
+    const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : (options.fps ?? 30);
+
     const rawTime = currentTime - activeClip.start;
     await this.maskController.syncMaskClips(
       maskClips,
@@ -541,7 +560,7 @@ export class TrackRenderEngine {
       logicalDimensions,
       rawTime,
       assetsById,
-      { fps: options.fps, waitForSam2: true },
+      { fps: clipFps, waitForSam2: true },
     );
 
     return new Promise((resolve, reject) => {
@@ -575,7 +594,7 @@ export class TrackRenderEngine {
               {
                 maskClips,
                 assetsById,
-                fps: options.fps,
+                fps: clipFps,
               },
             );
             resolve();
@@ -607,8 +626,8 @@ export class TrackRenderEngine {
 
       const localTime = calculatePlayerFrameTime(activeClip, currentTime);
       const renderTime =
-        typeof options.fps === "number" && options.fps > 0
-          ? snapFrameTimeSeconds(localTime, options.fps)
+        typeof clipFps === "number" && clipFps > 0
+          ? snapFrameTimeSeconds(localTime, clipFps)
           : localTime;
 
       this.worker.postMessage({

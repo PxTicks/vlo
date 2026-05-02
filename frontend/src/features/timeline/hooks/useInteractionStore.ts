@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import type { BaseClip } from "../../../types/TimelineTypes";
 import { useTimelineStore } from "../useTimelineStore";
+import { mapSourceTimeToVisualTime } from "../../transformations";
 
 export type InteractionOperation = "move" | "resize_left" | "resize_right";
 
@@ -70,6 +71,22 @@ const buildSnapPoints = (clip: BaseClip, operation: InteractionOperation) => {
     if (excludedIds.has(timelineClip.id)) return;
     points.add(Math.round(timelineClip.start));
     points.add(Math.round(timelineClip.start + timelineClip.timelineDuration));
+
+    const components = timelineClip.components ?? [];
+    components.forEach((component) => {
+      if (component.type !== "markers") return;
+      if (component.isEnabled === false) return;
+      component.parameters.markers.forEach((marker) => {
+        const visualTicks = mapSourceTimeToVisualTime(
+          timelineClip,
+          marker.sourceTimeTicks,
+        );
+        if (visualTicks < 0 || visualTicks > timelineClip.timelineDuration) {
+          return;
+        }
+        points.add(Math.round(timelineClip.start + visualTicks));
+      });
+    });
   });
 
   return [...points].sort((a, b) => a - b);

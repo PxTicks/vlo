@@ -110,6 +110,11 @@ export type CreationMetadata =
       sourceHash: string;
     }
   | {
+      source: "brush_mask";
+      parentClipId: string;
+      maskClipId: string;
+    }
+  | {
       source: "generation_mask";
       parentGeneratedAssetId: string;
     };

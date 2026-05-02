@@ -24,6 +24,8 @@ import {
   parseMaskClipId,
   selectMaskClipsForParent,
 } from "../../timeline";
+import { clearBrushBuffer } from "../runtime/brushBufferRegistry";
+import { flushBrushMaskCommit } from "../runtime/brushAssetSync";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useExtractStore } from "../../player/useExtractStore";
 import { useMaskViewStore } from "../store/useMaskViewStore";
@@ -170,6 +172,12 @@ export interface UseMaskPanelResult {
   sam2GenerateError: string | null;
   isSam2Dirty: boolean;
   hasSam2MaskAsset: boolean;
+  brushTool: "paint" | "erase" | "gizmo";
+  setBrushTool: (tool: "paint" | "erase" | "gizmo") => void;
+  brushRadius: number;
+  setBrushRadius: (radius: number) => void;
+  hasBrushAsset: boolean;
+  clearBrush: () => void | Promise<void>;
   duplicateMask: (maskId: string) => void;
   deleteMask: (maskId: string) => void;
   deleteSelectedMask: () => void;
@@ -263,6 +271,10 @@ export function useMaskPanel(): UseMaskPanelResult {
   const setSelectedMask = useMaskViewStore((state) => state.setSelectedMask);
   const sam2PointMode = useMaskViewStore((state) => state.sam2PointMode);
   const setSam2PointMode = useMaskViewStore((state) => state.setSam2PointMode);
+  const brushTool = useMaskViewStore((state) => state.brushTool);
+  const setBrushTool = useMaskViewStore((state) => state.setBrushTool);
+  const brushRadius = useMaskViewStore((state) => state.brushRadius);
+  const setBrushRadius = useMaskViewStore((state) => state.setBrushRadius);
 
   // Read mask clips from the store via parent's mask clip components
   const masks = useTimelineStore(
@@ -536,8 +548,16 @@ export function useMaskPanel(): UseMaskPanelResult {
     (shape: ClipMaskType) => {
       if (!selectedClipId || isAddDisabled) return;
 
+      // Brush canvas dimensions are finalized lazily in the interaction
+      // controller from the parent clip's content size on first paint, so
+      // the placeholder here just needs to be > 0.
       const newMask = createMask(shape, {
-        parameters: shape === "sam2" ? { baseWidth: 1, baseHeight: 1 } : { baseWidth: 200, baseHeight: 200 },
+        parameters:
+          shape === "sam2"
+            ? { baseWidth: 1, baseHeight: 1 }
+            : shape === "brush"
+              ? { baseWidth: 1, baseHeight: 1 }
+              : { baseWidth: 200, baseHeight: 200 },
         maskPoints: shape === "sam2" ? [] : undefined,
       });
 
@@ -1413,6 +1433,28 @@ export function useMaskPanel(): UseMaskPanelResult {
     selectedMask.maskType === "sam2" &&
     !!selectedMask.sam2MaskAssetId;
 
+  const hasBrushAsset =
+    selectedMask?.type === "mask" &&
+    selectedMask.maskType === "brush" &&
+    !!selectedMask.brushMaskAssetId;
+
+  const clearBrush = useCallback(async () => {
+    if (!selectedClipId || !selectedMaskId) return;
+    if (
+      !selectedMask ||
+      selectedMask.type !== "mask" ||
+      selectedMask.maskType !== "brush"
+    ) {
+      return;
+    }
+
+    clearBrushBuffer(selectedMask.id);
+    // Force any debounced stroke flush to settle now (with the cleared buffer
+    // state) so the asset/bounds are removed immediately rather than waiting
+    // for the debounce window to fire.
+    await flushBrushMaskCommit(selectedMask.id);
+  }, [selectedClipId, selectedMask, selectedMaskId]);
+
   return {
     selectedClipId,
     masks,
@@ -1454,6 +1496,12 @@ export function useMaskPanel(): UseMaskPanelResult {
     sam2GenerateError,
     isSam2Dirty,
     hasSam2MaskAsset,
+    brushTool,
+    setBrushTool,
+    brushRadius,
+    setBrushRadius,
+    hasBrushAsset,
+    clearBrush,
     duplicateMask,
     deleteMask,
     deleteSelectedMask,

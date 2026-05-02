@@ -22,6 +22,10 @@ export interface Sam2LivePreview {
 }
 
 export type Sam2PointMode = "add" | "remove";
+export type BrushTool = "paint" | "erase" | "gizmo";
+export const DEFAULT_BRUSH_RADIUS = 32;
+export const MIN_BRUSH_RADIUS = 2;
+export const MAX_BRUSH_RADIUS = 256;
 
 interface MaskViewState {
   selectedMaskByClipId: Record<string, string | undefined>;
@@ -31,6 +35,8 @@ interface MaskViewState {
   interactionContext: MaskInteractionContext | null;
   sam2LivePreviewByClipId: Record<string, Sam2LivePreview | undefined>;
   sam2PointMode: Sam2PointMode;
+  brushTool: BrushTool;
+  brushRadius: number;
   setSelectedMask: (clipId: string, maskId: string | null) => void;
   setSam2EditorMask: (clipId: string, maskId: string | null) => void;
   setMaskTabActive: (isActive: boolean) => void;
@@ -38,6 +44,8 @@ interface MaskViewState {
   clearPendingDraw: () => void;
   setInteractionContext: (context: MaskInteractionContext | null) => void;
   setSam2PointMode: (mode: Sam2PointMode) => void;
+  setBrushTool: (tool: BrushTool) => void;
+  setBrushRadius: (radius: number) => void;
   setSam2LivePreview: (
     clipId: string,
     maskId: string,
@@ -59,6 +67,8 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
   interactionContext: null,
   sam2LivePreviewByClipId: {},
   sam2PointMode: "add",
+  brushTool: "paint",
+  brushRadius: DEFAULT_BRUSH_RADIUS,
 
   setSelectedMask: (clipId, maskId) =>
     set((state) => {
@@ -112,6 +122,16 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
   setInteractionContext: (context) => set({ interactionContext: context }),
 
   setSam2PointMode: (mode) => set({ sam2PointMode: mode }),
+
+  setBrushTool: (tool) => set({ brushTool: tool }),
+
+  setBrushRadius: (radius) =>
+    set({
+      brushRadius: Math.max(
+        MIN_BRUSH_RADIUS,
+        Math.min(MAX_BRUSH_RADIUS, Math.round(radius)),
+      ),
+    }),
 
   setSam2LivePreview: (
     clipId,

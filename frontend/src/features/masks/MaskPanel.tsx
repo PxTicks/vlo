@@ -32,6 +32,7 @@ import {
   useTransformationController,
 } from "../transformations";
 import { Sam2MaskPanel } from "./components/Sam2MaskPanel";
+import { BrushMaskPanel } from "./components/BrushMaskPanel";
 import { Sam2ModelDownloadOverlay } from "./components/Sam2ModelDownloadOverlay";
 import { MaskEquationBuilder } from "./components/MaskEquationBuilder";
 import { MaskActiveRangeSection } from "./components/MaskActiveRangeSection";
@@ -159,6 +160,12 @@ export const MaskPanel = memo(function MaskPanel() {
     sam2GenerateError,
     isSam2Dirty,
     hasSam2MaskAsset,
+    brushTool,
+    setBrushTool,
+    brushRadius,
+    setBrushRadius,
+    hasBrushAsset,
+    clearBrush,
     duplicateMask,
     deleteMask,
     deleteSelectedMask,
@@ -234,6 +241,8 @@ export const MaskPanel = memo(function MaskPanel() {
   // Compute this before the section hook to pass an empty sectionOrder.
   const selectedMaskIsSam2 =
     selectedMask?.type === "mask" && selectedMask.maskType === "sam2";
+  const selectedMaskIsBrush =
+    selectedMask?.type === "mask" && selectedMask.maskType === "brush";
 
   const sharedSectionOrder = useMemo(
     () =>
@@ -242,14 +251,15 @@ export const MaskPanel = memo(function MaskPanel() {
       ),
     [sharedMaskOperationDefinitions],
   );
+  const brushHidesLayoutSections = selectedMaskIsBrush && brushTool !== "gizmo";
   const selectedMaskSectionOrder = useMemo(
     () =>
-      selectedMaskIsSam2
+      selectedMaskIsSam2 || brushHidesLayoutSections
         ? []
         : layoutDefinitions.map((definition) =>
             getDefaultSectionId(definition.type),
           ),
-    [layoutDefinitions, selectedMaskIsSam2],
+    [brushHidesLayoutSections, layoutDefinitions, selectedMaskIsSam2],
   );
 
   const {
@@ -350,7 +360,67 @@ export const MaskPanel = memo(function MaskPanel() {
             </Button>
           </Box>
 
-          {selectedMaskIsSam2 ? (
+          {selectedMaskIsBrush ? (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              <Box sx={{ px: 2 }}>
+                <TextField
+                  label="Mask Name"
+                  size="small"
+                  fullWidth
+                  value={selectedMaskNameValue}
+                  onChange={(event) => setMaskName(event.target.value)}
+                />
+              </Box>
+              <BrushMaskPanel
+                maskMode={selectedMaskMode}
+                maskInverted={maskInverted}
+                maskLabel={selectedMaskLabel}
+                brushTool={brushTool}
+                brushRadius={brushRadius}
+                hasBrushAsset={hasBrushAsset}
+                onSetBrushTool={setBrushTool}
+                onSetBrushRadius={setBrushRadius}
+                onClearBrush={clearBrush}
+                onSetMaskMode={setMaskMode}
+                onSetMaskInverted={setMaskInverted}
+              />
+              {brushTool === "gizmo" && (
+                <DefaultTransformationSections
+                  definitions={layoutDefinitions}
+                  activeTransforms={selectedMaskTransforms}
+                  activeContextId={selectedMaskContextId}
+                  activeSectionId={activeSelectedMaskSectionId}
+                  timelineClip={selectedMaskTimelineClip}
+                  onCommit={handleSelectedMaskCommit}
+                  onSetDefaultGroupsEnabled={handleSetSelectedMaskGroupsEnabled}
+                  onUpdateTransform={updateSelectedMaskTransform}
+                  onSetTransforms={setSelectedMaskTransforms}
+                  onActivateSection={activateSelectedMaskSection}
+                />
+              )}
+              <Box sx={{ px: 2, pb: 2 }}>
+                <Divider sx={{ borderColor: "#2a2d33", mb: 2 }} />
+                <Box sx={{ mb: 2 }}>
+                  <MaskActiveRangeSection
+                    activeRange={selectedMaskActiveRange}
+                    onAdd={startSetSelectedMaskActiveRange}
+                    onEdit={startSetSelectedMaskActiveRange}
+                    onRemove={clearSelectedMaskActiveRange}
+                  />
+                </Box>
+                <Button
+                  data-testid="mask-delete-button"
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteOutline fontSize="small" />}
+                  onClick={deleteSelectedMask}
+                  sx={{ textTransform: "none", width: "100%" }}
+                >
+                  Delete Mask
+                </Button>
+              </Box>
+            </Box>
+          ) : selectedMaskIsSam2 ? (
             <>
               <Box sx={{ px: 2, pb: 1 }}>
                 <TextField

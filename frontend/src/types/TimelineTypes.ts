@@ -34,7 +34,13 @@ export interface ClipTransform {
   keyframeTimes?: number[];
 }
 
-export type ClipMaskType = "circle" | "rectangle" | "triangle" | "sam2" | "generation";
+export type ClipMaskType =
+  | "circle"
+  | "rectangle"
+  | "triangle"
+  | "sam2"
+  | "generation"
+  | "brush";
 export type ClipMaskMode = "apply" | "preview";
 export type MaskBooleanOperator = "union" | "intersect" | "subtract";
 
@@ -57,6 +63,18 @@ export type MaskBooleanExpression =
 export interface ClipMaskParameters {
   baseWidth: number;
   baseHeight: number;
+}
+
+/**
+ * Tight bounding box (in brush-canvas coordinates) of the painted region for
+ * a brush mask. Used to size the gizmo and the asset-mask sprite to just the
+ * painted area rather than the full canvas extent.
+ */
+export interface BrushPaintedBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface ClipMaskPoint {
@@ -94,6 +112,14 @@ export interface ClipMask extends ClipComponentBase<ClipMaskParameters> {
   sam2LastGeneratedAt?: number;
   /** Linked mask asset from generation pipeline. */
   generationMaskAssetId?: string;
+  /** Linked PNG asset for brush masks (red-on-black bitmap). */
+  brushMaskAssetId?: string;
+  /**
+   * Painted region bounds (brush-canvas coords) for brush masks. Drives the
+   * gizmo size and the composited asset-mask sprite's content rect so the
+   * mask wraps the painted region rather than the full canvas.
+   */
+  brushPaintedBounds?: BrushPaintedBounds;
   /**
    * When set, the mask is only active inside this source-time window.
    * Absent means active for the entire clip.
@@ -165,6 +191,13 @@ export interface MaskTimelineClip extends TimelineClipBase {
   sam2LastGeneratedAt?: number;
   /** Linked mask asset from generation pipeline. */
   generationMaskAssetId?: string;
+  /** Linked PNG asset for brush masks (red-on-black bitmap). */
+  brushMaskAssetId?: string;
+  /**
+   * Painted region bounds (brush-canvas coords) for brush masks. Persisted
+   * alongside the PNG so reloads can restore the gizmo extent.
+   */
+  brushPaintedBounds?: BrushPaintedBounds;
   /**
    * When set, the mask is only active inside this source-time window
    * (parent-clip source ticks). Outside the window the mask is treated as a

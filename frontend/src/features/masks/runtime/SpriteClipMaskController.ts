@@ -46,6 +46,10 @@ import {
   snapFrameTimeSeconds,
 } from "../../renderer";
 import { MaskVideoFramePlayer } from "./MaskVideoFramePlayer";
+import { BrushBufferMaskSource } from "./BrushBufferMaskSource";
+import { getBrushBuffer } from "./brushBufferRegistry";
+
+type AssetMaskFrameSource = MaskVideoFramePlayer | BrushBufferMaskSource;
 
 const MASK_EDGE_BLUR_SCALE = 0.5;
 interface VectorMaskNode {
@@ -63,9 +67,10 @@ interface VectorMaskNode {
 
 interface AssetMaskNode {
   root: Container;
-  player: MaskVideoFramePlayer;
+  player: AssetMaskFrameSource;
   assetId: string;
   thresholdFilter: Filter;
+  kind: "video" | "image";
 }
 
 type MaskApplicationMode = "none" | "regular" | "alpha";
@@ -83,12 +88,34 @@ interface ResolvedMaskCompositeState {
     | null;
 }
 
+/**
+ * Sentinel asset id used for brush masks whose strokes live only in the GPU
+ * buffer (not yet persisted to a PNG). The mask compositor still treats them
+ * as asset-backed so they flow through the sprite + threshold-filter path
+ * uniformly with SAM2 / generation / committed-brush masks.
+ */
+const BRUSH_BUFFER_ASSET_ID_PREFIX = "__brush_buffer__:";
+
+function isBrushBufferAssetId(id: string): boolean {
+  return id.startsWith(BRUSH_BUFFER_ASSET_ID_PREFIX);
+}
+
 function getAssetBackedMaskId(maskClip: MaskTimelineClip): string | null {
   if (maskClip.maskType === "sam2") {
     return maskClip.sam2MaskAssetId ?? null;
   }
   if (maskClip.maskType === "generation") {
     return maskClip.generationMaskAssetId ?? null;
+  }
+  if (maskClip.maskType === "brush") {
+    if (maskClip.brushMaskAssetId) return maskClip.brushMaskAssetId;
+    // Brush masks with live, in-memory strokes still participate in
+    // compositing — fall back to a sentinel so the renderer treats them as
+    // asset-backed even before the PNG is saved.
+    if (getBrushBuffer(maskClip.id)?.paintedBounds) {
+      return `${BRUSH_BUFFER_ASSET_ID_PREFIX}${maskClip.id}`;
+    }
+    return null;
   }
   return null;
 }
@@ -284,13 +311,20 @@ export class SpriteClipMaskController {
         return false;
       }
       const assetMaskId = getAssetBackedMaskId(clip);
-      return assetMaskId === null || assetsById.has(assetMaskId);
+      // Vector masks have no asset id; committed asset masks must have their
+      // bytes loaded; in-memory brush buffers (sentinel ids) always pass.
+      return (
+        assetMaskId === null ||
+        isBrushBufferAssetId(assetMaskId) ||
+        assetsById.has(assetMaskId)
+      );
     });
     const activeVectorMasks = activeMaskClips.filter(
       (clip) =>
         !isAssetBackedMask(clip) &&
         clip.maskType !== "sam2" &&
-        clip.maskType !== "generation",
+        clip.maskType !== "generation" &&
+        clip.maskType !== "brush",
     );
     const activeAssetMasks = activeMaskClips.filter((clip) =>
       isAssetBackedMask(clip),
@@ -301,6 +335,7 @@ export class SpriteClipMaskController {
       activeAssetMasks.map((clip) => ({
         maskId: clip.id,
         assetId: getAssetBackedMaskId(clip) as string,
+        kind: clip.maskType === "brush" ? "image" : "video",
       })),
     );
 
@@ -367,36 +402,46 @@ export class SpriteClipMaskController {
     for (const maskClip of activeAssetMasks) {
       const maskAssetId = getAssetBackedMaskId(maskClip);
       if (!maskAssetId) continue;
-      const asset = assetsById.get(maskAssetId);
       const node = this.assetMaskNodes.get(maskClip.id);
-      if (!asset || !node) continue;
+      if (!node) continue;
+      const isBrushBuffer = isBrushBufferAssetId(maskAssetId);
+      const asset = isBrushBuffer ? null : assetsById.get(maskAssetId);
+      if (!isBrushBuffer && !asset) continue;
       node.root.visible = true;
 
-      if (node.assetId !== asset.id) {
-        node.assetId = asset.id;
-        await node.player.setSource(asset);
+      if (asset) {
+        if (node.assetId !== asset.id) {
+          node.assetId = asset.id;
+          await node.player.setSource(asset);
+        } else {
+          await node.player.setSource(asset);
+        }
       } else {
-        await node.player.setSource(asset);
+        // Brush buffer: no Asset record, sprite is bound to the live render
+        // texture by BrushBufferMaskSource directly.
+        node.assetId = maskAssetId;
       }
 
-      if (!skipSam2FrameRender) {
-        if (waitForSam2) {
-          await node.player.renderAt(requestedMaskTimeSeconds, {
-            strict: true,
-          });
-        } else {
+      if (!isBrushBuffer) {
+        if (!skipSam2FrameRender) {
+          if (waitForSam2) {
+            await node.player.renderAt(requestedMaskTimeSeconds, {
+              strict: true,
+            });
+          } else {
+            void node.player
+              .renderAt(requestedMaskTimeSeconds)
+              .catch((error) => {
+                console.warn("Mask video frame update failed", error);
+              });
+          }
+        } else if (!node.player.hasFrame()) {
           void node.player
             .renderAt(requestedMaskTimeSeconds)
             .catch((error) => {
               console.warn("Mask video frame update failed", error);
             });
         }
-      } else if (!node.player.hasFrame()) {
-        void node.player
-          .renderAt(requestedMaskTimeSeconds)
-          .catch((error) => {
-            console.warn("Mask video frame update failed", error);
-          });
       }
 
       const maskSprite = node.player.sprite;
@@ -1572,7 +1617,7 @@ export class SpriteClipMaskController {
   }
 
   private reconcileAssetMaskNodes(
-    entries: Array<{ maskId: string; assetId: string }>,
+    entries: Array<{ maskId: string; assetId: string; kind: "video" | "image" }>,
   ) {
     const wantedMaskIds = new Set(entries.map((entry) => entry.maskId));
     this.assetMaskNodes.forEach((node, maskId) => {
@@ -1590,12 +1635,30 @@ export class SpriteClipMaskController {
 
     entries.forEach((entry) => {
       const existing = this.assetMaskNodes.get(entry.maskId);
-      if (existing) return;
+      if (existing) {
+        if (existing.kind !== entry.kind) {
+          // Backing kind switched (rare): tear down the old source and rebuild.
+          if (existing.root.parent) {
+            existing.root.removeFromParent();
+          }
+          existing.thresholdFilter.destroy();
+          existing.player.dispose();
+          if (!existing.root.destroyed) {
+            existing.root.destroy({ children: false });
+          }
+          this.assetMaskNodes.delete(entry.maskId);
+        } else {
+          return;
+        }
+      }
       const root = new Container();
-      const player = new MaskVideoFramePlayer(
-        entry.maskId,
-        this.onAssetMaskFrameReady,
-      );
+      const player: AssetMaskFrameSource =
+        entry.kind === "image"
+          ? new BrushBufferMaskSource(
+              entry.maskId,
+              this.onAssetMaskFrameReady,
+            )
+          : new MaskVideoFramePlayer(entry.maskId, this.onAssetMaskFrameReady);
       const thresholdFilter = createMaskBinaryThresholdFilter();
       player.sprite.filters = [thresholdFilter];
       root.addChild(player.sprite);
@@ -1605,6 +1668,7 @@ export class SpriteClipMaskController {
         player,
         assetId: entry.assetId,
         thresholdFilter,
+        kind: entry.kind,
       });
     });
   }

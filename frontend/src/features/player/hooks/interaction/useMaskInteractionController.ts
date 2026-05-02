@@ -52,6 +52,16 @@ import {
 } from "../../../masks/model/maskFactory";
 import { resolveMaskLayoutStateAtTime } from "../../../masks/model/maskTimelineClip";
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
+import {
+  ensureBrushBuffer,
+  getBrushBuffer,
+  hydrateBrushBufferFromUrl,
+  paintBrushDot,
+  paintBrushStroke,
+  subscribeToBrushBuffer,
+} from "../../../masks/runtime/brushBufferRegistry";
+import { scheduleBrushMaskCommit } from "../../../masks/runtime/brushAssetSync";
+import { ensureAssetSourceLoaded, useAssetStore } from "../../../userAssets";
 import { syncContainerTransformToTarget } from "../../../renderer";
 import { useProjectStore } from "../../../project/useProjectStore";
 
@@ -67,7 +77,13 @@ const SAM2_BORDER_COLOR = 0x60a5fa;
 
 const INHERITED_TRANSFORM_TYPES = new Set(["speed"]);
 
-type MaskInteractionMode = "idle" | "draw" | "translate" | "scale" | "rotate";
+type MaskInteractionMode =
+  | "idle"
+  | "draw"
+  | "translate"
+  | "scale"
+  | "rotate"
+  | "brush";
 
 interface MaskLayoutTransformIds {
   position: string | null;
@@ -87,6 +103,16 @@ interface MaskInteractionState {
   initialAngle: number;
   transformIds: MaskLayoutTransformIds;
   didMove: boolean;
+  brush: BrushStrokeState | null;
+}
+
+interface BrushStrokeState {
+  tool: "paint" | "erase";
+  lastCanvasPoint: { x: number; y: number };
+  canvasSize: { width: number; height: number };
+  radius: number;
+  /** Local id of the mask (without the parent clip prefix). */
+  maskLocalId: string;
 }
 
 function createInitialMaskInteractionState(): MaskInteractionState {
@@ -106,6 +132,7 @@ function createInitialMaskInteractionState(): MaskInteractionState {
       rotation: null,
     },
     didMove: false,
+    brush: null,
   };
 }
 
@@ -279,6 +306,8 @@ export function useMaskInteractionController(
   );
   const isMaskTabActive = useMaskViewStore((state) => state.isMaskTabActive);
   const sam2PointMode = useMaskViewStore((state) => state.sam2PointMode);
+  const brushTool = useMaskViewStore((state) => state.brushTool);
+  const brushRadius = useMaskViewStore((state) => state.brushRadius);
   const pendingDrawRequest = useMaskViewStore(
     (state) => state.pendingDrawRequest,
   );
@@ -326,6 +355,14 @@ export function useMaskInteractionController(
     if (!clipOverlayRef.current) return { x: 0, y: 0 };
     return clipOverlayRef.current.toLocal(global);
   }, []);
+
+  const toMaskOverlayLocal = useCallback(
+    (global: { x: number; y: number }) => {
+      if (!maskOverlayRef.current) return { x: 0, y: 0 };
+      return maskOverlayRef.current.toLocal(global);
+    },
+    [],
+  );
 
   const resolveActiveClipContentSize = useCallback(() => {
     const texture = sprite?.texture;
@@ -479,14 +516,49 @@ export function useMaskInteractionController(
       const params = mask.maskParameters ??
         mask.parameters ?? { baseWidth: 1, baseHeight: 1 };
       const shapeType = mask.maskType ?? mask.type ?? "rectangle";
+      const isDraft = mask.id === "draft_mask";
+      const maskMode = (mask as MaskTimelineClip).maskMode;
+
+      if (shapeType === "brush") {
+        // Brush masks override the standard polygon path: the gizmo and the
+        // visible mask outline track the painted bounds inside the canvas,
+        // not the canvas extent itself. Without painted strokes we hide the
+        // graphics so the gizmo collapses to nothing (the user paints first
+        // to make the mask appear).
+        const buffer = mask.id ? getBrushBuffer(mask.id) : null;
+        const bounds = buffer?.paintedBounds ?? null;
+        const canvasW = Math.max(1, params.baseWidth);
+        const canvasH = Math.max(1, params.baseHeight);
+        const signature = bounds
+          ? `${mask.id ?? ""}:brush:${canvasW}x${canvasH}:${bounds.x}:${bounds.y}:${bounds.width}:${bounds.height}`
+          : `${mask.id ?? ""}:brush:${canvasW}x${canvasH}:empty`;
+        if (overlayShapeSignatureRef.current !== signature) {
+          graphics.clear();
+          if (bounds && bounds.width > 0 && bounds.height > 0) {
+            // Convert top-left canvas coords → mask-local (canvas-centered).
+            const x = bounds.x - canvasW / 2;
+            const y = bounds.y - canvasH / 2;
+            // Fill is required for Pixi v8 to register geometry in
+            // getLocalBounds(), which is what SelectionGizmo reads to size
+            // the handles. The fill is hidden by alpha below; the gizmo
+            // border + handles draw on top.
+            graphics
+              .rect(x, y, bounds.width, bounds.height)
+              .fill(0xffffff);
+          }
+          overlayShapeSignatureRef.current = signature;
+        }
+        graphics.visible = !!bounds;
+        graphics.alpha = maskMode === "preview" || isDraft ? 0.35 : 0;
+        return;
+      }
+
       const shapeSignature = `${mask.id ?? ""}:${shapeType}:${params.baseWidth}:${params.baseHeight}`;
       if (overlayShapeSignatureRef.current !== shapeSignature) {
         graphics.clear();
         drawMaskBaseShape(graphics, mask);
         overlayShapeSignatureRef.current = shapeSignature;
       }
-      const isDraft = mask.id === "draft_mask";
-      const maskMode = (mask as MaskTimelineClip).maskMode;
       graphics.visible = true;
       graphics.alpha = maskMode === "preview" || isDraft ? 0.35 : 0;
     },
@@ -609,6 +681,7 @@ export function useMaskInteractionController(
     }
   }, []);
 
+
   const updateSam2MaskPoints = useCallback(
     (
       clipId: string,
@@ -669,6 +742,14 @@ export function useMaskInteractionController(
       // expose the vector gizmo/point editor in the viewport interaction layer.
       return null;
     }
+    // Brush masks use the gizmo only when the gizmo tool is selected; the
+    // paint/erase tools take over canvas pointer events instead.
+    if (
+      context.selectedMaskClip.maskType === "brush" &&
+      useMaskViewStore.getState().brushTool !== "gizmo"
+    ) {
+      return null;
+    }
 
     return {
       clipId: context.selectedClipId,
@@ -676,6 +757,36 @@ export function useMaskInteractionController(
       maskLocalId: context.maskLocalId,
     };
   }, [activeClipRef]);
+
+  const getTargetBrushMaskForPainting = useCallback((): {
+    clipId: string;
+    maskClip: MaskTimelineClip;
+    maskLocalId: string;
+  } | null => {
+    const context = resolveSelectedMaskContext();
+    const activeClip = activeClipRef.current;
+
+    if (
+      !context.selectedClipId ||
+      !context.selectedMaskClip ||
+      !context.maskLocalId ||
+      !activeClip
+    ) {
+      return null;
+    }
+
+    if (activeClip.id !== context.selectedClipId) return null;
+    if (context.selectedMaskClip.maskType !== "brush") return null;
+    if (!isMaskTabActive) return null;
+    const tool = useMaskViewStore.getState().brushTool;
+    if (tool !== "paint" && tool !== "erase") return null;
+
+    return {
+      clipId: context.selectedClipId,
+      maskClip: context.selectedMaskClip,
+      maskLocalId: context.maskLocalId,
+    };
+  }, [activeClipRef, isMaskTabActive]);
 
   const getTargetSam2MaskForPointEditing = useCallback((): {
     clipId: string;
@@ -776,6 +887,27 @@ export function useMaskInteractionController(
     function onPointerMove(e: FederatedPointerEvent) {
       const current = interactionRef.current;
       if (!current.active || !current.clipId) return;
+
+      if (current.mode === "brush" && current.brush && current.maskId) {
+        const local = toMaskOverlayLocal(e.global);
+        const next = {
+          x: local.x + current.brush.canvasSize.width / 2,
+          y: local.y + current.brush.canvasSize.height / 2,
+        };
+        const last = current.brush.lastCanvasPoint;
+        paintBrushStroke(
+          current.maskId,
+          last.x,
+          last.y,
+          next.x,
+          next.y,
+          current.brush.radius,
+          current.brush.tool,
+        );
+        current.brush.lastCanvasPoint = next;
+        current.didMove = true;
+        return;
+      }
 
       if (current.mode === "draw") {
         const pendingDraw = useMaskViewStore.getState().pendingDrawRequest;
@@ -878,6 +1010,29 @@ export function useMaskInteractionController(
       const current = interactionRef.current;
       if (!current.active) return;
 
+      if (current.mode === "brush" && current.brush && current.clipId && current.maskId) {
+        const clipId = current.clipId;
+        const maskClipId = current.maskId;
+        const maskLocalId = current.brush.maskLocalId;
+
+        // The buffer's RenderTexture already reflects every stroke and the
+        // mask compositing pipeline is reading from it live, so the visual
+        // state is up-to-date without needing the asset PNG to exist yet.
+        // Defer the (relatively expensive) ingestion into the asset store
+        // until the user pauses — otherwise rapid strokes thrash
+        // `addLocalAsset` and produce surface UI churn the user sees.
+        scheduleBrushMaskCommit(clipId, maskClipId, maskLocalId);
+
+        setInteractionContext({
+          clipId,
+          mode: "edit",
+          maskId: maskLocalId,
+        });
+        resetInteractionState();
+        unbindStageListeners();
+        return;
+      }
+
       if (current.mode === "draw" && current.clipId) {
         const draftMask = draftMaskShapeRef.current;
         if (
@@ -972,8 +1127,99 @@ export function useMaskInteractionController(
         initialAngle: 0,
         transformIds: resolveMaskLayoutTransformIds(target.maskClip),
         didMove: false,
+        brush: null,
       };
       notifyLiveMaskLayout(interactionRef.current.transformIds, startLayout);
+      setInteractionContext({
+        clipId: target.clipId,
+        mode: "edit",
+        maskId: target.maskLocalId,
+      });
+      bindStageListeners();
+      return true;
+    };
+
+    const handleBrushPointerDown = (
+      e: FederatedPointerEvent,
+      target: {
+        clipId: string;
+        maskClip: MaskTimelineClip;
+        maskLocalId: string;
+      },
+    ): boolean => {
+      if (typeof e.button === "number" && e.button !== 0) return false;
+      const tool = useMaskViewStore.getState().brushTool;
+      if (tool !== "paint" && tool !== "erase") return false;
+      const radius = useMaskViewStore.getState().brushRadius;
+
+      e.stopPropagation();
+      setIsPlaying(false);
+      selectClip(target.clipId, false);
+      clearLiveMaskLayoutPreview();
+
+      const params = target.maskClip.maskParameters;
+      // Lazy-finalize the brush canvas to the parent clip's content size on
+      // first paint. The mask was created with a (1,1) placeholder so we
+      // can defer until a frame has decoded and the texture size is known.
+      const placeholder =
+        (params?.baseWidth ?? 1) <= 1 && (params?.baseHeight ?? 1) <= 1;
+      const clipContent = resolveActiveClipContentSize();
+      const canvasSize =
+        placeholder && clipContent.width > 1 && clipContent.height > 1
+          ? {
+              width: Math.round(clipContent.width),
+              height: Math.round(clipContent.height),
+            }
+          : {
+              width: Math.max(1, Math.round(params?.baseWidth ?? 1)),
+              height: Math.max(1, Math.round(params?.baseHeight ?? 1)),
+            };
+      ensureBrushBuffer(
+        target.maskClip.id,
+        canvasSize.width,
+        canvasSize.height,
+      );
+      if (
+        placeholder &&
+        (canvasSize.width !== params?.baseWidth ||
+          canvasSize.height !== params?.baseHeight)
+      ) {
+        // Persist the finalized canvas size so reloads/hydration restore it.
+        updateClipMask(target.clipId, target.maskLocalId, {
+          maskParameters: {
+            baseWidth: canvasSize.width,
+            baseHeight: canvasSize.height,
+          },
+        });
+      }
+
+      const local = toMaskOverlayLocal(e.global);
+      const point = {
+        x: local.x + canvasSize.width / 2,
+        y: local.y + canvasSize.height / 2,
+      };
+      paintBrushDot(target.maskClip.id, point.x, point.y, radius, tool);
+
+      interactionRef.current = {
+        active: true,
+        mode: "brush",
+        clipId: target.clipId,
+        maskId: target.maskClip.id,
+        handle: null,
+        startLocal: local,
+        startLayout: null,
+        startBaseSize: null,
+        initialAngle: 0,
+        transformIds: { position: null, scale: null, rotation: null },
+        didMove: false,
+        brush: {
+          tool,
+          lastCanvasPoint: point,
+          canvasSize,
+          radius,
+          maskLocalId: target.maskLocalId,
+        },
+      };
       setInteractionContext({
         clipId: target.clipId,
         mode: "edit",
@@ -1088,6 +1334,7 @@ export function useMaskInteractionController(
             rotation: null,
           },
           didMove: false,
+          brush: null,
         };
         setInteractionContext({
           clipId: selectedId,
@@ -1103,6 +1350,11 @@ export function useMaskInteractionController(
         return handleSam2PointPointerDown(e, sam2Target);
       }
 
+      const brushTarget = getTargetBrushMaskForPainting();
+      if (brushTarget) {
+        return handleBrushPointerDown(e, brushTarget);
+      }
+
       const targetMask = getTargetMaskForEditing();
       if (!targetMask) return false;
 
@@ -1114,6 +1366,10 @@ export function useMaskInteractionController(
     };
 
     const onMaskPointerDown = (e: FederatedPointerEvent): boolean => {
+      const brushTarget = getTargetBrushMaskForPainting();
+      if (brushTarget) {
+        return handleBrushPointerDown(e, brushTarget);
+      }
       const targetMask = getTargetMaskForEditing();
       if (!targetMask) return false;
       return startMaskTranslateInteraction(e, targetMask);
@@ -1151,6 +1407,7 @@ export function useMaskInteractionController(
         initialAngle,
         transformIds: resolveMaskLayoutTransformIds(targetMask.maskClip),
         didMove: false,
+        brush: null,
       };
 
       notifyLiveMaskLayout(interactionRef.current.transformIds, layout);
@@ -1172,9 +1429,12 @@ export function useMaskInteractionController(
     activeClipRef,
     addClipMask,
     app,
+    brushRadius,
+    brushTool,
     clearPendingDraw,
     clearLiveMaskLayoutPreview,
     getTargetMaskForEditing,
+    getTargetBrushMaskForPainting,
     getTargetSam2MaskForPointEditing,
     pointTimeEpsilonTicks,
     renderMaskToOverlay,
@@ -1188,6 +1448,7 @@ export function useMaskInteractionController(
     setIsPlaying,
     setSelectedMask,
     sam2PointMode,
+    toMaskOverlayLocal,
     toSam2LocalPoint,
     toSam2NormalizedPoint,
     toClipLocal,
@@ -1373,6 +1634,28 @@ export function useMaskInteractionController(
       renderSam2PointsToOverlay(null);
       clearSam2PreviewSprite();
 
+      if (selectedMaskClip.maskType === "brush") {
+        const tool = useMaskViewStore.getState().brushTool;
+        const isPainting = tool === "paint" || tool === "erase";
+        syncSam2EditingCursor(isPainting);
+        const liveMaskLayoutPreview = liveMaskLayoutPreviewRef.current;
+        const liveLayout =
+          liveMaskLayoutPreview &&
+          liveMaskLayoutPreview.clipId === selectedClipId &&
+          liveMaskLayoutPreview.maskId === selectedMaskId
+            ? liveMaskLayoutPreview.layout
+            : null;
+        const resolvedLayout =
+          liveLayout ?? resolveMaskLayoutAtPlayhead(selectedMaskClip);
+        renderMaskToOverlay(selectedMaskClip, resolvedLayout);
+        // Gizmo handles visible only when the gizmo tool is selected.
+        setIsMaskGizmoVisible((previous) => {
+          const next = tool === "gizmo";
+          return previous === next ? previous : next;
+        });
+        return;
+      }
+
       const liveMaskLayoutPreview = liveMaskLayoutPreviewRef.current;
       const liveLayout =
         liveMaskLayoutPreview &&
@@ -1395,6 +1678,7 @@ export function useMaskInteractionController(
   }, [
     activeClipRef,
     app,
+    brushTool,
     clearSam2PreviewSprite,
     pendingDrawRequest,
     renderMaskToOverlay,
@@ -1408,6 +1692,65 @@ export function useMaskInteractionController(
     syncOverlayToSprite,
     resolveMaskLayoutAtPlayhead,
   ]);
+
+  // Force a re-render whenever the brush buffer's painted bounds change so
+  // the maskOverlay polygon (and gizmo) tracks live painting without
+  // depending on a zustand subscription firing.
+  const [, setBufferTick] = useState(0);
+  useEffect(() => {
+    if (!selectedMaskClip || selectedMaskClip.maskType !== "brush") return;
+    return subscribeToBrushBuffer(selectedMaskClip.id, () => {
+      setBufferTick((tick) => tick + 1);
+    });
+  }, [selectedMaskClip]);
+
+  useEffect(() => {
+    if (!selectedMaskClip || selectedMaskClip.maskType !== "brush") return;
+    const maskClipId = selectedMaskClip.id;
+    const params = selectedMaskClip.maskParameters;
+    const width = Math.max(1, params?.baseWidth ?? 1);
+    const height = Math.max(1, params?.baseHeight ?? 1);
+    const assetId = selectedMaskClip.brushMaskAssetId;
+    const persistedBounds = selectedMaskClip.brushPaintedBounds ?? null;
+
+    // Always ensure the buffer exists at the persisted canvas size — strokes
+    // can begin before any asset has been committed.
+    ensureBrushBuffer(maskClipId, width, height);
+
+    if (!assetId) return;
+
+    let cancelled = false;
+    void (async () => {
+      const hydratedAsset = await ensureAssetSourceLoaded(assetId).catch(
+        () => null,
+      );
+      const asset =
+        hydratedAsset ??
+        useAssetStore
+          .getState()
+          .assets.find((candidate) => candidate.id === assetId) ??
+        null;
+      const url = asset?.src;
+      if (!url || cancelled) return;
+      try {
+        await hydrateBrushBufferFromUrl(
+          maskClipId,
+          url,
+          width,
+          height,
+          persistedBounds,
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Failed to hydrate brush mask buffer", error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMaskClip]);
 
   useEffect(() => {
     return () => {

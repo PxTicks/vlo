@@ -14,6 +14,7 @@ export const MASK_TYPES: ClipMaskType[] = [
   "rectangle",
   "triangle",
   "sam2",
+  "brush",
 ];
 export const MASK_MODES: ClipMaskMode[] = ["apply", "preview"];
 
@@ -78,7 +79,8 @@ function normalizeMaskType(type: string | undefined): ClipMaskType {
     type === "circle" ||
     type === "triangle" ||
     type === "sam2" ||
-    type === "generation"
+    type === "generation" ||
+    type === "brush"
   ) {
     return type;
   }
@@ -456,6 +458,8 @@ export function createMask(
     sam2MaskAssetId: overrides.sam2MaskAssetId,
     sam2GeneratedPointsHash: overrides.sam2GeneratedPointsHash,
     sam2LastGeneratedAt: overrides.sam2LastGeneratedAt,
+    brushMaskAssetId: overrides.brushMaskAssetId,
+    brushPaintedBounds: overrides.brushPaintedBounds,
     activeRange: normalizedActiveRange,
   };
 }

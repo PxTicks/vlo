@@ -368,6 +368,19 @@ function getSam2MaskAssetId(clip: TimelineClip): string | null {
   return clip.type === "mask" ? clip.sam2MaskAssetId ?? null : null;
 }
 
+function getBrushMaskAssetId(clip: TimelineClip): string | null {
+  return clip.type === "mask" ? clip.brushMaskAssetId ?? null : null;
+}
+
+function getMaskBackingAssetIds(clip: TimelineClip): string[] {
+  const ids: string[] = [];
+  const sam2 = getSam2MaskAssetId(clip);
+  if (sam2) ids.push(sam2);
+  const brush = getBrushMaskAssetId(clip);
+  if (brush) ids.push(brush);
+  return ids;
+}
+
 export function countSam2MaskAssetConsumers(
   clips: readonly TimelineClip[],
   assetId: string | null | undefined,
@@ -378,6 +391,19 @@ export function countSam2MaskAssetConsumers(
 
   return clips.reduce((count, clip) => {
     return count + (getSam2MaskAssetId(clip) === assetId ? 1 : 0);
+  }, 0);
+}
+
+export function countBrushMaskAssetConsumers(
+  clips: readonly TimelineClip[],
+  assetId: string | null | undefined,
+): number {
+  if (!assetId) {
+    return 0;
+  }
+
+  return clips.reduce((count, clip) => {
+    return count + (getBrushMaskAssetId(clip) === assetId ? 1 : 0);
   }, 0);
 }
 
@@ -554,6 +580,8 @@ function createMaskClip(
     sam2GeneratedPointsHash?: string;
     sam2LastGeneratedAt?: number;
     generationMaskAssetId?: string;
+    brushMaskAssetId?: string;
+    brushPaintedBounds?: import("../../types/TimelineTypes").BrushPaintedBounds;
     activeRange?: MaskActiveRange;
     transformations: ClipTransform[];
   },
@@ -587,6 +615,8 @@ function createMaskClip(
     sam2GeneratedPointsHash: opts.sam2GeneratedPointsHash,
     sam2LastGeneratedAt: opts.sam2LastGeneratedAt,
     generationMaskAssetId: opts.generationMaskAssetId,
+    brushMaskAssetId: opts.brushMaskAssetId,
+    brushPaintedBounds: opts.brushPaintedBounds,
     activeRange: opts.activeRange,
   };
 }
@@ -605,6 +635,8 @@ function maskToClip(parentClip: TimelineClip, mask: ClipMask): TimelineClip {
     sam2GeneratedPointsHash: mask.sam2GeneratedPointsHash,
     sam2LastGeneratedAt: mask.sam2LastGeneratedAt,
     generationMaskAssetId: mask.generationMaskAssetId,
+    brushMaskAssetId: mask.brushMaskAssetId,
+    brushPaintedBounds: mask.brushPaintedBounds,
     activeRange: mask.activeRange,
     transformations: mask.transformations ?? [],
   });
@@ -857,9 +889,8 @@ function collectClipRemovalPlan(
     clipIdsToRemove.add(clip.id);
 
     if (clip.type === "mask") {
-      const sam2MaskAssetId = getSam2MaskAssetId(clip);
-      if (sam2MaskAssetId) {
-        sam2MaskAssetIdsToDelete.add(sam2MaskAssetId);
+      for (const backingAssetId of getMaskBackingAssetIds(clip)) {
+        sam2MaskAssetIdsToDelete.add(backingAssetId);
       }
       continue;
     }
@@ -867,9 +898,10 @@ function collectClipRemovalPlan(
     for (const maskChildId of getChildMaskClipIds(clip)) {
       clipIdsToRemove.add(maskChildId);
       const maskClip = clipById.get(maskChildId);
-      const sam2MaskAssetId = maskClip ? getSam2MaskAssetId(maskClip) : null;
-      if (sam2MaskAssetId) {
-        sam2MaskAssetIdsToDelete.add(sam2MaskAssetId);
+      if (maskClip) {
+        for (const backingAssetId of getMaskBackingAssetIds(maskClip)) {
+          sam2MaskAssetIdsToDelete.add(backingAssetId);
+        }
       }
     }
   }
@@ -880,7 +912,7 @@ function collectClipRemovalPlan(
         return false;
       }
 
-      return getSam2MaskAssetId(clip) === assetId;
+      return getMaskBackingAssetIds(clip).includes(assetId);
     });
 
     if (hasRemainingConsumer) {
@@ -1097,6 +1129,8 @@ interface TimelineState {
         | "sam2MaskAssetId"
         | "sam2GeneratedPointsHash"
         | "sam2LastGeneratedAt"
+        | "brushMaskAssetId"
+        | "brushPaintedBounds"
       >
     > & {
       transformations?: ClipTransform[];
@@ -2048,6 +2082,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
         if (updates.sam2LastGeneratedAt !== undefined) {
           maskClip.sam2LastGeneratedAt = updates.sam2LastGeneratedAt;
+        }
+
+        if (updates.brushMaskAssetId !== undefined) {
+          maskClip.brushMaskAssetId = updates.brushMaskAssetId;
+        }
+
+        if (updates.brushPaintedBounds !== undefined) {
+          maskClip.brushPaintedBounds = updates.brushPaintedBounds;
         }
 
         if (updates.activeRange !== undefined) {

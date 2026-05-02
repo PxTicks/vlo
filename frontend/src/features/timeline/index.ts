@@ -3,6 +3,7 @@ export type { TimelineContainerProps } from "./TimelineContainer";
 export {
   useTimelineStore,
   countSam2MaskAssetConsumers,
+  countBrushMaskAssetConsumers,
   parseMaskClipId,
   selectMaskClipsForParent,
   selectResolvedMaskBooleanExpressionForParent,

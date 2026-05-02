@@ -9,9 +9,16 @@ import {
   selectMaskClipsForParent,
   useTimelineStore,
 } from "../../timeline/useTimelineStore";
-import type { TimelineClip } from "../../../types/TimelineTypes";
+import { useTimelineViewStore } from "../../timeline/hooks/useTimelineViewStore";
+import { buildFrameSnappedLayerTimeDrag } from "../../timeline/utils/snapDragOverlay";
+import { useProjectStore } from "../../project/useProjectStore";
+import { getTicksPerFrame } from "../../timelineSelection";
+import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
+import { isSplineParameter } from "../types";
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
 import { collectSectionKeyframes } from "../utils/sectionKeyframes";
+
+const POINT_EPSILON_TICKS = 1;
 
 const DiamondMarker = styled(Box)(() => ({
   width: 8,
@@ -71,6 +78,81 @@ function resolveActiveClipKeyframes(
   return collectSectionKeyframes(maskClip, activeSection.sectionId);
 }
 
+function resolveHostClip(
+  clip: TimelineClip,
+  maskClips: TimelineClip[],
+  activeSection: { clipId: string; sectionId: string } | null,
+): TimelineClip | null {
+  if (!activeSection) return null;
+  if (activeSection.clipId === clip.id) return clip;
+  return (
+    maskClips.find((candidate) => candidate.id === activeSection.clipId) ?? null
+  );
+}
+
+function findNeighborInputTimes(
+  transform: ClipTransform | undefined,
+  inputTime: number,
+): { prev: number | null; next: number | null } {
+  const times = transform?.keyframeTimes ?? [];
+  if (times.length === 0) return { prev: null, next: null };
+
+  // `keyframeTimes` is maintained sorted; locate the dragged entry by
+  // tolerant equality so we don't trip on float drift.
+  const sorted = [...times].sort((a, b) => a - b);
+  const index = sorted.findIndex(
+    (t) => Math.abs(t - inputTime) <= POINT_EPSILON_TICKS,
+  );
+  if (index === -1) return { prev: null, next: null };
+
+  return {
+    prev: index > 0 ? sorted[index - 1] : null,
+    next: index < sorted.length - 1 ? sorted[index + 1] : null,
+  };
+}
+
+function commitKeyframeMove(
+  hostClipId: string,
+  transformId: string,
+  oldInputTime: number,
+  newInputTime: number,
+): void {
+  const store = useTimelineStore.getState();
+  const hostClip = store.clips.find((candidate) => candidate.id === hostClipId);
+  if (!hostClip) return;
+  const transform = hostClip.transformations.find((t) => t.id === transformId);
+  if (!transform) return;
+
+  if (Math.abs(newInputTime - oldInputTime) <= POINT_EPSILON_TICKS) return;
+
+  const nextTimes = (transform.keyframeTimes ?? [])
+    .map((time) =>
+      Math.abs(time - oldInputTime) <= POINT_EPSILON_TICKS ? newInputTime : time,
+    )
+    .sort((a, b) => a - b);
+
+  const nextParameters: Record<string, unknown> = {};
+  Object.entries(transform.parameters).forEach(([key, value]) => {
+    if (!isSplineParameter(value)) {
+      nextParameters[key] = value;
+      return;
+    }
+    const newPoints = value.points
+      .map((point) =>
+        Math.abs(point.time - oldInputTime) <= POINT_EPSILON_TICKS
+          ? { ...point, time: newInputTime }
+          : point,
+      )
+      .sort((a, b) => a.time - b.time);
+    nextParameters[key] = { type: "spline" as const, points: newPoints };
+  });
+
+  store.updateClipTransform(hostClipId, transformId, {
+    parameters: nextParameters,
+    keyframeTimes: nextTimes,
+  });
+}
+
 function useKeyframeOverlayItems({
   clip,
 }: {
@@ -105,21 +187,63 @@ function useKeyframeOverlayItems({
       return [];
     }
 
+    const hostClip = resolveHostClip(clip, maskClips, activeSection);
+
     const maxGroupIndex = keyframes.reduce(
       (largestGroupIndex, marker) =>
         Math.max(largestGroupIndex, marker.groupIndex),
       0,
     );
 
-    return keyframes.map((marker) =>
-      createLayerTimeOverlayItem({
+    return keyframes.map((marker) => {
+      const dragHandlers = hostClip
+        ? buildFrameSnappedLayerTimeDrag({
+            clip: hostClip,
+            transformId: marker.transformId,
+            initialLayerInputTicks: marker.inputTime,
+            ...(() => {
+              const transform = hostClip.transformations.find(
+                (t) => t.id === marker.transformId,
+              );
+              const { prev, next } = findNeighborInputTimes(
+                transform,
+                marker.inputTime,
+              );
+              return {
+                prevNeighborLayerInputTicks: prev,
+                nextNeighborLayerInputTicks: next,
+              };
+            })(),
+            getTicksPerFrame: () =>
+              getTicksPerFrame(useProjectStore.getState().config.fps),
+            getZoomScale: () => useTimelineViewStore.getState().zoomScale,
+            onCommit: (snappedLayerInputTicks) => {
+              commitKeyframeMove(
+                hostClip.id,
+                marker.transformId,
+                marker.inputTime,
+                snappedLayerInputTicks,
+              );
+            },
+          })
+        : undefined;
+
+      return createLayerTimeOverlayItem({
         id: marker.id,
         transformId: marker.transformId,
         layerInputTicks: marker.inputTime,
         lane: resolveKeyframeLane(marker.groupIndex, maxGroupIndex),
-        content: <DiamondMarker sx={{ backgroundColor: marker.color }} />,
-      }),
-    );
+        content: (
+          <DiamondMarker
+            sx={{
+              backgroundColor: marker.color,
+              cursor: dragHandlers ? "grab" : undefined,
+            }}
+          />
+        ),
+        drag: dragHandlers,
+      });
+    });
   }, [activeSection, clip, maskClips]);
 }
 

@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -33,6 +33,7 @@ import {
 } from "../transformations";
 import { Sam2MaskPanel } from "./components/Sam2MaskPanel";
 import { BrushMaskPanel } from "./components/BrushMaskPanel";
+import { flushBrushMaskCommit } from "./runtime/brushAssetSync";
 import { Sam2ModelDownloadOverlay } from "./components/Sam2ModelDownloadOverlay";
 import { MaskEquationBuilder } from "./components/MaskEquationBuilder";
 import { MaskActiveRangeSection } from "./components/MaskActiveRangeSection";
@@ -243,6 +244,23 @@ export const MaskPanel = memo(function MaskPanel() {
     selectedMask?.type === "mask" && selectedMask.maskType === "sam2";
   const selectedMaskIsBrush =
     selectedMask?.type === "mask" && selectedMask.maskType === "brush";
+
+  // Flush any unsaved brush strokes when the user leaves the brush detail
+  // view (clicking "Back to Masks" → panelView "mask" → "home"). The
+  // interaction controller already handles flushing on clip / mask / tab
+  // change; this covers the in-panel "back" action where selectedMask stays
+  // the same but the user is no longer editing it.
+  const focusedBrushMaskClipIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const isBrushDetail =
+      panelView === "mask" && selectedMaskIsBrush && !!selectedMask;
+    const next = isBrushDetail && selectedMask ? selectedMask.id : null;
+    const previous = focusedBrushMaskClipIdRef.current;
+    if (previous && previous !== next) {
+      void flushBrushMaskCommit(previous);
+    }
+    focusedBrushMaskClipIdRef.current = next;
+  }, [panelView, selectedMaskIsBrush, selectedMask]);
 
   const sharedSectionOrder = useMemo(
     () =>

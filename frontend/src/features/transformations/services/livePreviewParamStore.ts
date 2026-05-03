@@ -46,6 +46,16 @@ class LivePreviewParamStore {
     this.emit();
   }
 
+  /**
+   * Wake any subscribers without changing stored overrides. Used by sources
+   * that need to drive a paused-time re-render via this store's existing
+   * subscription (e.g. brush strokes mutating a GPU buffer the renderer
+   * reads on its next pass).
+   */
+  requestRender(): void {
+    this.emit();
+  }
+
   subscribe(listener: PreviewListener): () => void {
     this.listeners.add(listener);
     return () => {

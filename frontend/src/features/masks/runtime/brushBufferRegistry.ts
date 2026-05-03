@@ -7,6 +7,7 @@ import {
   type Renderer,
 } from "pixi.js";
 import type { BrushPaintedBounds } from "../../../types/TimelineTypes";
+import { livePreviewParamStore } from "../../transformations";
 
 /**
  * GPU-resident brush mask buffer. Replaces the previous offscreen 2D canvas
@@ -19,6 +20,13 @@ export interface BrushBuffer {
   renderTexture: RenderTexture;
   canvasSize: { width: number; height: number };
   paintedBounds: BrushPaintedBounds | null;
+  /**
+   * True when the buffer has unsaved strokes. Set by paint/erase/clear,
+   * cleared by `markBrushBufferClean` after a successful commit. Used by the
+   * leave-triggered flush so we don't re-ingest an unchanged buffer just
+   * because the user opened then closed the brush mask without painting.
+   */
+  dirty: boolean;
 }
 
 const buffers = new Map<string, BrushBuffer>();
@@ -84,6 +92,7 @@ export function ensureBrushBuffer(
     renderTexture,
     canvasSize: { width: w, height: h },
     paintedBounds: null,
+    dirty: false,
   };
   buffers.set(maskId, buffer);
   if (sharedRenderer) {
@@ -155,7 +164,12 @@ export function paintBrushDot(
     { minX: x - r, minY: y - r, maxX: x + r, maxY: y + r },
     buffer.canvasSize,
   );
+  buffer.dirty = true;
   notify(maskId);
+  // Wake the paused-time render loop so the player re-composites the mask
+  // with the new stroke; without this the user can't see what they paint
+  // until something else triggers a re-render.
+  livePreviewParamStore.requestRender();
 }
 
 export function paintBrushStroke(
@@ -190,7 +204,9 @@ export function paintBrushStroke(
     },
     buffer.canvasSize,
   );
+  buffer.dirty = true;
   notify(maskId);
+  livePreviewParamStore.requestRender();
 }
 
 export function clearBrushBuffer(maskId: string): void {
@@ -198,7 +214,19 @@ export function clearBrushBuffer(maskId: string): void {
   if (!buffer) return;
   clearRenderTextureToBlack(buffer);
   buffer.paintedBounds = null;
+  buffer.dirty = true;
   notify(maskId);
+  livePreviewParamStore.requestRender();
+}
+
+export function isBrushBufferDirty(maskId: string): boolean {
+  return buffers.get(maskId)?.dirty ?? false;
+}
+
+export function markBrushBufferClean(maskId: string): void {
+  const buffer = buffers.get(maskId);
+  if (!buffer) return;
+  buffer.dirty = false;
 }
 
 export function disposeBrushBuffer(maskId: string): void {
@@ -291,6 +319,7 @@ export async function hydrateBrushBufferFromUrl(
   const buffer = ensureBrushBuffer(maskId, canvasWidth, canvasHeight);
   if (!sharedRenderer) {
     buffer.paintedBounds = bounds;
+    buffer.dirty = false;
     notify(maskId);
     return buffer;
   }
@@ -332,6 +361,8 @@ export async function hydrateBrushBufferFromUrl(
   texture.destroy(true);
 
   buffer.paintedBounds = bounds;
+  // Hydration mirrors what's already on disk — no commit required.
+  buffer.dirty = false;
   notify(maskId);
   return buffer;
 }

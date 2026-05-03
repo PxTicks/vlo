@@ -60,7 +60,7 @@ import {
   paintBrushStroke,
   subscribeToBrushBuffer,
 } from "../../../masks/runtime/brushBufferRegistry";
-import { scheduleBrushMaskCommit } from "../../../masks/runtime/brushAssetSync";
+import { flushBrushMaskCommit } from "../../../masks/runtime/brushAssetSync";
 import { ensureAssetSourceLoaded, useAssetStore } from "../../../userAssets";
 import { syncContainerTransformToTarget } from "../../../renderer";
 import { useProjectStore } from "../../../project/useProjectStore";
@@ -1012,16 +1012,15 @@ export function useMaskInteractionController(
 
       if (current.mode === "brush" && current.brush && current.clipId && current.maskId) {
         const clipId = current.clipId;
-        const maskClipId = current.maskId;
         const maskLocalId = current.brush.maskLocalId;
 
         // The buffer's RenderTexture already reflects every stroke and the
         // mask compositing pipeline is reading from it live, so the visual
         // state is up-to-date without needing the asset PNG to exist yet.
-        // Defer the (relatively expensive) ingestion into the asset store
-        // until the user pauses — otherwise rapid strokes thrash
-        // `addLocalAsset` and produce surface UI churn the user sees.
-        scheduleBrushMaskCommit(clipId, maskClipId, maskLocalId);
+        // The PNG ingestion is deferred entirely until the user navigates
+        // away from this brush mask (see leave-detection effect below) —
+        // per-stroke ingestion would surface asset-store UI feedback while
+        // the user is mid-paint.
 
         setInteractionContext({
           clipId,
@@ -1752,8 +1751,33 @@ export function useMaskInteractionController(
     };
   }, [selectedMaskClip]);
 
+  // Leave-detection commit. The brush PNG is persisted only when focus moves
+  // off the currently-edited brush mask: switching to a different mask or
+  // clip, closing the inspector tab, or unmounting. Per-stroke ingestion was
+  // observably interrupting the user mid-paint with asset-store UI churn.
+  const focusedBrushMaskClipIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const isFocused =
+      isMaskTabActive &&
+      !!selectedMaskClip &&
+      selectedMaskClip.maskType === "brush";
+    const next = isFocused && selectedMaskClip ? selectedMaskClip.id : null;
+    const previous = focusedBrushMaskClipIdRef.current;
+    if (previous && previous !== next) {
+      void flushBrushMaskCommit(previous);
+    }
+    focusedBrushMaskClipIdRef.current = next;
+  }, [isMaskTabActive, selectedMaskClip]);
+
   useEffect(() => {
     return () => {
+      // Flush any unsaved strokes on unmount so closing the editor doesn't
+      // discard in-memory paint.
+      const focused = focusedBrushMaskClipIdRef.current;
+      if (focused) {
+        void flushBrushMaskCommit(focused);
+        focusedBrushMaskClipIdRef.current = null;
+      }
       handlers.unbindStageListeners();
     };
   }, [handlers]);

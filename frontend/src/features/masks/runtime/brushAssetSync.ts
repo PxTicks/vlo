@@ -1,30 +1,19 @@
-import type { BrushPaintedBounds } from "../../../types/TimelineTypes";
+import type {
+  BrushPaintedBounds,
+  MaskTimelineClip,
+} from "../../../types/TimelineTypes";
 import {
   countBrushMaskAssetConsumers,
+  parseMaskClipId,
   useTimelineStore,
 } from "../../timeline";
 import { useAssetStore } from "../../userAssets";
-import { extractBrushPng, getBrushBuffer } from "./brushBufferRegistry";
-
-/**
- * Debounce window for brush asset persistence. Each pointer-up resets the
- * timer; we only ingest a PNG into the asset store once the user pauses
- * painting. Tuned so quick stroke flurries don't churn `addLocalAsset` (which
- * surfaces UI feedback the user otherwise sees flickering).
- */
-const COMMIT_DEBOUNCE_MS = 600;
-
-interface PendingCommit {
-  parentClipId: string;
-  maskClipId: string;
-  maskLocalId: string;
-  timer: ReturnType<typeof setTimeout>;
-  inflight: Promise<void> | null;
-  /** Tracks whether more strokes arrived while a flush was in progress. */
-  redirty: boolean;
-}
-
-const pendingCommits = new Map<string, PendingCommit>();
+import {
+  extractBrushPng,
+  getBrushBuffer,
+  isBrushBufferDirty,
+  markBrushBufferClean,
+} from "./brushBufferRegistry";
 
 /**
  * Persist the live brush buffer for the given mask as a PNG asset and write
@@ -104,103 +93,63 @@ export async function commitBrushMaskAsset(
   return created.id;
 }
 
-/**
- * Schedule a debounced commit for the given brush mask. Each call resets the
- * timer; when it fires, we read `paintedBounds` from the live buffer at that
- * moment and persist a PNG asset. If a stroke happens while a flush is
- * in-flight, we mark the entry redirty and re-arm once the flush settles.
- */
-export function scheduleBrushMaskCommit(
-  parentClipId: string,
-  maskClipId: string,
-  maskLocalId: string,
-): void {
-  const existing = pendingCommits.get(maskClipId);
-  if (existing) {
-    clearTimeout(existing.timer);
-    if (existing.inflight) {
-      existing.redirty = true;
-    }
-  }
-
-  const flush = async () => {
-    const entry = pendingCommits.get(maskClipId);
-    if (!entry) return;
-
-    const previousAssetId = useTimelineStore
-      .getState()
-      .clips.find(
-        (clip) => clip.type === "mask" && clip.id === maskClipId,
-      )?.brushMaskAssetId;
-    const paintedBounds = getBrushBuffer(maskClipId)?.paintedBounds ?? null;
-
-    const promise = commitBrushMaskAsset(
-      parentClipId,
-      maskClipId,
-      maskLocalId,
-      previousAssetId,
-      paintedBounds,
-    )
-      .catch((error) => {
-        console.warn("Failed to commit brush mask asset", error);
-        return null;
-      })
-      .then(() => {
-        const after = pendingCommits.get(maskClipId);
-        if (!after) return;
-        if (after.redirty) {
-          // Strokes arrived during the flush — re-arm the debounce.
-          after.redirty = false;
-          after.inflight = null;
-          after.timer = setTimeout(() => {
-            void flush();
-          }, COMMIT_DEBOUNCE_MS);
-        } else {
-          pendingCommits.delete(maskClipId);
-        }
-      });
-    entry.inflight = promise;
-  };
-
-  const next: PendingCommit = {
-    parentClipId,
-    maskClipId,
-    maskLocalId,
-    inflight: existing?.inflight ?? null,
-    redirty: existing?.redirty ?? false,
-    timer: setTimeout(() => {
-      void flush();
-    }, COMMIT_DEBOUNCE_MS),
-  };
-  pendingCommits.set(maskClipId, next);
+function findMaskClip(maskClipId: string): MaskTimelineClip | null {
+  const clip = useTimelineStore
+    .getState()
+    .clips.find((candidate) => candidate.id === maskClipId);
+  if (!clip || clip.type !== "mask") return null;
+  return clip;
 }
 
 /**
- * Cancel any scheduled commit and force the buffer to flush immediately.
- * Called from places that need the asset to be up-to-date *now* (e.g. clear
- * action, mask deletion).
+ * Coalesces concurrent flush calls so leave events that fire in quick
+ * succession (e.g. tab switch + clip change) only trigger one ingestion.
+ */
+const inflightFlushes = new Map<string, Promise<void>>();
+
+/**
+ * Persist the buffer for `maskClipId` if it has unsaved strokes, and mark it
+ * clean. No-ops if the buffer hasn't been touched since the last commit, so
+ * spurious leave events (selecting a brush mask, then leaving without
+ * painting) don't churn the asset store.
+ *
+ * Called when the user navigates away from a brush mask: switching to a
+ * different mask, a different clip, a different inspector tab, or back to
+ * the masks list. Skipping painting means there are no per-stroke
+ * `addLocalAsset` calls to interrupt the user mid-paint.
  */
 export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
-  const entry = pendingCommits.get(maskClipId);
-  if (!entry) return;
-  clearTimeout(entry.timer);
-  pendingCommits.delete(maskClipId);
-  if (entry.inflight) {
-    await entry.inflight;
+  const existing = inflightFlushes.get(maskClipId);
+  if (existing) {
+    await existing;
+    return;
   }
-  const previousAssetId = useTimelineStore
-    .getState()
-    .clips.find(
-      (clip) => clip.type === "mask" && clip.id === maskClipId,
-    )?.brushMaskAssetId;
-  const paintedBounds = getBrushBuffer(maskClipId)?.paintedBounds ?? null;
-  await commitBrushMaskAsset(
-    entry.parentClipId,
-    maskClipId,
-    entry.maskLocalId,
-    previousAssetId,
-    paintedBounds,
-  ).catch((error) => {
-    console.warn("Failed to flush brush mask asset", error);
-  });
+  const promise = (async () => {
+    if (!isBrushBufferDirty(maskClipId)) return;
+    const parsed = parseMaskClipId(maskClipId);
+    if (!parsed) return;
+
+    const maskClip = findMaskClip(maskClipId);
+    const previousAssetId = maskClip?.brushMaskAssetId;
+    const paintedBounds = getBrushBuffer(maskClipId)?.paintedBounds ?? null;
+
+    try {
+      await commitBrushMaskAsset(
+        parsed.clipId,
+        maskClipId,
+        parsed.maskId,
+        previousAssetId,
+        paintedBounds,
+      );
+      markBrushBufferClean(maskClipId);
+    } catch (error) {
+      console.warn("Failed to commit brush mask asset", error);
+    }
+  })();
+  inflightFlushes.set(maskClipId, promise);
+  try {
+    await promise;
+  } finally {
+    inflightFlushes.delete(maskClipId);
+  }
 }

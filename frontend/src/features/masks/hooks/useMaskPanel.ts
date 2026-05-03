@@ -3,7 +3,6 @@ import {
   useEffect,
   useMemo,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type {
@@ -28,13 +27,8 @@ import {
   selectMaskClipsForParent,
 } from "../../timeline";
 import {
-  clearBrushBuffer,
-  ensureBrushBuffer,
-  getBrushBuffer,
-  subscribeToBrushBuffer,
-} from "../runtime/brushBufferRegistry";
-import { flushBrushMaskCommit } from "../runtime/brushAssetSync";
-import { useMaskViewStore } from "../store/useMaskViewStore";
+  useMaskViewStore,
+} from "../store/useMaskViewStore";
 import { createMask } from "../model/maskFactory";
 import {
   getMaskCompositionComponent,
@@ -42,6 +36,7 @@ import {
 } from "../model/maskBooleanExpression";
 import { useSam2MaskPanel } from "./useSam2MaskPanel";
 import { useRangeMaskSelection } from "./useRangeMaskSelection";
+import { useBrushMaskPanel } from "./useBrushMaskPanel";
 
 export interface UseMaskPanelResult {
   selectedClipId: string | null;
@@ -132,10 +127,6 @@ export function useMaskPanel(): UseMaskPanelResult {
   const setSelectedMask = useMaskViewStore((state) => state.setSelectedMask);
   const sam2PointMode = useMaskViewStore((state) => state.sam2PointMode);
   const setSam2PointMode = useMaskViewStore((state) => state.setSam2PointMode);
-  const brushTool = useMaskViewStore((state) => state.brushTool);
-  const setBrushTool = useMaskViewStore((state) => state.setBrushTool);
-  const brushRadius = useMaskViewStore((state) => state.brushRadius);
-  const setBrushRadius = useMaskViewStore((state) => state.setBrushRadius);
 
   // Read mask clips from the store via parent's mask clip components
   const masks = useTimelineStore(
@@ -171,22 +162,6 @@ export function useMaskPanel(): UseMaskPanelResult {
       }) ?? null
     );
   }, [masks, selectedMaskId]);
-  const selectedBrushMaskClipId =
-    selectedMask?.maskType === "brush" ? selectedMask.id : null;
-  const liveBrushPaintedBounds = useSyncExternalStore(
-    useCallback(
-      (listener) =>
-        selectedBrushMaskClipId
-          ? subscribeToBrushBuffer(selectedBrushMaskClipId, listener)
-          : () => {},
-      [selectedBrushMaskClipId],
-    ),
-    () =>
-      selectedBrushMaskClipId
-        ? getBrushBuffer(selectedBrushMaskClipId)?.paintedBounds ?? null
-        : null,
-    () => null,
-  );
 
   const {
     sam2GrowAmount,
@@ -215,6 +190,18 @@ export function useMaskPanel(): UseMaskPanelResult {
     selectedMask,
     isMaskTabActive,
     updateClipMask,
+  });
+  const {
+    brushTool,
+    setBrushTool,
+    brushRadius,
+    setBrushRadius,
+    hasBrushAsset,
+    clearBrush,
+  } = useBrushMaskPanel({
+    selectedClipId,
+    selectedMaskId,
+    selectedMask,
   });
 
   useEffect(() => {
@@ -377,28 +364,6 @@ export function useMaskPanel(): UseMaskPanelResult {
     if (!selectedMaskId) return;
     deleteMask(selectedMaskId);
   }, [deleteMask, selectedMaskId]);
-
-  const hasBrushAsset =
-    selectedMask?.maskType === "brush" &&
-    (!!selectedMask.brushMaskAssetId || !!liveBrushPaintedBounds);
-
-  const clearBrush = useCallback(async () => {
-    if (!selectedClipId || !selectedMaskId) return;
-    if (!selectedMask || selectedMask.maskType !== "brush") {
-      return;
-    }
-
-    ensureBrushBuffer(
-      selectedMask.id,
-      Math.max(1, selectedMask.maskParameters?.baseWidth ?? 1),
-      Math.max(1, selectedMask.maskParameters?.baseHeight ?? 1),
-    );
-    clearBrushBuffer(selectedMask.id);
-    // Force any debounced stroke flush to settle now (with the cleared buffer
-    // state) so the asset/bounds are removed immediately rather than waiting
-    // for the debounce window to fire.
-    await flushBrushMaskCommit(selectedMask.id);
-  }, [selectedClipId, selectedMask, selectedMaskId]);
 
   return {
     selectedClipId,

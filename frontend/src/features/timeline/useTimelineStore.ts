@@ -1307,6 +1307,31 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
   };
 
+  const disposeBrushMaskBuffers = (maskClipIds: Iterable<string>): void => {
+    const uniqueMaskClipIds = [...new Set([...maskClipIds].filter(Boolean))];
+    if (uniqueMaskClipIds.length === 0) return;
+
+    void import("../masks/runtime/brushBufferRegistry")
+      .then(({ disposeBrushBuffer }) => {
+        uniqueMaskClipIds.forEach((maskClipId) => {
+          try {
+            disposeBrushBuffer(maskClipId);
+          } catch (error) {
+            console.warn(
+              `[TimelineStore] Failed to dispose brush buffer '${maskClipId}'`,
+              error,
+            );
+          }
+        });
+      })
+      .catch((error) => {
+        console.warn(
+          "[TimelineStore] Failed to load brush buffer registry for cleanup",
+          error,
+        );
+      });
+  };
+
   const replaceTimelineSnapshot = (snapshot: TimelineSnapshot | null) => {
     if (pendingPersistTimer !== null) {
       clearTimeout(pendingPersistTimer);
@@ -1604,12 +1629,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const currentState = get();
       const { clipIdsToRemove, sam2MaskAssetIdsToDelete } =
         collectClipRemovalPlan(currentState.clips, [id]);
+      const brushMaskClipIdsToDispose = currentState.clips
+        .filter(
+          (clip): clip is MaskTimelineClip =>
+            clipIdsToRemove.has(clip.id) &&
+            clip.type === "mask" &&
+            clip.maskType === "brush",
+        )
+        .map((clip) => clip.id);
 
       const didCommit = commitModelMutation((draft) => {
         removeClipsFromDraft(draft, clipIdsToRemove);
       });
 
       if (didCommit) {
+        disposeBrushMaskBuffers(brushMaskClipIdsToDispose);
         deleteSam2MaskAssets(sam2MaskAssetIdsToDelete);
       }
     },
@@ -1626,12 +1660,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
       const { clipIdsToRemove, sam2MaskAssetIdsToDelete } =
         collectClipRemovalPlan(currentState.clips, directlyReferencedClipIds);
+      const brushMaskClipIdsToDispose = currentState.clips
+        .filter(
+          (clip): clip is MaskTimelineClip =>
+            clipIdsToRemove.has(clip.id) &&
+            clip.type === "mask" &&
+            clip.maskType === "brush",
+        )
+        .map((clip) => clip.id);
 
       const didCommit = commitModelMutation((draft) => {
         removeClipsFromDraft(draft, clipIdsToRemove);
       });
 
       if (didCommit) {
+        disposeBrushMaskBuffers(brushMaskClipIdsToDispose);
         deleteSam2MaskAssets(sam2MaskAssetIdsToDelete);
       }
 
@@ -2084,12 +2127,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           maskClip.sam2LastGeneratedAt = updates.sam2LastGeneratedAt;
         }
 
-        if (updates.brushMaskAssetId !== undefined) {
-          maskClip.brushMaskAssetId = updates.brushMaskAssetId;
+        if (Object.prototype.hasOwnProperty.call(updates, "brushMaskAssetId")) {
+          maskClip.brushMaskAssetId = updates.brushMaskAssetId ?? undefined;
         }
 
-        if (updates.brushPaintedBounds !== undefined) {
-          maskClip.brushPaintedBounds = updates.brushPaintedBounds;
+        if (Object.prototype.hasOwnProperty.call(updates, "brushPaintedBounds")) {
+          maskClip.brushPaintedBounds = updates.brushPaintedBounds ?? undefined;
         }
 
         if (updates.activeRange !== undefined) {
@@ -2130,12 +2173,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const currentState = get();
       const { clipIdsToRemove, sam2MaskAssetIdsToDelete } =
         collectClipRemovalPlan(currentState.clips, [maskClipId]);
+      const brushMaskClipIdsToDispose = currentState.clips
+        .filter(
+          (clip): clip is MaskTimelineClip =>
+            clipIdsToRemove.has(clip.id) &&
+            clip.type === "mask" &&
+            clip.maskType === "brush",
+        )
+        .map((clip) => clip.id);
 
       const didCommit = commitModelMutation((draft) => {
         removeClipsFromDraft(draft, clipIdsToRemove);
       });
 
       if (didCommit) {
+        disposeBrushMaskBuffers(brushMaskClipIdsToDispose);
         deleteSam2MaskAssets(sam2MaskAssetIdsToDelete);
       }
     },

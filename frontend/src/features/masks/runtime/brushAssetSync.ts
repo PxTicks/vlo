@@ -9,6 +9,7 @@ import {
 } from "../../timeline";
 import { useAssetStore } from "../../userAssets";
 import {
+  disposeBrushBuffer,
   extractBrushPng,
   getBrushBuffer,
   isBrushBufferDirty,
@@ -130,6 +131,10 @@ export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
     if (!parsed) return;
 
     const maskClip = findMaskClip(maskClipId);
+    if (!maskClip) {
+      disposeBrushBuffer(maskClipId);
+      return;
+    }
     const previousAssetId = maskClip?.brushMaskAssetId;
     const paintedBounds = getBrushBuffer(maskClipId)?.paintedBounds ?? null;
 

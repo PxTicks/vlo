@@ -6,12 +6,17 @@ import type {
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 
-const { mockDeleteAsset } = vi.hoisted(() => ({
+const { mockDeleteAsset, mockDisposeBrushBuffer } = vi.hoisted(() => ({
   mockDeleteAsset: vi.fn(async () => undefined),
+  mockDisposeBrushBuffer: vi.fn(),
 }));
 
 vi.mock("../../userAssets", () => ({
   deleteAsset: mockDeleteAsset,
+}));
+
+vi.mock("../../masks/runtime/brushBufferRegistry", () => ({
+  disposeBrushBuffer: mockDisposeBrushBuffer,
 }));
 
 import { useTimelineStore } from "../useTimelineStore";
@@ -82,9 +87,39 @@ const createSam2MaskClip = (
     sam2MaskAssetId,
   });
 
+const createBrushMaskClip = (
+  parentClipId: string,
+  maskLocalId: string,
+  trackId: string,
+  brushMaskAssetId?: string,
+): MaskTimelineClip => ({
+    id: `${parentClipId}::mask::${maskLocalId}`,
+    trackId,
+    type: "mask",
+    name: `Brush ${maskLocalId}`,
+    start: 0,
+    timelineDuration: 120,
+    offset: 0,
+    croppedSourceDuration: 120,
+    transformedOffset: 0,
+    sourceDuration: 120,
+    transformedDuration: 120,
+    transformations: [],
+    parentClipId,
+    maskType: "brush",
+    maskMode: "apply",
+    maskInverted: false,
+    maskParameters: {
+      baseWidth: 100,
+      baseHeight: 100,
+    },
+    brushMaskAssetId,
+  });
+
 describe("useTimelineStore SAM2 mask asset lifecycle", () => {
   beforeEach(() => {
     mockDeleteAsset.mockClear();
+    mockDisposeBrushBuffer.mockClear();
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [
         createTrack("track_top_pad", "Track 1"),
@@ -165,6 +200,33 @@ describe("useTimelineStore SAM2 mask asset lifecycle", () => {
       expect(mockDeleteAsset).toHaveBeenCalledWith(maskAssetId);
     });
     expect(mockDeleteAsset).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes a brush buffer when a brush mask is removed", async () => {
+    const parentClipId = "clip-brush-mask";
+    const maskLocalId = "mask-brush";
+    const maskClipId = `${parentClipId}::mask::${maskLocalId}`;
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        createTrack("track_top_pad", "Track 1"),
+        createTrack("track_current", "Track 2"),
+        createTrack("track_bottom_pad", "Track 3"),
+      ],
+      clips: [
+        createParentClip(parentClipId, "track_current", maskClipId),
+        createBrushMaskClip(parentClipId, maskLocalId, "track_current"),
+      ],
+    });
+
+    act(() => {
+      useTimelineStore.getState().removeClipMask(parentClipId, maskLocalId);
+    });
+
+    await waitFor(() => {
+      expect(mockDisposeBrushBuffer).toHaveBeenCalledWith(maskClipId);
+    });
+    expect(mockDeleteAsset).not.toHaveBeenCalled();
   });
 
   it("keeps a shared SAM2 mask asset when removing one duplicated mask", async () => {
@@ -286,6 +348,32 @@ describe("useTimelineStore SAM2 mask asset lifecycle", () => {
 
     await waitFor(() => {
       expect(mockDeleteAsset).not.toHaveBeenCalled();
+    });
+  });
+
+  it("disposes child brush buffers when a parent clip is removed", async () => {
+    const parentClipId = "clip-parent-brush";
+    const maskLocalId = "mask-parent-brush";
+    const maskClipId = `${parentClipId}::mask::${maskLocalId}`;
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        createTrack("track_top_pad", "Track 1"),
+        createTrack("track_current", "Track 2"),
+        createTrack("track_bottom_pad", "Track 3"),
+      ],
+      clips: [
+        createParentClip(parentClipId, "track_current", maskClipId),
+        createBrushMaskClip(parentClipId, maskLocalId, "track_current"),
+      ],
+    });
+
+    act(() => {
+      useTimelineStore.getState().removeClip(parentClipId);
+    });
+
+    await waitFor(() => {
+      expect(mockDisposeBrushBuffer).toHaveBeenCalledWith(maskClipId);
     });
   });
 

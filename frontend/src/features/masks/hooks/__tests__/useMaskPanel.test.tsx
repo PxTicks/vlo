@@ -9,6 +9,11 @@ import { playbackClock } from "../../../player/services/PlaybackClock";
 import { TICKS_PER_SECOND, useTimelineStore } from "../../../timeline";
 import { useAssetStore } from "../../../userAssets";
 import { useMaskViewStore } from "../../store/useMaskViewStore";
+import {
+  disposeBrushBuffer,
+  ensureBrushBuffer,
+  paintBrushDot,
+} from "../../runtime/brushBufferRegistry";
 import { useMaskPanel } from "../useMaskPanel";
 import { getRuntimeStatus } from "../../../../services/runtimeApi";
 
@@ -84,6 +89,48 @@ function createSam2MaskClip(
       baseHeight: 1,
     },
     maskPoints: [],
+  };
+}
+
+function createBrushMaskClip(
+  parent: TimelineClip,
+  localId: string,
+  maskMode: "apply" | "preview" = "apply",
+): MaskTimelineClip {
+  const id = `${parent.id}::mask::${localId}`;
+
+  if (parent.type !== "mask") {
+    parent.components = [
+      ...(parent.components ?? []),
+      {
+        id: `mask_ref_${localId}`,
+        type: "mask_ref",
+        parameters: { maskClipId: id },
+      },
+    ];
+  }
+
+  return {
+    id,
+    trackId: parent.trackId,
+    type: "mask",
+    name: `Brush ${localId}`,
+    sourceDuration: parent.sourceDuration,
+    start: parent.start,
+    timelineDuration: parent.timelineDuration,
+    offset: parent.offset,
+    transformedDuration: parent.transformedDuration,
+    transformedOffset: parent.transformedOffset,
+    croppedSourceDuration: parent.croppedSourceDuration,
+    transformations: [],
+    parentClipId: parent.id,
+    maskType: "brush",
+    maskMode,
+    maskInverted: false,
+    maskParameters: {
+      baseWidth: 64,
+      baseHeight: 64,
+    },
   };
 }
 
@@ -179,5 +226,38 @@ describe("useMaskPanel", () => {
         .clips.find((clip): clip is MaskTimelineClip => clip.id === previewMask.id);
       expect(updatedMask?.maskMode).toBe("apply");
     });
+  });
+
+  it("treats unsaved live brush strokes as clearable content", async () => {
+    vi.mocked(getRuntimeStatus).mockImplementation(
+      () => new Promise(() => undefined),
+    );
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const parent = createParentClip("clip_brush");
+    const brushMask = createBrushMaskClip(parent, "mask_live");
+
+    useTimelineStore.setState({
+      clips: [parent, brushMask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: { [parent.id]: "mask_live" },
+      isMaskTabActive: true,
+    });
+
+    const { result } = renderHook(() => useMaskPanel());
+    act(() => {
+      ensureBrushBuffer(brushMask.id, 64, 64);
+      paintBrushDot(brushMask.id, 20, 20, 8, "paint");
+    });
+
+    await waitFor(() => {
+      expect(result.current.hasBrushAsset).toBe(true);
+    });
+
+    disposeBrushBuffer(brushMask.id);
+    consoleErrorSpy.mockRestore();
   });
 });

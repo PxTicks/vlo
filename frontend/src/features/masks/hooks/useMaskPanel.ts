@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useShallow } from "zustand/react/shallow";
 import { getRuntimeStatus } from "../../../services/runtimeApi";
 import type {
@@ -24,7 +31,12 @@ import {
   parseMaskClipId,
   selectMaskClipsForParent,
 } from "../../timeline";
-import { clearBrushBuffer } from "../runtime/brushBufferRegistry";
+import {
+  clearBrushBuffer,
+  ensureBrushBuffer,
+  getBrushBuffer,
+  subscribeToBrushBuffer,
+} from "../runtime/brushBufferRegistry";
 import { flushBrushMaskCommit } from "../runtime/brushAssetSync";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useExtractStore } from "../../player/useExtractStore";
@@ -310,6 +322,24 @@ export function useMaskPanel(): UseMaskPanelResult {
       }) ?? null
     );
   }, [masks, selectedMaskId]);
+  const selectedBrushMaskClipId =
+    selectedMask?.type === "mask" && selectedMask.maskType === "brush"
+      ? selectedMask.id
+      : null;
+  const liveBrushPaintedBounds = useSyncExternalStore(
+    useCallback(
+      (listener) =>
+        selectedBrushMaskClipId
+          ? subscribeToBrushBuffer(selectedBrushMaskClipId, listener)
+          : () => {},
+      [selectedBrushMaskClipId],
+    ),
+    () =>
+      selectedBrushMaskClipId
+        ? getBrushBuffer(selectedBrushMaskClipId)?.paintedBounds ?? null
+        : null,
+    () => null,
+  );
 
   const sam2Points = useMemo(() => {
     if (!selectedMask || selectedMask.type !== "mask") return [];
@@ -1436,7 +1466,7 @@ export function useMaskPanel(): UseMaskPanelResult {
   const hasBrushAsset =
     selectedMask?.type === "mask" &&
     selectedMask.maskType === "brush" &&
-    !!selectedMask.brushMaskAssetId;
+    (!!selectedMask.brushMaskAssetId || !!liveBrushPaintedBounds);
 
   const clearBrush = useCallback(async () => {
     if (!selectedClipId || !selectedMaskId) return;
@@ -1448,6 +1478,11 @@ export function useMaskPanel(): UseMaskPanelResult {
       return;
     }
 
+    ensureBrushBuffer(
+      selectedMask.id,
+      Math.max(1, selectedMask.maskParameters?.baseWidth ?? 1),
+      Math.max(1, selectedMask.maskParameters?.baseHeight ?? 1),
+    );
     clearBrushBuffer(selectedMask.id);
     // Force any debounced stroke flush to settle now (with the cleared buffer
     // state) so the asset/bounds are removed immediately rather than waiting

@@ -1,1051 +1,88 @@
-// hooks/useTimelineStore.ts
-import {
-  applyPatches,
-  enablePatches,
-  produceWithPatches,
-  type Patch,
-} from "../../lib/immerLite";
+import { enablePatches } from "../../lib/immerLite";
 import { create } from "zustand";
-import {
-  DEFAULT_MASK_COMPOSITION_ALGEBRA,
-  resolveMaskCompositionAlgebra,
-  type MaskCompositionAlgebra,
-  type Component,
-  type MaskCompositionComponent,
-  type MaskCompositionComponentParameters,
-  type MaskRefComponent,
-} from "../../types/Components";
 import type {
-  ClipTransform,
+  Component,
+  MaskCompositionAlgebra,
+} from "../../types/Components";
+import type { Asset } from "../../types/Asset";
+import type {
   ClipMask,
-  ClipMaskType,
-  ClipMaskMode,
-  ClipMaskParameters,
-  ClipMaskPoint,
-  MaskActiveRange,
+  ClipTransform,
   MaskBooleanExpression,
   TimelineClip,
-  TimelineTrack,
-  MaskTimelineClip,
-  StandardTimelineClip,
 } from "../../types/TimelineTypes";
-import type { Asset } from "../../types/Asset";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
-import { useProjectStore } from "../project/useProjectStore";
-import { fileSystemService } from "../project/services/FileSystemService";
-import { projectPersistenceService } from "../project/services/ProjectPersistenceService";
-import { TICKS_PER_SECOND } from "./constants";
-import { getTrackTypeFromClipType } from "./utils/formatting";
-import { getResizedClipLeft, getResizedClipRight } from "./utils/clipMath";
-import { resolveCollision } from "./utils/collision";
 import {
-  appendMaskBooleanExpression,
-  getMaskLocalId,
-  pruneMaskBooleanExpression,
-  resolveMaskBooleanExpression,
-} from "../masks/model/maskBooleanExpression";
+  countBrushMaskAssetConsumers,
+  countSam2MaskAssetConsumers,
+  makeMaskClipId,
+  migrateLegacyMaskEdgeTransforms,
+  parseMaskClipId,
+} from "./model/maskClipModel";
+import {
+  addClipComponentToDraft,
+  addClipMaskToDraft,
+  addClipToDraft,
+  addClipTransformToDraft,
+  addTrackToDraft,
+  copySelectedClips,
+  duplicateClipMaskInDraft,
+  duplicateTimelineClip,
+  getTimelineClipsAtTime,
+  insertTrackIntoDraft,
+  pasteCopiedClipsAboveDraft,
+  planTimelineRemoval,
+  removeClipComponentFromDraft,
+  removeClipIdsFromDraft,
+  removeClipTransformFromDraft,
+  replaceClipAssetInDraft,
+  setClipMaskBooleanExpressionInDraft,
+  setClipMaskCompositionAlgebraInDraft,
+  setClipMaskCompositeTransformsInDraft,
+  setClipTransformsInDraft,
+  splitClipInDraft,
+  toggleClipMuteInDraft,
+  toggleTrackMuteInDraft,
+  toggleTrackVisibilityInDraft,
+  trimAndPadTracksInDraft,
+  updateClipComponentInDraft,
+  updateClipDurationInDraft,
+  updateClipMaskInDraft,
+  updateClipPositionInDraft,
+  updateClipShapeInDraft,
+  updateClipTransformInDraft,
+  withTimelineClipDefaults,
+  type TimelineClipShape,
+  type TimelineMaskUpdate,
+} from "./model/timelineCommands";
+import {
+  createDefaultTimelineSnapshot,
+  createNewTrack,
+  type TimelineModelState,
+} from "./model/timelineTrackModel";
+import {
+  selectMaskClipsForParent,
+  selectResolvedMaskBooleanExpressionForParent,
+} from "./selectors/timelineSelectors";
+import { createTimelineMutationPipeline } from "./store/timelineMutationPipeline";
 
 enablePatches();
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const MASK_CONTEXT_SEPARATOR = "::mask::";
-const INHERITED_TRANSFORM_TYPES = new Set(["speed"]);
-const MASK_EDGE_TRANSFORM_TYPES = new Set(["mask_grow", "feather"]);
-const TIMELINE_HISTORY_LIMIT = 100;
-const TIMELINE_PERSIST_DEBOUNCE_MS = 250;
-
-// ---------------------------------------------------------------------------
-// Timeline model helpers
-// ---------------------------------------------------------------------------
-
-interface TimelineModelState {
-  tracks: TimelineTrack[];
-  clips: TimelineClip[];
-}
-
-interface TimelineHistoryEntry {
-  forwardPatches: Patch[];
-  inversePatches: Patch[];
-}
-
-const generateTrackId = () => `track_${crypto.randomUUID()}`;
-
-const createNewTrack = (label: string): TimelineTrack => ({
-  id: generateTrackId(),
-  label,
-  isVisible: true,
-  isLocked: false,
-  isMuted: false,
-});
-
-const createDefaultTimelineSnapshot = (): TimelineSnapshot => ({
-  tracks: [createNewTrack("Track 1")],
-  clips: [],
-});
-
-function createDefaultFitModeTransform(): ClipTransform {
-  return {
-    id: crypto.randomUUID(),
-    type: "fitMode",
-    isEnabled: true,
-    parameters: {
-      fitMode: useProjectStore.getState().config.fitMode,
-    },
-  };
-}
-
-function areClipTransformArraysEqual(
-  left: readonly ClipTransform[],
-  right: readonly ClipTransform[],
-): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
-  if (clip.type === "mask") {
-    return clip;
-  }
-
-  const normalizedComponents = normalizeComponentsMaskComposite(clip.components);
-  const baseClip: StandardTimelineClip =
-    normalizedComponents === clip.components
-      ? clip
-      : {
-          ...clip,
-          components: normalizedComponents,
-        };
-
-  if (clip.type !== "video" && clip.type !== "image") {
-    return baseClip;
-  }
-
-  const hasFitModeTransform = (baseClip.transformations ?? []).some(
-    (transform) => transform.type === "fitMode",
-  );
-  if (hasFitModeTransform) {
-    return baseClip;
-  }
-
-  return {
-    ...baseClip,
-    transformations: [
-      createDefaultFitModeTransform(),
-      ...structuredClone(baseClip.transformations || []),
-    ],
-  };
-}
-
-/**
- * Normalize a `mask_composition` component's compositeTransformations so only
- * mask-edge transforms survive. Drops the component entirely if it ends up
- * empty (no expression, no explicit algebra, and no edge transforms).
- * Returns the same reference when no change is required, so callers can
- * cheaply detect no-ops.
- */
-function normalizeComponentsMaskComposite(
-  components: Component[] | undefined,
-): Component[] | undefined {
-  if (!components || components.length === 0) return components;
-
-  let changed = false;
-  const next: Component[] = [];
-  for (const component of components) {
-    if (component.type !== "mask_composition") {
-      next.push(component);
-      continue;
-    }
-    const normalizedParams = normalizeMaskCompositionParameters(
-      component.parameters,
-    );
-    const normalizedTransforms = normalizedParams.compositeTransformations;
-    const expressionIsSet = component.parameters.expression !== undefined;
-    const algebraIsSet = component.parameters.algebra !== undefined;
-    if (
-      !expressionIsSet &&
-      normalizedTransforms.length === 0 &&
-      !algebraIsSet
-    ) {
-      changed = true;
-      continue;
-    }
-    const originalTransforms = component.parameters.compositeTransformations;
-    const transformsChanged = !areClipTransformArraysEqual(
-      normalizedTransforms,
-      originalTransforms,
-    );
-    const algebraChanged =
-      component.parameters.algebra !== normalizedParams.algebra;
-    if (!transformsChanged && !algebraChanged) {
-      next.push(component);
-      continue;
-    }
-    changed = true;
-    next.push({
-      ...component,
-      parameters: normalizedParams,
-    });
-  }
-  if (!changed) return components;
-  return next.length > 0 ? next : undefined;
-}
-
-const cloneTimelineClip = (
-  clip: TimelineClip,
-  id: string = clip.id,
-): TimelineClip => {
-  const cloned = structuredClone(clip);
-  cloned.id = id;
-  return cloned;
+export {
+  countBrushMaskAssetConsumers,
+  countSam2MaskAssetConsumers,
+  parseMaskClipId,
+  selectMaskClipsForParent,
+  selectResolvedMaskBooleanExpressionForParent,
 };
 
-function getCurrentModelState(state: TimelineState): TimelineModelState {
-  return {
-    tracks: state.tracks,
-    clips: state.clips,
-  };
-}
-
-function sanitizeSelectedClipIds(
-  selectedClipIds: string[],
-  clips: TimelineClip[],
-): string[] {
-  if (selectedClipIds.length === 0) return selectedClipIds;
-  const clipIds = new Set(clips.map((clip) => clip.id));
-  return selectedClipIds.filter((id) => clipIds.has(id));
-}
-
-function maybeTrimAndPadTracks(model: TimelineModelState): void {
-  const { tracks, clips } = model;
-
-  const hasClips = (trackId: string) =>
-    clips.some((clip) => clip.trackId === trackId && clip.type !== "mask");
-
-  const populatedIndices = tracks
-    .map((track, index) => (hasClips(track.id) ? index : -1))
-    .filter((index) => index !== -1);
-
-  if (populatedIndices.length === 0) {
-    if (tracks.length === 1 && !hasClips(tracks[0].id)) return;
-    model.tracks = [createNewTrack("Track 1")];
-    return;
-  }
-
-  const firstIndex = populatedIndices[0];
-  const lastIndex = populatedIndices[populatedIndices.length - 1];
-
-  const coreTracks = tracks
-    .slice(firstIndex, lastIndex + 1)
-    .filter((track) => hasClips(track.id));
-
-  const topPadding =
-    firstIndex > 0 ? tracks[firstIndex - 1] : createNewTrack("Track Top");
-  const bottomPadding =
-    lastIndex < tracks.length - 1
-      ? tracks[lastIndex + 1]
-      : createNewTrack("Track Bottom");
-
-  const newTracks = [topPadding, ...coreTracks, bottomPadding].map((track, i) => ({
-    ...track,
-    label: `Track ${i + 1}`,
-  }));
-
-  const currentIds = tracks.map((track) => track.id).join(",");
-  const nextIds = newTracks.map((track) => track.id).join(",");
-
-  if (currentIds === nextIds) return;
-
-  model.tracks = newTracks;
-}
-
-// ---------------------------------------------------------------------------
-// Mask-as-clip helpers
-// ---------------------------------------------------------------------------
-
-/** Read all typed components from a clip (only standard clips carry them). */
-function getClipComponents(clip: TimelineClip): Component[] {
-  return clip.type !== "mask"
-    ? ((clip as StandardTimelineClip).components ?? [])
-    : [];
-}
-
-/** Mutably set the components array on a standard clip. */
-function setClipComponents(
-  clip: TimelineClip,
-  components: Component[],
-): void {
-  if (clip.type !== "mask") {
-    (clip as StandardTimelineClip).components =
-      components.length > 0 ? components : undefined;
-  }
-}
-
-function getMaskRefComponents(clip: TimelineClip): MaskRefComponent[] {
-  return getClipComponents(clip).filter(
-    (component): component is MaskRefComponent => component.type === "mask_ref",
-  );
-}
-
-function getChildMaskClipIds(clip: TimelineClip): string[] {
-  return getMaskRefComponents(clip).map(
-    (component) => component.parameters.maskClipId,
-  );
-}
-
-function getMaskCompositionComponent(
-  clip: TimelineClip,
-): MaskCompositionComponent | null {
-  const found = getClipComponents(clip).find(
-    (component): component is MaskCompositionComponent =>
-      component.type === "mask_composition",
-  );
-  return found ?? null;
-}
-
-/**
- * Upsert the parent's single `mask_composition` component in place on a draft.
- * Pass a null return from the updater to drop the component entirely (used to
- * clear empty composite transforms without leaving a stub component behind).
- */
-function updateMaskCompositionOnDraft(
-  clip: StandardTimelineClip,
-  updater: (
-    current: MaskCompositionComponentParameters,
-  ) => MaskCompositionComponentParameters | null,
-): void {
-  const existing = getMaskCompositionComponent(clip);
-  const currentParams: MaskCompositionComponentParameters =
-    existing?.parameters
-      ? normalizeMaskCompositionParameters(existing.parameters)
-      : { compositeTransformations: [] };
-  const nextParams = updater(currentParams);
-  const withoutComposition = (clip.components ?? []).filter(
-    (component) => component.type !== "mask_composition",
-  );
-
-  if (!nextParams) {
-    setClipComponents(clip, withoutComposition);
-    return;
-  }
-
-  const nextComponent: MaskCompositionComponent = {
-    id: existing?.id ?? crypto.randomUUID(),
-    type: "mask_composition",
-    parameters: normalizeMaskCompositionParameters(nextParams),
-  };
-  setClipComponents(clip, [...withoutComposition, nextComponent]);
-}
-
-/**
- * Does this composition-component params still carry meaningful state?
- * A component with no expression (legacy auto-union) and no edge transforms
- * should be dropped entirely rather than left as a stub.
- */
-function isMaskCompositionComponentMeaningful(
-  params: MaskCompositionComponentParameters,
-): boolean {
-  return (
-    params.expression !== undefined ||
-    params.algebra !== undefined ||
-    params.compositeTransformations.length > 0
-  );
-}
-
-function getOrderedChildMaskClips(
-  clips: readonly TimelineClip[],
-  parent: TimelineClip,
-): MaskTimelineClip[] {
-  const clipById = new Map(clips.map((clip) => [clip.id, clip] as const));
-
-  return getChildMaskClipIds(parent)
-    .map((maskClipId) => clipById.get(maskClipId))
-    .filter((clip): clip is MaskTimelineClip => !!clip && clip.type === "mask");
-}
-
-function getSam2MaskAssetId(clip: TimelineClip): string | null {
-  return clip.type === "mask" ? clip.sam2MaskAssetId ?? null : null;
-}
-
-function getBrushMaskAssetId(clip: TimelineClip): string | null {
-  return clip.type === "mask" ? clip.brushMaskAssetId ?? null : null;
-}
-
-function getMaskBackingAssetIds(clip: TimelineClip): string[] {
-  const ids: string[] = [];
-  const sam2 = getSam2MaskAssetId(clip);
-  if (sam2) ids.push(sam2);
-  const brush = getBrushMaskAssetId(clip);
-  if (brush) ids.push(brush);
-  return ids;
-}
-
-export function countSam2MaskAssetConsumers(
-  clips: readonly TimelineClip[],
-  assetId: string | null | undefined,
-): number {
-  if (!assetId) {
-    return 0;
-  }
-
-  return clips.reduce((count, clip) => {
-    return count + (getSam2MaskAssetId(clip) === assetId ? 1 : 0);
-  }, 0);
-}
-
-export function countBrushMaskAssetConsumers(
-  clips: readonly TimelineClip[],
-  assetId: string | null | undefined,
-): number {
-  if (!assetId) {
-    return 0;
-  }
-
-  return clips.reduce((count, clip) => {
-    return count + (getBrushMaskAssetId(clip) === assetId ? 1 : 0);
-  }, 0);
-}
-
-/** Replace mask_ref components while preserving other component types. */
-function setChildMaskClipIds(clip: TimelineClip, maskClipIds: string[]): void {
-  if (clip.type === "mask") return;
-  const existing = getClipComponents(clip);
-  const existingMaskRefsById = new Map<string, MaskRefComponent>();
-  for (const component of existing) {
-    if (component.type === "mask_ref") {
-      existingMaskRefsById.set(component.parameters.maskClipId, component);
-    }
-  }
-  const nonMaskRef = existing.filter((component) => component.type !== "mask_ref");
-  const uniqueMaskIds = [...new Set(maskClipIds)];
-  const maskRefs = uniqueMaskIds.map<MaskRefComponent>((clipId) => {
-    const existingRef = existingMaskRefsById.get(clipId);
-    if (existingRef) return existingRef;
-    return {
-      id: crypto.randomUUID(),
-      type: "mask_ref",
-      parameters: { maskClipId: clipId },
-    };
-  });
-  setClipComponents(clip, [...nonMaskRef, ...maskRefs]);
-}
-
-function addMaskClipComponent(clip: TimelineClip, maskClipId: string): void {
-  const currentMaskIds = getChildMaskClipIds(clip);
-  if (currentMaskIds.includes(maskClipId)) return;
-  setChildMaskClipIds(clip, [...currentMaskIds, maskClipId]);
-}
-
-function removeMaskClipComponent(clip: TimelineClip, maskClipId: string): void {
-  const currentMaskIds = getChildMaskClipIds(clip);
-  setChildMaskClipIds(
-    clip,
-    currentMaskIds.filter((id) => id !== maskClipId),
-  );
-}
-
-function makeMaskClipId(parentClipId: string, maskLocalId: string): string {
-  return `${parentClipId}${MASK_CONTEXT_SEPARATOR}${maskLocalId}`;
-}
-
-/** Extract { clipId, maskId } from a mask clip's id, or null if not a mask id. */
-export function parseMaskClipId(
-  id: string,
-): { clipId: string; maskId: string } | null {
-  const idx = id.indexOf(MASK_CONTEXT_SEPARATOR);
-  if (idx <= 0) return null;
-  const clipId = id.slice(0, idx);
-  const maskId = id.slice(idx + MASK_CONTEXT_SEPARATOR.length);
-  if (!clipId || !maskId) return null;
-  return { clipId, maskId };
-}
-
-function getInheritedSpeedTransforms(
-  parentClip: TimelineClip,
-): ClipTransform[] {
-  return (parentClip.transformations || []).filter((transform) =>
-    INHERITED_TRANSFORM_TYPES.has(transform.type),
-  );
-}
-
-function isMaskEdgeTransform(transform: ClipTransform): boolean {
-  return MASK_EDGE_TRANSFORM_TYPES.has(transform.type);
-}
-
-function getMaskEdgeTransforms(
-  transforms: readonly ClipTransform[] | undefined,
-): ClipTransform[] {
-  return (transforms || []).filter((transform) => isMaskEdgeTransform(transform));
-}
-
-function stripMaskEdgeTransforms(
-  transforms: readonly ClipTransform[] | undefined,
-): ClipTransform[] {
-  return (transforms || []).filter((transform) => !isMaskEdgeTransform(transform));
-}
-
-function syncMaskEdgeTransformInversion(
-  transforms: readonly ClipTransform[] | undefined,
-  inverted: boolean,
-): ClipTransform[] | undefined {
-  if (!transforms || transforms.length === 0) {
-    return undefined;
-  }
-
-  return transforms.map((transform) => {
-    if (!isMaskEdgeTransform(transform)) {
-      return structuredClone(transform);
-    }
-
-    return {
-      ...structuredClone(transform),
-      parameters: {
-        ...structuredClone(transform.parameters),
-        invert: inverted,
-      },
-    };
-  });
-}
-
-function syncMaskEdgeTransformsToAlgebra(
-  transforms: readonly ClipTransform[] | undefined,
-  algebra: MaskCompositionAlgebra,
-): ClipTransform[] {
-  return (
-    syncMaskEdgeTransformInversion(
-      getMaskEdgeTransforms(transforms),
-      algebra === "inverse",
-    ) ?? []
-  );
-}
-
-function inferLegacyMaskCompositionAlgebra(
-  params: MaskCompositionComponentParameters,
-): MaskCompositionAlgebra {
-  if (params.algebra) {
-    return params.algebra;
-  }
-
-  const edgeTransforms = getMaskEdgeTransforms(params.compositeTransformations);
-  if (edgeTransforms.length === 0) {
-    return DEFAULT_MASK_COMPOSITION_ALGEBRA;
-  }
-
-  return edgeTransforms.some((transform) => transform.parameters.invert === true)
-    ? "inverse"
-    : "normal";
-}
-
-function normalizeMaskCompositionParameters(
-  params: MaskCompositionComponentParameters,
-): MaskCompositionComponentParameters {
-  const algebra = inferLegacyMaskCompositionAlgebra(params);
-  return {
-    ...params,
-    algebra,
-    compositeTransformations: syncMaskEdgeTransformsToAlgebra(
-      params.compositeTransformations,
-      algebra,
-    ),
-  };
-}
-
-function buildMaskClipTransformations(
-  maskTransforms: ClipTransform[],
-  parentClip: TimelineClip,
-): ClipTransform[] {
-  const localTransforms = stripMaskEdgeTransforms(maskTransforms);
-  const inherited = getInheritedSpeedTransforms(parentClip);
-  if (inherited.length === 0) return localTransforms;
-  return [...localTransforms, ...inherited];
-}
-
-/**
- * Create a mask TimelineClip from mask data + parent clip.
- * Timing is copied from the parent; transforms are the mask's own + inherited speed.
- */
-function createMaskClip(
-  parentClip: TimelineClip,
-  opts: {
-    maskLocalId?: string;
-    name?: string;
-    maskType: ClipMaskType;
-    maskMode: ClipMaskMode;
-    maskInverted: boolean;
-    sam2GrowAmount?: number;
-    maskParameters: ClipMaskParameters;
-    maskPoints?: ClipMaskPoint[];
-    sam2MaskAssetId?: string;
-    sam2GeneratedPointsHash?: string;
-    sam2LastGeneratedAt?: number;
-    generationMaskAssetId?: string;
-    brushMaskAssetId?: string;
-    brushPaintedBounds?: import("../../types/TimelineTypes").BrushPaintedBounds;
-    activeRange?: MaskActiveRange;
-    transformations: ClipTransform[];
-  },
-): TimelineClip {
-  const maskLocalId = opts.maskLocalId ?? crypto.randomUUID();
-  return {
-    id: makeMaskClipId(parentClip.id, maskLocalId),
-    trackId: parentClip.trackId,
-    type: "mask",
-    name: opts.name ?? `Mask ${maskLocalId}`,
-    assetId: undefined,
-    sourceDuration: parentClip.sourceDuration,
-    start: parentClip.start,
-    timelineDuration: parentClip.timelineDuration,
-    offset: parentClip.offset,
-    transformedDuration: parentClip.transformedDuration,
-    transformedOffset: parentClip.transformedOffset,
-    croppedSourceDuration: parentClip.croppedSourceDuration,
-    transformations: buildMaskClipTransformations(
-      opts.transformations,
-      parentClip,
-    ),
-    parentClipId: parentClip.id,
-    maskType: opts.maskType,
-    maskMode: opts.maskMode,
-    maskInverted: opts.maskInverted,
-    sam2GrowAmount: opts.sam2GrowAmount,
-    maskParameters: opts.maskParameters,
-    maskPoints: opts.maskPoints ? structuredClone(opts.maskPoints) : undefined,
-    sam2MaskAssetId: opts.sam2MaskAssetId,
-    sam2GeneratedPointsHash: opts.sam2GeneratedPointsHash,
-    sam2LastGeneratedAt: opts.sam2LastGeneratedAt,
-    generationMaskAssetId: opts.generationMaskAssetId,
-    brushMaskAssetId: opts.brushMaskAssetId,
-    brushPaintedBounds: opts.brushPaintedBounds,
-    activeRange: opts.activeRange,
-  };
-}
-
-/** Convert a legacy ClipMask into a mask TimelineClip. */
-function maskToClip(parentClip: TimelineClip, mask: ClipMask): TimelineClip {
-  return createMaskClip(parentClip, {
-    maskLocalId: mask.id,
-    maskType: mask.type,
-    maskMode: mask.mode,
-    maskInverted: mask.inverted,
-    sam2GrowAmount: mask.sam2GrowAmount,
-    maskParameters: mask.parameters,
-    maskPoints: mask.maskPoints,
-    sam2MaskAssetId: mask.sam2MaskAssetId,
-    sam2GeneratedPointsHash: mask.sam2GeneratedPointsHash,
-    sam2LastGeneratedAt: mask.sam2LastGeneratedAt,
-    generationMaskAssetId: mask.generationMaskAssetId,
-    brushMaskAssetId: mask.brushMaskAssetId,
-    brushPaintedBounds: mask.brushPaintedBounds,
-    activeRange: mask.activeRange,
-    transformations: mask.transformations ?? [],
-  });
-}
-
-/**
- * Sync timing fields from a (potentially updated) parent clip onto a mask clip.
- * Returns a new clip object only if something changed.
- */
-function syncMaskTiming(
-  maskClip: TimelineClip,
-  parent: TimelineClip,
-): TimelineClip {
-  if (
-    maskClip.start === parent.start &&
-    maskClip.timelineDuration === parent.timelineDuration &&
-    maskClip.offset === parent.offset &&
-    maskClip.sourceDuration === parent.sourceDuration &&
-    maskClip.transformedDuration === parent.transformedDuration &&
-    maskClip.transformedOffset === parent.transformedOffset &&
-    maskClip.croppedSourceDuration === parent.croppedSourceDuration &&
-    maskClip.trackId === parent.trackId
-  ) {
-    return maskClip;
-  }
-
-  return {
-    ...maskClip,
-    start: parent.start,
-    timelineDuration: parent.timelineDuration,
-    offset: parent.offset,
-    sourceDuration: parent.sourceDuration,
-    transformedDuration: parent.transformedDuration,
-    transformedOffset: parent.transformedOffset,
-    croppedSourceDuration: parent.croppedSourceDuration,
-    trackId: parent.trackId,
-  };
-}
-
-/** Strip inherited speed transforms, leaving only mask-local transforms. */
-function getMaskLocalTransforms(maskClip: TimelineClip): ClipTransform[] {
-  return (maskClip.transformations || []).filter(
-    (transform) =>
-      !INHERITED_TRANSFORM_TYPES.has(transform.type) &&
-      !isMaskEdgeTransform(transform),
-  );
-}
-
-function migrateLegacyMaskEdgeTransforms(clips: TimelineClip[]): TimelineClip[] {
-  const normalizedClips = clips.map((clip) =>
-    withTimelineClipDefaults(cloneTimelineClip(clip)),
-  );
-  const clipById = new Map(
-    normalizedClips.map((clip) => [clip.id, clip] as const),
-  );
-
-  normalizedClips.forEach((clip) => {
-    if (clip.type === "mask") {
-      const parent = clip.parentClipId ? clipById.get(clip.parentClipId) : null;
-      clip.transformations = parent
-        ? buildMaskClipTransformations(getMaskLocalTransforms(clip), parent)
-        : getMaskLocalTransforms(clip);
-      return;
-    }
-
-    const parentClip = clip as StandardTimelineClip;
-    const childMaskIds = [
-      ...new Set([
-        ...getChildMaskClipIds(parentClip),
-        ...normalizedClips
-          .filter(
-            (candidate): candidate is MaskTimelineClip =>
-              candidate.type === "mask" &&
-              candidate.parentClipId === parentClip.id,
-          )
-          .map((candidate) => candidate.id),
-      ]),
-    ];
-    const childMasks = childMaskIds
-      .map((maskId) => clipById.get(maskId))
-      .filter(
-        (mask): mask is MaskTimelineClip => !!mask && mask.type === "mask",
-      );
-
-    const existingComposition = getMaskCompositionComponent(parentClip);
-    if (!existingComposition && childMasks.length === 0) {
-      return;
-    }
-
-    const existingSharedTransforms =
-      existingComposition &&
-      existingComposition.parameters.compositeTransformations.length > 0
-        ? structuredClone(
-            existingComposition.parameters.compositeTransformations,
-          )
-        : undefined;
-
-    const migratedSharedTransforms =
-      existingSharedTransforms ??
-      childMasks
-        .map((maskClip) => {
-          const edge = getMaskEdgeTransforms(maskClip.transformations);
-          return edge.length > 0 ? structuredClone(edge) : undefined;
-        })
-        .find(
-          (transforms): transforms is ClipTransform[] => !!transforms?.length,
-        );
-    const migratedAlgebra = existingComposition
-      ? inferLegacyMaskCompositionAlgebra(existingComposition.parameters)
-      : migratedSharedTransforms?.some(
-          (transform) => transform.parameters.invert === true,
-        )
-        ? "inverse"
-        : "normal";
-
-    updateMaskCompositionOnDraft(parentClip, (current) => {
-      const nextTransforms = migratedSharedTransforms ?? [];
-      if (
-        current.expression === undefined &&
-        nextTransforms.length === 0 &&
-        migratedAlgebra === DEFAULT_MASK_COMPOSITION_ALGEBRA
-      ) {
-        return null;
-      }
-      return {
-        ...current,
-        algebra: migratedAlgebra,
-        compositeTransformations: nextTransforms,
-      };
-    });
-
-    childMasks.forEach((maskClip) => {
-      maskClip.transformations = buildMaskClipTransformations(
-        getMaskLocalTransforms(maskClip),
-        parentClip,
-      );
-    });
-  });
-
-  return normalizedClips;
-}
-
-/**
- * Update inherited speed transforms on a mask clip to match a new parent.
- * Only produces a new object when the speed transforms actually differ.
- */
-function syncMaskInheritedSpeed(
-  maskClip: TimelineClip,
-  parentClip: TimelineClip,
-): TimelineClip {
-  const localTransforms = getMaskLocalTransforms(maskClip);
-  const parentSpeed = getInheritedSpeedTransforms(parentClip);
-
-  const merged =
-    parentSpeed.length > 0
-      ? [...localTransforms, ...parentSpeed]
-      : localTransforms;
-
-  if (
-    merged.length === maskClip.transformations.length &&
-    parentSpeed.every(
-      (transform, i) =>
-        maskClip.transformations[localTransforms.length + i] === transform,
-    )
-  ) {
-    return maskClip;
-  }
-
-  return { ...maskClip, transformations: merged };
-}
-
-/**
- * After a parent clip is updated, propagate timing + speed transforms to all its mask clips.
- * Returns the full clips array with mask clips updated in-place.
- */
-function propagateParentToMasks(
-  clips: TimelineClip[],
-  parentClip: TimelineClip,
-): TimelineClip[] {
-  const maskChildIds = new Set(getChildMaskClipIds(parentClip));
-  if (maskChildIds.size === 0) return clips;
-
-  return clips.map((clip) => {
-    if (!maskChildIds.has(clip.id)) return clip;
-    let updated = syncMaskTiming(clip, parentClip);
-    updated = syncMaskInheritedSpeed(updated, parentClip);
-    return updated;
-  });
-}
-
-/**
- * Clone a clip and all its child mask clips.
- * Returns [clonedParent, ...clonedMasks].
- */
-function cloneClipWithMasks(
-  clip: TimelineClip,
-  allClips: TimelineClip[],
-  newParentId?: string,
-): TimelineClip[] {
-  const parentId = newParentId ?? crypto.randomUUID();
-  const clonedParent = cloneTimelineClip(clip, parentId);
-
-  const maskChildIds = getChildMaskClipIds(clip);
-  const maskChildIdSet = new Set(maskChildIds);
-  const childMasks = maskChildIds.length > 0
-    ? allClips.filter((c) => maskChildIdSet.has(c.id) && c.type === "mask")
-    : [];
-
-  const clonedMaskIds: string[] = [];
-  const clonedMasks = childMasks.map((maskClip) => {
-    const parsed = parseMaskClipId(maskClip.id);
-    const maskLocalId = parsed?.maskId ?? crypto.randomUUID();
-    const newMaskId = makeMaskClipId(parentId, maskLocalId);
-    clonedMaskIds.push(newMaskId);
-
-    const clonedMask = {
-      ...cloneTimelineClip(maskClip, newMaskId),
-      parentClipId: parentId,
-      trackId: clonedParent.trackId,
-    };
-
-    return syncMaskInheritedSpeed(
-      syncMaskTiming(clonedMask, clonedParent),
-      clonedParent,
-    );
-  });
-
-  setChildMaskClipIds(clonedParent, clonedMaskIds);
-
-  return [clonedParent, ...clonedMasks];
-}
-
-function collectClipRemovalPlan(
-  clips: TimelineClip[],
-  clipIds: Iterable<string>,
-): {
-  clipIdsToRemove: Set<string>;
-  sam2MaskAssetIdsToDelete: Set<string>;
-} {
-  const clipIdsToRemove = new Set<string>();
-  const sam2MaskAssetIdsToDelete = new Set<string>();
-  const clipById = new Map(clips.map((clip) => [clip.id, clip]));
-
-  for (const clipId of clipIds) {
-    const clip = clipById.get(clipId);
-    if (!clip) {
-      continue;
-    }
-
-    clipIdsToRemove.add(clip.id);
-
-    if (clip.type === "mask") {
-      for (const backingAssetId of getMaskBackingAssetIds(clip)) {
-        sam2MaskAssetIdsToDelete.add(backingAssetId);
-      }
-      continue;
-    }
-
-    for (const maskChildId of getChildMaskClipIds(clip)) {
-      clipIdsToRemove.add(maskChildId);
-      const maskClip = clipById.get(maskChildId);
-      if (maskClip) {
-        for (const backingAssetId of getMaskBackingAssetIds(maskClip)) {
-          sam2MaskAssetIdsToDelete.add(backingAssetId);
-        }
-      }
-    }
-  }
-
-  for (const assetId of [...sam2MaskAssetIdsToDelete]) {
-    const hasRemainingConsumer = clips.some((clip) => {
-      if (clipIdsToRemove.has(clip.id)) {
-        return false;
-      }
-
-      return getMaskBackingAssetIds(clip).includes(assetId);
-    });
-
-    if (hasRemainingConsumer) {
-      sam2MaskAssetIdsToDelete.delete(assetId);
-    }
-  }
-
-  return {
-    clipIdsToRemove,
-    sam2MaskAssetIdsToDelete,
-  };
-}
-
-function removeClipsFromDraft(
-  draft: TimelineModelState,
-  clipIdsToRemove: Set<string>,
-): void {
-  if (clipIdsToRemove.size === 0) {
-    return;
-  }
-
-  const removedClips = draft.clips.filter((clip) => clipIdsToRemove.has(clip.id));
-  if (removedClips.length === 0) {
-    return;
-  }
-  const affectedTrackIds = new Set(removedClips.map((clip) => clip.trackId));
-
-  draft.clips = draft.clips.filter((clip) => !clipIdsToRemove.has(clip.id));
-
-  for (const removedClip of removedClips) {
-    if (removedClip.type !== "mask") {
-      continue;
-    }
-
-    const parsed = parseMaskClipId(removedClip.id);
-    if (!parsed) {
-      continue;
-    }
-
-    const parent = draft.clips.find((candidate) => candidate.id === parsed.clipId);
-    if (parent) {
-      removeMaskClipComponent(parent, removedClip.id);
-      if (parent.type !== "mask") {
-        const removedMaskId = getMaskLocalId(removedClip);
-        if (removedMaskId) {
-          updateMaskCompositionOnDraft(parent, (current) => {
-            // expression undefined → legacy auto-union, nothing to prune
-            // expression null → explicitly disabled, nothing to prune
-            if (!current.expression) {
-              return isMaskCompositionComponentMeaningful(current) ? current : null;
-            }
-            const prunedExpression = pruneMaskBooleanExpression(
-              current.expression,
-              [removedMaskId],
-            );
-            const nextParams: MaskCompositionComponentParameters = {
-              ...current,
-              expression: prunedExpression,
-            };
-            return isMaskCompositionComponentMeaningful(nextParams) ? nextParams : null;
-          });
-        }
-      }
-    }
-  }
-
-  draft.tracks = draft.tracks.map((track) => {
-    if (!affectedTrackIds.has(track.id)) {
-      return track;
-    }
-
-    const hasNonMaskClips = draft.clips.some(
-      (clip) => clip.trackId === track.id && clip.type !== "mask",
-    );
-    return hasNonMaskClips ? track : { ...track, type: undefined };
-  });
-
-  maybeTrimAndPadTracks(draft);
-}
-
-// ---------------------------------------------------------------------------
-// Selector helpers (exported for use in hooks)
-// ---------------------------------------------------------------------------
-
-export const selectMaskClipsForParent = (
-  state: { clips: TimelineClip[] },
-  parentClipId: string,
-): MaskTimelineClip[] => {
-  const parent = state.clips.find((c) => c.id === parentClipId);
-  if (!parent) return [];
-  const maskChildIds = getChildMaskClipIds(parent);
-  if (maskChildIds.length === 0) return [];
-  const clipById = new Map(state.clips.map((clip) => [clip.id, clip] as const));
-  return maskChildIds
-    .map((maskChildId) => clipById.get(maskChildId))
-    .filter((clip): clip is MaskTimelineClip => !!clip && clip.type === "mask");
-};
-
-export const selectResolvedMaskBooleanExpressionForParent = (
-  state: { clips: TimelineClip[] },
-  parentClipId: string,
-): MaskBooleanExpression | null => {
-  const parent = state.clips.find(
-    (clip): clip is StandardTimelineClip =>
-      clip.id === parentClipId && clip.type !== "mask",
-  );
-  if (!parent) {
-    return null;
-  }
-
-  return resolveMaskBooleanExpression(
-    parent,
-    selectMaskClipsForParent(state, parentClipId),
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Store
-// ---------------------------------------------------------------------------
-
-interface TimelineState {
-  tracks: TimelineTrack[];
-  clips: TimelineClip[];
-
+interface TimelineState extends TimelineModelState {
   isFocused: boolean;
-
   selectedClipIds: string[];
   copiedClips: TimelineClip[];
-
   canUndo: boolean;
   canRedo: boolean;
 
-  // ACTIONS
   setFocused: (focused: boolean) => void;
 
   duplicateClip: (clip: TimelineClip) => TimelineClip;
@@ -1072,17 +109,7 @@ interface TimelineState {
 
   updateClipShape: (
     id: string,
-    shape: Partial<
-      Pick<
-        TimelineClip,
-        | "start"
-        | "timelineDuration"
-        | "offset"
-        | "transformedDuration"
-        | "transformedOffset"
-        | "croppedSourceDuration"
-      >
-    >,
+    shape: TimelineClipShape,
   ) => void;
 
   updateClipDuration: (id: string, newDurationTicks: number) => void;
@@ -1117,29 +144,7 @@ interface TimelineState {
   updateClipMask: (
     clipId: string,
     maskId: string,
-    updates: Partial<
-      Pick<
-        MaskTimelineClip,
-        | "name"
-        | "maskMode"
-        | "maskInverted"
-        | "sam2GrowAmount"
-        | "maskParameters"
-        | "maskPoints"
-        | "sam2MaskAssetId"
-        | "sam2GeneratedPointsHash"
-        | "sam2LastGeneratedAt"
-        | "brushMaskAssetId"
-        | "brushPaintedBounds"
-      >
-    > & {
-      transformations?: ClipTransform[];
-      /**
-       * Pass `null` to clear the active range (mask becomes always-active),
-       * or an object to set/replace it. Omit to leave unchanged.
-       */
-      activeRange?: MaskActiveRange | null;
-    },
+    updates: TimelineMaskUpdate,
   ) => void;
 
   removeClipMask: (clipId: string, maskId: string) => void;
@@ -1166,204 +171,21 @@ interface TimelineState {
   getClipsAtTime: (timeTicks: number) => TimelineClip[];
 }
 
-let didRegisterBeforeUnloadListener = false;
-
 export const useTimelineStore = create<TimelineState>((set, get) => {
-  let undoStack: TimelineHistoryEntry[] = [];
-  let redoStack: TimelineHistoryEntry[] = [];
-  let pendingDocumentPatches: Patch[] = [];
-  let pendingPersistTimer: ReturnType<typeof setTimeout> | null = null;
-  let flushInFlight: Promise<void> | null = null;
-
-  const queueTimelinePatchesForPersistence = (timelinePatches: Patch[]): void => {
-    if (timelinePatches.length === 0) return;
-    if (!fileSystemService.getHandle()) return;
-
-    pendingDocumentPatches.push(...timelinePatches);
-
-    if (pendingPersistTimer !== null) return;
-
-    pendingPersistTimer = setTimeout(() => {
-      pendingPersistTimer = null;
-      void flushPendingPersistence();
-    }, TIMELINE_PERSIST_DEBOUNCE_MS);
-  };
-
-  const flushPendingPersistence = async (): Promise<void> => {
-    if (pendingPersistTimer !== null) {
-      clearTimeout(pendingPersistTimer);
-      pendingPersistTimer = null;
-    }
-
-    if (flushInFlight) {
-      await flushInFlight;
-    }
-
-    if (pendingDocumentPatches.length === 0) return;
-    if (!fileSystemService.getHandle()) {
-      pendingDocumentPatches = [];
-      return;
-    }
-
-    const patchesToApply = pendingDocumentPatches;
-    pendingDocumentPatches = [];
-
-    const fallbackSnapshot: TimelineSnapshot = {
-      tracks: structuredClone(get().tracks),
-      clips: structuredClone(get().clips),
-    };
-
-    flushInFlight = projectPersistenceService
-      .applyTimelinePatches(patchesToApply, fallbackSnapshot)
-      .then(() => undefined)
-      .catch(async (error) => {
-        console.error(
-          "[TimelineStore] Failed to apply timeline patches; writing snapshot fallback.",
-          error,
-        );
-
-        await projectPersistenceService.updateTimeline((draft) => {
-          draft.tracks = structuredClone(fallbackSnapshot.tracks);
-          draft.clips = structuredClone(fallbackSnapshot.clips);
-        });
-      })
-      .finally(() => {
-        flushInFlight = null;
-      });
-
-    await flushInFlight;
-
-    if (pendingDocumentPatches.length > 0) {
-      await flushPendingPersistence();
-    }
-  };
-
-  const applyHistoryFlags = () => ({
-    canUndo: undoStack.length > 0,
-    canRedo: redoStack.length > 0,
+  const mutationPipeline = createTimelineMutationPipeline<TimelineState>({
+    get,
+    set,
+    createDefaultTimelineSnapshot,
+    migrateTimelineSnapshot: (snapshot) => ({
+      tracks: structuredClone(snapshot.tracks),
+      clips: migrateLegacyMaskEdgeTransforms(
+        structuredClone(snapshot.clips),
+        withTimelineClipDefaults,
+      ),
+    }),
   });
 
-  const commitModelMutation = (
-    recipe: (draft: TimelineModelState) => void,
-    opts?: { persist?: boolean; recordHistory?: boolean },
-  ): boolean => {
-    const { persist = true, recordHistory = true } = opts ?? {};
-
-    const currentModel = getCurrentModelState(get());
-    const [nextModel, forwardPatches, inversePatches] = produceWithPatches(
-      currentModel,
-      recipe,
-    );
-
-    if (forwardPatches.length === 0) return false;
-
-    if (recordHistory) {
-      undoStack.push({ forwardPatches, inversePatches });
-      if (undoStack.length > TIMELINE_HISTORY_LIMIT) {
-        undoStack.shift();
-      }
-      redoStack = [];
-    }
-
-    set((state) => ({
-      tracks: nextModel.tracks,
-      clips: nextModel.clips,
-      selectedClipIds: sanitizeSelectedClipIds(
-        state.selectedClipIds,
-        nextModel.clips,
-      ),
-      ...applyHistoryFlags(),
-    }));
-
-    if (persist) {
-      queueTimelinePatchesForPersistence(forwardPatches);
-    }
-
-    return true;
-  };
-
-  const deleteSam2MaskAssets = (assetIds: Iterable<string>): void => {
-    const uniqueAssetIds = [...new Set([...assetIds].filter(Boolean))];
-    if (uniqueAssetIds.length === 0) return;
-
-    void import("../userAssets")
-      .then(async ({ deleteAsset }) => {
-        for (const assetId of uniqueAssetIds) {
-          try {
-            await deleteAsset(assetId);
-          } catch (error) {
-            console.warn(
-              `[TimelineStore] Failed to delete SAM2 mask asset '${assetId}'`,
-              error,
-            );
-          }
-        }
-      })
-      .catch((error) => {
-        console.warn(
-          "[TimelineStore] Failed to load asset store for SAM2 mask cleanup",
-          error,
-        );
-      });
-  };
-
-  const disposeBrushMaskBuffers = (maskClipIds: Iterable<string>): void => {
-    const uniqueMaskClipIds = [...new Set([...maskClipIds].filter(Boolean))];
-    if (uniqueMaskClipIds.length === 0) return;
-
-    void import("../masks/runtime/brushBufferRegistry")
-      .then(({ disposeBrushBuffer }) => {
-        uniqueMaskClipIds.forEach((maskClipId) => {
-          try {
-            disposeBrushBuffer(maskClipId);
-          } catch (error) {
-            console.warn(
-              `[TimelineStore] Failed to dispose brush buffer '${maskClipId}'`,
-              error,
-            );
-          }
-        });
-      })
-      .catch((error) => {
-        console.warn(
-          "[TimelineStore] Failed to load brush buffer registry for cleanup",
-          error,
-        );
-      });
-  };
-
-  const replaceTimelineSnapshot = (snapshot: TimelineSnapshot | null) => {
-    if (pendingPersistTimer !== null) {
-      clearTimeout(pendingPersistTimer);
-      pendingPersistTimer = null;
-    }
-    pendingDocumentPatches = [];
-    undoStack = [];
-    redoStack = [];
-
-    const next = snapshot
-      ? {
-          tracks: structuredClone(snapshot.tracks),
-          clips: migrateLegacyMaskEdgeTransforms(structuredClone(snapshot.clips)),
-        }
-      : createDefaultTimelineSnapshot();
-
-    set({
-      tracks: next.tracks,
-      clips: next.clips,
-      selectedClipIds: [],
-      copiedClips: [],
-      canUndo: false,
-      canRedo: false,
-    });
-  };
-
-  if (typeof window !== "undefined" && !didRegisterBeforeUnloadListener) {
-    window.addEventListener("beforeunload", () => {
-      void flushPendingPersistence();
-    });
-    didRegisterBeforeUnloadListener = true;
-  }
+  mutationPipeline.registerBeforeUnloadPersistence();
 
   const initial = createDefaultTimelineSnapshot();
 
@@ -1379,69 +201,33 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     setFocused: (focused) => set({ isFocused: focused }),
 
     addTrack: () => {
-      commitModelMutation((draft) => {
-        draft.tracks.push(createNewTrack(`Track ${draft.tracks.length + 1}`));
+      mutationPipeline.commitModelMutation((draft) => {
+        addTrackToDraft(draft);
       });
     },
 
     insertTrack: (index) => {
       const newTrack = createNewTrack("New Track");
-      commitModelMutation((draft) => {
-        const safeIndex = Math.max(0, Math.min(index, draft.tracks.length));
-        draft.tracks.splice(safeIndex, 0, newTrack);
+      mutationPipeline.commitModelMutation((draft) => {
+        insertTrackIntoDraft(draft, index, newTrack);
       });
       return newTrack.id;
     },
 
     addClip: (clip) => {
-      commitModelMutation((draft) => {
-        const clipWithDefaults = withTimelineClipDefaults(clip);
-        const targetTrack = draft.tracks.find(
-          (track) => track.id === clipWithDefaults.trackId,
-        );
-        if (targetTrack && !targetTrack.type) {
-          targetTrack.type = getTrackTypeFromClipType(clipWithDefaults.type);
-        }
-
-        draft.clips.push(clipWithDefaults);
-        maybeTrimAndPadTracks(draft);
+      mutationPipeline.commitModelMutation((draft) => {
+        addClipToDraft(draft, clip);
       });
     },
 
-    duplicateClip: (clip) => {
-      const allClips = get().clips;
-      const [parent] = cloneClipWithMasks(clip, allClips);
-      return parent;
-    },
+    duplicateClip: (clip) => duplicateTimelineClip(clip, get().clips),
 
     copySelectedClip: () => {
       const { selectedClipIds, clips, tracks } = get();
-      if (selectedClipIds.length === 0) return false;
-
-      const selectedSet = new Set(selectedClipIds);
-      const selectedClips = clips.filter(
-        (clip) => selectedSet.has(clip.id) && clip.type !== "mask",
-      );
-      if (selectedClips.length === 0) return false;
-
-      const trackIndexById = new Map(
-        tracks.map((track, index) => [track.id, index] as const),
-      );
-
-      const orderedSelection = [...selectedClips].sort((a, b) => {
-        const trackDelta =
-          (trackIndexById.get(a.trackId) ?? Number.MAX_SAFE_INTEGER) -
-          (trackIndexById.get(b.trackId) ?? Number.MAX_SAFE_INTEGER);
-
-        if (trackDelta !== 0) return trackDelta;
-        if (a.start !== b.start) return a.start - b.start;
-        return a.id.localeCompare(b.id);
-      });
-
-      const copiedClips: TimelineClip[] = [];
-      orderedSelection.forEach((clip) => {
-        copiedClips.push(...cloneClipWithMasks(clip, clips));
-      });
+      const copiedClips = copySelectedClips(selectedClipIds, clips, tracks);
+      if (copiedClips.length === 0) {
+        return false;
+      }
 
       set({ copiedClips });
       return true;
@@ -1449,124 +235,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     pasteCopiedClipAbove: () => {
       const { copiedClips } = get();
+      let pastedClipIds: string[] = [];
 
-      const parentCopies = copiedClips.filter((clip) => clip.type !== "mask");
-      if (parentCopies.length === 0) return false;
-
-      const maskCopiesByParent = new Map<string, TimelineClip[]>();
-      parentCopies.forEach((parent) => {
-        const maskChildIds = new Set(getChildMaskClipIds(parent));
-        if (maskChildIds.size === 0) return;
-        const masks = copiedClips.filter((c) => maskChildIds.has(c.id));
-        if (masks.length > 0) {
-          maskCopiesByParent.set(parent.id, masks);
-        }
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        pastedClipIds = pasteCopiedClipsAboveDraft(draft, copiedClips);
       });
 
-      const groupsBySourceTrack = new Map<string, TimelineClip[]>();
-      parentCopies.forEach((clip) => {
-        const group = groupsBySourceTrack.get(clip.trackId) || [];
-        group.push(clip);
-        groupsBySourceTrack.set(clip.trackId, group);
-      });
-
-      const pastedClipIds: string[] = [];
-
-      const didCommit = commitModelMutation((draft) => {
-        const initialTrackIndexById = new Map(
-          draft.tracks.map((track, index) => [track.id, index] as const),
-        );
-
-        const sourceTrackIdsByPriority = [...groupsBySourceTrack.keys()].sort(
-          (a, b) =>
-            (initialTrackIndexById.get(b) ?? Number.MIN_SAFE_INTEGER) -
-            (initialTrackIndexById.get(a) ?? Number.MIN_SAFE_INTEGER),
-        );
-
-        sourceTrackIdsByPriority.forEach((sourceTrackId) => {
-          const clipsInGroup = groupsBySourceTrack.get(sourceTrackId) || [];
-          if (clipsInGroup.length === 0) return;
-
-          const currentTrackIndex = draft.tracks.findIndex(
-            (track) => track.id === sourceTrackId,
-          );
-          if (currentTrackIndex === -1) return;
-
-          const aboveTrack =
-            currentTrackIndex > 0 ? draft.tracks[currentTrackIndex - 1] : null;
-
-          const canUseAboveTrack =
-            !!aboveTrack &&
-            clipsInGroup.every((clip) => {
-              if (
-                aboveTrack.type &&
-                aboveTrack.type !== getTrackTypeFromClipType(clip.type)
-              ) {
-                return false;
-              }
-
-              return (
-                resolveCollision(
-                  clip.id,
-                  clip.start,
-                  clip.timelineDuration,
-                  aboveTrack.id,
-                  draft.clips,
-                ) === clip.start
-              );
-            });
-
-          const targetTrackId =
-            canUseAboveTrack && aboveTrack
-              ? aboveTrack.id
-              : (() => {
-                  const inserted = createNewTrack("New Track");
-                  draft.tracks.splice(Math.max(currentTrackIndex, 0), 0, inserted);
-                  return inserted.id;
-                })();
-
-          clipsInGroup.forEach((clip) => {
-            const pastedClip = cloneTimelineClip(clip, crypto.randomUUID());
-            pastedClip.trackId = targetTrackId;
-            pastedClip.start = clip.start;
-
-            const targetTrack = draft.tracks.find(
-              (track) => track.id === targetTrackId,
-            );
-            if (targetTrack && !targetTrack.type) {
-              targetTrack.type = getTrackTypeFromClipType(pastedClip.type);
-            }
-
-            const pastedMasks = (maskCopiesByParent.get(clip.id) || []).map(
-              (maskClip) => {
-                const parsed = parseMaskClipId(maskClip.id);
-                const maskLocalId = parsed?.maskId ?? crypto.randomUUID();
-                const clonedMask = {
-                  ...cloneTimelineClip(
-                    maskClip,
-                    makeMaskClipId(pastedClip.id, maskLocalId),
-                  ),
-                  parentClipId: pastedClip.id,
-                  trackId: pastedClip.trackId,
-                };
-                return syncMaskInheritedSpeed(
-                  syncMaskTiming(clonedMask, pastedClip),
-                  pastedClip,
-                );
-              },
-            );
-
-            setChildMaskClipIds(pastedClip, pastedMasks.map((m) => m.id));
-            draft.clips.push(pastedClip);
-            draft.clips.push(...pastedMasks);
-            pastedClipIds.push(pastedClip.id);
-          });
-        });
-
-        maybeTrimAndPadTracks(draft);
-      });
-
-      if (!didCommit || pastedClipIds.length === 0) return false;
+      if (!didCommit || pastedClipIds.length === 0) {
+        return false;
+      }
 
       set({ selectedClipIds: pastedClipIds });
       return true;
@@ -1575,44 +252,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     splitClip: (clipId, splitTime) => {
       let rightClipId: string | null = null;
 
-      const didCommit = commitModelMutation((draft) => {
-        const clip = draft.clips.find((candidate) => candidate.id === clipId);
-        if (!clip) return;
-
-        if (
-          splitTime <= clip.start ||
-          splitTime >= clip.start + clip.timelineDuration
-        ) {
-          console.warn("[Store] Split time outside clip bounds");
-          return;
-        }
-
-        const leftDuration = splitTime - clip.start;
-        const leftDelta = leftDuration - clip.timelineDuration;
-        const leftUpdates = getResizedClipRight(clip, leftDelta);
-
-        const cloned = cloneClipWithMasks(clip, draft.clips);
-        const [rightClip, ...rightMasks] = cloned;
-
-        const rightDelta = splitTime - clip.start;
-        const rightUpdates = getResizedClipLeft(rightClip, rightDelta);
-        Object.assign(rightClip, rightUpdates);
-        rightClipId = rightClip.id;
-
-        const leftParent = { ...clip, ...leftUpdates } as TimelineClip;
-
-        let updatedClips: TimelineClip[] = draft.clips.flatMap((candidate) => {
-          if (candidate.id === clipId) {
-            return [leftParent, rightClip, ...rightMasks];
-          }
-          return [candidate];
-        });
-
-        updatedClips = propagateParentToMasks(updatedClips, leftParent);
-        updatedClips = propagateParentToMasks(updatedClips, rightClip);
-        draft.clips = updatedClips;
-
-        maybeTrimAndPadTracks(draft);
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        rightClipId = splitClipInDraft(draft, clipId, splitTime);
       });
 
       if (!didCommit || !rightClipId) return;
@@ -1626,78 +267,40 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     removeClip: (id) => {
-      const currentState = get();
-      const { clipIdsToRemove, sam2MaskAssetIdsToDelete } =
-        collectClipRemovalPlan(currentState.clips, [id]);
-      const brushMaskClipIdsToDispose = currentState.clips
-        .filter(
-          (clip): clip is MaskTimelineClip =>
-            clipIdsToRemove.has(clip.id) &&
-            clip.type === "mask" &&
-            clip.maskType === "brush",
-        )
-        .map((clip) => clip.id);
-
-      const didCommit = commitModelMutation((draft) => {
-        removeClipsFromDraft(draft, clipIdsToRemove);
+      const removalPlan = planTimelineRemoval(get().clips, [id]);
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
       });
 
       if (didCommit) {
-        disposeBrushMaskBuffers(brushMaskClipIdsToDispose);
-        deleteSam2MaskAssets(sam2MaskAssetIdsToDelete);
+        mutationPipeline.runPostCommitEffects(removalPlan);
       }
     },
 
     removeClipsByAssetId: (assetId) => {
-      const currentState = get();
-      const directlyReferencedClipIds = currentState.clips
-        .filter((clip) => clip.assetId === assetId)
+      const directlyReferencedClipIds = get()
+        .clips.filter((clip) => clip.assetId === assetId)
         .map((clip) => clip.id);
 
       if (directlyReferencedClipIds.length === 0) {
         return 0;
       }
 
-      const { clipIdsToRemove, sam2MaskAssetIdsToDelete } =
-        collectClipRemovalPlan(currentState.clips, directlyReferencedClipIds);
-      const brushMaskClipIdsToDispose = currentState.clips
-        .filter(
-          (clip): clip is MaskTimelineClip =>
-            clipIdsToRemove.has(clip.id) &&
-            clip.type === "mask" &&
-            clip.maskType === "brush",
-        )
-        .map((clip) => clip.id);
-
-      const didCommit = commitModelMutation((draft) => {
-        removeClipsFromDraft(draft, clipIdsToRemove);
+      const removalPlan = planTimelineRemoval(get().clips, directlyReferencedClipIds);
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
       });
 
       if (didCommit) {
-        disposeBrushMaskBuffers(brushMaskClipIdsToDispose);
-        deleteSam2MaskAssets(sam2MaskAssetIdsToDelete);
+        mutationPipeline.runPostCommitEffects(removalPlan);
       }
 
       return directlyReferencedClipIds.length;
     },
 
     replaceClipAsset: (clipId, asset) => {
-      commitModelMutation((draft) => {
-        draft.clips = draft.clips.map((clip) => {
-          if (clip.id !== clipId || clip.type === "mask") {
-            return clip;
-          }
-
-          if (clip.type !== asset.type) {
-            return clip;
-          }
-
-          return {
-            ...clip,
-            assetId: asset.id,
-            name: asset.name,
-          };
-        });
+      mutationPipeline.commitModelMutation((draft) => {
+        replaceClipAssetInDraft(draft, clipId, asset);
       });
     },
 
@@ -1728,615 +331,151 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     updateClipPosition: (id, newStartTicks, newTrackId) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find((candidate) => candidate.id === id);
-        if (!clip) return;
-
-        if (newTrackId && newTrackId !== clip.trackId) {
-          const targetTrack = draft.tracks.find((track) => track.id === newTrackId);
-          if (targetTrack && !targetTrack.type) {
-            targetTrack.type = getTrackTypeFromClipType(clip.type);
-          }
-
-          const isOldTrackEmpty = !draft.clips.some(
-            (candidate) =>
-              candidate.trackId === clip.trackId &&
-              candidate.id !== id &&
-              candidate.type !== "mask",
-          );
-
-          if (isOldTrackEmpty) {
-            draft.tracks = draft.tracks.map((track) =>
-              track.id === clip.trackId ? { ...track, type: undefined } : track,
-            );
-          }
-        }
-
-        const updatedParentStart = Math.round(Math.max(0, newStartTicks));
-        const updatedTrackId = newTrackId ?? clip.trackId;
-        const maskChildIds = new Set(getChildMaskClipIds(clip));
-
-        draft.clips = draft.clips.map((candidate) => {
-          if (candidate.id === id || maskChildIds.has(candidate.id)) {
-            return {
-              ...candidate,
-              start: updatedParentStart,
-              trackId: updatedTrackId,
-            };
-          }
-
-          return candidate;
-        });
-
-        maybeTrimAndPadTracks(draft);
+      mutationPipeline.commitModelMutation((draft) => {
+        updateClipPositionInDraft(draft, id, newStartTicks, newTrackId);
       });
     },
 
     updateClipShape: (id, shape) => {
-      commitModelMutation((draft) => {
-        let updatedParent: TimelineClip | null = null;
-
-        draft.clips = draft.clips.map((clip) => {
-          if (clip.id !== id) return clip;
-
-          const updated = {
-            ...clip,
-            start: shape.start !== undefined ? Math.round(shape.start) : clip.start,
-            timelineDuration:
-              shape.timelineDuration !== undefined
-                ? Math.round(shape.timelineDuration)
-                : clip.timelineDuration,
-            offset: shape.offset !== undefined ? Math.round(shape.offset) : clip.offset,
-            transformedDuration:
-              shape.transformedDuration !== undefined
-                ? Math.round(shape.transformedDuration)
-                : clip.transformedDuration,
-            transformedOffset:
-              shape.transformedOffset !== undefined
-                ? Math.round(shape.transformedOffset)
-                : clip.transformedOffset,
-            croppedSourceDuration:
-              shape.croppedSourceDuration !== undefined
-                ? Math.round(shape.croppedSourceDuration)
-                : clip.croppedSourceDuration,
-          };
-
-          updatedParent = updated;
-          return updated;
-        });
-
-        if (updatedParent) {
-          draft.clips = propagateParentToMasks(draft.clips, updatedParent);
-        }
+      mutationPipeline.commitModelMutation((draft) => {
+        updateClipShapeInDraft(draft, id, shape);
       });
     },
 
     updateClipDuration: (id, newDurationTicks) => {
-      commitModelMutation((draft) => {
-        let updatedParent: TimelineClip | null = null;
-
-        draft.clips = draft.clips.map((clip) => {
-          if (clip.id !== id) return clip;
-
-          const updated = {
-            ...clip,
-            timelineDuration: Math.round(
-              Math.max(TICKS_PER_SECOND / 60, newDurationTicks),
-            ),
-          };
-
-          updatedParent = updated;
-          return updated;
-        });
-
-        if (updatedParent) {
-          draft.clips = propagateParentToMasks(draft.clips, updatedParent);
-        }
+      mutationPipeline.commitModelMutation((draft) => {
+        updateClipDurationInDraft(draft, id, newDurationTicks);
       });
     },
 
     addClipTransform: (clipId, effect) => {
-      commitModelMutation((draft) => {
-        draft.clips = draft.clips.map((clip) =>
-          clip.id === clipId
-            ? { ...clip, transformations: [...(clip.transformations || []), effect] }
-            : clip,
-        );
-
-        if (INHERITED_TRANSFORM_TYPES.has(effect.type)) {
-          const parent = draft.clips.find((clip) => clip.id === clipId);
-          if (parent && parent.type !== "mask") {
-            draft.clips = propagateParentToMasks(draft.clips, parent);
-          }
-        }
+      mutationPipeline.commitModelMutation((draft) => {
+        addClipTransformToDraft(draft, clipId, effect);
       });
     },
 
     updateClipTransform: (clipId, effectId, updates) => {
-      commitModelMutation((draft) => {
-        draft.clips = draft.clips.map((clip) => {
-          if (clip.id !== clipId) return clip;
-
-          return {
-            ...clip,
-            transformations: clip.transformations.map((effect) =>
-              effect.id === effectId ? { ...effect, ...updates } : effect,
-            ),
-          };
-        });
-
-        const parent = draft.clips.find((clip) => clip.id === clipId);
-        if (parent && parent.type !== "mask") {
-          const transform = parent.transformations.find((t) => t.id === effectId);
-          if (transform && INHERITED_TRANSFORM_TYPES.has(transform.type)) {
-            draft.clips = propagateParentToMasks(draft.clips, parent);
-          }
-        }
+      mutationPipeline.commitModelMutation((draft) => {
+        updateClipTransformInDraft(draft, clipId, effectId, updates);
       });
     },
 
     setClipTransforms: (clipId, transforms) => {
-      commitModelMutation((draft) => {
-        draft.clips = draft.clips.map((clip) =>
-          clip.id === clipId ? { ...clip, transformations: transforms } : clip,
-        );
-
-        const parent = draft.clips.find((clip) => clip.id === clipId);
-        if (parent && parent.type !== "mask") {
-          draft.clips = propagateParentToMasks(draft.clips, parent);
-        }
+      mutationPipeline.commitModelMutation((draft) => {
+        setClipTransformsInDraft(draft, clipId, transforms);
       });
     },
 
     setClipMaskCompositeTransforms: (clipId, transforms) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
-        );
-        if (!clip) return;
-
-        updateMaskCompositionOnDraft(clip, (current) => {
-          const algebra = resolveMaskCompositionAlgebra(current);
-          const normalized = syncMaskEdgeTransformsToAlgebra(
-            transforms,
-            algebra,
-          );
-          if (
-            current.expression === undefined &&
-            current.algebra === undefined &&
-            normalized.length === 0
-          ) {
-            return null;
-          }
-
-          const nextParams: MaskCompositionComponentParameters = {
-            ...current,
-            algebra,
-            compositeTransformations: normalized,
-          };
-          return isMaskCompositionComponentMeaningful(nextParams)
-            ? nextParams
-            : null;
-        });
+      mutationPipeline.commitModelMutation((draft) => {
+        setClipMaskCompositeTransformsInDraft(draft, clipId, transforms);
       });
     },
 
     setClipMaskCompositionAlgebra: (clipId, algebra) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
-        );
-        if (!clip) return;
-
-        updateMaskCompositionOnDraft(clip, (current) => {
-          const nextParams: MaskCompositionComponentParameters = {
-            ...current,
-            algebra,
-            compositeTransformations: syncMaskEdgeTransformsToAlgebra(
-              current.compositeTransformations,
-              algebra,
-            ),
-          };
-          return isMaskCompositionComponentMeaningful(nextParams)
-            ? nextParams
-            : null;
-        });
+      mutationPipeline.commitModelMutation((draft) => {
+        setClipMaskCompositionAlgebraInDraft(draft, clipId, algebra);
       });
     },
 
     setClipMaskBooleanExpression: (clipId, expression) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
-        );
-        if (!clip) return;
-
-        updateMaskCompositionOnDraft(clip, (current) => ({
-          ...current,
-          expression: expression ? structuredClone(expression) : null,
-        }));
+      mutationPipeline.commitModelMutation((draft) => {
+        setClipMaskBooleanExpressionInDraft(draft, clipId, expression);
       });
     },
 
     removeClipTransform: (clipId, effectId) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find((candidate) => candidate.id === clipId);
-        const removedTransform = clip?.transformations.find(
-          (effect) => effect.id === effectId,
-        );
-
-        draft.clips = draft.clips.map((candidate) =>
-          candidate.id === clipId
-            ? {
-                ...candidate,
-                transformations: candidate.transformations.filter(
-                  (effect) => effect.id !== effectId,
-                ),
-              }
-            : candidate,
-        );
-
-        if (
-          removedTransform &&
-          INHERITED_TRANSFORM_TYPES.has(removedTransform.type) &&
-          clip &&
-          clip.type !== "mask"
-        ) {
-          const parent = draft.clips.find((candidate) => candidate.id === clipId);
-          if (parent) {
-            draft.clips = propagateParentToMasks(draft.clips, parent);
-          }
-        }
+      mutationPipeline.commitModelMutation((draft) => {
+        removeClipTransformFromDraft(draft, clipId, effectId);
       });
     },
 
     addClipMask: (clipId, mask) => {
-      commitModelMutation((draft) => {
-        const parent = draft.clips.find((clip) => clip.id === clipId);
-        if (!parent || parent.type === "mask") return;
-
-        const existingMaskClips = getOrderedChildMaskClips(draft.clips, parent);
-
-        const maskClip = maskToClip(parent, mask);
-        maskClip.name = `Mask ${existingMaskClips.length + 1}`;
-        draft.clips.push(maskClip);
-        addMaskClipComponent(parent, maskClip.id);
-
-        const maskLocalId = getMaskLocalId(maskClip);
-        if (!maskLocalId) {
-          return;
-        }
-
-        const resolved = resolveMaskBooleanExpression(parent, existingMaskClips);
-        const nextExpression = appendMaskBooleanExpression(resolved, maskLocalId);
-        updateMaskCompositionOnDraft(parent, (current) => ({
-          ...current,
-          expression: nextExpression,
-        }));
+      mutationPipeline.commitModelMutation((draft) => {
+        addClipMaskToDraft(draft, clipId, mask);
       });
     },
 
     duplicateClipMask: (clipId, maskId) => {
       let duplicatedMaskId: string | null = null;
 
-      const didCommit = commitModelMutation((draft) => {
-        const parent = draft.clips.find(
-          (clip): clip is StandardTimelineClip =>
-            clip.id === clipId && clip.type !== "mask",
-        );
-        if (!parent) return;
-
-        const sourceMaskClipId = makeMaskClipId(clipId, maskId);
-        const sourceMask = draft.clips.find(
-          (clip): clip is MaskTimelineClip =>
-            clip.id === sourceMaskClipId && clip.type === "mask",
-        );
-        if (!sourceMask) return;
-
-        const orderedMaskClips = getOrderedChildMaskClips(draft.clips, parent);
-        const sourceIndex = orderedMaskClips.findIndex(
-          (maskClip) => maskClip.id === sourceMaskClipId,
-        );
-        const nextLocalId = `mask_${crypto.randomUUID()}`;
-        const nextMaskClipId = makeMaskClipId(clipId, nextLocalId);
-        const storedSourceName = sourceMask.name.trim();
-        const sourceName =
-          storedSourceName && storedSourceName !== `Mask ${maskId}`
-            ? storedSourceName
-            : sourceIndex >= 0
-              ? `Mask ${sourceIndex + 1}`
-              : "Mask";
-        const duplicatedMask: MaskTimelineClip = {
-          ...structuredClone(sourceMask),
-          id: nextMaskClipId,
-          name: `${sourceName} copy`,
-          parentClipId: clipId,
-          trackId: parent.trackId,
-        };
-
-        draft.clips.push(duplicatedMask);
-
-        const currentMaskClipIds = getChildMaskClipIds(parent);
-        const insertIndex =
-          sourceIndex >= 0 ? sourceIndex + 1 : currentMaskClipIds.length;
-        const nextMaskClipIds = [
-          ...currentMaskClipIds.slice(0, insertIndex),
-          nextMaskClipId,
-          ...currentMaskClipIds.slice(insertIndex),
-        ];
-        setChildMaskClipIds(parent, nextMaskClipIds);
-
-        const resolved = resolveMaskBooleanExpression(parent, orderedMaskClips);
-        updateMaskCompositionOnDraft(parent, (current) => ({
-          ...current,
-          expression: appendMaskBooleanExpression(resolved, nextLocalId),
-        }));
-
-        duplicatedMaskId = nextLocalId;
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        duplicatedMaskId = duplicateClipMaskInDraft(draft, clipId, maskId);
       });
 
       return didCommit ? duplicatedMaskId : null;
     },
 
     updateClipMask: (clipId, maskId, updates) => {
-      commitModelMutation((draft) => {
-        const maskClipId = makeMaskClipId(clipId, maskId);
-        const maskClip = draft.clips.find((clip) => clip.id === maskClipId);
-
-        if (!maskClip || maskClip.type !== "mask") return;
-
-        if (updates.name !== undefined) {
-          maskClip.name = updates.name;
-        }
-
-        if (updates.maskMode !== undefined) {
-          maskClip.maskMode = updates.maskMode;
-        }
-
-        if (updates.maskInverted !== undefined) {
-          maskClip.maskInverted = updates.maskInverted;
-        }
-
-        if (updates.sam2GrowAmount !== undefined) {
-          maskClip.sam2GrowAmount = updates.sam2GrowAmount;
-        }
-
-        if (updates.maskParameters !== undefined) {
-          maskClip.maskParameters = {
-            ...maskClip.maskParameters,
-            ...updates.maskParameters,
-          };
-        }
-
-        if (updates.maskPoints !== undefined) {
-          maskClip.maskPoints = structuredClone(updates.maskPoints);
-        }
-
-        if (updates.sam2MaskAssetId !== undefined) {
-          maskClip.sam2MaskAssetId = updates.sam2MaskAssetId;
-        }
-
-        if (updates.sam2GeneratedPointsHash !== undefined) {
-          maskClip.sam2GeneratedPointsHash = updates.sam2GeneratedPointsHash;
-        }
-
-        if (updates.sam2LastGeneratedAt !== undefined) {
-          maskClip.sam2LastGeneratedAt = updates.sam2LastGeneratedAt;
-        }
-
-        if (Object.prototype.hasOwnProperty.call(updates, "brushMaskAssetId")) {
-          maskClip.brushMaskAssetId = updates.brushMaskAssetId ?? undefined;
-        }
-
-        if (Object.prototype.hasOwnProperty.call(updates, "brushPaintedBounds")) {
-          maskClip.brushPaintedBounds = updates.brushPaintedBounds ?? undefined;
-        }
-
-        if (updates.activeRange !== undefined) {
-          if (updates.activeRange === null) {
-            maskClip.activeRange = undefined;
-          } else {
-            const start = Math.min(
-              updates.activeRange.startSourceTicks,
-              updates.activeRange.endSourceTicks,
-            );
-            const end = Math.max(
-              updates.activeRange.startSourceTicks,
-              updates.activeRange.endSourceTicks,
-            );
-            maskClip.activeRange = {
-              startSourceTicks: start,
-              endSourceTicks: end,
-            };
-          }
-        }
-
-        if (updates.transformations !== undefined) {
-          const parent = draft.clips.find((clip) => clip.id === clipId);
-          if (parent) {
-            maskClip.transformations = buildMaskClipTransformations(
-              updates.transformations,
-              parent,
-            );
-          } else {
-            maskClip.transformations = updates.transformations;
-          }
-        }
+      mutationPipeline.commitModelMutation((draft) => {
+        updateClipMaskInDraft(draft, clipId, maskId, updates);
       });
     },
 
     removeClipMask: (clipId, maskId) => {
       const maskClipId = makeMaskClipId(clipId, maskId);
-      const currentState = get();
-      const { clipIdsToRemove, sam2MaskAssetIdsToDelete } =
-        collectClipRemovalPlan(currentState.clips, [maskClipId]);
-      const brushMaskClipIdsToDispose = currentState.clips
-        .filter(
-          (clip): clip is MaskTimelineClip =>
-            clipIdsToRemove.has(clip.id) &&
-            clip.type === "mask" &&
-            clip.maskType === "brush",
-        )
-        .map((clip) => clip.id);
-
-      const didCommit = commitModelMutation((draft) => {
-        removeClipsFromDraft(draft, clipIdsToRemove);
+      const removalPlan = planTimelineRemoval(get().clips, [maskClipId]);
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
       });
 
       if (didCommit) {
-        disposeBrushMaskBuffers(brushMaskClipIdsToDispose);
-        deleteSam2MaskAssets(sam2MaskAssetIdsToDelete);
+        mutationPipeline.runPostCommitEffects(removalPlan);
       }
     },
 
     addClipComponent: (clipId, component) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
-        );
-        if (!clip) return;
-
-        clip.components = [...(clip.components ?? []), component];
+      mutationPipeline.commitModelMutation((draft) => {
+        addClipComponentToDraft(draft, clipId, component);
       });
     },
 
     updateClipComponent: (clipId, componentId, updater) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
-        );
-        if (!clip?.components) return;
-
-        clip.components = clip.components.map((component) =>
-          component.id === componentId ? updater(component) : component,
-        );
+      mutationPipeline.commitModelMutation((draft) => {
+        updateClipComponentInDraft(draft, clipId, componentId, updater);
       });
     },
 
     removeClipComponent: (clipId, componentId) => {
-      commitModelMutation((draft) => {
-        const clip = draft.clips.find(
-          (candidate): candidate is StandardTimelineClip =>
-            candidate.id === clipId && candidate.type !== "mask",
-        );
-        if (!clip?.components) return;
-
-        const next = clip.components.filter(
-          (component) => component.id !== componentId,
-        );
-        clip.components = next.length > 0 ? next : undefined;
+      mutationPipeline.commitModelMutation((draft) => {
+        removeClipComponentFromDraft(draft, clipId, componentId);
       });
     },
 
     toggleTrackVisibility: (trackId) => {
-      commitModelMutation((draft) => {
-        draft.tracks = draft.tracks.map((track) =>
-          track.id === trackId
-            ? { ...track, isVisible: !track.isVisible }
-            : track,
-        );
+      mutationPipeline.commitModelMutation((draft) => {
+        toggleTrackVisibilityInDraft(draft, trackId);
       });
     },
 
     toggleTrackMute: (trackId) => {
-      commitModelMutation((draft) => {
-        draft.tracks = draft.tracks.map((track) =>
-          track.id === trackId ? { ...track, isMuted: !track.isMuted } : track,
-        );
+      mutationPipeline.commitModelMutation((draft) => {
+        toggleTrackMuteInDraft(draft, trackId);
       });
     },
 
     toggleClipMute: (clipId) => {
-      commitModelMutation((draft) => {
-        draft.clips = draft.clips.map((clip) => {
-          if (clip.id !== clipId || clip.type === "mask") return clip;
-          return { ...clip, isMuted: !clip.isMuted };
-        });
+      mutationPipeline.commitModelMutation((draft) => {
+        toggleClipMuteInDraft(draft, clipId);
       });
     },
 
     trimAndPadTracks: () => {
-      commitModelMutation((draft) => {
-        maybeTrimAndPadTracks(draft);
+      mutationPipeline.commitModelMutation((draft) => {
+        trimAndPadTracksInDraft(draft);
       });
     },
 
-    undo: () => {
-      const entry = undoStack.pop();
-      if (!entry) return false;
+    undo: () => mutationPipeline.undo(),
+    redo: () => mutationPipeline.redo(),
+    replaceTimelineSnapshot: mutationPipeline.replaceTimelineSnapshot,
+    flushPendingPersistence: mutationPipeline.flushPendingPersistence,
 
-      const currentModel = getCurrentModelState(get());
-      const nextModel = applyPatches(
-        currentModel,
-        entry.inversePatches,
-      ) as TimelineModelState;
-
-      redoStack.push(entry);
-
-      set((state) => ({
-        tracks: nextModel.tracks,
-        clips: nextModel.clips,
-        selectedClipIds: sanitizeSelectedClipIds(
-          state.selectedClipIds,
-          nextModel.clips,
-        ),
-        ...applyHistoryFlags(),
-      }));
-
-      queueTimelinePatchesForPersistence(entry.inversePatches);
-      return true;
-    },
-
-    redo: () => {
-      const entry = redoStack.pop();
-      if (!entry) return false;
-
-      const currentModel = getCurrentModelState(get());
-      const nextModel = applyPatches(
-        currentModel,
-        entry.forwardPatches,
-      ) as TimelineModelState;
-
-      undoStack.push(entry);
-      if (undoStack.length > TIMELINE_HISTORY_LIMIT) {
-        undoStack.shift();
-      }
-
-      set((state) => ({
-        tracks: nextModel.tracks,
-        clips: nextModel.clips,
-        selectedClipIds: sanitizeSelectedClipIds(
-          state.selectedClipIds,
-          nextModel.clips,
-        ),
-        ...applyHistoryFlags(),
-      }));
-
-      queueTimelinePatchesForPersistence(entry.forwardPatches);
-      return true;
-    },
-
-    replaceTimelineSnapshot,
-
-    flushPendingPersistence: async () => {
-      await flushPendingPersistence();
-    },
-
-    getClipsAtTime: (time) => {
-      const { clips } = get();
-      return clips.filter(
-        (clip) =>
-          clip.type !== "mask" &&
-          clip.start <= time &&
-          clip.start + clip.timelineDuration > time,
-      );
-    },
+    getClipsAtTime: (timeTicks) => getTimelineClipsAtTime(get().clips, timeTicks),
   };
 });
-// DEBUG: expose for console diagnostics
-(window as unknown as Record<string, unknown>).__TIMELINE_STORE__ = useTimelineStore;
+
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__TIMELINE_STORE__ =
+    useTimelineStore;
+}

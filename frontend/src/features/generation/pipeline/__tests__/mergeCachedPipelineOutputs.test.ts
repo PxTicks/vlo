@@ -47,7 +47,9 @@ describe("mergeCachedPipelineOutputsIntoResponse", () => {
       },
     };
     const response = {
-      pipeline_outputs: { mask_processing: {} },
+      pipeline_outputs: {
+        mask_processing: {} as Record<string, unknown>,
+      },
     };
 
     const merged = mergeCachedPipelineOutputsIntoResponse(
@@ -80,7 +82,9 @@ describe("mergeCachedPipelineOutputsIntoResponse", () => {
 
   it("brings in cached stages absent from the response", () => {
     const cached = { mask_processing: { mask_crop_metadata: { mode: "full" } } };
-    const response = { pipeline_outputs: {} };
+    const response = {
+      pipeline_outputs: {} as Record<string, Record<string, unknown>>,
+    };
 
     const merged = mergeCachedPipelineOutputsIntoResponse(
       response,

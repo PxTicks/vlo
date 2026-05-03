@@ -13,7 +13,6 @@ import type {
   ClipMaskType,
   MaskTimelineClip,
   StandardTimelineClip,
-  TimelineClip,
 } from "../../../types/TimelineTypes";
 import {
   resolveMaskCompositionAlgebra,

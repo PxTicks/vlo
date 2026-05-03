@@ -254,7 +254,7 @@ describe("useMaskPanel", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.hasBrushAsset).toBe(true);
+      expect(result.current.brush.hasBrushAsset).toBe(true);
     });
 
     disposeBrushBuffer(brushMask.id);

@@ -1,7 +1,10 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MaskPanel } from "../MaskPanel";
-import { useMaskPanel } from "../hooks/useMaskPanel";
+import {
+  useMaskPanel,
+  type UseMaskPanelResult,
+} from "../hooks/useMaskPanel";
 import type { ClipTransform, MaskTimelineClip } from "../../../types/TimelineTypes";
 
 vi.mock("../hooks/useMaskPanel");
@@ -102,6 +105,30 @@ function createMaskClip(
   };
 }
 
+type MaskPanelFlatOverrides = Partial<
+  UseMaskPanelResult["selection"] &
+    UseMaskPanelResult["panel"] &
+    UseMaskPanelResult["mask"] &
+    UseMaskPanelResult["sam2"] &
+    UseMaskPanelResult["brush"] &
+    UseMaskPanelResult["rangeMask"]
+>;
+
+function pickOverrides<T extends object, K extends keyof T>(
+  source: T,
+  keys: readonly K[],
+): Partial<Pick<T, K>> {
+  const next: Partial<Pick<T, K>> = {};
+
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      next[key] = source[key];
+    }
+  }
+
+  return next;
+}
+
 describe("MaskPanel", () => {
   const mockSetAddMenuAnchorEl = vi.fn();
   const mockRequestDraw = vi.fn();
@@ -121,68 +148,180 @@ describe("MaskPanel", () => {
   const mockDeleteSelectedMask = vi.fn();
   const mockSetMaskCompositionAlgebra = vi.fn();
   const mockEnsureSam2Available = vi.fn(async () => true);
-  let baseHookValue: ReturnType<typeof useMaskPanel>;
+  let baseHookValue: UseMaskPanelResult;
+
+  const selectionOverrideKeys = [
+    "selectedClipId",
+    "masks",
+    "selectedMaskId",
+    "selectedMask",
+    "selectMask",
+    "duplicateMask",
+    "deleteMask",
+    "deleteSelectedMask",
+  ] as const;
+  const panelOverrideKeys = [
+    "addMenuAnchorEl",
+    "isAddDisabled",
+    "addDisabledReason",
+    "setAddMenuAnchorEl",
+    "requestDraw",
+  ] as const;
+  const maskOverrideKeys = [
+    "maskBooleanExpression",
+    "setMaskBooleanExpression",
+    "setMaskMode",
+    "setMaskName",
+    "maskInverted",
+    "setMaskInverted",
+    "maskCompositionAlgebra",
+    "setMaskCompositionAlgebra",
+  ] as const;
+  const sam2OverrideKeys = [
+    "sam2GrowAmount",
+    "setSam2GrowAmount",
+    "sam2PointMode",
+    "setSam2PointMode",
+    "sam2Points",
+    "sam2CurrentFramePointsCount",
+    "isSam2EditorOpen",
+    "isSam2Available",
+    "isSam2Checking",
+    "sam2AvailabilityError",
+    "ensureSam2Available",
+    "clearSam2Points",
+    "clearSam2CurrentFramePoints",
+    "generateSam2FramePreview",
+    "isSam2FrameGenerating",
+    "sam2FramePreviewError",
+    "generateSam2Mask",
+    "isSam2Generating",
+    "sam2GenerateError",
+    "isSam2Dirty",
+    "hasSam2MaskAsset",
+  ] as const;
+  const brushOverrideKeys = [
+    "brushTool",
+    "setBrushTool",
+    "brushRadius",
+    "setBrushRadius",
+    "hasBrushAsset",
+    "clearBrush",
+  ] as const;
+  const rangeMaskOverrideKeys = [
+    "rangeMaskComponents",
+    "startAddRangeMask",
+    "startEditRangeMask",
+    "removeRangeMask",
+    "toggleRangeMaskActive",
+    "selectedMaskActiveRange",
+    "startSetSelectedMaskActiveRange",
+    "clearSelectedMaskActiveRange",
+  ] as const;
+
+  function createHookValueFromFlat(
+    overrides: MaskPanelFlatOverrides = {},
+  ): UseMaskPanelResult {
+    return {
+      selection: {
+        ...baseHookValue.selection,
+        ...pickOverrides(overrides, selectionOverrideKeys),
+      },
+      panel: {
+        ...baseHookValue.panel,
+        ...pickOverrides(overrides, panelOverrideKeys),
+      },
+      mask: {
+        ...baseHookValue.mask,
+        ...pickOverrides(overrides, maskOverrideKeys),
+      },
+      sam2: {
+        ...baseHookValue.sam2,
+        ...pickOverrides(overrides, sam2OverrideKeys),
+      },
+      brush: {
+        ...baseHookValue.brush,
+        ...pickOverrides(overrides, brushOverrideKeys),
+      },
+      rangeMask: {
+        ...baseHookValue.rangeMask,
+        ...pickOverrides(overrides, rangeMaskOverrideKeys),
+      },
+    };
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockSharedMaskTransforms = [];
     baseHookValue = {
-      selectedClipId: "clip_1",
-      masks: [],
-      maskBooleanExpression: null,
-      selectedMaskId: null,
-      selectedMask: null,
-      addMenuAnchorEl: null,
-      isAddDisabled: false,
-      addDisabledReason: null,
-      setAddMenuAnchorEl: mockSetAddMenuAnchorEl,
-      requestDraw: mockRequestDraw,
-      selectMask: mockSelectMask,
-      setMaskMode: mockSetMaskMode,
-      setMaskBooleanExpression: mockSetMaskBooleanExpression,
-      setMaskName: mockSetMaskName,
-      maskInverted: false,
-      setMaskInverted: mockSetMaskInverted,
-      sam2GrowAmount: 0,
-      setSam2GrowAmount: mockSetSam2GrowAmount,
-      sam2PointMode: "add",
-      setSam2PointMode: mockSetSam2PointMode,
-      sam2Points: [],
-      sam2CurrentFramePointsCount: 0,
-      isSam2EditorOpen: false,
-      isSam2Available: true,
-      isSam2Checking: false,
-      sam2AvailabilityError: null,
-      ensureSam2Available: mockEnsureSam2Available,
-      clearSam2Points: mockClearSam2Points,
-      clearSam2CurrentFramePoints: mockClearSam2CurrentFramePoints,
-      generateSam2FramePreview: mockGenerateSam2FramePreview,
-      isSam2FrameGenerating: false,
-      sam2FramePreviewError: null,
-      generateSam2Mask: mockGenerateSam2Mask,
-      isSam2Generating: false,
-      sam2GenerateError: null,
-      isSam2Dirty: false,
-      hasSam2MaskAsset: false,
-      brushTool: "paint",
-      setBrushTool: vi.fn(),
-      brushRadius: 32,
-      setBrushRadius: vi.fn(),
-      hasBrushAsset: false,
-      clearBrush: vi.fn(),
-      duplicateMask: mockDuplicateMask,
-      deleteMask: mockDeleteMask,
-      deleteSelectedMask: mockDeleteSelectedMask,
-      maskCompositionAlgebra: "inverse",
-      setMaskCompositionAlgebra: mockSetMaskCompositionAlgebra,
-      rangeMaskComponents: [],
-      startAddRangeMask: vi.fn(),
-      startEditRangeMask: vi.fn(),
-      removeRangeMask: vi.fn(),
-      toggleRangeMaskActive: vi.fn(),
-      selectedMaskActiveRange: null,
-      startSetSelectedMaskActiveRange: vi.fn(),
-      clearSelectedMaskActiveRange: vi.fn(),
+      selection: {
+        selectedClipId: "clip_1",
+        masks: [],
+        selectedMaskId: null,
+        selectedMask: null,
+        selectMask: mockSelectMask,
+        duplicateMask: mockDuplicateMask,
+        deleteMask: mockDeleteMask,
+        deleteSelectedMask: mockDeleteSelectedMask,
+      },
+      panel: {
+        addMenuAnchorEl: null,
+        isAddDisabled: false,
+        addDisabledReason: null,
+        setAddMenuAnchorEl: mockSetAddMenuAnchorEl,
+        requestDraw: mockRequestDraw,
+      },
+      mask: {
+        maskBooleanExpression: null,
+        setMaskMode: mockSetMaskMode,
+        setMaskBooleanExpression: mockSetMaskBooleanExpression,
+        setMaskName: mockSetMaskName,
+        maskInverted: false,
+        setMaskInverted: mockSetMaskInverted,
+        maskCompositionAlgebra: "inverse",
+        setMaskCompositionAlgebra: mockSetMaskCompositionAlgebra,
+      },
+      sam2: {
+        sam2GrowAmount: 0,
+        setSam2GrowAmount: mockSetSam2GrowAmount,
+        sam2PointMode: "add",
+        setSam2PointMode: mockSetSam2PointMode,
+        sam2Points: [],
+        sam2CurrentFramePointsCount: 0,
+        isSam2EditorOpen: false,
+        isSam2Available: true,
+        isSam2Checking: false,
+        sam2AvailabilityError: null,
+        ensureSam2Available: mockEnsureSam2Available,
+        clearSam2Points: mockClearSam2Points,
+        clearSam2CurrentFramePoints: mockClearSam2CurrentFramePoints,
+        generateSam2FramePreview: mockGenerateSam2FramePreview,
+        isSam2FrameGenerating: false,
+        sam2FramePreviewError: null,
+        generateSam2Mask: mockGenerateSam2Mask,
+        isSam2Generating: false,
+        sam2GenerateError: null,
+        isSam2Dirty: false,
+        hasSam2MaskAsset: false,
+      },
+      brush: {
+        brushTool: "paint",
+        setBrushTool: vi.fn(),
+        brushRadius: 32,
+        setBrushRadius: vi.fn(),
+        hasBrushAsset: false,
+        clearBrush: vi.fn(),
+      },
+      rangeMask: {
+        rangeMaskComponents: [],
+        startAddRangeMask: vi.fn(),
+        startEditRangeMask: vi.fn(),
+        removeRangeMask: vi.fn(),
+        toggleRangeMaskActive: vi.fn(),
+        selectedMaskActiveRange: null,
+        startSetSelectedMaskActiveRange: vi.fn(),
+        clearSelectedMaskActiveRange: vi.fn(),
+      },
     };
     vi.mocked(useMaskPanel).mockReturnValue(baseHookValue);
   });
@@ -198,7 +337,7 @@ describe("MaskPanel", () => {
   }, 15000);
 
   it("renders selectable mask buttons plus trailing add mask button", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         createMaskClip("clip_1", "mask_1", "circle"),
@@ -206,7 +345,7 @@ describe("MaskPanel", () => {
       ],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "circle"),
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -218,7 +357,7 @@ describe("MaskPanel", () => {
   }, 10000);
 
   it("does not highlight any mask chip on the home view", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         createMaskClip("clip_1", "mask_1", "circle"),
@@ -226,7 +365,7 @@ describe("MaskPanel", () => {
       ],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "circle"),
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -239,12 +378,12 @@ describe("MaskPanel", () => {
   });
 
   it("shows helper text when add is disabled", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       isAddDisabled: true,
       addDisabledReason:
         "Move playhead inside the selected clip to draw a mask.",
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -260,11 +399,11 @@ describe("MaskPanel", () => {
   });
 
   it("keeps SAM2 selectable from the add menu even when unavailable", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       addMenuAnchorEl: document.createElement("button"),
       isSam2Available: false,
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -277,13 +416,13 @@ describe("MaskPanel", () => {
 
   it("shows SAM2 download on home and opens the SAM2 detail view separately", () => {
     const sam2Mask = createMaskClip("clip_1", "mask_sam2", "sam2");
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [sam2Mask],
       selectedMaskId: "mask_sam2",
       selectedMask: sam2Mask,
       isSam2Available: false,
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -314,13 +453,13 @@ describe("MaskPanel", () => {
   });
 
   it("does not show the SAM2 download overlay for non-SAM2 masks", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
       isSam2Available: false,
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -330,10 +469,10 @@ describe("MaskPanel", () => {
   });
 
   it("opens shape menu and dispatches selected shape", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       addMenuAnchorEl: document.createElement("button"),
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -342,12 +481,12 @@ describe("MaskPanel", () => {
   });
 
   it("updates mask mode and deletes selected mask", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -369,14 +508,14 @@ describe("MaskPanel", () => {
 
   it("shows an Add affordance for the active range when none is set and triggers the setter", () => {
     const mockStartSet = vi.fn();
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
       selectedMaskActiveRange: null,
       startSetSelectedMaskActiveRange: mockStartSet,
-    });
+    }));
 
     render(<MaskPanel />);
     fireEvent.click(
@@ -393,7 +532,7 @@ describe("MaskPanel", () => {
 
   it("shows the configured active range and clears it on remove", () => {
     const mockClear = vi.fn();
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
       selectedMaskId: "mask_1",
@@ -403,7 +542,7 @@ describe("MaskPanel", () => {
         endSourceTicks: 480_000,
       },
       clearSelectedMaskActiveRange: mockClear,
-    });
+    }));
 
     render(<MaskPanel />);
     fireEvent.click(
@@ -417,7 +556,7 @@ describe("MaskPanel", () => {
   });
 
   it("renames the selected mask from the detail view", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         {
@@ -430,7 +569,7 @@ describe("MaskPanel", () => {
         ...createMaskClip("clip_1", "mask_1", "triangle"),
         name: "Foreground",
       },
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -446,12 +585,12 @@ describe("MaskPanel", () => {
   });
 
   it("duplicates and deletes an available mask via the chip actions menu", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -476,10 +615,10 @@ describe("MaskPanel", () => {
   });
 
   it("does not expose an inline add-to-equation button on the home view", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -489,12 +628,12 @@ describe("MaskPanel", () => {
   });
 
   it("keeps shared mask edges on home and opens individual controls in detail view", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -540,12 +679,12 @@ describe("MaskPanel", () => {
         },
       },
     ];
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -558,12 +697,12 @@ describe("MaskPanel", () => {
   });
 
   it("does not materialize edge transforms when toggling algebra with none present", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -576,12 +715,12 @@ describe("MaskPanel", () => {
   });
 
   it("returns from a mask detail view back to the shared home view", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "triangle")],
       selectedMaskId: "mask_1",
       selectedMask: createMaskClip("clip_1", "mask_1", "triangle"),
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -604,12 +743,12 @@ describe("MaskPanel", () => {
 
   it("renders Sam2MaskPanel in the dedicated mask detail view", () => {
     const sam2Mask = createMaskClip("clip_1", "mask_sam2", "sam2");
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [sam2Mask],
       selectedMaskId: "mask_sam2",
       selectedMask: sam2Mask,
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -639,10 +778,10 @@ describe("MaskPanel", () => {
   });
 
   it("adds a mask to the equation by dragging its chip onto the equation area", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "circle")],
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -664,10 +803,10 @@ describe("MaskPanel", () => {
   });
 
   it("does not add a mask to the equation when simply clicking its chip", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "circle")],
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -677,7 +816,7 @@ describe("MaskPanel", () => {
   });
 
   it("unions a dragged mask onto the end when dropped on the equation area", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         createMaskClip("clip_1", "mask_1", "circle"),
@@ -687,7 +826,7 @@ describe("MaskPanel", () => {
         kind: "mask_ref",
         maskId: "mask_1",
       },
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -717,7 +856,7 @@ describe("MaskPanel", () => {
   });
 
   it("unions a dragged mask onto the end when dropped on an operator chip", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         createMaskClip("clip_1", "mask_1", "circle"),
@@ -736,7 +875,7 @@ describe("MaskPanel", () => {
           maskId: "mask_2",
         },
       },
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -774,7 +913,7 @@ describe("MaskPanel", () => {
   });
 
   it("nests a dragged mask into a subexpression when dropped on that chip", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         createMaskClip("clip_1", "mask_1", "circle"),
@@ -793,7 +932,7 @@ describe("MaskPanel", () => {
           maskId: "mask_2",
         },
       },
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -831,7 +970,7 @@ describe("MaskPanel", () => {
   });
 
   it("cycles an inline operator chip through the boolean operations", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         createMaskClip("clip_1", "mask_1", "circle"),
@@ -849,7 +988,7 @@ describe("MaskPanel", () => {
           maskId: "mask_2",
         },
       },
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -870,7 +1009,7 @@ describe("MaskPanel", () => {
   });
 
   it("does not render dedicated swap, delete, or clear equation buttons", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         createMaskClip("clip_1", "mask_1", "circle"),
@@ -888,7 +1027,7 @@ describe("MaskPanel", () => {
           maskId: "mask_2",
         },
       },
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -898,7 +1037,7 @@ describe("MaskPanel", () => {
   });
 
   it("swaps two equation mask chips when dragging one onto the other", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         createMaskClip("clip_1", "mask_1", "circle"),
@@ -916,7 +1055,7 @@ describe("MaskPanel", () => {
           maskId: "mask_2",
         },
       },
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -951,7 +1090,7 @@ describe("MaskPanel", () => {
   });
 
   it("removes the selected mask chip when Delete is pressed", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [
         createMaskClip("clip_1", "mask_1", "circle"),
@@ -969,7 +1108,7 @@ describe("MaskPanel", () => {
           maskId: "mask_2",
         },
       },
-    });
+    }));
 
     render(<MaskPanel />);
 
@@ -984,14 +1123,14 @@ describe("MaskPanel", () => {
   });
 
   it("clears the equation when Delete removes the final selected mask", () => {
-    vi.mocked(useMaskPanel).mockReturnValue({
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
       masks: [createMaskClip("clip_1", "mask_1", "circle")],
       maskBooleanExpression: {
         kind: "mask_ref",
         maskId: "mask_1",
       },
-    });
+    }));
 
     render(<MaskPanel />);
 

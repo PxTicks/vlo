@@ -39,62 +39,76 @@ import { useRangeMaskSelection } from "./useRangeMaskSelection";
 import { useBrushMaskPanel } from "./useBrushMaskPanel";
 
 export interface UseMaskPanelResult {
-  selectedClipId: string | null;
-  masks: MaskTimelineClip[];
-  maskBooleanExpression: MaskBooleanExpression | null;
-  selectedMaskId: string | null;
-  selectedMask: TimelineClip | null;
-  addMenuAnchorEl: HTMLElement | null;
-  isAddDisabled: boolean;
-  addDisabledReason: string | null;
-  setAddMenuAnchorEl: (anchor: HTMLElement | null) => void;
-  requestDraw: (shape: ClipMaskType) => void;
-  selectMask: (maskId: string) => void;
-  setMaskMode: (mode: ClipMaskMode) => void;
-  setMaskBooleanExpression: (expression: MaskBooleanExpression | null) => void;
-  setMaskName: (name: string) => void;
-  maskInverted: boolean;
-  setMaskInverted: (inverted: boolean) => void;
-  sam2GrowAmount: number;
-  setSam2GrowAmount: (amount: number) => void;
-  sam2PointMode: "add" | "remove";
-  setSam2PointMode: (mode: "add" | "remove") => void;
-  sam2Points: ClipMaskPoint[];
-  sam2CurrentFramePointsCount: number;
-  isSam2EditorOpen: boolean;
-  isSam2Available: boolean;
-  isSam2Checking: boolean;
-  sam2AvailabilityError: string | null;
-  ensureSam2Available: () => Promise<boolean>;
-  clearSam2Points: () => void;
-  clearSam2CurrentFramePoints: () => void;
-  generateSam2FramePreview: () => Promise<void>;
-  isSam2FrameGenerating: boolean;
-  sam2FramePreviewError: string | null;
-  generateSam2Mask: () => Promise<void>;
-  isSam2Generating: boolean;
-  sam2GenerateError: string | null;
-  isSam2Dirty: boolean;
-  hasSam2MaskAsset: boolean;
-  brushTool: "paint" | "erase" | "gizmo";
-  setBrushTool: (tool: "paint" | "erase" | "gizmo") => void;
-  brushRadius: number;
-  setBrushRadius: (radius: number) => void;
-  hasBrushAsset: boolean;
-  clearBrush: () => void | Promise<void>;
-  duplicateMask: (maskId: string) => void;
-  deleteMask: (maskId: string) => void;
-  deleteSelectedMask: () => void;
-  maskCompositionAlgebra: MaskCompositionAlgebra;
-  setMaskCompositionAlgebra: (algebra: MaskCompositionAlgebra) => void;
-  rangeMaskComponents: RangeMaskComponent[];
-  startAddRangeMask: () => void;
-  startEditRangeMask: (rangeMaskId: string) => void;
-  removeRangeMask: (rangeMaskId: string) => void;
-  toggleRangeMaskActive: (rangeMaskId: string) => void;
-  selectedMaskActiveRange: MaskActiveRange | null;
-  startSetSelectedMaskActiveRange: () => void;
-  clearSelectedMaskActiveRange: () => void;
+  selection: {
+    selectedClipId: string | null;
+    masks: MaskTimelineClip[];
+    selectedMaskId: string | null;
+    selectedMask: MaskTimelineClip | null;
+    selectMask: (maskId: string) => void;
+    duplicateMask: (maskId: string) => void;
+    deleteMask: (maskId: string) => void;
+    deleteSelectedMask: () => void;
+  };
+  panel: {
+    addMenuAnchorEl: HTMLElement | null;
+    isAddDisabled: boolean;
+    addDisabledReason: string | null;
+    setAddMenuAnchorEl: (anchor: HTMLElement | null) => void;
+    requestDraw: (shape: ClipMaskType) => void;
+  };
+  mask: {
+    maskBooleanExpression: MaskBooleanExpression | null;
+    setMaskBooleanExpression: (
+      expression: MaskBooleanExpression | null,
+    ) => void;
+    setMaskMode: (mode: ClipMaskMode) => void;
+    setMaskName: (name: string) => void;
+    maskInverted: boolean;
+    setMaskInverted: (inverted: boolean) => void;
+    maskCompositionAlgebra: MaskCompositionAlgebra;
+    setMaskCompositionAlgebra: (algebra: MaskCompositionAlgebra) => void;
+  };
+  sam2: {
+    sam2GrowAmount: number;
+    setSam2GrowAmount: (amount: number) => void;
+    sam2PointMode: "add" | "remove";
+    setSam2PointMode: (mode: "add" | "remove") => void;
+    sam2Points: ClipMaskPoint[];
+    sam2CurrentFramePointsCount: number;
+    isSam2EditorOpen: boolean;
+    isSam2Available: boolean;
+    isSam2Checking: boolean;
+    sam2AvailabilityError: string | null;
+    ensureSam2Available: () => Promise<boolean>;
+    clearSam2Points: () => void;
+    clearSam2CurrentFramePoints: () => void;
+    generateSam2FramePreview: () => Promise<void>;
+    isSam2FrameGenerating: boolean;
+    sam2FramePreviewError: string | null;
+    generateSam2Mask: () => Promise<void>;
+    isSam2Generating: boolean;
+    sam2GenerateError: string | null;
+    isSam2Dirty: boolean;
+    hasSam2MaskAsset: boolean;
+  };
+  brush: {
+    brushTool: "paint" | "erase" | "gizmo";
+    setBrushTool: (tool: "paint" | "erase" | "gizmo") => void;
+    brushRadius: number;
+    setBrushRadius: (radius: number) => void;
+    hasBrushAsset: boolean;
+    clearBrush: () => void | Promise<void>;
+  };
+  rangeMask: {
+    rangeMaskComponents: RangeMaskComponent[];
+    startAddRangeMask: () => void;
+    startEditRangeMask: (rangeMaskId: string) => void;
+    removeRangeMask: (rangeMaskId: string) => void;
+    toggleRangeMaskActive: (rangeMaskId: string) => void;
+    selectedMaskActiveRange: MaskActiveRange | null;
+    startSetSelectedMaskActiveRange: () => void;
+    clearSelectedMaskActiveRange: () => void;
+  };
 }
 
 export function useMaskPanel(): UseMaskPanelResult {
@@ -366,67 +380,79 @@ export function useMaskPanel(): UseMaskPanelResult {
   }, [deleteMask, selectedMaskId]);
 
   return {
-    selectedClipId,
-    masks,
-    maskBooleanExpression,
-    selectedMaskId,
-    selectedMask,
-    addMenuAnchorEl,
-    isAddDisabled,
-    addDisabledReason,
-    setAddMenuAnchorEl,
-    requestDraw,
-    selectMask,
-    setMaskMode,
-    setMaskBooleanExpression: (expression) => {
-      if (!selectedClipId) return;
-      setClipMaskBooleanExpression(selectedClipId, expression);
+    selection: {
+      selectedClipId,
+      masks,
+      selectedMaskId,
+      selectedMask,
+      selectMask,
+      duplicateMask,
+      deleteMask,
+      deleteSelectedMask,
     },
-    setMaskName,
-    maskInverted,
-    setMaskInverted,
-    sam2GrowAmount,
-    setSam2GrowAmount,
-    sam2PointMode,
-    setSam2PointMode,
-    sam2Points,
-    sam2CurrentFramePointsCount,
-    isSam2EditorOpen,
-    isSam2Available,
-    isSam2Checking,
-    sam2AvailabilityError,
-    ensureSam2Available,
-    clearSam2Points,
-    clearSam2CurrentFramePoints,
-    generateSam2FramePreview,
-    isSam2FrameGenerating,
-    sam2FramePreviewError,
-    generateSam2Mask,
-    isSam2Generating,
-    sam2GenerateError,
-    isSam2Dirty,
-    hasSam2MaskAsset,
-    brushTool,
-    setBrushTool,
-    brushRadius,
-    setBrushRadius,
-    hasBrushAsset,
-    clearBrush,
-    duplicateMask,
-    deleteMask,
-    deleteSelectedMask,
-    maskCompositionAlgebra,
-    setMaskCompositionAlgebra: (algebra) => {
-      if (!selectedClipId) return;
-      setClipMaskCompositionAlgebra(selectedClipId, algebra);
+    panel: {
+      addMenuAnchorEl,
+      isAddDisabled,
+      addDisabledReason,
+      setAddMenuAnchorEl,
+      requestDraw,
     },
-    rangeMaskComponents,
-    startAddRangeMask,
-    startEditRangeMask,
-    removeRangeMask,
-    toggleRangeMaskActive,
-    selectedMaskActiveRange,
-    startSetSelectedMaskActiveRange,
-    clearSelectedMaskActiveRange,
+    mask: {
+      maskBooleanExpression,
+      setMaskMode,
+      setMaskBooleanExpression: (expression) => {
+        if (!selectedClipId) return;
+        setClipMaskBooleanExpression(selectedClipId, expression);
+      },
+      setMaskName,
+      maskInverted,
+      setMaskInverted,
+      maskCompositionAlgebra,
+      setMaskCompositionAlgebra: (algebra) => {
+        if (!selectedClipId) return;
+        setClipMaskCompositionAlgebra(selectedClipId, algebra);
+      },
+    },
+    sam2: {
+      sam2GrowAmount,
+      setSam2GrowAmount,
+      sam2PointMode,
+      setSam2PointMode,
+      sam2Points,
+      sam2CurrentFramePointsCount,
+      isSam2EditorOpen,
+      isSam2Available,
+      isSam2Checking,
+      sam2AvailabilityError,
+      ensureSam2Available,
+      clearSam2Points,
+      clearSam2CurrentFramePoints,
+      generateSam2FramePreview,
+      isSam2FrameGenerating,
+      sam2FramePreviewError,
+      generateSam2Mask,
+      isSam2Generating,
+      sam2GenerateError,
+      isSam2Dirty,
+      hasSam2MaskAsset,
+    },
+    brush: {
+      brushTool,
+      setBrushTool,
+      brushRadius,
+      setBrushRadius,
+      hasBrushAsset,
+      clearBrush,
+    },
+    rangeMask: {
+      rangeMaskComponents,
+      startAddRangeMask,
+      startEditRangeMask,
+      removeRangeMask,
+      toggleRangeMaskActive,
+      selectedMaskActiveRange,
+      startSetSelectedMaskActiveRange,
+      clearSelectedMaskActiveRange,
+    },
   };
 }

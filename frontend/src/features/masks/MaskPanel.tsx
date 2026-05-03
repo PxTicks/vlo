@@ -126,21 +126,40 @@ export const MaskPanel = memo(function MaskPanel() {
   const [panelView, setPanelView] = useState<MaskPanelView>("home");
   const [homeSubTab, setHomeSubTab] = useState<MaskHomeSubTab>("clip");
   const {
+    selection,
+    panel,
+    mask,
+    sam2,
+    brush,
+    rangeMask,
+  } = useMaskPanel();
+  const {
     selectedClipId,
     masks,
-    maskBooleanExpression,
     selectedMask,
+    selectMask,
+    duplicateMask,
+    deleteMask,
+    deleteSelectedMask,
+  } = selection;
+  const {
     addMenuAnchorEl,
     isAddDisabled,
     addDisabledReason,
     setAddMenuAnchorEl,
     requestDraw,
-    selectMask,
+  } = panel;
+  const {
+    maskBooleanExpression,
     setMaskMode,
     setMaskBooleanExpression,
     setMaskName,
     maskInverted,
     setMaskInverted,
+    maskCompositionAlgebra,
+    setMaskCompositionAlgebra,
+  } = mask;
+  const {
     sam2GrowAmount,
     setSam2GrowAmount,
     sam2PointMode,
@@ -161,17 +180,16 @@ export const MaskPanel = memo(function MaskPanel() {
     sam2GenerateError,
     isSam2Dirty,
     hasSam2MaskAsset,
+  } = sam2;
+  const {
     brushTool,
     setBrushTool,
     brushRadius,
     setBrushRadius,
     hasBrushAsset,
     clearBrush,
-    duplicateMask,
-    deleteMask,
-    deleteSelectedMask,
-    maskCompositionAlgebra,
-    setMaskCompositionAlgebra,
+  } = brush;
+  const {
     rangeMaskComponents,
     startAddRangeMask,
     startEditRangeMask,
@@ -180,7 +198,7 @@ export const MaskPanel = memo(function MaskPanel() {
     selectedMaskActiveRange,
     startSetSelectedMaskActiveRange,
     clearSelectedMaskActiveRange,
-  } = useMaskPanel();
+  } = rangeMask;
   const {
     activeContextId: sharedMaskContextId,
     activeTransforms: sharedMaskTransforms,

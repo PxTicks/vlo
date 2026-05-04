@@ -8,8 +8,10 @@ import { playbackClock } from "../../player/services/PlaybackClock";
 import { BufferedTextInput } from "../../panelUI/components/BufferedTextInput";
 import {
   TRACK_HEADER_WIDTH,
+  RULER_HEIGHT,
   TICKS_PER_SECOND,
   PIXELS_PER_SECOND,
+  SNAP_THRESHOLD_PX,
 } from "../constants";
 import {
   getTicksPerFrame,
@@ -19,6 +21,11 @@ import {
   snapTickToFrame,
 } from "../../timelineSelection";
 import { stopOverlayEventPropagation } from "../utils/stopOverlayEventPropagation";
+import {
+  buildTimelineSnapPoints,
+  useInteractionStore,
+} from "../hooks/useInteractionStore";
+import { getEdgeSnapCandidate } from "../hooks/dnd/snapUtils";
 
 export interface SelectionOverlayProps {
   maxSelectionTicks?: number | null;
@@ -59,6 +66,8 @@ export function SelectionOverlay({
   const onConfirmSelection = useExtractStore((s) => s.onConfirmSelection);
   const zoomScale = useTimelineViewStore((s) => s.zoomScale);
   const projectFps = useProjectStore((s) => s.config.fps);
+  const snappingEnabled = useInteractionStore((s) => s.snappingEnabled);
+  const interactionSnapTick = useInteractionStore((s) => s.snapTick);
 
   const effectiveFps = resolveSelectionFps(
     { fps: selectionFpsOverride },
@@ -126,6 +135,7 @@ export function SelectionOverlay({
   ]);
 
   const draggingRef = useRef<"start" | "end" | "middle" | null>(null);
+  const snapPointsRef = useRef<number[]>([]);
   const [draggingHandle, setDraggingHandle] = useState<
     "start" | "end" | "middle" | null
   >(null);
@@ -152,6 +162,9 @@ export function SelectionOverlay({
       e.stopPropagation();
       draggingRef.current = handle;
       setDraggingHandle(handle);
+      snapPointsRef.current =
+        handle === "middle" ? [] : buildTimelineSnapPoints();
+      useInteractionStore.getState().clearSnapPreview();
 
       const scrollContainer = useTimelineViewStore.getState().scrollContainer;
       const rect = scrollContainer?.getBoundingClientRect();
@@ -176,6 +189,65 @@ export function SelectionOverlay({
     [],
   );
 
+  const maybeResolveSnappedEdgeTick = useCallback(
+    (
+      rawEdgeTick: number,
+      minTick: number,
+      maxTick: number,
+      resolveTick: (edgeTick: number) => number,
+    ) => {
+      const interaction = useInteractionStore.getState();
+      const ticksToPxFromStore = useTimelineViewStore.getState().ticksToPx;
+
+      if (!snappingEnabled || snapPointsRef.current.length === 0) {
+        interaction.clearSnapPreview();
+        return resolveTick(rawEdgeTick);
+      }
+
+      const rangeSnapPoints = snapPointsRef.current.filter(
+        (tick) => tick >= minTick && tick <= maxTick,
+      );
+      const candidate = getEdgeSnapCandidate(
+        rawEdgeTick,
+        rangeSnapPoints,
+        ticksToPxFromStore,
+        SNAP_THRESHOLD_PX,
+      );
+      const hysteresisPx = SNAP_THRESHOLD_PX + 3;
+
+      if (!candidate) {
+        if (interaction.snapTick !== null) {
+          const keepCurrent =
+            Math.abs(ticksToPxFromStore(rawEdgeTick - interaction.snapTick)) <=
+            hysteresisPx;
+          if (keepCurrent) {
+            return interaction.snapTick;
+          }
+        }
+        interaction.clearSnapPreview();
+        return resolveTick(rawEdgeTick);
+      }
+
+      const snappedEdgeTick = resolveTick(candidate.snapTick);
+      if (snappedEdgeTick < minTick || snappedEdgeTick > maxTick) {
+        if (interaction.snapTick !== null) {
+          const keepCurrent =
+            Math.abs(ticksToPxFromStore(rawEdgeTick - interaction.snapTick)) <=
+            hysteresisPx;
+          if (keepCurrent) {
+            return interaction.snapTick;
+          }
+        }
+        interaction.clearSnapPreview();
+        return resolveTick(rawEdgeTick);
+      }
+
+      interaction.setSnapPreview({ tick: snappedEdgeTick });
+      return snappedEdgeTick;
+    },
+    [snappingEnabled],
+  );
+
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!draggingRef.current) return;
@@ -198,12 +270,26 @@ export function SelectionOverlay({
 
       if (draggingRef.current === "start") {
         const rawStartTick = Math.max(0, dragOriginTickRef.current + deltaTicks);
-        const rawFrameCount =
-          (selectionEndTick - rawStartTick) / Math.max(1e-6, ticksPerFrame);
-        const frameCount = clampFrameCount(rawFrameCount, "floor");
-        const finalTick = Math.max(
-          0,
-          selectionEndTick - frameCount * ticksPerFrame,
+        const minStartTick = 0;
+        const maxStartTick = Math.max(
+          minStartTick,
+          selectionEndTick - ticksPerFrame,
+        );
+        const resolveStartTick = (edgeTick: number) => {
+          const boundedTick = Math.max(minStartTick, edgeTick);
+          const rawFrameCount =
+            (selectionEndTick - boundedTick) / Math.max(1e-6, ticksPerFrame);
+          const frameCount = clampFrameCount(rawFrameCount, "floor");
+          return Math.max(
+            minStartTick,
+            selectionEndTick - frameCount * ticksPerFrame,
+          );
+        };
+        const finalTick = maybeResolveSnappedEdgeTick(
+          rawStartTick,
+          minStartTick,
+          maxStartTick,
+          resolveStartTick,
         );
 
         if (finalTick < selectionEndTick) {
@@ -212,16 +298,31 @@ export function SelectionOverlay({
         }
       } else if (draggingRef.current === "end") {
         const rawEndTick = dragOriginTickRef.current + deltaTicks;
-        const rawFrameCount =
-          (rawEndTick - selectionStartTick) / Math.max(1e-6, ticksPerFrame);
-        const frameCount = clampFrameCount(rawFrameCount, "floor");
-        const finalTick = selectionStartTick + frameCount * ticksPerFrame;
+        const minEndTick = selectionStartTick + ticksPerFrame;
+        const maxFrameCount = getMaxFrameCount();
+        const maxEndTick =
+          maxFrameCount === null
+            ? Number.POSITIVE_INFINITY
+            : selectionStartTick + maxFrameCount * ticksPerFrame;
+        const resolveEndTick = (edgeTick: number) => {
+          const rawFrameCount =
+            (edgeTick - selectionStartTick) / Math.max(1e-6, ticksPerFrame);
+          const frameCount = clampFrameCount(rawFrameCount, "floor");
+          return selectionStartTick + frameCount * ticksPerFrame;
+        };
+        const finalTick = maybeResolveSnappedEdgeTick(
+          rawEndTick,
+          minEndTick,
+          maxEndTick,
+          resolveEndTick,
+        );
 
         if (finalTick > selectionStartTick) {
           updateSelectionEnd(finalTick);
           playbackClock.setTime(finalTick);
         }
       } else if (draggingRef.current === "middle") {
+        useInteractionStore.getState().clearSnapPreview();
         const rawStartTick = Math.max(0, dragOriginTickRef.current + deltaTicks);
         const snappedStartTick = snapTickToFrame(rawStartTick, ticksPerFrame);
         const durationFrameCount = clampFrameCount(
@@ -237,15 +338,30 @@ export function SelectionOverlay({
         playbackClock.setTime(newStart);
       }
     },
-    [clampFrameCount, pxToTicks, ticksPerFrame],
+    [
+      clampFrameCount,
+      getMaxFrameCount,
+      maybeResolveSnappedEdgeTick,
+      pxToTicks,
+      ticksPerFrame,
+    ],
   );
 
   const handlePointerUp = useCallback(() => {
     draggingRef.current = null;
+    snapPointsRef.current = [];
+    useInteractionStore.getState().clearSnapPreview();
     setDraggingHandle(null);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      useInteractionStore.getState().clearSnapPreview();
+    };
+  }, []);
+
   const handleCancel = useCallback(() => {
+    useInteractionStore.getState().clearSnapPreview();
     useTimelineSelectionStore.getState().exitSelectionMode();
     useExtractStore.getState().setOnConfirmSelection(null);
   }, []);
@@ -258,6 +374,10 @@ export function SelectionOverlay({
 
   const startPx = ticksToPx(startTick);
   const endPx = ticksToPx(endTick);
+  const snapIndicatorLeft =
+    interactionSnapTick === null
+      ? null
+      : TRACK_HEADER_WIDTH + ticksToPx(interactionSnapTick);
 
   const currentDurationSeconds = (endTick - startTick) / TICKS_PER_SECOND;
   const currentFrameCount = Math.max(
@@ -366,6 +486,23 @@ export function SelectionOverlay({
           ...dimSx,
           left: `${TRACK_HEADER_WIDTH + endPx}px`,
           right: 0,
+        }}
+      />
+
+      <Box
+        data-testid="selection-snap-indicator"
+        sx={{
+          position: "absolute",
+          top: `${RULER_HEIGHT}px`,
+          bottom: 0,
+          left: snapIndicatorLeft !== null ? `${snapIndicatorLeft}px` : 0,
+          width: "2px",
+          bgcolor: "#fbc02d",
+          boxShadow:
+            "0 0 0 1px rgba(251, 192, 45, 0.45), 0 0 8px rgba(251, 192, 45, 0.45)",
+          zIndex: 40,
+          pointerEvents: "none",
+          display: snapIndicatorLeft !== null ? "block" : "none",
         }}
       />
 

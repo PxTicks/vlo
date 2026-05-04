@@ -6,6 +6,10 @@ import { mapSourceTimeToVisualTime } from "../../transformations";
 
 export type InteractionOperation = "move" | "resize_left" | "resize_right";
 
+interface BuildTimelineSnapPointsOptions {
+  excludedClipIds?: Iterable<string>;
+}
+
 type SnapPreview = {
   tick: number;
   snappedStartTicks?: number | null;
@@ -51,19 +55,11 @@ interface InteractionState {
   stopDrag: () => void;
 }
 
-const buildSnapPoints = (clip: BaseClip, operation: InteractionOperation) => {
-  const { clips, selectedClipIds } = useTimelineStore.getState();
-  const excludedIds = new Set<string>();
-
-  if (operation === "move" && "trackId" in clip) {
-    if (selectedClipIds.includes(clip.id)) {
-      selectedClipIds.forEach((id) => excludedIds.add(id));
-    } else {
-      excludedIds.add(clip.id);
-    }
-  } else if (operation === "resize_left" || operation === "resize_right") {
-    excludedIds.add(clip.id);
-  }
+export const buildTimelineSnapPoints = (
+  options: BuildTimelineSnapPointsOptions = {},
+) => {
+  const excludedIds = new Set(options.excludedClipIds ?? []);
+  const { clips } = useTimelineStore.getState();
 
   const points = new Set<number>();
   clips.forEach((timelineClip) => {
@@ -90,6 +86,23 @@ const buildSnapPoints = (clip: BaseClip, operation: InteractionOperation) => {
   });
 
   return [...points].sort((a, b) => a - b);
+};
+
+const buildSnapPoints = (clip: BaseClip, operation: InteractionOperation) => {
+  const { selectedClipIds } = useTimelineStore.getState();
+  const excludedIds = new Set<string>();
+
+  if (operation === "move" && "trackId" in clip) {
+    if (selectedClipIds.includes(clip.id)) {
+      selectedClipIds.forEach((id) => excludedIds.add(id));
+    } else {
+      excludedIds.add(clip.id);
+    }
+  } else if (operation === "resize_left" || operation === "resize_right") {
+    excludedIds.add(clip.id);
+  }
+
+  return buildTimelineSnapPoints({ excludedClipIds: excludedIds });
 };
 
 export const useInteractionStore = create<InteractionState>((set) => ({

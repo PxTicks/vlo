@@ -905,25 +905,30 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
         extractStore.enterFrameSelectionMode();
         extractStore.setOnConfirmSelection(() => {
           void (async () => {
-            try {
-              const frameFile = await captureFramePngAtTick(
-                playbackClock.time,
-                "generation-frame",
-              );
-              setMediaInputFrameWithSelection(
-                inputId,
-                frameFile,
-                createPointTimelineSelection(playbackClock.time),
-              );
-            } catch (error) {
-              console.error("Failed to capture generation image frame", error);
-            } finally {
+            const selectedTick = playbackClock.time;
+            const closeFrameSelection = () => {
               const current = useExtractStore.getState();
               current.exitFrameSelectionMode();
               current.setOnConfirmSelection(null);
               useTimelineSelectionStore
                 .getState()
                 .clearSelectionRecommendations();
+            };
+
+            closeFrameSelection();
+
+            try {
+              const frameFile = await captureFramePngAtTick(
+                selectedTick,
+                "generation-frame",
+              );
+              setMediaInputFrameWithSelection(
+                inputId,
+                frameFile,
+                createPointTimelineSelection(selectedTick),
+              );
+            } catch (error) {
+              console.error("Failed to capture generation image frame", error);
             }
           })();
         });
@@ -979,6 +984,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
               createTimelineSelection(selectionStartTick, selectionEndTick),
               selectionConfig,
             );
+            closeSelectionMode();
             const thumbnailFile =
               inputType === "audio"
                 ? createAudioSelectionPlaceholderFile()
@@ -1002,7 +1008,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
                 extractionRequestId,
               },
             );
-            closeSelectionMode();
 
             if (inputType === "audio") {
               await extractAudioTimelineSelection({

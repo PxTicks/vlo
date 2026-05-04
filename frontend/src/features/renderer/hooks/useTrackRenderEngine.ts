@@ -187,12 +187,6 @@ export function useTrackRenderEngine(
       return;
     }
 
-    // Keep paused synchronized playback responsive to transform edits and
-    // other clip-state changes without requiring a playhead move.
-    if (!activeClipRef.current && currentClipIdRef.current === null) {
-      return;
-    }
-
     void renderSynchronizedPlaybackFrame(playbackClock.time);
   }, [
     assets,

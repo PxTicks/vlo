@@ -1,5 +1,6 @@
 import { Sprite } from "pixi.js";
 import type { Asset } from "../../../types/Asset";
+import { ensureAssetSourceLoaded } from "../../userAssets";
 import {
   ensureBrushBuffer,
   getBrushBuffer,
@@ -68,13 +69,17 @@ export class BrushBufferMaskSource {
 
   public async setSource(asset: Asset): Promise<void> {
     if (this.disposed) return;
-    if (this.currentAssetId === asset.id && getBrushBuffer(this.maskClipId)) {
+    const ctx = this.hydrationContext;
+    const existingBuffer = getBrushBuffer(this.maskClipId);
+    if (
+      this.currentAssetId === asset.id &&
+      this.isBufferReadyForContext(existingBuffer, ctx)
+    ) {
       this.bindToBuffer();
       return;
     }
-    this.currentAssetId = asset.id;
 
-    const ctx = this.hydrationContext;
+    this.currentAssetId = asset.id;
     if (!ctx) {
       this.bindToBuffer();
       return;
@@ -84,7 +89,13 @@ export class BrushBufferMaskSource {
       await this.hydrating;
     }
 
-    const url = asset.src;
+    const hydratedAsset = await ensureAssetSourceLoaded(asset.id);
+    if (this.disposed || this.currentAssetId !== asset.id) {
+      return;
+    }
+
+    const resolvedAsset = hydratedAsset ?? asset;
+    const url = resolvedAsset.src;
     if (!url) {
       ensureBrushBuffer(this.maskClipId, ctx.canvasWidth, ctx.canvasHeight);
       this.bindToBuffer();
@@ -157,5 +168,38 @@ export class BrushBufferMaskSource {
     this.sprite.width = buffer.canvasSize.width;
     this.sprite.height = buffer.canvasSize.height;
     this.sprite.visible = true;
+  }
+
+  private isBufferReadyForContext(
+    buffer: ReturnType<typeof getBrushBuffer>,
+    context: BrushBufferMaskSource["hydrationContext"],
+  ): boolean {
+    if (!buffer) {
+      return false;
+    }
+
+    if (!context) {
+      return true;
+    }
+
+    if (
+      buffer.canvasSize.width !== context.canvasWidth ||
+      buffer.canvasSize.height !== context.canvasHeight
+    ) {
+      return false;
+    }
+
+    if (!context.paintedBounds) {
+      return true;
+    }
+
+    const bounds = buffer.paintedBounds;
+    return (
+      !!bounds &&
+      bounds.x === context.paintedBounds.x &&
+      bounds.y === context.paintedBounds.y &&
+      bounds.width === context.paintedBounds.width &&
+      bounds.height === context.paintedBounds.height
+    );
   }
 }

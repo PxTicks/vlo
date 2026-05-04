@@ -749,6 +749,113 @@ describe("useTrackRenderEngine Integration", () => {
     unmount();
   });
 
+  it("refreshes the paused synchronized frame on asset changes even before the first active-clip sync", async () => {
+    const trackId = "track-1";
+    const clipId = "clip-A";
+    const registeredRenderers = new Map<
+      string,
+      (time: number) => Promise<void>
+    >();
+    const renderSpy = vi.spyOn(
+      TrackRenderEngine.prototype,
+      "renderSynchronizedPlaybackFrame",
+    );
+
+    mockPlaybackState.time = 2 * TICKS_PER_SECOND;
+    mockTimelineState.clips = [
+      {
+        id: clipId,
+        trackId,
+        assetId: "asset-A",
+        name: "Test Clip",
+        start: 0,
+        timelineDuration: 10 * TICKS_PER_SECOND,
+        sourceDuration: 10 * TICKS_PER_SECOND,
+        transformedDuration: 10 * TICKS_PER_SECOND,
+        transformedOffset: 0,
+        croppedSourceDuration: 10 * TICKS_PER_SECOND,
+        offset: 0,
+        type: "video",
+        transformations: [],
+      },
+    ];
+    mockAssetState.assets = [
+      {
+        id: "asset-A",
+        src: "test-a.mp4",
+        name: "Test Asset A",
+        hash: "abc123hash-a",
+        type: "video",
+        createdAt: 0,
+      },
+    ];
+
+    const { rerender, unmount } = renderHook(() =>
+      useTrackRenderEngine(
+        trackId,
+        mockApp,
+        mockContainer,
+        1,
+        {
+          width: 800,
+          height: 600,
+        },
+        (registeredTrackId, renderer) => {
+          if (renderer) {
+            registeredRenderers.set(registeredTrackId, renderer);
+            return;
+          }
+          registeredRenderers.delete(registeredTrackId);
+        },
+      ),
+    );
+
+    expect(registeredRenderers.has(trackId)).toBe(true);
+    renderSpy.mockClear();
+
+    mockAssetState.assets = [
+      ...mockAssetState.assets,
+      {
+        id: "brush-mask-asset",
+        src: "brush-mask.png",
+        name: "Brush Mask",
+        hash: "brush-hash",
+        type: "image",
+        createdAt: 0,
+      },
+    ];
+
+    await act(async () => {
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(renderSpy).toHaveBeenCalledWith(
+        mockPlaybackState.time,
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: clipId,
+          }),
+        ]),
+        expect.any(Map),
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "asset-A",
+          }),
+          expect.objectContaining({
+            id: "brush-mask-asset",
+          }),
+        ]),
+        { width: 800, height: 600 },
+        expect.objectContaining({
+          fps: expect.any(Number),
+        }),
+      );
+    });
+
+    unmount();
+  });
+
   it("registers a synchronized playback renderer during live playback", async () => {
     const trackId = "track-1";
     const clipId = "clip-A";

@@ -231,7 +231,7 @@ def test_resolve_workflow_rules_always_surfaces_seed_without_node_policy():
     assert set(widgets) == {"seed"}
     assert widgets["seed"]["default"] == 42
     assert widgets["seed"]["value_type"] == "int"
-    assert widgets["seed"]["control_after_generate"] is False
+    assert widgets["seed"]["control_after_generate"] is True
 
 
 def test_resolve_workflow_rules_prefers_graph_widget_values_over_object_info_defaults():

@@ -57,6 +57,19 @@ def _should_force_default_policy_widget(
     )
 
 
+def _build_forced_default_policy_widget(
+    param_name: str,
+    widget_entry: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_param = param_name.strip().lower()
+    if normalized_param not in _ALWAYS_DISCOVERED_WIDGET_PARAMS:
+        return widget_entry
+
+    forced_widget = dict(widget_entry)
+    forced_widget["control_after_generate"] = True
+    return forced_widget
+
+
 def set_object_info_cache(object_info: dict[str, Any] | None) -> None:
     global _object_info_cache
     _object_info_cache = object_info
@@ -355,7 +368,10 @@ def _resolve_default_policy_widgets(
             continue
 
         if _should_force_default_policy_widget(param_name, widget_entry):
-            selected_widgets.setdefault(param_name, widget_entry)
+            selected_widgets.setdefault(
+                param_name,
+                _build_forced_default_policy_widget(param_name, widget_entry),
+            )
 
     return selected_widgets or None
 

@@ -9,7 +9,10 @@ import { useTimelineStore, TICKS_PER_SECOND } from "../../../../timeline";
 import { useMaskViewStore } from "../../../../masks/store/useMaskViewStore";
 import { createMaskLayoutTransforms } from "../../../../masks/model/maskFactory";
 import { useMaskInteractionController } from "../useMaskInteractionController";
+import { useTransformInteractionController } from "../useTransformInteractionController";
+import { useCanvasSelectionManager } from "../useCanvasSelectionManager";
 import { playbackClock } from "../../../services/PlaybackClock";
+import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
 
 const {
   mockEnsureBrushBuffer,
@@ -146,6 +149,7 @@ describe("useMaskInteractionController", () => {
     mockPaintBrushStroke.mockClear();
     mockSubscribeToBrushBuffer.mockClear();
     mockFlushBrushMaskCommit.mockClear();
+    useCanvasSelectionStore.getState().clearSelection();
     useTimelineStore.setState({
       clips: [],
       selectedClipIds: [],
@@ -172,7 +176,7 @@ describe("useMaskInteractionController", () => {
     const activeClipRef = { current: parent };
 
     const { result } = renderHook(() =>
-      useMaskInteractionController(sprite, activeClipRef, app, viewport),
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
     );
 
     act(() => {
@@ -242,11 +246,81 @@ describe("useMaskInteractionController", () => {
     const app = new Application();
     const activeClipRef = { current: parent };
 
-    const { result } = renderHook(() =>
-      useMaskInteractionController(sprite, activeClipRef, app, viewport),
-    );
+    const { result } = renderHook(() => {
+      useCanvasSelectionManager(null);
+      return useMaskInteractionController(
+        trackId,
+        1,
+        sprite,
+        activeClipRef,
+        app,
+        viewport,
+      );
+    });
 
     expect(result.current.isMaskGizmoVisible).toBe(true);
+  });
+
+  it("hands the visible gizmo back to the clip when the clip becomes active", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const mask = createMaskClip(parent, "mask_selected");
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_selected");
+
+    const viewport = new Container();
+    viewport.toLocal = vi.fn((point: { x: number; y: number }) => ({
+      x: point.x,
+      y: point.y,
+    })) as unknown as Container["toLocal"];
+    const spriteParent = new Container();
+    const sprite = new Sprite();
+    spriteParent.addChild(sprite);
+    viewport.addChild(spriteParent);
+
+    const app = new Application();
+    const activeClipRef = { current: parent };
+
+    const { result } = renderHook(() => {
+      useCanvasSelectionManager(null);
+      const maskController = useMaskInteractionController(
+        trackId,
+        1,
+        sprite,
+        activeClipRef,
+        app,
+        viewport,
+      );
+      const transformController = useTransformInteractionController(
+        sprite,
+        activeClipRef,
+        app,
+        viewport,
+      );
+
+      return { maskController, transformController };
+    });
+
+    expect(result.current.maskController.isMaskGizmoVisible).toBe(true);
+
+    act(() => {
+      result.current.transformController.onSpritePointerDown({
+        button: 0,
+        stopPropagation: vi.fn(),
+        global: { x: 12, y: 14 },
+        originalEvent: { shiftKey: false, ctrlKey: false, metaKey: false },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    expect(useCanvasSelectionStore.getState().activeSelection).toEqual({
+      kind: "clip",
+      clipId: parent.id,
+    });
+    expect(result.current.maskController.isMaskGizmoVisible).toBe(false);
   });
 
   it("does not crash when a SAM2 mask is selected (regression)", () => {
@@ -275,7 +349,7 @@ describe("useMaskInteractionController", () => {
 
     // This will throw "Maximum update depth exceeded" if there's a loop
     const { result } = renderHook(() =>
-      useMaskInteractionController(sprite, activeClipRef, app, viewport),
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
     );
 
     // SAM2 masks skip the shape gizmo — they use the points overlay instead
@@ -323,7 +397,7 @@ describe("useMaskInteractionController", () => {
     const activeClipRef = { current: parent };
 
     const { result } = renderHook(() =>
-      useMaskInteractionController(sprite, activeClipRef, app, viewport),
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
     );
 
     let consumedAdd = false;
@@ -404,7 +478,7 @@ describe("useMaskInteractionController", () => {
     const activeClipRef = { current: parent };
 
     renderHook(() =>
-      useMaskInteractionController(sprite, activeClipRef, app, viewport),
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
     );
 
     expect(sprite.cursor).toBe("crosshair");
@@ -437,14 +511,17 @@ describe("useMaskInteractionController", () => {
     const activeClipRef = { current: parent };
 
     const { result } = renderHook(() =>
-      useMaskInteractionController(sprite, activeClipRef, app, viewport),
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
     );
 
-    const consumed = result.current.onSpritePointerDown({
-      button: 0,
-      stopPropagation: vi.fn(),
-      global: { x: 0, y: 0 },
-    } as unknown as FederatedPointerEvent);
+    let consumed = false;
+    act(() => {
+      consumed = result.current.onSpritePointerDown({
+        button: 0,
+        stopPropagation: vi.fn(),
+        global: { x: 0, y: 0 },
+      } as unknown as FederatedPointerEvent);
+    });
     expect(consumed).toBe(true);
 
     const onPointerMove = vi
@@ -475,6 +552,78 @@ describe("useMaskInteractionController", () => {
     );
   });
 
+  it("locks mask corner scaling to the starting aspect ratio", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const mask: MaskTimelineClip = {
+      ...createMaskClip(parent, "mask_scale"),
+      transformations: createMaskLayoutTransforms(
+        `${parent.id}::mask::mask_scale`,
+        {
+          x: 0,
+          y: 0,
+          scaleX: 2,
+          scaleY: 1,
+          rotation: 0,
+        },
+      ),
+    };
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_scale");
+
+    const viewport = new Container();
+    const spriteParent = new Container();
+    const sprite = new Sprite();
+    spriteParent.addChild(sprite);
+    viewport.addChild(spriteParent);
+
+    const app = new Application();
+    const activeClipRef = { current: parent };
+
+    const { result } = renderHook(() =>
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
+    );
+
+    act(() => {
+      result.current.onHandlePointerDown({
+        altKey: false,
+        stopPropagation: vi.fn(),
+        global: { x: 0, y: 0 },
+      } as unknown as FederatedPointerEvent, "se");
+    });
+
+    const onPointerMove = vi
+      .mocked(app.stage.on)
+      .mock.calls.find((call) => call[0] === "pointermove")?.[1];
+    const onPointerUp = vi
+      .mocked(app.stage.on)
+      .mock.calls.find((call) => call[0] === "pointerup")?.[1];
+
+    act(() => {
+      onPointerMove?.({
+        global: { x: 60, y: 5 },
+      } as unknown as FederatedPointerEvent);
+    });
+    act(() => {
+      onPointerUp?.({} as unknown as FederatedPointerEvent);
+    });
+
+    const updatedMask = useTimelineStore
+      .getState()
+      .clips.find((clip) => clip.id === mask.id) as MaskTimelineClip | undefined;
+    const scaleTransform = updatedMask?.transformations.find(
+      (transform) => transform.type === "scale",
+    );
+
+    expect(scaleTransform?.parameters).toEqual(
+      expect.objectContaining({ x: 2.5, y: 1.25 }),
+    );
+  });
+
   it("commits a brush mask when the stroke ends", () => {
     const trackId = useTimelineStore.getState().tracks[0].id;
     const parent = createParentClip(trackId);
@@ -498,7 +647,7 @@ describe("useMaskInteractionController", () => {
     const activeClipRef = { current: parent };
 
     const { result } = renderHook(() =>
-      useMaskInteractionController(sprite, activeClipRef, app, viewport),
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
     );
 
     let consumed = false;

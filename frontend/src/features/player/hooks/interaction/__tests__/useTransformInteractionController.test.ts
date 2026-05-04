@@ -4,6 +4,7 @@ import { act } from "react";
 import { Application, Container, FederatedPointerEvent, Sprite } from "pixi.js";
 import type { TimelineClip } from "../../../../../types/TimelineTypes";
 import { useTimelineStore } from "../../../../timeline";
+import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
 import { usePlayerStore } from "../../../usePlayerStore";
 import { playbackClock } from "../../../services/PlaybackClock";
 import { liveParamStore } from "../../../../transformations";
@@ -35,6 +36,7 @@ describe("useTransformInteractionController", () => {
       clips: [],
       tracks: [],
     });
+    useCanvasSelectionStore.getState().clearSelection();
     usePlayerStore.setState({ isPlaying: true });
     playbackClock.setTime(0);
 
@@ -175,6 +177,10 @@ describe("useTransformInteractionController", () => {
 
     const selectedIds = useTimelineStore.getState().selectedClipIds;
     expect(selectedIds).toContain("clip_select_test");
+    expect(useCanvasSelectionStore.getState().activeSelection).toEqual({
+      kind: "clip",
+      clipId: "clip_select_test",
+    });
   });
 
   it("keeps spline parameters and commits dragged value at playhead time", () => {

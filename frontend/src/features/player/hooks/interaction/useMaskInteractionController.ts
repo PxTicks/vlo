@@ -40,7 +40,12 @@ import {
   bindStagePointerListeners,
   unbindStagePointerListeners,
 } from "./pointerStage";
-import { computeHandleScale, getAngleFromPoint } from "./layoutInteractionMath";
+import {
+  computeHandleScale,
+  getAngleFromPoint,
+  lockCornerScaleAspectRatio,
+} from "./layoutInteractionMath";
+import { registerCanvasSelectable } from "./useCanvasSelectionManager";
 import {
   createMaskLayoutTransforms,
   createMask,
@@ -64,6 +69,7 @@ import { flushBrushMaskCommit } from "../../../masks/runtime/brushAssetSync";
 import { ensureAssetSourceLoaded, useAssetStore } from "../../../userAssets";
 import { syncContainerTransformToTarget } from "../../../renderer";
 import { useProjectStore } from "../../../project/useProjectStore";
+import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 
 const MIN_DRAW_SIZE = 3;
 const MIN_SCALE = 0.05;
@@ -279,6 +285,8 @@ interface MaskInteractionHandlers {
 }
 
 export function useMaskInteractionController(
+  trackId: string,
+  trackZIndex: number,
   sprite: Sprite | null,
   activeClipRef: React.MutableRefObject<TimelineClip | null>,
   app: Application | null,
@@ -289,6 +297,11 @@ export function useMaskInteractionController(
   const addClipMask = useTimelineStore((state) => state.addClipMask);
   const updateClipMask = useTimelineStore((state) => state.updateClipMask);
   const selectClip = useTimelineStore((state) => state.selectClip);
+  const activeCanvasSelection = useCanvasSelectionStore(
+    (state) => state.activeSelection,
+  );
+  const selectCanvasClip = useCanvasSelectionStore((state) => state.selectClip);
+  const selectCanvasMask = useCanvasSelectionStore((state) => state.selectMask);
 
   const setSelectedMask = useMaskViewStore((state) => state.setSelectedMask);
   const clearPendingDraw = useMaskViewStore((state) => state.clearPendingDraw);
@@ -307,7 +320,6 @@ export function useMaskInteractionController(
   const isMaskTabActive = useMaskViewStore((state) => state.isMaskTabActive);
   const sam2PointMode = useMaskViewStore((state) => state.sam2PointMode);
   const brushTool = useMaskViewStore((state) => state.brushTool);
-  const brushRadius = useMaskViewStore((state) => state.brushRadius);
   const pendingDrawRequest = useMaskViewStore(
     (state) => state.pendingDrawRequest,
   );
@@ -971,11 +983,16 @@ export function useMaskInteractionController(
           },
           minScale: MIN_SCALE,
         });
+        const lockedScale = lockCornerScaleAspectRatio(
+          current.handle,
+          { x: base.scaleX, y: base.scaleY },
+          scaleDrag.scale,
+        );
 
         const nextLayout: MaskLayoutState = {
           ...base,
-          scaleX: scaleDrag.scale.x,
-          scaleY: scaleDrag.scale.y,
+          scaleX: lockedScale.x,
+          scaleY: lockedScale.y,
         };
         current.didMove =
           current.didMove ||
@@ -1052,6 +1069,7 @@ export function useMaskInteractionController(
           );
           addClipMask(current.clipId, finalMask);
           setSelectedMask(current.clipId, finalMask.id);
+          selectCanvasMask(current.clipId, finalMask.id);
           setInteractionContext({
             clipId: current.clipId,
             mode: "edit",
@@ -1103,6 +1121,7 @@ export function useMaskInteractionController(
       e.stopPropagation();
       setIsPlaying(false);
       selectClip(target.clipId, false);
+      selectCanvasMask(target.clipId, target.maskLocalId);
       clearLiveMaskLayoutPreview();
 
       const local = toClipLocal(e.global);
@@ -1151,6 +1170,7 @@ export function useMaskInteractionController(
       e.stopPropagation();
       setIsPlaying(false);
       selectClip(target.clipId, false);
+      selectCanvasMask(target.clipId, target.maskLocalId);
       clearLiveMaskLayoutPreview();
 
       const params = target.maskClip.maskParameters;
@@ -1242,6 +1262,7 @@ export function useMaskInteractionController(
       e.stopPropagation();
       setIsPlaying(false);
       selectClip(target.clipId, false);
+      selectCanvasMask(target.clipId, target.maskLocalId);
       clearLiveMaskLayoutPreview();
 
       const local = toClipLocal(e.global);
@@ -1311,6 +1332,7 @@ export function useMaskInteractionController(
         e.stopPropagation();
         setIsPlaying(false);
         selectClip(selectedId, false);
+        selectCanvasClip(selectedId);
         clearLiveMaskLayoutPreview();
 
         const local = toClipLocal(e.global);
@@ -1378,6 +1400,7 @@ export function useMaskInteractionController(
       e.stopPropagation();
       setIsPlaying(false);
       selectClip(targetMask.clipId, false);
+      selectCanvasMask(targetMask.clipId, targetMask.maskLocalId);
       clearLiveMaskLayoutPreview();
 
       const local = toClipLocal(e.global);
@@ -1425,7 +1448,6 @@ export function useMaskInteractionController(
     activeClipRef,
     addClipMask,
     app,
-    brushRadius,
     brushTool,
     clearPendingDraw,
     clearLiveMaskLayoutPreview,
@@ -1439,6 +1461,8 @@ export function useMaskInteractionController(
     resolveMaskLayoutAtPlayhead,
     resolveActiveClipContentSize,
     selectClip,
+    selectCanvasClip,
+    selectCanvasMask,
     setLiveMaskLayoutPreview,
     setInteractionContext,
     setIsPlaying,
@@ -1475,11 +1499,13 @@ export function useMaskInteractionController(
     clipOverlay.addChild(sam2PreviewSprite);
     clipOverlay.addChild(sam2PointsGraphics);
     clipOverlay.addChild(maskOverlay);
-    // Keep mask fill above sprites but below gizmo handles.
-    clipOverlay.zIndex = 9_998;
+    // Keep the selected mask above its own track sprite while still letting
+    // higher tracks outrank it during hit testing and rendering.
+    clipOverlay.zIndex = trackZIndex + 0.5;
     clipOverlay.visible = false;
 
     viewport.addChild(clipOverlay);
+    viewport.sortChildren();
 
     clipOverlayRef.current = clipOverlay;
     maskOverlayRef.current = maskOverlay;
@@ -1512,13 +1538,15 @@ export function useMaskInteractionController(
       setGizmoTarget(null);
       setIsMaskGizmoVisible(false);
     };
-  }, [viewport]);
+  }, [trackZIndex, viewport]);
 
   useEffect(() => {
     const maskGraphics = maskGraphicsRef.current;
     if (!maskGraphics) return;
 
-    // Dragging mask body should follow the same interaction path as sprite drag.
+    // Keep direct pointer binding so Pixi hit testing can still select the
+    // topmost interactive object on the canvas without depending on stage-wide
+    // dispatch.
     maskGraphics.eventMode = "static";
     maskGraphics.cursor = "grab";
     maskGraphics.on("pointerdown", handlers.onMaskPointerDown);
@@ -1527,6 +1555,29 @@ export function useMaskInteractionController(
       maskGraphics.off("pointerdown", handlers.onMaskPointerDown);
     };
   }, [handlers.onMaskPointerDown, viewport]);
+
+  useEffect(() => {
+    const maskGraphics = maskGraphicsRef.current;
+    if (!maskGraphics) return;
+
+    return registerCanvasSelectable({
+      id: `mask:${trackId}`,
+      kind: "mask",
+      displayObject: maskGraphics,
+      getClipId: () => selectedClipId,
+      getSelectionOrder: () => trackZIndex + 0.5,
+      onPointerDown: handlers.onMaskPointerDown,
+      isEnabled: () =>
+        maskGraphics.visible && !!selectedClipId && !!selectedMaskId,
+    });
+  }, [
+    handlers.onMaskPointerDown,
+    selectedClipId,
+    selectedMaskId,
+    trackId,
+    trackZIndex,
+    viewport,
+  ]);
 
   useEffect(() => {
     if (!app) return;
@@ -1555,12 +1606,17 @@ export function useMaskInteractionController(
     };
 
     const updateOverlay = () => {
+      const isActiveMaskSelection =
+        activeCanvasSelection?.kind === "mask" &&
+        activeCanvasSelection.clipId === selectedClipId &&
+        activeCanvasSelection.maskId === selectedMaskId;
+
       if (!sprite || !selectedClipId) {
         syncSam2EditingCursor(false);
         renderMaskToOverlay(null);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
-        setIsMaskGizmoVisible((previous) => (previous ? false : previous));
+        setIsMaskGizmoVisible(false);
         return;
       }
 
@@ -1570,7 +1626,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(null);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
-        setIsMaskGizmoVisible((previous) => (previous ? false : previous));
+        setIsMaskGizmoVisible(false);
         return;
       }
 
@@ -1580,7 +1636,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(null);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
-        setIsMaskGizmoVisible((previous) => (previous ? false : previous));
+        setIsMaskGizmoVisible(false);
         return;
       }
 
@@ -1589,7 +1645,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(draftMaskShapeRef.current);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
-        setIsMaskGizmoVisible((previous) => (previous ? false : previous));
+        setIsMaskGizmoVisible(false);
         return;
       }
 
@@ -1598,7 +1654,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(null);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
-        setIsMaskGizmoVisible((previous) => (previous ? false : previous));
+        setIsMaskGizmoVisible(false);
         return;
       }
 
@@ -1613,7 +1669,7 @@ export function useMaskInteractionController(
           renderSam2PointsToOverlay(null);
           clearSam2PreviewSprite();
         }
-        setIsMaskGizmoVisible((previous) => (previous ? false : previous));
+        setIsMaskGizmoVisible(false);
         return;
       }
 
@@ -1622,7 +1678,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(null);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
-        setIsMaskGizmoVisible((previous) => (previous ? false : previous));
+        setIsMaskGizmoVisible(false);
         return;
       }
 
@@ -1645,10 +1701,7 @@ export function useMaskInteractionController(
           liveLayout ?? resolveMaskLayoutAtPlayhead(selectedMaskClip);
         renderMaskToOverlay(selectedMaskClip, resolvedLayout);
         // Gizmo handles visible only when the gizmo tool is selected.
-        setIsMaskGizmoVisible((previous) => {
-          const next = tool === "gizmo";
-          return previous === next ? previous : next;
-        });
+        setIsMaskGizmoVisible(tool === "gizmo" && isActiveMaskSelection);
         return;
       }
 
@@ -1662,7 +1715,7 @@ export function useMaskInteractionController(
       const resolvedLayout =
         liveLayout ?? resolveMaskLayoutAtPlayhead(selectedMaskClip);
       renderMaskToOverlay(selectedMaskClip, resolvedLayout);
-      setIsMaskGizmoVisible((previous) => (previous ? previous : true));
+      setIsMaskGizmoVisible(isActiveMaskSelection);
     };
 
     app.ticker.add(updateOverlay);
@@ -1681,6 +1734,7 @@ export function useMaskInteractionController(
     renderSam2PointsToOverlay,
     updateSam2PreviewSprite,
     isMaskTabActive,
+    activeCanvasSelection,
     selectedClipId,
     selectedMaskClip,
     selectedMaskId,

@@ -76,6 +76,27 @@ export function computeHandleScale({
   };
 }
 
+export function lockCornerScaleAspectRatio(
+  handle: string | null,
+  startScale: ScaleLike,
+  nextScale: ScaleLike,
+): ScaleLike {
+  const isCornerHandle = typeof handle === "string" && handle.length === 2;
+  if (!isCornerHandle) {
+    return nextScale;
+  }
+
+  const ratio = startScale.x / startScale.y;
+  if (Math.abs(startScale.x) <= 0.0001 || Math.abs(ratio) <= 0.0001) {
+    return nextScale;
+  }
+
+  return {
+    x: nextScale.x,
+    y: nextScale.x / ratio,
+  };
+}
+
 export function getAngleFromPoint(
   point: { x: number; y: number },
   center: { x: number; y: number },

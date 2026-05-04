@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { Application, Container, FederatedPointerEvent, Sprite } from "pixi.js";
 import { getTimelineClipById, useTimelineStore } from "../../../timeline";
 import { usePlayerStore } from "../../usePlayerStore";
+import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 import type { ClipTransform, TimelineClip } from "../../../../types/TimelineTypes";
 import type {
   PositionTransform,
@@ -29,6 +30,7 @@ import {
 import {
   computeHandleScale,
   getAngleFromPoint,
+  lockCornerScaleAspectRatio,
 } from "./layoutInteractionMath";
 
 const POINT_EPSILON_TICKS = 1;
@@ -92,6 +94,7 @@ export function useTransformInteractionController(
   const updateClipTransform = useTimelineStore((state) => state.updateClipTransform);
   const setClipTransforms = useTimelineStore((state) => state.setClipTransforms);
   const selectClip = useTimelineStore((state) => state.selectClip);
+  const selectCanvasClip = useCanvasSelectionStore((state) => state.selectClip);
 
   const interactionRef = useRef<InteractionState>(createInitialInteractionState());
 
@@ -185,27 +188,24 @@ export function useTransformInteractionController(
       });
 
       const newVisualScaleX = scaleDrag.scale.x;
-      let newVisualScaleY = scaleDrag.scale.y;
+      const newVisualScaleY = scaleDrag.scale.y;
 
-      const newParamX = newVisualScaleX / current.baseScale.x;
-      let newParamY = newVisualScaleY / current.baseScale.y;
-
-      const isCorner = current.handle && current.handle.length === 2;
-      if (isCorner) {
-        const ratio = current.startParams.x / current.startParams.y;
-        if (Math.abs(current.startParams.x) > 0.0001 && Math.abs(ratio) > 0.0001) {
-          newParamY = newParamX / ratio;
-          newVisualScaleY = newParamY * current.baseScale.y;
-        }
-      }
+      const lockedParamScale = lockCornerScaleAspectRatio(
+        current.handle,
+        { x: current.startParams.x, y: current.startParams.y },
+        {
+          x: newVisualScaleX / current.baseScale.x,
+          y: newVisualScaleY / current.baseScale.y,
+        },
+      );
 
       return {
         localDx: scaleDrag.localDelta.x,
         localDy: scaleDrag.localDelta.y,
-        newParamX,
-        newParamY,
+        newParamX: lockedParamScale.x,
+        newParamY: lockedParamScale.y,
         newVisualScaleX,
-        newVisualScaleY,
+        newVisualScaleY: lockedParamScale.y * current.baseScale.y,
       };
     };
 
@@ -437,6 +437,7 @@ export function useTransformInteractionController(
         Boolean(modifierEvent.ctrlKey) ||
         Boolean(modifierEvent.metaKey);
       selectClip(activeClip.id, isMulti);
+      selectCanvasClip(activeClip.id);
 
       const transform = activeClip.transformations?.find(
         (item) => item.type === "position",
@@ -488,6 +489,7 @@ export function useTransformInteractionController(
 
       e.stopPropagation();
       setIsPlaying(false);
+      selectCanvasClip(activeClip.id);
 
       const mode: InteractionMode = e.altKey ? "rotate" : "scale";
       let nextTransforms = [...(activeClip.transformations || [])];
@@ -601,6 +603,7 @@ export function useTransformInteractionController(
     updateClipTransform,
     setClipTransforms,
     selectClip,
+    selectCanvasClip,
   ]);
 
   useEffect(() => {

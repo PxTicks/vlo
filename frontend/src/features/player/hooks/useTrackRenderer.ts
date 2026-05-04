@@ -1,11 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { Application, Container } from "pixi.js";
-import { useShallow } from "zustand/react/shallow";
-import { useTimelineStore } from "../../timeline";
 import { useSpriteInteraction } from "./useSpriteInteraction";
 import { useGizmoBehavior } from "./useGizmoBehavior";
 import { useTransformInteractionController } from "./interaction/useTransformInteractionController";
 import { useMaskInteractionController } from "./interaction/useMaskInteractionController";
+import { registerCanvasSelectable } from "./interaction/useCanvasSelectionManager";
+import { useCanvasSelectionStore } from "../useCanvasSelectionStore";
 import { useTrackRenderEngine } from "../../renderer";
 
 /**
@@ -36,10 +36,8 @@ export function useTrackRenderer(
   );
 
   // 2. Selection state
-  const isSelected = useTimelineStore(
-    useShallow((state) =>
-      currentClipId ? state.selectedClipIds.includes(currentClipId) : false,
-    ),
+  const activeCanvasSelection = useCanvasSelectionStore(
+    (state) => state.activeSelection,
   );
 
   // 3. Interaction controllers
@@ -50,6 +48,8 @@ export function useTrackRenderer(
     container,
   );
   const maskInteractionHandlers = useMaskInteractionController(
+    trackId,
+    zIndex,
     spriteInstance,
     activeClipRef,
     app,
@@ -84,12 +84,30 @@ export function useTrackRenderer(
     }),
     [maskInteractionHandlers],
   );
+  const isClipSelectionActive =
+    !!currentClipId &&
+    activeCanvasSelection?.kind === "clip" &&
+    activeCanvasSelection.clipId === currentClipId;
+
+  useEffect(() => {
+    if (!spriteInstance) return;
+
+    return registerCanvasSelectable({
+      id: `clip:${trackId}`,
+      kind: "clip",
+      displayObject: spriteInstance,
+      getClipId: () => activeClipRef.current?.id ?? null,
+      getSelectionOrder: () => zIndex,
+      onPointerDown: spriteInteractionHandlers.onSpritePointerDown,
+      isEnabled: () => spriteInstance.visible && !!activeClipRef.current,
+    });
+  }, [activeClipRef, spriteInstance, spriteInteractionHandlers, trackId, zIndex]);
 
   // 5. Wire sprite interaction and gizmo hooks
   useSpriteInteraction(spriteInstance, spriteInteractionHandlers);
   useGizmoBehavior(
     spriteInstance,
-    isSelected && !maskInteractionHandlers.isMaskGizmoVisible,
+    isClipSelectionActive && !maskInteractionHandlers.isMaskGizmoVisible,
     app,
     container,
     transformGizmoInteractions,

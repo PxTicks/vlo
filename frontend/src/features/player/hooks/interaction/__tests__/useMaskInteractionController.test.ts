@@ -11,6 +11,24 @@ import { createMaskLayoutTransforms } from "../../../../masks/model/maskFactory"
 import { useMaskInteractionController } from "../useMaskInteractionController";
 import { playbackClock } from "../../../services/PlaybackClock";
 
+const {
+  mockEnsureBrushBuffer,
+  mockGetBrushBuffer,
+  mockHydrateBrushBufferFromUrl,
+  mockPaintBrushDot,
+  mockPaintBrushStroke,
+  mockSubscribeToBrushBuffer,
+  mockFlushBrushMaskCommit,
+} = vi.hoisted(() => ({
+  mockEnsureBrushBuffer: vi.fn(),
+  mockGetBrushBuffer: vi.fn(() => null),
+  mockHydrateBrushBufferFromUrl: vi.fn(),
+  mockPaintBrushDot: vi.fn(),
+  mockPaintBrushStroke: vi.fn(),
+  mockSubscribeToBrushBuffer: vi.fn(() => () => {}),
+  mockFlushBrushMaskCommit: vi.fn(),
+}));
+
 vi.mock("pixi.js", async () => {
   const originalModule = await vi.importActual("pixi.js");
   return {
@@ -28,6 +46,19 @@ vi.mock("pixi.js", async () => {
     },
   };
 });
+
+vi.mock("../../../../masks/runtime/brushBufferRegistry", () => ({
+  ensureBrushBuffer: mockEnsureBrushBuffer,
+  getBrushBuffer: mockGetBrushBuffer,
+  hydrateBrushBufferFromUrl: mockHydrateBrushBufferFromUrl,
+  paintBrushDot: mockPaintBrushDot,
+  paintBrushStroke: mockPaintBrushStroke,
+  subscribeToBrushBuffer: mockSubscribeToBrushBuffer,
+}));
+
+vi.mock("../../../../masks/runtime/brushAssetSync", () => ({
+  flushBrushMaskCommit: mockFlushBrushMaskCommit,
+}));
 
 function createParentClip(trackId: string): TimelineClip {
   const duration = TICKS_PER_SECOND;
@@ -95,9 +126,26 @@ function createMaskClip(
   };
 }
 
+function createBrushMaskClip(
+  parent: TimelineClip,
+  localId: string,
+): MaskTimelineClip {
+  return {
+    ...createMaskClip(parent, localId),
+    maskType: "brush",
+  };
+}
+
 describe("useMaskInteractionController", () => {
   beforeEach(() => {
     playbackClock.setTime(0);
+    mockEnsureBrushBuffer.mockClear();
+    mockGetBrushBuffer.mockClear();
+    mockHydrateBrushBufferFromUrl.mockClear();
+    mockPaintBrushDot.mockClear();
+    mockPaintBrushStroke.mockClear();
+    mockSubscribeToBrushBuffer.mockClear();
+    mockFlushBrushMaskCommit.mockClear();
     useTimelineStore.setState({
       clips: [],
       selectedClipIds: [],
@@ -425,5 +473,59 @@ describe("useMaskInteractionController", () => {
     expect(position?.parameters).toEqual(
       expect.objectContaining({ x: 15, y: 10 }),
     );
+  });
+
+  it("commits a brush mask when the stroke ends", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const brushMask = createBrushMaskClip(parent, "mask_brush");
+
+    useTimelineStore.setState({
+      clips: [parent, brushMask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_brush");
+    useMaskViewStore.getState().setMaskTabActive(true);
+    useMaskViewStore.getState().setBrushTool("paint");
+
+    const viewport = new Container();
+    const spriteParent = new Container();
+    const sprite = new Sprite();
+    spriteParent.addChild(sprite);
+    viewport.addChild(spriteParent);
+
+    const app = new Application();
+    const activeClipRef = { current: parent };
+
+    const { result } = renderHook(() =>
+      useMaskInteractionController(sprite, activeClipRef, app, viewport),
+    );
+
+    let consumed = false;
+    act(() => {
+      consumed = result.current.onSpritePointerDown({
+        button: 0,
+        stopPropagation: vi.fn(),
+        global: { x: 10, y: 14 },
+      } as unknown as FederatedPointerEvent);
+    });
+    expect(consumed).toBe(true);
+
+    const onPointerUp = vi
+      .mocked(app.stage.on)
+      .mock.calls.find((call) => call[0] === "pointerup")?.[1];
+
+    act(() => {
+      onPointerUp?.({} as unknown as FederatedPointerEvent);
+    });
+
+    expect(mockPaintBrushDot).toHaveBeenCalledWith(
+      brushMask.id,
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(Number),
+      "paint",
+    );
+    expect(mockFlushBrushMaskCommit).toHaveBeenCalledWith(brushMask.id);
   });
 });

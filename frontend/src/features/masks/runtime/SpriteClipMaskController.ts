@@ -409,6 +409,15 @@ export class SpriteClipMaskController {
       if (!isBrushBuffer && !asset) continue;
       node.root.visible = true;
 
+      if (maskClip.maskType === "brush" && node.player instanceof BrushBufferMaskSource) {
+        const maskContentSize = getMaskContentSize(maskClip);
+        node.player.setHydrationContext({
+          canvasWidth: maskContentSize.width,
+          canvasHeight: maskContentSize.height,
+          paintedBounds: maskClip.brushPaintedBounds ?? null,
+        });
+      }
+
       if (asset) {
         if (node.assetId !== asset.id) {
           node.assetId = asset.id;

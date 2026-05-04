@@ -8,6 +8,7 @@ import { recentProjectsService } from "./services/RecentProjectsService";
 import { VLO_APP_VERSION } from "./constants";
 import { PROJECT_ASPECT_RATIOS } from "./aspectRatioOptions";
 import type { ProjectDocumentConfig } from "./types/ProjectDocument";
+import { flushAllBrushMaskCommits } from "../masks/runtime/brushAssetSync";
 
 export type AspectRatio = "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
 export type AssetBrowserDisplay = "grouped" | "ungrouped";
@@ -90,6 +91,7 @@ const hasProjectConfigChanged = (
   current.assetBrowserDisplay !== next.assetBrowserDisplay;
 
 async function flushOpenProjectPersistence(): Promise<void> {
+  await flushAllBrushMaskCommits();
   await useTimelineStore.getState().flushPendingPersistence();
   await projectPersistenceService.flushAll();
 
@@ -311,6 +313,8 @@ export const useProjectStore = create<ProjectState>()(
         if (!project) return null;
 
         try {
+          await flushOpenProjectPersistence();
+
           await projectPersistenceService.updateManifest((draft) => {
             draft.id = project.id;
             draft.title = project.title;

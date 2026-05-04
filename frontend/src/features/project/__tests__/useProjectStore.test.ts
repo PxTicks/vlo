@@ -9,8 +9,9 @@ import {
 } from "../constants";
 import { useTimelineStore } from "../../timeline";
 
-const { mockScanForNewAssets } = vi.hoisted(() => ({
+const { mockScanForNewAssets, mockFlushAllBrushMaskCommits } = vi.hoisted(() => ({
   mockScanForNewAssets: vi.fn(),
+  mockFlushAllBrushMaskCommits: vi.fn(),
 }));
 
 vi.mock("../services/FileSystemService", () => ({
@@ -31,6 +32,10 @@ vi.mock("../services/RecentProjectsService", () => ({
 vi.mock("../../userAssets", () => ({
   flushAllAssetPersistence: vi.fn(),
   scanForNewAssets: mockScanForNewAssets,
+}));
+
+vi.mock("../../masks/runtime/brushAssetSync", () => ({
+  flushAllBrushMaskCommits: mockFlushAllBrushMaskCommits,
 }));
 
 describe("useProjectStore", () => {
@@ -55,6 +60,7 @@ describe("useProjectStore", () => {
     });
     useTimelineStore.getState().replaceTimelineSnapshot(null);
     vi.clearAllMocks();
+    mockFlushAllBrushMaskCommits.mockResolvedValue(undefined);
     (fileSystemService.checkDirectoryExists as Mock).mockResolvedValue(false);
     projectPersistenceService.resetCaches();
   });
@@ -173,6 +179,7 @@ describe("useProjectStore", () => {
       ([path]) => path === ".vloproject/project.json",
     );
     expect(projectWrites).toHaveLength(2); // Create + title update
+    expect(mockFlushAllBrushMaskCommits).toHaveBeenCalled();
   });
 
   it("should not update title if no project exists", async () => {

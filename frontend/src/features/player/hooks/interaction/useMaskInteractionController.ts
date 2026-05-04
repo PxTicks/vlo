@@ -1014,13 +1014,10 @@ export function useMaskInteractionController(
         const clipId = current.clipId;
         const maskLocalId = current.brush.maskLocalId;
 
-        // The buffer's RenderTexture already reflects every stroke and the
-        // mask compositing pipeline is reading from it live, so the visual
-        // state is up-to-date without needing the asset PNG to exist yet.
-        // The PNG ingestion is deferred entirely until the user navigates
-        // away from this brush mask (see leave-detection effect below) —
-        // per-stroke ingestion would surface asset-store UI feedback while
-        // the user is mid-paint.
+        // Commit on stroke-end so brush masks persist across reloads the same
+        // way other asset-backed masks do, while still avoiding per-move
+        // asset churn during the stroke itself.
+        void flushBrushMaskCommit(current.maskId);
 
         setInteractionContext({
           clipId,

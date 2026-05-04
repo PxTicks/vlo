@@ -17,6 +17,11 @@ import type {
 import type { Asset } from "../../../../types/Asset";
 import { livePreviewParamStore } from "../../../transformations";
 
+const { mockBrushSetHydrationContext, mockBrushSetSource } = vi.hoisted(() => ({
+  mockBrushSetHydrationContext: vi.fn(),
+  mockBrushSetSource: vi.fn(async () => undefined),
+}));
+
 vi.mock("../MaskVideoFramePlayer", async () => {
   const { Sprite, Texture } = await import("pixi.js");
 
@@ -40,6 +45,30 @@ vi.mock("../MaskVideoFramePlayer", async () => {
 
   return {
     MaskVideoFramePlayer: MockMaskVideoFramePlayer,
+  };
+});
+
+vi.mock("../BrushBufferMaskSource", async () => {
+  const { Sprite, Texture } = await import("pixi.js");
+
+  class MockBrushBufferMaskSource {
+    public readonly sprite: Sprite;
+    public readonly setHydrationContext = mockBrushSetHydrationContext;
+    public readonly setSource = mockBrushSetSource;
+    public readonly renderAt = vi.fn(async () => undefined);
+    public readonly hasFrame = vi.fn(() => true);
+    public readonly dispose = vi.fn(() => undefined);
+
+    constructor(...args: [string]) {
+      void args;
+      this.sprite = new Sprite(Texture.WHITE);
+      this.sprite.anchor.set(0.5);
+      this.sprite.visible = true;
+    }
+  }
+
+  return {
+    BrushBufferMaskSource: MockBrushBufferMaskSource,
   };
 });
 
@@ -101,6 +130,8 @@ function createMaskClip(
     sam2GrowAmount?: number;
     sam2MaskAssetId?: string;
     generationMaskAssetId?: string;
+    brushMaskAssetId?: string;
+    brushPaintedBounds?: MaskTimelineClip["brushPaintedBounds"];
     transformations?: MaskTimelineClip["transformations"];
   } = {},
 ): MaskTimelineClip {
@@ -128,6 +159,8 @@ function createMaskClip(
     },
     sam2MaskAssetId: options.sam2MaskAssetId,
     generationMaskAssetId: options.generationMaskAssetId,
+    brushMaskAssetId: options.brushMaskAssetId,
+    brushPaintedBounds: options.brushPaintedBounds,
   };
 }
 
@@ -142,7 +175,55 @@ function createMaskAsset(id: string): Asset {
   };
 }
 
+function createImageAsset(id: string): Asset {
+  return {
+    id,
+    type: "image",
+    name: `${id}.png`,
+    src: `${id}.png`,
+    hash: `${id}-hash`,
+    createdAt: 0,
+  };
+}
+
 describe("SpriteClipMaskController mask composition", () => {
+  it("hydrates persisted brush masks during normal mask sync", async () => {
+    mockBrushSetHydrationContext.mockClear();
+    mockBrushSetSource.mockClear();
+
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = createParentClip();
+    const brushMask = createMaskClip("mask_brush", {
+      maskType: "brush",
+      brushMaskAssetId: "brush-mask-asset",
+      brushPaintedBounds: { x: 12, y: 18, width: 44, height: 30 },
+    });
+    const brushAsset = createImageAsset("brush-mask-asset");
+
+    await controller.syncMaskClips(
+      [brushMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map([[brushAsset.id, brushAsset]]),
+    );
+
+    expect(mockBrushSetHydrationContext).toHaveBeenCalledWith({
+      canvasWidth: 100,
+      canvasHeight: 100,
+      paintedBounds: { x: 12, y: 18, width: 44, height: 30 },
+    });
+    expect(mockBrushSetSource).toHaveBeenCalledWith(brushAsset);
+
+    controller.dispose();
+  });
+
   it("keeps the alpha-mask sprite active without rendering it as scene content", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSpy = vi.fn();

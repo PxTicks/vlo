@@ -114,10 +114,10 @@ const inflightFlushes = new Map<string, Promise<void>>();
  * spurious leave events (selecting a brush mask, then leaving without
  * painting) don't churn the asset store.
  *
- * Called when the user navigates away from a brush mask: switching to a
- * different mask, a different clip, a different inspector tab, or back to
- * the masks list. Skipping painting means there are no per-stroke
- * `addLocalAsset` calls to interrupt the user mid-paint.
+ * Called from stroke-end commits, leave-navigation fallbacks, and broader
+ * project persistence flushes. We still avoid per-move writes while the user
+ * is actively dragging the brush, but once a stroke completes the PNG can be
+ * materialized so reload/save flows behave like other asset-backed masks.
  */
 export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
   const existing = inflightFlushes.get(maskClipId);
@@ -157,4 +157,23 @@ export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
   } finally {
     inflightFlushes.delete(maskClipId);
   }
+}
+
+/**
+ * Flush all brush-mask buffers that currently exist in the timeline. This is
+ * used by broader project persistence flows so brush masks are materialized as
+ * PNG assets before we persist timeline/assets documents or switch projects.
+ */
+export async function flushAllBrushMaskCommits(): Promise<void> {
+  const brushMaskClipIds = useTimelineStore
+    .getState()
+    .clips.filter(
+      (clip): clip is MaskTimelineClip =>
+        clip.type === "mask" && clip.maskType === "brush",
+    )
+    .map((clip) => clip.id);
+
+  await Promise.all(
+    brushMaskClipIds.map((maskClipId) => flushBrushMaskCommit(maskClipId)),
+  );
 }

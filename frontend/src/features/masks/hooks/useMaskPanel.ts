@@ -273,10 +273,19 @@ export function useMaskPanel(): UseMaskPanelResult {
 
       addClipMask(selectedClipId, newMask);
       setSelectedMask(selectedClipId, newMask.id);
+      if (shape === "brush") {
+        setBrushTool("paint");
+      }
 
       setAddMenuAnchorEl(null);
     },
-    [isAddDisabled, addClipMask, selectedClipId, setSelectedMask],
+    [
+      isAddDisabled,
+      addClipMask,
+      selectedClipId,
+      setBrushTool,
+      setSelectedMask,
+    ],
   );
 
   const selectMask = useCallback(

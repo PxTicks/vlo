@@ -265,9 +265,9 @@ export const MaskPanel = memo(function MaskPanel() {
 
   // Flush any unsaved brush strokes when the user leaves the brush detail
   // view (clicking "Back to Masks" → panelView "mask" → "home"). The
-  // interaction controller already handles flushing on clip / mask / tab
-  // change; this covers the in-panel "back" action where selectedMask stays
-  // the same but the user is no longer editing it.
+  // interaction controller already handles clip / mask / tab focus changes;
+  // this covers the in-panel "back" action where selectedMask stays the same
+  // but paint/erase mode should release canvas selection back to the gizmo.
   const focusedBrushMaskClipIdRef = useRef<string | null>(null);
   useEffect(() => {
     const isBrushDetail =
@@ -276,9 +276,12 @@ export const MaskPanel = memo(function MaskPanel() {
     const previous = focusedBrushMaskClipIdRef.current;
     if (previous && previous !== next) {
       void flushBrushMaskCommit(previous);
+      if (!next) {
+        setBrushTool("gizmo");
+      }
     }
     focusedBrushMaskClipIdRef.current = next;
-  }, [panelView, selectedMaskIsBrush, selectedMask]);
+  }, [panelView, selectedMaskIsBrush, selectedMask, setBrushTool]);
 
   const sharedSectionOrder = useMemo(
     () =>

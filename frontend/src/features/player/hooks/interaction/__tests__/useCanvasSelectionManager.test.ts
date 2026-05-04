@@ -1,17 +1,17 @@
 import { act, renderHook } from "@testing-library/react";
-import type { DisplayObject } from "pixi.js";
 import { describe, expect, it, beforeEach } from "vitest";
 import { useTimelineStore } from "../../../../timeline";
 import { useMaskViewStore } from "../../../../masks/store/useMaskViewStore";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
 import {
+  type CanvasSelectableDisplayObject,
   resolveCanvasSelectableCandidates,
   useCanvasSelectionManager,
 } from "../useCanvasSelectionManager";
 
 function createDisplayObject(
   containsPoint: (point: { x: number; y: number }) => boolean,
-): DisplayObject {
+): CanvasSelectableDisplayObject {
   return {
     destroyed: false,
     visible: true,
@@ -22,7 +22,7 @@ function createDisplayObject(
       width: 100,
       height: 100,
     }),
-  } as unknown as DisplayObject;
+  };
 }
 
 describe("useCanvasSelectionManager", () => {

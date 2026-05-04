@@ -190,5 +190,32 @@ describe("brushAssetSync", () => {
       .clips.find((clip): clip is MaskTimelineClip => clip.id === brushMask.id);
     expect(updatedMask?.brushPaintedBounds).toEqual(recalculatedBounds);
     expect(updatedMask?.brushMaskAssetId).toBe("brush-asset-2");
+    expect(mockMarkBrushBufferClean).toHaveBeenCalledWith(
+      brushMask.id,
+      "brush-asset-2",
+    );
+  });
+
+  it("keeps a non-empty buffer dirty when it cannot be materialized", async () => {
+    const initialBounds = { x: 0, y: 0, width: 80, height: 80 };
+    const recalculatedBounds = { x: 20, y: 24, width: 12, height: 16 };
+    const brushMask = createBrushMaskClip("brush-asset-1", initialBounds);
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [createTrack("track_1")],
+      clips: [createParentClip(brushMask.id), brushMask],
+    });
+
+    mockIsBrushBufferDirty.mockReturnValue(true);
+    mockRecalculateBrushPaintedBounds.mockResolvedValue(recalculatedBounds);
+    mockExtractBrushPng.mockResolvedValue(null);
+
+    await flushBrushMaskCommit(brushMask.id);
+
+    expect(mockExtractBrushPng).toHaveBeenCalledWith(
+      brushMask.id,
+      recalculatedBounds,
+    );
+    expect(mockMarkBrushBufferClean).not.toHaveBeenCalled();
   });
 });

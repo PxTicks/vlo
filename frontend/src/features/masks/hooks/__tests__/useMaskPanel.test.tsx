@@ -149,6 +149,7 @@ describe("useMaskPanel", () => {
       pendingDrawRequest: null,
       interactionContext: null,
       sam2LivePreviewByClipId: {},
+      brushTool: "gizmo",
     });
     useAssetStore.setState({
       assets: [],
@@ -259,5 +260,30 @@ describe("useMaskPanel", () => {
 
     disposeBrushBuffer(brushMask.id);
     consoleErrorSpy.mockRestore();
+  });
+
+  it("starts newly drawn brush masks in paint mode from the gizmo default", () => {
+    const parent = createParentClip("clip_brush_new");
+    useTimelineStore.setState({
+      clips: [parent],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setBrushTool("gizmo");
+
+    const { result } = renderHook(() => useMaskPanel());
+
+    act(() => {
+      result.current.panel.requestDraw("brush");
+    });
+
+    expect(useMaskViewStore.getState().brushTool).toBe("paint");
+    expect(useTimelineStore.getState().clips).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "mask",
+          maskType: "brush",
+        }),
+      ]),
+    );
   });
 });

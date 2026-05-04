@@ -7,7 +7,14 @@ import {
 } from "../hooks/useMaskPanel";
 import type { ClipTransform, MaskTimelineClip } from "../../../types/TimelineTypes";
 
+const { mockFlushBrushMaskCommit } = vi.hoisted(() => ({
+  mockFlushBrushMaskCommit: vi.fn(() => Promise.resolve()),
+}));
+
 vi.mock("../hooks/useMaskPanel");
+vi.mock("../runtime/brushAssetSync", () => ({
+  flushBrushMaskCommit: mockFlushBrushMaskCommit,
+}));
 const mockSetSharedMaskTransforms = vi.fn();
 let mockSharedMaskTransforms: ClipTransform[] = [];
 vi.mock("../../transformations", () => ({
@@ -79,7 +86,7 @@ vi.mock("../components/Sam2ModelDownloadOverlay", () => ({
 function createMaskClip(
   parentClipId: string,
   localId: string,
-  type: "circle" | "rectangle" | "triangle" | "sam2",
+  type: "circle" | "rectangle" | "triangle" | "sam2" | "brush",
 ): MaskTimelineClip {
   return {
     id: `${parentClipId}::mask::${localId}`,
@@ -252,6 +259,7 @@ describe("MaskPanel", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFlushBrushMaskCommit.mockClear();
     mockSharedMaskTransforms = [];
     baseHookValue = {
       selection: {
@@ -739,6 +747,33 @@ describe("MaskPanel", () => {
     expect(
       screen.queryByTestId("default-sections-order-mask-context"),
     ).not.toBeInTheDocument();
+  });
+
+  it("restores gizmo mode when returning from a brush detail view", () => {
+    const setBrushTool = vi.fn();
+    const brushMask = createMaskClip("clip_1", "mask_1", "brush");
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
+      ...baseHookValue,
+      masks: [brushMask],
+      selectedMaskId: "mask_1",
+      selectedMask: brushMask,
+      brushTool: "paint",
+      setBrushTool,
+    }));
+
+    render(<MaskPanel />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Mask 1" }),
+    );
+    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    expect(screen.getByTestId("brush-mask-panel")).toBeInTheDocument();
+    expect(setBrushTool).not.toHaveBeenCalledWith("gizmo");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back To Masks" }));
+
+    expect(mockFlushBrushMaskCommit).toHaveBeenCalledWith(brushMask.id);
+    expect(setBrushTool).toHaveBeenCalledWith("gizmo");
   });
 
   it("renders Sam2MaskPanel in the dedicated mask detail view", () => {

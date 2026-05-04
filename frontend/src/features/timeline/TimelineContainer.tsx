@@ -285,10 +285,6 @@ function TimelineContainerComponent({
         return;
       }
 
-      if (!useTimelineStore.getState().isFocused) {
-        return;
-      }
-
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
@@ -299,16 +295,6 @@ function TimelineContainerComponent({
       const isShortcut = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
 
-      if (isShortcut && key === "c") {
-        if (copySelectedClip()) e.preventDefault();
-        return;
-      }
-
-      if (isShortcut && key === "v") {
-        if (pasteCopiedClipAbove()) e.preventDefault();
-        return;
-      }
-
       if (isShortcut && key === "z") {
         const wasHandled = e.shiftKey ? redo() : undo();
         if (wasHandled) e.preventDefault();
@@ -317,6 +303,20 @@ function TimelineContainerComponent({
 
       if (isShortcut && key === "y") {
         if (redo()) e.preventDefault();
+        return;
+      }
+
+      if (!useTimelineStore.getState().isFocused) {
+        return;
+      }
+
+      if (isShortcut && key === "c") {
+        if (copySelectedClip()) e.preventDefault();
+        return;
+      }
+
+      if (isShortcut && key === "v") {
+        if (pasteCopiedClipAbove()) e.preventDefault();
         return;
       }
 

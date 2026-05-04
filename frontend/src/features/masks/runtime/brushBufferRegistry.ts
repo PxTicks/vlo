@@ -27,6 +27,12 @@ export interface BrushBuffer {
    * because the user opened then closed the brush mask without painting.
    */
   dirty: boolean;
+  /**
+   * The persisted asset currently represented by this clean buffer. `null`
+   * means the buffer is empty, newly painted, or otherwise not known to match
+   * an asset on disk.
+   */
+  sourceAssetId: string | null;
 }
 
 const buffers = new Map<string, BrushBuffer>();
@@ -93,6 +99,7 @@ export function ensureBrushBuffer(
     canvasSize: { width: w, height: h },
     paintedBounds: null,
     dirty: false,
+    sourceAssetId: null,
   };
   buffers.set(maskId, buffer);
   if (sharedRenderer) {
@@ -205,6 +212,7 @@ export function paintBrushDot(
     buffer.canvasSize,
   );
   buffer.dirty = true;
+  buffer.sourceAssetId = null;
   notify(maskId);
   // Wake the paused-time render loop so the player re-composites the mask
   // with the new stroke; without this the user can't see what they paint
@@ -245,6 +253,7 @@ export function paintBrushStroke(
     buffer.canvasSize,
   );
   buffer.dirty = true;
+  buffer.sourceAssetId = null;
   notify(maskId);
   livePreviewParamStore.requestRender();
 }
@@ -255,6 +264,7 @@ export function clearBrushBuffer(maskId: string): void {
   clearRenderTextureToBlack(buffer);
   buffer.paintedBounds = null;
   buffer.dirty = true;
+  buffer.sourceAssetId = null;
   notify(maskId);
   livePreviewParamStore.requestRender();
 }
@@ -263,10 +273,16 @@ export function isBrushBufferDirty(maskId: string): boolean {
   return buffers.get(maskId)?.dirty ?? false;
 }
 
-export function markBrushBufferClean(maskId: string): void {
+export function markBrushBufferClean(
+  maskId: string,
+  sourceAssetId?: string | null,
+): void {
   const buffer = buffers.get(maskId);
   if (!buffer) return;
   buffer.dirty = false;
+  if (sourceAssetId !== undefined) {
+    buffer.sourceAssetId = sourceAssetId;
+  }
 }
 
 export function disposeBrushBuffer(maskId: string): void {
@@ -285,6 +301,36 @@ export function setBrushPaintedBounds(
   if (!buffer) return;
   buffer.paintedBounds = bounds;
   notify(maskId);
+}
+
+function brushBoundsEqual(
+  left: BrushPaintedBounds | null,
+  right: BrushPaintedBounds | null,
+): boolean {
+  return (
+    left?.x === right?.x &&
+    left?.y === right?.y &&
+    left?.width === right?.width &&
+    left?.height === right?.height
+  );
+}
+
+export function isBrushBufferReadyForSource(
+  maskId: string,
+  sourceAssetId: string | null,
+  canvasWidth: number,
+  canvasHeight: number,
+  bounds: BrushPaintedBounds | null,
+): boolean {
+  const buffer = buffers.get(maskId);
+  return (
+    !!buffer &&
+    !buffer.dirty &&
+    buffer.sourceAssetId === sourceAssetId &&
+    buffer.canvasSize.width === Math.max(1, Math.round(canvasWidth)) &&
+    buffer.canvasSize.height === Math.max(1, Math.round(canvasHeight)) &&
+    brushBoundsEqual(buffer.paintedBounds, bounds)
+  );
 }
 
 export async function recalculateBrushPaintedBounds(
@@ -401,11 +447,26 @@ export async function hydrateBrushBufferFromUrl(
   canvasWidth: number,
   canvasHeight: number,
   bounds: BrushPaintedBounds | null,
+  sourceAssetId: string | null = null,
 ): Promise<BrushBuffer> {
   const buffer = ensureBrushBuffer(maskId, canvasWidth, canvasHeight);
+  if (
+    buffer.dirty ||
+    isBrushBufferReadyForSource(
+      maskId,
+      sourceAssetId,
+      canvasWidth,
+      canvasHeight,
+      bounds,
+    )
+  ) {
+    return buffer;
+  }
+
   if (!sharedRenderer) {
     buffer.paintedBounds = bounds;
     buffer.dirty = false;
+    buffer.sourceAssetId = sourceAssetId;
     notify(maskId);
     return buffer;
   }
@@ -417,6 +478,11 @@ export async function hydrateBrushBufferFromUrl(
     image.onerror = () => reject(new Error("Failed to load brush PNG"));
     image.src = url;
   });
+  const currentBuffer = buffers.get(maskId);
+  if (!currentBuffer || currentBuffer !== buffer || currentBuffer.dirty) {
+    return currentBuffer ?? buffer;
+  }
+
   const texture = Texture.from(image);
   const sprite = new Sprite(texture);
   // Place cropped PNG back at its original canvas-space position.
@@ -449,6 +515,7 @@ export async function hydrateBrushBufferFromUrl(
   buffer.paintedBounds = bounds;
   // Hydration mirrors what's already on disk — no commit required.
   buffer.dirty = false;
+  buffer.sourceAssetId = sourceAssetId;
   notify(maskId);
   return buffer;
 }

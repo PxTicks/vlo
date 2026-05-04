@@ -370,6 +370,29 @@ describe("TimelineContainer", () => {
     expect(useTimelineStore.getState().selectedClipIds).toEqual(["c1"]);
   });
 
+  it("handles timeline undo and redo shortcuts when focus is outside the timeline", () => {
+    const undo = vi.fn(() => true);
+    const redo = vi.fn(() => true);
+    useTimelineStore.setState({
+      isFocused: false,
+      undo,
+      redo,
+    });
+
+    render(
+      <TimelineContainer
+        scrollContainerRef={mockScrollRef}
+        insertGapIndex={null}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "y", ctrlKey: true });
+
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(redo).toHaveBeenCalledTimes(1);
+  });
+
   it("handles copy + paste keyboard shortcuts for a single selected clip", () => {
     const sourceClip = {
       id: "c1",

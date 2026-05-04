@@ -1,17 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Texture } from "pixi.js";
 import type { Asset } from "../../../../types/Asset";
+import type { BrushBuffer } from "../brushBufferRegistry";
 
 const {
   mockEnsureAssetSourceLoaded,
   mockEnsureBrushBuffer,
   mockGetBrushBuffer,
   mockHydrateBrushBufferFromUrl,
+  mockIsBrushBufferReadyForSource,
   mockSubscribeToBrushBuffer,
 } = vi.hoisted(() => ({
   mockEnsureAssetSourceLoaded: vi.fn(),
   mockEnsureBrushBuffer: vi.fn(),
-  mockGetBrushBuffer: vi.fn(() => null),
+  mockGetBrushBuffer: vi.fn<() => BrushBuffer | null>(() => null),
   mockHydrateBrushBufferFromUrl: vi.fn(async () => undefined),
+  mockIsBrushBufferReadyForSource: vi.fn(() => false),
   mockSubscribeToBrushBuffer: vi.fn(() => () => undefined),
 }));
 
@@ -23,6 +27,7 @@ vi.mock("../brushBufferRegistry", () => ({
   ensureBrushBuffer: mockEnsureBrushBuffer,
   getBrushBuffer: mockGetBrushBuffer,
   hydrateBrushBufferFromUrl: mockHydrateBrushBufferFromUrl,
+  isBrushBufferReadyForSource: mockIsBrushBufferReadyForSource,
   subscribeToBrushBuffer: mockSubscribeToBrushBuffer,
 }));
 
@@ -40,10 +45,24 @@ function createAsset(overrides: Partial<Asset> = {}): Asset {
   };
 }
 
+function createBrushBuffer(
+  overrides: Partial<BrushBuffer> = {},
+): BrushBuffer {
+  return {
+    renderTexture: Texture.EMPTY as never,
+    canvasSize: { width: 128, height: 72 },
+    paintedBounds: { x: 10, y: 12, width: 30, height: 20 },
+    dirty: false,
+    sourceAssetId: null,
+    ...overrides,
+  };
+}
+
 describe("BrushBufferMaskSource", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetBrushBuffer.mockReturnValue(null);
+    mockIsBrushBufferReadyForSource.mockReturnValue(false);
     mockEnsureAssetSourceLoaded.mockResolvedValue(null);
   });
 
@@ -68,6 +87,7 @@ describe("BrushBufferMaskSource", () => {
       128,
       72,
       { x: 10, y: 12, width: 30, height: 20 },
+      "brush-asset-1",
     );
   });
 
@@ -87,7 +107,48 @@ describe("BrushBufferMaskSource", () => {
       64,
       64,
       null,
+      "brush-asset-1",
     );
+  });
+
+  it("does not hydrate over a dirty live buffer", async () => {
+    const source = new BrushBufferMaskSource("clip_1::mask::mask_brush");
+    source.setHydrationContext({
+      canvasWidth: 128,
+      canvasHeight: 72,
+      paintedBounds: { x: 10, y: 12, width: 30, height: 20 },
+    });
+    mockGetBrushBuffer.mockReturnValue(
+      createBrushBuffer({
+        dirty: true,
+        sourceAssetId: null,
+      }),
+    );
+
+    await source.setSource(createAsset());
+
+    expect(mockEnsureAssetSourceLoaded).not.toHaveBeenCalled();
+    expect(mockHydrateBrushBufferFromUrl).not.toHaveBeenCalled();
+  });
+
+  it("reuses a clean live buffer already committed to the same asset", async () => {
+    const source = new BrushBufferMaskSource("clip_1::mask::mask_brush");
+    source.setHydrationContext({
+      canvasWidth: 128,
+      canvasHeight: 72,
+      paintedBounds: { x: 10, y: 12, width: 30, height: 20 },
+    });
+    mockGetBrushBuffer.mockReturnValue(
+      createBrushBuffer({
+        sourceAssetId: "brush-asset-1",
+      }),
+    );
+    mockIsBrushBufferReadyForSource.mockReturnValue(true);
+
+    await source.setSource(createAsset());
+
+    expect(mockEnsureAssetSourceLoaded).not.toHaveBeenCalled();
+    expect(mockHydrateBrushBufferFromUrl).not.toHaveBeenCalled();
   });
 
   it("retries hydration when an earlier attempt left behind an empty buffer", async () => {
@@ -100,12 +161,11 @@ describe("BrushBufferMaskSource", () => {
 
     mockGetBrushBuffer
       .mockReturnValueOnce(null)
-      .mockReturnValue({
-        renderTexture: {} as never,
+      .mockReturnValue(createBrushBuffer({
         canvasSize: { width: 128, height: 72 },
         paintedBounds: null,
         dirty: false,
-      });
+      }));
     mockEnsureAssetSourceLoaded
       .mockResolvedValueOnce(createAsset({ src: "blob:first-url" }))
       .mockResolvedValueOnce(createAsset({ src: "blob:second-url" }));
@@ -123,6 +183,7 @@ describe("BrushBufferMaskSource", () => {
       128,
       72,
       { x: 10, y: 12, width: 30, height: 20 },
+      "brush-asset-1",
     );
     expect(mockHydrateBrushBufferFromUrl).toHaveBeenNthCalledWith(
       2,
@@ -131,6 +192,7 @@ describe("BrushBufferMaskSource", () => {
       128,
       72,
       { x: 10, y: 12, width: 30, height: 20 },
+      "brush-asset-1",
     );
   });
 });

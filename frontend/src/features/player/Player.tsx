@@ -25,6 +25,7 @@ import {
 } from "./services/PlaybackClock";
 import { usePixiApp } from "./hooks/usePixiApp";
 import { useCanvasSelectionManager } from "./hooks/interaction/useCanvasSelectionManager";
+import { useCanvasSelectionKeyboard } from "./hooks/interaction/useCanvasSelectionKeyboard";
 
 import { PlayerControls } from "./components/PlayerControls";
 import { ExtractDialog } from "./components/ExtractDialog";
@@ -80,6 +81,7 @@ function PlayerImpl() {
   // --- Pixi Initialization ---
   const { pixiApp, canvasSize } = usePixiApp(containerRef, canvasRef);
   useCanvasSelectionManager(pixiApp);
+  useCanvasSelectionKeyboard();
 
   // Keep a ref to the latest currentTime to read inside the loop without restarting it
   const currentTimeRef = useRef(playbackClock.time);

@@ -37,113 +37,11 @@ export function SplineGraph({
   const [viewMin, setViewMin] = useState(softMin ?? minY);
   const [viewMax, setViewMax] = useState(softMax ?? maxY);
 
-  // --- History State (Undo/Redo) ---
-  const history = useRef<SplinePoint[][]>([value.points]);
-  const historyIdx = useRef(0);
-
-  const commitToHistory = useCallback((newPoints: SplinePoint[]) => {
-      // 1. Slice history if we are in the middle
-      const newHistory = history.current.slice(0, historyIdx.current + 1);
-      // 2. Push new state
-      newHistory.push(newPoints);
-      history.current = newHistory;
-      historyIdx.current = newHistory.length - 1;
-      // 3. Propagate change
+  const commitPoints = useCallback((newPoints: SplinePoint[]) => {
       onChange({ ...value, points: newPoints });
   }, [onChange, value]);
 
-  const undo = useCallback(() => {
-      if (historyIdx.current > 0) {
-          historyIdx.current--;
-          const prevPoints = history.current[historyIdx.current];
-          setLocalPoints(prevPoints);
-          onChange({ ...value, points: prevPoints });
-      }
-  }, [onChange, value]);
-
-  const redo = useCallback(() => {
-      if (historyIdx.current < history.current.length - 1) {
-          historyIdx.current++;
-          const nextPoints = history.current[historyIdx.current];
-          setLocalPoints(nextPoints);
-          onChange({ ...value, points: nextPoints });
-      }
-  }, [onChange, value]);
-
-  // Keyboard Shortcuts (Undo/Redo)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-            e.preventDefault();
-            if (e.shiftKey) {
-                redo();
-            } else {
-                undo();
-            }
-        } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-            e.preventDefault();
-            redo();
-        }
-    };
-    
-    // We attach to window to ensure we catch it even if SVG isn't strictly focused
-    // (Common pattern for modal tools)
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [redo, undo]); // Dependencies for undo/redo closures? 
-
-  // Wait, undo/redo use refs for history, but call 'onChange' and 'setLocalPoints'.
-  // 'onChange' is external, 'setLocalPoints' is stable. 
-  // 'value' is used in onChange call. We should be careful about closure staleness if we didn't use refs for everything.
-  // Actually, let's wrap undo/redo in the effect or use a ref for 'value' too if needed.
-  // BUT: 'history' contains the full points array. We construct the new value object: { ...value, points: ... }.
-  // 'value' might be stale in the effect closure.
-  // FIX: Use a ref for the latest 'value' metadata (type/params) or just accept we overwrite points on a potentially stale 'value' object? 
-  // Actually, 'value' prop updates every time we call onChange (parent re-renders).
-  // So adding 'value' to deps is correct, but re-binding listener on every change is annoying.
-  // Better: Use a ref for `value` to access inside the static listener.
-  const valueRef = useRef(value);
-  useEffect(() => { valueRef.current = value; }, [value]);
-
-  // Re-implement Undo/Redo using valueRef to avoid re-binding
-  const performUndo = useCallback(() => {
-      if (historyIdx.current > 0) {
-          historyIdx.current--;
-          const prevPoints = history.current[historyIdx.current];
-          setLocalPoints(prevPoints);
-          onChange({ ...valueRef.current, points: prevPoints });
-      }
-  }, [onChange]);
-
-   const performRedo = useCallback(() => {
-      if (historyIdx.current < history.current.length - 1) {
-          historyIdx.current++;
-          const nextPoints = history.current[historyIdx.current];
-          setLocalPoints(nextPoints);
-          onChange({ ...valueRef.current, points: nextPoints });
-      }
-  }, [onChange]);
-  
-  // Attach Listener ONE TIME (using refs for dependencies)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-            e.preventDefault();
-            if (e.shiftKey) {
-                performRedo();
-            } else {
-                performUndo();
-            }
-        } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-            e.preventDefault();
-            performRedo();
-        }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [performRedo, performUndo]);
-
-  // Refs for Event Listener access & RAF
+  // Refs for drag-state access inside pointer handlers and RAF callbacks.
   const stateRef = useRef({ localPoints, viewMin, viewMax });
   const mouseRef = useRef<{ x: number, y: number } | null>(null);
 
@@ -236,7 +134,7 @@ export function SplineGraph({
     const newPoints = [...localPoints];
     newPoints.splice(index, 1);
     setLocalPoints(newPoints);
-    commitToHistory(newPoints);
+    commitPoints(newPoints);
   };
 
   // Global Drag Handler (RAF Loop)
@@ -319,7 +217,7 @@ export function SplineGraph({
     // Start
     window.addEventListener('mousemove', onWindowMove);
     const onWindowUp = () => {
-        commitToHistory(stateRef.current.localPoints); // Use Commit
+        commitPoints(stateRef.current.localPoints);
         setDragIdx(null);
     };
     window.addEventListener('mouseup', onWindowUp);
@@ -332,7 +230,7 @@ export function SplineGraph({
         window.removeEventListener('mouseup', onWindowUp);
         cancelAnimationFrame(animationFrameId);
     };
-  }, [dragIdx, maxY, minY, minTime, maxTime, onChange, value, graphHeight, height, padding, graphWidth, yToVal, commitToHistory, duration]); 
+  }, [dragIdx, maxY, minY, minTime, maxTime, onChange, value, graphHeight, height, padding, graphWidth, yToVal, commitPoints, duration]); 
 
 
   // Note: We removed handleMouseMove and handleMouseUp from here since they are now effect-driven.

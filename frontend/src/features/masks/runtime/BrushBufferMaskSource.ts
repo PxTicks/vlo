@@ -5,6 +5,7 @@ import {
   ensureBrushBuffer,
   getBrushBuffer,
   hydrateBrushBufferFromUrl,
+  isBrushBufferReadyForSource,
   subscribeToBrushBuffer,
 } from "./brushBufferRegistry";
 
@@ -71,6 +72,26 @@ export class BrushBufferMaskSource {
     if (this.disposed) return;
     const ctx = this.hydrationContext;
     const existingBuffer = getBrushBuffer(this.maskClipId);
+    if (existingBuffer?.dirty) {
+      this.bindToBuffer();
+      return;
+    }
+
+    if (
+      ctx &&
+      isBrushBufferReadyForSource(
+        this.maskClipId,
+        asset.id,
+        ctx.canvasWidth,
+        ctx.canvasHeight,
+        ctx.paintedBounds,
+      )
+    ) {
+      this.currentAssetId = asset.id;
+      this.bindToBuffer();
+      return;
+    }
+
     if (
       this.currentAssetId === asset.id &&
       this.isBufferReadyForContext(existingBuffer, ctx)
@@ -108,6 +129,7 @@ export class BrushBufferMaskSource {
       ctx.canvasWidth,
       ctx.canvasHeight,
       ctx.paintedBounds,
+      asset.id,
     )
       .then(() => {
         if (this.disposed) return;
@@ -175,6 +197,10 @@ export class BrushBufferMaskSource {
     context: BrushBufferMaskSource["hydrationContext"],
   ): boolean {
     if (!buffer) {
+      return false;
+    }
+
+    if (buffer.dirty) {
       return false;
     }
 

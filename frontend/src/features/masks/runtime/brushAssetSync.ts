@@ -141,16 +141,23 @@ export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
       (await recalculateBrushPaintedBounds(maskClipId)) ??
       getBrushBuffer(maskClipId)?.paintedBounds ??
       null;
+    const hasPaintedBounds =
+      !!paintedBounds &&
+      paintedBounds.width > 0 &&
+      paintedBounds.height > 0;
 
     try {
-      await commitBrushMaskAsset(
+      const committedAssetId = await commitBrushMaskAsset(
         parsed.clipId,
         maskClipId,
         parsed.maskId,
         previousAssetId,
         paintedBounds,
       );
-      markBrushBufferClean(maskClipId);
+      if (hasPaintedBounds && !committedAssetId) {
+        return;
+      }
+      markBrushBufferClean(maskClipId, committedAssetId);
     } catch (error) {
       console.warn("Failed to commit brush mask asset", error);
     }

@@ -1,10 +1,11 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Application, Container, FederatedPointerEvent, Sprite } from "pixi.js";
 import type {
   TimelineClip,
   MaskTimelineClip,
 } from "../../../../../types/TimelineTypes";
+import type { BrushBuffer } from "../../../../masks/runtime/brushBufferRegistry";
 import { useTimelineStore, TICKS_PER_SECOND } from "../../../../timeline";
 import { useMaskViewStore } from "../../../../masks/store/useMaskViewStore";
 import { createMaskLayoutTransforms } from "../../../../masks/model/maskFactory";
@@ -18,6 +19,7 @@ const {
   mockEnsureBrushBuffer,
   mockGetBrushBuffer,
   mockHydrateBrushBufferFromUrl,
+  mockIsBrushBufferReadyForSource,
   mockPaintBrushDot,
   mockPaintBrushStroke,
   mockSubscribeToBrushBuffer,
@@ -26,6 +28,7 @@ const {
   mockEnsureBrushBuffer: vi.fn(),
   mockGetBrushBuffer: vi.fn(() => null),
   mockHydrateBrushBufferFromUrl: vi.fn(),
+  mockIsBrushBufferReadyForSource: vi.fn(() => false),
   mockPaintBrushDot: vi.fn(),
   mockPaintBrushStroke: vi.fn(),
   mockSubscribeToBrushBuffer: vi.fn(() => () => {}),
@@ -54,6 +57,7 @@ vi.mock("../../../../masks/runtime/brushBufferRegistry", () => ({
   ensureBrushBuffer: mockEnsureBrushBuffer,
   getBrushBuffer: mockGetBrushBuffer,
   hydrateBrushBufferFromUrl: mockHydrateBrushBufferFromUrl,
+  isBrushBufferReadyForSource: mockIsBrushBufferReadyForSource,
   paintBrushDot: mockPaintBrushDot,
   paintBrushStroke: mockPaintBrushStroke,
   subscribeToBrushBuffer: mockSubscribeToBrushBuffer,
@@ -139,12 +143,28 @@ function createBrushMaskClip(
   };
 }
 
+function createBrushBuffer(
+  overrides: Partial<BrushBuffer> = {},
+): BrushBuffer {
+  return {
+    renderTexture: {} as never,
+    canvasSize: { width: 120, height: 120 },
+    paintedBounds: { x: 8, y: 12, width: 40, height: 32 },
+    dirty: false,
+    sourceAssetId: null,
+    ...overrides,
+  };
+}
+
 describe("useMaskInteractionController", () => {
   beforeEach(() => {
     playbackClock.setTime(0);
-    mockEnsureBrushBuffer.mockClear();
-    mockGetBrushBuffer.mockClear();
+    mockEnsureBrushBuffer.mockReset();
+    mockGetBrushBuffer.mockReset();
+    mockGetBrushBuffer.mockReturnValue(null);
     mockHydrateBrushBufferFromUrl.mockClear();
+    mockIsBrushBufferReadyForSource.mockClear();
+    mockIsBrushBufferReadyForSource.mockReturnValue(false);
     mockPaintBrushDot.mockClear();
     mockPaintBrushStroke.mockClear();
     mockSubscribeToBrushBuffer.mockClear();
@@ -160,6 +180,7 @@ describe("useMaskInteractionController", () => {
       isMaskTabActive: false,
       pendingDrawRequest: null,
       interactionContext: null,
+      brushTool: "paint",
     });
   });
 
@@ -552,6 +573,84 @@ describe("useMaskInteractionController", () => {
     );
   });
 
+  it("selects and drags a non-selected mask hit from the canvas", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const firstMask = createMaskClip(parent, "mask_first");
+    const secondMask: MaskTimelineClip = {
+      ...createMaskClip(parent, "mask_second"),
+      transformations: createMaskLayoutTransforms(
+        `${parent.id}::mask::mask_second`,
+        {
+          x: 200,
+          y: 0,
+          scaleX: 1,
+          scaleY: 1,
+          rotation: 0,
+        },
+      ),
+    };
+
+    useTimelineStore.setState({
+      clips: [parent, firstMask, secondMask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_first");
+
+    const viewport = new Container();
+    const spriteParent = new Container();
+    const sprite = new Sprite();
+    spriteParent.addChild(sprite);
+    viewport.addChild(spriteParent);
+
+    const app = new Application();
+    const activeClipRef = { current: parent };
+
+    const { result } = renderHook(() =>
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
+    );
+
+    let consumed = false;
+    act(() => {
+      consumed = result.current.onSpritePointerDown({
+        button: 0,
+        stopPropagation: vi.fn(),
+        global: { x: 200, y: 0 },
+      } as unknown as FederatedPointerEvent);
+    });
+    expect(consumed).toBe(true);
+    expect(
+      useMaskViewStore.getState().selectedMaskByClipId[parent.id],
+    ).toBe("mask_second");
+
+    const onPointerMove = vi
+      .mocked(app.stage.on)
+      .mock.calls.find((call) => call[0] === "pointermove")?.[1];
+    const onPointerUp = vi
+      .mocked(app.stage.on)
+      .mock.calls.find((call) => call[0] === "pointerup")?.[1];
+
+    act(() => {
+      onPointerMove?.({
+        global: { x: 215, y: 10 },
+      } as unknown as FederatedPointerEvent);
+    });
+    act(() => {
+      onPointerUp?.({} as unknown as FederatedPointerEvent);
+    });
+
+    const updatedMask = useTimelineStore
+      .getState()
+      .clips.find((clip) => clip.id === secondMask.id);
+    const position = updatedMask?.transformations.find(
+      (transform) => transform.type === "position",
+    );
+
+    expect(position?.parameters).toEqual(
+      expect.objectContaining({ x: 215, y: 10 }),
+    );
+  });
+
   it("locks mask corner scaling to the starting aspect ratio", () => {
     const trackId = useTimelineStore.getState().tracks[0].id;
     const parent = createParentClip(trackId);
@@ -676,5 +775,80 @@ describe("useMaskInteractionController", () => {
       "paint",
     );
     expect(mockFlushBrushMaskCommit).toHaveBeenCalledWith(brushMask.id);
+  });
+
+  it("does not hydrate a persisted brush mask over a dirty live buffer", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const brushMask: MaskTimelineClip = {
+      ...createBrushMaskClip(parent, "mask_brush"),
+      brushMaskAssetId: "brush-asset-1",
+      brushPaintedBounds: { x: 8, y: 12, width: 40, height: 32 },
+    };
+    mockEnsureBrushBuffer.mockReturnValue(
+      createBrushBuffer({
+        dirty: true,
+        sourceAssetId: null,
+      }),
+    );
+
+    useTimelineStore.setState({
+      clips: [parent, brushMask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_brush");
+
+    const viewport = new Container();
+    const spriteParent = new Container();
+    const sprite = new Sprite();
+    spriteParent.addChild(sprite);
+    viewport.addChild(spriteParent);
+
+    const app = new Application();
+    const activeClipRef = { current: parent };
+
+    renderHook(() =>
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
+    );
+
+    expect(mockEnsureBrushBuffer).toHaveBeenCalledWith(brushMask.id, 120, 120);
+    expect(mockIsBrushBufferReadyForSource).not.toHaveBeenCalled();
+    expect(mockHydrateBrushBufferFromUrl).not.toHaveBeenCalled();
+  });
+
+  it("restores gizmo mode when the brush mask tab focus leaves", async () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const brushMask = createBrushMaskClip(parent, "mask_brush");
+
+    useTimelineStore.setState({
+      clips: [parent, brushMask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_brush");
+    useMaskViewStore.getState().setMaskTabActive(true);
+    useMaskViewStore.getState().setBrushTool("paint");
+
+    const viewport = new Container();
+    const spriteParent = new Container();
+    const sprite = new Sprite();
+    spriteParent.addChild(sprite);
+    viewport.addChild(spriteParent);
+
+    const app = new Application();
+    const activeClipRef = { current: parent };
+
+    renderHook(() =>
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
+    );
+
+    act(() => {
+      useMaskViewStore.getState().setMaskTabActive(false);
+    });
+
+    expect(mockFlushBrushMaskCommit).toHaveBeenCalledWith(brushMask.id);
+    await waitFor(() => {
+      expect(useMaskViewStore.getState().brushTool).toBe("gizmo");
+    });
   });
 });

@@ -1,18 +1,26 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import type { Application, DisplayObject, FederatedPointerEvent } from "pixi.js";
+import type { Application, FederatedPointerEvent } from "pixi.js";
 import { useTimelineStore } from "../../../timeline";
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 
 export type CanvasSelectableKind = "clip" | "mask";
 
+export interface CanvasSelectableDisplayObject {
+  destroyed: boolean;
+  visible: boolean;
+  containsPoint?: (point: { x: number; y: number }) => boolean;
+  getBounds: () => { x: number; y: number; width: number; height: number };
+}
+
 export interface CanvasSelectableRegistration {
   id: string;
   kind: CanvasSelectableKind;
-  displayObject: DisplayObject;
+  displayObject: CanvasSelectableDisplayObject;
   getClipId: () => string | null;
   getSelectionOrder: () => number;
   onPointerDown: (event: FederatedPointerEvent) => boolean | void;
+  containsGlobalPoint?: (global: { x: number; y: number }) => boolean;
   isEnabled?: () => boolean;
 }
 
@@ -26,16 +34,12 @@ function isSelectableEnabled(selectable: CanvasSelectableRegistration): boolean 
 }
 
 function containsGlobalPoint(
-  displayObject: DisplayObject,
+  displayObject: CanvasSelectableDisplayObject,
   global: { x: number; y: number },
 ): boolean {
-  const hitTestable = displayObject as DisplayObject & {
-    containsPoint?: (point: { x: number; y: number }) => boolean;
-  };
-
-  if (typeof hitTestable.containsPoint === "function") {
+  if (typeof displayObject.containsPoint === "function") {
     try {
-      return hitTestable.containsPoint(global);
+      return displayObject.containsPoint(global);
     } catch {
       // Fall back to world bounds when the display object cannot perform
       // geometry-aware hit testing for the current state.
@@ -77,7 +81,11 @@ export function resolveCanvasSelectableCandidates(
 ): CanvasSelectableRegistration[] {
   return Array.from(registrations)
     .filter((selectable) => isSelectableEnabled(selectable))
-    .filter((selectable) => containsGlobalPoint(selectable.displayObject, global))
+    .filter((selectable) =>
+      selectable.containsGlobalPoint
+        ? selectable.containsGlobalPoint(global)
+        : containsGlobalPoint(selectable.displayObject, global),
+    )
     .sort(compareSelectionPriority);
 }
 
@@ -177,6 +185,8 @@ export function useCanvasSelectionManager(app: Application | null) {
     if (typeof stage.on !== "function" || typeof stage.off !== "function") {
       return;
     }
+    const stageOn = stage.on.bind(stage);
+    const stageOff = stage.off.bind(stage);
 
     const handlePointerDown = (event: FederatedPointerEvent) => {
       const candidates = resolveCanvasSelectableCandidates(
@@ -191,10 +201,10 @@ export function useCanvasSelectionManager(app: Application | null) {
       }
     };
 
-    stage.on("pointerdown", handlePointerDown);
+    stageOn("pointerdown", handlePointerDown);
 
     return () => {
-      stage.off("pointerdown", handlePointerDown);
+      stageOff("pointerdown", handlePointerDown);
     };
   }, [app]);
 

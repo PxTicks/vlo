@@ -67,7 +67,7 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
   interactionContext: null,
   sam2LivePreviewByClipId: {},
   sam2PointMode: "add",
-  brushTool: "paint",
+  brushTool: "gizmo",
   brushRadius: DEFAULT_BRUSH_RADIUS,
 
   setSelectedMask: (clipId, maskId) =>

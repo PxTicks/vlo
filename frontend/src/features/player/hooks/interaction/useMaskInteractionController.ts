@@ -3,15 +3,9 @@ import type {
   Application,
   Container,
   FederatedPointerEvent,
-  Graphics,
   Sprite,
 } from "pixi.js";
-import {
-  Container as PixiContainer,
-  Graphics as PixiGraphics,
-  Sprite as PixiSprite,
-  Texture,
-} from "pixi.js";
+import { Texture } from "pixi.js";
 import type {
   ClipMaskPoint,
   ClipTransform,
@@ -51,7 +45,6 @@ import {
   getMaskLayoutState,
   createMask,
   drawMaskBaseShape,
-  isPointInsideMask,
   type MaskLayoutState,
   type MaskShapeSource,
 } from "../../../masks/model/maskFactory";
@@ -75,6 +68,17 @@ import { ensureAssetSourceLoaded, useAssetStore } from "../../../userAssets";
 import { syncContainerTransformToTarget } from "../../../renderer";
 import { useProjectStore } from "../../../project/useProjectStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
+import { findEditableMaskTargetAtPoint as findEditableMaskTargetAtPointFromInput } from "./mask/maskHitTesting";
+import {
+  createInitialMaskInteractionState,
+  type LiveMaskLayoutPreview,
+  type MaskInteractionHandlers,
+  type MaskInteractionMode,
+  type MaskInteractionTarget,
+  type MaskLayoutTransformIds,
+  type MaskInteractionState,
+} from "./mask/maskInteractionTypes";
+import { useMaskOverlayScene } from "./mask/useMaskOverlayScene";
 
 const MIN_DRAW_SIZE = 3;
 const MIN_SCALE = 0.05;
@@ -87,77 +91,6 @@ const SAM2_POINT_BORDER_WIDTH = 2;
 const SAM2_BORDER_COLOR = 0x60a5fa;
 
 const INHERITED_TRANSFORM_TYPES = new Set(["speed"]);
-
-type MaskInteractionMode =
-  | "idle"
-  | "draw"
-  | "translate"
-  | "scale"
-  | "rotate"
-  | "brush";
-
-interface MaskLayoutTransformIds {
-  position: string | null;
-  scale: string | null;
-  rotation: string | null;
-}
-
-interface MaskInteractionState {
-  active: boolean;
-  mode: MaskInteractionMode;
-  clipId: string | null;
-  maskId: string | null;
-  handle: string | null;
-  startLocal: { x: number; y: number };
-  startLayout: MaskLayoutState | null;
-  startBaseSize: { width: number; height: number } | null;
-  initialAngle: number;
-  transformIds: MaskLayoutTransformIds;
-  didMove: boolean;
-  brush: BrushStrokeState | null;
-}
-
-interface BrushStrokeState {
-  tool: "paint" | "erase";
-  lastCanvasPoint: { x: number; y: number };
-  canvasSize: { width: number; height: number };
-  radius: number;
-  /** Local id of the mask (without the parent clip prefix). */
-  maskLocalId: string;
-}
-
-function createInitialMaskInteractionState(): MaskInteractionState {
-  return {
-    active: false,
-    mode: "idle",
-    clipId: null,
-    maskId: null,
-    handle: null,
-    startLocal: { x: 0, y: 0 },
-    startLayout: null,
-    startBaseSize: null,
-    initialAngle: 0,
-    transformIds: {
-      position: null,
-      scale: null,
-      rotation: null,
-    },
-    didMove: false,
-    brush: null,
-  };
-}
-
-interface LiveMaskLayoutPreview {
-  clipId: string;
-  maskId: string;
-  layout: MaskLayoutState;
-}
-
-interface MaskInteractionTarget {
-  clipId: string;
-  maskClip: MaskTimelineClip;
-  maskLocalId: string;
-}
 
 /** Get mask-local transforms (exclude inherited speed transforms). */
 function getMaskLocalTransforms(maskClip: MaskTimelineClip): ClipTransform[] {
@@ -287,14 +220,6 @@ function resolveSelectedMaskContext(): SelectedMaskContext {
   };
 }
 
-interface MaskInteractionHandlers {
-  onSpritePointerDown: (e: FederatedPointerEvent) => boolean;
-  onMaskPointerDown: (e: FederatedPointerEvent) => boolean;
-  onHandlePointerDown: (e: FederatedPointerEvent, key: string) => void;
-  gizmoTarget: Container | null;
-  isMaskGizmoVisible: boolean;
-}
-
 export function useMaskInteractionController(
   trackId: string,
   trackZIndex: number,
@@ -354,17 +279,31 @@ export function useMaskInteractionController(
   const draftMaskShapeRef = useRef<MaskShapeSource | null>(null);
   const liveMaskLayoutPreviewRef = useRef<LiveMaskLayoutPreview | null>(null);
 
-  const clipOverlayRef = useRef<Container | null>(null);
-  const maskOverlayRef = useRef<Container | null>(null);
-  const maskGraphicsRef = useRef<Graphics | null>(null);
-  const sam2PointsGraphicsRef = useRef<Graphics | null>(null);
-  const sam2PreviewSpriteRef = useRef<Sprite | null>(null);
   const sam2PreviewTextureUrlRef = useRef<string>("");
   const sam2PreviewBitmapRef = useRef<ImageBitmap | null>(null);
   const overlayShapeSignatureRef = useRef<string>("");
 
-  const [gizmoTarget, setGizmoTarget] = useState<Container | null>(null);
   const [isMaskGizmoVisible, setIsMaskGizmoVisible] = useState(false);
+  const handleOverlaySceneDispose = useCallback(() => {
+    sam2PreviewTextureUrlRef.current = "";
+    sam2PreviewBitmapRef.current = null;
+    overlayShapeSignatureRef.current = "";
+    liveMaskLayoutPreviewRef.current = null;
+    setIsMaskGizmoVisible(false);
+  }, []);
+  const {
+    clipOverlayRef,
+    maskOverlayRef,
+    maskGraphicsRef,
+    sam2PointsGraphicsRef,
+    sam2PreviewSpriteRef,
+    gizmoTarget,
+  } = useMaskOverlayScene({
+    viewport,
+    trackZIndex,
+    sam2BorderColor: SAM2_BORDER_COLOR,
+    onDispose: handleOverlaySceneDispose,
+  });
   const pointTimeEpsilonTicks = useMemo(() => {
     const safeFps =
       typeof projectFps === "number" &&
@@ -378,14 +317,14 @@ export function useMaskInteractionController(
   const toClipLocal = useCallback((global: { x: number; y: number }) => {
     if (!clipOverlayRef.current) return { x: 0, y: 0 };
     return clipOverlayRef.current.toLocal(global);
-  }, []);
+  }, [clipOverlayRef]);
 
   const toMaskOverlayLocal = useCallback(
     (global: { x: number; y: number }) => {
       if (!maskOverlayRef.current) return { x: 0, y: 0 };
       return maskOverlayRef.current.toLocal(global);
     },
-    [],
+    [maskOverlayRef],
   );
 
   const resolveActiveClipContentSize = useCallback(() => {
@@ -502,7 +441,7 @@ export function useMaskInteractionController(
     const clipOverlay = clipOverlayRef.current;
     if (!clipOverlay || !sprite) return false;
     return syncContainerTransformToTarget(clipOverlay, sprite);
-  }, [sprite]);
+  }, [clipOverlayRef, sprite]);
 
   const applyLayoutToOverlay = useCallback((layout: MaskLayoutState) => {
     const clipOverlay = clipOverlayRef.current;
@@ -512,7 +451,7 @@ export function useMaskInteractionController(
     maskOverlay.position.set(layout.x, layout.y);
     maskOverlay.scale.set(layout.scaleX, layout.scaleY);
     maskOverlay.rotation = layout.rotation;
-  }, []);
+  }, [clipOverlayRef, maskOverlayRef]);
 
   const setLiveMaskLayoutPreview = useCallback(
     (clipId: string, maskId: string, layout: MaskLayoutState) => {
@@ -593,7 +532,7 @@ export function useMaskInteractionController(
       graphics.visible = true;
       graphics.alpha = maskMode === "preview" || isDraft ? 0.35 : 0;
     },
-    [applyLayoutToOverlay],
+    [applyLayoutToOverlay, clipOverlayRef, maskGraphicsRef],
   );
 
   const renderSam2PointsToOverlay = useCallback(
@@ -637,8 +576,10 @@ export function useMaskInteractionController(
     },
     [
       pointTimeEpsilonTicks,
+      clipOverlayRef,
       resolveActiveClipContentSize,
       resolveMaskInputTimeAtPlayhead,
+      sam2PointsGraphicsRef,
       toSam2LocalPoint,
     ],
   );
@@ -702,7 +643,7 @@ export function useMaskInteractionController(
       previewSprite.height = contentSize.height;
       previewSprite.visible = true;
     },
-    [resolveActiveClipContentSize, resolveMaskInputTimeAtPlayhead],
+    [resolveActiveClipContentSize, resolveMaskInputTimeAtPlayhead, sam2PreviewSpriteRef],
   );
 
   const clearSam2PreviewSprite = useCallback(() => {
@@ -710,7 +651,7 @@ export function useMaskInteractionController(
     if (previewSprite) {
       previewSprite.visible = false;
     }
-  }, []);
+  }, [sam2PreviewSpriteRef]);
 
   const findEditableMaskTargetAtPoint = useCallback(
     (global: { x: number; y: number }): MaskInteractionTarget | null => {
@@ -720,37 +661,19 @@ export function useMaskInteractionController(
 
       const timelineState = useTimelineStore.getState();
       const maskClips = selectMaskClipsForParent(timelineState, activeClip.id);
-      if (maskClips.length === 0) return null;
 
       const selectedMaskLocalId =
         useMaskViewStore.getState().selectedMaskByClipId[activeClip.id] ?? null;
-      const selectedMaskClip = selectedMaskLocalId
-        ? maskClips.find(
-            (maskClip) =>
-              parseMaskClipId(maskClip.id)?.maskId === selectedMaskLocalId,
-          ) ?? null
-        : null;
-      const orderedMasks = selectedMaskClip
-        ? [
-            selectedMaskClip,
-            ...maskClips
-              .filter((maskClip) => maskClip.id !== selectedMaskClip.id)
-              .reverse(),
-          ]
-        : [...maskClips].reverse();
-      const local = toClipLocal(global);
-
-      for (const maskClip of orderedMasks) {
-        const target = createEditableMaskTarget(activeClip.id, maskClip);
-        if (!target) continue;
-
-        const hitTestShape = resolveMaskHitTestShape(maskClip);
-        if (hitTestShape && isPointInsideMask(local, hitTestShape)) {
-          return target;
-        }
-      }
-
-      return null;
+      return findEditableMaskTargetAtPointFromInput({
+        global,
+        activeClip,
+        masks: maskClips,
+        selectedMaskId: selectedMaskLocalId,
+        toClipLocal,
+        canEditMask: (maskClip) =>
+          createEditableMaskTarget(activeClip.id, maskClip) !== null,
+        resolveHitShape: resolveMaskHitTestShape,
+      });
     },
     [
       activeClipRef,
@@ -1487,7 +1410,6 @@ export function useMaskInteractionController(
     activeClipRef,
     addClipMask,
     app,
-    brushTool,
     clearPendingDraw,
     clearLiveMaskLayoutPreview,
     getTargetMaskForEditing,
@@ -1519,69 +1441,6 @@ export function useMaskInteractionController(
   ]);
 
   useEffect(() => {
-    if (!viewport) return;
-
-    const clipOverlay = new PixiContainer();
-    const maskOverlay = new PixiContainer();
-    const maskGraphics = new PixiGraphics();
-    const sam2PointsGraphics = new PixiGraphics();
-    const sam2PreviewSprite = new PixiSprite();
-
-    // SAM2 preview sprite: semi-transparent blue-tinted mask overlay
-    sam2PreviewSprite.anchor.set(0.5);
-    sam2PreviewSprite.alpha = 0.45;
-    sam2PreviewSprite.tint = SAM2_BORDER_COLOR;
-    sam2PreviewSprite.visible = false;
-    sam2PreviewSprite.eventMode = "none";
-
-    maskOverlay.addChild(maskGraphics);
-    sam2PointsGraphics.eventMode = "none";
-    // Add preview sprite first (below points), then points on top
-    clipOverlay.addChild(sam2PreviewSprite);
-    clipOverlay.addChild(sam2PointsGraphics);
-    clipOverlay.addChild(maskOverlay);
-    // Keep the selected mask above its own track sprite while still letting
-    // higher tracks outrank it during hit testing and rendering.
-    clipOverlay.zIndex = trackZIndex + 0.5;
-    clipOverlay.visible = false;
-
-    viewport.addChild(clipOverlay);
-    viewport.sortChildren();
-
-    clipOverlayRef.current = clipOverlay;
-    maskOverlayRef.current = maskOverlay;
-    maskGraphicsRef.current = maskGraphics;
-    sam2PointsGraphicsRef.current = sam2PointsGraphics;
-    sam2PreviewSpriteRef.current = sam2PreviewSprite;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setGizmoTarget(maskOverlay);
-
-    return () => {
-      // Clean up preview sprite texture
-      const previewTex = sam2PreviewSprite.texture;
-      if (previewTex && previewTex !== Texture.EMPTY && !previewTex.destroyed) {
-        previewTex.destroy(true);
-      }
-
-      if (viewport && !viewport.destroyed) {
-        viewport.removeChild(clipOverlay);
-      }
-      clipOverlay.destroy({ children: true });
-      clipOverlayRef.current = null;
-      maskOverlayRef.current = null;
-      maskGraphicsRef.current = null;
-      sam2PointsGraphicsRef.current = null;
-      sam2PreviewSpriteRef.current = null;
-      sam2PreviewTextureUrlRef.current = "";
-      sam2PreviewBitmapRef.current = null;
-      overlayShapeSignatureRef.current = "";
-      liveMaskLayoutPreviewRef.current = null;
-      setGizmoTarget(null);
-      setIsMaskGizmoVisible(false);
-    };
-  }, [trackZIndex, viewport]);
-
-  useEffect(() => {
     const maskGraphics = maskGraphicsRef.current;
     if (!maskGraphics) return;
 
@@ -1595,7 +1454,7 @@ export function useMaskInteractionController(
     return () => {
       maskGraphics.off("pointerdown", handlers.onMaskPointerDown);
     };
-  }, [handlers.onMaskPointerDown, viewport]);
+  }, [handlers.onMaskPointerDown, maskGraphicsRef, viewport]);
 
   useEffect(() => {
     const maskGraphics = maskGraphicsRef.current;
@@ -1613,6 +1472,7 @@ export function useMaskInteractionController(
     });
   }, [
     handlers.onMaskPointerDown,
+    maskGraphicsRef,
     selectedClipId,
     selectedMaskId,
     trackId,
@@ -1794,6 +1654,7 @@ export function useMaskInteractionController(
     selectedClipId,
     selectedMaskClip,
     selectedMaskId,
+    maskGraphicsRef,
     sprite,
     syncOverlayToSprite,
     resolveMaskLayoutAtPlayhead,

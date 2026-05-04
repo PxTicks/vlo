@@ -131,6 +131,46 @@ function expandBounds(
   };
 }
 
+export function calculateBrushPaintedBoundsFromImageData(
+  pixels: ArrayLike<number>,
+  width: number,
+  height: number,
+): BrushPaintedBounds | null {
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const red = pixels[offset] ?? 0;
+      if (red <= 0) {
+        continue;
+      }
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return null;
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+  };
+}
+
 function renderStroke(buffer: BrushBuffer, build: (g: Graphics) => void): void {
   if (!sharedRenderer) return;
   const graphics = new Graphics();
@@ -245,6 +285,52 @@ export function setBrushPaintedBounds(
   if (!buffer) return;
   buffer.paintedBounds = bounds;
   notify(maskId);
+}
+
+export async function recalculateBrushPaintedBounds(
+  maskId: string,
+): Promise<BrushPaintedBounds | null> {
+  const buffer = buffers.get(maskId);
+  if (!buffer || !sharedRenderer) {
+    return buffer?.paintedBounds ?? null;
+  }
+
+  const extract = sharedRenderer.extract;
+  if (!extract || typeof extract.canvas !== "function") {
+    return buffer.paintedBounds;
+  }
+
+  const canvas = await Promise.resolve(extract.canvas(buffer.renderTexture));
+  const htmlCanvas = canvas as HTMLCanvasElement;
+  const ctx = htmlCanvas.getContext("2d");
+  if (!ctx) {
+    return buffer.paintedBounds;
+  }
+
+  const imageData = ctx.getImageData(
+    0,
+    0,
+    buffer.canvasSize.width,
+    buffer.canvasSize.height,
+  );
+  const nextBounds = calculateBrushPaintedBoundsFromImageData(
+    imageData.data,
+    buffer.canvasSize.width,
+    buffer.canvasSize.height,
+  );
+
+  const previous = buffer.paintedBounds;
+  const changed =
+    previous?.x !== nextBounds?.x ||
+    previous?.y !== nextBounds?.y ||
+    previous?.width !== nextBounds?.width ||
+    previous?.height !== nextBounds?.height;
+
+  buffer.paintedBounds = nextBounds;
+  if (changed) {
+    notify(maskId);
+  }
+  return nextBounds;
 }
 
 /**

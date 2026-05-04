@@ -12,6 +12,7 @@ const {
   mockGetBrushBuffer,
   mockIsBrushBufferDirty,
   mockMarkBrushBufferClean,
+  mockRecalculateBrushPaintedBounds,
   mockAddLocalAsset,
   mockDeleteAsset,
 } = vi.hoisted(() => ({
@@ -20,6 +21,7 @@ const {
   mockGetBrushBuffer: vi.fn(),
   mockIsBrushBufferDirty: vi.fn(),
   mockMarkBrushBufferClean: vi.fn(),
+  mockRecalculateBrushPaintedBounds: vi.fn(),
   mockAddLocalAsset: vi.fn(),
   mockDeleteAsset: vi.fn(),
 }));
@@ -30,6 +32,7 @@ vi.mock("../brushBufferRegistry", () => ({
   getBrushBuffer: mockGetBrushBuffer,
   isBrushBufferDirty: mockIsBrushBufferDirty,
   markBrushBufferClean: mockMarkBrushBufferClean,
+  recalculateBrushPaintedBounds: mockRecalculateBrushPaintedBounds,
 }));
 
 import { useTimelineStore } from "../../../timeline";
@@ -103,6 +106,7 @@ function createBrushMaskClip(
 describe("brushAssetSync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRecalculateBrushPaintedBounds.mockResolvedValue(null);
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [createTrack("track_1")],
       clips: [],
@@ -143,8 +147,11 @@ describe("brushAssetSync", () => {
 
   it("does not create an orphan asset when flushing a deleted brush mask", async () => {
     mockIsBrushBufferDirty.mockReturnValue(true);
-    mockGetBrushBuffer.mockReturnValue({
-      paintedBounds: { x: 1, y: 2, width: 30, height: 40 },
+    mockRecalculateBrushPaintedBounds.mockResolvedValue({
+      x: 1,
+      y: 2,
+      width: 30,
+      height: 40,
     });
 
     await flushBrushMaskCommit("clip_deleted::mask::mask_brush");
@@ -155,5 +162,33 @@ describe("brushAssetSync", () => {
       "clip_deleted::mask::mask_brush",
     );
     expect(mockMarkBrushBufferClean).not.toHaveBeenCalled();
+  });
+
+  it("uses recalculated painted bounds when flushing a dirty brush mask", async () => {
+    const initialBounds = { x: 0, y: 0, width: 80, height: 80 };
+    const recalculatedBounds = { x: 20, y: 24, width: 12, height: 16 };
+    const brushMask = createBrushMaskClip("brush-asset-1", initialBounds);
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [createTrack("track_1")],
+      clips: [createParentClip(brushMask.id), brushMask],
+    });
+
+    mockIsBrushBufferDirty.mockReturnValue(true);
+    mockRecalculateBrushPaintedBounds.mockResolvedValue(recalculatedBounds);
+    mockExtractBrushPng.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+    mockAddLocalAsset.mockResolvedValue({ id: "brush-asset-2" });
+
+    await flushBrushMaskCommit(brushMask.id);
+
+    expect(mockExtractBrushPng).toHaveBeenCalledWith(
+      brushMask.id,
+      recalculatedBounds,
+    );
+    const updatedMask = useTimelineStore
+      .getState()
+      .clips.find((clip): clip is MaskTimelineClip => clip.id === brushMask.id);
+    expect(updatedMask?.brushPaintedBounds).toEqual(recalculatedBounds);
+    expect(updatedMask?.brushMaskAssetId).toBe("brush-asset-2");
   });
 });

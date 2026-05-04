@@ -14,6 +14,7 @@ import {
   getBrushBuffer,
   isBrushBufferDirty,
   markBrushBufferClean,
+  recalculateBrushPaintedBounds,
 } from "./brushBufferRegistry";
 
 /**
@@ -136,7 +137,10 @@ export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
       return;
     }
     const previousAssetId = maskClip?.brushMaskAssetId;
-    const paintedBounds = getBrushBuffer(maskClipId)?.paintedBounds ?? null;
+    const paintedBounds =
+      (await recalculateBrushPaintedBounds(maskClipId)) ??
+      getBrushBuffer(maskClipId)?.paintedBounds ??
+      null;
 
     try {
       await commitBrushMaskAsset(

@@ -176,6 +176,64 @@ def test_resolve_workflow_rules_uses_graph_data_for_randomized_control_after_gen
     assert widget["value_type"] == "int"
 
 
+def test_resolve_workflow_rules_always_surfaces_seed_without_node_policy():
+    payload = {
+        "workflow_id": "wf.json",
+        "workflow": {
+            "701": {
+                "class_type": "SeedVR2VideoUpscaler",
+                "inputs": {},
+            }
+        },
+    }
+    object_info = {
+        "SeedVR2VideoUpscaler": {
+            "input": {
+                "required": {
+                    "image": ["IMAGE"],
+                    "dit": ["SEEDVR2_DIT"],
+                    "vae": ["SEEDVR2_VAE"],
+                    "seed": [
+                        "INT",
+                        {
+                            "default": 42,
+                            "min": 0,
+                            "max": 4294967295,
+                        },
+                    ],
+                    "resolution": [
+                        "INT",
+                        {
+                            "default": 1080,
+                            "min": 16,
+                            "max": 16384,
+                        },
+                    ],
+                }
+            },
+            "input_order": {
+                "required": ["image", "dit", "vae", "seed", "resolution"],
+            },
+        }
+    }
+
+    set_object_info_cache(object_info)
+    try:
+        result = asyncio.run(
+            comfyui.resolve_workflow_rules(
+                DummyRequest(payload)
+            )
+        )
+    finally:
+        set_object_info_cache(None)
+
+    widgets = result["rules"]["nodes"]["701"]["widgets"]
+    assert set(widgets) == {"seed"}
+    assert widgets["seed"]["default"] == 42
+    assert widgets["seed"]["value_type"] == "int"
+    assert widgets["seed"]["control_after_generate"] is False
+
+
 def test_resolve_workflow_rules_prefers_graph_widget_values_over_object_info_defaults():
     payload = {
         "workflow_id": "vlo_VACE_inpaint_new.json",

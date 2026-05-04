@@ -328,8 +328,8 @@ def _resolve_default_policy_widgets(
     object_info: dict[str, Any],
 ) -> dict[str, dict[str, Any]] | None:
     preferred_params = node_policy.get("default_widget_params")
-    if not isinstance(preferred_params, list) or not preferred_params:
-        return None
+    if not isinstance(preferred_params, list):
+        preferred_params = []
 
     all_widgets = build_widget_entries_for_class(
         node_info.class_type,

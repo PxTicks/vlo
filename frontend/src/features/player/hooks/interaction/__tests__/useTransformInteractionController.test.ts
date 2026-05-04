@@ -73,6 +73,7 @@ describe("useTransformInteractionController", () => {
 
     useTimelineStore.getState().addClip(clip);
     activeClipRef = { current: clip };
+    const syncMaskSpriteTransform = vi.fn();
 
     const { result } = renderHook(() =>
       useTransformInteractionController(
@@ -80,6 +81,7 @@ describe("useTransformInteractionController", () => {
         activeClipRef,
         mockApp,
         mockViewport,
+        syncMaskSpriteTransform,
       ),
     );
 
@@ -113,6 +115,7 @@ describe("useTransformInteractionController", () => {
     expect(positionBeforeDrop!.parameters.y).toBe(0);
     expect(notifySpy).toHaveBeenCalledWith(positionBeforeDrop!.id, "x", 30);
     expect(notifySpy).toHaveBeenCalledWith(positionBeforeDrop!.id, "y", 40);
+    expect(syncMaskSpriteTransform).toHaveBeenCalledTimes(1);
 
     const onPointerUp = getStageHandler("pointerup");
     expect(onPointerUp).toBeDefined();

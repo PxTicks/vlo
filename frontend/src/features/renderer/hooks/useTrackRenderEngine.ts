@@ -53,6 +53,7 @@ export interface TrackRenderEngineResult {
   spriteInstance: Sprite | null;
   activeClipRef: React.MutableRefObject<TimelineClip | null>;
   currentClipId: string | null;
+  syncMaskSpriteTransform: () => void;
 }
 
 /**
@@ -177,6 +178,10 @@ export function useTrackRenderEngine(
       { fps: currentState.fps },
     );
   }, [syncActiveClipState]);
+
+  const syncMaskSpriteTransform = useCallback(() => {
+    engineRef.current?.syncMaskSpriteTransform();
+  }, []);
 
   useEffect(() => {
     if (
@@ -413,5 +418,10 @@ export function useTrackRenderEngine(
     trackId,
   ]);
 
-  return { spriteInstance, activeClipRef, currentClipId };
+  return {
+    spriteInstance,
+    activeClipRef,
+    currentClipId,
+    syncMaskSpriteTransform,
+  };
 }

@@ -88,6 +88,7 @@ export function useTransformInteractionController(
   activeClipRef: React.MutableRefObject<TimelineClip | null>,
   app: Application | null,
   viewport: Container | null,
+  onLiveSpriteTransform?: () => void,
 ): TransformInteractionHandlers {
   const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
   const addClipTransform = useTimelineStore((state) => state.addClipTransform);
@@ -257,6 +258,7 @@ export function useTransformInteractionController(
           current.startSprite.x + deltaX,
           current.startSprite.y + deltaY,
         );
+        onLiveSpriteTransform?.();
 
         if (current.transformIds.position) {
           liveParamStore.notify(current.transformIds.position, "x", newX);
@@ -270,6 +272,7 @@ export function useTransformInteractionController(
         if (!scaleDrag) return;
 
         sprite.scale.set(scaleDrag.newVisualScaleX, scaleDrag.newVisualScaleY);
+        onLiveSpriteTransform?.();
         current.lastScaleParams = { x: scaleDrag.newParamX, y: scaleDrag.newParamY };
 
         if (
@@ -295,6 +298,7 @@ export function useTransformInteractionController(
 
         // eslint-disable-next-line react-hooks/immutability
         sprite.rotation = rotationDrag.newVisualRotation;
+        onLiveSpriteTransform?.();
         current.lastRotationParam = rotationDrag.newParamAngle;
 
         if (hasDragMovement(DRAG_MOVE_EPSILON, rotationDrag.deltaAngle)) {
@@ -597,6 +601,7 @@ export function useTransformInteractionController(
     sprite,
     viewport,
     app,
+    onLiveSpriteTransform,
     activeClipRef,
     setIsPlaying,
     addClipTransform,

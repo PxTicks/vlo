@@ -26,7 +26,12 @@ export function useTrackRenderer(
   ) => void,
 ) {
   // 1. Delegate rendering to the renderer feature
-  const { spriteInstance, activeClipRef, currentClipId } = useTrackRenderEngine(
+  const {
+    spriteInstance,
+    activeClipRef,
+    currentClipId,
+    syncMaskSpriteTransform,
+  } = useTrackRenderEngine(
     trackId,
     app,
     container,
@@ -46,6 +51,7 @@ export function useTrackRenderer(
     activeClipRef,
     app,
     container,
+    syncMaskSpriteTransform,
   );
   const maskInteractionHandlers = useMaskInteractionController(
     trackId,

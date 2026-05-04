@@ -7,6 +7,7 @@ import type {
 } from "../../../../types/TimelineTypes";
 import type {
   ClipTransform,
+  ClipMask,
   MaskBooleanExpression,
   StandardTimelineClip,
 } from "../../../../types/TimelineTypes";
@@ -16,6 +17,12 @@ import type {
 } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
 import { livePreviewParamStore } from "../../../transformations";
+import {
+  createMaskLayoutTransforms,
+  getMaskLayoutState,
+} from "../../model/maskFactory";
+import { createMaskRenderableShapeSource } from "../../model/maskRenderableLayout";
+import { resolveMaskRenderableLayout } from "../resolveMaskRenderableLayout";
 
 const { mockBrushSetHydrationContext, mockBrushSetSource } = vi.hoisted(() => ({
   mockBrushSetHydrationContext: vi.fn(),
@@ -1270,6 +1277,81 @@ describe("SpriteClipMaskController mask composition", () => {
     ).assetMaskNodes.get(sam2Mask.id);
 
     expect(node?.player.renderAt).toHaveBeenCalledWith(expect.any(Number));
+
+    controller.dispose();
+    warnSpy.mockRestore();
+  });
+
+  it("keeps a gizmo-moved generation mask aligned with the rendered asset rectangle", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = createParentClip();
+    const generationMask = createMaskClip("mask_generation_aligned", {
+      maskType: "generation",
+      generationMaskAssetId: "generation-mask-asset-aligned",
+      transformations: createMaskLayoutTransforms(
+        "clip_1::mask::mask_generation_aligned",
+        {
+          x: 48,
+          y: -22,
+          scaleX: 1.4,
+          scaleY: 0.8,
+          rotation: 0.35,
+        },
+      ),
+    });
+    const generationAsset = createMaskAsset("generation-mask-asset-aligned");
+
+    await controller.syncMaskClips(
+      [generationMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map([[generationAsset.id, generationAsset]]),
+      { waitForSam2: true },
+    );
+
+    const node = (
+      controller as unknown as {
+        assetMaskNodes: Map<
+          string,
+          {
+            player: {
+              sprite: Sprite;
+            };
+          }
+        >;
+      }
+    ).assetMaskNodes.get(generationMask.id);
+
+    const resolved = resolveMaskRenderableLayout(generationMask, {
+      rawTimeTicks: 10,
+      parentClipContentSize: { width: 1920, height: 1080 },
+      assetTextureSize: {
+        width: node?.player.sprite.texture.width ?? 1,
+        height: node?.player.sprite.texture.height ?? 1,
+      },
+    });
+    const overlayShape = createMaskRenderableShapeSource(generationMask, resolved);
+    const overlayLayout = getMaskLayoutState(
+      overlayShape as unknown as ClipMask,
+    );
+
+    expect(overlayShape?.maskParameters).toEqual({
+      baseWidth: node?.player.sprite.texture.width ?? 1,
+      baseHeight: node?.player.sprite.texture.height ?? 1,
+    });
+    expect(overlayLayout.x).toBe(node?.player.sprite.position.x);
+    expect(overlayLayout.y).toBe(node?.player.sprite.position.y);
+    expect(overlayLayout.scaleX).toBe(node?.player.sprite.scale.x);
+    expect(overlayLayout.scaleY).toBe(node?.player.sprite.scale.y);
+    expect(overlayLayout.rotation).toBe(node?.player.sprite.rotation);
 
     controller.dispose();
     warnSpy.mockRestore();

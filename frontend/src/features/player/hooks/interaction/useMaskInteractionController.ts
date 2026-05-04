@@ -48,18 +48,21 @@ import {
 import { registerCanvasSelectable } from "./useCanvasSelectionManager";
 import {
   createMaskLayoutTransforms,
+  getMaskLayoutState,
   createMask,
   drawMaskBaseShape,
-  getMaskLayoutState,
   isPointInsideMask,
   type MaskLayoutState,
   type MaskShapeSource,
 } from "../../../masks/model/maskFactory";
+import {
+  createMaskRenderableShapeSource,
+  getMaskRenderableBaseSize,
+} from "../../../masks/model/maskRenderableLayout";
 import { resolveMaskLayoutStateAtTime } from "../../../masks/model/maskTimelineClip";
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import {
   ensureBrushBuffer,
-  getBrushBuffer,
   hydrateBrushBufferFromUrl,
   isBrushBufferReadyForSource,
   paintBrushDot,
@@ -67,6 +70,7 @@ import {
   subscribeToBrushBuffer,
 } from "../../../masks/runtime/brushBufferRegistry";
 import { flushBrushMaskCommit } from "../../../masks/runtime/brushAssetSync";
+import { resolveMaskRenderableLayout } from "../../../masks/runtime/resolveMaskRenderableLayout";
 import { ensureAssetSourceLoaded, useAssetStore } from "../../../userAssets";
 import { syncContainerTransformToTarget } from "../../../renderer";
 import { useProjectStore } from "../../../project/useProjectStore";
@@ -468,108 +472,30 @@ export function useMaskInteractionController(
     [activeClipRef],
   );
 
-  const resolveMaskHitTestShape = useCallback(
-    (maskClip: MaskTimelineClip): MaskShapeSource | null => {
-      const resolvedLayout = resolveMaskLayoutAtPlayhead(maskClip);
-
-      if (maskClip.maskType === "brush") {
-        const params = maskClip.maskParameters;
-        const canvasWidth = Math.max(1, params?.baseWidth ?? 1);
-        const canvasHeight = Math.max(1, params?.baseHeight ?? 1);
-        const bounds =
-          getBrushBuffer(maskClip.id)?.paintedBounds ??
-          maskClip.brushPaintedBounds ??
-          null;
-
-        if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
-          return null;
-        }
-
-        const boundsCenterX = bounds.x + bounds.width / 2 - canvasWidth / 2;
-        const boundsCenterY = bounds.y + bounds.height / 2 - canvasHeight / 2;
-        const scaledCenterX = boundsCenterX * resolvedLayout.scaleX;
-        const scaledCenterY = boundsCenterY * resolvedLayout.scaleY;
-        const cos = Math.cos(resolvedLayout.rotation);
-        const sin = Math.sin(resolvedLayout.rotation);
-
-        return {
-          maskType: "rectangle",
-          maskParameters: {
-            baseWidth: bounds.width,
-            baseHeight: bounds.height,
-          },
-          transformations: createMaskLayoutTransforms(maskClip.id, {
-            ...resolvedLayout,
-            x:
-              resolvedLayout.x +
-              scaledCenterX * cos -
-              scaledCenterY * sin,
-            y:
-              resolvedLayout.y +
-              scaledCenterX * sin +
-              scaledCenterY * cos,
-          }),
-          id: maskClip.id,
-        };
-      }
-
-      if (maskClip.maskType === "generation") {
-        const contentSize = resolveActiveClipContentSize();
-        return {
-          maskType: "rectangle",
-          maskParameters: {
-            baseWidth: contentSize.width,
-            baseHeight: contentSize.height,
-          },
-          transformations: createMaskLayoutTransforms(
-            maskClip.id,
-            resolvedLayout,
-          ),
-          id: maskClip.id,
-        };
-      }
-
-      return {
-        maskType: maskClip.maskType,
-        maskParameters: maskClip.maskParameters,
-        transformations: createMaskLayoutTransforms(
-          maskClip.id,
-          resolvedLayout,
-        ),
-        id: maskClip.id,
-      };
+  const resolveMaskRenderableShape = useCallback(
+    (
+      maskClip: MaskTimelineClip,
+      layoutOverride?: MaskLayoutState,
+    ): MaskShapeSource | null => {
+      const resolvedLayout = resolveMaskRenderableLayout(maskClip, {
+        layout: layoutOverride ?? resolveMaskLayoutAtPlayhead(maskClip),
+        parentClipContentSize: resolveActiveClipContentSize(),
+      });
+      return createMaskRenderableShapeSource(maskClip, resolvedLayout);
     },
     [resolveActiveClipContentSize, resolveMaskLayoutAtPlayhead],
   );
 
-  const resolveMaskLayoutBaseSize = useCallback(
-    (maskClip: MaskTimelineClip): { width: number; height: number } => {
-      if (maskClip.maskType === "generation") {
-        return resolveActiveClipContentSize();
-      }
-
-      const params = maskClip.maskParameters;
-      return {
-        width: Math.max(1, params?.baseWidth ?? 1),
-        height: Math.max(1, params?.baseHeight ?? 1),
-      };
-    },
-    [resolveActiveClipContentSize],
+  const resolveMaskHitTestShape = useCallback(
+    (maskClip: MaskTimelineClip): MaskShapeSource | null =>
+      resolveMaskRenderableShape(maskClip),
+    [resolveMaskRenderableShape],
   );
 
-  const createAssetMaskOverlayShape = useCallback(
-    (maskClip: MaskTimelineClip): MaskShapeSource => {
-      const contentSize = resolveActiveClipContentSize();
-      return {
-        id: maskClip.id,
-        maskType: "rectangle",
-        maskParameters: {
-          baseWidth: contentSize.width,
-          baseHeight: contentSize.height,
-        },
-      };
-    },
-    [resolveActiveClipContentSize],
+  const resolveMaskLayoutBaseSize = useCallback(
+    (maskClip: MaskTimelineClip): { width: number; height: number } =>
+      getMaskRenderableBaseSize(resolveMaskRenderableShape(maskClip)),
+    [resolveMaskRenderableShape],
   );
 
   const syncOverlayToSprite = useCallback(() => {
@@ -642,59 +568,26 @@ export function useMaskInteractionController(
         return;
       }
 
-      const layout = layoutOverride ?? {
-        x: 0,
-        y: 0,
-        scaleX: 1,
-        scaleY: 1,
-        rotation: 0,
-      };
+      const layout =
+        layoutOverride ??
+        getMaskLayoutState(mask as unknown as ClipMask);
       applyLayoutToOverlay(layout);
 
       const params = mask.maskParameters ??
         mask.parameters ?? { baseWidth: 1, baseHeight: 1 };
       const shapeType = mask.maskType ?? mask.type ?? "rectangle";
       const isDraft = mask.id === "draft_mask";
-      const maskMode = (mask as MaskTimelineClip).maskMode;
-
-      if (shapeType === "brush") {
-        // Brush masks override the standard polygon path: the gizmo and the
-        // visible mask outline track the painted bounds inside the canvas,
-        // not the canvas extent itself. Without painted strokes we hide the
-        // graphics so the gizmo collapses to nothing (the user paints first
-        // to make the mask appear).
-        const buffer = mask.id ? getBrushBuffer(mask.id) : null;
-        const bounds = buffer?.paintedBounds ?? null;
-        const canvasW = Math.max(1, params.baseWidth);
-        const canvasH = Math.max(1, params.baseHeight);
-        const signature = bounds
-          ? `${mask.id ?? ""}:brush:${canvasW}x${canvasH}:${bounds.x}:${bounds.y}:${bounds.width}:${bounds.height}`
-          : `${mask.id ?? ""}:brush:${canvasW}x${canvasH}:empty`;
-        if (overlayShapeSignatureRef.current !== signature) {
-          graphics.clear();
-          if (bounds && bounds.width > 0 && bounds.height > 0) {
-            // Convert top-left canvas coords → mask-local (canvas-centered).
-            const x = bounds.x - canvasW / 2;
-            const y = bounds.y - canvasH / 2;
-            // Fill is required for Pixi v8 to register geometry in
-            // getLocalBounds(), which is what SelectionGizmo reads to size
-            // the handles. The fill is hidden by alpha below; the gizmo
-            // border + handles draw on top.
-            graphics
-              .rect(x, y, bounds.width, bounds.height)
-              .fill(0xffffff);
-          }
-          overlayShapeSignatureRef.current = signature;
-        }
-        graphics.visible = !!bounds;
-        graphics.alpha = maskMode === "preview" || isDraft ? 0.35 : 0;
-        return;
-      }
+      const maskMode = (mask as MaskShapeSource & {
+        maskMode?: MaskTimelineClip["maskMode"];
+      }).maskMode;
 
       const shapeSignature = `${mask.id ?? ""}:${shapeType}:${params.baseWidth}:${params.baseHeight}`;
       if (overlayShapeSignatureRef.current !== shapeSignature) {
         graphics.clear();
-        drawMaskBaseShape(graphics, mask);
+        drawMaskBaseShape(graphics, {
+          ...mask,
+          transformations: undefined,
+        });
         overlayShapeSignatureRef.current = shapeSignature;
       }
       graphics.visible = true;
@@ -1273,11 +1166,9 @@ export function useMaskInteractionController(
       const local = toClipLocal(e.global);
       const startLayout = resolveMaskLayoutAtPlayhead(target.maskClip);
       const startBaseSize = resolveMaskLayoutBaseSize(target.maskClip);
-      const overlayMask =
-        target.maskClip.maskType === "generation"
-          ? createAssetMaskOverlayShape(target.maskClip)
-          : target.maskClip;
-      renderMaskToOverlay(overlayMask, startLayout);
+      renderMaskToOverlay(
+        resolveMaskRenderableShape(target.maskClip, startLayout),
+      );
       interactionRef.current = {
         active: true,
         mode: "translate",
@@ -1605,7 +1496,7 @@ export function useMaskInteractionController(
     findEditableMaskTargetAtPoint,
     pointTimeEpsilonTicks,
     renderMaskToOverlay,
-    createAssetMaskOverlayShape,
+    resolveMaskRenderableShape,
     resolveMaskInputTimeAtPlayhead,
     resolveMaskLayoutAtPlayhead,
     resolveMaskLayoutBaseSize,
@@ -1850,49 +1741,9 @@ export function useMaskInteractionController(
         return;
       }
 
-      if (selectedMaskClip.maskType === "generation") {
-        const liveMaskLayoutPreview = liveMaskLayoutPreviewRef.current;
-        const liveLayout =
-          liveMaskLayoutPreview &&
-          liveMaskLayoutPreview.clipId === selectedClipId &&
-          liveMaskLayoutPreview.maskId === selectedMaskId
-            ? liveMaskLayoutPreview.layout
-            : null;
-        const resolvedLayout =
-          liveLayout ?? resolveMaskLayoutAtPlayhead(selectedMaskClip);
-        syncSam2EditingCursor(false);
-        renderMaskToOverlay(
-          createAssetMaskOverlayShape(selectedMaskClip),
-          resolvedLayout,
-        );
-        renderSam2PointsToOverlay(null);
-        clearSam2PreviewSprite();
-        setIsMaskGizmoVisible(isActiveMaskSelection);
-        return;
-      }
-
       syncSam2EditingCursor(false);
       renderSam2PointsToOverlay(null);
       clearSam2PreviewSprite();
-
-      if (selectedMaskClip.maskType === "brush") {
-        const tool = useMaskViewStore.getState().brushTool;
-        const isPainting = tool === "paint" || tool === "erase";
-        syncSam2EditingCursor(isPainting);
-        const liveMaskLayoutPreview = liveMaskLayoutPreviewRef.current;
-        const liveLayout =
-          liveMaskLayoutPreview &&
-          liveMaskLayoutPreview.clipId === selectedClipId &&
-          liveMaskLayoutPreview.maskId === selectedMaskId
-            ? liveMaskLayoutPreview.layout
-            : null;
-        const resolvedLayout =
-          liveLayout ?? resolveMaskLayoutAtPlayhead(selectedMaskClip);
-        renderMaskToOverlay(selectedMaskClip, resolvedLayout);
-        // Gizmo handles visible only when the gizmo tool is selected.
-        setIsMaskGizmoVisible(tool === "gizmo" && isActiveMaskSelection);
-        return;
-      }
 
       const liveMaskLayoutPreview = liveMaskLayoutPreviewRef.current;
       const liveLayout =
@@ -1903,7 +1754,22 @@ export function useMaskInteractionController(
           : null;
       const resolvedLayout =
         liveLayout ?? resolveMaskLayoutAtPlayhead(selectedMaskClip);
-      renderMaskToOverlay(selectedMaskClip, resolvedLayout);
+      const renderableShape = resolveMaskRenderableShape(
+        selectedMaskClip,
+        resolvedLayout,
+      );
+
+      if (selectedMaskClip.maskType === "brush") {
+        const tool = useMaskViewStore.getState().brushTool;
+        const isPainting = tool === "paint" || tool === "erase";
+        syncSam2EditingCursor(isPainting);
+        renderMaskToOverlay(renderableShape);
+        // Gizmo handles visible only when the gizmo tool is selected.
+        setIsMaskGizmoVisible(tool === "gizmo" && isActiveMaskSelection);
+        return;
+      }
+
+      renderMaskToOverlay(renderableShape);
       setIsMaskGizmoVisible(isActiveMaskSelection);
     };
 
@@ -1918,10 +1784,10 @@ export function useMaskInteractionController(
     app,
     brushTool,
     clearSam2PreviewSprite,
-    createAssetMaskOverlayShape,
     pendingDrawRequest,
     renderMaskToOverlay,
     renderSam2PointsToOverlay,
+    resolveMaskRenderableShape,
     updateSam2PreviewSprite,
     isMaskTabActive,
     activeCanvasSelection,

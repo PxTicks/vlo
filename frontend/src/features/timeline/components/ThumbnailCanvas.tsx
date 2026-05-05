@@ -4,6 +4,7 @@ import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { CLIP_HEIGHT } from "../constants";
 import type { BaseClip } from "../../../types/TimelineTypes";
 import { useThumbnailRenderer } from "../hooks/useThumbnailRenderer";
+import { useWaveformRenderer } from "../hooks/useWaveformRenderer";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import { useAsset } from "../../userAssets";
 import { Box } from "@mui/material";
@@ -45,6 +46,7 @@ export function ThumbnailCanvasBase({
   const zoomScale = useTimelineViewStore((state) => state.zoomScale);
 
   const assetType = useAsset(clip.assetId)?.type;
+  const isAudioClip = assetType === "audio";
 
   // We still calculate height to pass to the renderer logic,
   // but we do NOT pass dimensions to the DOM element here.
@@ -55,7 +57,16 @@ export function ThumbnailCanvasBase({
     clip,
     zoomScale,
     height,
-    enabled: true,
+    enabled: !isAudioClip,
+    isDragging,
+  });
+
+  const { showFallbackOverlay } = useWaveformRenderer({
+    canvasRef,
+    clip,
+    zoomScale,
+    height,
+    enabled: isAudioClip,
     isDragging,
   });
 
@@ -67,8 +78,8 @@ export function ThumbnailCanvasBase({
         // REMOVED: width={fullWidth} -> This was the primary cause of the glitch
         // REMOVED: height={height} -> Let the hook manage this
       />
-      {assetType === "audio" && (
-        <AudioIconOverlay>
+      {isAudioClip && showFallbackOverlay && (
+        <AudioIconOverlay data-testid="audio-waveform-fallback">
           <MusicNoteIcon sx={{ fontSize: 40, color: "#888" }} />
         </AudioIconOverlay>
       )}

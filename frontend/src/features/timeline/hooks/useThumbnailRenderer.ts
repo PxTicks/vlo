@@ -1,15 +1,7 @@
-import {
-  useEffect,
-  useRef,
-  useCallback,
-  useState,
-  useLayoutEffect,
-} from "react";
+import { useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { TICKS_PER_SECOND, PIXELS_PER_SECOND, CLIP_HEIGHT } from "../constants";
 import type { BaseClip, TimelineClip } from "../../../types/TimelineTypes";
 import { ensureAssetSourceLoaded, useAsset } from "../../userAssets";
-import { useTimelineViewStore } from "./useTimelineViewStore";
-import { useInteractionStore } from "../hooks/useInteractionStore";
 import {
   Input,
   UrlSource,
@@ -23,6 +15,7 @@ import {
   clampThumbnailAssetTickToFirstFrame,
   resolveThumbnailBucketRequestSeconds,
 } from "../utils/thumbnailTiming";
+import { useClipCanvasWindow } from "./useClipCanvasWindow";
 
 interface UseThumbnailRendererProps {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -33,10 +26,6 @@ interface UseThumbnailRendererProps {
   isDragging?: boolean;
 }
 
-const INITIAL_WING_SIZE = 1000;
-const WING_GROWTH_CHUNK = 2000;
-const EXPANSION_THRESHOLD = 300;
-
 export function useThumbnailRenderer({
   canvasRef,
   clip,
@@ -45,21 +34,24 @@ export function useThumbnailRenderer({
   enabled = true,
   isDragging = false,
 }: UseThumbnailRendererProps) {
-  const [dynamicWings, setDynamicWings] = useState({
-    left: INITIAL_WING_SIZE,
-    right: INITIAL_WING_SIZE,
-  });
-
-  const clipStart = "start" in clip ? (clip as TimelineClip).start : null;
   const abortControllerRef = useRef<AbortController | null>(null);
-  const layoutRef = useRef({ canvasLeft: -1, canvasWidth: -1 });
   const pendingDrawRef = useRef<boolean>(false);
   const throttleLastRunRef = useRef<number>(0);
-
-  const scrollContainer = useTimelineViewStore(
-    (state) => state.scrollContainer,
-  );
-  const viewportRef = useRef({ scrollLeft: 0, containerWidth: 0 });
+  const {
+    clipStart,
+    fullCanvasWidth,
+    leftWingPx,
+    scrollContainer,
+    updateCanvasGeometry,
+    updateViewportState,
+  } = useClipCanvasWindow({
+    canvasRef,
+    clip,
+    zoomScale,
+    height,
+    enabled,
+    isDragging,
+  });
 
   // Get asset immediately for synchronous draw checks
   const asset = useAsset(clip.assetId);
@@ -73,141 +65,9 @@ export function useThumbnailRenderer({
     };
   }, [clip.assetId, enabled]);
 
-  const updateViewportState = useCallback(() => {
-    if (scrollContainer) {
-      viewportRef.current = {
-        scrollLeft: scrollContainer.scrollLeft,
-        containerWidth: scrollContainer.clientWidth,
-      };
-    }
-  }, [scrollContainer]);
-
   const clipOffset = "offset" in clip ? (clip as TimelineClip).offset : 0;
   const clipSourceDuration =
     "sourceDuration" in clip ? (clip as TimelineClip).sourceDuration : 0;
-
-  // --- DYNAMIC DRAG SUBSCRIPTION ---
-  useEffect(() => {
-    if (!enabled) return;
-    setDynamicWings({ left: INITIAL_WING_SIZE, right: INITIAL_WING_SIZE });
-
-    const unsubscribe = useInteractionStore.subscribe((state) => {
-      const isLeft = state.activeId === `resize_left_${clip.id}`;
-      const isRight = state.activeId === `resize_right_${clip.id}`;
-
-      if (!isLeft && !isRight) return;
-
-      const delta = state.currentDeltaX;
-      const dragDistance = Math.abs(delta);
-
-      setDynamicWings((prev) => {
-        if (isLeft) {
-          if (dragDistance > prev.left - EXPANSION_THRESHOLD) {
-            return { ...prev, left: prev.left + WING_GROWTH_CHUNK };
-          }
-        }
-        if (isRight) {
-          if (dragDistance > prev.right - EXPANSION_THRESHOLD) {
-            return { ...prev, right: prev.right + WING_GROWTH_CHUNK };
-          }
-        }
-        return prev;
-      });
-    });
-
-    return () => unsubscribe();
-  }, [clip.id, enabled]);
-
-  useLayoutEffect(() => {
-    if (!enabled) return;
-    updateViewportState();
-  }, [updateViewportState, enabled, isDragging]);
-
-  // Reset wings when assetId changes
-  useEffect(() => {
-    layoutRef.current = { canvasLeft: -1, canvasWidth: -1 };
-    setDynamicWings({ left: INITIAL_WING_SIZE, right: INITIAL_WING_SIZE });
-  }, [clip.assetId]);
-
-  // ---------------------------------------------------------------------------
-  // GEOMETRY CALCULATION
-  // ---------------------------------------------------------------------------
-  const visibleDurationPx =
-    (clip.timelineDuration / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
-  const maxLeftPx =
-    (clip.transformedOffset / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
-  const leftWingPx = Math.min(maxLeftPx, dynamicWings.left);
-  const hasUnboundedRightSide =
-    clip.type === "image" || clip.sourceDuration === null;
-  const remainingRightTicks = hasUnboundedRightSide
-    ? 0
-    : clip.transformedDuration - clip.transformedOffset - clip.timelineDuration;
-  const maxRightPx = hasUnboundedRightSide
-    ? Number.POSITIVE_INFINITY
-    : (remainingRightTicks / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
-  const rightWingPx = hasUnboundedRightSide
-    ? dynamicWings.right
-    : Math.min(Math.max(0, maxRightPx), dynamicWings.right);
-  const fullCanvasWidth = leftWingPx + visibleDurationPx + rightWingPx;
-
-  const updateCanvasGeometry = useCallback(() => {
-    if (!scrollContainer || !canvasRef.current) return null;
-
-    let intLocalStart = 0;
-    let intWidth = 0;
-
-    if (isDragging || clipStart === null) {
-      intLocalStart = 0;
-      intWidth = Math.min(16384, Math.ceil(fullCanvasWidth));
-    } else {
-      const { scrollLeft, containerWidth } = viewportRef.current;
-      const clipGlobalStart =
-        (clipStart / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
-      const virtualGlobalStart = clipGlobalStart - leftWingPx;
-
-      const BUFFER = 1000;
-      const viewStart = scrollLeft - BUFFER;
-      const viewEnd = scrollLeft + containerWidth + BUFFER;
-
-      const localStart = Math.max(0, viewStart - virtualGlobalStart);
-      const localEnd = Math.min(fullCanvasWidth, viewEnd - virtualGlobalStart);
-
-      if (localEnd <= localStart) return null;
-
-      intWidth = Math.ceil(localEnd - localStart);
-      intLocalStart = Math.floor(localStart);
-    }
-    const baseLeft = -leftWingPx + intLocalStart;
-
-    const canvas = canvasRef.current;
-
-    // Resize buffer if needed (this clears the canvas)
-    if (canvas.width !== intWidth || canvas.height !== height) {
-      canvas.width = intWidth;
-      canvas.height = height;
-    }
-
-    const transform = `translateX(calc(${baseLeft}px - var(--drag-delta-x, 0px)))`;
-
-    if (
-      layoutRef.current.canvasLeft !== intLocalStart ||
-      canvas.style.transform !== transform
-    ) {
-      canvas.style.transform = transform;
-      layoutRef.current.canvasLeft = intLocalStart;
-    }
-
-    return { localStart: intLocalStart, localWidth: intWidth };
-  }, [
-    scrollContainer,
-    clipStart,
-    canvasRef,
-    zoomScale,
-    fullCanvasWidth,
-    leftWingPx,
-    height,
-    isDragging,
-  ]);
 
   const getCacheKey = (tier: number, index: number) => `${tier}_${index}`;
 

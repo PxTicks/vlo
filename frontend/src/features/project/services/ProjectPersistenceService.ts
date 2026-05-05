@@ -217,12 +217,10 @@ function toLightweightCreationMetadata(
     return metadata;
   }
 
-  const {
-    replayState: _replayState,
-    comfyuiPrompt: _comfyuiPrompt,
-    comfyuiWorkflow: _comfyuiWorkflow,
-    ...lightweight
-  } = metadata;
+  const lightweight = { ...metadata };
+  delete lightweight.replayState;
+  delete lightweight.comfyuiPrompt;
+  delete lightweight.comfyuiWorkflow;
 
   return lightweight as CreationMetadata;
 }

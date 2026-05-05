@@ -70,7 +70,7 @@ describe("ExportRenderer - RenderOptions interface", () => {
 
   describe("Format options", () => {
     it("should define mp4 format", () => {
-      const format: "mp4" = "mp4";
+      const format = "mp4" as const;
       expect(format).toBe("mp4");
     });
   });

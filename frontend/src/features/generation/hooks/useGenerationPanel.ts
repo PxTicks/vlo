@@ -761,7 +761,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     workflowInputs,
     textValues,
     widgetInputs,
-    derivedMaskMappings,
     randomizeToggles,
   ]);
 

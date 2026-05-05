@@ -460,7 +460,7 @@ export function useTransformInteractionController(
 
         if (current.mode === "recordPath") {
           if (current.didMove && current.recordStartedAtMs === null) {
-            current.recordStartedAtMs = performance.now();
+            current.recordStartedAtMs = e.timeStamp;
             current.rawPathSamples = [
               { point: { x: current.startParams.x, y: current.startParams.y }, time: 0 },
             ];
@@ -469,7 +469,7 @@ export function useTransformInteractionController(
           if (current.recordStartedAtMs !== null) {
             current.rawPathSamples.push({
               point: { x: newX, y: newY },
-              time: performance.now() - current.recordStartedAtMs,
+              time: Math.max(0, e.timeStamp - current.recordStartedAtMs),
             });
           }
         } else if (current.activePath && current.pathProgress !== null) {
@@ -615,14 +615,13 @@ export function useTransformInteractionController(
                 lastSample.point.x !== finalPosition.x ||
                 lastSample.point.y !== finalPosition.y
               ) {
+                const finalSampleTime =
+                  e && current.recordStartedAtMs !== null
+                    ? Math.max(0, e.timeStamp - current.recordStartedAtMs)
+                    : lastSample?.time ?? 0;
                 samples.push({
                   point: finalPosition,
-                  time: current.recordStartedAtMs !== null
-                    ? Math.max(
-                        0,
-                        performance.now() - current.recordStartedAtMs,
-                      )
-                    : 0,
+                  time: finalSampleTime,
                 });
               }
 
@@ -1072,7 +1071,7 @@ export function useTransformInteractionController(
       let controlPoints: Point2D[] | null = null;
       let currentPoint: Point2D | null = null;
       let curveColor = PATH_CURVE_COLOR;
-      let curveAlpha = 0.9;
+      const curveAlpha = 0.9;
 
       if (
         currentInteraction.active &&

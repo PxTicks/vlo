@@ -149,9 +149,11 @@ export class BrushBufferMaskSource {
   // Brush masks are not time-varying — present for symmetry with the video
   // player so the mask controller can call uniformly.
   public async renderAt(
-    _timeSeconds: number,
-    _options: { strict?: boolean } = {},
+    timeSeconds: number,
+    options: { strict?: boolean } = {},
   ): Promise<void> {
+    void timeSeconds;
+    void options;
     return;
   }
 

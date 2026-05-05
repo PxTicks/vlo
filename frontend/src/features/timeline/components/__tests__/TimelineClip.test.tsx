@@ -28,6 +28,7 @@ const viewStoreState = vi.hoisted(() => ({
 const extractionState = vi.hoisted(() => ({
   mockUseAsset: vi.fn(),
   mockExtractTimelineClipAudioAsset: vi.fn(),
+  mockRevealAssetInBrowser: vi.fn(),
 }));
 
 // Mock dnd-kit hooks to prevent errors during render
@@ -90,6 +91,10 @@ vi.mock("../../utils/clipAudioExtraction", () => ({
   extractTimelineClipAudioAsset: extractionState.mockExtractTimelineClipAudioAsset,
 }));
 
+vi.mock("../../../userAssets/useAssetBrowserRevealStore", () => ({
+  revealAssetInBrowser: extractionState.mockRevealAssetInBrowser,
+}));
+
 describe("TimelineClip Visual Geometry", () => {
   const mockClip: TimelineClipType = {
     id: "clip_1",
@@ -137,6 +142,7 @@ describe("TimelineClip Visual Geometry", () => {
     );
     extractionState.mockExtractTimelineClipAudioAsset.mockReset();
     extractionState.mockExtractTimelineClipAudioAsset.mockResolvedValue(null);
+    extractionState.mockRevealAssetInBrowser.mockReset();
 
     if (!HTMLElement.prototype.setPointerCapture) {
       HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -211,6 +217,44 @@ describe("TimelineClip Visual Geometry", () => {
         expect.objectContaining({ id: "track_1" }),
       );
     });
+  });
+
+  it("reveals the extracted audio asset in the asset browser and shows a success popup", async () => {
+    extractionState.mockExtractTimelineClipAudioAsset.mockResolvedValue({
+      id: "extracted-audio-1",
+      type: "audio",
+      name: "Test Clip-audio.m4a",
+    });
+
+    render(<TimelineClipItem clip={mockClip} isOverlay={false} />);
+
+    fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Extract Audio" }));
+
+    await waitFor(() => {
+      expect(extractionState.mockRevealAssetInBrowser).toHaveBeenCalledWith(
+        "extracted-audio-1",
+      );
+    });
+
+    expect(
+      screen.getByText("Audio Extracted to Asset Browser"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show extract audio for audio clips", () => {
+    render(
+      <TimelineClipItem
+        clip={{ ...mockClip, type: "audio" }}
+        isOverlay={false}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
+
+    expect(
+      screen.queryByRole("menuitem", { name: "Extract Audio" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not show extract audio for clips without audio-capable media", () => {

@@ -1,6 +1,16 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { Box, Typography, Paper, Menu, MenuItem, ListItemIcon, ListItemText } from "@mui/material";
+import {
+  Alert,
+  Box,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Paper,
+  Snackbar,
+  Typography,
+} from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import GraphicEqIcon from "@mui/icons-material/GraphicEq";
@@ -22,6 +32,7 @@ import type {
 } from "../../../types/TimelineTypes";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
 import { useAsset } from "../../userAssets/publicApi";
+import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStore";
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { extractTimelineClipAudioAsset } from "../utils/clipAudioExtraction";
@@ -106,6 +117,7 @@ function TimelineClipComponent({
     { x: number; y: number } | null
   >(null);
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
+  const [isExtractionSnackbarOpen, setIsExtractionSnackbarOpen] = useState(false);
 
   const startTime = "start" in clip ? (clip as TimelineClipType).start : 0;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
@@ -137,8 +149,8 @@ function TimelineClipComponent({
     timelineClip !== null &&
     track !== undefined &&
     !!timelineClip.assetId &&
-    (timelineClip.type === "audio" ||
-      (timelineClip.type === "video" && clipAsset?.hasAudio !== false));
+    timelineClip.type === "video" &&
+    clipAsset?.hasAudio !== false;
 
   // 2. Vertical Position
   const topPos = isOverlay ? 0 : trackIndex * TRACK_HEIGHT + RULER_HEIGHT + 5;
@@ -296,7 +308,7 @@ function TimelineClipComponent({
       timelineClip === null ||
       track === undefined ||
       !timelineClip.assetId ||
-      (timelineClip.type !== "audio" && timelineClip.type !== "video")
+      timelineClip.type !== "video"
     ) {
       closeContextMenu();
       return;
@@ -312,6 +324,9 @@ function TimelineClipComponent({
       );
       if (!extractedAsset) {
         window.alert("No audio track was found for the selected clip.");
+      } else {
+        revealAssetInBrowser(extractedAsset.id);
+        setIsExtractionSnackbarOpen(true);
       }
     } catch (error) {
       window.alert(
@@ -462,6 +477,22 @@ function TimelineClipComponent({
           </MenuItem>
         )}
       </Menu>
+      <Snackbar
+        open={isExtractionSnackbarOpen}
+        autoHideDuration={2500}
+        onClose={() => setIsExtractionSnackbarOpen(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        sx={{ zIndex: (theme) => theme.zIndex.tooltip + 1 }}
+      >
+        <Alert
+          onClose={() => setIsExtractionSnackbarOpen(false)}
+          severity="success"
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
+          Audio Extracted to Asset Browser
+        </Alert>
+      </Snackbar>
     </ClipRoot>
   );
 }

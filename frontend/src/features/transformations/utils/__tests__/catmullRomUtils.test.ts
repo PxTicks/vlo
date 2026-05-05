@@ -169,5 +169,18 @@ describe("catmullRomUtils", () => {
       expect(result.timingSplinePoints[2].time).toBe(1);
       expect(result.timingSplinePoints[2].value).toBe(1);
     });
+
+    it("heavily reduces dense linear recordings with recording-style thresholds", () => {
+      const samples: RawDragSample[] = Array.from({ length: 25 }, (_, index) => ({
+        point: { x: index * 2, y: 0 },
+        time: index * 16,
+      }));
+
+      const result = processRawDragSamples(samples, 6, 4);
+
+      expect(result.points.length).toBeLessThanOrEqual(4);
+      expect(result.points[0]).toEqual({ x: 0, y: 0 });
+      expect(result.points[result.points.length - 1]).toEqual({ x: 48, y: 0 });
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo, useEffect, useCallback } from "react";
+import { useRef, useState, useMemo, useEffect, useCallback, useId } from "react";
 import { Box } from "@mui/material";
 import { MonotoneCubicSpline, type SplinePoint } from "../../utils/MonotoneCubicSpline";
 import type { SplineParameter } from "../../types";
@@ -38,6 +38,7 @@ export function SplineGraph({
   const [localPoints, setLocalPoints] = useState<SplinePoint[]>(value.points);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const clipPathId = useId().replaceAll(":", "_");
 
   // Viewport State
   const [viewMin, setViewMin] = useState(softMin ?? minY);
@@ -344,6 +345,16 @@ export function SplineGraph({
         // No local onMouseMove needed
         onMouseDown={handleBackgroundMouseDown}
       >
+        <defs>
+          <clipPath id={clipPathId}>
+            <rect
+              x={padding}
+              y={padding}
+              width={graphWidth}
+              height={graphHeight}
+            />
+          </clipPath>
+        </defs>
         {/* Helper Lines (Zero line if visible, Max Soft line?) */}
         {viewMin <= 0 && viewMax >= 0 && (
              <line 
@@ -353,12 +364,14 @@ export function SplineGraph({
              />
         )}
 
-        <path
-            d={pathD}
-            fill="none"
-            stroke="#4caf50"
-            strokeWidth="2"
-        />
+        <g clipPath={`url(#${clipPathId})`}>
+          <path
+              d={pathD}
+              fill="none"
+              stroke="#4caf50"
+              strokeWidth="2"
+          />
+        </g>
 
         {localPoints.map((p, i) => {
             return (

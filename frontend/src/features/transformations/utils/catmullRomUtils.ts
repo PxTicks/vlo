@@ -160,19 +160,21 @@ export function samplePathAtProgress(points: Point2D[], table: ArcLengthEntry[],
   }
 }
 
-/**
- * Inserts a control point into the path exactly at normalized progress u.
- * Returns a new array of points.
- */
-export function insertControlPoint(points: Point2D[], table: ArcLengthEntry[], u: number, alpha: number = 0.5): Point2D[] {
-  if (points.length < 2) return points;
-  if (u <= 0 || u >= 1) return points;
+export function getInsertionIndexForProgress(
+  points: Point2D[],
+  table: ArcLengthEntry[],
+  u: number,
+): number {
+  if (points.length < 2 || table.length === 0) {
+    return Math.max(0, points.length - 1);
+  }
 
-  const targetLength = u * table[table.length - 1].length;
-  
+  const normalizedProgress = Math.max(0, Math.min(1, u));
+  const totalLength = table[table.length - 1].length;
+  const targetLength = normalizedProgress * totalLength;
+
   let insertIndex = points.length - 1;
   for (let i = 0; i < points.length - 1; i++) {
-    // Find the end length of segment i
     let endLength = 0;
     for (let j = table.length - 1; j >= 0; j--) {
       if (table[j].segmentIndex === i && table[j].t === 1.0) {
@@ -180,18 +182,57 @@ export function insertControlPoint(points: Point2D[], table: ArcLengthEntry[], u
         break;
       }
     }
-    
+
     if (targetLength <= endLength) {
       insertIndex = i + 1;
       break;
     }
   }
 
+  return insertIndex;
+}
+
+export interface InsertControlPointResult {
+  points: Point2D[];
+  index: number;
+}
+
+export function insertControlPointWithIndex(
+  points: Point2D[],
+  table: ArcLengthEntry[],
+  u: number,
+  alpha: number = 0.5,
+): InsertControlPointResult {
+  if (points.length < 2) {
+    return {
+      points: [...points],
+      index: Math.max(0, points.length - 1),
+    };
+  }
+  if (u <= 0 || u >= 1) {
+    return {
+      points: [...points],
+      index: u <= 0 ? 0 : points.length - 1,
+    };
+  }
+
+  const insertIndex = getInsertionIndexForProgress(points, table, u);
   const newPt = samplePathAtProgress(points, table, u, alpha);
   const newPoints = [...points];
   newPoints.splice(insertIndex, 0, newPt);
-  
-  return newPoints;
+
+  return {
+    points: newPoints,
+    index: insertIndex,
+  };
+}
+
+/**
+ * Inserts a control point into the path exactly at normalized progress u.
+ * Returns a new array of points.
+ */
+export function insertControlPoint(points: Point2D[], table: ArcLengthEntry[], u: number, alpha: number = 0.5): Point2D[] {
+  return insertControlPointWithIndex(points, table, u, alpha).points;
 }
 
 export interface RawDragSample {

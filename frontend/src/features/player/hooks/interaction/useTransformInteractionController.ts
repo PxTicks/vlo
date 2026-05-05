@@ -56,7 +56,9 @@ import {
 
 const POINT_EPSILON_TICKS = 1;
 const DRAG_MOVE_EPSILON = 0.01;
-const PATH_PROGRESS_EPSILON = 0.05;
+const PATH_PROGRESS_EPSILON = 0.02;
+const PATH_RECORDING_SPATIAL_EPSILON = 6;
+const PATH_RECORDING_SIMPLIFY_EPSILON = 4;
 const PATH_OVERLAY_SAMPLES_PER_SEGMENT = 18;
 const PATH_CURVE_COLOR = 0x60a5fa;
 const PATH_PROVISIONAL_COLOR = 0xf59e0b;
@@ -141,6 +143,7 @@ interface InteractionState {
   rawPathSamples: RawDragSample[];
   recordStartedAtMs: number | null;
   pathProgress: number | null;
+  pathEditIndex: number | null;
   activePath: PositionPathParameter | null;
   draftPathControlPoints: Point2D[] | null;
   didMove: boolean;
@@ -166,6 +169,7 @@ function createInitialInteractionState(): InteractionState {
     rawPathSamples: [],
     recordStartedAtMs: null,
     pathProgress: null,
+    pathEditIndex: null,
     activePath: null,
     draftPathControlPoints: null,
     didMove: false,
@@ -231,6 +235,7 @@ export function useTransformInteractionController(
       current.rawPathSamples = [];
       current.recordStartedAtMs = null;
       current.pathProgress = null;
+      current.pathEditIndex = null;
       current.activePath = null;
       current.draftPathControlPoints = null;
       current.didMove = false;
@@ -468,12 +473,24 @@ export function useTransformInteractionController(
             });
           }
         } else if (current.activePath && current.pathProgress !== null) {
-          current.draftPathControlPoints = upsertPathControlPointAtProgress(
-            current.activePath,
-            current.pathProgress,
-            { x: newX, y: newY },
-            PATH_PROGRESS_EPSILON,
-          );
+          if (
+            current.pathEditIndex !== null &&
+            current.draftPathControlPoints &&
+            current.pathEditIndex < current.draftPathControlPoints.length
+          ) {
+            const nextPoints = [...current.draftPathControlPoints];
+            nextPoints[current.pathEditIndex] = { x: newX, y: newY };
+            current.draftPathControlPoints = nextPoints;
+          } else {
+            const editResult = upsertPathControlPointAtProgress(
+              current.activePath,
+              current.pathProgress,
+              { x: newX, y: newY },
+              PATH_PROGRESS_EPSILON,
+            );
+            current.draftPathControlPoints = editResult.points;
+            current.pathEditIndex = editResult.index;
+          }
         }
 
         return;
@@ -609,7 +626,11 @@ export function useTransformInteractionController(
                 });
               }
 
-              const processed = processRawDragSamples(samples);
+              const processed = processRawDragSamples(
+                samples,
+                PATH_RECORDING_SPATIAL_EPSILON,
+                PATH_RECORDING_SIMPLIFY_EPSILON,
+              );
               if (processed.points.length >= 2) {
                 const defaultTiming = createDefaultPathTiming();
                 const candidateTimingPoints = processed.timingSplinePoints;
@@ -662,12 +683,22 @@ export function useTransformInteractionController(
               current.activePath &&
               current.pathProgress !== null
             ) {
-              const nextControlPoints = upsertPathControlPointAtProgress(
-                current.activePath,
-                current.pathProgress,
-                finalPosition,
-                PATH_PROGRESS_EPSILON,
-              );
+              let nextControlPoints = current.draftPathControlPoints;
+              if (
+                nextControlPoints &&
+                current.pathEditIndex !== null &&
+                current.pathEditIndex < nextControlPoints.length
+              ) {
+                nextControlPoints = [...nextControlPoints];
+                nextControlPoints[current.pathEditIndex] = finalPosition;
+              } else {
+                nextControlPoints = upsertPathControlPointAtProgress(
+                  current.activePath,
+                  current.pathProgress,
+                  finalPosition,
+                  PATH_PROGRESS_EPSILON,
+                ).points;
+              }
               const transformId = commitPositionPath(
                 latestClip,
                 {
@@ -848,6 +879,7 @@ export function useTransformInteractionController(
                 activeClip.timelineDuration,
               )
             : null,
+        pathEditIndex: null,
         activePath,
         draftPathControlPoints: activePath?.controlPoints ?? null,
       };

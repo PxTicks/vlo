@@ -1,5 +1,5 @@
 import type { Point2D } from "./catmullRomUtils";
-import { distance, insertControlPoint } from "./catmullRomUtils";
+import { distance, insertControlPointWithIndex } from "./catmullRomUtils";
 import type { PositionPathParameter } from "../types";
 import { getCachedArcLengthTable } from "./positionPath";
 
@@ -48,16 +48,44 @@ export function findControlPointIndexNearProgress(
   progress: number,
   epsilon: number,
 ): number {
-  if (points.length === 0) {
+  const result = findNearestControlPointIndexByProgress(points, progress);
+  if (result.index < 0 || result.distance > epsilon) {
     return -1;
+  }
+  return result.index;
+}
+
+export function findNearestControlPointIndexByProgress(
+  points: Point2D[],
+  progress: number,
+): { index: number; distance: number } {
+  if (points.length === 0) {
+    return { index: -1, distance: Number.POSITIVE_INFINITY };
   }
 
   const normalizedProgress = clamp01(progress);
   const progresses = estimateControlPointProgresses(points);
-  return progresses.findIndex(
-    (candidateProgress) =>
-      Math.abs(candidateProgress - normalizedProgress) <= epsilon,
-  );
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  progresses.forEach((candidateProgress, index) => {
+    const candidateDistance = Math.abs(candidateProgress - normalizedProgress);
+    if (candidateDistance < bestDistance) {
+      bestDistance = candidateDistance;
+      bestIndex = index;
+    }
+  });
+
+  return {
+    index: bestIndex,
+    distance: bestDistance,
+  };
+}
+
+export interface UpsertPathControlPointResult {
+  points: Point2D[];
+  index: number;
+  inserted: boolean;
 }
 
 export function upsertPathControlPointAtProgress(
@@ -65,36 +93,38 @@ export function upsertPathControlPointAtProgress(
   progress: number,
   point: Point2D,
   epsilon: number,
-): Point2D[] {
+): UpsertPathControlPointResult {
   const normalizedProgress = clamp01(progress);
-  const existingIndex = findControlPointIndexNearProgress(
+  const nearestExisting = findNearestControlPointIndexByProgress(
     path.controlPoints,
     normalizedProgress,
-    epsilon,
   );
+  const existingIndex =
+    nearestExisting.distance <= epsilon ? nearestExisting.index : -1;
 
   if (existingIndex >= 0) {
     const nextPoints = [...path.controlPoints];
     nextPoints[existingIndex] = point;
-    return nextPoints;
+    return {
+      points: nextPoints,
+      index: existingIndex,
+      inserted: false,
+    };
   }
 
   const table = getCachedArcLengthTable(path);
-  const nextPoints = insertControlPoint(
+  const insertionResult = insertControlPointWithIndex(
     path.controlPoints,
     table,
     normalizedProgress,
     0.5,
   );
-  const insertedIndex = findControlPointIndexNearProgress(
-    nextPoints,
-    normalizedProgress,
-    epsilon * 2,
-  );
+  const nextPoints = [...insertionResult.points];
+  nextPoints[insertionResult.index] = point;
 
-  if (insertedIndex >= 0) {
-    nextPoints[insertedIndex] = point;
-  }
-
-  return nextPoints;
+  return {
+    points: nextPoints,
+    index: insertionResult.index,
+    inserted: true,
+  };
 }

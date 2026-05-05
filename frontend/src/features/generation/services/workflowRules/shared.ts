@@ -113,6 +113,9 @@ export function toSelectionConfig(
   if (typeof selection.max_frames === "number" && selection.max_frames > 0) {
     next.maxFrames = selection.max_frames;
   }
+  if (typeof selection.message === "string" && selection.message.trim().length > 0) {
+    next.message = selection.message.trim();
+  }
 
   return Object.keys(next).length > 0 ? next : undefined;
 }

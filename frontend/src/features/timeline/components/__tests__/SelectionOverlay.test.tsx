@@ -86,6 +86,8 @@ describe("SelectionOverlay", () => {
           selectionMode: true,
           selectionStartTick: 0,
           selectionEndTick: 96000,
+          selectionMessage: "Use the highlighted tracks for this pass",
+          selectionIncludedTrackIds: ["track-1", "track-2"],
           selectionFpsOverride: null,
           selectionFrameStep: 1,
           updateSelectionStart: vi.fn(),
@@ -106,6 +108,8 @@ describe("SelectionOverlay", () => {
     ).getState.mockReturnValue({
       selectionStartTick: 0,
       selectionEndTick: 96000,
+      selectionMessage: "Use the highlighted tracks for this pass",
+      selectionIncludedTrackIds: ["track-1", "track-2"],
       selectionFpsOverride: null,
       selectionFrameStep: 1,
       updateSelectionStart: vi.fn(),
@@ -203,5 +207,18 @@ describe("SelectionOverlay", () => {
 
     expect(onConfirmSelection).toHaveBeenCalledTimes(1);
     expect(parentClick).not.toHaveBeenCalled();
+  });
+
+  it("renders workflow guidance and included track summary", () => {
+    render(<SelectionOverlay />);
+
+    expect(
+      screen.getByText("Use the highlighted tracks for this pass"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "2 included tracks. Click track header checkboxes to focus the selection.",
+      ),
+    ).toBeInTheDocument();
   });
 });

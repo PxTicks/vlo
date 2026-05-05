@@ -294,6 +294,7 @@ export interface WorkflowRuleSelectionConfig {
   export_fps?: number | null;
   frame_step?: number | null;
   max_frames?: number | null;
+  message?: string | null;
 }
 
 export interface WorkflowRuleSlot {

@@ -33,6 +33,7 @@ export interface GeneratedCreationWorkflowSelectionConfig {
   exportFps?: number;
   frameStep?: number;
   maxFrames?: number;
+  message?: string;
 }
 
 export interface GeneratedCreationWorkflowInputDispatch {

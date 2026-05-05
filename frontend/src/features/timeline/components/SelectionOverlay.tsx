@@ -48,6 +48,10 @@ export function SelectionOverlay({
     (s) => s.selectionFpsOverride,
   );
   const selectionFrameStep = useTimelineSelectionStore((s) => s.selectionFrameStep);
+  const selectionMessage = useTimelineSelectionStore((s) => s.selectionMessage);
+  const selectionIncludedTrackIds = useTimelineSelectionStore(
+    (s) => s.selectionIncludedTrackIds,
+  );
   const recommendedFpsFromStore = useTimelineSelectionStore(
     (s) => s.selectionRecommendedFps,
   );
@@ -384,6 +388,12 @@ export function SelectionOverlay({
     1,
     Math.round((endTick - startTick) / Math.max(1e-6, ticksPerFrame)),
   );
+  const hasIncludedTracks = selectionIncludedTrackIds.length > 0;
+  const trackScopeLabel = hasIncludedTracks
+    ? `${selectionIncludedTrackIds.length} included track${
+        selectionIncludedTrackIds.length === 1 ? "" : "s"
+      }`
+    : "All tracks";
 
   // Determine if we should show a warning
   const isOverRecommended =
@@ -561,154 +571,180 @@ export function SelectionOverlay({
           px: 2,
           py: 1,
           display: "flex",
-          gap: 1.5,
-          alignItems: "center",
+          flexDirection: "column",
+          gap: 1,
+          alignItems: "stretch",
           borderRadius: 2,
+          width: "min(90vw, 920px)",
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", mr: 1 }}>
-          <Typography variant="body2" sx={{ color: "#aaa", mr: 0.5 }}>
-            Duration: {currentDurationSeconds.toFixed(2)}s ({currentFrameCount}f)
+        {selectionMessage ? (
+          <Typography variant="body2" sx={{ color: "#ddd", lineHeight: 1.4 }}>
+            {selectionMessage}
           </Typography>
-          <BufferedTextInput
-            label=""
-            value={
-              localMaxTicks !== null
-                ? (localMaxTicks / TICKS_PER_SECOND).toFixed(2)
-                : ""
-            }
-            placeholder="∞"
-            onCommit={handleMaxLimitChange}
-            sx={{
-              width: 50,
-              "& .MuiOutlinedInput-root": {
-                height: 24,
-                fontSize: "0.875rem",
-                color: "#aaa",
-                px: 0.5,
-                "& fieldset": {
-                  border: "none",
-                  borderBottom: isOverRecommended ? "1px solid" : "1px dotted",
-                  borderColor: isOverRecommended ? "error.main" : "#666",
-                  borderRadius: 0,
-                },
-                "&:hover fieldset": {
-                  borderColor: isOverRecommended ? "error.main" : "#aaa",
-                },
-                "&.Mui-focused fieldset": {
-                  borderColor: isOverRecommended ? "error.main" : "#fff",
-                },
-                "& input": {
-                  textAlign: "center",
-                  p: 0,
-                },
-              },
-            }}
-          />
-          <Typography variant="body2" sx={{ color: "#aaa", ml: 0.5 }}>
-            s max
+        ) : null}
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
+          <Typography variant="caption" sx={{ color: "#7ec8e3", flexShrink: 0 }}>
+            Track scope
+          </Typography>
+          <Typography variant="body2" sx={{ color: "#aaa", minWidth: 0 }}>
+            {trackScopeLabel}. Click track header checkboxes to focus the selection.
           </Typography>
         </Box>
 
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          <Typography variant="body2" sx={{ color: "#aaa" }}>
-            FPS
-          </Typography>
-          <BufferedTextInput
-            label=""
-            value={selectionFpsOverride !== null ? String(selectionFpsOverride) : ""}
-            placeholder={String(resolvedRecommendedFps ?? projectFps)}
-            onCommit={handleFpsOverrideChange}
-            sx={{
-              width: 54,
-              "& .MuiOutlinedInput-root": {
-                height: 24,
-                fontSize: "0.875rem",
-                color: "#aaa",
-                px: 0.5,
-                "& fieldset": {
-                  border: "none",
-                  borderBottom: "1px dotted",
-                  borderColor: "#666",
-                  borderRadius: 0,
-                },
-                "&:hover fieldset": {
-                  borderColor: "#aaa",
-                },
-                "&.Mui-focused fieldset": {
-                  borderColor: "#fff",
-                },
-                "& input": {
-                  textAlign: "center",
-                  p: 0,
-                },
-              },
-            }}
-          />
-          {resolvedRecommendedFps !== null && (
-            <Typography variant="body2" sx={{ color: "#777" }}>
-              (rec {resolvedRecommendedFps})
-            </Typography>
-          )}
-        </Box>
-
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          <Typography variant="body2" sx={{ color: "#aaa" }}>
-            Step
-          </Typography>
-          <BufferedTextInput
-            label=""
-            value={String(selectionFrameStep)}
-            placeholder={
-              resolvedRecommendedFrameStep !== null
-                ? String(resolvedRecommendedFrameStep)
-                : "1"
-            }
-            onCommit={handleFrameStepChange}
-            sx={{
-              width: 44,
-              "& .MuiOutlinedInput-root": {
-                height: 24,
-                fontSize: "0.875rem",
-                color: "#aaa",
-                px: 0.5,
-                "& fieldset": {
-                  border: "none",
-                  borderBottom: "1px dotted",
-                  borderColor: "#666",
-                  borderRadius: 0,
-                },
-                "&:hover fieldset": {
-                  borderColor: "#aaa",
-                },
-                "&.Mui-focused fieldset": {
-                  borderColor: "#fff",
-                },
-                "& input": {
-                  textAlign: "center",
-                  p: 0,
-                },
-              },
-            }}
-          />
-          {resolvedRecommendedFrameStep !== null && (
-            <Typography variant="body2" sx={{ color: "#777" }}>
-              rec {resolvedRecommendedFrameStep}
-            </Typography>
-          )}
-        </Box>
-
-        <Button
-          size="small"
-          color="inherit"
-          onClick={handleCancel}
-          sx={{ color: "#aaa" }}
+        <Box
+          sx={{
+            display: "flex",
+            gap: 1.5,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
         >
-          Cancel
-        </Button>
-        <Button size="small" variant="contained" onClick={handleConfirm}>
-          Confirm Selection
-        </Button>
+          <Box sx={{ display: "flex", alignItems: "center", mr: 1 }}>
+            <Typography variant="body2" sx={{ color: "#aaa", mr: 0.5 }}>
+              Duration: {currentDurationSeconds.toFixed(2)}s ({currentFrameCount}f)
+            </Typography>
+            <BufferedTextInput
+              label=""
+              value={
+                localMaxTicks !== null
+                  ? (localMaxTicks / TICKS_PER_SECOND).toFixed(2)
+                  : ""
+              }
+              placeholder="∞"
+              onCommit={handleMaxLimitChange}
+              sx={{
+                width: 50,
+                "& .MuiOutlinedInput-root": {
+                  height: 24,
+                  fontSize: "0.875rem",
+                  color: "#aaa",
+                  px: 0.5,
+                  "& fieldset": {
+                    border: "none",
+                    borderBottom: isOverRecommended ? "1px solid" : "1px dotted",
+                    borderColor: isOverRecommended ? "error.main" : "#666",
+                    borderRadius: 0,
+                  },
+                  "&:hover fieldset": {
+                    borderColor: isOverRecommended ? "error.main" : "#aaa",
+                  },
+                  "&.Mui-focused fieldset": {
+                    borderColor: isOverRecommended ? "error.main" : "#fff",
+                  },
+                  "& input": {
+                    textAlign: "center",
+                    p: 0,
+                  },
+                },
+              }}
+            />
+            <Typography variant="body2" sx={{ color: "#aaa", ml: 0.5 }}>
+              s max
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="body2" sx={{ color: "#aaa" }}>
+              FPS
+            </Typography>
+            <BufferedTextInput
+              label=""
+              value={selectionFpsOverride !== null ? String(selectionFpsOverride) : ""}
+              placeholder={String(resolvedRecommendedFps ?? projectFps)}
+              onCommit={handleFpsOverrideChange}
+              sx={{
+                width: 54,
+                "& .MuiOutlinedInput-root": {
+                  height: 24,
+                  fontSize: "0.875rem",
+                  color: "#aaa",
+                  px: 0.5,
+                  "& fieldset": {
+                    border: "none",
+                    borderBottom: "1px dotted",
+                    borderColor: "#666",
+                    borderRadius: 0,
+                  },
+                  "&:hover fieldset": {
+                    borderColor: "#aaa",
+                  },
+                  "&.Mui-focused fieldset": {
+                    borderColor: "#fff",
+                  },
+                  "& input": {
+                    textAlign: "center",
+                    p: 0,
+                  },
+                },
+              }}
+            />
+            {resolvedRecommendedFps !== null && (
+              <Typography variant="body2" sx={{ color: "#777" }}>
+                (rec {resolvedRecommendedFps})
+              </Typography>
+            )}
+          </Box>
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="body2" sx={{ color: "#aaa" }}>
+              Step
+            </Typography>
+            <BufferedTextInput
+              label=""
+              value={String(selectionFrameStep)}
+              placeholder={
+                resolvedRecommendedFrameStep !== null
+                  ? String(resolvedRecommendedFrameStep)
+                  : "1"
+              }
+              onCommit={handleFrameStepChange}
+              sx={{
+                width: 44,
+                "& .MuiOutlinedInput-root": {
+                  height: 24,
+                  fontSize: "0.875rem",
+                  color: "#aaa",
+                  px: 0.5,
+                  "& fieldset": {
+                    border: "none",
+                    borderBottom: "1px dotted",
+                    borderColor: "#666",
+                    borderRadius: 0,
+                  },
+                  "&:hover fieldset": {
+                    borderColor: "#aaa",
+                  },
+                  "&.Mui-focused fieldset": {
+                    borderColor: "#fff",
+                  },
+                  "& input": {
+                    textAlign: "center",
+                    p: 0,
+                  },
+                },
+              }}
+            />
+            {resolvedRecommendedFrameStep !== null && (
+              <Typography variant="body2" sx={{ color: "#777" }}>
+                rec {resolvedRecommendedFrameStep}
+              </Typography>
+            )}
+          </Box>
+
+          <Button
+            size="small"
+            color="inherit"
+            onClick={handleCancel}
+            sx={{ color: "#aaa", marginLeft: "auto" }}
+          >
+            Cancel
+          </Button>
+          <Button size="small" variant="contained" onClick={handleConfirm}>
+            Confirm Selection
+          </Button>
+        </Box>
       </Paper>
     </>
   );

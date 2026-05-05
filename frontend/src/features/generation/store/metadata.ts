@@ -646,6 +646,11 @@ function buildWorkflowInputSnapshot(
                     maxFrames: workflowInput.dispatch.selectionConfig.maxFrames,
                   }
                 : {}),
+              ...(workflowInput.dispatch.selectionConfig.message?.trim()
+                ? {
+                    message: workflowInput.dispatch.selectionConfig.message.trim(),
+                  }
+                : {}),
             },
           }
         : {}),

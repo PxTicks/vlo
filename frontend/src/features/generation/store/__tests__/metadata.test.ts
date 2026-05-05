@@ -35,6 +35,7 @@ describe("generation metadata replay helpers", () => {
           selectionConfig: {
             exportFps: 12,
             frameStep: 2,
+            message: "Pick the establishing shot",
           },
         },
       },
@@ -118,6 +119,7 @@ describe("generation metadata replay helpers", () => {
               selectionConfig: {
                 exportFps: 12,
                 frameStep: 2,
+                message: "Pick the establishing shot",
               },
             },
           },

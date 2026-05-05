@@ -11,6 +11,16 @@ export interface TimelineSelection {
   clips: TimelineClip[];
   tracks?: TimelineTrack[];
   /**
+   * Optional workflow-provided guidance shown while the selection is being made.
+   */
+  message?: string;
+  /**
+   * Optional overlay filter that limits renders/extractions to an explicit set
+   * of track ids while preserving the original `tracks` metadata.
+   * When omitted or empty, consumers should treat the selection as "all tracks".
+   */
+  includedTrackIds?: string[];
+  /**
    * Effective FPS used for renders/extractions from this selection.
    * When omitted, consumers fall back to project FPS.
    */

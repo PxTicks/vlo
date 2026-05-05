@@ -1,6 +1,8 @@
 export type { TimelineSelection } from "../../types/TimelineTypes";
 export { useTimelineSelectionStore } from "./useTimelineSelectionStore";
 export {
+  getIncludedClipsForSelection,
+  getIncludedTracksForSelection,
   getClipsInSelection,
   getTicksPerFrame,
   normalizeTimelineSelection,

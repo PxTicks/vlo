@@ -374,6 +374,8 @@ function PlayerImpl() {
     const {
       selectionStartTick,
       selectionEndTick,
+      selectionMessage,
+      selectionIncludedTrackIds,
       selectionFpsOverride,
       selectionFrameStep,
       exitSelectionMode,
@@ -389,6 +391,8 @@ function PlayerImpl() {
       await runSelectionExport({
         selectionStartTick,
         selectionEndTick,
+        selectionMessage,
+        selectionIncludedTrackIds,
         selectionFpsOverride,
         selectionFrameStep,
         onProgress: (progress) => {

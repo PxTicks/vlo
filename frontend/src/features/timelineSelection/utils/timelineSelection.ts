@@ -1,6 +1,7 @@
 import type {
   TimelineClip,
   TimelineSelection,
+  TimelineTrack,
 } from "../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../timeline";
 
@@ -90,6 +91,85 @@ export function getClipsInSelection(
   });
 }
 
+function normalizeIncludedTrackIds(
+  includedTrackIds: unknown,
+  availableTracks: TimelineTrack[],
+): string[] {
+  if (!Array.isArray(includedTrackIds)) {
+    return [];
+  }
+
+  const allowedTrackIds =
+    availableTracks.length > 0
+      ? new Set(availableTracks.map((track) => track.id))
+      : null;
+
+  return includedTrackIds.filter((trackId, index, list): trackId is string => {
+    if (typeof trackId !== "string" || trackId.trim().length === 0) {
+      return false;
+    }
+    if (list.indexOf(trackId) !== index) {
+      return false;
+    }
+    return allowedTrackIds === null || allowedTrackIds.has(trackId);
+  });
+}
+
+export function getIncludedTracksForSelection(
+  selection: TimelineSelection,
+  availableTracks: TimelineTrack[],
+): TimelineTrack[] {
+  const includedTrackIds = normalizeIncludedTrackIds(
+    selection.includedTrackIds,
+    availableTracks,
+  );
+  if (includedTrackIds.length === 0) {
+    return availableTracks;
+  }
+
+  const includedTrackIdSet = new Set(includedTrackIds);
+  return availableTracks.filter((track) => includedTrackIdSet.has(track.id));
+}
+
+export function getIncludedClipsForSelection(
+  selection: TimelineSelection,
+  availableClips: TimelineClip[],
+): TimelineClip[] {
+  const includedTrackIds = normalizeIncludedTrackIds(
+    selection.includedTrackIds,
+    selection.tracks ?? [],
+  );
+  if (includedTrackIds.length === 0) {
+    return availableClips;
+  }
+
+  const includedTrackIdSet = new Set(includedTrackIds);
+  const includedPrimaryClips = availableClips.filter((clip) =>
+    includedTrackIdSet.has(clip.trackId),
+  );
+  const referencedMaskIds = new Set<string>();
+
+  for (const clip of includedPrimaryClips) {
+    if (clip.type === "mask") {
+      continue;
+    }
+    for (const component of clip.components ?? []) {
+      if (
+        component.type === "mask_ref" &&
+        typeof component.parameters.maskClipId === "string"
+      ) {
+        referencedMaskIds.add(component.parameters.maskClipId);
+      }
+    }
+  }
+
+  return availableClips.filter(
+    (clip) =>
+      includedTrackIdSet.has(clip.trackId) ||
+      (clip.type === "mask" && referencedMaskIds.has(clip.id)),
+  );
+}
+
 function isTimelineClip(value: unknown): value is TimelineClip {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -110,10 +190,15 @@ export function normalizeTimelineSelection(
 ): TimelineSelection {
   const rawClips = Array.isArray(selection.clips) ? selection.clips : [];
   const validClips = rawClips.filter(isTimelineClip);
-
-  if (validClips.length === rawClips.length) {
-    return selection;
-  }
+  const availableTracks = Array.isArray(selection.tracks) ? selection.tracks : [];
+  const normalizedIncludedTrackIds = normalizeIncludedTrackIds(
+    selection.includedTrackIds,
+    availableTracks,
+  );
+  const normalizedMessage =
+    typeof selection.message === "string" && selection.message.trim().length > 0
+      ? selection.message.trim()
+      : null;
 
   const recoveredClips =
     availableClips.length > 0
@@ -123,8 +208,22 @@ export function normalizeTimelineSelection(
         })
       : validClips;
 
-  return {
+  const normalizedSelection: TimelineSelection = {
     ...selection,
     clips: recoveredClips,
   };
+
+  if (normalizedMessage) {
+    normalizedSelection.message = normalizedMessage;
+  } else {
+    delete normalizedSelection.message;
+  }
+
+  if (normalizedIncludedTrackIds.length > 0) {
+    normalizedSelection.includedTrackIds = normalizedIncludedTrackIds;
+  } else {
+    delete normalizedSelection.includedTrackIds;
+  }
+
+  return normalizedSelection;
 }

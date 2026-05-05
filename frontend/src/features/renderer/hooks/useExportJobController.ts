@@ -26,6 +26,8 @@ function createAbortError(): Error {
 export interface SelectionExportOptions {
   selectionStartTick: number;
   selectionEndTick: number;
+  selectionMessage: string | null;
+  selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
   selectionFrameStep: number;
   onProgress?: (progress: number) => void;
@@ -119,6 +121,8 @@ export function useExportJobController({
     async ({
       selectionStartTick,
       selectionEndTick,
+      selectionMessage,
+      selectionIncludedTrackIds,
       selectionFpsOverride,
       selectionFrameStep,
       onProgress,
@@ -149,6 +153,11 @@ export function useExportJobController({
           end: selectionEndTick,
           clips: [],
         }),
+        tracks: projectData.tracks,
+        ...(selectionMessage ? { message: selectionMessage } : {}),
+        ...(selectionIncludedTrackIds.length > 0
+          ? { includedTrackIds: selectionIncludedTrackIds.slice() }
+          : {}),
         fps: selectionFps,
         frameStep: selectionFrameStep,
       };

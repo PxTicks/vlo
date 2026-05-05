@@ -4,14 +4,25 @@ export interface TimelineSelectionState {
   selectionMode: boolean;
   selectionStartTick: number;
   selectionEndTick: number;
+  selectionMessage: string | null;
+  selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
   selectionFrameStep: number;
   selectionRecommendedFps: number | null;
   selectionRecommendedFrameStep: number | null;
   selectionRecommendedMaxTicks: number | null;
-  enterSelectionMode: (startTick: number, endTick: number) => void;
+  enterSelectionMode: (
+    startTick: number,
+    endTick: number,
+    options?: {
+      message?: string | null;
+      includedTrackIds?: string[];
+    },
+  ) => void;
   updateSelectionStart: (tick: number) => void;
   updateSelectionEnd: (tick: number) => void;
+  setSelectionMessage: (message: string | null) => void;
+  toggleSelectionIncludedTrack: (trackId: string) => void;
   setSelectionFpsOverride: (fps: number | null) => void;
   setSelectionFrameStep: (step: number) => void;
   setSelectionRecommendations: (options: {
@@ -27,19 +38,53 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
   selectionMode: false,
   selectionStartTick: 0,
   selectionEndTick: 0,
+  selectionMessage: null,
+  selectionIncludedTrackIds: [],
   selectionFpsOverride: null,
   selectionFrameStep: 1,
   selectionRecommendedFps: null,
   selectionRecommendedFrameStep: null,
   selectionRecommendedMaxTicks: null,
-  enterSelectionMode: (startTick, endTick) =>
+  enterSelectionMode: (startTick, endTick, options) =>
     set({
       selectionMode: true,
       selectionStartTick: startTick,
       selectionEndTick: endTick,
+      selectionMessage:
+        typeof options?.message === "string" && options.message.trim().length > 0
+          ? options.message.trim()
+          : null,
+      selectionIncludedTrackIds: Array.isArray(options?.includedTrackIds)
+        ? options.includedTrackIds.filter(
+            (trackId, index, list): trackId is string =>
+              typeof trackId === "string" &&
+              trackId.trim().length > 0 &&
+              list.indexOf(trackId) === index,
+          )
+        : [],
     }),
   updateSelectionStart: (tick) => set({ selectionStartTick: tick }),
   updateSelectionEnd: (tick) => set({ selectionEndTick: tick }),
+  setSelectionMessage: (message) =>
+    set({
+      selectionMessage:
+        typeof message === "string" && message.trim().length > 0
+          ? message.trim()
+          : null,
+    }),
+  toggleSelectionIncludedTrack: (trackId) =>
+    set((state) => {
+      const normalizedTrackId = trackId.trim();
+      if (!normalizedTrackId) {
+        return {};
+      }
+      const hasTrack = state.selectionIncludedTrackIds.includes(normalizedTrackId);
+      return {
+        selectionIncludedTrackIds: hasTrack
+          ? state.selectionIncludedTrackIds.filter((id) => id !== normalizedTrackId)
+          : [...state.selectionIncludedTrackIds, normalizedTrackId],
+      };
+    }),
   setSelectionFpsOverride: (fps) =>
     set({
       selectionFpsOverride:
@@ -82,6 +127,8 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       selectionMode: false,
       selectionStartTick: 0,
       selectionEndTick: 0,
+      selectionMessage: null,
+      selectionIncludedTrackIds: [],
       selectionRecommendedFps: null,
       selectionRecommendedFrameStep: null,
       selectionRecommendedMaxTicks: null,

@@ -21,7 +21,12 @@ export function createTimelineSelection(
   const clips = useTimelineStore.getState().clips;
   const tracks = useTimelineStore.getState().tracks;
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
-  const { selectionFpsOverride, selectionFrameStep } =
+  const {
+    selectionFpsOverride,
+    selectionFrameStep,
+    selectionMessage,
+    selectionIncludedTrackIds,
+  } =
     useTimelineSelectionStore.getState();
   const selectionFps = resolveSelectionFps(
     { fps: selectionFpsOverride },
@@ -37,6 +42,10 @@ export function createTimelineSelection(
       clips: [],
     }),
     tracks,
+    ...(selectionMessage ? { message: selectionMessage } : {}),
+    ...(selectionIncludedTrackIds.length > 0
+      ? { includedTrackIds: selectionIncludedTrackIds.slice() }
+      : {}),
     fps: selectionFps,
     frameStep: selectionFrameStep,
   };

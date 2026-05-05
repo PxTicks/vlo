@@ -966,6 +966,9 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       timelineSelectionStore.enterSelectionMode(
         selectionStartTick,
         selectionEndTick,
+        {
+          message: selectionConfig?.message ?? null,
+        },
       );
       extractStore.setOnConfirmSelection(() => {
         void (async () => {

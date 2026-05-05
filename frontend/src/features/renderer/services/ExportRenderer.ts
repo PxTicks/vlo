@@ -15,6 +15,8 @@ import {
 } from "../utils/clipLookup";
 import { getAssetInput } from "../../userAssets";
 import {
+  getIncludedClipsForSelection,
+  getIncludedTracksForSelection,
   getTicksPerFrame,
   resolveSelectionFps,
   resolveSelectionFrameStep,
@@ -283,8 +285,14 @@ export class ExportRenderer {
       clips,
       tracks,
     };
-    const selectedClips = timelineSelection.clips;
-    const effectiveTracks = timelineSelection.tracks ?? tracks;
+    const selectedClips = getIncludedClipsForSelection(
+      timelineSelection,
+      timelineSelection.clips,
+    );
+    const effectiveTracks = getIncludedTracksForSelection(
+      timelineSelection,
+      timelineSelection.tracks ?? tracks,
+    );
     const startTick = timelineSelection.start;
     const inferredEndTick = selectedClips.reduce(
       (max, clip) => Math.max(max, clip.start + clip.timelineDuration),
@@ -526,8 +534,14 @@ export class ExportRenderer {
     options.signal?.addEventListener("abort", onAbort, { once: true });
 
     const { assets, fps } = projectData;
-    const tracks = options.timelineSelection?.tracks ?? projectData.tracks;
-    const clips = options.timelineSelection?.clips ?? projectData.clips;
+    const availableTracks = options.timelineSelection?.tracks ?? projectData.tracks;
+    const availableClips = options.timelineSelection?.clips ?? projectData.clips;
+    const tracks = options.timelineSelection
+      ? getIncludedTracksForSelection(options.timelineSelection, availableTracks)
+      : availableTracks;
+    const clips = options.timelineSelection
+      ? getIncludedClipsForSelection(options.timelineSelection, availableClips)
+      : availableClips;
     const { logicalWidth, logicalHeight } = config;
     const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
       buildVisualRenderData(

@@ -11,8 +11,11 @@ import type { TrackType, TimelineTrack } from "../../../types/TimelineTypes";
 interface TimelineRowProps {
   track: TimelineTrack;
   index: number;
+  selectionMode?: boolean;
+  isIncludedInSelection?: boolean;
   onToggleVisibility: (id: string) => void;
   onToggleMute?: (id: string) => void;
+  onToggleSelectionInclude?: (id: string) => void;
 }
 
 const StyledRow = styled(Box)({
@@ -24,8 +27,11 @@ const StyledRow = styled(Box)({
 function TimelineRowComponent({
   track,
   index,
+  selectionMode = false,
+  isIncludedInSelection = false,
   onToggleVisibility,
   onToggleMute,
+  onToggleSelectionInclude,
 }: TimelineRowProps) {
   // Optimization: Removed subscription to clips.
   // We rely on track.type being updated by the store when clips are added/moved.
@@ -42,6 +48,11 @@ function TimelineRowComponent({
     [track.id, onToggleMute],
   );
 
+  const handleToggleSelectionInclude = React.useCallback(
+    () => onToggleSelectionInclude && onToggleSelectionInclude(track.id),
+    [onToggleSelectionInclude, track.id],
+  );
+
   return (
     <StyledRow data-testid="timeline-row">
       <TimelineHeader
@@ -49,8 +60,11 @@ function TimelineRowComponent({
         isMuted={track.isMuted}
         derivedType={derivedType}
         color={trackColor}
+        selectionMode={selectionMode}
+        isIncludedInSelection={isIncludedInSelection}
         onToggleVisibility={handleToggleVisibility}
         onToggleMute={handleToggleMute}
+        onToggleSelectionInclude={handleToggleSelectionInclude}
       />
 
       <TimelineBody

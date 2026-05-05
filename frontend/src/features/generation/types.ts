@@ -121,6 +121,7 @@ export interface WorkflowSelectionConfig {
   exportFps?: number;
   frameStep?: number;
   maxFrames?: number;
+  message?: string;
 }
 
 export interface WorkflowInputDispatch {

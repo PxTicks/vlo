@@ -93,6 +93,74 @@ describe("timelineSelection helpers", () => {
     });
   });
 
+  it("preserves valid saved clips so metadata-backed transforms survive normalization", () => {
+    const savedClip = {
+      id: "saved-clip",
+      type: "video" as const,
+      name: "Saved Clip",
+      assetId: "asset-1",
+      sourceDuration: 300,
+      transformedDuration: 300,
+      transformedOffset: 40,
+      timelineDuration: 120,
+      croppedSourceDuration: 180,
+      offset: 60,
+      transformations: [
+        {
+          id: "speed-1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 1.5 },
+        },
+      ],
+      trackId: "track-1",
+      start: 240,
+    };
+    const liveTimelineClip = {
+      ...savedClip,
+      id: "live-clip",
+      transformedOffset: 0,
+      croppedSourceDuration: 120,
+      offset: 0,
+      transformations: [],
+    };
+
+    expect(
+      normalizeTimelineSelection(
+        {
+          start: 240,
+          end: 360,
+          clips: [savedClip],
+          tracks: [
+            {
+              id: "track-1",
+              label: "Track 1",
+              type: "visual" as const,
+              isVisible: true,
+              isMuted: false,
+              isLocked: false,
+            },
+          ],
+        },
+        [liveTimelineClip],
+      ),
+    ).toEqual({
+      start: 240,
+      end: 360,
+      clips: [savedClip],
+      tracks: [
+        {
+          id: "track-1",
+          label: "Track 1",
+          type: "visual",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+      ],
+    });
+  });
+
   it("filters tracks and clips using included-track ids while preserving linked masks", () => {
     const visualTrack = {
       id: "track-visual",

@@ -195,6 +195,37 @@ describe("useAssetStore - Local Assets", () => {
     expect(result.skippedExistingFiles).toBe(1);
   });
 
+  it("can bypass hash deduplication when explicitly requested", async () => {
+    const { mediaProcessingService } =
+      await import("../services/MediaProcessingService");
+
+    vi.mocked(mediaProcessingService.computeChecksum).mockResolvedValue("shared-hash");
+
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "existing-asset",
+          name: "clip.mp3",
+          src: "clip.mp3",
+          hash: "shared-hash",
+          type: "audio",
+          createdAt: 1,
+        },
+      ],
+    });
+
+    const store = useAssetStore.getState();
+    const duplicateFile = new File(["audio"], "clip.mp3", { type: "audio/mpeg" });
+
+    const asset = await store.addLocalAsset(duplicateFile, undefined, undefined, {
+      allowDuplicateHash: true,
+    });
+
+    expect(asset).not.toBeNull();
+    expect(useAssetStore.getState().assets).toHaveLength(2);
+    expect(useAssetStore.getState().assets[1]?.name).toBe("clip_2.mp3");
+  });
+
   it("assigns a family when the ingested asset matches the family contract", async () => {
     useAssetStore.setState({
       families: [

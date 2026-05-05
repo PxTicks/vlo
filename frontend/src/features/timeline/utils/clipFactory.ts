@@ -3,7 +3,10 @@ import type { BaseClip, ClipType } from "../../../types/TimelineTypes";
 import { getProjectDimensions } from "../../renderer/utils/dimensions";
 import { useProjectStore } from "../../project/useProjectStore";
 import { TICKS_PER_SECOND } from "../constants";
-import { deriveClipTransformsFromAsset } from "./metadataTransforms";
+import {
+  deriveClipTransformsFromAsset,
+  deriveExtractedAudioClipState,
+} from "./metadataTransforms";
 
 export const createClipFromAsset = (asset: Asset): BaseClip => {
   // AssetType is "video" | "image" | "audio", which matches ClipType subset
@@ -25,9 +28,15 @@ export const createClipFromAsset = (asset: Asset): BaseClip => {
     Math.floor(durationSeconds * TICKS_PER_SECOND),
   );
   const { aspectRatio } = useProjectStore.getState().config;
-  const transformations = deriveClipTransformsFromAsset(asset, {
-    fallbackContainerSize: getProjectDimensions(aspectRatio),
-  });
+  const metadataClipState =
+    asset.type === "audio"
+      ? deriveExtractedAudioClipState(asset, durationTicks)
+      : null;
+  const transformations =
+    metadataClipState?.transformations ??
+    deriveClipTransformsFromAsset(asset, {
+      fallbackContainerSize: getProjectDimensions(aspectRatio),
+    });
 
   return {
     id: `clip_${crypto.randomUUID()}`,
@@ -35,11 +44,13 @@ export const createClipFromAsset = (asset: Asset): BaseClip => {
     name: asset.name,
     assetId: asset.id,
     sourceDuration: isImage ? null : durationTicks,
-    timelineDuration: durationTicks,
-    croppedSourceDuration: durationTicks,
-    offset: 0,
+    timelineDuration: metadataClipState?.timelineDuration ?? durationTicks,
+    croppedSourceDuration:
+      metadataClipState?.croppedSourceDuration ?? durationTicks,
+    offset: metadataClipState?.offset ?? 0,
     transformations,
-    transformedDuration: durationTicks, // 1:1 initially
-    transformedOffset: 0, // No crop initially
+    transformedDuration:
+      metadataClipState?.transformedDuration ?? durationTicks,
+    transformedOffset: metadataClipState?.transformedOffset ?? 0,
   };
 };

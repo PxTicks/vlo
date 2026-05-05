@@ -13,6 +13,7 @@ import {
   type PersistedAssetIndexEntry,
 } from "../project";
 import { mediaProcessingService } from "./services/MediaProcessingService";
+import type { AssetIngestOptions } from "./services/AssetService";
 
 export interface AddLocalAssetsResult {
   assets: Asset[];
@@ -32,17 +33,20 @@ interface AssetStore {
     file: File,
     creationMetadata?: Asset["creationMetadata"],
     familyId?: Asset["familyId"],
+    options?: AssetIngestOptions,
   ) => Promise<Asset | null>;
   addLocalAssets: (
     files: readonly File[],
     creationMetadata?: Asset["creationMetadata"],
     familyId?: Asset["familyId"],
+    options?: AssetIngestOptions,
   ) => Promise<AddLocalAssetsResult>;
   addLocalAssetWithFamily: (
     file: File,
     creationMetadata?: Asset["creationMetadata"],
     family?: Pick<AssetFamily, "id" | "compatibility">,
     compatibilityHint?: AssetFamilyCompatibility | null,
+    options?: AssetIngestOptions,
   ) => Promise<Asset | null>;
   upsertFamily: (family: AssetFamily) => Promise<void>;
   setFamilyRepresentative: (
@@ -309,6 +313,7 @@ async function ingestLocalAssetsIntoStore(
   creationMetadata?: Asset["creationMetadata"],
   family?: Pick<AssetFamily, "id" | "compatibility">,
   compatibilityHint?: AssetFamilyCompatibility | null,
+  options: AssetIngestOptions = {},
 ): Promise<AddLocalAssetsResult> {
   const returnedAssets: Asset[] = [];
   const newlyCreatedAssets: Asset[] = [];
@@ -339,6 +344,7 @@ async function ingestLocalAssetsIntoStore(
         creationMetadata,
         family,
         compatibilityHint,
+        options,
       );
 
       if (ingestResult.status === "skipped_existing") {
@@ -604,6 +610,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     file: File,
     creationMetadata?: Asset["creationMetadata"],
     familyId?: Asset["familyId"],
+    options: AssetIngestOptions = {},
   ) => {
     const family = familyId
       ? get().families.find((candidate) => candidate.id === familyId)
@@ -621,6 +628,8 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       [file],
       creationMetadata,
       family,
+      undefined,
+      options,
     );
     return result.assets[0] ?? null;
   },
@@ -629,6 +638,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     files: readonly File[],
     creationMetadata?: Asset["creationMetadata"],
     familyId?: Asset["familyId"],
+    options: AssetIngestOptions = {},
   ) => {
     const family = familyId
       ? get().families.find((candidate) => candidate.id === familyId)
@@ -646,6 +656,8 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       files,
       creationMetadata,
       family,
+      undefined,
+      options,
     );
   },
 
@@ -654,6 +666,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     creationMetadata?: Asset["creationMetadata"],
     family?: Pick<AssetFamily, "id" | "compatibility">,
     compatibilityHint?: AssetFamilyCompatibility | null,
+    options: AssetIngestOptions = {},
   ) => {
     const result = await ingestLocalAssetsIntoStore(
       get,
@@ -662,6 +675,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       creationMetadata,
       family,
       compatibilityHint,
+      options,
     );
     return result.assets[0] ?? null;
   },

@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TimelineClipItem } from "../TimelineClip";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../../hooks/useInteractionStore";
+import type { Asset } from "../../../../types/Asset";
 import type {
   TimelineClip as TimelineClipType,
   TimelineTrack,
@@ -23,6 +24,10 @@ import {
 
 const viewStoreState = vi.hoisted(() => ({
   zoomScale: 1,
+}));
+const extractionState = vi.hoisted(() => ({
+  mockUseAsset: vi.fn(),
+  mockExtractTimelineClipAudioAsset: vi.fn(),
 }));
 
 // Mock dnd-kit hooks to prevent errors during render
@@ -77,6 +82,14 @@ vi.mock("../../hooks/useTimelineViewStore", () => ({
   ),
 }));
 
+vi.mock("../../../userAssets/publicApi", () => ({
+  useAsset: extractionState.mockUseAsset,
+}));
+
+vi.mock("../../utils/clipAudioExtraction", () => ({
+  extractTimelineClipAudioAsset: extractionState.mockExtractTimelineClipAudioAsset,
+}));
+
 describe("TimelineClip Visual Geometry", () => {
   const mockClip: TimelineClipType = {
     id: "clip_1",
@@ -85,6 +98,7 @@ describe("TimelineClip Visual Geometry", () => {
     timelineDuration: 200,
     type: "video",
     name: "Test Clip",
+    assetId: "asset-1",
     transformations: [],
     offset: 0,
     sourceDuration: 200,
@@ -111,6 +125,18 @@ describe("TimelineClip Visual Geometry", () => {
       tracks: [{ id: "track_1", label: "Track 1" } as unknown as TimelineTrack],
     });
     useInteractionStore.setState({ activeId: null, operation: null });
+    extractionState.mockUseAsset.mockReset();
+    extractionState.mockUseAsset.mockImplementation(
+      (assetId: string | null | undefined) =>
+        assetId
+          ? ({
+              id: assetId,
+              hasAudio: true,
+            } as Asset)
+          : undefined,
+    );
+    extractionState.mockExtractTimelineClipAudioAsset.mockReset();
+    extractionState.mockExtractTimelineClipAudioAsset.mockResolvedValue(null);
 
     if (!HTMLElement.prototype.setPointerCapture) {
       HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -169,6 +195,42 @@ describe("TimelineClip Visual Geometry", () => {
     // Note: In JSDOM, style properties set via JS are reflected in the style object
     expect(clipElement.style.getPropertyValue("--drag-delta-x")).toBe("50px");
     expect(clipElement.style.getPropertyValue("--drag-delta-w")).toBe("-50px");
+  });
+
+  it("shows extract audio for clips with audio and invokes extraction for the clicked clip", async () => {
+    render(<TimelineClipItem clip={mockClip} isOverlay={false} />);
+
+    fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Extract Audio" }));
+
+    await waitFor(() => {
+      expect(
+        extractionState.mockExtractTimelineClipAudioAsset,
+      ).toHaveBeenCalledWith(
+        mockClip,
+        expect.objectContaining({ id: "track_1" }),
+      );
+    });
+  });
+
+  it("does not show extract audio for clips without audio-capable media", () => {
+    extractionState.mockUseAsset.mockReturnValue({
+      id: "asset-1",
+      hasAudio: false,
+    } as Asset);
+
+    render(
+      <TimelineClipItem
+        clip={{ ...mockClip, type: "image" }}
+        isOverlay={false}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
+
+    expect(
+      screen.queryByRole("menuitem", { name: "Extract Audio" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders always-on overlay items while hiding selected-only items for unselected clips", () => {

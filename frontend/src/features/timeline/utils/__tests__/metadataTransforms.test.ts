@@ -190,4 +190,61 @@ describe("metadataTransforms", () => {
     expect(imageClip.timelineDuration).toBe(5 * TICKS_PER_SECOND);
     expect(audioClip.timelineDuration).toBe(0);
   });
+
+  it("restores extracted audio clip timing from metadata without baking transforms", () => {
+    const clip = createClipFromAsset(
+      createAsset({
+        type: "audio",
+        name: "clip-audio.m4a",
+        duration: 60,
+        creationMetadata: {
+          source: "extracted",
+          timelineSelection: {
+            start: 240,
+            end: 360,
+            clips: [],
+          },
+          extractedAudioClip: {
+            sourceAssetId: "source-video",
+            sourceClipType: "video",
+            timelineDuration: 120,
+            croppedSourceDuration: 180,
+            offset: 60,
+            transformedOffset: 40,
+            transformations: [
+              {
+                id: "speed-1",
+                type: "speed",
+                isEnabled: true,
+                parameters: { factor: 2 },
+              },
+              {
+                id: "volume-1",
+                type: "volume",
+                isEnabled: true,
+                parameters: { gain: 0.8 },
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(clip.sourceDuration).toBe(60 * TICKS_PER_SECOND);
+    expect(clip.timelineDuration).toBe(120);
+    expect(clip.croppedSourceDuration).toBe(180);
+    expect(clip.offset).toBe(60);
+    expect(clip.transformedOffset).toBe(40);
+    expect(clip.transformations).toEqual([
+      expect.objectContaining({
+        type: "speed",
+        parameters: { factor: 2 },
+      }),
+      expect.objectContaining({
+        type: "volume",
+        parameters: { gain: 0.8 },
+      }),
+    ]);
+    expect(clip.transformedDuration).toBe(30 * TICKS_PER_SECOND);
+  });
 });

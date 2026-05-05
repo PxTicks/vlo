@@ -3,6 +3,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { Box, Typography, Paper, Menu, MenuItem, ListItemIcon, ListItemText } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import GraphicEqIcon from "@mui/icons-material/GraphicEq";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 
@@ -20,8 +21,10 @@ import type {
   TimelineClip as TimelineClipType,
 } from "../../../types/TimelineTypes";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
+import { useAsset } from "../../userAssets/publicApi";
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
+import { extractTimelineClipAudioAsset } from "../utils/clipAudioExtraction";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
 
@@ -102,6 +105,7 @@ function TimelineClipComponent({
   const [contextMenuPos, setContextMenuPos] = useState<
     { x: number; y: number } | null
   >(null);
+  const [isExtractingAudio, setIsExtractingAudio] = useState(false);
 
   const startTime = "start" in clip ? (clip as TimelineClipType).start : 0;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
@@ -128,6 +132,13 @@ function TimelineClipComponent({
   const trackIndex = tracks.findIndex((t) => t.id === trackId);
   const track = tracks[trackIndex];
   const isTrackVisible = track?.isVisible ?? true;
+  const clipAsset = useAsset(timelineClip?.assetId);
+  const canExtractAudio =
+    timelineClip !== null &&
+    track !== undefined &&
+    !!timelineClip.assetId &&
+    (timelineClip.type === "audio" ||
+      (timelineClip.type === "video" && clipAsset?.hasAudio !== false));
 
   // 2. Vertical Position
   const topPos = isOverlay ? 0 : trackIndex * TRACK_HEIGHT + RULER_HEIGHT + 5;
@@ -280,6 +291,39 @@ function TimelineClipComponent({
     closeContextMenu();
   };
 
+  const handleExtractAudio = async () => {
+    if (
+      timelineClip === null ||
+      track === undefined ||
+      !timelineClip.assetId ||
+      (timelineClip.type !== "audio" && timelineClip.type !== "video")
+    ) {
+      closeContextMenu();
+      return;
+    }
+
+    closeContextMenu();
+    setIsExtractingAudio(true);
+
+    try {
+      const extractedAsset = await extractTimelineClipAudioAsset(
+        timelineClip,
+        track,
+      );
+      if (!extractedAsset) {
+        window.alert("No audio track was found for the selected clip.");
+      }
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to extract clip audio.",
+      );
+    } finally {
+      setIsExtractingAudio(false);
+    }
+  };
+
   return (
     <ClipRoot
       ref={setRefs}
@@ -392,6 +436,19 @@ function TimelineClipComponent({
           </ListItemIcon>
           <ListItemText>Copy</ListItemText>
         </MenuItem>
+        {canExtractAudio ? (
+          <MenuItem
+            onClick={() => void handleExtractAudio()}
+            disabled={isExtractingAudio}
+          >
+            <ListItemIcon>
+              <GraphicEqIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>
+              {isExtractingAudio ? "Extracting Audio..." : "Extract Audio"}
+            </ListItemText>
+          </MenuItem>
+        ) : null}
         {canMute && (
           <MenuItem onClick={handleContextMute}>
             <ListItemIcon>

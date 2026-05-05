@@ -201,12 +201,14 @@ export function normalizeTimelineSelection(
       : null;
 
   const recoveredClips =
-    availableClips.length > 0
-      ? getClipsInSelection(availableClips, {
-          ...selection,
-          clips: [],
-        })
-      : validClips;
+    validClips.length > 0
+      ? validClips
+      : availableClips.length > 0
+        ? getClipsInSelection(availableClips, {
+            ...selection,
+            clips: [],
+          })
+        : validClips;
 
   const normalizedSelection: TimelineSelection = {
     ...selection,

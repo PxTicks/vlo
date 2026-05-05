@@ -1,4 +1,4 @@
-import type { TimelineSelection } from "./TimelineTypes";
+import type { ClipTransform, TimelineSelection } from "./TimelineTypes";
 
 export type AssetType = "video" | "image" | "audio";
 
@@ -98,10 +98,24 @@ export interface GeneratedCreationMetadata {
   comfyuiWorkflow?: Record<string, unknown>;
 }
 
+export interface ExtractedAudioClipMetadata {
+  sourceAssetId: string;
+  sourceClipType: "audio" | "video";
+  timelineDuration: number;
+  croppedSourceDuration: number;
+  offset: number;
+  transformedOffset: number;
+  transformations: ClipTransform[];
+}
+
 export type CreationMetadata =
   | { source: "uploaded" }
   | GeneratedCreationMetadata
-  | { source: "extracted"; timelineSelection: TimelineSelection }
+  | {
+      source: "extracted";
+      timelineSelection: TimelineSelection;
+      extractedAudioClip?: ExtractedAudioClipMetadata;
+    }
   | {
       source: "sam2_mask";
       parentAssetId: string;

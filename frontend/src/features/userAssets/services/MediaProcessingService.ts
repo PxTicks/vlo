@@ -4,13 +4,116 @@ import {
   ALL_FORMATS,
   CanvasSink,
   Output,
+  OggOutputFormat,
+  FlacOutputFormat,
+  Mp3OutputFormat,
   Mp4OutputFormat,
   BufferTarget,
   Conversion,
+  WavOutputFormat,
 } from "mediabunny";
 import { createXxhash64 } from "../../../shared/utils/xxhash";
 import { CLIP_HEIGHT } from "../../timeline";
 import { sanitizeFilename } from "../utils/filenameSanitization";
+
+interface ExtractedAudioOutputSpec {
+  extension: string;
+  mimeType: string;
+  createFormat: () => object;
+}
+
+const PRIMARY_AUDIO_OUTPUT_SPECS = {
+  mp3: {
+    extension: "mp3",
+    mimeType: "audio/mpeg",
+    createFormat: () => new Mp3OutputFormat(),
+  },
+  flac: {
+    extension: "flac",
+    mimeType: "audio/flac",
+    createFormat: () => new FlacOutputFormat(),
+  },
+  wav: {
+    extension: "wav",
+    mimeType: "audio/wav",
+    createFormat: () => new WavOutputFormat(),
+  },
+  ogg: {
+    extension: "ogg",
+    mimeType: "audio/ogg",
+    createFormat: () => new OggOutputFormat(),
+  },
+  mp4: {
+    extension: "m4a",
+    mimeType: "audio/mp4",
+    createFormat: () => new Mp4OutputFormat(),
+  },
+} as const satisfies Record<string, ExtractedAudioOutputSpec>;
+
+function createExtractedAudioFilename(
+  filename: string,
+  extension: string,
+): string {
+  const baseName = filename.replace(/\.[a-z0-9]+$/i, "").trim() || "audio";
+  return `${baseName}-audio.${extension}`;
+}
+
+export function resolvePrimaryAudioOutputSpec(
+  codec: string | null | undefined,
+): ExtractedAudioOutputSpec | null {
+  switch (codec) {
+    case "mp3":
+      return PRIMARY_AUDIO_OUTPUT_SPECS.mp3;
+    case "flac":
+      return PRIMARY_AUDIO_OUTPUT_SPECS.flac;
+    case "opus":
+    case "vorbis":
+      return PRIMARY_AUDIO_OUTPUT_SPECS.ogg;
+    case "pcm-s16":
+    case "pcm-s24":
+    case "pcm-s32":
+    case "pcm-f32":
+    case "pcm-u8":
+    case "ulaw":
+    case "alaw":
+      return PRIMARY_AUDIO_OUTPUT_SPECS.wav;
+    case "aac":
+    case "ac3":
+    case "eac3":
+    case "pcm-s16be":
+    case "pcm-s24be":
+    case "pcm-s32be":
+    case "pcm-f32be":
+    case "pcm-f64":
+    case "pcm-f64be":
+      return PRIMARY_AUDIO_OUTPUT_SPECS.mp4;
+    default:
+      return null;
+  }
+}
+
+function resolveAudioExtractionPlan(
+  codec: string | null | undefined,
+): {
+  outputSpec: ExtractedAudioOutputSpec;
+  targetCodec: string;
+  preservesSourceCodec: boolean;
+} {
+  const outputSpec = resolvePrimaryAudioOutputSpec(codec);
+  if (outputSpec && codec) {
+    return {
+      outputSpec,
+      targetCodec: codec,
+      preservesSourceCodec: true,
+    };
+  }
+
+  return {
+    outputSpec: PRIMARY_AUDIO_OUTPUT_SPECS.wav,
+    targetCodec: "pcm-s16",
+    preservesSourceCodec: false,
+  };
+}
 
 export class MediaFileProcessor {
   private file: File;
@@ -195,11 +298,143 @@ export class MediaFileProcessor {
     try {
       const input = this.getInput();
       const audioTrack = await input.getPrimaryAudioTrack();
+      console.info("[MediaFileProcessor] Probed audio track presence", {
+        fileName: this.file.name,
+        fileType: this.file.type,
+        hasAudioTrack: audioTrack !== null,
+        audioTrackId: audioTrack?.id ?? null,
+        audioCodec: audioTrack?.codec ?? null,
+      });
       return audioTrack !== null;
     } catch (e) {
       console.warn("Failed to check for audio track:", e);
       return false;
     }
+  }
+
+  /**
+   * Extracts the primary audio track without rendering the timeline.
+   * When the codec/container combination is supported, Mediabunny can keep the
+   * source codec/container. Otherwise we fall back to a full-track WAV export.
+   */
+  async extractPrimaryAudioTrack(): Promise<File | null> {
+    if (this.isDisposed) throw new Error("MediaFileProcessor is disposed");
+
+    const input = this.getInput();
+    console.info("[MediaFileProcessor] Starting primary audio extraction", {
+      fileName: this.file.name,
+      fileType: this.file.type,
+      fileSize: this.file.size,
+    });
+    const audioTrack = await input.getPrimaryAudioTrack();
+    if (!audioTrack) {
+      console.warn(
+        "[MediaFileProcessor] No primary audio track was reported for file.",
+        {
+          fileName: this.file.name,
+          fileType: this.file.type,
+          fileSize: this.file.size,
+        },
+      );
+      return null;
+    }
+
+    console.info("[MediaFileProcessor] Primary audio track details", {
+      fileName: this.file.name,
+      audioTrackId: audioTrack.id,
+      audioCodec: audioTrack.codec ?? null,
+      sampleRate:
+        "sampleRate" in audioTrack &&
+        typeof audioTrack.sampleRate === "number"
+          ? audioTrack.sampleRate
+          : null,
+      numberOfChannels:
+        "numberOfChannels" in audioTrack &&
+        typeof audioTrack.numberOfChannels === "number"
+          ? audioTrack.numberOfChannels
+          : null,
+    });
+
+    const extractionPlan = resolveAudioExtractionPlan(audioTrack.codec);
+    console.info("[MediaFileProcessor] Resolved audio extraction plan", {
+      fileName: this.file.name,
+      sourceCodec: audioTrack.codec ?? null,
+      targetCodec: extractionPlan.targetCodec,
+      preservesSourceCodec: extractionPlan.preservesSourceCodec,
+      outputExtension: extractionPlan.outputSpec.extension,
+      outputMimeType: extractionPlan.outputSpec.mimeType,
+    });
+    if (!extractionPlan.preservesSourceCodec) {
+      console.warn(
+        "[MediaFileProcessor] Falling back to WAV audio extraction because the primary codec could not be copied directly.",
+        {
+          fileName: this.file.name,
+          codec: audioTrack.codec ?? null,
+        },
+      );
+    }
+
+    const output = new Output({
+      format: extractionPlan.outputSpec.createFormat(),
+      target: new BufferTarget(),
+    });
+
+    const conversion = await Conversion.init({
+      input,
+      output,
+      video: {
+        discard: true,
+      },
+      audio: (track, index) =>
+        track.id === audioTrack.id && index === 1
+          ? {
+              codec: extractionPlan.targetCodec,
+            }
+          : {
+              discard: true,
+            },
+      showWarnings: false,
+    });
+
+    await conversion.execute();
+
+    const buffer = (output.target as BufferTarget).buffer;
+    if (!buffer) {
+      console.warn(
+        "[MediaFileProcessor] Extraction completed without an output buffer.",
+        {
+          fileName: this.file.name,
+          audioTrackId: audioTrack.id,
+        },
+      );
+      return null;
+    }
+
+    const mimeType =
+      typeof output.getMimeType === "function"
+        ? await output.getMimeType()
+        : extractionPlan.outputSpec.mimeType;
+
+    const extractedFile = new File(
+      [buffer],
+      createExtractedAudioFilename(
+        this.file.name,
+        extractionPlan.outputSpec.extension,
+      ),
+      {
+        type: mimeType || extractionPlan.outputSpec.mimeType,
+        lastModified: Date.now(),
+      },
+    );
+
+    console.info("[MediaFileProcessor] Primary audio extraction complete", {
+      fileName: this.file.name,
+      extractedName: extractedFile.name,
+      extractedType: extractedFile.type,
+      extractedSize: extractedFile.size,
+    });
+
+    return extractedFile;
   }
 
   /**
@@ -361,6 +596,15 @@ export class MediaProcessingService {
     const processor = this.createProcessor(file);
     try {
       return await processor.hasAudioTrack();
+    } finally {
+      processor.dispose();
+    }
+  }
+
+  async extractPrimaryAudioTrack(file: File): Promise<File | null> {
+    const processor = this.createProcessor(file);
+    try {
+      return await processor.extractPrimaryAudioTrack();
     } finally {
       processor.dispose();
     }

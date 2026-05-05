@@ -31,6 +31,10 @@ export type AssetIngestResult =
       reason: "unsupported" | "failed";
     };
 
+export interface AssetIngestOptions {
+  allowDuplicateHash?: boolean;
+}
+
 function splitFilename(filename: string): { stem: string; extension: string } {
   const extensionIndex = filename.lastIndexOf(".");
   if (extensionIndex <= 0) {
@@ -212,6 +216,7 @@ export class AssetService {
     creationMetadata?: Asset["creationMetadata"],
     family?: Pick<AssetFamily, "id" | "compatibility">,
     compatibilityHint?: AssetFamilyCompatibility | null,
+    options: AssetIngestOptions = {},
   ): Promise<AssetIngestResult> {
     console.time(`[Ingest] ${file.name}`);
     // Use MediaFileProcessor for optimized access to the file
@@ -266,7 +271,7 @@ export class AssetService {
       const isIncomingMask = creationMetadata?.source === "generation_mask";
       const matchingAsset = existingAssets.find((a) => a.hash === hash);
 
-      if (matchingAsset) {
+      if (matchingAsset && !options.allowDuplicateHash) {
         // Generation masks frequently produce identical bytes across runs (same
         // source + mask + crop). Reuse the existing mask asset so multiple
         // generated outputs can share one mask record via generationMaskAssetId.
@@ -523,6 +528,7 @@ export class AssetService {
     creationMetadata?: Asset["creationMetadata"],
     family?: Pick<AssetFamily, "id" | "compatibility">,
     compatibilityHint?: AssetFamilyCompatibility | null,
+    options: AssetIngestOptions = {},
   ): Promise<Asset | null> {
     const result = await this.ingestAssetWithResult(
       file,
@@ -532,6 +538,7 @@ export class AssetService {
       creationMetadata,
       family,
       compatibilityHint,
+      options,
     );
 
     return result.status === "created" ? result.asset : null;

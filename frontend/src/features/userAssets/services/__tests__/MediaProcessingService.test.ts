@@ -9,6 +9,7 @@ import {
 import {
   MediaProcessingService,
   MediaFileProcessor,
+  resolvePrimaryAudioOutputSpec,
 } from "../MediaProcessingService";
 import { CanvasSink, Input } from "mediabunny";
 
@@ -37,9 +38,42 @@ vi.mock("mediabunny", () => {
     BlobSource: vi.fn(),
     ALL_FORMATS: [],
     CanvasSink: MockCanvasSink,
-    Output: vi.fn(),
-    Mp4OutputFormat: vi.fn(),
-    BufferTarget: vi.fn(),
+    Output: vi.fn(function ({ format, target }) {
+      const mimeType =
+        format?.kind === "wav"
+          ? "audio/wav"
+          : format?.kind === "mp3"
+            ? "audio/mpeg"
+            : format?.kind === "flac"
+              ? "audio/flac"
+              : format?.kind === "ogg"
+                ? "audio/ogg"
+                : "audio/mp4";
+      return {
+        target,
+        getMimeType: vi.fn().mockResolvedValue(mimeType),
+      };
+    }),
+    OggOutputFormat: vi.fn(function () {
+      return { kind: "ogg" };
+    }),
+    FlacOutputFormat: vi.fn(function () {
+      return { kind: "flac" };
+    }),
+    Mp3OutputFormat: vi.fn(function () {
+      return { kind: "mp3" };
+    }),
+    Mp4OutputFormat: vi.fn(function () {
+      return { kind: "mp4" };
+    }),
+    WavOutputFormat: vi.fn(function () {
+      return { kind: "wav" };
+    }),
+    BufferTarget: vi.fn(function () {
+      return {
+        buffer: new Uint8Array([1, 2, 3]),
+      };
+    }),
     Conversion: {
       init: vi.fn(),
     },
@@ -150,6 +184,22 @@ describe("MediaFileProcessor", () => {
     expect(result).toBe(false);
   });
 
+  it("should resolve output specs that preserve common source codecs", () => {
+    expect(resolvePrimaryAudioOutputSpec("aac")).toMatchObject({
+      extension: "m4a",
+      mimeType: "audio/mp4",
+    });
+    expect(resolvePrimaryAudioOutputSpec("opus")).toMatchObject({
+      extension: "ogg",
+      mimeType: "audio/ogg",
+    });
+    expect(resolvePrimaryAudioOutputSpec("pcm-s16")).toMatchObject({
+      extension: "wav",
+      mimeType: "audio/wav",
+    });
+    expect(resolvePrimaryAudioOutputSpec("mystery-codec")).toBeNull();
+  });
+
   it("should compute media duration", async () => {
     const computeDuration = vi.fn().mockResolvedValue(12.5);
     vi.mocked(Input).mockImplementationOnce(function () {
@@ -164,6 +214,69 @@ describe("MediaFileProcessor", () => {
 
     await expect(processor.computeDuration()).resolves.toBe(12.5);
     expect(computeDuration).toHaveBeenCalled();
+  });
+
+  it("should extract the primary audio track without timeline rendering", async () => {
+    const execute = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Input).mockImplementationOnce(function () {
+      return {
+        getMimeType: vi.fn(),
+        computeDuration: vi.fn(),
+        getPrimaryVideoTrack: vi.fn(),
+        getPrimaryAudioTrack: vi.fn().mockResolvedValue({
+          id: "audio-1",
+          codec: "aac",
+        }),
+        dispose: vi.fn(),
+      };
+    });
+    const { Conversion } = await import("mediabunny");
+    vi.mocked(Conversion.init).mockResolvedValue({ execute } as never);
+
+    const extracted = await processor.extractPrimaryAudioTrack();
+
+    expect(extracted).toBeInstanceOf(File);
+    expect(extracted?.name).toBe("test-audio.m4a");
+    expect(extracted?.type).toBe("audio/mp4");
+    expect(Conversion.init).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video: { discard: true },
+        showWarnings: false,
+      }),
+    );
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("should fall back to wav extraction when the primary track codec is unavailable", async () => {
+    const execute = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Input).mockImplementationOnce(function () {
+      return {
+        getMimeType: vi.fn(),
+        computeDuration: vi.fn(),
+        getPrimaryVideoTrack: vi.fn(),
+        getPrimaryAudioTrack: vi.fn().mockResolvedValue({
+          id: "audio-1",
+          codec: undefined,
+        }),
+        dispose: vi.fn(),
+      };
+    });
+    const { Conversion } = await import("mediabunny");
+    vi.mocked(Conversion.init).mockResolvedValue({ execute } as never);
+
+    const extracted = await processor.extractPrimaryAudioTrack();
+
+    expect(extracted).toBeInstanceOf(File);
+    expect(extracted?.name).toBe("test-audio.wav");
+    expect(extracted?.type).toBe("audio/wav");
+    const conversionConfig = vi.mocked(Conversion.init).mock.calls[0]?.[0];
+    expect(conversionConfig?.audio?.({ id: "audio-1" }, 1)).toEqual({
+      codec: "pcm-s16",
+    });
+    expect(conversionConfig?.audio?.({ id: "audio-2" }, 2)).toEqual({
+      discard: true,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it("should prefer primary video track duration when generating video metadata", async () => {

@@ -1,5 +1,10 @@
-import type { Asset, MaskCropMetadata } from "../../../types/Asset";
-import type { ClipTransform } from "../../../types/TimelineTypes";
+import type {
+  Asset,
+  ExtractedAudioClipMetadata,
+  MaskCropMetadata,
+} from "../../../types/Asset";
+import type { BaseClip, ClipTransform } from "../../../types/TimelineTypes";
+import { solveTimelineDuration } from "../../transformations/publicApi";
 
 interface Size {
   width: number;
@@ -8,6 +13,15 @@ interface Size {
 
 export interface DeriveClipTransformsOptions {
   fallbackContainerSize?: Size;
+}
+
+export interface DerivedExtractedAudioClipState {
+  timelineDuration: number;
+  croppedSourceDuration: number;
+  offset: number;
+  transformedOffset: number;
+  transformedDuration: number;
+  transformations: ClipTransform[];
 }
 
 type MetadataTransformDeriver = (
@@ -140,4 +154,83 @@ export function deriveClipTransformsFromAsset(
   return METADATA_TRANSFORM_DERIVERS.flatMap((deriver) =>
     deriver(asset, options),
   );
+}
+
+function cloneMetadataTransforms(
+  transforms: readonly ClipTransform[] | undefined,
+): ClipTransform[] {
+  return structuredClone(transforms ?? []);
+}
+
+function sanitizeNonNegativeNumber(
+  value: number | undefined,
+  fallback: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+  return Math.round(value);
+}
+
+function getExtractedAudioClipMetadata(
+  asset: Asset,
+): ExtractedAudioClipMetadata | null {
+  const metadata = asset.creationMetadata;
+  if (!metadata || metadata.source !== "extracted" || !metadata.extractedAudioClip) {
+    return null;
+  }
+  return metadata.extractedAudioClip;
+}
+
+export function deriveExtractedAudioClipState(
+  asset: Asset,
+  sourceDurationTicks: number,
+): DerivedExtractedAudioClipState | null {
+  const metadata = getExtractedAudioClipMetadata(asset);
+  if (!metadata) {
+    return null;
+  }
+
+  const timelineDuration = sanitizeNonNegativeNumber(
+    metadata.timelineDuration,
+    sourceDurationTicks,
+  );
+  const croppedSourceDuration = sanitizeNonNegativeNumber(
+    metadata.croppedSourceDuration,
+    timelineDuration,
+  );
+  const offset = sanitizeNonNegativeNumber(metadata.offset, 0);
+  const transformedOffset = sanitizeNonNegativeNumber(
+    metadata.transformedOffset,
+    0,
+  );
+  const transformations = cloneMetadataTransforms(metadata.transformations);
+
+  const clipForDurationSolve: BaseClip = {
+    id: "metadata-extracted-audio",
+    type: asset.type,
+    name: asset.name,
+    assetId: asset.id,
+    sourceDuration: sourceDurationTicks,
+    transformedDuration: sourceDurationTicks,
+    transformedOffset,
+    timelineDuration,
+    croppedSourceDuration,
+    offset,
+    transformations,
+  };
+
+  return {
+    timelineDuration,
+    croppedSourceDuration,
+    offset,
+    transformedOffset,
+    transformedDuration: Math.max(
+      0,
+      Math.round(
+        solveTimelineDuration(clipForDurationSolve, 0, sourceDurationTicks),
+      ),
+    ),
+    transformations,
+  };
 }

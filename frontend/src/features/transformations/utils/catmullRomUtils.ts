@@ -13,6 +13,11 @@ export function distance(p1: Point2D, p2: Point2D): number {
   return Math.sqrt(distanceSq(p1, p2));
 }
 
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
 /**
  * Evaluates a Catmull-Rom spline at parameter t in [0, 1] between p1 and p2.
  * p0 and p3 are the outer control points.
@@ -309,12 +314,110 @@ export interface ProcessedPathData {
   timingSplinePoints: { time: number; value: number }[];
 }
 
+function normalizeTimingSplinePoints(
+  points: { time: number; value: number }[],
+): { time: number; value: number }[] {
+  if (points.length === 0) {
+    return [];
+  }
+
+  const sorted = [...points]
+    .map((point, index) => ({
+      time: index === 0 ? 0 : index === points.length - 1 ? 1 : clamp01(point.time),
+      value:
+        index === 0 ? 0 : index === points.length - 1 ? 1 : clamp01(point.value),
+    }))
+    .sort((left, right) => left.time - right.time);
+
+  const result: { time: number; value: number }[] = [sorted[0]];
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const point = sorted[index];
+    const previous = result[result.length - 1];
+    const nextValue = Math.max(previous.value, point.value);
+
+    if (Math.abs(point.time - previous.time) <= 0.0001) {
+      result[result.length - 1] = {
+        time: previous.time,
+        value: nextValue,
+      };
+      continue;
+    }
+
+    result.push({
+      time: point.time,
+      value: nextValue,
+    });
+  }
+
+  result[0] = { time: 0, value: 0 };
+  result[result.length - 1] = { time: 1, value: 1 };
+  return result;
+}
+
+function buildTimingSplinePoints(
+  samples: RawDragSample[],
+  simplifyEpsilon: number = 0.025,
+  maxPoints: number = 8,
+): { time: number; value: number }[] {
+  if (samples.length < 2) {
+    return [];
+  }
+
+  const arcLengths: number[] = [0];
+  let currentLength = 0;
+  for (let index = 1; index < samples.length; index += 1) {
+    currentLength += distance(samples[index].point, samples[index - 1].point);
+    arcLengths.push(currentLength);
+  }
+
+  const totalLength = currentLength;
+  const startTime = samples[0].time;
+  const totalTime = samples[samples.length - 1].time - startTime;
+
+  const normalizedPoints = samples.map((sample, index) => ({
+    time: totalTime > 0 ? clamp01((sample.time - startTime) / totalTime) : 0,
+    value: totalLength > 0 ? clamp01(arcLengths[index] / totalLength) : 0,
+  }));
+
+  const timingSamples = normalizedPoints.map((point, index) => ({
+    point: { x: point.time, y: point.value },
+    time: index,
+  }));
+
+  let epsilon = simplifyEpsilon;
+  let simplifiedPoints = normalizeTimingSplinePoints(normalizedPoints);
+
+  while (simplifiedPoints.length > maxPoints && epsilon <= 0.25) {
+    const simplifiedTimingSamples = simplifyPath(timingSamples, epsilon);
+    simplifiedPoints = normalizeTimingSplinePoints(
+      simplifiedTimingSamples.map((sample) => ({
+        time: sample.point.x,
+        value: sample.point.y,
+      })),
+    );
+    epsilon *= 1.5;
+  }
+
+  if (simplifiedPoints.length > 2) {
+    const simplifiedTimingSamples = simplifyPath(timingSamples, epsilon);
+    simplifiedPoints = normalizeTimingSplinePoints(
+      simplifiedTimingSamples.map((sample) => ({
+        time: sample.point.x,
+        value: sample.point.y,
+      })),
+    );
+  }
+
+  return simplifiedPoints;
+}
+
 /**
  * Full coarse-graining pipeline:
  * 1. Drop near-duplicates
  * 2. Simplify path
- * 3. Derive normalized cumulative arc length
- * 4. Build timing spline (normalized time to normalized arc-length)
+ * 3. Build geometry control points from the simplified path
+ * 4. Build timing independently from normalized time -> distance-travelled
  */
 export function processRawDragSamples(
   samples: RawDragSample[], 
@@ -331,28 +434,8 @@ export function processRawDragSamples(
       };
   }
 
-  const arcLengths: number[] = [0];
-  let currentLength = 0;
-  for (let i = 1; i < simplified.length; i++) {
-      currentLength += distance(simplified[i].point, simplified[i - 1].point);
-      arcLengths.push(currentLength);
-  }
-  const totalLength = currentLength;
-
-  const startTime = simplified[0].time;
-  const totalTime = simplified[simplified.length - 1].time - startTime;
-
-  const timingSplinePoints = simplified.map((sample, i) => {
-      const normTime = totalTime > 0 ? (sample.time - startTime) / totalTime : 0;
-      const normArcLength = totalLength > 0 ? arcLengths[i] / totalLength : 0;
-      return {
-          time: normTime,
-          value: normArcLength
-      };
-  });
-
   return {
       points: simplified.map(s => s.point),
-      timingSplinePoints
+      timingSplinePoints: buildTimingSplinePoints(coarse)
   };
 }

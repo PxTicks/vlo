@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Box, Button, Divider, Typography } from "@mui/material";
 import { ArrowBack } from "@mui/icons-material";
 import type {
@@ -21,6 +22,36 @@ export function PositionPathDetailView({
   onRemove,
   onRerecord,
 }: PositionPathDetailViewProps) {
+  const graphContainerRef = useRef<HTMLDivElement | null>(null);
+  const [graphWidth, setGraphWidth] = useState(360);
+
+  useEffect(() => {
+    const container = graphContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const updateWidth = () => {
+      const nextWidth = Math.floor(container.clientWidth);
+      if (nextWidth > 0) {
+        setGraphWidth(nextWidth);
+      }
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => updateWidth());
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <Box sx={{ px: 2, pt: 2, pb: 1 }}>
@@ -58,21 +89,23 @@ export function PositionPathDetailView({
         >
           Timing
         </Typography>
-        <SplineGraph
-          value={path.timing}
-          onChange={(nextTiming) => onTimingChange(nextTiming)}
-          width={360}
-          height={220}
-          minTime={0}
-          duration={1}
-          minY={0}
-          maxY={1}
-          softMin={0}
-          softMax={1}
-          constrainMonotoneIncreasing
-          lockEndpoints
-          allowPointDeletion={false}
-        />
+        <Box ref={graphContainerRef} sx={{ width: "100%" }}>
+          <SplineGraph
+            value={path.timing}
+            onChange={(nextTiming) => onTimingChange(nextTiming)}
+            width={graphWidth}
+            height={220}
+            minTime={0}
+            duration={1}
+            minY={0}
+            maxY={1}
+            softMin={0}
+            softMax={1}
+            constrainMonotoneIncreasing
+            lockEndpoints
+            allowPointDeletion={false}
+          />
+        </Box>
       </Box>
 
       <Box sx={{ px: 2, pb: 2 }}>

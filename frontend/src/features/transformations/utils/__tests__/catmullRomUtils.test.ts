@@ -146,7 +146,7 @@ describe("catmullRomUtils", () => {
       expect(simplified[1].point.x).toBe(10);
     });
 
-    it("processes full raw drag pipeline and extracts timing spline", () => {
+    it("coarsens timing independently from path geometry for steady motion", () => {
       const samples: RawDragSample[] = [
         { point: { x: 0, y: 0 }, time: 0 },
         { point: { x: 5, y: 5 }, time: 500 },
@@ -155,19 +155,29 @@ describe("catmullRomUtils", () => {
       const result = processRawDragSamples(samples, 1.0, 0.5);
       
       expect(result.points.length).toBe(3);
-      expect(result.timingSplinePoints.length).toBe(3);
-      
-      // First point
+      expect(result.timingSplinePoints).toEqual([
+        { time: 0, value: 0 },
+        { time: 1, value: 1 },
+      ]);
+    });
+
+    it("keeps timing control points when speed changes sharply", () => {
+      const samples: RawDragSample[] = [
+        { point: { x: 0, y: 0 }, time: 0 },
+        { point: { x: 80, y: 0 }, time: 200 },
+        { point: { x: 100, y: 0 }, time: 1000 },
+      ];
+      const result = processRawDragSamples(samples, 1.0, 0.5);
+
+      expect(result.timingSplinePoints.length).toBeGreaterThan(2);
       expect(result.timingSplinePoints[0].time).toBe(0);
       expect(result.timingSplinePoints[0].value).toBe(0);
-
-      // Mid point
-      expect(result.timingSplinePoints[1].time).toBeCloseTo(0.5);
-      expect(result.timingSplinePoints[1].value).toBeCloseTo(0.5);
-
-      // Last point
-      expect(result.timingSplinePoints[2].time).toBe(1);
-      expect(result.timingSplinePoints[2].value).toBe(1);
+      const lastPoint =
+        result.timingSplinePoints[result.timingSplinePoints.length - 1];
+      expect(lastPoint.time).toBe(1);
+      expect(lastPoint.value).toBe(1);
+      expect(result.timingSplinePoints[1].time).toBeCloseTo(0.2, 2);
+      expect(result.timingSplinePoints[1].value).toBeCloseTo(0.8, 2);
     });
 
     it("heavily reduces dense linear recordings with recording-style thresholds", () => {
@@ -179,6 +189,10 @@ describe("catmullRomUtils", () => {
       const result = processRawDragSamples(samples, 6, 4);
 
       expect(result.points.length).toBeLessThanOrEqual(4);
+      expect(result.timingSplinePoints).toEqual([
+        { time: 0, value: 0 },
+        { time: 1, value: 1 },
+      ]);
       expect(result.points[0]).toEqual({ x: 0, y: 0 });
       expect(result.points[result.points.length - 1]).toEqual({ x: 48, y: 0 });
     });

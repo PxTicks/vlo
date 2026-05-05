@@ -433,5 +433,3 @@ export class MonotoneCubicSpline {
     return roots;
   }
 }
-
-

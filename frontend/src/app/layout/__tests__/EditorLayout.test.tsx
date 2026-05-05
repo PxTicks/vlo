@@ -53,6 +53,19 @@ vi.mock("../../../features/timeline", () => ({
     scrollContainerRef: { current: null },
   }),
   AssetDragOverlay: () => <div data-testid="asset-drag-overlay" />,
+  useTimelineStore: Object.assign(() => undefined, {
+    getState: () => ({
+      setFocused: vi.fn(),
+    }),
+  }),
+  useTimelineClipMuteOverlay: () => ({
+    id: "mute-overlay",
+    useItems: () => [],
+  }),
+  useTimelineMarkersClipOverlay: () => ({
+    id: "markers-overlay",
+    useItems: () => [],
+  }),
 }));
 
 vi.mock("../../../features/player/Player", () => ({

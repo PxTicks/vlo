@@ -54,10 +54,16 @@ vi.mock("../../../masks/runtime/MaskVideoFramePlayer", () => ({
   },
 }));
 
-vi.mock("../../../masks/model/maskFactory", () => ({
-  drawMaskBaseShape: (...args: unknown[]) => drawMaskShapeSpy(...args),
-  createMaskLayoutTransformsFromParameters: () => [],
-}));
+vi.mock("../../../masks/model/maskFactory", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../masks/model/maskFactory")>();
+  return {
+    ...actual,
+    drawMaskBaseShape: (...args: Parameters<typeof actual.drawMaskBaseShape>) =>
+      drawMaskShapeSpy(...args),
+    createMaskLayoutTransformsFromParameters: () => [],
+  };
+});
 
 vi.mock("pixi.js", async () => {
   const actual = await vi.importActual("pixi.js");

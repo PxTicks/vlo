@@ -443,6 +443,54 @@ describe("AssetService", () => {
       name: "duplicate-name_2.png",
       hash: "new-hash",
       type: "image",
+      thumbnailPath: ".vloproject/thumbnails/duplicate-name_2.png_thumb.webp",
+    });
+  });
+
+  it("uses the collision-resolved asset name for video thumbnail and proxy paths", async () => {
+    const file = new File(["video"], "duplicate-video.mp4", {
+      type: "video/mp4",
+    });
+
+    (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
+      "video-hash-2",
+    );
+    mockProcessor.generateVideoMetadata.mockResolvedValue({
+      duration: 12,
+      thumbnail: new Blob(["thumb"]),
+      fps: 24,
+    });
+    mockProcessor.generateProxyVideo.mockResolvedValue(new Blob(["proxy"]));
+    mockProcessor.hasAudioTrack.mockResolvedValue(true);
+
+    const newAsset = await assetService.ingestAsset(
+      file,
+      true,
+      true,
+      [
+        {
+          id: "existing-video",
+          name: "duplicate-video.mp4",
+          hash: "video-hash-1",
+          src: "duplicate-video.mp4",
+          type: "video",
+          createdAt: 1,
+        },
+      ],
+      {
+        source: "generated",
+        workflowName: "Test Workflow",
+        inputs: [],
+      },
+    );
+
+    expect(newAsset).toMatchObject({
+      name: "duplicate-video_2.mp4",
+      hash: "video-hash-2",
+      type: "video",
+      thumbnailPath:
+        ".vloproject/thumbnails/duplicate-video_2.mp4_thumb.webp",
+      proxyPath: ".vloproject/proxies/duplicate-video_2.mp4_proxy.mp4",
     });
   });
 });

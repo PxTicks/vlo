@@ -315,7 +315,7 @@ export class AssetService {
         thumbnailBlob =
           await mediaProcessingService.generateImageThumbnail(file);
         if (thumbnailBlob) {
-          const thumbName = `${safeName}_thumb.webp`;
+          const thumbName = `${assetFileName}_thumb.webp`;
           storageThumbnail = `.vloproject/thumbnails/${thumbName}`;
         }
       } else if (isVideo) {
@@ -327,7 +327,7 @@ export class AssetService {
             : undefined;
         thumbnailBlob = metadata.thumbnail;
         if (thumbnailBlob) {
-          const thumbName = `${safeName}_thumb.webp`;
+          const thumbName = `${assetFileName}_thumb.webp`;
           storageThumbnail = `.vloproject/thumbnails/${thumbName}`;
         }
 
@@ -337,7 +337,7 @@ export class AssetService {
         try {
           proxyBlob = await processor.generateProxyVideo();
           if (proxyBlob) {
-            storageProxy = `.vloproject/proxies/${safeName}_proxy.mp4`;
+            storageProxy = `.vloproject/proxies/${assetFileName}_proxy.mp4`;
           }
         } catch (e) {
           console.warn(`[Ingest] Proxy generation failed for ${file.name}`, e);
@@ -465,7 +465,7 @@ export class AssetService {
           // Save Proxy
           if (proxyBlob && storageProxy) {
             console.time(`[Ingest-BG] Save Proxy ${file.name}`);
-            const proxyFile = new File([proxyBlob], `${safeName}_proxy.mp4`, {
+            const proxyFile = new File([proxyBlob], `${assetFileName}_proxy.mp4`, {
               type: "video/mp4",
             });
             await fileSystemService.saveAssetFile(proxyFile, storageProxy);

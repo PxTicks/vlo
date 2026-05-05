@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { TransformationPanel } from "../TransformationPanel";
 import { useTimelineStore, TICKS_PER_SECOND } from "../../../timeline";
+import { useTransformationViewStore } from "../../store/useTransformationViewStore";
 
 vi.mock("../../../timeline/useTimelineStore");
 
@@ -28,6 +29,11 @@ describe("TransformationPanel toggles", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useTransformationViewStore.setState({
+      pathPanelView: "home",
+      armedPathRecording: null,
+      activePathEditor: null,
+    });
   });
 
   function mockTimeline(
@@ -145,5 +151,73 @@ describe("TransformationPanel toggles", () => {
         .slice(0, 4)
         .every((transform) => transform.isEnabled === false),
     ).toBe(true);
+  });
+
+  it("shows record path when no position path exists and can arm recording", () => {
+    mockTimeline([
+      {
+        id: "position_1",
+        type: "position",
+        isEnabled: true,
+        parameters: { x: 10, y: 20 },
+      },
+    ]);
+
+    render(<TransformationPanel />);
+
+    fireEvent.click(screen.getByText("Record Path"));
+
+    expect(screen.getByText("Cancel Recording")).toBeInTheDocument();
+    expect(useTransformationViewStore.getState().armedPathRecording).toEqual({
+      clipId: "clip_1",
+      transformId: "position_1",
+    });
+  });
+
+  it("shows path actions, disables position inputs, and opens the path detail view", () => {
+    mockTimeline([
+      {
+        id: "position_1",
+        type: "position",
+        isEnabled: true,
+        parameters: {
+          x: 10,
+          y: 20,
+          path: {
+            type: "path2d",
+            curve: "centripetal_catmull_rom",
+            controlPoints: [
+              { x: 0, y: 0 },
+              { x: 100, y: 40 },
+            ],
+            timing: {
+              type: "spline",
+              points: [
+                { time: 0, value: 0 },
+                { time: 1, value: 1 },
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    render(<TransformationPanel />);
+
+    expect(screen.getByText("Edit Path")).toBeInTheDocument();
+    expect(screen.getByText("Re-record")).toBeInTheDocument();
+    expect(screen.getByText("Remove Path")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("X")[0]).toBeDisabled();
+    expect(screen.getAllByLabelText("Y")[0]).toBeDisabled();
+
+    fireEvent.click(screen.getByText("Edit Path"));
+
+    expect(screen.getByText("Position Path")).toBeInTheDocument();
+    expect(screen.getByText("Back To Transform")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Back To Transform"));
+
+    expect(screen.getByText("Layout")).toBeInTheDocument();
+    expect(useTransformationViewStore.getState().pathPanelView).toBe("home");
   });
 });

@@ -113,6 +113,93 @@ describe("applyClipTransforms", () => {
     expect(mockSprite.position.y).toBe(540 - 50);
   });
 
+  it("lets a position path override x and y while other transforms still apply", () => {
+    mockClip.transformations = [
+      {
+        id: "position_path_1",
+        type: "position",
+        isEnabled: true,
+        parameters: {
+          x: 999,
+          y: -999,
+          path: {
+            type: "path2d",
+            curve: "centripetal_catmull_rom",
+            controlPoints: [
+              { x: 0, y: 0 },
+              { x: 100, y: 40 },
+            ],
+            timing: {
+              type: "spline",
+              points: [
+                { time: 0, value: 0 },
+                { time: 1, value: 1 },
+              ],
+            },
+          },
+        },
+      },
+      {
+        id: "scale_1",
+        type: "scale",
+        isEnabled: true,
+        parameters: { x: 1.5, y: 0.75 },
+      },
+      {
+        id: "rotation_1",
+        type: "rotation",
+        isEnabled: true,
+        parameters: { angle: Math.PI / 3 },
+      },
+    ];
+
+    applyClipTransforms(mockSprite, mockClip, containerSize, 50);
+
+    expect(mockSprite.position.x).toBeCloseTo(960 + 50, 1);
+    expect(mockSprite.position.y).toBeCloseTo(540 + 20, 1);
+    expect(mockSprite.scale.x).toBeCloseTo(1.5, 3);
+    expect(mockSprite.scale.y).toBeCloseTo(0.75, 3);
+    expect(mockSprite.rotation).toBeCloseTo(Math.PI / 3, 6);
+  });
+
+  it("drives position path timing from visual clip time instead of pulled input time", () => {
+    mockClip.transformations = [
+      {
+        id: "speed_1",
+        type: "speed",
+        isEnabled: true,
+        parameters: { factor: 2 },
+      },
+      {
+        id: "position_path_1",
+        type: "position",
+        isEnabled: true,
+        parameters: {
+          path: {
+            type: "path2d",
+            curve: "centripetal_catmull_rom",
+            controlPoints: [
+              { x: 0, y: 0 },
+              { x: 100, y: 0 },
+            ],
+            timing: {
+              type: "spline",
+              points: [
+                { time: 0, value: 0 },
+                { time: 1, value: 1 },
+              ],
+            },
+          },
+        },
+      },
+    ];
+
+    applyClipTransforms(mockSprite, mockClip, containerSize, 50);
+
+    expect(mockSprite.position.x).toBeCloseTo(960 + 50, 1);
+    expect(mockSprite.position.y).toBeCloseTo(540, 1);
+  });
+
   it("can disable contain base layout and use origin defaults", () => {
     mockSprite.texture = {
       valid: true,

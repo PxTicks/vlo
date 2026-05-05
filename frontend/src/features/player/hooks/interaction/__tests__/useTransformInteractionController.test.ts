@@ -9,6 +9,7 @@ import { usePlayerStore } from "../../../usePlayerStore";
 import { playbackClock } from "../../../services/PlaybackClock";
 import { liveParamStore } from "../../../../transformations";
 import { useTransformInteractionController } from "../useTransformInteractionController";
+import { useTransformationViewStore } from "../../../../transformations/store/useTransformationViewStore";
 
 // Mock Pixi Application stage event bus only.
 vi.mock("pixi.js", async () => {
@@ -19,6 +20,10 @@ vi.mock("pixi.js", async () => {
       stage = {
         on: vi.fn(),
         off: vi.fn(),
+      };
+      ticker = {
+        add: vi.fn(),
+        remove: vi.fn(),
       };
       destroy = vi.fn();
     },
@@ -39,6 +44,11 @@ describe("useTransformInteractionController", () => {
     useCanvasSelectionStore.getState().clearSelection();
     usePlayerStore.setState({ isPlaying: true });
     playbackClock.setTime(0);
+    useTransformationViewStore.setState({
+      pathPanelView: "home",
+      armedPathRecording: null,
+      activePathEditor: null,
+    });
 
     mockSprite = new Sprite();
     mockSprite.eventMode = "passive";
@@ -302,5 +312,225 @@ describe("useTransformInteractionController", () => {
     expect(xParam.points.find((point) => point.time === 50)?.value).toBe(60);
 
     notifySpy.mockRestore();
+  });
+
+  it("records a position path when recording is armed", () => {
+    const clip: TimelineClip = {
+      id: "clip_record_path",
+      trackId: "track_1",
+      type: "video",
+      assetId: "asset_1",
+      start: 0,
+      timelineDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      croppedSourceDuration: 100,
+      sourceDuration: 100,
+      name: "Record Path",
+      transformations: [],
+    } as TimelineClip;
+
+    useTimelineStore.getState().addClip(clip);
+    useTransformationViewStore.setState({
+      armedPathRecording: {
+        clipId: clip.id,
+        transformId: null,
+      },
+    });
+    activeClipRef = { current: clip };
+
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    act(() => {
+      result.current.onSpritePointerDown({
+        button: 0,
+        stopPropagation: vi.fn(),
+        global: { x: 50, y: 50 },
+        originalEvent: { shiftKey: false, ctrlKey: false, metaKey: false },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const onPointerMove = getStageHandler("pointermove");
+    const onPointerUp = getStageHandler("pointerup");
+
+    expect(onPointerMove).toBeDefined();
+    expect(onPointerUp).toBeDefined();
+
+    act(() => {
+      onPointerMove!(
+        {
+          global: { x: 80, y: 90 },
+        } as unknown as FederatedPointerEvent,
+      );
+    });
+
+    act(() => {
+      onPointerUp!(
+        {
+          global: { x: 80, y: 90 },
+        } as unknown as FederatedPointerEvent,
+      );
+    });
+
+    const updatedClip = useTimelineStore
+      .getState()
+      .clips.find((currentClip) => currentClip.id === clip.id);
+    const positionTransform = updatedClip?.transformations.find(
+      (transform) => transform.type === "position",
+    ) as
+      | {
+          id: string;
+          parameters: {
+            path?: {
+              controlPoints: Array<{ x: number; y: number }>;
+              timing: { points: Array<{ time: number; value: number }> };
+            };
+          };
+        }
+      | undefined;
+
+    expect(positionTransform?.parameters.path).toBeDefined();
+    expect(
+      positionTransform?.parameters.path?.controlPoints.length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(positionTransform?.parameters.path?.timing.points).toEqual([
+      { time: 0, value: 0 },
+      { time: 1, value: 1 },
+    ]);
+    expect(useTransformationViewStore.getState().armedPathRecording).toBeNull();
+    expect(useTransformationViewStore.getState().pathPanelView).toBe("path");
+    expect(useTransformationViewStore.getState().activePathEditor).toEqual({
+      clipId: clip.id,
+      transformId: positionTransform?.id,
+    });
+  });
+
+  it("edits a path point in path detail mode without committing x/y transforms", () => {
+    playbackClock.setTime(50);
+    mockSprite.position.set(50, 0);
+
+    const clip: TimelineClip = {
+      id: "clip_edit_path",
+      trackId: "track_1",
+      type: "video",
+      assetId: "asset_1",
+      start: 0,
+      timelineDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      croppedSourceDuration: 100,
+      sourceDuration: 100,
+      name: "Edit Path",
+      transformations: [
+        {
+          id: "position_path_1",
+          type: "position",
+          isEnabled: true,
+          parameters: {
+            x: 123,
+            y: 456,
+            path: {
+              type: "path2d",
+              curve: "centripetal_catmull_rom",
+              controlPoints: [
+                { x: 0, y: 0 },
+                { x: 100, y: 0 },
+              ],
+              timing: {
+                type: "spline",
+                points: [
+                  { time: 0, value: 0 },
+                  { time: 1, value: 1 },
+                ],
+              },
+            },
+          },
+        },
+      ],
+    } as TimelineClip;
+
+    useTimelineStore.getState().addClip(clip);
+    useTransformationViewStore.setState({
+      pathPanelView: "path",
+      activePathEditor: {
+        clipId: clip.id,
+        transformId: "position_path_1",
+      },
+    });
+    activeClipRef = { current: clip };
+
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    act(() => {
+      result.current.onSpritePointerDown({
+        button: 0,
+        stopPropagation: vi.fn(),
+        global: { x: 10, y: 10 },
+        originalEvent: { shiftKey: false, ctrlKey: false, metaKey: false },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const onPointerMove = getStageHandler("pointermove");
+    const onPointerUp = getStageHandler("pointerup");
+
+    expect(onPointerMove).toBeDefined();
+    expect(onPointerUp).toBeDefined();
+
+    act(() => {
+      onPointerMove!(
+        {
+          global: { x: 20, y: 40 },
+        } as unknown as FederatedPointerEvent,
+      );
+    });
+
+    act(() => {
+      onPointerUp!(
+        {
+          global: { x: 20, y: 40 },
+        } as unknown as FederatedPointerEvent,
+      );
+    });
+
+    const updatedClip = useTimelineStore
+      .getState()
+      .clips.find((currentClip) => currentClip.id === clip.id);
+    const updatedTransform = updatedClip?.transformations.find(
+      (transform) => transform.id === "position_path_1",
+    ) as
+      | {
+          parameters: {
+            x: number;
+            y: number;
+            path: {
+              controlPoints: Array<{ x: number; y: number }>;
+            };
+          };
+        }
+      | undefined;
+
+    expect(updatedTransform?.parameters.x).toBe(123);
+    expect(updatedTransform?.parameters.y).toBe(456);
+    expect(
+      updatedTransform?.parameters.path.controlPoints.some(
+        (point) => point.y > 0,
+      ),
+    ).toBe(true);
   });
 });

@@ -12,12 +12,14 @@ interface SelectControlProps {
   control: ControlDefinition;
   value: unknown;
   onCommit: (val: unknown) => void;
+  disabled?: boolean;
 }
 
 export const SelectControl = memo(function SelectControl({
   control,
   value,
   onCommit,
+  disabled,
 }: SelectControlProps) {
   return (
     <Box
@@ -37,6 +39,7 @@ export const SelectControl = memo(function SelectControl({
           value={value ?? control.defaultValue ?? ""}
           onChange={(e) => onCommit(e.target.value)}
           disableUnderline
+          disabled={disabled}
           sx={{
             "& .MuiSelect-select": {
               py: 0.5,

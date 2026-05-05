@@ -186,6 +186,8 @@ export function applyClipTransforms(
         container: logicalContainerSize,
         content: { width: texWidth, height: texHeight },
         time: effectiveTimes[index],
+        visualTime: defaultTime,
+        visualDuration: clip.timelineDuration,
       });
 
       if (shouldNotifyLiveParams) {

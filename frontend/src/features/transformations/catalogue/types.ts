@@ -63,6 +63,8 @@ export interface TransformContext {
   container: Size;
   content: Size;
   time?: number;
+  visualTime?: number;
+  visualDuration?: number;
 }
 
 export type TransformHandler<T extends ClipTransform = ClipTransform> = (

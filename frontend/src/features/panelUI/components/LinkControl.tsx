@@ -5,11 +5,13 @@ import { Link, LinkOff } from "@mui/icons-material";
 interface LinkControlProps {
   value: unknown;
   onCommit: (val: unknown) => void;
+  disabled?: boolean;
 }
 
 export const LinkControl = memo(function LinkControl({
   value,
   onCommit,
+  disabled,
 }: LinkControlProps) {
   const isLinked = Boolean(value);
   return (
@@ -17,6 +19,7 @@ export const LinkControl = memo(function LinkControl({
       size="small"
       onClick={() => onCommit(!isLinked)}
       color={isLinked ? "primary" : "default"}
+      disabled={disabled}
       sx={{
         transform: "rotate(90deg)",
         padding: 0,

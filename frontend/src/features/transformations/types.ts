@@ -1,4 +1,5 @@
 import type { ClipTransform } from "../../types/TimelineTypes";
+import type { Point2D } from "./utils/catmullRomUtils";
 
 export type TransformType = "position" | "scale" | "rotation" | "speed" | "volume";
 
@@ -10,6 +11,13 @@ export interface SplinePoint {
 export interface SplineParameter {
   type: "spline";
   points: SplinePoint[];
+}
+
+export interface PositionPathParameter {
+  type: "path2d";
+  curve: "centripetal_catmull_rom";
+  controlPoints: Point2D[];
+  timing: SplineParameter;
 }
 
 export function isSplineParameter(val: unknown): val is SplineParameter {
@@ -26,6 +34,7 @@ export type ScalarParameter = number | SplineParameter;
 export interface PositionParams {
   x: ScalarParameter;
   y: ScalarParameter;
+  path?: PositionPathParameter;
   [key: string]: unknown;
 }
 

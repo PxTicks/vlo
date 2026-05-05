@@ -94,6 +94,79 @@ describe("ProjectPersistenceService", () => {
     expect(fileSystemService.writeFile).not.toHaveBeenCalled();
   });
 
+  it("preserves position path data when loading a split project", async () => {
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(
+      ".vloproject/timeline.json",
+      JSON.stringify({
+        ...timeline,
+        clips: [
+          {
+            id: "clip-1",
+            trackId: "track-1",
+            type: "video",
+            name: "Path Clip",
+            sourceDuration: 100,
+            transformedDuration: 100,
+            transformedOffset: 0,
+            timelineDuration: 100,
+            croppedSourceDuration: 100,
+            offset: 0,
+            start: 0,
+            transformations: [
+              {
+                id: "position_1",
+                type: "position",
+                isEnabled: true,
+                parameters: {
+                  x: 12,
+                  y: 34,
+                  path: {
+                    type: "path2d",
+                    curve: "centripetal_catmull_rom",
+                    controlPoints: [
+                      { x: 0, y: 0 },
+                      { x: 100, y: 50 },
+                    ],
+                    timing: {
+                      type: "spline",
+                      points: [
+                        { time: 0, value: 0 },
+                        { time: 1, value: 1 },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loaded = await projectPersistenceService.loadOrMigrateProject();
+    const loadedPath =
+      loaded.timeline?.clips[0]?.transformations[0]?.parameters?.path;
+
+    expect(loadedPath).toEqual({
+      type: "path2d",
+      curve: "centripetal_catmull_rom",
+      controlPoints: [
+        { x: 0, y: 0 },
+        { x: 100, y: 50 },
+      ],
+      timing: {
+        type: "spline",
+        points: [
+          { time: 0, value: 0 },
+          { time: 1, value: 1 },
+        ],
+      },
+    });
+    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid v3 manifest without overwriting files", async () => {
     files.set(
       ".vloproject/project.json",

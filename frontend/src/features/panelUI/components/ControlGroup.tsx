@@ -7,11 +7,14 @@ interface ControlGroupProps {
   values: Record<string, unknown>;
   onCommit: (groupId: string, controlName: string, value: unknown) => void;
   renderControl: (props: ControlRenderProps) => React.ReactNode;
+  headerActions?: React.ReactNode;
+  disabled?: boolean;
   keyframe?: {
     enabled: boolean;
     active: boolean;
     onToggle: () => void;
     color?: string;
+    disabled?: boolean;
   };
 }
 
@@ -20,6 +23,8 @@ export const ControlGroup = memo(function ControlGroup({
   values,
   onCommit,
   renderControl,
+  headerActions,
+  disabled = false,
   keyframe,
 }: ControlGroupProps) {
   // Resolve display values by applying valueTransform.toView
@@ -60,38 +65,43 @@ export const ControlGroup = memo(function ControlGroup({
 
   return (
     <Box>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1, gap: 1 }}>
         <Typography
           variant="caption"
-          sx={{ color: "text.secondary", display: "block" }}
+          sx={{ color: disabled ? "text.disabled" : "text.secondary", display: "block" }}
         >
           {group.title}
         </Typography>
-        {keyframe?.enabled ? (
-          <IconButton
-            size="small"
-            onClick={keyframe.onToggle}
-            title={
-              keyframe.active
-                ? "Keyframe exists at playhead"
-                : "Add keyframe at playhead"
-            }
-            sx={{ p: 0.25 }}
-          >
-            <Box
-              sx={(theme) => ({
-                width: 8,
-                height: 8,
-                transform: "rotate(45deg)",
-                backgroundColor: keyframe.active
-                  ? keyframe.color ?? theme.palette.secondary.main
-                  : "transparent",
-                border: `1px solid ${keyframe.color ?? theme.palette.text.secondary}`,
-                boxShadow: keyframe.active ? "0 0 4px rgba(0,0,0,0.5)" : "none",
-              })}
-            />
-          </IconButton>
-        ) : null}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          {headerActions}
+          {keyframe?.enabled ? (
+            <IconButton
+              size="small"
+              onClick={keyframe.onToggle}
+              disabled={keyframe.disabled}
+              title={
+                keyframe.active
+                  ? "Keyframe exists at playhead"
+                  : "Add keyframe at playhead"
+              }
+              sx={{ p: 0.25 }}
+            >
+              <Box
+                sx={(theme) => ({
+                  width: 8,
+                  height: 8,
+                  transform: "rotate(45deg)",
+                  backgroundColor: keyframe.active
+                    ? keyframe.color ?? theme.palette.secondary.main
+                    : "transparent",
+                  border: `1px solid ${keyframe.color ?? theme.palette.text.secondary}`,
+                  boxShadow: keyframe.active ? "0 0 4px rgba(0,0,0,0.5)" : "none",
+                  opacity: keyframe.disabled ? 0.45 : 1,
+                })}
+              />
+            </IconButton>
+          ) : null}
+        </Box>
       </Box>
       <Box
         sx={{
@@ -102,6 +112,7 @@ export const ControlGroup = memo(function ControlGroup({
               : `repeat(${group.columns || 1}, 1fr)`,
           gap: 1,
           alignItems: "center",
+          opacity: disabled ? 0.5 : 1,
         }}
       >
         {group.controls.filter((control) => !control.hidden).map((control) => (
@@ -111,6 +122,7 @@ export const ControlGroup = memo(function ControlGroup({
               value: displayValues[control.name],
               onCommit: (val: unknown) => onCommit(group.id, control.name, val),
               groupId: group.id,
+              disabled,
             })}
           </React.Fragment>
         ))}

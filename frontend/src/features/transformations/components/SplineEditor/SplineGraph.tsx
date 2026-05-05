@@ -14,6 +14,9 @@ interface SplineGraphProps {
   maxY?: number;     // Hard Max
   softMin?: number;  // Default View Min
   softMax?: number;  // Default View Max
+  constrainMonotoneIncreasing?: boolean;
+  lockEndpoints?: boolean;
+  allowPointDeletion?: boolean;
 }
 
 export function SplineGraph({
@@ -27,6 +30,9 @@ export function SplineGraph({
   maxY = 2,
   softMin,
   softMax,
+  constrainMonotoneIncreasing = false,
+  lockEndpoints = false,
+  allowPointDeletion = true,
 }: SplineGraphProps) {
   // Local state for smooth dragging
   const [localPoints, setLocalPoints] = useState<SplinePoint[]>(value.points);
@@ -37,9 +43,55 @@ export function SplineGraph({
   const [viewMin, setViewMin] = useState(softMin ?? minY);
   const [viewMax, setViewMax] = useState(softMax ?? maxY);
 
+  const sanitizePoints = useCallback((inputPoints: SplinePoint[]) => {
+    let nextPoints = [...inputPoints].sort((left, right) => left.time - right.time);
+    const endpointMaxTime = minTime + duration;
+
+    if (lockEndpoints) {
+      const startPoint = { time: minTime, value: minY };
+      const endPoint = { time: endpointMaxTime, value: maxY };
+
+      if (nextPoints.length === 0) {
+        nextPoints = [startPoint, endPoint];
+      } else {
+        if (Math.abs((nextPoints[0]?.time ?? Infinity) - minTime) <= 0.0001) {
+          nextPoints[0] = startPoint;
+        } else {
+          nextPoints.unshift(startPoint);
+        }
+
+        const lastIndex = nextPoints.length - 1;
+        if (
+          Math.abs((nextPoints[lastIndex]?.time ?? -Infinity) - endpointMaxTime) <=
+          0.0001
+        ) {
+          nextPoints[lastIndex] = endPoint;
+        } else {
+          nextPoints.push(endPoint);
+        }
+      }
+    }
+
+    if (constrainMonotoneIncreasing && nextPoints.length > 1) {
+      const monotonePoints = [...nextPoints];
+      for (let index = 1; index < monotonePoints.length; index += 1) {
+        monotonePoints[index] = {
+          ...monotonePoints[index],
+          value: Math.max(
+            monotonePoints[index - 1].value,
+            monotonePoints[index].value,
+          ),
+        };
+      }
+      nextPoints = monotonePoints;
+    }
+
+    return nextPoints;
+  }, [constrainMonotoneIncreasing, duration, lockEndpoints, maxY, minTime, minY]);
+
   const commitPoints = useCallback((newPoints: SplinePoint[]) => {
-      onChange({ ...value, points: newPoints });
-  }, [onChange, value]);
+      onChange({ ...value, points: sanitizePoints(newPoints) });
+  }, [onChange, sanitizePoints, value]);
 
   // Refs for drag-state access inside pointer handlers and RAF callbacks.
   const stateRef = useRef({ localPoints, viewMin, viewMax });
@@ -121,6 +173,9 @@ export function SplineGraph({
   // 3. Handlers
   const handleMouseDown = (e: React.MouseEvent, index: number) => {
     if (e.button !== 0) return; // Only drag on left-click
+    if (lockEndpoints && (index === 0 || index === localPoints.length - 1)) {
+      return;
+    }
     e.stopPropagation();
     e.preventDefault();
     // Capture initial position immediately
@@ -131,10 +186,15 @@ export function SplineGraph({
   const handlePointContextMenu = (e: React.MouseEvent, index: number) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!allowPointDeletion) return;
+    if (lockEndpoints && (index === 0 || index === localPoints.length - 1)) {
+      return;
+    }
     const newPoints = [...localPoints];
     newPoints.splice(index, 1);
-    setLocalPoints(newPoints);
-    commitPoints(newPoints);
+    const sanitized = sanitizePoints(newPoints);
+    setLocalPoints(sanitized);
+    commitPoints(sanitized);
   };
 
   // Global Drag Handler (RAF Loop)
@@ -204,6 +264,12 @@ export function SplineGraph({
         
         // Clamp to maintain ordering
         const clampedT = Math.max(prevT + 0.01, Math.min(nextT - 0.01, newT));
+
+        if (constrainMonotoneIncreasing) {
+          const prevValue = prev ? prev.value : minY;
+          const nextValue = next ? next.value : maxY;
+          newV = Math.max(prevValue, Math.min(nextValue, newV));
+        }
         
         // Check if point changed significantly
         if (points[dragIdx].time !== clampedT || points[dragIdx].value !== newV) {
@@ -230,7 +296,7 @@ export function SplineGraph({
         window.removeEventListener('mouseup', onWindowUp);
         cancelAnimationFrame(animationFrameId);
     };
-  }, [dragIdx, maxY, minY, minTime, maxTime, onChange, value, graphHeight, height, padding, graphWidth, yToVal, commitPoints, duration]); 
+  }, [commitPoints, constrainMonotoneIncreasing, dragIdx, duration, graphHeight, graphWidth, height, maxTime, maxY, minTime, minY, onChange, padding, value, yToVal]); 
 
 
   // Note: We removed handleMouseMove and handleMouseUp from here since they are now effect-driven.
@@ -252,11 +318,17 @@ export function SplineGraph({
     };
 
     // Sort by time
-    const newPoints = [...localPoints, newPoint].sort((a, b) => a.time - b.time);
-    const newIndex = newPoints.indexOf(newPoint);
+    const newPoints = sanitizePoints(
+      [...localPoints, newPoint].sort((a, b) => a.time - b.time),
+    );
+    const newIndex = newPoints.findIndex(
+      (point) =>
+        Math.abs(point.time - newPoint.time) <= 0.0001 &&
+        Math.abs(point.value - newPoint.value) <= 0.0001,
+    );
     
     setLocalPoints(newPoints);
-    setDragIdx(newIndex);
+    setDragIdx(newIndex >= 0 ? newIndex : null);
   };
 
   return (

@@ -27,6 +27,7 @@ interface NumericControlProps {
   groupId: string;
   context?: { clipId: string; transformId: string; property: string };
   transformId?: string;
+  disabled?: boolean;
 }
 
 // --- Spline toggle button (shared between ScalarControl and SliderControl) ---
@@ -35,11 +36,13 @@ function SplineToggleButton({
   isSpline,
   onOpen,
   compact,
+  disabled,
 }: {
   supportsSpline?: boolean;
   isSpline: boolean;
   onOpen: (event: React.MouseEvent<HTMLButtonElement>) => void;
   compact?: boolean;
+  disabled?: boolean;
 }) {
   if (!supportsSpline) return null;
   return (
@@ -48,6 +51,7 @@ function SplineToggleButton({
       onClick={onOpen}
       color={isSpline ? "primary" : "default"}
       title="Edit Animation Curve"
+      disabled={disabled}
       {...(compact
         ? { sx: { padding: 0.5 } }
         : { edge: "end" as const })}
@@ -66,6 +70,7 @@ function ScalarControl({
   duration,
   context,
   transformId,
+  disabled,
 }: NumericControlProps) {
   const {
     isSpline,
@@ -107,8 +112,10 @@ function ScalarControl({
             supportsSpline={control.supportsSpline}
             isSpline={isSpline}
             onOpen={handleOpenGraph}
+            disabled={disabled}
           />
         }
+        disabled={disabled}
       />
       <SplineEditorPopover
         open={open}
@@ -137,6 +144,7 @@ function TransformSliderControl({
   groupId,
   context,
   transformId,
+  disabled,
 }: NumericControlProps) {
   const {
     isSpline,
@@ -273,6 +281,7 @@ function TransformSliderControl({
             isSpline={isSpline}
             onOpen={handleOpenGraph}
             compact
+            disabled={disabled}
           />
         }
         onMouseDown={() => {
@@ -281,6 +290,7 @@ function TransformSliderControl({
         onMouseUp={() => {
           isDraggingRef.current = false;
         }}
+        disabled={disabled}
       />
       <SplineEditorPopover
         open={open}
@@ -315,6 +325,7 @@ interface ControlRendererProps {
 
   minTime?: number;
   duration?: number;
+  disabled?: boolean;
 }
 
 export const ControlRenderer = memo(function ControlRenderer({
@@ -326,6 +337,7 @@ export const ControlRenderer = memo(function ControlRenderer({
   clipId,
   minTime = 0,
   duration = 10,
+  disabled = false,
 }: ControlRendererProps) {
   const context = useMemo(
     () =>
@@ -346,6 +358,7 @@ export const ControlRenderer = memo(function ControlRenderer({
         context={context}
         transformId={transformId}
         groupId={groupId}
+        disabled={disabled}
       />
     );
   }
@@ -361,12 +374,13 @@ export const ControlRenderer = memo(function ControlRenderer({
         context={context}
         transformId={transformId}
         groupId={groupId}
+        disabled={disabled}
       />
     );
   }
 
   if (control.type === "link") {
-    return <LinkControl value={value} onCommit={onCommit} />;
+    return <LinkControl value={value} onCommit={onCommit} disabled={disabled} />;
   }
 
   if (control.type === "spacer") {
@@ -375,7 +389,12 @@ export const ControlRenderer = memo(function ControlRenderer({
 
   if (control.type === "select") {
     return (
-      <SelectControl control={control} value={value} onCommit={onCommit} />
+      <SelectControl
+        control={control}
+        value={value}
+        onCommit={onCommit}
+        disabled={disabled}
+      />
     );
   }
 
@@ -387,6 +406,7 @@ export const ControlRenderer = memo(function ControlRenderer({
             size="small"
             checked={value === true}
             onChange={(_, checked) => onCommit(checked)}
+            disabled={disabled}
           />
         }
         label={control.label}

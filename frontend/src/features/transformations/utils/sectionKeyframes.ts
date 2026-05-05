@@ -65,6 +65,15 @@ function resolveDefaultSectionGroups(
       (candidate) => candidate.type === group.id,
     );
     if (!transform) return [];
+    if (
+      group.id === "position" &&
+      typeof transform.parameters === "object" &&
+      transform.parameters !== null &&
+      "path" in transform.parameters &&
+      transform.parameters.path
+    ) {
+      return [];
+    }
 
     return [
       {

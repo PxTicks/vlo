@@ -58,4 +58,5 @@ export interface ControlRenderProps {
   value: unknown;
   onCommit: (value: unknown) => void;
   groupId: string;
+  disabled?: boolean;
 }

@@ -13,6 +13,7 @@ import type {
 } from "../types";
 import type { PositionTransform } from "../../types";
 import { TemplateRegistry } from "./templates";
+import { samplePositionPath } from "../../utils/positionPath";
 
 export const positionHandler: TransformHandler<PositionTransform> = (
   state: TransformState,
@@ -28,8 +29,19 @@ export const positionHandler: TransformHandler<PositionTransform> = (
   }
 
   // 2. Additive Parameters
-  const { x, y } = transform.parameters;
+  const { x, y, path } = transform.parameters;
   const t = context.time ?? 0;
+
+  if (path) {
+    const sampledPoint = samplePositionPath(
+      path,
+      context.visualTime ?? t,
+      context.visualDuration ?? 0,
+    );
+    state.x += sampledPoint.x;
+    state.y += sampledPoint.y;
+    return;
+  }
 
   state.x += resolveScalar(x, t, 0);
   state.y += resolveScalar(y, t, 0);

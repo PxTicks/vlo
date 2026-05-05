@@ -95,4 +95,53 @@ describe("sectionKeyframes", () => {
   it("uses off-white for the fourth group color slot", () => {
     expect(getSectionGroupKeyframeColor(3)).toBe("#f5f5f5");
   });
+
+  it("suppresses position keyframe markers when a position path is active", () => {
+    const clip: TimelineClip = {
+      ...baseClip,
+      transformations: [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: {
+            x: 0,
+            y: 0,
+            path: {
+              type: "path2d",
+              curve: "centripetal_catmull_rom",
+              controlPoints: [
+                { x: 0, y: 0 },
+                { x: 100, y: 0 },
+              ],
+              timing: {
+                type: "spline",
+                points: [
+                  { time: 0, value: 0 },
+                  { time: 1, value: 1 },
+                ],
+              },
+            },
+          },
+          keyframeTimes: [120, 360],
+        },
+        {
+          id: "scale_1",
+          type: "scale",
+          isEnabled: true,
+          parameters: { x: 1, y: 1 },
+          keyframeTimes: [240],
+        },
+      ],
+    };
+
+    const markers = collectSectionKeyframes(clip, getDefaultSectionId("layout"));
+
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({
+      groupId: "scale",
+      inputTime: 240,
+      visualTime: 240,
+    });
+  });
 });

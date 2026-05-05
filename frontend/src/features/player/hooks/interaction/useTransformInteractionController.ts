@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { Graphics } from "pixi.js";
 import type { Application, Container, FederatedPointerEvent, Sprite } from "pixi.js";
 import { getTimelineClipById, useTimelineStore } from "../../../timeline";
 import { usePlayerStore } from "../../usePlayerStore";
@@ -6,6 +7,7 @@ import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 import type { ClipTransform, TimelineClip } from "../../../../types/TimelineTypes";
 import type {
   PositionTransform,
+  PositionPathParameter,
   RotationTransform,
   ScaleTransform,
 } from "../../../transformations";
@@ -18,6 +20,7 @@ import {
   resolveScalar,
 } from "../../../transformations";
 import { playbackClock } from "../../services/PlaybackClock";
+import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
 import {
   commitTransformControl,
   hasDragMovement,
@@ -32,11 +35,92 @@ import {
   getAngleFromPoint,
   lockCornerScaleAspectRatio,
 } from "./layoutInteractionMath";
+import {
+  evaluateOpenPath,
+  processRawDragSamples,
+  type Point2D,
+  type RawDragSample,
+} from "../../../transformations/utils/catmullRomUtils";
+import {
+  samplePositionPath,
+  resolvePositionPathProgress,
+} from "../../../transformations/utils/positionPath";
+import {
+  createDefaultPathTiming,
+  upsertPathControlPointAtProgress,
+} from "../../../transformations/utils/positionPathEditing";
+import {
+  getPositionPath,
+  getPositionTransform,
+} from "../../../transformations/utils/positionPathState";
 
 const POINT_EPSILON_TICKS = 1;
 const DRAG_MOVE_EPSILON = 0.01;
+const PATH_PROGRESS_EPSILON = 0.05;
+const PATH_OVERLAY_SAMPLES_PER_SEGMENT = 18;
+const PATH_CURVE_COLOR = 0x60a5fa;
+const PATH_PROVISIONAL_COLOR = 0xf59e0b;
+const PATH_MARKER_COLOR = 0xffffff;
+const PATH_CONTROL_POINT_COLOR = 0x1d4ed8;
+const PATH_CONTROL_POINT_ACTIVE_COLOR = 0xf97316;
 
-type InteractionMode = "translate" | "scale" | "rotate";
+type InteractionMode =
+  | "translate"
+  | "scale"
+  | "rotate"
+  | "recordPath"
+  | "editPath";
+
+function drawPathCurve(
+  graphics: Graphics,
+  points: Point2D[],
+  baseOrigin: Point2D,
+  color: number,
+  alpha: number,
+) {
+  if (points.length === 0) {
+    return;
+  }
+
+  if (points.length === 1) {
+    graphics.circle(
+      baseOrigin.x + points[0].x,
+      baseOrigin.y + points[0].y,
+      2,
+    ).fill({ color, alpha });
+    return;
+  }
+
+  let didMove = false;
+  for (let segmentIndex = 0; segmentIndex < points.length - 1; segmentIndex += 1) {
+    for (
+      let sampleIndex = 0;
+      sampleIndex <= PATH_OVERLAY_SAMPLES_PER_SEGMENT;
+      sampleIndex += 1
+    ) {
+      const t = sampleIndex / PATH_OVERLAY_SAMPLES_PER_SEGMENT;
+      const point = evaluateOpenPath(points, segmentIndex, t, 0.5);
+      const x = baseOrigin.x + point.x;
+      const y = baseOrigin.y + point.y;
+      if (!didMove) {
+        graphics.moveTo(x, y);
+        didMove = true;
+      } else {
+        graphics.lineTo(x, y);
+      }
+    }
+  }
+
+  if (didMove) {
+    graphics.stroke({
+      width: 2,
+      color,
+      alpha,
+      cap: "round",
+      join: "round",
+    });
+  }
+}
 
 interface InteractionState {
   active: boolean;
@@ -54,6 +138,11 @@ interface InteractionState {
   lastPositionParams: { x: number; y: number } | null;
   lastScaleParams: { x: number; y: number } | null;
   lastRotationParam: number | null;
+  rawPathSamples: RawDragSample[];
+  recordStartedAtMs: number | null;
+  pathProgress: number | null;
+  activePath: PositionPathParameter | null;
+  draftPathControlPoints: Point2D[] | null;
   didMove: boolean;
 }
 
@@ -74,6 +163,11 @@ function createInitialInteractionState(): InteractionState {
     lastPositionParams: null,
     lastScaleParams: null,
     lastRotationParam: null,
+    rawPathSamples: [],
+    recordStartedAtMs: null,
+    pathProgress: null,
+    activePath: null,
+    draftPathControlPoints: null,
     didMove: false,
   };
 }
@@ -95,9 +189,29 @@ export function useTransformInteractionController(
   const updateClipTransform = useTimelineStore((state) => state.updateClipTransform);
   const setClipTransforms = useTimelineStore((state) => state.setClipTransforms);
   const selectClip = useTimelineStore((state) => state.selectClip);
+  const selectedClipId = useTimelineStore(
+    (state) => state.selectedClipIds[0] ?? null,
+  );
   const selectCanvasClip = useCanvasSelectionStore((state) => state.selectClip);
+  const armedPathRecording = useTransformationViewStore(
+    (state) => state.armedPathRecording,
+  );
+  const activePathEditor = useTransformationViewStore(
+    (state) => state.activePathEditor,
+  );
+  const pathPanelView = useTransformationViewStore((state) => state.pathPanelView);
+  const setArmedPathRecording = useTransformationViewStore(
+    (state) => state.setArmedPathRecording,
+  );
+  const setActivePathEditor = useTransformationViewStore(
+    (state) => state.setActivePathEditor,
+  );
+  const setPathPanelView = useTransformationViewStore(
+    (state) => state.setPathPanelView,
+  );
 
   const interactionRef = useRef<InteractionState>(createInitialInteractionState());
+  const pathOverlayRef = useRef<Graphics | null>(null);
 
   const handlers = useMemo(() => {
     const findClipById = (clipId: string): TimelineClip | null => {
@@ -114,7 +228,94 @@ export function useTransformInteractionController(
       current.lastPositionParams = null;
       current.lastScaleParams = null;
       current.lastRotationParam = null;
+      current.rawPathSamples = [];
+      current.recordStartedAtMs = null;
+      current.pathProgress = null;
+      current.activePath = null;
+      current.draftPathControlPoints = null;
       current.didMove = false;
+    };
+
+    const resolveLocalVisualTime = (clip: TimelineClip): number => {
+      const clampedGlobal = Math.max(
+        clip.start,
+        Math.min(playbackClock.time, clip.start + clip.timelineDuration),
+      );
+      return clampedGlobal - clip.start;
+    };
+
+    const resolvePositionAtVisualTime = (
+      clip: TimelineClip,
+      transform: PositionTransform | undefined,
+      localVisualTime: number,
+    ) => {
+      const path = transform?.parameters.path ?? null;
+      if (path) {
+        const sampled = samplePositionPath(
+          path,
+          localVisualTime,
+          clip.timelineDuration,
+        );
+        return {
+          x: sampled.x,
+          y: sampled.y,
+          path,
+        };
+      }
+
+      const transformInputTime = transform
+        ? getTransformInputTimeAtVisualOffset(clip, transform.id, localVisualTime)
+        : localVisualTime;
+
+      return {
+        x: transform
+          ? resolveScalar(transform.parameters.x, transformInputTime, 0)
+          : 0,
+        y: transform
+          ? resolveScalar(transform.parameters.y, transformInputTime, 0)
+          : 0,
+        path: null,
+      };
+    };
+
+    const commitPositionPath = (
+      clip: TimelineClip,
+      path: PositionPathParameter,
+      existingTransformId?: string | null,
+    ): string | null => {
+      const positionTransform =
+        (existingTransformId
+          ? clip.transformations.find(
+              (transform) => transform.id === existingTransformId,
+            )
+          : getPositionTransform(clip)) as PositionTransform | undefined;
+
+      if (positionTransform) {
+        updateClipTransform(clip.id, positionTransform.id, {
+          parameters: {
+            ...positionTransform.parameters,
+            path,
+          },
+        });
+        return positionTransform.id;
+      }
+
+      const created = createAddTransform("position") as PositionTransform | null;
+      if (!created) {
+        return null;
+      }
+
+      created.parameters = {
+        ...created.parameters,
+        path,
+      };
+
+      const nextTransforms = insertTransformRespectingDefaultOrder(
+        clip.transformations || [],
+        created,
+      );
+      setClipTransforms(clip.id, nextTransforms);
+      return created.id;
     };
 
     const applyCommit = (
@@ -234,6 +435,50 @@ export function useTransformInteractionController(
       const current = interactionRef.current;
       if (!current.active || !current.clipId || !viewport || !sprite) return;
 
+      if (current.mode === "recordPath" || current.mode === "editPath") {
+        const localPos = toViewportLocal(viewport, e.global);
+        const deltaX = localPos.x - current.startLocal.x;
+        const deltaY = localPos.y - current.startLocal.y;
+        const newX = current.startParams.x + deltaX;
+        const newY = current.startParams.y + deltaY;
+        current.lastPositionParams = { x: newX, y: newY };
+
+        if (hasDragMovement(DRAG_MOVE_EPSILON, deltaX, deltaY)) {
+          current.didMove = true;
+        }
+
+        sprite.position.set(
+          current.startSprite.x + deltaX,
+          current.startSprite.y + deltaY,
+        );
+        onLiveSpriteTransform?.();
+
+        if (current.mode === "recordPath") {
+          if (current.didMove && current.recordStartedAtMs === null) {
+            current.recordStartedAtMs = performance.now();
+            current.rawPathSamples = [
+              { point: { x: current.startParams.x, y: current.startParams.y }, time: 0 },
+            ];
+          }
+
+          if (current.recordStartedAtMs !== null) {
+            current.rawPathSamples.push({
+              point: { x: newX, y: newY },
+              time: performance.now() - current.recordStartedAtMs,
+            });
+          }
+        } else if (current.activePath && current.pathProgress !== null) {
+          current.draftPathControlPoints = upsertPathControlPointAtProgress(
+            current.activePath,
+            current.pathProgress,
+            { x: newX, y: newY },
+            PATH_PROGRESS_EPSILON,
+          );
+        }
+
+        return;
+      }
+
       if (current.mode === "translate") {
         const localPos = toViewportLocal(viewport, e.global);
         const deltaX = localPos.x - current.startLocal.x;
@@ -324,7 +569,122 @@ export function useTransformInteractionController(
         if (latestClip) {
           let nextTransforms = [...(latestClip.transformations || [])];
 
-          if (current.mode === "translate") {
+          if (current.mode === "recordPath") {
+            let finalPosition = current.lastPositionParams;
+            if (e && viewport) {
+              const localPos = toViewportLocal(viewport, e.global);
+              finalPosition = {
+                x: current.startParams.x + (localPos.x - current.startLocal.x),
+                y: current.startParams.y + (localPos.y - current.startLocal.y),
+              };
+            }
+
+            if (finalPosition) {
+              const samples =
+                current.rawPathSamples.length > 0
+                  ? [...current.rawPathSamples]
+                  : [];
+
+              if (samples.length === 0) {
+                samples.push({
+                  point: { x: current.startParams.x, y: current.startParams.y },
+                  time: 0,
+                });
+              }
+
+              const lastSample = samples[samples.length - 1];
+              if (
+                !lastSample ||
+                lastSample.point.x !== finalPosition.x ||
+                lastSample.point.y !== finalPosition.y
+              ) {
+                samples.push({
+                  point: finalPosition,
+                  time: current.recordStartedAtMs !== null
+                    ? Math.max(
+                        0,
+                        performance.now() - current.recordStartedAtMs,
+                      )
+                    : 0,
+                });
+              }
+
+              const processed = processRawDragSamples(samples);
+              if (processed.points.length >= 2) {
+                const defaultTiming = createDefaultPathTiming();
+                const candidateTimingPoints = processed.timingSplinePoints;
+                const timingPoints =
+                  candidateTimingPoints.length >= 2 &&
+                  candidateTimingPoints[0]?.time === 0 &&
+                  candidateTimingPoints[0]?.value === 0 &&
+                  candidateTimingPoints[candidateTimingPoints.length - 1]?.time === 1 &&
+                  candidateTimingPoints[candidateTimingPoints.length - 1]?.value === 1
+                    ? candidateTimingPoints
+                    : defaultTiming.points;
+
+                const path: PositionPathParameter = {
+                  type: "path2d",
+                  curve: "centripetal_catmull_rom",
+                  controlPoints: processed.points,
+                  timing: {
+                    type: "spline",
+                    points: timingPoints,
+                  },
+                };
+
+                const transformId = commitPositionPath(
+                  latestClip,
+                  path,
+                  current.transformIds.position,
+                );
+                if (transformId) {
+                  setArmedPathRecording(null);
+                  setActivePathEditor({
+                    clipId: latestClip.id,
+                    transformId,
+                  });
+                  setPathPanelView("path");
+                }
+              }
+            }
+          } else if (current.mode === "editPath") {
+            let finalPosition = current.lastPositionParams;
+            if (e && viewport) {
+              const localPos = toViewportLocal(viewport, e.global);
+              finalPosition = {
+                x: current.startParams.x + (localPos.x - current.startLocal.x),
+                y: current.startParams.y + (localPos.y - current.startLocal.y),
+              };
+            }
+
+            if (
+              finalPosition &&
+              current.activePath &&
+              current.pathProgress !== null
+            ) {
+              const nextControlPoints = upsertPathControlPointAtProgress(
+                current.activePath,
+                current.pathProgress,
+                finalPosition,
+                PATH_PROGRESS_EPSILON,
+              );
+              const transformId = commitPositionPath(
+                latestClip,
+                {
+                  ...current.activePath,
+                  controlPoints: nextControlPoints,
+                },
+                current.transformIds.position,
+              );
+              if (transformId) {
+                setActivePathEditor({
+                  clipId: latestClip.id,
+                  transformId,
+                });
+                setPathPanelView("path");
+              }
+            }
+          } else if (current.mode === "translate") {
             let finalPosition = current.lastPositionParams;
             if (e && viewport) {
               const localPos = toViewportLocal(viewport, e.global);
@@ -443,32 +803,34 @@ export function useTransformInteractionController(
       selectClip(activeClip.id, isMulti);
       selectCanvasClip(activeClip.id);
 
-      const transform = activeClip.transformations?.find(
-        (item) => item.type === "position",
-      ) as PositionTransform | undefined;
+      const transform = getPositionTransform(activeClip) ?? undefined;
+      const localVisualTime = resolveLocalVisualTime(activeClip);
+      const {
+        x: startX,
+        y: startY,
+        path: activePath,
+      } = resolvePositionAtVisualTime(activeClip, transform, localVisualTime);
+      const isArmedRecording = armedPathRecording?.clipId === activeClip.id;
+      const isPathEditing =
+        pathPanelView === "path" &&
+        activePathEditor?.clipId === activeClip.id &&
+        activePathEditor.transformId === transform?.id &&
+        !!activePath;
 
-      const clampedGlobal = Math.max(
-        activeClip.start,
-        Math.min(playbackClock.time, activeClip.start + activeClip.timelineDuration),
-      );
-      const localVisualTime = clampedGlobal - activeClip.start;
-      const transformInputTime = transform
-        ? getTransformInputTimeAtVisualOffset(activeClip, transform.id, localVisualTime)
-        : localVisualTime;
-
-      const startX = transform
-        ? resolveScalar(transform.parameters.x, transformInputTime, 0)
-        : 0;
-      const startY = transform
-        ? resolveScalar(transform.parameters.y, transformInputTime, 0)
-        : 0;
+      if (activePath && !isArmedRecording && !isPathEditing) {
+        return;
+      }
 
       const localPos = toViewportLocal(viewport, e.global);
       interactionRef.current = {
         ...createInitialInteractionState(),
         active: true,
         clipId: activeClip.id,
-        mode: "translate",
+        mode: isArmedRecording
+          ? "recordPath"
+          : isPathEditing
+            ? "editPath"
+            : "translate",
         startLocal: { x: localPos.x, y: localPos.y },
         startSprite: { x: sprite.position.x, y: sprite.position.y },
         startParams: { x: startX, y: startY, angle: 0 },
@@ -478,6 +840,16 @@ export function useTransformInteractionController(
           rotation: null,
         },
         lastPositionParams: { x: startX, y: startY },
+        pathProgress:
+          activePath && isPathEditing
+            ? resolvePositionPathProgress(
+                activePath,
+                localVisualTime,
+                activeClip.timelineDuration,
+              )
+            : null,
+        activePath,
+        draftPathControlPoints: activePath?.controlPoints ?? null,
       };
 
       bindStageListeners();
@@ -603,13 +975,179 @@ export function useTransformInteractionController(
     app,
     onLiveSpriteTransform,
     activeClipRef,
+    armedPathRecording,
+    activePathEditor,
+    pathPanelView,
     setIsPlaying,
     addClipTransform,
     updateClipTransform,
     setClipTransforms,
     selectClip,
     selectCanvasClip,
+    setArmedPathRecording,
+    setActivePathEditor,
+    setPathPanelView,
   ]);
+
+  useEffect(() => {
+    if (!viewport) {
+      if (pathOverlayRef.current && !pathOverlayRef.current.destroyed) {
+        pathOverlayRef.current.destroy();
+      }
+      pathOverlayRef.current = null;
+      return;
+    }
+
+    const overlay = new Graphics();
+    overlay.zIndex = 9998;
+    viewport.addChild(overlay);
+    pathOverlayRef.current = overlay;
+
+    return () => {
+      if (pathOverlayRef.current === overlay) {
+        pathOverlayRef.current = null;
+      }
+      overlay.destroy();
+    };
+  }, [viewport]);
+
+  useEffect(() => {
+    if (!app) {
+      return;
+    }
+
+    const drawOverlay = () => {
+      const overlay = pathOverlayRef.current;
+      if (!overlay) {
+        return;
+      }
+
+      overlay.clear();
+
+      const activeClip = activeClipRef.current;
+      if (
+        !overlay ||
+        !sprite ||
+        !activeClip ||
+        selectedClipId !== activeClip.id ||
+        !sprite.visible
+      ) {
+        overlay.visible = false;
+        return;
+      }
+
+      const currentInteraction = interactionRef.current;
+      let controlPoints: Point2D[] | null = null;
+      let currentPoint: Point2D | null = null;
+      let curveColor = PATH_CURVE_COLOR;
+      let curveAlpha = 0.9;
+
+      if (
+        currentInteraction.active &&
+        currentInteraction.clipId === activeClip.id &&
+        currentInteraction.mode === "recordPath" &&
+        currentInteraction.rawPathSamples.length > 0
+      ) {
+        controlPoints = currentInteraction.rawPathSamples.map(
+          (sample) => sample.point,
+        );
+        currentPoint =
+          currentInteraction.lastPositionParams ??
+          currentInteraction.rawPathSamples[currentInteraction.rawPathSamples.length - 1]
+            ?.point ??
+          null;
+        curveColor = PATH_PROVISIONAL_COLOR;
+      } else {
+        const persistedPath = getPositionPath(activeClip);
+        if (!persistedPath) {
+          overlay.visible = false;
+          return;
+        }
+
+        const pathToRender =
+          currentInteraction.active &&
+          currentInteraction.clipId === activeClip.id &&
+          currentInteraction.mode === "editPath" &&
+          currentInteraction.draftPathControlPoints
+            ? {
+                ...persistedPath,
+                controlPoints: currentInteraction.draftPathControlPoints,
+              }
+            : persistedPath;
+
+        const clampedGlobal = Math.max(
+          activeClip.start,
+          Math.min(
+            playbackClock.time,
+            activeClip.start + activeClip.timelineDuration,
+          ),
+        );
+        const localVisualTime = clampedGlobal - activeClip.start;
+        controlPoints = pathToRender.controlPoints;
+        currentPoint =
+          currentInteraction.active &&
+          currentInteraction.clipId === activeClip.id &&
+          currentInteraction.mode === "editPath" &&
+          currentInteraction.lastPositionParams
+            ? currentInteraction.lastPositionParams
+            : samplePositionPath(
+                pathToRender,
+                localVisualTime,
+                activeClip.timelineDuration,
+              );
+        curveColor =
+          currentInteraction.active &&
+          currentInteraction.clipId === activeClip.id &&
+          currentInteraction.mode === "editPath"
+            ? PATH_PROVISIONAL_COLOR
+            : PATH_CURVE_COLOR;
+      }
+
+      if (!controlPoints || controlPoints.length === 0 || !currentPoint) {
+        overlay.visible = false;
+        return;
+      }
+
+      overlay.visible = true;
+      const baseOrigin = {
+        x: sprite.position.x - currentPoint.x,
+        y: sprite.position.y - currentPoint.y,
+      };
+
+      drawPathCurve(overlay, controlPoints, baseOrigin, curveColor, curveAlpha);
+
+      controlPoints.forEach((point) => {
+        overlay
+          .circle(baseOrigin.x + point.x, baseOrigin.y + point.y, 4)
+          .fill({
+            color:
+              curveColor === PATH_PROVISIONAL_COLOR
+                ? PATH_CONTROL_POINT_ACTIVE_COLOR
+                : PATH_CONTROL_POINT_COLOR,
+            alpha: 1,
+          })
+          .stroke({ width: 1, color: 0xffffff, alpha: 0.9 });
+      });
+
+      overlay
+        .circle(baseOrigin.x + currentPoint.x, baseOrigin.y + currentPoint.y, 5)
+        .fill({ color: PATH_MARKER_COLOR, alpha: 1 })
+        .stroke({ width: 1, color: curveColor, alpha: 1 });
+    };
+
+    app.ticker.add(drawOverlay);
+    const unsubscribe = playbackClock.subscribe(() => drawOverlay());
+    drawOverlay();
+
+    return () => {
+      app.ticker.remove(drawOverlay);
+      unsubscribe();
+      if (pathOverlayRef.current) {
+        pathOverlayRef.current.clear();
+        pathOverlayRef.current.visible = false;
+      }
+    };
+  }, [activeClipRef, app, selectedClipId, sprite]);
 
   useEffect(() => {
     return () => {

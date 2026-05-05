@@ -1,4 +1,5 @@
 import { memo, useCallback } from "react";
+import type { ReactNode } from "react";
 import { ControlGroup } from "../../panelUI/components/ControlGroup";
 import { ControlRenderer } from "./ControlRenderer";
 import type { LayoutGroup, ControlRenderProps } from "../../panelUI/types";
@@ -11,6 +12,9 @@ import { useGroupKeyframeManager } from "../hooks/useGroupKeyframeManager";
 interface TransformationGroupProps {
   group: LayoutGroup;
   transform: ClipTransform | undefined;
+  disabled?: boolean;
+  headerActions?: ReactNode;
+  disableKeyframe?: boolean;
   onCommit: (
     groupId: string,
     controlName: string,
@@ -34,6 +38,9 @@ interface TransformationGroupProps {
 export const TransformationGroup = memo(function TransformationGroup({
   group,
   transform,
+  disabled = false,
+  headerActions,
+  disableKeyframe = false,
   onCommit,
   minTime,
   duration,
@@ -82,9 +89,10 @@ export const TransformationGroup = memo(function TransformationGroup({
         clipId={clipId}
         minTime={minTime}
         duration={duration}
+        disabled={disabled}
       />
     ),
-    [transform?.id, clipId, minTime, duration],
+    [transform?.id, clipId, minTime, duration, disabled],
   );
 
   return (
@@ -93,11 +101,14 @@ export const TransformationGroup = memo(function TransformationGroup({
       values={values}
       onCommit={handleCommit}
       renderControl={renderControl}
+      headerActions={headerActions}
+      disabled={disabled}
       keyframe={{
         enabled: keyframeManager.enabled,
         active: keyframeManager.active,
         onToggle: keyframeManager.toggleKeyframe,
         color: keyframeColor,
+        disabled: disableKeyframe,
       }}
     />
   );

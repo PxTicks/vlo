@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Box, Button, Menu, MenuItem } from "@mui/material";
 import { Add } from "@mui/icons-material";
 import { useTransformationController } from "../hooks/useTransformationController";
@@ -17,12 +17,15 @@ import { DefaultTransformationSections } from "./DefaultTransformationSections";
 import { useTimelineClip } from "../../timeline";
 import { useAsset } from "../../userAssets";
 import { useActiveTransformationSection } from "../hooks/useActiveTransformationSection";
+import { useTransformationViewStore } from "../store/useTransformationViewStore";
 import { getTransformLayerDomain } from "../utils/layerDomain";
 import {
   getDefaultSectionId,
   getDynamicSectionId,
   getSectionGroupKeyframeColor,
 } from "../utils/sectionKeyframes";
+import type { PositionTransform, SplineParameter } from "../types";
+import { PositionPathDetailView } from "./PositionPathDetailView";
 
 // DnD Kit Imports
 import {
@@ -63,9 +66,33 @@ export function TransformationPanel() {
   const [activeDragId, setActiveDragId] = useState<UniqueIdentifier | null>(
     null,
   );
+  const pathPanelView = useTransformationViewStore((state) => state.pathPanelView);
+  const armedPathRecording = useTransformationViewStore(
+    (state) => state.armedPathRecording,
+  );
+  const activePathEditor = useTransformationViewStore(
+    (state) => state.activePathEditor,
+  );
+  const setPathPanelView = useTransformationViewStore(
+    (state) => state.setPathPanelView,
+  );
+  const setArmedPathRecording = useTransformationViewStore(
+    (state) => state.setArmedPathRecording,
+  );
+  const setActivePathEditor = useTransformationViewStore(
+    (state) => state.setActivePathEditor,
+  );
 
   const selectedClip = useTimelineClip(selectedClipId);
   const domainClip = activeTimelineClip ?? selectedClip;
+  const positionTransform = useMemo(
+    () =>
+      activeTransforms.find(
+        (transform) => transform.type === "position",
+      ) as PositionTransform | undefined,
+    [activeTransforms],
+  );
+  const positionPath = positionTransform?.parameters.path ?? null;
 
   // Get the asset for the selected clip to check hasAudio
   const clipAsset = useAsset(selectedClip?.assetId);
@@ -140,6 +167,47 @@ export function TransformationPanel() {
     sectionOrder,
   );
 
+  useEffect(() => {
+    if (!selectedClipId) {
+      if (pathPanelView !== "home") {
+        setPathPanelView("home");
+      }
+      if (armedPathRecording !== null) {
+        setArmedPathRecording(null);
+      }
+      if (activePathEditor !== null) {
+        setActivePathEditor(null);
+      }
+      return;
+    }
+
+    if (
+      armedPathRecording !== null &&
+      armedPathRecording.clipId !== selectedClipId
+    ) {
+      setArmedPathRecording(null);
+    }
+
+    if (activePathEditor !== null && activePathEditor.clipId !== selectedClipId) {
+      setPathPanelView("home");
+      setActivePathEditor(null);
+    }
+
+    if (!positionPath && pathPanelView === "path") {
+      setPathPanelView("home");
+      setActivePathEditor(null);
+    }
+  }, [
+    activePathEditor,
+    armedPathRecording,
+    pathPanelView,
+    positionPath,
+    selectedClipId,
+    setActivePathEditor,
+    setArmedPathRecording,
+    setPathPanelView,
+  ]);
+
   // --- Handlers ---
 
   const handleOpenAddMenu = (event: React.MouseEvent<HTMLElement>) => {
@@ -169,7 +237,191 @@ export function TransformationPanel() {
     setActiveDragId(event.active.id);
   };
 
+  const handleStartRecording = useCallback(() => {
+    if (!selectedClipId) return;
+    setPathPanelView("home");
+    setActivePathEditor(null);
+    setArmedPathRecording({
+      clipId: selectedClipId,
+      transformId: positionTransform?.id ?? null,
+    });
+  }, [
+    positionTransform?.id,
+    selectedClipId,
+    setActivePathEditor,
+    setArmedPathRecording,
+    setPathPanelView,
+  ]);
+
+  const handleCancelRecording = useCallback(() => {
+    setArmedPathRecording(null);
+  }, [setArmedPathRecording]);
+
+  const handleOpenPathEditor = useCallback(() => {
+    if (!selectedClipId || !positionTransform || !positionPath) return;
+    setArmedPathRecording(null);
+    setActivePathEditor({
+      clipId: selectedClipId,
+      transformId: positionTransform.id,
+    });
+    setPathPanelView("path");
+  }, [
+    positionPath,
+    positionTransform,
+    selectedClipId,
+    setActivePathEditor,
+    setArmedPathRecording,
+    setPathPanelView,
+  ]);
+
+  const handleBackFromPathEditor = useCallback(() => {
+    setPathPanelView("home");
+    setActivePathEditor(null);
+  }, [setActivePathEditor, setPathPanelView]);
+
+  const handleRemovePath = useCallback(() => {
+    if (!positionTransform || !positionPath) return;
+    const nextParameters = { ...positionTransform.parameters };
+    delete nextParameters.path;
+    updateActiveTransform(positionTransform.id, { parameters: nextParameters });
+    setArmedPathRecording(null);
+    setActivePathEditor(null);
+    setPathPanelView("home");
+  }, [
+    positionPath,
+    positionTransform,
+    setActivePathEditor,
+    setArmedPathRecording,
+    setPathPanelView,
+    updateActiveTransform,
+  ]);
+
+  const handlePathTimingChange = useCallback(
+    (nextTiming: SplineParameter) => {
+      if (!positionTransform || !positionPath) return;
+      updateActiveTransform(positionTransform.id, {
+        parameters: {
+          ...positionTransform.parameters,
+          path: {
+            ...positionPath,
+            timing: nextTiming,
+          },
+        },
+      });
+    },
+    [positionPath, positionTransform, updateActiveTransform],
+  );
+
+  const positionGroupHeaderActions = useMemo(() => {
+    if (!selectedClipId) {
+      return null;
+    }
+
+    const commonButtonSx = {
+      minWidth: 0,
+      px: 0.75,
+      py: 0.25,
+      textTransform: "none",
+      fontSize: "0.7rem",
+      lineHeight: 1.2,
+    };
+
+    if (armedPathRecording?.clipId === selectedClipId) {
+      return (
+        <Button
+          size="small"
+          color="warning"
+          onClick={handleCancelRecording}
+          sx={commonButtonSx}
+        >
+          Cancel Recording
+        </Button>
+      );
+    }
+
+    if (!positionPath) {
+      return (
+        <Button size="small" onClick={handleStartRecording} sx={commonButtonSx}>
+          Record Path
+        </Button>
+      );
+    }
+
+    return (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
+        <Button size="small" onClick={handleOpenPathEditor} sx={commonButtonSx}>
+          Edit Path
+        </Button>
+        <Button size="small" onClick={handleStartRecording} sx={commonButtonSx}>
+          Re-record
+        </Button>
+        <Button
+          size="small"
+          color="error"
+          onClick={handleRemovePath}
+          sx={commonButtonSx}
+        >
+          Remove Path
+        </Button>
+      </Box>
+    );
+  }, [
+    armedPathRecording?.clipId,
+    handleCancelRecording,
+    handleOpenPathEditor,
+    handleRemovePath,
+    handleStartRecording,
+    positionPath,
+    selectedClipId,
+  ]);
+
+  const getDefaultGroupProps = useCallback(
+    (groupId: string) => {
+      if (groupId !== "position") {
+        return {};
+      }
+
+      return {
+        disabled: Boolean(positionPath),
+        disableKeyframe: Boolean(positionPath),
+        headerActions: positionGroupHeaderActions,
+      };
+    },
+    [positionGroupHeaderActions, positionPath],
+  );
+
+  const isPathEditorOpen =
+    pathPanelView === "path" &&
+    !!selectedClipId &&
+    !!positionTransform &&
+    !!positionPath &&
+    activePathEditor?.clipId === selectedClipId &&
+    activePathEditor.transformId === positionTransform.id;
+
   if (!selectedClipId) return null;
+
+  if (isPathEditorOpen && positionPath) {
+    return (
+      <Box
+        data-testid="transformation-panel"
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          width: "100%",
+          overflowY: "auto",
+        }}
+      >
+        <PositionPathDetailView
+          path={positionPath}
+          onBack={handleBackFromPathEditor}
+          onTimingChange={handlePathTimingChange}
+          onRemove={handleRemovePath}
+          onRerecord={handleStartRecording}
+        />
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -195,6 +447,7 @@ export function TransformationPanel() {
           onSetTransforms={setActiveTransforms}
           onActivateSection={activateSection}
           dimmed={!!activeDragId}
+          getGroupProps={getDefaultGroupProps}
         />
 
         {/* 2. Dynamic Sections */}

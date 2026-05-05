@@ -1,4 +1,5 @@
 import { Box } from "@mui/material";
+import type { ReactNode } from "react";
 import type {
   ClipTransform,
   TimelineClip,
@@ -32,6 +33,14 @@ interface DefaultTransformationSectionsProps {
   onSetTransforms?: (nextTransforms: ClipTransform[]) => void;
   onActivateSection: (sectionId: string) => void;
   dimmed?: boolean;
+  getGroupProps?: (
+    groupId: string,
+    transform: ClipTransform | undefined,
+  ) => {
+    disabled?: boolean;
+    disableKeyframe?: boolean;
+    headerActions?: ReactNode;
+  };
 }
 
 export function DefaultTransformationSections({
@@ -46,6 +55,7 @@ export function DefaultTransformationSections({
   onSetTransforms,
   onActivateSection,
   dimmed = false,
+  getGroupProps,
 }: DefaultTransformationSectionsProps) {
   return definitions.map((definition) => {
     const sectionId = getDefaultSectionId(definition.type);
@@ -75,6 +85,7 @@ export function DefaultTransformationSections({
             const transform = activeTransforms.find(
               (item) => item.type === group.id,
             );
+            const groupProps = getGroupProps?.(group.id, transform) ?? {};
             const domain = getTransformLayerDomain(timelineClip, transform?.id);
 
             return (
@@ -82,6 +93,9 @@ export function DefaultTransformationSections({
                 key={group.id}
                 group={group}
                 transform={transform}
+                disabled={groupProps.disabled}
+                disableKeyframe={groupProps.disableKeyframe}
+                headerActions={groupProps.headerActions}
                 onCommit={onCommit}
                 minTime={domain.minTime}
                 duration={domain.duration}

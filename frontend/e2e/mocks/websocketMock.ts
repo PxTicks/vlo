@@ -87,18 +87,20 @@ export async function installWebSocketMock(page: Page) {
                     else h.handleEvent(ev);
                 });
 
-                // Send initial status event (queue empty)
-                const statusEvent = new MessageEvent('message', {
-                    data: JSON.stringify({
-                        type: 'status',
-                        data: { status: { exec_info: { queue_remaining: 0 } } },
-                    }),
-                });
-                if (instance.onmessage) instance.onmessage(statusEvent);
-                listeners.message.forEach((h) => {
-                    if (typeof h === 'function') h(statusEvent);
-                    else h.handleEvent(statusEvent);
-                });
+                if (url.includes('/comfy/ws')) {
+                    // Send initial status event (queue empty)
+                    const statusEvent = new MessageEvent('message', {
+                        data: JSON.stringify({
+                            type: 'status',
+                            data: { status: { exec_info: { queue_remaining: 0 } } },
+                        }),
+                    });
+                    if (instance.onmessage) instance.onmessage(statusEvent);
+                    listeners.message.forEach((h) => {
+                        if (typeof h === 'function') h(statusEvent);
+                        else h.handleEvent(statusEvent);
+                    });
+                }
             }, 0);
 
             return instance;
@@ -107,8 +109,8 @@ export async function installWebSocketMock(page: Page) {
         // Override the WebSocket constructor
         // @ts-expect-error - Override native WebSocket
         window.WebSocket = function MockWebSocket(url: string, protocols?: string | string[]) {
-            // Only intercept ComfyUI WebSocket connections
-            if (url.includes('/comfy/ws')) {
+            // Only intercept backend-owned WebSocket connections used by e2e.
+            if (url.includes('/comfy/ws') || url.includes('/app/generation-delivery/ws')) {
                 return createMockWs(url);
             }
             // Pass through non-ComfyUI connections to the real WebSocket

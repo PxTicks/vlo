@@ -1,9 +1,11 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { installApiMock } from './mocks/apiMock';
+import { installWebSocketMock } from './mocks/websocketMock';
 import { EditorComponent } from './components';
 
 async function setupSam2Editor(page: Page, options: Parameters<typeof installApiMock>[1] = {}) {
+    await installWebSocketMock(page);
     await installApiMock(page, options);
 
     const editor = new EditorComponent(page);
@@ -71,7 +73,6 @@ test.describe('SAM2 Mask Flow', () => {
 
         const sam2Option = page.getByRole('menuitem', { name: 'Sam2' });
         await expect(sam2Option).toBeVisible();
-        await expect(sam2Option).toBeEnabled();
     });
 
     test('SAM2 panel shows point tools', async ({ page }) => {
@@ -120,6 +121,13 @@ test.describe('SAM2 Mask Flow', () => {
 
         const sam2Option = page.getByRole('menuitem', { name: 'Sam2' });
         await expect(sam2Option).toBeVisible();
-        await expect(sam2Option).toBeDisabled();
+        await expect(sam2Option).toBeEnabled();
+
+        await sam2Option.click();
+
+        await expect(editor.maskPanel.sam2Panel).toBeVisible();
+        await expect(editor.maskPanel.panel.getByText('SAM2 offline for test').first()).toBeVisible();
+        await expect(editor.maskPanel.sam2PreviewButton).toBeDisabled();
+        await expect(editor.maskPanel.sam2GenerateButton).toBeDisabled();
     });
 });

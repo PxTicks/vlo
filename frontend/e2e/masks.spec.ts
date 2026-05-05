@@ -8,10 +8,9 @@ test.describe('Mask Panel (Shape Masks)', () => {
         await timeline.clickClip(0);
         await rightSidebar.switchToTab('Mask');
 
-        // No masks yet — placeholder text and add chip visible
-        await expect(maskPanel.panel.getByText('Add a mask to start editing.')).toBeVisible();
+        // No masks yet — the home view shows the add action and an empty equation.
         await expect(maskPanel.addMaskChip).toBeVisible();
-        // No mask chips should exist
+        await expect(maskPanel.equation).toBeVisible();
         await expect(maskPanel.maskChips).toHaveCount(0);
     });
 
@@ -30,6 +29,7 @@ test.describe('Mask Panel (Shape Masks)', () => {
         await expect(page.getByRole('menuitem', { name: 'Rectangle' })).toBeVisible();
         await expect(page.getByRole('menuitem', { name: 'Triangle' })).toBeVisible();
         await expect(page.getByRole('menuitem', { name: 'Sam2' })).toBeVisible();
+        await expect(page.getByRole('menuitem', { name: 'Brush' })).toBeVisible();
     });
 
     test('Mask mode switching', async ({ editorWithClips }) => {
@@ -41,15 +41,12 @@ test.describe('Mask Panel (Shape Masks)', () => {
         // Add a rectangle mask to access mode controls
         await maskPanel.addMask('Rectangle');
 
-        // Default mode is Apply — verify all three buttons are visible
+        // Default mode is Apply — verify the current apply/preview controls.
         await expect(maskPanel.getModeButton('apply')).toBeVisible();
         await expect(maskPanel.getModeButton('preview')).toBeVisible();
-        await expect(maskPanel.getModeButton('off')).toBeVisible();
 
         // Switch to Preview
         await maskPanel.setMode('Preview');
-        // Switch to Off
-        await maskPanel.setMode('Off');
         // Switch back to Apply
         await maskPanel.setMode('Apply');
     });
@@ -81,7 +78,6 @@ test.describe('Mask Panel (Shape Masks)', () => {
 
         // Add a mask
         await maskPanel.addMask('Circle');
-        await expect(maskPanel.maskChips).toHaveCount(1);
         await expect(maskPanel.deleteButton).toBeVisible();
 
         // Delete it
@@ -89,7 +85,7 @@ test.describe('Mask Panel (Shape Masks)', () => {
 
         // Should return to empty state
         await expect(maskPanel.maskChips).toHaveCount(0);
-        await expect(maskPanel.panel.getByText('Add a mask to start editing.')).toBeVisible();
+        await expect(maskPanel.addMaskChip).toBeVisible();
     });
 
     test('Multiple mask chips and switching', async ({ editorWithClips }) => {
@@ -100,19 +96,22 @@ test.describe('Mask Panel (Shape Masks)', () => {
 
         // Add two masks
         await maskPanel.addMask('Circle');
+        await expect(maskPanel.backButton).toBeVisible();
+        await maskPanel.backButton.click();
         await expect(maskPanel.maskChips).toHaveCount(1);
 
         await maskPanel.addMask('Rectangle');
+        await expect(maskPanel.backButton).toBeVisible();
+        await maskPanel.backButton.click();
         await expect(maskPanel.maskChips).toHaveCount(2);
 
         // Verify chip labels
         await expect(maskPanel.maskChips.nth(0)).toHaveText('Mask 1');
         await expect(maskPanel.maskChips.nth(1)).toHaveText('Mask 2');
 
-        // Click first chip to switch back
+        // Clicking a chip selects it in the equation builder.
         await maskPanel.maskChips.nth(0).click();
-        // Mode controls should still be visible (mask is selected)
-        await expect(maskPanel.getModeButton('apply')).toBeVisible();
+        await expect(maskPanel.maskChips.nth(0)).toHaveAttribute('aria-label', 'Mask 1');
     });
 
 });

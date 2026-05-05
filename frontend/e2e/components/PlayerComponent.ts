@@ -16,27 +16,27 @@ export class PlayerComponent {
     }
 
     get playButton() {
-        return this.page.getByRole('button', { name: 'Play' });
+        return this.controls.getByRole('button', { name: 'Play' });
     }
 
     get pauseButton() {
-        return this.page.getByRole('button', { name: 'Pause' });
+        return this.controls.getByRole('button', { name: 'Pause' });
     }
 
     get fitToScreenButton() {
-        return this.page.getByRole('button', { name: 'Fit to Screen' });
+        return this.controls.getByRole('button', { name: 'Fit to Screen' });
     }
 
     get fullscreenButton() {
-        return this.page.getByRole('button', { name: 'Enter Fullscreen' });
+        return this.controls.getByRole('button', { name: 'Enter Fullscreen' });
     }
 
     get exitFullscreenButton() {
-        return this.page.getByRole('button', { name: 'Exit Fullscreen' });
+        return this.controls.getByRole('button', { name: 'Exit Fullscreen' });
     }
 
     get extractButton() {
-        return this.page.getByRole('button', { name: 'Extract' });
+        return this.controls.getByRole('button', { name: 'Extract' });
     }
 
     async play() {

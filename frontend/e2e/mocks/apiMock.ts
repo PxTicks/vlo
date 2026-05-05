@@ -48,13 +48,73 @@ function buildMockComfyFrameHtml(): string {
           return trimmed.length > 0 ? trimmed : 'workflow.json';
         }
 
-        function setActiveWorkflow(graphData, filename) {
+        function isRecord(value) {
+          return value && typeof value === 'object' && !Array.isArray(value);
+        }
+
+        function isApiWorkflow(value) {
+          if (!isRecord(value)) return false;
+          const nodes = Object.values(value).filter(isRecord);
+          return nodes.length > 0 && nodes.every((node) => typeof node.class_type === 'string');
+        }
+
+        function synthesizeGraphDataFromApiWorkflow(workflow) {
+          return {
+            nodes: Object.entries(workflow).map(([id, node]) => ({
+              id: Number.isFinite(Number(id)) ? Number(id) : id,
+              type: node.class_type,
+              title: isRecord(node._meta) && typeof node._meta.title === 'string'
+                ? node._meta.title
+                : node.class_type,
+              widgets_values: isRecord(node.inputs) ? Object.values(node.inputs) : [],
+            })),
+          };
+        }
+
+        function cloneJson(value) {
+          return JSON.parse(JSON.stringify(value));
+        }
+
+        function createGraphNodes(promptWorkflow) {
+          if (!isApiWorkflow(promptWorkflow)) return [];
+          return Object.entries(promptWorkflow).map(([id, node]) => ({
+            id: Number(id),
+            mode: 0,
+            widgets: isRecord(node.inputs)
+              ? Object.entries(node.inputs).map(([name, value]) => ({
+                  name,
+                  value,
+                  callback() {},
+                }))
+              : [],
+          }));
+        }
+
+        function buildPromptFromActiveWorkflow(workflow) {
+          const prompt = cloneJson(workflow.promptWorkflow);
+          if (!isApiWorkflow(prompt)) return prompt;
+
+          for (const graphNode of workflow.graphNodes ?? []) {
+            const promptNode = prompt[String(graphNode.id)];
+            if (!isRecord(promptNode)) continue;
+            if (!isRecord(promptNode.inputs)) promptNode.inputs = {};
+            for (const widget of graphNode.widgets ?? []) {
+              promptNode.inputs[widget.name] = widget.value;
+            }
+          }
+
+          return prompt;
+        }
+
+        function setActiveWorkflow(graphData, filename, promptWorkflow) {
           const normalizedFilename = normalizeFilename(filename);
           const workflow = {
             filename: normalizedFilename,
             fullFilename: normalizedFilename,
             path: normalizedFilename,
             activeState: graphData,
+            promptWorkflow: promptWorkflow ?? graphData,
+            graphNodes: createGraphNodes(promptWorkflow ?? graphData),
             pendingWarnings: null,
           };
           workflowApi.workflows = [workflow];
@@ -63,17 +123,36 @@ function buildMockComfyFrameHtml(): string {
         }
 
         window.app = {
+          graph: {
+            getNodeById(id) {
+              const activeWorkflow = workflowApi.activeWorkflow;
+              return activeWorkflow?.graphNodes?.find((node) => node.id === Number(id)) ?? null;
+            },
+            setDirtyCanvas() {},
+          },
           async handleFile(file) {
             const text = await file.text();
-            const graphData = JSON.parse(text);
-            setActiveWorkflow(graphData, file && 'name' in file ? file.name : 'workflow.json');
+            const rawWorkflow = JSON.parse(text);
+            const graphData = isApiWorkflow(rawWorkflow)
+              ? synthesizeGraphDataFromApiWorkflow(rawWorkflow)
+              : rawWorkflow;
+            const promptWorkflow = isApiWorkflow(rawWorkflow) ? rawWorkflow : graphData;
+            setActiveWorkflow(
+              graphData,
+              file && 'name' in file ? file.name : 'workflow.json',
+              promptWorkflow,
+            );
           },
           async graphToPrompt() {
-            const graphData = workflowApi.activeWorkflow && workflowApi.activeWorkflow.activeState;
+            const activeWorkflow = workflowApi.activeWorkflow;
+            const graphData = activeWorkflow && activeWorkflow.activeState;
             if (!graphData) {
               return null;
             }
-            return [graphData, graphData];
+            return {
+              output: buildPromptFromActiveWorkflow(activeWorkflow),
+              workflow: graphData,
+            };
           },
           extensionManager: {
             workflow: workflowApi,
@@ -266,11 +345,27 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
         });
     });
 
+    await page.route('**/comfy/api/view**', async (route) => {
+        const transparentPng = Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+            'base64',
+        );
+        await route.fulfill({
+            status: 200,
+            contentType: 'image/png',
+            body: transparentPng,
+        });
+    });
+
     await page.route('**/comfy/object_info/sync', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ synced: true, node_classes: Object.keys(objectInfo).length }),
+            body: JSON.stringify({
+                synced: true,
+                node_classes: Object.keys(objectInfo).length,
+                object_info: objectInfo,
+            }),
         });
     });
 

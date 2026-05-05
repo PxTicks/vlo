@@ -1,5 +1,13 @@
 import { test as base } from '@playwright/test';
 import { EditorComponent } from './components';
+import { installApiMock } from './mocks/apiMock';
+import { installWebSocketMock } from './mocks/websocketMock';
+
+async function setupEditor(editor: EditorComponent, fixtureDir?: string) {
+    await installWebSocketMock(editor.page);
+    await installApiMock(editor.page);
+    await editor.setup(fixtureDir);
+}
 
 /**
  * Custom Playwright fixtures for VLO e2e tests.
@@ -23,19 +31,19 @@ export const test = base.extend<{
 }>({
     editor: async ({ page }, runFixture) => {
         const editor = new EditorComponent(page);
-        await editor.setup();
+        await setupEditor(editor);
         await runFixture(editor);
     },
 
     editorWithClips: async ({ page }, runFixture) => {
         const editor = new EditorComponent(page);
-        await editor.setup('project_v2_with_clips');
+        await setupEditor(editor, 'project_v2_with_clips');
         await runFixture(editor);
     },
 
     editorWithAudioTrack: async ({ page }, runFixture) => {
         const editor = new EditorComponent(page);
-        await editor.setup('project_v3_with_audio_track');
+        await setupEditor(editor, 'project_v3_with_audio_track');
         await runFixture(editor);
     },
 

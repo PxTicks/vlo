@@ -1,7 +1,7 @@
 import { Page } from '@playwright/test';
 
-type MaskType = 'Circle' | 'Rectangle' | 'Triangle' | 'Sam2';
-type MaskMode = 'Apply' | 'Preview' | 'Off';
+type MaskType = 'Circle' | 'Rectangle' | 'Triangle' | 'Sam2' | 'Brush';
+type MaskMode = 'Apply' | 'Preview';
 
 /**
  * Component Object Model for the Mask Panel.
@@ -19,7 +19,15 @@ export class MaskPanelComponent {
     }
 
     get maskChips() {
-        return this.page.getByTestId('mask-chip');
+        return this.page.getByTestId(/^mask-variable-chip-/);
+    }
+
+    get equation() {
+        return this.page.getByTestId('mask-equation');
+    }
+
+    get backButton() {
+        return this.page.getByTestId('mask-back-button');
     }
 
     get addMaskChip() {
@@ -54,7 +62,7 @@ export class MaskPanelComponent {
         return this.page.getByTestId('mask-delete-button');
     }
 
-    getModeButton(mode: 'apply' | 'preview' | 'off') {
+    getModeButton(mode: 'apply' | 'preview') {
         return this.page.getByTestId(`mask-mode-${mode}`);
     }
 
@@ -68,7 +76,7 @@ export class MaskPanelComponent {
     }
 
     async setMode(mode: MaskMode) {
-        await this.getModeButton(mode.toLowerCase() as 'apply' | 'preview' | 'off').click();
+        await this.getModeButton(mode.toLowerCase() as 'apply' | 'preview').click();
     }
 
     async setInversion(value: 'Normal' | 'Inverted') {

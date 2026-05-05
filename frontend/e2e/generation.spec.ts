@@ -103,8 +103,8 @@ test.describe('Generation Panel', () => {
         // Click generate
         await generationPanel.clickGenerate();
 
-        // Should show cancel button while running
-        await expect(generationPanel.generateButton).toHaveText('Cancel');
+        // Running jobs expose a dedicated cancel control.
+        await expect(generationPanel.cancelCurrentButton).toBeVisible();
 
         // Simulate progress events
         await simulateWsEvent(page, 'executing', {
@@ -142,14 +142,13 @@ test.describe('Generation Panel', () => {
         // Start generation
         await generationPanel.clickGenerate();
 
-        // Button should change to Cancel
-        await expect(generationPanel.generateButton).toHaveText('Cancel');
+        await expect(generationPanel.cancelCurrentButton).toBeVisible();
 
         // Click cancel
         await generationPanel.clickCancel();
 
-        // Button should revert to Generate
-        await expect(generationPanel.generateButton).toHaveText('Generate', { timeout: 5000 });
+        await expect(generationPanel.cancelCurrentButton).toHaveCount(0);
+        await expect(generationPanel.generateButton).toHaveText('Generate');
     });
 
 });

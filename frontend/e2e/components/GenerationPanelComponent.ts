@@ -31,6 +31,10 @@ export class GenerationPanelComponent {
         return this.page.getByTestId('generation-progress-bar');
     }
 
+    get cancelCurrentButton() {
+        return this.panel.getByRole('button', { name: 'Cancel current generation' });
+    }
+
     get sendToTimelineButton() {
         return this.page.getByTestId('generation-send-to-timeline-button');
     }
@@ -40,7 +44,7 @@ export class GenerationPanelComponent {
     }
 
     async clickCancel() {
-        await this.generateButton.click();
+        await this.cancelCurrentButton.click();
     }
 
     async selectWorkflow(name: string) {

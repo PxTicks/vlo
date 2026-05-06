@@ -15,6 +15,7 @@ import {
 import type {
   GenerationDeliveryContext,
   GenerationPlan,
+  GenerationRequest,
   SlotValue,
 } from "../pipeline/types";
 import {
@@ -86,7 +87,39 @@ function clonePostprocessConfig(
 
 function collectProvidedInputIds(
   plan: GenerationPlan,
+  request?: GenerationRequest,
 ): Set<string> {
+  if (request) {
+    const ids = new Set<string>();
+    const requestInputKeys = [
+      ...Object.keys(request.textInputs),
+      ...Object.keys(request.imageInputs),
+      ...Object.keys(request.videoInputs),
+      ...Object.keys(request.audioInputs),
+    ];
+    for (const key of requestInputKeys) {
+      ids.add(key);
+    }
+
+    const knownNodeIds = new Set<string>([
+      ...plan.workflow.workflowInputs.map((input) => input.nodeId),
+      ...plan.preprocess.derivedMaskMappings.flatMap((mapping) => [
+        mapping.sourceNodeId,
+        mapping.maskNodeId,
+      ]),
+    ]);
+    for (const nodeId of knownNodeIds) {
+      if (
+        requestInputKeys.some(
+          (key) => key === nodeId || key.startsWith(`${nodeId}_`),
+        )
+      ) {
+        ids.add(nodeId);
+      }
+    }
+    return ids;
+  }
+
   const ids = new Set<string>();
   for (const [id, value] of Object.entries(plan.preprocess.slotValues)) {
     if (value.type === "text") {
@@ -370,6 +403,7 @@ function verifyIframeMatchesPanel(
 async function captureSubmittedWorkflow(
   plan: GenerationPlan,
   state: ReturnType<GenerationStoreGet>,
+  providedInputIdsOverride?: ReadonlySet<string>,
 ): Promise<CapturedSubmittedWorkflow | null> {
   if (!state.preResolvedPromptEnabled) {
     return null;
@@ -390,7 +424,8 @@ async function captureSubmittedWorkflow(
 
   const rewrites: RewriteRule[] =
     (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
-  const providedInputIds = collectProvidedInputIds(plan);
+  const providedInputIds =
+    providedInputIdsOverride ?? collectProvidedInputIds(plan);
   const defaultWidgetOverrides = evaluateWidgetDefaultOverrides(
     plan.workflow.workflowRules,
     providedInputIds,
@@ -432,29 +467,6 @@ async function captureSubmittedWorkflow(
   };
 }
 
-async function attachSubmittedWorkflowToPlan(
-  plan: GenerationPlan,
-  state: ReturnType<GenerationStoreGet>,
-): Promise<GenerationPlan> {
-  if (plan.workflow.submittedWorkflow != null) {
-    return plan;
-  }
-
-  const captured = await captureSubmittedWorkflow(plan, state);
-  if (!captured) {
-    return plan;
-  }
-
-  return {
-    ...plan,
-    workflow: {
-      ...plan.workflow,
-      submittedWorkflow: captured.workflow,
-      promptIsPreResolved: captured.promptIsPreResolved,
-    },
-  };
-}
-
 async function buildQueuedGenerationPlansFromState(
   state: ReturnType<GenerationStoreGet>,
   slotValues: Record<string, SlotValue>,
@@ -465,7 +477,7 @@ async function buildQueuedGenerationPlansFromState(
   count: number,
   bypassNodeIds: string[] = [],
 ): Promise<GenerationPlan[]> {
-  const plans = Array.from({ length: count }, () =>
+  return Array.from({ length: count }, () =>
     buildGenerationPlanFromState(
       state,
       slotValues,
@@ -476,34 +488,6 @@ async function buildQueuedGenerationPlansFromState(
       bypassNodeIds,
     ),
   );
-  const firstPlan = plans[0];
-  if (!firstPlan) {
-    return [];
-  }
-
-  const resolvedFirstPlan = await attachSubmittedWorkflowToPlan(
-    firstPlan,
-    state,
-  );
-  const submittedWorkflow = resolvedFirstPlan.workflow.submittedWorkflow;
-  if (!submittedWorkflow) {
-    return [resolvedFirstPlan, ...plans.slice(1)];
-  }
-
-  const promptIsPreResolved =
-    resolvedFirstPlan.workflow.promptIsPreResolved === true;
-
-  return [
-    resolvedFirstPlan,
-    ...plans.slice(1).map((plan) => ({
-      ...plan,
-      workflow: {
-        ...plan.workflow,
-        submittedWorkflow: cloneSubmittedWorkflow(submittedWorkflow),
-        promptIsPreResolved,
-      },
-    })),
-  ];
 }
 
 function buildGenerationDeliveryContext(
@@ -599,11 +583,7 @@ export function buildExecutionStoreState(
       // Skip the async capture when the kill switch is off so this hop
       // doesn't add an extra microtask to dispatch ordering; production
       // keeps the switch on and always awaits.
-      const resolvedPlan =
-        plan.workflow.submittedWorkflow != null ||
-        !state.preResolvedPromptEnabled
-          ? plan
-          : await attachSubmittedWorkflowToPlan(plan, state);
+      let resolvedPlan = plan;
       if (get().pipelineRunToken !== pipelineRunToken) {
         return null;
       }
@@ -637,13 +617,41 @@ export function buildExecutionStoreState(
         signal: preprocessAbortController.signal,
         cacheEntry: matchingPreprocessCache,
       });
+      let effectivePrepared = prepared;
+      if (get().pipelineRunToken !== pipelineRunToken) {
+        return null;
+      }
+      if (
+        resolvedPlan.workflow.submittedWorkflow == null &&
+        state.preResolvedPromptEnabled
+      ) {
+        const captured = await captureSubmittedWorkflow(
+          resolvedPlan,
+          state,
+          collectProvidedInputIds(resolvedPlan, prepared.request),
+        );
+        if (captured) {
+          resolvedPlan = {
+            ...resolvedPlan,
+            workflow: {
+              ...resolvedPlan.workflow,
+              submittedWorkflow: cloneSubmittedWorkflow(captured.workflow),
+              promptIsPreResolved: captured.promptIsPreResolved,
+            },
+          };
+          effectivePrepared = {
+            ...prepared,
+            plan: resolvedPlan,
+          };
+        }
+      }
       if (get().pipelineRunToken !== pipelineRunToken) {
         return null;
       }
       if (preprocessCacheKey !== null && matchingPreprocessCache === null) {
         generationPreprocessCache = buildGenerationPreprocessCacheEntry(
           preprocessCacheKey,
-          prepared,
+          effectivePrepared,
         );
       }
 
@@ -655,7 +663,7 @@ export function buildExecutionStoreState(
       const usesPreResolvedWorkflow =
         resolvedPlan.workflow.promptIsPreResolved === true;
       const resolvedWorkflow: Record<string, unknown> | null =
-        submittedWorkflow ?? prepared.request.workflow;
+        submittedWorkflow ?? effectivePrepared.request.workflow;
 
       const projectId = useProjectStore.getState().project?.id;
       if (!projectId) {
@@ -666,9 +674,9 @@ export function buildExecutionStoreState(
       try {
         autoFamilyRequestKey = await buildGenerationFamilyRequestKey({
           workflow:
-            prepared.plan.workflow.graphData ??
+            effectivePrepared.plan.workflow.graphData ??
             resolvedWorkflow ??
-            prepared.request.workflow,
+            effectivePrepared.request.workflow,
           workflowInputs: resolvedPlan.workflow.workflowInputs,
           slotValues: resolvedPlan.preprocess.slotValues,
           generationInputs: resolvedPlan.metadata.generationMetadata.inputs,
@@ -688,7 +696,7 @@ export function buildExecutionStoreState(
 
       const response = await comfyApi.generate(
         {
-          ...prepared.request,
+          ...effectivePrepared.request,
           projectId,
           deliveryContext,
           workflow: resolvedWorkflow,
@@ -725,7 +733,7 @@ export function buildExecutionStoreState(
           );
       }
       const submitted = buildSubmittedGeneration(
-        prepared,
+        effectivePrepared,
         responseWithCachedPipelineOutputs,
         {
           autoFamilyRequestKey,

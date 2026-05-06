@@ -1177,7 +1177,8 @@ describe("useGenerationStore pipeline phases", () => {
     const submitPromise = useGenerationStore.getState().submitGeneration({});
     await flushMicrotasks();
 
-    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(mockFrontendPreprocess).toHaveBeenCalledTimes(1);
+    expect(mockPreResolvePrompt).not.toHaveBeenCalled();
 
     useGenerationStore.setState({
       selectedWorkflowId: "wf-switched.json",
@@ -1211,6 +1212,7 @@ describe("useGenerationStore pipeline phases", () => {
 
     await submitPromise;
 
+    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
     expect(mockGenerate).toHaveBeenCalledTimes(1);
     expect(mockGenerate.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
@@ -1258,6 +1260,100 @@ describe("useGenerationStore pipeline phases", () => {
 
     expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
     expect(mockPreResolvePrompt.mock.calls[0]?.[1]).toEqual(["62"]);
+  });
+
+  it("keeps optional derived mask nodes out of the bypass list when preprocess uploaded a mask", async () => {
+    makeReadyStoreState();
+
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "644": {
+          class_type: "VHS_LoadVideoFFmpeg",
+          inputs: {},
+        },
+        "689": {
+          class_type: "LoadVideo",
+          inputs: {},
+        },
+      },
+      workflowInputs: [
+        {
+          nodeId: "644",
+          classType: "VHS_LoadVideoFFmpeg",
+          inputType: "video",
+          param: "video",
+          label: "Source video",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      activeWorkflowRules: makeWorkflowRules({
+        rewrites: [
+          {
+            when: {
+              kind: "input_presence",
+              inputs: ["689"],
+              match: "all_missing",
+            },
+            bypass: ["689", "693", "694", "703", "708"],
+          },
+        ],
+      }),
+      derivedMaskMappings: [
+        {
+          sourceNodeId: "644",
+          maskNodeId: "689",
+          maskParam: "file",
+          maskType: "binary",
+          optional: true,
+        },
+      ],
+      editorRef: {} as HTMLIFrameElement,
+      preResolvedPromptEnabled: true,
+    });
+
+    mockFrontendPreprocess.mockResolvedValueOnce({
+      workflow: {
+        "644": {
+          class_type: "VHS_LoadVideoFFmpeg",
+          inputs: {},
+        },
+      },
+      workflowId: "wf.json",
+      targetAspectRatio: "16:9",
+      exactAspectRatio: false,
+      targetResolution: 1080,
+      textInputs: {},
+      imageInputs: {},
+      audioInputs: {},
+      videoInputs: {
+        "644": new File(["video"], "selection.mp4", { type: "video/mp4" }),
+        "689": new File(["mask"], "selection-mask.mp4", {
+          type: "video/mp4",
+        }),
+      },
+      clientId: "client-id",
+    });
+    mockPreResolvePrompt.mockResolvedValueOnce({
+      output: {
+        "101": {
+          class_type: "CapturedPreResolvedWorkflow",
+          inputs: {},
+        },
+      },
+      workflow: {},
+    });
+
+    await useGenerationStore.getState().submitGeneration({
+      "644": {
+        type: "video",
+        file: new File(["video"], "source.mp4", { type: "video/mp4" }),
+      },
+    });
+
+    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(mockPreResolvePrompt.mock.calls[0]?.[1]).not.toContain("689");
+    expect(mockPreResolvePrompt.mock.calls[0]?.[1]).not.toContain("693");
   });
 
   it("refuses to submit when the iframe holds a different workflow than the panel", async () => {
@@ -1447,7 +1543,7 @@ describe("useGenerationStore pipeline phases", () => {
 
     await useGenerationStore.getState().queueGeneration({});
 
-    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(mockPreResolvePrompt).not.toHaveBeenCalled();
     expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
 
     useGenerationStore.setState({

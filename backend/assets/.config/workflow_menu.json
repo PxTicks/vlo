@@ -9,9 +9,13 @@
     },
     {
       "id": "edit",
-      "name": "Inpaint",
+      "name": "Edit",
       "order": 1,
-      "workflow_ids": ["vlo_VACE_inpaint.json", "vlo_ltx2_3_inpaint.json"]
+      "workflow_ids": [
+        "vlo_VACE_inpaint.json",
+        "vlo_ltx2_3_inpaint.json",
+        "vlo_ltx2_3_ic_edit.json"
+      ]
     }
   ]
 }

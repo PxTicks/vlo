@@ -38,6 +38,14 @@ export interface DerivedMaskMapping {
   purpose?: DerivedMaskPurpose;
   /** Optional export FPS override for temporal/audio timing masks. */
   renderFps?: number;
+  /**
+   * When true, the mask node is declared optional in the rules sidecar
+   * (`present.required === false`). If the timeline selection contains no
+   * mask clip, the mapping is dropped before render so the mask node never
+   * receives an upload, allowing the workflow's `input_presence` rewrite to
+   * bypass the mask chain.
+   */
+  optional?: boolean;
 }
 
 // ---------------------------------------------------------------------------

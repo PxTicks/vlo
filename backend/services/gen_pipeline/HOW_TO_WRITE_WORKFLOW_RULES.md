@@ -601,6 +601,78 @@ Controls may be exposed as widgets (`"expose": "widget"`) or hidden
 (`"expose": "none"`). Hidden controls must declare `source: "client"` or
 `source: "backend"` so it is unambiguous who is responsible for the value.
 
+### Optional Masks
+
+By default a mask target's `mask` node is treated as required: the frontend
+renders the timeline-selection-derived mask unconditionally and uploads it,
+which means the mask node is always present in `provided_input_ids`.
+
+A mask becomes **optional** when its node carries `present.required: false`.
+Two things change for that target:
+
+1. The frontend's video-input collector inspects the timeline selection. If
+   it contains no clip of `type: "mask"` (i.e. the user made a selection
+   without painting/creating a mask, or dragged in a raw video), the
+   optional mapping is dropped before render — no mask file is generated
+   and the mask node receives no upload.
+2. Because nothing was uploaded to the mask node, it is absent from
+   `provided_input_ids`. A sidecar `rewrites` entry can then bypass the
+   mask chain via an `input_presence` `all_missing` check on that node id.
+
+This is the right pattern for workflows where a mask is *accepted but not
+mandatory* — for example IC-edit, where the model can run on the full
+source video and only narrows to a region when the user provides one.
+Required-mask workflows like inpaint should leave `required` at its
+default; the absence of a mask there is a user error, not a graph variant.
+
+Sketch:
+
+```json
+{
+  "nodes": {
+    "689": { "present": { "required": false } }
+  },
+  "rewrites": [
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["689"],
+        "match": "all_missing"
+      },
+      "bypass": ["689", "693", "694", "703", "708"]
+    }
+  ],
+  "pipeline": [
+    {
+      "id": "mask_processing",
+      "kind": "mask_processing",
+      "after": ["aspect_ratio"],
+      "targets": [
+        {
+          "source": { "node_id": "644", "param": "video" },
+          "mask":   { "node_id": "689", "param": "file" },
+          "mask_type": "binary",
+          "purpose": "video"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The bypass list should cover every node in the mask preprocessing chain
+that has no other consumer — typically the mask `LoadVideo`, any resize /
+`ImageToMask` / `GetMaskSizeAndCount` nodes, and the
+`LTXVPreprocessMasks`-style preprocessor. The downstream consumer must
+accept a missing mask (e.g. `attention_mask` declared with
+`shape: 7` / optional in ComfyUI), otherwise the bypass produces a
+disconnected required input at execution time.
+
+The dragged-input case (slot value typed `video` rather than
+`video_selection`) is handled by the same rewrite for free — that path
+never goes through the mask processor at all, so the mask node is
+trivially absent from `provided_input_ids`.
+
 ---
 
 ## Aspect Ratio Processing

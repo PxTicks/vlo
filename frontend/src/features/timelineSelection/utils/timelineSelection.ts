@@ -70,6 +70,17 @@ export function snapFrameCountToStep(
 }
 
 /**
+ * True when the selection's clip set contains at least one clip whose
+ * type is `"mask"`. Used to decide whether a derived-mask render would
+ * produce non-empty output.
+ */
+export function selectionHasMaskClip(selection: TimelineSelection): boolean {
+  return Array.isArray(selection.clips)
+    ? selection.clips.some((clip) => clip.type === "mask")
+    : false;
+}
+
+/**
  * Returns a subset of the timeline clip array that intersects with the given selection.
  * Including all clips and masks.
  */

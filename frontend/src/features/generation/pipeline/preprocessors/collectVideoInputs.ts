@@ -1,4 +1,5 @@
 import type { TimelineSelection } from "../../../../types/TimelineTypes";
+import { selectionHasMaskClip } from "../../../timelineSelection";
 import type { WorkflowSelectionConfig } from "../../types";
 import {
   renderTimelineSelectionToMp4,
@@ -123,8 +124,15 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       if (value.type === "video") {
         ctx.videoInputs[getNodeInputRequestKey(input, inputById)] = value.file;
       } else if (value.type === "video_selection") {
-        const masks =
+        const allMasks =
           masksBySource.get(inputId) ?? masksBySource.get(input.nodeId);
+        // Optional mask mappings are dropped when the selection contains no
+        // mask clip — the corresponding mask node receives no upload, so a
+        // sidecar `input_presence` rewrite can bypass the mask chain.
+        const masks =
+          allMasks && !selectionHasMaskClip(value.selection)
+            ? allMasks.filter((mapping) => !mapping.optional)
+            : allMasks;
         if (masks && masks.length > 0) {
           const result = await normalizeVideoSelectionWithDerivedMasks(
             value.selection,

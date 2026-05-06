@@ -8,6 +8,7 @@ export {
   normalizeTimelineSelection,
   resolveSelectionFps,
   resolveSelectionFrameStep,
+  selectionHasMaskClip,
   snapFrameCountToStep,
   snapTickToFrame,
 } from "./utils/timelineSelection";

@@ -356,6 +356,7 @@ export function resolvePresentedInputsFromRules(
         maskType: derivedMask.maskType,
         purpose: derivedMask.purpose,
         renderFps: derivedMask.renderFps,
+        ...(present?.required === false ? { optional: true } : {}),
       });
       continue;
     }

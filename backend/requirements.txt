@@ -13,3 +13,10 @@ websockets
 python-dotenv
 numpy
 av
+torch
+torchaudio
+einops
+soxr
+soundfile
+rotary-embedding-torch
+beat-this

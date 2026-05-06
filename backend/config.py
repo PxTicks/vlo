@@ -30,6 +30,17 @@ SAM2_CACHE_DIR = Path(
 )
 SAM2_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+BEATTHIS_DEVICE = os.environ.get("BEATTHIS_DEVICE", "auto").strip() or "auto"
+BEATTHIS_DEFAULT_MODEL = (
+    os.environ.get("BEATTHIS_MODEL", "final0").strip() or "final0"
+)
+BEATTHIS_CACHE_DIR = Path(
+    os.environ.get("BEATTHIS_CACHE_DIR", str(PROJECTS_ROOT / ".beat_this_cache"))
+)
+BEATTHIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Steer Beat This! / torch.hub auto-downloads into our cache dir.
+os.environ.setdefault("TORCH_HOME", str(BEATTHIS_CACHE_DIR / "torch"))
+
 SAM2_SEARCH_PATHS: list[Path] = [Path(__file__).parent / "assets" / "models" / "sams"]
 EXTRA_MODEL_PATHS_FILE = Path(__file__).parent.parent / "extra_model_paths.yaml"
 

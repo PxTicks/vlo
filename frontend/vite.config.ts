@@ -39,6 +39,7 @@ export default defineConfig(({ mode }) => {
     "/app",
     "/downloads",
     "/sam2",
+    "/beats",
     "/comfyui-frame",
     "/comfy",
     "/scripts",

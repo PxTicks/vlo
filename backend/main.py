@@ -18,6 +18,7 @@ from routers.comfyui import (
     close_http_client,
 )
 from routers.sam2 import router as sam2_router
+from routers.beats import router as beats_router
 from routers.downloads import router as downloads_router
 from routers.generation_delivery import router as generation_delivery_router
 from pathlib import Path
@@ -29,12 +30,14 @@ from services.comfyui.comfyui_client import (
     get_http_client,
 )
 from services.sam2 import sam2_service
+from services.beats import beats_service
 
 app = FastAPI()
 
 app.include_router(comfyui_router)
 app.include_router(comfyui_compat_router)
 app.include_router(sam2_router)
+app.include_router(beats_router)
 app.include_router(downloads_router)
 app.include_router(generation_delivery_router)
 
@@ -173,6 +176,20 @@ async def get_app_status():
         sam2_status = "unavailable"
         sam2_error = str(exc)
 
+    try:
+        beats_health = beats_service.get_health()
+        beats_runtime = beats_health.get("runtime") or {}
+        beats_ready = bool(beats_runtime.get("ready"))
+        beats_status = "available" if beats_ready else "unavailable"
+        beats_error = (
+            None
+            if beats_ready
+            else (beats_runtime.get("error") or "Beat This! is not installed")
+        )
+    except Exception as exc:  # pragma: no cover - defensive status fallback
+        beats_status = "unavailable"
+        beats_error = str(exc)
+
     return {
         "backend": {
             "status": "ok",
@@ -188,6 +205,10 @@ async def get_app_status():
         "sam2": {
             "status": sam2_status,
             "error": sam2_error,
+        },
+        "beat_this": {
+            "status": beats_status,
+            "error": beats_error,
         },
     }
 

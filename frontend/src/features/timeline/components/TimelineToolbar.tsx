@@ -1,9 +1,11 @@
-import { Box, Slider, Stack, IconButton, Tooltip } from "@mui/material";
+import { useState } from "react";
+import { Box, CircularProgress, Slider, Stack, IconButton, Tooltip } from "@mui/material";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
 import VerticalAlignCenterIcon from "@mui/icons-material/VerticalAlignCenter";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useTimelineStore } from "../useTimelineStore";
@@ -15,7 +17,14 @@ import type {
   MarkerEntry,
   MarkersComponent,
 } from "../../../types/Components";
-import { MIN_ZOOM, MAX_ZOOM } from "../constants";
+import type { TimelineClip } from "../../../types/TimelineTypes";
+import { MIN_ZOOM, MAX_ZOOM, TICKS_PER_SECOND } from "../constants";
+import { ensureAssetSourceLoaded } from "../../userAssets/publicApi";
+import { mediaProcessingService } from "../../userAssets/services/MediaProcessingService";
+import {
+  detectBeats,
+  registerBeatThisSource,
+} from "../services/beatThisApi";
 
 export const TimelineToolbar = () => {
   const zoomScale = useTimelineViewStore((state) => state.zoomScale);
@@ -25,8 +34,120 @@ export const TimelineToolbar = () => {
     (state) => state.toggleSnappingEnabled,
   );
 
+  const [isDetectingBeats, setIsDetectingBeats] = useState(false);
+
   const handleSliderChange = (_: Event, newValue: number | number[]) => {
     setZoomScale(newValue as number);
+  };
+
+  const handleDetectBeats = async () => {
+    if (isDetectingBeats) return;
+
+    const state = useTimelineStore.getState();
+    const playheadTick = playbackClock.time;
+
+    const isAudibleClip = (clip: TimelineClip): boolean =>
+      clip.type === "audio" || clip.type === "video";
+
+    let candidates: TimelineClip[] = state.selectedClipIds
+      .map((id) => state.clips.find((candidate) => candidate.id === id))
+      .filter((clip): clip is TimelineClip => clip !== undefined && isAudibleClip(clip));
+
+    if (candidates.length === 0) {
+      candidates = state.clips.filter(
+        (clip) =>
+          isAudibleClip(clip) &&
+          clip.start <= playheadTick &&
+          clip.start + clip.timelineDuration > playheadTick,
+      );
+    }
+
+    if (candidates.length === 0) {
+      window.alert("Select an audio or video clip to detect beats.");
+      return;
+    }
+
+    setIsDetectingBeats(true);
+    try {
+      for (const clip of candidates) {
+        if (!("assetId" in clip) || !clip.assetId) continue;
+
+        const asset = await ensureAssetSourceLoaded(clip.assetId);
+        const sourceFile = asset?.file;
+        if (!asset || !sourceFile) {
+          console.warn("[BeatDetect] Skipping clip without loadable asset", clip.id);
+          continue;
+        }
+
+        let audioFile: File | null = sourceFile;
+        if (asset.type === "video") {
+          audioFile = await mediaProcessingService.extractPrimaryAudioTrack(sourceFile);
+          if (!audioFile) {
+            console.warn(
+              "[BeatDetect] No audio track found on video clip",
+              clip.id,
+            );
+            continue;
+          }
+        } else if (asset.type !== "audio") {
+          continue;
+        }
+
+        await registerBeatThisSource(audioFile, asset.hash);
+        const result = await detectBeats({
+          sourceId: asset.hash,
+          ticksPerSecond: TICKS_PER_SECOND,
+        });
+
+        if (result.beats.length === 0) continue;
+
+        const newMarkers: MarkerEntry[] = result.beats.map((beat) => ({
+          id: crypto.randomUUID(),
+          sourceTimeTicks: beat.timeTicks,
+          name: beat.isDownbeat ? "downbeat" : "beat",
+        }));
+
+        const refreshed = useTimelineStore
+          .getState()
+          .clips.find((candidate) => candidate.id === clip.id);
+        if (!refreshed || refreshed.type === "mask") continue;
+
+        const existing = (refreshed.components ?? []).find(
+          (component): component is MarkersComponent =>
+            component.type === "markers",
+        );
+
+        if (existing) {
+          useTimelineStore
+            .getState()
+            .updateClipComponent(clip.id, existing.id, (component) => {
+              if (component.type !== "markers") return component;
+              return {
+                ...component,
+                parameters: {
+                  ...component.parameters,
+                  markers: [...component.parameters.markers, ...newMarkers],
+                },
+              };
+            });
+        } else {
+          const newComponent: MarkersComponent = {
+            id: crypto.randomUUID(),
+            type: "markers",
+            parameters: { markers: newMarkers },
+          };
+          useTimelineStore.getState().addClipComponent(clip.id, newComponent);
+        }
+      }
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? `Beat detection failed: ${error.message}`
+          : "Beat detection failed.",
+      );
+    } finally {
+      setIsDetectingBeats(false);
+    }
   };
 
   return (
@@ -151,6 +272,25 @@ export const TimelineToolbar = () => {
           >
             <ArrowDropDownIcon fontSize="small" />
           </IconButton>
+        </Tooltip>
+
+        <Tooltip title="Detect Beats (selected audio/video clip)">
+          <span>
+            <IconButton
+              size="small"
+              data-testid="timeline-detect-beats"
+              aria-label="Detect beats"
+              onClick={handleDetectBeats}
+              disabled={isDetectingBeats}
+              sx={{ color: "#fbc02d" }}
+            >
+              {isDetectingBeats ? (
+                <CircularProgress size={16} sx={{ color: "#fbc02d" }} />
+              ) : (
+                <MusicNoteIcon fontSize="small" />
+              )}
+            </IconButton>
+          </span>
         </Tooltip>
 
         <Tooltip title="Split Clip (Cut)">

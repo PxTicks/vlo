@@ -10,6 +10,7 @@ describe("useTimelineSelectionStore", () => {
       selectionStartTick: 0,
       selectionEndTick: 0,
       selectionMessage: null,
+      selectionIncludeModeEnabled: false,
       selectionIncludedTrackIds: [],
       selectionFpsOverride: null,
       selectionFrameStep: 1,
@@ -26,6 +27,7 @@ describe("useTimelineSelectionStore", () => {
     expect(result.current.selectionStartTick).toBe(0);
     expect(result.current.selectionEndTick).toBe(0);
     expect(result.current.selectionMessage).toBeNull();
+    expect(result.current.selectionIncludeModeEnabled).toBe(false);
     expect(result.current.selectionIncludedTrackIds).toEqual([]);
     expect(result.current.selectionFpsOverride).toBeNull();
     expect(result.current.selectionFrameStep).toBe(1);
@@ -40,6 +42,7 @@ describe("useTimelineSelectionStore", () => {
     act(() => {
       result.current.enterSelectionMode(1_000, 5_000, {
         message: "Focus on the foreground pass",
+        includeTracks: true,
         includedTrackIds: ["track-1", "track-2", "track-1"],
       });
       result.current.updateSelectionStart(2_000);
@@ -50,6 +53,7 @@ describe("useTimelineSelectionStore", () => {
     expect(result.current.selectionStartTick).toBe(2_000);
     expect(result.current.selectionEndTick).toBe(8_000);
     expect(result.current.selectionMessage).toBe("Focus on the foreground pass");
+    expect(result.current.selectionIncludeModeEnabled).toBe(true);
     expect(result.current.selectionIncludedTrackIds).toEqual([
       "track-1",
       "track-2",
@@ -62,6 +66,7 @@ describe("useTimelineSelectionStore", () => {
     act(() => {
       result.current.enterSelectionMode(1_000, 5_000, {
         message: "Use these tracks",
+        includeTracks: true,
         includedTrackIds: ["track-1"],
       });
       result.current.setSelectionRecommendations({
@@ -76,6 +81,7 @@ describe("useTimelineSelectionStore", () => {
     expect(result.current.selectionStartTick).toBe(0);
     expect(result.current.selectionEndTick).toBe(0);
     expect(result.current.selectionMessage).toBeNull();
+    expect(result.current.selectionIncludeModeEnabled).toBe(false);
     expect(result.current.selectionIncludedTrackIds).toEqual([]);
     expect(result.current.selectionRecommendedFps).toBeNull();
     expect(result.current.selectionRecommendedFrameStep).toBeNull();
@@ -112,5 +118,18 @@ describe("useTimelineSelectionStore", () => {
     });
 
     expect(result.current.selectionIncludedTrackIds).toEqual(["track-a"]);
+  });
+
+  it("does not enable include mode unless requested", () => {
+    const { result } = renderHook(() => useTimelineSelectionStore());
+
+    act(() => {
+      result.current.enterSelectionMode(1_000, 5_000, {
+        includedTrackIds: ["track-1"],
+      });
+    });
+
+    expect(result.current.selectionIncludeModeEnabled).toBe(false);
+    expect(result.current.selectionIncludedTrackIds).toEqual([]);
   });
 });

@@ -16,7 +16,7 @@ describe("TimelineHeader", () => {
           isMuted={false}
           derivedType="visual"
           color="#fff"
-          selectionMode
+          selectionIncludeModeEnabled
           isIncludedInSelection={false}
           onToggleVisibility={onToggleVisibility}
           onToggleMute={onToggleMute}
@@ -44,7 +44,7 @@ describe("TimelineHeader", () => {
           isMuted={false}
           derivedType="visual"
           color="#fff"
-          selectionMode
+          selectionIncludeModeEnabled
           isIncludedInSelection={false}
           onToggleVisibility={onToggleVisibility}
           onToggleMute={onToggleMute}
@@ -72,7 +72,7 @@ describe("TimelineHeader", () => {
           isMuted={false}
           derivedType="visual"
           color="#fff"
-          selectionMode
+          selectionIncludeModeEnabled
           isIncludedInSelection={false}
           onToggleVisibility={onToggleVisibility}
           onToggleMute={onToggleMute}

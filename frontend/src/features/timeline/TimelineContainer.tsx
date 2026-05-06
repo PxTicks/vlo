@@ -116,7 +116,9 @@ function TimelineContainerComponent({
         setScrollContainer: state.setScrollContainer,
       })),
     );
-  const selectionMode = useTimelineSelectionStore((state) => state.selectionMode);
+  const selectionIncludeModeEnabled = useTimelineSelectionStore(
+    (state) => state.selectionIncludeModeEnabled,
+  );
   const selectionIncludedTrackIds = useTimelineSelectionStore(
     (state) => state.selectionIncludedTrackIds,
   );
@@ -472,7 +474,7 @@ function TimelineContainerComponent({
                 key={track.id}
                 track={track}
                 index={index}
-                selectionMode={selectionMode}
+                selectionIncludeModeEnabled={selectionIncludeModeEnabled}
                 isIncludedInSelection={includedTrackIdSet.has(track.id)}
                 onToggleVisibility={toggleTrackVisibility}
                 onToggleMute={toggleTrackMute}

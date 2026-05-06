@@ -651,6 +651,11 @@ function buildWorkflowInputSnapshot(
                     message: workflowInput.dispatch.selectionConfig.message.trim(),
                   }
                 : {}),
+              ...(workflowInput.dispatch.selectionConfig.includeTracks === true
+                ? {
+                    includeTracks: true,
+                  }
+                : {}),
             },
           }
         : {}),

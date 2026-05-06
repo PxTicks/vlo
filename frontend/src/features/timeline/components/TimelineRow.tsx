@@ -11,7 +11,7 @@ import type { TrackType, TimelineTrack } from "../../../types/TimelineTypes";
 interface TimelineRowProps {
   track: TimelineTrack;
   index: number;
-  selectionMode?: boolean;
+  selectionIncludeModeEnabled?: boolean;
   isIncludedInSelection?: boolean;
   onToggleVisibility: (id: string) => void;
   onToggleMute?: (id: string) => void;
@@ -27,7 +27,7 @@ const StyledRow = styled(Box)({
 function TimelineRowComponent({
   track,
   index,
-  selectionMode = false,
+  selectionIncludeModeEnabled = false,
   isIncludedInSelection = false,
   onToggleVisibility,
   onToggleMute,
@@ -60,7 +60,7 @@ function TimelineRowComponent({
         isMuted={track.isMuted}
         derivedType={derivedType}
         color={trackColor}
-        selectionMode={selectionMode}
+        selectionIncludeModeEnabled={selectionIncludeModeEnabled}
         isIncludedInSelection={isIncludedInSelection}
         onToggleVisibility={handleToggleVisibility}
         onToggleMute={handleToggleMute}

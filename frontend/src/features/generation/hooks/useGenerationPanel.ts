@@ -967,6 +967,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
         selectionEndTick,
         {
           message: selectionConfig?.message ?? null,
+          includeTracks: selectionConfig?.includeTracks === true,
         },
       );
       extractStore.setOnConfirmSelection(() => {

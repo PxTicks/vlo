@@ -34,6 +34,7 @@ export interface GeneratedCreationWorkflowSelectionConfig {
   frameStep?: number;
   maxFrames?: number;
   message?: string;
+  includeTracks?: boolean;
 }
 
 export interface GeneratedCreationWorkflowInputDispatch {

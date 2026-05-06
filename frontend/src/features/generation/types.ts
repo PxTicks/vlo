@@ -122,6 +122,7 @@ export interface WorkflowSelectionConfig {
   frameStep?: number;
   maxFrames?: number;
   message?: string;
+  includeTracks?: boolean;
 }
 
 export interface WorkflowInputDispatch {

@@ -87,6 +87,7 @@ describe("SelectionOverlay", () => {
           selectionStartTick: 0,
           selectionEndTick: 96000,
           selectionMessage: "Use the highlighted tracks for this pass",
+          selectionIncludeModeEnabled: true,
           selectionIncludedTrackIds: ["track-1", "track-2"],
           selectionFpsOverride: null,
           selectionFrameStep: 1,
@@ -109,6 +110,7 @@ describe("SelectionOverlay", () => {
       selectionStartTick: 0,
       selectionEndTick: 96000,
       selectionMessage: "Use the highlighted tracks for this pass",
+      selectionIncludeModeEnabled: true,
       selectionIncludedTrackIds: ["track-1", "track-2"],
       selectionFpsOverride: null,
       selectionFrameStep: 1,
@@ -217,7 +219,7 @@ describe("SelectionOverlay", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "2 included tracks. Click track header checkboxes to focus the selection.",
+        "2 included tracks. Use the header overlays to include the tracks for this selection.",
       ),
     ).toBeInTheDocument();
   });

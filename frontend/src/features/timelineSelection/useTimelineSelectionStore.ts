@@ -5,6 +5,7 @@ export interface TimelineSelectionState {
   selectionStartTick: number;
   selectionEndTick: number;
   selectionMessage: string | null;
+  selectionIncludeModeEnabled: boolean;
   selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
   selectionFrameStep: number;
@@ -16,6 +17,7 @@ export interface TimelineSelectionState {
     endTick: number,
     options?: {
       message?: string | null;
+      includeTracks?: boolean;
       includedTrackIds?: string[];
     },
   ) => void;
@@ -39,6 +41,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
   selectionStartTick: 0,
   selectionEndTick: 0,
   selectionMessage: null,
+  selectionIncludeModeEnabled: false,
   selectionIncludedTrackIds: [],
   selectionFpsOverride: null,
   selectionFrameStep: 1,
@@ -54,7 +57,9 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
         typeof options?.message === "string" && options.message.trim().length > 0
           ? options.message.trim()
           : null,
-      selectionIncludedTrackIds: Array.isArray(options?.includedTrackIds)
+      selectionIncludeModeEnabled: options?.includeTracks === true,
+      selectionIncludedTrackIds:
+        options?.includeTracks === true && Array.isArray(options?.includedTrackIds)
         ? options.includedTrackIds.filter(
             (trackId, index, list): trackId is string =>
               typeof trackId === "string" &&
@@ -128,6 +133,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       selectionStartTick: 0,
       selectionEndTick: 0,
       selectionMessage: null,
+      selectionIncludeModeEnabled: false,
       selectionIncludedTrackIds: [],
       selectionRecommendedFps: null,
       selectionRecommendedFrameStep: null,

@@ -295,6 +295,7 @@ export interface WorkflowRuleSelectionConfig {
   frame_step?: number | null;
   max_frames?: number | null;
   message?: string | null;
+  include_tracks?: boolean | null;
 }
 
 export interface WorkflowRuleSlot {

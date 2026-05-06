@@ -25,6 +25,7 @@ export function createTimelineSelection(
     selectionFpsOverride,
     selectionFrameStep,
     selectionMessage,
+    selectionIncludeModeEnabled,
     selectionIncludedTrackIds,
   } =
     useTimelineSelectionStore.getState();
@@ -43,7 +44,7 @@ export function createTimelineSelection(
     }),
     tracks,
     ...(selectionMessage ? { message: selectionMessage } : {}),
-    ...(selectionIncludedTrackIds.length > 0
+    ...(selectionIncludeModeEnabled && selectionIncludedTrackIds.length > 0
       ? { includedTrackIds: selectionIncludedTrackIds.slice() }
       : {}),
     fps: selectionFps,

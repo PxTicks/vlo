@@ -116,6 +116,9 @@ export function toSelectionConfig(
   if (typeof selection.message === "string" && selection.message.trim().length > 0) {
     next.message = selection.message.trim();
   }
+  if (selection.include_tracks === true) {
+    next.includeTracks = true;
+  }
 
   return Object.keys(next).length > 0 ? next : undefined;
 }

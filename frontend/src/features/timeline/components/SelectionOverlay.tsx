@@ -49,6 +49,9 @@ export function SelectionOverlay({
   );
   const selectionFrameStep = useTimelineSelectionStore((s) => s.selectionFrameStep);
   const selectionMessage = useTimelineSelectionStore((s) => s.selectionMessage);
+  const selectionIncludeModeEnabled = useTimelineSelectionStore(
+    (s) => s.selectionIncludeModeEnabled,
+  );
   const selectionIncludedTrackIds = useTimelineSelectionStore(
     (s) => s.selectionIncludedTrackIds,
   );
@@ -394,6 +397,7 @@ export function SelectionOverlay({
         selectionIncludedTrackIds.length === 1 ? "" : "s"
       }`
     : "All tracks";
+  const showSelectionMeta = selectionIncludeModeEnabled || Boolean(selectionMessage);
 
   // Determine if we should show a warning
   const isOverRecommended =
@@ -571,11 +575,11 @@ export function SelectionOverlay({
           px: 2,
           py: 1,
           display: "flex",
-          flexDirection: "column",
-          gap: 1,
-          alignItems: "stretch",
+          flexDirection: showSelectionMeta ? "column" : "row",
+          gap: showSelectionMeta ? 1 : 1.5,
+          alignItems: showSelectionMeta ? "stretch" : "center",
           borderRadius: 2,
-          width: "min(90vw, 920px)",
+          width: showSelectionMeta ? "min(90vw, 920px)" : "auto",
         }}
       >
         {selectionMessage ? (
@@ -584,14 +588,20 @@ export function SelectionOverlay({
           </Typography>
         ) : null}
 
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
-          <Typography variant="caption" sx={{ color: "#7ec8e3", flexShrink: 0 }}>
-            Track scope
-          </Typography>
-          <Typography variant="body2" sx={{ color: "#aaa", minWidth: 0 }}>
-            {trackScopeLabel}. Click track header checkboxes to focus the selection.
-          </Typography>
-        </Box>
+        {selectionIncludeModeEnabled ? (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
+            <Typography
+              variant="caption"
+              sx={{ color: "#7ec8e3", flexShrink: 0 }}
+            >
+              Track scope
+            </Typography>
+            <Typography variant="body2" sx={{ color: "#aaa", minWidth: 0 }}>
+              {trackScopeLabel}. Use the header overlays to include the tracks for
+              this selection.
+            </Typography>
+          </Box>
+        ) : null}
 
         <Box
           sx={{
@@ -737,7 +747,7 @@ export function SelectionOverlay({
             size="small"
             color="inherit"
             onClick={handleCancel}
-            sx={{ color: "#aaa", marginLeft: "auto" }}
+            sx={{ color: "#aaa", marginLeft: showSelectionMeta ? "auto" : 0 }}
           >
             Cancel
           </Button>

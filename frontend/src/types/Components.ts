@@ -100,10 +100,23 @@ export type MaskCompositionComponent = ComponentBase<
 // markers: list of source-time-encoded markers carried with the clip
 // ---------------------------------------------------------------------------
 
+export type MarkerKind = "beat" | "downbeat";
+
 export interface MarkerEntry {
   id: string;
   sourceTimeTicks: number;
   name?: string;
+  /**
+   * Optional discriminator for markers produced by automated tools.
+   * Plain user-added markers leave this unset. Beat-detection writes
+   * `"beat"` or `"downbeat"` so downstream UI can identify and bulk-manage
+   * them without overloading `name`.
+   */
+  kind?: MarkerKind;
+}
+
+export function isBeatMarker(marker: MarkerEntry): boolean {
+  return marker.kind === "beat" || marker.kind === "downbeat";
 }
 
 export interface MarkersComponentParameters {

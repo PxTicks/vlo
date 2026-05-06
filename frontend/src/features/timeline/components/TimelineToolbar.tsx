@@ -17,6 +17,7 @@ import type {
   MarkerEntry,
   MarkersComponent,
 } from "../../../types/Components";
+import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import { MIN_ZOOM, MAX_ZOOM, TICKS_PER_SECOND } from "../constants";
 import { ensureAssetSourceLoaded } from "../../userAssets/publicApi";
@@ -36,6 +37,21 @@ export const TimelineToolbar = () => {
 
   const [isDetectingBeats, setIsDetectingBeats] = useState(false);
 
+  const selectedClipsHaveBeats = useTimelineStore((state) => {
+    if (state.selectedClipIds.length === 0) return false;
+    for (const clipId of state.selectedClipIds) {
+      const clip = state.clips.find((candidate) => candidate.id === clipId);
+      if (!clip || clip.type === "mask") continue;
+      const markers = (clip.components ?? []).find(
+        (component): component is MarkersComponent => component.type === "markers",
+      );
+      if (markers?.parameters.markers.some(isBeatMarker)) {
+        return true;
+      }
+    }
+    return false;
+  });
+
   const handleSliderChange = (_: Event, newValue: number | number[]) => {
     setZoomScale(newValue as number);
   };
@@ -48,6 +64,14 @@ export const TimelineToolbar = () => {
 
     const isAudibleClip = (clip: TimelineClip): boolean =>
       clip.type === "audio" || clip.type === "video";
+
+    const clipHasBeatMarkers = (clip: TimelineClip): boolean => {
+      if (clip.type === "mask") return false;
+      const markers = (clip.components ?? []).find(
+        (component): component is MarkersComponent => component.type === "markers",
+      );
+      return markers?.parameters.markers.some(isBeatMarker) ?? false;
+    };
 
     let candidates: TimelineClip[] = state.selectedClipIds
       .map((id) => state.clips.find((candidate) => candidate.id === id))
@@ -64,6 +88,11 @@ export const TimelineToolbar = () => {
 
     if (candidates.length === 0) {
       window.alert("Select an audio or video clip to detect beats.");
+      return;
+    }
+
+    if (candidates.some(clipHasBeatMarkers)) {
+      window.alert("Please remove all beats before regenerating.");
       return;
     }
 
@@ -104,7 +133,7 @@ export const TimelineToolbar = () => {
         const newMarkers: MarkerEntry[] = result.beats.map((beat) => ({
           id: crypto.randomUUID(),
           sourceTimeTicks: beat.timeTicks,
-          name: beat.isDownbeat ? "downbeat" : "beat",
+          kind: beat.isDownbeat ? "downbeat" : "beat",
         }));
 
         const refreshed = useTimelineStore
@@ -274,15 +303,23 @@ export const TimelineToolbar = () => {
           </IconButton>
         </Tooltip>
 
-        <Tooltip title="Detect Beats (selected audio/video clip)">
+        <Tooltip
+          title={
+            selectedClipsHaveBeats
+              ? "Remove existing beats before regenerating"
+              : "Detect Beats (selected audio/video clip)"
+          }
+        >
           <span>
             <IconButton
               size="small"
               data-testid="timeline-detect-beats"
               aria-label="Detect beats"
               onClick={handleDetectBeats}
-              disabled={isDetectingBeats}
-              sx={{ color: "#fbc02d" }}
+              disabled={isDetectingBeats || selectedClipsHaveBeats}
+              sx={{
+                color: selectedClipsHaveBeats ? "#666" : "#fbc02d",
+              }}
             >
               {isDetectingBeats ? (
                 <CircularProgress size={16} sx={{ color: "#fbc02d" }} />

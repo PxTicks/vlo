@@ -14,6 +14,7 @@ import {
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import GraphicEqIcon from "@mui/icons-material/GraphicEq";
+import MusicOffIcon from "@mui/icons-material/MusicOff";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 
@@ -30,6 +31,8 @@ import type {
   BaseClip,
   TimelineClip as TimelineClipType,
 } from "../../../types/TimelineTypes";
+import type { MarkersComponent } from "../../../types/Components";
+import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
 import { useAsset } from "../../userAssets/publicApi";
 import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStore";
@@ -151,6 +154,17 @@ function TimelineClipComponent({
     !!timelineClip.assetId &&
     timelineClip.type === "video" &&
     clipAsset?.hasAudio !== false;
+
+  const beatMarkersComponent = useTimelineStore((state) => {
+    const liveClip = state.clips.find((candidate) => candidate.id === clip.id);
+    if (!liveClip || liveClip.type === "mask") return null;
+    const markers = (liveClip.components ?? []).find(
+      (component): component is MarkersComponent => component.type === "markers",
+    );
+    if (!markers) return null;
+    return markers.parameters.markers.some(isBeatMarker) ? markers : null;
+  });
+  const canRemoveBeats = beatMarkersComponent !== null;
 
   // 2. Vertical Position
   const topPos = isOverlay ? 0 : trackIndex * TRACK_HEIGHT + RULER_HEIGHT + 5;
@@ -299,6 +313,29 @@ function TimelineClipComponent({
   const handleContextMute = () => {
     if (canMute) {
       useTimelineStore.getState().toggleClipMute(clip.id);
+    }
+    closeContextMenu();
+  };
+
+  const handleContextRemoveBeats = () => {
+    if (!beatMarkersComponent) {
+      closeContextMenu();
+      return;
+    }
+    const remaining = beatMarkersComponent.parameters.markers.filter(
+      (marker) => !isBeatMarker(marker),
+    );
+    const store = useTimelineStore.getState();
+    if (remaining.length === 0) {
+      store.removeClipComponent(clip.id, beatMarkersComponent.id);
+    } else {
+      store.updateClipComponent(clip.id, beatMarkersComponent.id, (component) => {
+        if (component.type !== "markers") return component;
+        return {
+          ...component,
+          parameters: { ...component.parameters, markers: remaining },
+        };
+      });
     }
     closeContextMenu();
   };
@@ -474,6 +511,14 @@ function TimelineClipComponent({
               )}
             </ListItemIcon>
             <ListItemText>{isClipMuted ? "Unmute" : "Mute"}</ListItemText>
+          </MenuItem>
+        )}
+        {canRemoveBeats && (
+          <MenuItem onClick={handleContextRemoveBeats}>
+            <ListItemIcon>
+              <MusicOffIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Remove Beats</ListItemText>
           </MenuItem>
         )}
       </Menu>

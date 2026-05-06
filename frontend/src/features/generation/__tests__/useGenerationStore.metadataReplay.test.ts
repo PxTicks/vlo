@@ -92,6 +92,9 @@ describe("useGenerationStore metadata replay", () => {
           type: "video/mp4",
         }),
       },
+      maskContentByKey: {
+        video_binary: true,
+      },
     });
     mocks.pickPrimaryPreparedMaskFile.mockReturnValue(
       new File(["mask"], "selection-mask.mp4", {

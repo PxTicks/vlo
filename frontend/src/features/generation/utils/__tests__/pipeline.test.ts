@@ -343,6 +343,9 @@ describe("generation pipeline", () => {
             type: "video/mp4",
           }),
         },
+        maskContentByKey: {
+          video_binary: true,
+        },
       });
 
     const request = await frontendPreprocess(
@@ -476,6 +479,10 @@ describe("generation pipeline", () => {
           { type: "video/mp4" },
         ),
       },
+      maskContentByKey: {
+        video_binary: true,
+        audio_timing_binary_25: true,
+      },
     });
 
     const request = await frontendPreprocess(
@@ -525,6 +532,234 @@ describe("generation pipeline", () => {
     expect(request.videoInputs.mask_input.name).toBe("selection-mask.mp4");
     expect(request.videoInputs.audio_mask_input.name).toBe(
       "selection-audio-mask.mp4",
+    );
+  });
+
+  it("keeps optional derived masks when the selection carries mask_ref-backed geometry", async () => {
+    const derivedRenderSpy = vi
+      .spyOn(inputSelection, "renderTimelineSelectionToMp4WithDerivedMasks")
+      .mockResolvedValue({
+        video: new File(["video"], "selection.mp4", { type: "video/mp4" }),
+        masks: {
+          video_binary: new File(["mask"], "selection-mask.mp4", {
+            type: "video/mp4",
+          }),
+        },
+        maskContentByKey: {
+          video_binary: true,
+        },
+      });
+    const plainRenderSpy = vi.spyOn(inputSelection, "renderTimelineSelectionToMp4");
+
+    await frontendPreprocess(
+      {},
+      "workflow.json",
+      [
+        {
+          nodeId: "video_input",
+          classType: "LoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Video Input",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      {
+        video_input: {
+          type: "video_selection",
+          selection: {
+            start: 0,
+            end: 24,
+            fps: 24,
+            clips: [
+              {
+                id: "clip-visual",
+                type: "video",
+                name: "Visual Clip",
+                assetId: "asset-1",
+                sourceDuration: 24,
+                transformedDuration: 24,
+                transformedOffset: 0,
+                timelineDuration: 24,
+                croppedSourceDuration: 24,
+                offset: 0,
+                transformations: [],
+                trackId: "track-1",
+                start: 0,
+                components: [
+                  {
+                    id: "mask-ref-1",
+                    type: "mask_ref",
+                    parameters: {
+                      maskClipId: "clip-mask",
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      "client-id",
+      [
+        {
+          sourceNodeId: "video_input",
+          maskNodeId: "mask_input",
+          maskParam: "file",
+          maskType: "binary",
+          optional: true,
+        },
+      ],
+    );
+
+    expect(derivedRenderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: 0,
+        end: 24,
+        fps: 24,
+      }),
+      [
+        {
+          sourceNodeId: "video_input",
+          maskNodeId: "mask_input",
+          maskParam: "file",
+          maskType: "binary",
+          optional: true,
+        },
+      ],
+      {
+        preparedMaskFile: undefined,
+        preparedVideoFile: undefined,
+        signal: undefined,
+      },
+    );
+    expect(plainRenderSpy).not.toHaveBeenCalled();
+  });
+
+  it("drops optional derived mask uploads when the rendered mask output is empty", async () => {
+    vi.spyOn(inputSelection, "renderTimelineSelectionToMp4WithDerivedMasks")
+      .mockResolvedValue({
+        video: new File(["video"], "selection.mp4", { type: "video/mp4" }),
+        masks: {
+          video_binary: new File(["mask"], "selection-mask.mp4", {
+            type: "video/mp4",
+          }),
+        },
+        maskContentByKey: {
+          video_binary: false,
+        },
+      });
+
+    const request = await frontendPreprocess(
+      {},
+      "workflow.json",
+      [
+        {
+          nodeId: "video_input",
+          classType: "LoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Video Input",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      {
+        video_input: {
+          type: "video_selection",
+          selection: {
+            start: 0,
+            end: 24,
+            clips: [],
+            fps: 24,
+          },
+        },
+      },
+      "client-id",
+      [
+        {
+          sourceNodeId: "video_input",
+          maskNodeId: "mask_input",
+          maskParam: "file",
+          maskType: "binary",
+          optional: true,
+        },
+      ],
+    );
+
+    expect(request.videoInputs.video_input.name).toBe("selection.mp4");
+    expect(request.videoInputs.mask_input).toBeUndefined();
+  });
+
+  it("re-renders optional masks instead of reusing cached prepared mask files", async () => {
+    const renderSpy = vi
+      .spyOn(inputSelection, "renderTimelineSelectionToMp4WithDerivedMasks")
+      .mockResolvedValue({
+        video: new File(["video"], "selection.mp4", { type: "video/mp4" }),
+        masks: {
+          video_binary: new File(["mask"], "selection-mask.mp4", {
+            type: "video/mp4",
+          }),
+        },
+        maskContentByKey: {
+          video_binary: true,
+        },
+      });
+    const preparedVideoFile = new File(["video"], "prepared.mp4", {
+      type: "video/mp4",
+    });
+    const preparedMaskFile = new File(["mask"], "prepared-mask.mp4", {
+      type: "video/mp4",
+    });
+
+    await frontendPreprocess(
+      {},
+      "workflow.json",
+      [
+        {
+          nodeId: "video_input",
+          classType: "LoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Video Input",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      {
+        video_input: {
+          type: "video_selection",
+          selection: {
+            start: 0,
+            end: 24,
+            clips: [],
+            fps: 24,
+          },
+          preparedVideoFile,
+          preparedMaskFile,
+        },
+      },
+      "client-id",
+      [
+        {
+          sourceNodeId: "video_input",
+          maskNodeId: "mask_input",
+          maskParam: "file",
+          maskType: "binary",
+          optional: true,
+        },
+      ],
+    );
+
+    expect(renderSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      {
+        preparedMaskFile: undefined,
+        preparedVideoFile,
+        signal: undefined,
+      },
     );
   });
 

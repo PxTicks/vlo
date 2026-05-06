@@ -1,5 +1,4 @@
 import type { TimelineSelection } from "../../../../types/TimelineTypes";
-import { selectionHasMaskClip } from "../../../timelineSelection";
 import type { WorkflowSelectionConfig } from "../../types";
 import {
   renderTimelineSelectionToMp4,
@@ -80,7 +79,7 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       preparedVideoFile?: File,
       preparedMaskFile?: File,
       config?: WorkflowSelectionConfig,
-    ) {
+    ): Promise<Awaited<ReturnType<typeof renderTimelineSelectionToMp4WithDerivedMasks>>> {
       const visualMasks = masks.filter((mask) => mask.purpose !== "audio_timing");
       const hasAudioTimingMasks = visualMasks.length !== masks.length;
       const uniqueVisualMaskKeys = new Set(
@@ -97,6 +96,9 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
           video: preparedVideoFile,
           masks: {
             [visualMaskKey]: preparedMaskFile,
+          },
+          maskContentByKey: {
+            [visualMaskKey]: true,
           },
         };
       }
@@ -126,24 +128,22 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       } else if (value.type === "video_selection") {
         const allMasks =
           masksBySource.get(inputId) ?? masksBySource.get(input.nodeId);
-        // Optional mask mappings are dropped when the selection contains no
-        // mask clip — the corresponding mask node receives no upload, so a
-        // sidecar `input_presence` rewrite can bypass the mask chain.
-        const masks =
-          allMasks && !selectionHasMaskClip(value.selection)
-            ? allMasks.filter((mapping) => !mapping.optional)
-            : allMasks;
-        if (masks && masks.length > 0) {
+        // Optional mask uploads stay compatible with `input_presence`
+        // rewrites by withholding the upload after render when the matte is
+        // effectively empty.
+        const needsRenderedMaskPresenceCheck =
+          allMasks?.some((mapping) => mapping.optional) ?? false;
+        if (allMasks && allMasks.length > 0) {
           const result = await normalizeVideoSelectionWithDerivedMasks(
             value.selection,
-            masks,
+            allMasks,
             value.preparedVideoFile,
-            value.preparedMaskFile,
+            needsRenderedMaskPresenceCheck ? undefined : value.preparedMaskFile,
           );
           throwIfAborted(ctx.signal);
           ctx.videoInputs[getNodeInputRequestKey(input, inputById)] =
             result.video;
-          for (const mask of masks) {
+          for (const mask of allMasks) {
             const maskInput = ctx.workflowInputs.find(
               (candidate) =>
                 candidate.nodeId === mask.maskNodeId &&
@@ -157,6 +157,12 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
               throw new Error(
                 `Derived mask render '${getDerivedMaskRenderKey(mask)}' was requested but not produced`,
               );
+            }
+            if (
+              mask.optional &&
+              result.maskContentByKey[getDerivedMaskRenderKey(mask)] === false
+            ) {
+              continue;
             }
             ctx.videoInputs[maskRequestKey] = renderedMask;
           }

@@ -6,6 +6,7 @@ import {
   normalizeTimelineSelection,
   resolveSelectionFps,
   resolveSelectionFrameStep,
+  selectionHasMaskClip,
   snapFrameCountToStep,
 } from "../timelineSelection";
 import { TICKS_PER_SECOND } from "../../../timeline";
@@ -262,5 +263,103 @@ describe("timelineSelection helpers", () => {
       visualClip,
       maskClip,
     ]);
+  });
+
+  it("treats mask_ref-backed selections as masked even when the mask clip is absent", () => {
+    const selection = {
+      start: 0,
+      end: 100,
+      clips: [
+        {
+          id: "clip-visual",
+          type: "video" as const,
+          name: "Visual Clip",
+          assetId: "asset-1",
+          sourceDuration: 100,
+          transformedDuration: 100,
+          transformedOffset: 0,
+          timelineDuration: 100,
+          croppedSourceDuration: 100,
+          offset: 0,
+          transformations: [],
+          trackId: "track-visual",
+          start: 0,
+          components: [
+            {
+              id: "mask-ref-1",
+              type: "mask_ref" as const,
+              parameters: {
+                maskClipId: "clip-mask",
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(selectionHasMaskClip(selection)).toBe(true);
+  });
+
+  it("recovers linked mask clips when saved selections only contain the parent clip", () => {
+    const visualClip = {
+      id: "clip-visual",
+      type: "video" as const,
+      name: "Visual Clip",
+      assetId: "asset-1",
+      sourceDuration: 100,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      timelineDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformations: [],
+      trackId: "track-visual",
+      start: 0,
+      components: [
+        {
+          id: "mask-ref-1",
+          type: "mask_ref" as const,
+          parameters: {
+            maskClipId: "clip-mask",
+          },
+        },
+      ],
+    };
+    const maskClip = {
+      id: "clip-mask",
+      type: "mask" as const,
+      name: "Mask Clip",
+      sourceDuration: 100,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      timelineDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformations: [],
+      trackId: "track-mask",
+      start: 0,
+      maskType: "circle" as const,
+      maskMode: "apply" as const,
+      maskInverted: false,
+      maskParameters: {
+        baseWidth: 100,
+        baseHeight: 100,
+      },
+    };
+
+    expect(
+      normalizeTimelineSelection(
+        {
+          start: 0,
+          end: 100,
+          clips: [visualClip],
+        },
+        [visualClip, maskClip],
+      ),
+    ).toEqual({
+      start: 0,
+      end: 100,
+      clips: [visualClip, maskClip],
+    });
   });
 });

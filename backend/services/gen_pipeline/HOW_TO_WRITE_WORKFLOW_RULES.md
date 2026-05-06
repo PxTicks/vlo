@@ -610,11 +610,10 @@ which means the mask node is always present in `provided_input_ids`.
 A mask becomes **optional** when its node carries `present.required: false`.
 Two things change for that target:
 
-1. The frontend's video-input collector inspects the timeline selection. If
-   it contains no clip of `type: "mask"` (i.e. the user made a selection
-   without painting/creating a mask, or dragged in a raw video), the
-   optional mapping is dropped before render — no mask file is generated
-   and the mask node receives no upload.
+1. The frontend still renders the derived mask pass, but decides
+   optional-mask presence from the rendered matte itself. If the rendered
+   mask output is effectively empty, the optional upload is suppressed and
+   the mask node receives no file.
 2. Because nothing was uploaded to the mask node, it is absent from
    `provided_input_ids`. A sidecar `rewrites` entry can then bypass the
    mask chain via an `input_presence` `all_missing` check on that node id.

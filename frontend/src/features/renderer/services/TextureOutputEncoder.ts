@@ -14,6 +14,11 @@ import {
 } from "../utils/outputTransformStack";
 
 export type OutputVideoFormat = "mp4";
+export type OutputContentProbe = "non_black_pixels";
+
+export interface OutputVideoAnalysis {
+  hasVisibleContent: boolean;
+}
 
 export interface OutputVideoDefinition {
   id: string;
@@ -23,6 +28,11 @@ export interface OutputVideoDefinition {
   audioBitrate?: number;
   transformStack?: OutputTransform[];
   fileHandle?: FileSystemFileHandle;
+  /**
+   * Optional analysis over the transformed output.
+   * Used by derived-mask exports to detect effectively empty mattes.
+   */
+  contentProbe?: OutputContentProbe;
 }
 
 interface ManagedOutput {
@@ -33,6 +43,30 @@ interface ManagedOutput {
   videoSource: CanvasSource;
   audioSource: AudioBufferSource | null;
   fileStream?: FileSystemWritableFileStream;
+  measuredContent: boolean;
+  hasVisibleContent: boolean;
+  canMeasureContent: boolean;
+}
+
+interface RendererExtractApi {
+  pixels?: (target?: unknown) => Uint8Array | Uint8ClampedArray;
+  canvas?: (target?: unknown) => HTMLCanvasElement | Promise<HTMLCanvasElement>;
+}
+
+interface FinalizedOutputBundle {
+  blobs: Record<string, Blob>;
+  analyses: Record<string, OutputVideoAnalysis>;
+}
+
+function pixelsContainNonBlackContent(
+  pixels: ArrayLike<number>,
+): boolean {
+  for (let index = 0; index < pixels.length; index += 4) {
+    if (pixels[index] > 0 || pixels[index + 1] > 0 || pixels[index + 2] > 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export class TextureOutputEncoder {
@@ -118,6 +152,9 @@ export class TextureOutputEncoder {
           videoSource,
           audioSource,
           fileStream,
+          measuredContent: false,
+          hasVisibleContent: false,
+          canMeasureContent: definition.contentProbe === "non_black_pixels",
         };
       }),
     );
@@ -161,11 +198,54 @@ export class TextureOutputEncoder {
         container: this.outputStage,
         clear: true,
       });
+      if (
+        output.definition.contentProbe === "non_black_pixels" &&
+        output.canMeasureContent &&
+        !output.hasVisibleContent
+      ) {
+        const hasVisibleContent = await this.probeRenderedOutputContent();
+        if (typeof hasVisibleContent === "boolean") {
+          output.measuredContent = true;
+          output.hasVisibleContent = hasVisibleContent;
+        } else {
+          output.canMeasureContent = false;
+        }
+      }
       await output.videoSource.add(timestamp, frameDuration);
     }
   }
 
-  public async finalize(): Promise<Record<string, Blob>> {
+  private async probeRenderedOutputContent(): Promise<boolean | null> {
+    const extract = (
+      this.app.renderer as { extract?: RendererExtractApi }
+    ).extract;
+
+    if (extract?.pixels) {
+      try {
+        return pixelsContainNonBlackContent(extract.pixels(this.outputStage));
+      } catch {
+        // Fall through to the canvas-based path below.
+      }
+    }
+
+    if (extract?.canvas) {
+      try {
+        const canvas = await Promise.resolve(extract.canvas(this.outputStage));
+        const context = canvas.getContext("2d");
+        if (!context) {
+          return null;
+        }
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        return pixelsContainNonBlackContent(imageData.data);
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  public async finalize(): Promise<FinalizedOutputBundle> {
     for (const output of this.outputs) {
       await output.videoSource.close();
       await output.output.finalize();
@@ -182,7 +262,23 @@ export class TextureOutputEncoder {
         });
       }
     }
-    return blobs;
+
+    const analyses: Record<string, OutputVideoAnalysis> = {};
+    for (const output of this.outputs) {
+      if (
+        output.definition.contentProbe === "non_black_pixels" &&
+        output.measuredContent
+      ) {
+        analyses[output.definition.id] = {
+          hasVisibleContent: output.hasVisibleContent,
+        };
+      }
+    }
+
+    return {
+      blobs,
+      analyses,
+    };
   }
 
   public dispose(): void {

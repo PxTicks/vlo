@@ -69,14 +69,30 @@ export function snapFrameCountToStep(
   return Math.max(1, snappedUnits * safeFrameStep + 1);
 }
 
+function clipReferencesMask(clip: TimelineClip): boolean {
+  if (clip.type === "mask") {
+    return false;
+  }
+
+  return (clip.components ?? []).some(
+    (component) =>
+      component.type === "mask_ref" &&
+      typeof component.parameters.maskClipId === "string" &&
+      component.parameters.maskClipId.trim().length > 0,
+  );
+}
+
 /**
- * True when the selection's clip set contains at least one clip whose
- * type is `"mask"`. Used to decide whether a derived-mask render would
- * produce non-empty output.
+ * True when the selection contains either explicit mask clips or clips that
+ * reference masks. This is only a structural hint: it does not account for
+ * active-range windows or final scene occlusion, so generation-time optional
+ * mask bypasses should prefer a rendered-output check instead.
  */
 export function selectionHasMaskClip(selection: TimelineSelection): boolean {
   return Array.isArray(selection.clips)
-    ? selection.clips.some((clip) => clip.type === "mask")
+    ? selection.clips.some(
+        (clip) => clip.type === "mask" || clipReferencesMask(clip),
+      )
     : false;
 }
 
@@ -181,6 +197,50 @@ export function getIncludedClipsForSelection(
   );
 }
 
+function recoverReferencedMaskClips(
+  clips: TimelineClip[],
+  availableClips: TimelineClip[],
+): TimelineClip[] {
+  if (clips.length === 0 || availableClips.length === 0) {
+    return clips;
+  }
+
+  const clipIds = new Set(clips.map((clip) => clip.id));
+  const availableClipsById = new Map(
+    availableClips.map((clip) => [clip.id, clip] as const),
+  );
+  const recoveredMaskClips: TimelineClip[] = [];
+
+  for (const clip of clips) {
+    if (!clipReferencesMask(clip)) {
+      continue;
+    }
+
+    for (const component of clip.components ?? []) {
+      if (component.type !== "mask_ref") {
+        continue;
+      }
+
+      const { maskClipId } = component.parameters;
+      if (typeof maskClipId !== "string" || clipIds.has(maskClipId)) {
+        continue;
+      }
+
+      const maskClip = availableClipsById.get(maskClipId);
+      if (maskClip?.type !== "mask") {
+        continue;
+      }
+
+      clipIds.add(maskClip.id);
+      recoveredMaskClips.push(maskClip);
+    }
+  }
+
+  return recoveredMaskClips.length > 0
+    ? [...clips, ...recoveredMaskClips]
+    : clips;
+}
+
 function isTimelineClip(value: unknown): value is TimelineClip {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -213,7 +273,7 @@ export function normalizeTimelineSelection(
 
   const recoveredClips =
     validClips.length > 0
-      ? validClips
+      ? recoverReferencedMaskClips(validClips, availableClips)
       : availableClips.length > 0
         ? getClipsInSelection(availableClips, {
             ...selection,

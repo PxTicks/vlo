@@ -89,6 +89,11 @@ describe("inputSelection", () => {
         outputs: {
           mask: new Blob(["mask"], { type: "video/mp4" }),
         },
+        outputAnalyses: {
+          mask: {
+            hasVisibleContent: false,
+          },
+        },
       })
       .mockResolvedValueOnce({
         video: new Blob(["video"], { type: "video/mp4" }),
@@ -132,6 +137,7 @@ describe("inputSelection", () => {
 
     expect(result.video.type).toBe("video/mp4");
     expect(result.mask.type).toBe("video/mp4");
+    expect(result.maskHasVisibleContent).toBe(false);
   });
 
   it("renders mask-only outputs at explicit small dimensions when requested", async () => {

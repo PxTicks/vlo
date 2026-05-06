@@ -24,6 +24,7 @@ import {
 } from "../../timelineSelection";
 import {
   TextureOutputEncoder,
+  type OutputVideoAnalysis,
   type OutputVideoDefinition,
 } from "./TextureOutputEncoder";
 
@@ -207,6 +208,7 @@ export interface RenderResult {
   video: Blob;
   mask?: Blob;
   outputs: Record<string, Blob>;
+  outputAnalyses?: Record<string, OutputVideoAnalysis>;
 }
 
 export class ExportRenderer {
@@ -496,7 +498,8 @@ export class ExportRenderer {
 
       this.throwIfCancelled();
 
-      const outputs = await outputEncoder.finalize();
+      const { blobs: outputs, analyses: outputAnalyses } =
+        await outputEncoder.finalize();
       const primaryOutputId = outputs.video
         ? "video"
         : Object.keys(outputs)[0] ?? null;
@@ -508,6 +511,7 @@ export class ExportRenderer {
         video: outputs[primaryOutputId],
         mask: outputs.mask,
         outputs,
+        outputAnalyses,
       };
     } finally {
       options.signal?.removeEventListener("abort", onAbort);

@@ -70,6 +70,7 @@ export async function renderTimelineSelectionToMp4(
 export interface TimelineSelectionWithMaskResult {
   video: File;
   mask: File;
+  maskHasVisibleContent: boolean;
 }
 
 export type DerivedMaskRenderKey =
@@ -80,6 +81,7 @@ export type DerivedMaskRenderKey =
 export interface TimelineSelectionWithDerivedMasksResult {
   video: File;
   masks: Partial<Record<DerivedMaskRenderKey, File>>;
+  maskContentByKey: Partial<Record<DerivedMaskRenderKey, boolean>>;
 }
 
 export const DEFAULT_AUDIO_TIMING_MASK_EXPORT_FPS = 25;
@@ -150,13 +152,21 @@ function createVideoOutputDefinition() {
   };
 }
 
-function createMaskOutputDefinition(maskType: DerivedMaskType) {
+function createMaskOutputDefinition(
+  maskType: DerivedMaskType,
+  options: {
+    trackRenderedMaskContent?: boolean;
+  } = {},
+) {
   return {
     id: "mask",
     format: "mp4" as const,
     includeAudio: false,
     bitrate: 20_000_000,
     transformStack: [createFilterStackTransform([createMaskFilter(maskType)])],
+    ...(options.trackRenderedMaskContent
+      ? { contentProbe: "non_black_pixels" as const }
+      : {}),
   };
 }
 
@@ -190,7 +200,7 @@ async function renderTimelineSelectionToOutputs(
     outputWidth?: number;
     outputHeight?: number;
   } = {},
-): Promise<Record<string, Blob>> {
+): Promise<Awaited<ReturnType<ExportRenderer["render"]>>> {
   throwIfAborted(options.signal);
   const { exportConfig, projectData } = buildProjectRenderInputs();
   const renderConfig = {
@@ -210,7 +220,47 @@ async function renderTimelineSelectionToOutputs(
     includeTimelineMasks: options.includeTimelineMasks,
     signal: options.signal,
   });
-  return result.outputs;
+  return result;
+}
+
+function getRenderedMaskHasVisibleContent(
+  result: Awaited<ReturnType<ExportRenderer["render"]>>,
+): boolean {
+  return result.outputAnalyses?.mask?.hasVisibleContent ?? true;
+}
+
+async function renderTimelineSelectionToMaskOutput(
+  timelineSelection: TimelineSelection,
+  maskType: DerivedMaskType = "binary",
+  options: RenderTimelineSelectionMaskOptions & {
+    trackRenderedMaskContent?: boolean;
+  } = {},
+): Promise<{ file: File; hasVisibleContent: boolean }> {
+  const result = await renderTimelineSelectionToOutputs(
+    timelineSelection,
+    [
+      createMaskOutputDefinition(maskType, {
+        trackRenderedMaskContent: options.trackRenderedMaskContent,
+      }),
+    ],
+    {
+      signal: options.signal,
+      outputWidth: options.outputWidth,
+      outputHeight: options.outputHeight,
+    },
+  );
+  const maskBlob = result.outputs.mask;
+  if (!maskBlob) {
+    throw new Error("Mask output was requested but not produced");
+  }
+
+  return {
+    file: createOutputFile(
+      maskBlob,
+      `generation-selection-mask-${Date.now()}.mp4`,
+    ),
+    hasVisibleContent: getRenderedMaskHasVisibleContent(result),
+  };
 }
 
 export async function renderTimelineSelectionToMaskMp4(
@@ -221,23 +271,12 @@ export async function renderTimelineSelectionToMaskMp4(
   throwIfAborted(options.signal);
 
   try {
-    const outputs = await renderTimelineSelectionToOutputs(
+    const result = await renderTimelineSelectionToMaskOutput(
       timelineSelection,
-      [createMaskOutputDefinition(maskType)],
-      {
-        signal: options.signal,
-        outputWidth: options.outputWidth,
-        outputHeight: options.outputHeight,
-      },
+      maskType,
+      options,
     );
-    const maskBlob = outputs.mask;
-    if (!maskBlob) {
-      throw new Error("Mask output was requested but not produced");
-    }
-    return createOutputFile(
-      maskBlob,
-      `generation-selection-mask-${Date.now()}.mp4`,
-    );
+    return result.file;
   } catch (error) {
     if (options.signal?.aborted && error instanceof Error) {
       throw createGenerationAbortError(error.message);
@@ -250,7 +289,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
   timelineSelection: TimelineSelection,
   derivedMaskMappings: readonly Pick<
     DerivedMaskMapping,
-    "maskType" | "purpose" | "renderFps"
+    "maskType" | "purpose" | "renderFps" | "optional"
   >[],
   options: {
     signal?: AbortSignal;
@@ -259,9 +298,10 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
   } = {},
 ): Promise<TimelineSelectionWithDerivedMasksResult> {
   const masks: Partial<Record<DerivedMaskRenderKey, File>> = {};
+  const maskContentByKey: Partial<Record<DerivedMaskRenderKey, boolean>> = {};
   const requiredMasksByKey = new Map<
     DerivedMaskRenderKey,
-    Pick<DerivedMaskMapping, "maskType" | "purpose" | "renderFps">
+    Pick<DerivedMaskMapping, "maskType" | "purpose" | "renderFps" | "optional">
   >();
   for (const mapping of derivedMaskMappings) {
     const key = getDerivedMaskRenderKey(mapping);
@@ -273,9 +313,18 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
   const visualMaskKeys = requiredMaskKeys.filter(
     (key) => !key.startsWith("audio_timing_binary_"),
   );
+  const hasOptionalVisualMask = derivedMaskMappings.some(
+    (mapping) =>
+      getDerivedMaskPurpose(mapping) === "video" && mapping.optional === true,
+  );
 
-  if (options.preparedMaskFile && visualMaskKeys.length === 1) {
+  if (
+    options.preparedMaskFile &&
+    visualMaskKeys.length === 1 &&
+    !hasOptionalVisualMask
+  ) {
     masks[visualMaskKeys[0]] = options.preparedMaskFile;
+    maskContentByKey[visualMaskKeys[0]] = true;
   }
 
   const preparedVideoFile = options.preparedVideoFile;
@@ -287,13 +336,15 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     visualMaskKeys.length === 1 &&
     !masks[visualMaskKeys[0]]
   ) {
-    const { video, mask } = await renderTimelineSelectionToMp4WithMask(
+    const { video, mask, maskHasVisibleContent } =
+      await renderTimelineSelectionToMp4WithMask(
       timelineSelection,
       visualMaskKeys[0] === "video_soft" ? "soft" : "binary",
       { signal: options.signal },
     );
     masks[visualMaskKeys[0]] = mask;
-    return { video, masks };
+    maskContentByKey[visualMaskKeys[0]] = maskHasVisibleContent;
+    return { video, masks, maskContentByKey };
   }
 
   const video = canReusePreparedVideo
@@ -325,18 +376,22 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
           outputHeight: AUDIO_TIMING_MASK_OUTPUT_SIZE,
         },
       );
+      maskContentByKey[key] = true;
       continue;
     }
-    masks[key] = await renderTimelineSelectionToMaskMp4(
+    const { file, hasVisibleContent } = await renderTimelineSelectionToMaskOutput(
       timelineSelection,
       key === "video_soft" ? "soft" : "binary",
       {
         signal: options.signal,
+        trackRenderedMaskContent: true,
       },
     );
+    masks[key] = file;
+    maskContentByKey[key] = hasVisibleContent;
   }
 
-  return { video, masks };
+  return { video, masks, maskContentByKey };
 }
 
 export async function renderTimelineSelectionToMp4WithMask(
@@ -349,7 +404,9 @@ export async function renderTimelineSelectionToMp4WithMask(
   throwIfAborted(options.signal);
   const { exportConfig, projectData } = buildProjectRenderInputs();
   try {
-    const maskOutput = createMaskOutputDefinition(maskType);
+    const maskOutput = createMaskOutputDefinition(maskType, {
+      trackRenderedMaskContent: true,
+    });
     const maskRenderer = await ExportRenderer.create(exportConfig);
     const maskResult = await maskRenderer.render(
       projectData,
@@ -390,6 +447,7 @@ export async function renderTimelineSelectionToMp4WithMask(
     return {
       video: createOutputFile(videoBlob, `generation-selection-${now}.mp4`),
       mask: createOutputFile(maskBlob, `generation-selection-mask-${now}.mp4`),
+      maskHasVisibleContent: getRenderedMaskHasVisibleContent(maskResult),
     };
   } catch (error) {
     if (options.signal?.aborted && error instanceof Error) {

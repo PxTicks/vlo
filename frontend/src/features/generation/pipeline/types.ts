@@ -40,10 +40,10 @@ export interface DerivedMaskMapping {
   renderFps?: number;
   /**
    * When true, the mask node is declared optional in the rules sidecar
-   * (`present.required === false`). If the timeline selection contains no
-   * mask clip, the mapping is dropped before render so the mask node never
-   * receives an upload, allowing the workflow's `input_presence` rewrite to
-   * bypass the mask chain.
+   * (`present.required === false`). Optional uploads are decided from the
+   * rendered mask output rather than structural clip inspection, so active
+   * ranges and final scene compositing can suppress the upload and allow the
+   * workflow's `input_presence` rewrite to bypass the mask chain.
    */
   optional?: boolean;
 }

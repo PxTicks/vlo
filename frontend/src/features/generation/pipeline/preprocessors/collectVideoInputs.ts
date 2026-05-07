@@ -6,10 +6,6 @@ import {
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../../utils/inputSelection";
 import {
-  recordMaskDebugArtifact,
-  summarizeSelectionForMaskDebug,
-} from "../../utils/maskDebugArtifacts";
-import {
   buildWorkflowInputLookup,
   getNodeInputRequestKey,
 } from "../../utils/workflowInputs";
@@ -205,71 +201,6 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
               throw new Error(
                 `Derived mask render '${getDerivedMaskRenderKey(mask)}' was requested but not produced`,
               );
-            }
-            const isPreparedVisualMask = renderedMask === value.preparedMaskFile;
-            if (mask.purpose === "audio_timing") {
-              recordMaskDebugArtifact({
-                category: "submit_rendered_audio_timing_mask",
-                file: renderedMask,
-                metadata: {
-                  workflowId: ctx.workflowId,
-                  inputId,
-                  sourceNodeId: input.nodeId,
-                  maskNodeId: mask.maskNodeId,
-                  maskRequestKey,
-                  maskRenderKey: getDerivedMaskRenderKey(mask),
-                  optional: mask.optional === true,
-                  ...summarizeSelectionForMaskDebug(value.selection),
-                },
-              });
-            } else if (isPreparedVisualMask) {
-              recordMaskDebugArtifact({
-                category: "submit_reused_prepared_visual_mask",
-                file: renderedMask,
-                metadata: {
-                  workflowId: ctx.workflowId,
-                  inputId,
-                  sourceNodeId: input.nodeId,
-                  maskNodeId: mask.maskNodeId,
-                  maskRequestKey,
-                  maskRenderKey: getDerivedMaskRenderKey(mask),
-                  optional: mask.optional === true,
-                  reusedPreparedMaskFile: true,
-                  ...summarizeSelectionForMaskDebug(value.selection),
-                },
-              });
-            } else if (mask.optional) {
-              recordMaskDebugArtifact({
-                category: "submit_rendered_optional_visual_mask",
-                file: renderedMask,
-                metadata: {
-                  workflowId: ctx.workflowId,
-                  inputId,
-                  sourceNodeId: input.nodeId,
-                  maskNodeId: mask.maskNodeId,
-                  maskRequestKey,
-                  maskRenderKey: getDerivedMaskRenderKey(mask),
-                  optional: true,
-                  hasVisibleContent:
-                    result.maskContentByKey[getDerivedMaskRenderKey(mask)] ?? null,
-                  ...summarizeSelectionForMaskDebug(value.selection),
-                },
-              });
-            } else {
-              recordMaskDebugArtifact({
-                category: "submit_rendered_visual_mask",
-                file: renderedMask,
-                metadata: {
-                  workflowId: ctx.workflowId,
-                  inputId,
-                  sourceNodeId: input.nodeId,
-                  maskNodeId: mask.maskNodeId,
-                  maskRequestKey,
-                  maskRenderKey: getDerivedMaskRenderKey(mask),
-                  optional: false,
-                  ...summarizeSelectionForMaskDebug(value.selection),
-                },
-              });
             }
             if (
               mask.optional &&

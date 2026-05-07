@@ -115,7 +115,6 @@ export interface TimelineSelectionWithDerivedMasksResult {
 }
 
 export const DEFAULT_AUDIO_TIMING_MASK_EXPORT_FPS = 25;
-export const AUDIO_TIMING_MASK_OUTPUT_SIZE = 64;
 
 type RenderSelectionOutputDefinition =
   | ReturnType<typeof createVideoOutputDefinition>
@@ -430,6 +429,8 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
       continue;
     }
     if (getDerivedMaskPurpose(mapping) === "audio_timing") {
+      // Audio timing masks are reduced to per-frame activity downstream, so
+      // shrinking them here can erase small active regions entirely.
       masks[key] = await renderTimelineSelectionToMaskMp4(
         {
           ...timelineSelection,
@@ -439,8 +440,6 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
         "binary",
         {
           signal: options.signal,
-          outputWidth: AUDIO_TIMING_MASK_OUTPUT_SIZE,
-          outputHeight: AUDIO_TIMING_MASK_OUTPUT_SIZE,
         },
       );
       maskContentByKey[key] = true;

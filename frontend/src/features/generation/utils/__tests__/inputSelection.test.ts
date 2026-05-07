@@ -4,7 +4,6 @@ import { useProjectStore } from "../../../project/useProjectStore";
 import { useTimelineStore } from "../../../timeline";
 import { useAssetStore } from "../../../userAssets";
 import {
-  AUDIO_TIMING_MASK_OUTPUT_SIZE,
   DEFAULT_AUDIO_TIMING_MASK_EXPORT_FPS,
   renderTimelineSelectionToMaskMp4,
   renderTimelineSelectionToMp4WithDerivedMasks,
@@ -12,6 +11,8 @@ import {
 } from "../inputSelection";
 
 describe("inputSelection", () => {
+  const SMALL_MASK_OUTPUT_SIZE = 64;
+
   beforeEach(() => {
     vi.restoreAllMocks();
 
@@ -162,22 +163,22 @@ describe("inputSelection", () => {
       timelineSelection,
       "binary",
       {
-        outputWidth: AUDIO_TIMING_MASK_OUTPUT_SIZE,
-        outputHeight: AUDIO_TIMING_MASK_OUTPUT_SIZE,
+        outputWidth: SMALL_MASK_OUTPUT_SIZE,
+        outputHeight: SMALL_MASK_OUTPUT_SIZE,
       },
     );
 
     expect(createSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        outputWidth: AUDIO_TIMING_MASK_OUTPUT_SIZE,
-        outputHeight: AUDIO_TIMING_MASK_OUTPUT_SIZE,
+        outputWidth: SMALL_MASK_OUTPUT_SIZE,
+        outputHeight: SMALL_MASK_OUTPUT_SIZE,
       }),
     );
     expect(renderSpy).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        outputWidth: AUDIO_TIMING_MASK_OUTPUT_SIZE,
-        outputHeight: AUDIO_TIMING_MASK_OUTPUT_SIZE,
+        outputWidth: SMALL_MASK_OUTPUT_SIZE,
+        outputHeight: SMALL_MASK_OUTPUT_SIZE,
       }),
       expect.any(Function),
       expect.objectContaining({
@@ -252,10 +253,18 @@ describe("inputSelection", () => {
     expect(renderSpy.mock.calls[1]?.[3]).toMatchObject({
       timelineSelection: expect.objectContaining({ fps: 17 }),
     });
+    expect(renderSpy.mock.calls[1]?.[1]).toMatchObject({
+      outputWidth: renderSpy.mock.calls[0]?.[1]?.outputWidth,
+      outputHeight: renderSpy.mock.calls[0]?.[1]?.outputHeight,
+    });
     expect(renderSpy.mock.calls[3]?.[3]).toMatchObject({
       timelineSelection: expect.objectContaining({
         fps: DEFAULT_AUDIO_TIMING_MASK_EXPORT_FPS,
       }),
+    });
+    expect(renderSpy.mock.calls[3]?.[1]).toMatchObject({
+      outputWidth: renderSpy.mock.calls[2]?.[1]?.outputWidth,
+      outputHeight: renderSpy.mock.calls[2]?.[1]?.outputHeight,
     });
   });
 });

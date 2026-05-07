@@ -5,10 +5,12 @@ import type {
   WorkflowRewriteRule,
   WorkflowRules,
 } from "./workflowRules/types";
+import type { WorkflowInputMetadataMap } from "../pipeline/types";
 
 export interface FrontendRuleState {
   providedInputIds: ReadonlySet<string>;
   widgetValues: Readonly<Record<string, unknown>>;
+  inputMetadata: Readonly<WorkflowInputMetadataMap>;
 }
 
 export interface WidgetOverride {
@@ -53,11 +55,37 @@ export function buildFrontendStateValueKey(options: {
 export function createFrontendRuleState(
   providedInputIds: ReadonlySet<string>,
   widgetValues: Readonly<Record<string, unknown>> = {},
+  inputMetadata: Readonly<WorkflowInputMetadataMap> = {},
 ): FrontendRuleState {
   return {
     providedInputIds,
     widgetValues,
+    inputMetadata,
   };
+}
+
+function resolveInputMetadataField(
+  inputMetadata: Readonly<WorkflowInputMetadataMap>,
+  inputId: string,
+  field: string,
+): unknown {
+  const metadata = inputMetadata[inputId];
+  if (!metadata || field.trim().length === 0) {
+    return undefined;
+  }
+
+  let current: unknown = metadata;
+  for (const segment of field.split(".")) {
+    if (
+      typeof current !== "object" ||
+      current === null ||
+      Array.isArray(current)
+    ) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
 }
 
 function coerceNumeric(value: unknown): number | null {
@@ -135,6 +163,17 @@ export function resolveStateReference(
     return Object.prototype.hasOwnProperty.call(state.widgetValues, key)
       ? state.widgetValues[key]
       : undefined;
+  }
+
+  if (kind === "input_metadata") {
+    const { input: inputId, field } = ref as {
+      input: string;
+      field: string;
+    };
+    if (typeof inputId !== "string" || typeof field !== "string") {
+      return undefined;
+    }
+    return resolveInputMetadataField(state.inputMetadata, inputId, field);
   }
 
   // pipeline_control values are not known on the frontend — conditions

@@ -37,6 +37,7 @@ export type {
   EffectSwitch,
   EffectSwitchCase,
   FrontendControlStateReference,
+  InputMetadataReference,
   MaskProcessingTarget,
   PipelineControl,
   PipelineControlCondition,

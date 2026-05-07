@@ -50,6 +50,7 @@ import {
   hasProvidedMediaInputValue,
   resolveAssetFileForGeneration,
 } from "../utils/mediaInputAssets";
+import { buildWorkflowInputMetadataMap } from "../utils/inputMetadata";
 import { carryOverTextValues } from "../utils/workflowInputCarryover";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import { resolveManualWidgetInputs } from "../services/manualWorkflowWidgets";
@@ -362,6 +363,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   );
   const workflowInputs =
     mode === "manual" ? manualWorkflowInputs : smartWorkflowInputs;
+  const projectConfig = useProjectStore((state) => state.config);
   const workflowInputById = useMemo(
     () => buildWorkflowInputLookup(workflowInputs),
     [workflowInputs],
@@ -392,12 +394,22 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     }
     return provided;
   }, [mediaInputs, textValues, workflowInputById, workflowInputs]);
+  const inputMetadata = useMemo(
+    () =>
+      buildWorkflowInputMetadataMap(
+        workflowInputs,
+        mediaInputs,
+        projectConfig,
+      ),
+    [mediaInputs, projectConfig, workflowInputs],
+  );
   const smartWidgetInputs = useMemo(
     () =>
       resolveWidgetInputs(syncedWorkflow, activeWorkflowRules, {
         graphData: syncedGraphData,
         objectInfo: rawObjectInfo,
         providedInputIds,
+        inputMetadata,
       }),
     [
       syncedWorkflow,
@@ -405,6 +417,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       syncedGraphData,
       rawObjectInfo,
       providedInputIds,
+      inputMetadata,
     ],
   );
   const manualWidgetInputs = useMemo(

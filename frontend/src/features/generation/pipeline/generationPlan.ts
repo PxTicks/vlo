@@ -19,6 +19,7 @@ import {
   findPreparedMaskFallback,
 } from "../store/metadata";
 import { frontendPreprocess } from "../utils/pipeline";
+import { buildWorkflowInputMetadataMap } from "../utils/inputMetadata";
 import {
   buildWorkflowInputLookup,
   getNodeInputRequestKey,
@@ -803,6 +804,13 @@ export function createGenerationPlan(
       frontendStateWidgetValues: cloneSerializableValue(
         options.frontendStateWidgetValues,
       ),
+      inputMetadata: cloneSerializableValue(
+        buildWorkflowInputMetadataMap(
+          options.workflowInputs,
+          options.mediaInputs,
+          options.projectConfig,
+        ),
+      ),
       widgetModes: { ...options.widgetModes },
       derivedWidgetInputs: { ...options.derivedWidgetInputs },
       bypassNodeIds: [...(options.bypassNodeIds ?? [])],
@@ -885,6 +893,9 @@ export async function prepareGenerationPlan(
   }
   if (Object.keys(plan.submission.derivedWidgetInputs).length > 0) {
     request.derivedWidgetInputs = { ...plan.submission.derivedWidgetInputs };
+  }
+  if (Object.keys(plan.submission.inputMetadata).length > 0) {
+    request.inputMetadata = cloneSerializableValue(plan.submission.inputMetadata);
   }
 
   return {

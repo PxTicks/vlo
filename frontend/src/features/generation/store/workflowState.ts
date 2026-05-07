@@ -6,6 +6,7 @@ import {
   type WorkflowInputValidationRule,
   type WorkflowRules,
 } from "../services/workflowRules";
+import type { WorkflowInputMetadataMap } from "../pipeline/types";
 import type { WorkflowInput } from "../types";
 import { extractWorkflowNodeMap } from "../utils/workflowNodeSignature";
 
@@ -518,6 +519,7 @@ export function resolveWidgetInputs(
     objectInfo?: Record<string, unknown> | null;
     providedInputIds?: ReadonlySet<string>;
     frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
+    inputMetadata?: Readonly<WorkflowInputMetadataMap>;
   } = {},
 ) {
   return resolveWidgetInputsFromRules(

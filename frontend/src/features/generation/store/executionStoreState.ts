@@ -430,16 +430,19 @@ async function captureSubmittedWorkflow(
     plan.workflow.workflowRules,
     providedInputIds,
     plan.submission.frontendStateWidgetValues,
+    plan.submission.inputMetadata,
   );
   const { bypass, widgetOverrides: rewriteWidgetOverrides } = evaluateRewrites(
     rewrites,
     providedInputIds,
     plan.submission.frontendStateWidgetValues,
+    plan.submission.inputMetadata,
   );
   const effectSwitchEffects = evaluateEffectSwitchesForState(
     plan.workflow.workflowRules?.effect_switches ?? [],
     providedInputIds,
     plan.submission.frontendStateWidgetValues,
+    plan.submission.inputMetadata,
   );
   const bypassNodeIds = Array.from(
     new Set([

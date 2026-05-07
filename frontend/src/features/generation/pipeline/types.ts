@@ -67,6 +67,30 @@ export type SlotValue =
       pendingExtractionRequestId?: number;
     };
 
+export interface TimelineSelectionInputMetadata {
+  startTick: number;
+  endTick: number;
+  durationTicks: number;
+  durationSeconds: number;
+  effectiveFps: number;
+  frameStep: number;
+  frameCount: number;
+  clipCount: number;
+  trackCount: number;
+  includedTrackCount: number;
+  hasMaskClip: boolean;
+  isRange: boolean;
+}
+
+export interface WorkflowInputMetadata {
+  sourceKind: "asset" | "frame" | "timeline_selection";
+  inputType: WorkflowInput["inputType"];
+  mediaType?: "image" | "video" | "audio";
+  timelineSelection?: TimelineSelectionInputMetadata;
+}
+
+export type WorkflowInputMetadataMap = Record<string, WorkflowInputMetadata>;
+
 // ---------------------------------------------------------------------------
 // Processor metadata — self-documenting processor declarations
 // ---------------------------------------------------------------------------
@@ -141,6 +165,7 @@ export interface GenerationPreprocessPlan {
 export interface GenerationSubmissionPlan {
   widgetInputs: Record<string, string>;
   frontendStateWidgetValues: Record<string, unknown>;
+  inputMetadata: WorkflowInputMetadataMap;
   derivedWidgetInputs: Record<string, string>;
   widgetModes: Record<string, "fixed" | "randomize">;
   bypassNodeIds: string[];
@@ -215,6 +240,7 @@ export interface GenerationRequest {
   widgetInputs?: Record<string, string>;
   derivedWidgetInputs?: Record<string, string>;
   widgetModes?: Record<string, "fixed" | "randomize">;
+  inputMetadata?: WorkflowInputMetadataMap;
   pipelineInputs: Record<string, Record<string, unknown>>;
   clientId: string;
   promptIsPreResolved?: boolean;

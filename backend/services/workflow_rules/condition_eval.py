@@ -29,6 +29,26 @@ class ConditionState:
     pipeline_control_values: dict[str, dict[str, Any]] = field(default_factory=dict)
     frontend_control_values: dict[str, Any] = field(default_factory=dict)
     derived_widget_values: dict[str, Any] = field(default_factory=dict)
+    input_metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def resolve_input_metadata_field(
+    input_metadata: dict[str, Any],
+    input_id: Any,
+    field_name: Any,
+) -> Any:
+    if not isinstance(input_id, str) or not isinstance(field_name, str):
+        return None
+
+    current = input_metadata.get(input_id)
+    if not isinstance(current, dict):
+        return None
+
+    for segment in field_name.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(segment)
+    return current
 
 
 def _coerce_numeric(value: Any) -> float | None:
@@ -104,6 +124,13 @@ def resolve_state_reference(ref: Any, state: ConditionState) -> Any:
         if not isinstance(derived_id, str):
             return None
         return state.derived_widget_values.get(derived_id)
+
+    if kind == "input_metadata":
+        return resolve_input_metadata_field(
+            state.input_metadata,
+            ref.get("input"),
+            ref.get("field"),
+        )
 
     return None
 
@@ -216,5 +243,6 @@ __all__ = [
     "ConditionState",
     "compare_values",
     "evaluate_condition",
+    "resolve_input_metadata_field",
     "resolve_state_reference",
 ]

@@ -157,6 +157,7 @@
             "mapping": {
               "derived_widget": "#/$defs/DerivedWidgetStateReference",
               "frontend_control": "#/$defs/FrontendControlStateReference",
+              "input_metadata": "#/$defs/InputMetadataReference",
               "pipeline_control": "#/$defs/PipelineControlReference",
               "workflow_param": "#/$defs/WorkflowParamValueReference"
             },
@@ -174,6 +175,9 @@
             },
             {
               "$ref": "#/$defs/DerivedWidgetStateReference"
+            },
+            {
+              "$ref": "#/$defs/InputMetadataReference"
             }
           ],
           "title": "Ref"
@@ -366,6 +370,47 @@
       "title": "FrontendControlStateReference",
       "type": "object"
     },
+    "InputMetadataReference": {
+      "properties": {
+        "field": {
+          "enum": [
+            "sourceKind",
+            "inputType",
+            "mediaType",
+            "timelineSelection.startTick",
+            "timelineSelection.endTick",
+            "timelineSelection.durationTicks",
+            "timelineSelection.durationSeconds",
+            "timelineSelection.effectiveFps",
+            "timelineSelection.frameStep",
+            "timelineSelection.frameCount",
+            "timelineSelection.clipCount",
+            "timelineSelection.trackCount",
+            "timelineSelection.includedTrackCount",
+            "timelineSelection.hasMaskClip",
+            "timelineSelection.isRange"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "input": {
+          "title": "Input",
+          "type": "string"
+        },
+        "kind": {
+          "const": "input_metadata",
+          "default": "input_metadata",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input",
+        "field"
+      ],
+      "title": "InputMetadataReference",
+      "type": "object"
+    },
     "MaskProcessingTarget": {
       "properties": {
         "mask": {
@@ -422,6 +467,7 @@
                 "mapping": {
                   "derived_widget": "#/$defs/DerivedWidgetStateReference",
                   "frontend_control": "#/$defs/FrontendControlStateReference",
+                  "input_metadata": "#/$defs/InputMetadataReference",
                   "pipeline_control": "#/$defs/PipelineControlReference",
                   "workflow_param": "#/$defs/WorkflowParamValueReference"
                 },
@@ -439,6 +485,9 @@
                 },
                 {
                   "$ref": "#/$defs/DerivedWidgetStateReference"
+                },
+                {
+                  "$ref": "#/$defs/InputMetadataReference"
                 }
               ]
             },
@@ -768,6 +817,7 @@
             "mapping": {
               "derived_widget": "#/$defs/DerivedWidgetStateReference",
               "frontend_control": "#/$defs/FrontendControlStateReference",
+              "input_metadata": "#/$defs/InputMetadataReference",
               "pipeline_control": "#/$defs/PipelineControlReference",
               "workflow_param": "#/$defs/WorkflowParamValueReference"
             },
@@ -785,6 +835,9 @@
             },
             {
               "$ref": "#/$defs/DerivedWidgetStateReference"
+            },
+            {
+              "$ref": "#/$defs/InputMetadataReference"
             }
           ],
           "title": "Ref"

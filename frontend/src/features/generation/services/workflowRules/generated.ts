@@ -24,7 +24,7 @@ export interface ConditionAnyOf {
 
 export interface ConditionCompare {
   kind?: "compare";
-  ref: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference;
+  ref: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference | InputMetadataReference;
   operator?: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
   value?: unknown | null;
 }
@@ -55,6 +55,12 @@ export interface FrontendControlStateReference {
   control_id: string;
 }
 
+export interface InputMetadataReference {
+  kind?: "input_metadata";
+  input: string;
+  field: "sourceKind" | "inputType" | "mediaType" | "timelineSelection.startTick" | "timelineSelection.endTick" | "timelineSelection.durationTicks" | "timelineSelection.durationSeconds" | "timelineSelection.effectiveFps" | "timelineSelection.frameStep" | "timelineSelection.frameCount" | "timelineSelection.clipCount" | "timelineSelection.trackCount" | "timelineSelection.includedTrackCount" | "timelineSelection.hasMaskClip" | "timelineSelection.isRange";
+}
+
 export interface MaskProcessingTarget {
   source: WorkflowParamReference;
   mask: WorkflowParamReference;
@@ -83,12 +89,12 @@ export interface PipelineControl {
   exclude_options?: Array<string | number | boolean> | null;
   true_value?: unknown | null;
   false_value?: unknown | null;
-  bind?: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference | null;
+  bind?: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference | InputMetadataReference | null;
   default_rules?: Array<PipelineControlDefaultRule> | null;
 }
 
 export interface PipelineControlCondition {
-  ref: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference;
+  ref: WorkflowParamValueReference | PipelineControlReference | FrontendControlStateReference | DerivedWidgetStateReference | InputMetadataReference;
   operator?: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
   value?: unknown | null;
 }
@@ -294,8 +300,6 @@ export interface WorkflowRuleSelectionConfig {
   export_fps?: number | null;
   frame_step?: number | null;
   max_frames?: number | null;
-  message?: string | null;
-  include_tracks?: boolean | null;
 }
 
 export interface WorkflowRuleSlot {

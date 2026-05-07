@@ -3,6 +3,7 @@ import type {
   WorkflowRewriteRule,
   WorkflowRules,
 } from "./workflowRules/types";
+import type { WorkflowInputMetadataMap } from "../pipeline/types";
 import {
   createFrontendRuleState,
   evaluateEffectSwitches,
@@ -25,10 +26,11 @@ export function evaluateRewrites(
   rewrites: RewriteRule[],
   providedInputIds: ReadonlySet<string>,
   widgetValues: Readonly<Record<string, unknown>> = {},
+  inputMetadata: Readonly<WorkflowInputMetadataMap> = {},
 ): EvaluateRewritesResult {
   return evaluateRewriteEffects(
     rewrites,
-    createFrontendRuleState(providedInputIds, widgetValues),
+    createFrontendRuleState(providedInputIds, widgetValues, inputMetadata),
   );
 }
 
@@ -36,10 +38,11 @@ export function evaluateEffectSwitchesForState(
   switches: ReadonlyArray<EffectSwitch>,
   providedInputIds: ReadonlySet<string>,
   widgetValues: Readonly<Record<string, unknown>> = {},
+  inputMetadata: Readonly<WorkflowInputMetadataMap> = {},
 ): EvaluateRewritesResult {
   return evaluateEffectSwitches(
     switches,
-    createFrontendRuleState(providedInputIds, widgetValues),
+    createFrontendRuleState(providedInputIds, widgetValues, inputMetadata),
   );
 }
 
@@ -47,9 +50,10 @@ export function evaluateWidgetDefaultOverrides(
   rules: WorkflowRules | null | undefined,
   providedInputIds: ReadonlySet<string>,
   widgetValues: Readonly<Record<string, unknown>> = {},
+  inputMetadata: Readonly<WorkflowInputMetadataMap> = {},
 ): WidgetOverride[] {
   return evaluateWidgetDefaultOverridesFromState(
     rules,
-    createFrontendRuleState(providedInputIds, widgetValues),
+    createFrontendRuleState(providedInputIds, widgetValues, inputMetadata),
   );
 }

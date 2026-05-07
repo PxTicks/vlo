@@ -109,6 +109,54 @@ def test_vace_inpaint_hidden_target_aspect_ratio_accepts_frontend_submission():
     )
 
 
+def test_pipeline_controls_can_bind_to_input_metadata():
+    resolved, warnings = resolve_pipeline_control_values_with_warnings(
+        {
+            "version": 3,
+            "pipeline": [
+                {
+                    "id": "output_assembly",
+                    "kind": "output_assembly",
+                    "controls": [
+                        {
+                            "key": "mode",
+                            "value_type": "string",
+                            "default": "auto",
+                            "default_rules": [
+                                {
+                                    "when": {
+                                        "ref": {
+                                            "kind": "input_metadata",
+                                            "input": "89",
+                                            "field": "timelineSelection.durationSeconds",
+                                        },
+                                        "operator": "gt",
+                                        "value": 5,
+                                    },
+                                    "value": "stitch_frames_with_audio",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+        workflow={},
+        pipeline_inputs={},
+        input_metadata={
+            "89": {
+                "sourceKind": "timeline_selection",
+                "timelineSelection": {
+                    "durationSeconds": 6,
+                },
+            }
+        },
+    )
+
+    assert warnings == []
+    assert resolved["output_assembly"]["mode"] == "stitch_frames_with_audio"
+
+
 def test_vace_inpaint_mask_crop_records_crop_metadata_from_pipeline_outputs():
     rules_model, _ = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,

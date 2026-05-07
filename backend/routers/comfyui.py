@@ -1220,6 +1220,31 @@ async def generate(request: Request):
             if isinstance(stage_id, str) and isinstance(values, dict)
         }
 
+    input_metadata: dict[str, dict[str, Any]] = {}
+    input_metadata_json = form.get("input_metadata")
+    if isinstance(input_metadata_json, str) and input_metadata_json.strip():
+        try:
+            parsed_input_metadata = json.loads(input_metadata_json)
+        except json.JSONDecodeError:
+            return error_response(
+                400,
+                "invalid_input_metadata_payload",
+                "Input metadata payload must be valid JSON",
+                retryable=False,
+            )
+        if not isinstance(parsed_input_metadata, dict):
+            return error_response(
+                400,
+                "invalid_input_metadata_payload",
+                "Input metadata payload must be an object",
+                retryable=False,
+            )
+        input_metadata = {
+            input_id: value
+            for input_id, value in parsed_input_metadata.items()
+            if isinstance(input_id, str) and isinstance(value, dict)
+        }
+
     # --- Collect injections from form fields ---
     injections: dict[str, dict[str, Any]] = {}
     workflow_warnings: list[dict[str, Any]] = []
@@ -1439,6 +1464,7 @@ async def generate(request: Request):
         rules=workflow_rules,
         rules_override_provided=workflow_rules is not None,
         pipeline_inputs=pipeline_inputs,
+        input_metadata=input_metadata,
         injections=injections,
         widget_overrides=widget_overrides,
         derived_widget_values=derived_widget_values,

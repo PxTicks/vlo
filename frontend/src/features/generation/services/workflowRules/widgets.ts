@@ -15,6 +15,7 @@ import type {
   WidgetInputConfig,
   WorkflowWidgetInput,
 } from "../../types";
+import type { WorkflowInputMetadataMap } from "../../pipeline/types";
 import type {
   ConditionExpression,
   WorkflowDualSamplerDenoiseRule,
@@ -551,6 +552,7 @@ export function resolveWidgetInputsFromRules(
     objectInfo?: Record<string, unknown> | null;
     providedInputIds?: ReadonlySet<string>;
     frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
+    inputMetadata?: Readonly<WorkflowInputMetadataMap>;
   } = {},
 ): WorkflowWidgetInput[] {
   const workflowNodes = workflow ?? {};
@@ -562,6 +564,7 @@ export function resolveWidgetInputsFromRules(
   const frontendState = createFrontendRuleState(
     options.providedInputIds ?? new Set<string>(),
     options.frontendStateWidgetValues ?? {},
+    options.inputMetadata ?? {},
   );
   const ruleNodes = rules.nodes ?? {};
   const nodesWithWidgets = Object.entries(ruleNodes).filter(
@@ -726,6 +729,7 @@ export function resolveWidgetInputs(
     objectInfo?: Record<string, unknown> | null;
     providedInputIds?: ReadonlySet<string>;
     frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
+    inputMetadata?: Readonly<WorkflowInputMetadataMap>;
   } = {},
 ): WorkflowWidgetInput[] {
   const { rules } = normalizeWorkflowRules(rawRules);

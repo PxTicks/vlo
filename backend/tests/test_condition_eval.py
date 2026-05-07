@@ -57,6 +57,14 @@ def test_state_reference_kinds_resolve_from_their_state_bags():
         pipeline_control_values={"mask_processing": {"enabled": False}},
         frontend_control_values={"prompt_enhancer_enabled": True},
         derived_widget_values={"single_sampler_denoise": 0.75},
+        input_metadata={
+            "89": {
+                "sourceKind": "timeline_selection",
+                "timelineSelection": {
+                    "durationSeconds": 6,
+                },
+            }
+        },
     )
 
     assert (
@@ -98,6 +106,17 @@ def test_state_reference_kinds_resolve_from_their_state_bags():
         == 0.75
     )
     assert (
+        resolve_state_reference(
+            {
+                "kind": "input_metadata",
+                "input": "89",
+                "field": "timelineSelection.durationSeconds",
+            },
+            state,
+        )
+        == 6
+    )
+    assert (
         evaluate_condition(
             {
                 "kind": "compare",
@@ -107,6 +126,19 @@ def test_state_reference_kinds_resolve_from_their_state_bags():
             state,
         )
         is False
+    )
+    assert evaluate_condition(
+        {
+            "kind": "compare",
+            "ref": {
+                "kind": "input_metadata",
+                "input": "89",
+                "field": "timelineSelection.durationSeconds",
+            },
+            "operator": "gt",
+            "value": 5,
+        },
+        state,
     )
 
 

@@ -13,6 +13,26 @@ import {
   evaluateFrontendStateCondition,
 } from "../frontendRuleState";
 
+function createSelectionMetadata(
+  overrides: Partial<{ durationSeconds: number }> = {},
+) {
+  const durationSeconds = overrides.durationSeconds ?? 6;
+  return {
+    startTick: 0,
+    endTick: durationSeconds * 1000,
+    durationTicks: durationSeconds * 1000,
+    durationSeconds,
+    effectiveFps: 24,
+    frameStep: 1,
+    frameCount: durationSeconds * 24,
+    clipCount: 1,
+    trackCount: 1,
+    includedTrackCount: 1,
+    hasMaskClip: false,
+    isRange: true,
+  };
+}
+
 const IMAGE_PRESENCE_OVERRIDES = [
   {
     when: {
@@ -178,6 +198,45 @@ describe("evaluateRewrites", () => {
       widgetOverrides: [
         { node_id: "594", widget: "value", value: false },
       ],
+    });
+  });
+
+  it("can bypass nodes from timeline selection metadata", () => {
+    const rules = createDefaultWorkflowRules({
+      rewrites: [
+        {
+          when: {
+            kind: "compare",
+            ref: {
+              kind: "input_metadata",
+              input: "89",
+              field: "timelineSelection.durationSeconds",
+            },
+            operator: "gt",
+            value: 5,
+          },
+          bypass: ["347"],
+        },
+      ],
+    });
+
+    expect(
+      evaluateRewrites(
+        rules.rewrites ?? [],
+        new Set(["89"]),
+        {},
+        {
+          "89": {
+            sourceKind: "timeline_selection",
+            inputType: "video",
+            mediaType: "video",
+            timelineSelection: createSelectionMetadata(),
+          },
+        },
+      ),
+    ).toEqual({
+      bypass: ["347"],
+      widgetOverrides: [],
     });
   });
 });
@@ -385,5 +444,36 @@ describe("evaluateFrontendStateCondition", () => {
         state,
       ),
     ).toBe(false);
+  });
+
+  it("resolves input metadata references from the state bag", () => {
+    const state = createFrontendRuleState(
+      new Set(["89"]),
+      {},
+      {
+        "89": {
+          sourceKind: "timeline_selection",
+          inputType: "video",
+          mediaType: "video",
+          timelineSelection: createSelectionMetadata({ durationSeconds: 3 }),
+        },
+      },
+    );
+
+    expect(
+      evaluateFrontendStateCondition(
+        {
+          kind: "compare",
+          ref: {
+            kind: "input_metadata",
+            input: "89",
+            field: "timelineSelection.durationSeconds",
+          },
+          operator: "eq",
+          value: 3,
+        },
+        state,
+      ),
+    ).toBe(true);
   });
 });

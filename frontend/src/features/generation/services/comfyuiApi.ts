@@ -277,6 +277,9 @@ export async function generate(
     formData.append("workflow_rules", JSON.stringify(request.workflowRules));
   }
   formData.append("pipeline_inputs", JSON.stringify(request.pipelineInputs));
+  if (request.inputMetadata && Object.keys(request.inputMetadata).length > 0) {
+    formData.append("input_metadata", JSON.stringify(request.inputMetadata));
+  }
 
   for (const [nodeId, text] of Object.entries(request.textInputs)) {
     formData.append(`text_${nodeId}`, text);

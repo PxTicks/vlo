@@ -80,11 +80,37 @@ class DerivedWidgetStateReference(WorkflowRuleBaseModel):
     derived_widget_id: str
 
 
+WorkflowInputMetadataField = Literal[
+    "sourceKind",
+    "inputType",
+    "mediaType",
+    "timelineSelection.startTick",
+    "timelineSelection.endTick",
+    "timelineSelection.durationTicks",
+    "timelineSelection.durationSeconds",
+    "timelineSelection.effectiveFps",
+    "timelineSelection.frameStep",
+    "timelineSelection.frameCount",
+    "timelineSelection.clipCount",
+    "timelineSelection.trackCount",
+    "timelineSelection.includedTrackCount",
+    "timelineSelection.hasMaskClip",
+    "timelineSelection.isRange",
+]
+
+
+class InputMetadataReference(WorkflowRuleBaseModel):
+    kind: Literal["input_metadata"] = "input_metadata"
+    input: str
+    field: WorkflowInputMetadataField
+
+
 StateReference = Annotated[
     WorkflowParamValueReference
     | PipelineControlReference
     | FrontendControlStateReference
-    | DerivedWidgetStateReference,
+    | DerivedWidgetStateReference
+    | InputMetadataReference,
     Field(discriminator="kind"),
 ]
 

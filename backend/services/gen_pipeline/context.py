@@ -23,6 +23,7 @@ class BackendPipelineContext:
         workflow: dict[str, Any],
         workflow_id: str | None = None,
         pipeline_inputs: dict[str, dict[str, Any]] | None = None,
+        input_metadata: dict[str, Any] | None = None,
         injections: dict[str, dict[str, Any]] | None = None,
         widget_overrides: dict[str, dict[str, Any]] | None = None,
         derived_widget_values: dict[str, Any] | None = None,
@@ -49,6 +50,11 @@ class BackendPipelineContext:
             stage_id: dict(values)
             for stage_id, values in (pipeline_inputs or {}).items()
             if isinstance(stage_id, str) and isinstance(values, dict)
+        }
+        self.input_metadata = {
+            input_id: dict(value)
+            for input_id, value in (input_metadata or {}).items()
+            if isinstance(input_id, str) and isinstance(value, dict)
         }
         self.injections = dict(injections or {})
         self.widget_overrides = dict(widget_overrides or {})

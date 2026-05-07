@@ -26,6 +26,7 @@ class _ResolvePipelineControlsProcessor:
             ctx.rules,
             ctx.workflow,
             ctx.pipeline_inputs,
+            input_metadata=ctx.input_metadata,
         )
         if control_warnings:
             ctx.warnings.extend(control_warnings)

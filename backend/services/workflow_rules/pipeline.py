@@ -3,7 +3,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from services.workflow_rules.condition_eval import compare_values
+from services.workflow_rules.condition_eval import (
+    compare_values,
+    resolve_input_metadata_field,
+)
 from services.workflow_rules.normalize import WorkflowRules
 from services.workflow_rules.schema.models import (
     DEFAULT_PIPELINE_STAGE_AFTER_BY_KIND,
@@ -317,10 +320,12 @@ def resolve_pipeline_control_values_with_warnings(
     pipeline_inputs: dict[str, dict[str, Any]] | None,
     *,
     control_option_fallbacks: dict[tuple[str, str], list[Any]] | None = None,
+    input_metadata: dict[str, Any] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[PipelineControlResolutionWarning]]:
     resolved: dict[str, dict[str, Any]] = {}
     submitted = pipeline_inputs or {}
     fallbacks = control_option_fallbacks or {}
+    metadata = input_metadata or {}
     warnings: list[PipelineControlResolutionWarning] = []
     emitted_warning_keys: set[tuple[Any, ...]] = set()
 
@@ -376,6 +381,13 @@ def resolve_pipeline_control_values_with_warnings(
                 )
                 return None
             return resolve_control_value(target_stage_id, target_key)
+
+        if ref_kind == "input_metadata":
+            return resolve_input_metadata_field(
+                metadata,
+                ref.get("input"),
+                ref.get("field"),
+            )
 
         return None
 
@@ -546,12 +558,14 @@ def resolve_pipeline_control_values(
     pipeline_inputs: dict[str, dict[str, Any]] | None,
     *,
     control_option_fallbacks: dict[tuple[str, str], list[Any]] | None = None,
+    input_metadata: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
     resolved, _warnings = resolve_pipeline_control_values_with_warnings(
         rules,
         workflow,
         pipeline_inputs,
         control_option_fallbacks=control_option_fallbacks,
+        input_metadata=input_metadata,
     )
     return resolved
 

@@ -1113,6 +1113,68 @@ describe("resolvePresentedInputs", () => {
     ).toBe(true);
   });
 
+  it("can gate widget visibility from input metadata", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "145": {
+          inputs: {
+            strength: 0.5,
+          },
+        },
+      },
+      {
+        version: 3,
+        nodes: {
+          "145": {
+            widgets: {
+              strength: {
+                label: "Strength",
+                when: {
+                  kind: "compare",
+                  ref: {
+                    kind: "input_metadata",
+                    input: "89",
+                    field: "timelineSelection.durationSeconds",
+                  },
+                  operator: "lte",
+                  value: 5,
+                },
+                value_type: "float",
+              },
+            },
+          },
+        },
+        slots: {},
+      },
+      {
+        inputMetadata: {
+          "89": {
+            sourceKind: "timeline_selection",
+            inputType: "video",
+            mediaType: "video",
+            timelineSelection: {
+              startTick: 0,
+              endTick: 3000,
+              durationTicks: 3000,
+              durationSeconds: 3,
+              effectiveFps: 24,
+              frameStep: 1,
+              frameCount: 72,
+              clipCount: 1,
+              trackCount: 1,
+              includedTrackCount: 1,
+              hasMaskClip: false,
+              isRange: true,
+            },
+          },
+        },
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.param).toBe("strength");
+  });
+
   it("resolves dual-sampler denoise as a derived slider and hides backing widgets", () => {
     const widgets = resolveWidgetInputs(
       {

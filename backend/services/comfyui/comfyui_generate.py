@@ -48,6 +48,7 @@ class GenerationInput:
     rules: dict[str, Any] | None = None
     rules_override_provided: bool = False
     pipeline_inputs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    input_metadata: dict[str, Any] = field(default_factory=dict)
     injections: dict[str, dict[str, Any]] = field(default_factory=dict)
     widget_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     derived_widget_values: dict[str, Any] = field(default_factory=dict)
@@ -302,6 +303,7 @@ def build_backend_context(
         rules=gen_input.rules,
         rules_override_provided=gen_input.rules_override_provided,
         pipeline_inputs=gen_input.pipeline_inputs,
+        input_metadata=gen_input.input_metadata,
         injections=gen_input.injections,
         widget_overrides=gen_input.widget_overrides,
         derived_widget_values=gen_input.derived_widget_values,

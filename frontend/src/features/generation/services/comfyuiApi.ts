@@ -428,6 +428,16 @@ interface WorkflowListResponseItem {
   group_order?: number;
 }
 
+export interface WorkflowUploadResultItem {
+  filename: string;
+  kind: "workflow" | "rules";
+  workflow_id: string;
+}
+
+interface WorkflowUploadResponse {
+  uploaded: WorkflowUploadResultItem[];
+}
+
 export async function syncObjectInfo(): Promise<SyncObjectInfoResult> {
   const resp = await fetch(`${COMFY_API}/object_info/sync`, { method: "POST" });
   if (!resp.ok) {
@@ -483,6 +493,26 @@ export async function saveWorkflowContent(
   if (!resp.ok) {
     await throwRequestError("Workflow save", resp);
   }
+}
+
+export async function uploadWorkflowJsonFiles(
+  files: File[],
+): Promise<WorkflowUploadResultItem[]> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
+  }
+
+  const resp = await fetch(`${COMFY_API}/workflow/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!resp.ok) {
+    await throwRequestError("Workflow upload", resp);
+  }
+
+  const payload = (await resp.json()) as WorkflowUploadResponse;
+  return Array.isArray(payload.uploaded) ? payload.uploaded : [];
 }
 
 export async function getWorkflowRules(

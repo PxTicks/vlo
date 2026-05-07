@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type DragEvent, type MouseEvent } from "react";
 import {
   Box,
   Typography,
@@ -49,7 +49,11 @@ import {
   type PreviewAnimation,
 } from "./useGenerationStore";
 import { getOutputMediaKindFromFilename } from "./constants/mediaKinds";
-import { getObjectInfo, saveWorkflowContent } from "./services/comfyuiApi";
+import {
+  getObjectInfo,
+  saveWorkflowContent,
+  uploadWorkflowJsonFiles,
+} from "./services/comfyuiApi";
 import { isAspectRatioWidget } from "./utils/aspectRatioWidgets";
 import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResolver";
 import { buildWorkflowMenuSections } from "./store/workflowCatalog";
@@ -142,6 +146,43 @@ const PREVIEW_STYLE: React.CSSProperties = {
   display: "block",
 };
 
+function extractDroppedWorkflowJsonFiles(
+  dataTransfer: DataTransfer | null,
+): File[] {
+  if (!dataTransfer) return [];
+  return Array.from(dataTransfer.files).filter((file) =>
+    /\.json$/i.test(file.name.trim()),
+  );
+}
+
+function hasExternalFileTransfer(dataTransfer: DataTransfer | null): boolean {
+  if (!dataTransfer) return false;
+  if (dataTransfer.files.length > 0) {
+    return true;
+  }
+  if (Array.from(dataTransfer.items ?? []).some((item) => item.kind === "file")) {
+    return true;
+  }
+  return Array.from(dataTransfer.types ?? []).includes("Files");
+}
+
+function isLikelyWorkflowJsonTransfer(
+  dataTransfer: DataTransfer | null,
+): boolean {
+  if (!dataTransfer) return false;
+
+  const droppedFiles = extractDroppedWorkflowJsonFiles(dataTransfer);
+  if (droppedFiles.length > 0) {
+    return true;
+  }
+
+  return Array.from(dataTransfer.items ?? []).some((item) => {
+    if (item.kind !== "file") return false;
+    const normalizedType = item.type.toLowerCase();
+    return normalizedType.length === 0 || normalizedType.includes("json");
+  });
+}
+
 function LivePreview({
   animation,
   fallbackUrl,
@@ -191,6 +232,9 @@ function LivePreviewPlayback({
 
 export function GenerationPanel() {
   const [isBackendSavePending, setIsBackendSavePending] = useState(false);
+  const [isWorkflowUploadPending, setIsWorkflowUploadPending] = useState(false);
+  const [isWorkflowJsonDragActive, setIsWorkflowJsonDragActive] =
+    useState(false);
   const [workflowMode, setWorkflowMode] = useState<"smart" | "manual">("smart");
   const [generateMenuAnchorEl, setGenerateMenuAnchorEl] =
     useState<HTMLElement | null>(null);
@@ -287,6 +331,7 @@ export function GenerationPanel() {
     [availableWorkflows],
   );
   const fetchWorkflows = useGenerationStore((s) => s.fetchWorkflows);
+  const loadWorkflow = useGenerationStore((s) => s.loadWorkflow);
   const hasMaskMappings = derivedMaskMappings.length > 0;
   const aspectRatioProcessingConfig = getAspectRatioStage(activeWorkflowRules);
   const hasAspectRatioTargets =
@@ -560,17 +605,135 @@ export function GenerationPanel() {
     handleGenerateCount(customGenerateCountValue);
   }
 
+  function handleWorkflowJsonDragOver(
+    event: DragEvent<HTMLElement>,
+  ): void {
+    if (!hasExternalFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    if (isLikelyWorkflowJsonTransfer(event.dataTransfer)) {
+      event.dataTransfer.dropEffect = "copy";
+    }
+    if (
+      !isWorkflowJsonDragActive &&
+      isLikelyWorkflowJsonTransfer(event.dataTransfer)
+    ) {
+      setIsWorkflowJsonDragActive(true);
+    } else if (
+      isWorkflowJsonDragActive &&
+      !isLikelyWorkflowJsonTransfer(event.dataTransfer)
+    ) {
+      setIsWorkflowJsonDragActive(false);
+    }
+  }
+
+  function handleWorkflowJsonDragLeave(
+    event: DragEvent<HTMLElement>,
+  ): void {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+    setIsWorkflowJsonDragActive(false);
+  }
+
+  async function handleWorkflowJsonDrop(
+    event: DragEvent<HTMLElement>,
+  ): Promise<void> {
+    if (hasExternalFileTransfer(event.dataTransfer)) {
+      event.preventDefault();
+    }
+    const files = extractDroppedWorkflowJsonFiles(event.dataTransfer);
+    setIsWorkflowJsonDragActive(false);
+
+    if (files.length === 0) {
+      return;
+    }
+
+    event.stopPropagation();
+    setIsWorkflowUploadPending(true);
+
+    try {
+      const uploaded = await uploadWorkflowJsonFiles(files);
+      await fetchWorkflows();
+
+      const uploadedWorkflow = uploaded.find((file) => file.kind === "workflow");
+      if (uploadedWorkflow) {
+        await loadWorkflow(uploadedWorkflow.workflow_id);
+        return;
+      }
+
+      if (
+        selectedWorkflowId &&
+        uploaded.some((file) => file.workflow_id === selectedWorkflowId)
+      ) {
+        await loadWorkflow(selectedWorkflowId);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to upload workflow JSON files";
+      alert(message);
+    } finally {
+      setIsWorkflowUploadPending(false);
+    }
+  }
+
   return (
     <Box
       data-testid="generation-panel"
+      onDragOver={handleWorkflowJsonDragOver}
+      onDragLeave={handleWorkflowJsonDragLeave}
+      onDrop={(event) => {
+        void handleWorkflowJsonDrop(event);
+      }}
       sx={{
         display: "flex",
         flexDirection: "column",
         height: "100%",
         width: "100%",
+        position: "relative",
         overflowY: "auto",
+        outline: isWorkflowJsonDragActive
+          ? (theme) => `1px dashed ${theme.palette.primary.main}`
+          : "none",
+        outlineOffset: -1,
       }}
     >
+      {isWorkflowJsonDragActive ? (
+        <Box
+          sx={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 1,
+            pointerEvents: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            bgcolor: "rgba(0, 0, 0, 0.35)",
+            px: 3,
+          }}
+        >
+          <Typography
+            variant="body2"
+            sx={{
+              px: 2,
+              py: 1.25,
+              borderRadius: 1,
+              bgcolor: "rgba(17, 17, 17, 0.92)",
+              border: "1px solid rgba(255, 255, 255, 0.16)",
+              textAlign: "center",
+            }}
+          >
+            Drop workflow JSON files to upload them to the backend workflow
+            directory.
+          </Typography>
+        </Box>
+      ) : null}
+
       {/* Header */}
       <Box
         sx={{
@@ -686,6 +849,14 @@ export function GenerationPanel() {
             ])}
           </Select>
         </FormControl>
+        <Typography
+          variant="caption"
+          sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
+        >
+          {isWorkflowUploadPending
+            ? "Uploading workflow JSON files..."
+            : "Drop .json workflows or .rules.json sidecars anywhere in this tab to upload them."}
+        </Typography>
       </Box>
 
       <Box sx={{ px: 2, pb: 2 }}>

@@ -19,6 +19,15 @@ class DummyRequest:
         return self._payload
 
 
+class DummyUploadFile:
+    def __init__(self, filename: str, payload: bytes):
+        self.filename = filename
+        self._payload = payload
+
+    async def read(self):
+        return self._payload
+
+
 def test_save_workflow_content_persists_to_backend_workflows_dir(
     tmp_path, monkeypatch
 ):
@@ -51,6 +60,48 @@ def test_save_workflow_content_persists_to_backend_workflows_dir(
     assert json.loads(
         (tmp_path / ".config" / "object_info.json").read_text(encoding="utf-8")
     ) == {"LoadImage": {"input": {}}}
+
+
+def test_upload_workflow_files_persists_workflows_and_rules_sidecars(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(comfyui, "WORKFLOWS_DIR", tmp_path)
+
+    result = asyncio.run(
+        comfyui.upload_workflow_files(
+            [
+                DummyUploadFile(
+                    filename="dragged-workflow.json",
+                    payload=b'{"nodes":[{"id":1}]}',
+                ),
+                DummyUploadFile(
+                    filename="dragged-workflow.rules.json",
+                    payload=b'{"name":"Dragged Workflow"}',
+                ),
+            ]
+        )
+    )
+
+    assert result == {
+        "uploaded": [
+            {
+                "filename": "dragged-workflow.json",
+                "kind": "workflow",
+                "workflow_id": "dragged-workflow.json",
+            },
+            {
+                "filename": "dragged-workflow.rules.json",
+                "kind": "rules",
+                "workflow_id": "dragged-workflow.json",
+            },
+        ]
+    }
+    assert json.loads(
+        (tmp_path / "dragged-workflow.json").read_text(encoding="utf-8")
+    ) == {"nodes": [{"id": 1}]}
+    assert json.loads(
+        (tmp_path / "dragged-workflow.rules.json").read_text(encoding="utf-8")
+    ) == {"name": "Dragged Workflow"}
 
 
 def test_list_workflows_applies_menu_groups_and_preserves_shadowing(

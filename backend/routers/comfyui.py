@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
-from fastapi import APIRouter, Request, Response, UploadFile, WebSocket
+from fastapi import APIRouter, File, Request, Response, UploadFile, WebSocket
 from fastapi.responses import JSONResponse
 from services.comfyui import comfyui_generate as comfyui_generate_service
 from services.gen_pipeline.processors.utils.video_crop import (
@@ -363,6 +363,25 @@ def _resolve_workflow_sidecar_path(filename: str) -> Path | None:
         return default
 
     return None
+
+
+def _classify_uploaded_workflow_filename(filename: str) -> dict[str, str]:
+    if filename.lower().endswith(".rules.json"):
+        workflow_stem = filename[: -len(".rules.json")]
+        workflow_id = (
+            workflow_stem
+            if workflow_stem.lower().endswith(".json")
+            else f"{workflow_stem}.json"
+        )
+        return {
+            "kind": "rules",
+            "workflow_id": workflow_id,
+        }
+
+    return {
+        "kind": "workflow",
+        "workflow_id": filename,
+    }
 
 
 def _resolve_workflow_media_fallbacks(
@@ -902,6 +921,89 @@ async def save_workflow_content(filename: str, request: Request):
             500,
             "workflow_save_failed",
             "Failed to persist workflow content",
+            retryable=True,
+            details={"reason": str(exc)},
+        )
+
+
+@router.post("/workflow/upload")
+async def upload_workflow_files(files: list[UploadFile] = File(...)):
+    """Persists one or more workflow-side JSON files into backend/assets/workflows."""
+    if not files:
+        return error_response(
+            400,
+            "missing_workflow_files",
+            "At least one workflow JSON file is required",
+            retryable=False,
+        )
+
+    uploaded: list[dict[str, str]] = []
+
+    try:
+        WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
+
+        for upload in files:
+            filename = upload.filename.strip() if isinstance(upload.filename, str) else ""
+            if not filename:
+                return error_response(
+                    400,
+                    "invalid_workflow_filename",
+                    "Workflow upload is missing a filename",
+                    retryable=False,
+                )
+            if not filename.lower().endswith(".json"):
+                return error_response(
+                    400,
+                    "invalid_workflow_extension",
+                    "Workflow uploads must use .json filenames",
+                    retryable=False,
+                    details={"filename": filename},
+                )
+            if not _is_safe_workflow_filename(filename):
+                return error_response(
+                    400,
+                    "invalid_workflow_filename",
+                    "Invalid workflow filename",
+                    retryable=False,
+                    details={"filename": filename},
+                )
+
+            raw_bytes = await upload.read()
+            try:
+                parsed_json = json.loads(raw_bytes.decode("utf-8"))
+            except UnicodeDecodeError:
+                return error_response(
+                    400,
+                    "invalid_workflow_encoding",
+                    "Workflow JSON files must be UTF-8 encoded",
+                    retryable=False,
+                    details={"filename": filename},
+                )
+            except json.JSONDecodeError as exc:
+                return error_response(
+                    400,
+                    "invalid_workflow_json",
+                    "Workflow JSON file is invalid",
+                    retryable=False,
+                    details={"filename": filename, "reason": exc.msg},
+                )
+
+            path = WORKFLOWS_DIR / filename
+            path.write_text(json.dumps(parsed_json, indent=2), encoding="utf-8")
+
+            uploaded.append({
+                "filename": filename,
+                **_classify_uploaded_workflow_filename(filename),
+            })
+
+        return {
+            "uploaded": uploaded,
+        }
+    except OSError as exc:
+        return error_response(
+            500,
+            "workflow_upload_failed",
+            "Failed to persist workflow upload",
             retryable=True,
             details={"reason": str(exc)},
         )

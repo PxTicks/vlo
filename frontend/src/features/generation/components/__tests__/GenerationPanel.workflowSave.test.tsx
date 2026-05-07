@@ -34,12 +34,17 @@ vi.mock("../../services/comfyuiApi", async () => {
     ...actual,
     getObjectInfo: vi.fn(),
     saveWorkflowContent: vi.fn(),
+    uploadWorkflowJsonFiles: vi.fn(),
   };
 });
 
 import { useGenerationPanel } from "../../hooks/useGenerationPanel";
 import { GenerationPanel } from "../../GenerationPanel";
-import { getObjectInfo, saveWorkflowContent } from "../../services/comfyuiApi";
+import {
+  getObjectInfo,
+  saveWorkflowContent,
+  uploadWorkflowJsonFiles,
+} from "../../services/comfyuiApi";
 import { TEMP_WORKFLOW_ID, useGenerationStore } from "../../useGenerationStore";
 
 const DEFAULT_RUNTIME_STATUS: RuntimeStatus = {
@@ -130,7 +135,10 @@ function makeHookState(
   };
 }
 
-function resetGenerationStore(fetchWorkflows = vi.fn()) {
+function resetGenerationStore(
+  fetchWorkflows = vi.fn(),
+  loadWorkflow = vi.fn(),
+) {
   useGenerationStore.setState({
     activeWorkflowRules: null,
     derivedMaskMappings: [],
@@ -141,13 +149,14 @@ function resetGenerationStore(fetchWorkflows = vi.fn()) {
     syncedGraphData: { nodes: [{ id: 1 }] },
     selectedWorkflowId: "wf.json",
     fetchWorkflows,
+    loadWorkflow,
     setTargetResolution: vi.fn(),
     setExactAspectRatio: vi.fn(),
     setMaskCropMode: vi.fn(),
     setMaskCropDilation: vi.fn(),
   });
 
-  return fetchWorkflows;
+  return { fetchWorkflows, loadWorkflow };
 }
 
 describe("GenerationPanel workflow save prompt", () => {
@@ -171,7 +180,9 @@ describe("GenerationPanel workflow save prompt", () => {
 
   it("prompts to save and reuses the backend save path when the workflow changes", async () => {
     const setEditorOpen = vi.fn();
-    const fetchWorkflows = resetGenerationStore(vi.fn().mockResolvedValue(undefined));
+    const { fetchWorkflows } = resetGenerationStore(
+      vi.fn().mockResolvedValue(undefined),
+    );
     vi.mocked(getObjectInfo).mockResolvedValue({ LoadImage: { input: {} } });
     vi.mocked(saveWorkflowContent).mockResolvedValue(undefined);
     vi.mocked(useGenerationPanel).mockReturnValue(
@@ -206,7 +217,9 @@ describe("GenerationPanel workflow save prompt", () => {
 
   it("appends .json when saving edited workflows with a bare selected id", async () => {
     const setEditorOpen = vi.fn();
-    const fetchWorkflows = resetGenerationStore(vi.fn().mockResolvedValue(undefined));
+    const { fetchWorkflows } = resetGenerationStore(
+      vi.fn().mockResolvedValue(undefined),
+    );
     useGenerationStore.setState({
       selectedWorkflowId: "wf",
       syncedGraphData: { nodes: [{ id: 1 }, { id: 4 }] },
@@ -266,7 +279,9 @@ describe("GenerationPanel workflow save prompt", () => {
 
   it("saves a temp workflow as a new backend workflow", async () => {
     const setEditorOpen = vi.fn();
-    const fetchWorkflows = resetGenerationStore(vi.fn().mockResolvedValue(undefined));
+    const { fetchWorkflows } = resetGenerationStore(
+      vi.fn().mockResolvedValue(undefined),
+    );
     useGenerationStore.setState({
       availableWorkflows: [{ id: TEMP_WORKFLOW_ID, name: "Unsaved Workflow" }],
       selectedWorkflowId: TEMP_WORKFLOW_ID,
@@ -316,4 +331,88 @@ describe("GenerationPanel workflow save prompt", () => {
       state.availableWorkflows.some((workflow) => workflow.id === TEMP_WORKFLOW_ID),
     ).toBe(false);
   }, 10000);
+
+  it("uploads dropped workflow json files and loads the uploaded workflow", async () => {
+    const { fetchWorkflows, loadWorkflow } = resetGenerationStore(
+      vi.fn().mockResolvedValue(undefined),
+      vi.fn().mockResolvedValue(undefined),
+    );
+    vi.mocked(uploadWorkflowJsonFiles).mockResolvedValue([
+      {
+        filename: "dragged-workflow.json",
+        kind: "workflow",
+        workflow_id: "dragged-workflow.json",
+      },
+      {
+        filename: "dragged-workflow.rules.json",
+        kind: "rules",
+        workflow_id: "dragged-workflow.json",
+      },
+    ]);
+    vi.mocked(useGenerationPanel).mockReturnValue(makeHookState());
+
+    render(<GenerationPanel />);
+
+    const panel = screen.getByTestId("generation-panel");
+    const workflowFile = new File(['{"nodes":[{"id":1}]}'], "dragged-workflow.json", {
+      type: "application/json",
+    });
+    const rulesFile = new File(['{"name":"Dragged"}'], "dragged-workflow.rules.json", {
+      type: "application/json",
+    });
+
+    fireEvent.drop(panel, {
+      dataTransfer: {
+        files: [workflowFile, rulesFile],
+        items: [
+          { kind: "file", type: "application/json" },
+          { kind: "file", type: "application/json" },
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadWorkflowJsonFiles).toHaveBeenCalledWith([
+        workflowFile,
+        rulesFile,
+      ]);
+      expect(fetchWorkflows).toHaveBeenCalledTimes(1);
+      expect(loadWorkflow).toHaveBeenCalledWith("dragged-workflow.json");
+    });
+  });
+
+  it("reloads the selected workflow when a matching rules sidecar is dropped", async () => {
+    const { fetchWorkflows, loadWorkflow } = resetGenerationStore(
+      vi.fn().mockResolvedValue(undefined),
+      vi.fn().mockResolvedValue(undefined),
+    );
+    vi.mocked(uploadWorkflowJsonFiles).mockResolvedValue([
+      {
+        filename: "wf.rules.json",
+        kind: "rules",
+        workflow_id: "wf.json",
+      },
+    ]);
+    vi.mocked(useGenerationPanel).mockReturnValue(makeHookState());
+
+    render(<GenerationPanel />);
+
+    const panel = screen.getByTestId("generation-panel");
+    const rulesFile = new File(['{"name":"Updated"}'], "wf.rules.json", {
+      type: "application/json",
+    });
+
+    fireEvent.drop(panel, {
+      dataTransfer: {
+        files: [rulesFile],
+        items: [{ kind: "file", type: "application/json" }],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadWorkflowJsonFiles).toHaveBeenCalledWith([rulesFile]);
+      expect(fetchWorkflows).toHaveBeenCalledTimes(1);
+      expect(loadWorkflow).toHaveBeenCalledWith("wf.json");
+    });
+  });
 });

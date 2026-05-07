@@ -141,6 +141,10 @@ function collectProvidedInputIds(
   return ids;
 }
 
+function logMaskDebug(message: string, details: Record<string, unknown>): void {
+  console.info(`[Generation][MaskDebug] ${message}`, details);
+}
+
 function isComfyReadyForDispatch(
   state: ReturnType<GenerationStoreGet>,
 ): boolean {
@@ -426,6 +430,26 @@ async function captureSubmittedWorkflow(
     (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
   const providedInputIds =
     providedInputIdsOverride ?? collectProvidedInputIds(plan);
+  const derivedMaskMappings = plan.preprocess.derivedMaskMappings;
+  if (derivedMaskMappings.length > 0) {
+    logMaskDebug("captureSubmittedWorkflow pre-resolve inputs", {
+      workflowId: plan.workflow.workflowId,
+      providedInputIdsSource:
+        providedInputIdsOverride == null ? "plan_slot_values" : "prepared_request",
+      providedInputIds: [...providedInputIds].sort(),
+      derivedMaskMappings: derivedMaskMappings.map((mapping) => ({
+        sourceInputId: mapping.sourceInputId ?? null,
+        sourceNodeId: mapping.sourceNodeId,
+        maskNodeId: mapping.maskNodeId,
+        maskParam: mapping.maskParam,
+        optional: mapping.optional === true,
+      })),
+      maskNodePresence: derivedMaskMappings.map((mapping) => ({
+        maskNodeId: mapping.maskNodeId,
+        present: providedInputIds.has(mapping.maskNodeId),
+      })),
+    });
+  }
   const defaultWidgetOverrides = evaluateWidgetDefaultOverrides(
     plan.workflow.workflowRules,
     providedInputIds,
@@ -454,11 +478,39 @@ async function captureSubmittedWorkflow(
     ...effectSwitchEffects.widgetOverrides,
   ];
 
+  if (derivedMaskMappings.length > 0) {
+    logMaskDebug("captureSubmittedWorkflow rewrite evaluation", {
+      workflowId: plan.workflow.workflowId,
+      bypassFromRewrites: bypass,
+      bypassFromEffectSwitches: effectSwitchEffects.bypass,
+      bypassFromSubmission: plan.submission.bypassNodeIds,
+      finalBypassNodeIds: bypassNodeIds,
+      rewriteWidgetOverrideCount: rewriteWidgetOverrides.length,
+      defaultWidgetOverrideCount: defaultWidgetOverrides.length,
+      effectSwitchWidgetOverrideCount: effectSwitchEffects.widgetOverrides.length,
+      maskNodesBypassed: derivedMaskMappings
+        .map((mapping) => mapping.maskNodeId)
+        .filter((nodeId) => bypassNodeIds.includes(nodeId)),
+    });
+  }
+
   const resolved = await preResolvePrompt(iframe, bypassNodeIds, widgetOverrides);
   if (!resolved) {
     throw new Error(
       "graphToPrompt failed; cannot construct submission payload (check that ComfyUI graphToPrompt is available)",
     );
+  }
+
+  if (derivedMaskMappings.length > 0) {
+    const resolvedNodeIds = new Set(Object.keys(resolved.output ?? {}));
+    logMaskDebug("captureSubmittedWorkflow graphToPrompt result", {
+      workflowId: plan.workflow.workflowId,
+      resolvedNodeCount: resolvedNodeIds.size,
+      maskNodePresence: derivedMaskMappings.map((mapping) => ({
+        maskNodeId: mapping.maskNodeId,
+        presentInResolvedPrompt: resolvedNodeIds.has(mapping.maskNodeId),
+      })),
+    });
   }
 
   return {
@@ -625,6 +677,14 @@ export function buildExecutionStoreState(
         resolvedPlan.workflow.submittedWorkflow == null &&
         state.preResolvedPromptEnabled
       ) {
+        if (resolvedPlan.preprocess.derivedMaskMappings.length > 0) {
+          logMaskDebug("dispatchGenerationPlan prepared request inputs", {
+            workflowId: resolvedPlan.workflow.workflowId,
+            videoInputKeys: Object.keys(prepared.request.videoInputs),
+            imageInputKeys: Object.keys(prepared.request.imageInputs),
+            audioInputKeys: Object.keys(prepared.request.audioInputs),
+          });
+        }
         const captured = await captureSubmittedWorkflow(
           resolvedPlan,
           state,

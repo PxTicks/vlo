@@ -343,7 +343,7 @@ export function resolvePresentedInputsFromRules(
       `${inferred.nodeId}:${present?.param ?? inferred.param}`,
     );
     if (derivedMask) {
-      derivedMaskMappings.push({
+      const mapping = {
         maskNodeId: inferred.nodeId,
         maskParam: present?.param ?? inferred.param,
         sourceNodeId: derivedMask.sourceNodeId,
@@ -357,6 +357,18 @@ export function resolvePresentedInputsFromRules(
         purpose: derivedMask.purpose,
         renderFps: derivedMask.renderFps,
         ...(present?.required === false ? { optional: true } : {}),
+      };
+      derivedMaskMappings.push(mapping);
+      console.info("[Generation][MaskDebug] registered derived mask mapping", {
+        workflowNodeId: inferred.nodeId,
+        sourceNodeId: mapping.sourceNodeId,
+        sourceInputId: mapping.sourceInputId ?? null,
+        maskNodeId: mapping.maskNodeId,
+        maskParam: mapping.maskParam,
+        maskType: mapping.maskType,
+        purpose: mapping.purpose ?? "video",
+        renderFps: mapping.renderFps ?? null,
+        optional: mapping.optional === true,
       });
       continue;
     }

@@ -9,6 +9,7 @@ import {
 } from "../../renderer";
 import {
   getTicksPerFrame,
+  normalizeTimelineSelection,
   resolveSelectionFps,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
@@ -44,11 +45,15 @@ export async function renderTimelineSelectionToMp4(
 ): Promise<File> {
   throwIfAborted(options.signal);
   const { exportConfig, projectData } = buildProjectRenderInputs();
+  const normalizedSelection = normalizeTimelineSelection(
+    timelineSelection,
+    projectData.clips,
+  );
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {
     const result = await renderer.render(projectData, exportConfig, () => {}, {
-      timelineSelection,
+      timelineSelection: normalizedSelection,
       format: "mp4",
       includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,
@@ -203,6 +208,10 @@ async function renderTimelineSelectionToOutputs(
 ): Promise<Awaited<ReturnType<ExportRenderer["render"]>>> {
   throwIfAborted(options.signal);
   const { exportConfig, projectData } = buildProjectRenderInputs();
+  const normalizedSelection = normalizeTimelineSelection(
+    timelineSelection,
+    projectData.clips,
+  );
   const renderConfig = {
     ...exportConfig,
     outputWidth: normalizeOutputDimension(options.outputWidth, exportConfig.outputWidth),
@@ -215,7 +224,7 @@ async function renderTimelineSelectionToOutputs(
     ...renderConfig,
   });
   const result = await renderer.render(projectData, renderConfig, () => {}, {
-    timelineSelection,
+    timelineSelection: normalizedSelection,
     outputs: [...outputs],
     includeTimelineMasks: options.includeTimelineMasks,
     signal: options.signal,
@@ -403,6 +412,10 @@ export async function renderTimelineSelectionToMp4WithMask(
 ): Promise<TimelineSelectionWithMaskResult> {
   throwIfAborted(options.signal);
   const { exportConfig, projectData } = buildProjectRenderInputs();
+  const normalizedSelection = normalizeTimelineSelection(
+    timelineSelection,
+    projectData.clips,
+  );
   try {
     const maskOutput = createMaskOutputDefinition(maskType, {
       trackRenderedMaskContent: true,
@@ -413,7 +426,7 @@ export async function renderTimelineSelectionToMp4WithMask(
       exportConfig,
       () => {},
       {
-        timelineSelection,
+        timelineSelection: normalizedSelection,
         outputs: [maskOutput],
         signal: options.signal,
       },
@@ -427,7 +440,7 @@ export async function renderTimelineSelectionToMp4WithMask(
       exportConfig,
       () => {},
       {
-        timelineSelection,
+        timelineSelection: normalizedSelection,
         outputs: [createVideoOutputDefinition()],
         includeTimelineMasks: false,
         signal: options.signal,

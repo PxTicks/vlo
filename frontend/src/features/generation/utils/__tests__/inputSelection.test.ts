@@ -187,6 +187,34 @@ describe("inputSelection", () => {
     expect(result.type).toBe("video/mp4");
   });
 
+  it("recovers referenced mask clips before rendering a mask output", async () => {
+    const renderSpy = vi.fn().mockResolvedValue({
+      video: new Blob(["mask"], { type: "video/mp4" }),
+      outputs: {
+        mask: new Blob(["mask"], { type: "video/mp4" }),
+      },
+    });
+    vi.spyOn(ExportRenderer, "create").mockResolvedValue({
+      render: renderSpy,
+    } as unknown as ExportRenderer);
+
+    const [visualClip] = useTimelineStore.getState().clips;
+    const timelineSelection = {
+      start: 0,
+      end: 24,
+      clips: [visualClip],
+      fps: 24,
+    };
+
+    await renderTimelineSelectionToMaskMp4(timelineSelection, "binary");
+
+    expect(
+      renderSpy.mock.calls[0]?.[3]?.timelineSelection?.clips?.map(
+        (clip: { id: string }) => clip.id,
+      ),
+    ).toEqual(["clip_1", "clip_1::mask::mask_1"]);
+  });
+
   it("uses the configured audio timing mask fps and defaults to 25 when omitted", async () => {
     const renderSpy = vi.fn().mockResolvedValue({
       video: new Blob(["video"], { type: "video/mp4" }),

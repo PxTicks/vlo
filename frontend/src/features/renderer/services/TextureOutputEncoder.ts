@@ -53,6 +53,11 @@ interface RendererExtractApi {
   canvas?: (target?: unknown) => HTMLCanvasElement | Promise<HTMLCanvasElement>;
 }
 
+interface RendererReadbackApi {
+  gl?: WebGLRenderingContext | WebGL2RenderingContext;
+  extract?: RendererExtractApi;
+}
+
 interface FinalizedOutputBundle {
   blobs: Record<string, Blob>;
   analyses: Record<string, OutputVideoAnalysis>;
@@ -216,9 +221,24 @@ export class TextureOutputEncoder {
   }
 
   private async probeRenderedOutputContent(): Promise<boolean | null> {
-    const extract = (
-      this.app.renderer as { extract?: RendererExtractApi }
-    ).extract;
+    const renderer = this.app.renderer as RendererReadbackApi;
+    const gl = renderer.gl;
+
+    if (gl && typeof gl.readPixels === "function") {
+      try {
+        const width = gl.drawingBufferWidth;
+        const height = gl.drawingBufferHeight;
+        if (width > 0 && height > 0) {
+          const pixels = new Uint8Array(width * height * 4);
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          return pixelsContainNonBlackContent(pixels);
+        }
+      } catch {
+        // Fall back to Pixi's extract helpers below.
+      }
+    }
+
+    const extract = renderer.extract;
 
     if (extract?.pixels) {
       try {

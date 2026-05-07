@@ -27,6 +27,10 @@ import {
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
 import {
+  recordMaskDebugArtifact,
+  summarizeSelectionForMaskDebug,
+} from "../utils/maskDebugArtifacts";
+import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
 } from "../utils/manualSlotMedia";
@@ -214,6 +218,18 @@ async function extractVideoTimelineSelection({
       timelineSelection,
       cachedVisualMasks,
     );
+    const preparedMaskFile = pickPrimaryPreparedMaskFile(cachedVisualMasks, masks);
+    recordMaskDebugArtifact({
+      category: "selection_extraction_prepared_visual_mask",
+      file: preparedMaskFile,
+      metadata: {
+        inputId,
+        inputNodeId,
+        maskKeys: Object.keys(masks),
+        cachedVisualMaskCount: cachedVisualMasks.length,
+        ...summarizeSelectionForMaskDebug(timelineSelection),
+      },
+    });
     if (selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId) {
       return;
     }
@@ -222,7 +238,7 @@ async function extractVideoTimelineSelection({
       isExtracting: false,
       extractionRequestId,
       preparedVideoFile: video,
-      preparedMaskFile: pickPrimaryPreparedMaskFile(cachedVisualMasks, masks),
+      preparedMaskFile,
     });
     return;
   }

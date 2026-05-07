@@ -43,9 +43,6 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
   },
 
   async execute(ctx) {
-    const logMaskDebug = (message: string, details: Record<string, unknown>) => {
-      console.info(`[Generation][MaskDebug] ${message}`, details);
-    };
     const inputById = buildWorkflowInputLookup(ctx.workflowInputs);
     const projectFps = Math.max(1, ctx.projectConfig.fps);
 
@@ -61,21 +58,6 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
         existing.push(mapping);
         masksBySource.set(key, existing);
       }
-    }
-
-    if (ctx.derivedMaskMappings.length > 0) {
-      logMaskDebug("collectVideoInputs derived mask mappings", {
-        derivedMaskMappings: ctx.derivedMaskMappings.map((mapping) => ({
-          sourceInputId: mapping.sourceInputId ?? null,
-          sourceNodeId: mapping.sourceNodeId,
-          maskNodeId: mapping.maskNodeId,
-          maskParam: mapping.maskParam,
-          maskType: mapping.maskType,
-          purpose: mapping.purpose ?? "video",
-          renderFps: mapping.renderFps ?? null,
-          optional: mapping.optional === true,
-        })),
-      });
     }
 
     async function normalizeVideoSelection(
@@ -151,24 +133,6 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
         // effectively empty.
         const needsRenderedMaskPresenceCheck =
           allMasks?.some((mapping) => mapping.optional) ?? false;
-        logMaskDebug("collectVideoInputs processing video selection", {
-          inputId,
-          sourceNodeId: input.nodeId,
-          sourceRequestKey: getNodeInputRequestKey(input, inputById),
-          selectionClipIds: value.selection.clips.map((clip) => clip.id),
-          maskMappings:
-            allMasks?.map((mask) => ({
-              key: getDerivedMaskRenderKey(mask),
-              sourceNodeId: mask.sourceNodeId,
-              maskNodeId: mask.maskNodeId,
-              maskParam: mask.maskParam,
-              optional: mask.optional === true,
-              purpose: mask.purpose ?? "video",
-            })) ?? [],
-          hasPreparedVideoFile: !!value.preparedVideoFile,
-          hasPreparedMaskFile: !!value.preparedMaskFile,
-          needsRenderedMaskPresenceCheck,
-        });
         if (allMasks && allMasks.length > 0) {
           const result = await normalizeVideoSelectionWithDerivedMasks(
             value.selection,
@@ -179,14 +143,6 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
           throwIfAborted(ctx.signal);
           ctx.videoInputs[getNodeInputRequestKey(input, inputById)] =
             result.video;
-          logMaskDebug("collectVideoInputs rendered selection with masks", {
-            inputId,
-            sourceNodeId: input.nodeId,
-            sourceRequestKey: getNodeInputRequestKey(input, inputById),
-            producedMaskKeys: Object.keys(result.masks),
-            maskContentByKey: result.maskContentByKey,
-            videoFileName: result.video.name,
-          });
           for (const mask of allMasks) {
             const maskInput = ctx.workflowInputs.find(
               (candidate) =>
@@ -206,26 +162,9 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
               mask.optional &&
               result.maskContentByKey[getDerivedMaskRenderKey(mask)] === false
             ) {
-              logMaskDebug("collectVideoInputs skipped optional derived mask upload", {
-                inputId,
-                sourceNodeId: input.nodeId,
-                maskNodeId: mask.maskNodeId,
-                maskRequestKey,
-                maskRenderKey: getDerivedMaskRenderKey(mask),
-                reason: "rendered_mask_empty",
-              });
               continue;
             }
             ctx.videoInputs[maskRequestKey] = renderedMask;
-            logMaskDebug("collectVideoInputs routed derived mask upload", {
-              inputId,
-              sourceNodeId: input.nodeId,
-              maskNodeId: mask.maskNodeId,
-              maskRequestKey,
-              maskRenderKey: getDerivedMaskRenderKey(mask),
-              fileName: renderedMask.name,
-              optional: mask.optional === true,
-            });
           }
         } else {
           ctx.videoInputs[getNodeInputRequestKey(input, inputById)] =
@@ -236,12 +175,6 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
           throwIfAborted(ctx.signal);
         }
       }
-    }
-
-    if (Object.keys(ctx.videoInputs).length > 0) {
-      logMaskDebug("collectVideoInputs final video input keys", {
-        videoInputKeys: Object.keys(ctx.videoInputs),
-      });
     }
   },
 };

@@ -24,24 +24,6 @@ import {
   throwIfAborted,
 } from "../pipeline/utils/abort";
 
-function summarizeSelectionClips(selection: TimelineSelection): string[] {
-  return (selection.clips ?? []).map((clip) => {
-    const componentSummary =
-      clip.type === "mask"
-        ? clip.parentClipId
-          ? ` parent=${clip.parentClipId}`
-          : ""
-        : clip.components && clip.components.length > 0
-          ? ` components=${clip.components.map((component) => component.type).join(",")}`
-          : "";
-    return `${clip.id}:${clip.type}${componentSummary}`;
-  });
-}
-
-function logMaskDebug(message: string, details: Record<string, unknown>): void {
-  console.info(`[Generation][MaskDebug] ${message}`, details);
-}
-
 export async function captureFramePngAtTick(
   tick: number,
   filenamePrefix: string,
@@ -67,13 +49,6 @@ export async function renderTimelineSelectionToMp4(
     timelineSelection,
     projectData.clips,
   );
-  logMaskDebug("renderTimelineSelectionToMp4 normalized selection", {
-    includeTimelineMasks: options.includeTimelineMasks ?? true,
-    rawClipCount: timelineSelection.clips.length,
-    normalizedClipCount: normalizedSelection.clips.length,
-    rawClips: summarizeSelectionClips(timelineSelection),
-    normalizedClips: summarizeSelectionClips(normalizedSelection),
-  });
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {
@@ -236,14 +211,6 @@ async function renderTimelineSelectionToOutputs(
     timelineSelection,
     projectData.clips,
   );
-  logMaskDebug("renderTimelineSelectionToOutputs normalized selection", {
-    includeTimelineMasks: options.includeTimelineMasks ?? true,
-    outputIds: outputs.map((output) => output.id),
-    rawClipCount: timelineSelection.clips.length,
-    normalizedClipCount: normalizedSelection.clips.length,
-    rawClips: summarizeSelectionClips(timelineSelection),
-    normalizedClips: summarizeSelectionClips(normalizedSelection),
-  });
   const renderConfig = {
     ...exportConfig,
     outputWidth: normalizeOutputDimension(options.outputWidth, exportConfig.outputWidth),
@@ -267,12 +234,7 @@ async function renderTimelineSelectionToOutputs(
 function getRenderedMaskHasVisibleContent(
   result: Awaited<ReturnType<ExportRenderer["render"]>>,
 ): boolean {
-  const hasVisibleContent = result.outputAnalyses?.mask?.hasVisibleContent ?? true;
-  logMaskDebug("mask output content probe", {
-    hasVisibleContent,
-    outputAnalyses: result.outputAnalyses ?? null,
-  });
-  return hasVisibleContent;
+  return result.outputAnalyses?.mask?.hasVisibleContent ?? true;
 }
 
 async function renderTimelineSelectionToMaskOutput(
@@ -364,22 +326,6 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
       getDerivedMaskPurpose(mapping) === "video" && mapping.optional === true,
   );
 
-  logMaskDebug("renderTimelineSelectionToMp4WithDerivedMasks start", {
-    derivedMaskMappings: derivedMaskMappings.map((mapping) => ({
-      key: getDerivedMaskRenderKey(mapping),
-      purpose: getDerivedMaskPurpose(mapping),
-      maskType: mapping.maskType,
-      renderFps: mapping.renderFps ?? null,
-      optional: mapping.optional === true,
-    })),
-    requiredMaskKeys,
-    visualMaskKeys,
-    hasOptionalVisualMask,
-    hasPreparedVideoFile: !!options.preparedVideoFile,
-    hasPreparedMaskFile: !!options.preparedMaskFile,
-    selectionClips: summarizeSelectionClips(timelineSelection),
-  });
-
   if (
     options.preparedMaskFile &&
     visualMaskKeys.length === 1 &&
@@ -404,10 +350,6 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
       visualMaskKeys[0] === "video_soft" ? "soft" : "binary",
       { signal: options.signal },
     );
-    logMaskDebug("renderTimelineSelectionToMp4WithDerivedMasks single-pass mask result", {
-      maskKey: visualMaskKeys[0],
-      maskHasVisibleContent,
-    });
     masks[visualMaskKeys[0]] = mask;
     maskContentByKey[visualMaskKeys[0]] = maskHasVisibleContent;
     return { video, masks, maskContentByKey };
@@ -443,10 +385,6 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
         },
       );
       maskContentByKey[key] = true;
-      logMaskDebug("rendered audio timing mask", {
-        key,
-        renderFps: mapping.renderFps ?? null,
-      });
       continue;
     }
     const { file, hasVisibleContent } = await renderTimelineSelectionToMaskOutput(
@@ -459,19 +397,8 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     );
     masks[key] = file;
     maskContentByKey[key] = hasVisibleContent;
-    logMaskDebug("rendered visual derived mask", {
-      key,
-      maskType: mapping.maskType,
-      optional: mapping.optional === true,
-      hasVisibleContent,
-    });
   }
 
-  logMaskDebug("renderTimelineSelectionToMp4WithDerivedMasks complete", {
-    producedMaskKeys: Object.keys(masks),
-    maskContentByKey,
-    videoFileName: video.name,
-  });
   return { video, masks, maskContentByKey };
 }
 
@@ -488,13 +415,6 @@ export async function renderTimelineSelectionToMp4WithMask(
     timelineSelection,
     projectData.clips,
   );
-  logMaskDebug("renderTimelineSelectionToMp4WithMask normalized selection", {
-    maskType,
-    rawClipCount: timelineSelection.clips.length,
-    normalizedClipCount: normalizedSelection.clips.length,
-    rawClips: summarizeSelectionClips(timelineSelection),
-    normalizedClips: summarizeSelectionClips(normalizedSelection),
-  });
   try {
     const maskOutput = createMaskOutputDefinition(maskType, {
       trackRenderedMaskContent: true,

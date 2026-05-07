@@ -69,16 +69,52 @@ export function snapFrameCountToStep(
   return Math.max(1, snappedUnits * safeFrameStep + 1);
 }
 
-function clipReferencesMask(clip: TimelineClip): boolean {
+type SubordinateClipReferenceRole = "mask";
+
+interface SubordinateClipReference {
+  clipId: string;
+  role: SubordinateClipReferenceRole;
+}
+
+/**
+ * Central place for component-level child clip references.
+ *
+ * Saved selections often preserve the parent clip plus its component metadata
+ * but omit the subordinate clip records those components point at. Keep new
+ * clip-backed attachments wired into this helper so render/export selection
+ * normalization stays generic instead of accreting mask-specific fixes.
+ */
+function collectSubordinateClipReferences(
+  clip: TimelineClip,
+): SubordinateClipReference[] {
   if (clip.type === "mask") {
-    return false;
+    return [];
   }
 
-  return (clip.components ?? []).some(
-    (component) =>
-      component.type === "mask_ref" &&
-      typeof component.parameters.maskClipId === "string" &&
-      component.parameters.maskClipId.trim().length > 0,
+  const references: SubordinateClipReference[] = [];
+
+  for (const component of clip.components ?? []) {
+    if (component.type !== "mask_ref") {
+      continue;
+    }
+
+    const { maskClipId } = component.parameters;
+    if (typeof maskClipId !== "string" || maskClipId.trim().length === 0) {
+      continue;
+    }
+
+    references.push({
+      clipId: maskClipId,
+      role: "mask",
+    });
+  }
+
+  return references;
+}
+
+function clipReferencesMask(clip: TimelineClip): boolean {
+  return collectSubordinateClipReferences(clip).some(
+    (reference) => reference.role === "mask",
   );
 }
 
@@ -174,30 +210,22 @@ export function getIncludedClipsForSelection(
   const includedPrimaryClips = availableClips.filter((clip) =>
     includedTrackIdSet.has(clip.trackId),
   );
-  const referencedMaskIds = new Set<string>();
+  const referencedSubordinateClipIds = new Set<string>();
 
   for (const clip of includedPrimaryClips) {
-    if (clip.type === "mask") {
-      continue;
-    }
-    for (const component of clip.components ?? []) {
-      if (
-        component.type === "mask_ref" &&
-        typeof component.parameters.maskClipId === "string"
-      ) {
-        referencedMaskIds.add(component.parameters.maskClipId);
-      }
+    for (const reference of collectSubordinateClipReferences(clip)) {
+      referencedSubordinateClipIds.add(reference.clipId);
     }
   }
 
   return availableClips.filter(
     (clip) =>
       includedTrackIdSet.has(clip.trackId) ||
-      (clip.type === "mask" && referencedMaskIds.has(clip.id)),
+      referencedSubordinateClipIds.has(clip.id),
   );
 }
 
-function recoverReferencedMaskClips(
+function recoverReferencedSubordinateClips(
   clips: TimelineClip[],
   availableClips: TimelineClip[],
 ): TimelineClip[] {
@@ -209,35 +237,26 @@ function recoverReferencedMaskClips(
   const availableClipsById = new Map(
     availableClips.map((clip) => [clip.id, clip] as const),
   );
-  const recoveredMaskClips: TimelineClip[] = [];
+  const recoveredClips: TimelineClip[] = [];
 
   for (const clip of clips) {
-    if (!clipReferencesMask(clip)) {
-      continue;
-    }
-
-    for (const component of clip.components ?? []) {
-      if (component.type !== "mask_ref") {
+    for (const reference of collectSubordinateClipReferences(clip)) {
+      if (clipIds.has(reference.clipId)) {
         continue;
       }
 
-      const { maskClipId } = component.parameters;
-      if (typeof maskClipId !== "string" || clipIds.has(maskClipId)) {
+      const referencedClip = availableClipsById.get(reference.clipId);
+      if (!referencedClip) {
         continue;
       }
 
-      const maskClip = availableClipsById.get(maskClipId);
-      if (maskClip?.type !== "mask") {
-        continue;
-      }
-
-      clipIds.add(maskClip.id);
-      recoveredMaskClips.push(maskClip);
+      clipIds.add(referencedClip.id);
+      recoveredClips.push(referencedClip);
     }
   }
 
-  return recoveredMaskClips.length > 0
-    ? [...clips, ...recoveredMaskClips]
+  return recoveredClips.length > 0
+    ? [...clips, ...recoveredClips]
     : clips;
 }
 
@@ -273,7 +292,7 @@ export function normalizeTimelineSelection(
 
   const recoveredClips =
     validClips.length > 0
-      ? recoverReferencedMaskClips(validClips, availableClips)
+      ? recoverReferencedSubordinateClips(validClips, availableClips)
       : availableClips.length > 0
         ? getClipsInSelection(availableClips, {
             ...selection,

@@ -574,6 +574,7 @@ def enrich_rules_with_object_info(
             node_title=info.title,
             widgets_values=info.widgets_values,
             widget_groups=info.widget_groups,
+            linked_input_params=info.linked_input_params,
             include_all_widgets=include_all_widgets,
         )
         if not has_explicit_widgets_mode and default_widgets_mode is None:
@@ -609,6 +610,7 @@ def enrich_rules_with_object_info(
                         object_info,
                         unenriched,
                         widgets_values=info.widgets_values,
+                        linked_input_params=info.linked_input_params,
                     )
                 )
             if merged_widgets:

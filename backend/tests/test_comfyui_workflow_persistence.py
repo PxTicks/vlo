@@ -287,7 +287,7 @@ def test_resolve_workflow_rules_always_surfaces_seed_without_node_policy():
 
 def test_resolve_workflow_rules_prefers_graph_widget_values_over_object_info_defaults():
     payload = {
-        "workflow_id": "vlo_VACE_inpaint_new.json",
+        "workflow_id": "vlo_VACE_inpaint.json",
         "workflow": {
             "115": {
                 "class_type": "KSamplerAdvanced",

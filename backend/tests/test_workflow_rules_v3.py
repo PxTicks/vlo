@@ -40,10 +40,10 @@ DEFAULT_WORKFLOWS_DIR = (
 )
 
 
-def test_vace_inpaint_new_uses_v3_pipeline_stage_controls():
+def test_vace_inpaint_uses_v3_pipeline_stage_controls():
     rules, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "vlo_VACE_inpaint_new.json",
+        "vlo_VACE_inpaint.json",
     )
 
     assert warnings == []
@@ -65,10 +65,10 @@ def test_vace_inpaint_new_uses_v3_pipeline_stage_controls():
     assert [target.width.node_id for target in aspect_stage.targets] == ["104", "105"]
 
 
-def test_vace_inpaint_new_collects_mask_crop_pairs():
+def test_vace_inpaint_collects_mask_crop_pairs():
     rules_model, _ = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "vlo_VACE_inpaint_new.json",
+        "vlo_VACE_inpaint.json",
     )
     rules = dump_resolved_rules(rules_model)
     assert collect_mask_crop_pairs(rules) == [("98", "101")]
@@ -224,21 +224,16 @@ def test_aspect_ratio_processing_normalizes_resize_image_mask_targets_in_v3_sche
     assert workflow["693"]["inputs"]["resize_type.height"] % 32 == 0
 
 
-def test_i2v_t2v_basic_rules_allow_widget_driven_prompt_enhancer_rewrites():
+def test_ic_edit_rules_allow_frontend_control_prompt_enhancer_rewrites():
     rules_model, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "video_ltx2_3_i2v_t2v_basic.json",
+        "vlo_ltx2_3_ic_edit.json",
     )
 
     assert warnings == []
-    assert len(rules_model.media_fallbacks) == 1
-    assert rules_model.media_fallbacks[0].kind == "dummy"
-    assert rules_model.media_fallbacks[0].node_id == "167"
-    assert rules_model.media_fallbacks[0].input_type == "image"
-    assert rules_model.media_fallbacks[0].when is not None
-    assert rules_model.media_fallbacks[0].when.match == "all_missing"
+    assert rules_model.media_fallbacks == []
     assert "prompt_enhancer_enabled" in rules_model.frontend_controls
-    assert len(rules_model.rewrites) == 1
+    assert len(rules_model.rewrites) == 2
 
     off_rewrite = rules_model.rewrites[0]
 
@@ -247,18 +242,25 @@ def test_i2v_t2v_basic_rules_allow_widget_driven_prompt_enhancer_rewrites():
     assert off_rewrite.when.ref.control_id == "prompt_enhancer_enabled"
     assert off_rewrite.when.operator == "eq"
     assert off_rewrite.when.value is False
-    assert off_rewrite.bypass == ["347", "348", "349", "350"]
+    assert off_rewrite.bypass == ["599"]
     assert off_rewrite.set_widgets == []
 
+    missing_mask_rewrite = rules_model.rewrites[1]
+    assert missing_mask_rewrite.when.kind == "input_presence"
+    assert missing_mask_rewrite.when.inputs == ["689"]
+    assert missing_mask_rewrite.when.match == "all_missing"
+    assert missing_mask_rewrite.bypass == ["689", "693", "694", "703", "708"]
 
-def test_retake_rules_allow_frontend_control_prompt_enhancer_rewrites():
+def test_ltx23_inpaint_rules_allow_prompt_enhancer_rewrites_and_retake_widget():
     rules_model, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "video_ltx2_3_retake.json",
+        "vlo_ltx2_3_inpaint.json",
     )
 
     assert warnings == []
     assert "prompt_enhancer_enabled" in rules_model.frontend_controls
+    assert len(rules_model.derived_widgets) == 1
+    assert rules_model.derived_widgets[0].kind == "video_audio_retake"
     assert len(rules_model.rewrites) == 1
 
     false_rewrite = rules_model.rewrites[0]
@@ -272,9 +274,9 @@ def test_retake_rules_allow_frontend_control_prompt_enhancer_rewrites():
     assert false_rewrite.set_widgets == []
 
 
-def test_retake_workflow_emits_websocket_frames_and_preview_audio():
+def test_ltx23_inpaint_workflow_emits_websocket_frames_and_preview_audio():
     workflow_graph = json.loads(
-        (DEFAULT_WORKFLOWS_DIR / "video_ltx2_3_retake.json").read_text(
+        (DEFAULT_WORKFLOWS_DIR / "vlo_ltx2_3_inpaint.json").read_text(
             encoding="utf-8"
         )
     )

@@ -62,6 +62,11 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
         "get_health",
         lambda: {"runtime": {"ready": True}},
     )
+    monkeypatch.setattr(
+        main.beats_service,
+        "get_health",
+        lambda: {"runtime": {"ready": True}},
+    )
 
     status = asyncio.run(main.get_app_status())
 
@@ -78,6 +83,10 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
             "modelDownloadsEnabled": main.COMFYUI_INSTALL_DIR is not None,
         },
         "sam2": {
+            "status": "available",
+            "error": None,
+        },
+        "beat_this": {
             "status": "available",
             "error": None,
         },
@@ -98,6 +107,11 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
         "get_health",
         lambda: {"runtime": {"ready": False}},
     )
+    monkeypatch.setattr(
+        main.beats_service,
+        "get_health",
+        lambda: {"runtime": {"ready": False, "error": "Beat This offline"}},
+    )
 
     status = asyncio.run(main.get_app_status())
 
@@ -110,6 +124,10 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     assert status["sam2"] == {
         "status": "unavailable",
         "error": "No SAM2 models discovered",
+    }
+    assert status["beat_this"] == {
+        "status": "unavailable",
+        "error": "Beat This offline",
     }
 
 

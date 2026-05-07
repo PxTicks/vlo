@@ -272,9 +272,17 @@ class _Sam2PredictorRuntime:
             from hydra import initialize_config_dir
             from hydra.core.global_hydra import GlobalHydra
         except Exception as exc:  # pragma: no cover - environment dependent
-            raise Sam2ConfigError(
-                "Failed to import Hydra initialization utilities for custom SAM2 config paths"
-            ) from exc
+            try:
+                return self._build_predictor_for_device(
+                    build_sam2_video_predictor=build_sam2_video_predictor,
+                    model_config_path=model_config_path,
+                    checkpoint_path=checkpoint_path,
+                    device=device,
+                )
+            except Exception:
+                raise Sam2ConfigError(
+                    "Failed to import Hydra initialization utilities for custom SAM2 config paths"
+                ) from exc
 
         hydra_state = GlobalHydra.instance()
         if hydra_state.is_initialized():

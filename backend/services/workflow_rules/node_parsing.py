@@ -287,6 +287,8 @@ def _widget_value_type_from_type_spec(type_spec: Any) -> str | None:
 def get_widget_value_index_map(
     class_type: str,
     object_info: dict[str, Any],
+    *,
+    linked_input_params: set[str] | None = None,
 ) -> dict[str, int]:
     """Return the widget_values slot for each editable widget on a node class."""
     if not isinstance(object_info, dict):
@@ -310,6 +312,7 @@ def get_widget_value_index_map(
 
     widget_value_index: dict[str, int] = {}
     index = 0
+    linked_params = linked_input_params or set()
     for param_name in input_order:
         param_def = None
         for section_key in ("required", "optional"):
@@ -324,6 +327,9 @@ def get_widget_value_index_map(
             type_spec = param_def[0]
             if _widget_value_type_from_type_spec(type_spec) is None:
                 continue
+
+        if param_name in linked_params:
+            continue
 
         widget_value_index[param_name] = index
         opts = (
@@ -363,6 +369,7 @@ def build_widget_entries_for_class(
     node_title: str | None = None,
     widgets_values: list[Any] | None = None,
     widget_groups: dict[str, dict[str, Any]] | None = None,
+    linked_input_params: set[str] | None = None,
     include_all_widgets: bool = False,
 ) -> dict[str, dict[str, Any]] | None:
     """Build widget entries for a class using object_info as the source of truth.
@@ -381,6 +388,7 @@ def build_widget_entries_for_class(
     widget_value_index = get_widget_value_index_map(
         class_type,
         object_info,
+        linked_input_params=linked_input_params,
     )
 
     discovered: dict[str, dict[str, Any]] = {}
@@ -470,6 +478,7 @@ def resolve_widget_param_metadata(
     param_names: set[str],
     *,
     widgets_values: list[Any] | None = None,
+    linked_input_params: set[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Resolve widget metadata for specific param names from raw object_info.
 
@@ -481,7 +490,11 @@ def resolve_widget_param_metadata(
     if not isinstance(class_info, dict):
         return {}
 
-    widget_value_index = get_widget_value_index_map(class_type, object_info)
+    widget_value_index = get_widget_value_index_map(
+        class_type,
+        object_info,
+        linked_input_params=linked_input_params,
+    )
     result: dict[str, dict[str, Any]] = {}
     for param_name, type_spec, opts in iter_all_params(class_info):
         if param_name not in param_names:

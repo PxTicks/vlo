@@ -5,7 +5,7 @@ JSON and controls how that workflow is presented in the Generate panel and
 how the frontend pre-resolves graph effects before dispatch.
 
 This document walks through authoring a sidecar, using the real
-[`video_ltx2_3_retake.rules.json`](../../assets/.config/default_workflows/video_ltx2_3_retake.rules.json)
+[`vlo_ltx2_3_inpaint.rules.json`](../../assets/.config/default_workflows/vlo_ltx2_3_inpaint.rules.json)
 as the running example. It also covers the decisions an author will hit
 most often: manual widget exposure, hiding things, mask processing, and
 aspect ratio processing.

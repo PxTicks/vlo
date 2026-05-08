@@ -101,6 +101,12 @@ const SAVE_IMAGE_WEBSOCKET_NODE_TYPES = new Set([
   "SaveImageWebsocket",
   "VLOSaveImageWebsocketBMP",
 ]);
+const MEMORY_LOADER_NODE_TYPES = new Set([
+  "VLOMemoryLoadImage",
+  "VLOMemoryLoadVideo",
+  "VLOMemoryLoadAudio",
+]);
+const MEMORY_LOADER_PLACEHOLDER_VALUES = new Set(["loading..."]);
 
 function normalizeForStableStringify(value: unknown): JsonValue {
   if (value === null) {
@@ -659,12 +665,44 @@ function getWorkflowNodeInputValue(
   return (inputs as Record<string, unknown>)[param];
 }
 
-function isCacheableMediaInputValue(value: unknown): boolean {
+function isMemoryLoaderPlaceholderValue(
+  workflow: Record<string, unknown>,
+  nodeId: string,
+  value: unknown,
+): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const node = workflow[nodeId];
+  if (typeof node !== "object" || node === null || Array.isArray(node)) {
+    return false;
+  }
+
+  const classType = (node as { class_type?: unknown }).class_type;
+  if (
+    typeof classType !== "string" ||
+    !MEMORY_LOADER_NODE_TYPES.has(classType)
+  ) {
+    return false;
+  }
+
+  return MEMORY_LOADER_PLACEHOLDER_VALUES.has(value.trim().toLowerCase());
+}
+
+function isCacheableMediaInputValue(
+  workflow: Record<string, unknown>,
+  nodeId: string,
+  value: unknown,
+): boolean {
   if (value === null || typeof value === "undefined") {
     return false;
   }
   if (typeof value === "string") {
-    return value.trim().length > 0;
+    return (
+      value.trim().length > 0 &&
+      !isMemoryLoaderPlaceholderValue(workflow, nodeId, value)
+    );
   }
   return true;
 }
@@ -686,7 +724,7 @@ function extractCachedMediaInputs(
   for (const [nodeId, params] of references.entries()) {
     for (const param of params) {
       const value = getWorkflowNodeInputValue(workflow, nodeId, param);
-      if (!isCacheableMediaInputValue(value)) {
+      if (!isCacheableMediaInputValue(workflow, nodeId, value)) {
         return null;
       }
       cachedMediaInputs[nodeId] = {

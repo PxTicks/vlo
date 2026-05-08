@@ -167,7 +167,9 @@ function hasExternalFileTransfer(dataTransfer: DataTransfer | null): boolean {
   if (dataTransfer.files.length > 0) {
     return true;
   }
-  if (Array.from(dataTransfer.items ?? []).some((item) => item.kind === "file")) {
+  if (
+    Array.from(dataTransfer.items ?? []).some((item) => item.kind === "file")
+  ) {
     return true;
   }
   return Array.from(dataTransfer.types ?? []).includes("Files");
@@ -518,7 +520,7 @@ export function GenerationPanel() {
 
     setIsBackendSavePending(true);
     try {
-      const objectInfo = rawObjectInfo ?? await getObjectInfo();
+      const objectInfo = rawObjectInfo ?? (await getObjectInfo());
       await saveWorkflowContent(filename, syncedGraphData, objectInfo);
       await fetchWorkflows();
       return true;
@@ -571,7 +573,7 @@ export function GenerationPanel() {
 
     setIsBackendSavePending(true);
     try {
-      const objectInfo = rawObjectInfo ?? await getObjectInfo();
+      const objectInfo = rawObjectInfo ?? (await getObjectInfo());
       await saveWorkflowContent(filename, syncedGraphData, objectInfo);
       await fetchWorkflows();
 
@@ -686,9 +688,7 @@ export function GenerationPanel() {
     handleGenerateCount(customGenerateCountValue);
   }
 
-  function handleWorkflowJsonDragOver(
-    event: DragEvent<HTMLElement>,
-  ): void {
+  function handleWorkflowJsonDragOver(event: DragEvent<HTMLElement>): void {
     if (!hasExternalFileTransfer(event.dataTransfer)) {
       return;
     }
@@ -710,11 +710,12 @@ export function GenerationPanel() {
     }
   }
 
-  function handleWorkflowJsonDragLeave(
-    event: DragEvent<HTMLElement>,
-  ): void {
+  function handleWorkflowJsonDragLeave(event: DragEvent<HTMLElement>): void {
     const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+    if (
+      nextTarget instanceof Node &&
+      event.currentTarget.contains(nextTarget)
+    ) {
       return;
     }
     setIsWorkflowJsonDragActive(false);
@@ -740,7 +741,9 @@ export function GenerationPanel() {
       const uploaded = await uploadWorkflowJsonFiles(files);
       await fetchWorkflows();
 
-      const uploadedWorkflow = uploaded.find((file) => file.kind === "workflow");
+      const uploadedWorkflow = uploaded.find(
+        (file) => file.kind === "workflow",
+      );
       if (uploadedWorkflow) {
         await loadWorkflow(uploadedWorkflow.workflow_id);
         return;
@@ -930,14 +933,14 @@ export function GenerationPanel() {
             ])}
           </Select>
         </FormControl>
-        <Typography
-          variant="caption"
-          sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
-        >
-          {isWorkflowUploadPending
-            ? "Uploading workflow JSON files..."
-            : "Drop .json workflows or .rules.json sidecars anywhere in this tab to upload them."}
-        </Typography>
+        {isWorkflowUploadPending && (
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
+          >
+            Uploading workflow JSON files...
+          </Typography>
+        )}
       </Box>
 
       <Box sx={{ px: 2, pb: 2 }}>

@@ -785,7 +785,7 @@ function WidgetRow({
   return (
     <Box sx={{ mb: 1 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <Box sx={{ minWidth: 120 }}>
+        <Box sx={{ minWidth: 120, flexShrink: 0 }}>
           <Typography
             variant="caption"
             sx={{ color: "text.secondary", display: "block" }}
@@ -817,6 +817,7 @@ function WidgetRow({
               : {}),
           }}
           sx={{
+            minWidth: 80,
             "& .MuiOutlinedInput-root": {
               bgcolor: isRandomized ? "#2a2a30" : "#1a1a1a",
               fontSize: "0.875rem",

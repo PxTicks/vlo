@@ -1199,12 +1199,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
 
   const connectionSummary = runtimeStatusError
     ? runtimeStatusError
-    : runtimeStatus?.comfyui.error ??
-      (backendConnected
-        ? runtimeStatus?.backend.mode === "production"
-          ? "Release mode: frontend served by FastAPI."
-          : "Development mode: frontend build not present on backend."
-        : null);
+    : runtimeStatus?.comfyui.error ?? null;
   const comfyuiModelDownloadsEnabled =
     runtimeStatus?.comfyui.modelDownloadsEnabled === true;
 

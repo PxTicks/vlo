@@ -13,8 +13,6 @@ import {
 } from "./pipeline";
 
 const PIPELINE_WIDGET_NODE_ID_PREFIX = "__pipeline__:";
-const TARGET_RESOLUTION_DESCRIPTION =
-  "Generation resolution controls the short edge before strided resize.";
 
 function buildPipelineWidgetNodeId(stageId: string): string {
   return `${PIPELINE_WIDGET_NODE_ID_PREFIX}${stageId}`;
@@ -40,11 +38,7 @@ function toPipelineWidgetConfig(
 ): WidgetInputConfig {
   return {
     label: control.label ?? control.key,
-    ...(control.description
-      ? { description: control.description }
-      : control.key === "target_resolution"
-        ? { description: TARGET_RESOLUTION_DESCRIPTION }
-        : {}),
+    ...(control.description ? { description: control.description } : {}),
     controlAfterGenerate: false,
     frontendOnly: true,
     ...(control.group_id ? { groupId: control.group_id } : {}),

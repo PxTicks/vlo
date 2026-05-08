@@ -840,50 +840,7 @@ function WidgetRow({
                   </MenuItem>
                 )))}
         </TextField>
-        {showInlineExactAspectRatioControl ? (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 0.5,
-              flexShrink: 0,
-            }}
-          >
-            <Typography
-              variant="caption"
-              sx={{
-                color: "text.secondary",
-                letterSpacing: "0.12em",
-              }}
-            >
-              EXACT
-            </Typography>
-            <Checkbox
-              checked={exactAspectRatio}
-              onChange={(event) => onExactAspectRatioChange(event.target.checked)}
-              size="small"
-              inputProps={{
-                "aria-label": "Use exact input aspect ratio",
-              }}
-              sx={{
-                color: "rgba(255, 255, 255, 0.65)",
-                p: 0.25,
-                "&.Mui-checked": {
-                  color: "primary.main",
-                },
-              }}
-            />
-            {exactAspectRatioTooltip ? (
-              <Tooltip title={exactAspectRatioTooltip} arrow>
-                <InfoOutlined
-                  fontSize="inherit"
-                  aria-label="Exact aspect ratio help"
-                  sx={{ color: "text.secondary" }}
-                />
-              </Tooltip>
-            ) : null}
-          </Box>
-        ) : null}
+
         {widget.config.controlAfterGenerate && (
           <IconButton
             size="small"
@@ -907,6 +864,51 @@ function WidgetRow({
           </IconButton>
         )}
       </Box>
+      {showInlineExactAspectRatioControl ? (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 0.5,
+            pl: "128px",
+            mt: 0.5,
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+              letterSpacing: "0.12em",
+            }}
+          >
+            EXACT
+          </Typography>
+          <Checkbox
+            checked={exactAspectRatio}
+            onChange={(event) => onExactAspectRatioChange(event.target.checked)}
+            size="small"
+            inputProps={{
+              "aria-label": "Use exact input aspect ratio",
+            }}
+            sx={{
+              color: "rgba(255, 255, 255, 0.65)",
+              p: 0.25,
+              "&.Mui-checked": {
+                color: "primary.main",
+              },
+            }}
+          />
+          {exactAspectRatioTooltip ? (
+            <Tooltip title={exactAspectRatioTooltip} arrow>
+              <InfoOutlined
+                fontSize="inherit"
+                aria-label="Exact aspect ratio help"
+                sx={{ color: "text.secondary" }}
+              />
+            </Tooltip>
+          ) : null}
+        </Box>
+      ) : null}
       {widget.config.description ? (
         <Typography
           variant="caption"

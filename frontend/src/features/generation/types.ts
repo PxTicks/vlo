@@ -230,6 +230,7 @@ export interface WidgetDisplayUnit {
 
 export interface WidgetInputConfig {
   label: string;
+  description?: string;
   controlAfterGenerate: boolean;
   defaultRandomize?: boolean;
   frontendOnly?: boolean;

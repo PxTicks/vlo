@@ -421,6 +421,9 @@ class PipelineControl(WorkflowRuleBaseModel):
     key: str
     label: str | None = None
     description: str | None = None
+    group_id: str | None = None
+    group_title: str | None = None
+    group_order: int | None = None
     value_type: PipelineControlValueType = "unknown"
     expose: PipelineControlExposure = "widget"
     source: PipelineControlSource | None = None

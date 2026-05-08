@@ -65,6 +65,26 @@ def test_vace_inpaint_uses_v3_pipeline_stage_controls():
     assert [target.width.node_id for target in aspect_stage.targets] == ["104", "105"]
 
 
+def test_wan_animate_sidecar_loads_mask_processing_rules():
+    rules, warnings = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_wan_animate.json",
+    )
+
+    assert warnings == []
+    assert rules.version == 3
+
+    mask_stage = get_pipeline_stage(rules, "mask_processing")
+    assert mask_stage is not None
+    assert [(target.source.node_id, target.mask.node_id) for target in mask_stage.targets] == [
+        ("63", "180")
+    ]
+    assert [control.key for control in mask_stage.controls] == [
+        "crop_mode",
+        "crop_dilation",
+    ]
+
+
 def test_vace_inpaint_collects_mask_crop_pairs():
     rules_model, _ = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,

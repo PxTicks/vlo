@@ -243,6 +243,32 @@ describe("GenerationPanel workflow rule hints", () => {
 
   it("shows mask processing mode and hides dilation slider in full mode", () => {
     useGenerationStore.setState({
+      activeWorkflowRules: createDefaultWorkflowRules({
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            controls: [
+              {
+                key: "crop_mode",
+                label: "Mask crop mode",
+                value_type: "enum",
+                options: ["crop", "full"],
+              },
+              {
+                key: "crop_dilation",
+                label: "Mask crop padding",
+                value_type: "float",
+                control: "slider",
+                slider_display: "percent",
+                min: 0,
+                max: 0.5,
+                step: 0.01,
+              },
+            ],
+          },
+        ],
+      }),
       derivedMaskMappings: [
         {
           sourceNodeId: "1",
@@ -258,7 +284,7 @@ describe("GenerationPanel workflow rule hints", () => {
     );
 
     render(<GenerationPanel />);
-    expect(screen.getByLabelText("Mask processing")).toBeInTheDocument();
+    expect(screen.getByText("Mask crop mode")).toBeInTheDocument();
     expect(screen.queryByRole("slider")).not.toBeInTheDocument();
   });
 
@@ -291,6 +317,14 @@ describe("GenerationPanel workflow rule hints", () => {
                 },
               },
             ],
+            controls: [
+              {
+                key: "target_resolution",
+                label: "Resolution",
+                value_type: "int",
+                options: [480, 720],
+              },
+            ],
           },
         ],
       }),
@@ -301,13 +335,68 @@ describe("GenerationPanel workflow rule hints", () => {
 
     render(<GenerationPanel />);
 
-    expect(screen.getByLabelText("Resolution")).toBeInTheDocument();
+    expect(screen.getByText("Resolution")).toBeInTheDocument();
     expect(
       screen.getByLabelText("Use exact input aspect ratio"),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Generation resolution controls the short edge before strided resize."),
     ).toBeInTheDocument();
+  });
+
+  it("routes unified resolution control changes through the store setter", () => {
+    const setTargetResolution = vi.fn();
+    useGenerationStore.setState({
+      activeWorkflowRules: createDefaultWorkflowRules({
+        pipeline: [
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            config: {
+              stride: 16,
+              search_steps: 2,
+              resolutions: [480, 720],
+              postprocess: {
+                enabled: true,
+                mode: "stretch_exact",
+                apply_to: "all_visual_outputs",
+              },
+            },
+            targets: [
+              {
+                width: {
+                  node_id: "49",
+                  param: "width",
+                },
+                height: {
+                  node_id: "49",
+                  param: "height",
+                },
+              },
+            ],
+            controls: [
+              {
+                key: "target_resolution",
+                label: "Resolution",
+                value_type: "int",
+                options: [480, 720],
+              },
+            ],
+          },
+        ],
+      }),
+      setTargetResolution,
+    });
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState(),
+    );
+
+    render(<GenerationPanel />);
+
+    fireEvent.mouseDown(screen.getAllByRole("combobox")[2]!);
+    fireEvent.click(screen.getByRole("option", { name: "720" }));
+
+    expect(setTargetResolution).toHaveBeenCalledWith(720);
   });
 
   it("shows only postprocessed preview when replace mode has preview", () => {
@@ -641,6 +730,36 @@ describe("GenerationPanel workflow rule hints", () => {
                 },
               },
             ],
+            controls: [
+              {
+                key: "target_resolution",
+                label: "Resolution",
+                value_type: "int",
+                options: [480, 720],
+              },
+            ],
+          },
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            controls: [
+              {
+                key: "crop_mode",
+                label: "Mask crop mode",
+                value_type: "enum",
+                options: ["crop", "full"],
+              },
+              {
+                key: "crop_dilation",
+                label: "Mask crop padding",
+                value_type: "float",
+                control: "slider",
+                slider_display: "percent",
+                min: 0,
+                max: 0.5,
+                step: 0.01,
+              },
+            ],
           },
         ],
       }),
@@ -691,14 +810,14 @@ describe("GenerationPanel workflow rule hints", () => {
 
     render(<GenerationPanel />);
 
-    expect(screen.getByLabelText("Resolution")).toBeInTheDocument();
-    expect(screen.getByLabelText("Mask processing")).toBeInTheDocument();
+    expect(screen.getByText("Resolution")).toBeInTheDocument();
+    expect(screen.getByText("Mask crop mode")).toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByLabelText("Mode"));
     fireEvent.click(screen.getByRole("option", { name: "Manual" }));
 
-    expect(screen.queryByLabelText("Resolution")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Mask processing")).not.toBeInTheDocument();
+    expect(screen.queryByText("Resolution")).not.toBeInTheDocument();
+    expect(screen.queryByText("Mask crop mode")).not.toBeInTheDocument();
 
     const editWorkflowButton = await screen.findByRole("button", {
       name: "Edit workflow",

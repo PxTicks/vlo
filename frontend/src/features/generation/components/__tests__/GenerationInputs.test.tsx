@@ -357,6 +357,59 @@ describe("GenerationInputs", () => {
     expect(screen.getByText("EXACT")).toBeInTheDocument();
   });
 
+  it("can target the exact aspect ratio toggle at a non-aspect-ratio widget", () => {
+    const handleExactAspectRatioChange = vi.fn();
+
+    render(
+      <GenerationInputs
+        inputs={[]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[
+          {
+            kind: "raw",
+            nodeId: "__pipeline__:aspect_ratio",
+            param: "target_resolution",
+            currentValue: 720,
+            config: {
+              label: "Resolution",
+              description:
+                "Generation resolution controls the short edge before strided resize.",
+              controlAfterGenerate: false,
+              frontendOnly: true,
+              valueType: "enum",
+              options: [480, 720],
+            },
+          },
+        ]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+        showExactAspectRatioControl={true}
+        exactAspectRatioWidgetKey="__pipeline__:aspect_ratio:target_resolution"
+        exactAspectRatio={false}
+        onExactAspectRatioChange={handleExactAspectRatioChange}
+        exactAspectRatioTooltip="Tooltip"
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Use exact input aspect ratio"));
+
+    expect(handleExactAspectRatioChange).toHaveBeenCalledWith(true);
+    expect(
+      screen.getByText(
+        "Generation resolution controls the short edge before strided resize.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("forwards compatible external file drops to the media input handler", () => {
     const handleExternalInputDrop = vi.fn();
 

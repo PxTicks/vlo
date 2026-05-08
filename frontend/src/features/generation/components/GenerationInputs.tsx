@@ -42,6 +42,7 @@ interface GenerationInputsProps {
   onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
   onToggleRandomize: (nodeId: string, param: string) => void;
   showExactAspectRatioControl?: boolean;
+  exactAspectRatioWidgetKey?: string | null;
   exactAspectRatio?: boolean;
   onExactAspectRatioChange?: (exact: boolean) => void;
   exactAspectRatioTooltip?: string;
@@ -707,7 +708,6 @@ function WidgetRow({
   const isSlider = isSliderWidget(widget);
   const showInlineExactAspectRatioControl =
     showExactAspectRatioControl &&
-    isAspectRatioWidget(widget) &&
     typeof onExactAspectRatioChange === "function";
   const displayValue =
     value === undefined || value === null
@@ -770,132 +770,154 @@ function WidgetRow({
             px: 0.5,
           }}
         />
+        {widget.config.description ? (
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
+          >
+            {widget.config.description}
+          </Typography>
+        ) : null}
       </Box>
     );
   }
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
-      <Box sx={{ minWidth: 120 }}>
-        <Typography
-          variant="caption"
-          sx={{ color: "text.secondary", display: "block" }}
-        >
-          {widget.config.label}
-        </Typography>
-      </Box>
-      <TextField
-        fullWidth
-        select={useSelectInput}
-        size="small"
-        type={useNumericInput && !isRandomized ? "number" : "text"}
-        value={displayValue}
-        disabled={isRandomized}
-        onChange={(event) => {
-          onWidgetChange(
-            widget.nodeId,
-            widget.param,
-            parseWidgetValue(event.target.value, useNumericInput, widget),
-          );
-        }}
-        inputProps={{
-          ...(useNumericInput && !isRandomized
-            ? {
-                min: widget.config.min,
-                max: widget.config.max,
-                step: widget.config.valueType === "int" ? 1 : 0.01,
-              }
-            : {}),
-        }}
-        sx={{
-          "& .MuiOutlinedInput-root": {
-            bgcolor: isRandomized ? "#2a2a30" : "#1a1a1a",
-            fontSize: "0.875rem",
-          },
-        }}
-      >
-        {useSelectInput &&
-          (isBooleanWidget(widget)
-            ? [
-                <MenuItem key="boolean:true" value="true">
-                  true
-                </MenuItem>,
-                <MenuItem key="boolean:false" value="false">
-                  false
-                </MenuItem>,
-              ]
-            : (widget.config.options ?? []).map((option) => (
-                <MenuItem key={String(option)} value={String(option)}>
-                  {String(option)}
-                </MenuItem>
-              )))}
-      </TextField>
-      {showInlineExactAspectRatioControl ? (
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: 0.5,
-            flexShrink: 0,
-          }}
-        >
+    <Box sx={{ mb: 1 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box sx={{ minWidth: 120 }}>
           <Typography
             variant="caption"
-            sx={{
-              color: "text.secondary",
-              letterSpacing: "0.12em",
-            }}
+            sx={{ color: "text.secondary", display: "block" }}
           >
-            EXACT
+            {widget.config.label}
           </Typography>
-          <Checkbox
-            checked={exactAspectRatio}
-            onChange={(event) => onExactAspectRatioChange(event.target.checked)}
-            size="small"
-            inputProps={{
-              "aria-label": "Use exact input aspect ratio",
-            }}
-            sx={{
-              color: "rgba(255, 255, 255, 0.65)",
-              p: 0.25,
-              "&.Mui-checked": {
-                color: "primary.main",
-              },
-            }}
-          />
-          {exactAspectRatioTooltip ? (
-            <Tooltip title={exactAspectRatioTooltip} arrow>
-              <InfoOutlined
-                fontSize="inherit"
-                aria-label="Exact aspect ratio help"
-                sx={{ color: "text.secondary" }}
-              />
-            </Tooltip>
-          ) : null}
         </Box>
-      ) : null}
-      {widget.config.controlAfterGenerate && (
-        <IconButton
+        <TextField
+          fullWidth
+          select={useSelectInput}
           size="small"
-          onClick={() => onToggleRandomize(widget.nodeId, widget.param)}
-          title={isRandomized ? "Disable randomize" : "Enable randomize"}
+          type={useNumericInput && !isRandomized ? "number" : "text"}
+          value={displayValue}
+          disabled={isRandomized}
+          onChange={(event) => {
+            onWidgetChange(
+              widget.nodeId,
+              widget.param,
+              parseWidgetValue(event.target.value, useNumericInput, widget),
+            );
+          }}
+          inputProps={{
+            ...(useNumericInput && !isRandomized
+              ? {
+                  min: widget.config.min,
+                  max: widget.config.max,
+                  step: widget.config.valueType === "int" ? 1 : 0.01,
+                }
+              : {}),
+          }}
           sx={{
-            color: isRandomized ? "primary.main" : "text.disabled",
-            bgcolor: isRandomized
-              ? "rgba(144,202,249,0.12)"
-              : "transparent",
-            borderRadius: 1,
-            p: 0.5,
-            "&:hover": {
-              bgcolor: isRandomized
-                ? "rgba(144,202,249,0.2)"
-                : "rgba(255,255,255,0.08)",
+            "& .MuiOutlinedInput-root": {
+              bgcolor: isRandomized ? "#2a2a30" : "#1a1a1a",
+              fontSize: "0.875rem",
             },
           }}
         >
-          <Casino sx={{ fontSize: 18 }} />
-        </IconButton>
-      )}
+          {useSelectInput &&
+            (isBooleanWidget(widget)
+              ? [
+                  <MenuItem key="boolean:true" value="true">
+                    true
+                  </MenuItem>,
+                  <MenuItem key="boolean:false" value="false">
+                    false
+                  </MenuItem>,
+                ]
+              : (widget.config.options ?? []).map((option) => (
+                  <MenuItem key={String(option)} value={String(option)}>
+                    {String(option)}
+                  </MenuItem>
+                )))}
+        </TextField>
+        {showInlineExactAspectRatioControl ? (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              flexShrink: 0,
+            }}
+          >
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+                letterSpacing: "0.12em",
+              }}
+            >
+              EXACT
+            </Typography>
+            <Checkbox
+              checked={exactAspectRatio}
+              onChange={(event) => onExactAspectRatioChange(event.target.checked)}
+              size="small"
+              inputProps={{
+                "aria-label": "Use exact input aspect ratio",
+              }}
+              sx={{
+                color: "rgba(255, 255, 255, 0.65)",
+                p: 0.25,
+                "&.Mui-checked": {
+                  color: "primary.main",
+                },
+              }}
+            />
+            {exactAspectRatioTooltip ? (
+              <Tooltip title={exactAspectRatioTooltip} arrow>
+                <InfoOutlined
+                  fontSize="inherit"
+                  aria-label="Exact aspect ratio help"
+                  sx={{ color: "text.secondary" }}
+                />
+              </Tooltip>
+            ) : null}
+          </Box>
+        ) : null}
+        {widget.config.controlAfterGenerate && (
+          <IconButton
+            size="small"
+            onClick={() => onToggleRandomize(widget.nodeId, widget.param)}
+            title={isRandomized ? "Disable randomize" : "Enable randomize"}
+            sx={{
+              color: isRandomized ? "primary.main" : "text.disabled",
+              bgcolor: isRandomized
+                ? "rgba(144,202,249,0.12)"
+                : "transparent",
+              borderRadius: 1,
+              p: 0.5,
+              "&:hover": {
+                bgcolor: isRandomized
+                  ? "rgba(144,202,249,0.2)"
+                  : "rgba(255,255,255,0.08)",
+              },
+            }}
+          >
+            <Casino sx={{ fontSize: 18 }} />
+          </IconButton>
+        )}
+      </Box>
+      {widget.config.description ? (
+        <Typography
+          variant="caption"
+          sx={{
+            color: "text.secondary",
+            display: "block",
+            mt: 0.75,
+          }}
+        >
+          {widget.config.description}
+        </Typography>
+      ) : null}
     </Box>
   );
 }
@@ -918,6 +940,7 @@ export const GenerationInputs = memo(function GenerationInputs({
   onWidgetChange,
   onToggleRandomize,
   showExactAspectRatioControl = false,
+  exactAspectRatioWidgetKey,
   exactAspectRatio = false,
   onExactAspectRatioChange,
   exactAspectRatioTooltip,
@@ -931,10 +954,13 @@ export const GenerationInputs = memo(function GenerationInputs({
     [inputs],
   );
   const inputLookup = useMemo(() => buildWorkflowInputLookup(inputs), [inputs]);
-  const exactAspectRatioWidgetKey = useMemo(() => {
+  const resolvedExactAspectRatioWidgetKey = useMemo(() => {
+    if (exactAspectRatioWidgetKey) {
+      return exactAspectRatioWidgetKey;
+    }
     const widget = widgetInputs.find(isAspectRatioWidget);
     return widget ? `${widget.nodeId}:${widget.param}` : null;
-  }, [widgetInputs]);
+  }, [exactAspectRatioWidgetKey, widgetInputs]);
   return (
     <Box sx={{ display: "flex", flexDirection: "column" }}>
       {inputBlocks.map((block, index) => {
@@ -1018,7 +1044,7 @@ export const GenerationInputs = memo(function GenerationInputs({
                   onToggleRandomize={onToggleRandomize}
                   showExactAspectRatioControl={
                     showExactAspectRatioControl &&
-                    exactAspectRatioWidgetKey === key
+                    resolvedExactAspectRatioWidgetKey === key
                   }
                   exactAspectRatio={exactAspectRatio}
                   onExactAspectRatioChange={onExactAspectRatioChange}

@@ -73,6 +73,9 @@ export interface PipelineControl {
   key: string;
   label?: string | null;
   description?: string | null;
+  group_id?: string | null;
+  group_title?: string | null;
+  group_order?: number | null;
   value_type?: "int" | "float" | "string" | "boolean" | "enum" | "unknown";
   expose?: "widget" | "none";
   source?: "client" | "backend" | null;

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type DragEvent, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+} from "react";
 import {
   Box,
   Typography,
@@ -14,9 +21,7 @@ import {
   ListSubheader,
   FormControl,
   InputLabel,
-  Checkbox,
   TextField,
-  Slider,
   Tooltip,
   Dialog,
   DialogTitle,
@@ -30,7 +35,6 @@ import {
   ArrowDropDown,
   Close,
   OpenInNew,
-  InfoOutlined,
   Timeline,
 } from "@mui/icons-material";
 import { ComfyUIEditor } from "./components/ComfyUIEditor";
@@ -38,7 +42,10 @@ import { GenerationInputs } from "./components/GenerationInputs";
 import {
   DEFAULT_GENERATION_RESOLUTION_OPTIONS,
   getAspectRatioStage,
+  getPipelineWidgetKey,
   getSupportedWorkflowResolutions,
+  isPipelineWidgetNodeId,
+  resolvePipelineWidgetInputs,
   type WorkflowRules,
 } from "./services/workflowRules";
 import { normalizeWorkflowFilename } from "./services/workflowFilenames";
@@ -350,7 +357,52 @@ export function GenerationPanel() {
   const currentResolution = resolutionOptions.includes(targetResolution)
     ? targetResolution
     : resolutionOptions[0];
-  const hasAspectRatioWidget = widgetInputs.some(isAspectRatioWidget);
+  const pipelineWidgetInputs = useMemo(
+    () =>
+      resolvePipelineWidgetInputs(activeWorkflowRules, {
+        showTargetResolution: showSmartResolutionSelector,
+        currentResolution,
+        showMaskControls: workflowMode === "smart" && hasMaskMappings,
+        maskCropMode,
+        maskCropDilation,
+      }),
+    [
+      activeWorkflowRules,
+      currentResolution,
+      hasMaskMappings,
+      maskCropDilation,
+      maskCropMode,
+      showSmartResolutionSelector,
+      workflowMode,
+    ],
+  );
+  const displayWidgetInputs = useMemo(
+    () => [...pipelineWidgetInputs, ...widgetInputs],
+    [pipelineWidgetInputs, widgetInputs],
+  );
+  const exactAspectRatioWidgetKey = useMemo(() => {
+    if (!showSmartResolutionSelector) {
+      return null;
+    }
+
+    const aspectRatioWidget = displayWidgetInputs.find(isAspectRatioWidget);
+    if (aspectRatioWidget) {
+      return `${aspectRatioWidget.nodeId}:${aspectRatioWidget.param}`;
+    }
+
+    if (!aspectRatioProcessingConfig) {
+      return null;
+    }
+
+    return getPipelineWidgetKey(
+      aspectRatioProcessingConfig.id,
+      "target_resolution",
+    );
+  }, [
+    aspectRatioProcessingConfig,
+    displayWidgetInputs,
+    showSmartResolutionSelector,
+  ]);
   const canSaveWorkflowToBackend =
     !isBackendSavePending &&
     !!syncedGraphData &&
@@ -376,7 +428,36 @@ export function GenerationPanel() {
     ],
   );
   const hasVisibleGenerationControls =
-    workflowInputs.length > 0 || widgetInputs.length > 0;
+    workflowInputs.length > 0 || displayWidgetInputs.length > 0;
+
+  const handleDisplayedWidgetChange = useCallback(
+    (nodeId: string, param: string, value: unknown) => {
+      if (!isPipelineWidgetNodeId(nodeId)) {
+        handleWidgetChange(nodeId, param, value);
+        return;
+      }
+
+      if (param === "target_resolution" && typeof value === "number") {
+        setTargetResolution(value);
+        return;
+      }
+
+      if (param === "crop_mode" && (value === "crop" || value === "full")) {
+        setMaskCropMode(value);
+        return;
+      }
+
+      if (param === "crop_dilation" && typeof value === "number") {
+        setMaskCropDilation(value);
+      }
+    },
+    [
+      handleWidgetChange,
+      setMaskCropDilation,
+      setMaskCropMode,
+      setTargetResolution,
+    ],
+  );
 
   useEffect(() => {
     if (!import.meta.env.DEV) {
@@ -886,91 +967,6 @@ export function GenerationPanel() {
         />
       ) : (
         <>
-          {/* Dynamic Workflow Inputs */}
-          {showSmartResolutionSelector && !isWorkflowLoading && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Box
-                sx={{ display: "flex", alignItems: "flex-start", gap: 1.25 }}
-              >
-                <FormControl fullWidth size="small">
-                  <InputLabel id="generation-resolution-label">
-                    Resolution
-                  </InputLabel>
-                  <Select
-                    labelId="generation-resolution-label"
-                    value={currentResolution}
-                    label="Resolution"
-                    onChange={(event) =>
-                      setTargetResolution(Number(event.target.value))
-                    }
-                    sx={{ bgcolor: "#1a1a1a" }}
-                  >
-                    {resolutionOptions.map((resolution) => (
-                      <MenuItem key={resolution} value={resolution}>
-                        {`${resolution}p`}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                {!hasAspectRatioWidget ? (
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 0.5,
-                      minHeight: 40,
-                      px: 0.25,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: "text.secondary",
-                        letterSpacing: "0.12em",
-                      }}
-                    >
-                      EXACT
-                    </Typography>
-                    <Checkbox
-                      checked={exactAspectRatio}
-                      onChange={(event) =>
-                        setExactAspectRatio(event.target.checked)
-                      }
-                      size="small"
-                      inputProps={{
-                        "aria-label": "Use exact input aspect ratio",
-                      }}
-                      sx={{
-                        color: "rgba(255, 255, 255, 0.65)",
-                        p: 0.25,
-                        "&.Mui-checked": {
-                          color: "primary.main",
-                        },
-                      }}
-                    />
-                    <Tooltip title={EXACT_ASPECT_RATIO_TOOLTIP} arrow>
-                      <IconButton
-                        size="small"
-                        aria-label="Exact aspect ratio help"
-                        sx={{ color: "text.secondary", p: 0.25 }}
-                      >
-                        <InfoOutlined fontSize="inherit" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-                ) : null}
-              </Box>
-              <Typography
-                variant="caption"
-                sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
-              >
-                Generation resolution controls the short edge before strided
-                resize.
-              </Typography>
-            </Box>
-          )}
-
           {isWorkflowLoading ? (
             <Box
               sx={{
@@ -1024,64 +1020,18 @@ export function GenerationPanel() {
               onInputClear={handleInputClear}
               onSwapMediaInputs={handleSwapMediaInputs}
               onClickSelect={handleClickSelect}
-              widgetInputs={widgetInputs}
+              widgetInputs={displayWidgetInputs}
               widgetValues={widgetValues}
               randomizeToggles={randomizeToggles}
-              onWidgetChange={handleWidgetChange}
+              onWidgetChange={handleDisplayedWidgetChange}
               onToggleRandomize={handleToggleRandomize}
               showExactAspectRatioControl={showSmartResolutionSelector}
+              exactAspectRatioWidgetKey={exactAspectRatioWidgetKey}
               exactAspectRatio={exactAspectRatio}
               onExactAspectRatioChange={setExactAspectRatio}
               exactAspectRatioTooltip={EXACT_ASPECT_RATIO_TOOLTIP}
             />
           ) : null}
-
-          {/* Mask processing */}
-          {workflowMode === "smart" && hasMaskMappings && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <FormControl
-                fullWidth
-                size="small"
-                sx={{ mb: maskCropMode === "crop" ? 1.5 : 0 }}
-              >
-                <InputLabel id="mask-processing-mode-label">
-                  Mask processing
-                </InputLabel>
-                <Select
-                  labelId="mask-processing-mode-label"
-                  value={maskCropMode}
-                  label="Mask processing"
-                  onChange={(event) =>
-                    setMaskCropMode(event.target.value as "crop" | "full")
-                  }
-                  sx={{ bgcolor: "#1a1a1a" }}
-                >
-                  <MenuItem value="full">Full</MenuItem>
-                  <MenuItem value="crop">Crop</MenuItem>
-                </Select>
-              </FormControl>
-              {maskCropMode === "crop" ? (
-                <>
-                  <Typography
-                    variant="caption"
-                    sx={{ color: "text.secondary", display: "block", mb: 0.5 }}
-                  >
-                    Mask crop padding: {Math.round(maskCropDilation * 100)}%
-                  </Typography>
-                  <Slider
-                    size="small"
-                    value={maskCropDilation}
-                    min={0}
-                    max={0.5}
-                    step={0.01}
-                    onChange={(_, value) =>
-                      setMaskCropDilation(value as number)
-                    }
-                  />
-                </>
-              ) : null}
-            </Box>
-          )}
 
           {workflowMode === "manual" ? (
             <Box sx={{ px: 2, pb: 1 }}>

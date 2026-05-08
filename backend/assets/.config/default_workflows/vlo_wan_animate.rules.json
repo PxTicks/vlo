@@ -1,0 +1,208 @@
+{
+  "version": 3,
+  "name": "Wan Animate",
+  "nodes": {
+    "63": {
+      "present": {
+        "label": "Source video",
+        "input_type": "video",
+        "param": "video",
+        "class_type": "VHS_LoadVideo",
+        "group_id": "inputs",
+        "group_title": "Inputs",
+        "group_order": 0,
+        "required": true
+      },
+      "selection": {
+        "export_fps": 16
+      }
+    },
+    "57": {
+      "present": {
+        "label": "Character image",
+        "input_type": "image",
+        "param": "image",
+        "class_type": "LoadImage",
+        "group_id": "inputs",
+        "group_title": "Inputs",
+        "group_order": 1,
+        "required": true
+      }
+    },
+    "180": {},
+    "150": {
+      "widgets": {
+        "value": {
+          "label": "Width",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "151": {
+      "widgets": {
+        "value": {
+          "label": "Height",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    }
+  },
+  "frontend_controls": {
+    "animate_mode": {
+      "label": "Mode",
+      "value_type": "enum",
+      "options": [
+        "Replace character in video",
+        "Animate character in image"
+      ],
+      "default": "Replace character in video",
+      "group_id": "mode",
+      "group_title": "Mode",
+      "group_order": 0
+    }
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "required",
+        "input": "63",
+        "message": "Source video is required."
+      },
+      {
+        "kind": "required",
+        "input": "57",
+        "message": "Character image is required."
+      }
+    ]
+  },
+  "input_conditions": [],
+  "derived_widgets": [],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "animate_mode"
+        },
+        "operator": "eq",
+        "value": "Animate character in image"
+      },
+      "bypass": [
+        "143",
+        "131"
+      ]
+    }
+  ],
+  "effect_switches": [],
+  "slots": {},
+  "media_fallbacks": [],
+  "pipeline": [
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolutions": [
+          480,
+          720
+        ],
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": {
+            "node_id": "150",
+            "param": "value"
+          },
+          "height": {
+            "node_id": "151",
+            "param": "value"
+          }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "options": [
+            480,
+            720
+          ],
+          "default": 720,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "expose": "none",
+          "source": "client"
+        }
+      ]
+    },
+    {
+      "id": "mask_processing",
+      "kind": "mask_processing",
+      "after": [
+        "aspect_ratio"
+      ],
+      "targets": [
+        {
+          "source": {
+            "node_id": "63",
+            "param": "video"
+          },
+          "mask": {
+            "node_id": "180",
+            "param": "file"
+          },
+          "mask_type": "binary",
+          "purpose": "video"
+        }
+      ],
+      "controls": [
+        {
+          "key": "crop_mode",
+          "label": "Mask crop mode",
+          "value_type": "enum",
+          "expose": "widget",
+          "options": [
+            "crop",
+            "full"
+          ],
+          "default": "crop",
+          "group_id": "mask",
+          "group_title": "Mask",
+          "group_order": 0
+        },
+        {
+          "key": "crop_dilation",
+          "label": "Mask crop padding",
+          "value_type": "float",
+          "expose": "widget",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 0.5,
+          "step": 0.01,
+          "default": 0.1,
+          "group_id": "mask",
+          "group_title": "Mask",
+          "group_order": 1
+        }
+      ]
+    }
+  ]
+}

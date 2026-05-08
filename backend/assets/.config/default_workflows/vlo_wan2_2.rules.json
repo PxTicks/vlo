@@ -35,15 +35,6 @@
         }
       }
     },
-    "62": {
-      "present": {
-        "label": "End frame",
-        "group_id": "frames",
-        "group_title": "Frames",
-        "group_order": 1,
-        "required": false
-      }
-    },
     "67": {
       "widgets": {
         "width": {
@@ -58,7 +49,9 @@
           "label": "Length",
           "when": {
             "kind": "input_presence",
-            "inputs": ["89"],
+            "inputs": [
+              "94"
+            ],
             "match": "all_missing"
           },
           "value_type": "int",
@@ -82,15 +75,6 @@
         }
       }
     },
-    "68": {
-      "present": {
-        "label": "Start frame",
-        "group_id": "frames",
-        "group_title": "Frames",
-        "group_order": 0,
-        "required": false
-      }
-    },
     "85": {
       "widgets": {
         "value": {
@@ -109,17 +93,6 @@
         }
       }
     },
-    "89": {
-      "present": {
-        "label": "Source video",
-        "required": false
-      },
-      "selection": {
-        "export_fps": 16,
-        "frame_step": 4,
-        "max_frames": 81
-      }
-    },
     "91": {
       "widgets": {
         "switch": {
@@ -128,19 +101,60 @@
           "hidden": true
         }
       }
+    },
+    "93": {
+      "present": {
+        "label": "End frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 1,
+        "required": false,
+        "input_type": "image",
+        "param": "image",
+        "class_type": "VLOMemoryLoadImage"
+      }
+    },
+    "92": {
+      "present": {
+        "label": "Start frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 0,
+        "required": false,
+        "input_type": "image",
+        "param": "image",
+        "class_type": "VLOMemoryLoadImage"
+      }
+    },
+    "94": {
+      "present": {
+        "label": "Source video",
+        "required": false,
+        "input_type": "video",
+        "param": "file",
+        "class_type": "VLOMemoryLoadVideo"
+      },
+      "selection": {
+        "export_fps": 16,
+        "frame_step": 4,
+        "max_frames": 81
+      }
     }
   },
   "validation": {
     "inputs": [
       {
         "kind": "at_least_n",
-        "inputs": ["68", "62"],
+        "inputs": [
+          "92",
+          "93"
+        ],
         "min": 1,
         "message": "Provide at least one frame input."
       },
       {
         "kind": "optional",
-        "input": "89"
+        "input": "94"
       }
     ]
   },
@@ -151,7 +165,9 @@
       "label": "Denoise",
       "when": {
         "kind": "input_presence",
-        "inputs": ["89"],
+        "inputs": [
+          "94"
+        ],
         "match": "all_present"
       },
       "group_id": "video_generation",
@@ -185,23 +201,33 @@
     {
       "when": {
         "kind": "input_presence",
-        "inputs": ["68"],
+        "inputs": [
+          "92"
+        ],
         "match": "all_missing"
       },
-      "bypass": ["68"]
+      "bypass": [
+        "92"
+      ]
     },
     {
       "when": {
         "kind": "input_presence",
-        "inputs": ["62"],
+        "inputs": [
+          "93"
+        ],
         "match": "all_missing"
       },
-      "bypass": ["62"]
+      "bypass": [
+        "93"
+      ]
     },
     {
       "when": {
         "kind": "input_presence",
-        "inputs": ["89"],
+        "inputs": [
+          "94"
+        ],
         "match": "all_present"
       },
       "set_widgets": [
@@ -215,7 +241,9 @@
     {
       "when": {
         "kind": "input_presence",
-        "inputs": ["89"],
+        "inputs": [
+          "94"
+        ],
         "match": "all_missing"
       },
       "set_widgets": [
@@ -236,7 +264,10 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [480, 720],
+        "resolutions": [
+          480,
+          720
+        ],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -271,7 +302,10 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [480, 720],
+          "options": [
+            480,
+            720
+          ],
           "default": 720
         },
         {

@@ -188,7 +188,10 @@ function createOutputFile(blob: Blob, filename: string): File {
   });
 }
 
-function normalizeOutputDimension(value: number | undefined, fallback: number): number {
+function normalizeOutputDimension(
+  value: number | undefined,
+  fallback: number,
+): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return fallback;
   }
@@ -213,7 +216,10 @@ async function renderTimelineSelectionToOutputs(
   );
   const renderConfig = {
     ...exportConfig,
-    outputWidth: normalizeOutputDimension(options.outputWidth, exportConfig.outputWidth),
+    outputWidth: normalizeOutputDimension(
+      options.outputWidth,
+      exportConfig.outputWidth,
+    ),
     outputHeight: normalizeOutputDimension(
       options.outputHeight,
       exportConfig.outputHeight,
@@ -346,10 +352,10 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
   ) {
     const { video, mask, maskHasVisibleContent } =
       await renderTimelineSelectionToMp4WithMask(
-      timelineSelection,
-      visualMaskKeys[0] === "video_soft" ? "soft" : "binary",
-      { signal: options.signal },
-    );
+        timelineSelection,
+        visualMaskKeys[0] === "video_soft" ? "soft" : "binary",
+        { signal: options.signal },
+      );
     masks[visualMaskKeys[0]] = mask;
     maskContentByKey[visualMaskKeys[0]] = maskHasVisibleContent;
     return { video, masks, maskContentByKey };
@@ -387,14 +393,15 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
       maskContentByKey[key] = true;
       continue;
     }
-    const { file, hasVisibleContent } = await renderTimelineSelectionToMaskOutput(
-      timelineSelection,
-      key === "video_soft" ? "soft" : "binary",
-      {
-        signal: options.signal,
-        trackRenderedMaskContent: true,
-      },
-    );
+    const { file, hasVisibleContent } =
+      await renderTimelineSelectionToMaskOutput(
+        timelineSelection,
+        key === "video_soft" ? "soft" : "binary",
+        {
+          signal: options.signal,
+          trackRenderedMaskContent: true,
+        },
+      );
     masks[key] = file;
     maskContentByKey[key] = hasVisibleContent;
   }
@@ -430,7 +437,8 @@ export async function renderTimelineSelectionToMp4WithMask(
         signal: options.signal,
       },
     );
-    const maskBlob = maskResult.outputs.mask ?? maskResult.mask ?? maskResult.video;
+    const maskBlob =
+      maskResult.outputs.mask ?? maskResult.mask ?? maskResult.video;
     throwIfAborted(options.signal);
 
     const videoRenderer = await ExportRenderer.create(exportConfig);
@@ -479,7 +487,7 @@ export async function renderTimelineSelectionToFrameBatch(
     frameStep:
       timelineSelection.frameStep && timelineSelection.frameStep > 1
         ? timelineSelection.frameStep
-        : options.frameStep ?? timelineSelection.frameStep,
+        : (options.frameStep ?? timelineSelection.frameStep),
   });
   const ticksPerFrame = getTicksPerFrame(clampedFps);
   const startTick = timelineSelection.start;
@@ -520,7 +528,11 @@ export async function renderTimelineSelectionToFrameBatch(
 
   if (frames.length === 0) {
     frames.push(
-      await captureFramePngAtTick(startTick, "generation-selection-frame-0", timelineSelection),
+      await captureFramePngAtTick(
+        startTick,
+        "generation-selection-frame-0",
+        timelineSelection,
+      ),
     );
   }
 

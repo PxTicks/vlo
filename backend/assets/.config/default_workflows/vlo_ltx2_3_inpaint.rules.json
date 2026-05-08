@@ -52,20 +52,19 @@
         "enabled": false
       }
     },
-    "644": {
+    "774": {
       "present": {
         "label": "Source video",
         "input_type": "video",
-        "param": "video",
-        "class_type": "VHS_LoadVideoFFmpeg"
+        "param": "file",
+        "class_type": "VLOMemoryLoadVideo"
       },
       "selection": {
         "export_fps": 24,
         "max_frames": 361
       }
     },
-    "689": {},
-    "691": {},
+    "771": {},
     "705": {
       "widgets": {
         "switch": {
@@ -138,28 +137,15 @@
       "targets": [
         {
           "source": {
-            "node_id": "644",
-            "param": "video"
+            "node_id": "774",
+            "param": "file"
           },
           "mask": {
-            "node_id": "689",
+            "node_id": "771",
             "param": "file"
           },
           "mask_type": "binary",
           "purpose": "video"
-        },
-        {
-          "source": {
-            "node_id": "644",
-            "param": "video"
-          },
-          "mask": {
-            "node_id": "691",
-            "param": "file"
-          },
-          "mask_type": "binary",
-          "purpose": "audio_timing",
-          "render_fps": 25
         }
       ],
       "controls": [

@@ -63,9 +63,7 @@ interface FinalizedOutputBundle {
   analyses: Record<string, OutputVideoAnalysis>;
 }
 
-function pixelsContainNonBlackContent(
-  pixels: ArrayLike<number>,
-): boolean {
+function pixelsContainNonBlackContent(pixels: ArrayLike<number>): boolean {
   for (let index = 0; index < pixels.length; index += 4) {
     if (pixels[index] > 0 || pixels[index + 1] > 0 || pixels[index + 2] > 0) {
       return true;
@@ -255,7 +253,12 @@ export class TextureOutputEncoder {
         if (!context) {
           return null;
         }
-        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const imageData = context.getImageData(
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+        );
         return pixelsContainNonBlackContent(imageData.data);
       } catch {
         return null;

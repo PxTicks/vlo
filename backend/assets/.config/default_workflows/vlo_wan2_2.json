@@ -1,8 +1,8 @@
 {
   "id": "82da63f0-27cf-4a20-8c0f-84e75a23ac07",
   "revision": 0,
-  "last_node_id": 91,
-  "last_link_id": 198,
+  "last_node_id": 94,
+  "last_link_id": 201,
   "nodes": [
     {
       "id": 70,
@@ -571,70 +571,6 @@
       "widgets_values": [4, "fixed"]
     },
     {
-      "id": 68,
-      "type": "LoadImage",
-      "pos": [-160, 500],
-      "size": [320, 320],
-      "flags": {},
-      "order": 9,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "slot_index": 0,
-          "links": [157]
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "slot_index": 1,
-          "links": null
-        }
-      ],
-      "title": "Start Image",
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.45",
-        "Node name for S&R": "LoadImage",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["example.png", "image"]
-    },
-    {
-      "id": 62,
-      "type": "LoadImage",
-      "pos": [-160, 940],
-      "size": [320, 320],
-      "flags": {},
-      "order": 10,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "slot_index": 0,
-          "links": [158]
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "slot_index": 1,
-          "links": null
-        }
-      ],
-      "title": "End Image",
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.45",
-        "Node name for S&R": "LoadImage",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["example.png", "image"]
-    },
-    {
       "id": 8,
       "type": "VAEDecode",
       "pos": [1240, -70],
@@ -723,30 +659,6 @@
       "widgets_values": ["scale dimensions", 1280, 720, "center", "area"]
     },
     {
-      "id": 89,
-      "type": "LoadVideo",
-      "pos": [260, -800],
-      "size": [290, 263.81818181818187],
-      "flags": {},
-      "order": 11,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "VIDEO",
-          "type": "VIDEO",
-          "links": [194]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.17.0",
-        "Node name for S&R": "LoadVideo",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["0222.mov", "image"]
-    },
-    {
       "id": 90,
       "type": "GetVideoComponents",
       "pos": [450, -420],
@@ -758,7 +670,7 @@
         {
           "name": "video",
           "type": "VIDEO",
-          "link": 194
+          "link": 201
         }
       ],
       "outputs": [
@@ -826,13 +738,13 @@
           "name": "start_image",
           "shape": 7,
           "type": "IMAGE",
-          "link": 157
+          "link": 199
         },
         {
           "name": "end_image",
           "shape": 7,
           "type": "IMAGE",
-          "link": 158
+          "link": 200
         }
       ],
       "outputs": [
@@ -899,7 +811,7 @@
       "id": 91,
       "type": "ComfySwitchNode",
       "pos": [520, -270],
-      "size": [270, 78],
+      "size": [270, 80],
       "flags": {},
       "order": 21,
       "mode": 0,
@@ -926,10 +838,94 @@
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.19.3",
-        "widget_ue_connectable": {},
-        "Node name for S&R": "ComfySwitchNode"
+        "Node name for S&R": "ComfySwitchNode",
+        "widget_ue_connectable": {}
       },
       "widgets_values": [false]
+    },
+    {
+      "id": 92,
+      "type": "VLOMemoryLoadImage",
+      "pos": [-150, 620],
+      "size": [270, 150],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [199]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "title": "Start Image",
+      "properties": {
+        "aux_id": "PxTicks/ComfyUI-vlo",
+        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "VLOMemoryLoadImage"
+      },
+      "widgets_values": ["Loading...", false, "refresh", "image"]
+    },
+    {
+      "id": 93,
+      "type": "VLOMemoryLoadImage",
+      "pos": [-150, 980],
+      "size": [270, 150],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [200]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "title": "End Image",
+      "properties": {
+        "aux_id": "PxTicks/ComfyUI-vlo",
+        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "VLOMemoryLoadImage"
+      },
+      "widgets_values": ["Loading...", false, "refresh", "image"]
+    },
+    {
+      "id": 94,
+      "type": "VLOMemoryLoadVideo",
+      "pos": [290, -750],
+      "size": [270, 130],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [201]
+        }
+      ],
+      "properties": {
+        "aux_id": "PxTicks/ComfyUI-vlo",
+        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "widget_ue_connectable": {},
+        "Node name for S&R": "VLOMemoryLoadVideo"
+      },
+      "widgets_values": ["Loading...", false, "refresh", "image"]
     }
   ],
   "links": [
@@ -945,8 +941,6 @@
     [154, 67, 0, 58, 1, "CONDITIONING"],
     [155, 67, 1, 58, 2, "CONDITIONING"],
     [156, 39, 0, 67, 2, "VAE"],
-    [157, 68, 0, 67, 5, "IMAGE"],
-    [158, 62, 0, 67, 6, "IMAGE"],
     [161, 37, 0, 54, 0, "MODEL"],
     [162, 56, 0, 72, 0, "MODEL"],
     [163, 72, 0, 55, 0, "MODEL"],
@@ -960,11 +954,13 @@
     [190, 86, 0, 57, 5, "INT"],
     [191, 8, 0, 87, 0, "IMAGE"],
     [193, 88, 0, 80, 0, "IMAGE"],
-    [194, 89, 0, 90, 0, "VIDEO"],
     [195, 90, 0, 88, 0, "IMAGE"],
     [196, 67, 2, 91, 0, "LATENT"],
     [197, 80, 0, 91, 1, "LATENT"],
-    [198, 91, 0, 57, 3, "LATENT"]
+    [198, 91, 0, 57, 3, "LATENT"],
+    [199, 92, 0, 67, 5, "IMAGE"],
+    [200, 93, 0, 67, 6, "IMAGE"],
+    [201, 94, 0, 90, 0, "VIDEO"]
   ],
   "groups": [
     {
@@ -1011,8 +1007,8 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.28675657795042697,
-      "offset": [941.9056918197014, 1233.6527965141609]
+      "scale": 0.19255042609381848,
+      "offset": [2778.2464686735557, 857.2291810817733]
     },
     "frontendVersion": "1.42.15",
     "VHS_latentpreview": true,

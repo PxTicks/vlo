@@ -2,12 +2,12 @@
   "version": 3,
   "name": "Wan Animate",
   "nodes": {
-    "63": {
+    "185": {
       "present": {
         "label": "Source video",
         "input_type": "video",
-        "param": "video",
-        "class_type": "VHS_LoadVideo",
+        "param": "file",
+        "class_type": "VLOMemoryLoadVideo",
         "group_id": "inputs",
         "group_title": "Inputs",
         "group_order": 0,
@@ -17,19 +17,19 @@
         "export_fps": 16
       }
     },
-    "57": {
+    "193": {
       "present": {
         "label": "Character image",
         "input_type": "image",
         "param": "image",
-        "class_type": "LoadImage",
+        "class_type": "VLOMemoryLoadImage",
         "group_id": "inputs",
         "group_title": "Inputs",
         "group_order": 1,
         "required": true
       }
     },
-    "180": {},
+    "190": {},
     "150": {
       "widgets": {
         "value": {
@@ -67,12 +67,12 @@
     "inputs": [
       {
         "kind": "required",
-        "input": "63",
+        "input": "185",
         "message": "Source video is required."
       },
       {
         "kind": "required",
-        "input": "57",
+        "input": "193",
         "message": "Character image is required."
       }
     ]
@@ -161,11 +161,11 @@
       "targets": [
         {
           "source": {
-            "node_id": "63",
-            "param": "video"
+            "node_id": "185",
+            "param": "file"
           },
           "mask": {
-            "node_id": "180",
+            "node_id": "190",
             "param": "file"
           },
           "mask_type": "binary",

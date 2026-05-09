@@ -25,7 +25,7 @@ import {
 } from "../utils/workflowInputs";
 import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
 import * as comfyApi from "../services/comfyuiApi";
-import { parseWorkflowInputs } from "../services/workflowBridge";
+import { parseInputsFromApiWorkflow } from "../services/apiWorkflowInputs";
 import type {
   WorkflowRuleWarning,
   WorkflowRules,
@@ -526,7 +526,7 @@ export function parseMetadataWorkflowInputs(
   objectInfo?: Record<string, unknown> | null,
 ): WorkflowInput[] {
   if (!prompt) return [];
-  return parseWorkflowInputs(prompt, inputNodeMap, objectInfo);
+  return parseInputsFromApiWorkflow(prompt, inputNodeMap, objectInfo);
 }
 
 export function parseReplayWorkflowInputs(

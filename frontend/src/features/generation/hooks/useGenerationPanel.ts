@@ -33,8 +33,8 @@ import {
 import { resolveWidgetInputs } from "../store/workflowState";
 import {
   parseInputsFromGraphData,
-  parseWorkflowInputs,
 } from "../services/workflowBridge";
+import { parseInputsFromApiWorkflow } from "../services/apiWorkflowInputs";
 import { addLocalAsset, useAssetStore } from "../../userAssets";
 import {
   findWorkflowInputValidationFailures,
@@ -352,7 +352,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const manualWorkflowInputs = useMemo(
     () =>
       syncedWorkflow
-        ? parseWorkflowInputs(syncedWorkflow, inputNodeMap, rawObjectInfo)
+        ? parseInputsFromApiWorkflow(syncedWorkflow, inputNodeMap, rawObjectInfo)
         : syncedGraphData
           ? parseInputsFromGraphData(syncedGraphData, {
               inputNodeMap,

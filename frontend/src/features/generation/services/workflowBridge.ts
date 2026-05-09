@@ -11,66 +11,14 @@ import {
 } from "./nodeTitles";
 import { buildWorkflowInputId } from "../utils/workflowInputs";
 
-// ---------------------------------------------------------------------------
-// Node class_type → UI input mapping
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Workflow parsing
-// ---------------------------------------------------------------------------
-
 /**
- * Parses an API-format ComfyUI workflow and returns discoverable input nodes.
+ * Graph-based workflow bridge for the live editor UI.
  *
- * When a dynamic `inputNodeMap` (built from object_info) is provided it is
- * checked first; the static `INPUT_NODE_MAP` is always used as a fallback.
+ * This module is intentionally limited to visual-graph data for workflow
+ * synchronization and display. It does not call `app.graphToPrompt()` to
+ * derive display state. Deprecated API-shaped iframe readers live in
+ * `deprecatedApiWorkflowBridge.ts`.
  */
-export function parseWorkflowInputs(
-  workflow: Record<string, unknown>,
-  inputNodeMap?: InputNodeMap | null,
-  objectInfo?: Record<string, unknown> | null,
-): WorkflowInput[] {
-  const nodeMap = inputNodeMap ?? INPUT_NODE_MAP;
-  const inputs: WorkflowInput[] = [];
-
-  for (const [nodeId, nodeData] of Object.entries(workflow)) {
-    if (!nodeData || typeof nodeData !== "object") continue;
-
-    const node = nodeData as Record<string, unknown>;
-    const classType = node.class_type as string | undefined;
-    if (!classType) continue;
-
-    const mappings = nodeMap[classType] ?? [];
-    if (mappings.length === 0) continue;
-
-    const nodeInputs = (node.inputs ?? {}) as Record<string, unknown>;
-    const meta = (node._meta ?? {}) as Record<string, unknown>;
-    const nodeTitle =
-      resolveNodeDisplayTitle({
-        workflowTitle: meta.title,
-        classType,
-        objectInfo,
-      }) ?? classType;
-    const hasMultipleMappings = mappings.length > 1;
-
-    for (const mapping of mappings) {
-      inputs.push({
-        id: buildWorkflowInputId(nodeId, mapping.param),
-        nodeId,
-        classType,
-        inputType: mapping.inputType,
-        param: mapping.param,
-        label: resolveWorkflowInputLabel(nodeTitle, mapping, hasMultipleMappings),
-        description: mapping.description ?? null,
-        currentValue: nodeInputs[mapping.param] ?? null,
-        origin: "inferred",
-        dispatch: { kind: "node" },
-      });
-    }
-  }
-
-  return inputs;
-}
 
 function resolveWorkflowInputLabel(
   nodeTitle: string,
@@ -207,8 +155,9 @@ function collectLinkedInputNames(node: Record<string, unknown>): Set<string> {
  * for the class. No API-shape projection happens; this is the cheap "I have
  * a visual graph, populate the panel" path.
  *
- * The return shape mirrors `parseWorkflowInputs` so call sites can use
- * either source interchangeably.
+ * The return shape mirrors the API-workflow parser from
+ * `apiWorkflowInputs.ts` so call sites can use either source
+ * interchangeably.
  *
  * NOTE: This is for input discovery only. It is NEVER a substitute for
  * `app.graphToPrompt()` and MUST NEVER be the source of an execution
@@ -345,7 +294,6 @@ interface ComfyUIWorkflowApi {
 }
 
 interface ComfyUIApp {
-  graphToPrompt?: () => Promise<unknown> | unknown;
   handleFile?: (
     file: File,
     openSource?: string,
@@ -379,24 +327,13 @@ export interface WorkflowWarningSummary {
   missingModels: string[];
 }
 
-export type WorkflowReadStatus =
-  | "success"
-  | "invalid_graph"
-  | "unavailable";
-
 export interface WorkflowReadResult {
-  // Populated ONLY when produced by `app.graphToPrompt()` (the iframe
-  // round-trip path). `null` when the result was synthesized from the
-  // visual graph alone (input-discovery only). Never a fake API shape.
+  // Active graph-sync helpers in this module always leave this as `null`.
+  // Non-null values come only from deprecated API-shaped iframe readers.
   workflow: Record<string, unknown> | null;
   graphData: Record<string, unknown>;
   inputs: WorkflowInput[];
   filename: string | null;
-}
-
-export interface WorkflowReadAttempt {
-  status: WorkflowReadStatus;
-  result: WorkflowReadResult | null;
 }
 
 export interface ActiveWorkflowReadResult {
@@ -443,10 +380,6 @@ function summarizeWorkflowTab(wf: WorkflowTab | null | undefined) {
       ? Object.keys(pendingWarningsRaw)
       : [],
   };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return isRecord(value) ? value : null;
 }
 
 function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
@@ -520,39 +453,8 @@ export function readActiveWorkflowFromIframe(
   }
 }
 
-function looksLikeApiWorkflow(workflow: Record<string, unknown>): boolean {
-  const entries = Object.entries(workflow);
-  if (entries.length === 0) return false;
-
-  return entries.every(([, nodeData]) => {
-    if (!isRecord(nodeData)) return false;
-    return (
-      typeof nodeData.class_type === "string" &&
-      isRecord(nodeData.inputs ?? null)
-    );
-  });
-}
-
 function toUnique(values: string[]): string[] {
   return [...new Set(values)];
-}
-
-function isTransientInvalidGraphError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const name = error.name.trim();
-  const message = error.message.trim();
-
-  if (name === "InvalidLinkError") {
-    return true;
-  }
-
-  return (
-    message.includes("InvalidLinkError") ||
-    message.includes("No link found in parent graph")
-  );
 }
 
 function extractMissingNodeTypes(value: unknown): string[] {
@@ -615,103 +517,6 @@ function extractMissingModels(value: unknown): string[] {
     .filter((name): name is string => name !== null);
 
   return toUnique(names);
-}
-
-/**
- * Reads the current workflow from a ComfyUI iframe.
- *
- * We prefer `activeWorkflow.activeState` for the live visual graph when the
- * workflow store exposes it, and still use `app.graphToPrompt()` for the
- * API-format workflow required by generation.
- */
-export async function readWorkflowFromIframe(
-  iframe: HTMLIFrameElement,
-  inputNodeMap?: InputNodeMap | null,
-  objectInfo?: Record<string, unknown> | null,
-): Promise<WorkflowReadResult | null> {
-  const attempt = await readWorkflowFromIframeDetailed(
-    iframe,
-    inputNodeMap,
-    objectInfo,
-  );
-  return attempt.result;
-}
-
-export async function readWorkflowFromIframeDetailed(
-  iframe: HTMLIFrameElement,
-  inputNodeMap?: InputNodeMap | null,
-  objectInfo?: Record<string, unknown> | null,
-): Promise<WorkflowReadAttempt> {
-  try {
-    const win = iframe.contentWindow as ComfyUIWindow | null;
-    const app = win?.app;
-    const activeWorkflow = getIframeWorkflowApi(iframe)?.activeWorkflow ?? null;
-    const graphToPrompt = app?.graphToPrompt;
-    let apiWorkflow: Record<string, unknown> | null = null;
-    let graphData = getActiveWorkflowGraphData(activeWorkflow);
-
-    if (typeof graphToPrompt === "function") {
-      const rawResult = await graphToPrompt.call(app);
-
-      if (Array.isArray(rawResult)) {
-        const rawGraphData = asRecord(rawResult[0]);
-        apiWorkflow = asRecord(rawResult[1]);
-        if (!graphData) {
-          graphData = rawGraphData;
-        }
-      } else if (isRecord(rawResult)) {
-        apiWorkflow =
-          asRecord(rawResult.output) ??
-          asRecord(rawResult.prompt) ??
-          asRecord(rawResult.apiWorkflow) ??
-          null;
-
-        if (!graphData) {
-          graphData = asRecord(rawResult.workflow) ?? asRecord(rawResult.graph);
-        }
-      }
-    }
-
-    if (!apiWorkflow && graphData && looksLikeApiWorkflow(graphData)) {
-      apiWorkflow = graphData;
-    }
-
-    if (!apiWorkflow) {
-      return {
-        status: "unavailable",
-        result: null,
-      };
-    }
-    if (!graphData) {
-      // Some ComfyUI variants do not return a dedicated visual workflow payload.
-      // API-format JSON is still usable for sync + reload in our bridge.
-      graphData = apiWorkflow;
-    }
-
-    const inputs = parseWorkflowInputs(apiWorkflow, inputNodeMap, objectInfo);
-    const filename = resolveWorkflowTabFilename(activeWorkflow);
-    return {
-      status: "success",
-      result: { workflow: apiWorkflow, graphData, inputs, filename },
-    };
-  } catch (err) {
-    if (isTransientInvalidGraphError(err)) {
-      console.info(
-        "[workflowBridge] readWorkflowFromIframe skipped invalid graph state:",
-        err,
-      );
-      return {
-        status: "invalid_graph",
-        result: null,
-      };
-    }
-
-    console.warn("[workflowBridge] readWorkflowFromIframe failed:", err);
-    return {
-      status: "unavailable",
-      result: null,
-    };
-  }
 }
 
 /**
@@ -972,7 +777,7 @@ export async function loadWorkflowIntoIframe(
 
 /**
  * Checks if the ComfyUI app inside the iframe is ready.
- * Uses multiple capability checks because ComfyUI internals vary by version.
+ * Uses only the capabilities required by the live graph-sync path.
  */
 export function isIframeAppReady(iframe: HTMLIFrameElement): boolean {
   try {
@@ -980,11 +785,7 @@ export function isIframeAppReady(iframe: HTMLIFrameElement): boolean {
     const app = win?.app;
     if (!app) return false;
 
-    return (
-      typeof app.handleFile === "function" ||
-      typeof app.graphToPrompt === "function" ||
-      !!app.extensionManager?.workflow
-    );
+    return typeof app.handleFile === "function" || !!app.extensionManager?.workflow;
   } catch (err) {
     console.warn("[workflowBridge] isIframeAppReady failed:", err);
     return false;

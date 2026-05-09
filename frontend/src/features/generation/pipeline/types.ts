@@ -22,6 +22,9 @@ import type {
 
 export type DerivedMaskType = "binary" | "soft";
 export type DerivedMaskPurpose = "video" | "audio_timing";
+export type TimelineSelectionRenderMode =
+  | "input_selection"
+  | "full_selection";
 
 export interface DerivedMaskMapping {
   /** Node ID of the mask input (the one that receives the rendered mask) */
@@ -38,6 +41,10 @@ export interface DerivedMaskMapping {
   purpose?: DerivedMaskPurpose;
   /** Optional export FPS override for temporal/audio timing masks. */
   renderFps?: number;
+  /** Which selection variant to use when rendering the source video. */
+  sourceSelection?: TimelineSelectionRenderMode;
+  /** Which selection variant to use when rendering the derived mask. */
+  maskSelection?: TimelineSelectionRenderMode;
   /**
    * When true, the mask node is declared optional in the rules sidecar
    * (`present.required === false`). Optional uploads are decided from the

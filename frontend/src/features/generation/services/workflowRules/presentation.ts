@@ -309,6 +309,8 @@ export function resolvePresentedInputsFromRules(
       maskType: "binary" | "soft";
       purpose?: "video" | "audio_timing";
       renderFps?: number;
+      sourceSelection?: "input_selection" | "full_selection";
+      maskSelection?: "input_selection" | "full_selection";
     }
   >();
   for (const target of maskProcessingStage?.targets ?? []) {
@@ -320,6 +322,10 @@ export function resolvePresentedInputsFromRules(
       ...(typeof target.render_fps === "number"
         ? { renderFps: target.render_fps }
         : {}),
+      ...(target.source_selection
+        ? { sourceSelection: target.source_selection }
+        : {}),
+      ...(target.mask_selection ? { maskSelection: target.mask_selection } : {}),
     });
   }
   const derivedMaskNodeIds = new Set(
@@ -356,6 +362,12 @@ export function resolvePresentedInputsFromRules(
         maskType: derivedMask.maskType,
         purpose: derivedMask.purpose,
         renderFps: derivedMask.renderFps,
+        ...(derivedMask.sourceSelection
+          ? { sourceSelection: derivedMask.sourceSelection }
+          : {}),
+        ...(derivedMask.maskSelection
+          ? { maskSelection: derivedMask.maskSelection }
+          : {}),
         ...(present?.required === false ? { optional: true } : {}),
       });
       continue;

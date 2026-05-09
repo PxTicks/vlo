@@ -416,6 +416,22 @@
         "mask": {
           "$ref": "#/$defs/WorkflowParamReference"
         },
+        "mask_selection": {
+          "anyOf": [
+            {
+              "enum": [
+                "input_selection",
+                "full_selection"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mask Selection"
+        },
         "mask_type": {
           "default": "binary",
           "enum": [
@@ -448,6 +464,22 @@
         },
         "source": {
           "$ref": "#/$defs/WorkflowParamReference"
+        },
+        "source_selection": {
+          "anyOf": [
+            {
+              "enum": [
+                "input_selection",
+                "full_selection"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Selection"
         }
       },
       "required": [
@@ -605,6 +637,42 @@
           ],
           "default": null,
           "title": "False Value"
+        },
+        "group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "group_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Order"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
         },
         "include_options": {
           "anyOf": [
@@ -2314,6 +2382,18 @@
           "default": null,
           "title": "Frame Step"
         },
+        "include_tracks": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Include Tracks"
+        },
         "max_frames": {
           "anyOf": [
             {
@@ -2325,6 +2405,18 @@
           ],
           "default": null,
           "title": "Max Frames"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
         }
       },
       "title": "WorkflowRuleSelectionConfig",

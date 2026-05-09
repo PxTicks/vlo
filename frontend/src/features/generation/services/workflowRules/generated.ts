@@ -67,6 +67,8 @@ export interface MaskProcessingTarget {
   mask_type?: "binary" | "soft";
   purpose?: "video" | "audio_timing";
   render_fps?: number | null;
+  source_selection?: "input_selection" | "full_selection" | null;
+  mask_selection?: "input_selection" | "full_selection" | null;
 }
 
 export interface PipelineControl {
@@ -303,6 +305,8 @@ export interface WorkflowRuleSelectionConfig {
   export_fps?: number | null;
   frame_step?: number | null;
   max_frames?: number | null;
+  message?: string | null;
+  include_tracks?: boolean | null;
 }
 
 export interface WorkflowRuleSlot {

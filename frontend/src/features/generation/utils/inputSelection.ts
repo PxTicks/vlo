@@ -18,6 +18,7 @@ import type {
   DerivedMaskMapping,
   DerivedMaskPurpose,
   DerivedMaskType,
+  TimelineSelectionRenderMode,
 } from "../pipeline/types";
 import {
   createGenerationAbortError,
@@ -99,6 +100,48 @@ function getDerivedMaskPurpose(
   mapping: Pick<DerivedMaskMapping, "purpose">,
 ): DerivedMaskPurpose {
   return mapping.purpose === "audio_timing" ? "audio_timing" : "video";
+}
+
+function resolveTimelineSelectionRenderMode(
+  mode: TimelineSelectionRenderMode | undefined,
+): TimelineSelectionRenderMode {
+  return mode === "full_selection" ? "full_selection" : "input_selection";
+}
+
+function resolveTimelineSelectionForRenderMode(
+  timelineSelection: TimelineSelection,
+  mode: TimelineSelectionRenderMode | undefined,
+): TimelineSelection {
+  if (resolveTimelineSelectionRenderMode(mode) !== "full_selection") {
+    return timelineSelection;
+  }
+  if (
+    !Array.isArray(timelineSelection.includedTrackIds) ||
+    timelineSelection.includedTrackIds.length === 0
+  ) {
+    return timelineSelection;
+  }
+
+  const fullSelection: TimelineSelection = {
+    ...timelineSelection,
+  };
+  delete fullSelection.includedTrackIds;
+  return fullSelection;
+}
+
+function resolveSharedSourceSelectionMode(
+  derivedMaskMappings: readonly Pick<DerivedMaskMapping, "sourceSelection">[],
+): TimelineSelectionRenderMode {
+  const modes = new Set<TimelineSelectionRenderMode>();
+  for (const mapping of derivedMaskMappings) {
+    modes.add(resolveTimelineSelectionRenderMode(mapping.sourceSelection));
+  }
+  if (modes.size > 1) {
+    throw new Error(
+      "Derived masks for a single source requested conflicting source selection modes",
+    );
+  }
+  return [...modes][0] ?? "input_selection";
 }
 
 export function resolveAudioTimingMaskExportFps(
@@ -303,7 +346,12 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
   timelineSelection: TimelineSelection,
   derivedMaskMappings: readonly Pick<
     DerivedMaskMapping,
-    "maskType" | "purpose" | "renderFps" | "optional"
+    | "maskType"
+    | "purpose"
+    | "renderFps"
+    | "optional"
+    | "sourceSelection"
+    | "maskSelection"
   >[],
   options: {
     signal?: AbortSignal;
@@ -311,11 +359,25 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     preparedMaskFile?: File | null;
   } = {},
 ): Promise<TimelineSelectionWithDerivedMasksResult> {
+  const sourceSelectionMode =
+    resolveSharedSourceSelectionMode(derivedMaskMappings);
+  const sourceTimelineSelection = resolveTimelineSelectionForRenderMode(
+    timelineSelection,
+    sourceSelectionMode,
+  );
   const masks: Partial<Record<DerivedMaskRenderKey, File>> = {};
   const maskContentByKey: Partial<Record<DerivedMaskRenderKey, boolean>> = {};
   const requiredMasksByKey = new Map<
     DerivedMaskRenderKey,
-    Pick<DerivedMaskMapping, "maskType" | "purpose" | "renderFps" | "optional">
+    Pick<
+      DerivedMaskMapping,
+      | "maskType"
+      | "purpose"
+      | "renderFps"
+      | "optional"
+      | "sourceSelection"
+      | "maskSelection"
+    >
   >();
   for (const mapping of derivedMaskMappings) {
     const key = getDerivedMaskRenderKey(mapping);
@@ -331,6 +393,10 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     (mapping) =>
       getDerivedMaskPurpose(mapping) === "video" && mapping.optional === true,
   );
+  const singleVisualMaskMapping =
+    visualMaskKeys.length === 1
+      ? requiredMasksByKey.get(visualMaskKeys[0]) ?? null
+      : null;
 
   if (
     options.preparedMaskFile &&
@@ -348,13 +414,17 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     !canReusePreparedVideo &&
     requiredMaskKeys.length === 1 &&
     visualMaskKeys.length === 1 &&
-    !masks[visualMaskKeys[0]]
+    !masks[visualMaskKeys[0]] &&
+    resolveTimelineSelectionRenderMode(singleVisualMaskMapping?.maskSelection) ===
+      sourceSelectionMode
   ) {
     const { video, mask, maskHasVisibleContent } =
       await renderTimelineSelectionToMp4WithMask(
-        timelineSelection,
+        sourceTimelineSelection,
         visualMaskKeys[0] === "video_soft" ? "soft" : "binary",
-        { signal: options.signal },
+        {
+          signal: options.signal,
+        },
       );
     masks[visualMaskKeys[0]] = mask;
     maskContentByKey[visualMaskKeys[0]] = maskHasVisibleContent;
@@ -363,7 +433,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
 
   const video = canReusePreparedVideo
     ? preparedVideoFile
-    : await renderTimelineSelectionToMp4(timelineSelection, {
+    : await renderTimelineSelectionToMp4(sourceTimelineSelection, {
         includeTimelineMasks: false,
         signal: options.signal,
       });
@@ -376,12 +446,16 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     if (!mapping) {
       continue;
     }
+    const maskTimelineSelection = resolveTimelineSelectionForRenderMode(
+      timelineSelection,
+      mapping.maskSelection,
+    );
     if (getDerivedMaskPurpose(mapping) === "audio_timing") {
       // Audio timing masks are reduced to per-frame activity downstream, so
       // shrinking them here can erase small active regions entirely.
       masks[key] = await renderTimelineSelectionToMaskMp4(
         {
-          ...timelineSelection,
+          ...maskTimelineSelection,
           fps: resolveAudioTimingMaskExportFps(mapping.renderFps),
           frameStep: 1,
         },
@@ -395,7 +469,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     }
     const { file, hasVisibleContent } =
       await renderTimelineSelectionToMaskOutput(
-        timelineSelection,
+        maskTimelineSelection,
         key === "video_soft" ? "soft" : "binary",
         {
           signal: options.signal,

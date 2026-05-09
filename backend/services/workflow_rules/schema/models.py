@@ -24,6 +24,7 @@ PipelineControlValueType = Literal["int", "float", "string", "boolean", "enum", 
 WorkflowMediaFallbackKind = Literal["dummy"]
 MaskProcessingTargetType = Literal["binary", "soft"]
 MaskProcessingTargetPurpose = Literal["video", "audio_timing"]
+MaskProcessingTargetSelectionMode = Literal["input_selection", "full_selection"]
 PostprocessingMode = Literal["auto", "stitch_frames_with_audio", "none"]
 PostprocessingPanelPreview = Literal["raw_outputs", "replace_outputs"]
 PostprocessingOnFailure = Literal["fallback_raw", "show_error"]
@@ -265,6 +266,8 @@ class WorkflowRuleSelectionConfig(WorkflowRuleBaseModel):
     export_fps: int | None = None
     frame_step: int | None = None
     max_frames: int | None = None
+    message: str | None = None
+    include_tracks: bool | None = None
 
 
 class WorkflowRuleNode(WorkflowRuleBaseModel):
@@ -479,6 +482,8 @@ class MaskProcessingTarget(WorkflowRuleBaseModel):
     mask_type: MaskProcessingTargetType = "binary"
     purpose: MaskProcessingTargetPurpose = "video"
     render_fps: int | None = None
+    source_selection: MaskProcessingTargetSelectionMode | None = None
+    mask_selection: MaskProcessingTargetSelectionMode | None = None
 
 
 class AspectRatioTargetNode(WorkflowRuleBaseModel):

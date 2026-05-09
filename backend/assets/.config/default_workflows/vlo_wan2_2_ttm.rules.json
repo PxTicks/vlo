@@ -1,0 +1,283 @@
+{
+  "version": 3,
+  "name": "Wan2.2 TTM",
+  "nodes": {
+    "57": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 3
+        },
+        "start_at_step": {
+          "value_type": "int",
+          "hidden": true
+        },
+        "end_at_step": {
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "58": {
+      "widgets": {
+        "noise_seed": {
+          "control_after_generate": true,
+          "value_type": "int",
+          "hidden": true
+        },
+        "start_at_step": {
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "67": {
+      "widgets": {
+        "width": {
+          "value_type": "int",
+          "hidden": true
+        },
+        "height": {
+          "value_type": "int",
+          "hidden": true
+        },
+        "length": {
+          "label": "Length",
+          "when": {
+            "kind": "input_presence",
+            "inputs": [
+              "95"
+            ],
+            "match": "all_missing"
+          },
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 81,
+          "step": 4,
+          "display_unit": {
+            "scale": 0.0625,
+            "unit": "s",
+            "precision": 1
+          },
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0
+        },
+        "batch_size": {
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "85": {
+      "widgets": {
+        "value": {
+          "label": "Total Steps",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "86": {
+      "widgets": {
+        "value": {
+          "label": "Split Steps",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "95": {
+      "present": {
+        "label": "Source video",
+        "required": true,
+        "input_type": "video",
+        "param": "file",
+        "class_type": "VLOMemoryLoadVideo"
+      },
+      "selection": {
+        "export_fps": 16,
+        "frame_step": 4,
+        "max_frames": 81,
+        "message": "Select which track(s) contain the moving object(s)",
+        "include_tracks": true
+      }
+    },
+    "97": {}
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "required",
+        "input": "95",
+        "message": "Source video is required."
+      }
+    ]
+  },
+  "derived_widgets": [
+    {
+      "id": "dual_sampler_denoise",
+      "kind": "dual_sampler_denoise",
+      "label": "Denoise",
+      "when": {
+        "kind": "input_presence",
+        "inputs": [
+          "95"
+        ],
+        "match": "all_present"
+      },
+      "group_id": "video_generation",
+      "group_title": "Video Generation",
+      "group_order": 1,
+      "total_steps": {
+        "node_id": "85",
+        "param": "value"
+      },
+      "start_step": {
+        "node_id": "57",
+        "param": "start_at_step"
+      },
+      "base_split_step": {
+        "node_id": "86",
+        "param": "value"
+      },
+      "split_step_targets": [
+        {
+          "node_id": "57",
+          "param": "end_at_step"
+        },
+        {
+          "node_id": "58",
+          "param": "start_at_step"
+        }
+      ]
+    }
+  ],
+  "rewrites": [],
+  "slots": {},
+  "pipeline": [
+    {
+      "id": "mask_processing",
+      "kind": "mask_processing",
+      "after": [
+        "aspect_ratio"
+      ],
+      "targets": [
+        {
+          "source": {
+            "node_id": "95",
+            "param": "file"
+          },
+          "mask": {
+            "node_id": "97",
+            "param": "file"
+          },
+          "mask_type": "binary",
+          "purpose": "video",
+          "source_selection": "full_selection",
+          "mask_selection": "input_selection"
+        }
+      ],
+      "controls": [
+        {
+          "key": "crop_mode",
+          "label": "Mask crop mode",
+          "value_type": "enum",
+          "expose": "widget",
+          "options": [
+            "crop",
+            "full"
+          ],
+          "default": "crop"
+        },
+        {
+          "key": "crop_dilation",
+          "label": "Mask crop padding",
+          "value_type": "float",
+          "expose": "widget",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 0.5,
+          "step": 0.01,
+          "default": 0.1
+        }
+      ]
+    },
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolutions": [
+          480,
+          720
+        ],
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": {
+            "node_id": "67",
+            "param": "width"
+          },
+          "height": {
+            "node_id": "67",
+            "param": "height"
+          }
+        },
+        {
+          "width": {
+            "node_id": "88",
+            "param": "resize_type.width"
+          },
+          "height": {
+            "node_id": "88",
+            "param": "resize_type.height"
+          }
+        },
+        {
+          "width": {
+            "node_id": "102",
+            "param": "resize_type.width"
+          },
+          "height": {
+            "node_id": "102",
+            "param": "resize_type.height"
+          }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "options": [
+            480,
+            720
+          ],
+          "default": 720
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "expose": "none",
+          "source": "client"
+        }
+      ]
+    }
+  ]
+}

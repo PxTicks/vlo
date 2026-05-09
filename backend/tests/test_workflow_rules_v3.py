@@ -77,12 +77,36 @@ def test_wan_animate_sidecar_loads_mask_processing_rules():
     mask_stage = get_pipeline_stage(rules, "mask_processing")
     assert mask_stage is not None
     assert [(target.source.node_id, target.mask.node_id) for target in mask_stage.targets] == [
-        ("63", "180")
+        ("185", "190")
     ]
     assert [control.key for control in mask_stage.controls] == [
         "crop_mode",
         "crop_dilation",
     ]
+
+
+def test_wan2_2_ttm_sidecar_loads_track_selection_message_and_mask_selection_modes():
+    rules, warnings = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_wan2_2_ttm.json",
+    )
+
+    assert warnings == []
+    assert rules.version == 3
+
+    source_video_rule = rules.nodes["95"]
+    assert source_video_rule.selection is not None
+    assert source_video_rule.selection.include_tracks is True
+    assert (
+        source_video_rule.selection.message
+        == "Select which track(s) contain the moving object(s)"
+    )
+
+    mask_stage = get_pipeline_stage(rules, "mask_processing")
+    assert mask_stage is not None
+    assert len(mask_stage.targets) == 1
+    assert mask_stage.targets[0].source_selection == "full_selection"
+    assert mask_stage.targets[0].mask_selection == "input_selection"
 
 
 def test_vace_inpaint_collects_mask_crop_pairs():

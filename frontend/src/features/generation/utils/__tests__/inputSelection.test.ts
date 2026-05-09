@@ -267,4 +267,54 @@ describe("inputSelection", () => {
       outputHeight: renderSpy.mock.calls[2]?.[1]?.outputHeight,
     });
   });
+
+  it("renders the source video from the full selection while keeping masks on included tracks when requested", async () => {
+    const renderSpy = vi
+      .fn()
+      .mockResolvedValueOnce({
+        video: new Blob(["video"], { type: "video/mp4" }),
+        outputs: {
+          video: new Blob(["video"], { type: "video/mp4" }),
+        },
+      })
+      .mockResolvedValueOnce({
+        video: new Blob(["mask"], { type: "video/mp4" }),
+        outputs: {
+          mask: new Blob(["mask"], { type: "video/mp4" }),
+        },
+        outputAnalyses: {
+          mask: {
+            hasVisibleContent: true,
+          },
+        },
+      });
+    vi.spyOn(ExportRenderer, "create").mockResolvedValue({
+      render: renderSpy,
+    } as unknown as ExportRenderer);
+
+    const timelineSelection = {
+      start: 0,
+      end: 24,
+      clips: useTimelineStore.getState().clips,
+      fps: 24,
+      includedTrackIds: ["track_1"],
+    };
+
+    await renderTimelineSelectionToMp4WithDerivedMasks(timelineSelection, [
+      {
+        maskType: "binary",
+        purpose: "video",
+        sourceSelection: "full_selection",
+        maskSelection: "input_selection",
+      },
+    ]);
+
+    expect(renderSpy).toHaveBeenCalledTimes(2);
+    expect(
+      renderSpy.mock.calls[0]?.[3]?.timelineSelection?.includedTrackIds,
+    ).toBeUndefined();
+    expect(
+      renderSpy.mock.calls[1]?.[3]?.timelineSelection?.includedTrackIds,
+    ).toEqual(["track_1"]);
+  });
 });

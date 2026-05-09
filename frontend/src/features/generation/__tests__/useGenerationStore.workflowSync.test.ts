@@ -551,6 +551,100 @@ describe("useGenerationStore workflow editor sync", () => {
     ]);
   });
 
+  it("preserves mask-processing selection modes in derived mask mappings", async () => {
+    vi.spyOn(comfyApi, "resolveWorkflowRules").mockResolvedValue({
+      workflow_id: "wan-ttm.json",
+      rules: createDefaultWorkflowRules({
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [
+              {
+                source: { node_id: "95", param: "file" },
+                mask: { node_id: "97", param: "file" },
+                mask_type: "binary",
+                purpose: "video",
+                source_selection: "full_selection",
+                mask_selection: "input_selection",
+              },
+            ],
+          },
+        ],
+      }),
+      warnings: [],
+    });
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "wan-ttm.json",
+      availableWorkflows: [{ id: "wan-ttm.json", name: "Wan TTM" }],
+      activeRulesWarnings: [],
+      activeWorkflowRules: createDefaultWorkflowRules({
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [
+              {
+                source: { node_id: "95", param: "file" },
+                mask: { node_id: "97", param: "file" },
+                mask_type: "binary",
+                purpose: "video",
+                source_selection: "full_selection",
+                mask_selection: "input_selection",
+              },
+            ],
+          },
+        ],
+      }),
+      rulesWorkflowSourceId: "wan-ttm.json",
+    });
+
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      {
+        "95": { class_type: "LoadVideo", inputs: { file: "source.mov" } },
+        "97": { class_type: "LoadVideo", inputs: { file: "mask.mov" } },
+      },
+      {
+        nodes: [{ id: 95, type: "LoadVideo" }],
+      },
+      [
+        {
+          nodeId: "95",
+          classType: "LoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Source video",
+          currentValue: null,
+          origin: "inferred",
+        },
+        {
+          nodeId: "97",
+          classType: "LoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Mask video",
+          currentValue: null,
+          origin: "inferred",
+        },
+      ],
+      "__temp__.json",
+    );
+
+    expect(useGenerationStore.getState().derivedMaskMappings).toEqual([
+      {
+        maskNodeId: "97",
+        maskParam: "file",
+        sourceNodeId: "95",
+        sourceInputId: "95:file",
+        maskType: "binary",
+        purpose: "video",
+        sourceSelection: "full_selection",
+        maskSelection: "input_selection",
+      },
+    ]);
+  });
+
   it("maps binary_audio_derived_mask_of rules into hidden audio-timing mask inputs", async () => {
     vi.spyOn(comfyApi, "resolveWorkflowRules").mockResolvedValue({
       workflow_id: "ltx.json",

@@ -223,4 +223,56 @@ describe("SelectionOverlay", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("keeps the legacy single-row layout when track subselection is disabled", () => {
+    (useTimelineSelectionStore as unknown as Mock).mockImplementation(
+      (selector: unknown) => {
+        const state = {
+          selectionMode: true,
+          selectionStartTick: 0,
+          selectionEndTick: 96_000,
+          selectionMessage: "Use this range for the pass",
+          selectionIncludeModeEnabled: false,
+          selectionIncludedTrackIds: [],
+          selectionFpsOverride: null,
+          selectionFrameStep: 1,
+          updateSelectionStart: vi.fn(),
+          updateSelectionEnd: vi.fn(),
+          setSelectionFpsOverride: vi.fn(),
+          setSelectionFrameStep: vi.fn(),
+          exitSelectionMode: vi.fn(),
+        };
+        if (typeof selector === "function") {
+          return selector(state);
+        }
+        return state;
+      },
+    );
+
+    (
+      useTimelineSelectionStore as unknown as { getState: Mock }
+    ).getState.mockReturnValue({
+      selectionStartTick: 0,
+      selectionEndTick: 96_000,
+      selectionMessage: "Use this range for the pass",
+      selectionIncludeModeEnabled: false,
+      selectionIncludedTrackIds: [],
+      selectionFpsOverride: null,
+      selectionFrameStep: 1,
+      updateSelectionStart: vi.fn(),
+      updateSelectionEnd: vi.fn(),
+      setSelectionFpsOverride: vi.fn(),
+      setSelectionFrameStep: vi.fn(),
+      exitSelectionMode: vi.fn(),
+    });
+
+    render(<SelectionOverlay />);
+
+    expect(window.getComputedStyle(screen.getByTestId("selection-overlay-paper")).flexDirection).toBe(
+      "row",
+    );
+    expect(screen.getByText("Cancel").parentElement).toBe(
+      screen.getByText("Confirm Selection").parentElement,
+    );
+  });
 });

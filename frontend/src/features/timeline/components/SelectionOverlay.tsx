@@ -397,7 +397,7 @@ export function SelectionOverlay({
         selectionIncludedTrackIds.length === 1 ? "" : "s"
       }`
     : "All tracks";
-  const showSelectionMeta = selectionIncludeModeEnabled || Boolean(selectionMessage);
+  const showSelectionMeta = selectionIncludeModeEnabled;
 
   // Determine if we should show a warning
   const isOverRecommended =
@@ -561,6 +561,7 @@ export function SelectionOverlay({
       />
 
       <Paper
+        data-testid="selection-overlay-paper"
         onClick={stopOverlayEventPropagation}
         onMouseDown={stopOverlayEventPropagation}
         onPointerDown={stopOverlayEventPropagation}
@@ -608,7 +609,7 @@ export function SelectionOverlay({
             display: "flex",
             gap: 1.5,
             alignItems: "center",
-            flexWrap: "wrap",
+            flexWrap: showSelectionMeta ? "wrap" : "nowrap",
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", mr: 1 }}>
@@ -743,17 +744,28 @@ export function SelectionOverlay({
             )}
           </Box>
 
-          <Button
-            size="small"
-            color="inherit"
-            onClick={handleCancel}
-            sx={{ color: "#aaa", marginLeft: showSelectionMeta ? "auto" : 0 }}
+          <Box
+            data-testid="selection-overlay-actions"
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              marginLeft: showSelectionMeta ? "auto" : 0,
+              flexShrink: 0,
+            }}
           >
-            Cancel
-          </Button>
-          <Button size="small" variant="contained" onClick={handleConfirm}>
-            Confirm Selection
-          </Button>
+            <Button
+              size="small"
+              color="inherit"
+              onClick={handleCancel}
+              sx={{ color: "#aaa" }}
+            >
+              Cancel
+            </Button>
+            <Button size="small" variant="contained" onClick={handleConfirm}>
+              Confirm Selection
+            </Button>
+          </Box>
         </Box>
       </Paper>
     </>

@@ -234,6 +234,7 @@ function buildDerivedMaskCacheDescriptor(
       renderFps: mapping.renderFps ?? null,
       sourceSelection: mapping.sourceSelection ?? null,
       maskSelection: mapping.maskSelection ?? null,
+      sourceVideoTreatment: mapping.sourceVideoTreatment ?? null,
       sourceInputId: mapping.sourceInputId ?? null,
       sourceNodeId: mapping.sourceNodeId,
     }))

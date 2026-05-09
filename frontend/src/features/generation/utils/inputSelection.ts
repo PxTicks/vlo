@@ -5,6 +5,7 @@ import {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
+  createTransparentAreaNeutralGrayOutputColorMatrixFilter,
   renderProjectFrameFileAtTick,
 } from "../../renderer";
 import {
@@ -17,6 +18,7 @@ import {
 import type {
   DerivedMaskMapping,
   DerivedMaskPurpose,
+  DerivedMaskSourceVideoTreatment,
   DerivedMaskType,
   TimelineSelectionRenderMode,
 } from "../pipeline/types";
@@ -41,6 +43,7 @@ export async function renderTimelineSelectionToMp4(
   timelineSelection: TimelineSelection,
   options: {
     includeTimelineMasks?: boolean;
+    videoTreatment?: DerivedMaskSourceVideoTreatment;
     signal?: AbortSignal;
   } = {},
 ): Promise<File> {
@@ -53,9 +56,18 @@ export async function renderTimelineSelectionToMp4(
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {
+    const videoTreatment = resolveDerivedMaskSourceVideoTreatment(
+      options.videoTreatment,
+    );
     const result = await renderer.render(projectData, exportConfig, () => {}, {
       timelineSelection: normalizedSelection,
-      format: "mp4",
+      ...(videoTreatment === "fill_transparent_with_neutral_gray"
+        ? {
+            outputs: [createVideoOutputDefinition(videoTreatment)],
+          }
+        : {
+            format: "mp4" as const,
+          }),
       includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,
     });
@@ -91,6 +103,8 @@ export interface TimelineSelectionWithDerivedMasksResult {
 }
 
 export const DEFAULT_AUDIO_TIMING_MASK_EXPORT_FPS = 25;
+export const DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT: DerivedMaskSourceVideoTreatment =
+  "remove_transparency";
 
 type RenderSelectionOutputDefinition =
   | ReturnType<typeof createVideoOutputDefinition>
@@ -106,6 +120,19 @@ function resolveTimelineSelectionRenderMode(
   mode: TimelineSelectionRenderMode | undefined,
 ): TimelineSelectionRenderMode {
   return mode === "full_selection" ? "full_selection" : "input_selection";
+}
+
+function resolveDerivedMaskSourceVideoTreatment(
+  treatment: DerivedMaskSourceVideoTreatment | undefined,
+): DerivedMaskSourceVideoTreatment {
+  switch (treatment) {
+    case "preserve_transparency":
+    case "fill_transparent_with_neutral_gray":
+    case "remove_transparency":
+      return treatment;
+    default:
+      return DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT;
+  }
 }
 
 function resolveTimelineSelectionForRenderMode(
@@ -142,6 +169,26 @@ function resolveSharedSourceSelectionMode(
     );
   }
   return [...modes][0] ?? "input_selection";
+}
+
+function resolveSharedSourceVideoTreatment(
+  derivedMaskMappings: readonly Pick<
+    DerivedMaskMapping,
+    "sourceVideoTreatment"
+  >[],
+): DerivedMaskSourceVideoTreatment {
+  const treatments = new Set<DerivedMaskSourceVideoTreatment>();
+  for (const mapping of derivedMaskMappings) {
+    treatments.add(
+      resolveDerivedMaskSourceVideoTreatment(mapping.sourceVideoTreatment),
+    );
+  }
+  if (treatments.size > 1) {
+    throw new Error(
+      "Derived masks for a single source requested conflicting source video treatments",
+    );
+  }
+  return [...treatments][0] ?? DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT;
 }
 
 export function resolveAudioTimingMaskExportFps(
@@ -191,11 +238,32 @@ function createMaskFilter(maskType: DerivedMaskType) {
   }
 }
 
-function createVideoOutputDefinition() {
+function createVideoTreatmentFilter(
+  treatment: DerivedMaskSourceVideoTreatment,
+) {
+  switch (treatment) {
+    case "fill_transparent_with_neutral_gray":
+      return createTransparentAreaNeutralGrayOutputColorMatrixFilter();
+    case "preserve_transparency":
+    case "remove_transparency":
+      return null;
+  }
+}
+
+function createVideoOutputDefinition(
+  treatment: DerivedMaskSourceVideoTreatment = DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
+) {
+  const filter = createVideoTreatmentFilter(treatment);
+
   return {
     id: "video",
     format: "mp4" as const,
     includeAudio: true,
+    ...(filter
+      ? {
+          transformStack: [createFilterStackTransform([filter])],
+        }
+      : {}),
   };
 }
 
@@ -352,6 +420,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     | "optional"
     | "sourceSelection"
     | "maskSelection"
+    | "sourceVideoTreatment"
   >[],
   options: {
     signal?: AbortSignal;
@@ -361,6 +430,8 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
 ): Promise<TimelineSelectionWithDerivedMasksResult> {
   const sourceSelectionMode =
     resolveSharedSourceSelectionMode(derivedMaskMappings);
+  const sourceVideoTreatment =
+    resolveSharedSourceVideoTreatment(derivedMaskMappings);
   const sourceTimelineSelection = resolveTimelineSelectionForRenderMode(
     timelineSelection,
     sourceSelectionMode,
@@ -377,6 +448,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
       | "optional"
       | "sourceSelection"
       | "maskSelection"
+      | "sourceVideoTreatment"
     >
   >();
   for (const mapping of derivedMaskMappings) {
@@ -424,6 +496,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
         visualMaskKeys[0] === "video_soft" ? "soft" : "binary",
         {
           signal: options.signal,
+          sourceVideoTreatment,
         },
       );
     masks[visualMaskKeys[0]] = mask;
@@ -434,7 +507,9 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
   const video = canReusePreparedVideo
     ? preparedVideoFile
     : await renderTimelineSelectionToMp4(sourceTimelineSelection, {
-        includeTimelineMasks: false,
+        includeTimelineMasks:
+          sourceVideoTreatment === "remove_transparency" ? false : undefined,
+        videoTreatment: sourceVideoTreatment,
         signal: options.signal,
       });
 
@@ -488,6 +563,7 @@ export async function renderTimelineSelectionToMp4WithMask(
   maskType: DerivedMaskType = "binary",
   options: {
     signal?: AbortSignal;
+    sourceVideoTreatment?: DerivedMaskSourceVideoTreatment;
   } = {},
 ): Promise<TimelineSelectionWithMaskResult> {
   throwIfAborted(options.signal);
@@ -500,34 +576,56 @@ export async function renderTimelineSelectionToMp4WithMask(
     const maskOutput = createMaskOutputDefinition(maskType, {
       trackRenderedMaskContent: true,
     });
-    const maskRenderer = await ExportRenderer.create(exportConfig);
-    const maskResult = await maskRenderer.render(
-      projectData,
-      exportConfig,
-      () => {},
-      {
-        timelineSelection: normalizedSelection,
-        outputs: [maskOutput],
-        signal: options.signal,
-      },
+    const sourceVideoTreatment = resolveDerivedMaskSourceVideoTreatment(
+      options.sourceVideoTreatment,
     );
-    const maskBlob =
-      maskResult.outputs.mask ?? maskResult.mask ?? maskResult.video;
-    throwIfAborted(options.signal);
+    let videoBlob: Blob | undefined;
+    let maskBlob: Blob | undefined;
+    let maskHasVisibleContent = true;
 
-    const videoRenderer = await ExportRenderer.create(exportConfig);
-    const videoResult = await videoRenderer.render(
-      projectData,
-      exportConfig,
-      () => {},
-      {
+    if (sourceVideoTreatment === "remove_transparency") {
+      const maskRenderer = await ExportRenderer.create(exportConfig);
+      const maskResult = await maskRenderer.render(
+        projectData,
+        exportConfig,
+        () => {},
+        {
+          timelineSelection: normalizedSelection,
+          outputs: [maskOutput],
+          signal: options.signal,
+        },
+      );
+      maskBlob = maskResult.outputs.mask ?? maskResult.mask ?? maskResult.video;
+      maskHasVisibleContent = getRenderedMaskHasVisibleContent(maskResult);
+      throwIfAborted(options.signal);
+
+      const videoRenderer = await ExportRenderer.create(exportConfig);
+      const videoResult = await videoRenderer.render(
+        projectData,
+        exportConfig,
+        () => {},
+        {
+          timelineSelection: normalizedSelection,
+          outputs: [createVideoOutputDefinition(sourceVideoTreatment)],
+          includeTimelineMasks: false,
+          signal: options.signal,
+        },
+      );
+      videoBlob = videoResult.outputs.video ?? videoResult.video;
+    } else {
+      const renderer = await ExportRenderer.create(exportConfig);
+      const result = await renderer.render(projectData, exportConfig, () => {}, {
         timelineSelection: normalizedSelection,
-        outputs: [createVideoOutputDefinition()],
-        includeTimelineMasks: false,
+        outputs: [
+          createVideoOutputDefinition(sourceVideoTreatment),
+          maskOutput,
+        ],
         signal: options.signal,
-      },
-    );
-    const videoBlob = videoResult.outputs.video ?? videoResult.video;
+      });
+      videoBlob = result.outputs.video ?? result.video;
+      maskBlob = result.outputs.mask ?? result.mask;
+      maskHasVisibleContent = getRenderedMaskHasVisibleContent(result);
+    }
 
     throwIfAborted(options.signal);
     if (!videoBlob) {
@@ -541,7 +639,7 @@ export async function renderTimelineSelectionToMp4WithMask(
     return {
       video: createOutputFile(videoBlob, `generation-selection-${now}.mp4`),
       mask: createOutputFile(maskBlob, `generation-selection-mask-${now}.mp4`),
-      maskHasVisibleContent: getRenderedMaskHasVisibleContent(maskResult),
+      maskHasVisibleContent,
     };
   } catch (error) {
     if (options.signal?.aborted && error instanceof Error) {

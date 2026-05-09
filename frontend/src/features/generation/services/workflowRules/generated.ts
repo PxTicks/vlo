@@ -69,6 +69,7 @@ export interface MaskProcessingTarget {
   render_fps?: number | null;
   source_selection?: "input_selection" | "full_selection" | null;
   mask_selection?: "input_selection" | "full_selection" | null;
+  source_video_treatment?: "preserve_transparency" | "fill_transparent_with_neutral_gray" | "remove_transparency" | null;
 }
 
 export interface PipelineControl {

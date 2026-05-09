@@ -480,6 +480,23 @@
           ],
           "default": null,
           "title": "Source Selection"
+        },
+        "source_video_treatment": {
+          "anyOf": [
+            {
+              "enum": [
+                "preserve_transparency",
+                "fill_transparent_with_neutral_gray",
+                "remove_transparency"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Video Treatment"
         }
       },
       "required": [

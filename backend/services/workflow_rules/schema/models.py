@@ -25,6 +25,11 @@ WorkflowMediaFallbackKind = Literal["dummy"]
 MaskProcessingTargetType = Literal["binary", "soft"]
 MaskProcessingTargetPurpose = Literal["video", "audio_timing"]
 MaskProcessingTargetSelectionMode = Literal["input_selection", "full_selection"]
+MaskProcessingSourceVideoTreatment = Literal[
+    "preserve_transparency",
+    "fill_transparent_with_neutral_gray",
+    "remove_transparency",
+]
 PostprocessingMode = Literal["auto", "stitch_frames_with_audio", "none"]
 PostprocessingPanelPreview = Literal["raw_outputs", "replace_outputs"]
 PostprocessingOnFailure = Literal["fallback_raw", "show_error"]
@@ -484,6 +489,7 @@ class MaskProcessingTarget(WorkflowRuleBaseModel):
     render_fps: int | None = None
     source_selection: MaskProcessingTargetSelectionMode | None = None
     mask_selection: MaskProcessingTargetSelectionMode | None = None
+    source_video_treatment: MaskProcessingSourceVideoTreatment | None = None
 
 
 class AspectRatioTargetNode(WorkflowRuleBaseModel):

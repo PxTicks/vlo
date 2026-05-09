@@ -25,6 +25,10 @@ export type DerivedMaskPurpose = "video" | "audio_timing";
 export type TimelineSelectionRenderMode =
   | "input_selection"
   | "full_selection";
+export type DerivedMaskSourceVideoTreatment =
+  | "preserve_transparency"
+  | "fill_transparent_with_neutral_gray"
+  | "remove_transparency";
 
 export interface DerivedMaskMapping {
   /** Node ID of the mask input (the one that receives the rendered mask) */
@@ -45,6 +49,8 @@ export interface DerivedMaskMapping {
   sourceSelection?: TimelineSelectionRenderMode;
   /** Which selection variant to use when rendering the derived mask. */
   maskSelection?: TimelineSelectionRenderMode;
+  /** How the source video should be rendered when a derived mask is present. */
+  sourceVideoTreatment?: DerivedMaskSourceVideoTreatment;
   /**
    * When true, the mask node is declared optional in the rules sidecar
    * (`present.required === false`). Optional uploads are decided from the

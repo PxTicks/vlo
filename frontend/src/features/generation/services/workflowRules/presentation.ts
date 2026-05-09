@@ -311,6 +311,10 @@ export function resolvePresentedInputsFromRules(
       renderFps?: number;
       sourceSelection?: "input_selection" | "full_selection";
       maskSelection?: "input_selection" | "full_selection";
+      sourceVideoTreatment?:
+        | "preserve_transparency"
+        | "fill_transparent_with_neutral_gray"
+        | "remove_transparency";
     }
   >();
   for (const target of maskProcessingStage?.targets ?? []) {
@@ -326,6 +330,9 @@ export function resolvePresentedInputsFromRules(
         ? { sourceSelection: target.source_selection }
         : {}),
       ...(target.mask_selection ? { maskSelection: target.mask_selection } : {}),
+      ...(target.source_video_treatment
+        ? { sourceVideoTreatment: target.source_video_treatment }
+        : {}),
     });
   }
   const derivedMaskNodeIds = new Set(
@@ -367,6 +374,9 @@ export function resolvePresentedInputsFromRules(
           : {}),
         ...(derivedMask.maskSelection
           ? { maskSelection: derivedMask.maskSelection }
+          : {}),
+        ...(derivedMask.sourceVideoTreatment
+          ? { sourceVideoTreatment: derivedMask.sourceVideoTreatment }
           : {}),
         ...(present?.required === false ? { optional: true } : {}),
       });

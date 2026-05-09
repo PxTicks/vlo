@@ -567,6 +567,7 @@ describe("useGenerationStore workflow editor sync", () => {
                 purpose: "video",
                 source_selection: "full_selection",
                 mask_selection: "input_selection",
+                source_video_treatment: "preserve_transparency",
               },
             ],
           },
@@ -592,6 +593,7 @@ describe("useGenerationStore workflow editor sync", () => {
                 purpose: "video",
                 source_selection: "full_selection",
                 mask_selection: "input_selection",
+                source_video_treatment: "preserve_transparency",
               },
             ],
           },
@@ -641,6 +643,7 @@ describe("useGenerationStore workflow editor sync", () => {
         purpose: "video",
         sourceSelection: "full_selection",
         maskSelection: "input_selection",
+        sourceVideoTreatment: "preserve_transparency",
       },
     ]);
   });

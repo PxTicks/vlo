@@ -107,6 +107,7 @@ def test_wan2_2_ttm_sidecar_loads_track_selection_message_and_mask_selection_mod
     assert len(mask_stage.targets) == 1
     assert mask_stage.targets[0].source_selection == "full_selection"
     assert mask_stage.targets[0].mask_selection == "input_selection"
+    assert mask_stage.targets[0].source_video_treatment == "preserve_transparency"
 
 
 def test_vace_inpaint_collects_mask_crop_pairs():

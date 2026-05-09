@@ -306,10 +306,12 @@ describe("inputSelection", () => {
         purpose: "video",
         sourceSelection: "full_selection",
         maskSelection: "input_selection",
+        sourceVideoTreatment: "preserve_transparency",
       },
     ]);
 
     expect(renderSpy).toHaveBeenCalledTimes(2);
+    expect(renderSpy.mock.calls[0]?.[3]?.includeTimelineMasks).toBeUndefined();
     expect(
       renderSpy.mock.calls[0]?.[3]?.timelineSelection?.includedTrackIds,
     ).toBeUndefined();

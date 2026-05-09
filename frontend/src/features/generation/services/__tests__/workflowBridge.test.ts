@@ -71,6 +71,49 @@ describe("workflowBridge", () => {
     ]);
   });
 
+  it("falls back to object_info display_name when an API workflow node has no title", () => {
+    const inputs = parseWorkflowInputs(
+      {
+        "145": {
+          class_type: "CheckpointLoaderSimple",
+          inputs: {
+            ckpt_name: "model.safetensors",
+          },
+        },
+      },
+      {
+        CheckpointLoaderSimple: [
+          {
+            inputType: "image",
+            param: "ckpt_name",
+          },
+        ],
+      },
+      {
+        CheckpointLoaderSimple: {
+          display_name: "Load Checkpoint",
+        },
+      },
+    );
+
+    expect(inputs).toEqual([
+      {
+        id: "145:ckpt_name",
+        nodeId: "145",
+        classType: "CheckpointLoaderSimple",
+        inputType: "image",
+        param: "ckpt_name",
+        label: "Load Checkpoint",
+        description: null,
+        currentValue: "model.safetensors",
+        origin: "inferred",
+        dispatch: {
+          kind: "node",
+        },
+      },
+    ]);
+  });
+
   it("prefers activeWorkflow.activeState as the persisted graph source", async () => {
     const activeState = {
       nodes: [{ id: 1, widgets_values: ["new-model.safetensors"] }],
@@ -257,6 +300,46 @@ describe("workflowBridge", () => {
         dispatch: { kind: "node" },
       },
     ]);
+  });
+
+  it("falls back to object_info display_name when a graph node has no title", () => {
+    const inputs = parseInputsFromGraphData(
+      {
+        nodes: [
+          {
+            id: 1,
+            type: "CheckpointLoaderSimple",
+            widgets_values: ["model.safetensors"],
+          },
+        ],
+        links: [],
+      },
+      {
+        inputNodeMap: {
+          CheckpointLoaderSimple: [
+            {
+              inputType: "image",
+              param: "ckpt_name",
+            },
+          ],
+        },
+        objectInfo: {
+          CheckpointLoaderSimple: {
+            display_name: "Load Checkpoint",
+            input: {
+              required: {
+                ckpt_name: ["STRING", {}],
+              },
+            },
+            input_order: {
+              required: ["ckpt_name"],
+            },
+          },
+        },
+      },
+    );
+
+    expect(inputs[0]?.label).toBe("Load Checkpoint");
   });
 
   it("classifies InvalidLinkError graph reads as transient invalid graph states", async () => {

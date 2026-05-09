@@ -1,5 +1,9 @@
 import { isRecord } from "../parsers";
 import {
+  resolveClassInfo,
+  resolveNodeDisplayTitle,
+} from "../nodeTitles";
+import {
   createFrontendRuleState,
   evaluateCondition,
   type FrontendRuleState,
@@ -43,15 +47,6 @@ function resolveGraphNode(
     return String(candidate.id) === nodeId;
   });
   return isRecord(node) ? node : null;
-}
-
-function resolveClassInfo(
-  objectInfo: Record<string, unknown> | null | undefined,
-  classType: string | undefined,
-): Record<string, unknown> | null {
-  if (!objectInfo || !classType) return null;
-  const classInfo = objectInfo[classType];
-  return isRecord(classInfo) ? classInfo : null;
 }
 
 function resolveInputSpec(
@@ -682,7 +677,17 @@ export function resolveWidgetInputsFromRules(
         sliderDisplay: entry.slider_display ?? undefined,
         unit: toOptionalString(entry.unit),
         displayUnit: toDisplayUnit(entry),
-        nodeTitle: toOptionalString(nodeRule.node_title),
+        nodeTitle: toOptionalString(
+          resolveNodeDisplayTitle({
+            workflowTitle: workflowNode?._meta && isRecord(workflowNode._meta)
+              ? workflowNode._meta.title
+              : undefined,
+            graphTitle: graphNode?.title,
+            ruleTitle: nodeRule.node_title,
+            classType,
+            objectInfo: options.objectInfo,
+          }),
+        ),
         valueType: entry.value_type ?? undefined,
         options: entry.options ?? undefined,
       };

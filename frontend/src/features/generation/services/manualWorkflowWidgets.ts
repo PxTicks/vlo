@@ -1,5 +1,9 @@
 import type { WidgetValueType, WorkflowWidgetInput } from "../types";
 import { isRecord } from "./parsers";
+import {
+  resolveClassInfo,
+  resolveNodeDisplayTitle,
+} from "./nodeTitles";
 
 function isPrimitiveOption(
   value: unknown,
@@ -13,12 +17,6 @@ function isPrimitiveOption(
 
 function isLinkValue(value: unknown): boolean {
   return Array.isArray(value) && value.length === 2;
-}
-
-function normalizeNodeName(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
 
 function resolveGraphNode(
@@ -47,15 +45,24 @@ function resolveNodeTitle(
   nodeId: string,
   node: Record<string, unknown>,
   graphData: Record<string, unknown> | null,
+  objectInfo: Record<string, unknown> | null,
 ): string {
   const meta = isRecord(node._meta) ? node._meta : null;
   const graphNode = resolveGraphNode(graphData, nodeId);
+  const classType =
+    typeof node.class_type === "string"
+      ? node.class_type
+      : typeof graphNode?.type === "string"
+        ? graphNode.type
+        : undefined;
 
   return (
-    normalizeNodeName(meta?.title) ??
-    normalizeNodeName(graphNode?.title) ??
-    normalizeNodeName(graphNode?.type) ??
-    normalizeNodeName(node.class_type) ??
+    resolveNodeDisplayTitle({
+      workflowTitle: meta?.title,
+      graphTitle: graphNode?.title,
+      classType,
+      objectInfo,
+    }) ??
     `Node ${nodeId}`
   );
 }
@@ -142,15 +149,6 @@ function isManualWidgetParam(param: string, nodeTitle: string): boolean {
 function isSeedWidgetParam(param: string): boolean {
   const normalizedParam = param.trim().toLowerCase();
   return normalizedParam === "seed" || normalizedParam === "noise_seed";
-}
-
-function resolveClassInfo(
-  objectInfo: Record<string, unknown> | null,
-  classType: string | undefined,
-): Record<string, unknown> | null {
-  if (!objectInfo || !classType) return null;
-  const classInfo = objectInfo[classType];
-  return isRecord(classInfo) ? classInfo : null;
 }
 
 function resolveInputSpec(
@@ -332,12 +330,12 @@ export function resolveManualWidgetInputs(
           {
             class_type: classType,
             inputs: {},
-            _meta: {
-              title:
-                typeof node.title === "string"
-                  ? node.title
-                  : classType ?? `Node ${nodeId}`,
-            },
+            _meta:
+              typeof node.title === "string"
+                ? {
+                    title: node.title,
+                  }
+                : {},
           },
         ] as const];
       })
@@ -350,7 +348,7 @@ export function resolveManualWidgetInputs(
     const nodeInputs = isRecord(nodeData.inputs) ? nodeData.inputs : {};
     const classType =
       typeof nodeData.class_type === "string" ? nodeData.class_type : undefined;
-    const nodeTitle = resolveNodeTitle(nodeId, nodeData, graphData);
+    const nodeTitle = resolveNodeTitle(nodeId, nodeData, graphData, objectInfo);
     const classInfo = resolveClassInfo(objectInfo, classType);
     const inputSpec = resolveInputSpec(classInfo);
     const candidateParams = new Set<string>();

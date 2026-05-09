@@ -227,4 +227,27 @@ describe("resolveManualWidgetInputs", () => {
     expect(widgets[0]?.config.label).toBe("Seed");
     expect(widgets[0]?.currentValue).toBe(456);
   });
+
+  it("falls back to object_info display_name for proxy value widgets", () => {
+    const widgets = resolveManualWidgetInputs(
+      {
+        "201": {
+          class_type: "PrimitiveNode",
+          inputs: {
+            value: 456,
+          },
+        },
+      },
+      {
+        PrimitiveNode: {
+          display_name: "Seed",
+        },
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.config.nodeTitle).toBe("Seed");
+    expect(widgets[0]?.config.label).toBe("Seed");
+    expect(widgets[0]?.currentValue).toBe(456);
+  });
 });

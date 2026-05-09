@@ -352,7 +352,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const manualWorkflowInputs = useMemo(
     () =>
       syncedWorkflow
-        ? parseWorkflowInputs(syncedWorkflow, inputNodeMap)
+        ? parseWorkflowInputs(syncedWorkflow, inputNodeMap, rawObjectInfo)
         : syncedGraphData
           ? parseInputsFromGraphData(syncedGraphData, {
               inputNodeMap,

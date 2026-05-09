@@ -61,6 +61,7 @@ import {
   saveWorkflowContent,
   uploadWorkflowJsonFiles,
 } from "./services/comfyuiApi";
+import { resolveNodeDisplayTitle } from "./services/nodeTitles";
 import { isAspectRatioWidget } from "./utils/aspectRatioWidgets";
 import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResolver";
 import { buildWorkflowMenuSections } from "./store/workflowCatalog";
@@ -84,16 +85,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizeNodeName(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function resolveGraphNodeName(
+function resolveGraphNode(
   graphData: Record<string, unknown> | null,
   nodeId: string,
-): string | null {
+): Record<string, unknown> | null {
   const nodes = graphData?.nodes;
   if (!Array.isArray(nodes)) return null;
 
@@ -101,9 +96,7 @@ function resolveGraphNodeName(
     if (!isRecord(candidate)) return false;
     return String(candidate.id) === nodeId;
   });
-  if (!isRecord(node)) return null;
-
-  return normalizeNodeName(node.title) ?? normalizeNodeName(node.type);
+  return isRecord(node) ? node : null;
 }
 
 function resolveActiveNodeName(
@@ -111,6 +104,7 @@ function resolveActiveNodeName(
   workflow: Record<string, unknown> | null,
   workflowRules: WorkflowRules | null,
   graphData: Record<string, unknown> | null,
+  objectInfo: Record<string, unknown> | null,
 ): string | null {
   if (!nodeId) return null;
 
@@ -119,13 +113,21 @@ function resolveActiveNodeName(
   const workflowMeta = isRecord(workflowNodeRecord?._meta)
     ? workflowNodeRecord._meta
     : null;
+  const graphNode = resolveGraphNode(graphData, nodeId);
+  const classType =
+    typeof workflowNodeRecord?.class_type === "string"
+      ? workflowNodeRecord.class_type
+      : typeof graphNode?.type === "string"
+        ? graphNode.type
+        : undefined;
 
-  return (
-    normalizeNodeName(workflowMeta?.title) ??
-    resolveGraphNodeName(graphData, nodeId) ??
-    normalizeNodeName(workflowRules?.nodes?.[nodeId]?.node_title) ??
-    normalizeNodeName(workflowNodeRecord?.class_type)
-  );
+  return resolveNodeDisplayTitle({
+    workflowTitle: workflowMeta?.title,
+    graphTitle: graphNode?.title,
+    ruleTitle: workflowRules?.nodes?.[nodeId]?.node_title,
+    classType,
+    objectInfo,
+  });
 }
 
 function formatActiveNodeStatus(
@@ -133,6 +135,7 @@ function formatActiveNodeStatus(
   workflow: Record<string, unknown> | null,
   workflowRules: WorkflowRules | null,
   graphData: Record<string, unknown> | null,
+  objectInfo: Record<string, unknown> | null,
 ): string | null {
   if (!nodeId) return null;
 
@@ -141,6 +144,7 @@ function formatActiveNodeStatus(
     workflow,
     workflowRules,
     graphData,
+    objectInfo,
   );
   if (!nodeName || nodeName === nodeId) return null;
 
@@ -421,10 +425,12 @@ export function GenerationPanel() {
         syncedWorkflow,
         activeWorkflowRules,
         syncedGraphData,
+        rawObjectInfo,
       ),
     [
       activeJob?.currentNode,
       activeWorkflowRules,
+      rawObjectInfo,
       syncedGraphData,
       syncedWorkflow,
     ],

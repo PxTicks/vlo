@@ -5,6 +5,10 @@ import {
   type InputNodeMapEntry,
 } from "../constants/inputNodeMap";
 import { isRecord } from "./parsers";
+import {
+  resolveClassInfo,
+  resolveNodeDisplayTitle,
+} from "./nodeTitles";
 import { buildWorkflowInputId } from "../utils/workflowInputs";
 
 // ---------------------------------------------------------------------------
@@ -24,6 +28,7 @@ import { buildWorkflowInputId } from "../utils/workflowInputs";
 export function parseWorkflowInputs(
   workflow: Record<string, unknown>,
   inputNodeMap?: InputNodeMap | null,
+  objectInfo?: Record<string, unknown> | null,
 ): WorkflowInput[] {
   const nodeMap = inputNodeMap ?? INPUT_NODE_MAP;
   const inputs: WorkflowInput[] = [];
@@ -40,7 +45,12 @@ export function parseWorkflowInputs(
 
     const nodeInputs = (node.inputs ?? {}) as Record<string, unknown>;
     const meta = (node._meta ?? {}) as Record<string, unknown>;
-    const nodeTitle = (meta.title as string) ?? classType;
+    const nodeTitle =
+      resolveNodeDisplayTitle({
+        workflowTitle: meta.title,
+        classType,
+        objectInfo,
+      }) ?? classType;
     const hasMultipleMappings = mappings.length > 1;
 
     for (const mapping of mappings) {
@@ -71,15 +81,6 @@ function resolveWorkflowInputLabel(
     return mapping.label ?? mapping.param;
   }
   return nodeTitle;
-}
-
-function resolveClassInfo(
-  objectInfo: Record<string, unknown> | null | undefined,
-  classType: string | undefined,
-): Record<string, unknown> | null {
-  if (!objectInfo || !classType) return null;
-  const classInfo = objectInfo[classType];
-  return isRecord(classInfo) ? classInfo : null;
 }
 
 function resolveInputSpec(
@@ -187,12 +188,6 @@ function getWidgetValueIndexMap(
   return result;
 }
 
-function normalizeNodeTitle(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function collectLinkedInputNames(node: Record<string, unknown>): Set<string> {
   const linked = new Set<string>();
   const rawInputs = Array.isArray(node.inputs) ? node.inputs : [];
@@ -262,7 +257,13 @@ export function parseInputsFromGraphData(
     if (mappings.length === 0) continue;
 
     const nodeId = String(node.id);
-    const nodeTitle = normalizeNodeTitle(node.title) ?? classType;
+    const nodeTitle =
+      resolveNodeDisplayTitle({
+        graphTitle: node.title,
+        classType,
+        objectInfo,
+        fallback: `Node ${nodeId}`,
+      }) ?? `Node ${nodeId}`;
     const hasMultipleMappings = mappings.length > 1;
 
     const widgetsValues = Array.isArray(node.widgets_values)
@@ -626,14 +627,20 @@ function extractMissingModels(value: unknown): string[] {
 export async function readWorkflowFromIframe(
   iframe: HTMLIFrameElement,
   inputNodeMap?: InputNodeMap | null,
+  objectInfo?: Record<string, unknown> | null,
 ): Promise<WorkflowReadResult | null> {
-  const attempt = await readWorkflowFromIframeDetailed(iframe, inputNodeMap);
+  const attempt = await readWorkflowFromIframeDetailed(
+    iframe,
+    inputNodeMap,
+    objectInfo,
+  );
   return attempt.result;
 }
 
 export async function readWorkflowFromIframeDetailed(
   iframe: HTMLIFrameElement,
   inputNodeMap?: InputNodeMap | null,
+  objectInfo?: Record<string, unknown> | null,
 ): Promise<WorkflowReadAttempt> {
   try {
     const win = iframe.contentWindow as ComfyUIWindow | null;
@@ -681,7 +688,7 @@ export async function readWorkflowFromIframeDetailed(
       graphData = apiWorkflow;
     }
 
-    const inputs = parseWorkflowInputs(apiWorkflow, inputNodeMap);
+    const inputs = parseWorkflowInputs(apiWorkflow, inputNodeMap, objectInfo);
     const filename = resolveWorkflowTabFilename(activeWorkflow);
     return {
       status: "success",

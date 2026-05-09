@@ -523,9 +523,10 @@ export function findPreparedMaskFallback(
 export function parseMetadataWorkflowInputs(
   prompt: Record<string, unknown> | null,
   inputNodeMap: import("../constants/inputNodeMap").InputNodeMap | null,
+  objectInfo?: Record<string, unknown> | null,
 ): WorkflowInput[] {
   if (!prompt) return [];
-  return parseWorkflowInputs(prompt, inputNodeMap);
+  return parseWorkflowInputs(prompt, inputNodeMap, objectInfo);
 }
 
 export function parseReplayWorkflowInputs(

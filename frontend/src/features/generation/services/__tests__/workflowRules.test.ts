@@ -579,6 +579,43 @@ describe("resolvePresentedInputs", () => {
     expect(sampler?.config.options).toEqual(["euler", "heun"]);
   });
 
+  it("falls back to object_info display_name for widget node titles", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "145": {
+          class_type: "CheckpointLoaderSimple",
+          inputs: {
+            ckpt_name: "model.safetensors",
+          },
+        },
+      },
+      {
+        version: 1,
+        nodes: {
+          "145": {
+            widgets: {
+              ckpt_name: {
+                label: "Checkpoint",
+                value_type: "string",
+              },
+            },
+          },
+        },
+        slots: {},
+      },
+      {
+        objectInfo: {
+          CheckpointLoaderSimple: {
+            display_name: "Load Checkpoint",
+          },
+        },
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.config.nodeTitle).toBe("Load Checkpoint");
+  });
+
   it("skips stale widget rules whose params are no longer present in the workflow", () => {
     const widgets = resolveWidgetInputs(
       {

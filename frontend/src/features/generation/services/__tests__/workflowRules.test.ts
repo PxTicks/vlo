@@ -854,6 +854,280 @@ describe("resolvePresentedInputs", () => {
     );
   });
 
+  it("resolves conditional dual_sampler_denoise widgets from graph data when the API workflow is unavailable", () => {
+    const rules = {
+      version: 3,
+      derived_widgets: [
+        {
+          id: "denoise",
+          kind: "dual_sampler_denoise" as const,
+          label: "Denoise",
+          when: {
+            kind: "input_presence" as const,
+            inputs: ["94"],
+            match: "all_present" as const,
+          },
+          total_steps: {
+            node_id: "85",
+            param: "value",
+          },
+          start_step: {
+            node_id: "57",
+            param: "start_at_step",
+          },
+          base_split_step: {
+            node_id: "86",
+            param: "value",
+          },
+          split_step_targets: [
+            {
+              node_id: "57",
+              param: "end_at_step",
+            },
+            {
+              node_id: "58",
+              param: "start_at_step",
+            },
+          ],
+        },
+      ],
+      slots: {},
+    };
+    const options = {
+      graphData: {
+        nodes: [
+          {
+            id: 57,
+            type: "KSamplerAdvanced",
+            widgets_values: [
+              "enable",
+              42,
+              "randomize",
+              10,
+              2,
+              "euler",
+              "simple",
+              0,
+              4,
+              "enable",
+            ],
+          },
+          {
+            id: 85,
+            type: "PrimitiveInt",
+            widgets_values: [8, "fixed"],
+          },
+          {
+            id: 86,
+            type: "PrimitiveInt",
+            widgets_values: [4, "fixed"],
+          },
+        ],
+      },
+      objectInfo: {
+        KSamplerAdvanced: {
+          input: {
+            required: {
+              add_noise: [["enable", "disable"], {}],
+              noise_seed: ["INT", { control_after_generate: true }],
+              steps: ["INT", {}],
+              cfg: ["FLOAT", {}],
+              sampler_name: [["euler"], {}],
+              scheduler: [["simple"], {}],
+              start_at_step: ["INT", {}],
+              end_at_step: ["INT", {}],
+              return_with_leftover_noise: [["disable", "enable"], {}],
+            },
+          },
+          input_order: {
+            required: [
+              "add_noise",
+              "noise_seed",
+              "steps",
+              "cfg",
+              "sampler_name",
+              "scheduler",
+              "start_at_step",
+              "end_at_step",
+              "return_with_leftover_noise",
+            ],
+          },
+        },
+        PrimitiveInt: {
+          input: {
+            required: {
+              value: ["INT", {}],
+            },
+          },
+          input_order: {
+            required: ["value"],
+          },
+        },
+      },
+    };
+
+    const withoutVideo = resolveWidgetInputs(null, rules, {
+      ...options,
+      providedInputIds: new Set(),
+    });
+    const withVideo = resolveWidgetInputs(null, rules, {
+      ...options,
+      providedInputIds: new Set(["94"]),
+    });
+
+    expect(
+      withoutVideo.some(
+        (widget) =>
+          widget.kind === "derived" && widget.derivedWidgetId === "denoise",
+      ),
+    ).toBe(false);
+    expect(
+      withVideo.some(
+        (widget) =>
+          widget.kind === "derived" &&
+          widget.derivedWidgetId === "denoise" &&
+          widget.currentValue === 1,
+      ),
+    ).toBe(true);
+  });
+
+  it("prefers active graph values over API workflow values for dual_sampler_denoise", () => {
+    const rules = {
+      version: 3,
+      derived_widgets: [
+        {
+          id: "denoise",
+          kind: "dual_sampler_denoise" as const,
+          total_steps: {
+            node_id: "85",
+            param: "value",
+          },
+          start_step: {
+            node_id: "57",
+            param: "start_at_step",
+          },
+          base_split_step: {
+            node_id: "86",
+            param: "value",
+          },
+          split_step_targets: [
+            {
+              node_id: "57",
+              param: "end_at_step",
+            },
+          ],
+        },
+      ],
+      slots: {},
+    };
+
+    const widgets = resolveWidgetInputs(
+      {
+        "57": {
+          class_type: "KSamplerAdvanced",
+          inputs: {
+            start_at_step: 6,
+            end_at_step: 3,
+          },
+        },
+        "85": {
+          class_type: "PrimitiveInt",
+          inputs: {
+            value: 12,
+          },
+        },
+        "86": {
+          class_type: "PrimitiveInt",
+          inputs: {
+            value: 3,
+          },
+        },
+      },
+      rules,
+      {
+        graphData: {
+          nodes: [
+            {
+              id: 57,
+              type: "KSamplerAdvanced",
+              widgets_values: [
+                "enable",
+                42,
+                "randomize",
+                10,
+                2,
+                "euler",
+                "simple",
+                0,
+                4,
+                "enable",
+              ],
+            },
+            {
+              id: 85,
+              type: "PrimitiveInt",
+              widgets_values: [8, "fixed"],
+            },
+            {
+              id: 86,
+              type: "PrimitiveInt",
+              widgets_values: [4, "fixed"],
+            },
+          ],
+        },
+        objectInfo: {
+          KSamplerAdvanced: {
+            input: {
+              required: {
+                add_noise: [["enable", "disable"], {}],
+                noise_seed: ["INT", { control_after_generate: true }],
+                steps: ["INT", {}],
+                cfg: ["FLOAT", {}],
+                sampler_name: [["euler"], {}],
+                scheduler: [["simple"], {}],
+                start_at_step: ["INT", {}],
+                end_at_step: ["INT", {}],
+                return_with_leftover_noise: [["disable", "enable"], {}],
+              },
+            },
+            input_order: {
+              required: [
+                "add_noise",
+                "noise_seed",
+                "steps",
+                "cfg",
+                "sampler_name",
+                "scheduler",
+                "start_at_step",
+                "end_at_step",
+                "return_with_leftover_noise",
+              ],
+            },
+          },
+          PrimitiveInt: {
+            input: {
+              required: {
+                value: ["INT", {}],
+              },
+            },
+            input_order: {
+              required: ["value"],
+            },
+          },
+        },
+      },
+    );
+
+    expect(
+      widgets.some(
+        (widget) =>
+          widget.kind === "derived" &&
+          widget.derivedWidgetId === "denoise" &&
+          widget.currentValue === 1,
+      ),
+    ).toBe(true);
+  });
+
   it("resolves root-level frontend controls without attaching them to workflow nodes", () => {
     const widgets = resolveWidgetInputs(
       {},

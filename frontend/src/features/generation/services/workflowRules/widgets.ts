@@ -179,6 +179,11 @@ function getWorkflowParamValue(
   return inputs[ref.param];
 }
 
+interface WorkflowParamResolutionOptions {
+  graphData?: Record<string, unknown> | null;
+  objectInfo?: Record<string, unknown> | null;
+}
+
 function getRuleWidgetDefaultValue(
   rules: WorkflowRules,
   ref: WorkflowParamReference,
@@ -192,12 +197,45 @@ function getRuleWidgetDefaultValue(
     : null;
 }
 
+function getGraphParamValue(
+  ref: WorkflowParamReference,
+  options: WorkflowParamResolutionOptions,
+  workflowClassType?: string,
+): unknown {
+  if (!options.graphData) {
+    return undefined;
+  }
+
+  const graphNode = resolveGraphNode(options.graphData, ref.node_id);
+  const classType =
+    workflowClassType ??
+    (typeof graphNode?.type === "string" ? graphNode.type : undefined);
+
+  return resolveGraphWidgetValue(
+    options.graphData,
+    ref.node_id,
+    classType,
+    ref.param,
+    options.objectInfo,
+  );
+}
+
 function getWorkflowParamValueWithRuleFallback(
   workflow: Record<string, unknown>,
   rules: WorkflowRules,
   ref: WorkflowParamReference,
+  options: WorkflowParamResolutionOptions = {},
 ): unknown {
   const node = workflow[ref.node_id];
+  const workflowClassType =
+    isRecord(node) && typeof node.class_type === "string"
+      ? node.class_type
+      : undefined;
+  const graphValue = getGraphParamValue(ref, options, workflowClassType);
+  if (graphValue !== undefined) {
+    return graphValue;
+  }
+
   if (isRecord(node)) {
     const inputs = isRecord(node.inputs) ? node.inputs : {};
     if (Object.prototype.hasOwnProperty.call(inputs, ref.param)) {
@@ -212,8 +250,11 @@ function getWorkflowParamNumber(
   workflow: Record<string, unknown>,
   rules: WorkflowRules,
   ref: WorkflowParamReference,
+  options: WorkflowParamResolutionOptions = {},
 ): number | null {
-  return toFiniteNumber(getWorkflowParamValueWithRuleFallback(workflow, rules, ref));
+  return toFiniteNumber(
+    getWorkflowParamValueWithRuleFallback(workflow, rules, ref, options),
+  );
 }
 
 function getDerivedWidgetNodeId(derivedWidgetId: string): string {
@@ -282,15 +323,22 @@ function resolveDualSamplerDenoiseWidget(
   workflow: Record<string, unknown>,
   rules: WorkflowRules,
   rule: WorkflowDualSamplerDenoiseRule,
+  options: WorkflowParamResolutionOptions = {},
 ): DualSamplerDenoiseDerivedWidgetInput | null {
   const totalSteps = toPositiveInteger(
-    getWorkflowParamNumber(workflow, rules, rule.total_steps),
+    getWorkflowParamNumber(workflow, rules, rule.total_steps, options),
   );
-  const startStep = getWorkflowParamNumber(workflow, rules, rule.start_step);
+  const startStep = getWorkflowParamNumber(
+    workflow,
+    rules,
+    rule.start_step,
+    options,
+  );
   const baseSplitStep = getWorkflowParamNumber(
     workflow,
     rules,
     rule.base_split_step,
+    options,
   );
 
   if (
@@ -351,11 +399,17 @@ function resolveSingleSamplerDenoiseWidget(
   workflow: Record<string, unknown>,
   rules: WorkflowRules,
   rule: WorkflowSingleSamplerDenoiseRule,
+  options: WorkflowParamResolutionOptions = {},
 ): SingleSamplerDenoiseDerivedWidgetInput | null {
   const totalSteps = toPositiveInteger(
-    getWorkflowParamNumber(workflow, rules, rule.total_steps),
+    getWorkflowParamNumber(workflow, rules, rule.total_steps, options),
   );
-  const startStep = getWorkflowParamNumber(workflow, rules, rule.start_step);
+  const startStep = getWorkflowParamNumber(
+    workflow,
+    rules,
+    rule.start_step,
+    options,
+  );
 
   if (totalSteps === null || startStep === null) {
     console.warn(
@@ -421,9 +475,14 @@ function toBooleanParamValue(value: unknown): boolean | null {
 function resolveVideoAudioRetakeWidget(
   workflow: Record<string, unknown>,
   rule: WorkflowVideoAudioRetakeRule,
+  options: WorkflowParamResolutionOptions = {},
 ): VideoAudioRetakeDerivedWidgetInput | null {
-  const videoBypassRaw = getWorkflowParamValue(workflow, rule.video_bypass);
-  const audioBypassRaw = getWorkflowParamValue(workflow, rule.audio_bypass);
+  const videoBypassRaw =
+    getGraphParamValue(rule.video_bypass, options) ??
+    getWorkflowParamValue(workflow, rule.video_bypass);
+  const audioBypassRaw =
+    getGraphParamValue(rule.audio_bypass, options) ??
+    getWorkflowParamValue(workflow, rule.audio_bypass);
   const videoBypass = toBooleanParamValue(videoBypassRaw);
   const audioBypass = toBooleanParamValue(audioBypassRaw);
 
@@ -465,6 +524,7 @@ function resolveDerivedWidgetInputs(
   workflow: Record<string, unknown>,
   rules: WorkflowRules,
   state: FrontendRuleState,
+  options: WorkflowParamResolutionOptions = {},
 ): WorkflowWidgetInput[] {
   const result: WorkflowWidgetInput[] = [];
   for (const rule of rules.derived_widgets ?? []) {
@@ -474,11 +534,16 @@ function resolveDerivedWidgetInputs(
 
     let widget: DerivedWorkflowWidgetInput | null = null;
     if (rule.kind === "dual_sampler_denoise") {
-      widget = resolveDualSamplerDenoiseWidget(workflow, rules, rule);
+      widget = resolveDualSamplerDenoiseWidget(workflow, rules, rule, options);
     } else if (rule.kind === "single_sampler_denoise") {
-      widget = resolveSingleSamplerDenoiseWidget(workflow, rules, rule);
+      widget = resolveSingleSamplerDenoiseWidget(
+        workflow,
+        rules,
+        rule,
+        options,
+      );
     } else if (rule.kind === "video_audio_retake") {
-      widget = resolveVideoAudioRetakeWidget(workflow, rule);
+      widget = resolveVideoAudioRetakeWidget(workflow, rule, options);
     }
     if (widget) {
       result.push(widget);
@@ -712,6 +777,10 @@ export function resolveWidgetInputsFromRules(
     workflowNodes,
     rules,
     frontendState,
+    {
+      graphData: options.graphData,
+      objectInfo: options.objectInfo,
+    },
   );
   const result = [...frontendControls, ...rawWidgets, ...derivedWidgets];
 

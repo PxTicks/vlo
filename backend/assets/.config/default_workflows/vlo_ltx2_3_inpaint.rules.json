@@ -61,7 +61,8 @@
       },
       "selection": {
         "export_fps": 24,
-        "max_frames": 361
+        "frame_step": 8,
+        "max_frames": 481
       }
     },
     "771": {},

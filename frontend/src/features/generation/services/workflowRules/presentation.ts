@@ -313,7 +313,6 @@ export function resolvePresentedInputsFromRules(
       maskSelection?: "input_selection" | "full_selection";
       sourceVideoTreatment?:
         | "preserve_transparency"
-        | "fill_transparent_with_neutral_gray"
         | "remove_transparency";
     }
   >();

@@ -130,13 +130,3 @@ export function createOpaqueOutputColorMatrixFilter(): ColorMatrixFilter {
   return filter;
 }
 
-export function createTransparentAreaNeutralGrayOutputColorMatrixFilter(): ColorMatrixFilter {
-  const filter = new ColorMatrixFilter();
-  filter.matrix = [
-    1, 0, 0, -0.5, 0.5,
-    0, 1, 0, -0.5, 0.5,
-    0, 0, 1, -0.5, 0.5,
-    0, 0, 0, 0, 1,
-  ];
-  return filter;
-}

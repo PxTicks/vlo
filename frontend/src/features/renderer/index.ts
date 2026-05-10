@@ -6,6 +6,13 @@ export { useExportJobController } from "./hooks/useExportJobController";
 export { AudioTrackLayer } from "./components/AudioTrackLayer";
 export { TrackRenderEngine } from "./services/TrackRenderEngine";
 export { ExportRenderer } from "./services/ExportRenderer";
+export type {
+  ExportConfig,
+  ProjectData,
+  RenderOptions,
+  RenderStillOptions,
+  RenderResult,
+} from "./services/ExportRenderer";
 export { TrackAudioRenderer } from "./services/TrackAudioRenderer";
 export {
   buildProjectRenderInputs,

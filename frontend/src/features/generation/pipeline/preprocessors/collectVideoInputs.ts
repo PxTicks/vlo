@@ -1,6 +1,7 @@
 import type { TimelineSelection } from "../../../../types/TimelineTypes";
 import type { WorkflowSelectionConfig } from "../../types";
 import {
+  renderAssetToMaskMp4,
   renderTimelineSelectionToMp4,
   getDerivedMaskRenderKey,
   renderTimelineSelectionToMp4WithDerivedMasks,
@@ -124,7 +125,60 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       if (!input) continue;
 
       if (value.type === "video") {
+        // The source video goes through unchanged. Note: this path does not
+        // honor the workflow's sourceVideoTreatment (preserve_transparency,
+        // remove_transparency) — that would need extra plumbing, and may not
+        // always be doable: removing pre-multiplied alpha can't be done by a
+        // flat composite, it requires un-pre-multiplying first.
         ctx.videoInputs[getNodeInputRequestKey(input, inputById)] = value.file;
+
+        // Direct uploads bypass the timeline render, so any derived mask
+        // mappings normally wouldn't fire. Pipe the asset through
+        // renderAssetToMaskMp4, which synthesises a 1-clip timeline so the
+        // alpha-to-matte shader can run against the asset's baked-in
+        // transparency.
+        const allMasks =
+          masksBySource.get(inputId) ?? masksBySource.get(input.nodeId);
+        if (allMasks && allMasks.length > 0 && value.assetId) {
+          // Dedupe by render key so binary+soft (or any duplicate-keyed
+          // mappings) only render once each; the timeline path does the
+          // same in renderTimelineSelectionToMp4WithDerivedMasks.
+          const visualMasksByKey = new Map<
+            ReturnType<typeof getDerivedMaskRenderKey>,
+            DerivedMaskMapping[]
+          >();
+          for (const mapping of allMasks) {
+            // audio_timing masks need timeline activity that doesn't exist
+            // for a free-standing asset; skip them here.
+            if (mapping.purpose === "audio_timing") continue;
+            const key = getDerivedMaskRenderKey(mapping);
+            const bucket = visualMasksByKey.get(key) ?? [];
+            bucket.push(mapping);
+            visualMasksByKey.set(key, bucket);
+          }
+
+          for (const [key, mappings] of visualMasksByKey) {
+            const { file: maskFile, hasVisibleContent } =
+              await renderAssetToMaskMp4(value.assetId, {
+                maskType: key === "video_soft" ? "soft" : "binary",
+                signal: ctx.signal,
+              });
+            throwIfAborted(ctx.signal);
+
+            for (const mapping of mappings) {
+              if (mapping.optional && !hasVisibleContent) continue;
+              const maskInput = ctx.workflowInputs.find(
+                (candidate) =>
+                  candidate.nodeId === mapping.maskNodeId &&
+                  candidate.param === mapping.maskParam,
+              );
+              const maskRequestKey = maskInput
+                ? getNodeInputRequestKey(maskInput, inputById)
+                : mapping.maskNodeId;
+              ctx.videoInputs[maskRequestKey] = maskFile;
+            }
+          }
+        }
       } else if (value.type === "video_selection") {
         const allMasks =
           masksBySource.get(inputId) ?? masksBySource.get(input.nodeId);

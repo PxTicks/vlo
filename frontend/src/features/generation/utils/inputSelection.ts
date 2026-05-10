@@ -1,13 +1,19 @@
-import type { TimelineSelection } from "../../../types/TimelineTypes";
+import type {
+  StandardTimelineClip,
+  TimelineSelection,
+  TimelineTrack,
+} from "../../../types/TimelineTypes";
 import {
   ExportRenderer,
   buildProjectRenderInputs,
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
-  createTransparentAreaNeutralGrayOutputColorMatrixFilter,
   renderProjectFrameFileAtTick,
+  type ExportConfig,
+  type ProjectData,
 } from "../../renderer";
+import { TICKS_PER_SECOND } from "../../timeline";
 import {
   getTicksPerFrame,
   normalizeTimelineSelection,
@@ -15,6 +21,7 @@ import {
   resolveSelectionFrameStep,
   snapFrameCountToStep,
 } from "../../timelineSelection";
+import { getAssetInput, getAssets } from "../../userAssets";
 import type {
   DerivedMaskMapping,
   DerivedMaskPurpose,
@@ -43,7 +50,6 @@ export async function renderTimelineSelectionToMp4(
   timelineSelection: TimelineSelection,
   options: {
     includeTimelineMasks?: boolean;
-    videoTreatment?: DerivedMaskSourceVideoTreatment;
     signal?: AbortSignal;
   } = {},
 ): Promise<File> {
@@ -56,18 +62,9 @@ export async function renderTimelineSelectionToMp4(
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {
-    const videoTreatment = resolveDerivedMaskSourceVideoTreatment(
-      options.videoTreatment,
-    );
     const result = await renderer.render(projectData, exportConfig, () => {}, {
       timelineSelection: normalizedSelection,
-      ...(videoTreatment === "fill_transparent_with_neutral_gray"
-        ? {
-            outputs: [createVideoOutputDefinition(videoTreatment)],
-          }
-        : {
-            format: "mp4" as const,
-          }),
+      format: "mp4" as const,
       includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,
     });
@@ -127,7 +124,6 @@ function resolveDerivedMaskSourceVideoTreatment(
 ): DerivedMaskSourceVideoTreatment {
   switch (treatment) {
     case "preserve_transparency":
-    case "fill_transparent_with_neutral_gray":
     case "remove_transparency":
       return treatment;
     default:
@@ -238,32 +234,11 @@ function createMaskFilter(maskType: DerivedMaskType) {
   }
 }
 
-function createVideoTreatmentFilter(
-  treatment: DerivedMaskSourceVideoTreatment,
-) {
-  switch (treatment) {
-    case "fill_transparent_with_neutral_gray":
-      return createTransparentAreaNeutralGrayOutputColorMatrixFilter();
-    case "preserve_transparency":
-    case "remove_transparency":
-      return null;
-  }
-}
-
-function createVideoOutputDefinition(
-  treatment: DerivedMaskSourceVideoTreatment = DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
-) {
-  const filter = createVideoTreatmentFilter(treatment);
-
+function createVideoOutputDefinition() {
   return {
     id: "video",
     format: "mp4" as const,
     includeAudio: true,
-    ...(filter
-      ? {
-          transformStack: [createFilterStackTransform([filter])],
-        }
-      : {}),
   };
 }
 
@@ -410,6 +385,177 @@ export async function renderTimelineSelectionToMaskMp4(
   }
 }
 
+const SYNTHETIC_ASSET_RENDER_TRACK_ID = "synthetic-asset-render-track";
+const SYNTHETIC_ASSET_RENDER_IMAGE_FPS = 1;
+const SYNTHETIC_ASSET_RENDER_DEFAULT_VIDEO_FPS = 24;
+
+export interface RenderAssetToMaskOptions {
+  maskType?: DerivedMaskType;
+  signal?: AbortSignal;
+}
+
+/**
+ * Renders a transparency-derived mask MP4 from an asset that is NOT on the
+ * user's timeline (e.g. a directly dragged-in PNG/alpha video).
+ *
+ * The trick: we synthesise a one-clip, one-track project sized to the asset
+ * itself, then run the standard ExportRenderer pipeline. Because the mask
+ * output filter reads the rendered frame's alpha channel (see
+ * `binaryMaskFragment` in outputTransformStack.ts), any baked-in transparency
+ * — PNG alpha, alpha-channel video, etc. — ends up in the output matte
+ * without us having to mirror it as a real timeline mask clip.
+ *
+ * Logical/output dims match the asset so the clip fills the canvas exactly
+ * (contain-fit on equal aspect = identity); otherwise letterbox borders would
+ * be alpha=0 and pollute the matte.
+ */
+export async function renderAssetToMaskMp4(
+  assetId: string,
+  options: RenderAssetToMaskOptions = {},
+): Promise<{ file: File; hasVisibleContent: boolean }> {
+  throwIfAborted(options.signal);
+
+  const asset = getAssets().find((candidate) => candidate.id === assetId);
+  if (!asset) {
+    throw new Error(`Asset '${assetId}' not found`);
+  }
+  if (asset.type === "audio") {
+    throw new Error(
+      `Cannot derive a transparency mask from audio asset '${assetId}'`,
+    );
+  }
+
+  const input = await getAssetInput(assetId);
+  if (!input) {
+    throw new Error(`Failed to load asset input for '${assetId}'`);
+  }
+  const videoTrack = await input.getPrimaryVideoTrack();
+  if (!videoTrack) {
+    throw new Error(`Asset '${assetId}' has no video track to render`);
+  }
+  const width = videoTrack.displayWidth;
+  const height = videoTrack.displayHeight;
+  if (!width || !height) {
+    throw new Error(`Asset '${assetId}' has invalid display dimensions`);
+  }
+
+  const isImage = asset.type === "image";
+  let durationSeconds: number;
+  let fps: number;
+  if (isImage) {
+    fps = SYNTHETIC_ASSET_RENDER_IMAGE_FPS;
+    durationSeconds = 1 / fps;
+  } else {
+    let probedDuration = await videoTrack.computeDuration().catch(() => 0);
+    if (!Number.isFinite(probedDuration) || probedDuration <= 0) {
+      probedDuration = await input.computeDuration().catch(() => 0);
+    }
+    if (!Number.isFinite(probedDuration) || probedDuration <= 0) {
+      throw new Error(`Could not determine duration for asset '${assetId}'`);
+    }
+    durationSeconds = probedDuration;
+    const stats = await videoTrack.computePacketStats(240).catch(() => null);
+    fps =
+      stats?.averagePacketRate && stats.averagePacketRate > 0
+        ? stats.averagePacketRate
+        : asset.fps && asset.fps > 0
+          ? asset.fps
+          : SYNTHETIC_ASSET_RENDER_DEFAULT_VIDEO_FPS;
+  }
+
+  const durationTicks = Math.max(
+    1,
+    Math.floor(durationSeconds * TICKS_PER_SECOND),
+  );
+
+  const syntheticClip: StandardTimelineClip = {
+    id: `synthetic-asset-clip-${asset.id}`,
+    type: asset.type,
+    trackId: SYNTHETIC_ASSET_RENDER_TRACK_ID,
+    start: 0,
+    name: asset.name,
+    assetId: asset.id,
+    sourceDuration: isImage ? null : durationTicks,
+    timelineDuration: durationTicks,
+    croppedSourceDuration: durationTicks,
+    offset: 0,
+    transformedDuration: durationTicks,
+    transformedOffset: 0,
+    transformations: [],
+  };
+
+  const syntheticTrack: TimelineTrack = {
+    id: SYNTHETIC_ASSET_RENDER_TRACK_ID,
+    type: "visual",
+    label: "synthetic-asset-render",
+    isVisible: true,
+    isMuted: true,
+    isLocked: false,
+  };
+
+  // Match the asset's exact pixel dims. The standard project pipeline can
+  // get away with snapping odd dims to the nearest even (H.264 chroma
+  // subsampling requires even sides), but only because it re-encodes the
+  // source through the same snap. Here the source is the asset file as-is,
+  // so any rounding on the mask side would drift the pair by a pixel.
+  const exportConfig: ExportConfig = {
+    logicalWidth: width,
+    logicalHeight: height,
+    outputWidth: width,
+    outputHeight: height,
+    backgroundAlpha: 0,
+  };
+
+  const projectData: ProjectData = {
+    tracks: [syntheticTrack],
+    clips: [syntheticClip],
+    assets: [asset],
+    duration: durationTicks,
+    fps,
+  };
+
+  const timelineSelection: TimelineSelection = {
+    start: 0,
+    end: durationTicks,
+    clips: [syntheticClip],
+    tracks: [syntheticTrack],
+    fps,
+    frameStep: 1,
+  };
+
+  const renderer = await ExportRenderer.create(exportConfig);
+  try {
+    const result = await renderer.render(projectData, exportConfig, () => {}, {
+      timelineSelection,
+      outputs: [
+        createMaskOutputDefinition(options.maskType ?? "binary", {
+          trackRenderedMaskContent: true,
+        }),
+      ],
+      signal: options.signal,
+    });
+    throwIfAborted(options.signal);
+
+    const maskBlob = result.outputs.mask;
+    if (!maskBlob) {
+      throw new Error("Mask output was requested but not produced");
+    }
+
+    return {
+      file: createOutputFile(
+        maskBlob,
+        `asset-mask-${asset.id}-${Date.now()}.mp4`,
+      ),
+      hasVisibleContent: getRenderedMaskHasVisibleContent(result),
+    };
+  } catch (error) {
+    if (options.signal?.aborted && error instanceof Error) {
+      throw createGenerationAbortError(error.message);
+    }
+    throw error;
+  }
+}
+
 export async function renderTimelineSelectionToMp4WithDerivedMasks(
   timelineSelection: TimelineSelection,
   derivedMaskMappings: readonly Pick<
@@ -467,7 +613,7 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
   );
   const singleVisualMaskMapping =
     visualMaskKeys.length === 1
-      ? requiredMasksByKey.get(visualMaskKeys[0]) ?? null
+      ? (requiredMasksByKey.get(visualMaskKeys[0]) ?? null)
       : null;
 
   if (
@@ -487,8 +633,9 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     requiredMaskKeys.length === 1 &&
     visualMaskKeys.length === 1 &&
     !masks[visualMaskKeys[0]] &&
-    resolveTimelineSelectionRenderMode(singleVisualMaskMapping?.maskSelection) ===
-      sourceSelectionMode
+    resolveTimelineSelectionRenderMode(
+      singleVisualMaskMapping?.maskSelection,
+    ) === sourceSelectionMode
   ) {
     const { video, mask, maskHasVisibleContent } =
       await renderTimelineSelectionToMp4WithMask(
@@ -509,7 +656,6 @@ export async function renderTimelineSelectionToMp4WithDerivedMasks(
     : await renderTimelineSelectionToMp4(sourceTimelineSelection, {
         includeTimelineMasks:
           sourceVideoTreatment === "remove_transparency" ? false : undefined,
-        videoTreatment: sourceVideoTreatment,
         signal: options.signal,
       });
 
@@ -606,7 +752,7 @@ export async function renderTimelineSelectionToMp4WithMask(
         () => {},
         {
           timelineSelection: normalizedSelection,
-          outputs: [createVideoOutputDefinition(sourceVideoTreatment)],
+          outputs: [createVideoOutputDefinition()],
           includeTimelineMasks: false,
           signal: options.signal,
         },
@@ -614,14 +760,16 @@ export async function renderTimelineSelectionToMp4WithMask(
       videoBlob = videoResult.outputs.video ?? videoResult.video;
     } else {
       const renderer = await ExportRenderer.create(exportConfig);
-      const result = await renderer.render(projectData, exportConfig, () => {}, {
-        timelineSelection: normalizedSelection,
-        outputs: [
-          createVideoOutputDefinition(sourceVideoTreatment),
-          maskOutput,
-        ],
-        signal: options.signal,
-      });
+      const result = await renderer.render(
+        projectData,
+        exportConfig,
+        () => {},
+        {
+          timelineSelection: normalizedSelection,
+          outputs: [createVideoOutputDefinition(), maskOutput],
+          signal: options.signal,
+        },
+      );
       videoBlob = result.outputs.video ?? result.video;
       maskBlob = result.outputs.mask ?? result.mask;
       maskHasVisibleContent = getRenderedMaskHasVisibleContent(result);

@@ -27,7 +27,6 @@ export type TimelineSelectionRenderMode =
   | "full_selection";
 export type DerivedMaskSourceVideoTreatment =
   | "preserve_transparency"
-  | "fill_transparent_with_neutral_gray"
   | "remove_transparency";
 
 export interface DerivedMaskMapping {
@@ -68,7 +67,16 @@ export interface DerivedMaskMapping {
 
 export type SlotValue =
   | { type: "text"; value: string }
-  | { type: "image" | "video" | "audio"; file: File }
+  | { type: "image"; file: File }
+  | { type: "audio"; file: File }
+  | {
+      type: "video";
+      file: File;
+      // Source asset id for direct uploads. Lets collectVideoInputs render a
+      // transparency-derived mask via renderAssetToMaskMp4 when this slot
+      // also has derived mask mappings.
+      assetId?: string;
+    }
   | {
       type: "video_selection";
       selection: TimelineSelection;

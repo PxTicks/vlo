@@ -27,7 +27,6 @@ MaskProcessingTargetPurpose = Literal["video", "audio_timing"]
 MaskProcessingTargetSelectionMode = Literal["input_selection", "full_selection"]
 MaskProcessingSourceVideoTreatment = Literal[
     "preserve_transparency",
-    "fill_transparent_with_neutral_gray",
     "remove_transparency",
 ]
 PostprocessingMode = Literal["auto", "stitch_frames_with_audio", "none"]

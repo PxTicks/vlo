@@ -680,6 +680,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
           slotValues[inputId] = {
             type: "video",
             file,
+            assetId: value.asset.id,
           };
           continue;
         }

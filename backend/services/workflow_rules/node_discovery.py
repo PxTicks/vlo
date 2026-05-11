@@ -270,6 +270,12 @@ DEFAULT_NODE_POLICY_RULES: list[NodePolicyRule] = [
     },
     {
         "constraint": {
+            "class_names": frozenset({"VLOMemoryLoadAudio"}),
+        },
+        "policy": {"has_audio_input": True},
+    },
+    {
+        "constraint": {
             "has_matching_param": {
                 "flags": {"dynamicPrompts": True},
                 "type_spec_string": "STRING",

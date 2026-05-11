@@ -107,6 +107,7 @@ const MEMORY_LOADER_NODE_TYPES = new Set([
   "VLOMemoryLoadAudio",
 ]);
 const MEMORY_LOADER_PLACEHOLDER_VALUES = new Set(["loading..."]);
+const MEMORY_LOADER_DISABLE_PARAM = "disable_in_memory";
 
 function normalizeForStableStringify(value: unknown): JsonValue {
   if (value === null) {
@@ -354,6 +355,75 @@ function hasRandomizedPipelineConnectedWidget(
   return false;
 }
 
+function coerceBooleanLike(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (
+      normalized === "true" ||
+      normalized === "1" ||
+      normalized === "yes" ||
+      normalized === "on"
+    ) {
+      return true;
+    }
+    if (
+      normalized === "false" ||
+      normalized === "0" ||
+      normalized === "no" ||
+      normalized === "off" ||
+      normalized === ""
+    ) {
+      return false;
+    }
+  }
+  return false;
+}
+
+function buildMemoryLoaderModeCacheDescriptor(
+  workflow: Record<string, unknown> | null,
+  widgetInputs: Record<string, string>,
+): JsonValue {
+  if (!workflow) {
+    return {};
+  }
+
+  const entries = Object.entries(workflow)
+    .filter(([, node]) => {
+      if (typeof node !== "object" || node === null || Array.isArray(node)) {
+        return false;
+      }
+      const classType = (node as { class_type?: unknown }).class_type;
+      return (
+        typeof classType === "string" &&
+        MEMORY_LOADER_NODE_TYPES.has(classType)
+      );
+    })
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([nodeId, node]) => {
+      const widgetKey = `widget_${nodeId}_${MEMORY_LOADER_DISABLE_PARAM}`;
+      const widgetOverride = widgetInputs[widgetKey];
+      const inputs =
+        typeof node === "object" && node !== null && !Array.isArray(node)
+          ? ((node as { inputs?: unknown }).inputs ?? null)
+          : null;
+      const rawValue =
+        typeof widgetOverride !== "undefined"
+          ? widgetOverride
+          : typeof inputs === "object" && inputs !== null && !Array.isArray(inputs)
+            ? (inputs as Record<string, unknown>)[MEMORY_LOADER_DISABLE_PARAM]
+            : undefined;
+      return [nodeId, coerceBooleanLike(rawValue)];
+    });
+
+  return Object.fromEntries(entries) as JsonValue;
+}
+
 function cloneFileRecord(record: Record<string, File>): Record<string, File> {
   return { ...record };
 }
@@ -529,6 +599,10 @@ export function buildGenerationPreprocessCacheKey(
     mediaSlots: buildMediaSlotCacheDescriptor(plan.preprocess.slotValues),
     projectConfig: plan.preprocess.projectConfig,
     targetResolution: plan.preprocess.targetResolution,
+    memoryLoaderModes: buildMemoryLoaderModeCacheDescriptor(
+      plan.workflow.workflow,
+      plan.submission.widgetInputs,
+    ),
     workflowId: plan.workflow.workflowId,
     workflowInputs: buildWorkflowInputCacheDescriptor(
       plan.workflow.workflowInputs,

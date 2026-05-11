@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { WorkflowInput } from "../../types";
 import {
+  buildGenerationPreprocessCacheKey,
   type GenerationPreprocessCacheEntry,
   updateGenerationPreprocessCacheFromResponse,
 } from "../generationPlan";
@@ -24,7 +25,15 @@ function makePlan(classType: string): GenerationPlan {
     id: "plan-id",
     createdAt: 0,
     workflow: {
-      workflow: null,
+      workflow: {
+        "94": {
+          class_type: classType,
+          inputs: {
+            file: "",
+            disable_in_memory: false,
+          },
+        },
+      },
       graphData: null,
       workflowId: "workflow.json",
       workflowRules: null,
@@ -148,5 +157,22 @@ describe("generationPlan cache media extraction", () => {
         },
       },
     });
+  });
+
+  it("changes the preprocess cache key when a memory loader toggles out of in-memory mode", () => {
+    const memoryPlan = makePlan("VLOMemoryLoadVideo");
+    const filePlan: GenerationPlan = {
+      ...memoryPlan,
+      submission: {
+        ...memoryPlan.submission,
+        widgetInputs: {
+          widget_94_disable_in_memory: "true",
+        },
+      },
+    };
+
+    expect(buildGenerationPreprocessCacheKey(memoryPlan)).not.toBe(
+      buildGenerationPreprocessCacheKey(filePlan),
+    );
   });
 });

@@ -12,6 +12,7 @@ from services.gen_pipeline.types import Processor, ProcessorMeta
 MEMORY_LOADER_NODE_TYPES = frozenset(
     {"VLOMemoryLoadImage", "VLOMemoryLoadVideo", "VLOMemoryLoadAudio"}
 )
+MEMORY_LOADER_DISABLE_PARAM = "disable_in_memory"
 
 
 UploadMediaBytesFn = Callable[
@@ -22,6 +23,37 @@ RegisterMediaBytesFn = Callable[
     [Any, bytes, str, str, str, str | None],
     Awaitable[tuple[str | None, dict[str, Any] | None]],
 ]
+
+
+def _coerce_bool_like(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off", ""}:
+            return False
+    return False
+
+
+def _should_use_in_memory_loader(
+    class_type: str,
+    node: dict[str, Any] | None,
+) -> bool:
+    if class_type not in MEMORY_LOADER_NODE_TYPES:
+        return False
+
+    if not isinstance(node, dict):
+        return True
+
+    inputs = node.get("inputs")
+    if not isinstance(inputs, dict):
+        return True
+
+    return not _coerce_bool_like(inputs.get(MEMORY_LOADER_DISABLE_PARAM))
 
 
 class _UploadMediaProcessor:
@@ -62,7 +94,10 @@ class _UploadMediaProcessor:
                 else media_info.get("class_type", "")
             )
 
-            if current_class_type in MEMORY_LOADER_NODE_TYPES:
+            if _should_use_in_memory_loader(
+                current_class_type,
+                node if isinstance(node, dict) else None,
+            ):
                 injected_value, upload_warning = await self._register_media_bytes(
                     ctx.client,
                     media_info["bytes"],

@@ -1002,6 +1002,136 @@ describe("useGenerationStore pipeline phases", () => {
     );
   });
 
+  it("treats cached media inputs as present during pre-resolve reruns", async () => {
+    makeReadyStoreState();
+    const sourceFrame = makeTestFile("frame", "source.png", {
+      type: "image/png",
+      lastModified: 1,
+    });
+
+    useGenerationStore.setState({
+      syncedWorkflow: {
+        "92": {
+          class_type: "VLOMemoryLoadImage",
+          inputs: {
+            image: "",
+          },
+        },
+      },
+      workflowInputs: [
+        makeWorkflowInput({
+          nodeId: "92",
+          classType: "VLOMemoryLoadImage",
+          inputType: "image",
+          param: "image",
+          label: "Start frame",
+        }),
+      ],
+      activeWorkflowRules: makeWorkflowRules({
+        rewrites: [
+          {
+            when: {
+              kind: "input_presence",
+              inputs: ["92"],
+              match: "all_missing",
+            },
+            bypass: ["92"],
+          },
+        ],
+      }),
+      editorRef: {} as HTMLIFrameElement,
+      preResolvedPromptEnabled: true,
+    });
+
+    mockFrontendPreprocess.mockResolvedValueOnce({
+      workflow: {
+        "92": {
+          class_type: "VLOMemoryLoadImage",
+          inputs: {
+            image: "",
+          },
+        },
+      },
+      workflowId: "wf.json",
+      targetAspectRatio: "16:9",
+      exactAspectRatio: false,
+      targetResolution: 1080,
+      textInputs: {},
+      imageInputs: {
+        "92": sourceFrame,
+      },
+      audioInputs: {},
+      videoInputs: {},
+      pipelineInputs: {},
+      clientId: "client-id",
+    });
+    mockPreResolvePrompt.mockResolvedValue({
+      output: {
+        "101": {
+          class_type: "CapturedPreResolvedWorkflow",
+          inputs: {},
+        },
+      },
+      workflow: {},
+    });
+    mockGenerate
+      .mockResolvedValueOnce({
+        prompt_id: "prompt-1",
+        number: 1,
+        node_errors: {},
+        comfyui_prompt: {
+          "92": {
+            class_type: "VLOMemoryLoadImage",
+            inputs: {
+              image: "cached-frame.png",
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        prompt_id: "prompt-2",
+        number: 2,
+        node_errors: {},
+        comfyui_prompt: {
+          "92": {
+            class_type: "VLOMemoryLoadImage",
+            inputs: {
+              image: "cached-frame.png",
+            },
+          },
+        },
+      });
+
+    await useGenerationStore.getState().submitGeneration({
+      "92": {
+        type: "image",
+        file: sourceFrame,
+      },
+    });
+    useGenerationStore.setState({ activeJobId: null });
+
+    await useGenerationStore.getState().submitGeneration({
+      "92": {
+        type: "image",
+        file: sourceFrame,
+      },
+    });
+
+    expect(mockFrontendPreprocess).toHaveBeenCalledTimes(1);
+    expect(mockGenerate.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        imageInputs: {},
+        cachedMediaInputs: {
+          "92": {
+            image: "cached-frame.png",
+          },
+        },
+      }),
+    );
+    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(2);
+    expect(mockPreResolvePrompt.mock.calls[1]?.[1]).not.toContain("92");
+  });
+
   it("reruns media preprocessing when the source file changes", async () => {
     makeReadyStoreState();
     const firstVideo = makeTestFile("video-a", "source.mp4", {

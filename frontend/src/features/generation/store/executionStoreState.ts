@@ -28,6 +28,12 @@ import { preResolvePrompt } from "../services/preResolvePrompt";
 import { readActiveWorkflowFromIframe } from "../services/workflowBridge";
 import { normalizeWorkflowFilename } from "../services/workflowFilenames";
 import { getWorkflowPostprocessingConfig } from "../services/workflowRules";
+import {
+  buildWorkflowInputId,
+  buildWorkflowInputLookup,
+  getNodeInputRequestKey,
+  getWorkflowInputId,
+} from "../utils/workflowInputs";
 import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
 import {
   createGenerationAbortError,
@@ -91,14 +97,59 @@ function collectProvidedInputIds(
 ): Set<string> {
   if (request) {
     const ids = new Set<string>();
-    const requestInputKeys = [
+    const requestInputKeys = new Set<string>([
       ...Object.keys(request.textInputs),
       ...Object.keys(request.imageInputs),
       ...Object.keys(request.videoInputs),
       ...Object.keys(request.audioInputs),
-    ];
+    ]);
     for (const key of requestInputKeys) {
       ids.add(key);
+    }
+
+    const workflowInputById = buildWorkflowInputLookup(plan.workflow.workflowInputs);
+    for (const input of plan.workflow.workflowInputs) {
+      const requestKey = getNodeInputRequestKey(input, workflowInputById);
+      if (!requestInputKeys.has(requestKey)) {
+        continue;
+      }
+      ids.add(getWorkflowInputId(input));
+      ids.add(input.nodeId);
+    }
+
+    // Cached reruns submit backend loader ids instead of fresh file uploads.
+    // These still count as present for rewrite/default evaluation, otherwise
+    // preResolvePrompt can wrongly bypass the very nodes that need reinjection.
+    for (const [nodeId, values] of Object.entries(request.cachedMediaInputs ?? {})) {
+      if (!values || typeof values !== "object" || Array.isArray(values)) {
+        continue;
+      }
+
+      let nodeWasProvided = false;
+      for (const [param, value] of Object.entries(values)) {
+        if (
+          value == null ||
+          (typeof value === "string" && value.trim().length === 0)
+        ) {
+          continue;
+        }
+
+        ids.add(buildWorkflowInputId(nodeId, param));
+        ids.add(`${nodeId}_${param}`);
+
+        const matchedInput =
+          workflowInputById.get(buildWorkflowInputId(nodeId, param)) ??
+          workflowInputById.get(nodeId);
+        if (matchedInput?.param === param) {
+          ids.add(getWorkflowInputId(matchedInput));
+        }
+
+        nodeWasProvided = true;
+      }
+
+      if (nodeWasProvided) {
+        ids.add(nodeId);
+      }
     }
 
     const knownNodeIds = new Set<string>([
@@ -108,11 +159,11 @@ function collectProvidedInputIds(
         mapping.maskNodeId,
       ]),
     ]);
+    const requestInputKeyList = [...requestInputKeys];
     for (const nodeId of knownNodeIds) {
       if (
-        requestInputKeys.some(
-          (key) => key === nodeId || key.startsWith(`${nodeId}_`),
-        )
+        requestInputKeys.has(nodeId) ||
+        requestInputKeyList.some((key) => key.startsWith(`${nodeId}_`))
       ) {
         ids.add(nodeId);
       }

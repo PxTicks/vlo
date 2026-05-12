@@ -76,6 +76,7 @@ export interface PipelineControl {
   key: string;
   label?: string | null;
   description?: string | null;
+  section_id?: string | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -165,6 +166,7 @@ export interface WorkflowDualSamplerDenoiseRule {
   kind?: "dual_sampler_denoise";
   label?: string | null;
   when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
+  section_id?: string | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -185,6 +187,7 @@ export interface WorkflowFrontendControl {
   slider_display?: "percent" | "number" | null;
   unit?: string | null;
   display_unit?: WidgetDisplayUnit | null;
+  section_id?: string | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -297,6 +300,7 @@ export interface WorkflowRuleNodePresent {
   param?: string | null;
   label?: string | null;
   class_type?: string | null;
+  section_id?: string | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -336,6 +340,7 @@ export interface WorkflowRuleWidgetEntry {
   slider_display?: "percent" | "number" | null;
   unit?: string | null;
   display_unit?: WidgetDisplayUnit | null;
+  section_id?: string | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -356,11 +361,19 @@ export interface WorkflowRuleWidgetInputPresenceCondition {
   match?: "all_present" | "all_missing" | "any_present" | "any_missing";
 }
 
+export interface WorkflowSection {
+  id: string;
+  title?: string | null;
+  order?: number | null;
+  default_open?: boolean | null;
+}
+
 export interface WorkflowSingleSamplerDenoiseRule {
   id: string;
   kind?: "single_sampler_denoise";
   label?: string | null;
   when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
+  section_id?: string | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -377,6 +390,7 @@ export interface WorkflowVideoAudioRetakeRule {
   kind?: "video_audio_retake";
   label?: string | null;
   when?: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot | null;
+  section_id?: string | null;
   group_id?: string | null;
   group_title?: string | null;
   group_order?: number | null;
@@ -389,6 +403,7 @@ export interface WorkflowRules {
   version?: 3;
   name?: string | null;
   default_widgets_mode?: "control_after_generate" | "all" | null;
+  sections?: Array<WorkflowSection>;
   nodes?: Record<string, WorkflowRuleNode>;
   validation?: WorkflowValidationConfig;
   input_conditions?: Array<WorkflowInputCondition> | null;

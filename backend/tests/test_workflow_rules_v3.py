@@ -393,6 +393,73 @@ def test_default_workflow_rules_parse_with_current_schema():
         ResolvedWorkflowRules.model_validate(rules)
 
 
+def test_schema_accepts_section_metadata():
+    rules_model, warnings = normalize_rules_model(
+        {
+            "version": 3,
+            "sections": [
+                {
+                    "id": "masking",
+                    "title": "Masking",
+                    "order": 1,
+                    "default_open": False,
+                }
+            ],
+            "nodes": {
+                "10": {
+                    "present": {
+                        "input_type": "text",
+                        "param": "text",
+                        "section_id": "prompts",
+                    }
+                },
+                "20": {
+                    "widgets": {
+                        "strength": {
+                            "value_type": "float",
+                            "section_id": "masking",
+                        }
+                    }
+                },
+            },
+            "derived_widgets": [
+                {
+                    "id": "retake_mode",
+                    "kind": "video_audio_retake",
+                    "label": "Retake",
+                    "section_id": "masking",
+                    "video_bypass": {"node_id": "705", "param": "switch"},
+                    "audio_bypass": {"node_id": "714", "param": "switch"},
+                }
+            ],
+            "pipeline": [
+                {
+                    "id": "mask_processing",
+                    "kind": "mask_processing",
+                    "targets": [],
+                    "controls": [
+                        {
+                            "key": "crop_mode",
+                            "value_type": "enum",
+                            "options": ["crop", "full"],
+                            "section_id": "masking",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert warnings == []
+    assert rules_model.sections[0].id == "masking"
+    assert rules_model.sections[0].default_open is False
+    assert rules_model.nodes["10"].present is not None
+    assert rules_model.nodes["10"].present.section_id == "prompts"
+    assert rules_model.nodes["20"].widgets["strength"].section_id == "masking"
+    assert rules_model.derived_widgets[0].section_id == "masking"
+    assert rules_model.pipeline[0].controls[0].section_id == "masking"
+
+
 def test_schema_rejects_legacy_fields():
     rules_model, warnings = normalize_rules_model(
         {

@@ -62,6 +62,7 @@ export type {
   WorkflowRuleNodePresent,
   WorkflowRuleSelectionConfig,
   WorkflowRuleSlot,
+  WorkflowSection,
   WorkflowRuleWidgetDefaultOverride,
   WorkflowRuleWidgetEntry,
   WorkflowRuleWidgetInputPresenceCondition,
@@ -149,6 +150,9 @@ export function createDefaultWorkflowRules(
     ...(overrides.default_widgets_mode !== undefined
       ? { default_widgets_mode: overrides.default_widgets_mode }
       : {}),
+    ...(overrides.sections !== undefined
+      ? { sections: cloneJsonValue(overrides.sections) }
+      : {}),
     nodes: cloneJsonValue(overrides.nodes ?? {}),
     validation: cloneJsonValue(overrides.validation ?? { inputs: [] }),
     ...(overrides.input_conditions !== undefined
@@ -188,6 +192,7 @@ export type {
   DerivedWorkflowWidgetInput,
   WorkflowInput,
   WorkflowSelectionConfig,
+  WorkflowSection,
   WorkflowWidgetInput,
   WidgetInputConfig,
 };

@@ -18,6 +18,7 @@ import type {
   WorkflowInput,
   WorkflowWidgetInput,
 } from "../types";
+import type { WorkflowSection } from "../services/workflowRules";
 import type { AssetDropSlotValue } from "../../panelUI";
 import {
   buildWorkflowInputLookup,
@@ -37,6 +38,7 @@ interface GenerationInputsProps {
   onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
   widgetInputs: WorkflowWidgetInput[];
+  sections?: WorkflowSection[];
   widgetValues: Record<string, Record<string, unknown>>;
   randomizeToggles: Record<string, boolean>;
   onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
@@ -46,6 +48,48 @@ interface GenerationInputsProps {
   exactAspectRatio?: boolean;
   onExactAspectRatioChange?: (exact: boolean) => void;
   exactAspectRatioTooltip?: string;
+}
+
+const DEFAULT_SECTION_METADATA = {
+  inputs: {
+    title: "Inputs",
+    order: 0,
+    defaultOpen: true,
+  },
+  prompts: {
+    title: "Prompts",
+    order: 1,
+    defaultOpen: true,
+  },
+  settings: {
+    title: "Settings",
+    order: 2,
+    defaultOpen: true,
+  },
+} as const;
+
+type DefaultSectionId = keyof typeof DEFAULT_SECTION_METADATA;
+
+function normalizeSectionId(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeOptionalLabel(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function isDefaultSectionId(value: string): value is DefaultSectionId {
+  return Object.prototype.hasOwnProperty.call(DEFAULT_SECTION_METADATA, value);
+}
+
+function formatSectionTitle(sectionId: string): string {
+  return sectionId
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
 function toSlotValue(
@@ -273,8 +317,18 @@ function parseWidgetValue(
 
 interface WidgetGroup {
   id: string;
+  sectionId: string;
   title: string;
   widgets: WorkflowWidgetInput[];
+}
+
+function resolveInputSectionId(input: WorkflowInput): string {
+  return normalizeSectionId(input.presentation?.section?.id)
+    ?? (input.inputType === "text" ? "prompts" : "inputs");
+}
+
+function resolveWidgetSectionId(widget: WorkflowWidgetInput): string {
+  return normalizeSectionId(widget.config.sectionId) ?? "settings";
 }
 
 /** Hide frontend-only enum widgets that declare no options (the default is still applied). */
@@ -296,6 +350,8 @@ function groupWidgetsByNode(widgetInputs: WorkflowWidgetInput[]): WidgetGroup[] 
   };
 
   type WidgetGroupAccumulator = {
+    sectionId: string;
+    sourceGroupId: string;
     title: string;
     widgets: GroupedWidget[];
     firstIndex: number;
@@ -305,9 +361,11 @@ function groupWidgetsByNode(widgetInputs: WorkflowWidgetInput[]): WidgetGroup[] 
   const grouped = new Map<string, WidgetGroupAccumulator>();
   for (const [index, widget] of widgetInputs.entries()) {
     if (isHiddenWidget(widget)) continue;
+    const sectionId = resolveWidgetSectionId(widget);
     const groupId = widget.config.groupId || widget.nodeId;
+    const groupKey = `${sectionId}::${groupId}`;
     const groupTitle = widget.config.groupTitle || widget.config.nodeTitle || "";
-    const existing = grouped.get(groupId);
+    const existing = grouped.get(groupKey);
     if (existing) {
       existing.widgets.push({ widget, index });
       if (!existing.title && groupTitle) {
@@ -322,7 +380,9 @@ function groupWidgetsByNode(widgetInputs: WorkflowWidgetInput[]): WidgetGroup[] 
       }
       continue;
     }
-    grouped.set(groupId, {
+    grouped.set(groupKey, {
+      sectionId,
+      sourceGroupId: groupId,
       title: groupTitle,
       widgets: [{ widget, index }],
       firstIndex: index,
@@ -370,11 +430,12 @@ function groupWidgetsByNode(widgetInputs: WorkflowWidgetInput[]): WidgetGroup[] 
 
       const fallbackTitle =
         entries.length === 1
-          ? entries[0]?.widget.config.label || `Node ${groupId}`
-          : `Node ${groupId}`;
+          ? entries[0]?.widget.config.label || `Node ${group.sourceGroupId}`
+          : `Node ${group.sourceGroupId}`;
 
       return {
         id: groupId,
+        sectionId: group.sectionId,
         title: group.title || fallbackTitle,
         widgets: entries.map((entry) => entry.widget),
       };
@@ -384,15 +445,18 @@ function groupWidgetsByNode(widgetInputs: WorkflowWidgetInput[]): WidgetGroup[] 
 type RenderableInputBlock =
   | {
       kind: "text";
+      sectionId: string;
       input: WorkflowInput;
     }
   | {
       kind: "media";
+      sectionId: string;
       input: MediaWorkflowInput;
     }
   | {
       kind: "mediaGroup";
       id: string;
+      sectionId: string;
       title: string;
       inputs: MediaWorkflowInput[];
     };
@@ -415,6 +479,7 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
   };
 
   type GroupAccumulator = {
+    sectionId: string;
     title: string;
     entries: GroupedInputEntry[];
     minOrder?: number;
@@ -425,8 +490,9 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
   const groupedEntries = new Map<string, GroupAccumulator>();
 
   for (const [index, input] of inputs.entries()) {
+    const sectionId = resolveInputSectionId(input);
     if (input.inputType === "text") {
-      blocks.push({ kind: "text", input });
+      blocks.push({ kind: "text", input, sectionId });
       continue;
     }
 
@@ -438,11 +504,12 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
 
     const group = mediaInput.presentation?.group;
     if (!group?.id) {
-      blocks.push({ kind: "media", input: mediaInput });
+      blocks.push({ kind: "media", input: mediaInput, sectionId });
       continue;
     }
 
-    const existing = groupedEntries.get(group.id);
+    const groupKey = `${sectionId}::${group.id}`;
+    const existing = groupedEntries.get(groupKey);
     if (existing) {
       existing.entries.push({ input: mediaInput, index, order: group.order });
       if (
@@ -457,7 +524,8 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
       continue;
     }
 
-    groupedEntries.set(group.id, {
+    groupedEntries.set(groupKey, {
+      sectionId,
       title: group.title ?? mediaInput.label,
       entries: [{ input: mediaInput, index, order: group.order }],
       minOrder: typeof group.order === "number" ? group.order : undefined,
@@ -465,7 +533,8 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
     });
     blocks.push({
       kind: "mediaGroup",
-      id: group.id,
+      id: groupKey,
+      sectionId,
       title: group.title ?? mediaInput.label,
       inputs: [],
     });
@@ -539,6 +608,120 @@ function buildRenderableInputBlocks(inputs: WorkflowInput[]): RenderableInputBlo
       return left.index - right.index;
     })
     .map(({ block }) => block);
+}
+
+interface RenderableSection {
+  id: string;
+  title: string;
+  order?: number;
+  defaultOpen: boolean;
+  hasExplicitDefinition: boolean;
+  renderAsPanel: boolean;
+  blocks: RenderableInputBlock[];
+  widgetGroups: WidgetGroup[];
+  firstIndex: number;
+}
+
+function buildRenderableSections(
+  inputBlocks: RenderableInputBlock[],
+  widgetGroups: WidgetGroup[],
+  sections: WorkflowSection[],
+): RenderableSection[] {
+  type SectionAccumulator = {
+    blocks: RenderableInputBlock[];
+    widgetGroups: WidgetGroup[];
+    firstIndex: number;
+  };
+
+  const explicitSections = new Map<string, WorkflowSection>();
+  for (const section of sections) {
+    const sectionId = normalizeSectionId(section.id);
+    if (!sectionId || explicitSections.has(sectionId)) {
+      continue;
+    }
+    explicitSections.set(sectionId, section);
+  }
+
+  const resolvedSections = new Map<string, SectionAccumulator>();
+  const ensureSection = (sectionId: string, index: number): SectionAccumulator => {
+    const existing = resolvedSections.get(sectionId);
+    if (existing) {
+      if (index < existing.firstIndex) {
+        existing.firstIndex = index;
+      }
+      return existing;
+    }
+
+    const created: SectionAccumulator = {
+      blocks: [],
+      widgetGroups: [],
+      firstIndex: index,
+    };
+    resolvedSections.set(sectionId, created);
+    return created;
+  };
+
+  inputBlocks.forEach((block, index) => {
+    ensureSection(block.sectionId, index).blocks.push(block);
+  });
+
+  widgetGroups.forEach((group, index) => {
+    ensureSection(group.sectionId, inputBlocks.length + index).widgetGroups.push(group);
+  });
+
+  return Array.from(resolvedSections.entries())
+    .map(([sectionId, section]) => {
+      const explicitSection = explicitSections.get(sectionId);
+      const builtinSection = isDefaultSectionId(sectionId)
+        ? DEFAULT_SECTION_METADATA[sectionId]
+        : null;
+      const title =
+        normalizeOptionalLabel(explicitSection?.title)
+        ?? builtinSection?.title
+        ?? formatSectionTitle(sectionId);
+      const order =
+        typeof explicitSection?.order === "number"
+          ? explicitSection.order
+          : builtinSection?.order;
+      const defaultOpen =
+        typeof explicitSection?.default_open === "boolean"
+          ? explicitSection.default_open
+          : builtinSection?.defaultOpen ?? true;
+      const hasExplicitDefinition = explicitSection !== undefined;
+
+      return {
+        id: sectionId,
+        title,
+        order,
+        defaultOpen,
+        hasExplicitDefinition,
+        renderAsPanel:
+          section.widgetGroups.length > 0 ||
+          sectionId === "settings" ||
+          !isDefaultSectionId(sectionId) ||
+          hasExplicitDefinition,
+        blocks: section.blocks,
+        widgetGroups: section.widgetGroups,
+        firstIndex: section.firstIndex,
+      };
+    })
+    .sort((left, right) => {
+      if (typeof left.order === "number" && typeof right.order === "number") {
+        if (left.order !== right.order) {
+          return left.order - right.order;
+        }
+      } else if (typeof left.order === "number") {
+        return -1;
+      } else if (typeof right.order === "number") {
+        return 1;
+      }
+
+      if (left.firstIndex !== right.firstIndex) {
+        return left.firstIndex - right.firstIndex;
+      }
+
+      return left.id.localeCompare(right.id);
+    });
 }
 
 interface TextInputSectionProps {
@@ -1040,58 +1223,16 @@ function WidgetGroupSection({
 
 const MemoizedWidgetGroupSection = memo(WidgetGroupSection);
 
-interface SettingsSectionProps {
-  bgColor: string;
-  groups: WidgetGroup[];
-  widgetValues: Record<string, Record<string, unknown>>;
-  randomizeToggles: Record<string, boolean>;
-  onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
-  onToggleRandomize: (nodeId: string, param: string) => void;
-  showExactAspectRatioControl: boolean;
-  resolvedExactAspectRatioWidgetKey: string | null;
-  exactAspectRatio: boolean;
-  onExactAspectRatioChange?: (exact: boolean) => void;
-  exactAspectRatioTooltip?: string;
+function getRenderableInputBlockKey(block: RenderableInputBlock): string {
+  switch (block.kind) {
+    case "text":
+      return `text:${getWorkflowInputId(block.input)}`;
+    case "media":
+      return `media:${getWorkflowInputId(block.input)}`;
+    case "mediaGroup":
+      return `media-group:${block.id}`;
+  }
 }
-
-function SettingsSection({
-  bgColor,
-  groups,
-  widgetValues,
-  randomizeToggles,
-  onWidgetChange,
-  onToggleRandomize,
-  showExactAspectRatioControl,
-  resolvedExactAspectRatioWidgetKey,
-  exactAspectRatio,
-  onExactAspectRatioChange,
-  exactAspectRatioTooltip,
-}: SettingsSectionProps) {
-  return (
-    <PanelSection title="Settings" bgColor={bgColor} defaultOpen={true}>
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        {groups.map((group, index) => (
-          <MemoizedWidgetGroupSection
-            key={`settings-group:${group.id}`}
-            group={group}
-            widgetValues={widgetValues}
-            randomizeToggles={randomizeToggles}
-            onWidgetChange={onWidgetChange}
-            onToggleRandomize={onToggleRandomize}
-            showExactAspectRatioControl={showExactAspectRatioControl}
-            resolvedExactAspectRatioWidgetKey={resolvedExactAspectRatioWidgetKey}
-            exactAspectRatio={exactAspectRatio}
-            onExactAspectRatioChange={onExactAspectRatioChange}
-            exactAspectRatioTooltip={exactAspectRatioTooltip}
-            showDivider={index > 0}
-          />
-        ))}
-      </Box>
-    </PanelSection>
-  );
-}
-
-const MemoizedSettingsSection = memo(SettingsSection);
 
 export const GenerationInputs = memo(function GenerationInputs({
   inputs,
@@ -1104,6 +1245,7 @@ export const GenerationInputs = memo(function GenerationInputs({
   onSwapMediaInputs,
   onClickSelect,
   widgetInputs,
+  sections = [],
   widgetValues,
   randomizeToggles,
   onWidgetChange,
@@ -1122,6 +1264,19 @@ export const GenerationInputs = memo(function GenerationInputs({
     () => buildRenderableInputBlocks(inputs),
     [inputs],
   );
+  const renderableSections = useMemo(
+    () => buildRenderableSections(inputBlocks, groupedWidgets, sections),
+    [groupedWidgets, inputBlocks, sections],
+  );
+  const topLevelRenderItems = useMemo(
+    () =>
+      renderableSections.flatMap((section) =>
+        section.renderAsPanel
+          ? [{ kind: "section" as const, section }]
+          : section.blocks.map((block) => ({ kind: "block" as const, block })),
+      ),
+    [renderableSections],
+  );
   const inputLookup = useMemo(() => buildWorkflowInputLookup(inputs), [inputs]);
   const resolvedExactAspectRatioWidgetKey = useMemo(() => {
     if (exactAspectRatioWidgetKey) {
@@ -1130,77 +1285,111 @@ export const GenerationInputs = memo(function GenerationInputs({
     const widget = widgetInputs.find(isAspectRatioWidget);
     return widget ? `${widget.nodeId}:${widget.param}` : null;
   }, [exactAspectRatioWidgetKey, widgetInputs]);
+
+  const renderInputBlock = (
+    block: RenderableInputBlock,
+    bgColor: string,
+    key?: string,
+  ) => {
+    if (block.kind === "text") {
+      const input = block.input;
+      const inputId = getWorkflowInputId(input);
+      const commitInputId =
+        inputLookup.get(input.nodeId) === input ? input.nodeId : inputId;
+
+      return (
+        <MemoizedTextInputSection
+          key={key ?? inputId}
+          input={input}
+          bgColor={bgColor}
+          value={getWorkflowInputValue(textValues, input, inputLookup) ?? ""}
+          commitInputId={commitInputId}
+          onCommit={onTextValueCommit}
+        />
+      );
+    }
+
+    if (block.kind === "mediaGroup") {
+      return (
+        <MemoizedMediaInputGroupSection
+          key={key ?? `media-group:${block.id}`}
+          title={block.title}
+          inputs={block.inputs}
+          bgColor={bgColor}
+          mediaInputs={mediaInputs}
+          onInputDrop={onInputDrop}
+          onExternalInputDrop={onExternalInputDrop}
+          onInputClear={onInputClear}
+          onSwapMediaInputs={onSwapMediaInputs}
+          onClickSelect={onClickSelect}
+        />
+      );
+    }
+
+    const input = block.input;
+    const inputId = getWorkflowInputId(input);
+    return (
+      <MemoizedMediaInputSection
+        key={key ?? inputId}
+        input={input}
+        bgColor={bgColor}
+        value={getWorkflowInputValue(mediaInputs, input, inputLookup)}
+        onInputDrop={onInputDrop}
+        onExternalInputDrop={onExternalInputDrop}
+        onInputClear={onInputClear}
+        onClickSelect={onClickSelect}
+      />
+    );
+  };
+
   return (
     <Box sx={{ display: "flex", flexDirection: "column" }}>
-      {inputBlocks.map((block, index) => {
+      {topLevelRenderItems.map((item, index) => {
         const bgColor = index % 2 === 0 ? "#202024" : "#18181b";
 
-        if (block.kind === "text") {
-          const input = block.input;
-          const inputId = getWorkflowInputId(input);
-          const commitInputId =
-            inputLookup.get(input.nodeId) === input ? input.nodeId : inputId;
-
-          return (
-            <MemoizedTextInputSection
-              key={inputId}
-              input={input}
-              bgColor={bgColor}
-              value={getWorkflowInputValue(textValues, input, inputLookup) ?? ""}
-              commitInputId={commitInputId}
-              onCommit={onTextValueCommit}
-            />
+        if (item.kind === "block") {
+          return renderInputBlock(
+            item.block,
+            bgColor,
+            getRenderableInputBlockKey(item.block),
           );
         }
 
-        if (block.kind === "mediaGroup") {
-          return (
-            <MemoizedMediaInputGroupSection
-              key={`media-group:${block.id}`}
-              title={block.title}
-              inputs={block.inputs}
-              bgColor={bgColor}
-              mediaInputs={mediaInputs}
-              onInputDrop={onInputDrop}
-              onExternalInputDrop={onExternalInputDrop}
-              onInputClear={onInputClear}
-              onSwapMediaInputs={onSwapMediaInputs}
-              onClickSelect={onClickSelect}
-            />
-          );
-        }
-
-        const input = block.input;
-        const inputId = getWorkflowInputId(input);
         return (
-          <MemoizedMediaInputSection
-            key={inputId}
-            input={input}
+          <PanelSection
+            key={`section:${item.section.id}`}
+            title={item.section.title}
             bgColor={bgColor}
-            value={getWorkflowInputValue(mediaInputs, input, inputLookup)}
-            onInputDrop={onInputDrop}
-            onExternalInputDrop={onExternalInputDrop}
-            onInputClear={onInputClear}
-            onClickSelect={onClickSelect}
-          />
+            defaultOpen={item.section.defaultOpen}
+          >
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              {item.section.blocks.map((block, blockIndex) =>
+                renderInputBlock(
+                  block,
+                  blockIndex % 2 === 0 ? "#202024" : "#18181b",
+                  getRenderableInputBlockKey(block),
+                ),
+              )}
+              {item.section.widgetGroups.map((group, groupIndex) => (
+                <MemoizedWidgetGroupSection
+                  key={`section-group:${item.section.id}:${group.id}`}
+                  group={group}
+                  widgetValues={widgetValues}
+                  randomizeToggles={randomizeToggles}
+                  onWidgetChange={onWidgetChange}
+                  onToggleRandomize={onToggleRandomize}
+                  showExactAspectRatioControl={showExactAspectRatioControl}
+                  resolvedExactAspectRatioWidgetKey={resolvedExactAspectRatioWidgetKey}
+                  exactAspectRatio={exactAspectRatio}
+                  onExactAspectRatioChange={onExactAspectRatioChange}
+                  exactAspectRatioTooltip={exactAspectRatioTooltip}
+                  showDivider={item.section.blocks.length > 0 || groupIndex > 0}
+                />
+              ))}
+            </Box>
+          </PanelSection>
         );
       })}
-
-      {groupedWidgets.length > 0 ? (
-        <MemoizedSettingsSection
-          bgColor={inputBlocks.length % 2 === 0 ? "#202024" : "#18181b"}
-          groups={groupedWidgets}
-          widgetValues={widgetValues}
-          randomizeToggles={randomizeToggles}
-          onWidgetChange={onWidgetChange}
-          onToggleRandomize={onToggleRandomize}
-          showExactAspectRatioControl={showExactAspectRatioControl}
-          resolvedExactAspectRatioWidgetKey={resolvedExactAspectRatioWidgetKey}
-          exactAspectRatio={exactAspectRatio}
-          onExactAspectRatioChange={onExactAspectRatioChange}
-          exactAspectRatioTooltip={exactAspectRatioTooltip}
-        />
-      ) : null}
     </Box>
   );
 });

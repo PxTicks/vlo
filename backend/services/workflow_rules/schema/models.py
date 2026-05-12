@@ -58,6 +58,7 @@ class WorkflowRuleNodePresent(WorkflowRuleBaseModel):
     param: str | None = None
     label: str | None = None
     class_type: str | None = None
+    section_id: str | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
@@ -243,6 +244,7 @@ class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     slider_display: WidgetSliderDisplay | None = None
     unit: str | None = None
     display_unit: WidgetDisplayUnit | None = None
+    section_id: str | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
@@ -325,6 +327,7 @@ class WorkflowDualSamplerDenoiseRule(WorkflowRuleBaseModel):
     kind: Literal["dual_sampler_denoise"] = "dual_sampler_denoise"
     label: str | None = None
     when: ConditionExpression | None = None
+    section_id: str | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
@@ -339,6 +342,7 @@ class WorkflowSingleSamplerDenoiseRule(WorkflowRuleBaseModel):
     kind: Literal["single_sampler_denoise"] = "single_sampler_denoise"
     label: str | None = None
     when: ConditionExpression | None = None
+    section_id: str | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
@@ -358,6 +362,7 @@ class WorkflowVideoAudioRetakeRule(WorkflowRuleBaseModel):
     kind: Literal["video_audio_retake"] = "video_audio_retake"
     label: str | None = None
     when: ConditionExpression | None = None
+    section_id: str | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
@@ -428,6 +433,7 @@ class PipelineControl(WorkflowRuleBaseModel):
     key: str
     label: str | None = None
     description: str | None = None
+    section_id: str | None = None
     group_id: str | None = None
     group_title: str | None = None
     group_order: int | None = None
@@ -535,6 +541,19 @@ class WorkflowPipelineStageBase(WorkflowRuleBaseModel):
         return self
 
 
+class WorkflowSection(WorkflowRuleBaseModel):
+    id: str
+    title: str | None = None
+    order: int | None = None
+    default_open: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_id(self) -> "WorkflowSection":
+        if not self.id.strip():
+            raise ValueError("Workflow section id must be non-empty")
+        return self
+
+
 class WorkflowMaskProcessingStage(WorkflowPipelineStageBase):
     kind: Literal["mask_processing"] = "mask_processing"
     targets: list[MaskProcessingTarget] = Field(default_factory=list)
@@ -600,6 +619,7 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
     version: Literal[3] = 3
     name: str | None = None
     default_widgets_mode: WidgetsMode | None = None
+    sections: list[WorkflowSection] = Field(default_factory=list)
     nodes: dict[str, WorkflowRuleNode] = Field(default_factory=dict)
     validation: WorkflowValidationConfig = Field(default_factory=WorkflowValidationConfig)
     input_conditions: list[WorkflowInputCondition] | None = None
@@ -620,6 +640,10 @@ class ResolvedWorkflowRules(WorkflowRuleBaseModel):
 
     @model_validator(mode="after")
     def validate_pipeline_graph(self) -> "ResolvedWorkflowRules":
+        section_ids = [section.id for section in self.sections]
+        if len(section_ids) != len(set(section_ids)):
+            raise ValueError("workflow section ids must be unique")
+
         stage_ids = [stage.id for stage in self.pipeline]
         if len(stage_ids) != len(set(stage_ids)):
             raise ValueError("pipeline stage ids must be unique")

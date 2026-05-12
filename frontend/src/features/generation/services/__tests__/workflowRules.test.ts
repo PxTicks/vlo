@@ -91,6 +91,7 @@ describe("resolvePresentedInputs", () => {
           "62": {
             present: {
               label: "Start frame",
+              section_id: "references",
               group_id: "frames",
               group_title: "Frames",
               group_order: 0,
@@ -101,6 +102,9 @@ describe("resolvePresentedInputs", () => {
     );
 
     expect(resolved.inputs[0]?.presentation).toEqual({
+      section: {
+        id: "references",
+      },
       group: {
         id: "frames",
         title: "Frames",
@@ -1257,6 +1261,7 @@ describe("resolvePresentedInputs", () => {
                 label: "Width",
                 control_after_generate: true,
                 value_type: "int",
+                section_id: "masking",
                 group_id: "267",
                 group_title: "Video Generation (LTX-2.3)",
                 group_order: 4,
@@ -1270,6 +1275,7 @@ describe("resolvePresentedInputs", () => {
                 label: "Height",
                 control_after_generate: true,
                 value_type: "int",
+                section_id: "masking",
                 group_id: "267",
                 group_title: "Video Generation (LTX-2.3)",
                 group_order: 5,
@@ -1282,9 +1288,11 @@ describe("resolvePresentedInputs", () => {
     );
 
     expect(widgets).toHaveLength(2);
+    expect(widgets[0]?.config.sectionId).toBe("masking");
     expect(widgets[0]?.config.groupId).toBe("267");
     expect(widgets[0]?.config.groupTitle).toBe("Video Generation (LTX-2.3)");
     expect(widgets[0]?.config.groupOrder).toBe(4);
+    expect(widgets[1]?.config.sectionId).toBe("masking");
     expect(widgets[1]?.config.groupId).toBe("267");
     expect(widgets[1]?.config.groupOrder).toBe(5);
   });

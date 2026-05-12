@@ -19,21 +19,33 @@ import { buildWorkflowInputId, getWorkflowInputId } from "../../utils/workflowIn
 function resolveInputPresentation(
   present: WorkflowRuleNodePresent | null | undefined,
 ): WorkflowInput["presentation"] | undefined {
+  const sectionId = present?.section_id?.trim();
   const groupId = present?.group_id?.trim();
-  if (!groupId) {
+  if (!sectionId && !groupId) {
     return undefined;
   }
 
   return {
-    group: {
-      id: groupId,
-      ...(present?.group_title?.trim()
-        ? { title: present.group_title.trim() }
-        : {}),
-      ...(typeof present?.group_order === "number"
-        ? { order: present.group_order }
-        : {}),
-    },
+    ...(sectionId
+      ? {
+          section: {
+            id: sectionId,
+          },
+        }
+      : {}),
+    ...(groupId
+      ? {
+          group: {
+            id: groupId,
+            ...(present?.group_title?.trim()
+              ? { title: present.group_title.trim() }
+              : {}),
+            ...(typeof present?.group_order === "number"
+              ? { order: present.group_order }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 

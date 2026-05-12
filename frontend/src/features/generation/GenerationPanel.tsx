@@ -1021,6 +1021,7 @@ export function GenerationPanel() {
           {!isWorkflowLoading && !workflowLoadError ? (
             <GenerationInputs
               inputs={workflowInputs}
+              sections={activeWorkflowRules?.sections ?? []}
               textValues={textValues}
               onTextValueCommit={handleTextValueCommit}
               mediaInputs={mediaInputs}

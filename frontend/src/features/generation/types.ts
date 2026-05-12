@@ -136,7 +136,12 @@ export interface WorkflowInputPresentationGroup {
   order?: number;
 }
 
+export interface WorkflowInputPresentationSection {
+  id: string;
+}
+
 export interface WorkflowInputPresentation {
+  section?: WorkflowInputPresentationSection;
   group?: WorkflowInputPresentationGroup;
 }
 
@@ -235,6 +240,7 @@ export interface WidgetInputConfig {
   defaultRandomize?: boolean;
   frontendOnly?: boolean;
   hidden?: boolean;
+  sectionId?: string;
   min?: number;
   max?: number;
   step?: number;

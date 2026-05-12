@@ -176,6 +176,113 @@ describe("GenerationInputs", () => {
     expect(screen.getByText("Height")).toBeInTheDocument();
   });
 
+  it("renders explicit custom input sections as dedicated panels", () => {
+    render(
+      <GenerationInputs
+        inputs={[
+          {
+            nodeId: "6",
+            classType: "CLIPTextEncode",
+            inputType: "text",
+            param: "text",
+            label: "Prompt",
+            currentValue: "",
+            origin: "rule",
+            presentation: {
+              section: {
+                id: "guidance",
+              },
+            },
+          },
+        ]}
+        sections={[
+          {
+            id: "guidance",
+            title: "Guidance",
+            order: 0,
+          },
+        ]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Guidance")).toBeInTheDocument();
+    expect(screen.getByText("Prompt")).toBeInTheDocument();
+  });
+
+  it("moves widget controls from Settings into a dedicated section", () => {
+    render(
+      <GenerationInputs
+        inputs={[]}
+        sections={[
+          {
+            id: "masking",
+            title: "Masking",
+            order: 1,
+          },
+        ]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[
+          {
+            nodeId: "mask-node",
+            param: "crop_mode",
+            currentValue: "crop",
+            config: {
+              label: "Mask crop mode",
+              controlAfterGenerate: false,
+              valueType: "enum",
+              options: ["crop", "full"],
+              sectionId: "masking",
+            },
+          },
+          {
+            nodeId: "seed-node",
+            param: "seed",
+            currentValue: 42,
+            config: {
+              label: "Seed",
+              controlAfterGenerate: false,
+              valueType: "int",
+            },
+          },
+        ]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const maskingTitle = screen.getByText("Masking");
+    const settingsTitle = screen.getByText("Settings");
+
+    expect(
+      maskingTitle.compareDocumentPosition(settingsTitle) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(screen.getAllByText("Mask crop mode")).toHaveLength(2);
+    expect(screen.getAllByText("Seed")).toHaveLength(2);
+  });
+
   it("renders media inputs before text prompts by default", () => {
     render(
       <GenerationInputs

@@ -457,9 +457,12 @@ def build_widget_entries_for_class(
             if isinstance(widget_groups, dict):
                 proxy_group = widget_groups.get(param_name)
                 if isinstance(proxy_group, dict):
+                    section_id = proxy_group.get("section_id")
                     group_id = proxy_group.get("group_id")
                     group_title = proxy_group.get("group_title")
                     group_order = proxy_group.get("group_order")
+                    if isinstance(section_id, str) and section_id.strip():
+                        widget_entry["section_id"] = section_id
                     if isinstance(group_id, str) and group_id.strip():
                         widget_entry["group_id"] = group_id
                     if isinstance(group_title, str) and group_title.strip():
@@ -537,7 +540,15 @@ def merge_widget_entries_with_object_info(
             for key in ("value_type", "options"):
                 if key in enriched:
                     entry[key] = enriched[key]
-            for key in ("min", "max", "default", "group_id", "group_title", "group_order"):
+            for key in (
+                "min",
+                "max",
+                "default",
+                "section_id",
+                "group_id",
+                "group_title",
+                "group_order",
+            ):
                 if key in enriched and key not in entry:
                     entry[key] = enriched[key]
         merged[param_name] = entry

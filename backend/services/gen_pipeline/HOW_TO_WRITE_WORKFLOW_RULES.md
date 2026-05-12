@@ -69,6 +69,7 @@ sidecars must declare `"version": 3` and use the shape below.
   "version": 3,
   "name": "Optional display name",
   "default_widgets_mode": "control_after_generate",
+  "sections": [],
   "nodes": {},
   "frontend_controls": {},
   "validation": { "inputs": [] },
@@ -87,6 +88,7 @@ sidecars must declare `"version": 3` and use the shape below.
 | `version`              | `3` (literal)                         | required                   |
 | `name`                 | string                                | none                       |
 | `default_widgets_mode` | `"control_after_generate"` \| `"all"` | unset (per-node policy)    |
+| `sections`             | array of top-level panel sections     | `[]`                       |
 | `nodes`                | object keyed by node id               | `{}`                       |
 | `frontend_controls`    | object keyed by control id            | `{}`                       |
 | `validation`           | object                                | `{ "inputs": [] }`         |
@@ -362,7 +364,8 @@ you want "basically all controls, minus a few internal ones".
 | `default_randomize`      | Randomize by default (requires `min`/`max`)                       |
 | `hidden`                 | Unconditionally hidden from UI; value stays in the workflow       |
 | `frontend_only`          | Rendered in UI, value not sent to backend                         |
-| `group_id` / `group_title` / `group_order` | Cross-node grouping                              |
+| `section_id`           | Move the widget into a specific top-level section                  |
+| `group_id` / `group_title` / `group_order` | Cross-node grouping within a section               |
 | `min` / `max` / `step`   | Bounds; used by validation and randomization                      |
 | `default`                | Authored default; falls back to `object_info`                     |
 | `value_type`             | `"int" \| "float" \| "string" \| "boolean" \| "enum" \| "unknown"` |
@@ -970,7 +973,12 @@ appear behind a slot rather than as its own top-level input.
 | `param`      | inferred      | Parameter name on the node for value injection                                        |
 | `label`      | node title    | Custom display label                                                                  |
 | `class_type` | node's class  | Override for rule-defined inputs                                                      |
-| `group_id` / `group_title` / `group_order` | —   | Grouping in the input list (see below)                             |
+| `section_id` | autodetected | Top-level section override (defaults to `inputs` for media and `prompts` for text) |
+| `group_id` / `group_title` / `group_order` | —   | Grouping within a section (see below)                              |
+
+`section_id` chooses the top-level bucket (`inputs`, `prompts`, `settings`,
+or a custom id such as `masking`). `group_*` then organizes related entries
+inside that section.
 
 #### Group ordering
 

@@ -41,6 +41,7 @@ function toPipelineWidgetConfig(
     ...(control.description ? { description: control.description } : {}),
     controlAfterGenerate: false,
     frontendOnly: true,
+    ...(control.section_id ? { sectionId: control.section_id } : {}),
     ...(control.group_id ? { groupId: control.group_id } : {}),
     ...(control.group_title ? { groupTitle: control.group_title } : {}),
     ...(typeof control.group_order === "number"

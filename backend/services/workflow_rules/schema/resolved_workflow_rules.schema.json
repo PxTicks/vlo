@@ -486,7 +486,6 @@
             {
               "enum": [
                 "preserve_transparency",
-                "fill_transparent_with_neutral_gray",
                 "remove_transparency"
               ],
               "type": "string"
@@ -792,6 +791,18 @@
           ],
           "default": null,
           "title": "Options"
+        },
+        "section_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id"
         },
         "slider_display": {
           "anyOf": [
@@ -1302,6 +1313,18 @@
           "default": null,
           "title": "Label"
         },
+        "section_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id"
+        },
         "split_step_targets": {
           "items": {
             "$ref": "#/$defs/WorkflowParamReference"
@@ -1574,6 +1597,18 @@
           ],
           "default": null,
           "title": "Options"
+        },
+        "section_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id"
         },
         "slider_display": {
           "anyOf": [
@@ -2368,6 +2403,18 @@
           ],
           "default": null,
           "title": "Required"
+        },
+        "section_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id"
         }
       },
       "title": "WorkflowRuleNodePresent",
@@ -2790,6 +2837,18 @@
           "default": null,
           "title": "Options"
         },
+        "section_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id"
+        },
         "slider_display": {
           "anyOf": [
             {
@@ -2939,6 +2998,55 @@
       "title": "WorkflowRuleWidgetInputPresenceCondition",
       "type": "object"
     },
+    "WorkflowSection": {
+      "properties": {
+        "default_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Open"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Order"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "WorkflowSection",
+      "type": "object"
+    },
     "WorkflowSingleSamplerDenoiseRule": {
       "properties": {
         "group_id": {
@@ -2998,6 +3106,18 @@
           ],
           "default": null,
           "title": "Label"
+        },
+        "section_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id"
         },
         "start_step": {
           "$ref": "#/$defs/WorkflowParamReference"
@@ -3160,6 +3280,18 @@
           ],
           "default": null,
           "title": "Label"
+        },
+        "section_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id"
         },
         "video_bypass": {
           "$ref": "#/$defs/WorkflowParamReference"
@@ -3344,6 +3476,13 @@
         "$ref": "#/$defs/WorkflowRewriteRule"
       },
       "title": "Rewrites",
+      "type": "array"
+    },
+    "sections": {
+      "items": {
+        "$ref": "#/$defs/WorkflowSection"
+      },
+      "title": "Sections",
       "type": "array"
     },
     "slots": {

@@ -2,14 +2,14 @@
   "version": 3,
   "name": "VACE inpaint and stitch",
   "nodes": {
-    "98": {
+    "118": {
       "selection": {
         "export_fps": 16,
         "frame_step": 4,
         "max_frames": 81
       }
     },
-    "101": {},
+    "119": {},
     "114": {
       "widgets": {
         "switch": {
@@ -97,11 +97,11 @@
       "targets": [
         {
           "source": {
-            "node_id": "98",
+            "node_id": "118",
             "param": "file"
           },
           "mask": {
-            "node_id": "101",
+            "node_id": "119",
             "param": "file"
           },
           "mask_type": "binary",

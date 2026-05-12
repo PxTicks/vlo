@@ -3521,7 +3521,7 @@
       "id": 723,
       "type": "EmptyLTXVLatentVideo",
       "pos": [650, 3050],
-      "size": [270, 130],
+      "size": [272.990234375, 324.6845170454545],
       "flags": {},
       "order": 53,
       "mode": 0,
@@ -4138,7 +4138,7 @@
         "widget_ue_connectable": {},
         "Node name for S&R": "VLOMemoryLoadVideo"
       },
-      "widgets_values": ["Loading...", false, "refresh", "image"]
+      "widgets_values": ["Loading...", false, "refresh", false, "image"]
     },
     {
       "id": 487,
@@ -4356,7 +4356,7 @@
       "id": 774,
       "type": "VLOMemoryLoadVideo",
       "pos": [-440, 4060],
-      "size": [270, 130],
+      "size": [272.990234375, 324.6845170454545],
       "flags": {},
       "order": 44,
       "mode": 0,
@@ -4374,7 +4374,7 @@
         "widget_ue_connectable": {},
         "Node name for S&R": "VLOMemoryLoadVideo"
       },
-      "widgets_values": ["Loading...", false, "refresh", "image"]
+      "widgets_values": ["Loading...", false, "refresh", false, "image"]
     }
   ],
   "links": [

@@ -32,7 +32,7 @@
         }
       }
     },
-    "45": {
+    "244": {
       "present": {
         "label": "Start frame",
         "group_id": "frames",
@@ -41,7 +41,7 @@
         "required": false
       }
     },
-    "47": {
+    "245": {
       "present": {
         "label": "End frame",
         "group_id": "frames",
@@ -113,18 +113,18 @@
     {
       "when": {
         "kind": "input_presence",
-        "inputs": ["45"],
+        "inputs": ["244"],
         "match": "all_missing"
       },
-      "bypass": ["45", "42", "70", "71", "44", "31", "75", "114", "152"]
+      "bypass": ["244", "42", "70", "71", "44", "31", "75", "114", "152"]
     },
     {
       "when": {
         "kind": "input_presence",
-        "inputs": ["47"],
+        "inputs": ["245"],
         "match": "all_missing"
       },
-      "bypass": ["47", "49", "48", "50", "78", "116"]
+      "bypass": ["245", "49", "48", "50", "78", "116"]
     },
     {
       "when": {

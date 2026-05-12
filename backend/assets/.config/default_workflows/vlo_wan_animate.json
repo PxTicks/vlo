@@ -2543,7 +2543,7 @@
       "id": 190,
       "type": "VLOMemoryLoadVideo",
       "pos": [-1200, -2340],
-      "size": [270, 130],
+      "size": [272.990234375, 324.6845170454545],
       "flags": {},
       "order": 24,
       "mode": 0,
@@ -2562,13 +2562,13 @@
         "widget_ue_connectable": {},
         "Node name for S&R": "VLOMemoryLoadVideo"
       },
-      "widgets_values": ["Loading...", false, "refresh", "image"]
+      "widgets_values": ["Loading...", false, "refresh", false, "image"]
     },
     {
       "id": 193,
       "type": "VLOMemoryLoadImage",
       "pos": [-1546.4966160496679, -1587.1436908159535],
-      "size": [270, 150],
+      "size": [272.990234375, 386],
       "flags": {},
       "order": 25,
       "mode": 0,
@@ -2591,7 +2591,7 @@
         "widget_ue_connectable": {},
         "Node name for S&R": "VLOMemoryLoadImage"
       },
-      "widgets_values": ["Loading...", false, "refresh", "image"]
+      "widgets_values": ["Loading...", false, "refresh", false, "image"]
     },
     {
       "id": 186,
@@ -2673,7 +2673,7 @@
       "id": 185,
       "type": "VLOMemoryLoadVideo",
       "pos": [-1340, -3020],
-      "size": [270, 130],
+      "size": [272.990234375, 324.6845170454545],
       "flags": {},
       "order": 26,
       "mode": 0,
@@ -2692,7 +2692,7 @@
         "widget_ue_connectable": {},
         "Node name for S&R": "VLOMemoryLoadVideo"
       },
-      "widgets_values": ["Loading...", false, "refresh", "image"]
+      "widgets_values": ["Loading...", false, "refresh", false, "image"]
     },
     {
       "id": 187,

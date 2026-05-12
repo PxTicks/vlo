@@ -6,6 +6,8 @@ export const LOADED_WORKFLOW_DISPLAY_NAME = "loaded workflow";
 export const GENERATION_CANCELLED_BY_USER_MESSAGE =
   "Generation cancelled by user";
 export const GENERATION_INTERRUPTED_MESSAGE = "Generation interrupted";
+export const GENERATION_CANCELLED_BY_SERVER_MESSAGE =
+  "Generation cancelled by the server before it could finish";
 
 export const IDLE_PIPELINE_STATUS: GenerationPipelineStatus = {
   phase: "idle",

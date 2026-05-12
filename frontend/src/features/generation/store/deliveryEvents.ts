@@ -8,8 +8,16 @@ import {
 } from "../services/generationDeliveryApi";
 import { frontendPostprocess } from "../utils/pipeline";
 import type { GenerationJob } from "../types";
-import { applyPreviewUpdate, setJobPostprocessResult } from "./jobMutations";
-import { isGenerationInterruptionMessage } from "./constants";
+import {
+  applyPreviewUpdate,
+  isActiveGenerationJob,
+  markJobError,
+  setJobPostprocessResult,
+} from "./jobMutations";
+import {
+  GENERATION_CANCELLED_BY_SERVER_MESSAGE,
+  isGenerationInterruptionMessage,
+} from "./constants";
 import type {
   GenerationStoreGet,
   GenerationStorePatch,
@@ -49,9 +57,13 @@ function buildJobFromDelivery(
   if (!manifest.prompt_id) {
     return null;
   }
+  // A locally settled job cannot be resurrected by a late delivery_update.
+  // This covers user interrupts, mid-execution errors, and the race where a
+  // delivery_update for a server-cancelled submission arrives after the
+  // dispatch's catch has already recorded a submission error.
   if (
-    existingJob?.status === "error" &&
-    isGenerationInterruptionMessage(existingJob.error)
+    existingJob &&
+    (existingJob.status === "completed" || existingJob.status === "error")
   ) {
     return {
       ...existingJob,
@@ -376,7 +388,11 @@ export function attachDeliveryClientHandlers(
         if (!hasActiveLease) {
           return;
         }
+        const livePromptIds = new Set<string>();
         for (const delivery of message.data.deliveries) {
+          if (typeof delivery.prompt_id === "string" && delivery.prompt_id) {
+            livePromptIds.add(delivery.prompt_id);
+          }
           if (
             delivery.status === "error" &&
             delivery.prompt_id &&
@@ -386,6 +402,32 @@ export function attachDeliveryClientHandlers(
             continue;
           }
           applyDeliveryUpdate(delivery);
+        }
+        // Reconcile: any non-terminal job that thinks it has a delivery the
+        // server no longer knows about is stuck. This catches the case where
+        // we missed the `delivery_removed` event (e.g. the WS dropped right
+        // after the backend acknowledged a failed submission).
+        let reconciled = false;
+        for (const job of get().jobs.values()) {
+          if (
+            job.deliveryId &&
+            !livePromptIds.has(job.id) &&
+            isActiveGenerationJob(job)
+          ) {
+            set((state) =>
+              markJobError(
+                state,
+                job.id,
+                GENERATION_CANCELLED_BY_SERVER_MESSAGE,
+                null,
+                { completedAt: Date.now() },
+              ),
+            );
+            reconciled = true;
+          }
+        }
+        if (reconciled) {
+          void get().processGenerationQueue();
         }
         break;
       }
@@ -398,6 +440,28 @@ export function attachDeliveryClientHandlers(
       }
       case "delivery_removed": {
         ackingDeliveryIds.delete(message.data.delivery_id);
+        // A delivery can be removed because the frontend acked it (job is
+        // already terminal locally — nothing to do) or because the backend
+        // cancelled it (e.g. /comfy/generate validation 400, ComfyUI rejected
+        // the prompt, or the comfy host became unreachable). In the second
+        // case, the local job is still "queued" / "running" and would stay
+        // that way forever; transition it to error so the queue can move on.
+        const removedPromptId = message.data.prompt_id;
+        if (typeof removedPromptId === "string" && removedPromptId) {
+          const removedJob = get().jobs.get(removedPromptId);
+          if (isActiveGenerationJob(removedJob)) {
+            set((state) =>
+              markJobError(
+                state,
+                removedPromptId,
+                GENERATION_CANCELLED_BY_SERVER_MESSAGE,
+                null,
+                { completedAt: Date.now() },
+              ),
+            );
+            void get().processGenerationQueue();
+          }
+        }
         break;
       }
     }

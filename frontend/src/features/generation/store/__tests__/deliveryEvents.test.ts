@@ -623,4 +623,83 @@ describe("deliveryEvents", () => {
     expect(mockFrontendPostprocess).not.toHaveBeenCalled();
   });
 
+  it("transitions a queued job to error when the server removes its delivery (e.g. /comfy/generate 400)", async () => {
+    // Repro of the perpetually-queued bug: the backend creates a delivery and
+    // broadcasts a queued delivery_update, then ComfyUI/validation rejects the
+    // prompt with a 400, so the backend acknowledges the delivery and emits a
+    // delivery_removed. Before this fix the local job would stay "queued"
+    // forever; now it must transition to error and the queue must resume.
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: {
+        delivery: makeCompletedManifest({ status: "queued", outputs: [] }),
+      },
+    });
+
+    expect(useGenerationStore.getState().jobs.get("prompt-1")).toMatchObject({
+      status: "queued",
+    });
+
+    client.emitMessage({
+      type: "delivery_removed",
+      data: { delivery_id: "delivery-1", prompt_id: "prompt-1" },
+    });
+
+    const finalJob = useGenerationStore.getState().jobs.get("prompt-1");
+    expect(finalJob?.status).toBe("error");
+    expect(finalJob?.error).toMatch(/cancelled by the server/i);
+    expect(mockProcessGenerationQueue).toHaveBeenCalled();
+  });
+
+  it("ignores delivery_removed once a job has already completed locally", async () => {
+    useGenerationStore.setState({
+      jobs: new Map<string, GenerationJob>([
+        [
+          "prompt-1",
+          {
+            ...makeQueuedJob("prompt-1"),
+            status: "completed",
+            progress: 100,
+            completedAt: Date.now(),
+          },
+        ],
+      ]),
+      activeJobId: null,
+    });
+
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_removed",
+      data: { delivery_id: "delivery-1", prompt_id: "prompt-1" },
+    });
+
+    const finalJob = useGenerationStore.getState().jobs.get("prompt-1");
+    expect(finalJob?.status).toBe("completed");
+    expect(finalJob?.error).toBeNull();
+  });
+
+  it("reconciles a stuck queued job against a snapshot that no longer lists it", async () => {
+    // Covers the case where we missed the delivery_removed entirely (e.g.
+    // delivery websocket dropped) and only see the new snapshot on reconnect.
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "snapshot",
+      data: { project_id: "project-1", deliveries: [] },
+    });
+
+    const finalJob = useGenerationStore.getState().jobs.get("prompt-1");
+    expect(finalJob?.status).toBe("error");
+    expect(finalJob?.error).toMatch(/cancelled by the server/i);
+    expect(mockProcessGenerationQueue).toHaveBeenCalled();
+  });
 });

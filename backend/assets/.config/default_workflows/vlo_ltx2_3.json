@@ -40,7 +40,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 58,
+      "order": 57,
       "mode": 0,
       "inputs": [
         {
@@ -131,7 +131,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 89,
+      "order": 88,
       "mode": 0,
       "inputs": [
         {
@@ -166,7 +166,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 90,
+      "order": 89,
       "mode": 0,
       "inputs": [
         {
@@ -341,7 +341,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 75,
+      "order": 74,
       "mode": 0,
       "inputs": [
         {
@@ -431,7 +431,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 77,
+      "order": 76,
       "mode": 0,
       "inputs": [
         {
@@ -466,7 +466,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 76,
+      "order": 75,
       "mode": 0,
       "inputs": [
         {
@@ -501,7 +501,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 60,
+      "order": 59,
       "mode": 0,
       "inputs": [
         {
@@ -563,7 +563,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 87,
+      "order": 86,
       "mode": 0,
       "inputs": [
         {
@@ -598,7 +598,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 70,
+      "order": 69,
       "mode": 0,
       "inputs": [
         {
@@ -685,7 +685,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 61,
+      "order": 60,
       "mode": 0,
       "inputs": [
         {
@@ -720,7 +720,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 63,
+      "order": 62,
       "mode": 0,
       "inputs": [
         {
@@ -836,7 +836,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 62,
+      "order": 61,
       "mode": 0,
       "inputs": [
         {
@@ -1001,7 +1001,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 74,
+      "order": 73,
       "mode": 0,
       "inputs": [
         {
@@ -1062,7 +1062,7 @@
       "pos": [190, 3590],
       "size": [370, 100],
       "flags": {},
-      "order": 83,
+      "order": 82,
       "mode": 4,
       "inputs": [
         {
@@ -1093,7 +1093,7 @@
       "pos": [2320, 3350],
       "size": [250, 270],
       "flags": {},
-      "order": 101,
+      "order": 100,
       "mode": 0,
       "inputs": [
         {
@@ -1239,7 +1239,7 @@
       "pos": [1990, 4210],
       "size": [280, 170],
       "flags": {},
-      "order": 84,
+      "order": 83,
       "mode": 0,
       "inputs": [
         {
@@ -1337,7 +1337,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 94,
+      "order": 93,
       "mode": 0,
       "inputs": [
         {
@@ -1426,7 +1426,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 67,
+      "order": 66,
       "mode": 4,
       "inputs": [
         {
@@ -1543,7 +1543,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 93,
+      "order": 92,
       "mode": 0,
       "inputs": [
         {
@@ -1578,7 +1578,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 92,
+      "order": 91,
       "mode": 0,
       "inputs": [
         {
@@ -1611,7 +1611,7 @@
       "pos": [1570, 4150],
       "size": [280, 90],
       "flags": {},
-      "order": 82,
+      "order": 81,
       "mode": 0,
       "inputs": [
         {
@@ -1668,7 +1668,7 @@
       "pos": [2650, 3370],
       "size": [310, 50],
       "flags": {},
-      "order": 103,
+      "order": 102,
       "mode": 0,
       "inputs": [
         {
@@ -1710,7 +1710,7 @@
       "pos": [1990, 3480],
       "size": [280, 110],
       "flags": {},
-      "order": 66,
+      "order": 65,
       "mode": 0,
       "inputs": [
         {
@@ -1759,7 +1759,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 95,
+      "order": 94,
       "mode": 0,
       "inputs": [
         {
@@ -1846,7 +1846,7 @@
       "pos": [1580, 4010],
       "size": [280, 70],
       "flags": {},
-      "order": 98,
+      "order": 97,
       "mode": 0,
       "inputs": [
         {
@@ -1918,7 +1918,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 108,
+      "order": 107,
       "mode": 0,
       "inputs": [
         {
@@ -1951,7 +1951,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 105,
+      "order": 104,
       "mode": 0,
       "inputs": [
         {
@@ -1995,7 +1995,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 109,
+      "order": 108,
       "mode": 0,
       "inputs": [
         {
@@ -2056,7 +2056,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 86,
+      "order": 85,
       "mode": 0,
       "inputs": [
         {
@@ -2150,7 +2150,7 @@
       "pos": [1250, 3390],
       "size": [230, 70],
       "flags": {},
-      "order": 85,
+      "order": 84,
       "mode": 0,
       "inputs": [
         {
@@ -2187,7 +2187,7 @@
       "pos": [1590, 3730],
       "size": [270, 220],
       "flags": {},
-      "order": 96,
+      "order": 95,
       "mode": 0,
       "inputs": [
         {
@@ -2296,7 +2296,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 100,
+      "order": 99,
       "mode": 0,
       "inputs": [
         {
@@ -2361,7 +2361,7 @@
       "pos": [1980, 3930],
       "size": [280, 100],
       "flags": {},
-      "order": 68,
+      "order": 67,
       "mode": 0,
       "inputs": [
         {
@@ -2461,7 +2461,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 107,
+      "order": 106,
       "mode": 0,
       "inputs": [
         {
@@ -2496,7 +2496,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 72,
+      "order": 71,
       "mode": 0,
       "inputs": [
         {
@@ -2762,7 +2762,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 91,
+      "order": 90,
       "mode": 0,
       "inputs": [
         {
@@ -2793,7 +2793,7 @@
       "pos": [1590, 3330],
       "size": [280, 120],
       "flags": {},
-      "order": 80,
+      "order": 79,
       "mode": 0,
       "inputs": [
         {
@@ -2849,7 +2849,7 @@
       "pos": [2650, 3680],
       "size": [310, 50],
       "flags": {},
-      "order": 106,
+      "order": 105,
       "mode": 0,
       "inputs": [
         {
@@ -2937,7 +2937,7 @@
       "pos": [1250, 3680],
       "size": [220, 60],
       "flags": {},
-      "order": 81,
+      "order": 80,
       "mode": 0,
       "inputs": [
         {
@@ -3088,7 +3088,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 69,
+      "order": 68,
       "mode": 0,
       "inputs": [
         {
@@ -3127,7 +3127,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 59,
+      "order": 58,
       "mode": 0,
       "inputs": [
         {
@@ -3277,7 +3277,7 @@
       "pos": [1570, 4300],
       "size": [320, 100],
       "flags": {},
-      "order": 73,
+      "order": 72,
       "mode": 0,
       "inputs": [
         {
@@ -3315,7 +3315,7 @@
       "pos": [490, 5030],
       "size": [240, 50],
       "flags": {},
-      "order": 97,
+      "order": 96,
       "mode": 0,
       "inputs": [
         {
@@ -3360,7 +3360,7 @@
       "pos": [500, 4790],
       "size": [240, 90],
       "flags": {},
-      "order": 88,
+      "order": 87,
       "mode": 0,
       "inputs": [
         {
@@ -3405,7 +3405,7 @@
       "pos": [800, 5090],
       "size": [270, 50],
       "flags": {},
-      "order": 104,
+      "order": 103,
       "mode": 0,
       "inputs": [
         {
@@ -3447,7 +3447,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 71,
+      "order": 70,
       "mode": 0,
       "inputs": [
         {
@@ -3499,7 +3499,7 @@
       "pos": [810, 4830],
       "size": [270, 60],
       "flags": {},
-      "order": 102,
+      "order": 101,
       "mode": 0,
       "inputs": [
         {
@@ -3540,7 +3540,7 @@
       "pos": [810, 4710],
       "size": [290, 80],
       "flags": {},
-      "order": 99,
+      "order": 98,
       "mode": 0,
       "inputs": [
         {
@@ -3578,7 +3578,7 @@
       "pos": [3060, 3260],
       "size": [590, 675.75],
       "flags": {},
-      "order": 110,
+      "order": 109,
       "mode": 0,
       "inputs": [
         {
@@ -3655,40 +3655,6 @@
       }
     },
     {
-      "id": 45,
-      "type": "LoadImage",
-      "pos": [540, 2670],
-      "size": [300, 480],
-      "flags": {
-        "collapsed": false
-      },
-      "order": 55,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": []
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": null
-        }
-      ],
-      "title": "FIRST FRAME",
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.8.2",
-        "Node name for S&R": "LoadImage",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["dummy_photo.jpeg", "image"],
-      "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
-    },
-    {
       "id": 44,
       "type": "ImageResizeKJv2",
       "pos": [750, 3460],
@@ -3696,7 +3662,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 78,
+      "order": 77,
       "mode": 0,
       "inputs": [
         {
@@ -3773,9 +3739,9 @@
       "id": 244,
       "type": "VLOMemoryLoadImage",
       "pos": [650, 3330],
-      "size": [272.990234375, 386],
+      "size": [280, 390],
       "flags": {},
-      "order": 56,
+      "order": 55,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -3794,8 +3760,8 @@
       "properties": {
         "aux_id": "PxTicks/ComfyUI-vlo",
         "ver": "6f054dd1f09cc97ae4991c25792bf5d1c5f96e8b",
-        "widget_ue_connectable": {},
-        "Node name for S&R": "VLOMemoryLoadImage"
+        "Node name for S&R": "VLOMemoryLoadImage",
+        "widget_ue_connectable": {}
       },
       "widgets_values": [
         "00007-1426653811.png",
@@ -3806,14 +3772,92 @@
       ]
     },
     {
+      "id": 16,
+      "type": "CLIPTextEncode",
+      "pos": [990, 3910],
+      "size": [470, 340],
+      "flags": {},
+      "order": 63,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 186
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [279]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.56",
+        "Node name for S&R": "CLIPTextEncode",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [""],
+      "color": "#346434",
+      "bgcolor": "rgba(24,24,27,.9)"
+    },
+    {
+      "id": 11,
+      "type": "CLIPTextEncode",
+      "pos": [1000, 4310],
+      "size": [470, 120],
+      "flags": {},
+      "order": 64,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 187
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [280]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.56",
+        "Node name for S&R": "CLIPTextEncode",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [""],
+      "color": "#422342",
+      "bgcolor": "rgba(24,24,27,.9)"
+    },
+    {
       "id": 48,
       "type": "ImageResizeKJv2",
       "pos": [650, 3990],
       "size": [280, 540],
       "flags": {
-        "collapsed": false
+        "collapsed": true
       },
-      "order": 79,
+      "order": 78,
       "mode": 0,
       "inputs": [
         {
@@ -3889,10 +3933,10 @@
     {
       "id": 245,
       "type": "VLOMemoryLoadImage",
-      "pos": [650, 3820],
-      "size": [272.990234375, 386],
+      "pos": [650, 3830],
+      "size": [280, 390],
       "flags": {},
-      "order": 57,
+      "order": 56,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -3911,8 +3955,8 @@
       "properties": {
         "aux_id": "PxTicks/ComfyUI-vlo",
         "ver": "6f054dd1f09cc97ae4991c25792bf5d1c5f96e8b",
-        "widget_ue_connectable": {},
-        "Node name for S&R": "VLOMemoryLoadImage"
+        "Node name for S&R": "VLOMemoryLoadImage",
+        "widget_ue_connectable": {}
       },
       "widgets_values": [
         "00007-1426653811.png",
@@ -3921,84 +3965,6 @@
         false,
         "image"
       ]
-    },
-    {
-      "id": 16,
-      "type": "CLIPTextEncode",
-      "pos": [990, 3910],
-      "size": [470, 340],
-      "flags": {},
-      "order": 64,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "clip",
-          "type": "CLIP",
-          "link": 186
-        }
-      ],
-      "outputs": [
-        {
-          "name": "CONDITIONING",
-          "type": "CONDITIONING",
-          "links": [279]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.56",
-        "Node name for S&R": "CLIPTextEncode",
-        "enableTabs": false,
-        "tabWidth": 65,
-        "tabXOffset": 10,
-        "hasSecondTab": false,
-        "secondTabText": "Send Back",
-        "secondTabOffset": 80,
-        "secondTabWidth": 65,
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [""],
-      "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
-    },
-    {
-      "id": 11,
-      "type": "CLIPTextEncode",
-      "pos": [1000, 4310],
-      "size": [470, 120],
-      "flags": {},
-      "order": 65,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "clip",
-          "type": "CLIP",
-          "link": 187
-        }
-      ],
-      "outputs": [
-        {
-          "name": "CONDITIONING",
-          "type": "CONDITIONING",
-          "links": [280]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.56",
-        "Node name for S&R": "CLIPTextEncode",
-        "enableTabs": false,
-        "tabWidth": 65,
-        "tabXOffset": 10,
-        "hasSecondTab": false,
-        "secondTabText": "Send Back",
-        "secondTabOffset": 80,
-        "secondTabWidth": 65,
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [""],
-      "color": "#422342",
-      "bgcolor": "rgba(24,24,27,.9)"
     }
   ],
   "links": [
@@ -4185,8 +4151,8 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.20918198050150652,
-      "offset": [537.9843770895562, -2597.70410398229]
+      "scale": 0.33002775033586845,
+      "offset": [685.3445086827398, -2848.8145306805686]
     },
     "frontendVersion": "1.42.15",
     "workflowRendererVersion": "LG",

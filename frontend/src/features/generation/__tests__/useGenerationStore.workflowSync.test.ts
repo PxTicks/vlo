@@ -68,6 +68,7 @@ function resetGenerationStore() {
     activeWorkflowRules: null,
     rulesWorkflowSourceId: null,
     activeRulesWarnings: [],
+    suspectRuleLossCount: 0,
     derivedMaskMappings: [],
     mediaInputs: {},
     workflowWarning: null,
@@ -1024,6 +1025,280 @@ describe("useGenerationStore workflow editor sync", () => {
       },
     ]);
     expect(state.activeWorkflowRules?.nodes?.["115"]).toBeUndefined();
+  });
+
+  it("defers destructive rule replacement when an editor read drops a stage from the cached rules", async () => {
+    const fullRules = createDefaultWorkflowRules({
+      pipeline: [
+        {
+          id: "mask_processing",
+          kind: "mask_processing",
+          targets: [
+            {
+              source: { node_id: "774", param: "file" },
+              mask: { node_id: "771", param: "file" },
+              mask_type: "binary",
+              purpose: "video",
+            },
+          ],
+        },
+      ],
+    });
+
+    vi.spyOn(comfyApi, "resolveWorkflowRules").mockResolvedValue({
+      workflow_id: "ltx_inpaint.json",
+      rules: fullRules,
+      warnings: [],
+    });
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "ltx_inpaint.json",
+      availableWorkflows: [{ id: "ltx_inpaint.json", name: "LTX Inpaint" }],
+      activeRulesWarnings: [],
+      activeWorkflowRules: fullRules,
+      rulesWorkflowSourceId: "ltx_inpaint.json",
+      syncedGraphData: {
+        nodes: [
+          { id: 771, type: "VLOMemoryLoadVideo" },
+          { id: 774, type: "VLOMemoryLoadVideo" },
+          { id: 113, type: "SamplerCustomAdvanced" },
+        ],
+      },
+    });
+
+    const partialInputs: WorkflowInput[] = [
+      {
+        nodeId: "771",
+        classType: "VLOMemoryLoadVideo",
+        inputType: "video",
+        param: "file",
+        label: "Load Video Mask",
+        currentValue: null,
+        origin: "inferred",
+      },
+      {
+        nodeId: "113",
+        classType: "SamplerCustomAdvanced",
+        inputType: "text",
+        param: "noise_seed",
+        label: "Sampler",
+        currentValue: null,
+        origin: "inferred",
+      },
+    ];
+
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      null,
+      {
+        // Transient partial read: node 774 is missing, so the mask_processing
+        // target would prune to zero — destructive, were the deferral not in
+        // place.
+        nodes: [
+          { id: 771, type: "VLOMemoryLoadVideo" },
+          { id: 113, type: "SamplerCustomAdvanced" },
+        ],
+      },
+      partialInputs,
+      "ltx_inpaint.json",
+    );
+
+    const state = useGenerationStore.getState();
+    expect(state.suspectRuleLossCount).toBe(1);
+    // Rules preserved across the suspect read.
+    expect(state.activeWorkflowRules?.pipeline?.[0]?.kind).toBe(
+      "mask_processing",
+    );
+    expect(state.rulesWorkflowSourceId).toBe("ltx_inpaint.json");
+    expect(state.selectedWorkflowId).toBe("ltx_inpaint.json");
+    // Old rules applied to the new inputs — node 771 stays hidden via the
+    // derived-mask mapping.
+    expect(state.workflowInputs.map((input) => input.nodeId)).toEqual(["113"]);
+    expect(state.derivedMaskMappings).toMatchObject([
+      { maskNodeId: "771", maskParam: "file", sourceNodeId: "774" },
+    ]);
+  });
+
+  it("applies destructive rule replacement after a second confirming read of the same loss", async () => {
+    const fullRules = createDefaultWorkflowRules({
+      pipeline: [
+        {
+          id: "mask_processing",
+          kind: "mask_processing",
+          targets: [
+            {
+              source: { node_id: "774", param: "file" },
+              mask: { node_id: "771", param: "file" },
+              mask_type: "binary",
+              purpose: "video",
+            },
+          ],
+        },
+      ],
+    });
+
+    vi.spyOn(comfyApi, "resolveWorkflowRules").mockResolvedValue({
+      workflow_id: "ltx_inpaint.json",
+      rules: fullRules,
+      warnings: [],
+    });
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "ltx_inpaint.json",
+      availableWorkflows: [{ id: "ltx_inpaint.json", name: "LTX Inpaint" }],
+      activeRulesWarnings: [],
+      activeWorkflowRules: fullRules,
+      rulesWorkflowSourceId: "ltx_inpaint.json",
+      syncedGraphData: {
+        nodes: [
+          { id: 771, type: "VLOMemoryLoadVideo" },
+          { id: 774, type: "VLOMemoryLoadVideo" },
+          { id: 113, type: "SamplerCustomAdvanced" },
+        ],
+      },
+    });
+
+    const partialGraph = {
+      nodes: [
+        { id: 771, type: "VLOMemoryLoadVideo" },
+        { id: 113, type: "SamplerCustomAdvanced" },
+      ],
+    };
+    const partialInputs: WorkflowInput[] = [
+      {
+        nodeId: "771",
+        classType: "VLOMemoryLoadVideo",
+        inputType: "video",
+        param: "file",
+        label: "Load Video Mask",
+        currentValue: null,
+        origin: "inferred",
+      },
+    ];
+
+    // First read: deferred.
+    await useGenerationStore
+      .getState()
+      .registerWorkflowFromEditor(null, partialGraph, partialInputs, "ltx_inpaint.json");
+    expect(useGenerationStore.getState().suspectRuleLossCount).toBe(1);
+    expect(
+      useGenerationStore.getState().activeWorkflowRules?.pipeline?.[0]?.kind,
+    ).toBe("mask_processing");
+
+    // Second read with the same loss: confirmed, destructive change applies.
+    await useGenerationStore
+      .getState()
+      .registerWorkflowFromEditor(null, partialGraph, partialInputs, "ltx_inpaint.json");
+
+    const state = useGenerationStore.getState();
+    expect(state.suspectRuleLossCount).toBe(0);
+    // mask_processing no longer survives pruning against the partial graph.
+    expect(state.activeWorkflowRules?.pipeline ?? []).toEqual([]);
+    // Node 771 now surfaces as an input because the rule is gone.
+    expect(state.workflowInputs.map((input) => input.nodeId)).toContain("771");
+  });
+
+  it("resets the suspect-rule-loss counter on a non-suspect editor read", async () => {
+    const fullRules = createDefaultWorkflowRules({
+      pipeline: [
+        {
+          id: "mask_processing",
+          kind: "mask_processing",
+          targets: [
+            {
+              source: { node_id: "774", param: "file" },
+              mask: { node_id: "771", param: "file" },
+              mask_type: "binary",
+              purpose: "video",
+            },
+          ],
+        },
+      ],
+    });
+
+    vi.spyOn(comfyApi, "resolveWorkflowRules").mockResolvedValue({
+      workflow_id: "ltx_inpaint.json",
+      rules: fullRules,
+      warnings: [],
+    });
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "ltx_inpaint.json",
+      availableWorkflows: [{ id: "ltx_inpaint.json", name: "LTX Inpaint" }],
+      activeRulesWarnings: [],
+      activeWorkflowRules: fullRules,
+      rulesWorkflowSourceId: "ltx_inpaint.json",
+      suspectRuleLossCount: 0,
+      syncedGraphData: {
+        nodes: [
+          { id: 771, type: "VLOMemoryLoadVideo" },
+          { id: 774, type: "VLOMemoryLoadVideo" },
+          { id: 113, type: "SamplerCustomAdvanced" },
+        ],
+      },
+    });
+
+    // First read: partial graph → suspect, counter increments to 1.
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      null,
+      {
+        nodes: [
+          { id: 771, type: "VLOMemoryLoadVideo" },
+          { id: 113, type: "SamplerCustomAdvanced" },
+        ],
+      },
+      [
+        {
+          nodeId: "771",
+          classType: "VLOMemoryLoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Load Video Mask",
+          currentValue: null,
+          origin: "inferred",
+        },
+      ],
+      "ltx_inpaint.json",
+    );
+    expect(useGenerationStore.getState().suspectRuleLossCount).toBe(1);
+
+    // Second read: full graph again → not suspect, counter resets.
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      null,
+      {
+        nodes: [
+          { id: 771, type: "VLOMemoryLoadVideo" },
+          { id: 774, type: "VLOMemoryLoadVideo" },
+          { id: 113, type: "SamplerCustomAdvanced" },
+        ],
+      },
+      [
+        {
+          nodeId: "771",
+          classType: "VLOMemoryLoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Load Video Mask",
+          currentValue: null,
+          origin: "inferred",
+        },
+        {
+          nodeId: "774",
+          classType: "VLOMemoryLoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Source Video",
+          currentValue: null,
+          origin: "inferred",
+        },
+      ],
+      "ltx_inpaint.json",
+    );
+
+    const state = useGenerationStore.getState();
+    expect(state.suspectRuleLossCount).toBe(0);
+    expect(state.activeWorkflowRules?.pipeline?.[0]?.kind).toBe(
+      "mask_processing",
+    );
   });
 
   it("drops incompatible persisted rules when a different workflow is loaded into the editor tab", async () => {

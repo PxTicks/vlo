@@ -42,6 +42,7 @@ import {
   EMPTY_WORKFLOW_RULES,
   applyPresentationRules,
   areWorkflowRulesEffectivelyEmpty,
+  findLostRuleFragments,
   hasNodeLinkedWorkflowRules,
   haveSubstantialWorkflowOverlap,
   pruneWorkflowRulesForWorkflows,
@@ -62,6 +63,14 @@ interface WorkflowStoreStateOptions {
 
 const METADATA_REPLAY_INPUT_WAIT_TIMEOUT_MS = 4_000;
 const METADATA_REPLAY_INPUT_WAIT_POLL_MS = 50;
+
+/**
+ * Number of consecutive editor reads that must report the same rule loss
+ * before we accept it as real and overwrite the cached rules. Set to 2 so a
+ * single transient partial read (ComfyUI mid-update) is ignored, while a
+ * genuine workflow change still applies on the next poll.
+ */
+const SUSPECT_RULE_LOSS_CONFIRMATION_THRESHOLD = 2;
 
 async function waitForReplayWorkflowInputs(
   get: GenerationStoreGet,
@@ -113,6 +122,7 @@ export function buildWorkflowStoreState(
     activeWorkflowRules: null,
     rulesWorkflowSourceId: null,
     activeRulesWarnings: [],
+    suspectRuleLossCount: 0,
     derivedMaskMappings: [],
     targetResolution: DEFAULT_GENERATION_TARGET_RESOLUTION,
     setTargetResolution: (targetResolution) => set({ targetResolution }),
@@ -289,6 +299,84 @@ export function buildWorkflowStoreState(
         );
       }
 
+      // Defer destructive rule replacement when the freshly resolved rules
+      // have lost stages/nodes/derived widgets that the cached rules already
+      // had, AND the new graph clearly belongs to the same workflow we just
+      // had. This guards against transient partial `activeState` reads from
+      // the iframe (e.g. ComfyUI mid-update during a model change or close)
+      // permanently stranding the panel with empty rules.
+      //
+      // We require:
+      //   - identity preserved: the new graph substantially overlaps the
+      //     previously synced one (`previousWorkflowMatches`). Filename
+      //     match alone is too weak — a different workflow could land in a
+      //     tab that happens to share the selected filename, and we'd see
+      //     legitimate rule changes incorrectly held back.
+      //   - cached rules were non-empty and tied to a known source: nothing
+      //     to protect otherwise. (A `rulesWorkflowSourceId === null` state
+      //     means the rules are already orphaned from a previous wipe.)
+      //   - actual loss: at least one stage / node rule / derived widget /
+      //     rewrite / media_fallback present in the cached rules is missing
+      //     from the resolved+pruned ones.
+      const previousRules = state.activeWorkflowRules;
+      const previousRulesProtectable =
+        previousRules !== null &&
+        !areWorkflowRulesEffectivelyEmpty(previousRules) &&
+        state.rulesWorkflowSourceId !== null;
+      const lostFragments = previousRulesProtectable
+        ? findLostRuleFragments(previousRules, resolvedRules)
+        : null;
+      const suspectRuleLoss =
+        previousWorkflowMatches && lostFragments !== null && lostFragments.hasLoss;
+      const nextSuspectCount = suspectRuleLoss
+        ? state.suspectRuleLossCount + 1
+        : 0;
+      const deferDestructiveReplacement =
+        suspectRuleLoss &&
+        nextSuspectCount < SUSPECT_RULE_LOSS_CONFIRMATION_THRESHOLD;
+
+      if (deferDestructiveReplacement && previousRules) {
+        const deferredPresented = applyPresentationRules(
+          inputs,
+          previousRules,
+          workflow,
+          graphData,
+        );
+        const deferredRuleWarnings = mergeRuleWarnings(
+          state.activeRulesWarnings,
+          deferredPresented.presentationWarnings,
+        );
+
+        console.warn(
+          "[Generation] Editor read reported rule loss while workflow identity is preserved; deferring destructive rule replacement",
+          {
+            lostFragments,
+            suspectRuleLossCount: nextSuspectCount,
+            rulesWorkflowSourceId: state.rulesWorkflowSourceId,
+          },
+        );
+
+        set((currentState) => ({
+          syncedWorkflow: workflow,
+          syncedGraphData: graphData,
+          workflowInputs: deferredPresented.inputs,
+          hasInferredInputs: deferredPresented.hasInferredInputs,
+          derivedMaskMappings: deferredPresented.derivedMaskMappings,
+          workflowRuleWarnings: deferredRuleWarnings,
+          workflowLoadError: null,
+          suspectRuleLossCount: nextSuspectCount,
+          mediaInputs: carryOverMediaInputs(
+            currentState.workflowInputs,
+            currentState.mediaInputs,
+            deferredPresented.inputs,
+          ),
+          isWorkflowLoading: false,
+          workflowLoadState: "ready",
+          isWorkflowReady: true,
+        }));
+        return;
+      }
+
       const presented = applyPresentationRules(
         inputs,
         resolvedRules,
@@ -339,6 +427,7 @@ export function buildWorkflowStoreState(
           activeWorkflowRules: resolvedRules,
           rulesWorkflowSourceId: resolvedRulesSourceId,
           activeRulesWarnings: resolvedRulesWarnings,
+          suspectRuleLossCount: 0,
           mediaInputs: carryOverMediaInputs(
             currentState.workflowInputs,
             currentState.mediaInputs,
@@ -379,6 +468,7 @@ export function buildWorkflowStoreState(
         activeWorkflowRules: resolvedRules,
         rulesWorkflowSourceId: resolvedRulesSourceId,
         activeRulesWarnings: resolvedRulesWarnings,
+        suspectRuleLossCount: 0,
         mediaInputs: carryOverMediaInputs(
           currentState.workflowInputs,
           currentState.mediaInputs,
@@ -480,6 +570,7 @@ export function buildWorkflowStoreState(
         hasInferredInputs: false,
         derivedMaskMappings: [],
         pendingReplayPanelState: null,
+        suspectRuleLossCount: 0,
       });
 
       let deferred = false;
@@ -700,6 +791,7 @@ export function buildWorkflowStoreState(
         hasInferredInputs: false,
         derivedMaskMappings: [],
         pendingReplayPanelState: null,
+        suspectRuleLossCount: 0,
         // Regeneration should restore exactly the saved media inputs rather
         // than heuristically carrying over whatever the panel currently holds.
         mediaInputs: pruneMediaInputs(state.mediaInputs, []),

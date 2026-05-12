@@ -453,6 +453,69 @@ export function areWorkflowRulesEffectivelyEmpty(
   );
 }
 
+export interface LostRuleFragments {
+  pipelineStageIds: string[];
+  nodeIds: string[];
+  derivedWidgetIds: string[];
+  rewriteCount: number;
+  mediaFallbackCount: number;
+  hasLoss: boolean;
+}
+
+export function findLostRuleFragments(
+  previousRules: WorkflowRules | null | undefined,
+  nextRules: WorkflowRules | null | undefined,
+): LostRuleFragments {
+  const prevPipelineIds = new Set(
+    (previousRules?.pipeline ?? []).map((stage) => stage.id),
+  );
+  const nextPipelineIds = new Set(
+    (nextRules?.pipeline ?? []).map((stage) => stage.id),
+  );
+  const pipelineStageIds = [...prevPipelineIds].filter(
+    (id) => !nextPipelineIds.has(id),
+  );
+
+  const prevNodeIds = new Set(Object.keys(previousRules?.nodes ?? {}));
+  const nextNodeIds = new Set(Object.keys(nextRules?.nodes ?? {}));
+  const nodeIds = [...prevNodeIds].filter((id) => !nextNodeIds.has(id));
+
+  const prevDerivedIds = new Set(
+    (previousRules?.derived_widgets ?? []).map((widget) => widget.id),
+  );
+  const nextDerivedIds = new Set(
+    (nextRules?.derived_widgets ?? []).map((widget) => widget.id),
+  );
+  const derivedWidgetIds = [...prevDerivedIds].filter(
+    (id) => !nextDerivedIds.has(id),
+  );
+
+  const rewriteCount = Math.max(
+    0,
+    (previousRules?.rewrites?.length ?? 0) -
+      (nextRules?.rewrites?.length ?? 0),
+  );
+  const mediaFallbackCount = Math.max(
+    0,
+    (previousRules?.media_fallbacks?.length ?? 0) -
+      (nextRules?.media_fallbacks?.length ?? 0),
+  );
+
+  return {
+    pipelineStageIds,
+    nodeIds,
+    derivedWidgetIds,
+    rewriteCount,
+    mediaFallbackCount,
+    hasLoss:
+      pipelineStageIds.length > 0 ||
+      nodeIds.length > 0 ||
+      derivedWidgetIds.length > 0 ||
+      rewriteCount > 0 ||
+      mediaFallbackCount > 0,
+  };
+}
+
 export function haveSubstantialWorkflowOverlap(
   leftWorkflows: ReadonlyArray<Record<string, unknown> | null | undefined>,
   rightWorkflows: ReadonlyArray<Record<string, unknown> | null | undefined>,

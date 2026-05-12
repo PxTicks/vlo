@@ -78,6 +78,17 @@ export interface GenerationWorkflowState {
   activeWorkflowRules: WorkflowRules | null;
   rulesWorkflowSourceId: string | null;
   activeRulesWarnings: WorkflowRuleWarning[];
+  /**
+   * How many consecutive editor reads have shown a rule loss that looks
+   * suspect — same workflow identity, but stages/nodes/derived widgets that
+   * existed in the cached rules are missing from the freshly resolved ones.
+   *
+   * Used by `registerWorkflowFromEditor` to delay destructive rule
+   * replacement until a second confirming read, so a transient partial
+   * `activeState` read from the iframe (e.g. ComfyUI mid-update during a
+   * model change/close) cannot strand the panel with empty rules.
+   */
+  suspectRuleLossCount: number;
   derivedMaskMappings: DerivedMaskMapping[];
   maskCropMode: WorkflowMaskCroppingMode;
   targetResolution: number;

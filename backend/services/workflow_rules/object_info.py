@@ -57,6 +57,26 @@ def _should_force_default_policy_widget(
     )
 
 
+def _should_surface_default_widget(
+    param_name: str,
+    widget_entry: dict[str, Any],
+) -> bool:
+    """Whether a widget should be auto-surfaced in default discovery.
+
+    Named seed params (``seed``, ``noise_seed``) and non-int widgets always
+    surface. Other ints only surface when their current
+    ``control_after_generate`` mode is ``randomize``.
+    """
+    normalized_param = param_name.strip().lower()
+    if normalized_param in _ALWAYS_DISCOVERED_WIDGET_PARAMS:
+        return True
+
+    if widget_entry.get("value_type") != "int":
+        return True
+
+    return widget_entry.get("default_randomize") is True
+
+
 def _build_forced_default_policy_widget(
     param_name: str,
     widget_entry: dict[str, Any],
@@ -577,6 +597,13 @@ def enrich_rules_with_object_info(
             linked_input_params=info.linked_input_params,
             include_all_widgets=include_all_widgets,
         )
+        if not include_all_widgets and isinstance(discovered_widgets, dict):
+            discovered_widgets = {
+                name: entry
+                for name, entry in discovered_widgets.items()
+                if isinstance(entry, dict)
+                and _should_surface_default_widget(name, entry)
+            }
         if not has_explicit_widgets_mode and default_widgets_mode is None:
             policy_widgets = _resolve_default_policy_widgets(
                 info,

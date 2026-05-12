@@ -170,6 +170,7 @@ describe("GenerationInputs", () => {
       />,
     );
 
+    expect(screen.getAllByText("Settings")).toHaveLength(1);
     expect(screen.getAllByText("Video Generation (LTX-2.3)")).toHaveLength(1);
     expect(screen.getByText("Width")).toBeInTheDocument();
     expect(screen.getByText("Height")).toBeInTheDocument();
@@ -266,7 +267,8 @@ describe("GenerationInputs", () => {
       />,
     );
 
-    expect(screen.getByText("Denoise")).toBeInTheDocument();
+    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getAllByText("Denoise")).toHaveLength(2);
     expect(screen.getByRole("slider")).toBeInTheDocument();
     expect(screen.getByText("80%")).toBeInTheDocument();
   });
@@ -308,7 +310,7 @@ describe("GenerationInputs", () => {
       />,
     );
 
-    expect(screen.getByText("Duration")).toBeInTheDocument();
+    expect(screen.getAllByText("Duration")).toHaveLength(2);
     expect(screen.getByRole("slider")).toBeInTheDocument();
     expect(screen.getByText("10 s")).toBeInTheDocument();
   });

@@ -295,47 +295,90 @@ function groupWidgetsByNode(widgetInputs: WorkflowWidgetInput[]): WidgetGroup[] 
     index: number;
   };
 
-  const grouped = new Map<string, WidgetGroup>();
-  const groupedWidgets = new Map<string, GroupedWidget[]>();
+  type WidgetGroupAccumulator = {
+    title: string;
+    widgets: GroupedWidget[];
+    firstIndex: number;
+    minOrder?: number;
+  };
+
+  const grouped = new Map<string, WidgetGroupAccumulator>();
   for (const [index, widget] of widgetInputs.entries()) {
     if (isHiddenWidget(widget)) continue;
     const groupId = widget.config.groupId || widget.nodeId;
-    const groupTitle =
-      widget.config.groupTitle ||
-      widget.config.nodeTitle ||
-      `Node ${groupId}`;
+    const groupTitle = widget.config.groupTitle || widget.config.nodeTitle || "";
     const existing = grouped.get(groupId);
     if (existing) {
-      groupedWidgets.get(groupId)?.push({ widget, index });
+      existing.widgets.push({ widget, index });
+      if (!existing.title && groupTitle) {
+        existing.title = groupTitle;
+      }
+      if (
+        typeof widget.config.groupOrder === "number" &&
+        (existing.minOrder === undefined ||
+          widget.config.groupOrder < existing.minOrder)
+      ) {
+        existing.minOrder = widget.config.groupOrder;
+      }
       continue;
     }
     grouped.set(groupId, {
-      id: groupId,
       title: groupTitle,
-      widgets: [],
+      widgets: [{ widget, index }],
+      firstIndex: index,
+      minOrder:
+        typeof widget.config.groupOrder === "number"
+          ? widget.config.groupOrder
+          : undefined,
     });
-    groupedWidgets.set(groupId, [{ widget, index }]);
   }
 
-  return Array.from(grouped.values()).map((group) => {
-    const entries = groupedWidgets.get(group.id) ?? [];
-    entries.sort((left, right) => {
-      const leftOrder = left.widget.config.groupOrder;
-      const rightOrder = right.widget.config.groupOrder;
-      if (typeof leftOrder === "number" && typeof rightOrder === "number") {
-        if (leftOrder !== rightOrder) return leftOrder - rightOrder;
-        return left.index - right.index;
+  return Array.from(grouped.entries())
+    .sort(([leftId, left], [rightId, right]) => {
+      if (
+        typeof left.minOrder === "number" &&
+        typeof right.minOrder === "number"
+      ) {
+        if (left.minOrder !== right.minOrder) {
+          return left.minOrder - right.minOrder;
+        }
+      } else if (typeof left.minOrder === "number") {
+        return -1;
+      } else if (typeof right.minOrder === "number") {
+        return 1;
       }
-      if (typeof leftOrder === "number") return -1;
-      if (typeof rightOrder === "number") return 1;
-      return left.index - right.index;
-    });
 
-    return {
-      ...group,
-      widgets: entries.map((entry) => entry.widget),
-    };
-  });
+      if (left.firstIndex !== right.firstIndex) {
+        return left.firstIndex - right.firstIndex;
+      }
+
+      return leftId.localeCompare(rightId);
+    })
+    .map(([groupId, group]) => {
+      const entries = [...group.widgets];
+      entries.sort((left, right) => {
+        const leftOrder = left.widget.config.groupOrder;
+        const rightOrder = right.widget.config.groupOrder;
+        if (typeof leftOrder === "number" && typeof rightOrder === "number") {
+          if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+          return left.index - right.index;
+        }
+        if (typeof leftOrder === "number") return -1;
+        if (typeof rightOrder === "number") return 1;
+        return left.index - right.index;
+      });
+
+      const fallbackTitle =
+        entries.length === 1
+          ? entries[0]?.widget.config.label || `Node ${groupId}`
+          : `Node ${groupId}`;
+
+      return {
+        id: groupId,
+        title: group.title || fallbackTitle,
+        widgets: entries.map((entry) => entry.widget),
+      };
+    });
 }
 
 type RenderableInputBlock =
@@ -927,6 +970,129 @@ function WidgetRow({
 
 const MemoizedWidgetRow = memo(WidgetRow);
 
+interface WidgetGroupSectionProps {
+  group: WidgetGroup;
+  widgetValues: Record<string, Record<string, unknown>>;
+  randomizeToggles: Record<string, boolean>;
+  onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
+  onToggleRandomize: (nodeId: string, param: string) => void;
+  showExactAspectRatioControl: boolean;
+  resolvedExactAspectRatioWidgetKey: string | null;
+  exactAspectRatio: boolean;
+  onExactAspectRatioChange?: (exact: boolean) => void;
+  exactAspectRatioTooltip?: string;
+  showDivider: boolean;
+}
+
+function WidgetGroupSection({
+  group,
+  widgetValues,
+  randomizeToggles,
+  onWidgetChange,
+  onToggleRandomize,
+  showExactAspectRatioControl,
+  resolvedExactAspectRatioWidgetKey,
+  exactAspectRatio,
+  onExactAspectRatioChange,
+  exactAspectRatioTooltip,
+  showDivider,
+}: WidgetGroupSectionProps) {
+  return (
+    <Box
+      sx={{
+        pt: showDivider ? 1.5 : 0,
+        borderTop: showDivider ? "1px solid rgba(255,255,255,0.08)" : "none",
+      }}
+    >
+      <Typography
+        variant="subtitle2"
+        sx={{ color: "text.primary", fontWeight: 600, mb: 1 }}
+      >
+        {group.title}
+      </Typography>
+      {group.widgets.map((widget) => {
+        const key = `${widget.nodeId}:${widget.param}`;
+        const nodeValues = widgetValues[widget.nodeId] ?? {};
+        const value = nodeValues[widget.param] ?? widget.currentValue;
+        const isRandomized = randomizeToggles[key] ?? false;
+
+        return (
+          <MemoizedWidgetRow
+            key={key}
+            widget={widget}
+            value={value}
+            isRandomized={isRandomized}
+            onWidgetChange={onWidgetChange}
+            onToggleRandomize={onToggleRandomize}
+            showExactAspectRatioControl={
+              showExactAspectRatioControl &&
+              resolvedExactAspectRatioWidgetKey === key
+            }
+            exactAspectRatio={exactAspectRatio}
+            onExactAspectRatioChange={onExactAspectRatioChange}
+            exactAspectRatioTooltip={exactAspectRatioTooltip}
+          />
+        );
+      })}
+    </Box>
+  );
+}
+
+const MemoizedWidgetGroupSection = memo(WidgetGroupSection);
+
+interface SettingsSectionProps {
+  bgColor: string;
+  groups: WidgetGroup[];
+  widgetValues: Record<string, Record<string, unknown>>;
+  randomizeToggles: Record<string, boolean>;
+  onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
+  onToggleRandomize: (nodeId: string, param: string) => void;
+  showExactAspectRatioControl: boolean;
+  resolvedExactAspectRatioWidgetKey: string | null;
+  exactAspectRatio: boolean;
+  onExactAspectRatioChange?: (exact: boolean) => void;
+  exactAspectRatioTooltip?: string;
+}
+
+function SettingsSection({
+  bgColor,
+  groups,
+  widgetValues,
+  randomizeToggles,
+  onWidgetChange,
+  onToggleRandomize,
+  showExactAspectRatioControl,
+  resolvedExactAspectRatioWidgetKey,
+  exactAspectRatio,
+  onExactAspectRatioChange,
+  exactAspectRatioTooltip,
+}: SettingsSectionProps) {
+  return (
+    <PanelSection title="Settings" bgColor={bgColor} defaultOpen={true}>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        {groups.map((group, index) => (
+          <MemoizedWidgetGroupSection
+            key={`settings-group:${group.id}`}
+            group={group}
+            widgetValues={widgetValues}
+            randomizeToggles={randomizeToggles}
+            onWidgetChange={onWidgetChange}
+            onToggleRandomize={onToggleRandomize}
+            showExactAspectRatioControl={showExactAspectRatioControl}
+            resolvedExactAspectRatioWidgetKey={resolvedExactAspectRatioWidgetKey}
+            exactAspectRatio={exactAspectRatio}
+            onExactAspectRatioChange={onExactAspectRatioChange}
+            exactAspectRatioTooltip={exactAspectRatioTooltip}
+            showDivider={index > 0}
+          />
+        ))}
+      </Box>
+    </PanelSection>
+  );
+}
+
+const MemoizedSettingsSection = memo(SettingsSection);
+
 export const GenerationInputs = memo(function GenerationInputs({
   inputs,
   textValues,
@@ -1020,44 +1186,21 @@ export const GenerationInputs = memo(function GenerationInputs({
         );
       })}
 
-      {groupedWidgets.map((group, index) => {
-        const bgColor =
-          (inputBlocks.length + index) % 2 === 0 ? "#202024" : "#18181b";
-
-        return (
-          <PanelSection
-            key={`widgets:${group.id}`}
-            title={group.title}
-            bgColor={bgColor}
-            defaultOpen={true}
-          >
-            {group.widgets.map((widget) => {
-              const key = `${widget.nodeId}:${widget.param}`;
-              const nodeValues = widgetValues[widget.nodeId] ?? {};
-              const value = nodeValues[widget.param] ?? widget.currentValue;
-              const isRandomized = randomizeToggles[key] ?? false;
-
-              return (
-                <MemoizedWidgetRow
-                  key={key}
-                  widget={widget}
-                  value={value}
-                  isRandomized={isRandomized}
-                  onWidgetChange={onWidgetChange}
-                  onToggleRandomize={onToggleRandomize}
-                  showExactAspectRatioControl={
-                    showExactAspectRatioControl &&
-                    resolvedExactAspectRatioWidgetKey === key
-                  }
-                  exactAspectRatio={exactAspectRatio}
-                  onExactAspectRatioChange={onExactAspectRatioChange}
-                  exactAspectRatioTooltip={exactAspectRatioTooltip}
-                />
-              );
-            })}
-          </PanelSection>
-        );
-      })}
+      {groupedWidgets.length > 0 ? (
+        <MemoizedSettingsSection
+          bgColor={inputBlocks.length % 2 === 0 ? "#202024" : "#18181b"}
+          groups={groupedWidgets}
+          widgetValues={widgetValues}
+          randomizeToggles={randomizeToggles}
+          onWidgetChange={onWidgetChange}
+          onToggleRandomize={onToggleRandomize}
+          showExactAspectRatioControl={showExactAspectRatioControl}
+          resolvedExactAspectRatioWidgetKey={resolvedExactAspectRatioWidgetKey}
+          exactAspectRatio={exactAspectRatio}
+          onExactAspectRatioChange={onExactAspectRatioChange}
+          exactAspectRatioTooltip={exactAspectRatioTooltip}
+        />
+      ) : null}
     </Box>
   );
 });

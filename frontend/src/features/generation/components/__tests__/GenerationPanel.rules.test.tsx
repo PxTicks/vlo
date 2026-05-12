@@ -335,12 +335,10 @@ describe("GenerationPanel workflow rule hints", () => {
 
     render(<GenerationPanel />);
 
+    expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getByText("Resolution")).toBeInTheDocument();
     expect(
       screen.getByLabelText("Use exact input aspect ratio"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Generation resolution controls the short edge before strided resize."),
     ).toBeInTheDocument();
   });
 

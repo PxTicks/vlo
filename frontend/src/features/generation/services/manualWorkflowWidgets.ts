@@ -304,7 +304,7 @@ function shouldIncludeObjectInfoWidget(
   }
 
   if (valueType === "int") {
-    return isSeedWidgetParam(param) || graphMode === "randomize";
+    return isManualWidgetParam(param, nodeTitle) || graphMode === "randomize";
   }
 
   return opts.control_after_generate === true || isManualWidgetParam(param, nodeTitle);
@@ -424,7 +424,8 @@ export function resolveManualWidgetInputs(
       const options = coerceWidgetOptions(typeSpec, opts);
       const label = param === "value" ? nodeTitle : param;
       const supportsRandomize =
-        opts.control_after_generate === true || isSeedWidgetParam(param);
+        opts.control_after_generate === true ||
+        isManualWidgetParam(param, nodeTitle);
 
       widgets.push({
         nodeId,

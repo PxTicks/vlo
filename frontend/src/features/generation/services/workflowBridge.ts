@@ -300,8 +300,10 @@ interface ComfyUIApp {
     openSource?: string,
     options?: { deferWarnings?: boolean },
   ) => Promise<void>;
+  canvas?: unknown;
   extensionManager?: {
     workflow?: ComfyUIWorkflowApi;
+    spinner?: boolean;
   };
   api?: {
     socket?: {
@@ -792,16 +794,39 @@ export async function loadWorkflowIntoIframe(
 }
 
 /**
- * Checks if the ComfyUI app inside the iframe is ready.
- * Uses only the capabilities required by the live graph-sync path.
+ * Checks if the ComfyUI app inside the iframe is ready for workflow
+ * injection.
+ *
+ * The lax check (`handleFile` or `extensionManager.workflow` exists) returned
+ * true very early: `app.extensionManager = useWorkspaceStore()` runs in
+ * ComfyUI's `App.vue` script setup, before `GraphCanvas.onMounted` has fired
+ * `comfyApp.setup()` or `workflowPersistence.initializeWorkflow()`. Injecting
+ * `handleFile` during that window races ComfyUI's own initial workflow
+ * restore, which can land last and overwrite our inject — exactly the
+ * "loaded workflow did not become active" path that drives the deferred
+ * retry chain.
+ *
+ * The gates below cover the full GraphCanvas onMounted sequence:
+ *   - `handleFile` present (app instance exists)
+ *   - `canvas` present (`comfyApp.setup()` got past LGraphCanvas creation)
+ *   - `extensionManager.spinner === false` (onMounted try-block finished —
+ *     extensions loaded, nodes registered)
+ *   - `extensionManager.workflow.activeWorkflow` truthy
+ *     (`workflowPersistence.initializeWorkflow()` ran, so our handleFile
+ *     won't race ComfyUI's restore)
  */
 export function isIframeAppReady(iframe: HTMLIFrameElement): boolean {
   try {
     const win = iframe.contentWindow as ComfyUIWindow | null;
     const app = win?.app;
     if (!app) return false;
-
-    return typeof app.handleFile === "function" || !!app.extensionManager?.workflow;
+    if (typeof app.handleFile !== "function") return false;
+    if (!app.canvas) return false;
+    const extensionManager = app.extensionManager;
+    if (!extensionManager) return false;
+    if (extensionManager.spinner === true) return false;
+    if (!extensionManager.workflow?.activeWorkflow) return false;
+    return true;
   } catch (err) {
     console.warn("[workflowBridge] isIframeAppReady failed:", err);
     return false;

@@ -48,8 +48,12 @@ function makeReadyEditorRef(): HTMLIFrameElement {
     contentWindow: {
       app: {
         handleFile: vi.fn(),
+        canvas: {},
         extensionManager: {
-          workflow: {},
+          spinner: false,
+          workflow: {
+            activeWorkflow: { filename: "wf.json" },
+          },
         },
       },
     },

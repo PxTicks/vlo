@@ -1,10 +1,41 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildWorkflowResultFromGraphData,
+  isIframeAppReady,
   parseInputsFromGraphData,
   readActiveWorkflowFromIframe,
   readPendingWarningsFromIframe,
 } from "../workflowBridge";
+
+type ReadyAppOverrides = {
+  handleFile?: unknown;
+  canvas?: unknown;
+  extensionManager?: unknown;
+};
+
+function buildIframeWithApp(
+  app: ReadyAppOverrides | null,
+): HTMLIFrameElement {
+  return {
+    contentWindow: { app },
+  } as unknown as HTMLIFrameElement;
+}
+
+function buildReadyIframe(
+  overrides: ReadyAppOverrides = {},
+): HTMLIFrameElement {
+  return buildIframeWithApp({
+    handleFile: vi.fn(),
+    canvas: {},
+    extensionManager: {
+      spinner: false,
+      workflow: {
+        activeWorkflow: { filename: "wf.json" },
+      },
+    },
+    ...overrides,
+  });
+}
 
 function buildIframeWithPendingWarnings(
   pendingWarnings: unknown,
@@ -262,6 +293,56 @@ describe("workflowBridge", () => {
     it("returns null when no warnings are present", () => {
       const iframe = buildIframeWithPendingWarnings(null);
       expect(readPendingWarningsFromIframe(iframe)).toBeNull();
+    });
+  });
+
+  describe("isIframeAppReady", () => {
+    it("returns true once the full GraphCanvas onMounted sequence has completed", () => {
+      expect(isIframeAppReady(buildReadyIframe())).toBe(true);
+    });
+
+    it("returns false when contentWindow has no app", () => {
+      expect(isIframeAppReady(buildIframeWithApp(null))).toBe(false);
+    });
+
+    it("returns false when canvas is not yet created (mid-setup)", () => {
+      expect(isIframeAppReady(buildReadyIframe({ canvas: undefined }))).toBe(
+        false,
+      );
+    });
+
+    it("returns false while the workspace spinner is still up", () => {
+      const iframe = buildReadyIframe({
+        extensionManager: {
+          spinner: true,
+          workflow: {
+            activeWorkflow: { filename: "wf.json" },
+          },
+        },
+      });
+      expect(isIframeAppReady(iframe)).toBe(false);
+    });
+
+    it("returns false before workflowPersistence.initializeWorkflow has set an active workflow", () => {
+      const iframe = buildReadyIframe({
+        extensionManager: {
+          spinner: false,
+          workflow: { activeWorkflow: null },
+        },
+      });
+      expect(isIframeAppReady(iframe)).toBe(false);
+    });
+
+    it("returns false when only the early extensionManager.workflow stub is present", () => {
+      // The lax check used to pass here, but at this point extensionManager
+      // is set in App.vue script setup — before comfyApp.setup() runs.
+      const iframe = buildIframeWithApp({
+        handleFile: vi.fn(),
+        extensionManager: {
+          workflow: {},
+        },
+      });
+      expect(isIframeAppReady(iframe)).toBe(false);
     });
   });
 });

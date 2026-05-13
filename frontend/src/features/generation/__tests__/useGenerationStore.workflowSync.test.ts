@@ -1403,7 +1403,7 @@ describe("useGenerationStore workflow editor sync", () => {
     expect(state.isWorkflowLoading).toBe(true);
   });
 
-  it("holds the workflow not-ready when the iframe app is not yet ready", async () => {
+  it("holds the workflow not-ready when the iframe app never becomes ready", async () => {
     vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
       source: "backend",
     });
@@ -1416,6 +1416,9 @@ describe("useGenerationStore workflow editor sync", () => {
       workflowSyncController,
       "injectWorkflowAndRead",
     );
+    // Inline app-ready wait would otherwise poll for 30s against a fake
+    // iframe; short-circuit it so the test exits in milliseconds.
+    vi.spyOn(workflowSyncController, "waitForAppReady").mockResolvedValue(false);
 
     // editorRef present but no `app` on contentWindow → isIframeAppReady false
     const editorRef = {
@@ -1434,6 +1437,51 @@ describe("useGenerationStore workflow editor sync", () => {
     expect(injectSpy).not.toHaveBeenCalled();
     expect(state.isWorkflowReady).toBe(false);
     expect(state.isWorkflowLoading).toBe(true);
+  });
+
+  it("injects once the iframe app becomes ready during the inline wait", async () => {
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      source: "backend",
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "wf.json",
+      rules: createDefaultWorkflowRules(),
+      warnings: [],
+    });
+    vi.spyOn(workflowSyncController, "injectWorkflowAndRead").mockResolvedValue({
+      ok: true,
+      deferred: false,
+      workflowResult: {
+        workflow: { "1": { class_type: "LoadImage", inputs: {} } },
+        graphData: { nodes: [{ id: 1, type: "LoadImage" }] },
+        inputs: makeInputs(),
+        filename: "wf.json",
+      },
+      reason: null,
+      warnings: null,
+    });
+    // Simulate the iframe finishing its boot mid-wait: waitForAppReady
+    // resolves true once, then loadWorkflow proceeds to inject.
+    vi.spyOn(workflowSyncController, "waitForAppReady").mockResolvedValue(true);
+
+    // editorRef without `app` keeps the synchronous isIframeAppReady check
+    // false, so loadWorkflow falls into the inline wait branch.
+    const editorRef = {
+      contentWindow: {},
+    } as unknown as HTMLIFrameElement;
+    useGenerationStore.setState({
+      syncedWorkflow: { old: true },
+      syncedGraphData: { old: true },
+      workflowInputs: makeInputs(),
+      editorRef,
+    });
+
+    await useGenerationStore.getState().loadWorkflow("wf.json");
+
+    expect(workflowSyncController.injectWorkflowAndRead).toHaveBeenCalled();
+    const state = useGenerationStore.getState();
+    expect(state.isWorkflowReady).toBe(true);
+    expect(state.isWorkflowLoading).toBe(false);
   });
 
   it("marks the workflow ready when no iframe is registered", async () => {

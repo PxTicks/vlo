@@ -11,7 +11,10 @@ import {
   getSupportedWorkflowResolutions,
   type WorkflowRuleWarning,
 } from "../services/workflowRules";
-import { injectWorkflowAndRead } from "../services/workflowSyncController";
+import {
+  injectWorkflowAndRead,
+  waitForAppReady,
+} from "../services/workflowSyncController";
 import { mergeRuleWarnings } from "../services/warnings";
 import { buildMediaInputActions } from "./mediaInputActions";
 import {
@@ -63,6 +66,22 @@ interface WorkflowStoreStateOptions {
 
 const METADATA_REPLAY_INPUT_WAIT_TIMEOUT_MS = 4_000;
 const METADATA_REPLAY_INPUT_WAIT_POLL_MS = 50;
+
+/**
+ * How long {@link GenerationWorkflowState.loadWorkflow} will wait inline for
+ * the ComfyUI iframe to finish initializing before falling back to a delayed
+ * retry. Sized to cover slow cold starts (extension load + node registration
+ * + initial workflow restore) without spinning the previous 750ms retry chain
+ * that re-fetched backend data on every iteration.
+ */
+const APP_READY_LOAD_TIMEOUT_MS = 30_000;
+
+/**
+ * Fallback delay used only when the inline wait above hit its timeout. The
+ * timeout already implies "the iframe is unusually slow"; retrying sooner
+ * burns backend fetches without helping.
+ */
+const APP_NOT_READY_RETRY_DELAY_MS = 2_000;
 
 /**
  * Number of consecutive editor reads that must report the same rule loss
@@ -687,50 +706,74 @@ export function buildWorkflowStoreState(
           );
         }
 
-        if (editorRef && isIframeAppReady(editorRef)) {
-          const syncResult = await injectWorkflowAndRead(
-            editorRef,
-            graphData,
-            workflowId,
-            isStale,
-            get().inputNodeMap,
-            get().rawObjectInfo,
-          );
-          if (isStale()) return;
-
-          if (syncResult.warnings) {
-            set({ workflowWarning: syncResult.warnings });
+        if (editorRef) {
+          // For non-temp workflows, wait inline for the iframe to finish
+          // initializing rather than bailing and spinning a tight retry
+          // chain. The previous 750ms retry re-fetched backend graph+rules,
+          // reset syncedGraphData → null between iterations, and fought the
+          // editor's own health-check loop. isStale cancels the wait if the
+          // user switches workflows mid-flight.
+          //
+          // Temp workflows already carry their graph in `tempWorkflow`, so
+          // we never have to wait — if the iframe isn't ready synchronously
+          // we just skip the inject and let the panel mark ready off the
+          // optimistic sync above.
+          let appReady = isIframeAppReady(editorRef);
+          if (!appReady && !isTempWorkflow) {
+            appReady = await waitForAppReady(
+              editorRef,
+              isStale,
+              APP_READY_LOAD_TIMEOUT_MS,
+            );
+            if (isStale()) return;
           }
 
-          if (!syncResult.ok) {
-            console.warn(
-              "[Generation] Failed to inject workflow",
-              syncResult.reason ?? undefined,
+          if (appReady) {
+            const syncResult = await injectWorkflowAndRead(
+              editorRef,
+              graphData,
+              workflowId,
+              isStale,
+              get().inputNodeMap,
+              get().rawObjectInfo,
             );
-          }
+            if (isStale()) return;
 
-          if (syncResult.workflowResult) {
-            get().syncWorkflow(
-              syncResult.workflowResult.workflow,
-              syncResult.workflowResult.graphData,
-              syncResult.workflowResult.inputs,
-            );
-          } else if (!isTempWorkflow && syncResult.deferred) {
-            // Iframe didn't confirm the new graph. Hold isWorkflowReady
-            // false until the scheduled retry succeeds; the finally block
-            // checks `deferred` to suppress its readiness flip.
-            deferred = true;
-            if (syncResult.reason === "inputs not found after injection") {
-              scheduleRetry(syncResult.reason, 500);
-            } else {
-              scheduleRetry(syncResult.reason ?? "workflow sync deferred");
+            if (syncResult.warnings) {
+              set({ workflowWarning: syncResult.warnings });
             }
+
+            if (!syncResult.ok) {
+              console.warn(
+                "[Generation] Failed to inject workflow",
+                syncResult.reason ?? undefined,
+              );
+            }
+
+            if (syncResult.workflowResult) {
+              get().syncWorkflow(
+                syncResult.workflowResult.workflow,
+                syncResult.workflowResult.graphData,
+                syncResult.workflowResult.inputs,
+              );
+            } else if (!isTempWorkflow && syncResult.deferred) {
+              // Iframe didn't confirm the new graph. Hold isWorkflowReady
+              // false until the scheduled retry succeeds; the finally block
+              // checks `deferred` to suppress its readiness flip.
+              deferred = true;
+              if (syncResult.reason === "inputs not found after injection") {
+                scheduleRetry(syncResult.reason, 500);
+              } else {
+                scheduleRetry(syncResult.reason ?? "workflow sync deferred");
+              }
+            }
+          } else if (!isTempWorkflow) {
+            // The inline wait timed out — ComfyUI is unusually slow to come
+            // up (or never will). Leave the panel in loading state and let
+            // a delayed retry have another go without thrashing the backend.
+            deferred = true;
+            scheduleRetry("iframe app not ready", APP_NOT_READY_RETRY_DELAY_MS);
           }
-        } else if (!isTempWorkflow && editorRef) {
-          // Iframe is mounted but not yet app-ready. Same hazard as a
-          // deferred inject — the iframe still has the previous graph.
-          deferred = true;
-          scheduleRetry("iframe app not ready");
         }
       } catch (err) {
         console.error("[Generation] Failed to load workflow:", err);

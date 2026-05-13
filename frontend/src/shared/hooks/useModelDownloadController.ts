@@ -13,9 +13,13 @@ export interface ActiveModelDownload {
 }
 
 interface UseModelDownloadControllerOptions {
-  startDownload: (modelKey: string) => Promise<StartDownloadResponse>;
+  startDownload: (modelKey: string, context?: DownloadContext) => Promise<StartDownloadResponse>;
   onDownloadComplete?: () => void;
   completionDelayMs?: number;
+}
+
+export interface DownloadContext {
+  hfToken?: string;
 }
 
 export function useModelDownloadController({
@@ -38,7 +42,7 @@ export function useModelDownloadController({
   }, []);
 
   const handleDownload = useCallback(
-    async (modelKey: string) => {
+    async (modelKey: string, context?: DownloadContext) => {
       setError(null);
 
       if (completionTimerRef.current !== null) {
@@ -47,7 +51,7 @@ export function useModelDownloadController({
       }
 
       try {
-        const result = await startDownload(modelKey);
+        const result = await startDownload(modelKey, context);
         setActiveDownload({ jobId: result.jobId, modelKey, progress: null });
 
         unsubRef.current?.();

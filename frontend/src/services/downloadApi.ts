@@ -70,6 +70,8 @@ export interface DownloadableModel {
   installed: boolean;
   directory?: string;
   filename?: string;
+  gated?: boolean;
+  gatedRepoUrl?: string | null;
 }
 
 export interface AvailableModelsResponse {
@@ -127,16 +129,22 @@ export async function startModelDownload(
   modelKey: string,
   options: {
     workflowId?: string;
+    hfToken?: string;
   } = {},
 ): Promise<StartDownloadResponse> {
+  const body: Record<string, unknown> = {
+    modelType,
+    modelKey,
+    workflowId: options.workflowId,
+  };
+  if (options.hfToken) {
+    body.hfToken = options.hfToken;
+  }
+
   const response = await fetch(`${DOWNLOADS_API}/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      modelType,
-      modelKey,
-      workflowId: options.workflowId,
-    }),
+    body: JSON.stringify(body),
   });
   return parseJsonResponse<StartDownloadResponse>(
     response,

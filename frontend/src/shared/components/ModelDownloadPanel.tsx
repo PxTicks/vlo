@@ -1,14 +1,30 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   Box,
   Button,
   CircularProgress,
+  IconButton,
+  Link,
   LinearProgress,
+  TextField,
   Typography,
 } from "@mui/material";
-import { Check, Close } from "@mui/icons-material";
+import {
+  Check,
+  Close,
+  OpenInNew,
+  Visibility,
+  VisibilityOff,
+  VpnKey,
+} from "@mui/icons-material";
 import type { DownloadableModel } from "../../services/downloadApi";
-import type { ActiveModelDownload } from "../hooks/useModelDownloadController";
+import type {
+  ActiveModelDownload,
+  DownloadContext,
+} from "../hooks/useModelDownloadController";
+
+const HF_TOKEN_STORAGE_KEY = "vlo:hf-access-token";
+const HF_TOKEN_PAGE_URL = "https://huggingface.co/settings/tokens";
 
 interface ModelDownloadPanelProps {
   icon?: ReactNode;
@@ -21,7 +37,7 @@ interface ModelDownloadPanelProps {
   activeDownload: ActiveModelDownload | null;
   beforeModels?: ReactNode;
   emptyState?: ReactNode;
-  onDownload: (modelKey: string) => void;
+  onDownload: (modelKey: string, context?: DownloadContext) => void;
   onCancel: () => void;
   variant?: "card" | "plain";
   fillHeight?: boolean;
@@ -41,6 +57,14 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+function loadStoredHfToken(): string {
+  try {
+    return globalThis.localStorage?.getItem(HF_TOKEN_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export function ModelDownloadPanel({
   icon,
   title,
@@ -57,6 +81,32 @@ export function ModelDownloadPanel({
   variant = "card",
   fillHeight = false,
 }: ModelDownloadPanelProps) {
+  const hasGatedModels = models.some((model) => model.gated);
+  const [hfToken, setHfToken] = useState<string>("");
+  const [showToken, setShowToken] = useState(false);
+
+  useEffect(() => {
+    if (hasGatedModels) {
+      setHfToken(loadStoredHfToken());
+    }
+  }, [hasGatedModels]);
+
+  const handleTokenChange = useCallback((value: string) => {
+    setHfToken(value);
+    try {
+      const trimmed = value.trim();
+      if (trimmed) {
+        globalThis.localStorage?.setItem(HF_TOKEN_STORAGE_KEY, trimmed);
+      } else {
+        globalThis.localStorage?.removeItem(HF_TOKEN_STORAGE_KEY);
+      }
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+  }, []);
+
+  const trimmedToken = hfToken.trim();
+
   return (
     <Box
       sx={{
@@ -97,6 +147,72 @@ export function ModelDownloadPanel({
       ) : null}
 
       {beforeModels ? <Box sx={{ width: "100%" }}>{beforeModels}</Box> : null}
+
+      {hasGatedModels && !loading ? (
+        <Box
+          sx={{
+            width: "100%",
+            p: 1.5,
+            borderRadius: 1,
+            border: "1px solid #4a432a",
+            bgcolor: "#2a2620",
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            textAlign: "left",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+            <VpnKey sx={{ fontSize: 16, color: "warning.light" }} />
+            <Typography variant="caption" sx={{ color: "warning.light", fontWeight: 600 }}>
+              HuggingFace access token required
+            </Typography>
+          </Box>
+          <Typography variant="caption" sx={{ color: "text.secondary", lineHeight: 1.5 }}>
+            Some FLUX models are gated. Open each gated model's repository
+            below to accept the license, create a read-scoped token at{" "}
+            <Link
+              href={HF_TOKEN_PAGE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{ color: "primary.light" }}
+            >
+              huggingface.co/settings/tokens
+            </Link>
+            , then paste it here.
+          </Typography>
+          <TextField
+            value={hfToken}
+            onChange={(event) => handleTokenChange(event.target.value)}
+            placeholder="hf_..."
+            size="small"
+            type={showToken ? "text" : "password"}
+            autoComplete="off"
+            fullWidth
+            InputProps={{
+              sx: { fontFamily: "monospace", fontSize: "0.75rem" },
+              endAdornment: (
+                <IconButton
+                  size="small"
+                  onClick={() => setShowToken((prev) => !prev)}
+                  edge="end"
+                  sx={{ color: "text.secondary" }}
+                  aria-label={showToken ? "Hide token" : "Show token"}
+                >
+                  {showToken ? (
+                    <VisibilityOff sx={{ fontSize: 16 }} />
+                  ) : (
+                    <Visibility sx={{ fontSize: 16 }} />
+                  )}
+                </IconButton>
+              ),
+            }}
+          />
+          <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.65rem" }}>
+            Saved locally in this browser for convenience.
+          </Typography>
+        </Box>
+      ) : null}
 
       {loading ? (
         <Box
@@ -168,6 +284,27 @@ export function ModelDownloadPanel({
                   {model.description}
                 </Typography>
 
+                {model.gated && model.gatedRepoUrl ? (
+                  <Button
+                    variant="text"
+                    size="small"
+                    href={model.gatedRepoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    startIcon={<OpenInNew sx={{ fontSize: 14 }} />}
+                    sx={{
+                      textTransform: "none",
+                      justifyContent: "flex-start",
+                      px: 0,
+                      mb: 0.5,
+                      color: "primary.light",
+                      fontSize: "0.7rem",
+                    }}
+                  >
+                    Accept license on HuggingFace
+                  </Button>
+                ) : null}
+
                 {model.installed ? (
                   <Typography variant="caption" sx={{ color: "success.main" }}>
                     Installed
@@ -209,11 +346,21 @@ export function ModelDownloadPanel({
                   <Button
                     variant="outlined"
                     size="small"
-                    onClick={() => void onDownload(model.key)}
-                    disabled={activeDownload !== null}
+                    onClick={() =>
+                      void onDownload(
+                        model.key,
+                        model.gated ? { hfToken: trimmedToken } : undefined,
+                      )
+                    }
+                    disabled={
+                      activeDownload !== null ||
+                      (model.gated === true && trimmedToken.length === 0)
+                    }
                     sx={{ textTransform: "none", width: "100%" }}
                   >
-                    Download
+                    {model.gated && trimmedToken.length === 0
+                      ? "Enter token to download"
+                      : "Download"}
                   </Button>
                 )}
               </Box>

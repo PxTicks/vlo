@@ -114,6 +114,80 @@ describe("WorkflowDependencyResolver", () => {
     expect(onOpenEditor).toHaveBeenCalledTimes(1);
   });
 
+  it("renders gated flux models with a license link and forwards the HF token", async () => {
+    globalThis.localStorage.removeItem("vlo:hf-access-token");
+
+    vi.mocked(getAvailableModels).mockResolvedValue({
+      sam2: [],
+      comfyui: {
+        modelDownloadsEnabled: true,
+        workflowModels: [
+          {
+            key: "diffusion_models:flux-2-klein-base-9b-fp8.safetensors",
+            label: "flux-2-klein-base-9b-fp8.safetensors",
+            description: "Save to ComfyUI/models/diffusion_models",
+            installed: false,
+            filename: "flux-2-klein-base-9b-fp8.safetensors",
+            directory: "diffusion_models",
+            gated: true,
+            gatedRepoUrl:
+              "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8",
+          },
+        ],
+      },
+    });
+    vi.mocked(startModelDownload).mockResolvedValue({
+      jobId: "job-flux",
+      label: "flux-2-klein-base-9b-fp8.safetensors",
+      status: "pending",
+    });
+
+    render(
+      <WorkflowDependencyResolver
+        workflowId="vlo_klein_multi.json"
+        warning={{
+          missingNodeTypes: [],
+          missingModels: ["flux-2-klein-base-9b-fp8.safetensors"],
+        }}
+        onOpenEditor={vi.fn()}
+        onRefreshWarning={vi.fn()}
+      />,
+    );
+
+    const licenseLink = await screen.findByRole("link", {
+      name: /accept license on huggingface/i,
+    });
+    expect(licenseLink).toHaveAttribute(
+      "href",
+      "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8",
+    );
+
+    const disabledButton = await screen.findByRole("button", {
+      name: /enter token to download/i,
+    });
+    expect(disabledButton).toBeDisabled();
+
+    const tokenInput = screen.getByPlaceholderText("hf_...");
+    fireEvent.change(tokenInput, { target: { value: "hf_abc123" } });
+
+    const downloadButton = await screen.findByRole("button", { name: /^download$/i });
+    fireEvent.click(downloadButton);
+
+    await waitFor(() => {
+      expect(startModelDownload).toHaveBeenCalledWith(
+        "comfyui-workflow",
+        "diffusion_models:flux-2-klein-base-9b-fp8.safetensors",
+        {
+          workflowId: "vlo_klein_multi.json",
+          hfToken: "hf_abc123",
+        },
+      );
+    });
+
+    expect(globalThis.localStorage.getItem("vlo:hf-access-token")).toBe("hf_abc123");
+    globalThis.localStorage.removeItem("vlo:hf-access-token");
+  });
+
   it("starts a workflow-scoped download with the selected workflow id", async () => {
     vi.mocked(getAvailableModels).mockResolvedValue({
       sam2: [],

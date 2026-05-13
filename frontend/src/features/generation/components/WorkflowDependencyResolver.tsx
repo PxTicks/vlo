@@ -134,9 +134,10 @@ export function WorkflowDependencyResolver({
     handleDownload,
     handleCancel,
   } = useModelDownloadController({
-    startDownload: (modelKey) =>
+    startDownload: (modelKey, context) =>
       startModelDownload("comfyui-workflow", modelKey, {
         workflowId: workflowId ?? undefined,
+        hfToken: context?.hfToken,
       }),
     onDownloadComplete: () => {
       onRefreshWarning();

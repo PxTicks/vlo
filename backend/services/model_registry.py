@@ -6,8 +6,10 @@ Maps human-friendly model keys to their download URLs and destination paths.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from config import COMFYUI_INSTALL_DIR, SAM2_SEARCH_PATHS
 from services.download_service import DownloadFileSpec
@@ -17,6 +19,18 @@ _HF_RESOLVE = "https://huggingface.co/{repo}/resolve/main/{filename}"
 _WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
 _DEFAULT_WORKFLOWS_DIR = (
     Path(__file__).parent.parent / "assets" / ".config" / "default_workflows"
+)
+
+# black-forest-labs FLUX.1/FLUX.2 repos are gated on HuggingFace (the user
+# must accept the license before downloading), except for FLUX.1-schnell and
+# any FLUX.2-klein 4B variant, which are released openly.
+_GATED_FLUX_REPO_PATTERN = re.compile(
+    r"^black-forest-labs/FLUX\.[12]-",
+    re.IGNORECASE,
+)
+_OPEN_FLUX_REPO_EXCEPTIONS = (
+    re.compile(r"^black-forest-labs/FLUX\.1-schnell$", re.IGNORECASE),
+    re.compile(r"^black-forest-labs/FLUX\.2-klein-base-4b", re.IGNORECASE),
 )
 
 SAM2_MODELS: dict[str, dict] = {
@@ -126,8 +140,43 @@ def _build_workflow_model_key(directory: str, filename: str) -> str:
     return f"{directory}:{filename}"
 
 
-def _extract_workflow_models(workflow: dict[str, Any]) -> list[dict[str, str]]:
-    unique_models: dict[str, dict[str, str]] = {}
+def _parse_hf_repo(url: str) -> tuple[str, str, str] | None:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https") or parsed.netloc != "huggingface.co":
+        return None
+
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if len(segments) < 2:
+        return None
+
+    owner, repo_name = segments[0], segments[1]
+    return owner, repo_name, f"{parsed.scheme}://{parsed.netloc}/{owner}/{repo_name}"
+
+
+def _is_gated_flux_url(url: str) -> bool:
+    repo_info = _parse_hf_repo(url)
+    if repo_info is None:
+        return False
+    owner, repo_name, _repo_url = repo_info
+    repo = f"{owner}/{repo_name}"
+    if not _GATED_FLUX_REPO_PATTERN.match(repo):
+        return False
+    return not any(exception.match(repo) for exception in _OPEN_FLUX_REPO_EXCEPTIONS)
+
+
+def _gated_repo_url_for(url: str) -> str | None:
+    repo_info = _parse_hf_repo(url)
+    if repo_info is None:
+        return None
+    _owner, _repo_name, repo_url = repo_info
+    return repo_url
+
+
+def _extract_workflow_models(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    unique_models: dict[str, dict[str, Any]] = {}
 
     for node in _iter_workflow_nodes(workflow):
         properties = node.get("properties")
@@ -161,6 +210,7 @@ def _extract_workflow_models(workflow: dict[str, Any]) -> list[dict[str, str]]:
                 continue
 
             key = _build_workflow_model_key(directory, filename)
+            gated = _is_gated_flux_url(url)
             unique_models.setdefault(
                 key,
                 {
@@ -171,6 +221,8 @@ def _extract_workflow_models(workflow: dict[str, Any]) -> list[dict[str, str]]:
                     "directory": directory,
                     "filename": filename,
                     "url": url,
+                    "gated": gated,
+                    "gatedRepoUrl": _gated_repo_url_for(url) if gated else None,
                 },
             )
 
@@ -228,9 +280,21 @@ def get_available_workflow_models(workflow_id: str) -> list[dict[str, Any]]:
             "installed": False,
             "directory": model["directory"],
             "filename": model["filename"],
+            "gated": model["gated"],
+            "gatedRepoUrl": model["gatedRepoUrl"],
         }
         for model in models
     ]
+
+
+def is_workflow_model_gated(workflow_id: str, model_key: str) -> bool:
+    if COMFYUI_INSTALL_DIR is None:
+        return False
+    workflow = _load_workflow_json(workflow_id)
+    for model in _extract_workflow_models(workflow):
+        if model["key"] == model_key:
+            return bool(model["gated"])
+    return False
 
 
 def get_workflow_download_specs(workflow_id: str, model_key: str) -> list[DownloadFileSpec]:

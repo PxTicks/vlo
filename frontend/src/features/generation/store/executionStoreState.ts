@@ -27,7 +27,10 @@ import {
 import { preResolvePrompt } from "../services/preResolvePrompt";
 import { readActiveWorkflowFromIframe } from "../services/workflowBridge";
 import { normalizeWorkflowFilename } from "../services/workflowFilenames";
-import { getWorkflowPostprocessingConfig } from "../services/workflowRules";
+import {
+  getWorkflowPostprocessingConfig,
+  pruneRulesForSubmittedWorkflow,
+} from "../services/workflowRules";
 import {
   buildWorkflowInputId,
   buildWorkflowInputLookup,
@@ -691,6 +694,10 @@ export function buildExecutionStoreState(
               ...resolvedPlan.workflow,
               submittedWorkflow: cloneSubmittedWorkflow(captured.workflow),
               promptIsPreResolved: captured.promptIsPreResolved,
+              workflowRules: pruneRulesForSubmittedWorkflow(
+                resolvedPlan.workflow.workflowRules,
+                captured.workflow,
+              ),
             },
           };
           effectivePrepared = {

@@ -3,7 +3,27 @@ import {
   buildWorkflowResultFromGraphData,
   parseInputsFromGraphData,
   readActiveWorkflowFromIframe,
+  readPendingWarningsFromIframe,
 } from "../workflowBridge";
+
+function buildIframeWithPendingWarnings(
+  pendingWarnings: unknown,
+): HTMLIFrameElement {
+  return {
+    contentWindow: {
+      app: {
+        extensionManager: {
+          workflow: {
+            activeWorkflow: {
+              filename: "wf.json",
+              pendingWarnings,
+            },
+          },
+        },
+      },
+    },
+  } as unknown as HTMLIFrameElement;
+}
 
 describe("workflowBridge", () => {
   it("reads the active workflow snapshot without resolving graphToPrompt", () => {
@@ -188,5 +208,60 @@ describe("workflowBridge", () => {
     );
 
     expect(inputs[0]?.label).toBe("Load Checkpoint");
+  });
+
+  describe("readPendingWarningsFromIframe", () => {
+    it("reads the new ComfyUI missingModelCandidates shape", () => {
+      const iframe = buildIframeWithPendingWarnings({
+        missingNodeTypes: [],
+        missingModelCandidates: [
+          {
+            nodeType: "CheckpointLoaderSimple",
+            widgetName: "ckpt_name",
+            name: "flux-2-klein-base-9b-fp8.safetensors",
+            directory: "diffusion_models",
+            url: "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8/resolve/main/flux-2-klein-base-9b-fp8.safetensors",
+            isAssetSupported: false,
+            isMissing: true,
+          },
+        ],
+      });
+
+      expect(readPendingWarningsFromIframe(iframe)).toEqual({
+        missingNodeTypes: [],
+        missingModels: ["flux-2-klein-base-9b-fp8.safetensors"],
+      });
+    });
+
+    it("filters out candidates where isMissing is not true", () => {
+      const iframe = buildIframeWithPendingWarnings({
+        missingModelCandidates: [
+          { name: "installed.safetensors", isMissing: false },
+          { name: "pending.safetensors", isMissing: undefined },
+          { name: "really-missing.safetensors", isMissing: true },
+        ],
+      });
+
+      expect(readPendingWarningsFromIframe(iframe)).toEqual({
+        missingNodeTypes: [],
+        missingModels: ["really-missing.safetensors"],
+      });
+    });
+
+    it("falls back to the legacy missingModels key for older ComfyUI builds", () => {
+      const iframe = buildIframeWithPendingWarnings({
+        missingModels: [{ name: "legacy.safetensors" }],
+      });
+
+      expect(readPendingWarningsFromIframe(iframe)).toEqual({
+        missingNodeTypes: [],
+        missingModels: ["legacy.safetensors"],
+      });
+    });
+
+    it("returns null when no warnings are present", () => {
+      const iframe = buildIframeWithPendingWarnings(null);
+      expect(readPendingWarningsFromIframe(iframe)).toBeNull();
+    });
   });
 });

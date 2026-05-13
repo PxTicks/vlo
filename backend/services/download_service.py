@@ -56,6 +56,7 @@ class DownloadJob:
     error: str | None = None
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     progress_event: asyncio.Event | None = None
+    auth_token: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -96,6 +97,14 @@ async def _execute_download_job(
         # Pre-scan to estimate overall total if possible
         overall_downloaded_prior_files: int = 0
 
+        # httpx strips Authorization on cross-origin redirects by default, so
+        # the Bearer token is only sent to the initial huggingface.co request
+        # — the CDN URL it redirects to is already presigned and rejects
+        # forwarded auth.
+        request_headers: dict[str, str] = {}
+        if job.auth_token:
+            request_headers["Authorization"] = f"Bearer {job.auth_token}"
+
         async with httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=300.0)) as client:
             for file_index, file_spec in enumerate(job.files):
                 if job.cancel_event.is_set():
@@ -111,7 +120,9 @@ async def _execute_download_job(
                 dest.parent.mkdir(parents=True, exist_ok=True)
 
                 try:
-                    async with client.stream("GET", file_spec.url) as response:
+                    async with client.stream(
+                        "GET", file_spec.url, headers=request_headers or None
+                    ) as response:
                         response.raise_for_status()
 
                         content_length = response.headers.get("content-length")
@@ -151,7 +162,11 @@ async def _execute_download_job(
         _release_job_destinations(job.job_id)
 
 
-def start_download(label: str, files: list[DownloadFileSpec]) -> DownloadJob:
+def start_download(
+    label: str,
+    files: list[DownloadFileSpec],
+    auth_token: str | None = None,
+) -> DownloadJob:
     requested_destinations = _normalize_destinations(files)
 
     with _registry_lock:
@@ -178,6 +193,7 @@ def start_download(label: str, files: list[DownloadFileSpec]) -> DownloadJob:
             job_id=str(uuid.uuid4()),
             label=label,
             files=files,
+            auth_token=auth_token,
         )
         _active_jobs[job.job_id] = job
         _job_destinations[job.job_id] = requested_destinations

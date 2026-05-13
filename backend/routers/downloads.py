@@ -20,6 +20,7 @@ from services.model_registry import (
     get_sam2_download_specs,
     get_workflow_download_specs,
     is_comfyui_model_downloads_enabled,
+    is_workflow_model_gated,
 )
 
 router = APIRouter(prefix="/downloads", tags=["downloads"])
@@ -29,6 +30,7 @@ class StartDownloadRequest(BaseModel):
     modelType: str
     modelKey: str
     workflowId: str | None = None
+    hfToken: str | None = None
 
 
 @router.get("/models")
@@ -51,6 +53,8 @@ def list_available_models(workflowId: str | None = None):
 
 @router.post("/start")
 async def start_download(request: StartDownloadRequest):
+    auth_token: str | None = None
+
     if request.modelType == "sam2":
         try:
             specs = get_sam2_download_specs(request.modelKey)
@@ -80,11 +84,28 @@ async def start_download(request: StartDownloadRequest):
             if model["key"] == request.modelKey:
                 label = model["label"]
                 break
+
+        if is_workflow_model_gated(request.workflowId, request.modelKey):
+            token = (request.hfToken or "").strip()
+            if not token:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "This model is gated on HuggingFace. Accept the "
+                        "license on the model's repository and provide a "
+                        "HuggingFace access token to download it."
+                    ),
+                )
+            auth_token = token
     else:
         raise HTTPException(status_code=400, detail=f"Unknown model type: {request.modelType}")
 
     try:
-        job = download_service.start_download(label=label, files=specs)
+        job = download_service.start_download(
+            label=label,
+            files=specs,
+            auth_token=auth_token,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 

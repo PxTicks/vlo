@@ -1,11 +1,100 @@
 import type { WorkflowInput } from "../../types";
 import { getWorkflowInputId } from "../../utils/workflowInputs";
+import { extractWorkflowNodeMap } from "../../utils/workflowNodeSignature";
 import type {
   WorkflowInputCondition,
   WorkflowInputValidationFailure,
   WorkflowInputValidationRule,
   WorkflowRules,
 } from "./types";
+
+function parseNodeIdFromInputRef(inputRef: string | null | undefined): string | null {
+  if (typeof inputRef !== "string") return null;
+  const trimmed = inputRef.trim();
+  if (!trimmed) return null;
+  const [nodeId] = trimmed.split(":", 1);
+  return nodeId?.trim() || null;
+}
+
+/**
+ * Drop validation rules / input conditions whose target node IDs do not appear
+ * in the submitted (post-bypass) workflow. Called at submission time so that
+ * runtime bypass — either pre-baked `mode: 4` in the workflow file or manual-
+ * mode auto-bypass of empty inputs — does not leave behind "required" rules
+ * for nodes that graphToPrompt already pruned.
+ */
+export function pruneRulesForSubmittedWorkflow(
+  rules: WorkflowRules | null | undefined,
+  submittedWorkflow: Record<string, unknown> | null | undefined,
+): WorkflowRules | null {
+  if (!rules) return null;
+  if (!submittedWorkflow) return rules;
+
+  const surviving = new Set(extractWorkflowNodeMap(submittedWorkflow).keys());
+  if (surviving.size === 0) return rules;
+
+  const validationInputs = rules.validation?.inputs ?? [];
+  const prunedValidationInputs: WorkflowInputValidationRule[] = [];
+  let validationChanged = false;
+  for (const rule of validationInputs) {
+    if (rule.kind === "required" || rule.kind === "optional") {
+      const nodeId = parseNodeIdFromInputRef(rule.input);
+      if (nodeId && surviving.has(nodeId)) {
+        prunedValidationInputs.push(rule);
+      } else {
+        validationChanged = true;
+      }
+      continue;
+    }
+    const ruleInputs = rule.inputs ?? [];
+    const filtered = ruleInputs.filter((inputRef) => {
+      const nodeId = parseNodeIdFromInputRef(inputRef);
+      return nodeId !== null && surviving.has(nodeId);
+    });
+    if (filtered.length === 0) {
+      validationChanged = true;
+      continue;
+    }
+    if (filtered.length === ruleInputs.length) {
+      prunedValidationInputs.push(rule);
+      continue;
+    }
+    validationChanged = true;
+    prunedValidationInputs.push({
+      ...rule,
+      inputs: filtered,
+      min: Math.min(rule.min, filtered.length),
+    });
+  }
+
+  const inputConditions = rules.input_conditions ?? [];
+  const prunedInputConditions: WorkflowInputCondition[] = [];
+  let conditionsChanged = false;
+  for (const condition of inputConditions) {
+    const filtered = (condition.inputs ?? []).filter((inputRef) => {
+      const nodeId = parseNodeIdFromInputRef(inputRef);
+      return nodeId !== null && surviving.has(nodeId);
+    });
+    if (filtered.length === 0) {
+      conditionsChanged = true;
+      continue;
+    }
+    if (filtered.length === (condition.inputs ?? []).length) {
+      prunedInputConditions.push(condition);
+      continue;
+    }
+    conditionsChanged = true;
+    prunedInputConditions.push({ ...condition, inputs: filtered });
+  }
+
+  if (!validationChanged && !conditionsChanged) return rules;
+
+  return {
+    ...rules,
+    validation: { ...(rules.validation ?? {}), inputs: prunedValidationInputs },
+    input_conditions: prunedInputConditions,
+  };
+}
 
 export function isWorkflowInputRequired(
   rules: WorkflowRules | null | undefined,

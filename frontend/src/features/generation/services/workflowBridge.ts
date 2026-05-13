@@ -486,10 +486,12 @@ function extractMissingNodeTypes(value: unknown): string[] {
 }
 
 function extractMissingModels(value: unknown): string[] {
-  const modelEntries = Array.isArray(value)
+  const modelEntries: unknown[] = Array.isArray(value)
     ? value
-    : isRecord(value) && Array.isArray(value.missingModels)
-      ? value.missingModels
+    : isRecord(value) &&
+        (Array.isArray(value.missingModelCandidates) ||
+          Array.isArray(value.missingModels))
+      ? (value.missingModelCandidates ?? value.missingModels) as unknown[]
       : [];
 
   const names = modelEntries
@@ -499,6 +501,14 @@ function extractMissingModels(value: unknown): string[] {
         return trimmed.length > 0 ? trimmed : null;
       }
       if (!isRecord(entry)) return null;
+
+      // ComfyUI's new MissingModelCandidate shape carries an isMissing flag
+      // that may be false (installed) or undefined (pending verification).
+      // The pipeline already filters to isMissing === true before caching,
+      // but defend against stale entries left by interrupted runs.
+      if ("isMissing" in entry && entry.isMissing !== true) {
+        return null;
+      }
 
       const candidates = [
         entry.name,
@@ -550,8 +560,13 @@ export function readPendingWarningsFromIframe(
     const missingNodeTypes = extractMissingNodeTypes(
       activeWorkflow.pendingWarnings.missingNodeTypes,
     );
+    // ComfyUI renamed `missingModels` → `missingModelCandidates` along with
+    // a richer candidate shape (see MissingModelCandidate in their
+    // `platform/missingModel/types.ts`). Fall back to the old key for older
+    // ComfyUI builds.
     const missingModels = extractMissingModels(
-      activeWorkflow.pendingWarnings.missingModels,
+      activeWorkflow.pendingWarnings.missingModelCandidates ??
+        activeWorkflow.pendingWarnings.missingModels,
     );
 
     if (missingNodeTypes.length === 0 && missingModels.length === 0) {

@@ -35,38 +35,6 @@
         }
       }
     },
-    "67": {
-      "widgets": {
-        "length": {
-          "label": "Length",
-          "when": {
-            "kind": "input_presence",
-            "inputs": [
-              "94"
-            ],
-            "match": "all_missing"
-          },
-          "value_type": "int",
-          "control": "slider",
-          "slider_display": "number",
-          "min": 1,
-          "max": 81,
-          "step": 4,
-          "display_unit": {
-            "scale": 0.0625,
-            "unit": "s",
-            "precision": 1
-          },
-          "group_id": "video_generation",
-          "group_title": "Video Generation",
-          "group_order": 0
-        },
-        "batch_size": {
-          "value_type": "int",
-          "hidden": true
-        }
-      }
-    },
     "85": {
       "widgets": {
         "value": {
@@ -147,16 +115,39 @@
         "frame_step": 4,
         "max_frames": 81
       }
+    },
+    "112": {
+      "widgets": {
+        "value": {
+          "label": "Length",
+          "when": {
+            "kind": "input_presence",
+            "inputs": ["94"],
+            "match": "all_missing"
+          },
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 81,
+          "step": 4,
+          "display_unit": {
+            "scale": 0.0625,
+            "unit": "s",
+            "precision": 1
+          },
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0
+        }
+      }
     }
   },
   "validation": {
     "inputs": [
       {
         "kind": "at_least_n",
-        "inputs": [
-          "92",
-          "93"
-        ],
+        "inputs": ["92", "93"],
         "min": 1,
         "message": "Provide at least one frame input."
       },
@@ -173,9 +164,7 @@
       "label": "Denoise",
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "94"
-        ],
+        "inputs": ["94"],
         "match": "all_present"
       },
       "group_id": "video_generation",
@@ -209,35 +198,23 @@
     {
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "92"
-        ],
+        "inputs": ["92"],
         "match": "all_missing"
       },
-      "bypass": [
-        "92",
-        "100"
-      ]
+      "bypass": ["92", "100"]
     },
     {
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "93"
-        ],
+        "inputs": ["93"],
         "match": "all_missing"
       },
-      "bypass": [
-        "93",
-        "101"
-      ]
+      "bypass": ["93", "101"]
     },
     {
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "94"
-        ],
+        "inputs": ["94"],
         "match": "all_present"
       },
       "set_widgets": [
@@ -251,9 +228,7 @@
     {
       "when": {
         "kind": "input_presence",
-        "inputs": [
-          "94"
-        ],
+        "inputs": ["94"],
         "match": "all_missing"
       },
       "set_widgets": [
@@ -274,10 +249,7 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [
-          480,
-          720
-        ],
+        "resolutions": [480, 720],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -302,10 +274,7 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [
-            480,
-            720
-          ],
+          "options": [480, 720],
           "default": 720
         },
         {

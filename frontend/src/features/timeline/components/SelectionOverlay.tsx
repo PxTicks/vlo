@@ -580,7 +580,8 @@ export function SelectionOverlay({
           gap: showSelectionMeta ? 1 : 1.5,
           alignItems: showSelectionMeta ? "stretch" : "center",
           borderRadius: 2,
-          width: showSelectionMeta ? "min(90vw, 920px)" : "auto",
+          width: showSelectionMeta ? "min(90vw, 920px)" : "max-content",
+          maxWidth: "calc(100vw - 32px)",
         }}
       >
         {selectionMessage ? (

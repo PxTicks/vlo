@@ -314,7 +314,7 @@
     },
     {
       "id": 22,
-      "type": "VLOMemoryLoadImage",
+      "type": "vloMemoryLoadImage",
       "pos": [
         60,
         -180
@@ -347,7 +347,7 @@
         "aux_id": "PxTicks/ComfyUI-vlo",
         "ver": "b9f40e0df896fb96cf036b74c20260711aad6616",
         "widget_ue_connectable": {},
-        "Node name for S&R": "VLOMemoryLoadImage"
+        "Node name for S&R": "vloMemoryLoadImage"
       },
       "widgets_values": [
         "Loading...",

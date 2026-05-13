@@ -339,7 +339,7 @@
     },
     {
       "id": 25,
-      "type": "VLOMemoryLoadVideo",
+      "type": "vloMemoryLoadVideo",
       "pos": [
         -220,
         -270
@@ -364,7 +364,7 @@
       "properties": {
         "aux_id": "PxTicks/ComfyUI-vlo",
         "ver": "b9f40e0df896fb96cf036b74c20260711aad6616",
-        "Node name for S&R": "VLOMemoryLoadVideo",
+        "Node name for S&R": "vloMemoryLoadVideo",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -489,7 +489,7 @@
     },
     {
       "id": 26,
-      "type": "VLOSaveVideoWebsocket",
+      "type": "vloSaveVideoWebsocket",
       "pos": [
         1580,
         100
@@ -513,7 +513,7 @@
         "aux_id": "PxTicks/ComfyUI-vlo",
         "ver": "b9f40e0df896fb96cf036b74c20260711aad6616",
         "widget_ue_connectable": {},
-        "Node name for S&R": "VLOSaveVideoWebsocket"
+        "Node name for S&R": "vloSaveVideoWebsocket"
       },
       "widgets_values": [
         "video/ComfyUI",

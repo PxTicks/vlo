@@ -1,0 +1,120 @@
+{
+  "version": 3,
+  "name": "FLUX.2 Klein Multi-reference",
+  "nodes": {
+    "76": {
+      "present": {
+        "label": "Reference 1",
+        "input_type": "image",
+        "param": "image",
+        "class_type": "VLOMemoryLoadImage",
+        "group_id": "references",
+        "group_title": "References [optional]",
+        "group_order": 0,
+        "required": false
+      }
+    },
+    "81": {
+      "present": {
+        "label": "Reference 2",
+        "input_type": "image",
+        "param": "image",
+        "class_type": "VLOMemoryLoadImage",
+        "group_id": "references",
+        "group_title": "References [optional]",
+        "group_order": 1,
+        "required": false
+      }
+    },
+    "152": {
+      "present": {
+        "label": "Reference 3",
+        "input_type": "image",
+        "param": "image",
+        "class_type": "VLOMemoryLoadImage",
+        "group_id": "references",
+        "group_title": "References [optional]",
+        "group_order": 2,
+        "required": false
+      }
+    },
+    "157": {
+      "present": {
+        "label": "Reference 4",
+        "input_type": "image",
+        "param": "image",
+        "class_type": "VLOMemoryLoadImage",
+        "group_id": "references",
+        "group_title": "References [optional]",
+        "group_order": 3,
+        "required": false
+      }
+    },
+    "163": {
+      "widgets": {
+        "value": {
+          "label": "Width",
+          "value_type": "int",
+          "group_id": "dimensions",
+          "group_title": "Dimensions",
+          "group_order": 0
+        }
+      }
+    },
+    "165": {
+      "widgets": {
+        "value": {
+          "label": "Height",
+          "value_type": "int",
+          "group_id": "dimensions",
+          "group_title": "Dimensions",
+          "group_order": 1
+        }
+      }
+    }
+  },
+  "validation": {
+    "inputs": [
+      { "kind": "optional", "input": "76" },
+      { "kind": "optional", "input": "81" },
+      { "kind": "optional", "input": "152" },
+      { "kind": "optional", "input": "157" }
+    ]
+  },
+  "derived_widgets": [],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["76"],
+        "match": "all_missing"
+      },
+      "bypass": ["76", "139", "147", "148", "146"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["81"],
+        "match": "all_missing"
+      },
+      "bypass": ["81", "140", "150", "151", "149"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["152"],
+        "match": "all_missing"
+      },
+      "bypass": ["152", "153", "154", "155", "156"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["157"],
+        "match": "all_missing"
+      },
+      "bypass": ["157", "158", "159", "160", "161"]
+    }
+  ],
+  "slots": {}
+}

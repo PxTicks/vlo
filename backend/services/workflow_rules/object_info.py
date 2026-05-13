@@ -226,6 +226,8 @@ def _extract_node_info(workflow_data: dict[str, Any]) -> dict[str, _NodeInfo]:
     ):
         for node_id, node_data in workflow_data.items():
             if isinstance(node_data, dict):
+                if node_data.get("mode") in (2, 4):
+                    continue
                 class_type = node_data.get("class_type")
                 if isinstance(class_type, str):
                     meta = node_data.get("_meta", {})
@@ -254,6 +256,8 @@ def _extract_node_info(workflow_data: dict[str, Any]) -> dict[str, _NodeInfo]:
             return
         for node in nodes:
             if not isinstance(node, dict):
+                continue
+            if node.get("mode") in (2, 4):
                 continue
             node_id = node.get("id")
             node_type = node.get("type")

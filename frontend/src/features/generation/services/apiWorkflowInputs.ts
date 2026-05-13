@@ -39,6 +39,7 @@ export function parseInputsFromApiWorkflow(
     if (!nodeData || typeof nodeData !== "object") continue;
 
     const node = nodeData as Record<string, unknown>;
+    if (node.mode === 2 || node.mode === 4) continue;
     const classType = node.class_type as string | undefined;
     if (!classType) continue;
 

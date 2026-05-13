@@ -323,6 +323,7 @@ export function resolveManualWidgetInputs(
   const graphOnlyNodes = !workflow
     ? resolveGraphNodes(graphData).flatMap((node) => {
         if (node.id == null) return [];
+        if (node.mode === 2 || node.mode === 4) return [];
         const nodeId = String(node.id);
         const classType = typeof node.type === "string" ? node.type : undefined;
         return [[
@@ -344,6 +345,11 @@ export function resolveManualWidgetInputs(
 
   for (const [nodeId, nodeData] of workflowEntries) {
     if (!isRecord(nodeData)) continue;
+    if (nodeData.mode === 2 || nodeData.mode === 4) continue;
+    if (workflow) {
+      const graphMode = resolveGraphNode(graphData, nodeId)?.mode;
+      if (graphMode === 2 || graphMode === 4) continue;
+    }
 
     const nodeInputs = isRecord(nodeData.inputs) ? nodeData.inputs : {};
     const classType =

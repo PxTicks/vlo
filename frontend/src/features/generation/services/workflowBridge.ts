@@ -199,6 +199,7 @@ export function parseInputsFromGraphData(
     if (!isRecord(node) || node.id == null || typeof node.type !== "string") {
       continue;
     }
+    if (node.mode === 2 || node.mode === 4) continue;
     const classType = node.type.trim();
     if (!classType) continue;
 

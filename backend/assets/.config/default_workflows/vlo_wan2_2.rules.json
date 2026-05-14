@@ -19,6 +19,10 @@
         "end_at_step": {
           "value_type": "int",
           "hidden": true
+        },
+        "cfg": {
+          "value_type": "float",
+          "hidden": true
         }
       }
     },
@@ -31,6 +35,10 @@
         },
         "start_at_step": {
           "value_type": "int",
+          "hidden": true
+        },
+        "cfg": {
+          "value_type": "float",
           "hidden": true
         }
       }

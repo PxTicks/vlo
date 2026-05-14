@@ -547,6 +547,33 @@ async function buildQueuedGenerationPlansFromState(
   );
 }
 
+async function captureQueuedSubmittedWorkflows(
+  plans: GenerationPlan[],
+  state: ReturnType<GenerationStoreGet>,
+): Promise<GenerationPlan[]> {
+  if (!state.preResolvedPromptEnabled || !state.editorRef || plans.length === 0) {
+    return plans;
+  }
+
+  const captured = await captureSubmittedWorkflow(plans[0], state);
+  if (!captured) {
+    return plans;
+  }
+
+  return plans.map((plan) => ({
+    ...plan,
+    workflow: {
+      ...plan.workflow,
+      submittedWorkflow: cloneSubmittedWorkflow(captured.workflow),
+      promptIsPreResolved: captured.promptIsPreResolved,
+      workflowRules: pruneRulesForSubmittedWorkflow(
+        plan.workflow.workflowRules,
+        captured.workflow,
+      ),
+    },
+  }));
+}
+
 function buildGenerationDeliveryContext(
   plan: GenerationPlan,
   workflow: Record<string, unknown> | null,
@@ -1078,6 +1105,7 @@ export function buildExecutionStoreState(
           safeCount,
           bypassNodeIds,
         );
+        plans = await captureQueuedSubmittedWorkflows(plans, currentState);
       } catch (error) {
         buildSubmissionErrorPatch(get, set, error);
         return;

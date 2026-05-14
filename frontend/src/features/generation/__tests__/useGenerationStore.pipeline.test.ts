@@ -819,6 +819,131 @@ describe("useGenerationStore pipeline phases", () => {
     ).not.toHaveProperty("269");
   });
 
+  it("captures the queued pre-resolved workflow snapshot at queue time before switching workflows", async () => {
+    makeReadyStoreState();
+
+    const queuedWorkflowId = "video_ltx2_3_retake.json";
+    const switchedWorkflowId = "video_ltx2_3_i2v.json";
+    const queuedCapturedWorkflow = {
+      "202": {
+        class_type: "QueuedCapturedWorkflow",
+        inputs: {
+          prompt: "preserved-queued-workflow",
+        },
+      },
+    };
+    const switchedCapturedWorkflow = {
+      "303": {
+        class_type: "SwitchedCapturedWorkflow",
+        inputs: {
+          prompt: "incorrect-switched-workflow",
+        },
+      },
+    };
+
+    const queuedRules = makeWorkflowRules({
+      nodes: {
+        "235": {
+          widgets: {
+            switch: {
+              label: "Use custom audio",
+              hidden: true,
+              value_type: "boolean",
+            },
+          },
+        },
+      },
+    });
+    const switchedRules = makeWorkflowRules({
+      nodes: {
+        "269": {
+          present: {
+            label: "Source image",
+            required: false,
+          },
+        },
+      },
+    });
+
+    mockPreResolvePrompt.mockImplementation(async () => ({
+      output:
+        useGenerationStore.getState().selectedWorkflowId === queuedWorkflowId
+          ? queuedCapturedWorkflow
+          : switchedCapturedWorkflow,
+      workflow: {},
+    }));
+
+    useGenerationStore.setState({
+      selectedWorkflowId: queuedWorkflowId,
+      availableWorkflows: [
+        { id: queuedWorkflowId, name: "LTX2.3 ReTake" },
+        { id: switchedWorkflowId, name: "LTX2.3 I2V" },
+      ],
+      syncedWorkflow: {
+        "1": {
+          class_type: "OriginalQueuedWorkflow",
+          inputs: {},
+        },
+      },
+      activeWorkflowRules: queuedRules,
+      rulesWorkflowSourceId: queuedWorkflowId,
+      editorRef: {} as HTMLIFrameElement,
+      preResolvedPromptEnabled: true,
+      jobs: new Map([
+        [
+          "active-job",
+          {
+            ...makeQueuedJob("active-job"),
+            status: "running",
+          },
+        ],
+      ]),
+      activeJobId: "active-job",
+    });
+
+    await useGenerationStore.getState().queueGeneration({});
+
+    const queuedPlan = useGenerationStore.getState().generationQueue[0];
+    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(queuedPlan?.workflow.submittedWorkflow).toEqual(
+      queuedCapturedWorkflow,
+    );
+    expect(queuedPlan?.workflow.promptIsPreResolved).toBe(true);
+
+    useGenerationStore.setState({
+      selectedWorkflowId: switchedWorkflowId,
+      syncedWorkflow: {
+        "2": {
+          class_type: "SwitchedWorkflow",
+          inputs: {},
+        },
+      },
+      activeWorkflowRules: switchedRules,
+      rulesWorkflowSourceId: switchedWorkflowId,
+      activeJobId: null,
+    });
+
+    await useGenerationStore.getState().processGenerationQueue();
+
+    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(mockGenerate).toHaveBeenCalledTimes(1);
+    expect(mockGenerate.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        workflowId: queuedWorkflowId,
+        workflow: queuedCapturedWorkflow,
+        promptIsPreResolved: true,
+        workflowRules: expect.objectContaining({
+          nodes: expect.objectContaining({
+            "235": expect.any(Object),
+          }),
+        }),
+      }),
+    );
+    expect(
+      mockGenerate.mock.calls[0]?.[0]?.workflowRules?.nodes,
+    ).not.toHaveProperty("269");
+  });
+
   it("reuses prepared media when only text and seed inputs change", async () => {
     makeReadyStoreState();
     const sourceVideo = makeTestFile("video", "source.mp4", {
@@ -1673,7 +1798,17 @@ describe("useGenerationStore pipeline phases", () => {
 
     await useGenerationStore.getState().queueGeneration({});
 
-    expect(mockPreResolvePrompt).not.toHaveBeenCalled();
+    const queuedPlan = useGenerationStore.getState().generationQueue[0];
+    expect(mockPreResolvePrompt).toHaveBeenCalledTimes(1);
+    expect(queuedPlan?.workflow.submittedWorkflow).toEqual({
+      "202": {
+        class_type: "QueuedCapturedWorkflow",
+        inputs: {
+          prompt: "preserved-queued-workflow",
+        },
+      },
+    });
+    expect(queuedPlan?.workflow.promptIsPreResolved).toBe(true);
     expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
 
     useGenerationStore.setState({

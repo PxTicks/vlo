@@ -857,7 +857,9 @@ export function useMaskInteractionController(
       const parsed = parseMaskClipId(maskClip.id);
       if (!parsed) return null;
 
-      const nextTransforms = (maskClip.transformations || []).map((transform) =>
+      // Only pass mask-local transforms — inherited speed transforms are
+      // re-derived from the parent by buildMaskClipTransformations.
+      const nextTransforms = getMaskLocalTransforms(maskClip).map((transform) =>
         transform.id === positionTransform.id
           ? {
               ...transform,
@@ -1674,9 +1676,12 @@ export function useMaskInteractionController(
     selectClip,
     selectCanvasClip,
     selectCanvasMask,
+    setActivePathEditor,
+    setArmedPathRecording,
     setLiveMaskLayoutPreview,
     setInteractionContext,
     setIsPlaying,
+    setPathPanelView,
     setSelectedMask,
     sam2PointMode,
     toMaskOverlayLocal,
@@ -1757,6 +1762,8 @@ export function useMaskInteractionController(
 
   useEffect(() => {
     if (!app) return;
+
+    const pathOverlay = pathOverlayRef.current;
 
     const syncSam2EditingCursor = (enabled: boolean) => {
       const maskGraphics = maskGraphicsRef.current;
@@ -1986,10 +1993,9 @@ export function useMaskInteractionController(
 
     return () => {
       app.ticker.remove(updateOverlay);
-      const overlay = pathOverlayRef.current;
-      if (overlay && !overlay.destroyed) {
-        overlay.clear();
-        overlay.visible = false;
+      if (pathOverlay && !pathOverlay.destroyed) {
+        pathOverlay.clear();
+        pathOverlay.visible = false;
       }
     };
   }, [

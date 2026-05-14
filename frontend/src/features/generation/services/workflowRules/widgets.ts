@@ -147,6 +147,37 @@ function getWidgetValueIndexMap(
   return result;
 }
 
+const KNOWN_WIDGET_VALUE_FALLBACK_INDICES: Readonly<
+  Record<string, Readonly<Record<string, number>>>
+> = {
+  KSamplerAdvanced: {
+    add_noise: 0,
+    noise_seed: 1,
+    steps: 3,
+    cfg: 4,
+    sampler_name: 5,
+    scheduler: 6,
+    start_at_step: 7,
+    end_at_step: 8,
+    return_with_leftover_noise: 9,
+  },
+};
+
+function resolveFallbackWidgetIndex(
+  classType: string | undefined,
+  param: string,
+): number | undefined {
+  if (param === "value") {
+    return 0;
+  }
+
+  if (!classType) {
+    return undefined;
+  }
+
+  return KNOWN_WIDGET_VALUE_FALLBACK_INDICES[classType]?.[param];
+}
+
 function resolveGraphWidgetValue(
   graphData: Record<string, unknown> | null | undefined,
   nodeId: string,
@@ -161,7 +192,9 @@ function resolveGraphWidgetValue(
   if (!Array.isArray(widgetsValues)) return undefined;
 
   const classInfo = resolveClassInfo(objectInfo, classType);
-  const widgetIndex = getWidgetValueIndexMap(classInfo).get(param);
+  const widgetIndex =
+    getWidgetValueIndexMap(classInfo).get(param) ??
+    resolveFallbackWidgetIndex(classType, param);
   if (typeof widgetIndex !== "number" || widgetIndex >= widgetsValues.length) {
     return undefined;
   }

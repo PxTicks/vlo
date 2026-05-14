@@ -995,6 +995,90 @@ describe("resolvePresentedInputs", () => {
     ).toBe(true);
   });
 
+  it("resolves conditional dual_sampler_denoise widgets from graph data without object_info for known sampler and primitive nodes", () => {
+    const rules = {
+      version: 3,
+      derived_widgets: [
+        {
+          id: "denoise",
+          kind: "dual_sampler_denoise" as const,
+          label: "Denoise",
+          when: {
+            kind: "input_presence" as const,
+            inputs: ["94"],
+            match: "all_present" as const,
+          },
+          total_steps: {
+            node_id: "85",
+            param: "value",
+          },
+          start_step: {
+            node_id: "57",
+            param: "start_at_step",
+          },
+          base_split_step: {
+            node_id: "86",
+            param: "value",
+          },
+          split_step_targets: [
+            {
+              node_id: "57",
+              param: "end_at_step",
+            },
+            {
+              node_id: "58",
+              param: "start_at_step",
+            },
+          ],
+        },
+      ],
+      slots: {},
+    };
+
+    const widgets = resolveWidgetInputs(null, rules, {
+      graphData: {
+        nodes: [
+          {
+            id: 57,
+            type: "KSamplerAdvanced",
+            widgets_values: [
+              "enable",
+              42,
+              "randomize",
+              8,
+              2,
+              "euler",
+              "simple",
+              0,
+              4,
+              "enable",
+            ],
+          },
+          {
+            id: 85,
+            type: "PrimitiveInt",
+            widgets_values: [8, "fixed"],
+          },
+          {
+            id: 86,
+            type: "PrimitiveInt",
+            widgets_values: [4, "fixed"],
+          },
+        ],
+      },
+      providedInputIds: new Set(["94"]),
+    });
+
+    expect(
+      widgets.some(
+        (widget) =>
+          widget.kind === "derived" &&
+          widget.derivedWidgetId === "denoise" &&
+          widget.currentValue === 1,
+      ),
+    ).toBe(true);
+  });
+
   it("prefers active graph values over API workflow values for dual_sampler_denoise", () => {
     const rules = {
       version: 3,

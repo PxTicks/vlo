@@ -17,6 +17,14 @@ vi.mock("../runtime/brushAssetSync", () => ({
 }));
 const mockSetSharedMaskTransforms = vi.fn();
 let mockSharedMaskTransforms: ClipTransform[] = [];
+const mockTransformationViewState = {
+  armedPathRecording: null as { clipId: string; transformId: string } | null,
+  activePathEditor: null as { clipId: string; transformId: string } | null,
+  pathPanelView: "home" as "home" | "path",
+  setArmedPathRecording: vi.fn(),
+  setActivePathEditor: vi.fn(),
+  setPathPanelView: vi.fn(),
+};
 vi.mock("../../transformations", () => ({
   useTransformationController: (
     options?: { target?: "clip" | "mask" | "maskComposite" | "auto" },
@@ -71,6 +79,12 @@ vi.mock("../../transformations", () => ({
       : type === "feather"
         ? { type: "feather", label: "Feather", uiConfig: { groups: [] } }
         : undefined,
+  useTransformationViewStore: (
+    selector: (state: typeof mockTransformationViewState) => unknown,
+  ) => selector(mockTransformationViewState),
+  PositionPathDetailView: () => (
+    <div data-testid="position-path-detail-view" />
+  ),
 }));
 vi.mock("../components/Sam2MaskPanel", () => ({
   Sam2MaskPanel: (props: { maskLabel: string }) => (
@@ -261,6 +275,9 @@ describe("MaskPanel", () => {
     vi.clearAllMocks();
     mockFlushBrushMaskCommit.mockClear();
     mockSharedMaskTransforms = [];
+    mockTransformationViewState.armedPathRecording = null;
+    mockTransformationViewState.activePathEditor = null;
+    mockTransformationViewState.pathPanelView = "home";
     baseHookValue = {
       selection: {
         selectedClipId: "clip_1",

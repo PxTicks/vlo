@@ -48,6 +48,21 @@ import {
   type MaskLayoutState,
   type MaskShapeSource,
 } from "../../../masks/model/maskFactory";
+import type { PositionPathParameter, PositionTransform } from "../../../transformations";
+import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
+import { type Point2D } from "../../../transformations/utils/catmullRomUtils";
+import {
+  samplePositionPath,
+  resolvePositionPathProgress,
+} from "../../../transformations/utils/positionPath";
+import {
+  appendRecordPathSample,
+  applyEditPathSample,
+  createInitialPositionPathDragState,
+  drawPositionPathOverlay,
+  finalizePositionPathEdit,
+  finalizePositionPathRecording,
+} from "../../../transformations/utils/positionPathDrag";
 import {
   createMaskRenderableShapeSource,
   getMaskRenderableBaseSize,
@@ -89,6 +104,9 @@ const SAM2_POINT_RADIUS = 8;
 const SAM2_POINT_HIT_RADIUS = 12;
 const SAM2_POINT_BORDER_WIDTH = 2;
 const SAM2_BORDER_COLOR = 0x60a5fa;
+const PATH_PROGRESS_EPSILON = 0.02;
+const PATH_RECORDING_SPATIAL_EPSILON = 6;
+const PATH_RECORDING_SIMPLIFY_EPSILON = 4;
 
 const INHERITED_TRANSFORM_TYPES = new Set(["speed"]);
 
@@ -173,6 +191,21 @@ function normalizeSam2Points(
   }));
 }
 
+function getMaskPositionTransform(
+  maskClip: MaskTimelineClip,
+): PositionTransform | null {
+  const transform = (maskClip.transformations || []).find(
+    (candidate) => candidate.type === "position",
+  );
+  return (transform as PositionTransform | undefined) ?? null;
+}
+
+function getMaskPositionPath(
+  maskClip: MaskTimelineClip,
+): PositionPathParameter | null {
+  return getMaskPositionTransform(maskClip)?.parameters.path ?? null;
+}
+
 interface SelectedMaskContext {
   selectedClipId: string | null;
   selectedClip: TimelineClip | null;
@@ -245,6 +278,21 @@ export function useMaskInteractionController(
     (state) => state.setInteractionContext,
   );
 
+  // Path armed/editor/view-mode state is read on-demand via
+  // `useTransformationViewStore.getState()` inside the click and overlay
+  // paths — the interaction ref is mutated every frame, so we don't need a
+  // React subscription to keep things in sync. We only subscribe to the
+  // setters because they're stable references.
+  const setArmedPathRecording = useTransformationViewStore(
+    (state) => state.setArmedPathRecording,
+  );
+  const setActivePathEditor = useTransformationViewStore(
+    (state) => state.setActivePathEditor,
+  );
+  const setPathPanelView = useTransformationViewStore(
+    (state) => state.setPathPanelView,
+  );
+
   const selectedClipId = useTimelineStore(
     (state) => state.selectedClipIds[0] ?? null,
   );
@@ -297,6 +345,7 @@ export function useMaskInteractionController(
     maskGraphicsRef,
     sam2PointsGraphicsRef,
     sam2PreviewSpriteRef,
+    pathOverlayRef,
     gizmoTarget,
   } = useMaskOverlayScene({
     viewport,
@@ -798,6 +847,34 @@ export function useMaskInteractionController(
       interactionRef.current = createInitialMaskInteractionState();
     };
 
+    const commitMaskPositionPath = (
+      maskClip: MaskTimelineClip,
+      path: PositionPathParameter,
+    ): string | null => {
+      const positionTransform = getMaskPositionTransform(maskClip);
+      if (!positionTransform) return null;
+
+      const parsed = parseMaskClipId(maskClip.id);
+      if (!parsed) return null;
+
+      const nextTransforms = (maskClip.transformations || []).map((transform) =>
+        transform.id === positionTransform.id
+          ? {
+              ...transform,
+              parameters: {
+                ...transform.parameters,
+                path,
+              },
+            }
+          : transform,
+      );
+
+      updateClipMask(parsed.clipId, parsed.maskId, {
+        transformations: nextTransforms,
+      });
+      return positionTransform.id;
+    };
+
     const unbindStageListeners = () => {
       unbindStagePointerListeners(app, onPointerMove, onPointerUp);
     };
@@ -916,6 +993,51 @@ export function useMaskInteractionController(
         return;
       }
 
+      if (
+        (current.mode === "recordPath" || current.mode === "editPath") &&
+        current.maskId &&
+        current.startLayout &&
+        current.path
+      ) {
+        const local = toClipLocal(e.global);
+        const base = current.startLayout;
+        const startPosition: Point2D = { x: base.x, y: base.y };
+        const deltaX = local.x - current.startLocal.x;
+        const deltaY = local.y - current.startLocal.y;
+        const currentPosition: Point2D = {
+          x: startPosition.x + deltaX,
+          y: startPosition.y + deltaY,
+        };
+
+        const moved = hasDragMovement(DRAG_MOVE_EPSILON, deltaX, deltaY);
+        if (moved) {
+          current.didMove = true;
+        }
+
+        const previewLayout: MaskLayoutState = {
+          ...base,
+          x: currentPosition.x,
+          y: currentPosition.y,
+        };
+        setLiveMaskLayoutPreview(current.clipId, current.maskId, previewLayout);
+        notifyLiveMaskLayout(current.transformIds, previewLayout);
+
+        if (current.mode === "recordPath") {
+          appendRecordPathSample(current.path, {
+            startPosition,
+            currentPosition,
+            eventTimeStamp: e.timeStamp,
+            hasMoved: current.didMove,
+          });
+        } else {
+          applyEditPathSample(current.path, {
+            currentPosition,
+            progressEpsilon: PATH_PROGRESS_EPSILON,
+          });
+        }
+        return;
+      }
+
       if (!current.maskId || !current.startLayout) return;
 
       const local = toClipLocal(e.global);
@@ -1011,6 +1133,79 @@ export function useMaskInteractionController(
         return;
       }
 
+      if (
+        (current.mode === "recordPath" || current.mode === "editPath") &&
+        current.clipId &&
+        current.maskId &&
+        current.path &&
+        current.startLayout
+      ) {
+        const state = useTimelineStore.getState();
+        const maskClips = selectMaskClipsForParent(state, current.clipId);
+        const latestMaskClip = maskClips.find((candidate) => {
+          const parsed = parseMaskClipId(candidate.id);
+          return parsed?.maskId === current.maskId;
+        });
+
+        if (latestMaskClip) {
+          const startPosition: Point2D = {
+            x: current.startLayout.x,
+            y: current.startLayout.y,
+          };
+          const finalPosition: Point2D =
+            current.path.lastPositionParams ?? startPosition;
+
+          if (current.mode === "recordPath") {
+            const path = finalizePositionPathRecording(current.path, {
+              startPosition,
+              finalPosition,
+              spatialEpsilon: PATH_RECORDING_SPATIAL_EPSILON,
+              simplifyEpsilon: PATH_RECORDING_SIMPLIFY_EPSILON,
+            });
+            if (path) {
+              const transformId = commitMaskPositionPath(latestMaskClip, path);
+              if (transformId) {
+                setArmedPathRecording(null);
+                setActivePathEditor({
+                  clipId: latestMaskClip.id,
+                  transformId,
+                });
+                setPathPanelView("path");
+              }
+            }
+          } else if (current.path.activePath) {
+            const nextControlPoints = finalizePositionPathEdit(current.path, {
+              finalPosition,
+              progressEpsilon: PATH_PROGRESS_EPSILON,
+            });
+            if (nextControlPoints) {
+              const transformId = commitMaskPositionPath(latestMaskClip, {
+                ...current.path.activePath,
+                controlPoints: nextControlPoints,
+              });
+              if (transformId) {
+                setActivePathEditor({
+                  clipId: latestMaskClip.id,
+                  transformId,
+                });
+                setPathPanelView("path");
+              }
+            }
+          }
+        }
+
+        setInteractionContext({
+          clipId: current.clipId,
+          mode: "edit",
+          maskId: current.maskId,
+        });
+        clearLiveMaskLayoutPreview();
+        clearLiveMaskLayoutPreviewParams(current.transformIds);
+        resetInteractionState();
+        unbindStageListeners();
+        return;
+      }
+
       if (current.mode === "draw" && current.clipId) {
         const draftMask = draftMaskShapeRef.current;
         if (
@@ -1086,15 +1281,64 @@ export function useMaskInteractionController(
       selectCanvasMask(target.clipId, target.maskLocalId);
       clearLiveMaskLayoutPreview();
 
+      const armed =
+        useTransformationViewStore.getState().armedPathRecording;
+      const isArmedRecording = armed?.clipId === target.maskClip.id;
+
+      const editorState = useTransformationViewStore.getState().activePathEditor;
+      const viewMode = useTransformationViewStore.getState().pathPanelView;
+      const positionTransform = getMaskPositionTransform(target.maskClip);
+      const positionPath = getMaskPositionPath(target.maskClip);
+      const isPathEditing =
+        viewMode === "path" &&
+        !!positionPath &&
+        !!positionTransform &&
+        editorState?.clipId === target.maskClip.id &&
+        editorState?.transformId === positionTransform.id;
+
+      // When a path already drives the position, plain drag would compete
+      // with the path. Defer to the path editor / re-record flow instead.
+      if (positionPath && !isArmedRecording && !isPathEditing) {
+        return false;
+      }
+
       const local = toClipLocal(e.global);
       const startLayout = resolveMaskLayoutAtPlayhead(target.maskClip);
       const startBaseSize = resolveMaskLayoutBaseSize(target.maskClip);
       renderMaskToOverlay(
         resolveMaskRenderableShape(target.maskClip, startLayout),
       );
+      const mode: MaskInteractionMode = isArmedRecording
+        ? "recordPath"
+        : isPathEditing
+          ? "editPath"
+          : "translate";
+      const pathState =
+        mode === "recordPath" || mode === "editPath"
+          ? (() => {
+              const next = createInitialPositionPathDragState();
+              next.activePath = positionPath;
+              next.draftPathControlPoints = positionPath?.controlPoints ?? null;
+              next.lastPositionParams = { x: startLayout.x, y: startLayout.y };
+              if (isPathEditing && positionPath) {
+                next.pathProgress = resolvePositionPathProgress(
+                  positionPath,
+                  Math.max(
+                    0,
+                    Math.min(
+                      playbackClock.time - target.maskClip.start,
+                      target.maskClip.timelineDuration,
+                    ),
+                  ),
+                  target.maskClip.timelineDuration,
+                );
+              }
+              return next;
+            })()
+          : null;
       interactionRef.current = {
         active: true,
-        mode: "translate",
+        mode,
         clipId: target.clipId,
         maskId: target.maskLocalId,
         handle: null,
@@ -1105,6 +1349,7 @@ export function useMaskInteractionController(
         transformIds: resolveMaskLayoutTransformIds(target.maskClip),
         didMove: false,
         brush: null,
+        path: pathState,
       };
       notifyLiveMaskLayout(interactionRef.current.transformIds, startLayout);
       setInteractionContext({
@@ -1198,6 +1443,7 @@ export function useMaskInteractionController(
           radius,
           maskLocalId: target.maskLocalId,
         },
+        path: null,
       };
       setInteractionContext({
         clipId: target.clipId,
@@ -1317,6 +1563,7 @@ export function useMaskInteractionController(
           },
           didMove: false,
           brush: null,
+          path: null,
         };
         setInteractionContext({
           clipId: selectedId,
@@ -1388,6 +1635,7 @@ export function useMaskInteractionController(
         transformIds: resolveMaskLayoutTransformIds(targetMask.maskClip),
         didMove: false,
         brush: null,
+        path: null,
       };
 
       notifyLiveMaskLayout(interactionRef.current.transformIds, layout);
@@ -1533,6 +1781,99 @@ export function useMaskInteractionController(
       }
     };
 
+    const clearPathOverlay = () => {
+      const overlay = pathOverlayRef.current;
+      if (!overlay) return;
+      overlay.clear();
+      overlay.visible = false;
+    };
+
+    const drawPathOverlay = (maskClip: MaskTimelineClip) => {
+      const overlay = pathOverlayRef.current;
+      if (!overlay) return;
+
+      overlay.clear();
+
+      const currentInteraction = interactionRef.current;
+      const interactionMatchesMask =
+        currentInteraction.active &&
+        currentInteraction.maskId === maskClip.id;
+
+      let controlPoints: Point2D[] | null = null;
+      let currentPoint: Point2D | null = null;
+      let isProvisional = false;
+
+      if (
+        interactionMatchesMask &&
+        currentInteraction.mode === "recordPath" &&
+        currentInteraction.path &&
+        currentInteraction.path.rawPathSamples.length > 0
+      ) {
+        controlPoints = currentInteraction.path.rawPathSamples.map(
+          (sample) => sample.point,
+        );
+        currentPoint =
+          currentInteraction.path.lastPositionParams ??
+          currentInteraction.path.rawPathSamples[
+            currentInteraction.path.rawPathSamples.length - 1
+          ]?.point ??
+          null;
+        isProvisional = true;
+      } else {
+        const persistedPath = getMaskPositionPath(maskClip);
+        if (!persistedPath) {
+          overlay.visible = false;
+          return;
+        }
+
+        const pathToRender =
+          interactionMatchesMask &&
+          currentInteraction.mode === "editPath" &&
+          currentInteraction.path?.draftPathControlPoints
+            ? {
+                ...persistedPath,
+                controlPoints: currentInteraction.path.draftPathControlPoints,
+              }
+            : persistedPath;
+
+        const localVisualTime = Math.max(
+          0,
+          Math.min(
+            playbackClock.time - maskClip.start,
+            maskClip.timelineDuration,
+          ),
+        );
+
+        controlPoints = pathToRender.controlPoints;
+        currentPoint =
+          interactionMatchesMask &&
+          currentInteraction.mode === "editPath" &&
+          currentInteraction.path?.lastPositionParams
+            ? currentInteraction.path.lastPositionParams
+            : samplePositionPath(
+                pathToRender,
+                localVisualTime,
+                maskClip.timelineDuration,
+              );
+        isProvisional =
+          interactionMatchesMask && currentInteraction.mode === "editPath";
+      }
+
+      if (!controlPoints || controlPoints.length === 0 || !currentPoint) {
+        overlay.visible = false;
+        return;
+      }
+
+      overlay.visible = true;
+      // Path coords are already in clipOverlay-local space (the overlay sits
+      // inside clipOverlay, which is sprite-aligned). No baseOrigin offset.
+      drawPositionPathOverlay(overlay, {
+        controlPoints,
+        currentPoint,
+        isProvisional,
+      });
+    };
+
     const updateOverlay = () => {
       const isActiveMaskSelection =
         activeCanvasSelection?.kind === "mask" &&
@@ -1544,6 +1885,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(null);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
+        clearPathOverlay();
         setIsMaskGizmoVisible(false);
         return;
       }
@@ -1554,6 +1896,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(null);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
+        clearPathOverlay();
         setIsMaskGizmoVisible(false);
         return;
       }
@@ -1564,6 +1907,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(null);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
+        clearPathOverlay();
         setIsMaskGizmoVisible(false);
         return;
       }
@@ -1573,6 +1917,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(draftMaskShapeRef.current);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
+        clearPathOverlay();
         setIsMaskGizmoVisible(false);
         return;
       }
@@ -1582,6 +1927,7 @@ export function useMaskInteractionController(
         renderMaskToOverlay(null);
         renderSam2PointsToOverlay(null);
         clearSam2PreviewSprite();
+        clearPathOverlay();
         setIsMaskGizmoVisible(false);
         return;
       }
@@ -1597,6 +1943,7 @@ export function useMaskInteractionController(
           renderSam2PointsToOverlay(null);
           clearSam2PreviewSprite();
         }
+        clearPathOverlay();
         setIsMaskGizmoVisible(false);
         return;
       }
@@ -1604,6 +1951,7 @@ export function useMaskInteractionController(
       syncSam2EditingCursor(false);
       renderSam2PointsToOverlay(null);
       clearSam2PreviewSprite();
+      drawPathOverlay(selectedMaskClip);
 
       const liveMaskLayoutPreview = liveMaskLayoutPreviewRef.current;
       const liveLayout =
@@ -1638,6 +1986,11 @@ export function useMaskInteractionController(
 
     return () => {
       app.ticker.remove(updateOverlay);
+      const overlay = pathOverlayRef.current;
+      if (overlay && !overlay.destroyed) {
+        overlay.clear();
+        overlay.visible = false;
+      }
     };
   }, [
     activeClipRef,
@@ -1645,6 +1998,7 @@ export function useMaskInteractionController(
     brushTool,
     clearSam2PreviewSprite,
     pendingDrawRequest,
+    pathOverlayRef,
     renderMaskToOverlay,
     renderSam2PointsToOverlay,
     resolveMaskRenderableShape,

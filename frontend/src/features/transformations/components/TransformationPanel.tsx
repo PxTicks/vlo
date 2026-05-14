@@ -14,7 +14,7 @@ import { TransformationGroup } from "./TransformationGroup";
 import { TransformationSection } from "./TransformationSection";
 import { SortableTransformationItem } from "./SortableTransformationItem";
 import { DefaultTransformationSections } from "./DefaultTransformationSections";
-import { useTimelineClip } from "../../timeline";
+import { useTimelineClip, parseMaskClipId } from "../../timeline";
 import { useAsset } from "../../userAssets";
 import { useActiveTransformationSection } from "../hooks/useActiveTransformationSection";
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
@@ -168,14 +168,25 @@ export function TransformationPanel() {
   );
 
   useEffect(() => {
+    // Mask-owned armed/editor state lives in the same shared store but is
+    // managed by the mask panel. Don't touch it from here even when the
+    // selected clip is the mask's parent — otherwise we race-clear what the
+    // mask panel just wrote.
+    const isArmedForMask =
+      armedPathRecording !== null &&
+      parseMaskClipId(armedPathRecording.clipId) !== null;
+    const isEditingMaskPath =
+      activePathEditor !== null &&
+      parseMaskClipId(activePathEditor.clipId) !== null;
+
     if (!selectedClipId) {
       if (pathPanelView !== "home") {
         setPathPanelView("home");
       }
-      if (armedPathRecording !== null) {
+      if (armedPathRecording !== null && !isArmedForMask) {
         setArmedPathRecording(null);
       }
-      if (activePathEditor !== null) {
+      if (activePathEditor !== null && !isEditingMaskPath) {
         setActivePathEditor(null);
       }
       return;
@@ -183,19 +194,26 @@ export function TransformationPanel() {
 
     if (
       armedPathRecording !== null &&
-      armedPathRecording.clipId !== selectedClipId
+      armedPathRecording.clipId !== selectedClipId &&
+      !isArmedForMask
     ) {
       setArmedPathRecording(null);
     }
 
-    if (activePathEditor !== null && activePathEditor.clipId !== selectedClipId) {
+    if (
+      activePathEditor !== null &&
+      activePathEditor.clipId !== selectedClipId &&
+      !isEditingMaskPath
+    ) {
       setPathPanelView("home");
       setActivePathEditor(null);
     }
 
-    if (!positionPath && pathPanelView === "path") {
+    if (!positionPath && pathPanelView === "path" && !isEditingMaskPath) {
       setPathPanelView("home");
-      setActivePathEditor(null);
+      if (!isEditingMaskPath) {
+        setActivePathEditor(null);
+      }
     }
   }, [
     activePathEditor,

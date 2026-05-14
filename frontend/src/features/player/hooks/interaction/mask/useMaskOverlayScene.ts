@@ -14,6 +14,7 @@ export interface MaskOverlayScene {
   maskGraphicsRef: MutableRefObject<Graphics | null>;
   sam2PointsGraphicsRef: MutableRefObject<Graphics | null>;
   sam2PreviewSpriteRef: MutableRefObject<Sprite | null>;
+  pathOverlayRef: MutableRefObject<Graphics | null>;
   gizmoTarget: Container | null;
 }
 
@@ -35,6 +36,7 @@ export function useMaskOverlayScene({
   const maskGraphicsRef = useRef<Graphics | null>(null);
   const sam2PointsGraphicsRef = useRef<Graphics | null>(null);
   const sam2PreviewSpriteRef = useRef<Sprite | null>(null);
+  const pathOverlayRef = useRef<Graphics | null>(null);
   const [gizmoTarget, setGizmoTarget] = useState<Container | null>(null);
 
   useEffect(() => {
@@ -45,6 +47,7 @@ export function useMaskOverlayScene({
     const maskGraphics = new PixiGraphics();
     const sam2PointsGraphics = new PixiGraphics();
     const sam2PreviewSprite = new PixiSprite();
+    const pathOverlay = new PixiGraphics();
 
     sam2PreviewSprite.anchor.set(0.5);
     sam2PreviewSprite.alpha = 0.45;
@@ -52,11 +55,15 @@ export function useMaskOverlayScene({
     sam2PreviewSprite.visible = false;
     sam2PreviewSprite.eventMode = "none";
 
+    pathOverlay.eventMode = "none";
+    pathOverlay.visible = false;
+
     maskOverlay.addChild(maskGraphics);
     sam2PointsGraphics.eventMode = "none";
     clipOverlay.addChild(sam2PreviewSprite);
     clipOverlay.addChild(sam2PointsGraphics);
     clipOverlay.addChild(maskOverlay);
+    clipOverlay.addChild(pathOverlay);
     clipOverlay.zIndex = trackZIndex + 0.5;
     clipOverlay.visible = false;
 
@@ -68,6 +75,7 @@ export function useMaskOverlayScene({
     maskGraphicsRef.current = maskGraphics;
     sam2PointsGraphicsRef.current = sam2PointsGraphics;
     sam2PreviewSpriteRef.current = sam2PreviewSprite;
+    pathOverlayRef.current = pathOverlay;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setGizmoTarget(maskOverlay);
 
@@ -86,6 +94,7 @@ export function useMaskOverlayScene({
       maskGraphicsRef.current = null;
       sam2PointsGraphicsRef.current = null;
       sam2PreviewSpriteRef.current = null;
+      pathOverlayRef.current = null;
       setGizmoTarget(null);
       onDispose?.();
     };
@@ -97,6 +106,7 @@ export function useMaskOverlayScene({
     maskGraphicsRef,
     sam2PointsGraphicsRef,
     sam2PreviewSpriteRef,
+    pathOverlayRef,
     gizmoTarget,
   };
 }

@@ -1,6 +1,7 @@
 import type { Container, FederatedPointerEvent } from "pixi.js";
 import type { MaskTimelineClip } from "../../../../../types/TimelineTypes";
 import type { MaskLayoutState } from "../../../../masks/model/maskFactory";
+import type { PositionPathDragState } from "../../../../transformations/utils/positionPathDrag";
 
 export type MaskInteractionMode =
   | "idle"
@@ -8,7 +9,9 @@ export type MaskInteractionMode =
   | "translate"
   | "scale"
   | "rotate"
-  | "brush";
+  | "brush"
+  | "recordPath"
+  | "editPath";
 
 export interface MaskLayoutTransformIds {
   position: string | null;
@@ -38,6 +41,7 @@ export interface MaskInteractionState {
   transformIds: MaskLayoutTransformIds;
   didMove: boolean;
   brush: BrushStrokeState | null;
+  path: PositionPathDragState | null;
 }
 
 export interface LiveMaskLayoutPreview {
@@ -78,5 +82,6 @@ export function createInitialMaskInteractionState(): MaskInteractionState {
     },
     didMove: false,
     brush: null,
+    path: null,
   };
 }

@@ -36,19 +36,21 @@ import {
   lockCornerScaleAspectRatio,
 } from "./layoutInteractionMath";
 import {
-  evaluateOpenPath,
-  processRawDragSamples,
   type Point2D,
-  type RawDragSample,
 } from "../../../transformations/utils/catmullRomUtils";
 import {
   samplePositionPath,
   resolvePositionPathProgress,
 } from "../../../transformations/utils/positionPath";
 import {
-  createDefaultPathTiming,
-  upsertPathControlPointAtProgress,
-} from "../../../transformations/utils/positionPathEditing";
+  appendRecordPathSample,
+  applyEditPathSample,
+  createInitialPositionPathDragState,
+  drawPositionPathOverlay,
+  finalizePositionPathEdit,
+  finalizePositionPathRecording,
+  type PositionPathDragState,
+} from "../../../transformations/utils/positionPathDrag";
 import {
   getPositionPath,
   getPositionTransform,
@@ -59,12 +61,6 @@ const DRAG_MOVE_EPSILON = 0.01;
 const PATH_PROGRESS_EPSILON = 0.02;
 const PATH_RECORDING_SPATIAL_EPSILON = 6;
 const PATH_RECORDING_SIMPLIFY_EPSILON = 4;
-const PATH_OVERLAY_SAMPLES_PER_SEGMENT = 18;
-const PATH_CURVE_COLOR = 0x60a5fa;
-const PATH_PROVISIONAL_COLOR = 0xf59e0b;
-const PATH_MARKER_COLOR = 0xffffff;
-const PATH_CONTROL_POINT_COLOR = 0x1d4ed8;
-const PATH_CONTROL_POINT_ACTIVE_COLOR = 0xf97316;
 
 type InteractionMode =
   | "translate"
@@ -72,57 +68,6 @@ type InteractionMode =
   | "rotate"
   | "recordPath"
   | "editPath";
-
-function drawPathCurve(
-  graphics: Graphics,
-  points: Point2D[],
-  baseOrigin: Point2D,
-  color: number,
-  alpha: number,
-) {
-  if (points.length === 0) {
-    return;
-  }
-
-  if (points.length === 1) {
-    graphics.circle(
-      baseOrigin.x + points[0].x,
-      baseOrigin.y + points[0].y,
-      2,
-    ).fill({ color, alpha });
-    return;
-  }
-
-  let didMove = false;
-  for (let segmentIndex = 0; segmentIndex < points.length - 1; segmentIndex += 1) {
-    for (
-      let sampleIndex = 0;
-      sampleIndex <= PATH_OVERLAY_SAMPLES_PER_SEGMENT;
-      sampleIndex += 1
-    ) {
-      const t = sampleIndex / PATH_OVERLAY_SAMPLES_PER_SEGMENT;
-      const point = evaluateOpenPath(points, segmentIndex, t, 0.5);
-      const x = baseOrigin.x + point.x;
-      const y = baseOrigin.y + point.y;
-      if (!didMove) {
-        graphics.moveTo(x, y);
-        didMove = true;
-      } else {
-        graphics.lineTo(x, y);
-      }
-    }
-  }
-
-  if (didMove) {
-    graphics.stroke({
-      width: 2,
-      color,
-      alpha,
-      cap: "round",
-      join: "round",
-    });
-  }
-}
 
 interface InteractionState {
   active: boolean;
@@ -140,12 +85,7 @@ interface InteractionState {
   lastPositionParams: { x: number; y: number } | null;
   lastScaleParams: { x: number; y: number } | null;
   lastRotationParam: number | null;
-  rawPathSamples: RawDragSample[];
-  recordStartedAtMs: number | null;
-  pathProgress: number | null;
-  pathEditIndex: number | null;
-  activePath: PositionPathParameter | null;
-  draftPathControlPoints: Point2D[] | null;
+  path: PositionPathDragState;
   didMove: boolean;
 }
 
@@ -166,12 +106,7 @@ function createInitialInteractionState(): InteractionState {
     lastPositionParams: null,
     lastScaleParams: null,
     lastRotationParam: null,
-    rawPathSamples: [],
-    recordStartedAtMs: null,
-    pathProgress: null,
-    pathEditIndex: null,
-    activePath: null,
-    draftPathControlPoints: null,
+    path: createInitialPositionPathDragState(),
     didMove: false,
   };
 }
@@ -232,12 +167,7 @@ export function useTransformInteractionController(
       current.lastPositionParams = null;
       current.lastScaleParams = null;
       current.lastRotationParam = null;
-      current.rawPathSamples = [];
-      current.recordStartedAtMs = null;
-      current.pathProgress = null;
-      current.pathEditIndex = null;
-      current.activePath = null;
-      current.draftPathControlPoints = null;
+      current.path = createInitialPositionPathDragState();
       current.didMove = false;
     };
 
@@ -444,11 +374,18 @@ export function useTransformInteractionController(
         const localPos = toViewportLocal(viewport, e.global);
         const deltaX = localPos.x - current.startLocal.x;
         const deltaY = localPos.y - current.startLocal.y;
-        const newX = current.startParams.x + deltaX;
-        const newY = current.startParams.y + deltaY;
-        current.lastPositionParams = { x: newX, y: newY };
+        const startPosition: Point2D = {
+          x: current.startParams.x,
+          y: current.startParams.y,
+        };
+        const currentPosition: Point2D = {
+          x: startPosition.x + deltaX,
+          y: startPosition.y + deltaY,
+        };
+        current.lastPositionParams = currentPosition;
 
-        if (hasDragMovement(DRAG_MOVE_EPSILON, deltaX, deltaY)) {
+        const moved = hasDragMovement(DRAG_MOVE_EPSILON, deltaX, deltaY);
+        if (moved) {
           current.didMove = true;
         }
 
@@ -459,38 +396,17 @@ export function useTransformInteractionController(
         onLiveSpriteTransform?.();
 
         if (current.mode === "recordPath") {
-          if (current.didMove && current.recordStartedAtMs === null) {
-            current.recordStartedAtMs = e.timeStamp;
-            current.rawPathSamples = [
-              { point: { x: current.startParams.x, y: current.startParams.y }, time: 0 },
-            ];
-          }
-
-          if (current.recordStartedAtMs !== null) {
-            current.rawPathSamples.push({
-              point: { x: newX, y: newY },
-              time: Math.max(0, e.timeStamp - current.recordStartedAtMs),
-            });
-          }
-        } else if (current.activePath && current.pathProgress !== null) {
-          if (
-            current.pathEditIndex !== null &&
-            current.draftPathControlPoints &&
-            current.pathEditIndex < current.draftPathControlPoints.length
-          ) {
-            const nextPoints = [...current.draftPathControlPoints];
-            nextPoints[current.pathEditIndex] = { x: newX, y: newY };
-            current.draftPathControlPoints = nextPoints;
-          } else {
-            const editResult = upsertPathControlPointAtProgress(
-              current.activePath,
-              current.pathProgress,
-              { x: newX, y: newY },
-              PATH_PROGRESS_EPSILON,
-            );
-            current.draftPathControlPoints = editResult.points;
-            current.pathEditIndex = editResult.index;
-          }
+          appendRecordPathSample(current.path, {
+            startPosition,
+            currentPosition,
+            eventTimeStamp: e.timeStamp,
+            hasMoved: current.didMove,
+          });
+        } else {
+          applyEditPathSample(current.path, {
+            currentPosition,
+            progressEpsilon: PATH_PROGRESS_EPSILON,
+          });
         }
 
         return;
@@ -587,71 +503,29 @@ export function useTransformInteractionController(
           let nextTransforms = [...(latestClip.transformations || [])];
 
           if (current.mode === "recordPath") {
-            let finalPosition = current.lastPositionParams;
-            if (e && viewport) {
-              const localPos = toViewportLocal(viewport, e.global);
-              finalPosition = {
-                x: current.startParams.x + (localPos.x - current.startLocal.x),
-                y: current.startParams.y + (localPos.y - current.startLocal.y),
-              };
-            }
+            const startPosition: Point2D = {
+              x: current.startParams.x,
+              y: current.startParams.y,
+            };
+            const finalPosition: Point2D | null =
+              e && viewport
+                ? (() => {
+                    const localPos = toViewportLocal(viewport, e.global);
+                    return {
+                      x: startPosition.x + (localPos.x - current.startLocal.x),
+                      y: startPosition.y + (localPos.y - current.startLocal.y),
+                    };
+                  })()
+                : current.lastPositionParams;
 
             if (finalPosition) {
-              const samples =
-                current.rawPathSamples.length > 0
-                  ? [...current.rawPathSamples]
-                  : [];
-
-              if (samples.length === 0) {
-                samples.push({
-                  point: { x: current.startParams.x, y: current.startParams.y },
-                  time: 0,
-                });
-              }
-
-              const lastSample = samples[samples.length - 1];
-              if (
-                !lastSample ||
-                lastSample.point.x !== finalPosition.x ||
-                lastSample.point.y !== finalPosition.y
-              ) {
-                const finalSampleTime =
-                  e && current.recordStartedAtMs !== null
-                    ? Math.max(0, e.timeStamp - current.recordStartedAtMs)
-                    : lastSample?.time ?? 0;
-                samples.push({
-                  point: finalPosition,
-                  time: finalSampleTime,
-                });
-              }
-
-              const processed = processRawDragSamples(
-                samples,
-                PATH_RECORDING_SPATIAL_EPSILON,
-                PATH_RECORDING_SIMPLIFY_EPSILON,
-              );
-              if (processed.points.length >= 2) {
-                const defaultTiming = createDefaultPathTiming();
-                const candidateTimingPoints = processed.timingSplinePoints;
-                const timingPoints =
-                  candidateTimingPoints.length >= 2 &&
-                  candidateTimingPoints[0]?.time === 0 &&
-                  candidateTimingPoints[0]?.value === 0 &&
-                  candidateTimingPoints[candidateTimingPoints.length - 1]?.time === 1 &&
-                  candidateTimingPoints[candidateTimingPoints.length - 1]?.value === 1
-                    ? candidateTimingPoints
-                    : defaultTiming.points;
-
-                const path: PositionPathParameter = {
-                  type: "path2d",
-                  curve: "centripetal_catmull_rom",
-                  controlPoints: processed.points,
-                  timing: {
-                    type: "spline",
-                    points: timingPoints,
-                  },
-                };
-
+              const path = finalizePositionPathRecording(current.path, {
+                startPosition,
+                finalPosition,
+                spatialEpsilon: PATH_RECORDING_SPATIAL_EPSILON,
+                simplifyEpsilon: PATH_RECORDING_SIMPLIFY_EPSILON,
+              });
+              if (path) {
                 const transformId = commitPositionPath(
                   latestClip,
                   path,
@@ -668,50 +542,42 @@ export function useTransformInteractionController(
               }
             }
           } else if (current.mode === "editPath") {
-            let finalPosition = current.lastPositionParams;
-            if (e && viewport) {
-              const localPos = toViewportLocal(viewport, e.global);
-              finalPosition = {
-                x: current.startParams.x + (localPos.x - current.startLocal.x),
-                y: current.startParams.y + (localPos.y - current.startLocal.y),
-              };
-            }
+            const startPosition: Point2D = {
+              x: current.startParams.x,
+              y: current.startParams.y,
+            };
+            const finalPosition: Point2D | null =
+              e && viewport
+                ? (() => {
+                    const localPos = toViewportLocal(viewport, e.global);
+                    return {
+                      x: startPosition.x + (localPos.x - current.startLocal.x),
+                      y: startPosition.y + (localPos.y - current.startLocal.y),
+                    };
+                  })()
+                : current.lastPositionParams;
 
-            if (
-              finalPosition &&
-              current.activePath &&
-              current.pathProgress !== null
-            ) {
-              let nextControlPoints = current.draftPathControlPoints;
-              if (
-                nextControlPoints &&
-                current.pathEditIndex !== null &&
-                current.pathEditIndex < nextControlPoints.length
-              ) {
-                nextControlPoints = [...nextControlPoints];
-                nextControlPoints[current.pathEditIndex] = finalPosition;
-              } else {
-                nextControlPoints = upsertPathControlPointAtProgress(
-                  current.activePath,
-                  current.pathProgress,
-                  finalPosition,
-                  PATH_PROGRESS_EPSILON,
-                ).points;
-              }
-              const transformId = commitPositionPath(
-                latestClip,
-                {
-                  ...current.activePath,
-                  controlPoints: nextControlPoints,
-                },
-                current.transformIds.position,
-              );
-              if (transformId) {
-                setActivePathEditor({
-                  clipId: latestClip.id,
-                  transformId,
-                });
-                setPathPanelView("path");
+            if (finalPosition && current.path.activePath) {
+              const nextControlPoints = finalizePositionPathEdit(current.path, {
+                finalPosition,
+                progressEpsilon: PATH_PROGRESS_EPSILON,
+              });
+              if (nextControlPoints) {
+                const transformId = commitPositionPath(
+                  latestClip,
+                  {
+                    ...current.path.activePath,
+                    controlPoints: nextControlPoints,
+                  },
+                  current.transformIds.position,
+                );
+                if (transformId) {
+                  setActivePathEditor({
+                    clipId: latestClip.id,
+                    transformId,
+                  });
+                  setPathPanelView("path");
+                }
               }
             }
           } else if (current.mode === "translate") {
@@ -852,6 +718,20 @@ export function useTransformInteractionController(
       }
 
       const localPos = toViewportLocal(viewport, e.global);
+      const initialPathState = createInitialPositionPathDragState();
+      initialPathState.activePath = activePath;
+      initialPathState.draftPathControlPoints =
+        activePath?.controlPoints ?? null;
+      initialPathState.lastPositionParams = { x: startX, y: startY };
+      initialPathState.pathProgress =
+        activePath && isPathEditing
+          ? resolvePositionPathProgress(
+              activePath,
+              localVisualTime,
+              activeClip.timelineDuration,
+            )
+          : null;
+
       interactionRef.current = {
         ...createInitialInteractionState(),
         active: true,
@@ -870,17 +750,7 @@ export function useTransformInteractionController(
           rotation: null,
         },
         lastPositionParams: { x: startX, y: startY },
-        pathProgress:
-          activePath && isPathEditing
-            ? resolvePositionPathProgress(
-                activePath,
-                localVisualTime,
-                activeClip.timelineDuration,
-              )
-            : null,
-        pathEditIndex: null,
-        activePath,
-        draftPathControlPoints: activePath?.controlPoints ?? null,
+        path: initialPathState,
       };
 
       bindStageListeners();
@@ -1068,26 +938,28 @@ export function useTransformInteractionController(
       }
 
       const currentInteraction = interactionRef.current;
+      const interactionMatchesClip =
+        currentInteraction.active &&
+        currentInteraction.clipId === activeClip.id;
       let controlPoints: Point2D[] | null = null;
       let currentPoint: Point2D | null = null;
-      let curveColor = PATH_CURVE_COLOR;
-      const curveAlpha = 0.9;
+      let isProvisional = false;
 
       if (
-        currentInteraction.active &&
-        currentInteraction.clipId === activeClip.id &&
+        interactionMatchesClip &&
         currentInteraction.mode === "recordPath" &&
-        currentInteraction.rawPathSamples.length > 0
+        currentInteraction.path.rawPathSamples.length > 0
       ) {
-        controlPoints = currentInteraction.rawPathSamples.map(
+        controlPoints = currentInteraction.path.rawPathSamples.map(
           (sample) => sample.point,
         );
         currentPoint =
-          currentInteraction.lastPositionParams ??
-          currentInteraction.rawPathSamples[currentInteraction.rawPathSamples.length - 1]
-            ?.point ??
+          currentInteraction.path.lastPositionParams ??
+          currentInteraction.path.rawPathSamples[
+            currentInteraction.path.rawPathSamples.length - 1
+          ]?.point ??
           null;
-        curveColor = PATH_PROVISIONAL_COLOR;
+        isProvisional = true;
       } else {
         const persistedPath = getPositionPath(activeClip);
         if (!persistedPath) {
@@ -1096,13 +968,12 @@ export function useTransformInteractionController(
         }
 
         const pathToRender =
-          currentInteraction.active &&
-          currentInteraction.clipId === activeClip.id &&
+          interactionMatchesClip &&
           currentInteraction.mode === "editPath" &&
-          currentInteraction.draftPathControlPoints
+          currentInteraction.path.draftPathControlPoints
             ? {
                 ...persistedPath,
-                controlPoints: currentInteraction.draftPathControlPoints,
+                controlPoints: currentInteraction.path.draftPathControlPoints,
               }
             : persistedPath;
 
@@ -1116,22 +987,17 @@ export function useTransformInteractionController(
         const localVisualTime = clampedGlobal - activeClip.start;
         controlPoints = pathToRender.controlPoints;
         currentPoint =
-          currentInteraction.active &&
-          currentInteraction.clipId === activeClip.id &&
+          interactionMatchesClip &&
           currentInteraction.mode === "editPath" &&
-          currentInteraction.lastPositionParams
-            ? currentInteraction.lastPositionParams
+          currentInteraction.path.lastPositionParams
+            ? currentInteraction.path.lastPositionParams
             : samplePositionPath(
                 pathToRender,
                 localVisualTime,
                 activeClip.timelineDuration,
               );
-        curveColor =
-          currentInteraction.active &&
-          currentInteraction.clipId === activeClip.id &&
-          currentInteraction.mode === "editPath"
-            ? PATH_PROVISIONAL_COLOR
-            : PATH_CURVE_COLOR;
+        isProvisional =
+          interactionMatchesClip && currentInteraction.mode === "editPath";
       }
 
       if (!controlPoints || controlPoints.length === 0 || !currentPoint) {
@@ -1140,30 +1006,15 @@ export function useTransformInteractionController(
       }
 
       overlay.visible = true;
-      const baseOrigin = {
-        x: sprite.position.x - currentPoint.x,
-        y: sprite.position.y - currentPoint.y,
-      };
-
-      drawPathCurve(overlay, controlPoints, baseOrigin, curveColor, curveAlpha);
-
-      controlPoints.forEach((point) => {
-        overlay
-          .circle(baseOrigin.x + point.x, baseOrigin.y + point.y, 4)
-          .fill({
-            color:
-              curveColor === PATH_PROVISIONAL_COLOR
-                ? PATH_CONTROL_POINT_ACTIVE_COLOR
-                : PATH_CONTROL_POINT_COLOR,
-            alpha: 1,
-          })
-          .stroke({ width: 1, color: 0xffffff, alpha: 0.9 });
+      drawPositionPathOverlay(overlay, {
+        controlPoints,
+        currentPoint,
+        baseOrigin: {
+          x: sprite.position.x - currentPoint.x,
+          y: sprite.position.y - currentPoint.y,
+        },
+        isProvisional,
       });
-
-      overlay
-        .circle(baseOrigin.x + currentPoint.x, baseOrigin.y + currentPoint.y, 5)
-        .fill({ color: PATH_MARKER_COLOR, alpha: 1 })
-        .stroke({ width: 1, color: curveColor, alpha: 1 });
     };
 
     app.ticker.add(drawOverlay);

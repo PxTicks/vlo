@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Box,
   Button,
@@ -26,10 +27,17 @@ import { MASK_TYPES } from "./model/maskFactory";
 import { useMaskPanel } from "./hooks/useMaskPanel";
 import {
   DefaultTransformationSections,
+  PositionPathDetailView,
   getDefaultTransforms,
   getEntryByType,
   getDefaultSectionId,
   useTransformationController,
+  useTransformationViewStore,
+} from "../transformations";
+import type {
+  PositionParams,
+  PositionTransform,
+  SplineParameter,
 } from "../transformations";
 import { Sam2MaskPanel } from "./components/Sam2MaskPanel";
 import { BrushMaskPanel } from "./components/BrushMaskPanel";
@@ -347,6 +355,247 @@ export const MaskPanel = memo(function MaskPanel() {
     setPanelView("home");
   }, []);
 
+  // ---- Position-path recording / editing for moveable masks ----
+  const selectedMaskClipId =
+    selectedMask?.type === "mask" ? selectedMask.id : null;
+  const selectedMaskIsPathCapable =
+    !!selectedMask &&
+    selectedMask.type === "mask" &&
+    selectedMask.maskType !== "sam2";
+  const positionTransform = useMemo<PositionTransform | undefined>(
+    () =>
+      selectedMaskIsPathCapable
+        ? (selectedMaskTransforms.find(
+            (transform) => transform.type === "position",
+          ) as PositionTransform | undefined)
+        : undefined,
+    [selectedMaskIsPathCapable, selectedMaskTransforms],
+  );
+  const positionPath =
+    (positionTransform?.parameters as PositionParams | undefined)?.path ?? null;
+
+  const armedPathRecording = useTransformationViewStore(
+    (state) => state.armedPathRecording,
+  );
+  const activePathEditor = useTransformationViewStore(
+    (state) => state.activePathEditor,
+  );
+  const pathPanelView = useTransformationViewStore(
+    (state) => state.pathPanelView,
+  );
+  const setArmedPathRecording = useTransformationViewStore(
+    (state) => state.setArmedPathRecording,
+  );
+  const setActivePathEditor = useTransformationViewStore(
+    (state) => state.setActivePathEditor,
+  );
+  const setPathPanelView = useTransformationViewStore(
+    (state) => state.setPathPanelView,
+  );
+
+  // The shared armed/editor state is keyed by clip id; for masks we use the
+  // full mask clip id. Clear it when the user navigates away from the mask
+  // that owns it (or the path it was editing was deleted).
+  useEffect(() => {
+    if (!selectedMaskClipId) return;
+
+    if (
+      armedPathRecording !== null &&
+      armedPathRecording.clipId === selectedMaskClipId &&
+      !selectedMaskIsPathCapable
+    ) {
+      setArmedPathRecording(null);
+    }
+
+    if (
+      activePathEditor !== null &&
+      activePathEditor.clipId === selectedMaskClipId &&
+      (!positionPath || !selectedMaskIsPathCapable)
+    ) {
+      setActivePathEditor(null);
+      if (pathPanelView === "path") {
+        setPathPanelView("home");
+      }
+    }
+  }, [
+    activePathEditor,
+    armedPathRecording,
+    pathPanelView,
+    positionPath,
+    selectedMaskClipId,
+    selectedMaskIsPathCapable,
+    setActivePathEditor,
+    setArmedPathRecording,
+    setPathPanelView,
+  ]);
+
+  const handleStartMaskPathRecording = useCallback(() => {
+    if (!selectedMaskClipId || !positionTransform) return;
+    setActivePathEditor(null);
+    setPathPanelView("home");
+    setArmedPathRecording({
+      clipId: selectedMaskClipId,
+      transformId: positionTransform.id,
+    });
+  }, [
+    positionTransform,
+    selectedMaskClipId,
+    setActivePathEditor,
+    setArmedPathRecording,
+    setPathPanelView,
+  ]);
+
+  const handleCancelMaskPathRecording = useCallback(() => {
+    setArmedPathRecording(null);
+  }, [setArmedPathRecording]);
+
+  const handleOpenMaskPathEditor = useCallback(() => {
+    if (!selectedMaskClipId || !positionTransform || !positionPath) return;
+    setArmedPathRecording(null);
+    setActivePathEditor({
+      clipId: selectedMaskClipId,
+      transformId: positionTransform.id,
+    });
+    setPathPanelView("path");
+  }, [
+    positionPath,
+    positionTransform,
+    selectedMaskClipId,
+    setActivePathEditor,
+    setArmedPathRecording,
+    setPathPanelView,
+  ]);
+
+  const handleBackFromMaskPathEditor = useCallback(() => {
+    setPathPanelView("home");
+    setActivePathEditor(null);
+  }, [setActivePathEditor, setPathPanelView]);
+
+  const handleRemoveMaskPath = useCallback(() => {
+    if (!positionTransform || !positionPath) return;
+    const nextParameters = { ...positionTransform.parameters } as PositionParams;
+    delete nextParameters.path;
+    updateSelectedMaskTransform(positionTransform.id, {
+      parameters: nextParameters,
+    });
+    setArmedPathRecording(null);
+    setActivePathEditor(null);
+    setPathPanelView("home");
+  }, [
+    positionPath,
+    positionTransform,
+    setActivePathEditor,
+    setArmedPathRecording,
+    setPathPanelView,
+    updateSelectedMaskTransform,
+  ]);
+
+  const handleMaskPathTimingChange = useCallback(
+    (nextTiming: SplineParameter) => {
+      if (!positionTransform || !positionPath) return;
+      updateSelectedMaskTransform(positionTransform.id, {
+        parameters: {
+          ...positionTransform.parameters,
+          path: {
+            ...positionPath,
+            timing: nextTiming,
+          },
+        },
+      });
+    },
+    [positionPath, positionTransform, updateSelectedMaskTransform],
+  );
+
+  const maskPositionGroupHeaderActions = useMemo<ReactNode>(() => {
+    if (!selectedMaskClipId || !selectedMaskIsPathCapable) return null;
+
+    const commonButtonSx = {
+      minWidth: 0,
+      px: 0.75,
+      py: 0.25,
+      textTransform: "none" as const,
+      fontSize: "0.7rem",
+      lineHeight: 1.2,
+    };
+
+    if (armedPathRecording?.clipId === selectedMaskClipId) {
+      return (
+        <Button
+          size="small"
+          color="warning"
+          onClick={handleCancelMaskPathRecording}
+          sx={commonButtonSx}
+        >
+          Cancel Recording
+        </Button>
+      );
+    }
+
+    if (!positionPath) {
+      return (
+        <Button
+          size="small"
+          onClick={handleStartMaskPathRecording}
+          sx={commonButtonSx}
+        >
+          Record Path
+        </Button>
+      );
+    }
+
+    return (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
+        <Button size="small" onClick={handleOpenMaskPathEditor} sx={commonButtonSx}>
+          Edit Path
+        </Button>
+        <Button
+          size="small"
+          onClick={handleStartMaskPathRecording}
+          sx={commonButtonSx}
+        >
+          Re-record
+        </Button>
+        <Button
+          size="small"
+          color="error"
+          onClick={handleRemoveMaskPath}
+          sx={commonButtonSx}
+        >
+          Remove Path
+        </Button>
+      </Box>
+    );
+  }, [
+    armedPathRecording?.clipId,
+    handleCancelMaskPathRecording,
+    handleOpenMaskPathEditor,
+    handleRemoveMaskPath,
+    handleStartMaskPathRecording,
+    positionPath,
+    selectedMaskClipId,
+    selectedMaskIsPathCapable,
+  ]);
+
+  const getMaskLayoutGroupProps = useCallback(
+    (groupId: string) => {
+      if (groupId !== "position") return {};
+      return {
+        disabled: Boolean(positionPath),
+        disableKeyframe: Boolean(positionPath),
+        headerActions: maskPositionGroupHeaderActions,
+      };
+    },
+    [maskPositionGroupHeaderActions, positionPath],
+  );
+
+  const isMaskPathEditorOpen =
+    pathPanelView === "path" &&
+    !!selectedMaskClipId &&
+    !!positionTransform &&
+    !!positionPath &&
+    activePathEditor?.clipId === selectedMaskClipId &&
+    activePathEditor.transformId === positionTransform.id;
+
   if (!selectedClipId) return null;
 
   const selectedMaskIndex = selectedMask
@@ -368,6 +617,35 @@ export const MaskPanel = memo(function MaskPanel() {
   );
   const showSam2DownloadOverlay = hasSam2Masks && !isSam2Available;
   const isDetailView = panelView === "mask" && !!selectedMask;
+
+  if (
+    isDetailView &&
+    isMaskPathEditorOpen &&
+    selectedMask &&
+    positionPath &&
+    selectedMaskIsPathCapable
+  ) {
+    return (
+      <Box
+        data-testid="mask-panel"
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          width: "100%",
+          overflowY: "auto",
+        }}
+      >
+        <PositionPathDetailView
+          path={positionPath}
+          onBack={handleBackFromMaskPathEditor}
+          onTimingChange={handleMaskPathTimingChange}
+          onRemove={handleRemoveMaskPath}
+          onRerecord={handleStartMaskPathRecording}
+        />
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -435,6 +713,7 @@ export const MaskPanel = memo(function MaskPanel() {
                   onUpdateTransform={updateSelectedMaskTransform}
                   onSetTransforms={setSelectedMaskTransforms}
                   onActivateSection={activateSelectedMaskSection}
+                  getGroupProps={getMaskLayoutGroupProps}
                 />
               )}
               <Box sx={{ px: 2, pb: 2 }}>
@@ -554,6 +833,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 onUpdateTransform={updateSelectedMaskTransform}
                 onSetTransforms={setSelectedMaskTransforms}
                 onActivateSection={activateSelectedMaskSection}
+                getGroupProps={getMaskLayoutGroupProps}
               />
 
               <Box sx={{ px: 2, pb: 2 }}>

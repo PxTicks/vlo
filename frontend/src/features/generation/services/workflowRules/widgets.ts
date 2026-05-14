@@ -35,6 +35,24 @@ const DERIVED_WIDGET_VALUE_PARAM = "__value";
 const FRONTEND_CONTROLS_NODE_ID = "__frontend_controls__";
 const FRONTEND_CONTROLS_NODE_TITLE = "Workflow Controls";
 
+interface LiteGraphWidget {
+  name?: string;
+  value?: unknown;
+}
+
+interface LiteGraphNode {
+  widgets?: LiteGraphWidget[];
+}
+
+interface LiteGraphGraph {
+  getNodeById(id: number): LiteGraphNode | null;
+}
+
+interface ComfyAppWithGraph {
+  graph?: LiteGraphGraph | null;
+  rootGraph?: LiteGraphGraph | null;
+}
+
 function resolveGraphNode(
   graphData: Record<string, unknown> | null | undefined,
   nodeId: string,
@@ -147,35 +165,42 @@ function getWidgetValueIndexMap(
   return result;
 }
 
-const KNOWN_WIDGET_VALUE_FALLBACK_INDICES: Readonly<
-  Record<string, Readonly<Record<string, number>>>
-> = {
-  KSamplerAdvanced: {
-    add_noise: 0,
-    noise_seed: 1,
-    steps: 3,
-    cfg: 4,
-    sampler_name: 5,
-    scheduler: 6,
-    start_at_step: 7,
-    end_at_step: 8,
-    return_with_leftover_noise: 9,
-  },
-};
-
-function resolveFallbackWidgetIndex(
-  classType: string | undefined,
+function resolveLiveWidgetValue(
+  editorRef: HTMLIFrameElement | null | undefined,
+  nodeId: string,
   param: string,
-): number | undefined {
-  if (param === "value") {
-    return 0;
-  }
-
-  if (!classType) {
+): unknown {
+  if (!editorRef) {
     return undefined;
   }
 
-  return KNOWN_WIDGET_VALUE_FALLBACK_INDICES[classType]?.[param];
+  const numericNodeId = Number(nodeId);
+  if (!Number.isFinite(numericNodeId)) {
+    return undefined;
+  }
+
+  try {
+    const win = editorRef.contentWindow as
+      | (Window & { app?: ComfyAppWithGraph })
+      | null;
+    const app = win?.app;
+    const graph = app?.rootGraph ?? app?.graph;
+    if (!graph || typeof graph.getNodeById !== "function") {
+      return undefined;
+    }
+
+    const node = graph.getNodeById(numericNodeId);
+    if (!node || !Array.isArray(node.widgets)) {
+      return undefined;
+    }
+
+    const widget = node.widgets.find(
+      (candidate) => candidate?.name === param,
+    );
+    return widget?.value;
+  } catch {
+    return undefined;
+  }
 }
 
 function resolveGraphWidgetValue(
@@ -184,7 +209,13 @@ function resolveGraphWidgetValue(
   classType: string | undefined,
   param: string,
   objectInfo: Record<string, unknown> | null | undefined,
+  editorRef?: HTMLIFrameElement | null,
 ): unknown {
+  const liveWidgetValue = resolveLiveWidgetValue(editorRef, nodeId, param);
+  if (liveWidgetValue !== undefined) {
+    return liveWidgetValue;
+  }
+
   const graphNode = resolveGraphNode(graphData, nodeId);
   if (!graphNode) return undefined;
 
@@ -192,9 +223,7 @@ function resolveGraphWidgetValue(
   if (!Array.isArray(widgetsValues)) return undefined;
 
   const classInfo = resolveClassInfo(objectInfo, classType);
-  const widgetIndex =
-    getWidgetValueIndexMap(classInfo).get(param) ??
-    resolveFallbackWidgetIndex(classType, param);
+  const widgetIndex = getWidgetValueIndexMap(classInfo).get(param);
   if (typeof widgetIndex !== "number" || widgetIndex >= widgetsValues.length) {
     return undefined;
   }
@@ -215,6 +244,7 @@ function getWorkflowParamValue(
 interface WorkflowParamResolutionOptions {
   graphData?: Record<string, unknown> | null;
   objectInfo?: Record<string, unknown> | null;
+  editorRef?: HTMLIFrameElement | null;
 }
 
 function getRuleWidgetDefaultValue(
@@ -250,6 +280,7 @@ function getGraphParamValue(
     classType,
     ref.param,
     options.objectInfo,
+    options.editorRef,
   );
 }
 
@@ -647,6 +678,7 @@ export function resolveWidgetInputsFromRules(
   options: {
     graphData?: Record<string, unknown> | null;
     objectInfo?: Record<string, unknown> | null;
+    editorRef?: HTMLIFrameElement | null;
     providedInputIds?: ReadonlySet<string>;
     frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
     inputMetadata?: Readonly<WorkflowInputMetadataMap>;
@@ -723,6 +755,7 @@ export function resolveWidgetInputsFromRules(
               classType,
               param,
               options.objectInfo,
+              options.editorRef,
             )
           : undefined;
       const hasGraphValue = resolvedGraphValue !== undefined;
@@ -818,6 +851,7 @@ export function resolveWidgetInputsFromRules(
     {
       graphData: options.graphData,
       objectInfo: options.objectInfo,
+      editorRef: options.editorRef,
     },
   );
   const result = [...frontendControls, ...rawWidgets, ...derivedWidgets];
@@ -839,6 +873,7 @@ export function resolveWidgetInputs(
   options: {
     graphData?: Record<string, unknown> | null;
     objectInfo?: Record<string, unknown> | null;
+    editorRef?: HTMLIFrameElement | null;
     providedInputIds?: ReadonlySet<string>;
     frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
     inputMetadata?: Readonly<WorkflowInputMetadataMap>;

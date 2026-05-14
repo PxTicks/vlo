@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   areInputConditionsSatisfied,
   findUnsatisfiedInputValidationRules,
@@ -995,7 +995,7 @@ describe("resolvePresentedInputs", () => {
     ).toBe(true);
   });
 
-  it("resolves conditional dual_sampler_denoise widgets from graph data without object_info for known sampler and primitive nodes", () => {
+  it("resolves conditional dual_sampler_denoise widgets from live app.graph widget values without object_info", () => {
     const rules = {
       version: 3,
       derived_widgets: [
@@ -1035,37 +1035,54 @@ describe("resolvePresentedInputs", () => {
       slots: {},
     };
 
+    const liveNodes = new Map<number, { widgets: Array<{ name: string; value: unknown }> }>([
+      [
+        57,
+        {
+          widgets: [{ name: "start_at_step", value: 0 }],
+        },
+      ],
+      [
+        85,
+        {
+          widgets: [{ name: "value", value: 8 }],
+        },
+      ],
+      [
+        86,
+        {
+          widgets: [{ name: "value", value: 4 }],
+        },
+      ],
+    ]);
+    const editorRef = {
+      contentWindow: {
+        app: {
+          graph: {
+            getNodeById: vi.fn((id: number) => liveNodes.get(id) ?? null),
+          },
+        },
+      },
+    } as unknown as HTMLIFrameElement;
+
     const widgets = resolveWidgetInputs(null, rules, {
       graphData: {
         nodes: [
           {
             id: 57,
             type: "KSamplerAdvanced",
-            widgets_values: [
-              "enable",
-              42,
-              "randomize",
-              8,
-              2,
-              "euler",
-              "simple",
-              0,
-              4,
-              "enable",
-            ],
           },
           {
             id: 85,
             type: "PrimitiveInt",
-            widgets_values: [8, "fixed"],
           },
           {
             id: 86,
             type: "PrimitiveInt",
-            widgets_values: [4, "fixed"],
           },
         ],
       },
+      editorRef,
       providedInputIds: new Set(["94"]),
     });
 

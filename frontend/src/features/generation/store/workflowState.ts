@@ -580,6 +580,7 @@ export function resolveWidgetInputs(
   options: {
     graphData?: Record<string, unknown> | null;
     objectInfo?: Record<string, unknown> | null;
+    editorRef?: HTMLIFrameElement | null;
     providedInputIds?: ReadonlySet<string>;
     frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
     inputMetadata?: Readonly<WorkflowInputMetadataMap>;

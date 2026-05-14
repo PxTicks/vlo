@@ -344,6 +344,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const syncedWorkflow = useGenerationStore((s) => s.syncedWorkflow);
   const syncedGraphData = useGenerationStore((s) => s.syncedGraphData);
   const activeWorkflowRules = useGenerationStore((s) => s.activeWorkflowRules);
+  const editorRef = useGenerationStore((s) => s.editorRef);
   const inputNodeMap = useGenerationStore((s) => s.inputNodeMap);
   const rawObjectInfo = useGenerationStore((s) => s.rawObjectInfo);
   const lastAppliedWidgetValues = useGenerationStore(
@@ -408,6 +409,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       resolveWidgetInputs(syncedWorkflow, activeWorkflowRules, {
         graphData: syncedGraphData,
         objectInfo: rawObjectInfo,
+        editorRef,
         providedInputIds,
         inputMetadata,
       }),
@@ -416,6 +418,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       activeWorkflowRules,
       syncedGraphData,
       rawObjectInfo,
+      editorRef,
       providedInputIds,
       inputMetadata,
     ],

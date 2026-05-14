@@ -157,6 +157,50 @@ async def test_generation_holding_service_keeps_nacked_delivery_pending(
 
 
 @pytest.mark.asyncio
+async def test_generation_holding_service_resyncs_all_persisted_deliveries_across_instances(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "holding"
+    writer = GenerationHoldingService(root=root)
+    reader = GenerationHoldingService(root=root)
+
+    await writer.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        delivery_context=_delivery_context(),
+    )
+    await writer.mark_completed("delivery-1", [])
+
+    initial = await reader.list_project_deliveries("project-1")
+    assert [delivery["delivery_id"] for delivery in initial] == ["delivery-1"]
+    assert initial[0]["status"] == "completed_pending_ack"
+
+    await writer.record_delivery_nack("delivery-1", "Frontend ingest failed")
+    await writer.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-2",
+        prompt_id="prompt-2",
+        client_id="client-2",
+        delivery_context=_delivery_context(),
+    )
+    await writer.mark_completed("delivery-2", [])
+
+    refreshed = await reader.list_project_deliveries("project-1")
+
+    assert [delivery["delivery_id"] for delivery in refreshed] == [
+        "delivery-1",
+        "delivery-2",
+    ]
+    assert [delivery["status"] for delivery in refreshed] == [
+        "completed_pending_ack",
+        "completed_pending_ack",
+    ]
+    assert refreshed[0]["last_delivery_error"] == "Frontend ingest failed"
+
+
+@pytest.mark.asyncio
 async def test_generation_holding_service_marks_stale_inflight_delivery_on_load(
     tmp_path: Path,
 ) -> None:

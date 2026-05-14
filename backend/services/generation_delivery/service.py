@@ -298,37 +298,95 @@ class GenerationHoldingService:
             if self._loaded:
                 return
 
-            for project_dir in self._root.iterdir():
-                if not project_dir.is_dir():
-                    continue
-                for delivery_dir in project_dir.iterdir():
-                    manifest_path = delivery_dir / "manifest.json"
-                    if not manifest_path.is_file():
-                        continue
-                    try:
-                        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                    except (OSError, json.JSONDecodeError) as exc:
-                        logger.warning("Failed to load generation manifest %s: %s", manifest_path, exc)
-                        continue
-                    delivery_id = manifest.get("delivery_id")
-                    project_id = manifest.get("project_id")
-                    if not isinstance(delivery_id, str) or not isinstance(project_id, str):
-                        continue
-                    if manifest.get("status") in {"queued", "running"}:
-                        manifest["status"] = "error"
-                        manifest["error"] = "Backend restarted before delivery completed"
-                        manifest["updated_at"] = _now_ms()
-                        try:
-                            manifest_path.write_text(
-                                json.dumps(manifest, indent=2, sort_keys=True),
-                                encoding="utf-8",
-                            )
-                        except OSError:
-                            logger.warning("Failed to rewrite stale manifest %s", manifest_path)
-                    self._deliveries[delivery_id] = manifest
-                    self._project_index.setdefault(project_id, set()).add(delivery_id)
-
+            await self._sync_persisted_deliveries_locked(mark_stale_inflight=True)
             self._loaded = True
+
+    def _has_live_monitor(self, delivery_id: str) -> bool:
+        task = self._monitor_tasks.get(delivery_id)
+        return task is not None and not task.done()
+
+    def _load_manifest_from_disk(
+        self,
+        manifest_path: Path,
+        *,
+        mark_stale_inflight: bool,
+    ) -> dict[str, Any] | None:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Failed to load generation manifest %s: %s",
+                manifest_path,
+                exc,
+            )
+            return None
+
+        delivery_id = manifest.get("delivery_id")
+        project_id = manifest.get("project_id")
+        if not isinstance(delivery_id, str) or not isinstance(project_id, str):
+            return None
+
+        if mark_stale_inflight and manifest.get("status") in {"queued", "running"}:
+            manifest["status"] = "error"
+            manifest["error"] = "Backend restarted before delivery completed"
+            manifest["updated_at"] = _now_ms()
+            try:
+                manifest_path.write_text(
+                    json.dumps(manifest, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+            except OSError:
+                logger.warning("Failed to rewrite stale manifest %s", manifest_path)
+
+        return manifest
+
+    async def _sync_persisted_deliveries_locked(
+        self,
+        *,
+        mark_stale_inflight: bool,
+    ) -> None:
+        seen_delivery_ids: set[str] = set()
+
+        for project_dir in self._root.iterdir():
+            if not project_dir.is_dir():
+                continue
+            for delivery_dir in project_dir.iterdir():
+                manifest_path = delivery_dir / "manifest.json"
+                if not manifest_path.is_file():
+                    continue
+                manifest = self._load_manifest_from_disk(
+                    manifest_path,
+                    mark_stale_inflight=mark_stale_inflight,
+                )
+                if not manifest:
+                    continue
+
+                delivery_id = manifest["delivery_id"]
+                seen_delivery_ids.add(delivery_id)
+                if self._has_live_monitor(delivery_id):
+                    continue
+                self._deliveries[delivery_id] = manifest
+
+        stale_delivery_ids = [
+            delivery_id
+            for delivery_id in list(self._deliveries)
+            if delivery_id not in seen_delivery_ids and not self._has_live_monitor(delivery_id)
+        ]
+        for delivery_id in stale_delivery_ids:
+            self._deliveries.pop(delivery_id, None)
+
+        self._project_index = {}
+        for delivery_id, manifest in self._deliveries.items():
+            project_id = manifest.get("project_id")
+            if isinstance(project_id, str):
+                self._project_index.setdefault(project_id, set()).add(delivery_id)
+
+    async def _sync_persisted_deliveries(self) -> None:
+        await self._ensure_loaded()
+        async with self._lock:
+            # Re-read manifests on reconnect/list paths so the holding area
+            # works across backend instances and late reconnects.
+            await self._sync_persisted_deliveries_locked(mark_stale_inflight=False)
 
     def _project_root(self, project_id: str) -> Path:
         return self._root / project_id
@@ -620,7 +678,7 @@ class GenerationHoldingService:
             await self._persist_manifest(manifest)
 
     async def acknowledge_delivery(self, project_id: str, delivery_id: str) -> bool:
-        await self._ensure_loaded()
+        await self._sync_persisted_deliveries()
         async with self._lock:
             manifest = self._deliveries.get(delivery_id)
             if not manifest or manifest.get("project_id") != project_id:
@@ -645,7 +703,7 @@ class GenerationHoldingService:
         return True
 
     async def list_project_deliveries(self, project_id: str) -> list[dict[str, Any]]:
-        await self._ensure_loaded()
+        await self._sync_persisted_deliveries()
         async with self._lock:
             delivery_ids = sorted(
                 self._project_index.get(project_id, set()),
@@ -661,7 +719,7 @@ class GenerationHoldingService:
             ]
 
     async def get_delivery(self, project_id: str, delivery_id: str) -> dict[str, Any] | None:
-        await self._ensure_loaded()
+        await self._sync_persisted_deliveries()
         async with self._lock:
             manifest = self._deliveries.get(delivery_id)
             if not manifest or manifest.get("project_id") != project_id:
@@ -675,7 +733,7 @@ class GenerationHoldingService:
         category: str,
         storage_name: str,
     ) -> Path | None:
-        await self._ensure_loaded()
+        await self._sync_persisted_deliveries()
         async with self._lock:
             manifest = self._deliveries.get(delivery_id)
             if not manifest or manifest.get("project_id") != project_id:

@@ -162,4 +162,41 @@ describe("jobMutations", () => {
     expect(patch.jobPreviewFrames?.get("job-1")).toHaveLength(1);
     expect(createSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("ignores preview packets that belong to another prompt", () => {
+    const createSpy = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:ignored");
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    const patch = applyPreviewUpdate(
+      makePreviewState({
+        activeJobId: "job-1",
+        latestPreviewUrl: "blob:current",
+        jobs: new Map([
+          [
+            "job-1",
+            {
+              id: "job-1",
+              status: "running",
+              progress: 50,
+              currentNode: "node-1",
+              outputs: [],
+              error: null,
+              submittedAt: 1,
+              completedAt: null,
+            },
+          ],
+        ]),
+      }),
+      {
+        blob: new Blob(["frame"], { type: "image/png" }),
+        promptId: "job-2",
+      },
+    );
+
+    expect(patch).toEqual({});
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(revokeSpy).not.toHaveBeenCalled();
+  });
 });

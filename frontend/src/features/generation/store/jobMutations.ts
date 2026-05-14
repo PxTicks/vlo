@@ -275,17 +275,55 @@ function buildNextAnimation(
   return { frameUrls, frameRate, totalFrames };
 }
 
+function matchesPreviewNodeId(
+  activeNodeId: string,
+  previewNodeId: string,
+): boolean {
+  return (
+    activeNodeId === previewNodeId ||
+    activeNodeId.startsWith(previewNodeId) ||
+    previewNodeId.startsWith(activeNodeId)
+  );
+}
+
+function previewMatchesActiveJob(
+  activeJob: GenerationJob,
+  preview: ComfyUIPreview,
+): boolean {
+  if (typeof preview.promptId === "string" && preview.promptId.length > 0) {
+    return preview.promptId === activeJob.id;
+  }
+
+  if (
+    typeof preview.nodeId === "string" &&
+    preview.nodeId.length > 0 &&
+    typeof activeJob.currentNode === "string" &&
+    activeJob.currentNode.length > 0
+  ) {
+    return matchesPreviewNodeId(activeJob.currentNode, preview.nodeId);
+  }
+
+  return true;
+}
+
 export function applyPreviewUpdate(
   state: JobPreviewState,
   preview: ComfyUIPreview,
 ): GenerationStorePatch {
+  const activeJobId = state.activeJobId;
+  const activeJob = activeJobId ? state.jobs.get(activeJobId) : null;
+  if (activeJob && isActiveGenerationJob(activeJob)) {
+    if (!previewMatchesActiveJob(activeJob, preview)) {
+      return {};
+    }
+  }
+
   if (state.latestPreviewUrl) {
     URL.revokeObjectURL(state.latestPreviewUrl);
   }
   const nextPreviewUrl = URL.createObjectURL(preview.blob);
   const nextAnimation = buildNextAnimation(state.previewAnimation, preview);
 
-  const activeJobId = state.activeJobId;
   if (!activeJobId) {
     return {
       latestPreviewUrl: nextPreviewUrl,
@@ -293,7 +331,6 @@ export function applyPreviewUpdate(
     };
   }
 
-  const activeJob = state.jobs.get(activeJobId);
   if (!activeJob || !isActiveGenerationJob(activeJob)) {
     return {
       latestPreviewUrl: nextPreviewUrl,

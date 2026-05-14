@@ -2500,6 +2500,31 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockGenerate).toHaveBeenCalledTimes(1);
   });
 
+  it("clears stale live previews when a new generation starts", async () => {
+    makeReadyStoreState();
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    useGenerationStore.setState({
+      latestPreviewUrl: "blob:stale-preview",
+      previewAnimation: {
+        frameUrls: ["blob:stale-frame"],
+        frameRate: 8,
+        totalFrames: 1,
+      },
+    });
+
+    const jobId = await useGenerationStore.getState().submitGeneration({});
+
+    expect(jobId).toBe("prompt-1");
+    expect(useGenerationStore.getState()).toMatchObject({
+      activeJobId: "prompt-1",
+      latestPreviewUrl: null,
+      previewAnimation: null,
+    });
+    expect(revokeSpy).toHaveBeenCalledWith("blob:stale-preview");
+    expect(revokeSpy).toHaveBeenCalledWith("blob:stale-frame");
+  });
+
   it("clears queued future generations before interrupting the active one", async () => {
     const runningJob = {
       ...makeQueuedJob("prompt-running"),

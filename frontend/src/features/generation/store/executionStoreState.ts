@@ -54,6 +54,7 @@ import {
   markJobError,
 } from "./jobMutations";
 import { buildGenerationFamilyRequestKey } from "../utils/familyAssignment";
+import { revokePreviewAnimation } from "./previewState";
 import { resolveWorkflowDisplayName } from "./workflowCatalog";
 import { isTemporaryWorkflowPersistenceId } from "./workflowCatalog";
 import type {
@@ -863,6 +864,11 @@ export function buildExecutionStoreState(
           return {};
         }
 
+        if (state.latestPreviewUrl) {
+          URL.revokeObjectURL(state.latestPreviewUrl);
+        }
+        revokePreviewAnimation(state.previewAnimation);
+
         const nextPreviewFrames = new Map(state.jobPreviewFrames);
         const previewMode = newJob.postprocessConfig?.mode ?? "auto";
         if (
@@ -879,6 +885,8 @@ export function buildExecutionStoreState(
           jobs: updated,
           jobPreviewFrames: nextPreviewFrames,
           activeJobId: submitted.promptId,
+          latestPreviewUrl: null,
+          previewAnimation: null,
           pipelineStatus: IDLE_PIPELINE_STATUS,
           preprocessAbortController: null,
         };

@@ -1,7 +1,13 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { act } from "react";
-import { Application, Container, FederatedPointerEvent, Sprite } from "pixi.js";
+import {
+  Application,
+  Container,
+  FederatedPointerEvent,
+  Graphics,
+  Sprite,
+} from "pixi.js";
 import type { TimelineClip } from "../../../../../types/TimelineTypes";
 import { useTimelineStore } from "../../../../timeline";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
@@ -20,6 +26,10 @@ vi.mock("pixi.js", async () => {
       stage = {
         on: vi.fn(),
         off: vi.fn(),
+      };
+      screen = {
+        width: 1920,
+        height: 1080,
       };
       ticker = {
         add: vi.fn(),
@@ -532,5 +542,81 @@ describe("useTransformInteractionController", () => {
         (point) => point.y > 0,
       ),
     ).toBe(true);
+  });
+
+  it("anchors the path overlay to the viewport center while scrubbing", () => {
+    playbackClock.setTime(50);
+    mockSprite.position.set(1200, 800);
+
+    const circleSpy = vi.spyOn(Graphics.prototype, "circle");
+
+    const clip: TimelineClip = {
+      id: "clip_overlay_anchor",
+      trackId: "track_1",
+      type: "video",
+      assetId: "asset_1",
+      start: 0,
+      timelineDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      croppedSourceDuration: 100,
+      sourceDuration: 100,
+      name: "Overlay Anchor",
+      transformations: [
+        {
+          id: "position_path_anchor",
+          type: "position",
+          isEnabled: true,
+          parameters: {
+            x: 0,
+            y: 0,
+            path: {
+              type: "path2d",
+              curve: "centripetal_catmull_rom",
+              controlPoints: [
+                { x: 0, y: 0 },
+                { x: 100, y: 0 },
+              ],
+              timing: {
+                type: "spline",
+                points: [
+                  { time: 0, value: 0 },
+                  { time: 1, value: 1 },
+                ],
+              },
+            },
+          },
+        },
+      ],
+    } as TimelineClip;
+
+    useTimelineStore.getState().addClip(clip);
+    useTimelineStore.getState().selectClip(clip.id);
+    activeClipRef = { current: clip };
+
+    renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    const drawOverlay = vi
+      .mocked(mockApp.ticker.add)
+      .mock.calls[0]?.[0] as (() => void) | undefined;
+
+    expect(drawOverlay).toBeDefined();
+
+    act(() => {
+      drawOverlay?.();
+    });
+
+    expect(circleSpy).toHaveBeenCalledWith(960, 540, expect.any(Number));
+    expect(circleSpy).toHaveBeenCalledWith(1060, 540, expect.any(Number));
+
+    circleSpy.mockRestore();
   });
 });

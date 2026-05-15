@@ -151,6 +151,13 @@ export function useTransformInteractionController(
 
   const interactionRef = useRef<InteractionState>(createInitialInteractionState());
   const pathOverlayRef = useRef<Graphics | null>(null);
+  const resolveViewportCenter = (): Point2D | null => {
+    if (!app || !viewport) return null;
+    return toViewportLocal(viewport, {
+      x: app.screen.width / 2,
+      y: app.screen.height / 2,
+    });
+  };
 
   const handlers = useMemo(() => {
     const findClipById = (clipId: string): TimelineClip | null => {
@@ -1005,14 +1012,19 @@ export function useTransformInteractionController(
         return;
       }
 
+      const viewportCenter = resolveViewportCenter();
+      if (!viewportCenter) {
+        overlay.visible = false;
+        return;
+      }
+
       overlay.visible = true;
       drawPositionPathOverlay(overlay, {
         controlPoints,
         currentPoint,
-        baseOrigin: {
-          x: sprite.position.x - currentPoint.x,
-          y: sprite.position.y - currentPoint.y,
-        },
+        // Anchor the path to the stable viewport center rather than the
+        // live sprite position, which can momentarily lag while scrubbing.
+        baseOrigin: viewportCenter,
         isProvisional,
       });
     };

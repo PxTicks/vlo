@@ -297,9 +297,9 @@ export const TimelineToolbar = () => {
                 }
               });
             }}
-            sx={{ color: "#fbc02d" }}
+            sx={{ color: "#eee" }}
           >
-            <ArrowDropDownIcon fontSize="small" />
+            <ArrowDropDownIcon fontSize="medium" />
           </IconButton>
         </Tooltip>
 
@@ -318,11 +318,11 @@ export const TimelineToolbar = () => {
               onClick={handleDetectBeats}
               disabled={isDetectingBeats || selectedClipsHaveBeats}
               sx={{
-                color: selectedClipsHaveBeats ? "#666" : "#fbc02d",
+                color: selectedClipsHaveBeats ? "#666" : "#eee",
               }}
             >
               {isDetectingBeats ? (
-                <CircularProgress size={16} sx={{ color: "#fbc02d" }} />
+                <CircularProgress size={16} sx={{ color: "#eee" }} />
               ) : (
                 <MusicNoteIcon fontSize="small" />
               )}

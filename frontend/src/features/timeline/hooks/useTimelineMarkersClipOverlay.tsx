@@ -18,10 +18,10 @@ import { getTicksPerFrame } from "../../timelineSelection";
 import { buildFrameSnappedSourceTimeDrag } from "../utils/snapDragOverlay";
 
 export const MARKER_COLOR = "#fbc02d";
-const MARKER_ICON_FONT_SIZE = 28;
+const MARKER_ICON_FONT_SIZE = 32;
 /** Lane "top" sits at 30% of clip height; this offset pulls the icon
  *  up so its top edge is flush with the clip's top edge. */
-const MARKER_VERTICAL_OFFSET_PX = -10;
+const MARKER_VERTICAL_OFFSET_PX = -12.33;
 
 interface MarkerMenuState {
   markerId: string;

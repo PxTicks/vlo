@@ -284,13 +284,15 @@ describe("SelectionOverlay", () => {
       screen.getByText("Use the highlighted tracks for this pass"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
+      screen.queryByText(
         "Click timeline rows to choose which tracks to include in this selection.",
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("selection-track-row-track-1")).toBeInTheDocument();
     expect(screen.getByText("Back to Range")).toBeInTheDocument();
     expect(screen.getByText("Confirm Tracks")).toBeInTheDocument();
+    expect(screen.getByText("2 included tracks")).toBeInTheDocument();
+    expect(screen.queryByText(/Duration:/)).not.toBeInTheDocument();
   });
 
   it("toggles track inclusion from the full-row track overlay", () => {
@@ -305,6 +307,21 @@ describe("SelectionOverlay", () => {
     expect(selectionState.toggleSelectionIncludedTrack).toHaveBeenCalledWith("track-3");
   });
 
+  it("falls back to the default track prompt when no workflow message is provided", () => {
+    selectionState = createSelectionState({
+      selectionStage: "tracks",
+      selectionMessage: null,
+    });
+
+    render(<SelectionOverlay />);
+
+    expect(
+      screen.getByText(
+        "Click timeline rows to choose which tracks to include in this selection.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("disables final track confirmation until a track is selected", () => {
     selectionState = createSelectionState({
       selectionStage: "tracks",
@@ -314,9 +331,8 @@ describe("SelectionOverlay", () => {
     render(<SelectionOverlay />);
 
     expect(screen.getByText("Confirm Tracks")).toBeDisabled();
-    expect(
-      screen.getByText("Select at least one track to continue."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("No tracks selected")).toBeInTheDocument();
+    expect(screen.queryByText(/Select at least one track/)).not.toBeInTheDocument();
   });
 
   it("confirms immediately and does not bubble when subselection is disabled", () => {

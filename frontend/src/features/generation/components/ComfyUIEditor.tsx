@@ -85,6 +85,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const setEditorNeedsReconnect = useGenerationStore(
     (s) => s.setEditorNeedsReconnect,
   );
+  const connectionStatus = useGenerationStore((s) => s.connectionStatus);
   const [loading, setLoading] = useState(true);
   const [appReady, setAppReady] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -356,6 +357,22 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     if (editorReconnectSignal === 0) return;
     recoverIframe("manual reconnect requested");
   }, [editorReconnectSignal, recoverIframe]);
+
+  // The iframe is mounted on first render and stays alive across open/close
+  // cycles, but the recovery loop below (and the iframe `onLoad` initializer)
+  // are gated on `open`. If the user starts vlo before ComfyUI, the iframe
+  // proxy returns 502 on first load; the user typically never opens this
+  // dialog, so nothing here notices when ComfyUI later comes up — the iframe
+  // stays on the dead 502 page and the panel spins on "Loading inputs..."
+  // forever. Watch for the disconnected→connected transition globally and
+  // reload the iframe if its app object never appeared.
+  useEffect(() => {
+    if (connectionStatus !== "connected") return;
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    if (isIframeAppReady(iframe)) return;
+    recoverIframe("ComfyUI became reachable; iframe app never initialized");
+  }, [connectionStatus, recoverIframe]);
 
   const syncLatestWorkflowFromIframe = useCallback(async () => {
     if (isGraphMutationInFlight()) return;

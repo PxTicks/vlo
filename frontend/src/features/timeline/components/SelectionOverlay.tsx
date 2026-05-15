@@ -36,6 +36,9 @@ export interface SelectionOverlayProps {
   recommendedFrameStep?: number | null;
 }
 
+const DEFAULT_TRACK_SELECTION_PROMPT =
+  "Click timeline rows to choose which tracks to include in this selection.";
+
 export function SelectionOverlay({
   maxSelectionTicks = null,
   recommendedMaxTicks,
@@ -84,6 +87,7 @@ export function SelectionOverlay({
   );
   const onConfirmSelection = useExtractStore((s) => s.onConfirmSelection);
   const zoomScale = useTimelineViewStore((s) => s.zoomScale);
+  const scrollContainer = useTimelineViewStore((s) => s.scrollContainer);
   const projectFps = useProjectStore((s) => s.config.fps);
   const tracks = useTimelineStore((s) => s.tracks);
   const snappingEnabled = useInteractionStore((s) => s.snappingEnabled);
@@ -426,10 +430,15 @@ export function SelectionOverlay({
         selectionIncludedTrackIds.length === 1 ? "" : "s"
       }`
     : "No tracks selected";
-  const showSelectionMessage =
-    !!selectionMessage &&
-    (!selectionIncludeModeEnabled || isTrackSelectionStage);
-  const showRangeSelectionMeta = showSelectionMessage;
+  const trackSelectionPrompt = isTrackSelectionStage
+    ? selectionMessage ?? DEFAULT_TRACK_SELECTION_PROMPT
+    : null;
+  const showRangeSelectionMessage =
+    !!selectionMessage && !selectionIncludeModeEnabled;
+  const trackSelectionDialogTop = Math.max(
+    8,
+    (scrollContainer?.getBoundingClientRect().top ?? 0) + 8,
+  );
 
   // Determine if we should show a warning
   const isOverRecommended =
@@ -698,85 +707,61 @@ export function SelectionOverlay({
         onPointerDown={stopOverlayEventPropagation}
         sx={{
           position: "fixed",
-          bottom: 16,
+          top: isTrackSelectionStage ? `${trackSelectionDialogTop}px` : "auto",
+          bottom: isTrackSelectionStage ? "auto" : 16,
           left: "50%",
           transform: "translateX(-50%)",
           zIndex: 1000,
           bgcolor: "#222",
           border: "1px solid #444",
           px: 2,
-          py: 1,
+          py: isTrackSelectionStage ? 0.75 : 1,
           display: "flex",
           flexDirection:
-            isTrackSelectionStage || showRangeSelectionMeta ? "column" : "row",
-          gap: isTrackSelectionStage || showRangeSelectionMeta ? 1 : 1.5,
+            isTrackSelectionStage || showRangeSelectionMessage ? "column" : "row",
+          gap: isTrackSelectionStage ? 0.75 : showRangeSelectionMessage ? 1 : 1.5,
           alignItems:
-            isTrackSelectionStage || showRangeSelectionMeta
+            isTrackSelectionStage || showRangeSelectionMessage
               ? "stretch"
               : "center",
           borderRadius: 2,
           width:
-            isTrackSelectionStage || showRangeSelectionMeta
+            isTrackSelectionStage
+              ? "auto"
+              : isTrackSelectionStage || showRangeSelectionMessage
               ? "min(90vw, 920px)"
               : "max-content",
-          maxWidth: "calc(100vw - 32px)",
+          maxWidth: isTrackSelectionStage ? "min(88vw, 760px)" : "calc(100vw - 32px)",
         }}
       >
-        {showSelectionMessage ? (
+        {trackSelectionPrompt ? (
+          <Typography
+            variant="body2"
+            title={trackSelectionPrompt}
+            noWrap
+            sx={{
+              color: "#d7ecf6",
+              lineHeight: 1.35,
+              minWidth: 0,
+            }}
+          >
+            {trackSelectionPrompt}
+          </Typography>
+        ) : null}
+
+        {showRangeSelectionMessage ? (
           <Typography variant="body2" sx={{ color: "#ddd", lineHeight: 1.4 }}>
             {selectionMessage}
           </Typography>
         ) : null}
 
-        {isTrackSelectionStage ? (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 1,
-              flexWrap: "wrap",
-            }}
-          >
-            <Typography variant="body2" sx={{ color: "#d7ecf6", lineHeight: 1.5 }}>
-              Click timeline rows to choose which tracks to include in this
-              selection.
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{ color: hasIncludedTracks ? "#7ec8e3" : "#ffb74d" }}
-            >
-              {trackScopeLabel}
-            </Typography>
-          </Box>
-        ) : null}
-
-        {isTrackSelectionStage ? (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 1,
-              flexWrap: "wrap",
-            }}
-          >
-            <Typography variant="body2" sx={{ color: "#aaa" }}>
-              Duration: {currentDurationSeconds.toFixed(2)}s ({currentFrameCount}f)
-            </Typography>
-            {!hasIncludedTracks ? (
-              <Typography variant="caption" sx={{ color: "#ffb74d" }}>
-                Select at least one track to continue.
-              </Typography>
-            ) : null}
-          </Box>
-        ) : (
+        {!isTrackSelectionStage ? (
           <Box
             sx={{
               display: "flex",
               gap: 1.5,
               alignItems: "center",
-              flexWrap: showRangeSelectionMeta ? "wrap" : "nowrap",
+              flexWrap: showRangeSelectionMessage ? "wrap" : "nowrap",
             }}
           >
             <Box sx={{ display: "flex", alignItems: "center", mr: 1 }}>
@@ -913,44 +898,63 @@ export function SelectionOverlay({
               )}
             </Box>
           </Box>
-        )}
+        ) : null}
 
         <Box
           data-testid="selection-overlay-actions"
           sx={{
             display: "flex",
             alignItems: "center",
-            gap: 1,
-            justifyContent: "flex-end",
+            gap: 1.5,
+            justifyContent: isTrackSelectionStage ? "space-between" : "flex-end",
+            flexWrap: "wrap",
             flexShrink: 0,
           }}
         >
           {isTrackSelectionStage ? (
+            <Typography
+              variant="caption"
+              sx={{ color: hasIncludedTracks ? "#7ec8e3" : "#ffb74d" }}
+            >
+              {trackScopeLabel}
+            </Typography>
+          ) : null}
+
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              marginLeft: isTrackSelectionStage ? "auto" : 0,
+            }}
+          >
+            {isTrackSelectionStage ? (
+              <Button
+                size="small"
+                color="inherit"
+                onClick={handleReturnToRangeSelection}
+                sx={{ color: "#aaa" }}
+              >
+                Back to Range
+              </Button>
+            ) : null}
             <Button
               size="small"
               color="inherit"
-              onClick={handleReturnToRangeSelection}
+              onClick={handleCancel}
               sx={{ color: "#aaa" }}
             >
-              Back to Range
+              Cancel
             </Button>
-          ) : null}
-          <Button
-            size="small"
-            color="inherit"
-            onClick={handleCancel}
-            sx={{ color: "#aaa" }}
-          >
-            Cancel
-          </Button>
-          <Button
-            size="small"
-            variant="contained"
-            onClick={handleConfirm}
-            disabled={isTrackSelectionStage && !hasIncludedTracks}
-          >
-            {isTrackSelectionStage ? "Confirm Tracks" : "Confirm Selection"}
-          </Button>
+            <Button
+              size="small"
+              variant="contained"
+              onClick={handleConfirm}
+              disabled={isTrackSelectionStage && !hasIncludedTracks}
+            >
+              {isTrackSelectionStage ? "Confirm Tracks" : "Confirm Selection"}
+            </Button>
+          </Box>
         </Box>
       </Paper>
     </>

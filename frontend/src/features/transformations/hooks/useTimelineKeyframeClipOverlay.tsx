@@ -237,7 +237,7 @@ function useKeyframeOverlayItems({
           <DiamondMarker
             sx={{
               backgroundColor: marker.color,
-              cursor: dragHandlers ? "grab" : undefined,
+              cursor: dragHandlers ? "default" : undefined,
             }}
           />
         ),

@@ -393,7 +393,7 @@ function TimelineClipComponent({
         {
           // --- Dynamic Visuals (Hybrid approach) ---
           backgroundColor: getBackgroundColor(),
-          cursor: isOverlay ? "grabbing" : "grab",
+          cursor: "default",
           border: "1px solid rgba(255,255,255,0.2)",
           outline: isSelected ? "2px solid #fff" : "2px solid transparent",
           outlineOffset: "-1px",

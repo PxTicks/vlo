@@ -185,6 +185,12 @@ describe("TimelineClip Visual Geometry", () => {
     expect(inlineLeft).toContain("var(--drag-delta-x, 0px)");
   });
 
+  it("uses the default cursor for draggable clips", () => {
+    render(<TimelineClipItem clip={mockClip} isOverlay={false} />);
+
+    expect(screen.getByTestId("timeline-clip").style.cursor).toBe("default");
+  });
+
   it("applies resize deltas via CSS variables", () => {
     // Simulate a resize operation active on this clip
     useInteractionStore.setState({

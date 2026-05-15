@@ -134,7 +134,7 @@ function useClipMarkersOverlayItems({ clip }: { clip: TimelineClip }) {
                 color: MARKER_COLOR,
                 fontSize: MARKER_ICON_FONT_SIZE,
                 filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.6))",
-                cursor: "grab",
+                cursor: "default",
                 outline: isMenuTarget
                   ? `2px solid ${MARKER_COLOR}`
                   : undefined,

@@ -165,4 +165,34 @@ describe("useTimelineKeyframeClipOverlay", () => {
     ).toBe(true);
     expect(result.current.every((item) => item.placement.lane === "middle")).toBe(true);
   });
+
+  it("uses the default cursor for draggable overlay keyframes", () => {
+    const clip: TimelineClip = {
+      ...baseClip,
+      transformations: [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: { x: 0, y: 0 },
+          keyframeTimes: [120],
+        },
+      ],
+    };
+
+    useTimelineStore.setState({ clips: [clip] });
+    useTransformationViewStore.setState({
+      activeSection: {
+        clipId: clip.id,
+        sectionId: getDefaultSectionId("layout"),
+      },
+    });
+
+    const { result } = renderHook(() => useOverlayItems(clip));
+    const firstContent = result.current[0].content as ReactElement<{
+      sx?: { cursor?: string };
+    }>;
+
+    expect(firstContent.props.sx?.cursor).toBe("default");
+  });
 });

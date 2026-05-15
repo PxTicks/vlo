@@ -610,11 +610,13 @@ export function buildWorkflowStoreState(
             comfyApi
               .getWorkflowRules(workflowId)
               .then((result) => ({
-                rules: result.rules,
+                rules: result.has_sidecar ? result.rules : EMPTY_WORKFLOW_RULES,
+                rulesSourceId: result.has_sidecar ? workflowId : null,
                 warnings: result.warnings ?? [],
               }))
               .catch((error) => ({
                 rules: EMPTY_WORKFLOW_RULES,
+                rulesSourceId: null,
                 warnings: [
                   {
                     code: "rules_fetch_failed",
@@ -630,7 +632,7 @@ export function buildWorkflowStoreState(
           graphData = graphResponse;
           rules = fetchedRules.rules;
           rulesWarnings = fetchedRules.warnings;
-          rulesSourceId = workflowId;
+          rulesSourceId = fetchedRules.rulesSourceId;
         }
         if (isStale()) return;
 

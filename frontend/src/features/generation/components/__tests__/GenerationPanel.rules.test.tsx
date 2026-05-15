@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../hooks/useGenerationPanel", () => ({
@@ -116,6 +116,8 @@ describe("GenerationPanel workflow rule hints", () => {
   beforeEach(() => {
     useGenerationStore.setState({
       activeWorkflowRules: null,
+      rulesWorkflowSourceId: null,
+      selectedWorkflowId: "wf.json",
       derivedMaskMappings: [],
       maskCropMode: "crop",
       maskCropDilation: 0.1,
@@ -269,6 +271,7 @@ describe("GenerationPanel workflow rule hints", () => {
           },
         ],
       }),
+      rulesWorkflowSourceId: "wf.json",
       derivedMaskMappings: [
         {
           sourceNodeId: "1",
@@ -328,6 +331,7 @@ describe("GenerationPanel workflow rule hints", () => {
           },
         ],
       }),
+      rulesWorkflowSourceId: "wf.json",
     });
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
       makeHookState(),
@@ -383,6 +387,7 @@ describe("GenerationPanel workflow rule hints", () => {
           },
         ],
       }),
+      rulesWorkflowSourceId: "wf.json",
       setTargetResolution,
     });
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
@@ -698,7 +703,7 @@ describe("GenerationPanel workflow rule hints", () => {
     expect(screen.getByRole("button", { name: "Send to Timeline" })).toBeInTheDocument();
   });
 
-  it("switches to manual mode, hides smart-only controls, and shows edit workflow", async () => {
+  it("switches to manual mode, hides rules-only controls, and shows edit workflow", async () => {
     const setEditorOpen = vi.fn();
     useGenerationStore.setState({
       activeWorkflowRules: createDefaultWorkflowRules({
@@ -769,11 +774,12 @@ describe("GenerationPanel workflow rule hints", () => {
           maskType: "binary",
         },
       ],
+      rulesWorkflowSourceId: "wf.json",
       maskCropMode: "crop",
     });
 
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      (mode: "smart" | "manual" | undefined) =>
+      (mode: "rules" | "manual" | undefined) =>
         makeHookState({
           setEditorOpen,
           workflowInputs: [
@@ -808,6 +814,7 @@ describe("GenerationPanel workflow rule hints", () => {
 
     render(<GenerationPanel />);
 
+    expect(screen.getByLabelText("Mode")).toHaveTextContent("Rules");
     expect(screen.getByText("Resolution")).toBeInTheDocument();
     expect(screen.getByText("Mask crop mode")).toBeInTheDocument();
 
@@ -823,6 +830,62 @@ describe("GenerationPanel workflow rule hints", () => {
     fireEvent.click(editWorkflowButton);
 
     expect(setEditorOpen).toHaveBeenCalledWith(true);
+  });
+
+  it("hides rules mode when no workflow rules file is available", () => {
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (mode: "rules" | "manual" | undefined) =>
+        makeHookState({
+          workflowInputs: [
+            {
+              nodeId: "6",
+              classType: "CLIPTextEncode",
+              inputType: "text",
+              param: "text",
+              label: mode === "manual" ? "Manual Prompt" : "Prompt",
+              currentValue: "",
+              origin: "inferred",
+            },
+          ],
+        }),
+    );
+
+    render(<GenerationPanel />);
+
+    expect(screen.getByLabelText("Mode")).toHaveTextContent("Manual");
+    fireEvent.mouseDown(screen.getByLabelText("Mode"));
+    expect(screen.queryByRole("option", { name: "Rules" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Manual" })).toBeInTheDocument();
+  });
+
+  it("defaults back to rules when they become available for the selected workflow", async () => {
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (mode: "rules" | "manual" | undefined) =>
+        makeHookState({
+          workflowInputs: [
+            {
+              nodeId: "6",
+              classType: "CLIPTextEncode",
+              inputType: "text",
+              param: "text",
+              label: mode === "manual" ? "Manual Prompt" : "Prompt",
+              currentValue: "",
+              origin: mode === "manual" ? "inferred" : "rule",
+            },
+          ],
+        }),
+    );
+
+    render(<GenerationPanel />);
+    expect(screen.getByLabelText("Mode")).toHaveTextContent("Manual");
+
+    await act(async () => {
+      useGenerationStore.setState({
+        rulesWorkflowSourceId: "wf.json",
+      });
+    });
+
+    expect(screen.getByLabelText("Mode")).toHaveTextContent("Rules");
   });
 });
 

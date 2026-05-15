@@ -223,6 +223,7 @@ describe("useGenerationStore workflow rules", () => {
     vi.spyOn(comfyApi, "getWorkflowContent").mockReturnValue(graphPromise);
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
+      has_sidecar: true,
       rules: makeWorkflowRules(),
       warnings: [],
     });
@@ -306,6 +307,33 @@ describe("useGenerationStore workflow rules", () => {
     await useGenerationStore.getState().loadWorkflow("wf.json");
 
     expect(useGenerationStore.getState().maskCropMode).toBe("full");
+  });
+
+  it("keeps rules mode disabled when a workflow has no sidecar rules file", async () => {
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({});
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "wf.json",
+      has_sidecar: false,
+      rules: makeWorkflowRules({
+        nodes: {
+          "145": {
+            present: {
+              label: "Should Not Apply",
+              input_type: "video",
+              param: "file",
+              class_type: "LoadVideo",
+            },
+          },
+        },
+      }),
+      warnings: [],
+    });
+
+    await useGenerationStore.getState().loadWorkflow("wf.json");
+
+    const state = useGenerationStore.getState();
+    expect(state.rulesWorkflowSourceId).toBeNull();
+    expect(state.activeWorkflowRules?.nodes).toEqual({});
   });
 
   it("loads generated asset metadata as a loaded workflow and applies matched sidecar rules", async () => {

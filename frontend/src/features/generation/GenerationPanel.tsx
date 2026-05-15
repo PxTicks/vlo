@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type DragEvent,
   type MouseEvent,
@@ -248,7 +249,17 @@ export function GenerationPanel() {
   const [isWorkflowUploadPending, setIsWorkflowUploadPending] = useState(false);
   const [isWorkflowJsonDragActive, setIsWorkflowJsonDragActive] =
     useState(false);
-  const [workflowMode, setWorkflowMode] = useState<"smart" | "manual">("smart");
+  const [workflowMode, setWorkflowMode] = useState<"rules" | "manual">("rules");
+  const selectedWorkflowIdForMode = useGenerationStore((s) => s.selectedWorkflowId);
+  const rulesWorkflowSourceId = useGenerationStore((s) => s.rulesWorkflowSourceId);
+  const hasRulesMode =
+    selectedWorkflowIdForMode === TEMP_WORKFLOW_ID
+      ? rulesWorkflowSourceId !== null
+      : selectedWorkflowIdForMode !== null &&
+        rulesWorkflowSourceId === selectedWorkflowIdForMode;
+  const effectiveWorkflowMode = hasRulesMode ? workflowMode : "manual";
+  const previousWorkflowIdForModeRef = useRef<string | null>(null);
+  const previousHasRulesModeRef = useRef(hasRulesMode);
   const [generateMenuAnchorEl, setGenerateMenuAnchorEl] =
     useState<HTMLElement | null>(null);
   const [customGenerateDialogOpen, setCustomGenerateDialogOpen] =
@@ -324,7 +335,7 @@ export function GenerationPanel() {
     importedAssets,
     sendableAssets,
     handleSendToTimeline,
-  } = useGenerationPanel(workflowMode);
+  } = useGenerationPanel(effectiveWorkflowMode);
 
   const derivedMaskMappings = useGenerationStore((s) => s.derivedMaskMappings);
   const activeWorkflowRules = useGenerationStore((s) => s.activeWorkflowRules);
@@ -352,8 +363,8 @@ export function GenerationPanel() {
   const showResolutionSelector = Boolean(
     aspectRatioProcessingConfig?.enabled !== false && hasAspectRatioTargets,
   );
-  const showSmartResolutionSelector =
-    workflowMode === "smart" && showResolutionSelector;
+  const showRulesResolutionSelector =
+    effectiveWorkflowMode === "rules" && showResolutionSelector;
   const supportedResolutions =
     getSupportedWorkflowResolutions(activeWorkflowRules);
   const resolutionOptions: number[] =
@@ -366,9 +377,9 @@ export function GenerationPanel() {
   const pipelineWidgetInputs = useMemo(
     () =>
       resolvePipelineWidgetInputs(activeWorkflowRules, {
-        showTargetResolution: showSmartResolutionSelector,
+        showTargetResolution: showRulesResolutionSelector,
         currentResolution,
-        showMaskControls: workflowMode === "smart" && hasMaskMappings,
+        showMaskControls: effectiveWorkflowMode === "rules" && hasMaskMappings,
         maskCropMode,
         maskCropDilation,
       }),
@@ -378,8 +389,8 @@ export function GenerationPanel() {
       hasMaskMappings,
       maskCropDilation,
       maskCropMode,
-      showSmartResolutionSelector,
-      workflowMode,
+      effectiveWorkflowMode,
+      showRulesResolutionSelector,
     ],
   );
   const displayWidgetInputs = useMemo(
@@ -387,7 +398,7 @@ export function GenerationPanel() {
     [pipelineWidgetInputs, widgetInputs],
   );
   const exactAspectRatioWidgetKey = useMemo(() => {
-    if (!showSmartResolutionSelector) {
+    if (!showRulesResolutionSelector) {
       return null;
     }
 
@@ -407,7 +418,7 @@ export function GenerationPanel() {
   }, [
     aspectRatioProcessingConfig,
     displayWidgetInputs,
-    showSmartResolutionSelector,
+    showRulesResolutionSelector,
   ]);
   const canSaveWorkflowToBackend =
     !isBackendSavePending &&
@@ -418,6 +429,26 @@ export function GenerationPanel() {
     () => buildWorkflowSignature(syncedGraphData),
     [syncedGraphData],
   );
+
+  useEffect(() => {
+    if (!hasRulesMode && workflowMode === "rules") {
+      setWorkflowMode("manual");
+    }
+  }, [hasRulesMode, workflowMode]);
+
+  useEffect(() => {
+    const workflowChanged =
+      previousWorkflowIdForModeRef.current !== selectedWorkflowIdForMode;
+    const rulesJustBecameAvailable =
+      !previousHasRulesModeRef.current && hasRulesMode;
+
+    if (hasRulesMode && (workflowChanged || rulesJustBecameAvailable)) {
+      setWorkflowMode("rules");
+    }
+
+    previousWorkflowIdForModeRef.current = selectedWorkflowIdForMode;
+    previousHasRulesModeRef.current = hasRulesMode;
+  }, [hasRulesMode, selectedWorkflowIdForMode]);
   const activeNodeStatus = useMemo(
     () =>
       formatActiveNodeStatus(
@@ -954,14 +985,14 @@ export function GenerationPanel() {
           <InputLabel id="generation-mode-label">Mode</InputLabel>
           <Select
             labelId="generation-mode-label"
-            value={workflowMode}
+            value={effectiveWorkflowMode}
             label="Mode"
             onChange={(event) =>
-              setWorkflowMode(event.target.value as "smart" | "manual")
+              setWorkflowMode(event.target.value as "rules" | "manual")
             }
             sx={{ bgcolor: "#1a1a1a" }}
           >
-            <MenuItem value="smart">Smart</MenuItem>
+            {hasRulesMode ? <MenuItem value="rules">Rules</MenuItem> : null}
             <MenuItem value="manual">Manual</MenuItem>
           </Select>
         </FormControl>
@@ -1035,7 +1066,7 @@ export function GenerationPanel() {
               randomizeToggles={randomizeToggles}
               onWidgetChange={handleDisplayedWidgetChange}
               onToggleRandomize={handleToggleRandomize}
-              showExactAspectRatioControl={showSmartResolutionSelector}
+              showExactAspectRatioControl={showRulesResolutionSelector}
               exactAspectRatioWidgetKey={exactAspectRatioWidgetKey}
               exactAspectRatio={exactAspectRatio}
               onExactAspectRatioChange={setExactAspectRatio}
@@ -1043,7 +1074,7 @@ export function GenerationPanel() {
             />
           ) : null}
 
-          {workflowMode === "manual" ? (
+          {effectiveWorkflowMode === "manual" ? (
             <Box sx={{ px: 2, pb: 1 }}>
               <Button
                 fullWidth

@@ -179,7 +179,7 @@ interface VideoSelectionExtractionOptions {
   timelineSelection: ReturnType<typeof createTimelineSelection>;
   thumbnailFile: File;
   extractionRequestId: number;
-  mode: "smart" | "manual";
+  mode: "rules" | "manual";
   derivedMaskMappings: ReturnType<typeof useGenerationStore.getState>["derivedMaskMappings"];
   setMediaInputTimelineSelection: ReturnType<
     typeof useGenerationStore.getState
@@ -242,7 +242,7 @@ async function extractVideoTimelineSelection({
   });
 }
 
-export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
+export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const [editorOpen, setEditorOpen] = useState(false);
   const [urlAnchorEl, setUrlAnchorEl] = useState<null | HTMLElement>(null);
   const [urlInput, setUrlInput] = useState("");
@@ -266,7 +266,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
   const latestPreviewUrl = useGenerationStore((s) => s.latestPreviewUrl);
   const previewAnimation = useGenerationStore((s) => s.previewAnimation);
   const comfyuiDirectUrl = useGenerationStore((s) => s.comfyuiDirectUrl);
-  const smartWorkflowInputs = useGenerationStore((s) => s.workflowInputs);
+  const rulesWorkflowInputs = useGenerationStore((s) => s.workflowInputs);
   const mediaInputs = useGenerationStore((s) => s.mediaInputs);
   const activeJobId = useGenerationStore((s) => s.activeJobId);
   const jobs = useGenerationStore((s) => s.jobs);
@@ -363,7 +363,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     [inputNodeMap, rawObjectInfo, syncedGraphData, syncedWorkflow],
   );
   const workflowInputs =
-    mode === "manual" ? manualWorkflowInputs : smartWorkflowInputs;
+    mode === "manual" ? manualWorkflowInputs : rulesWorkflowInputs;
   const projectConfig = useProjectStore((state) => state.config);
   const workflowInputById = useMemo(
     () => buildWorkflowInputLookup(workflowInputs),
@@ -404,7 +404,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
       ),
     [mediaInputs, projectConfig, workflowInputs],
   );
-  const smartWidgetInputs = useMemo(
+  const rulesWidgetInputs = useMemo(
     () =>
       resolveWidgetInputs(syncedWorkflow, activeWorkflowRules, {
         graphData: syncedGraphData,
@@ -433,7 +433,7 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
     [rawObjectInfo, syncedGraphData, syncedWorkflow],
   );
   const widgetInputs =
-    mode === "manual" ? manualWidgetInputs : smartWidgetInputs;
+    mode === "manual" ? manualWidgetInputs : rulesWidgetInputs;
 
   useEffect(() => {
     widgetValuesRef.current = widgetValues;

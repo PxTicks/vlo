@@ -1469,6 +1469,7 @@ describe("useGenerationStore workflow editor sync", () => {
     });
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
+      has_sidecar: true,
       rules: createDefaultWorkflowRules(),
       warnings: [],
     });
@@ -1487,6 +1488,7 @@ describe("useGenerationStore workflow editor sync", () => {
     });
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
+      has_sidecar: true,
       rules: createDefaultWorkflowRules(),
       warnings: [],
     });
@@ -1522,6 +1524,7 @@ describe("useGenerationStore workflow editor sync", () => {
     });
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
+      has_sidecar: true,
       rules: createDefaultWorkflowRules(),
       warnings: [],
     });
@@ -1558,6 +1561,7 @@ describe("useGenerationStore workflow editor sync", () => {
     });
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
+      has_sidecar: true,
       rules: createDefaultWorkflowRules(),
       warnings: [],
     });
@@ -1603,6 +1607,7 @@ describe("useGenerationStore workflow editor sync", () => {
     });
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
+      has_sidecar: true,
       rules: createDefaultWorkflowRules(),
       warnings: [],
     });
@@ -1627,6 +1632,7 @@ describe("useGenerationStore workflow editor sync", () => {
     });
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
+      has_sidecar: true,
       rules: createDefaultWorkflowRules(),
       warnings: [],
     });
@@ -1664,6 +1670,7 @@ describe("useGenerationStore workflow editor sync", () => {
     vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({});
     vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
       workflow_id: "wf.json",
+      has_sidecar: true,
       rules: createDefaultWorkflowRules(),
       warnings: [],
     });

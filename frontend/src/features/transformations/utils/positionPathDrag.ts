@@ -216,6 +216,9 @@ export const PATH_OVERLAY_DEFAULTS = {
   controlPointColor: 0x1d4ed8,
   controlPointActiveColor: 0xf97316,
   markerColor: 0xffffff,
+  singlePointRadius: 8,
+  controlPointRadius: 10,
+  markerRadius: 12,
 } as const;
 
 interface DrawOverlayParams {
@@ -250,7 +253,7 @@ export function drawPositionPathOverlay(
       .circle(
         baseOrigin.x + controlPoints[0].x,
         baseOrigin.y + controlPoints[0].y,
-        2,
+        PATH_OVERLAY_DEFAULTS.singlePointRadius,
       )
       .fill({ color: curveColor, alpha: 0.9 });
     return;
@@ -292,7 +295,11 @@ export function drawPositionPathOverlay(
 
   controlPoints.forEach((point) => {
     graphics
-      .circle(baseOrigin.x + point.x, baseOrigin.y + point.y, 4)
+      .circle(
+        baseOrigin.x + point.x,
+        baseOrigin.y + point.y,
+        PATH_OVERLAY_DEFAULTS.controlPointRadius,
+      )
       .fill({ color: controlPointColor, alpha: 1 })
       .stroke({ width: 1, color: 0xffffff, alpha: 0.9 });
   });
@@ -301,7 +308,7 @@ export function drawPositionPathOverlay(
     .circle(
       baseOrigin.x + currentPoint.x,
       baseOrigin.y + currentPoint.y,
-      5,
+      PATH_OVERLAY_DEFAULTS.markerRadius,
     )
     .fill({ color: PATH_OVERLAY_DEFAULTS.markerColor, alpha: 1 })
     .stroke({ width: 1, color: curveColor, alpha: 1 });

@@ -49,6 +49,7 @@ import { RangeMaskSection } from "./components/RangeMaskSection";
 import { parseMaskClipId } from "../timeline";
 import type { MaskTimelineClip } from "../../types/TimelineTypes";
 import type { MaskCompositionAlgebra } from "../../types/Components";
+import { useMaskViewStore } from "./store/useMaskViewStore";
 
 const connectedButtonSx = {
   textTransform: "none",
@@ -133,6 +134,7 @@ function useLocalActiveSection(
 export const MaskPanel = memo(function MaskPanel() {
   const [panelView, setPanelView] = useState<MaskPanelView>("home");
   const [homeSubTab, setHomeSubTab] = useState<MaskHomeSubTab>("clip");
+  const setSam2EditorMask = useMaskViewStore((state) => state.setSam2EditorMask);
   const {
     selection,
     panel,
@@ -144,6 +146,7 @@ export const MaskPanel = memo(function MaskPanel() {
   const {
     selectedClipId,
     masks,
+    selectedMaskId,
     selectedMask,
     selectMask,
     duplicateMask,
@@ -596,8 +599,6 @@ export const MaskPanel = memo(function MaskPanel() {
     activePathEditor?.clipId === selectedMaskClipId &&
     activePathEditor.transformId === positionTransform.id;
 
-  if (!selectedClipId) return null;
-
   const selectedMaskIndex = selectedMask
     ? masks.findIndex((mask) => mask.id === selectedMask.id)
     : -1;
@@ -617,6 +618,49 @@ export const MaskPanel = memo(function MaskPanel() {
   );
   const showSam2DownloadOverlay = hasSam2Masks && !isSam2Available;
   const isDetailView = panelView === "mask" && !!selectedMask;
+  const activeSam2EditorClipIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const nextClipId =
+      isDetailView &&
+      selectedMaskIsSam2 &&
+      selectedClipId &&
+      selectedMask &&
+      parseMaskClipId(selectedMask.id)?.maskId === selectedMaskId
+        ? selectedClipId
+        : null;
+
+    const previousClipId = activeSam2EditorClipIdRef.current;
+    if (previousClipId && previousClipId !== nextClipId) {
+      setSam2EditorMask(previousClipId, null);
+    }
+
+    if (nextClipId && selectedMaskId) {
+      setSam2EditorMask(nextClipId, selectedMaskId);
+    } else if (selectedClipId) {
+      setSam2EditorMask(selectedClipId, null);
+    }
+
+    activeSam2EditorClipIdRef.current = nextClipId;
+  }, [
+    isDetailView,
+    selectedClipId,
+    selectedMask,
+    selectedMaskId,
+    selectedMaskIsSam2,
+    setSam2EditorMask,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      const clipId = activeSam2EditorClipIdRef.current;
+      if (clipId) {
+        setSam2EditorMask(clipId, null);
+      }
+    };
+  }, [setSam2EditorMask]);
+
+  if (!selectedClipId) return null;
 
   if (
     isDetailView &&

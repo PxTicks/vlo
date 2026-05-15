@@ -207,6 +207,11 @@ export function useSam2MaskPanel({
   const assets = useAssetStore((state) => state.assets);
   const addLocalAsset = useAssetStore((state) => state.addLocalAsset);
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
+  const sam2EditorMaskId = useMaskViewStore((state) =>
+    selectedClipId
+      ? (state.sam2EditorMaskByClipId[selectedClipId] ?? null)
+      : null,
+  );
 
   const sam2Points = useMemo(
     () => selectedMask?.maskPoints ?? [],
@@ -253,7 +258,8 @@ export function useSam2MaskPanel({
   const isSam2EditorOpen =
     selectedMask?.maskType === "sam2" &&
     selectedMaskId !== null &&
-    isMaskTabActive;
+    isMaskTabActive &&
+    sam2EditorMaskId === selectedMaskId;
   const isSam2Selected = selectedMask?.maskType === "sam2";
 
   const ensureSam2Available = useCallback(async (): Promise<boolean> => {

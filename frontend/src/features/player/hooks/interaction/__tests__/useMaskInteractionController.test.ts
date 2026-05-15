@@ -407,6 +407,7 @@ describe("useMaskInteractionController", () => {
     });
     useMaskViewStore.getState().setSelectedMask(parent.id, "mask_sam2");
     useMaskViewStore.getState().setMaskTabActive(true);
+    useMaskViewStore.getState().setSam2EditorMask(parent.id, "mask_sam2");
 
     const viewport = new Container();
     const spriteParent = new Container();
@@ -487,6 +488,7 @@ describe("useMaskInteractionController", () => {
     });
     useMaskViewStore.getState().setSelectedMask(parent.id, "mask_sam2");
     useMaskViewStore.getState().setMaskTabActive(true);
+    useMaskViewStore.getState().setSam2EditorMask(parent.id, "mask_sam2");
 
     const viewport = new Container();
     const spriteParent = new Container();
@@ -509,6 +511,52 @@ describe("useMaskInteractionController", () => {
     });
 
     expect(sprite.cursor).toBe("grab");
+  });
+
+  it("does not place SAM2 points when the dedicated SAM2 editor is closed", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const sam2Mask: MaskTimelineClip = {
+      ...createMaskClip(parent, "mask_sam2"),
+      maskType: "sam2",
+      maskPoints: [],
+    };
+
+    useTimelineStore.setState({
+      clips: [parent, sam2Mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_sam2");
+    useMaskViewStore.getState().setMaskTabActive(true);
+
+    const viewport = new Container();
+    const spriteParent = new Container();
+    const sprite = new Sprite();
+    spriteParent.addChild(sprite);
+    viewport.addChild(spriteParent);
+
+    const app = new Application();
+    const activeClipRef = { current: parent };
+
+    const { result } = renderHook(() =>
+      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
+    );
+
+    let consumed = false;
+    act(() => {
+      consumed = result.current.onSpritePointerDown({
+        button: 0,
+        stopPropagation: vi.fn(),
+        global: { x: 0, y: 0 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const updatedMask = useTimelineStore
+      .getState()
+      .clips.find((clip) => clip.id === sam2Mask.id) as MaskTimelineClip | undefined;
+    expect(consumed).toBe(false);
+    expect(updatedMask?.maskPoints ?? []).toHaveLength(0);
+    expect(sprite.cursor).not.toBe("crosshair");
   });
 
   it("commits mask translation back to the mask clip transform stack", () => {

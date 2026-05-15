@@ -301,6 +301,11 @@ export function useMaskInteractionController(
       ? (state.selectedMaskByClipId[selectedClipId] ?? null)
       : null,
   );
+  const sam2EditorMaskId = useMaskViewStore((state) =>
+    selectedClipId
+      ? (state.sam2EditorMaskByClipId[selectedClipId] ?? null)
+      : null,
+  );
   const isMaskTabActive = useMaskViewStore((state) => state.isMaskTabActive);
   const sam2PointMode = useMaskViewStore((state) => state.sam2PointMode);
   const brushTool = useMaskViewStore((state) => state.brushTool);
@@ -834,13 +839,14 @@ export function useMaskInteractionController(
     if (activeClip.id !== context.selectedClipId) return null;
     if (context.selectedMaskClip.maskType !== "sam2") return null;
     if (!isMaskTabActive) return null;
+    if (sam2EditorMaskId !== context.maskLocalId) return null;
 
     return {
       clipId: context.selectedClipId,
       maskClip: context.selectedMaskClip,
       maskLocalId: context.maskLocalId,
     };
-  }, [activeClipRef, isMaskTabActive]);
+  }, [activeClipRef, isMaskTabActive, sam2EditorMaskId]);
 
   const handlers = useMemo(() => {
     const resetInteractionState = () => {
@@ -1940,7 +1946,8 @@ export function useMaskInteractionController(
       }
 
       if (selectedMaskClip.maskType === "sam2") {
-        const isSam2EditorActive = isMaskTabActive;
+        const isSam2EditorActive =
+          isMaskTabActive && sam2EditorMaskId === selectedMaskId;
         syncSam2EditingCursor(isSam2EditorActive);
         renderMaskToOverlay(null);
         if (isSam2EditorActive) {
@@ -2010,6 +2017,7 @@ export function useMaskInteractionController(
     resolveMaskRenderableShape,
     updateSam2PreviewSprite,
     isMaskTabActive,
+    sam2EditorMaskId,
     activeCanvasSelection,
     selectedClipId,
     selectedMaskClip,

@@ -1,8 +1,8 @@
 {
   "version": 3,
-  "name": "Wan2.2 TTM",
+  "name": "Wan TTM",
   "nodes": {
-    "57": {
+    "27": {
       "widgets": {
         "noise_seed": {
           "label": "Noise seed",
@@ -12,30 +12,30 @@
           "group_title": "Video Generation",
           "group_order": 3
         },
-        "start_at_step": {
+        "start_step": {
           "value_type": "int",
           "hidden": true
         },
-        "end_at_step": {
+        "end_step": {
           "value_type": "int",
           "hidden": true
         }
       }
     },
-    "58": {
+    "90": {
       "widgets": {
         "noise_seed": {
           "control_after_generate": true,
           "value_type": "int",
           "hidden": true
         },
-        "start_at_step": {
+        "start_step": {
           "value_type": "int",
           "hidden": true
         }
       }
     },
-    "67": {
+    "89": {
       "widgets": {
         "width": {
           "value_type": "int",
@@ -45,12 +45,12 @@
           "value_type": "int",
           "hidden": true
         },
-        "length": {
+        "num_frames": {
           "label": "Length",
           "when": {
             "kind": "input_presence",
             "inputs": [
-              "95"
+              "129"
             ],
             "match": "all_missing"
           },
@@ -68,14 +68,10 @@
           "group_id": "video_generation",
           "group_title": "Video Generation",
           "group_order": 0
-        },
-        "batch_size": {
-          "value_type": "int",
-          "hidden": true
         }
       }
     },
-    "85": {
+    "94": {
       "widgets": {
         "value": {
           "label": "Total Steps",
@@ -84,7 +80,7 @@
         }
       }
     },
-    "86": {
+    "91": {
       "widgets": {
         "value": {
           "label": "Split Steps",
@@ -93,13 +89,13 @@
         }
       }
     },
-    "95": {
+    "129": {
       "present": {
         "label": "Source video",
         "required": true,
         "input_type": "video",
         "param": "file",
-        "class_type": "VLOMemoryLoadVideo"
+        "class_type": "vloMemoryLoadVideo"
       },
       "selection": {
         "export_fps": 16,
@@ -109,13 +105,13 @@
         "include_tracks": true
       }
     },
-    "97": {}
+    "133": {}
   },
   "validation": {
     "inputs": [
       {
         "kind": "required",
-        "input": "95",
+        "input": "129",
         "message": "Source video is required."
       }
     ]
@@ -128,7 +124,7 @@
       "when": {
         "kind": "input_presence",
         "inputs": [
-          "95"
+          "129"
         ],
         "match": "all_present"
       },
@@ -136,25 +132,25 @@
       "group_title": "Video Generation",
       "group_order": 1,
       "total_steps": {
-        "node_id": "85",
+        "node_id": "94",
         "param": "value"
       },
       "start_step": {
-        "node_id": "57",
-        "param": "start_at_step"
+        "node_id": "27",
+        "param": "start_step"
       },
       "base_split_step": {
-        "node_id": "86",
+        "node_id": "91",
         "param": "value"
       },
       "split_step_targets": [
         {
-          "node_id": "57",
-          "param": "end_at_step"
+          "node_id": "27",
+          "param": "end_step"
         },
         {
-          "node_id": "58",
-          "param": "start_at_step"
+          "node_id": "90",
+          "param": "start_step"
         }
       ]
     }
@@ -171,11 +167,11 @@
       "targets": [
         {
           "source": {
-            "node_id": "95",
+            "node_id": "129",
             "param": "file"
           },
           "mask": {
-            "node_id": "97",
+            "node_id": "133",
             "param": "file"
           },
           "mask_type": "binary",
@@ -231,32 +227,32 @@
       "targets": [
         {
           "width": {
-            "node_id": "67",
+            "node_id": "68",
             "param": "width"
           },
           "height": {
-            "node_id": "67",
+            "node_id": "68",
             "param": "height"
           }
         },
         {
           "width": {
-            "node_id": "88",
-            "param": "resize_type.width"
+            "node_id": "105",
+            "param": "width"
           },
           "height": {
-            "node_id": "88",
-            "param": "resize_type.height"
+            "node_id": "105",
+            "param": "height"
           }
         },
         {
           "width": {
-            "node_id": "102",
-            "param": "resize_type.width"
+            "node_id": "103",
+            "param": "width"
           },
           "height": {
-            "node_id": "102",
-            "param": "resize_type.height"
+            "node_id": "103",
+            "param": "height"
           }
         }
       ],

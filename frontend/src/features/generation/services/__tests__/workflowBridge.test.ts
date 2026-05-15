@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildWorkflowResultFromGraphData,
   isIframeAppReady,
+  loadWorkflowIntoIframe,
   parseInputsFromGraphData,
   readActiveWorkflowFromIframe,
   readPendingWarningsFromIframe,
@@ -293,6 +294,93 @@ describe("workflowBridge", () => {
     it("returns null when no warnings are present", () => {
       const iframe = buildIframeWithPendingWarnings(null);
       expect(readPendingWarningsFromIframe(iframe)).toBeNull();
+    });
+  });
+
+  describe("loadWorkflowIntoIframe", () => {
+    it("reads warnings from the injected workflow tab instead of the previously active one", async () => {
+      const oldWorkflow = {
+        filename: "video_ltx2_3_i2v.json",
+        activeState: {
+          nodes: [{ id: 1, type: "OldWorkflow" }],
+          links: [],
+        },
+        pendingWarnings: {
+          missingModelCandidates: [
+            { name: "ltx-model.safetensors", isMissing: true },
+          ],
+        },
+      };
+      const newWorkflow = {
+        filename: "wan_video.json",
+        activeState: {
+          nodes: [{ id: 98, type: "LoadVideo" }],
+          links: [],
+        },
+        pendingWarnings: {
+          missingModelCandidates: [
+            { name: "wan-model.safetensors", isMissing: true },
+          ],
+        },
+      };
+      const workflowApi: {
+        activeWorkflow: typeof oldWorkflow | typeof newWorkflow | null;
+        openWorkflows: Array<typeof oldWorkflow | typeof newWorkflow>;
+        closeWorkflow: ReturnType<typeof vi.fn>;
+      } = {
+        activeWorkflow: oldWorkflow,
+        openWorkflows: [oldWorkflow],
+        closeWorkflow: vi.fn(async (workflow) => {
+          workflowApi.openWorkflows = workflowApi.openWorkflows.filter(
+            (candidate) => candidate !== workflow,
+          );
+          if (workflowApi.activeWorkflow === workflow) {
+            workflowApi.activeWorkflow = workflowApi.openWorkflows[0] ?? null;
+          }
+        }),
+      };
+      const handleFile = vi.fn(async () => {
+        workflowApi.openWorkflows = [oldWorkflow, newWorkflow];
+      });
+      const iframe = {
+        contentWindow: {
+          app: {
+            handleFile,
+            extensionManager: {
+              workflow: workflowApi,
+            },
+          },
+        },
+      } as unknown as HTMLIFrameElement;
+
+      const result = await loadWorkflowIntoIframe(
+        iframe,
+        {
+          nodes: [{ id: 98, type: "LoadVideo" }],
+          links: [],
+        },
+        "wan_video.json",
+        {
+          deferWarnings: true,
+          capturePendingWarnings: true,
+        },
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        warnings: {
+          missingNodeTypes: [],
+          missingModels: ["wan-model.safetensors"],
+        },
+      });
+      expect(workflowApi.closeWorkflow).toHaveBeenCalledTimes(1);
+      expect(workflowApi.closeWorkflow).toHaveBeenCalledWith(oldWorkflow);
+      expect(oldWorkflow.pendingWarnings).toEqual({
+        missingModelCandidates: [
+          { name: "ltx-model.safetensors", isMissing: true },
+        ],
+      });
+      expect(newWorkflow.pendingWarnings).toBeNull();
     });
   });
 

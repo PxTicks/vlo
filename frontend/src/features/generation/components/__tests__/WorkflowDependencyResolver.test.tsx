@@ -234,4 +234,93 @@ describe("WorkflowDependencyResolver", () => {
       );
     });
   });
+
+  it("ignores stale model-option responses after switching workflows", async () => {
+    let resolveFirst:
+      | ((value: Awaited<ReturnType<typeof getAvailableModels>>) => void)
+      | null = null;
+    let resolveSecond:
+      | ((value: Awaited<ReturnType<typeof getAvailableModels>>) => void)
+      | null = null;
+
+    vi.mocked(getAvailableModels)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSecond = resolve;
+          }),
+      );
+
+    const { rerender } = render(
+      <WorkflowDependencyResolver
+        workflowId="ltx.json"
+        warning={{
+          missingNodeTypes: [],
+          missingModels: ["ltx-model.safetensors"],
+        }}
+        onOpenEditor={vi.fn()}
+        onRefreshWarning={vi.fn()}
+      />,
+    );
+
+    rerender(
+      <WorkflowDependencyResolver
+        workflowId="wan.json"
+        warning={{
+          missingNodeTypes: [],
+          missingModels: ["wan-model.safetensors"],
+        }}
+        onOpenEditor={vi.fn()}
+        onRefreshWarning={vi.fn()}
+      />,
+    );
+
+    resolveSecond?.({
+      sam2: [],
+      comfyui: {
+        modelDownloadsEnabled: true,
+        workflowModels: [
+          {
+            key: "checkpoints:wan-model.safetensors",
+            label: "wan-model.safetensors",
+            description: "Save to ComfyUI/models/checkpoints",
+            installed: false,
+            filename: "wan-model.safetensors",
+            directory: "checkpoints",
+          },
+        ],
+      },
+    });
+
+    expect(
+      await screen.findByText("wan-model.safetensors"),
+    ).toBeInTheDocument();
+
+    resolveFirst?.({
+      sam2: [],
+      comfyui: {
+        modelDownloadsEnabled: true,
+        workflowModels: [
+          {
+            key: "checkpoints:ltx-model.safetensors",
+            label: "ltx-model.safetensors",
+            description: "Save to ComfyUI/models/checkpoints",
+            installed: false,
+            filename: "ltx-model.safetensors",
+            directory: "checkpoints",
+          },
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("ltx-model.safetensors")).not.toBeInTheDocument();
+    });
+  });
 });

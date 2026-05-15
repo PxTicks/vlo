@@ -10,6 +10,7 @@ import {
   resolveNodeDisplayTitle,
 } from "./nodeTitles";
 import { buildWorkflowInputId } from "../utils/workflowInputs";
+import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
 
 /**
  * Graph-based workflow bridge for the live editor UI.
@@ -435,6 +436,80 @@ function getActiveWorkflowGraphData(
   return cloneRecord(activeWorkflow.activeState);
 }
 
+function getWorkflowTabs(
+  workflowApi: ComfyUIWorkflowApi | null | undefined,
+): WorkflowTab[] {
+  if (!workflowApi) {
+    return [];
+  }
+
+  const openWorkflows =
+    workflowApi.workflows ?? workflowApi.openWorkflows ?? [];
+  const activeWorkflow = workflowApi.activeWorkflow ?? null;
+
+  if (!activeWorkflow || openWorkflows.includes(activeWorkflow)) {
+    return openWorkflows;
+  }
+
+  return [...openWorkflows, activeWorkflow];
+}
+
+function getWorkflowTabMatchScore(
+  workflow: WorkflowTab | null | undefined,
+  expectedGraphData: Record<string, unknown>,
+  expectedWorkflowId: string,
+): number {
+  if (!workflow) {
+    return 0;
+  }
+
+  let score = 0;
+  const expectedFilename = normalizeWorkflowFilename(expectedWorkflowId);
+  const actualFilename = resolveWorkflowTabFilename(workflow);
+  if (
+    expectedFilename &&
+    actualFilename &&
+    expectedFilename === actualFilename
+  ) {
+    score += 2;
+  }
+
+  if (
+    haveMatchingWorkflowNodes(
+      expectedGraphData,
+      getActiveWorkflowGraphData(workflow),
+    )
+  ) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function findMatchingWorkflowTab(
+  workflowApi: ComfyUIWorkflowApi | null | undefined,
+  expectedGraphData: Record<string, unknown>,
+  expectedWorkflowId: string,
+): WorkflowTab | null {
+  let bestMatch: WorkflowTab | null = null;
+  let bestScore = 0;
+
+  for (const workflow of getWorkflowTabs(workflowApi)) {
+    const score = getWorkflowTabMatchScore(
+      workflow,
+      expectedGraphData,
+      expectedWorkflowId,
+    );
+    if (score <= bestScore) {
+      continue;
+    }
+    bestMatch = workflow;
+    bestScore = score;
+  }
+
+  return bestMatch;
+}
+
 export function readActiveWorkflowFromIframe(
   iframe: HTMLIFrameElement,
 ): ActiveWorkflowReadResult | null {
@@ -547,31 +622,60 @@ function getIframeWorkflowApi(
   }
 }
 
+function readPendingWarningsFromWorkflow(
+  workflow: WorkflowTab | null | undefined,
+): WorkflowWarningSummary | null {
+  if (!workflow || !isRecord(workflow.pendingWarnings)) {
+    return null;
+  }
+
+  const missingNodeTypes = extractMissingNodeTypes(
+    workflow.pendingWarnings.missingNodeTypes,
+  );
+  // ComfyUI renamed `missingModels` → `missingModelCandidates` along with
+  // a richer candidate shape (see MissingModelCandidate in their
+  // `platform/missingModel/types.ts`). Fall back to the old key for older
+  // ComfyUI builds.
+  const missingModels = extractMissingModels(
+    workflow.pendingWarnings.missingModelCandidates ??
+      workflow.pendingWarnings.missingModels,
+  );
+
+  if (missingNodeTypes.length === 0 && missingModels.length === 0) {
+    return null;
+  }
+
+  return { missingNodeTypes, missingModels };
+}
+
+function clearPendingWarningsFromWorkflow(
+  workflow: WorkflowTab | null | undefined,
+): boolean {
+  if (!workflow || !("pendingWarnings" in workflow)) {
+    return false;
+  }
+
+  workflow.pendingWarnings = null;
+  return true;
+}
+
 export function readPendingWarningsFromIframe(
   iframe: HTMLIFrameElement,
 ): WorkflowWarningSummary | null {
   try {
     const workflowApi = getIframeWorkflowApi(iframe);
     const activeWorkflow = workflowApi?.activeWorkflow ?? null;
-    logWarningDebug("active workflow snapshot", summarizeWorkflowTab(activeWorkflow));
+    logWarningDebug(
+      "active workflow snapshot",
+      summarizeWorkflowTab(activeWorkflow),
+    );
     if (!activeWorkflow || !isRecord(activeWorkflow.pendingWarnings)) {
       logWarningDebug("no pendingWarnings on active workflow");
       return null;
     }
 
-    const missingNodeTypes = extractMissingNodeTypes(
-      activeWorkflow.pendingWarnings.missingNodeTypes,
-    );
-    // ComfyUI renamed `missingModels` → `missingModelCandidates` along with
-    // a richer candidate shape (see MissingModelCandidate in their
-    // `platform/missingModel/types.ts`). Fall back to the old key for older
-    // ComfyUI builds.
-    const missingModels = extractMissingModels(
-      activeWorkflow.pendingWarnings.missingModelCandidates ??
-        activeWorkflow.pendingWarnings.missingModels,
-    );
-
-    if (missingNodeTypes.length === 0 && missingModels.length === 0) {
+    const warnings = readPendingWarningsFromWorkflow(activeWorkflow);
+    if (!warnings) {
       logWarningDebug(
         "pendingWarnings existed but parsed as empty (no missing nodes/models)",
       );
@@ -580,10 +684,10 @@ export function readPendingWarningsFromIframe(
 
     logWarningDebug("read pendingWarnings", {
       fromWorkflow: summarizeWorkflowTab(activeWorkflow),
-      missingNodeTypes,
-      missingModels,
+      missingNodeTypes: warnings.missingNodeTypes,
+      missingModels: warnings.missingModels,
     });
-    return { missingNodeTypes, missingModels };
+    return warnings;
   } catch (err) {
     console.warn("[workflowBridge] readPendingWarningsFromIframe failed:", err);
     return null;
@@ -601,7 +705,7 @@ export function clearPendingWarningsFromIframe(
       return false;
     }
 
-    activeWorkflow.pendingWarnings = null;
+    clearPendingWarningsFromWorkflow(activeWorkflow);
     logWarningDebug(
       "cleared activeWorkflow.pendingWarnings",
       summarizeWorkflowTab(activeWorkflow),
@@ -631,18 +735,35 @@ const WARNING_CAPTURE_TIMEOUT_MS = 4000;
 
 async function capturePendingWarningsFromIframe(
   iframe: HTMLIFrameElement,
+  expectedGraphData: Record<string, unknown>,
+  expectedWorkflowId: string,
   timeoutMs = WARNING_CAPTURE_TIMEOUT_MS,
 ): Promise<WorkflowWarningSummary | null> {
   const deadline = Date.now() + timeoutMs;
   let attempts = 0;
-  logWarningDebug("capture polling started", { timeoutMs });
+  logWarningDebug("capture polling started", {
+    timeoutMs,
+    expectedWorkflowId,
+  });
 
   while (Date.now() < deadline) {
     attempts += 1;
-    const warnings = readAndClearPendingWarningsFromIframe(iframe);
-    if (warnings) {
-      logWarningDebug("capture polling succeeded", {
+    const workflowApi = getIframeWorkflowApi(iframe);
+    const matchedWorkflow = findMatchingWorkflowTab(
+      workflowApi,
+      expectedGraphData,
+      expectedWorkflowId,
+    );
+
+    if (matchedWorkflow) {
+      const warnings = readPendingWarningsFromWorkflow(matchedWorkflow);
+      if (warnings) {
+        clearPendingWarningsFromWorkflow(matchedWorkflow);
+      }
+
+      logWarningDebug("capture polling resolved for matched workflow", {
         attempts,
+        matchedWorkflow: summarizeWorkflowTab(matchedWorkflow),
         warnings,
       });
       return warnings;
@@ -651,7 +772,10 @@ async function capturePendingWarningsFromIframe(
     await new Promise((resolve) => setTimeout(resolve, WARNING_CAPTURE_POLL_MS));
   }
 
-  logWarningDebug("capture polling timed out without warnings", { attempts });
+  logWarningDebug("capture polling timed out before target workflow appeared", {
+    attempts,
+    expectedWorkflowId,
+  });
   return null;
 }
 
@@ -698,16 +822,26 @@ function resolveActiveWorkflowIndex(
  */
 async function closeOtherIframeWorkflows(
   iframe: HTMLIFrameElement,
+  expectedGraphData?: Record<string, unknown>,
+  expectedWorkflowId?: string,
 ): Promise<void> {
   try {
     const workflowApi = getIframeWorkflowApi(iframe);
     if (!workflowApi) return;
 
-    // The API might expose `workflows` or `openWorkflows`
-    const openWorkflows =
-      workflowApi.workflows ?? workflowApi.openWorkflows ?? [];
-    const activeWorkflow = workflowApi.activeWorkflow;
-    if (!activeWorkflow || openWorkflows.length <= 1) return;
+    const openWorkflows = getWorkflowTabs(workflowApi);
+    if (openWorkflows.length <= 1) return;
+
+    const workflowToKeep =
+      expectedGraphData && expectedWorkflowId
+        ? findMatchingWorkflowTab(
+            workflowApi,
+            expectedGraphData,
+            expectedWorkflowId,
+          )
+        : null;
+    const activeWorkflow = workflowToKeep ?? workflowApi.activeWorkflow;
+    if (!activeWorkflow) return;
 
     const activeIndex = resolveActiveWorkflowIndex(
       openWorkflows,
@@ -762,9 +896,6 @@ export async function loadWorkflowIntoIframe(
       type: "application/json",
     });
     const file = new File([blob], filename, { type: "application/json" });
-    if (deferWarnings && capturePendingWarnings) {
-      clearPendingWarningsFromIframe(iframe);
-    }
     await win.app.handleFile(file, undefined, { deferWarnings });
     logWarningDebug("handleFile resolved", {
       activeWorkflowAfterHandleFile: summarizeWorkflowTab(
@@ -776,6 +907,8 @@ export async function loadWorkflowIntoIframe(
     if (deferWarnings && capturePendingWarnings) {
       warnings = await capturePendingWarningsFromIframe(
         iframe,
+        workflowData,
+        filename,
         WARNING_CAPTURE_TIMEOUT_MS,
       );
     }
@@ -783,7 +916,7 @@ export async function loadWorkflowIntoIframe(
       warnings,
     });
 
-    await closeOtherIframeWorkflows(iframe);
+    await closeOtherIframeWorkflows(iframe, workflowData, filename);
     logWarningDebug("closeOtherIframeWorkflows resolved");
 
     return { ok: true, warnings };

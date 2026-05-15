@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import { OpenInNew, WarningAmberOutlined } from "@mui/icons-material";
 import {
@@ -100,8 +100,20 @@ export function WorkflowDependencyResolver({
 }: WorkflowDependencyResolverProps) {
   const [workflowModels, setWorkflowModels] = useState<DownloadableModel[]>([]);
   const [loading, setLoading] = useState(false);
+  const workflowModelsRequestIdRef = useRef(0);
+  const missingModelsKey = useMemo(
+    () =>
+      warning.missingModels
+        .map((modelName) => normalizeModelName(modelName))
+        .sort()
+        .join("\n"),
+    [warning.missingModels],
+  );
 
   const fetchWorkflowModels = useCallback(async () => {
+    const requestId = workflowModelsRequestIdRef.current + 1;
+    workflowModelsRequestIdRef.current = requestId;
+
     if (!workflowId || warning.missingModels.length === 0) {
       setWorkflowModels([]);
       setLoading(false);
@@ -111,13 +123,21 @@ export function WorkflowDependencyResolver({
     setLoading(true);
     try {
       const response = await getAvailableModels({ workflowId });
+      if (workflowModelsRequestIdRef.current !== requestId) {
+        return;
+      }
       setWorkflowModels(response.comfyui?.workflowModels ?? []);
     } catch {
+      if (workflowModelsRequestIdRef.current !== requestId) {
+        return;
+      }
       setWorkflowModels([]);
     } finally {
-      setLoading(false);
+      if (workflowModelsRequestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
-  }, [warning.missingModels.length, workflowId]);
+  }, [missingModelsKey, warning.missingModels.length, workflowId]);
 
   useEffect(() => {
     void fetchWorkflowModels();

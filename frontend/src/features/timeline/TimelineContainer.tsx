@@ -116,19 +116,6 @@ function TimelineContainerComponent({
         setScrollContainer: state.setScrollContainer,
       })),
     );
-  const selectionIncludeModeEnabled = useTimelineSelectionStore(
-    (state) => state.selectionIncludeModeEnabled,
-  );
-  const selectionIncludedTrackIds = useTimelineSelectionStore(
-    (state) => state.selectionIncludedTrackIds,
-  );
-  const toggleSelectionIncludedTrack = useTimelineSelectionStore(
-    (state) => state.toggleSelectionIncludedTrack,
-  );
-  const includedTrackIdSet = React.useMemo(
-    () => new Set(selectionIncludedTrackIds),
-    [selectionIncludedTrackIds],
-  );
 
   // --- INTERNAL DND SETUP ---
   const {
@@ -474,11 +461,8 @@ function TimelineContainerComponent({
                 key={track.id}
                 track={track}
                 index={index}
-                selectionIncludeModeEnabled={selectionIncludeModeEnabled}
-                isIncludedInSelection={includedTrackIdSet.has(track.id)}
                 onToggleVisibility={toggleTrackVisibility}
                 onToggleMute={toggleTrackMute}
-                onToggleSelectionInclude={toggleSelectionIncludedTrack}
               />
             ))}
 

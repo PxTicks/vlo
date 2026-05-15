@@ -7,6 +7,7 @@ describe("useTimelineSelectionStore", () => {
   beforeEach(() => {
     useTimelineSelectionStore.setState({
       selectionMode: false,
+      selectionStage: "range",
       selectionStartTick: 0,
       selectionEndTick: 0,
       selectionMessage: null,
@@ -24,6 +25,7 @@ describe("useTimelineSelectionStore", () => {
     const { result } = renderHook(() => useTimelineSelectionStore());
 
     expect(result.current.selectionMode).toBe(false);
+    expect(result.current.selectionStage).toBe("range");
     expect(result.current.selectionStartTick).toBe(0);
     expect(result.current.selectionEndTick).toBe(0);
     expect(result.current.selectionMessage).toBeNull();
@@ -50,6 +52,7 @@ describe("useTimelineSelectionStore", () => {
     });
 
     expect(result.current.selectionMode).toBe(true);
+    expect(result.current.selectionStage).toBe("range");
     expect(result.current.selectionStartTick).toBe(2_000);
     expect(result.current.selectionEndTick).toBe(8_000);
     expect(result.current.selectionMessage).toBe("Focus on the foreground pass");
@@ -78,6 +81,7 @@ describe("useTimelineSelectionStore", () => {
     });
 
     expect(result.current.selectionMode).toBe(false);
+    expect(result.current.selectionStage).toBe("range");
     expect(result.current.selectionStartTick).toBe(0);
     expect(result.current.selectionEndTick).toBe(0);
     expect(result.current.selectionMessage).toBeNull();
@@ -118,6 +122,33 @@ describe("useTimelineSelectionStore", () => {
     });
 
     expect(result.current.selectionIncludedTrackIds).toEqual(["track-a"]);
+  });
+
+  it("advances into track selection only when include mode is enabled", () => {
+    const { result } = renderHook(() => useTimelineSelectionStore());
+
+    act(() => {
+      result.current.enterSelectionMode(1_000, 5_000, {
+        includeTracks: true,
+      });
+      result.current.enterTrackSelectionStage();
+    });
+
+    expect(result.current.selectionStage).toBe("tracks");
+
+    act(() => {
+      result.current.returnToRangeSelectionStage();
+    });
+
+    expect(result.current.selectionStage).toBe("range");
+
+    act(() => {
+      result.current.exitSelectionMode();
+      result.current.enterSelectionMode(1_000, 5_000);
+      result.current.enterTrackSelectionStage();
+    });
+
+    expect(result.current.selectionStage).toBe("range");
   });
 
   it("does not enable include mode unless requested", () => {

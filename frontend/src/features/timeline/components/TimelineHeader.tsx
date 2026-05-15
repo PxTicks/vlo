@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Checkbox, IconButton, Typography } from "@mui/material";
+import { Box, IconButton } from "@mui/material";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import { TRACK_HEADER_WIDTH } from "../constants";
@@ -9,14 +9,11 @@ import type { TrackType } from "../../../types/TimelineTypes";
 
 interface TimelineHeaderProps {
   isVisible: boolean;
-  isMuted?: boolean; // New prop
+  isMuted?: boolean;
   derivedType: TrackType | null;
   color: string;
-  selectionIncludeModeEnabled?: boolean;
-  isIncludedInSelection?: boolean;
   onToggleVisibility: () => void;
-  onToggleMute: () => void; // New prop
-  onToggleSelectionInclude?: () => void;
+  onToggleMute: () => void;
 }
 
 export const TimelineHeader = React.memo(function TimelineHeader({
@@ -24,20 +21,9 @@ export const TimelineHeader = React.memo(function TimelineHeader({
   isMuted = false,
   derivedType,
   color,
-  selectionIncludeModeEnabled = false,
-  isIncludedInSelection = false,
   onToggleVisibility,
   onToggleMute,
-  onToggleSelectionInclude,
 }: TimelineHeaderProps) {
-  const handleToggleSelectionIncludeClick = React.useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      event.stopPropagation();
-      onToggleSelectionInclude?.();
-    },
-    [onToggleSelectionInclude],
-  );
-
   const handleToggleMuteClick = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
@@ -76,50 +62,6 @@ export const TimelineHeader = React.memo(function TimelineHeader({
         borderLeft: `4px solid ${color}`,
       }}
     >
-      {selectionIncludeModeEnabled ? (
-        <Box
-          sx={{
-            position: "absolute",
-            top: 6,
-            left: 8,
-            display: "flex",
-            alignItems: "center",
-            gap: 0.25,
-            pr: 0.5,
-            borderRadius: 999,
-            bgcolor: "rgba(12, 20, 26, 0.92)",
-            border: "1px solid rgba(79, 195, 247, 0.35)",
-            boxShadow: "0 4px 10px rgba(0, 0, 0, 0.18)",
-            zIndex: 1,
-          }}
-        >
-          <Checkbox
-            size="small"
-            checked={isIncludedInSelection}
-            onClick={(event) => event.stopPropagation()}
-            onChange={handleToggleSelectionIncludeClick}
-            inputProps={{
-              "aria-label": isIncludedInSelection
-                ? "Remove track from selection include list"
-                : "Include track in selection",
-            }}
-            sx={{
-              color: "#8aa8b6",
-              p: 0.25,
-              "&.Mui-checked": {
-                color: "#4fc3f7",
-              },
-            }}
-          />
-          <Typography
-            variant="caption"
-            sx={{ color: "#d7ecf6", letterSpacing: 0.2, userSelect: "none" }}
-          >
-            Include
-          </Typography>
-        </Box>
-      ) : null}
-
       <Box sx={{ flexGrow: 1 }} />
 
       <Box sx={{ display: "flex", gap: 0.5 }}>

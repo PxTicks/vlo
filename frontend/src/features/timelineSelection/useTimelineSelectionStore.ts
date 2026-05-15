@@ -1,7 +1,10 @@
 import { create } from "zustand";
 
+export type TimelineSelectionStage = "range" | "tracks";
+
 export interface TimelineSelectionState {
   selectionMode: boolean;
+  selectionStage: TimelineSelectionStage;
   selectionStartTick: number;
   selectionEndTick: number;
   selectionMessage: string | null;
@@ -24,6 +27,8 @@ export interface TimelineSelectionState {
   updateSelectionStart: (tick: number) => void;
   updateSelectionEnd: (tick: number) => void;
   setSelectionMessage: (message: string | null) => void;
+  enterTrackSelectionStage: () => void;
+  returnToRangeSelectionStage: () => void;
   toggleSelectionIncludedTrack: (trackId: string) => void;
   setSelectionFpsOverride: (fps: number | null) => void;
   setSelectionFrameStep: (step: number) => void;
@@ -38,6 +43,7 @@ export interface TimelineSelectionState {
 
 export const useTimelineSelectionStore = create<TimelineSelectionState>((set) => ({
   selectionMode: false,
+  selectionStage: "range",
   selectionStartTick: 0,
   selectionEndTick: 0,
   selectionMessage: null,
@@ -51,6 +57,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
   enterSelectionMode: (startTick, endTick, options) =>
     set({
       selectionMode: true,
+      selectionStage: "range",
       selectionStartTick: startTick,
       selectionEndTick: endTick,
       selectionMessage:
@@ -77,6 +84,13 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
           ? message.trim()
           : null,
     }),
+  enterTrackSelectionStage: () =>
+    set((state) =>
+      state.selectionIncludeModeEnabled
+        ? { selectionStage: "tracks" }
+        : {},
+    ),
+  returnToRangeSelectionStage: () => set({ selectionStage: "range" }),
   toggleSelectionIncludedTrack: (trackId) =>
     set((state) => {
       const normalizedTrackId = trackId.trim();
@@ -130,6 +144,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
   exitSelectionMode: () =>
     set({
       selectionMode: false,
+      selectionStage: "range",
       selectionStartTick: 0,
       selectionEndTick: 0,
       selectionMessage: null,

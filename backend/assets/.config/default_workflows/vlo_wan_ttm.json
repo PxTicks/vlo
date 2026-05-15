@@ -7,14 +7,8 @@
     {
       "id": 93,
       "type": "WanVideoSetBlockSwap",
-      "pos": [
-        -580,
-        -700
-      ],
-      "size": [
-        210,
-        50
-      ],
+      "pos": [-580, -700],
+      "size": [210, 50],
       "flags": {},
       "order": 21,
       "mode": 0,
@@ -35,9 +29,7 @@
         {
           "name": "model",
           "type": "WANVIDEOMODEL",
-          "links": [
-            161
-          ]
+          "links": [161]
         }
       ],
       "properties": {
@@ -53,14 +45,8 @@
     {
       "id": 80,
       "type": "WanVideoSetLoRAs",
-      "pos": [
-        -140,
-        -900
-      ],
-      "size": [
-        230,
-        50
-      ],
+      "pos": [-140, -900],
+      "size": [230, 50],
       "flags": {},
       "order": 25,
       "mode": 0,
@@ -81,9 +67,7 @@
         {
           "name": "model",
           "type": "WANVIDEOMODEL",
-          "links": [
-            109
-          ]
+          "links": [109]
         }
       ],
       "properties": {
@@ -99,14 +83,8 @@
     {
       "id": 79,
       "type": "WanVideoSetLoRAs",
-      "pos": [
-        -160,
-        -660
-      ],
-      "size": [
-        230,
-        50
-      ],
+      "pos": [-160, -660],
+      "size": [230, 50],
       "flags": {},
       "order": 26,
       "mode": 0,
@@ -127,9 +105,7 @@
         {
           "name": "model",
           "type": "WANVIDEOMODEL",
-          "links": [
-            144
-          ]
+          "links": [144]
         }
       ],
       "properties": {
@@ -145,14 +121,8 @@
     {
       "id": 109,
       "type": "GetNode",
-      "pos": [
-        -50,
-        480
-      ],
-      "size": [
-        210,
-        40
-      ],
+      "pos": [-50, 480],
+      "size": [210, 40],
       "flags": {
         "collapsed": true
       },
@@ -163,9 +133,7 @@
         {
           "name": "WANVAE",
           "type": "WANVAE",
-          "links": [
-            192
-          ]
+          "links": [192]
         }
       ],
       "title": "Get_VAE",
@@ -174,23 +142,15 @@
         "aux_id": "kijai/ComfyUI-KJNodes",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "VAE"
-      ],
+      "widgets_values": ["VAE"],
       "color": "#322",
       "bgcolor": "#533"
     },
     {
       "id": 107,
       "type": "SetNode",
-      "pos": [
-        -150,
-        -450
-      ],
-      "size": [
-        210,
-        60
-      ],
+      "pos": [-150, -450],
+      "size": [210, 60],
       "flags": {
         "collapsed": true
       },
@@ -207,9 +167,7 @@
         {
           "name": "WANVAE",
           "type": "WANVAE",
-          "links": [
-            194
-          ]
+          "links": [194]
         }
       ],
       "title": "Set_VAE",
@@ -219,23 +177,15 @@
         "previousName": "VAE",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "VAE"
-      ],
+      "widgets_values": ["VAE"],
       "color": "#322",
       "bgcolor": "#533"
     },
     {
       "id": 60,
       "type": "VHS_VideoCombine",
-      "pos": [
-        3150,
-        -390
-      ],
-      "size": [
-        700,
-        688
-      ],
+      "pos": [3150, -390],
+      "size": [700, 688],
       "flags": {},
       "order": 40,
       "mode": 0,
@@ -306,14 +256,8 @@
     {
       "id": 108,
       "type": "GetNode",
-      "pos": [
-        2180,
-        -490
-      ],
-      "size": [
-        210,
-        60
-      ],
+      "pos": [2180, -490],
+      "size": [210, 60],
       "flags": {
         "collapsed": true
       },
@@ -324,9 +268,7 @@
         {
           "name": "WANVAE",
           "type": "WANVAE",
-          "links": [
-            191
-          ]
+          "links": [191]
         }
       ],
       "title": "Get_VAE",
@@ -335,23 +277,15 @@
         "aux_id": "kijai/ComfyUI-KJNodes",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "VAE"
-      ],
+      "widgets_values": ["VAE"],
       "color": "#322",
       "bgcolor": "#533"
     },
     {
       "id": 38,
       "type": "WanVideoVAELoader",
-      "pos": [
-        -590,
-        -590
-      ],
-      "size": [
-        320,
-        130
-      ],
+      "pos": [-590, -590],
+      "size": [320, 130],
       "flags": {},
       "order": 2,
       "mode": 0,
@@ -368,9 +302,7 @@
           "name": "vae",
           "type": "WANVAE",
           "slot_index": 0,
-          "links": [
-            190
-          ]
+          "links": [190]
         }
       ],
       "properties": {
@@ -379,26 +311,15 @@
         "Node name for S&R": "WanVideoVAELoader",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "wan_2.1_vae.safetensors",
-        "bf16",
-        false,
-        false
-      ],
+      "widgets_values": ["wan_2.1_vae.safetensors", "bf16", false, false],
       "color": "#322",
       "bgcolor": "#533"
     },
     {
       "id": 103,
       "type": "ImageResizeKJv2",
-      "pos": [
-        -380,
-        840
-      ],
-      "size": [
-        270,
-        340
-      ],
+      "pos": [-380, 840],
+      "size": [270, 340],
       "flags": {},
       "order": 31,
       "mode": 0,
@@ -435,9 +356,7 @@
         {
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            174
-          ]
+          "links": [174]
         },
         {
           "name": "width",
@@ -478,14 +397,8 @@
     {
       "id": 101,
       "type": "ImageToMask",
-      "pos": [
-        -60,
-        860
-      ],
-      "size": [
-        270,
-        60
-      ],
+      "pos": [-60, 860],
+      "size": [270, 60],
       "flags": {},
       "order": 32,
       "mode": 0,
@@ -500,9 +413,7 @@
         {
           "name": "MASK",
           "type": "MASK",
-          "links": [
-            210
-          ]
+          "links": [210]
         }
       ],
       "properties": {
@@ -511,21 +422,13 @@
         "Node name for S&R": "ImageToMask",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "red"
-      ]
+      "widgets_values": ["red"]
     },
     {
       "id": 118,
       "type": "VHS_SelectImages",
-      "pos": [
-        -870,
-        -90
-      ],
-      "size": [
-        220,
-        110
-      ],
+      "pos": [-870, -90],
+      "size": [220, 110],
       "flags": {},
       "order": 24,
       "mode": 0,
@@ -540,9 +443,7 @@
         {
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            213
-          ]
+          "links": [213]
         }
       ],
       "properties": {
@@ -560,14 +461,8 @@
     {
       "id": 68,
       "type": "ImageResizeKJv2",
-      "pos": [
-        -420,
-        -240
-      ],
-      "size": [
-        270,
-        340
-      ],
+      "pos": [-420, -240],
+      "size": [270, 340],
       "flags": {},
       "order": 27,
       "mode": 0,
@@ -588,25 +483,17 @@
         {
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            139
-          ]
+          "links": [139]
         },
         {
           "name": "width",
           "type": "INT",
-          "links": [
-            141,
-            184
-          ]
+          "links": [141, 184]
         },
         {
           "name": "height",
           "type": "INT",
-          "links": [
-            142,
-            185
-          ]
+          "links": [142, 185]
         },
         {
           "name": "mask",
@@ -634,14 +521,8 @@
     {
       "id": 121,
       "type": "CLIPTextEncode",
-      "pos": [
-        1330,
-        -830
-      ],
-      "size": [
-        400,
-        200
-      ],
+      "pos": [1330, -830],
+      "size": [400, 200],
       "flags": {},
       "order": 17,
       "mode": 0,
@@ -656,9 +537,7 @@
         {
           "name": "CONDITIONING",
           "type": "CONDITIONING",
-          "links": [
-            217
-          ]
+          "links": [217]
         }
       ],
       "properties": {
@@ -674,14 +553,8 @@
     {
       "id": 122,
       "type": "WanVideoTextEmbedBridge",
-      "pos": [
-        1810,
-        -930
-      ],
-      "size": [
-        240,
-        50
-      ],
+      "pos": [1810, -930],
+      "size": [240, 50],
       "flags": {},
       "order": 22,
       "mode": 0,
@@ -702,10 +575,7 @@
         {
           "name": "text_embeds",
           "type": "WANVIDEOTEXTEMBEDS",
-          "links": [
-            218,
-            219
-          ]
+          "links": [218, 219]
         }
       ],
       "properties": {
@@ -719,14 +589,8 @@
     {
       "id": 90,
       "type": "WanVideoSampler",
-      "pos": [
-        2210,
-        -390
-      ],
-      "size": [
-        320,
-        1004
-      ],
+      "pos": [2210, -390],
+      "size": [320, 1004],
       "flags": {},
       "order": 38,
       "mode": 0,
@@ -854,9 +718,7 @@
           "name": "samples",
           "type": "LATENT",
           "slot_index": 0,
-          "links": [
-            151
-          ]
+          "links": [151]
         },
         {
           "name": "denoised_samples",
@@ -877,8 +739,8 @@
         6,
         1,
         8,
-        45,
-        "fixed",
+        6332,
+        "randomize",
         true,
         "dpm++_sde",
         0,
@@ -893,14 +755,8 @@
     {
       "id": 39,
       "type": "WanVideoBlockSwap",
-      "pos": [
-        -610,
-        -970
-      ],
-      "size": [
-        320,
-        210
-      ],
+      "pos": [-610, -970],
+      "size": [320, 210],
       "flags": {},
       "order": 3,
       "mode": 4,
@@ -910,10 +766,7 @@
           "name": "block_swap_args",
           "type": "BLOCKSWAPARGS",
           "slot_index": 0,
-          "links": [
-            156,
-            159
-          ]
+          "links": [156, 159]
         }
       ],
       "properties": {
@@ -922,29 +775,15 @@
         "Node name for S&R": "WanVideoBlockSwap",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        20,
-        false,
-        false,
-        false,
-        1,
-        0,
-        false
-      ],
+      "widgets_values": [20, false, false, false, 1, 0, false],
       "color": "#223",
       "bgcolor": "#335"
     },
     {
       "id": 35,
       "type": "WanVideoTorchCompileSettings",
-      "pos": [
-        -1680,
-        -1310
-      ],
-      "size": [
-        400,
-        250
-      ],
+      "pos": [-1680, -1310],
+      "size": [400, 250],
       "flags": {},
       "order": 4,
       "mode": 4,
@@ -954,10 +793,7 @@
           "name": "torch_compile_args",
           "type": "WANCOMPILEARGS",
           "slot_index": 0,
-          "links": [
-            111,
-            112
-          ]
+          "links": [111, 112]
         }
       ],
       "properties": {
@@ -981,14 +817,8 @@
     {
       "id": 119,
       "type": "CLIPLoader",
-      "pos": [
-        1020,
-        -990
-      ],
-      "size": [
-        270,
-        110
-      ],
+      "pos": [1020, -990],
+      "size": [270, 110],
       "flags": {},
       "order": 5,
       "mode": 0,
@@ -997,10 +827,7 @@
         {
           "name": "CLIP",
           "type": "CLIP",
-          "links": [
-            214,
-            215
-          ]
+          "links": [214, 215]
         }
       ],
       "properties": {
@@ -1018,14 +845,8 @@
     {
       "id": 22,
       "type": "WanVideoModelLoader",
-      "pos": [
-        -1140,
-        -1240
-      ],
-      "size": [
-        480,
-        340
-      ],
+      "pos": [-1140, -1240],
+      "size": [480, 340],
       "flags": {},
       "order": 14,
       "mode": 0,
@@ -1090,9 +911,7 @@
           "name": "model",
           "type": "WANVIDEOMODEL",
           "slot_index": 0,
-          "links": [
-            155
-          ]
+          "links": [155]
         }
       ],
       "properties": {
@@ -1115,14 +934,8 @@
     {
       "id": 71,
       "type": "WanVideoModelLoader",
-      "pos": [
-        -1140,
-        -820
-      ],
-      "size": [
-        480,
-        340
-      ],
+      "pos": [-1140, -820],
+      "size": [480, 340],
       "flags": {},
       "order": 15,
       "mode": 0,
@@ -1187,9 +1000,7 @@
           "name": "model",
           "type": "WANVIDEOMODEL",
           "slot_index": 0,
-          "links": [
-            160
-          ]
+          "links": [160]
         }
       ],
       "properties": {
@@ -1212,14 +1023,8 @@
     {
       "id": 105,
       "type": "ImageResizeKJv2",
-      "pos": [
-        -400,
-        420
-      ],
-      "size": [
-        270,
-        340
-      ],
+      "pos": [-400, 420],
+      "size": [270, 340],
       "flags": {},
       "order": 29,
       "mode": 0,
@@ -1256,23 +1061,17 @@
         {
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            173
-          ]
+          "links": [173]
         },
         {
           "name": "width",
           "type": "INT",
-          "links": [
-            176
-          ]
+          "links": [176]
         },
         {
           "name": "height",
           "type": "INT",
-          "links": [
-            177
-          ]
+          "links": [177]
         },
         {
           "name": "mask",
@@ -1303,14 +1102,8 @@
     {
       "id": 27,
       "type": "WanVideoSampler",
-      "pos": [
-        1720,
-        -380
-      ],
-      "size": [
-        320,
-        1004
-      ],
+      "pos": [1720, -380],
+      "size": [320, 1004],
       "flags": {},
       "order": 37,
       "mode": 0,
@@ -1438,9 +1231,7 @@
           "name": "samples",
           "type": "LATENT",
           "slot_index": 0,
-          "links": [
-            143
-          ]
+          "links": [143]
         },
         {
           "name": "denoised_samples",
@@ -1462,8 +1253,8 @@
         6,
         2,
         8,
-        44,
-        "fixed",
+        6332,
+        "randomize",
         true,
         "dpm++_sde",
         0,
@@ -1478,14 +1269,8 @@
     {
       "id": 56,
       "type": "WanVideoLoraSelect",
-      "pos": [
-        -1890,
-        -920
-      ],
-      "size": [
-        660,
-        150
-      ],
+      "pos": [-1890, -920],
+      "size": [660, 150],
       "flags": {},
       "order": 6,
       "mode": 0,
@@ -1507,9 +1292,7 @@
         {
           "name": "lora",
           "type": "WANVIDLORA",
-          "links": [
-            110
-          ]
+          "links": [110]
         }
       ],
       "properties": {
@@ -1530,14 +1313,8 @@
     {
       "id": 97,
       "type": "WanVideoLoraSelect",
-      "pos": [
-        -1840,
-        -690
-      ],
-      "size": [
-        630,
-        200
-      ],
+      "pos": [-1840, -690],
+      "size": [630, 200],
       "flags": {},
       "order": 7,
       "mode": 0,
@@ -1559,9 +1336,7 @@
         {
           "name": "lora",
           "type": "WANVIDLORA",
-          "links": [
-            169
-          ]
+          "links": [169]
         }
       ],
       "properties": {
@@ -1582,14 +1357,8 @@
     {
       "id": 91,
       "type": "INTConstant",
-      "pos": [
-        1390,
-        490
-      ],
-      "size": [
-        210,
-        60
-      ],
+      "pos": [1390, 490],
+      "size": [210, 60],
       "flags": {},
       "order": 8,
       "mode": 0,
@@ -1598,10 +1367,7 @@
         {
           "name": "value",
           "type": "INT",
-          "links": [
-            153,
-            154
-          ]
+          "links": [153, 154]
         }
       ],
       "title": "Split_step",
@@ -1611,23 +1377,15 @@
         "Node name for S&R": "INTConstant",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        3
-      ],
+      "widgets_values": [3],
       "color": "#1b4669",
       "bgcolor": "#29699c"
     },
     {
       "id": 92,
       "type": "WanVideoSetBlockSwap",
-      "pos": [
-        -590,
-        -1140
-      ],
-      "size": [
-        210,
-        50
-      ],
+      "pos": [-590, -1140],
+      "size": [210, 50],
       "flags": {},
       "order": 20,
       "mode": 4,
@@ -1648,9 +1406,7 @@
         {
           "name": "model",
           "type": "WANVIDEOMODEL",
-          "links": [
-            157
-          ]
+          "links": [157]
         }
       ],
       "properties": {
@@ -1666,14 +1422,8 @@
     {
       "id": 117,
       "type": "ThresholdMask",
-      "pos": [
-        -160,
-        1130
-      ],
-      "size": [
-        270,
-        60
-      ],
+      "pos": [-160, 1130],
+      "size": [270, 60],
       "flags": {},
       "order": 33,
       "mode": 0,
@@ -1688,9 +1438,7 @@
         {
           "name": "MASK",
           "type": "MASK",
-          "links": [
-            211
-          ]
+          "links": [211]
         }
       ],
       "properties": {
@@ -1699,21 +1447,13 @@
         "Node name for S&R": "ThresholdMask",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        0.5
-      ]
+      "widgets_values": [0.5]
     },
     {
       "id": 116,
       "type": "InvertMask",
-      "pos": [
-        250,
-        1040
-      ],
-      "size": [
-        140,
-        30
-      ],
+      "pos": [250, 1040],
+      "size": [140, 30],
       "flags": {},
       "order": 34,
       "mode": 0,
@@ -1728,9 +1468,7 @@
         {
           "name": "MASK",
           "type": "MASK",
-          "links": [
-            230
-          ]
+          "links": [230]
         }
       ],
       "properties": {
@@ -1744,14 +1482,8 @@
     {
       "id": 128,
       "type": "GrowMask",
-      "pos": [
-        440,
-        920
-      ],
-      "size": [
-        270,
-        90
-      ],
+      "pos": [440, 920],
+      "size": [270, 90],
       "flags": {},
       "order": 35,
       "mode": 0,
@@ -1766,9 +1498,7 @@
         {
           "name": "MASK",
           "type": "MASK",
-          "links": [
-            231
-          ]
+          "links": [231]
         }
       ],
       "properties": {
@@ -1777,22 +1507,13 @@
         "Node name for S&R": "GrowMask",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        15,
-        true
-      ]
+      "widgets_values": [15, true]
     },
     {
       "id": 104,
       "type": "WanVideoAddTTMLatents",
-      "pos": [
-        450,
-        540
-      ],
-      "size": [
-        280,
-        130
-      ],
+      "pos": [450, 540],
+      "size": [280, 130],
       "flags": {},
       "order": 36,
       "mode": 0,
@@ -1817,10 +1538,7 @@
         {
           "name": "image_embeds",
           "type": "WANVIDIMAGE_EMBEDS",
-          "links": [
-            188,
-            233
-          ]
+          "links": [188, 233]
         }
       ],
       "properties": {
@@ -1829,22 +1547,13 @@
         "Node name for S&R": "WanVideoAddTTMLatents",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        1,
-        2
-      ]
+      "widgets_values": [1, 2]
     },
     {
       "id": 94,
       "type": "INTConstant",
-      "pos": [
-        1340,
-        -60
-      ],
-      "size": [
-        210,
-        60
-      ],
+      "pos": [1340, -60],
+      "size": [210, 60],
       "flags": {},
       "order": 9,
       "mode": 0,
@@ -1853,10 +1562,7 @@
         {
           "name": "value",
           "type": "INT",
-          "links": [
-            163,
-            164
-          ]
+          "links": [163, 164]
         }
       ],
       "title": "Steps",
@@ -1866,23 +1572,15 @@
         "Node name for S&R": "INTConstant",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        6
-      ],
+      "widgets_values": [6],
       "color": "#1b4669",
       "bgcolor": "#29699c"
     },
     {
       "id": 120,
       "type": "CLIPTextEncode",
-      "pos": [
-        1320,
-        -1120
-      ],
-      "size": [
-        400,
-        200
-      ],
+      "pos": [1320, -1120],
+      "size": [400, 200],
       "flags": {},
       "order": 16,
       "mode": 0,
@@ -1897,9 +1595,7 @@
         {
           "name": "CONDITIONING",
           "type": "CONDITIONING",
-          "links": [
-            216
-          ]
+          "links": [216]
         }
       ],
       "properties": {
@@ -1908,21 +1604,13 @@
         "Node name for S&R": "CLIPTextEncode",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "A monkey jumps on a bed"
-      ]
+      "widgets_values": ["A monkey jumps on a bed"]
     },
     {
       "id": 114,
       "type": "MarkdownNote",
-      "pos": [
-        -1960,
-        630
-      ],
-      "size": [
-        450,
-        130
-      ],
+      "pos": [-1960, 630],
+      "size": [450, 130],
       "flags": {},
       "order": 10,
       "mode": 0,
@@ -1941,14 +1629,8 @@
     {
       "id": 28,
       "type": "WanVideoDecode",
-      "pos": [
-        2620,
-        -520
-      ],
-      "size": [
-        320,
-        200
-      ],
+      "pos": [2620, -520],
+      "size": [320, 200],
       "flags": {},
       "order": 39,
       "mode": 0,
@@ -1969,9 +1651,7 @@
           "name": "images",
           "type": "IMAGE",
           "slot_index": 0,
-          "links": [
-            237
-          ]
+          "links": [237]
         }
       ],
       "properties": {
@@ -1980,28 +1660,15 @@
         "Node name for S&R": "WanVideoDecode",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        false,
-        272,
-        272,
-        144,
-        128,
-        "default"
-      ],
+      "widgets_values": [false, 272, 272, 144, 128, "default"],
       "color": "#322",
       "bgcolor": "#533"
     },
     {
       "id": 135,
       "type": "GetImageSizeAndCount",
-      "pos": [
-        -779.9371590835598,
-        882.9890218569667
-      ],
-      "size": [
-        196.2994140625,
-        86
-      ],
+      "pos": [-779.9371590835598, 882.9890218569667],
+      "size": [196.2994140625, 86],
       "flags": {},
       "order": 23,
       "mode": 0,
@@ -2016,9 +1683,7 @@
         {
           "name": "image",
           "type": "IMAGE",
-          "links": [
-            242
-          ]
+          "links": [242]
         },
         {
           "label": "width",
@@ -2036,9 +1701,7 @@
           "label": "count",
           "name": "count",
           "type": "INT",
-          "links": [
-            244
-          ]
+          "links": [244]
         }
       ],
       "properties": {
@@ -2051,14 +1714,8 @@
     {
       "id": 134,
       "type": "GetVideoComponents",
-      "pos": [
-        -790,
-        1020
-      ],
-      "size": [
-        193.530859375,
-        66
-      ],
+      "pos": [-790, 1020],
+      "size": [193.530859375, 66],
       "flags": {},
       "order": 18,
       "mode": 0,
@@ -2073,9 +1730,7 @@
         {
           "name": "images",
           "type": "IMAGE",
-          "links": [
-            241
-          ]
+          "links": [241]
         },
         {
           "name": "audio",
@@ -2098,14 +1753,8 @@
     {
       "id": 133,
       "type": "vloMemoryLoadVideo",
-      "pos": [
-        -850,
-        710
-      ],
-      "size": [
-        270,
-        130
-      ],
+      "pos": [-850, 710],
+      "size": [270, 130],
       "flags": {},
       "order": 11,
       "mode": 0,
@@ -2114,9 +1763,7 @@
         {
           "name": "VIDEO",
           "type": "VIDEO",
-          "links": [
-            239
-          ]
+          "links": [239]
         }
       ],
       "properties": {
@@ -2125,25 +1772,13 @@
         "widget_ue_connectable": {},
         "Node name for S&R": "vloMemoryLoadVideo"
       },
-      "widgets_values": [
-        "Loading...",
-        false,
-        "refresh",
-        false,
-        "image"
-      ]
+      "widgets_values": ["Loading...", false, "refresh", false, "image"]
     },
     {
       "id": 129,
       "type": "vloMemoryLoadVideo",
-      "pos": [
-        -810,
-        290
-      ],
-      "size": [
-        270,
-        130
-      ],
+      "pos": [-810, 290],
+      "size": [270, 130],
       "flags": {},
       "order": 12,
       "mode": 0,
@@ -2152,9 +1787,7 @@
         {
           "name": "VIDEO",
           "type": "VIDEO",
-          "links": [
-            234
-          ]
+          "links": [234]
         }
       ],
       "title": "Load Video",
@@ -2164,25 +1797,13 @@
         "widget_ue_connectable": {},
         "Node name for S&R": "vloMemoryLoadVideo"
       },
-      "widgets_values": [
-        "Loading...",
-        false,
-        "refresh",
-        false,
-        "image"
-      ]
+      "widgets_values": ["Loading...", false, "refresh", false, "image"]
     },
     {
       "id": 130,
       "type": "GetVideoComponents",
-      "pos": [
-        -750,
-        510
-      ],
-      "size": [
-        193.530859375,
-        66
-      ],
+      "pos": [-750, 510],
+      "size": [193.530859375, 66],
       "flags": {},
       "order": 19,
       "mode": 0,
@@ -2197,10 +1818,7 @@
         {
           "name": "images",
           "type": "IMAGE",
-          "links": [
-            235,
-            236
-          ]
+          "links": [235, 236]
         },
         {
           "name": "audio",
@@ -2223,14 +1841,8 @@
     {
       "id": 89,
       "type": "WanVideoImageToVideoEncode",
-      "pos": [
-        50,
-        -290
-      ],
-      "size": [
-        310,
-        440
-      ],
+      "pos": [50, -290],
+      "size": [310, 440],
       "flags": {},
       "order": 28,
       "mode": 0,
@@ -2318,9 +1930,7 @@
         {
           "name": "image_embeds",
           "type": "WANVIDIMAGE_EMBEDS",
-          "links": [
-            187
-          ]
+          "links": [187]
         }
       ],
       "properties": {
@@ -2333,32 +1943,15 @@
           "num_frames": true
         }
       },
-      "widgets_values": [
-        832,
-        480,
-        81,
-        0,
-        1,
-        1,
-        true,
-        true,
-        false,
-        0
-      ],
+      "widgets_values": [832, 480, 81, 0, 1, 1, true, true, false, 0],
       "color": "#322",
       "bgcolor": "#533"
     },
     {
       "id": 99,
       "type": "WanVideoEncode",
-      "pos": [
-        80,
-        350
-      ],
-      "size": [
-        270,
-        250
-      ],
+      "pos": [80, 350],
+      "size": [270, 250],
       "flags": {},
       "order": 30,
       "mode": 0,
@@ -2384,9 +1977,7 @@
         {
           "name": "samples",
           "type": "LATENT",
-          "links": [
-            179
-          ]
+          "links": [179]
         }
       ],
       "properties": {
@@ -2395,461 +1986,70 @@
         "Node name for S&R": "WanVideoEncode",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        false,
-        272,
-        272,
-        144,
-        128,
-        0,
-        1
-      ]
+      "widgets_values": [false, 272, 272, 144, 128, 0, 1]
     }
   ],
   "links": [
-    [
-      109,
-      80,
-      0,
-      27,
-      0,
-      "WANVIDEOMODEL"
-    ],
-    [
-      110,
-      56,
-      0,
-      80,
-      1,
-      "WANVIDLORA"
-    ],
-    [
-      111,
-      35,
-      0,
-      22,
-      0,
-      "WANCOMPILEARGS"
-    ],
-    [
-      112,
-      35,
-      0,
-      71,
-      0,
-      "WANCOMPILEARGS"
-    ],
-    [
-      139,
-      68,
-      0,
-      89,
-      2,
-      "IMAGE"
-    ],
-    [
-      141,
-      68,
-      1,
-      89,
-      9,
-      "INT"
-    ],
-    [
-      142,
-      68,
-      2,
-      89,
-      10,
-      "INT"
-    ],
-    [
-      143,
-      27,
-      0,
-      90,
-      3,
-      "LATENT"
-    ],
-    [
-      144,
-      79,
-      0,
-      90,
-      0,
-      "WANVIDEOMODEL"
-    ],
-    [
-      151,
-      90,
-      0,
-      28,
-      1,
-      "LATENT"
-    ],
-    [
-      153,
-      91,
-      0,
-      27,
-      18,
-      "INT"
-    ],
-    [
-      154,
-      91,
-      0,
-      90,
-      18,
-      "INT"
-    ],
-    [
-      155,
-      22,
-      0,
-      92,
-      0,
-      "WANVIDEOMODEL"
-    ],
-    [
-      156,
-      39,
-      0,
-      92,
-      1,
-      "BLOCKSWAPARGS"
-    ],
-    [
-      157,
-      92,
-      0,
-      80,
-      0,
-      "WANVIDEOMODEL"
-    ],
-    [
-      159,
-      39,
-      0,
-      93,
-      1,
-      "BLOCKSWAPARGS"
-    ],
-    [
-      160,
-      71,
-      0,
-      93,
-      0,
-      "WANVIDEOMODEL"
-    ],
-    [
-      161,
-      93,
-      0,
-      79,
-      0,
-      "WANVIDEOMODEL"
-    ],
-    [
-      163,
-      94,
-      0,
-      27,
-      17,
-      "INT"
-    ],
-    [
-      164,
-      94,
-      0,
-      90,
-      17,
-      "INT"
-    ],
-    [
-      169,
-      97,
-      0,
-      79,
-      1,
-      "WANVIDLORA"
-    ],
-    [
-      173,
-      105,
-      0,
-      99,
-      1,
-      "IMAGE"
-    ],
-    [
-      174,
-      103,
-      0,
-      101,
-      0,
-      "IMAGE"
-    ],
-    [
-      176,
-      105,
-      1,
-      103,
-      2,
-      "INT"
-    ],
-    [
-      177,
-      105,
-      2,
-      103,
-      3,
-      "INT"
-    ],
-    [
-      179,
-      99,
-      0,
-      104,
-      1,
-      "LATENT"
-    ],
-    [
-      184,
-      68,
-      1,
-      105,
-      2,
-      "INT"
-    ],
-    [
-      185,
-      68,
-      2,
-      105,
-      3,
-      "INT"
-    ],
-    [
-      187,
-      89,
-      0,
-      104,
-      0,
-      "WANVIDIMAGE_EMBEDS"
-    ],
-    [
-      188,
-      104,
-      0,
-      27,
-      1,
-      "WANVIDIMAGE_EMBEDS"
-    ],
-    [
-      190,
-      38,
-      0,
-      107,
-      0,
-      "*"
-    ],
-    [
-      191,
-      108,
-      0,
-      28,
-      0,
-      "WANVAE"
-    ],
-    [
-      192,
-      109,
-      0,
-      99,
-      0,
-      "WANVAE"
-    ],
-    [
-      194,
-      107,
-      0,
-      89,
-      0,
-      "WANVAE"
-    ],
-    [
-      210,
-      101,
-      0,
-      117,
-      0,
-      "MASK"
-    ],
-    [
-      211,
-      117,
-      0,
-      116,
-      0,
-      "MASK"
-    ],
-    [
-      213,
-      118,
-      0,
-      68,
-      0,
-      "IMAGE"
-    ],
-    [
-      214,
-      119,
-      0,
-      120,
-      0,
-      "CLIP"
-    ],
-    [
-      215,
-      119,
-      0,
-      121,
-      0,
-      "CLIP"
-    ],
-    [
-      216,
-      120,
-      0,
-      122,
-      0,
-      "CONDITIONING"
-    ],
-    [
-      217,
-      121,
-      0,
-      122,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      218,
-      122,
-      0,
-      27,
-      2,
-      "WANVIDEOTEXTEMBEDS"
-    ],
-    [
-      219,
-      122,
-      0,
-      90,
-      2,
-      "WANVIDEOTEXTEMBEDS"
-    ],
-    [
-      230,
-      116,
-      0,
-      128,
-      0,
-      "MASK"
-    ],
-    [
-      231,
-      128,
-      0,
-      104,
-      2,
-      "MASK"
-    ],
-    [
-      233,
-      104,
-      0,
-      90,
-      1,
-      "WANVIDIMAGE_EMBEDS"
-    ],
-    [
-      234,
-      129,
-      0,
-      130,
-      0,
-      "VIDEO"
-    ],
-    [
-      235,
-      130,
-      0,
-      105,
-      0,
-      "IMAGE"
-    ],
-    [
-      236,
-      130,
-      0,
-      118,
-      0,
-      "IMAGE"
-    ],
-    [
-      237,
-      28,
-      0,
-      60,
-      0,
-      "IMAGE"
-    ],
-    [
-      239,
-      133,
-      0,
-      134,
-      0,
-      "VIDEO"
-    ],
-    [
-      241,
-      134,
-      0,
-      135,
-      0,
-      "IMAGE"
-    ],
-    [
-      242,
-      135,
-      0,
-      103,
-      0,
-      "IMAGE"
-    ],
-    [
-      244,
-      135,
-      3,
-      89,
-      11,
-      "INT"
-    ]
+    [109, 80, 0, 27, 0, "WANVIDEOMODEL"],
+    [110, 56, 0, 80, 1, "WANVIDLORA"],
+    [111, 35, 0, 22, 0, "WANCOMPILEARGS"],
+    [112, 35, 0, 71, 0, "WANCOMPILEARGS"],
+    [139, 68, 0, 89, 2, "IMAGE"],
+    [141, 68, 1, 89, 9, "INT"],
+    [142, 68, 2, 89, 10, "INT"],
+    [143, 27, 0, 90, 3, "LATENT"],
+    [144, 79, 0, 90, 0, "WANVIDEOMODEL"],
+    [151, 90, 0, 28, 1, "LATENT"],
+    [153, 91, 0, 27, 18, "INT"],
+    [154, 91, 0, 90, 18, "INT"],
+    [155, 22, 0, 92, 0, "WANVIDEOMODEL"],
+    [156, 39, 0, 92, 1, "BLOCKSWAPARGS"],
+    [157, 92, 0, 80, 0, "WANVIDEOMODEL"],
+    [159, 39, 0, 93, 1, "BLOCKSWAPARGS"],
+    [160, 71, 0, 93, 0, "WANVIDEOMODEL"],
+    [161, 93, 0, 79, 0, "WANVIDEOMODEL"],
+    [163, 94, 0, 27, 17, "INT"],
+    [164, 94, 0, 90, 17, "INT"],
+    [169, 97, 0, 79, 1, "WANVIDLORA"],
+    [173, 105, 0, 99, 1, "IMAGE"],
+    [174, 103, 0, 101, 0, "IMAGE"],
+    [176, 105, 1, 103, 2, "INT"],
+    [177, 105, 2, 103, 3, "INT"],
+    [179, 99, 0, 104, 1, "LATENT"],
+    [184, 68, 1, 105, 2, "INT"],
+    [185, 68, 2, 105, 3, "INT"],
+    [187, 89, 0, 104, 0, "WANVIDIMAGE_EMBEDS"],
+    [188, 104, 0, 27, 1, "WANVIDIMAGE_EMBEDS"],
+    [190, 38, 0, 107, 0, "*"],
+    [191, 108, 0, 28, 0, "WANVAE"],
+    [192, 109, 0, 99, 0, "WANVAE"],
+    [194, 107, 0, 89, 0, "WANVAE"],
+    [210, 101, 0, 117, 0, "MASK"],
+    [211, 117, 0, 116, 0, "MASK"],
+    [213, 118, 0, 68, 0, "IMAGE"],
+    [214, 119, 0, 120, 0, "CLIP"],
+    [215, 119, 0, 121, 0, "CLIP"],
+    [216, 120, 0, 122, 0, "CONDITIONING"],
+    [217, 121, 0, 122, 1, "CONDITIONING"],
+    [218, 122, 0, 27, 2, "WANVIDEOTEXTEMBEDS"],
+    [219, 122, 0, 90, 2, "WANVIDEOTEXTEMBEDS"],
+    [230, 116, 0, 128, 0, "MASK"],
+    [231, 128, 0, 104, 2, "MASK"],
+    [233, 104, 0, 90, 1, "WANVIDIMAGE_EMBEDS"],
+    [234, 129, 0, 130, 0, "VIDEO"],
+    [235, 130, 0, 105, 0, "IMAGE"],
+    [236, 130, 0, 118, 0, "IMAGE"],
+    [237, 28, 0, 60, 0, "IMAGE"],
+    [239, 133, 0, 134, 0, "VIDEO"],
+    [241, 134, 0, 135, 0, "IMAGE"],
+    [242, 135, 0, 103, 0, "IMAGE"],
+    [244, 135, 3, 89, 11, "INT"]
   ],
   "groups": [
     {
       "id": 2,
       "title": "TTM inputs",
-      "bounding": [
-        -890,
-        180,
-        1590.860985770768,
-        1206.3957287745668
-      ],
+      "bounding": [-890, 180, 1590.860985770768, 1206.3957287745668],
       "color": "#3f789e",
       "font_size": 24,
       "flags": {}
@@ -2857,12 +2057,7 @@
     {
       "id": 3,
       "title": "Models",
-      "bounding": [
-        -1950,
-        -1410,
-        2051.179501575185,
-        972.9388987176192
-      ],
+      "bounding": [-1950, -1410, 2051.179501575185, 972.9388987176192],
       "color": "#88A",
       "font_size": 24,
       "flags": {}
@@ -2872,10 +2067,7 @@
   "extra": {
     "ds": {
       "scale": 0.3967057370057464,
-      "offset": [
-        2241.144430208137,
-        1720.8237522317718
-      ]
+      "offset": [2241.144430208137, 1720.8237522317718]
     },
     "frontendVersion": "1.42.15",
     "node_versions": {

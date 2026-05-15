@@ -17,6 +17,7 @@ import {
 import {
   buildGeneratedCreationMetadata,
   findPreparedMaskFallback,
+  mergeAppliedWidgetValuesIntoGenerationMetadata,
 } from "../store/metadata";
 import { frontendPreprocess } from "../utils/pipeline";
 import { buildWorkflowInputMetadataMap } from "../utils/inputMetadata";
@@ -1063,6 +1064,10 @@ export function buildSubmittedGeneration(
   } else if (response.comfyui_workflow) {
     generationMetadata.comfyuiWorkflow = response.comfyui_workflow;
   }
+  mergeAppliedWidgetValuesIntoGenerationMetadata(
+    generationMetadata,
+    appliedWidgetValues,
+  );
 
   let preparedMaskFile = findPreparedMaskFallback(
     prepared.plan.preprocess.slotValues,

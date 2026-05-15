@@ -31,6 +31,10 @@ import type {
   WorkflowRules,
 } from "../services/workflowRules";
 import {
+  buildFrontendStateDerivedWidgetKey,
+  buildFrontendStateWidgetKey,
+} from "../services/frontendRuleState";
+import {
   buildWorkflowReplayPipelineInputs,
   getWorkflowReplayPipelineValue,
 } from "../services/workflowRules";
@@ -606,6 +610,63 @@ export function extractReplayPanelState(
     widgetModes: { ...widgetModes },
     derivedWidgetValues: { ...derivedWidgetValues },
   };
+}
+
+export function mergeAppliedWidgetValuesIntoGenerationMetadata(
+  metadata: GeneratedCreationMetadata,
+  appliedWidgetValues: Readonly<Record<string, string>>,
+): void {
+  if (Object.keys(appliedWidgetValues).length === 0) {
+    return;
+  }
+
+  const replayState: GeneratedCreationReplayState = metadata.replayState
+    ? { ...metadata.replayState }
+    : { version: 2 };
+  const widgetValues = isStringRecord(replayState.widgetValues)
+    ? { ...replayState.widgetValues }
+    : {};
+  const derivedWidgetValues = isStringRecord(replayState.derivedWidgetValues)
+    ? { ...replayState.derivedWidgetValues }
+    : {};
+
+  let changed = false;
+  for (const [key, value] of Object.entries(appliedWidgetValues)) {
+    if (typeof value !== "string") {
+      continue;
+    }
+
+    if (key.startsWith("derived:") && key.endsWith(":__value")) {
+      const derivedWidgetId = key.slice("derived:".length, -":__value".length);
+      if (derivedWidgetId.length === 0) {
+        continue;
+      }
+      derivedWidgetValues[buildFrontendStateDerivedWidgetKey(derivedWidgetId)] =
+        value;
+      changed = true;
+      continue;
+    }
+
+    const separatorIndex = key.lastIndexOf(":");
+    if (separatorIndex <= 0 || separatorIndex >= key.length - 1) {
+      continue;
+    }
+
+    const nodeId = key.slice(0, separatorIndex);
+    const param = key.slice(separatorIndex + 1);
+    widgetValues[buildFrontendStateWidgetKey(nodeId, param)] = value;
+    changed = true;
+  }
+
+  if (!changed) {
+    return;
+  }
+
+  replayState.widgetValues = widgetValues;
+  if (Object.keys(derivedWidgetValues).length > 0) {
+    replayState.derivedWidgetValues = derivedWidgetValues;
+  }
+  metadata.replayState = replayState;
 }
 
 function buildWorkflowInputSnapshot(

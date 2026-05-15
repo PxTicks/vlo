@@ -59,6 +59,7 @@ import {
   buildFrontendStateValueKey,
 } from "../services/frontendRuleState";
 import { shouldShowHistoricalGenerationJob } from "../utils/panelDisplayJob";
+import { parseStoredWidgetValue } from "../utils/storedWidgetValues";
 
 function applySelectionConfigDefaults(
   selection: ReturnType<typeof createTimelineSelection>,
@@ -88,50 +89,6 @@ function setNodeParamValue(
     ...current,
     [nodeId]: { ...(current[nodeId] ?? {}), [param]: value },
   };
-}
-
-function parseStoredWidgetValue(
-  widget: WorkflowWidgetInput,
-  storedValue: string,
-): unknown {
-  const valueType = widget.config.valueType;
-  const fallbackValue = widget.currentValue;
-
-  if (valueType === "boolean") {
-    if (
-      widget.config.trueValue !== undefined &&
-      storedValue === String(widget.config.trueValue)
-    ) {
-      return true;
-    }
-    if (
-      widget.config.falseValue !== undefined &&
-      storedValue === String(widget.config.falseValue)
-    ) {
-      return false;
-    }
-  }
-
-  if (
-    valueType === "int" ||
-    valueType === "float" ||
-    typeof fallbackValue === "number"
-  ) {
-    const parsed = Number(storedValue);
-    return Number.isFinite(parsed) ? parsed : fallbackValue;
-  }
-
-  if (valueType === "boolean" || typeof fallbackValue === "boolean") {
-    if (storedValue === "true") {
-      return true;
-    }
-    if (storedValue === "false") {
-      return false;
-    }
-    return fallbackValue;
-  }
-
-  return storedValue;
 }
 
 interface AudioSelectionExtractionOptions {

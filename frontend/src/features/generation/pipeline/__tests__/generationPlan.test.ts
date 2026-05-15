@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { WorkflowInput } from "../../types";
 import {
   buildGenerationPreprocessCacheKey,
+  buildSubmittedGeneration,
   type GenerationPreprocessCacheEntry,
   updateGenerationPreprocessCacheFromResponse,
 } from "../generationPlan";
@@ -194,5 +195,68 @@ describe("generationPlan cache media extraction", () => {
     );
 
     expect(updated.backendMedia).toBeNull();
+  });
+
+  it("stores backend-applied randomized widget values in replay metadata", () => {
+    const plan = makePlan("KSampler");
+    plan.metadata.generationMetadata = {
+      source: "generated",
+      workflowName: "Workflow",
+      inputs: [],
+      replayState: {
+        version: 2,
+        workflowInputs: [],
+        widgetValues: {
+          widget_94_seed: "11",
+          widget_94_steps: "30",
+        },
+        widgetModes: {
+          widget_mode_94_seed: "randomize",
+        },
+        derivedWidgetValues: {
+          derived_widget_single_sampler_denoise: "0.2",
+        },
+      },
+    };
+
+    const submitted = buildSubmittedGeneration(
+      {
+        plan,
+        request: {
+          workflow: plan.workflow.workflow,
+          graphData: null,
+          workflowId: plan.workflow.workflowId,
+          exactAspectRatio: false,
+          textInputs: {},
+          imageInputs: {},
+          videoInputs: {},
+          audioInputs: {},
+          pipelineInputs: {},
+          clientId: "client-id",
+        },
+      },
+      {
+        prompt_id: "prompt-1",
+        number: 1,
+        node_errors: {},
+        applied_widget_values: {
+          "94:seed": "18446744073709551615",
+          "derived:single_sampler_denoise:__value": "0.4",
+        },
+      },
+    );
+
+    expect(
+      submitted.generationMetadata.replayState?.widgetValues?.widget_94_seed,
+    ).toBe("18446744073709551615");
+    expect(
+      submitted.generationMetadata.replayState?.widgetValues?.widget_94_steps,
+    ).toBe("30");
+    expect(
+      submitted.generationMetadata.replayState?.derivedWidgetValues
+        ?.derived_widget_single_sampler_denoise,
+    ).toBe("0.4");
+    expect(plan.metadata.generationMetadata.replayState?.widgetValues?.widget_94_seed)
+      .toBe("11");
   });
 });

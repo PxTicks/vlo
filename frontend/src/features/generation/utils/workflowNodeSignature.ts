@@ -1,4 +1,5 @@
 import { isRecord } from "../services/parsers";
+import { canonicalizeWorkflowClassType } from "./workflowClassTypes";
 
 function isApiWorkflow(
   workflowData: Record<string, unknown>,
@@ -31,8 +32,10 @@ function collectGraphNodes(
       continue;
     }
 
+    const normalizedNodeType =
+      canonicalizeWorkflowClassType(nodeType) ?? nodeType.trim();
     const key = prefix ? `${prefix}${nodeId}` : String(nodeId);
-    result.set(key, nodeType.trim());
+    result.set(key, normalizedNodeType);
   }
 }
 
@@ -50,7 +53,11 @@ export function extractWorkflowNodeMap(
         continue;
       }
 
-      result.set(String(nodeId), nodeData.class_type.trim());
+      result.set(
+        String(nodeId),
+        canonicalizeWorkflowClassType(nodeData.class_type) ??
+          nodeData.class_type.trim(),
+      );
     }
 
     if (result.size > 0) {
@@ -209,7 +216,8 @@ function buildGraphWorkflowStructureSignature(
       }
 
       const nodeId = String(node.id);
-      const nodeType = node.type.trim();
+      const nodeType =
+        canonicalizeWorkflowClassType(node.type) ?? node.type.trim();
       if (!nodeType) {
         return null;
       }
@@ -275,7 +283,8 @@ export function buildWorkflowStructureSignature(
       const record = nodeData as Record<string, unknown>;
       const classType =
         typeof record.class_type === "string"
-          ? record.class_type.trim()
+          ? (canonicalizeWorkflowClassType(record.class_type) ??
+            record.class_type.trim())
           : null;
       if (!classType) {
         return null;

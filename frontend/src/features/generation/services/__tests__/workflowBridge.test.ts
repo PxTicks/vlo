@@ -242,6 +242,59 @@ describe("workflowBridge", () => {
     expect(inputs[0]?.label).toBe("Load Checkpoint");
   });
 
+  it("discovers lowercase vloMemoryLoadVideo graph nodes with legacy uppercase metadata", () => {
+    const inputs = parseInputsFromGraphData(
+      {
+        nodes: [
+          {
+            id: 129,
+            type: "vloMemoryLoadVideo",
+            widgets_values: ["memory-video-1"],
+          },
+        ],
+        links: [],
+      },
+      {
+        inputNodeMap: {
+          VLOMemoryLoadVideo: [
+            {
+              inputType: "video",
+              param: "file",
+            },
+          ],
+        },
+        objectInfo: {
+          VLOMemoryLoadVideo: {
+            display_name: "Load Video",
+            input: {
+              required: {
+                file: ["STRING", {}],
+              },
+            },
+            input_order: {
+              required: ["file"],
+            },
+          },
+        },
+      },
+    );
+
+    expect(inputs).toEqual([
+      {
+        id: "129:file",
+        nodeId: "129",
+        classType: "vloMemoryLoadVideo",
+        inputType: "video",
+        param: "file",
+        label: "Load Video",
+        description: null,
+        currentValue: "memory-video-1",
+        origin: "inferred",
+        dispatch: { kind: "node" },
+      },
+    ]);
+  });
+
   describe("readPendingWarningsFromIframe", () => {
     it("reads the new ComfyUI missingModelCandidates shape", () => {
       const iframe = buildIframeWithPendingWarnings({

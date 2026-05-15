@@ -2,10 +2,12 @@ import type { WorkflowInput } from "../types";
 import {
   INPUT_NODE_MAP,
   type InputNodeMap,
+  resolveInputNodeMappings,
   type InputNodeMapEntry,
 } from "../constants/inputNodeMap";
 import { resolveNodeDisplayTitle } from "./nodeTitles";
 import { buildWorkflowInputId } from "../utils/workflowInputs";
+import { canonicalizeWorkflowClassType } from "../utils/workflowClassTypes";
 
 function resolveWorkflowInputLabel(
   nodeTitle: string,
@@ -40,10 +42,11 @@ export function parseInputsFromApiWorkflow(
 
     const node = nodeData as Record<string, unknown>;
     if (node.mode === 2 || node.mode === 4) continue;
-    const classType = node.class_type as string | undefined;
+    const rawClassType = node.class_type as string | undefined;
+    const classType = canonicalizeWorkflowClassType(rawClassType) ?? rawClassType;
     if (!classType) continue;
 
-    const mappings = nodeMap[classType] ?? [];
+    const mappings = resolveInputNodeMappings(nodeMap, classType);
     if (mappings.length === 0) continue;
 
     const nodeInputs = (node.inputs ?? {}) as Record<string, unknown>;

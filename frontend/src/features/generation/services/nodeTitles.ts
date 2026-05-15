@@ -1,4 +1,5 @@
 import { isRecord } from "./parsers";
+import { getWorkflowClassTypeLookupKeys } from "../utils/workflowClassTypes";
 
 export function normalizeNodeName(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -11,8 +12,15 @@ export function resolveClassInfo(
   classType: string | undefined,
 ): Record<string, unknown> | null {
   if (!objectInfo || !classType) return null;
-  const classInfo = objectInfo[classType];
-  return isRecord(classInfo) ? classInfo : null;
+
+  for (const key of getWorkflowClassTypeLookupKeys(classType)) {
+    const classInfo = objectInfo[key];
+    if (isRecord(classInfo)) {
+      return classInfo;
+    }
+  }
+
+  return null;
 }
 
 export function resolveObjectInfoDisplayName(

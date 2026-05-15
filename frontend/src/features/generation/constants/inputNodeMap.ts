@@ -1,4 +1,5 @@
 import type { WorkflowInput } from "../types";
+import { getWorkflowClassTypeLookupKeys } from "../utils/workflowClassTypes";
 
 export interface InputNodeMapEntry {
   inputType: WorkflowInput["inputType"];
@@ -24,17 +25,46 @@ export type InputNodeMap = Record<string, InputNodeMapEntry[]>;
  * At runtime this is merged with the dynamic map built from object_info by
  * the backend's ``/object_info/sync`` endpoint.
  */
-export const INPUT_NODE_MAP: InputNodeMap = {
+const STATIC_INPUT_NODE_MAP: InputNodeMap = {
   LoadImage: [{ inputType: "image", param: "image", label: "Image" }],
-  VLOMemoryLoadImage: [{ inputType: "image", param: "image", label: "Image" }],
+  vloMemoryLoadImage: [{ inputType: "image", param: "image", label: "Image" }],
   CLIPTextEncode: [{ inputType: "text", param: "text", label: "Prompt" }],
   LoadAudio: [{ inputType: "audio", param: "audio", label: "Audio" }],
-  VLOMemoryLoadAudio: [{ inputType: "audio", param: "audio", label: "Audio" }],
+  vloMemoryLoadAudio: [{ inputType: "audio", param: "audio", label: "Audio" }],
   LoadVideo: [{ inputType: "video", param: "file", label: "Video" }],
-  VLOMemoryLoadVideo: [{ inputType: "video", param: "file", label: "Video" }],
+  vloMemoryLoadVideo: [{ inputType: "video", param: "file", label: "Video" }],
   VHS_LoadVideo: [{ inputType: "video", param: "video", label: "Video" }],
   VHS_LoadVideoFFmpeg: [{ inputType: "video", param: "video", label: "Video" }],
 };
+
+function withWorkflowClassTypeAliases(inputNodeMap: InputNodeMap): InputNodeMap {
+  const expanded: InputNodeMap = { ...inputNodeMap };
+
+  for (const [classType, entries] of Object.entries(inputNodeMap)) {
+    for (const key of getWorkflowClassTypeLookupKeys(classType)) {
+      expanded[key] ??= entries;
+    }
+  }
+
+  return expanded;
+}
+
+export const INPUT_NODE_MAP: InputNodeMap =
+  withWorkflowClassTypeAliases(STATIC_INPUT_NODE_MAP);
+
+export function resolveInputNodeMappings(
+  inputNodeMap: InputNodeMap,
+  classType: string | null | undefined,
+): InputNodeMapEntry[] {
+  for (const key of getWorkflowClassTypeLookupKeys(classType)) {
+    const mappings = inputNodeMap[key];
+    if (mappings && mappings.length > 0) {
+      return mappings;
+    }
+  }
+
+  return [];
+}
 
 /**
  * Merge a backend-provided dynamic input node map with the static fallback.
@@ -80,5 +110,5 @@ export function mergeInputNodeMap(
     }
     next[classType] = Array.from(byParam.values());
   }
-  return next;
+  return withWorkflowClassTypeAliases(next);
 }

@@ -15,6 +15,7 @@ from services.gen_pipeline.processors import (
     build_backend_preprocessors,
 )
 from services.gen_pipeline.processors.utils.video_crop import analyze_mask_video_bounds, crop_video, get_video_dimensions
+from services.workflow_rules.class_types import get_class_type_aliases
 from services.workflow_rules.object_info import build_input_node_map
 from services.workflow_rules.input_labels import default_input_label
 
@@ -26,12 +27,12 @@ DEFAULT_WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / ".config" / "d
 # Maps ComfyUI class_type -> discoverable input type
 INPUT_NODE_MAP = {
     "LoadImage": {"input_type": "image", "param": "image"},
-    "VLOMemoryLoadImage": {"input_type": "image", "param": "image"},
+    "vloMemoryLoadImage": {"input_type": "image", "param": "image"},
     "CLIPTextEncode": {"input_type": "text", "param": "text"},
     "LoadAudio": {"input_type": "audio", "param": "audio"},
-    "VLOMemoryLoadAudio": {"input_type": "audio", "param": "audio"},
+    "vloMemoryLoadAudio": {"input_type": "audio", "param": "audio"},
     "LoadVideo": {"input_type": "video", "param": "file"},
-    "VLOMemoryLoadVideo": {"input_type": "video", "param": "file"},
+    "vloMemoryLoadVideo": {"input_type": "video", "param": "file"},
     "VHS_LoadVideo": {"input_type": "video", "param": "video"},
     "VHS_LoadVideoFFmpeg": {"input_type": "video", "param": "video"},
 }
@@ -323,17 +324,19 @@ async def run_backend_preprocess(ctx: BackendPipelineContext) -> None:
     # Build dynamic input node map from object_info, with static fallbacks.
     dynamic_map = build_input_node_map()
     for class_type, mapping in INPUT_NODE_MAP.items():
-        existing = {
-            entry["param"]: dict(entry)
-            for entry in dynamic_map.get(class_type, [])
-        }
+        aliases = get_class_type_aliases(class_type) or (class_type,)
+        existing: dict[str, dict[str, Any]] = {}
+        for alias in aliases:
+            for entry in dynamic_map.get(alias, []):
+                existing[entry["param"]] = dict(entry)
         existing[mapping["param"]] = {
             "input_type": mapping["input_type"],
             "param": mapping["param"],
             "label": default_input_label(mapping["input_type"]),
             "description": None,
         }
-        dynamic_map[class_type] = list(existing.values())
+        for alias in aliases:
+            dynamic_map[alias] = list(existing.values())
 
     preprocessors = build_backend_preprocessors(
         workflows_dir=WORKFLOWS_DIR,

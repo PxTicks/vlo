@@ -28,9 +28,9 @@ def test_vlo_memory_load_audio_remains_discoverable_without_audio_upload_flag():
 
     assert policy["has_audio_input"] is True
     assert has_any_input(policy) is True
-    assert build_input_node_map({"VLOMemoryLoadAudio": class_info})[
-        "VLOMemoryLoadAudio"
-    ] == [
+    node_map = build_input_node_map({"VLOMemoryLoadAudio": class_info})
+
+    assert node_map["vloMemoryLoadAudio"] == [
         {
             "input_type": "audio",
             "param": "audio",
@@ -38,3 +38,4 @@ def test_vlo_memory_load_audio_remains_discoverable_without_audio_upload_flag():
             "description": None,
         }
     ]
+    assert node_map["VLOMemoryLoadAudio"] == node_map["vloMemoryLoadAudio"]

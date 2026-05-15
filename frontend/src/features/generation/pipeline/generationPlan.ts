@@ -25,6 +25,7 @@ import {
   getNodeInputRequestKey,
 } from "../utils/workflowInputs";
 import { throwIfAborted } from "./utils/abort";
+import { isMemoryLoaderClassType } from "../utils/workflowClassTypes";
 import type {
   DerivedMaskMapping,
   GenerationPlan,
@@ -100,11 +101,6 @@ interface BackendPreprocessResponseData {
 const SAVE_IMAGE_WEBSOCKET_NODE_TYPES = new Set([
   "SaveImageWebsocket",
   "VLOSaveImageWebsocketBMP",
-]);
-const MEMORY_LOADER_NODE_TYPES = new Set([
-  "VLOMemoryLoadImage",
-  "VLOMemoryLoadVideo",
-  "VLOMemoryLoadAudio",
 ]);
 const MEMORY_LOADER_PLACEHOLDER_VALUES = new Set(["loading..."]);
 const MEMORY_LOADER_DISABLE_PARAM = "disable_in_memory";
@@ -403,7 +399,7 @@ function buildMemoryLoaderModeCacheDescriptor(
       const classType = (node as { class_type?: unknown }).class_type;
       return (
         typeof classType === "string" &&
-        MEMORY_LOADER_NODE_TYPES.has(classType)
+        isMemoryLoaderClassType(classType)
       );
     })
     .sort(([left], [right]) => left.localeCompare(right))
@@ -761,7 +757,7 @@ function isMemoryLoaderPlaceholderValue(
   const classType = (node as { class_type?: unknown }).class_type;
   if (
     typeof classType !== "string" ||
-    !MEMORY_LOADER_NODE_TYPES.has(classType)
+    !isMemoryLoaderClassType(classType)
   ) {
     return false;
   }

@@ -2,6 +2,7 @@ import type { WorkflowInput } from "../types";
 import {
   INPUT_NODE_MAP,
   type InputNodeMap,
+  resolveInputNodeMappings,
   type InputNodeMapEntry,
 } from "../constants/inputNodeMap";
 import { isRecord } from "./parsers";
@@ -11,6 +12,7 @@ import {
 } from "./nodeTitles";
 import { buildWorkflowInputId } from "../utils/workflowInputs";
 import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
+import { canonicalizeWorkflowClassType } from "../utils/workflowClassTypes";
 
 /**
  * Graph-based workflow bridge for the live editor UI.
@@ -201,10 +203,12 @@ export function parseInputsFromGraphData(
       continue;
     }
     if (node.mode === 2 || node.mode === 4) continue;
-    const classType = node.type.trim();
+    const rawClassType = node.type.trim();
+    const classType =
+      canonicalizeWorkflowClassType(rawClassType) ?? rawClassType;
     if (!classType) continue;
 
-    const mappings = nodeMap[classType] ?? [];
+    const mappings = resolveInputNodeMappings(nodeMap, classType);
     if (mappings.length === 0) continue;
 
     const nodeId = String(node.id);

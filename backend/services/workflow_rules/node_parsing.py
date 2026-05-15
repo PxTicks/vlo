@@ -14,6 +14,11 @@ same iteration pattern over a node's ``input`` spec.
 
 from typing import Any
 
+from services.workflow_rules.class_types import (
+    canonicalize_class_type,
+    get_class_type_aliases,
+    resolve_class_info,
+)
 from services.workflow_rules.node_introspection import iter_all_params
 
 
@@ -23,7 +28,7 @@ from services.workflow_rules.node_introspection import iter_all_params
 
 
 _INPUT_NODE_FALLBACKS: dict[str, list[dict[str, Any]]] = {
-    "VLOMemoryLoadImage": [
+    "vloMemoryLoadImage": [
         {
             "input_type": "image",
             "param": "image",
@@ -39,7 +44,7 @@ _INPUT_NODE_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "description": None,
         }
     ],
-    "VLOMemoryLoadAudio": [
+    "vloMemoryLoadAudio": [
         {
             "input_type": "audio",
             "param": "audio",
@@ -47,7 +52,7 @@ _INPUT_NODE_FALLBACKS: dict[str, list[dict[str, Any]]] = {
             "description": None,
         }
     ],
-    "VLOMemoryLoadVideo": [
+    "vloMemoryLoadVideo": [
         {
             "input_type": "video",
             "param": "file",
@@ -232,15 +237,22 @@ def build_input_node_map(
         if not detected:
             continue
 
+        normalized_class_type = canonicalize_class_type(class_type) or class_type
         by_param = {
             entry["param"]: dict(entry)
-            for entry in result.get(class_type, [])
+            for entry in result.get(normalized_class_type, [])
         }
         for entry in detected:
             by_param.setdefault(entry["param"], entry)
-        result[class_type] = list(by_param.values())
+        result[normalized_class_type] = list(by_param.values())
 
-    return result
+    expanded: dict[str, list[dict[str, Any]]] = {}
+    for class_type, entries in result.items():
+        aliases = get_class_type_aliases(class_type) or (class_type,)
+        for alias in aliases:
+            expanded[alias] = [dict(entry) for entry in entries]
+
+    return expanded
 
 
 # ===========================================================================
@@ -294,7 +306,7 @@ def get_widget_value_index_map(
     if not isinstance(object_info, dict):
         return {}
 
-    class_info = object_info.get(class_type)
+    class_info = resolve_class_info(object_info, class_type)
     if not isinstance(class_info, dict):
         return {}
 
@@ -377,7 +389,7 @@ def build_widget_entries_for_class(
     By default, only ``control_after_generate`` widgets are included.
     If ``include_all_widgets=True``, every editable widget input is included.
     """
-    class_info = object_info.get(class_type)
+    class_info = resolve_class_info(object_info, class_type)
     if not isinstance(class_info, dict):
         return None
 
@@ -489,7 +501,7 @@ def resolve_widget_param_metadata(
     discovery policy.  Returns entries keyed by param name with value_type,
     min, max, default, and options where applicable.
     """
-    class_info = object_info.get(class_type)
+    class_info = resolve_class_info(object_info, class_type)
     if not isinstance(class_info, dict):
         return {}
 

@@ -33,7 +33,7 @@ describe("apiWorkflowInputs", () => {
     ]);
   });
 
-  it("falls back to VLOMemoryLoadVideo as a discoverable video input", () => {
+  it("normalizes legacy VLOMemoryLoadVideo inputs to the lowercase alias", () => {
     const inputs = parseInputsFromApiWorkflow({
       "145": {
         class_type: "VLOMemoryLoadVideo",
@@ -50,10 +50,53 @@ describe("apiWorkflowInputs", () => {
       {
         id: "145:file",
         nodeId: "145",
-        classType: "VLOMemoryLoadVideo",
+        classType: "vloMemoryLoadVideo",
         inputType: "video",
         param: "file",
         label: "Source video",
+        description: null,
+        currentValue: "memory-video-1",
+        origin: "inferred",
+        dispatch: {
+          kind: "node",
+        },
+      },
+    ]);
+  });
+
+  it("discovers lowercase vloMemoryLoadVideo inputs with legacy uppercase metadata", () => {
+    const inputs = parseInputsFromApiWorkflow(
+      {
+        "145": {
+          class_type: "vloMemoryLoadVideo",
+          inputs: {
+            file: "memory-video-1",
+          },
+        },
+      },
+      {
+        VLOMemoryLoadVideo: [
+          {
+            inputType: "video",
+            param: "file",
+          },
+        ],
+      },
+      {
+        VLOMemoryLoadVideo: {
+          display_name: "Load Video",
+        },
+      },
+    );
+
+    expect(inputs).toEqual([
+      {
+        id: "145:file",
+        nodeId: "145",
+        classType: "vloMemoryLoadVideo",
+        inputType: "video",
+        param: "file",
+        label: "Load Video",
         description: null,
         currentValue: "memory-video-1",
         origin: "inferred",

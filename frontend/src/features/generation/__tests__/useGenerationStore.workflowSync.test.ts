@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TEMP_WORKFLOW_ID, useGenerationStore } from "../useGenerationStore";
 import type { WorkflowInput } from "../types";
 import * as comfyApi from "../services/comfyuiApi";
+import { parseInputsFromGraphData } from "../services/workflowBridge";
 import * as workflowSyncController from "../services/workflowSyncController";
 import { createDefaultWorkflowRules } from "../services/workflowRules";
 
@@ -234,6 +235,118 @@ describe("useGenerationStore workflow editor sync", () => {
       { id: TEMP_WORKFLOW_ID, name: "Edited Workflow" },
     ]);
     expect(state.syncedGraphData).toEqual({ nodes: [{ id: 4 }] });
+  });
+
+  it("preserves derived mask mappings for lowercase vlo memory-loader graph nodes", async () => {
+    const rules = createDefaultWorkflowRules({
+      nodes: {
+        "129": {
+          present: {
+            label: "Source video",
+            required: true,
+            input_type: "video",
+            param: "file",
+            class_type: "vloMemoryLoadVideo",
+          },
+        },
+        "133": {},
+      },
+      pipeline: [
+        {
+          id: "mask_processing",
+          kind: "mask_processing",
+          targets: [
+            {
+              source: { node_id: "129", param: "file" },
+              mask: { node_id: "133", param: "file" },
+              mask_type: "binary",
+              purpose: "video",
+              source_selection: "full_selection",
+              mask_selection: "input_selection",
+            },
+          ],
+          controls: [
+            {
+              key: "crop_mode",
+              label: "Mask crop mode",
+              value_type: "enum",
+              options: ["crop", "full"],
+              default: "crop",
+            },
+          ],
+        },
+      ],
+    });
+
+    vi.spyOn(comfyApi, "resolveWorkflowRules").mockResolvedValue({
+      workflow_id: "vlo_wan_ttm.json",
+      rules,
+      warnings: [],
+    });
+
+    const graphData = {
+      nodes: [
+        {
+          id: 129,
+          type: "vloMemoryLoadVideo",
+          title: "Load Video",
+          widgets_values: ["memory-video-1"],
+        },
+        {
+          id: 133,
+          type: "vloMemoryLoadVideo",
+          widgets_values: ["memory-mask-1"],
+        },
+      ],
+      links: [],
+    };
+    const inputs = parseInputsFromGraphData(graphData, {
+      inputNodeMap: {
+        VLOMemoryLoadVideo: [
+          {
+            inputType: "video",
+            param: "file",
+          },
+        ],
+      },
+      objectInfo: {
+        VLOMemoryLoadVideo: {
+          display_name: "Load Video",
+          input: {
+            required: {
+              file: ["STRING", {}],
+            },
+          },
+          input_order: {
+            required: ["file"],
+          },
+        },
+      },
+    });
+
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      null,
+      graphData,
+      inputs,
+      "vlo_wan_ttm.json",
+    );
+
+    const state = useGenerationStore.getState();
+    expect(state.derivedMaskMappings).toMatchObject([
+      {
+        maskNodeId: "133",
+        maskParam: "file",
+        sourceNodeId: "129",
+        sourceSelection: "full_selection",
+        maskSelection: "input_selection",
+      },
+    ]);
+    expect(state.workflowInputs).toEqual([
+      expect.objectContaining({
+        nodeId: "129",
+        classType: "vloMemoryLoadVideo",
+      }),
+    ]);
   });
 
   it("refreshes live widget rules from the current editor workflow graph", async () => {

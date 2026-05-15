@@ -7,10 +7,14 @@ from services.gen_pipeline.context import BackendPipelineContext
 from services.gen_pipeline.processors.inject_values import apply_injections
 from services.gen_pipeline.processors.utils.warning import pipeline_warning
 from services.gen_pipeline.types import Processor, ProcessorMeta
+from services.workflow_rules.class_types import (
+    canonicalize_class_type,
+    get_class_type_aliases,
+)
 
 
 MEMORY_LOADER_NODE_TYPES = frozenset(
-    {"VLOMemoryLoadImage", "VLOMemoryLoadVideo", "VLOMemoryLoadAudio"}
+    {"vloMemoryLoadImage", "vloMemoryLoadVideo", "vloMemoryLoadAudio"}
 )
 MEMORY_LOADER_DISABLE_PARAM = "disable_in_memory"
 
@@ -43,7 +47,8 @@ def _should_use_in_memory_loader(
     class_type: str,
     node: dict[str, Any] | None,
 ) -> bool:
-    if class_type not in MEMORY_LOADER_NODE_TYPES:
+    normalized_class_type = canonicalize_class_type(class_type)
+    if normalized_class_type not in MEMORY_LOADER_NODE_TYPES:
         return False
 
     if not isinstance(node, dict):
@@ -124,11 +129,15 @@ class _UploadMediaProcessor:
                 continue
 
             if isinstance(node, dict):
-                mappings = self._input_node_map.get(node.get("class_type", ""), [])
-                mapping = next(
-                    (entry for entry in mappings if entry.get("param") == param),
-                    None,
-                )
+                mapping = None
+                for alias in get_class_type_aliases(node.get("class_type", "")):
+                    mappings = self._input_node_map.get(alias, [])
+                    mapping = next(
+                        (entry for entry in mappings if entry.get("param") == param),
+                        None,
+                    )
+                    if mapping is not None:
+                        break
                 if mapping and mapping.get("input_type") == input_type:
                     ctx.injections.setdefault(node_id, {})[param] = injected_value
                 elif mapping:

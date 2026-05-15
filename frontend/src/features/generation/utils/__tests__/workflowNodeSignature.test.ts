@@ -36,6 +36,26 @@ describe("workflowNodeSignature", () => {
     expect(haveMatchingWorkflowNodes(apiWorkflow, graphWorkflow)).toBe(true);
   });
 
+  it("treats lowercase vlo memory-loader aliases as the same node class", () => {
+    const apiWorkflow = {
+      "129": {
+        class_type: "VLOMemoryLoadVideo",
+        inputs: { file: "source-a.mp4" },
+      },
+    };
+    const graphWorkflow = {
+      nodes: [
+        {
+          id: 129,
+          type: "vloMemoryLoadVideo",
+          widgets_values: ["source-b.mp4"],
+        },
+      ],
+    };
+
+    expect(haveMatchingWorkflowNodes(apiWorkflow, graphWorkflow)).toBe(true);
+  });
+
   it("detects node-type mismatches", () => {
     const left = {
       "1": { class_type: "LoadVideo", inputs: {} },

@@ -175,4 +175,24 @@ describe("generationPlan cache media extraction", () => {
       buildGenerationPreprocessCacheKey(filePlan),
     );
   });
+
+  it("treats lowercase vlo memory loaders as in-memory loaders too", () => {
+    const entry = makeCacheEntry();
+    const updated = updateGenerationPreprocessCacheFromResponse(
+      entry,
+      makePlan("vloMemoryLoadVideo"),
+      {
+        comfyui_prompt: {
+          "94": {
+            class_type: "vloMemoryLoadVideo",
+            inputs: {
+              file: "Loading...",
+            },
+          },
+        },
+      },
+    );
+
+    expect(updated.backendMedia).toBeNull();
+  });
 });

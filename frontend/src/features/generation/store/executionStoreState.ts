@@ -301,9 +301,6 @@ function applyExtractedFilesToPlan(
     if (value.preparedMaskFile) {
       slot.preparedMaskFile = value.preparedMaskFile;
     }
-    if (typeof value.preparedDerivedMaskSignature === "string") {
-      slot.preparedDerivedMaskSignature = value.preparedDerivedMaskSignature;
-    }
   }
 }
 

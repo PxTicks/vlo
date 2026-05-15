@@ -129,7 +129,6 @@ export interface GenerationWorkflowState {
       preparedVideoFile?: File | null;
       preparedAudioFile?: File | null;
       preparedMaskFile?: File | null;
-      preparedDerivedMaskSignature?: string | null;
       extractionError?: string | null;
     },
   ) => void;

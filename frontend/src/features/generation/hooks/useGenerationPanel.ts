@@ -26,7 +26,6 @@ import {
   pickPrimaryPreparedMaskFile,
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
-import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
 import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
@@ -225,8 +224,6 @@ async function extractVideoTimelineSelection({
       extractionRequestId,
       preparedVideoFile: video,
       preparedMaskFile: pickPrimaryPreparedMaskFile(cachedVisualMasks, masks),
-      preparedDerivedMaskSignature:
-        buildDerivedMaskRenderSignature(cachedVisualMasks),
     });
     return;
   }
@@ -697,8 +694,6 @@ export function useGenerationPanel(mode: "smart" | "manual" = "smart") {
             selection: value.timelineSelection,
             preparedVideoFile: value.preparedVideoFile ?? undefined,
             preparedMaskFile: value.preparedMaskFile ?? undefined,
-            preparedDerivedMaskSignature:
-              value.preparedDerivedMaskSignature ?? undefined,
             pendingExtractionRequestId: value.isExtracting
               ? value.extractionRequestId
               : undefined,

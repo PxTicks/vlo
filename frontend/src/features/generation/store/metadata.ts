@@ -14,7 +14,6 @@ import {
   renderTimelineSelectionToMp4,
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
-import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
 import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
@@ -329,8 +328,6 @@ export async function restoreMediaInputsFromMetadata(
                 cachedVisualMasks,
                 masks,
               ),
-              preparedDerivedMaskSignature:
-                buildDerivedMaskRenderSignature(cachedVisualMasks),
             },
           );
         })

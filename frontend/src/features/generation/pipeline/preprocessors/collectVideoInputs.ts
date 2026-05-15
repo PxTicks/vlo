@@ -6,7 +6,6 @@ import {
   getDerivedMaskRenderKey,
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../../utils/inputSelection";
-import { buildDerivedMaskRenderSignature } from "../../utils/derivedMaskRenderSignature";
 import {
   buildWorkflowInputLookup,
   getNodeInputRequestKey,
@@ -80,22 +79,9 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       masks: readonly DerivedMaskMapping[],
       preparedVideoFile?: File,
       preparedMaskFile?: File,
-      preparedDerivedMaskSignature?: string | null,
       config?: WorkflowSelectionConfig,
     ): Promise<Awaited<ReturnType<typeof renderTimelineSelectionToMp4WithDerivedMasks>>> {
       const visualMasks = masks.filter((mask) => mask.purpose !== "audio_timing");
-      const expectedPreparedSignature =
-        buildDerivedMaskRenderSignature(visualMasks);
-      const hasMatchingPreparedSignature =
-        expectedPreparedSignature === (preparedDerivedMaskSignature ?? null);
-      const reusablePreparedVideoFile =
-        visualMasks.length === 0 || hasMatchingPreparedSignature
-          ? preparedVideoFile
-          : undefined;
-      const reusablePreparedMaskFile =
-        visualMasks.length > 0 && hasMatchingPreparedSignature
-          ? preparedMaskFile
-          : undefined;
       const hasAudioTimingMasks = visualMasks.length !== masks.length;
       const uniqueVisualMaskKeys = new Set(
         visualMasks.map((mask) => getDerivedMaskRenderKey(mask)),
@@ -103,14 +89,14 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
       if (
         !hasAudioTimingMasks &&
         uniqueVisualMaskKeys.size === 1 &&
-        reusablePreparedVideoFile &&
-        reusablePreparedMaskFile
+        preparedVideoFile &&
+        preparedMaskFile
       ) {
         const [visualMaskKey] = [...uniqueVisualMaskKeys];
         return {
-          video: reusablePreparedVideoFile,
+          video: preparedVideoFile,
           masks: {
-            [visualMaskKey]: reusablePreparedMaskFile,
+            [visualMaskKey]: preparedMaskFile,
           },
           maskContentByKey: {
             [visualMaskKey]: true,
@@ -123,8 +109,8 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
         masks,
         {
           signal: ctx.signal,
-          preparedVideoFile: reusablePreparedVideoFile,
-          preparedMaskFile: reusablePreparedMaskFile,
+          preparedVideoFile,
+          preparedMaskFile,
         },
       );
     }
@@ -207,7 +193,6 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
             allMasks,
             value.preparedVideoFile,
             needsRenderedMaskPresenceCheck ? undefined : value.preparedMaskFile,
-            value.preparedDerivedMaskSignature,
           );
           throwIfAborted(ctx.signal);
           ctx.videoInputs[getNodeInputRequestKey(input, inputById)] =

@@ -188,8 +188,6 @@ function buildMediaSlotCacheDescriptor(
         inputId,
         {
           preparedMaskFile: describeFileForCache(value.preparedMaskFile),
-          preparedDerivedMaskSignature:
-            value.preparedDerivedMaskSignature ?? null,
           preparedVideoFile: describeFileForCache(value.preparedVideoFile),
           selection: normalizeForStableStringify(value.selection),
           type: value.type,

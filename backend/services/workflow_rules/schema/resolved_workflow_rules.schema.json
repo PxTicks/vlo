@@ -2006,6 +2006,18 @@
     },
     "WorkflowOutputAssemblyStageConfig": {
       "properties": {
+        "attach_generation_mask": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attach Generation Mask"
+        },
         "mode": {
           "default": "auto",
           "enum": [

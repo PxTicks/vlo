@@ -522,6 +522,7 @@ class WorkflowOutputAssemblyStageConfig(WorkflowRuleBaseModel):
     panel_preview: PostprocessingPanelPreview = "raw_outputs"
     on_failure: PostprocessingOnFailure = "fallback_raw"
     stitch_fps: int | None = None
+    attach_generation_mask: bool | None = None
 
 
 class WorkflowPipelineStageBase(WorkflowRuleBaseModel):

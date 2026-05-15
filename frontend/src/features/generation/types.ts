@@ -32,6 +32,7 @@ export interface WorkflowPostprocessingConfig {
   panel_preview: WorkflowPostprocessingPanelPreview;
   on_failure: WorkflowPostprocessingOnFailure;
   stitch_fps?: number;
+  attach_generation_mask?: boolean | null;
 }
 
 export interface GenerationPostprocessedPreview {

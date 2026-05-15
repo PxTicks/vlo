@@ -81,6 +81,9 @@ function resolvePostprocessConfig(
     ...(postprocessing?.stitch_fps != null
       ? { stitch_fps: postprocessing.stitch_fps }
       : {}),
+    ...(postprocessing?.attach_generation_mask === false
+      ? { attach_generation_mask: false }
+      : {}),
   };
 }
 
@@ -92,6 +95,9 @@ function clonePostprocessConfig(
     panel_preview: config.panel_preview,
     on_failure: config.on_failure,
     ...(config.stitch_fps != null ? { stitch_fps: config.stitch_fps } : {}),
+    ...(config.attach_generation_mask === false
+      ? { attach_generation_mask: false }
+      : {}),
   };
 }
 

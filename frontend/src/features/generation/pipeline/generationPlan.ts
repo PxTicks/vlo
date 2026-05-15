@@ -957,6 +957,9 @@ export function createGenerationPlan(
         ...(options.postprocessConfig.stitch_fps != null
           ? { stitch_fps: options.postprocessConfig.stitch_fps }
           : {}),
+        ...(options.postprocessConfig.attach_generation_mask === false
+          ? { attach_generation_mask: false }
+          : {}),
       },
     },
   };

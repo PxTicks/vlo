@@ -29,6 +29,9 @@ function normalizePostprocessingConfig(
   if (requestedStitchFps !== null) {
     config.stitch_fps = requestedStitchFps;
   }
+  if (postprocessing?.attach_generation_mask === false) {
+    config.attach_generation_mask = false;
+  }
 
   return config;
 }

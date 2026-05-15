@@ -106,6 +106,12 @@ function getStageControl(
   return null;
 }
 
+function shouldExposePipelineControl(
+  control: PipelineControl | null,
+): control is PipelineControl {
+  return control !== null && control.expose !== "none";
+}
+
 interface ResolvePipelineWidgetInputsOptions {
   showTargetResolution: boolean;
   currentResolution: number;
@@ -126,7 +132,10 @@ export function resolvePipelineWidgetInputs(
       aspectRatioStage?.controls,
       "target_resolution",
     );
-    if (aspectRatioStage && targetResolutionControl) {
+    if (
+      aspectRatioStage &&
+      shouldExposePipelineControl(targetResolutionControl)
+    ) {
       result.push(
         createPipelineWidgetInput(
           aspectRatioStage.id,
@@ -143,7 +152,7 @@ export function resolvePipelineWidgetInputs(
       maskProcessingStage?.controls,
       "crop_mode",
     );
-    if (maskProcessingStage && cropModeControl) {
+    if (maskProcessingStage && shouldExposePipelineControl(cropModeControl)) {
       result.push(
         createPipelineWidgetInput(
           maskProcessingStage.id,
@@ -157,7 +166,10 @@ export function resolvePipelineWidgetInputs(
       maskProcessingStage?.controls,
       "crop_dilation",
     );
-    if (maskProcessingStage && cropDilationControl) {
+    if (
+      maskProcessingStage &&
+      shouldExposePipelineControl(cropDilationControl)
+    ) {
       result.push(
         createPipelineWidgetInput(
           maskProcessingStage.id,

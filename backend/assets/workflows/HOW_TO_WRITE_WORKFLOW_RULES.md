@@ -750,16 +750,18 @@ Controls across any pipeline stage also support:
   "mode": "auto",
   "panel_preview": "raw_outputs",
   "on_failure": "fallback_raw",
-  "stitch_fps": 24
+  "stitch_fps": 24,
+  "attach_generation_mask": false
 }
 ```
 
-| Field           | Purpose                                                           |
-| --------------- | ----------------------------------------------------------------- |
-| `mode`          | `"auto" \| "stitch_frames_with_audio" \| "none"`                  |
-| `panel_preview` | `"raw_outputs" \| "replace_outputs"`                              |
-| `on_failure`    | `"fallback_raw" \| "show_error"`                                  |
-| `stitch_fps`    | Optional integer override for the framerate used during stitching |
+| Field                    | Purpose                                                                 |
+| ------------------------ | ----------------------------------------------------------------------- |
+| `mode`                   | `"auto" \| "stitch_frames_with_audio" \| "none"`                        |
+| `panel_preview`          | `"raw_outputs" \| "replace_outputs"`                                    |
+| `on_failure`             | `"fallback_raw" \| "show_error"`                                        |
+| `stitch_fps`             | Optional integer override for the framerate used during stitching       |
+| `attach_generation_mask` | Optional boolean. `false` skips importing/linking the prepared mask clip |
 
 ---
 

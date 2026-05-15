@@ -9,6 +9,7 @@ import {
   getSupportedWorkflowResolutions,
   getWorkflowPostprocessingConfig,
 } from "../workflowRules";
+import { resolvePipelineWidgetInputs } from "../workflowRules/pipelineWidgets";
 
 
 describe("workflowRules pipeline helpers", () => {
@@ -63,6 +64,7 @@ describe("workflowRules pipeline helpers", () => {
             panel_preview: "replace_outputs",
             on_failure: "show_error",
             stitch_fps: 24,
+            attach_generation_mask: false,
           },
         },
       ],
@@ -73,7 +75,42 @@ describe("workflowRules pipeline helpers", () => {
       panel_preview: "replace_outputs",
       on_failure: "show_error",
       stitch_fps: 24,
+      attach_generation_mask: false,
     });
+  });
+
+  it("omits mask pipeline widgets when rules hide those controls", () => {
+    const rules = createDefaultWorkflowRules({
+      pipeline: [
+        {
+          id: "mask_processing",
+          kind: "mask_processing",
+          controls: [
+            {
+              key: "crop_mode",
+              value_type: "enum",
+              options: ["crop", "full"],
+              expose: "none",
+            },
+            {
+              key: "crop_dilation",
+              value_type: "float",
+              expose: "none",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(
+      resolvePipelineWidgetInputs(rules, {
+        showTargetResolution: false,
+        currentResolution: 720,
+        showMaskControls: true,
+        maskCropMode: "full",
+        maskCropDilation: 0.1,
+      }),
+    ).toEqual([]);
   });
 
   it("builds and reads replay pipeline inputs from stage ids", () => {

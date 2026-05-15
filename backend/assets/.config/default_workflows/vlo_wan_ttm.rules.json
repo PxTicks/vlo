@@ -186,18 +186,20 @@
           "key": "crop_mode",
           "label": "Mask crop mode",
           "value_type": "enum",
-          "expose": "widget",
+          "expose": "none",
+          "source": "client",
           "options": [
             "crop",
             "full"
           ],
-          "default": "crop"
+          "default": "full"
         },
         {
           "key": "crop_dilation",
           "label": "Mask crop padding",
           "value_type": "float",
-          "expose": "widget",
+          "expose": "none",
+          "source": "client",
           "control": "slider",
           "slider_display": "percent",
           "min": 0,
@@ -275,6 +277,13 @@
           "source": "client"
         }
       ]
+    },
+    {
+      "id": "output_assembly",
+      "kind": "output_assembly",
+      "config": {
+        "attach_generation_mask": false
+      }
     }
   ]
 }

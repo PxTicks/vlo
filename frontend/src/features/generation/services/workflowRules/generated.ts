@@ -252,6 +252,7 @@ export interface WorkflowOutputAssemblyStageConfig {
   panel_preview?: "raw_outputs" | "replace_outputs";
   on_failure?: "fallback_raw" | "show_error";
   stitch_fps?: number | null;
+  attach_generation_mask?: boolean | null;
 }
 
 export interface WorkflowParamReference {

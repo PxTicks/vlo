@@ -21,9 +21,10 @@ function getRawImportFiles(ctx: FrontendPostprocessContext): File[] {
 }
 
 /**
- * If a prepared mask file exists, ingest it as a separate asset first and
- * link it to the generation metadata so all subsequently ingested output
- * assets carry the `generationMaskAssetId` reference.
+ * If a prepared mask file exists and output assembly keeps mask attachment
+ * enabled, ingest it as a separate asset first and link it to the
+ * generation metadata so subsequently ingested output assets carry the
+ * `generationMaskAssetId` reference.
  */
 async function ingestMaskAsset(
   ctx: FrontendPostprocessContext,
@@ -33,6 +34,8 @@ async function ingestMaskAsset(
     familyId?: string,
   ) => Promise<{ id: string } | null>,
 ): Promise<void> {
+  delete ctx.generationMetadata.generationMaskAssetId;
+  if (ctx.postprocessingConfig.attach_generation_mask === false) return;
   if (!ctx.preparedMaskFile) return;
 
   const maskMeta: CreationMetadata = {

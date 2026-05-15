@@ -101,6 +101,9 @@ export function getWorkflowPostprocessingConfig(
     ...(typeof config?.stitch_fps === "number"
       ? { stitch_fps: config.stitch_fps }
       : {}),
+    ...(config?.attach_generation_mask === false
+      ? { attach_generation_mask: false }
+      : {}),
   };
 }
 

@@ -323,6 +323,8 @@ context. From `PromptResponse` it reads:
 - `on_failure: "show_error"` — surface the error to the UI instead of
   falling back.
 - `stitch_fps` — overrides the per-selection FPS when stitching.
+- `attach_generation_mask: false` — skip importing the prepared mask asset
+  and do not link generated outputs back to it via `generationMaskAssetId`.
 
 ### Exact-aspect resize
 
@@ -365,7 +367,7 @@ Stage-kind-specific fields:
   render_fps? }]`.
 - `aspect_ratio.config: { stride, search_steps, resolutions, postprocess }`
   and `aspect_ratio.targets: list[{ width, height }]`.
-- `output_assembly.config: { mode, panel_preview, on_failure, stitch_fps? }`.
+- `output_assembly.config: { mode, panel_preview, on_failure, stitch_fps?, attach_generation_mask? }`.
 
 ---
 

@@ -110,6 +110,28 @@ def test_wan2_2_ttm_sidecar_loads_track_selection_message_and_mask_selection_mod
     assert mask_stage.targets[0].source_video_treatment == "preserve_transparency"
 
 
+def test_wan_ttm_sidecar_defaults_to_full_mask_mode_and_disables_mask_attachment():
+    rules, warnings = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_wan_ttm.json",
+    )
+
+    assert warnings == []
+    assert rules.version == 3
+
+    mask_stage = get_pipeline_stage(rules, "mask_processing")
+    assert mask_stage is not None
+    assert mask_stage.controls[0].key == "crop_mode"
+    assert mask_stage.controls[0].default == "full"
+    assert mask_stage.controls[0].expose == "none"
+    assert mask_stage.controls[1].key == "crop_dilation"
+    assert mask_stage.controls[1].expose == "none"
+
+    output_assembly = get_pipeline_stage(rules, "output_assembly")
+    assert output_assembly is not None
+    assert output_assembly.config.attach_generation_mask is False
+
+
 def test_vace_inpaint_collects_mask_crop_pairs():
     rules_model, _ = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,

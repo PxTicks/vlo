@@ -1001,6 +1001,51 @@ describe("generation pipeline", () => {
     });
   });
 
+  it("skips generation-mask attachment when postprocessing disables it", async () => {
+    const output = new File(["video"], "raw-output.mp4", {
+      type: "video/mp4",
+    });
+    const preparedMaskFile = new File(["mask"], "prepared-mask.mp4", {
+      type: "video/mp4",
+    });
+    const metadata = makeGenerationMetadata();
+
+    mockFetchOutputAsFile.mockResolvedValue(output);
+    mockAddLocalAsset.mockResolvedValue({ id: "asset-raw-video" });
+
+    const result = await frontendPostprocess(
+      [
+        {
+          filename: "ComfyUI_00001_.mp4",
+          subfolder: "video",
+          type: "output",
+          viewUrl: "/api/vlo-memory/view/raw-output",
+        },
+      ],
+      {
+        postprocessing: {
+          mode: "none",
+          panel_preview: "raw_outputs",
+          on_failure: "fallback_raw",
+          attach_generation_mask: false,
+        },
+        aspectRatioProcessing: null,
+        generationMetadata: metadata,
+        previewFrameFiles: null,
+        preparedMaskFile,
+      },
+    );
+
+    expect(mockAddLocalAsset).toHaveBeenCalledTimes(1);
+    expect(mockAddLocalAsset).toHaveBeenCalledWith(output, metadata);
+    expect(metadata.generationMaskAssetId).toBeUndefined();
+    expect(result).toEqual({
+      postprocessedPreview: null,
+      postprocessError: null,
+      importedAssetIds: ["asset-raw-video"],
+    });
+  });
+
   it("returns a single-frame PNG with message when stitch mode has only one frame", async () => {
     mockFetchOutputAsFile.mockResolvedValue(
       new File(["frame-1"], "frame_0001.png", {

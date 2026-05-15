@@ -8,6 +8,7 @@ import { useProjectStore } from "../../../project";
 import * as inputSelection from "../../utils/inputSelection";
 import * as mediaUtils from "../../pipeline/utils/media";
 import { buildGenerationFamilyAutoMatchKey } from "../familyAssignment";
+import { buildDerivedMaskRenderSignature } from "../derivedMaskRenderSignature";
 
 const {
   mockAddLocalAsset,
@@ -419,6 +420,14 @@ describe("generation pipeline", () => {
     const preparedMaskFile = new File(["mask"], "prepared-mask.mp4", {
       type: "video/mp4",
     });
+    const derivedMaskMappings = [
+      {
+        sourceNodeId: "video_input",
+        maskNodeId: "mask_input",
+        maskParam: "file",
+        maskType: "binary" as const,
+      },
+    ];
 
     const request = await frontendPreprocess(
       {},
@@ -445,6 +454,67 @@ describe("generation pipeline", () => {
           },
           preparedVideoFile,
           preparedMaskFile,
+          preparedDerivedMaskSignature:
+            buildDerivedMaskRenderSignature(derivedMaskMappings),
+        },
+      },
+      "client-id",
+      derivedMaskMappings,
+    );
+
+    expect(renderSpy).not.toHaveBeenCalled();
+    expect(request.videoInputs.video_input).toBe(preparedVideoFile);
+    expect(request.videoInputs.mask_input).toBe(preparedMaskFile);
+  });
+
+  it("re-renders stale prepared files when current derived-mask selection semantics no longer match", async () => {
+    const renderSpy = vi
+      .spyOn(inputSelection, "renderTimelineSelectionToMp4WithDerivedMasks")
+      .mockResolvedValue({
+        video: new File(["video"], "selection.mp4", { type: "video/mp4" }),
+        masks: {
+          video_binary: new File(["mask"], "selection-mask.mp4", {
+            type: "video/mp4",
+          }),
+        },
+        maskContentByKey: {
+          video_binary: true,
+        },
+      });
+    const preparedVideoFile = new File(["video"], "prepared.mp4", {
+      type: "video/mp4",
+    });
+    const preparedMaskFile = new File(["mask"], "prepared-mask.mp4", {
+      type: "video/mp4",
+    });
+
+    const request = await frontendPreprocess(
+      {},
+      "workflow.json",
+      [
+        {
+          nodeId: "video_input",
+          classType: "LoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Video Input",
+          currentValue: null,
+          origin: "rule",
+        },
+      ],
+      {
+        video_input: {
+          type: "video_selection",
+          selection: {
+            start: 0,
+            end: 24,
+            clips: [],
+            fps: 24,
+            includedTrackIds: ["track_1"],
+          },
+          preparedVideoFile,
+          preparedMaskFile,
+          preparedDerivedMaskSignature: null,
         },
       },
       "client-id",
@@ -454,13 +524,36 @@ describe("generation pipeline", () => {
           maskNodeId: "mask_input",
           maskParam: "file",
           maskType: "binary",
+          sourceSelection: "full_selection",
+          maskSelection: "input_selection",
+          sourceVideoTreatment: "preserve_transparency",
         },
       ],
     );
 
-    expect(renderSpy).not.toHaveBeenCalled();
-    expect(request.videoInputs.video_input).toBe(preparedVideoFile);
-    expect(request.videoInputs.mask_input).toBe(preparedMaskFile);
+    expect(renderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includedTrackIds: ["track_1"],
+      }),
+      [
+        {
+          sourceNodeId: "video_input",
+          maskNodeId: "mask_input",
+          maskParam: "file",
+          maskType: "binary",
+          sourceSelection: "full_selection",
+          maskSelection: "input_selection",
+          sourceVideoTreatment: "preserve_transparency",
+        },
+      ],
+      {
+        preparedMaskFile: undefined,
+        preparedVideoFile: undefined,
+        signal: undefined,
+      },
+    );
+    expect(request.videoInputs.video_input.name).toBe("selection.mp4");
+    expect(request.videoInputs.mask_input.name).toBe("selection-mask.mp4");
   });
 
   it("routes audio-timing derived masks to their own hidden video inputs", async () => {
@@ -738,6 +831,15 @@ describe("generation pipeline", () => {
           },
           preparedVideoFile,
           preparedMaskFile,
+          preparedDerivedMaskSignature: buildDerivedMaskRenderSignature([
+            {
+              sourceNodeId: "video_input",
+              maskNodeId: "mask_input",
+              maskParam: "file",
+              maskType: "binary",
+              optional: true,
+            },
+          ]),
         },
       },
       "client-id",

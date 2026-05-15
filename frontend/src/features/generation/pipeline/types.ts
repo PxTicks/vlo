@@ -82,6 +82,7 @@ export type SlotValue =
       selection: TimelineSelection;
       preparedVideoFile?: File;
       preparedMaskFile?: File;
+      preparedDerivedMaskSignature?: string | null;
       // When set, the slot was queued while an extraction with this id was
       // still in flight. The dispatcher waits for the matching mediaInputs
       // entry to finish extracting before proceeding to preprocess.

@@ -800,7 +800,7 @@
     },
     {
       "id": 97,
-      "type": "LoadVideo",
+      "type": "vloMemoryLoadVideo",
       "pos": [
         -916.9096968362356,
         -678.2692839062964
@@ -823,13 +823,16 @@
         }
       ],
       "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.19.3",
-        "widget_ue_connectable": {},
-        "Node name for S&R": "LoadVideo"
+        "aux_id": "PxTicks/ComfyUI-vlo",
+        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "Node name for S&R": "vloMemoryLoadVideo",
+        "widget_ue_connectable": {}
       },
       "widgets_values": [
         "0222.mov",
+        false,
+        "refresh",
+        false,
         "image"
       ]
     },
@@ -1185,7 +1188,7 @@
     },
     {
       "id": 95,
-      "type": "LoadVideo",
+      "type": "vloMemoryLoadVideo",
       "pos": [
         640,
         -930
@@ -1208,13 +1211,16 @@
         }
       ],
       "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.19.3",
-        "widget_ue_connectable": {},
-        "Node name for S&R": "LoadVideo"
+        "aux_id": "PxTicks/ComfyUI-vlo",
+        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "Node name for S&R": "vloMemoryLoadVideo",
+        "widget_ue_connectable": {}
       },
       "widgets_values": [
         "0222.mov",
+        false,
+        "refresh",
+        false,
         "image"
       ]
     },

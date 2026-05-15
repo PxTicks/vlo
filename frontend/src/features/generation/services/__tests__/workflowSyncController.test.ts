@@ -6,6 +6,7 @@ vi.mock("../workflowBridge", async () => {
   );
   return {
     ...actual,
+    capturePendingWarningsForWorkflowFromIframe: vi.fn(),
     isIframeAppReady: vi.fn(),
     loadWorkflowIntoIframe: vi.fn(),
     readActiveWorkflowFromIframe: vi.fn(),
@@ -18,6 +19,7 @@ import {
   waitForAppReady,
 } from "../workflowSyncController";
 import {
+  capturePendingWarningsForWorkflowFromIframe,
   isIframeAppReady,
   loadWorkflowIntoIframe,
   readActiveWorkflowFromIframe,
@@ -28,6 +30,7 @@ describe("workflowSyncController", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(capturePendingWarningsForWorkflowFromIframe).mockResolvedValue(null);
   });
 
   it("waitForAppReady returns true when iframe app becomes ready", async () => {
@@ -127,6 +130,13 @@ describe("workflowSyncController", () => {
     expect(result.ok).toBe(true);
     expect(result.deferred).toBe(false);
     expect(result.workflowResult?.filename).toBe("wf.json");
+    expect(capturePendingWarningsForWorkflowFromIframe).toHaveBeenCalledWith(
+      iframe,
+      { nodes: [] },
+      "wf.json",
+      1000,
+      1000,
+    );
   });
 
   it("injectWorkflowAndRead ignores stale iframe reads from the previously active workflow", async () => {
@@ -158,5 +168,63 @@ describe("workflowSyncController", () => {
     expect(result.deferred).toBe(false);
     expect(result.workflowResult?.filename).toBe("__temp__.json");
     expect(readActiveWorkflowFromIframe).toHaveBeenCalledTimes(2);
+  });
+
+  it("injectWorkflowAndRead uses a settled second capture pass when the initial load returns no warnings", async () => {
+    vi.mocked(isIframeAppReady).mockReturnValue(true);
+    vi.mocked(loadWorkflowIntoIframe).mockResolvedValue({
+      ok: true,
+      warnings: null,
+    });
+    vi.mocked(readActiveWorkflowFromIframe).mockReturnValue({
+      graphData: { nodes: [{ id: 1, type: "LoadImage" }], links: [] },
+      filename: "wf.json",
+      isModified: true,
+    });
+    vi.mocked(capturePendingWarningsForWorkflowFromIframe).mockResolvedValue({
+      missingNodeTypes: [],
+      missingModels: ["wan-model.safetensors"],
+    });
+
+    const result = await injectWorkflowAndRead(
+      iframe,
+      { nodes: [] },
+      "wf.json",
+      () => false,
+    );
+
+    expect(result.warnings).toEqual({
+      missingNodeTypes: [],
+      missingModels: ["wan-model.safetensors"],
+    });
+  });
+
+  it("injectWorkflowAndRead skips the second capture pass when load already returned warnings", async () => {
+    vi.mocked(isIframeAppReady).mockReturnValue(true);
+    vi.mocked(loadWorkflowIntoIframe).mockResolvedValue({
+      ok: true,
+      warnings: {
+        missingNodeTypes: ["CustomNode"],
+        missingModels: [],
+      },
+    });
+    vi.mocked(readActiveWorkflowFromIframe).mockReturnValue({
+      graphData: { nodes: [{ id: 1, type: "LoadImage" }], links: [] },
+      filename: "wf.json",
+      isModified: true,
+    });
+
+    const result = await injectWorkflowAndRead(
+      iframe,
+      { nodes: [] },
+      "wf.json",
+      () => false,
+    );
+
+    expect(result.warnings).toEqual({
+      missingNodeTypes: ["CustomNode"],
+      missingModels: [],
+    });
+    expect(capturePendingWarningsForWorkflowFromIframe).not.toHaveBeenCalled();
   });
 });

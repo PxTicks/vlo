@@ -733,17 +733,20 @@ export function readAndClearPendingWarningsFromIframe(
 const WARNING_CAPTURE_POLL_MS = 50;
 const WARNING_CAPTURE_TIMEOUT_MS = 4000;
 
-async function capturePendingWarningsFromIframe(
+export async function capturePendingWarningsForWorkflowFromIframe(
   iframe: HTMLIFrameElement,
   expectedGraphData: Record<string, unknown>,
   expectedWorkflowId: string,
   timeoutMs = WARNING_CAPTURE_TIMEOUT_MS,
+  settleAfterMatchMs = 0,
 ): Promise<WorkflowWarningSummary | null> {
   const deadline = Date.now() + timeoutMs;
   let attempts = 0;
+  let firstMatchedAt: number | null = null;
   logWarningDebug("capture polling started", {
     timeoutMs,
     expectedWorkflowId,
+    settleAfterMatchMs,
   });
 
   while (Date.now() < deadline) {
@@ -759,14 +762,23 @@ async function capturePendingWarningsFromIframe(
       const warnings = readPendingWarningsFromWorkflow(matchedWorkflow);
       if (warnings) {
         clearPendingWarningsFromWorkflow(matchedWorkflow);
+        logWarningDebug("capture polling resolved for matched workflow", {
+          attempts,
+          matchedWorkflow: summarizeWorkflowTab(matchedWorkflow),
+          warnings,
+        });
+        return warnings;
       }
 
-      logWarningDebug("capture polling resolved for matched workflow", {
-        attempts,
-        matchedWorkflow: summarizeWorkflowTab(matchedWorkflow),
-        warnings,
-      });
-      return warnings;
+      firstMatchedAt ??= Date.now();
+      if (Date.now() - firstMatchedAt >= settleAfterMatchMs) {
+        logWarningDebug("capture polling resolved for matched workflow", {
+          attempts,
+          matchedWorkflow: summarizeWorkflowTab(matchedWorkflow),
+          warnings: null,
+        });
+        return null;
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, WARNING_CAPTURE_POLL_MS));
@@ -905,7 +917,7 @@ export async function loadWorkflowIntoIframe(
 
     let warnings: WorkflowWarningSummary | null = null;
     if (deferWarnings && capturePendingWarnings) {
-      warnings = await capturePendingWarningsFromIframe(
+      warnings = await capturePendingWarningsForWorkflowFromIframe(
         iframe,
         workflowData,
         filename,

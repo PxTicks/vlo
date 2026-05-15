@@ -4,6 +4,7 @@ import type {
 } from "./workflowBridge";
 import {
   buildWorkflowResultFromGraphData,
+  capturePendingWarningsForWorkflowFromIframe,
   isIframeAppReady,
   loadWorkflowIntoIframe,
   readActiveWorkflowFromIframe,
@@ -16,6 +17,7 @@ const APP_READY_POLL_MS = 100;
 const APP_READY_TIMEOUT_MS = 3000;
 const READ_RETRY_POLL_MS = 100;
 const READ_RETRY_TIMEOUT_MS = 3000;
+const WARNING_CAPTURE_SETTLE_TIMEOUT_MS = 1000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -158,11 +160,30 @@ export async function injectWorkflowAndRead(
     };
   }
 
+  const warnings =
+    loadResult.warnings ??
+    (await capturePendingWarningsForWorkflowFromIframe(
+      iframe,
+      graphData,
+      workflowId,
+      WARNING_CAPTURE_SETTLE_TIMEOUT_MS,
+      WARNING_CAPTURE_SETTLE_TIMEOUT_MS,
+    ));
+  if (shouldAbort()) {
+    return {
+      ok: false,
+      deferred: true,
+      reason: "workflow warning capture aborted",
+      warnings,
+      workflowResult: null,
+    };
+  }
+
   return {
     ok: loadResult.ok,
     deferred: false,
     reason: loadResult.ok ? null : "workflow injection failed",
-    warnings: loadResult.warnings,
+    warnings,
     workflowResult,
   };
 }

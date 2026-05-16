@@ -18,6 +18,10 @@ export type {
 } from "./components/assetDropSlotTypes";
 export { BufferedInput } from "./components/BufferedInput";
 export {
+  BufferedColorInput,
+  type BufferedColorInputProps,
+} from "./components/BufferedColorInput";
+export {
   TextInput,
   BufferedTextInput,
   CommittedTextInput,

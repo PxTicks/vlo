@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
 import {
   Box,
@@ -18,6 +18,7 @@ import type {
   TimelineClip,
 } from "../../types/TimelineTypes";
 import {
+  BufferedColorInput,
   BufferedTextInput,
   CommittedTextInput,
   PanelSection,
@@ -36,39 +37,8 @@ interface TextFormFieldsProps {
   contentMode: "draft" | "selected";
 }
 
-interface BufferedColorFieldProps {
-  value: string;
-  onCommit: (value: string) => void;
-}
-
 function isTextClip(clip: TimelineClip | undefined): clip is TextTimelineClip {
   return clip?.type === "text";
-}
-
-function BufferedColorField({ value, onCommit }: BufferedColorFieldProps) {
-  const [localValue, setLocalValue] = useState(value);
-
-  useEffect(() => {
-    setLocalValue(value);
-  }, [value]);
-
-  const commit = useCallback(() => {
-    if (localValue !== value) {
-      onCommit(localValue);
-    }
-  }, [localValue, onCommit, value]);
-
-  return (
-    <TextField
-      label="Color"
-      size="small"
-      type="color"
-      value={localValue}
-      onChange={(event) => setLocalValue(event.target.value)}
-      onBlur={commit}
-      sx={{ minWidth: 96 }}
-    />
-  );
 }
 
 function TextFormFields({
@@ -140,9 +110,10 @@ function TextFormFields({
           }}
           inputProps={{ min: 8, max: 400, step: 1 }}
         />
-        <BufferedColorField
+        <BufferedColorInput
           value={value.fill}
           onCommit={(fill) => onChange({ fill })}
+          sx={{ minWidth: 96 }}
         />
       </Box>
 

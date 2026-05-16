@@ -10,6 +10,7 @@ import pytest
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.comfyui.comfyui_generate import finalize_backend_response  # noqa: E402
+from routers.comfyui import _enrich_generation_metadata  # noqa: E402
 from services.gen_pipeline.context import BackendPipelineContext  # noqa: E402
 from services.gen_pipeline.processors.pipeline_stage import (  # noqa: E402
     create_pipeline_stage_processor,
@@ -157,6 +158,40 @@ def test_finalize_backend_response_enriches_json_response_with_pipeline_outputs(
         payload["pipeline_outputs"]["mask_processing"]["processed_mask_video"],
         str,
     )
+
+
+def test_enrich_generation_metadata_merges_applied_widget_values_into_replay_state():
+    metadata = _enrich_generation_metadata(
+        {
+            "source": "generated",
+            "workflowName": "Workflow",
+            "replayState": {
+                "version": 2,
+                "widgetValues": {"widget_145_seed": "11"},
+                "widgetModes": {"widget_mode_145_seed": "randomize"},
+                "derivedWidgetValues": {
+                    "derived_widget_single_sampler_denoise": "0.2"
+                },
+            },
+        },
+        {
+            "applied_widget_values": {
+                "145:seed": "18446744073709551615",
+                "derived:single_sampler_denoise:__value": "0.4",
+            }
+        },
+        None,
+    )
+
+    assert metadata["replayState"]["widgetValues"]["widget_145_seed"] == (
+        "18446744073709551615"
+    )
+    assert metadata["replayState"]["widgetModes"]["widget_mode_145_seed"] == (
+        "randomize"
+    )
+    assert metadata["replayState"]["derivedWidgetValues"][
+        "derived_widget_single_sampler_denoise"
+    ] == "0.4"
 
 
 def test_iter_pipeline_stages_applies_registry_dependency_contract():

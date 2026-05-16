@@ -335,6 +335,84 @@ describe("deliveryEvents", () => {
     await flushMicrotasks();
   });
 
+  it("preserves frontend-replayed applied widget values over stale manifest replay state", async () => {
+    useGenerationStore.setState({
+      jobs: new Map<string, GenerationJob>([
+        [
+          "prompt-1",
+          {
+            ...makeQueuedJob("prompt-1"),
+            generationMetadata: {
+              source: "generated",
+              workflowName: "Workflow One",
+              inputs: [],
+              replayState: {
+                version: 2,
+                widgetValues: {
+                  widget_145_seed: "18446744073709551615",
+                },
+                widgetModes: {
+                  widget_mode_145_seed: "randomize",
+                },
+              },
+            },
+          },
+        ],
+      ]),
+    });
+
+    mockFrontendPostprocess.mockResolvedValue({
+      postprocessedPreview: null,
+      postprocessError: null,
+      importedAssetIds: ["asset-1"],
+    });
+    mockWaitForAssetsPersistence.mockResolvedValue(undefined);
+
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: {
+        delivery: makeCompletedManifest({
+          generation_metadata: {
+            source: "generated",
+            workflowName: "Workflow One",
+            inputs: [],
+            replayState: {
+              version: 2,
+              widgetValues: {
+                widget_145_seed: "11",
+              },
+              widgetModes: {
+                widget_mode_145_seed: "randomize",
+              },
+            },
+          },
+        }),
+      },
+    });
+    await flushMicrotasks();
+
+    expect(
+      useGenerationStore.getState().jobs.get("prompt-1")?.generationMetadata
+        ?.replayState?.widgetValues?.widget_145_seed,
+    ).toBe("18446744073709551615");
+    expect(mockFrontendPostprocess).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        generationMetadata: expect.objectContaining({
+          replayState: expect.objectContaining({
+            widgetValues: expect.objectContaining({
+              widget_145_seed: "18446744073709551615",
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
   it("rejects completed deliveries when ingestion fails", async () => {
     mockFrontendPostprocess.mockRejectedValue(new Error("Held ingest failed"));
     mockWaitForAssetsPersistence.mockResolvedValue(undefined);

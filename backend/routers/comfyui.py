@@ -123,6 +123,48 @@ def _enrich_generation_metadata(
         if isinstance(comfyui_workflow, dict):
             metadata["comfyuiWorkflow"] = comfyui_workflow
 
+    applied_widget_values = response_payload.get("applied_widget_values")
+    if isinstance(applied_widget_values, dict):
+        replay_state = (
+            dict(metadata.get("replayState"))
+            if isinstance(metadata.get("replayState"), dict)
+            else {"version": 2}
+        )
+        widget_values = (
+            dict(replay_state.get("widgetValues"))
+            if isinstance(replay_state.get("widgetValues"), dict)
+            else {}
+        )
+        derived_widget_values = (
+            dict(replay_state.get("derivedWidgetValues"))
+            if isinstance(replay_state.get("derivedWidgetValues"), dict)
+            else {}
+        )
+
+        for raw_key, raw_value in applied_widget_values.items():
+            if not isinstance(raw_key, str):
+                continue
+            value = str(raw_value)
+
+            if raw_key.startswith("derived:") and raw_key.endswith(":__value"):
+                derived_widget_id = raw_key[len("derived:") : -len(":__value")]
+                if derived_widget_id:
+                    derived_widget_values[f"derived_widget_{derived_widget_id}"] = value
+                continue
+
+            separator_index = raw_key.rfind(":")
+            if separator_index <= 0 or separator_index >= len(raw_key) - 1:
+                continue
+            node_id = raw_key[:separator_index]
+            param = raw_key[separator_index + 1 :]
+            widget_values[f"widget_{node_id}_{param}"] = value
+
+        if widget_values:
+            replay_state["widgetValues"] = widget_values
+        if derived_widget_values:
+            replay_state["derivedWidgetValues"] = derived_widget_values
+        metadata["replayState"] = replay_state
+
     return metadata
 
 

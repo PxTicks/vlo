@@ -8,6 +8,10 @@ import {
 } from "../services/generationDeliveryApi";
 import { frontendPostprocess } from "../utils/pipeline";
 import type { GenerationJob } from "../types";
+import type {
+  GeneratedCreationMetadata,
+  GeneratedCreationReplayState,
+} from "../../../types/Asset";
 import {
   applyPreviewUpdate,
   isActiveGenerationJob,
@@ -41,13 +45,73 @@ function toJobStatus(
 // inactive so the manifest is missing maskCropMetadata / generationMaskAssetId.
 // Merge instead of replacing so values the frontend already populated at
 // submission time (via mergeCachedPipelineOutputsIntoResponse) are kept.
+function mergeReplayState(
+  existing: GeneratedCreationReplayState | undefined,
+  fromManifest: GeneratedCreationReplayState | undefined,
+): GeneratedCreationReplayState | undefined {
+  if (!existing) return fromManifest;
+  if (!fromManifest) return existing;
+
+  return {
+    ...fromManifest,
+    ...existing,
+    ...(fromManifest.textValues || existing.textValues
+      ? {
+          textValues: {
+            ...(fromManifest.textValues ?? {}),
+            ...(existing.textValues ?? {}),
+          },
+        }
+      : {}),
+    ...(fromManifest.widgetValues || existing.widgetValues
+      ? {
+          widgetValues: {
+            ...(fromManifest.widgetValues ?? {}),
+            ...(existing.widgetValues ?? {}),
+          },
+        }
+      : {}),
+    ...(fromManifest.widgetModes || existing.widgetModes
+      ? {
+          widgetModes: {
+            ...(fromManifest.widgetModes ?? {}),
+            ...(existing.widgetModes ?? {}),
+          },
+        }
+      : {}),
+    ...(fromManifest.derivedWidgetValues || existing.derivedWidgetValues
+      ? {
+          derivedWidgetValues: {
+            ...(fromManifest.derivedWidgetValues ?? {}),
+            ...(existing.derivedWidgetValues ?? {}),
+          },
+        }
+      : {}),
+    ...(fromManifest.pipelineInputs || existing.pipelineInputs
+      ? {
+          pipelineInputs: {
+            ...(fromManifest.pipelineInputs ?? {}),
+            ...(existing.pipelineInputs ?? {}),
+          },
+        }
+      : {}),
+  };
+}
+
 function mergeGenerationMetadata(
   existing: GenerationJob["generationMetadata"] | undefined,
   fromManifest: GenerationJob["generationMetadata"] | undefined,
 ): GenerationJob["generationMetadata"] | undefined {
   if (!existing) return fromManifest;
   if (!fromManifest) return existing;
-  return { ...existing, ...fromManifest };
+  return {
+    ...(fromManifest as GeneratedCreationMetadata),
+    ...(existing as GeneratedCreationMetadata),
+    replayState: mergeReplayState(
+      existing.replayState,
+      fromManifest.replayState,
+    ),
+  };
 }
 
 function buildJobFromDelivery(

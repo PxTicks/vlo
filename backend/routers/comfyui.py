@@ -754,7 +754,6 @@ def _apply_workflow_media_fallbacks(
             "synthetic": fallback.get("synthetic", True) is True,
         }
 
-
 def _parse_workflow_inputs(workflow: dict) -> list[dict]:
     """Parse a workflow and return discoverable input nodes."""
     node_map = _resolve_input_node_map()

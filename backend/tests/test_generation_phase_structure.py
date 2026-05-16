@@ -44,6 +44,14 @@ async def _noop_register_media_bytes(
     return None, None
 
 
+async def _noop_inspect_registered_media(
+    _client: Any,
+    _media_id: str,
+    _media_type: str,
+) -> bool:
+    return False
+
+
 def _noop_aspect_ratio_processing(
     _workflow: dict[str, Any],
     _rules: dict[str, Any],
@@ -63,6 +71,7 @@ def test_backend_generation_phase_builders_keep_dispatch_separate():
         get_video_dimensions_fn=lambda _video_bytes: (1, 1),
         upload_video_bytes_fn=_noop_upload_video_bytes,
         register_media_bytes_fn=_noop_register_media_bytes,
+        inspect_registered_media_fn=_noop_inspect_registered_media,
         apply_aspect_ratio_processing_fn=_noop_aspect_ratio_processing,
     )
     dispatch_processors = build_backend_dispatch_processors(
@@ -96,6 +105,7 @@ def test_build_generation_processors_flattens_preprocess_and_dispatch_phases():
         get_video_dimensions_fn=lambda _video_bytes: (1, 1),
         upload_video_bytes_fn=_noop_upload_video_bytes,
         register_media_bytes_fn=_noop_register_media_bytes,
+        inspect_registered_media_fn=_noop_inspect_registered_media,
         apply_aspect_ratio_processing_fn=_noop_aspect_ratio_processing,
         prompt_id_factory=lambda: "prompt-1",
     )

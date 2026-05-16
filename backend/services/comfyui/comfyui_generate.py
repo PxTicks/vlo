@@ -227,6 +227,31 @@ async def _register_media_bytes_in_comfy_memory(
     return media_id, None
 
 
+async def _inspect_registered_media_in_comfy_memory(
+    client: httpx.AsyncClient,
+    media_id: str,
+    media_type: str,
+) -> bool:
+    normalized_media_id = media_id.strip()
+    if not normalized_media_id:
+        return False
+
+    response = await client.get(f"/api/vlo-memory/item/{normalized_media_id}")
+    if response.status_code != 200:
+        return False
+
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+
+    return (
+        isinstance(payload, dict)
+        and payload.get("media_id") == normalized_media_id
+        and payload.get("kind") == media_type
+    )
+
+
 def _build_postprocess_response(
     comfyui_response: httpx.Response,
     workflow_warnings: list[dict[str, Any]] | None = None,
@@ -347,6 +372,7 @@ async def run_backend_preprocess(ctx: BackendPipelineContext) -> None:
         get_video_dimensions_fn=get_video_dimensions,
         upload_video_bytes_fn=_upload_video_bytes_to_comfy,
         register_media_bytes_fn=_register_media_bytes_in_comfy_memory,
+        inspect_registered_media_fn=_inspect_registered_media_in_comfy_memory,
         apply_aspect_ratio_processing_fn=apply_aspect_ratio_processing,
     )
     await run_processors(preprocessors, ctx)

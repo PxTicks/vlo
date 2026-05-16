@@ -24,6 +24,7 @@ import {
   useAssetStore,
   useTimelineAssetRevealClipOverlay,
 } from "../../features/userAssets";
+import { TextPanel } from "../../features/text";
 import { Player } from "../../features/player/Player";
 import { useExtractStore } from "../../features/player/useExtractStore";
 import { LeftSidebarPanel } from "./LeftSidebarPanel";
@@ -234,6 +235,7 @@ export function EditorLayout() {
               }}
             >
               {activeLeftSidebarTab === "assets" ? <AssetBrowser /> : null}
+              {activeLeftSidebarTab === "text" ? <TextPanel /> : null}
             </Box>
           </Box>
         </EditorRegion>

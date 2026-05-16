@@ -23,6 +23,9 @@ export type {
 export type {
   BaseClip,
   TimelineClip,
+  StandardTimelineClip,
+  MaskTimelineClip,
+  TextTimelineClip,
   TimelineTrack,
   TrackType,
   ClipType,
@@ -33,4 +36,6 @@ export type {
   ClipMaskParameters,
   ClipMaskPoint,
   MaskActiveRange,
+  TextClipData,
+  TextAlignment,
 } from "./TimelineTypes";

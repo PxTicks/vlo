@@ -43,6 +43,10 @@ vi.mock("../../../features/userAssets", () => ({
   ),
 }));
 
+vi.mock("../../../features/text", () => ({
+  TextPanel: () => <div data-testid="text-panel">Text</div>,
+}));
+
 vi.mock("../../../features/timeline", () => ({
   Timeline: () => <div data-testid="timeline-container">Timeline</div>,
   useAssetDrag: () => ({
@@ -151,5 +155,14 @@ describe("EditorLayout", () => {
     fireEvent.click(screen.getByTestId("editor-lock-right"));
 
     expect(mockSidebarClick).not.toHaveBeenCalled();
+  });
+
+  it("switches the left panel content when the text tab is selected", () => {
+    render(<EditorLayout />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Text" }));
+
+    expect(screen.getByTestId("text-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("asset-browser")).not.toBeInTheDocument();
   });
 });

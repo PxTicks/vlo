@@ -9,6 +9,7 @@ import type {
   ClipMask,
   ClipTransform,
   MaskBooleanExpression,
+  TextClipData,
   TimelineClip,
 } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
@@ -50,6 +51,7 @@ import {
   updateClipMaskInDraft,
   updateClipPositionInDraft,
   updateClipShapeInDraft,
+  updateTextClipDataInDraft,
   updateClipTransformInDraft,
   withTimelineClipDefaults,
   type TimelineClipShape,
@@ -110,6 +112,10 @@ interface TimelineState extends TimelineModelState {
   updateClipShape: (
     id: string,
     shape: TimelineClipShape,
+  ) => void;
+  updateTextClipData: (
+    clipId: string,
+    updates: Partial<TextClipData>,
   ) => void;
 
   updateClipDuration: (id: string, newDurationTicks: number) => void;
@@ -339,6 +345,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     updateClipShape: (id, shape) => {
       mutationPipeline.commitModelMutation((draft) => {
         updateClipShapeInDraft(draft, id, shape);
+      });
+    },
+
+    updateTextClipData: (clipId, updates) => {
+      mutationPipeline.commitModelMutation((draft) => {
+        updateTextClipDataInDraft(draft, clipId, updates);
       });
     },
 

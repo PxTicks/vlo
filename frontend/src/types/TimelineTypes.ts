@@ -5,6 +5,16 @@ export type TrackType = "visual" | "audio" | "prompt" | "effects" | "mask";
 
 export type ClipType = "video" | "image" | "audio" | "text" | "shape" | "mask";
 
+export type TextAlignment = "left" | "center" | "right";
+
+export interface TextClipData {
+  content: string;
+  fontFamily: string;
+  fontSize: number;
+  fill: string;
+  align: TextAlignment;
+}
+
 export interface TimelineSelection {
   start: number;
   end?: number;
@@ -171,6 +181,7 @@ export interface TimelineClipBase extends BaseClip {
 
 export interface StandardTimelineClip extends TimelineClipBase {
   type: Exclude<ClipType, "mask">;
+  textData?: TextClipData;
   /** Per-clip audio mute. When true, the audio renderer bypasses this clip. */
   isMuted?: boolean;
   /**
@@ -180,6 +191,11 @@ export interface StandardTimelineClip extends TimelineClipBase {
    *  - `range_mask`: source-time window of transparency
    */
   components?: Component[];
+}
+
+export interface TextTimelineClip extends StandardTimelineClip {
+  type: "text";
+  textData: TextClipData;
 }
 
 export interface MaskTimelineClip extends TimelineClipBase {

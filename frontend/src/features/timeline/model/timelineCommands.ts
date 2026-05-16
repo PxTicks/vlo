@@ -7,10 +7,15 @@ import type {
   MaskBooleanExpression,
   MaskTimelineClip,
   StandardTimelineClip,
+  TextClipData,
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 import { useProjectStore } from "../../project/useProjectStore";
+import {
+  deriveTextClipName,
+  resolveTextClipData,
+} from "../../text/utils/textClipData";
 import {
   appendMaskBooleanExpression,
   getMaskLocalId,
@@ -110,6 +115,15 @@ export function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
           ...clip,
           components: normalizedComponents,
         };
+
+  if (clip.type === "text") {
+    const textData = resolveTextClipData(baseClip.textData);
+    return {
+      ...baseClip,
+      name: deriveTextClipName(textData.content),
+      textData,
+    };
+  }
 
   if (clip.type !== "video" && clip.type !== "image") {
     return baseClip;
@@ -504,6 +518,29 @@ export function updateClipShapeInDraft(
   if (updatedParent) {
     draft.clips = propagateParentToMasks(draft.clips, updatedParent);
   }
+}
+
+export function updateTextClipDataInDraft(
+  draft: TimelineModelState,
+  clipId: string,
+  updates: Partial<TextClipData>,
+): void {
+  draft.clips = draft.clips.map((clip) => {
+    if (clip.id !== clipId || clip.type !== "text") {
+      return clip;
+    }
+
+    const textData = resolveTextClipData({
+      ...clip.textData,
+      ...updates,
+    });
+
+    return {
+      ...clip,
+      name: deriveTextClipName(textData.content),
+      textData,
+    };
+  });
 }
 
 export function updateClipDurationInDraft(

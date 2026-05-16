@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Asset } from "../../../../types/Asset";
+import type { BaseClip, TimelineTrack } from "../../../../types/TimelineTypes";
 import type { StandardTimelineClip } from "../../../../types/TimelineTypes";
 import type { MaskCompositionComponent } from "../../../../types/Components";
 import { useTimelineStore } from "../../useTimelineStore";
-import { attachGenerationMask } from "../insertAssetToTimeline";
+import {
+  attachGenerationMask,
+  insertBaseClipAtTime,
+} from "../insertAssetToTimeline";
 
 function getCompositeTransforms(clip: StandardTimelineClip | undefined) {
   const composition = (clip?.components ?? []).find(
@@ -28,6 +32,39 @@ function createParentClip() {
     transformedOffset: 0,
     croppedSourceDuration: 120,
     transformations: [],
+  };
+}
+
+function createTrack(
+  id: string,
+  type: TimelineTrack["type"] = "visual",
+): TimelineTrack {
+  return {
+    id,
+    label: id,
+    isVisible: true,
+    isMuted: false,
+    isLocked: false,
+    type,
+  };
+}
+
+function createBaseClip(
+  overrides: Partial<BaseClip> = {},
+): BaseClip {
+  return {
+    id: "clip_base",
+    type: "image",
+    name: "Inserted Clip",
+    assetId: "asset_inserted",
+    sourceDuration: null,
+    timelineDuration: 120,
+    croppedSourceDuration: 120,
+    offset: 0,
+    transformedDuration: 120,
+    transformedOffset: 0,
+    transformations: [],
+    ...overrides,
   };
 }
 
@@ -91,5 +128,70 @@ describe("insertAssetToTimeline", () => {
         },
       }),
     ]);
+  });
+
+  it("places new clips on the topmost compatible track that is free in range", () => {
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        createTrack("track_top"),
+        createTrack("track_middle"),
+        createTrack("track_bottom"),
+      ],
+      clips: [
+        {
+          ...createParentClip(),
+          id: "clip_existing",
+          trackId: "track_bottom",
+          start: 500,
+        },
+      ],
+    });
+
+    const clipId = insertBaseClipAtTime(createBaseClip(), 0);
+    const insertedClip = useTimelineStore
+      .getState()
+      .clips.find((clip) => clip.id === clipId);
+
+    expect(insertedClip?.trackId).toBe("track_top");
+  });
+
+  it("inserts a new compatible track above the occupied stack when needed", () => {
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        createTrack("track_audio", "audio"),
+        createTrack("track_visual_a"),
+        createTrack("track_visual_b"),
+      ],
+      clips: [
+        {
+          ...createParentClip(),
+          id: "clip_visual_a",
+          trackId: "track_visual_a",
+          start: 0,
+        },
+        {
+          ...createParentClip(),
+          id: "clip_visual_b",
+          trackId: "track_visual_b",
+          start: 0,
+        },
+      ],
+    });
+
+    const clipId = insertBaseClipAtTime(createBaseClip(), 0);
+    const state = useTimelineStore.getState();
+    const insertedClip = state.clips.find((clip) => clip.id === clipId);
+    const insertedTrackIndex = state.tracks.findIndex(
+      (track) => track.id === insertedClip?.trackId,
+    );
+    const firstVisualTrackIndex = state.tracks.findIndex(
+      (track) => track.id === "track_visual_a",
+    );
+
+    expect(insertedClip?.trackId).toBeTruthy();
+    expect(insertedClip?.trackId).not.toBe("track_visual_a");
+    expect(insertedClip?.trackId).not.toBe("track_visual_b");
+    expect(insertedTrackIndex).toBeGreaterThan(-1);
+    expect(insertedTrackIndex).toBeLessThan(firstVisualTrackIndex);
   });
 });

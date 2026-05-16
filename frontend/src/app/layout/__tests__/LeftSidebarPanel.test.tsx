@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LeftSidebarPanel } from "../LeftSidebarPanel";
 
@@ -15,5 +15,18 @@ describe("LeftSidebarPanel", () => {
       "true",
     );
     expect(screen.getByRole("tab", { name: "Assets" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Text" })).toBeInTheDocument();
+  });
+
+  it("switches to the text tab when clicked", () => {
+    const handleTabChange = vi.fn();
+
+    render(
+      <LeftSidebarPanel activeTab="assets" onTabChange={handleTabChange} />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Text" }));
+
+    expect(handleTabChange).toHaveBeenCalledWith("text");
   });
 });

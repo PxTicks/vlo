@@ -1,8 +1,9 @@
-import { Container, Sprite, Texture } from "pixi.js";
+import { Container, Sprite, Text, Texture } from "pixi.js";
 import type { Renderer } from "pixi.js";
 import type {
   TimelineClip,
   MaskTimelineClip,
+  TextTimelineClip,
 } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
 import DecoderWorker from "../workers/decoder.worker?worker";
@@ -24,6 +25,7 @@ import {
   awaitStrictFrame,
   type StrictFramePending,
 } from "../utils/strictFrameRequest";
+import { resolveTextClipData } from "../../text/utils/textClipData";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -95,11 +97,14 @@ export class TrackRenderEngine {
   public readonly sprite: Sprite;
   public readonly container: Container;
   private worker: Worker;
+  private readonly renderer: Renderer | null;
 
   // State
   private preparedClips = new Map<string, string>(); // clipId -> assetId
   private preparedClipTouchedAtMs = new Map<string, number>(); // clipId -> perf.now()
   private currentTextureClipId: string | null = null;
+  private currentTextureSourceKind: "asset" | "text" | null = null;
+  private currentTextTextureSignature: string | null = null;
   private lastRenderRequest: {
     time: number;
     clipId: string;
@@ -144,6 +149,7 @@ export class TrackRenderEngine {
     onFrameReady?: (clipId: string, transformTime: number) => void,
     renderer?: Renderer | null,
   ) {
+    this.renderer = renderer ?? null;
     this.worker = this.createWorker();
     this.onFrameReady = onFrameReady;
 
@@ -254,6 +260,32 @@ export class TrackRenderEngine {
       fps: clipFps,
     };
 
+    if (activeClip.type === "text") {
+      this.invalidateLivePipeline();
+
+      if (!shouldRender) {
+        if (this.sprite.visible && this.currentTextureClipId === activeClip.id) {
+          this.applyClipTransformsForClip(
+            activeClip,
+            logicalDimensions,
+            rawTimeSeconds,
+          );
+        }
+        return Promise.resolve();
+      }
+
+      return this.renderTextClip(
+        activeClip,
+        logicalDimensions,
+        rawTimeSeconds,
+        maskClips,
+        assetById,
+        clipFps,
+      ).catch((error) => {
+        console.warn("Failed to render text clip", error);
+      });
+    }
+
     // 6. Send Render Request
     // Optimization: Don't request same frame twice (Live Mode only)
     // For Export, we usually force request or trust the caller loop
@@ -349,6 +381,18 @@ export class TrackRenderEngine {
     }
 
     const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
+    if (activeClip.type === "text") {
+      await this.renderTextClip(
+        activeClip,
+        logicalDimensions,
+        rawTimeSeconds,
+        maskClips,
+        new Map<string, Asset>(assets.map((asset) => [asset.id, asset] as const)),
+        fps,
+      );
+      return;
+    }
+
     const inFlightSynchronizedRender = this.inFlightSynchronizedRender;
     if (
       inFlightSynchronizedRender &&
@@ -416,6 +460,18 @@ export class TrackRenderEngine {
       maskClips,
       rawTimeSeconds,
     } = request;
+    if (activeClip.type === "text") {
+      await this.renderTextClip(
+        activeClip,
+        logicalDimensions,
+        rawTimeSeconds,
+        maskClips,
+        new Map<string, Asset>(assets.map((asset) => [asset.id, asset] as const)),
+        fps,
+      );
+      return;
+    }
+
     for (
       let attempt = 0;
       attempt <= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS;
@@ -472,7 +528,11 @@ export class TrackRenderEngine {
 
           if (frame.bitmap) {
             const texture = Texture.from(frame.bitmap);
-            const contentSizeChanged = this.applyTexture(texture, activeClip.id);
+            const contentSizeChanged = this.applyTexture(
+              texture,
+              activeClip.id,
+              "asset",
+            );
             if (contentSizeChanged) {
               await this.resyncMasksForResolvedTexture(
                 maskClips,
@@ -549,6 +609,18 @@ export class TrackRenderEngine {
     options: { fps?: number; signal?: AbortSignal } = {},
   ): Promise<void> {
     this.invalidateLivePipeline();
+
+    if (activeClip.type === "text") {
+      await this.renderTextClip(
+        activeClip,
+        logicalDimensions,
+        currentTime - activeClip.start,
+        maskClips,
+        assetsById,
+        options.fps,
+      );
+      return;
+    }
 
     const asset = activeClip.assetId ? assetsById.get(activeClip.assetId) : undefined;
     const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : (options.fps ?? 30);
@@ -899,6 +971,7 @@ export class TrackRenderEngine {
             const contentSizeChanged = this.applyTexture(
               texture,
               request.clip.id,
+              "asset",
             );
             if (contentSizeChanged) {
               await this.resyncMasksForResolvedTexture(
@@ -1018,9 +1091,8 @@ export class TrackRenderEngine {
   ) {
     if (bitmap) {
       const texture = Texture.from(bitmap);
-      const contentSizeChanged = this.applyTexture(texture, clip.id);
-      applyClipTransforms(this.sprite, clip, dimensions, rawTime);
-      this.maskController.syncMaskSpriteTransform();
+      const contentSizeChanged = this.applyTexture(texture, clip.id, "asset");
+      this.applyClipTransformsForClip(clip, dimensions, rawTime);
       if (contentSizeChanged) {
         await this.resyncMasksForResolvedTexture(
           options.maskClips ?? [],
@@ -1034,7 +1106,11 @@ export class TrackRenderEngine {
     }
   }
 
-  private applyTexture(texture: Texture, clipId: string): boolean {
+  private applyTexture(
+    texture: Texture,
+    clipId: string,
+    sourceKind: "asset" | "text",
+  ): boolean {
     const previousTexture = this.sprite.texture;
     const previousWidth =
       previousTexture &&
@@ -1057,7 +1133,135 @@ export class TrackRenderEngine {
     this.retiredTextures.retire(previousTexture);
     this.sprite.visible = true;
     this.currentTextureClipId = clipId;
+    this.currentTextureSourceKind = sourceKind;
     return contentSizeChanged;
+  }
+
+  private applyClipTransformsForClip(
+    clip: TimelineClip,
+    logicalDimensions: { width: number; height: number },
+    rawTime: number,
+  ) {
+    applyClipTransforms(
+      this.sprite,
+      clip,
+      logicalDimensions,
+      rawTime,
+      clip.type === "text" ? logicalDimensions : undefined,
+    );
+    this.maskController.syncMaskSpriteTransform();
+  }
+
+  private getTextTextureSignature(
+    clip: TextTimelineClip,
+    logicalDimensions: { width: number; height: number },
+  ): string {
+    const textData = resolveTextClipData(clip.textData);
+    const renderResolution = this.getTextRenderResolution(logicalDimensions);
+
+    return JSON.stringify({
+      content: textData.content,
+      fontFamily: textData.fontFamily,
+      fontSize: textData.fontSize,
+      fill: textData.fill,
+      align: textData.align,
+      logicalWidth: logicalDimensions.width,
+      logicalHeight: logicalDimensions.height,
+      renderResolution,
+    });
+  }
+
+  private getTextRenderResolution(
+    logicalDimensions: { width: number; height: number },
+  ): number {
+    if (!this.renderer) {
+      return 1;
+    }
+
+    const widthRatio =
+      this.renderer.width / Math.max(1, logicalDimensions.width);
+    const heightRatio =
+      this.renderer.height / Math.max(1, logicalDimensions.height);
+
+    return Math.max(1, Math.min(8, Math.max(widthRatio, heightRatio)));
+  }
+
+  private createTextTexture(
+    clip: TextTimelineClip,
+    logicalDimensions: { width: number; height: number },
+  ): Texture | null {
+    if (!this.renderer) {
+      return null;
+    }
+
+    const textData = resolveTextClipData(clip.textData);
+    const renderResolution = this.getTextRenderResolution(logicalDimensions);
+    const text = new Text({
+      text: textData.content.length > 0 ? textData.content : " ",
+      resolution: renderResolution,
+      style: {
+        align: textData.align,
+        fill: textData.fill,
+        fontFamily: textData.fontFamily,
+        fontSize: textData.fontSize,
+        whiteSpace: "pre-line",
+      },
+    });
+
+    try {
+      return this.renderer.generateTexture({
+        target: text,
+        resolution: renderResolution,
+        clearColor: [0, 0, 0, 0],
+      });
+    } finally {
+      text.destroy();
+    }
+  }
+
+  private async renderTextClip(
+    clip: TextTimelineClip,
+    logicalDimensions: { width: number; height: number },
+    rawTime: number,
+    maskClips: MaskTimelineClip[],
+    assetsById: Map<string, Asset>,
+    fps?: number,
+  ): Promise<void> {
+    const nextSignature = this.getTextTextureSignature(clip, logicalDimensions);
+    const hasReusableTextTexture =
+      this.currentTextureSourceKind === "text" &&
+      this.currentTextTextureSignature === nextSignature &&
+      this.sprite.texture !== Texture.EMPTY;
+
+    if (hasReusableTextTexture) {
+      this.sprite.visible = true;
+      this.currentTextureClipId = clip.id;
+    } else {
+      const texture = this.createTextTexture(clip, logicalDimensions);
+      if (!texture) {
+        this.sprite.visible = false;
+        this.currentTextureClipId = null;
+        return;
+      }
+
+      this.applyTexture(texture, clip.id, "text");
+      this.currentTextTextureSignature = nextSignature;
+    }
+
+    this.applyClipTransformsForClip(clip, logicalDimensions, rawTime);
+
+    try {
+      await this.maskController.syncMaskClips(
+        maskClips,
+        clip,
+        logicalDimensions,
+        rawTime,
+        assetsById,
+        { fps, skipSam2FrameRender: true },
+      );
+    } catch (error) {
+      console.warn("Failed to sync text clip masks", error);
+    }
   }
 
   private async resyncMasksForResolvedTexture(
@@ -1128,13 +1332,11 @@ export class TrackRenderEngine {
   ) {
     if (!this.sprite.visible) return;
     const rawTimeSeconds = currentTime - activeClip.start;
-    applyClipTransforms(
-      this.sprite,
+    this.applyClipTransformsForClip(
       activeClip,
       logicalDimensions,
       rawTimeSeconds,
     );
-    this.maskController.syncMaskSpriteTransform();
     void this.maskController
       .syncMaskClips(
         maskClips,
@@ -1180,6 +1382,8 @@ export class TrackRenderEngine {
     }
     this.preparedClips.clear();
     this.preparedClipTouchedAtMs.clear();
+    this.currentTextureSourceKind = null;
+    this.currentTextTextureSignature = null;
     this.lastUpdateTime = null;
     this.lastUpdateDirection = 0;
     this.scrubActiveUntilMs = 0;

@@ -14,7 +14,11 @@ import {
   getDragStartSelectionAction,
   getDragEndClickAction,
 } from "../../utils/selection";
-import type { TimelineClip, BaseClip } from "../../../../types/TimelineTypes";
+import type {
+  BaseClip,
+  StandardTimelineClip,
+  TimelineClip,
+} from "../../../../types/TimelineTypes";
 import { useClipMove } from "./useClipMove";
 import { useClipResize } from "./useClipResize";
 import React from "react";
@@ -68,7 +72,7 @@ export const useTimelineInternalDrag = (
       // Force select the clip being resized
       useTimelineStore.getState().selectClip(data.clip.id, false);
 
-      const clip = data.clip as TimelineClip;
+      const clip = data.clip as StandardTimelineClip;
       const side = data.side as "left" | "right";
       const minDuration = getMinimumClipDurationTicks(
         useProjectStore.getState().config.fps,
@@ -155,7 +159,7 @@ export const useTimelineInternalDrag = (
 
     if (!activeClip) return;
 
-    const clip = activeClip as BaseClip | TimelineClip;
+    const clip = activeClip as BaseClip | StandardTimelineClip;
 
     if (operation === "move") {
       const wasDrag = Math.abs(delta.x) > 2 || Math.abs(delta.y) > 2;

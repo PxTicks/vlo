@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import type { BaseClip, TimelineClip } from "../../../types/TimelineTypes";
+import type {
+  AssetBackedBaseClip,
+  AssetBackedTimelineClip,
+  TimelineClip,
+} from "../../../types/TimelineTypes";
 import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../constants";
 import { useInteractionStore } from "./useInteractionStore";
 import { useTimelineViewStore } from "./useTimelineViewStore";
@@ -18,7 +22,7 @@ export interface ClipCanvasGeometry {
 
 interface UseClipCanvasWindowProps {
   canvasRef: RefObject<HTMLCanvasElement | null>;
-  clip: BaseClip;
+  clip: AssetBackedBaseClip | AssetBackedTimelineClip;
   zoomScale: number;
   height: number;
   enabled?: boolean;

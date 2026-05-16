@@ -13,7 +13,6 @@ def _make_context(
     disable_in_memory: Any,
     *,
     class_type: str = "VLOMemoryLoadImage",
-    current_value: str = "",
 ) -> BackendPipelineContext:
     return BackendPipelineContext(
         client=httpx.AsyncClient(),
@@ -22,7 +21,7 @@ def _make_context(
             "92": {
                 "class_type": class_type,
                 "inputs": {
-                    "image": current_value,
+                    "image": "",
                     "disable_in_memory": disable_in_memory,
                 },
             }
@@ -53,14 +52,9 @@ async def test_upload_media_processor_registers_memory_loader_media_by_default()
         calls.append("register")
         return "media-id-123", None
 
-    async def inspect_registered_media_fn(*args, **kwargs):
-        calls.append("inspect")
-        return False
-
     processor = create_upload_media_processor(
         upload_media_bytes_fn=upload_media_bytes_fn,
         register_media_bytes_fn=register_media_bytes_fn,
-        inspect_registered_media_fn=inspect_registered_media_fn,
         input_node_map={
             "VLOMemoryLoadImage": [
                 {"input_type": "image", "param": "image"},
@@ -90,14 +84,9 @@ async def test_upload_media_processor_falls_back_to_file_upload_when_memory_load
         calls.append("register")
         return "media-id-123", None
 
-    async def inspect_registered_media_fn(*args, **kwargs):
-        calls.append("inspect")
-        return False
-
     processor = create_upload_media_processor(
         upload_media_bytes_fn=upload_media_bytes_fn,
         register_media_bytes_fn=register_media_bytes_fn,
-        inspect_registered_media_fn=inspect_registered_media_fn,
         input_node_map={
             "VLOMemoryLoadImage": [
                 {"input_type": "image", "param": "image"},
@@ -127,14 +116,9 @@ async def test_upload_media_processor_accepts_lowercase_vlo_memory_loader_aliase
         calls.append("register")
         return "media-id-123", None
 
-    async def inspect_registered_media_fn(*args, **kwargs):
-        calls.append("inspect")
-        return False
-
     processor = create_upload_media_processor(
         upload_media_bytes_fn=upload_media_bytes_fn,
         register_media_bytes_fn=register_media_bytes_fn,
-        inspect_registered_media_fn=inspect_registered_media_fn,
         input_node_map={
             "VLOMemoryLoadImage": [
                 {"input_type": "image", "param": "image"},
@@ -149,78 +133,4 @@ async def test_upload_media_processor_accepts_lowercase_vlo_memory_loader_aliase
         await ctx.client.aclose()
 
     assert calls == ["register"]
-    assert ctx.workflow["92"]["inputs"]["image"] == "media-id-123"
-
-
-@pytest.mark.asyncio
-async def test_upload_media_processor_reuses_valid_cached_memory_id():
-    calls: list[str] = []
-
-    async def upload_media_bytes_fn(*args, **kwargs):
-        calls.append("upload")
-        return "frame.png", None
-
-    async def register_media_bytes_fn(*args, **kwargs):
-        calls.append("register")
-        return "media-id-123", None
-
-    async def inspect_registered_media_fn(*args, **kwargs):
-        calls.append("inspect")
-        return True
-
-    processor = create_upload_media_processor(
-        upload_media_bytes_fn=upload_media_bytes_fn,
-        register_media_bytes_fn=register_media_bytes_fn,
-        inspect_registered_media_fn=inspect_registered_media_fn,
-        input_node_map={
-            "VLOMemoryLoadImage": [
-                {"input_type": "image", "param": "image"},
-            ]
-        },
-    )
-    ctx = _make_context(False, current_value="cached-media-id")
-
-    try:
-        await processor.execute(ctx)
-    finally:
-        await ctx.client.aclose()
-
-    assert calls == ["inspect"]
-    assert ctx.workflow["92"]["inputs"]["image"] == "cached-media-id"
-
-
-@pytest.mark.asyncio
-async def test_upload_media_processor_reregisters_missing_cached_memory_id():
-    calls: list[str] = []
-
-    async def upload_media_bytes_fn(*args, **kwargs):
-        calls.append("upload")
-        return "frame.png", None
-
-    async def register_media_bytes_fn(*args, **kwargs):
-        calls.append("register")
-        return "media-id-123", None
-
-    async def inspect_registered_media_fn(*args, **kwargs):
-        calls.append("inspect")
-        return False
-
-    processor = create_upload_media_processor(
-        upload_media_bytes_fn=upload_media_bytes_fn,
-        register_media_bytes_fn=register_media_bytes_fn,
-        inspect_registered_media_fn=inspect_registered_media_fn,
-        input_node_map={
-            "VLOMemoryLoadImage": [
-                {"input_type": "image", "param": "image"},
-            ]
-        },
-    )
-    ctx = _make_context(False, current_value="stale-media-id")
-
-    try:
-        await processor.execute(ctx)
-    finally:
-        await ctx.client.aclose()
-
-    assert calls == ["inspect", "register"]
     assert ctx.workflow["92"]["inputs"]["image"] == "media-id-123"

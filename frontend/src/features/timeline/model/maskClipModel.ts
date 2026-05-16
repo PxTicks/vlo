@@ -19,6 +19,7 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
+import { isNonMaskTimelineClip } from "../../../types/TimelineTypes";
 import {
   getMaskLocalId,
   pruneMaskBooleanExpression,
@@ -105,9 +106,7 @@ export const cloneTimelineClip = (
 
 /** Read all typed components from a clip (only standard clips carry them). */
 function getClipComponents(clip: TimelineClip): Component[] {
-  return clip.type !== "mask"
-    ? ((clip as StandardTimelineClip).components ?? [])
-    : [];
+  return isNonMaskTimelineClip(clip) ? (clip.components ?? []) : [];
 }
 
 /** Mutably set the components array on a standard clip. */
@@ -115,9 +114,8 @@ function setClipComponents(
   clip: TimelineClip,
   components: Component[],
 ): void {
-  if (clip.type !== "mask") {
-    (clip as StandardTimelineClip).components =
-      components.length > 0 ? components : undefined;
+  if (isNonMaskTimelineClip(clip)) {
+    clip.components = components.length > 0 ? components : undefined;
   }
 }
 
@@ -443,7 +441,6 @@ function createMaskClip(
     trackId: parentClip.trackId,
     type: "mask",
     name: opts.name ?? `Mask ${maskLocalId}`,
-    assetId: undefined,
     sourceDuration: parentClip.sourceDuration,
     start: parentClip.start,
     timelineDuration: parentClip.timelineDuration,

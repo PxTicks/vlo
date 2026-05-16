@@ -5,6 +5,7 @@ import type {
   MaskTimelineClip,
   TextTimelineClip,
 } from "../../../types/TimelineTypes";
+import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
 import DecoderWorker from "../workers/decoder.worker?worker";
 import {
@@ -249,19 +250,15 @@ export class TrackRenderEngine {
     // Sync masks from first-class mask clips
     const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
 
-    const asset = activeClip.assetId ? assetById.get(activeClip.assetId) : undefined;
-    const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
-
-    this.latestMaskSyncContext = {
-      maskClips,
-      clip: activeClip,
-      logicalDimensions,
-      rawTimeTicks: rawTimeSeconds,
-      assetsById: assetById,
-      fps: clipFps,
-    };
-
     if (activeClip.type === "text") {
+      this.latestMaskSyncContext = {
+        maskClips,
+        clip: activeClip,
+        logicalDimensions,
+        rawTimeTicks: rawTimeSeconds,
+        assetsById: assetById,
+        fps,
+      };
       this.invalidateLivePipeline();
 
       if (!shouldRender) {
@@ -281,11 +278,31 @@ export class TrackRenderEngine {
         rawTimeSeconds,
         maskClips,
         assetById,
-        clipFps,
+        fps,
       ).catch((error) => {
         console.warn("Failed to render text clip", error);
       });
     }
+
+    if (!isAssetBackedClip(activeClip)) {
+      this.invalidateLivePipeline();
+      this.sprite.visible = false;
+      this.currentTextureClipId = null;
+      this.maskController.clear();
+      return Promise.resolve();
+    }
+
+    const asset = assetById.get(activeClip.assetId);
+    const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
+
+    this.latestMaskSyncContext = {
+      maskClips,
+      clip: activeClip,
+      logicalDimensions,
+      rawTimeTicks: rawTimeSeconds,
+      assetsById: assetById,
+      fps: clipFps,
+    };
 
     // 6. Send Render Request
     // Optimization: Don't request same frame twice (Live Mode only)
@@ -473,6 +490,14 @@ export class TrackRenderEngine {
       return;
     }
 
+    if (!isAssetBackedClip(activeClip)) {
+      this.invalidateLivePipeline();
+      this.sprite.visible = false;
+      this.currentTextureClipId = null;
+      this.maskController.clear();
+      return;
+    }
+
     for (
       let attempt = 0;
       attempt <= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS;
@@ -487,7 +512,7 @@ export class TrackRenderEngine {
         false,
       );
 
-      const asset = activeClip.assetId ? assetById.get(activeClip.assetId) : undefined;
+      const asset = assetById.get(activeClip.assetId);
       const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
 
       const renderTimeSeconds = snapFrameTimeSeconds(localTimeSeconds, clipFps);
@@ -623,7 +648,14 @@ export class TrackRenderEngine {
       return;
     }
 
-    const asset = activeClip.assetId ? assetsById.get(activeClip.assetId) : undefined;
+    if (!isAssetBackedClip(activeClip)) {
+      this.sprite.visible = false;
+      this.currentTextureClipId = null;
+      this.maskController.clear();
+      return;
+    }
+
+    const asset = assetsById.get(activeClip.assetId);
     const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : (options.fps ?? 30);
 
     const rawTime = currentTime - activeClip.start;
@@ -798,7 +830,7 @@ export class TrackRenderEngine {
       relevantClipIds.add(clip.id);
       this.preparedClipTouchedAtMs.set(clip.id, nowMs);
       const storedAssetId = this.preparedClips.get(clip.id);
-      if (storedAssetId === clip.assetId) {
+      if (isAssetBackedClip(clip) && storedAssetId === clip.assetId) {
         return;
       }
 
@@ -808,8 +840,12 @@ export class TrackRenderEngine {
         this.preparedClipTouchedAtMs.delete(clip.id);
       }
 
-      const asset = clip.assetId ? assetById.get(clip.assetId) : undefined;
-      if (!asset || !clip.assetId) {
+      if (!isAssetBackedClip(clip)) {
+        return;
+      }
+
+      const asset = assetById.get(clip.assetId);
+      if (!asset) {
         return;
       }
 
@@ -910,11 +946,14 @@ export class TrackRenderEngine {
     currentFrameIndex: number,
     renderTimeSeconds: number,
   ): boolean {
+    const currentAssetId = isAssetBackedClip(activeClip)
+      ? activeClip.assetId
+      : null;
     return (
       !this.lastRenderRequest ||
       this.lastRenderRequest.frameIndex !== currentFrameIndex ||
       this.lastRenderRequest.clipId !== activeClip.id ||
-      this.lastRenderRequest.assetId !== activeClip.assetId ||
+      this.lastRenderRequest.assetId !== currentAssetId ||
       this.lastRenderRequest.time !== renderTimeSeconds ||
       !this.hasRenderableTextureForClip(activeClip.id)
     );

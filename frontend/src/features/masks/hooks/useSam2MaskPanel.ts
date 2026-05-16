@@ -12,6 +12,7 @@ import type {
   MaskTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
+import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import {
   TICKS_PER_SECOND,
   countSam2MaskAssetConsumers,
@@ -449,7 +450,7 @@ export function useSam2MaskPanel({
     if (!selectedMask || selectedMask.maskType !== "sam2") return null;
 
     const parentClip = selectedClip;
-    if (!parentClip || !parentClip.assetId) return null;
+    if (!isAssetBackedClip(parentClip)) return null;
 
     const parentAsset = assets.find((asset) => asset.id === parentClip.assetId);
     if (!parentAsset) return null;
@@ -856,7 +857,7 @@ export function useSam2MaskPanel({
     }
 
     const parentClip = selectedClip;
-    if (!parentClip || !parentClip.assetId) {
+    if (!isAssetBackedClip(parentClip)) {
       setSam2GenerateError("Selected clip has no source asset.");
       return;
     }

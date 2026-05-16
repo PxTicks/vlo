@@ -29,8 +29,10 @@ import {
 } from "../constants";
 import type {
   BaseClip,
+  StandardTimelineClip,
   TimelineClip as TimelineClipType,
 } from "../../../types/TimelineTypes";
+import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import type { MarkersComponent } from "../../../types/Components";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
@@ -147,11 +149,12 @@ function TimelineClipComponent({
   const trackIndex = tracks.findIndex((t) => t.id === trackId);
   const track = tracks[trackIndex];
   const isTrackVisible = track?.isVisible ?? true;
-  const clipAsset = useAsset(timelineClip?.assetId);
+  const clipAsset = useAsset(
+    isAssetBackedClip(timelineClip) ? timelineClip.assetId : undefined,
+  );
   const canExtractAudio =
     timelineClip !== null &&
     track !== undefined &&
-    !!timelineClip.assetId &&
     timelineClip.type === "video" &&
     clipAsset?.hasAudio !== false;
 
@@ -344,7 +347,6 @@ function TimelineClipComponent({
     if (
       timelineClip === null ||
       track === undefined ||
-      !timelineClip.assetId ||
       timelineClip.type !== "video"
     ) {
       closeContextMenu();
@@ -429,7 +431,9 @@ function TimelineClipComponent({
       data-selected={isSelected ? "true" : "false"}
       data-track-visible={isTrackVisible ? "true" : "false"}
     >
-      <ThumbnailCanvas clip={clip} isDragging={isDragging} />
+      {isAssetBackedClip(clip) ? (
+        <ThumbnailCanvas clip={clip} isDragging={isDragging} />
+      ) : null}
       {!isDragging && !isOverlay && timelineClip ? (
         <TimelineClipOverlayLayer
           clip={timelineClip}
@@ -441,12 +445,12 @@ function TimelineClipComponent({
         <>
           <ResizeHandle
             id={`resize_left_${clip.id}`}
-            clip={clip as TimelineClipType}
+            clip={clip as StandardTimelineClip}
             side="left"
           />
           <ResizeHandle
             id={`resize_right_${clip.id}`}
-            clip={clip as TimelineClipType}
+            clip={clip as StandardTimelineClip}
             side="right"
           />
         </>

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { TICKS_PER_SECOND, PIXELS_PER_SECOND, CLIP_HEIGHT } from "../constants";
-import type { BaseClip, TimelineClip } from "../../../types/TimelineTypes";
+import type {
+  AssetBackedBaseClip,
+  AssetBackedTimelineClip,
+  TimelineClip,
+} from "../../../types/TimelineTypes";
 import { ensureAssetSourceLoaded, useAsset } from "../../userAssets";
 import {
   Input,
@@ -19,7 +23,7 @@ import { useClipCanvasWindow } from "./useClipCanvasWindow";
 
 interface UseThumbnailRendererProps {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
-  clip: BaseClip;
+  clip: AssetBackedBaseClip | AssetBackedTimelineClip;
   zoomScale: number;
   height: number;
   enabled?: boolean;

@@ -12,6 +12,7 @@ import type {
   TextClipData,
   TimelineClip,
 } from "../../types/TimelineTypes";
+import { isAssetBackedClip } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
   countBrushMaskAssetConsumers,
@@ -285,7 +286,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     removeClipsByAssetId: (assetId) => {
       const directlyReferencedClipIds = get()
-        .clips.filter((clip) => clip.assetId === assetId)
+        .clips
+        .filter((clip) => isAssetBackedClip(clip) && clip.assetId === assetId)
         .map((clip) => clip.id);
 
       if (directlyReferencedClipIds.length === 0) {

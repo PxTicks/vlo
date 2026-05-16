@@ -10,7 +10,15 @@ import {
   RULER_HEIGHT, // [!code ++]
   SNAP_THRESHOLD_PX,
 } from "../../constants";
-import type { TimelineClip, BaseClip } from "../../../../types/TimelineTypes";
+import type {
+  BaseClip,
+  StandardTimelineClip,
+  TimelineClip,
+} from "../../../../types/TimelineTypes";
+import {
+  isAssetBackedClip,
+  isNonMaskTimelineClip,
+} from "../../../../types/TimelineTypes";
 import { getGhostClipPosition, GHOST_CLIP_HEIGHT } from "./dragGeometry";
 import { getTrackTypeFromClipType } from "../../utils/formatting";
 import { getMoveSnapCandidate } from "./snapUtils";
@@ -451,9 +459,9 @@ export const useClipMove = (
             ...(clip as BaseClip),
             trackId: targetTrackId,
             start: finalStartTicks,
-          } as TimelineClip;
+          } as StandardTimelineClip;
           addClip(newClip);
-          if (newClip.assetId) {
+          if (isAssetBackedClip(newClip)) {
             const asset = getAssetById(newClip.assetId);
             if (asset) {
               attachGenerationMask(newClip.id, asset);
@@ -489,7 +497,8 @@ export const useClipMove = (
 
     // Apply updates...
     const selectedClips = clips.filter(
-      (c) => selectedClipIds.includes(c.id) && c.type !== "mask",
+      (c): c is StandardTimelineClip =>
+        selectedClipIds.includes(c.id) && isNonMaskTimelineClip(c),
     );
 
     // 1. Validate all moves first (Atomic Commit)

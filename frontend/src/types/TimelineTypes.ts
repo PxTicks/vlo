@@ -152,12 +152,12 @@ export interface ClipMask extends ClipComponentBase<ClipMaskParameters> {
   transformations?: ClipTransform[];
 }
 
-export interface BaseClip {
+export type NonMaskClipType = Exclude<ClipType, "mask">;
+export type AssetBackedClipType = "video" | "image" | "audio";
+
+export interface ClipBaseCommon {
   id: string;
   type: ClipType;
-
-  // --- ASSET DATA ---
-  assetId?: string;
   name: string;
   sourceDuration: number | null; // The full source length in ticks; null means unbounded (e.g. still images)
 
@@ -174,14 +174,16 @@ export interface BaseClip {
   transformations: ClipTransform[];
 }
 
-export interface TimelineClipBase extends BaseClip {
+export interface InsertableClipBaseCommon extends ClipBaseCommon {
+  type: NonMaskClipType;
+}
+
+export interface TimelineClipBaseCommon extends ClipBaseCommon {
   trackId: string;
   start: number; // Global timeline start position
 }
 
-export interface StandardTimelineClip extends TimelineClipBase {
-  type: Exclude<ClipType, "mask">;
-  textData?: TextClipData;
+export interface NonMaskTimelineClipCommon extends TimelineClipBaseCommon {
   /** Per-clip audio mute. When true, the audio renderer bypasses this clip. */
   isMuted?: boolean;
   /**
@@ -193,12 +195,86 @@ export interface StandardTimelineClip extends TimelineClipBase {
   components?: Component[];
 }
 
-export interface TextTimelineClip extends StandardTimelineClip {
+export interface AssetBackedBaseClipCommon extends InsertableClipBaseCommon {
+  type: AssetBackedClipType;
+  assetId: string;
+}
+
+export interface AssetBackedTimelineClipCommon
+  extends NonMaskTimelineClipCommon {
+  type: AssetBackedClipType;
+  assetId: string;
+}
+
+export interface VideoBaseClip extends AssetBackedBaseClipCommon {
+  type: "video";
+}
+
+export interface ImageBaseClip extends AssetBackedBaseClipCommon {
+  type: "image";
+}
+
+export interface AudioBaseClip extends AssetBackedBaseClipCommon {
+  type: "audio";
+}
+
+export interface TextBaseClip extends InsertableClipBaseCommon {
   type: "text";
   textData: TextClipData;
 }
 
-export interface MaskTimelineClip extends TimelineClipBase {
+export interface ShapeBaseClip extends InsertableClipBaseCommon {
+  type: "shape";
+}
+
+export interface VideoTimelineClip extends AssetBackedTimelineClipCommon {
+  type: "video";
+}
+
+export interface ImageTimelineClip extends AssetBackedTimelineClipCommon {
+  type: "image";
+}
+
+export interface AudioTimelineClip extends AssetBackedTimelineClipCommon {
+  type: "audio";
+}
+
+export interface TextTimelineClip extends NonMaskTimelineClipCommon {
+  type: "text";
+  textData: TextClipData;
+}
+
+export interface ShapeTimelineClip extends NonMaskTimelineClipCommon {
+  type: "shape";
+}
+
+export interface BaseClipByType {
+  video: VideoBaseClip;
+  image: ImageBaseClip;
+  audio: AudioBaseClip;
+  text: TextBaseClip;
+  shape: ShapeBaseClip;
+}
+
+export interface NonMaskTimelineClipByType {
+  video: VideoTimelineClip;
+  image: ImageTimelineClip;
+  audio: AudioTimelineClip;
+  text: TextTimelineClip;
+  shape: ShapeTimelineClip;
+}
+
+export type AssetBackedBaseClip =
+  BaseClipByType[Extract<keyof BaseClipByType, AssetBackedClipType>];
+export type AssetBackedTimelineClip =
+  NonMaskTimelineClipByType[
+    Extract<keyof NonMaskTimelineClipByType, AssetBackedClipType>
+  ];
+export type NonMaskBaseClip = BaseClipByType[keyof BaseClipByType];
+export type NonMaskTimelineClip =
+  NonMaskTimelineClipByType[keyof NonMaskTimelineClipByType];
+
+export interface MaskTimelineClip extends TimelineClipBaseCommon {
   type: "mask";
   parentClipId?: string;
   maskType: ClipMaskType;
@@ -232,7 +308,41 @@ export interface MaskTimelineClip extends TimelineClipBase {
   activeRange?: MaskActiveRange;
 }
 
-export type TimelineClip = StandardTimelineClip | MaskTimelineClip;
+export interface TimelineClipByType extends NonMaskTimelineClipByType {
+  mask: MaskTimelineClip;
+}
+
+export type BaseClip = NonMaskBaseClip;
+export type StandardTimelineClip = NonMaskTimelineClip;
+export type TimelineClip = TimelineClipByType[keyof TimelineClipByType];
+
+export function isMaskClip(
+  clip: BaseClip | TimelineClip | undefined | null,
+): clip is MaskTimelineClip {
+  return clip?.type === "mask";
+}
+
+export function isNonMaskTimelineClip(
+  clip: TimelineClip | undefined | null,
+): clip is NonMaskTimelineClip {
+  return !!clip && clip.type !== "mask";
+}
+
+export function isAssetBackedClip(
+  clip: BaseClip | TimelineClip | undefined | null,
+): clip is AssetBackedBaseClip | AssetBackedTimelineClip {
+  return (
+    clip?.type === "video" ||
+    clip?.type === "image" ||
+    clip?.type === "audio"
+  );
+}
+
+export function isTextClip(
+  clip: BaseClip | TimelineClip | undefined | null,
+): clip is TextBaseClip | TextTimelineClip {
+  return clip?.type === "text";
+}
 
 export interface TimelineTrack {
   id: string;

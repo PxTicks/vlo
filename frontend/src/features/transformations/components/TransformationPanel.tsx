@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { Box, Button, Menu, MenuItem } from "@mui/material";
 import { Add } from "@mui/icons-material";
+import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import { useTransformationController } from "../hooks/useTransformationController";
 import {
   getAddableTransforms,
@@ -95,7 +96,10 @@ export function TransformationPanel() {
   const positionPath = positionTransform?.parameters.path ?? null;
 
   // Get the asset for the selected clip to check hasAudio
-  const clipAsset = useAsset(selectedClip?.assetId);
+  const selectedAssetId = isAssetBackedClip(selectedClip)
+    ? selectedClip.assetId
+    : undefined;
+  const clipAsset = useAsset(selectedAssetId);
   const compatibilityClipType =
     activeTargetKind === "mask" ? "shape" : (selectedClip?.type ?? "shape");
   const compatibilityHasAudio =

@@ -2,7 +2,10 @@ import { memo, useRef } from "react";
 import { styled } from "@mui/material/styles";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { CLIP_HEIGHT } from "../constants";
-import type { BaseClip } from "../../../types/TimelineTypes";
+import type {
+  AssetBackedBaseClip,
+  AssetBackedTimelineClip,
+} from "../../../types/TimelineTypes";
 import { useThumbnailRenderer } from "../hooks/useThumbnailRenderer";
 import { useWaveformRenderer } from "../hooks/useWaveformRenderer";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
@@ -34,7 +37,7 @@ const AudioIconOverlay = styled(Box)({
 });
 
 interface ThumbnailCanvasProps {
-  clip: BaseClip;
+  clip: AssetBackedBaseClip | AssetBackedTimelineClip;
   isDragging?: boolean;
 }
 

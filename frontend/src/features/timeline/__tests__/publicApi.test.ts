@@ -85,6 +85,27 @@ const CLIPS: TimelineClip[] = [
     transformedOffset: 0,
     transformations: [],
   },
+  {
+    id: "clip-text",
+    trackId: "track-video",
+    type: "text",
+    name: "Text Clip",
+    sourceDuration: null,
+    timelineDuration: 80,
+    croppedSourceDuration: 80,
+    start: 120,
+    offset: 0,
+    transformedDuration: 80,
+    transformedOffset: 0,
+    transformations: [],
+    textData: {
+      content: "Hello",
+      fontFamily: "Arial",
+      fontSize: 48,
+      fill: "#ffffff",
+      align: "center",
+    },
+  },
 ];
 
 describe("timeline public API", () => {
@@ -108,15 +129,16 @@ describe("timeline public API", () => {
   it("exposes track clips, duration, and asset usage through public helpers", () => {
     const state = useTimelineStore.getState();
 
-    expect(selectTimelineClipsForTrack(state, "track-video")).toHaveLength(2);
-    expect(selectTimelineClipsForTrack(state, "track-video", false)).toHaveLength(1);
-    expect(getTimelineClipsForTrack("track-video", false)).toHaveLength(1);
+    expect(selectTimelineClipsForTrack(state, "track-video")).toHaveLength(3);
+    expect(selectTimelineClipsForTrack(state, "track-video", false)).toHaveLength(2);
+    expect(getTimelineClipsForTrack("track-video", false)).toHaveLength(2);
 
     expect(selectTimelineDuration(state)).toBe(200);
     expect(getTimelineDuration()).toBe(200);
 
     expect(selectTimelineClipCountForAsset(state, "asset-video")).toBe(1);
     expect(getTimelineClipCountForAsset("asset-audio")).toBe(1);
+    expect(getTimelineClipCountForAsset("asset-text")).toBe(0);
     expect(getTimelineClipCountForAsset("missing")).toBe(0);
   });
 

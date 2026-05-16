@@ -4,6 +4,10 @@ import type {
   StandardTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
+import {
+  isAssetBackedClip,
+  isNonMaskTimelineClip,
+} from "../../../types/TimelineTypes";
 import { resolveMaskBooleanExpression } from "../../masks/model/maskBooleanExpression";
 import { getChildMaskClipIds } from "../model/maskClipModel";
 
@@ -81,7 +85,8 @@ export function selectTimelineClipCountForAsset(
   }
 
   return state.clips.reduce(
-    (count, clip) => count + (clip.assetId === assetId ? 1 : 0),
+    (count, clip) =>
+      count + (isAssetBackedClip(clip) && clip.assetId === assetId ? 1 : 0),
     0,
   );
 }
@@ -106,7 +111,7 @@ export function selectResolvedMaskBooleanExpressionForParent(
 ): MaskBooleanExpression | null {
   const parent = state.clips.find(
     (clip): clip is StandardTimelineClip =>
-      clip.id === parentClipId && clip.type !== "mask",
+      clip.id === parentClipId && isNonMaskTimelineClip(clip),
   );
   if (!parent) {
     return null;

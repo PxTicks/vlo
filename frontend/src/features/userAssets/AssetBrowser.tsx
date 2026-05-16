@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, memo } from "react";
+import { isAssetBackedClip } from "../../types/TimelineTypes";
 import {
   Box,
   Tabs,
@@ -484,7 +485,9 @@ function AssetBrowserComponent() {
 
     const selectedAssetIdSet = new Set(selectedAssetIds);
     const nextSelectedClipIds = timelineClips
-      .filter((clip) => selectedAssetIdSet.has(clip.assetId ?? ""))
+      .filter(
+        (clip) => isAssetBackedClip(clip) && selectedAssetIdSet.has(clip.assetId),
+      )
       .map((clip) => clip.id);
     const { selectedClipIds, selectClip } = useTimelineStore.getState();
 

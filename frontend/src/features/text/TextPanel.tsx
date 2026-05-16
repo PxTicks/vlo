@@ -14,9 +14,8 @@ import { useShallow } from "zustand/react/shallow";
 import type {
   TextAlignment,
   TextClipData,
-  TextTimelineClip,
-  TimelineClip,
 } from "../../types/TimelineTypes";
+import { isTextClip } from "../../types/TimelineTypes";
 import {
   BufferedColorInput,
   BufferedTextInput,
@@ -40,10 +39,6 @@ interface TextFormFieldsProps {
   onContentEditEnd?: () => void;
   onColorPreview?: (fill: string) => void;
   onColorEditEnd?: () => void;
-}
-
-function isTextClip(clip: TimelineClip | undefined): clip is TextTimelineClip {
-  return clip?.type === "text";
 }
 
 function hasPendingPreviewUpdates(value: Partial<TextClipData>): boolean {
@@ -179,6 +174,8 @@ export function TextPanel() {
   const previewFrameIdRef = useRef<number | null>(null);
   const pendingPreviewUpdatesRef = useRef<Partial<TextClipData>>({});
 
+  // Keep the panel selection logic local for now: editing needs exactly one
+  // selected clip, and only if that clip is a text clip.
   const selectedTextClip = (() => {
     if (selectedClipIds.length !== 1) {
       return null;

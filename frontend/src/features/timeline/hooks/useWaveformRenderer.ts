@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { BaseClip, TimelineClip } from "../../../types/TimelineTypes";
+import type {
+  AssetBackedBaseClip,
+  AssetBackedTimelineClip,
+  TimelineClip,
+} from "../../../types/TimelineTypes";
 import { getAssetInput, useAsset } from "../../userAssets";
 import { calculateClipTime } from "../../transformations";
 import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../constants";
@@ -18,7 +22,7 @@ import { AudioSampleSink } from "mediabunny";
 
 interface UseWaveformRendererProps {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
-  clip: BaseClip;
+  clip: AssetBackedBaseClip | AssetBackedTimelineClip;
   zoomScale: number;
   height: number;
   enabled?: boolean;
@@ -134,7 +138,7 @@ function resolveWaveformLevel(
 }
 
 function getAssetTickForPixel(
-  clip: BaseClip,
+  clip: AssetBackedBaseClip | AssetBackedTimelineClip,
   pixelOffset: number,
   ticksPerPixel: number,
   firstTimestampSeconds?: number,

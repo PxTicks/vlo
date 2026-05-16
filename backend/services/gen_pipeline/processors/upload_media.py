@@ -27,7 +27,6 @@ RegisterMediaBytesFn = Callable[
     [Any, bytes, str, str, str, str | None],
     Awaitable[tuple[str | None, dict[str, Any] | None]],
 ]
-InspectRegisteredMediaFn = Callable[[Any, str, str], Awaitable[bool]]
 
 
 def _coerce_bool_like(value: Any) -> bool:
@@ -62,20 +61,6 @@ def _should_use_in_memory_loader(
     return not _coerce_bool_like(inputs.get(MEMORY_LOADER_DISABLE_PARAM))
 
 
-def _get_node_input_value(
-    node: dict[str, Any] | None,
-    param: str,
-) -> Any:
-    if not isinstance(node, dict):
-        return None
-
-    inputs = node.get("inputs")
-    if not isinstance(inputs, dict):
-        return None
-
-    return inputs.get(param)
-
-
 class _UploadMediaProcessor:
     meta = ProcessorMeta(
         name="upload_media",
@@ -88,12 +73,10 @@ class _UploadMediaProcessor:
         self,
         upload_media_bytes_fn: UploadMediaBytesFn,
         register_media_bytes_fn: RegisterMediaBytesFn,
-        inspect_registered_media_fn: InspectRegisteredMediaFn,
         input_node_map: dict[str, list[dict[str, Any]]],
     ):
         self._upload_media_bytes = upload_media_bytes_fn
         self._register_media_bytes = register_media_bytes_fn
-        self._inspect_registered_media = inspect_registered_media_fn
         self._input_node_map = input_node_map
 
     def is_active(self, ctx: BackendPipelineContext) -> bool:
@@ -120,22 +103,6 @@ class _UploadMediaProcessor:
                 current_class_type,
                 node if isinstance(node, dict) else None,
             ):
-                current_value = _get_node_input_value(
-                    node if isinstance(node, dict) else None,
-                    param,
-                )
-                if isinstance(current_value, str) and current_value.strip():
-                    # Cached reruns may submit both the prior memory id and the
-                    # original prepared file bytes. Reuse the id when it still
-                    # exists; otherwise re-register from bytes in the same
-                    # request so stale registry entries don't force a retry.
-                    if await self._inspect_registered_media(
-                        ctx.client,
-                        current_value,
-                        input_type,
-                    ):
-                        continue
-
                 injected_value, upload_warning = await self._register_media_bytes(
                     ctx.client,
                     media_info["bytes"],
@@ -192,13 +159,11 @@ class _UploadMediaProcessor:
 def create_upload_media_processor(
     upload_media_bytes_fn: UploadMediaBytesFn,
     register_media_bytes_fn: RegisterMediaBytesFn,
-    inspect_registered_media_fn: InspectRegisteredMediaFn,
     input_node_map: dict[str, list[dict[str, Any]]],
 ) -> Processor:
     return _UploadMediaProcessor(
         upload_media_bytes_fn,
         register_media_bytes_fn,
-        inspect_registered_media_fn,
         input_node_map,
     )
 

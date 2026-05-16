@@ -3,6 +3,7 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
+import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import {
   createEndpointOverlayItem,
   type TimelineClipOverlayDefinition,
@@ -41,10 +42,10 @@ function useAssetRevealOverlayItems({
   const assets = useAssetStore((state) => state.assets);
   const families = useAssetStore((state) => state.families);
 
-  const assetId = clip.assetId;
-  if (!assetId) {
+  if (!isAssetBackedClip(clip)) {
     return [];
   }
+  const assetId = clip.assetId;
 
   const asset = assets.find((candidate) => candidate.id === assetId);
   if (!asset) {

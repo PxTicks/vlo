@@ -3,7 +3,7 @@ import type {
   ExtractedAudioClipMetadata,
   MaskCropMetadata,
 } from "../../../types/Asset";
-import type { BaseClip, ClipTransform } from "../../../types/TimelineTypes";
+import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 import { solveTimelineDuration } from "../../transformations/publicApi";
 
 interface Size {
@@ -159,7 +159,7 @@ export function deriveClipTransformsFromAsset(
 function cloneMetadataTransforms(
   transforms: readonly ClipTransform[] | undefined,
 ): ClipTransform[] {
-  return structuredClone(transforms ?? []);
+  return structuredClone([...(transforms ?? [])]);
 }
 
 function sanitizeNonNegativeNumber(
@@ -206,10 +206,12 @@ export function deriveExtractedAudioClipState(
   );
   const transformations = cloneMetadataTransforms(metadata.transformations);
 
-  const clipForDurationSolve: BaseClip = {
+  const clipForDurationSolve: TimelineClip = {
     id: "metadata-extracted-audio",
-    type: asset.type,
+    type: "audio",
     name: asset.name,
+    trackId: "metadata-audio-track",
+    start: 0,
     assetId: asset.id,
     sourceDuration: sourceDurationTicks,
     transformedDuration: sourceDurationTicks,

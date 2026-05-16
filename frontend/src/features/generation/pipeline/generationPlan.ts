@@ -22,8 +22,6 @@ import {
 import { frontendPreprocess } from "../utils/pipeline";
 import { buildWorkflowInputMetadataMap } from "../utils/inputMetadata";
 import {
-  buildNodeInputRequestKey,
-  buildWorkflowInputId,
   buildWorkflowInputLookup,
   getNodeInputRequestKey,
 } from "../utils/workflowInputs";
@@ -433,119 +431,6 @@ function cloneUnknownRecord(
   return structuredClone(record);
 }
 
-function getWorkflowNodeRecord(
-  workflow: Record<string, unknown> | null,
-  nodeId: string,
-): Record<string, unknown> | null {
-  if (!workflow) {
-    return null;
-  }
-  const node = workflow[nodeId];
-  if (typeof node !== "object" || node === null || Array.isArray(node)) {
-    return null;
-  }
-  return node as Record<string, unknown>;
-}
-
-function isInMemoryLoaderEnabled(
-  workflow: Record<string, unknown> | null,
-  nodeId: string,
-  widgetInputs: Record<string, string>,
-): boolean {
-  const node = getWorkflowNodeRecord(workflow, nodeId);
-  if (!node) {
-    return false;
-  }
-
-  const classType = node.class_type;
-  if (
-    typeof classType !== "string" ||
-    !isMemoryLoaderClassType(classType)
-  ) {
-    return false;
-  }
-
-  const widgetKey = `widget_${nodeId}_${MEMORY_LOADER_DISABLE_PARAM}`;
-  const widgetOverride = widgetInputs[widgetKey];
-  const inputs = node.inputs;
-  const rawValue =
-    typeof widgetOverride !== "undefined"
-      ? widgetOverride
-      : typeof inputs === "object" &&
-          inputs !== null &&
-          !Array.isArray(inputs)
-        ? (inputs as Record<string, unknown>)[MEMORY_LOADER_DISABLE_PARAM]
-        : undefined;
-
-  return !coerceBooleanLike(rawValue);
-}
-
-function filterFileRecordByKeys(
-  record: Record<string, File>,
-  allowedKeys: ReadonlySet<string>,
-): Record<string, File> {
-  if (allowedKeys.size === 0) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(record).filter(([key]) => allowedKeys.has(key)),
-  ) as Record<string, File>;
-}
-
-function collectInMemoryLoaderFallbackRequestKeys(
-  plan: GenerationPlan,
-): {
-  image: Set<string>;
-  audio: Set<string>;
-  video: Set<string>;
-} {
-  const fallbackKeys = {
-    image: new Set<string>(),
-    audio: new Set<string>(),
-    video: new Set<string>(),
-  };
-  const inputById = buildWorkflowInputLookup(plan.workflow.workflowInputs);
-
-  for (const input of plan.workflow.workflowInputs) {
-    if (
-      input.inputType === "text" ||
-      !isInMemoryLoaderEnabled(
-        plan.workflow.workflow,
-        input.nodeId,
-        plan.submission.widgetInputs,
-      )
-    ) {
-      continue;
-    }
-
-    fallbackKeys[input.inputType].add(getNodeInputRequestKey(input, inputById));
-  }
-
-  for (const mapping of plan.preprocess.derivedMaskMappings) {
-    if (
-      !isInMemoryLoaderEnabled(
-        plan.workflow.workflow,
-        mapping.maskNodeId,
-        plan.submission.widgetInputs,
-      )
-    ) {
-      continue;
-    }
-
-    const maskInput =
-      inputById.get(buildWorkflowInputId(mapping.maskNodeId, mapping.maskParam)) ??
-      inputById.get(mapping.maskNodeId);
-    fallbackKeys.video.add(
-      maskInput
-        ? getNodeInputRequestKey(maskInput, inputById)
-        : buildNodeInputRequestKey(mapping.maskNodeId, mapping.maskParam),
-    );
-  }
-
-  return fallbackKeys;
-}
-
 function collectTextInputsForRequest(
   workflowInputs: WorkflowInput[],
   slotValues: Record<string, SlotValue>,
@@ -735,10 +620,6 @@ function buildGenerationRequestFromCache(
   cacheEntry: GenerationPreprocessCacheEntry,
 ): GenerationRequest {
   const backendMedia = cacheEntry.backendMedia;
-  const inMemoryLoaderFallbackKeys =
-    backendMedia !== null
-      ? collectInMemoryLoaderFallbackRequestKeys(plan)
-      : null;
 
   return {
     workflow: plan.workflow.workflow,
@@ -751,32 +632,17 @@ function buildGenerationRequestFromCache(
       plan.workflow.workflowInputs,
       plan.preprocess.slotValues,
     ),
-    imageInputs:
-      backendMedia && inMemoryLoaderFallbackKeys
-        ? filterFileRecordByKeys(
-            cacheEntry.assets.imageInputs,
-            inMemoryLoaderFallbackKeys.image,
-          )
-        : cloneFileRecord(cacheEntry.assets.imageInputs),
-    videoInputs:
-      backendMedia && inMemoryLoaderFallbackKeys
-        ? filterFileRecordByKeys(
-            cacheEntry.assets.videoInputs,
-            inMemoryLoaderFallbackKeys.video,
-          )
-        : cloneFileRecord(cacheEntry.assets.videoInputs),
-    audioInputs:
-      backendMedia && inMemoryLoaderFallbackKeys
-        ? filterFileRecordByKeys(
-            cacheEntry.assets.audioInputs,
-            inMemoryLoaderFallbackKeys.audio,
-          )
-        : cloneFileRecord(cacheEntry.assets.audioInputs),
+    imageInputs: backendMedia
+      ? {}
+      : cloneFileRecord(cacheEntry.assets.imageInputs),
+    videoInputs: backendMedia
+      ? {}
+      : cloneFileRecord(cacheEntry.assets.videoInputs),
+    audioInputs: backendMedia
+      ? {}
+      : cloneFileRecord(cacheEntry.assets.audioInputs),
     ...(backendMedia
       ? {
-          // Keep the original prepared uploads for active in-memory loaders so
-          // the backend can transparently re-register stale memory ids instead
-          // of surfacing a retry-only validation failure to the user.
           cachedMediaInputs: cloneUnknownRecord(backendMedia.cachedMediaInputs),
         }
       : {}),

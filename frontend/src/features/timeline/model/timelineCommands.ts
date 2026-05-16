@@ -11,6 +11,7 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
+import { isNonMaskTimelineClip, isTextClip } from "../../../types/TimelineTypes";
 import { useProjectStore } from "../../project/useProjectStore";
 import {
   deriveTextClipName,
@@ -116,7 +117,7 @@ export function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
           components: normalizedComponents,
         };
 
-  if (clip.type === "text") {
+  if (isTextClip(baseClip)) {
     const textData = resolveTextClipData(baseClip.textData);
     return {
       ...baseClip,
@@ -636,7 +637,7 @@ export function setClipMaskCompositeTransformsInDraft(
 ): void {
   const clip = draft.clips.find(
     (candidate): candidate is StandardTimelineClip =>
-      candidate.id === clipId && candidate.type !== "mask",
+      candidate.id === clipId && isNonMaskTimelineClip(candidate),
   );
   if (!clip) return;
 
@@ -667,7 +668,7 @@ export function setClipMaskCompositionAlgebraInDraft(
 ): void {
   const clip = draft.clips.find(
     (candidate): candidate is StandardTimelineClip =>
-      candidate.id === clipId && candidate.type !== "mask",
+      candidate.id === clipId && isNonMaskTimelineClip(candidate),
   );
   if (!clip) return;
 
@@ -691,7 +692,7 @@ export function setClipMaskBooleanExpressionInDraft(
 ): void {
   const clip = draft.clips.find(
     (candidate): candidate is StandardTimelineClip =>
-      candidate.id === clipId && candidate.type !== "mask",
+      candidate.id === clipId && isNonMaskTimelineClip(candidate),
   );
   if (!clip) return;
 
@@ -770,7 +771,7 @@ export function duplicateClipMaskInDraft(
 ): string | null {
   const parent = draft.clips.find(
     (clip): clip is StandardTimelineClip =>
-      clip.id === clipId && clip.type !== "mask",
+      clip.id === clipId && isNonMaskTimelineClip(clip),
   );
   if (!parent) return null;
 
@@ -919,7 +920,7 @@ export function addClipComponentToDraft(
 ): void {
   const clip = draft.clips.find(
     (candidate): candidate is StandardTimelineClip =>
-      candidate.id === clipId && candidate.type !== "mask",
+      candidate.id === clipId && isNonMaskTimelineClip(candidate),
   );
   if (!clip) return;
 
@@ -934,7 +935,7 @@ export function updateClipComponentInDraft(
 ): void {
   const clip = draft.clips.find(
     (candidate): candidate is StandardTimelineClip =>
-      candidate.id === clipId && candidate.type !== "mask",
+      candidate.id === clipId && isNonMaskTimelineClip(candidate),
   );
   if (!clip?.components) return;
 
@@ -950,7 +951,7 @@ export function removeClipComponentFromDraft(
 ): void {
   const clip = draft.clips.find(
     (candidate): candidate is StandardTimelineClip =>
-      candidate.id === clipId && candidate.type !== "mask",
+      candidate.id === clipId && isNonMaskTimelineClip(candidate),
   );
   if (!clip?.components) return;
 

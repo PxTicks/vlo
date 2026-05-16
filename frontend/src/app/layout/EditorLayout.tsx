@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { MouseEventHandler, ReactNode } from "react";
 import { Box, CssBaseline } from "@mui/material";
 import {
@@ -26,10 +26,13 @@ import {
 } from "../../features/userAssets";
 import { Player } from "../../features/player/Player";
 import { useExtractStore } from "../../features/player/useExtractStore";
+import { LeftSidebarPanel } from "./LeftSidebarPanel";
+import type { LeftSidebarTab } from "./LeftSidebarPanel";
 import { RightSidebarPanel } from "./RightSidebarPanel";
 import { ProjectSettingsMenu } from "./ProjectSettingsMenu";
 
-const SIDEBAR_WIDTH = 300;
+const LEFT_PANEL_WIDTH = 356;
+const RIGHT_SIDEBAR_WIDTH = 300;
 const TIMELINE_HEIGHT = 280;
 const ASSET_DRAG_ACTIVATION_DISTANCE_PX = 1;
 
@@ -107,6 +110,8 @@ export function EditorLayout() {
   const assetRevealClipOverlay = useTimelineAssetRevealClipOverlay();
   const muteClipOverlay = useTimelineClipMuteOverlay();
   const markersClipOverlay = useTimelineMarkersClipOverlay();
+  const [activeLeftSidebarTab, setActiveLeftSidebarTab] =
+    useState<LeftSidebarTab>("assets");
 
   // Default to compact if not set
   const layoutMode = config.layoutMode || "compact";
@@ -151,7 +156,7 @@ export function EditorLayout() {
   );
 
   // --- GRID CONFIGURATION ---
-  const gridTemplateColumns = `${SIDEBAR_WIDTH}px 1fr ${SIDEBAR_WIDTH}px`;
+  const gridTemplateColumns = `${LEFT_PANEL_WIDTH}px 1fr ${RIGHT_SIDEBAR_WIDTH}px`;
   // Row 1: Top Bar (48px)
   // Row 2: Middle (Flex)
   // Row 3: Bottom (Timeline Height)
@@ -208,7 +213,29 @@ export function EditorLayout() {
             overflow: "hidden",
           }}
         >
-          <AssetBrowser />
+          <Box
+            sx={{
+              display: "flex",
+              minWidth: 0,
+              flexGrow: 1,
+              height: "100%",
+            }}
+          >
+            <LeftSidebarPanel
+              activeTab={activeLeftSidebarTab}
+              onTabChange={setActiveLeftSidebarTab}
+            />
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                minWidth: 0,
+                flexGrow: 1,
+              }}
+            >
+              {activeLeftSidebarTab === "assets" ? <AssetBrowser /> : null}
+            </Box>
+          </Box>
         </EditorRegion>
 
         {/* --- TOP BAR --- */}

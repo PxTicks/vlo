@@ -110,6 +110,10 @@ describe("EditorLayout", () => {
   it("renders editor regions without lock overlays when timeline selection is inactive", () => {
     render(<EditorLayout />);
 
+    expect(
+      screen.getByTestId("left-sidebar-tab-assets"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("asset-browser")).toBeInTheDocument();
     expect(screen.queryByTestId("editor-lock-left")).not.toBeInTheDocument();
     expect(screen.queryByTestId("editor-lock-top")).not.toBeInTheDocument();
     expect(screen.queryByTestId("editor-lock-player")).not.toBeInTheDocument();

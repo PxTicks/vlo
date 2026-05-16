@@ -4,6 +4,8 @@ import { TextField, type SxProps, type Theme } from "@mui/material";
 export interface BufferedColorInputProps {
   value: string;
   onCommit: (value: string) => void;
+  onPreview?: (value: string) => void;
+  onEditEnd?: () => void;
   label?: string;
   disabled?: boolean;
   sx?: SxProps<Theme>;
@@ -12,6 +14,8 @@ export interface BufferedColorInputProps {
 function BufferedColorInputComponent({
   value,
   onCommit,
+  onPreview,
+  onEditEnd,
   label = "Color",
   disabled,
   sx,
@@ -34,8 +38,15 @@ function BufferedColorInputComponent({
       size="small"
       type="color"
       value={localValue}
-      onChange={(event) => setLocalValue(event.target.value)}
-      onBlur={commit}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        setLocalValue(nextValue);
+        onPreview?.(nextValue);
+      }}
+      onBlur={() => {
+        commit();
+        onEditEnd?.();
+      }}
       sx={sx}
       disabled={disabled}
     />

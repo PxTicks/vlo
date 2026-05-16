@@ -25,6 +25,7 @@ import {
   awaitStrictFrame,
   type StrictFramePending,
 } from "../utils/strictFrameRequest";
+import { livePreviewTextStore } from "../../text/services/livePreviewTextStore";
 import { resolveTextClipData } from "../../text/utils/textClipData";
 
 function createRenderAbortError(): Error {
@@ -1156,7 +1157,7 @@ export class TrackRenderEngine {
     clip: TextTimelineClip,
     logicalDimensions: { width: number; height: number },
   ): string {
-    const textData = resolveTextClipData(clip.textData);
+    const textData = this.getEffectiveTextClipData(clip);
     const renderResolution = this.getTextRenderResolution(logicalDimensions);
 
     return JSON.stringify({
@@ -1194,7 +1195,7 @@ export class TrackRenderEngine {
       return null;
     }
 
-    const textData = resolveTextClipData(clip.textData);
+    const textData = this.getEffectiveTextClipData(clip);
     const renderResolution = this.getTextRenderResolution(logicalDimensions);
     const text = new Text({
       text: textData.content.length > 0 ? textData.content : " ",
@@ -1217,6 +1218,14 @@ export class TrackRenderEngine {
     } finally {
       text.destroy();
     }
+  }
+
+  private getEffectiveTextClipData(clip: TextTimelineClip) {
+    const previewTextData = livePreviewTextStore.get(clip.id);
+    return resolveTextClipData({
+      ...clip.textData,
+      ...previewTextData,
+    });
   }
 
   private async renderTextClip(

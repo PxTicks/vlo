@@ -12,6 +12,8 @@ interface BaseTextInputProps {
   label?: string;
   value: string;
   onCommit: (val: string) => void;
+  onPreview?: (val: string) => void;
+  onEditEnd?: () => void;
   disabled?: boolean;
   placeholder?: string;
   multiline?: boolean;
@@ -40,6 +42,8 @@ function TextInputComponent({
   label,
   value,
   onCommit,
+  onPreview,
+  onEditEnd,
   disabled,
   placeholder,
   multiline,
@@ -90,8 +94,15 @@ function TextInputComponent({
       size="small"
       type={type}
       value={localValue}
-      onChange={(e) => setLocalValue(e.target.value)}
-      onBlur={commit}
+      onChange={(e) => {
+        const nextValue = e.target.value;
+        setLocalValue(nextValue);
+        onPreview?.(nextValue);
+      }}
+      onBlur={() => {
+        commit();
+        onEditEnd?.();
+      }}
       onKeyDown={handleKeyDown}
       placeholder={placeholder}
       multiline={multiline}

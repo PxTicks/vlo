@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Renderer, Sprite } from "pixi.js";
 import type { TextTimelineClip } from "../../../../types/TimelineTypes";
+import { livePreviewTextStore } from "../../../text/services/livePreviewTextStore";
 
 const mockGenerateTexture = vi.fn(() => ({
   width: 320,
@@ -104,6 +105,7 @@ describe("TrackRenderEngine text rendering", () => {
   beforeEach(() => {
     mockWorkerInstances.length = 0;
     mockGenerateTexture.mockClear();
+    livePreviewTextStore.clearAll();
     vi.clearAllMocks();
   });
 
@@ -141,6 +143,34 @@ describe("TrackRenderEngine text rendering", () => {
     expect((engine.sprite as Sprite).texture).toMatchObject({
       width: 320,
       height: 80,
+    });
+
+    engine.dispose();
+  });
+
+  it("uses live preview text data when generating text textures", async () => {
+    const renderer = {
+      width: 3840,
+      height: 2160,
+      generateTexture: mockGenerateTexture,
+    } as unknown as Renderer;
+    const engine = new TrackRenderEngine(1, undefined, renderer);
+    const clip = createTextClip();
+    const dimensions = { width: 1920, height: 1080 };
+
+    livePreviewTextStore.set(clip.id, {
+      content: "Preview text",
+      fill: "#ff5500",
+    });
+
+    await engine.update(10, [clip], new Map(), [], dimensions);
+
+    expect(mockGenerateTexture).toHaveBeenCalledTimes(1);
+    expect(mockGenerateTexture.mock.calls[0][0].target.options).toMatchObject({
+      text: "Preview text",
+      style: expect.objectContaining({
+        fill: "#ff5500",
+      }),
     });
 
     engine.dispose();

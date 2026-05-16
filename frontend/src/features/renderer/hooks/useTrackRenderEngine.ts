@@ -3,6 +3,7 @@ import type { Application, Container, Sprite } from "pixi.js";
 import { useTimelineClipsForTrack } from "../../timeline";
 import { useAssetStore } from "../../userAssets";
 import { useProjectStore } from "../../project/useProjectStore";
+import { livePreviewTextStore } from "../../text/services/livePreviewTextStore";
 import {
   playbackClock,
   playbackFrameClock,
@@ -210,7 +211,7 @@ export function useTrackRenderEngine(
       return;
     }
 
-    return livePreviewParamStore.subscribe(() => {
+    const rerenderPausedFrame = () => {
       const engine = engineRef.current;
       if (!engine) {
         return;
@@ -234,7 +235,19 @@ export function useTrackRenderEngine(
         { fps },
       );
       syncActiveClipState(playbackClock.time, sortedTrackClips);
-    });
+    };
+
+    const unsubscribeLiveParams = livePreviewParamStore.subscribe(
+      rerenderPausedFrame,
+    );
+    const unsubscribeLiveText = livePreviewTextStore.subscribe(
+      rerenderPausedFrame,
+    );
+
+    return () => {
+      unsubscribeLiveParams();
+      unsubscribeLiveText();
+    };
   }, [
     assets,
     fps,
@@ -243,6 +256,7 @@ export function useTrackRenderEngine(
     registerSynchronizedPlaybackRenderer,
     renderSynchronizedPlaybackFrame,
     sortedTrackClips,
+    spriteInstance,
     syncActiveClipState,
   ]);
 

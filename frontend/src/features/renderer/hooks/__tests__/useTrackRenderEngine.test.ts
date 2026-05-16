@@ -8,6 +8,7 @@ import { TICKS_PER_SECOND } from "../../../timeline";
 import type { Asset } from "../../../../types/Asset";
 import { TrackRenderEngine } from "../../services/TrackRenderEngine";
 import type { GenericFilterTransform } from "../../../transformations";
+import { livePreviewTextStore } from "../../../text/services/livePreviewTextStore";
 
 // --- Mocks Setup ---
 
@@ -235,6 +236,7 @@ describe("useTrackRenderEngine Integration", () => {
     mockSprite.scale.y = 1;
     mockSprite.rotation = 0;
     mockViewportHandlers.clear();
+    livePreviewTextStore.clearAll();
     vi.clearAllMocks();
   });
 
@@ -461,6 +463,58 @@ describe("useTrackRenderEngine Integration", () => {
 
     unmount();
     expect(registeredRenderers.has(trackId)).toBe(false);
+  });
+
+  it("refreshes the paused frame when live preview text changes", async () => {
+    const trackId = "track-1";
+    const updateSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "update")
+      .mockImplementation(() => undefined);
+
+    mockPlaybackState.time = 2 * TICKS_PER_SECOND;
+    mockTimelineState.clips = [
+      {
+        id: "clip-text",
+        trackId,
+        name: "Text Clip",
+        start: 0,
+        timelineDuration: 10 * TICKS_PER_SECOND,
+        sourceDuration: null,
+        transformedDuration: 10 * TICKS_PER_SECOND,
+        transformedOffset: 0,
+        croppedSourceDuration: 10 * TICKS_PER_SECOND,
+        offset: 0,
+        type: "text",
+        transformations: [],
+        textData: {
+          content: "Initial",
+          fontFamily: "Arial",
+          fontSize: 96,
+          fill: "#ffffff",
+          align: "center",
+        },
+      },
+    ];
+
+    const { unmount } = renderHook(() =>
+      useTrackRenderEngine(trackId, mockApp, mockContainer, 1, {
+        width: 800,
+        height: 600,
+      }),
+    );
+
+    const callsBeforePreview = updateSpy.mock.calls.length;
+
+    act(() => {
+      livePreviewTextStore.set("clip-text", { content: "Preview" });
+    });
+
+    await waitFor(() => {
+      expect(updateSpy.mock.calls.length).toBeGreaterThan(callsBeforePreview);
+    });
+
+    unmount();
+    updateSpy.mockRestore();
   });
 
   it("refreshes the paused synchronized frame when clip transforms change", async () => {

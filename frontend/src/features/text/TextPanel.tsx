@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import {
   Box,
@@ -25,6 +25,7 @@ import {
 } from "../panelUI";
 import { useTimelineStore } from "../timeline";
 import { TEXT_FONT_OPTIONS } from "./constants";
+import { livePreviewTextStore } from "./services/livePreviewTextStore";
 import { insertTextClipAtPlayhead } from "./utils/insertTextClipAtPlayhead";
 import { resolveTextClipData } from "./utils/textClipData";
 
@@ -35,16 +36,28 @@ interface TextFormFieldsProps {
   value: TextClipData;
   onChange: (updates: Partial<TextClipData>) => void;
   contentMode: "draft" | "selected";
+  onContentPreview?: (content: string) => void;
+  onContentEditEnd?: () => void;
+  onColorPreview?: (fill: string) => void;
+  onColorEditEnd?: () => void;
 }
 
 function isTextClip(clip: TimelineClip | undefined): clip is TextTimelineClip {
   return clip?.type === "text";
 }
 
+function hasPendingPreviewUpdates(value: Partial<TextClipData>): boolean {
+  return Object.keys(value).length > 0;
+}
+
 function TextFormFields({
   value,
   onChange,
   contentMode,
+  onContentPreview,
+  onContentEditEnd,
+  onColorPreview,
+  onColorEditEnd,
 }: TextFormFieldsProps) {
   const handleAlignmentChange = useCallback(
     (_event: MouseEvent<HTMLElement>, nextAlignment: TextAlignment | null) => {
@@ -64,6 +77,8 @@ function TextFormFields({
           label="Content"
           value={value.content}
           onCommit={(content) => onChange({ content })}
+          onPreview={onContentPreview}
+          onEditEnd={onContentEditEnd}
           multiline={true}
           minRows={4}
           maxRows={10}
@@ -74,6 +89,8 @@ function TextFormFields({
           label="Content"
           initialValue={value.content}
           onCommit={(content) => onChange({ content })}
+          onPreview={onContentPreview}
+          onEditEnd={onContentEditEnd}
           multiline={true}
           minRows={4}
           maxRows={10}
@@ -113,6 +130,8 @@ function TextFormFields({
         <BufferedColorInput
           value={value.fill}
           onCommit={(fill) => onChange({ fill })}
+          onPreview={onColorPreview}
+          onEditEnd={onColorEditEnd}
           sx={{ minWidth: 96 }}
         />
       </Box>
@@ -157,8 +176,10 @@ export function TextPanel() {
   const [draftTextData, setDraftTextData] = useState<TextClipData>(() =>
     resolveTextClipData(),
   );
+  const previewFrameIdRef = useRef<number | null>(null);
+  const pendingPreviewUpdatesRef = useRef<Partial<TextClipData>>({});
 
-  const selectedTextClip = useMemo(() => {
+  const selectedTextClip = (() => {
     if (selectedClipIds.length !== 1) {
       return null;
     }
@@ -170,8 +191,22 @@ export function TextPanel() {
           textData: resolveTextClipData(selectedClip.textData),
         }
       : null;
-  }, [clips, selectedClipIds]);
+  })();
   const hasClipSelection = selectedClipIds.length > 0;
+  const selectedTextClipId = selectedTextClip?.id ?? null;
+
+  useEffect(() => {
+    return () => {
+      if (previewFrameIdRef.current !== null) {
+        cancelAnimationFrame(previewFrameIdRef.current);
+        previewFrameIdRef.current = null;
+      }
+      pendingPreviewUpdatesRef.current = {};
+      if (selectedTextClipId) {
+        livePreviewTextStore.clear(selectedTextClipId);
+      }
+    };
+  }, [selectedTextClipId]);
 
   const handleDraftChange = useCallback((updates: Partial<TextClipData>) => {
     setDraftTextData((current) => resolveTextClipData({ ...current, ...updates }));
@@ -186,6 +221,85 @@ export function TextPanel() {
       updateTextClipData(selectedTextClip.id, updates);
     },
     [selectedTextClip, updateTextClipData],
+  );
+
+  const clearSelectedTextPreview = useCallback(
+    (fields?: (keyof TextClipData)[]) => {
+      if (!selectedTextClipId) {
+        return;
+      }
+
+      if (!fields || fields.length === 0) {
+        pendingPreviewUpdatesRef.current = {};
+        if (previewFrameIdRef.current !== null) {
+          cancelAnimationFrame(previewFrameIdRef.current);
+          previewFrameIdRef.current = null;
+        }
+        livePreviewTextStore.clear(selectedTextClipId);
+        return;
+      }
+
+      if (hasPendingPreviewUpdates(pendingPreviewUpdatesRef.current)) {
+        const nextPendingUpdates = { ...pendingPreviewUpdatesRef.current };
+        fields.forEach((field) => {
+          delete nextPendingUpdates[field];
+        });
+        pendingPreviewUpdatesRef.current = nextPendingUpdates;
+
+        if (
+          !hasPendingPreviewUpdates(nextPendingUpdates) &&
+          previewFrameIdRef.current !== null
+        ) {
+          cancelAnimationFrame(previewFrameIdRef.current);
+          previewFrameIdRef.current = null;
+        }
+      }
+
+      livePreviewTextStore.clear(selectedTextClipId, fields);
+    },
+    [selectedTextClipId],
+  );
+
+  const scheduleSelectedTextPreview = useCallback(
+    (updates: Partial<TextClipData>) => {
+      if (!selectedTextClipId) {
+        return;
+      }
+
+      pendingPreviewUpdatesRef.current = {
+        ...pendingPreviewUpdatesRef.current,
+        ...updates,
+      };
+      if (previewFrameIdRef.current !== null) {
+        return;
+      }
+
+      previewFrameIdRef.current = requestAnimationFrame(() => {
+        previewFrameIdRef.current = null;
+        const nextPreviewUpdates = pendingPreviewUpdatesRef.current;
+        pendingPreviewUpdatesRef.current = {};
+        if (!hasPendingPreviewUpdates(nextPreviewUpdates)) {
+          return;
+        }
+
+        livePreviewTextStore.set(selectedTextClipId, nextPreviewUpdates);
+      });
+    },
+    [selectedTextClipId],
+  );
+
+  const handleSelectedContentPreview = useCallback(
+    (content: string) => {
+      scheduleSelectedTextPreview({ content });
+    },
+    [scheduleSelectedTextPreview],
+  );
+
+  const handleSelectedColorPreview = useCallback(
+    (fill: string) => {
+      scheduleSelectedTextPreview({ fill });
+    },
+    [scheduleSelectedTextPreview],
   );
 
   const handleAddTextClip = useCallback(() => {
@@ -218,6 +332,10 @@ export function TextPanel() {
             value={selectedTextClip.textData}
             onChange={handleSelectedClipChange}
             contentMode="selected"
+            onContentPreview={handleSelectedContentPreview}
+            onContentEditEnd={() => clearSelectedTextPreview(["content"])}
+            onColorPreview={handleSelectedColorPreview}
+            onColorEditEnd={() => clearSelectedTextPreview(["fill"])}
           />
         </PanelSection>
       ) : hasClipSelection ? (

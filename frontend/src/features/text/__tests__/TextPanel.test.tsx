@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
   selectedClipIds: [] as string[],
   updateTextClipData: vi.fn(),
   insertTextClipAtPlayhead: vi.fn(),
+  livePreviewTextStore: {
+    set: vi.fn(),
+    clear: vi.fn(),
+  },
 }));
 
 vi.mock("../../timeline", () => ({
@@ -21,6 +25,10 @@ vi.mock("../../timeline", () => ({
 
 vi.mock("../utils/insertTextClipAtPlayhead", () => ({
   insertTextClipAtPlayhead: mocks.insertTextClipAtPlayhead,
+}));
+
+vi.mock("../services/livePreviewTextStore", () => ({
+  livePreviewTextStore: mocks.livePreviewTextStore,
 }));
 
 function createTextClip(
@@ -56,6 +64,13 @@ describe("TextPanel", () => {
     mocks.selectedClipIds = [];
     mocks.updateTextClipData.mockReset();
     mocks.insertTextClipAtPlayhead.mockReset();
+    mocks.livePreviewTextStore.set.mockReset();
+    mocks.livePreviewTextStore.clear.mockReset();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(16);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
   });
 
   it("shows the new text form when nothing is selected", () => {
@@ -115,11 +130,43 @@ describe("TextPanel", () => {
     fireEvent.change(colorInput, { target: { value: "#ff5500" } });
 
     expect(mocks.updateTextClipData).not.toHaveBeenCalled();
+    expect(mocks.livePreviewTextStore.set).toHaveBeenCalledWith("clip_text_1", {
+      fill: "#ff5500",
+    });
 
     fireEvent.blur(colorInput);
 
     expect(mocks.updateTextClipData).toHaveBeenCalledWith("clip_text_1", {
       fill: "#ff5500",
     });
+    expect(mocks.livePreviewTextStore.clear).toHaveBeenCalledWith(
+      "clip_text_1",
+      ["fill"],
+    );
+  });
+
+  it("previews text content live and commits on blur", () => {
+    mocks.clips = [createTextClip()];
+    mocks.selectedClipIds = ["clip_text_1"];
+
+    render(<TextPanel />);
+
+    const contentInput = screen.getByLabelText("Content");
+    fireEvent.change(contentInput, { target: { value: "Updated live preview" } });
+
+    expect(mocks.livePreviewTextStore.set).toHaveBeenCalledWith("clip_text_1", {
+      content: "Updated live preview",
+    });
+    expect(mocks.updateTextClipData).not.toHaveBeenCalled();
+
+    fireEvent.blur(contentInput);
+
+    expect(mocks.updateTextClipData).toHaveBeenCalledWith("clip_text_1", {
+      content: "Updated live preview",
+    });
+    expect(mocks.livePreviewTextStore.clear).toHaveBeenCalledWith(
+      "clip_text_1",
+      ["content"],
+    );
   });
 });

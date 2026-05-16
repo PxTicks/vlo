@@ -179,7 +179,7 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [480, 720, 1080],
+        "resolutions": [480, 720],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -214,8 +214,8 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [480, 720, 1080],
-          "default": 1080
+          "options": [480, 720],
+          "default": 720
         },
         {
           "key": "target_aspect_ratio",

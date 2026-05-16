@@ -153,6 +153,12 @@ class _UploadMediaProcessor:
                 )
 
             if upload_warning:
+                # NOTE: if a cached in-memory loader id was stale and
+                # re-registration failed above, we currently record the warning
+                # and continue. That can still fall through to ComfyUI's later
+                # generic "Invalid video id" validation error instead of
+                # surfacing this registration failure directly. A future
+                # hardening pass should fail fast here for that case.
                 upload_warning["node_id"] = node_id
                 upload_warning.setdefault("details", {})
                 upload_warning["details"]["buffered_input_id"] = buffered_input_id

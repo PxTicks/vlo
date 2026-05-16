@@ -4,6 +4,7 @@ import type { WorkflowInput } from "../../types";
 import {
   buildGenerationPreprocessCacheKey,
   buildSubmittedGeneration,
+  prepareGenerationPlan,
   type GenerationPreprocessCacheEntry,
   updateGenerationPreprocessCacheFromResponse,
 } from "../generationPlan";
@@ -157,6 +158,45 @@ describe("generationPlan cache media extraction", () => {
           },
         },
       },
+    });
+  });
+
+  it("keeps fallback uploads for active memory loaders on cached reruns", async () => {
+    const plan = makePlan("VLOMemoryLoadVideo");
+    const cacheEntry: GenerationPreprocessCacheEntry = {
+      ...makeCacheEntry(),
+      key: buildGenerationPreprocessCacheKey(plan) ?? "cache-key",
+      assets: {
+        targetAspectRatio: "16:9",
+        imageInputs: {},
+        audioInputs: {},
+        videoInputs: {
+          "94": plan.preprocess.slotValues["94:file"].file,
+        },
+        pipelineInputs: {},
+      },
+      backendMedia: {
+        cachedMediaInputs: {
+          "94": {
+            file: "media-video-123",
+          },
+        },
+        pipelineOutputs: {},
+      },
+    };
+
+    const prepared = await prepareGenerationPlan(plan, {
+      clientId: "client-id",
+      cacheEntry,
+    });
+
+    expect(prepared.request.cachedMediaInputs).toEqual({
+      "94": {
+        file: "media-video-123",
+      },
+    });
+    expect(prepared.request.videoInputs).toEqual({
+      "94": plan.preprocess.slotValues["94:file"].file,
     });
   });
 

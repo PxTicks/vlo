@@ -40,6 +40,7 @@ def build_generation_processors(
     get_video_dimensions_fn: Callable[[bytes], tuple[int, int]],
     upload_video_bytes_fn: Callable[..., Any],
     register_media_bytes_fn: Callable[..., Any],
+    inspect_registered_media_fn: Callable[..., Any],
     apply_aspect_ratio_processing_fn: Callable[..., Any],
     prompt_id_factory: Callable[[], str],
 ) -> list[Processor]:
@@ -53,6 +54,7 @@ def build_generation_processors(
             get_video_dimensions_fn=get_video_dimensions_fn,
             upload_video_bytes_fn=upload_video_bytes_fn,
             register_media_bytes_fn=register_media_bytes_fn,
+            inspect_registered_media_fn=inspect_registered_media_fn,
             apply_aspect_ratio_processing_fn=apply_aspect_ratio_processing_fn,
         ),
         *build_backend_dispatch_processors(prompt_id_factory=prompt_id_factory),
@@ -69,6 +71,7 @@ def build_backend_preprocessors(
     get_video_dimensions_fn: Callable[[bytes], tuple[int, int]],
     upload_video_bytes_fn: Callable[..., Any],
     register_media_bytes_fn: Callable[..., Any],
+    inspect_registered_media_fn: Callable[..., Any],
     apply_aspect_ratio_processing_fn: Callable[..., Any],
 ) -> list[Processor]:
     """Build the backend preprocess phase.
@@ -102,6 +105,7 @@ def build_backend_preprocessors(
         create_upload_media_processor(
             upload_video_bytes_fn,
             register_media_bytes_fn,
+            inspect_registered_media_fn,
             input_node_map,
         ),
         create_pipeline_stage_processor(

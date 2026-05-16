@@ -179,6 +179,8 @@ export function TextPanel() {
   const previewFrameIdRef = useRef<number | null>(null);
   const pendingPreviewUpdatesRef = useRef<Partial<TextClipData>>({});
 
+  // Keep the panel selection logic local for now: editing needs exactly one
+  // selected clip, and only if that clip is a text clip.
   const selectedTextClip = (() => {
     if (selectedClipIds.length !== 1) {
       return null;

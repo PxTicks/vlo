@@ -57,7 +57,7 @@
         "label": "Source video",
         "input_type": "video",
         "param": "file",
-        "class_type": "VLOMemoryLoadVideo"
+        "class_type": "vloMemoryLoadVideo"
       },
       "selection": {
         "export_fps": 24,

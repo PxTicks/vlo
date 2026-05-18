@@ -7,7 +7,7 @@
         "label": "Source video",
         "input_type": "video",
         "param": "file",
-        "class_type": "VLOMemoryLoadVideo",
+        "class_type": "vloMemoryLoadVideo",
         "group_id": "inputs",
         "group_title": "Inputs",
         "group_order": 0,
@@ -22,7 +22,7 @@
         "label": "Character image",
         "input_type": "image",
         "param": "image",
-        "class_type": "VLOMemoryLoadImage",
+        "class_type": "vloMemoryLoadImage",
         "group_id": "inputs",
         "group_title": "Inputs",
         "group_order": 1,
@@ -53,10 +53,7 @@
     "animate_mode": {
       "label": "Mode",
       "value_type": "enum",
-      "options": [
-        "Replace character in video",
-        "Animate character in image"
-      ],
+      "options": ["Replace character in video", "Animate character in image"],
       "default": "Replace character in video",
       "group_id": "mode",
       "group_title": "Mode",
@@ -90,10 +87,7 @@
         "operator": "eq",
         "value": "Animate character in image"
       },
-      "bypass": [
-        "143",
-        "131"
-      ]
+      "bypass": ["143", "131"]
     }
   ],
   "effect_switches": [],
@@ -107,10 +101,7 @@
       "config": {
         "stride": 32,
         "search_steps": 2,
-        "resolutions": [
-          480,
-          720
-        ],
+        "resolutions": [480, 720],
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
@@ -135,10 +126,7 @@
           "label": "Resolution",
           "value_type": "int",
           "expose": "widget",
-          "options": [
-            480,
-            720
-          ],
+          "options": [480, 720],
           "default": 720,
           "group_id": "video_generation",
           "group_title": "Video Generation",
@@ -155,9 +143,7 @@
     {
       "id": "mask_processing",
       "kind": "mask_processing",
-      "after": [
-        "aspect_ratio"
-      ],
+      "after": ["aspect_ratio"],
       "targets": [
         {
           "source": {
@@ -178,10 +164,7 @@
           "label": "Mask crop mode",
           "value_type": "enum",
           "expose": "widget",
-          "options": [
-            "crop",
-            "full"
-          ],
+          "options": ["crop", "full"],
           "default": "crop",
           "group_id": "mask",
           "group_title": "Mask",

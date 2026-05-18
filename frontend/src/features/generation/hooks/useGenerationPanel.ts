@@ -417,21 +417,80 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     }
   }, [isWorkflowLoading, workflowInputs]);
 
-  // Initialize widget values and randomize toggles when widget inputs change
+  // Reconcile widget values and randomize toggles when widget inputs change.
+  //
+  // `widgetInputs` is a memo whose identity flips whenever any upstream input
+  // (text values, media inputs, providedInputIds, inputMetadata, iframe poll,
+  // object-info refresh, etc.) re-renders — even when the widgets themselves
+  // are unchanged. Rebuilding `widgetValues` from `currentValue` on every
+  // identity flip clobbers any value the user just set in the panel, which
+  // shows up as the slider snapping back to its prior position immediately
+  // after a click.
+  //
+  // Instead, reconcile additively: keep existing entries for widgets that
+  // still exist (preserving any user edits), initialize newly-added widgets
+  // from their currentValue, and drop entries for widgets that disappeared.
   useEffect(() => {
-    const nextValues: Record<string, Record<string, unknown>> = {};
+    const prevValues = widgetValuesRef.current;
+    const presentByNode = new Map<string, Set<string>>();
+    for (const w of widgetInputs) {
+      let params = presentByNode.get(w.nodeId);
+      if (!params) {
+        params = new Set();
+        presentByNode.set(w.nodeId, params);
+      }
+      params.add(w.param);
+    }
+
+    let nextValues = prevValues;
+    let changed = false;
+    const cloneIfNeeded = () => {
+      if (!changed) {
+        nextValues = { ...prevValues };
+        changed = true;
+      }
+    };
+
+    for (const w of widgetInputs) {
+      if (prevValues[w.nodeId]?.[w.param] === undefined) {
+        cloneIfNeeded();
+        nextValues[w.nodeId] = {
+          ...(nextValues[w.nodeId] ?? {}),
+          [w.param]: w.currentValue,
+        };
+      }
+    }
+
+    for (const [nodeId, params] of Object.entries(prevValues)) {
+      const presentParams = presentByNode.get(nodeId);
+      for (const param of Object.keys(params)) {
+        if (presentParams?.has(param)) continue;
+        cloneIfNeeded();
+        const nodeCopy = { ...nextValues[nodeId] };
+        delete nodeCopy[param];
+        if (Object.keys(nodeCopy).length === 0) {
+          const tmp = { ...nextValues };
+          delete tmp[nodeId];
+          nextValues = tmp;
+        } else {
+          nextValues[nodeId] = nodeCopy;
+        }
+      }
+    }
+
+    if (changed) {
+      widgetValuesRef.current = nextValues;
+      setWidgetValues(nextValues);
+    }
+
     const nextToggles: Record<string, boolean> = {};
     for (const w of widgetInputs) {
-      if (!nextValues[w.nodeId]) nextValues[w.nodeId] = {};
-      nextValues[w.nodeId][w.param] = w.currentValue;
       if (w.config.controlAfterGenerate) {
         const key = `${w.nodeId}:${w.param}`;
         // Preserve existing toggle state, fall back to workflow's saved mode
         nextToggles[key] = randomizeToggles[key] ?? w.config.defaultRandomize ?? true;
       }
     }
-    widgetValuesRef.current = nextValues;
-    setWidgetValues(nextValues);
     setRandomizeToggles((prev) => ({ ...prev, ...nextToggles }));
     // Only re-run when widgetInputs identity changes
     // eslint-disable-next-line react-hooks/exhaustive-deps

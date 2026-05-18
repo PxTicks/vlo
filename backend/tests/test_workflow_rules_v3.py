@@ -85,16 +85,16 @@ def test_wan_animate_sidecar_loads_mask_processing_rules():
     ]
 
 
-def test_wan2_2_ttm_sidecar_loads_track_selection_message_and_mask_selection_modes():
+def test_wan_ttm_sidecar_loads_track_selection_message_and_mask_selection_modes():
     rules, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "vlo_wan2_2_ttm.json",
+        "vlo_wan_ttm.json",
     )
 
     assert warnings == []
     assert rules.version == 3
 
-    source_video_rule = rules.nodes["95"]
+    source_video_rule = rules.nodes["129"]
     assert source_video_rule.selection is not None
     assert source_video_rule.selection.include_tracks is True
     assert (
@@ -138,7 +138,7 @@ def test_vace_inpaint_collects_mask_crop_pairs():
         "vlo_VACE_inpaint.json",
     )
     rules = dump_resolved_rules(rules_model)
-    assert collect_mask_crop_pairs(rules) == [("98", "101")]
+    assert collect_mask_crop_pairs(rules) == [("118", "119")]
 
 
 def test_vace_inpaint_hidden_target_aspect_ratio_accepts_frontend_submission():
@@ -250,8 +250,8 @@ def test_vace_inpaint_mask_crop_records_crop_metadata_from_pipeline_outputs():
         workflow={},
         rules=rules,
         buffered_media={
-            "source": {"node_id": "98", "input_type": "video", "bytes": b"source"},
-            "mask": {"node_id": "101", "input_type": "video", "bytes": b"mask"},
+            "source": {"node_id": "118", "input_type": "video", "bytes": b"source"},
+            "mask": {"node_id": "119", "input_type": "video", "bytes": b"mask"},
         },
         resolved_pipeline_controls=resolved_controls,
     )

@@ -17,7 +17,6 @@ import { useProjectStore } from "../../project";
 import type {
   WorkflowSelectionConfig,
   WorkflowInput,
-  WorkflowWidgetInput,
 } from "../types";
 import type { SlotValue } from "../utils/pipeline";
 import {
@@ -50,6 +49,11 @@ import {
   hasProvidedMediaInputValue,
   resolveAssetFileForGeneration,
 } from "../utils/mediaInputAssets";
+import {
+  reconcileWidgetValues,
+  type WidgetCurrentValueMap,
+  type WidgetValueMap,
+} from "../utils/widgetValueReconciliation";
 import { buildWorkflowInputMetadataMap } from "../utils/inputMetadata";
 import { carryOverTextValues } from "../utils/workflowInputCarryover";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
@@ -80,11 +84,11 @@ function applySelectionConfigDefaults(
 }
 
 function setNodeParamValue(
-  current: Record<string, Record<string, unknown>>,
+  current: WidgetValueMap,
   nodeId: string,
   param: string,
   value: unknown,
-): Record<string, Record<string, unknown>> {
+): WidgetValueMap {
   return {
     ...current,
     [nodeId]: { ...(current[nodeId] ?? {}), [param]: value },
@@ -209,10 +213,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const previousTextWorkflowInputsRef = useRef<WorkflowInput[]>([]);
 
   // Widget state
-  const [widgetValues, setWidgetValues] = useState<
-    Record<string, Record<string, unknown>>
-  >({});
-  const widgetValuesRef = useRef<Record<string, Record<string, unknown>>>({});
+  const [widgetValues, setWidgetValues] = useState<WidgetValueMap>({});
+  const widgetValuesRef = useRef<WidgetValueMap>({});
+  const widgetCurrentValuesRef = useRef<WidgetCurrentValueMap>({});
   const [randomizeToggles, setRandomizeToggles] = useState<
     Record<string, boolean>
   >({});
@@ -427,60 +430,20 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   // shows up as the slider snapping back to its prior position immediately
   // after a click.
   //
-  // Instead, reconcile additively: keep existing entries for widgets that
-  // still exist (preserving any user edits), initialize newly-added widgets
-  // from their currentValue, and drop entries for widgets that disappeared.
+  // Instead, reconcile against the last backing value we saw: preserve panel
+  // values while currentValue is unchanged, refresh when currentValue really
+  // changes, initialize newly-added widgets, and drop disappeared ones.
   useEffect(() => {
-    const prevValues = widgetValuesRef.current;
-    const presentByNode = new Map<string, Set<string>>();
-    for (const w of widgetInputs) {
-      let params = presentByNode.get(w.nodeId);
-      if (!params) {
-        params = new Set();
-        presentByNode.set(w.nodeId, params);
-      }
-      params.add(w.param);
-    }
+    const reconciliation = reconcileWidgetValues({
+      widgetInputs,
+      previousValues: widgetValuesRef.current,
+      previousCurrentValues: widgetCurrentValuesRef.current,
+    });
 
-    let nextValues = prevValues;
-    let changed = false;
-    const cloneIfNeeded = () => {
-      if (!changed) {
-        nextValues = { ...prevValues };
-        changed = true;
-      }
-    };
-
-    for (const w of widgetInputs) {
-      if (prevValues[w.nodeId]?.[w.param] === undefined) {
-        cloneIfNeeded();
-        nextValues[w.nodeId] = {
-          ...(nextValues[w.nodeId] ?? {}),
-          [w.param]: w.currentValue,
-        };
-      }
-    }
-
-    for (const [nodeId, params] of Object.entries(prevValues)) {
-      const presentParams = presentByNode.get(nodeId);
-      for (const param of Object.keys(params)) {
-        if (presentParams?.has(param)) continue;
-        cloneIfNeeded();
-        const nodeCopy = { ...nextValues[nodeId] };
-        delete nodeCopy[param];
-        if (Object.keys(nodeCopy).length === 0) {
-          const tmp = { ...nextValues };
-          delete tmp[nodeId];
-          nextValues = tmp;
-        } else {
-          nextValues[nodeId] = nodeCopy;
-        }
-      }
-    }
-
-    if (changed) {
-      widgetValuesRef.current = nextValues;
-      setWidgetValues(nextValues);
+    widgetCurrentValuesRef.current = reconciliation.currentValues;
+    if (reconciliation.valuesChanged) {
+      widgetValuesRef.current = reconciliation.values;
+      setWidgetValues(reconciliation.values);
     }
 
     const nextToggles: Record<string, boolean> = {};
@@ -488,7 +451,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       if (w.config.controlAfterGenerate) {
         const key = `${w.nodeId}:${w.param}`;
         // Preserve existing toggle state, fall back to workflow's saved mode
-        nextToggles[key] = randomizeToggles[key] ?? w.config.defaultRandomize ?? true;
+        nextToggles[key] =
+          randomizeToggles[key] ?? w.config.defaultRandomize ?? true;
       }
     }
     setRandomizeToggles((prev) => ({ ...prev, ...nextToggles }));
@@ -1187,8 +1151,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         );
   const inputValidationSatisfied = inputValidationFailures.length === 0;
 
-  const backendConnected =
-    runtimeStatus?.backend.status === "ok" && runtimeStatusError === null;
   const comfyConnected = runtimeStatus?.comfyui.status === "connected";
 
   const canGenerate =

@@ -335,6 +335,12 @@ class WorkflowDualSamplerDenoiseRule(WorkflowRuleBaseModel):
     start_step: WorkflowParamReference
     base_split_step: WorkflowParamReference
     split_step_targets: list[WorkflowParamReference] = Field(default_factory=list)
+    # When the slider drives start_step at or past base_split_step, the first
+    # sampler runs zero steps and is effectively skipped. The first sampler is
+    # normally the one with add_noise=enable, so in that case the second
+    # sampler must take over noise introduction. This points at the second
+    # sampler's add_noise widget (KSamplerAdvanced "enable"/"disable" string).
+    second_sampler_add_noise: WorkflowParamReference | None = None
 
 
 class WorkflowSingleSamplerDenoiseRule(WorkflowRuleBaseModel):

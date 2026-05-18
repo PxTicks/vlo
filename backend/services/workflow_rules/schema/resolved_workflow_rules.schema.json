@@ -1313,6 +1313,17 @@
           "default": null,
           "title": "Label"
         },
+        "second_sampler_add_noise": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowParamReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "section_id": {
           "anyOf": [
             {

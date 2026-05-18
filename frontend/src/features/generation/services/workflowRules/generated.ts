@@ -174,6 +174,7 @@ export interface WorkflowDualSamplerDenoiseRule {
   start_step: WorkflowParamReference;
   base_split_step: WorkflowParamReference;
   split_step_targets?: Array<WorkflowParamReference>;
+  second_sampler_add_noise?: WorkflowParamReference | null;
 }
 
 export interface WorkflowFrontendControl {

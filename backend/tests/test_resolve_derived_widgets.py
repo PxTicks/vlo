@@ -116,6 +116,80 @@ def test_single_sampler_denoise_allows_full_denoise():
     )
 
 
+DUAL_SAMPLER_DENOISE_RULE = {
+    "id": "dual_sampler_denoise",
+    "kind": "dual_sampler_denoise",
+    "label": "Denoise",
+    "total_steps": {"node_id": "85", "param": "value"},
+    "start_step": {"node_id": "57", "param": "start_at_step"},
+    "base_split_step": {"node_id": "86", "param": "value"},
+    "split_step_targets": [
+        {"node_id": "57", "param": "end_at_step"},
+        {"node_id": "58", "param": "start_at_step"},
+    ],
+    "second_sampler_add_noise": {"node_id": "58", "param": "add_noise"},
+}
+
+
+def _dual_sampler_workflow() -> dict:
+    return {
+        "57": {"inputs": {"start_at_step": 0, "end_at_step": 4, "add_noise": "enable"}},
+        "58": {"inputs": {"start_at_step": 4, "add_noise": "disable"}},
+        "85": {"inputs": {"value": 8}},
+        "86": {"inputs": {"value": 4}},
+    }
+
+
+def test_dual_sampler_denoise_keeps_second_sampler_silent_when_first_runs():
+    # denoise=1.0 → start_step=0, split_step=base_split=4 → first sampler runs 4 steps.
+    ctx = _make_ctx(
+        workflow=_dual_sampler_workflow(),
+        rules={"derived_widgets": [DUAL_SAMPLER_DENOISE_RULE]},
+        derived_widget_values={"dual_sampler_denoise": "1.0"},
+    )
+
+    asyncio.run(resolve_derived_widgets_processor.execute(ctx))
+
+    assert ctx.widget_overrides["57"]["start_at_step"] == 0
+    assert ctx.widget_overrides["57"]["end_at_step"] == 4
+    assert ctx.widget_overrides["58"]["start_at_step"] == 4
+    assert ctx.widget_overrides["58"]["add_noise"] == "disable"
+
+
+def test_dual_sampler_denoise_enables_second_sampler_noise_when_first_skipped():
+    # denoise=0.25 → denoise_steps=2, start_step=6 > base_split=4 →
+    # split_step=6, first sampler runs zero steps and must be replaced.
+    ctx = _make_ctx(
+        workflow=_dual_sampler_workflow(),
+        rules={"derived_widgets": [DUAL_SAMPLER_DENOISE_RULE]},
+        derived_widget_values={"dual_sampler_denoise": "0.25"},
+    )
+
+    asyncio.run(resolve_derived_widgets_processor.execute(ctx))
+
+    assert ctx.widget_overrides["57"]["start_at_step"] == 6
+    assert ctx.widget_overrides["57"]["end_at_step"] == 6
+    assert ctx.widget_overrides["58"]["start_at_step"] == 6
+    assert ctx.widget_overrides["58"]["add_noise"] == "enable"
+
+
+def test_dual_sampler_denoise_enables_second_sampler_at_split_boundary():
+    # denoise=0.5 → start_step=4 == base_split=4 → first sampler still runs
+    # zero steps (start_at_step == end_at_step), so the second sampler must
+    # take over noise introduction.
+    ctx = _make_ctx(
+        workflow=_dual_sampler_workflow(),
+        rules={"derived_widgets": [DUAL_SAMPLER_DENOISE_RULE]},
+        derived_widget_values={"dual_sampler_denoise": "0.5"},
+    )
+
+    asyncio.run(resolve_derived_widgets_processor.execute(ctx))
+
+    assert ctx.widget_overrides["57"]["start_at_step"] == 4
+    assert ctx.widget_overrides["57"]["end_at_step"] == 4
+    assert ctx.widget_overrides["58"]["add_noise"] == "enable"
+
+
 def test_video_audio_retake_rejects_unknown_option():
     ctx = _make_ctx(
         workflow=_retake_workflow(),

@@ -115,6 +115,30 @@ def _expand_dual_sampler_denoise(
             )
         _apply_override(overrides, target_node_id, target_param, split_step_int)
 
+    # If the slider pushes start_step at or past the workflow's baseline split,
+    # the first sampler runs zero steps. The first sampler is conventionally
+    # the only one with add_noise=enable, so noise would never be introduced
+    # unless the second sampler takes over.
+    add_noise_ref = rule.get("second_sampler_add_noise")
+    if isinstance(add_noise_ref, dict):
+        add_noise_node_id = add_noise_ref.get("node_id")
+        add_noise_param = add_noise_ref.get("param")
+        if not isinstance(add_noise_node_id, str) or not isinstance(
+            add_noise_param, str
+        ):
+            return (
+                None,
+                None,
+                "second_sampler_add_noise must include node_id and param.",
+            )
+        first_sampler_skipped = start_step_int >= base_split_step_int
+        _apply_override(
+            overrides,
+            add_noise_node_id,
+            add_noise_param,
+            "enable" if first_sampler_skipped else "disable",
+        )
+
     return overrides, denoise_steps / total_steps_int, None
 
 

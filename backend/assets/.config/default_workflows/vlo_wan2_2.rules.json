@@ -95,7 +95,7 @@
         "required": false,
         "input_type": "image",
         "param": "image",
-        "class_type": "VLOMemoryLoadImage"
+        "class_type": "vloMemoryLoadImage"
       }
     },
     "92": {
@@ -107,7 +107,7 @@
         "required": false,
         "input_type": "image",
         "param": "image",
-        "class_type": "VLOMemoryLoadImage"
+        "class_type": "vloMemoryLoadImage"
       }
     },
     "94": {
@@ -116,7 +116,7 @@
         "required": false,
         "input_type": "video",
         "param": "file",
-        "class_type": "VLOMemoryLoadVideo"
+        "class_type": "vloMemoryLoadVideo"
       },
       "selection": {
         "export_fps": 16,
@@ -199,7 +199,11 @@
           "node_id": "58",
           "param": "start_at_step"
         }
-      ]
+      ],
+      "second_sampler_add_noise": {
+        "node_id": "58",
+        "param": "add_noise"
+      }
     }
   ],
   "rewrites": [

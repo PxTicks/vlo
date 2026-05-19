@@ -19,6 +19,25 @@ function isLinkValue(value: unknown): boolean {
   return Array.isArray(value) && value.length === 2;
 }
 
+const CONTROL_MODE_VALUES = new Set([
+  "fixed",
+  "randomize",
+  "increment",
+  "decrement",
+]);
+
+// `control_after_generate` in object_info appears as either `true` (e.g. KSampler's
+// seed) or a string mode like `"fixed"` (e.g. PrimitiveInt's value). Either form
+// means the widget occupies two slots in widgets_values: [value, mode]. Strict
+// `=== true` checks miss the string form, causing PrimitiveInt-style widgets to
+// be misaligned and their randomize state to go undetected.
+function hasControlAfterGenerate(opts: Record<string, unknown>): boolean {
+  const value = opts.control_after_generate;
+  if (value === true) return true;
+  if (typeof value === "string" && CONTROL_MODE_VALUES.has(value)) return true;
+  return false;
+}
+
 function resolveGraphNode(
   graphData: Record<string, unknown> | null,
   nodeId: string,
@@ -225,7 +244,7 @@ function getWidgetValueIndexMap(
     }
 
     result.set(param, index);
-    index += opts.control_after_generate === true ? 2 : 1;
+    index += hasControlAfterGenerate(opts) ? 2 : 1;
   }
 
   return result;
@@ -255,7 +274,7 @@ function resolveGraphWidgetMode(
   classInfo: Record<string, unknown> | null,
   opts: Record<string, unknown>,
 ): "fixed" | "randomize" | "increment" | "decrement" | null {
-  if (opts.control_after_generate !== true) return null;
+  if (!hasControlAfterGenerate(opts)) return null;
 
   const graphNode = resolveGraphNode(graphData, nodeId);
   if (!graphNode) return null;
@@ -307,7 +326,7 @@ function shouldIncludeObjectInfoWidget(
     return isManualWidgetParam(param, nodeTitle) || graphMode === "randomize";
   }
 
-  return opts.control_after_generate === true || isManualWidgetParam(param, nodeTitle);
+  return hasControlAfterGenerate(opts) || isManualWidgetParam(param, nodeTitle);
 }
 
 export function resolveManualWidgetInputs(
@@ -424,7 +443,7 @@ export function resolveManualWidgetInputs(
       const options = coerceWidgetOptions(typeSpec, opts);
       const label = param === "value" ? nodeTitle : param;
       const supportsRandomize =
-        opts.control_after_generate === true ||
+        hasControlAfterGenerate(opts) ||
         isManualWidgetParam(param, nodeTitle);
 
       widgets.push({

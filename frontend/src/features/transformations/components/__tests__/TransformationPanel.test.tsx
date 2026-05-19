@@ -104,87 +104,39 @@ describe("TransformationPanel", () => {
   });
 
   it("renders collapsible Base Layout and Dynamic sections", () => {
-     // Setup store with a HSL transform
-     (
-      useTimelineStore as unknown as ReturnType<typeof vi.fn>
-     ).mockImplementation((selector: (state: {
-      selectedClipIds: string[];
-      clips: Array<{
-        id: string;
-        transformations: Array<{
-          id: string;
-          type: string;
-          filterName?: string;
-          parameters: Record<string, unknown>;
-        }>;
-      }>;
-      updateClipTransform: typeof mockUpdateClipTransform;
-      addClipTransform: typeof mockAddClipTransform;
-      removeClipTransform: typeof mockRemoveClipTransform;
-    }) => unknown) => {
-      return selector({
-        selectedClipIds: ["clip_1"],
-        clips: [
-          {
-            id: "clip_1",
-            transformations: [
-              { id: "pos_1", type: "position", parameters: { x: 0, y: 0 } },
-              { 
-                  id: "color_1", 
-                  type: "filter", 
-                  filterName: "HslAdjustmentFilter", 
-                  parameters: { hue: 0 } 
-              } 
-            ],
-          },
-        ],
-        updateClipTransform: mockUpdateClipTransform,
-        addClipTransform: mockAddClipTransform,
-        removeClipTransform: mockRemoveClipTransform,
-      });
-    });
-
-    // Mock removeClipTransform in the outer scope
     const mockRemoveClipTransform = vi.fn();
-    // Re-mock to include removeClipTransform
+
+    // Hoist the state so every useTimelineStore() call returns the same
+    // references. Otherwise useShallow() in useTransformationController
+    // sees new references each render — combined with the dnd-kit state
+    // update from registering SortableTransformationItem, this loops until
+    // the test times out.
+    const state = {
+      selectedClipIds: ["clip_1"],
+      clips: [
+        {
+          id: "clip_1",
+          transformations: [
+            { id: "pos_1", type: "position", parameters: { x: 0, y: 0 } },
+            {
+              id: "color_1",
+              type: "filter",
+              filterName: "HslAdjustmentFilter",
+              parameters: { hue: 0 },
+            },
+          ],
+        },
+      ],
+      updateClipTransform: mockUpdateClipTransform,
+      addClipTransform: mockAddClipTransform,
+      removeClipTransform: mockRemoveClipTransform,
+    };
+
     (
       useTimelineStore as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation((selector: (state: {
-      selectedClipIds: string[];
-      clips: Array<{
-        id: string;
-        transformations: Array<{
-          id: string;
-          type: string;
-          filterName?: string;
-          parameters: Record<string, unknown>;
-        }>;
-      }>;
-      updateClipTransform: typeof mockUpdateClipTransform;
-      addClipTransform: typeof mockAddClipTransform;
-      removeClipTransform: typeof mockRemoveClipTransform;
-    }) => unknown) => {
-        return selector({
-            selectedClipIds: ["clip_1"],
-            clips: [
-            {
-                id: "clip_1",
-                transformations: [
-                { id: "pos_1", type: "position", parameters: { x: 0, y: 0 } },
-                { 
-                    id: "color_1", 
-                    type: "filter", 
-                    filterName: "HslAdjustmentFilter",
-                    parameters: { hue: 0 } 
-                } 
-                ],
-            },
-            ],
-            updateClipTransform: mockUpdateClipTransform,
-            addClipTransform: mockAddClipTransform,
-            removeClipTransform: mockRemoveClipTransform,
-        });
-    });
+    ).mockImplementation((selector: (s: typeof state) => unknown) =>
+      selector(state),
+    );
 
     render(<TransformationPanel />);
 

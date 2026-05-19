@@ -1114,7 +1114,11 @@ describe("useGenerationStore pipeline phases", () => {
         textInputs: {
           "10": "second prompt",
         },
-        videoInputs: {},
+        // Prepared media stays attached to cached reruns so the backend can
+        // recover from stale ComfyUI memory-loader ids.
+        videoInputs: {
+          "20": preparedVideo,
+        },
         cachedMediaInputs: {
           "20": {
             file: "cached-source.mp4",
@@ -1245,7 +1249,11 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockFrontendPreprocess).toHaveBeenCalledTimes(1);
     expect(mockGenerate.mock.calls[1]?.[0]).toEqual(
       expect.objectContaining({
-        imageInputs: {},
+        // Prepared media stays attached to cached reruns so the backend can
+        // recover from stale ComfyUI memory-loader ids.
+        imageInputs: {
+          "92": sourceFrame,
+        },
         cachedMediaInputs: {
           "92": {
             image: "cached-frame.png",

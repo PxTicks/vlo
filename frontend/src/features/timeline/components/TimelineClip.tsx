@@ -17,6 +17,7 @@ import GraphicEqIcon from "@mui/icons-material/GraphicEq";
 import MusicOffIcon from "@mui/icons-material/MusicOff";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
+import FastRewindIcon from "@mui/icons-material/FastRewind";
 
 import { styled } from "@mui/material/styles";
 import {
@@ -41,6 +42,7 @@ import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStor
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { extractTimelineClipAudioAsset } from "../utils/clipAudioExtraction";
+import { reverseTimelineClip } from "../utils/reverseClip";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
 
@@ -123,6 +125,7 @@ function TimelineClipComponent({
   >(null);
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [isExtractionSnackbarOpen, setIsExtractionSnackbarOpen] = useState(false);
+  const [isReversingClip, setIsReversingClip] = useState(false);
 
   const startTime = "start" in clip ? (clip as TimelineClipType).start : 0;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
@@ -157,6 +160,12 @@ function TimelineClipComponent({
     track !== undefined &&
     timelineClip.type === "video" &&
     clipAsset?.hasAudio !== false;
+  const canReverseClip =
+    timelineClip !== null &&
+    (timelineClip.type === "video" || timelineClip.type === "audio") &&
+    typeof timelineClip.sourceDuration === "number" &&
+    Number.isFinite(timelineClip.sourceDuration) &&
+    timelineClip.sourceDuration > 0;
 
   const beatMarkersComponent = useTimelineStore((state) => {
     const liveClip = state.clips.find((candidate) => candidate.id === clip.id);
@@ -343,6 +352,26 @@ function TimelineClipComponent({
     closeContextMenu();
   };
 
+  const handleReverseClip = async () => {
+    if (!timelineClip || !canReverseClip) {
+      closeContextMenu();
+      return;
+    }
+    closeContextMenu();
+    setIsReversingClip(true);
+    try {
+      await reverseTimelineClip(timelineClip.id);
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to reverse the clip.",
+      );
+    } finally {
+      setIsReversingClip(false);
+    }
+  };
+
   const handleExtractAudio = async () => {
     if (
       timelineClip === null ||
@@ -502,6 +531,19 @@ function TimelineClipComponent({
             </ListItemIcon>
             <ListItemText>
               {isExtractingAudio ? "Extracting Audio..." : "Extract Audio"}
+            </ListItemText>
+          </MenuItem>
+        ) : null}
+        {canReverseClip ? (
+          <MenuItem
+            onClick={() => void handleReverseClip()}
+            disabled={isReversingClip}
+          >
+            <ListItemIcon>
+              <FastRewindIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>
+              {isReversingClip ? "Reversing..." : "Reverse Clip"}
             </ListItemText>
           </MenuItem>
         ) : null}

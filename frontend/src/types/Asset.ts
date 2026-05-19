@@ -133,6 +133,10 @@ export type CreationMetadata =
   | {
       source: "generation_mask";
       parentGeneratedAssetId: string;
+    }
+  | {
+      source: "reversed";
+      sourceAssetId: string;
     };
 
 export interface Asset {

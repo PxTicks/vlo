@@ -13,7 +13,7 @@ The Timeline feature is a multi-track editor built around three local Zustand st
 
 The timeline now has two drag layers:
 
-1. An outer `DndContext` in `EditorLayout` for dragging assets into the timeline
+1. An outer `DndContext` in `Editor` for dragging assets into the timeline
 2. An inner `DndContext` in `TimelineContainer` for moving/resizing clips already on the timeline
 
 ## Public API
@@ -113,7 +113,7 @@ The feature also depends on shared stores/services:
 - `scrollContainerRef`
 - `insertGapIndex`
 
-Those come from the outer asset-drag flow in `EditorLayout`.
+Those come from the outer asset-drag flow in `Editor`.
 
 It is responsible for:
 
@@ -170,7 +170,7 @@ This lets zoom updates stay cheap even with many clips on screen.
 
 ### Outer Asset Drag
 
-`EditorLayout` owns the outer `DndContext` and uses `useAssetDrag`.
+`Editor` owns the outer `DndContext` and uses `useAssetDrag`.
 
 That flow handles:
 

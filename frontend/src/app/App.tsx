@@ -20,9 +20,9 @@ import { Suspense, lazy, useEffect } from "react";
 import { Box, CircularProgress, Typography } from "@mui/material";
 
 // 1. Lazy load the heavy editor to separate it from the initial bundle
-const EditorLayout = lazy(() =>
-  import("./layout/EditorLayout").then((module) => ({
-    default: module.EditorLayout,
+const Editor = lazy(() =>
+  import("./Editor").then((module) => ({
+    default: module.Editor,
   })),
 );
 
@@ -56,13 +56,13 @@ export function App() {
   // 2. Smart Preloading: Immediately start fetching the editor code in the background
   // This ensures that while the user is picking a project, the heavy editor code is downloading
   useEffect(() => {
-    import("./layout/EditorLayout");
+    import("./Editor");
   }, []);
 
   return (
     <ThemeProvider theme={darkTheme}>
       <Suspense fallback={<LoadingScreen />}>
-        {!project || !rootHandle ? <ProjectManager /> : <EditorLayout />}
+        {!project || !rootHandle ? <ProjectManager /> : <Editor />}
       </Suspense>
     </ThemeProvider>
   );

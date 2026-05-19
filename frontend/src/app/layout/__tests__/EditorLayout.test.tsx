@@ -1,168 +1,78 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { EditorLayout } from "../EditorLayout";
 
-const mockFetchAssets = vi.fn(() => Promise.resolve());
-const mockScanForNewAssets = vi.fn();
-const mockSidebarClick = vi.fn();
+function renderEditorLayout({
+  locked = false,
+  layoutMode = "compact" as const,
+} = {}) {
+  const handleEditorMouseDownCapture = vi.fn();
+  const handleTimelineMouseDownCapture = vi.fn();
+  const handleRightSidebarClick = vi.fn();
 
-let selectionMode = false;
-let frameSelectionMode = false;
+  render(
+    <EditorLayout
+      layoutMode={layoutMode}
+      nonTimelineRegionsLocked={locked}
+      onEditorMouseDownCapture={handleEditorMouseDownCapture}
+      onTimelineMouseDownCapture={handleTimelineMouseDownCapture}
+      leftSidebar={<div data-testid="left-sidebar">Left</div>}
+      topBar={<div data-testid="top-bar">Top</div>}
+      player={<div data-testid="player">Player</div>}
+      rightSidebar={
+        <button type="button" onClick={handleRightSidebarClick}>
+          Sidebar action
+        </button>
+      }
+      timeline={<div data-testid="timeline">Timeline</div>}
+    />,
+  );
 
-vi.mock("../../../features/project", () => ({
-  ProjectTitle: () => <div data-testid="project-title">Project</div>,
-  useProjectStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      project: {
-        id: "project-1",
-        rootAssetsFolder: "/tmp/assets",
-      },
-      config: {
-        layoutMode: "compact",
-        fps: 24,
-      },
-    }),
-}));
-
-vi.mock("../../../features/userAssets", () => ({
-  AssetBrowser: () => <div data-testid="asset-browser">Assets</div>,
-  useTimelineAssetRevealClipOverlay: () => ({
-    id: "asset-reveal-overlay",
-    useItems: () => [],
-  }),
-  useAssetStore: Object.assign(
-    (selector: (state: unknown) => unknown) =>
-      selector({
-        fetchAssets: mockFetchAssets,
-      }),
-    {
-      getState: () => ({
-        scanForNewAssets: mockScanForNewAssets,
-      }),
-    },
-  ),
-}));
-
-vi.mock("../../../features/text", () => ({
-  TextPanel: () => <div data-testid="text-panel">Text</div>,
-}));
-
-vi.mock("../../../features/timeline", () => ({
-  Timeline: () => <div data-testid="timeline-container">Timeline</div>,
-  useAssetDrag: () => ({
-    handleAssetDragStart: vi.fn(),
-    handleAssetDragMove: vi.fn(),
-    handleAssetDragEnd: vi.fn(),
-    insertGapIndex: null,
-    scrollContainerRef: { current: null },
-  }),
-  AssetDragOverlay: () => <div data-testid="asset-drag-overlay" />,
-  useTimelineStore: Object.assign(() => undefined, {
-    getState: () => ({
-      setFocused: vi.fn(),
-    }),
-  }),
-  useTimelineClipMuteOverlay: () => ({
-    id: "mute-overlay",
-    useItems: () => [],
-  }),
-  useTimelineMarkersClipOverlay: () => ({
-    id: "markers-overlay",
-    useItems: () => [],
-  }),
-}));
-
-vi.mock("../../../features/player/Player", () => ({
-  Player: () => <div data-testid="player">Player</div>,
-}));
-
-vi.mock("../RightSidebarPanel", () => ({
-  RightSidebarPanel: () => (
-    <button type="button" onClick={mockSidebarClick}>
-      Sidebar action
-    </button>
-  ),
-}));
-
-vi.mock("../ProjectSettingsMenu", () => ({
-  ProjectSettingsMenu: () => <div data-testid="project-settings">Settings</div>,
-}));
-
-vi.mock("../../../features/player/useExtractStore", () => ({
-  useExtractStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      frameSelectionMode,
-    }),
-}));
-
-vi.mock("../../../features/timelineSelection", () => ({
-  useTimelineSelectionStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      selectionMode,
-    }),
-}));
+  return {
+    handleEditorMouseDownCapture,
+    handleTimelineMouseDownCapture,
+    handleRightSidebarClick,
+  };
+}
 
 describe("EditorLayout", () => {
-  beforeEach(() => {
-    selectionMode = false;
-    frameSelectionMode = false;
-    mockFetchAssets.mockClear();
-    mockScanForNewAssets.mockClear();
-    mockSidebarClick.mockClear();
+  it("renders each editor region", () => {
+    renderEditorLayout();
+
+    expect(screen.getByTestId("left-sidebar")).toBeInTheDocument();
+    expect(screen.getByTestId("top-bar")).toBeInTheDocument();
+    expect(screen.getByTestId("player")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sidebar action" }))
+      .toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).toBeInTheDocument();
   });
 
-  it("renders editor regions without lock overlays when timeline selection is inactive", () => {
-    render(<EditorLayout />);
-
-    expect(
-      screen.getByTestId("left-sidebar-tab-assets"),
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("asset-browser")).toBeInTheDocument();
-    expect(screen.queryByTestId("editor-lock-left")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("editor-lock-top")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("editor-lock-player")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("editor-lock-right")).not.toBeInTheDocument();
-  });
-
-  it("locks non-timeline regions when range selection mode is active", () => {
-    selectionMode = true;
-
-    render(<EditorLayout />);
+  it("renders lock overlays for non-timeline regions only", () => {
+    renderEditorLayout({ locked: true });
 
     expect(screen.getByTestId("editor-lock-left")).toBeInTheDocument();
     expect(screen.getByTestId("editor-lock-top")).toBeInTheDocument();
     expect(screen.getByTestId("editor-lock-player")).toBeInTheDocument();
     expect(screen.getByTestId("editor-lock-right")).toBeInTheDocument();
-    expect(screen.getByTestId("timeline-container")).toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).toBeInTheDocument();
   });
 
-  it("locks non-timeline regions when frame selection mode is active", () => {
-    frameSelectionMode = true;
-
-    render(<EditorLayout />);
-
-    expect(screen.getByTestId("editor-lock-left")).toBeInTheDocument();
-    expect(screen.getByTestId("editor-lock-top")).toBeInTheDocument();
-    expect(screen.getByTestId("editor-lock-player")).toBeInTheDocument();
-    expect(screen.getByTestId("editor-lock-right")).toBeInTheDocument();
-  });
-
-  it("absorbs pointer interaction on the lock overlay", () => {
-    selectionMode = true;
-
-    render(<EditorLayout />);
+  it("absorbs pointer interaction on lock overlays", () => {
+    const { handleRightSidebarClick } = renderEditorLayout({ locked: true });
 
     fireEvent.click(screen.getByTestId("editor-lock-right"));
 
-    expect(mockSidebarClick).not.toHaveBeenCalled();
+    expect(handleRightSidebarClick).not.toHaveBeenCalled();
   });
 
-  it("switches the left panel content when the text tab is selected", () => {
-    render(<EditorLayout />);
+  it("delegates editor and timeline mouse capture", () => {
+    const { handleEditorMouseDownCapture, handleTimelineMouseDownCapture } =
+      renderEditorLayout();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Text" }));
+    fireEvent.mouseDown(screen.getByTestId("left-sidebar"));
+    fireEvent.mouseDown(screen.getByTestId("timeline"));
 
-    expect(screen.getByTestId("text-panel")).toBeInTheDocument();
-    expect(screen.queryByTestId("asset-browser")).not.toBeInTheDocument();
+    expect(handleEditorMouseDownCapture).toHaveBeenCalledTimes(2);
+    expect(handleTimelineMouseDownCapture).toHaveBeenCalledTimes(1);
   });
 });

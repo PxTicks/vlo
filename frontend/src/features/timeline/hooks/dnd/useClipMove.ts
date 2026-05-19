@@ -36,7 +36,7 @@ export const useClipMove = (
   scrollContainerRef: React.RefObject<HTMLDivElement | null>,
   insertGapMode: InsertGapMode = "local",
 ) => {
-  // We access stores imperatively to avoid re-rendering the EditorLayout
+  // We access stores imperatively to avoid re-rendering the Editor
   // every time the timeline state changes (which would happen if we subscribed here).
   const [localInsertGapIndex, setLocalInsertGapIndex] = useState<number | null>(
     null,

@@ -50,8 +50,8 @@ vi.mock("../../app/layout/RightSidebarPanel", () => ({
   ),
 }));
 
-vi.mock("../layout/EditorLayout", () => ({
-  EditorLayout: () => (
+vi.mock("../Editor", () => ({
+  Editor: () => (
     <div>
       <div>Test Project</div>
       <div data-testid="mock-player">Player</div>

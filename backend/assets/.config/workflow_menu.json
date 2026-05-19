@@ -30,7 +30,7 @@
     {
       "id": "improve",
       "name": "Improve",
-      "order": 2,
+      "order": 3,
       "workflow_ids": [
         "vlo_SeedVR2_image.json",
         "vlo_SeedVR2_video.json",

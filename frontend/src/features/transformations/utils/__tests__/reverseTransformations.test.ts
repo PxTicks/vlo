@@ -102,7 +102,12 @@ describe("reverseTransformationStack", () => {
     });
   });
 
-  it("reverses position-path timing without altering the geometry", () => {
+  it("reverses position-path controlPoints AND mirrors the timing spline", () => {
+    const originalControlPoints = [
+      { x: 0, y: 0 },
+      { x: 50, y: 100 },
+      { x: 200, y: 50 },
+    ];
     const pos: PositionTransform = {
       id: "pos-path",
       type: "position",
@@ -113,11 +118,7 @@ describe("reverseTransformationStack", () => {
         path: {
           type: "path2d",
           curve: "centripetal_catmull_rom",
-          controlPoints: [
-            { x: 0, y: 0 },
-            { x: 50, y: 100 },
-            { x: 200, y: 50 },
-          ],
+          controlPoints: originalControlPoints,
           timing: {
             type: "spline",
             points: [
@@ -133,7 +134,7 @@ describe("reverseTransformationStack", () => {
     const [reversed] = reverseTransformationStack([pos], SOURCE_DURATION);
     const reversedPos = reversed as PositionTransform;
     expect(reversedPos.parameters.path?.controlPoints).toEqual(
-      pos.parameters.path!.controlPoints,
+      [...originalControlPoints].reverse(),
     );
     expect(reversedPos.parameters.path?.timing.points).toEqual([
       { time: 0, value: 0 },

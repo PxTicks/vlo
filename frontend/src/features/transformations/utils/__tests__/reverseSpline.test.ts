@@ -157,15 +157,17 @@ describe("reflectKeyframeTimes", () => {
 });
 
 describe("reversePositionPath", () => {
-  it("clones controlPoints by value and mirrors the timing spline", () => {
+  const ORIGINAL_POINTS = [
+    { x: 0, y: 0 },
+    { x: 100, y: 50 },
+    { x: 200, y: 0 },
+  ];
+
+  it("reverses controlPoints AND mirrors the timing spline", () => {
     const path: PositionPathParameter = {
       type: "path2d",
       curve: "centripetal_catmull_rom",
-      controlPoints: [
-        { x: 0, y: 0 },
-        { x: 100, y: 50 },
-        { x: 200, y: 0 },
-      ],
+      controlPoints: ORIGINAL_POINTS,
       timing: {
         type: "spline",
         points: [
@@ -178,9 +180,12 @@ describe("reversePositionPath", () => {
 
     const reversed = reversePositionPath(path);
 
-    // Geometry unchanged (deep-copied)
-    expect(reversed.controlPoints).toEqual(path.controlPoints);
+    // controlPoints reversed and deep-copied
+    expect(reversed.controlPoints).toEqual(
+      [...ORIGINAL_POINTS].reverse(),
+    );
     expect(reversed.controlPoints).not.toBe(path.controlPoints);
+    expect(reversed.controlPoints[0]).not.toBe(path.controlPoints[2]);
 
     // Timing reflected about (0.5, 0.5), sorted, endpoints preserved
     expect(reversed.timing.points).toHaveLength(3);
@@ -190,5 +195,32 @@ describe("reversePositionPath", () => {
     expect(reversed.timing.points[1].value).toBeCloseTo(0.1);
     expect(reversed.timing.points[2].time).toBeCloseTo(1);
     expect(reversed.timing.points[2].value).toBeCloseTo(1);
+  });
+
+  it("is involutive: reversing twice returns the original path", () => {
+    const path: PositionPathParameter = {
+      type: "path2d",
+      curve: "centripetal_catmull_rom",
+      controlPoints: ORIGINAL_POINTS,
+      timing: {
+        type: "spline",
+        points: [
+          { time: 0, value: 0 },
+          { time: 0.25, value: 0.1 },
+          { time: 1, value: 1 },
+        ],
+      },
+    };
+
+    const twice = reversePositionPath(reversePositionPath(path));
+
+    expect(twice.controlPoints).toEqual(ORIGINAL_POINTS);
+    expect(twice.timing.points).toHaveLength(3);
+    expect(twice.timing.points[0].time).toBeCloseTo(0);
+    expect(twice.timing.points[0].value).toBeCloseTo(0);
+    expect(twice.timing.points[1].time).toBeCloseTo(0.25);
+    expect(twice.timing.points[1].value).toBeCloseTo(0.1);
+    expect(twice.timing.points[2].time).toBeCloseTo(1);
+    expect(twice.timing.points[2].value).toBeCloseTo(1);
   });
 });

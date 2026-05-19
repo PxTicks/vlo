@@ -107,17 +107,41 @@ export function reflectKeyframeTimes(
 }
 
 /**
- * Reverse a `PositionPathParameter`. The path's geometry is held fixed and
- * the timing curve is mirrored — at normalized time 0 we now sample the end
- * of the path, at 1 the start, with the same intermediate timing shape
- * (modulo reflection). This avoids re-running Catmull-Rom arc-length tables.
+ * Reverse a `PositionPathParameter`.
+ *
+ * Reversing requires **both** of:
+ *   1. Reversing the order of `controlPoints` so that the geometry is
+ *      traversed end → start as normalized progress moves 0 → 1.
+ *   2. Reflecting the timing spline about (0.5, 0.5) in normalized space —
+ *      i.e. mirroring both axes — so its values stay monotone-increasing
+ *      0 → 1 while its shape is the time-inverse of the original.
+ *
+ * Either modification alone is wrong: keeping controlPoints fixed AND
+ * mirroring timing in both axes gives the time-inverse of progress *into the
+ * same path* (P0 → Pn), which is not the path traversed backwards. Reversing
+ * controlPoints alone changes the path direction but uses the original
+ * timing curve, which mis-paces non-linear easings.
+ *
+ * Centripetal Catmull-Rom (`alpha = 0.5`) is geometry-invariant under
+ * controlPoint reversal: interior segments share `(p_{i-1}, p_i, p_{i+1},
+ * p_{i+2})` neighborhoods after reversal, and the virtual endpoint
+ * extrapolation `2·p_0 − p_1` ↔ `2·p_n − p_{n−1}` coincides as well, so the
+ * resulting curve is bit-identical to the original traversed backward.
+ *
+ * The arc-length cache (a WeakMap keyed on `PositionPathParameter`) will
+ * naturally repopulate because the reversed object is a fresh reference.
  */
 export function reversePositionPath(
   path: PositionPathParameter,
 ): PositionPathParameter {
+  const reversedControlPoints: Point2D[] = [];
+  for (let i = path.controlPoints.length - 1; i >= 0; i--) {
+    const p = path.controlPoints[i];
+    reversedControlPoints.push({ x: p.x, y: p.y });
+  }
   return {
     ...path,
-    controlPoints: path.controlPoints.map<Point2D>((p) => ({ x: p.x, y: p.y })),
+    controlPoints: reversedControlPoints,
     timing: reverseNormalizedTimingSpline(path.timing),
   };
 }

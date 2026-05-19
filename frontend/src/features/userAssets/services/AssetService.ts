@@ -100,12 +100,19 @@ export class AssetService {
   /**
    * Scans the project root for new assets, ingests them, and persists them to assets.json.
    * Returns a list of the newly added assets.
+   *
+   * `existingAssets` is treated as read-only; a local working copy is used so the caller's
+   * array (typically the asset store's `state.assets`) is never mutated.
    */
-  async scanForNewAssets(existingAssets: Asset[]): Promise<Asset[]> {
+  async scanForNewAssets(existingAssets: readonly Asset[]): Promise<Asset[]> {
     console.log("[Scanner] Starting scan...");
 
+    // Local working copy so in-loop hash/name dedup sees newly-ingested assets
+    // without touching the caller's array.
+    const workingAssets: Asset[] = [...existingAssets];
+
     // Deduplication Set
-    const knownPaths = new Set(existingAssets.map((a) => a.name));
+    const knownPaths = new Set(workingAssets.map((a) => a.name));
     console.log("[Scanner] Known assets:", Array.from(knownPaths));
 
     // List root directory
@@ -172,11 +179,12 @@ export class AssetService {
           file,
           true,
           true,
-          existingAssets,
+          workingAssets,
         );
         if (ingestResult.status === "created") {
           newAssetsToPersist.push(ingestResult.asset);
-          existingAssets.push(ingestResult.asset); // Add to local check too so we don't add duplicates if logic fails
+          workingAssets.push(ingestResult.asset);
+          knownPaths.add(ingestResult.asset.name);
         }
       } catch (e) {
         console.warn(

@@ -559,6 +559,10 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       disposeAssetCollectionRuntimeResources(previousAssets, previousInputCache);
     } catch (err) {
       console.error("Failed to load assets from assets.json", err);
+      // Re-throw so callers can decide not to follow up with a disk scan against
+      // an empty/stale `state.assets`, which would re-ingest existing assets under
+      // fresh IDs and duplicate them in assets.json.
+      throw err;
     } finally {
       set({ isLoading: false });
     }

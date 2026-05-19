@@ -14,8 +14,19 @@ export function useEditorAssetLibrary() {
       return;
     }
 
-    void fetchAssets().then(() => {
+    void (async () => {
+      try {
+        await fetchAssets();
+      } catch (error) {
+        // Skip the disk scan if we couldn't load the asset index — scanning against
+        // an empty/stale store would re-ingest existing files under new IDs.
+        console.error(
+          "[AssetLibrary] Skipping disk scan because asset index load failed",
+          error,
+        );
+        return;
+      }
       void useAssetStore.getState().scanForNewAssets();
-    });
+    })();
   }, [fetchAssets, projectId, rootAssetsFolder]);
 }

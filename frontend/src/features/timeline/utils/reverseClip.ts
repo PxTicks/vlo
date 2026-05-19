@@ -67,11 +67,33 @@ function findExistingReversedAsset(sourceAssetId: string): Asset | null {
   return reverseSource ?? null;
 }
 
+/**
+ * If `asset` was itself produced by an earlier reversal of some original X,
+ * and X is still in the store, return X. Reversing a reversed asset round-
+ * trips to the original — no decoding required. Returns null when no
+ * round-trip is available.
+ */
+function findRoundTripOriginalAsset(asset: Asset): Asset | null {
+  const meta = asset.creationMetadata;
+  if (!meta || meta.source !== "reversed") return null;
+  const original = getAssets().find(
+    (candidate) => candidate.id === meta.sourceAssetId,
+  );
+  return original ?? null;
+}
+
 async function obtainReversedAsset(
   clipAsset: Asset,
   options: ReverseClipOptions,
 ): Promise<Asset> {
   if (options.reuseExistingReversedAsset !== false) {
+    // Fast path A: clip is on a reversed asset; flipping it again gives back
+    // the still-existing original.
+    const roundTrip = findRoundTripOriginalAsset(clipAsset);
+    if (roundTrip) return roundTrip;
+
+    // Fast path B: someone already produced a reversed twin of this exact
+    // source asset earlier in the session.
     const cached = findExistingReversedAsset(clipAsset.id);
     if (cached) return cached;
   }

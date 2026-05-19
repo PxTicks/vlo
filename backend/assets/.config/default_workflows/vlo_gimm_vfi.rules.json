@@ -1,0 +1,42 @@
+{
+  "version": 3,
+  "name": "GIMM-VFI Frame Interpolation",
+  "nodes": {
+    "10": {
+      "present": {
+        "label": "Source video",
+        "input_type": "video",
+        "param": "file",
+        "class_type": "vloMemoryLoadVideo",
+        "group_id": "inputs",
+        "group_title": "Inputs",
+        "group_order": 0,
+        "required": true
+      }
+    },
+    "8": {
+      "widgets": {
+        "value": {
+          "label": "Interpolation Factor",
+          "value_type": "int",
+          "control": "slider",
+          "min": 2,
+          "max": 8,
+          "step": 1,
+          "group_id": "interpolation",
+          "group_title": "Interpolation Settings",
+          "group_order": 0
+        }
+      }
+    }
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "required",
+        "input": "10",
+        "message": "Source video is required."
+      }
+    ]
+  }
+}

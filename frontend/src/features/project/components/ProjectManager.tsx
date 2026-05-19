@@ -25,6 +25,7 @@ import {
 import { alpha, styled } from "@mui/material/styles";
 
 import vloLogo from "../../../assets/vlo.svg";
+import { VLO_APP_VERSION } from "../constants";
 import { fileSystemService } from "../services/FileSystemService";
 import {
   recentProjectsService,
@@ -418,7 +419,7 @@ export function ProjectManager() {
               color: alpha("#FFFFFF", 0.52),
             }}
           >
-            vlo v0.1
+            vlo v{VLO_APP_VERSION ? VLO_APP_VERSION.split(".").slice(0, 2).join(".") : "0.2"}
           </Typography>
         </LandingPanel>
 

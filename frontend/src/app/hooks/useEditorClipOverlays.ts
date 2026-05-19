@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import {
   useTimelineClipMuteOverlay,
   useTimelineMarkersClipOverlay,
+  useTimelineReverseStatusOverlay,
 } from "../../features/timeline";
 import type { TimelineClipOverlayDefinition } from "../../features/timeline";
 import { useTimelineKeyframeClipOverlay } from "../../features/transformations";
@@ -12,6 +13,7 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
   const assetRevealClipOverlay = useTimelineAssetRevealClipOverlay();
   const muteClipOverlay = useTimelineClipMuteOverlay();
   const markersClipOverlay = useTimelineMarkersClipOverlay();
+  const reverseStatusClipOverlay = useTimelineReverseStatusOverlay();
 
   return useMemo(
     () => [
@@ -19,12 +21,14 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
       assetRevealClipOverlay,
       muteClipOverlay,
       markersClipOverlay,
+      reverseStatusClipOverlay,
     ],
     [
       assetRevealClipOverlay,
       keyframeClipOverlay,
       markersClipOverlay,
       muteClipOverlay,
+      reverseStatusClipOverlay,
     ],
   );
 }

@@ -21,6 +21,7 @@ import {
   parseMaskClipId,
 } from "../model/maskClipModel";
 import { useTimelineStore } from "../useTimelineStore";
+import { beginClipReversal, endClipReversal } from "../hooks/useClipReversalStore";
 import type { Component, MarkerEntry, MarkersComponent } from "../../../types/Components";
 
 /**
@@ -204,60 +205,69 @@ export async function reverseTimelineClip(
 
   const sourceDurationTicks = clip.sourceDuration;
 
-  // 1. Reversed asset (cached or freshly encoded).
-  const reversedAsset = await obtainReversedAsset(sourceAsset, options);
+  // Flag the clip as "reversing" so the timeline overlay can show a
+  // "Rendering reverse…" badge until the hot-swap commits. Cleared in the
+  // finally below, covering both the slow re-encode path and the instant
+  // round-trip / cached-twin paths.
+  beginClipReversal(clipId);
+  try {
+    // 1. Reversed asset (cached or freshly encoded).
+    const reversedAsset = await obtainReversedAsset(sourceAsset, options);
 
-  // 2. Reverse transformations.
-  const reversedTransforms = reverseTransformationStack(
-    clip.transformations ?? [],
-    sourceDurationTicks,
-  );
-
-  // 3. Compute new clip shape (mirror around source / transformed midpoints).
-  const reversedShape = computeReversedClipShape({
-    ...clip,
-    sourceDuration: sourceDurationTicks,
-  });
-
-  // 4. Reverse markers components (carry source-tick markers). Asset-backed
-  // clips never have `type === "mask"`, but TS doesn't see the narrowing so we
-  // pluck `components` defensively.
-  const components =
-    "components" in clip ? clip.components : undefined;
-  const reversedMarkerComponents = reverseMarkersInComponents(
-    components,
-    sourceDurationTicks,
-  );
-
-  // 5. Collect child masks (pre-mutation snapshot).
-  const childMasks = getOrderedChildMaskClips(store.clips, clip);
-
-  // --- Apply store mutations sequentially ---
-
-  // 5a. Hot-swap asset reference (assetId + name).
-  store.replaceClipAsset(clipId, reversedAsset);
-
-  // 5b. Update clip trim / transformedOffset so the visual window mirrors.
-  store.updateClipShape(clipId, reversedShape);
-
-  // 5c. Apply reversed transformations stack.
-  store.setClipTransforms(clipId, reversedTransforms);
-
-  // 5d. Replace markers (if any) on the clip's components.
-  for (const { id, component } of reversedMarkerComponents) {
-    useTimelineStore.getState().updateClipComponent(
-      clipId,
-      id,
-      () => component,
+    // 2. Reverse transformations.
+    const reversedTransforms = reverseTransformationStack(
+      clip.transformations ?? [],
+      sourceDurationTicks,
     );
-  }
 
-  // 5e. Reverse each child mask's transformations + points + activeRange.
-  for (const mask of childMasks) {
-    applyMaskReversal(mask, clipId, sourceDurationTicks);
-  }
+    // 3. Compute new clip shape (mirror around source / transformed midpoints).
+    const reversedShape = computeReversedClipShape({
+      ...clip,
+      sourceDuration: sourceDurationTicks,
+    });
 
-  return reversedAsset;
+    // 4. Reverse markers components (carry source-tick markers). Asset-backed
+    // clips never have `type === "mask"`, but TS doesn't see the narrowing so
+    // we pluck `components` defensively.
+    const components =
+      "components" in clip ? clip.components : undefined;
+    const reversedMarkerComponents = reverseMarkersInComponents(
+      components,
+      sourceDurationTicks,
+    );
+
+    // 5. Collect child masks (pre-mutation snapshot).
+    const childMasks = getOrderedChildMaskClips(store.clips, clip);
+
+    // --- Apply store mutations sequentially ---
+
+    // 5a. Hot-swap asset reference (assetId + name).
+    store.replaceClipAsset(clipId, reversedAsset);
+
+    // 5b. Update clip trim / transformedOffset so the visual window mirrors.
+    store.updateClipShape(clipId, reversedShape);
+
+    // 5c. Apply reversed transformations stack.
+    store.setClipTransforms(clipId, reversedTransforms);
+
+    // 5d. Replace markers (if any) on the clip's components.
+    for (const { id, component } of reversedMarkerComponents) {
+      useTimelineStore.getState().updateClipComponent(
+        clipId,
+        id,
+        () => component,
+      );
+    }
+
+    // 5e. Reverse each child mask's transformations + points + activeRange.
+    for (const mask of childMasks) {
+      applyMaskReversal(mask, clipId, sourceDurationTicks);
+    }
+
+    return reversedAsset;
+  } finally {
+    endClipReversal(clipId);
+  }
 }
 
 function applyMaskReversal(

@@ -40,6 +40,7 @@ export type {
 export { useAssetDrag } from "./hooks/dnd/useAssetDrag";
 export { useTimelineClipMuteOverlay } from "./hooks/useTimelineClipMuteOverlay";
 export { useTimelineMarkersClipOverlay } from "./hooks/useTimelineMarkersClipOverlay";
+export { useTimelineReverseStatusOverlay } from "./hooks/useTimelineReverseStatusOverlay";
 export {
   insertAssetAtTime,
   insertBaseClipAtTime,

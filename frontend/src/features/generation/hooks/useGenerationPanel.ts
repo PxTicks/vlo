@@ -478,88 +478,108 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     });
   }, [lastAppliedWidgetValues]);
 
-  useEffect(() => {
-    if (!pendingReplayPanelState) {
-      return;
-    }
-
-    setTextValues((prev) => {
-      const next = { ...prev };
-      for (const input of workflowInputs) {
-        if (input.inputType !== "text") {
-          continue;
-        }
-        const inputId = getWorkflowInputId(input);
-        if (
-          Object.prototype.hasOwnProperty.call(
-            pendingReplayPanelState.textValues,
-            inputId,
-          )
-        ) {
-          next[inputId] = pendingReplayPanelState.textValues[inputId] ?? "";
-        }
-      }
-      return next;
+  // Hydrate panel state from a queued generation-replay snapshot during render
+  // (using the "store previous render value" pattern) so the hydrated values
+  // land in the same commit that exposed them, without an intermediate effect.
+  const [lastReplaySyncKey, setLastReplaySyncKey] = useState<{
+    pending: typeof pendingReplayPanelState;
+    widgets: typeof widgetInputs;
+    workflow: typeof workflowInputs;
+  }>({
+    pending: pendingReplayPanelState,
+    widgets: widgetInputs,
+    workflow: workflowInputs,
+  });
+  if (
+    lastReplaySyncKey.pending !== pendingReplayPanelState ||
+    lastReplaySyncKey.widgets !== widgetInputs ||
+    lastReplaySyncKey.workflow !== workflowInputs
+  ) {
+    setLastReplaySyncKey({
+      pending: pendingReplayPanelState,
+      widgets: widgetInputs,
+      workflow: workflowInputs,
     });
 
-    if (
-      Object.keys(pendingReplayPanelState.widgetValues).length > 0 ||
-      Object.keys(pendingReplayPanelState.derivedWidgetValues).length > 0
-    ) {
-      const nextWidgetValues: Record<string, Record<string, unknown>> = {};
-
-      for (const widget of widgetInputs) {
-        if (!nextWidgetValues[widget.nodeId]) {
-          nextWidgetValues[widget.nodeId] = {};
-        }
-
-        let restoredValue: unknown = widget.currentValue;
-        if (widget.kind === "derived") {
-          const replayKey = `derived_widget_${widget.derivedWidgetId}`;
-          const storedValue =
-            pendingReplayPanelState.derivedWidgetValues[replayKey];
-          if (typeof storedValue === "string") {
-            restoredValue = parseStoredWidgetValue(widget, storedValue);
-          }
-        } else {
-          const replayKey = buildFrontendStateValueKey({
-            nodeId: widget.nodeId,
-            widget: widget.param,
-            frontendControlId: widget.frontendControlId,
-          });
-          const storedValue =
-            pendingReplayPanelState.widgetValues[replayKey];
-          if (typeof storedValue === "string") {
-            restoredValue = parseStoredWidgetValue(widget, storedValue);
-          }
-        }
-
-        nextWidgetValues[widget.nodeId][widget.param] = restoredValue;
-      }
-
-      widgetValuesRef.current = nextWidgetValues;
-      setWidgetValues(nextWidgetValues);
-    }
-
-    if (Object.keys(pendingReplayPanelState.widgetModes).length > 0) {
-      setRandomizeToggles((prev) => {
+    if (pendingReplayPanelState) {
+      setTextValues((prev) => {
         const next = { ...prev };
-        for (const widget of widgetInputs) {
-          if (!widget.config.controlAfterGenerate) {
+        for (const input of workflowInputs) {
+          if (input.inputType !== "text") {
             continue;
           }
-          const replayKey = `widget_mode_${widget.nodeId}_${widget.param}`;
-          const restoredMode = pendingReplayPanelState.widgetModes[replayKey];
-          if (!restoredMode) {
-            continue;
+          const inputId = getWorkflowInputId(input);
+          if (
+            Object.prototype.hasOwnProperty.call(
+              pendingReplayPanelState.textValues,
+              inputId,
+            )
+          ) {
+            next[inputId] = pendingReplayPanelState.textValues[inputId] ?? "";
           }
-          next[`${widget.nodeId}:${widget.param}`] =
-            restoredMode === "randomize";
         }
         return next;
       });
+
+      if (
+        Object.keys(pendingReplayPanelState.widgetValues).length > 0 ||
+        Object.keys(pendingReplayPanelState.derivedWidgetValues).length > 0
+      ) {
+        const nextWidgetValues: Record<string, Record<string, unknown>> = {};
+
+        for (const widget of widgetInputs) {
+          if (!nextWidgetValues[widget.nodeId]) {
+            nextWidgetValues[widget.nodeId] = {};
+          }
+
+          let restoredValue: unknown = widget.currentValue;
+          if (widget.kind === "derived") {
+            const replayKey = `derived_widget_${widget.derivedWidgetId}`;
+            const storedValue =
+              pendingReplayPanelState.derivedWidgetValues[replayKey];
+            if (typeof storedValue === "string") {
+              restoredValue = parseStoredWidgetValue(widget, storedValue);
+            }
+          } else {
+            const replayKey = buildFrontendStateValueKey({
+              nodeId: widget.nodeId,
+              widget: widget.param,
+              frontendControlId: widget.frontendControlId,
+            });
+            const storedValue =
+              pendingReplayPanelState.widgetValues[replayKey];
+            if (typeof storedValue === "string") {
+              restoredValue = parseStoredWidgetValue(widget, storedValue);
+            }
+          }
+
+          nextWidgetValues[widget.nodeId][widget.param] = restoredValue;
+        }
+
+        // widgetValuesRef is kept in sync via the dedicated useEffect below.
+        setWidgetValues(nextWidgetValues);
+      }
+
+      if (Object.keys(pendingReplayPanelState.widgetModes).length > 0) {
+        setRandomizeToggles((prev) => {
+          const next = { ...prev };
+          for (const widget of widgetInputs) {
+            if (!widget.config.controlAfterGenerate) {
+              continue;
+            }
+            const replayKey = `widget_mode_${widget.nodeId}_${widget.param}`;
+            const restoredMode = pendingReplayPanelState.widgetModes[replayKey];
+            if (!restoredMode) {
+              continue;
+            }
+            next[`${widget.nodeId}:${widget.param}`] =
+              restoredMode === "randomize";
+          }
+          return next;
+        });
+      }
     }
-  }, [pendingReplayPanelState, widgetInputs, workflowInputs]);
+  }
 
   useEffect(() => {
     const store = useGenerationStore.getState();

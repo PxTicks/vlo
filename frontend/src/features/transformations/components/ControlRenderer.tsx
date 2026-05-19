@@ -160,15 +160,18 @@ function TransformSliderControl({
   const min = control.min ?? 0;
   const max = control.max ?? 100;
   const step = control.step ?? 1;
+  // Sync with prop updates (e.g. user seeks while paused, or edits a keyframe value)
+  // using the "store previous render value" pattern so the buffered local value
+  // tracks numericValue without an effect. This does NOT fire during playback
+  // because `numericValue` only changes when the spline definition object itself
+  // changes, not when the playhead moves.
   const [localValue, setLocalValue] = useState(numericValue);
-  const canPreviewWithoutCommit = Boolean(transformId) && groupId !== "speed";
-
-  // Sync with prop updates (e.g. user seeks while paused, or edits a keyframe value).
-  // This does NOT fire during playback because `numericValue` only changes when the
-  // spline definition object itself changes, not when the playhead moves.
-  useEffect(() => {
+  const [lastSyncedValue, setLastSyncedValue] = useState(numericValue);
+  if (lastSyncedValue !== numericValue) {
+    setLastSyncedValue(numericValue);
     setLocalValue(numericValue);
-  }, [numericValue]);
+  }
+  const canPreviewWithoutCommit = Boolean(transformId) && groupId !== "speed";
 
   useEffect(() => {
     if (!transformId) return;

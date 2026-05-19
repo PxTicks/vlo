@@ -200,15 +200,20 @@ export function useWaveformRenderer({
     };
   }, [clip.assetId, enabled]);
 
-  useEffect(() => {
-    if (!enabled || !clip.assetId) {
-      return;
+  // Mirror cached bucket presence into status during render whenever the
+  // active asset changes (or the renderer is re-enabled).
+  const [lastStatusSyncKey, setLastStatusSyncKey] = useState<string>(
+    `${enabled}|${clip.assetId ?? ""}`,
+  );
+  const currentStatusSyncKey = `${enabled}|${clip.assetId ?? ""}`;
+  if (lastStatusSyncKey !== currentStatusSyncKey) {
+    setLastStatusSyncKey(currentStatusSyncKey);
+    if (enabled && clip.assetId) {
+      setWaveformStatus(
+        waveformCacheService.hasAnyBuckets(clip.assetId) ? "ready" : "loading",
+      );
     }
-
-    setWaveformStatus(
-      waveformCacheService.hasAnyBuckets(clip.assetId) ? "ready" : "loading",
-    );
-  }, [clip.assetId, enabled]);
+  }
 
   const markWaveformReady = useCallback(() => {
     setWaveformStatus((current) => (current === "ready" ? current : "ready"));
@@ -306,12 +311,16 @@ export function useWaveformRenderer({
     zoomScale,
   ]);
 
+  // draw() paints into a canvas ref and may flip status to "ready" once
+  // samples are visible. Drawing requires a committed DOM canvas, so it has
+  // to live in a layout effect.
   useLayoutEffect(() => {
     if (!enabled) {
       return;
     }
 
     updateCanvasGeometry();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     draw();
   }, [draw, enabled, updateCanvasGeometry]);
 

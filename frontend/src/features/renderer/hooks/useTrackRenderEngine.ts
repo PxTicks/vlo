@@ -113,12 +113,16 @@ export function useTrackRenderEngine(
     sortedTrackClips,
   });
 
-  livePlaybackStateRef.current = {
-    assets,
-    fps,
-    maskClipsByParent,
-    sortedTrackClips,
-  };
+  useEffect(() => {
+    // Keep the rAF playback loop reading the latest snapshot of playback
+    // inputs without taking them as callback dependencies.
+    livePlaybackStateRef.current = {
+      assets,
+      fps,
+      maskClipsByParent,
+      sortedTrackClips,
+    };
+  });
 
   const syncActiveClipState = useCallback((
     currentTime: number,
@@ -323,6 +327,12 @@ export function useTrackRenderEngine(
   ]);
 
   // 1. Engine Lifecycle
+  // The engine integrates with Pixi.js, which is intentionally imperative —
+  // attaching the engine and enabling sortableChildren on the parent
+  // container both require mutating Pixi-owned objects across the effect
+  // boundary. Cleanup restores the container by removing the engine's
+  // children, so the mutations are scoped to this effect's lifetime.
+  // eslint-disable-next-line react-hooks/immutability
   useEffect(() => {
     if (!trackId || !app) return;
 
@@ -348,7 +358,7 @@ export function useTrackRenderEngine(
     engineRef.current = engine;
     setSpriteInstance(engine.sprite);
 
-    // Ensure sorting
+    // Ensure sorting on the Pixi container (justified above on the useEffect).
     // eslint-disable-next-line react-hooks/immutability
     container.sortableChildren = true;
     container.sortChildren();

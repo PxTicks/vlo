@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { TextField, type SxProps, type Theme } from "@mui/material";
 
 export interface BufferedColorInputProps {
@@ -20,11 +20,15 @@ function BufferedColorInputComponent({
   disabled,
   sx,
 }: BufferedColorInputProps) {
+  // Track the upstream value alongside the buffered local value so external
+  // changes (undo/redo, programmatic edits) snap into the field without
+  // an effect. See: https://react.dev/reference/react/useState#storing-information-from-previous-renders
   const [localValue, setLocalValue] = useState(value);
-
-  useEffect(() => {
+  const [committedValue, setCommittedValue] = useState(value);
+  if (committedValue !== value) {
+    setCommittedValue(value);
     setLocalValue(value);
-  }, [value]);
+  }
 
   const commit = useCallback(() => {
     if (localValue !== value) {

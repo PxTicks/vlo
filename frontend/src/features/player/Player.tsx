@@ -107,7 +107,9 @@ function PlayerImpl() {
 
   // Keep the playback loop stable across transform edits while still observing
   // the latest clip duration bounds for end-of-timeline detection.
-  maxTimelineDurationRef.current = timelineDuration;
+  useEffect(() => {
+    maxTimelineDurationRef.current = timelineDuration;
+  }, [timelineDuration]);
 
   // Use a ref to access current isPlaying state inside useCallback without dependency
   const isPlayingRef = useRef(isPlaying);

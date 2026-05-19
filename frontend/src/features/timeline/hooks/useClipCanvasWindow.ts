@@ -56,6 +56,17 @@ export function useClipCanvasWindow({
   const viewportRef = useRef({ scrollLeft: 0, containerWidth: 0 });
   const scrollContainer = useTimelineViewStore((state) => state.scrollContainer);
 
+  // Reset wing sizes during render whenever the active clip/asset changes or
+  // the hook is re-enabled, using the "store previous render value" pattern.
+  const [lastResetKey, setLastResetKey] = useState<string>(
+    `${clip.id}|${clip.assetId}|${enabled}`,
+  );
+  const currentResetKey = `${clip.id}|${clip.assetId}|${enabled}`;
+  if (lastResetKey !== currentResetKey) {
+    setLastResetKey(currentResetKey);
+    setDynamicWings({ left: INITIAL_WING_SIZE, right: INITIAL_WING_SIZE });
+  }
+
   const updateViewportState = useCallback(() => {
     if (!scrollContainer) {
       return;
@@ -71,8 +82,6 @@ export function useClipCanvasWindow({
     if (!enabled) {
       return;
     }
-
-    setDynamicWings({ left: INITIAL_WING_SIZE, right: INITIAL_WING_SIZE });
 
     const unsubscribe = useInteractionStore.subscribe((state) => {
       const isLeft = state.activeId === `resize_left_${clip.id}`;
@@ -108,12 +117,13 @@ export function useClipCanvasWindow({
   }, [enabled, isDragging, updateViewportState]);
 
   useEffect(() => {
+    // Invalidate scratch layout cache when the underlying asset swaps so the
+    // next render re-measures the canvas geometry from scratch.
     layoutRef.current = {
       canvasLeft: -1,
       canvasHeight: -1,
       canvasWidth: -1,
     };
-    setDynamicWings({ left: INITIAL_WING_SIZE, right: INITIAL_WING_SIZE });
   }, [clip.assetId]);
 
   const visibleDurationPx =

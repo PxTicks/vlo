@@ -347,11 +347,11 @@ function AssetBrowserComponent() {
     return getFamilyMembers(assets, selectedFamily, familyScope.assetType);
   }, [assets, selectedFamily, familyScope]);
 
-  React.useEffect(() => {
-    if (familyScope && !selectedFamily) {
-      setFamilyScope(null);
-    }
-  }, [familyScope, selectedFamily]);
+  // Clear the family scope when its underlying family disappears. Adjusted
+  // during render so dependent memos in the same pass observe the cleared value.
+  if (familyScope && !selectedFamily) {
+    setFamilyScope(null);
+  }
 
   React.useEffect(() => {
     if (!familyScope) {
@@ -608,6 +608,10 @@ function AssetBrowserComponent() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [assets, deleteAsset, selectedAssetIds, setSelectedAssetIds]);
 
+  // Consume reveal requests dispatched from outside the browser. The handler
+  // dispatches store mutations (selectAsset / clearRevealRequest) alongside
+  // the React state updates, so it has to live in an effect rather than the
+  // render body.
   React.useEffect(() => {
     if (!revealRequest) {
       return;
@@ -632,6 +636,7 @@ function AssetBrowserComponent() {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveTab(assetToReveal.type);
     setShowFavouritesOnly(false);
     setFamilyScope(resolveFamilyScopeForAsset(assetToReveal, assets, families));

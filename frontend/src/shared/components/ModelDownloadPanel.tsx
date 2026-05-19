@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import {
   Box,
   Button,
@@ -82,14 +82,21 @@ export function ModelDownloadPanel({
   fillHeight = false,
 }: ModelDownloadPanelProps) {
   const hasGatedModels = models.some((model) => model.gated);
-  const [hfToken, setHfToken] = useState<string>("");
-  const [showToken, setShowToken] = useState(false);
-
-  useEffect(() => {
+  // Hydrate the HF token from storage on initial mount when gated models are
+  // already present, and again whenever gated models appear later. The
+  // "store previous render value" pattern handles the transition without
+  // an effect.
+  const [hfToken, setHfToken] = useState<string>(() =>
+    hasGatedModels ? loadStoredHfToken() : "",
+  );
+  const [lastHadGatedModels, setLastHadGatedModels] = useState(hasGatedModels);
+  if (lastHadGatedModels !== hasGatedModels) {
+    setLastHadGatedModels(hasGatedModels);
     if (hasGatedModels) {
       setHfToken(loadStoredHfToken());
     }
-  }, [hasGatedModels]);
+  }
+  const [showToken, setShowToken] = useState(false);
 
   const handleTokenChange = useCallback((value: string) => {
     setHfToken(value);

@@ -63,7 +63,11 @@ export function Sam2ModelDownloadOverlay({
     },
   });
 
+  // Fetch-on-mount is the documented escape hatch for the
+  // react-hooks/set-state-in-effect rule when no data-fetching library is
+  // in play. See https://react.dev/reference/react/useEffect#fetching-data-with-effects
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchModels();
   }, [fetchModels]);
 

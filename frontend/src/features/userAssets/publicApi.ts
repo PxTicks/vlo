@@ -139,13 +139,16 @@ export function useAssetSourceUrl(
   enabled = true,
 ): string | null {
   const asset = useAsset(assetId);
+  // Mirror the asset's current hydrated URL into local state without an
+  // effect by tracking the previously-observed asset reference.
   const [sourceUrl, setSourceUrl] = useState<string | null>(() =>
     resolveHydratedSourceUrl(asset),
   );
-
-  useEffect(() => {
+  const [lastSyncedAsset, setLastSyncedAsset] = useState(asset);
+  if (lastSyncedAsset !== asset) {
+    setLastSyncedAsset(asset);
     setSourceUrl(resolveHydratedSourceUrl(asset));
-  }, [asset]);
+  }
 
   useEffect(() => {
     if (!enabled || !asset || resolveHydratedSourceUrl(asset)) {

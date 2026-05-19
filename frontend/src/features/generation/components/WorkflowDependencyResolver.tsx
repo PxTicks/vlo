@@ -139,7 +139,11 @@ export function WorkflowDependencyResolver({
     }
   }, [missingModelsKey, warning.missingModels.length, workflowId]);
 
+  // Fetch-on-mount + refetch-on-dep-change is the documented escape hatch
+  // for the react-hooks/set-state-in-effect rule when no data-fetching
+  // library is in play. See https://react.dev/reference/react/useEffect#fetching-data-with-effects
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchWorkflowModels();
   }, [fetchWorkflowModels]);
 

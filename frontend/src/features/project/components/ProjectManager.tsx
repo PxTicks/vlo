@@ -119,14 +119,15 @@ export function ProjectManager() {
   const [selectedAspectRatio, setSelectedAspectRatio] =
     useState<AspectRatio>("16:9");
   const [selectedFps, setSelectedFps] = useState<number>(16);
-  const [isNonChromium, setIsNonChromium] = useState<boolean>(false);
+  // UA capability check is stable for the component lifetime; compute it
+  // lazily once instead of via a post-mount effect.
+  const [isNonChromium] = useState<boolean>(() => isNonChromiumBrowser());
 
   const loadProject = useProjectStore((state) => state.loadProject);
   const createProject = useProjectStore((state) => state.createProject);
 
   useEffect(() => {
     void loadRecents();
-    setIsNonChromium(isNonChromiumBrowser());
   }, []);
 
   async function loadRecents() {

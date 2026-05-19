@@ -292,8 +292,13 @@ export function useSam2MaskPanel({
     }
   }, []);
 
+  // Async availability probe when the SAM2 tab becomes visible. Fetch-from-
+  // effect is the documented escape hatch for the set-state-in-effect rule
+  // when no data-fetching library is in play. See
+  // https://react.dev/reference/react/useEffect#fetching-data-with-effects
   useEffect(() => {
     if (!isMaskTabActive || !isSam2Selected) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void ensureSam2Available();
   }, [ensureSam2Available, isMaskTabActive, isSam2Selected]);
 
@@ -318,21 +323,33 @@ export function useSam2MaskPanel({
     };
   }, []);
 
+  // Reset transient SAM2 error state during render when the active clip/mask
+  // changes, then run the imperative cleanup side-effects in an effect.
+  const [lastClipMaskKey, setLastClipMaskKey] = useState<string>(
+    `${selectedClipId ?? ""}|${selectedMaskId ?? ""}`,
+  );
+  const currentClipMaskKey = `${selectedClipId ?? ""}|${selectedMaskId ?? ""}`;
+  if (lastClipMaskKey !== currentClipMaskKey) {
+    setLastClipMaskKey(currentClipMaskKey);
+    setSam2GenerateError(null);
+    setSam2FramePreviewError(null);
+  }
+
   useEffect(() => {
     cancelSam2PreviewRequest();
     activeSam2SessionInitRef.current = null;
     lastAppliedSam2PreviewRef.current = null;
-    setSam2GenerateError(null);
-    setSam2FramePreviewError(null);
     if (selectedClipId) {
       useMaskViewStore.getState().clearSam2LivePreview(selectedClipId);
     }
   }, [cancelSam2PreviewRequest, selectedClipId, selectedMaskId]);
 
   const selectedClipIdRef = useRef(selectedClipId);
-  selectedClipIdRef.current = selectedClipId;
   const selectedMaskIdRef = useRef(selectedMaskId);
-  selectedMaskIdRef.current = selectedMaskId;
+  useEffect(() => {
+    selectedClipIdRef.current = selectedClipId;
+    selectedMaskIdRef.current = selectedMaskId;
+  });
 
   useEffect(() => {
     return () => {

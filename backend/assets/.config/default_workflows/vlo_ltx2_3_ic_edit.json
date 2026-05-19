@@ -2135,6 +2135,13 @@
         "cnr_id": "comfy-core",
         "ver": "0.8.2",
         "Node name for S&R": "VAELoader",
+        "models": [
+          {
+            "name": "LTX23_video_vae_bf16.safetensors",
+            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_video_vae_bf16.safetensors",
+            "directory": "vae"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -2171,6 +2178,13 @@
         "cnr_id": "comfyui-kjnodes",
         "ver": "487c7d86a0230aae3d8c0a37d517159b73834f85",
         "Node name for S&R": "VAELoaderKJ",
+        "models": [
+          {
+            "name": "LTX23_audio_vae_bf16.safetensors",
+            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_audio_vae_bf16.safetensors",
+            "directory": "vae"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -2209,6 +2223,13 @@
         "cnr_id": "comfy-core",
         "ver": "0.16.3",
         "Node name for S&R": "VAELoader",
+        "models": [
+          {
+            "name": "taeltx2_3.safetensors",
+            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/vae/taeltx2_3.safetensors",
+            "directory": "vae"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -2765,6 +2786,18 @@
         "cnr_id": "comfy-core",
         "ver": "0.8.2",
         "Node name for S&R": "DualCLIPLoader",
+        "models": [
+          {
+            "name": "gemma_3_12B_it_fp8_scaled.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/ltx-2/resolve/main/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors",
+            "directory": "text_encoders"
+          },
+          {
+            "name": "ltx-2.3_text_projection_bf16.safetensors",
+            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/text_encoders/ltx-2.3_text_projection_bf16.safetensors",
+            "directory": "text_encoders"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -4455,6 +4488,13 @@
         "cnr_id": "comfy-core",
         "ver": "0.16.1",
         "Node name for S&R": "UNETLoader",
+        "models": [
+          {
+            "name": "ltx-2.3-22b-distilled_transformer_only_fp8_scaled.safetensors",
+            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/diffusion_models/ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+            "directory": "diffusion_models"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -4503,6 +4543,13 @@
         "cnr_id": "ComfyUI-LTXVideo",
         "ver": "2acf7af8991f33b5cc06ec26753cb6e88e057d04",
         "Node name for S&R": "LTXICLoRALoaderModelOnly",
+        "models": [
+          {
+            "name": "ltx23_edit_anything_global_rank128_v1_9000steps_adamw.safetensors",
+            "url": "https://huggingface.co/Alissonerdx/LTX-LoRAs/resolve/main/ltx23_edit_anything_global_rank128_v1_9000steps_adamw.safetensors",
+            "directory": "loras"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [

@@ -664,6 +664,13 @@
         "cnr_id": "comfy-core",
         "ver": "0.3.59",
         "Node name for S&R": "CLIPVisionLoader",
+        "models": [
+          {
+            "name": "clip_vision_h.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors",
+            "directory": "clip_vision"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1183,6 +1190,18 @@
         "cnr_id": "ComfyUI-WanVideoWrapper",
         "ver": "b2c8cf969fcf60a38884ea2c29af177ae1f28b29",
         "Node name for S&R": "WanVideoLoraSelectMulti",
+        "models": [
+          {
+            "name": "WanAnimate_relight_lora_fp16.safetensors",
+            "url": "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/LoRAs/Wan22_relight/WanAnimate_relight_lora_fp16.safetensors",
+            "directory": "loras"
+          },
+          {
+            "name": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+            "url": "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+            "directory": "loras"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1316,6 +1335,13 @@
         "cnr_id": "comfy-core",
         "ver": "0.19.3",
         "Node name for S&R": "CLIPLoader",
+        "models": [
+          {
+            "name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+            "directory": "text_encoders"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1427,6 +1453,13 @@
         "cnr_id": "ComfyUI-WanVideoWrapper",
         "ver": "e5ef9752a7e846b232fc05fd993327a2e870a788",
         "Node name for S&R": "WanVideoModelLoader",
+        "models": [
+          {
+            "name": "Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors",
+            "url": "https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/Wan22Animate/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors",
+            "directory": "diffusion_models"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1849,6 +1882,13 @@
         "cnr_id": "ComfyUI-WanVideoWrapper",
         "ver": "e5ef9752a7e846b232fc05fd993327a2e870a788",
         "Node name for S&R": "WanVideoVAELoader",
+        "models": [
+          {
+            "name": "wan_2.1_vae.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors",
+            "directory": "vae"
+          }
+        ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [

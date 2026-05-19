@@ -1,4 +1,4 @@
-import { Container, Sprite, Text, Texture } from "pixi.js";
+import { Container, Sprite, Texture } from "pixi.js";
 import type { Renderer } from "pixi.js";
 import type {
   TimelineClip,
@@ -26,8 +26,10 @@ import {
   awaitStrictFrame,
   type StrictFramePending,
 } from "../utils/strictFrameRequest";
-import { livePreviewTextStore } from "../../text/services/livePreviewTextStore";
-import { resolveTextClipData } from "../../text/utils/textClipData";
+import {
+  createTextTexture,
+  getTextTextureSignature,
+} from "./textTextureRenderer";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -1192,92 +1194,6 @@ export class TrackRenderEngine {
     this.maskController.syncMaskSpriteTransform();
   }
 
-  private getTextTextureSignature(
-    clip: TextTimelineClip,
-    logicalDimensions: { width: number; height: number },
-  ): string {
-    const textData = this.getEffectiveTextClipData(clip);
-    const renderResolution = this.getTextRenderResolution(logicalDimensions);
-
-    return JSON.stringify({
-      content: textData.content,
-      fontFamily: textData.fontFamily,
-      fontSize: textData.fontSize,
-      fill: textData.fill,
-      align: textData.align,
-      strokeColor: textData.strokeColor,
-      strokeWidth: textData.strokeWidth,
-      logicalWidth: logicalDimensions.width,
-      logicalHeight: logicalDimensions.height,
-      renderResolution,
-    });
-  }
-
-  private getTextRenderResolution(
-    logicalDimensions: { width: number; height: number },
-  ): number {
-    if (!this.renderer) {
-      return 1;
-    }
-
-    const widthRatio =
-      this.renderer.width / Math.max(1, logicalDimensions.width);
-    const heightRatio =
-      this.renderer.height / Math.max(1, logicalDimensions.height);
-
-    return Math.max(1, Math.min(8, Math.max(widthRatio, heightRatio)));
-  }
-
-  private createTextTexture(
-    clip: TextTimelineClip,
-    logicalDimensions: { width: number; height: number },
-  ): Texture | null {
-    if (!this.renderer) {
-      return null;
-    }
-
-    const textData = this.getEffectiveTextClipData(clip);
-    const renderResolution = this.getTextRenderResolution(logicalDimensions);
-    const text = new Text({
-      text: textData.content.length > 0 ? textData.content : " ",
-      resolution: renderResolution,
-      style: {
-        align: textData.align,
-        fill: textData.fill,
-        fontFamily: textData.fontFamily,
-        fontSize: textData.fontSize,
-        whiteSpace: "pre-line",
-        ...(textData.strokeWidth > 0
-          ? {
-              stroke: {
-                color: textData.strokeColor,
-                width: textData.strokeWidth,
-                join: "round",
-              },
-            }
-          : {}),
-      },
-    });
-
-    try {
-      return this.renderer.generateTexture({
-        target: text,
-        resolution: renderResolution,
-        clearColor: [0, 0, 0, 0],
-      });
-    } finally {
-      text.destroy();
-    }
-  }
-
-  private getEffectiveTextClipData(clip: TextTimelineClip) {
-    const previewTextData = livePreviewTextStore.get(clip.id);
-    return resolveTextClipData({
-      ...clip.textData,
-      ...previewTextData,
-    });
-  }
-
   private async renderTextClip(
     clip: TextTimelineClip,
     logicalDimensions: { width: number; height: number },
@@ -1286,7 +1202,11 @@ export class TrackRenderEngine {
     assetsById: Map<string, Asset>,
     fps?: number,
   ): Promise<void> {
-    const nextSignature = this.getTextTextureSignature(clip, logicalDimensions);
+    const nextSignature = getTextTextureSignature(
+      clip,
+      this.renderer,
+      logicalDimensions,
+    );
     const hasReusableTextTexture =
       this.currentTextureSourceKind === "text" &&
       this.currentTextTextureSignature === nextSignature &&
@@ -1296,7 +1216,7 @@ export class TrackRenderEngine {
       this.sprite.visible = true;
       this.currentTextureClipId = clip.id;
     } else {
-      const texture = this.createTextTexture(clip, logicalDimensions);
+      const texture = createTextTexture(clip, this.renderer, logicalDimensions);
       if (!texture) {
         this.sprite.visible = false;
         this.currentTextureClipId = null;

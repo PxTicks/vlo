@@ -14,6 +14,20 @@ vi.mock("../../utils/SelectionGizmo", () => {
         update: vi.fn(),
         destroy: vi.fn(),
         getHandle: vi.fn(),
+        handleKeys: [
+          "nw",
+          "n",
+          "ne",
+          "e",
+          "se",
+          "s",
+          "sw",
+          "w",
+          "rot-nw",
+          "rot-ne",
+          "rot-se",
+          "rot-sw",
+        ],
       };
     }),
   };

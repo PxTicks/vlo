@@ -31,8 +31,7 @@ export function useGizmoBehavior(
     viewport.addChild(gizmo);
     gizmoRef.current = gizmo;
 
-    const handleKeys = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
-    handleKeys.forEach((key) => {
+    gizmo.handleKeys.forEach((key) => {
       const handle = gizmo.getHandle(key);
       if (handle) {
         handle.on("pointerdown", (e) => interactions.onHandlePointerDown(e, key));

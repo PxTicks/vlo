@@ -1,4 +1,4 @@
-import { Container, Graphics } from "pixi.js";
+import { Container, Graphics, Rectangle } from "pixi.js";
 import { syncContainerTransformToTarget } from "../../renderer";
 
 // Constants for styling
@@ -6,6 +6,53 @@ const BORDER_COLOR = 0x00aaff;
 const HANDLE_COLOR = 0xffffff;
 const HANDLE_STROKE = 0x00aaff;
 const HANDLE_SIZE = 8; // Size in screen pixels (unscaled)
+const ROTATE_ZONE_SIZE = 12; // Hover/hit zone for rotation, in screen pixels
+const ROTATE_ZONE_GAP = 0; // Gap between resize handle and rotation zone, in screen pixels
+
+const RESIZE_HANDLE_KEYS = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
+const ROTATE_HANDLE_KEYS = ["rot-nw", "rot-ne", "rot-se", "rot-sw"] as const;
+
+type ResizeHandleKey = (typeof RESIZE_HANDLE_KEYS)[number];
+type RotateHandleKey = (typeof ROTATE_HANDLE_KEYS)[number];
+export type GizmoHandleKey = ResizeHandleKey | RotateHandleKey;
+
+// Quarter-arc with arrowheads at both ends. Drawn so the arc opens into the
+// inside-bottom-right quadrant (i.e. correct orientation for a NW corner when
+// looked at from outside the gizmo). We rotate the SVG per-corner so each
+// rotation zone points along its own diagonal.
+function buildRotateCursor(rotationDeg: number): string {
+  // Filled triangle arrowheads. Each triangle's BASE is centered on the arc
+  // endpoint and its TIP extends outward along the tangent — so the arc flows
+  // visually into the base of the arrow and the tip lies just beyond. The
+  // arc uses butt linecaps so it ends exactly at the base.
+  // Start: tangent up, outward direction +y, tip at (-8, 3).
+  const startTri = "M -10 0 L -8 3.5 L -6 0 Z";
+  // End: tangent right, outward direction +x, tip at (3, -8).
+  const endTri = "M 0 -10 L 3.5 -8 L 0 -6 Z";
+  const svg =
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='-12 -12 24 24'>" +
+    `<g transform='rotate(${rotationDeg})'>` +
+    "<g fill='none' stroke-linecap='butt'>" +
+    "<path d='M -8 0 A 8 8 0 0 1 0 -8' stroke='white' stroke-width='3.5'/>" +
+    "<path d='M -8 0 A 8 8 0 0 1 0 -8' stroke='black' stroke-width='1.5'/>" +
+    "</g>" +
+    "<g fill='black' stroke='white' stroke-width='1.5' stroke-linejoin='round'>" +
+    `<path d='${startTri}'/>` +
+    `<path d='${endTri}'/>` +
+    "</g>" +
+    "</g>" +
+    "</svg>";
+  return `url("data:image/svg+xml;utf8,${svg}") 12 12, alias`;
+}
+
+// Quadrant rotations: rot-nw arc lives in the NW corner pointing into the
+// gizmo, rot-ne is rotated 90°, rot-se 180°, rot-sw 270°.
+const ROTATE_CURSORS: Record<RotateHandleKey, string> = {
+  "rot-nw": buildRotateCursor(0),
+  "rot-ne": buildRotateCursor(90),
+  "rot-se": buildRotateCursor(180),
+  "rot-sw": buildRotateCursor(270),
+};
 
 export type GizmoTarget = Container & {
   anchor?: { x: number; y: number };
@@ -58,6 +105,12 @@ export class SelectionGizmo extends Container {
   private border: Graphics;
   private handles: { [key: string]: Graphics };
 
+  /** All interactive handle keys, including rotation zones. */
+  public readonly handleKeys: readonly GizmoHandleKey[] = [
+    ...RESIZE_HANDLE_KEYS,
+    ...ROTATE_HANDLE_KEYS,
+  ];
+
   // Stored references for interaction
   public target: GizmoTarget | null = null;
 
@@ -73,16 +126,13 @@ export class SelectionGizmo extends Container {
     this.border = new Graphics();
     this.addChild(this.border);
 
-    // 2. Create Handles
+    // 2. Create Handles (resize + rotation hover zones)
     this.handles = {};
-    const handleKeys = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
-
-    handleKeys.forEach((key) => {
+    this.handleKeys.forEach((key) => {
       const handle = new Graphics();
       this.addChild(handle);
       this.handles[key] = handle;
 
-      // Setup interactivity for handles
       handle.eventMode = "static";
       handle.cursor = this.getCursorForHandle(key);
     });
@@ -106,6 +156,11 @@ export class SelectionGizmo extends Container {
         return "e-resize";
       case "w":
         return "w-resize";
+      case "rot-nw":
+      case "rot-ne":
+      case "rot-se":
+      case "rot-sw":
+        return ROTATE_CURSORS[key];
       default:
         return "default";
     }
@@ -189,20 +244,49 @@ export class SelectionGizmo extends Container {
     // Note: We also divide by viewportScale to stay constant on screen relative to zoom
     const handleSizeX = (HANDLE_SIZE / viewportScale) * invScaleX;
     const handleSizeY = (HANDLE_SIZE / viewportScale) * invScaleY;
+    const rotateSizeX = (ROTATE_ZONE_SIZE / viewportScale) * invScaleX;
+    const rotateSizeY = (ROTATE_ZONE_SIZE / viewportScale) * invScaleY;
+    // Diagonal offset from the corner so the rotate zone sits *just outside*
+    // the resize handle with a small visual gap.
+    const rotateOffsetX =
+      ((HANDLE_SIZE / 2 + ROTATE_ZONE_GAP + ROTATE_ZONE_SIZE / 2) /
+        viewportScale) *
+      invScaleX;
+    const rotateOffsetY =
+      ((HANDLE_SIZE / 2 + ROTATE_ZONE_GAP + ROTATE_ZONE_SIZE / 2) /
+        viewportScale) *
+      invScaleY;
 
-    const drawHandle = (key: string, x: number, y: number) => {
+    const drawResizeHandle = (key: string, x: number, y: number) => {
       const h = this.handles[key];
       h.clear();
-
       h.rect(-handleSizeX / 2, -handleSizeY / 2, handleSizeX, handleSizeY)
         .fill(HANDLE_COLOR)
         .stroke({
           width: (1 / viewportScale) * invStrokeScale,
           color: HANDLE_STROKE,
         });
-
       h.position.set(x, y);
-      h.scale.set(1); // Reset scale since we drew it sized
+      h.scale.set(1);
+    };
+
+    const drawRotateZone = (key: string, x: number, y: number) => {
+      const h = this.handles[key];
+      h.clear();
+      // Invisible hit area — we use a transparent fill so the Graphics
+      // produces a hit-testable region without painting anything visible.
+      h.rect(-rotateSizeX / 2, -rotateSizeY / 2, rotateSizeX, rotateSizeY).fill({
+        color: 0xffffff,
+        alpha: 0,
+      });
+      h.hitArea = new Rectangle(
+        -rotateSizeX / 2,
+        -rotateSizeY / 2,
+        rotateSizeX,
+        rotateSizeY,
+      );
+      h.position.set(x, y);
+      h.scale.set(1);
     };
 
     const l = bounds.x;
@@ -212,17 +296,26 @@ export class SelectionGizmo extends Container {
     const cx = (l + r) / 2;
     const cy = (t + b) / 2;
 
-    drawHandle("nw", l, t);
-    drawHandle("n", cx, t);
-    drawHandle("ne", r, t);
-    drawHandle("e", r, cy);
-    drawHandle("se", r, b);
-    drawHandle("s", cx, b);
-    drawHandle("sw", l, b);
-    drawHandle("w", l, cy);
+    drawResizeHandle("nw", l, t);
+    drawResizeHandle("n", cx, t);
+    drawResizeHandle("ne", r, t);
+    drawResizeHandle("e", r, cy);
+    drawResizeHandle("se", r, b);
+    drawResizeHandle("s", cx, b);
+    drawResizeHandle("sw", l, b);
+    drawResizeHandle("w", l, cy);
+
+    drawRotateZone("rot-nw", l - rotateOffsetX, t - rotateOffsetY);
+    drawRotateZone("rot-ne", r + rotateOffsetX, t - rotateOffsetY);
+    drawRotateZone("rot-se", r + rotateOffsetX, b + rotateOffsetY);
+    drawRotateZone("rot-sw", l - rotateOffsetX, b + rotateOffsetY);
   }
 
   public getHandle(key: string): Graphics | undefined {
     return this.handles[key];
+  }
+
+  public static isRotateHandleKey(key: string): boolean {
+    return key.startsWith("rot-");
   }
 }

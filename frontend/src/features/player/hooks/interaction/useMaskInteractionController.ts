@@ -940,7 +940,14 @@ export function useMaskInteractionController(
         commitLayoutControl("scale", "y", updates.scaleY);
       }
       if (updates.rotation !== undefined) {
-        commitLayoutControl("rotation", "angle", updates.rotation);
+        // Layout state stores rotation in radians (model), but the rotation
+        // control's `toModel` converts degrees → radians on commit. Convert
+        // to degrees here so the value round-trips correctly.
+        commitLayoutControl(
+          "rotation",
+          "angle",
+          (updates.rotation * 180) / Math.PI,
+        );
       }
 
       updateClipMask(clipId, maskLocalId, { transformations: nextTransforms });
@@ -1623,7 +1630,9 @@ export function useMaskInteractionController(
       clearLiveMaskLayoutPreview();
 
       const local = toClipLocal(e.global);
-      const mode: MaskInteractionMode = e.altKey ? "rotate" : "scale";
+      const isRotateHandle = key.startsWith("rot-");
+      const mode: MaskInteractionMode =
+        isRotateHandle || e.altKey ? "rotate" : "scale";
       const activeClip = activeClipRef.current;
       if (!activeClip || activeClip.id !== targetMask.clipId) return;
       const layout = resolveMaskLayoutAtPlayhead(targetMask.maskClip);

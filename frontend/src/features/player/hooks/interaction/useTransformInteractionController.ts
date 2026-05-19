@@ -661,12 +661,17 @@ export function useTransformInteractionController(
             const finalAngle = finalRotation?.newParamAngle ?? current.lastRotationParam;
 
             if (typeof finalAngle === "number") {
+              // Rotation params are stored in radians (model space), but the
+              // commit pipeline applies the rotation control's `toModel`
+              // (degrees → radians) to incoming values. Hand it the view-space
+              // (degrees) value so the round-trip lands in radians.
+              const finalAngleDegrees = (finalAngle * 180) / Math.PI;
               const angleCommit = applyCommit(
                 latestClip,
                 nextTransforms,
                 "rotation",
                 "angle",
-                finalAngle,
+                finalAngleDegrees,
                 current.transformIds.rotation ?? undefined,
               );
               if (angleCommit) {
@@ -775,7 +780,9 @@ export function useTransformInteractionController(
       setIsPlaying(false);
       selectCanvasClip(activeClip.id);
 
-      const mode: InteractionMode = e.altKey ? "rotate" : "scale";
+      const isRotateHandle = key.startsWith("rot-");
+      const mode: InteractionMode =
+        isRotateHandle || e.altKey ? "rotate" : "scale";
       let nextTransforms = [...(activeClip.transformations || [])];
       let scaleTransform = nextTransforms.find(
         (transform) => transform.type === "scale",

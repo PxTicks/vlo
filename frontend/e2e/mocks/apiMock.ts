@@ -30,10 +30,19 @@ function buildMockComfyFrameHtml(): string {
   <body>
     <script>
       (() => {
+        const placeholderActiveWorkflow = {
+          filename: '__placeholder__.json',
+          fullFilename: '__placeholder__.json',
+          path: '__placeholder__.json',
+          activeState: { nodes: [] },
+          promptWorkflow: {},
+          graphNodes: [],
+          pendingWarnings: null,
+        };
         const workflowApi = {
-          workflows: [],
-          openWorkflows: [],
-          activeWorkflow: null,
+          workflows: [placeholderActiveWorkflow],
+          openWorkflows: [placeholderActiveWorkflow],
+          activeWorkflow: placeholderActiveWorkflow,
           async closeWorkflow(workflow) {
             this.workflows = this.workflows.filter((candidate) => candidate !== workflow);
             this.openWorkflows = this.openWorkflows.filter((candidate) => candidate !== workflow);
@@ -123,6 +132,7 @@ function buildMockComfyFrameHtml(): string {
         }
 
         window.app = {
+          canvas: {},
           graph: {
             getNodeById(id) {
               const activeWorkflow = workflowApi.activeWorkflow;

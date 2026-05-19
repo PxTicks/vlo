@@ -9,6 +9,7 @@ function createClip(transformations: ClipTransform[] = []): TimelineClip {
     trackId: "track_1",
     type: "video",
     name: "Layout Commit Clip",
+    assetId: "asset_clip_layout_commit",
     sourceDuration: 10 * TICKS_PER_SECOND,
     start: 0,
     timelineDuration: 10 * TICKS_PER_SECOND,

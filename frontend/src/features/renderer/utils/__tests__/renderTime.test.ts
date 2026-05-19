@@ -23,6 +23,7 @@ describe("calculatePlayerFrameTime (Regression Test)", () => {
     const clip: TimelineClip = {
       id: "test-clip",
       name: "Test Clip",
+      assetId: "asset_test-clip",
       type: "video",
       trackId: "track-1",
       start: startTicks,

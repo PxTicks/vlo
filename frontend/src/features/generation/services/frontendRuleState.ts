@@ -166,7 +166,7 @@ export function resolveStateReference(
   }
 
   if (kind === "input_metadata") {
-    const { input: inputId, field } = ref as {
+    const { input: inputId, field } = ref as unknown as {
       input: string;
       field: string;
     };

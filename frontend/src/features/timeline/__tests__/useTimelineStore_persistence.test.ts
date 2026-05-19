@@ -20,6 +20,7 @@ const createClip = (id: string, trackId: string): TimelineClip =>
     trackId,
     type: "video",
     name: id,
+    assetId: `asset_${id}`,
     start: 0,
     timelineDuration: 100,
     offset: 0,

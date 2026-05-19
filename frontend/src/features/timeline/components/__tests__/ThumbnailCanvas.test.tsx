@@ -175,7 +175,7 @@ describe("ThumbnailCanvas Virtualization", () => {
     render(
       <ThumbnailCanvas
         clip={
-          clip as unknown as import("../../../../types/TimelineTypes").BaseClip
+          clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip
         }
       />,
     );
@@ -252,7 +252,7 @@ describe("ThumbnailCanvas Virtualization", () => {
     render(
       <ThumbnailCanvas
         clip={
-          clip as unknown as import("../../../../types/TimelineTypes").BaseClip
+          clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip
         }
       />,
     );
@@ -311,7 +311,7 @@ describe("ThumbnailCanvas Virtualization", () => {
     render(
       <ThumbnailCanvas
         clip={
-          clip as unknown as import("../../../../types/TimelineTypes").BaseClip
+          clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip
         }
       />,
     );

@@ -392,6 +392,7 @@ describe("useProjectStore", () => {
           trackId: "legacy-track",
           type: "video",
           name: "legacy-clip",
+          assetId: "asset_legacy",
           start: 0,
           timelineDuration: 10,
           offset: 0,

@@ -65,7 +65,7 @@ function createBaseClip(
     transformedOffset: 0,
     transformations: [],
     ...overrides,
-  };
+  } as BaseClip;
 }
 
 describe("insertAssetToTimeline", () => {

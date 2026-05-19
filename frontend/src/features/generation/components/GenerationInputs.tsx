@@ -1268,12 +1268,23 @@ export const GenerationInputs = memo(function GenerationInputs({
     () => buildRenderableSections(inputBlocks, groupedWidgets, sections),
     [groupedWidgets, inputBlocks, sections],
   );
-  const topLevelRenderItems = useMemo(
+  const topLevelRenderItems = useMemo<
+    Array<
+      | { kind: "block"; block: RenderableInputBlock }
+      | { kind: "section"; section: RenderableSection }
+    >
+  >(
     () =>
-      renderableSections.flatMap((section) =>
-        section.renderAsPanel
-          ? [{ kind: "section" as const, section }]
-          : section.blocks.map((block) => ({ kind: "block" as const, block })),
+      renderableSections.flatMap(
+        (
+          section,
+        ): Array<
+          | { kind: "block"; block: RenderableInputBlock }
+          | { kind: "section"; section: RenderableSection }
+        > =>
+          section.renderAsPanel
+            ? [{ kind: "section", section }]
+            : section.blocks.map((block) => ({ kind: "block", block })),
       ),
     [renderableSections],
   );

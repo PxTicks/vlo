@@ -98,7 +98,7 @@ export async function readWorkflowFromIframeDetailed(
     let apiWorkflow: Record<string, unknown> | null = null;
     let graphData = activeWorkflow?.graphData ?? null;
 
-    if (typeof graphToPrompt === "function") {
+    if (typeof graphToPrompt === "function" && win) {
       const rawResult = await graphToPrompt.call(win.app);
 
       if (Array.isArray(rawResult)) {

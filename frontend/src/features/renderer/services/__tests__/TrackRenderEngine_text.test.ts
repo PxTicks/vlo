@@ -166,7 +166,10 @@ describe("TrackRenderEngine text rendering", () => {
     await engine.update(10, [clip], new Map(), [], dimensions);
 
     expect(mockGenerateTexture).toHaveBeenCalledTimes(1);
-    expect(mockGenerateTexture.mock.calls[0][0].target.options).toMatchObject({
+    const firstCall = mockGenerateTexture.mock.calls[0] as unknown as [
+      { target: { options: unknown } },
+    ];
+    expect(firstCall[0].target.options).toMatchObject({
       text: "Preview text",
       style: expect.objectContaining({
         fill: "#ff5500",

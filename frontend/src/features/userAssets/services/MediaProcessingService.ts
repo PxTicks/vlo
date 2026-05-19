@@ -11,6 +11,8 @@ import {
   BufferTarget,
   Conversion,
   WavOutputFormat,
+  OutputFormat,
+  type AudioCodec,
 } from "mediabunny";
 import { createXxhash64 } from "../../../shared/utils/xxhash";
 import { CLIP_HEIGHT } from "../../timeline";
@@ -19,7 +21,7 @@ import { sanitizeFilename } from "../utils/filenameSanitization";
 interface ExtractedAudioOutputSpec {
   extension: string;
   mimeType: string;
-  createFormat: () => object;
+  createFormat: () => OutputFormat;
 }
 
 const PRIMARY_AUDIO_OUTPUT_SPECS = {
@@ -96,14 +98,14 @@ function resolveAudioExtractionPlan(
   codec: string | null | undefined,
 ): {
   outputSpec: ExtractedAudioOutputSpec;
-  targetCodec: string;
+  targetCodec: AudioCodec;
   preservesSourceCodec: boolean;
 } {
   const outputSpec = resolvePrimaryAudioOutputSpec(codec);
   if (outputSpec && codec) {
     return {
       outputSpec,
-      targetCodec: codec,
+      targetCodec: codec as AudioCodec,
       preservesSourceCodec: true,
     };
   }

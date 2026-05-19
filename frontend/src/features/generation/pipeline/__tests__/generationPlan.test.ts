@@ -8,7 +8,7 @@ import {
   type GenerationPreprocessCacheEntry,
   updateGenerationPreprocessCacheFromResponse,
 } from "../generationPlan";
-import type { GenerationPlan } from "../types";
+import type { GenerationPlan, SlotValue } from "../types";
 
 function makeWorkflowInput(classType: string): WorkflowInput {
   return {
@@ -171,7 +171,12 @@ describe("generationPlan cache media extraction", () => {
         imageInputs: {},
         audioInputs: {},
         videoInputs: {
-          "94": plan.preprocess.slotValues["94:file"].file,
+          "94": (
+            plan.preprocess.slotValues["94:file"] as Extract<
+              SlotValue,
+              { type: "video" }
+            >
+          ).file,
         },
         pipelineInputs: {},
       },
@@ -196,7 +201,12 @@ describe("generationPlan cache media extraction", () => {
       },
     });
     expect(prepared.request.videoInputs).toEqual({
-      "94": plan.preprocess.slotValues["94:file"].file,
+      "94": (
+        plan.preprocess.slotValues["94:file"] as Extract<
+          SlotValue,
+          { type: "video" }
+        >
+      ).file,
     });
   });
 

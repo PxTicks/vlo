@@ -27,6 +27,7 @@ const createClip = (
     trackId,
     type: "video",
     name: id,
+    assetId: `asset_${id}`,
     start,
     timelineDuration: duration,
     offset: 0,
@@ -210,11 +211,13 @@ describe("useTimelineStore undo/redo", () => {
   });
 
   it("hot-swaps a clip asset and records the change in undo history", () => {
+    const baseClip = createClip("clip-family", "track_current", 0, 120);
     const clip: TimelineClip = {
-      ...createClip("clip-family", "track_current", 0, 120),
+      ...baseClip,
+      type: "video",
       assetId: "asset-a",
       name: "Asset A",
-    };
+    } as TimelineClip;
 
     act(() => {
       useTimelineStore.getState().addClip(clip);

@@ -19,6 +19,7 @@ describe("useTransformationController speed toggle", () => {
           type: "video",
           croppedSourceDuration: 10 * TICKS_PER_SECOND,
           name: "Speed Clip",
+          assetId: `asset_${clipId}`,
           sourceDuration: 10 * TICKS_PER_SECOND,
           transformedDuration: 5 * TICKS_PER_SECOND,
           transformedOffset: 0,

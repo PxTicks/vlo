@@ -192,7 +192,6 @@ export type {
   DerivedWorkflowWidgetInput,
   WorkflowInput,
   WorkflowSelectionConfig,
-  WorkflowSection,
   WorkflowWidgetInput,
   WidgetInputConfig,
 };

@@ -57,6 +57,7 @@ describe("useTimelineInternalDrag Integration", () => {
           timelineDuration: 100,
           type: "video",
           name: "Clip 1",
+          assetId: "asset_c1",
           isMuted: false,
           isLocked: false,
           transformations: [],

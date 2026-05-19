@@ -31,6 +31,7 @@ describe("Integration: Transforms on Cropped Clips", () => {
       id: "integration-clip",
       type: "video",
       name: "Test Clip",
+      assetId: "asset_integration-clip",
       trackId: "track-1",
       start: 0,
       sourceDuration: originalSourceDuration,

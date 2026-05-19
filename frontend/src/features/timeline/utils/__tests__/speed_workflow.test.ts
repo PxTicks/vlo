@@ -48,6 +48,7 @@ describe("Speed Workflow - User Scenario", () => {
   const initialClip: TimelineClip = {
     id: "test",
     trackId: "t1",
+    assetId: "asset_test",
     start: 0,
     timelineDuration: TICK_15S,
     offset: 0,

@@ -270,10 +270,13 @@ describe("MediaFileProcessor", () => {
     expect(extracted?.name).toBe("test-audio.wav");
     expect(extracted?.type).toBe("audio/wav");
     const conversionConfig = vi.mocked(Conversion.init).mock.calls[0]?.[0];
-    expect(conversionConfig?.audio?.({ id: "audio-1" }, 1)).toEqual({
+    const audioCallback = conversionConfig?.audio as
+      | ((track: { id: string }, index: number) => unknown)
+      | undefined;
+    expect(audioCallback?.({ id: "audio-1" }, 1)).toEqual({
       codec: "pcm-s16",
     });
-    expect(conversionConfig?.audio?.({ id: "audio-2" }, 2)).toEqual({
+    expect(audioCallback?.({ id: "audio-2" }, 2)).toEqual({
       discard: true,
     });
     expect(execute).toHaveBeenCalledTimes(1);

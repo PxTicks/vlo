@@ -138,7 +138,7 @@ describe("metadataTransforms", () => {
 
     const clip = createClipFromAsset(asset);
 
-    expect(clip.assetId).toBe(asset.id);
+    expect((clip as { assetId: string }).assetId).toBe(asset.id);
     expect(clip.transformations).toEqual([
       expect.objectContaining({
         type: "position",
@@ -167,7 +167,7 @@ describe("metadataTransforms", () => {
       }),
     );
 
-    expect(clip.assetId).toBe("asset-generated");
+    expect((clip as { assetId: string }).assetId).toBe("asset-generated");
     expect(clip.sourceDuration).toBe(42.75 * TICKS_PER_SECOND);
     expect(clip.timelineDuration).toBe(42.75 * TICKS_PER_SECOND);
   });

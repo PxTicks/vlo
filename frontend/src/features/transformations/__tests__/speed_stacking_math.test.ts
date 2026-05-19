@@ -12,6 +12,7 @@ describe("Speed Stacking Math", () => {
   const baseClip: TimelineClip = {
     id: "c1",
     trackId: "t1",
+    assetId: "asset_c1",
     start: 0,
     timelineDuration: 10 * TICKS_PER_SECOND,
     offset: 0,

@@ -759,9 +759,10 @@ describe("useTrackRenderEngine Integration", () => {
     mockTimelineState.clips = [
       {
         ...mockTimelineState.clips[0],
+        type: "video",
         assetId: "asset-B",
         name: "Test Asset B",
-      },
+      } as (typeof mockTimelineState.clips)[number],
     ];
 
     await act(async () => {

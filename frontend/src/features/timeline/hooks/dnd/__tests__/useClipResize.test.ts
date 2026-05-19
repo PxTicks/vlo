@@ -33,6 +33,7 @@ describe("useClipResize Logic", () => {
     mockClip = {
       id: "clip-1",
       trackId: "track-1",
+      assetId: "asset_clip-1",
       start: 0,
       timelineDuration: 10 * TICKS_PER_SECOND, // 10s
       sourceDuration: 20 * TICKS_PER_SECOND, // 20s total source

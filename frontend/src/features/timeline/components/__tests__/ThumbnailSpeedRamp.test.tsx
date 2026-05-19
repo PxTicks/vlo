@@ -150,7 +150,7 @@ describe("ThumbnailCanvas Speed Ramp", () => {
     render(
       <ThumbnailCanvas
         clip={
-          clip as unknown as import("../../../../types/TimelineTypes").BaseClip
+          clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip
         }
       />,
     );

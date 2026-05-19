@@ -76,6 +76,7 @@ describe("TimelineContainer Width Calculation", () => {
           trackId: "t1",
           type: "video",
           name: "Clip 1",
+          assetId: "asset_c1",
           offset: 0,
           sourceDuration: 1000,
           transformedDuration: 1000,
@@ -122,6 +123,7 @@ describe("TimelineContainer Width Calculation", () => {
         id: "ghost",
         type: "video",
         name: "Ghost",
+        assetId: "asset_ghost",
         timelineDuration: 500,
         offset: 0,
         // Mock required BaseClip props
@@ -174,6 +176,7 @@ describe("TimelineContainer Width Calculation", () => {
         id: "ghost",
         type: "video",
         name: "Ghost",
+        assetId: "asset_ghost",
         timelineDuration: 500,
         offset: 0,
         sourceDuration: 1000,

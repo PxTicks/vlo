@@ -22,6 +22,7 @@ const createClip = (
     trackId,
     type: "video",
     name: id,
+    assetId: `asset_${id}`,
     start,
     timelineDuration: duration,
     offset: 0,

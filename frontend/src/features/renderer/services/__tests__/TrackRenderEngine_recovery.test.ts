@@ -241,7 +241,7 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     engine["lastRenderRequest"] = {
       time: frameIndex / 30,
       clipId: clip.id,
-      assetId: clip.assetId,
+      assetId: (clip as { assetId: string }).assetId,
       frameIndex,
     };
     engine["currentTextureClipId"] = null;

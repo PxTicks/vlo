@@ -145,7 +145,7 @@ describe("WaveformCanvas Speed Ramp", () => {
 
     render(
       <ThumbnailCanvas
-        clip={clip as unknown as import("../../../../types/TimelineTypes").BaseClip}
+        clip={clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip}
       />,
     );
 

@@ -30,6 +30,7 @@ describe("AssetBrowser Component", () => {
     id: "dragged-asset",
     type: "video",
     name: "Dragged asset",
+    assetId: "asset_dragged-asset",
     sourceDuration: null,
     transformedDuration: 100,
     transformedOffset: 0,

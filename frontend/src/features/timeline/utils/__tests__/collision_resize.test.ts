@@ -10,6 +10,7 @@ describe("getResizeConstraints with Nonlinear Time", () => {
   const baseClip: TimelineClip = {
     id: "target",
     trackId: "track_1",
+    assetId: "asset_target",
     start: 100,
     timelineDuration: 50,
     offset: 0,

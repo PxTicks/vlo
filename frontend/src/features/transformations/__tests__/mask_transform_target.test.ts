@@ -43,6 +43,7 @@ describe("useTransformationController mask target", () => {
           type: "video",
           croppedSourceDuration: 8 * TICKS_PER_SECOND,
           name: "Mask Transform Clip",
+          assetId: `asset_${clipId}`,
           sourceDuration: 8 * TICKS_PER_SECOND,
           transformedDuration: 8 * TICKS_PER_SECOND,
           transformedOffset: 0,

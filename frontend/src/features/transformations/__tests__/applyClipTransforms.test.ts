@@ -34,6 +34,7 @@ describe("applyClipTransforms", () => {
       id: "c1",
       type: "video",
       name: "Clip 1",
+      assetId: "asset_c1",
       sourceDuration: 100,
       timelineDuration: 100,
       offset: 0,

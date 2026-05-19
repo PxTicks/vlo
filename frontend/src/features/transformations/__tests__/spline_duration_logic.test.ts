@@ -12,6 +12,7 @@ describe("Spline Duration and Segment Logic", () => {
     trackId: "t1",
     type: "video",
     name: "Test",
+    assetId: "asset_c1",
     start: 0,
     timelineDuration: 10 * TICKS_PER_SECOND, // 10s Visible
     sourceDuration: 20 * TICKS_PER_SECOND, // 20s Content

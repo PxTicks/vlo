@@ -71,6 +71,7 @@ describe("Time-Dependent Transformations", () => {
         id: "c1",
         type: "video",
         name: "Clip",
+        assetId: "asset_c1",
         sourceDuration: 100,
         timelineDuration: 100,
         offset: 0,

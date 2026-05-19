@@ -166,7 +166,7 @@ function createParentClip(
     transformations: [],
     components: [],
     ...overrides,
-  };
+  } as StandardTimelineClip;
 }
 
 function createMaskClip(

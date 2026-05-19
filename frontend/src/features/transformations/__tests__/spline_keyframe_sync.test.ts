@@ -17,6 +17,7 @@ function createClip(transformations: TimelineClip["transformations"]): TimelineC
     type: "video",
     croppedSourceDuration: 10 * TICKS_PER_SECOND,
     name: "Spline Sync Clip",
+    assetId: `asset_${clipId}`,
     sourceDuration: 10 * TICKS_PER_SECOND,
     transformedDuration: 10 * TICKS_PER_SECOND,
     transformedOffset: 0,

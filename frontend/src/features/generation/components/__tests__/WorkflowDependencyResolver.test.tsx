@@ -236,24 +236,25 @@ describe("WorkflowDependencyResolver", () => {
   });
 
   it("ignores stale model-option responses after switching workflows", async () => {
-    let resolveFirst:
-      | ((value: Awaited<ReturnType<typeof getAvailableModels>>) => void)
-      | null = null;
-    let resolveSecond:
-      | ((value: Awaited<ReturnType<typeof getAvailableModels>>) => void)
-      | null = null;
+    type ResolveFn = (
+      value: Awaited<ReturnType<typeof getAvailableModels>>,
+    ) => void;
+    const resolvers: { first: ResolveFn | null; second: ResolveFn | null } = {
+      first: null,
+      second: null,
+    };
 
     vi.mocked(getAvailableModels)
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
-            resolveFirst = resolve;
+            resolvers.first = resolve;
           }),
       )
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
-            resolveSecond = resolve;
+            resolvers.second = resolve;
           }),
       );
 
@@ -281,7 +282,7 @@ describe("WorkflowDependencyResolver", () => {
       />,
     );
 
-    resolveSecond?.({
+    resolvers.second?.({
       sam2: [],
       comfyui: {
         modelDownloadsEnabled: true,
@@ -302,7 +303,7 @@ describe("WorkflowDependencyResolver", () => {
       await screen.findByText("wan-model.safetensors"),
     ).toBeInTheDocument();
 
-    resolveFirst?.({
+    resolvers.first?.({
       sam2: [],
       comfyui: {
         modelDownloadsEnabled: true,

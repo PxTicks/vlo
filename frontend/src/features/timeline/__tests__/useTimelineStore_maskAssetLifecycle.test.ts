@@ -399,8 +399,9 @@ describe("useTimelineStore SAM2 mask asset lifecycle", () => {
         ),
         {
           ...createParentClip("clip-4", "track_current"),
+          type: "video",
           assetId: "other-asset",
-        },
+        } as StandardTimelineClip,
       ],
     });
 

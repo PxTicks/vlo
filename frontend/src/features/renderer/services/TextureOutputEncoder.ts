@@ -219,7 +219,7 @@ export class TextureOutputEncoder {
   }
 
   private async probeRenderedOutputContent(): Promise<boolean | null> {
-    const renderer = this.app.renderer as RendererReadbackApi;
+    const renderer = this.app.renderer as unknown as RendererReadbackApi;
     const gl = renderer.gl;
 
     if (gl && typeof gl.readPixels === "function") {

@@ -105,11 +105,11 @@ describe("useTimelineAssetRevealClipOverlay", () => {
 
   it("creates family navigation arrows around the reveal control and swaps the clip asset", () => {
     const { result, rerender } = renderHook(
-      ({ clip }) => useOverlayItems(clip),
+      ({ clip }: { clip: StandardTimelineClip }) => useOverlayItems(clip),
       {
         initialProps: {
           clip: baseClip,
-        },
+        } as { clip: StandardTimelineClip },
       },
     );
 
@@ -152,7 +152,7 @@ describe("useTimelineAssetRevealClipOverlay", () => {
 
   it("omits the reveal overlay for clips that do not reference an asset", () => {
     const { result } = renderHook(() =>
-      useOverlayItems({ ...baseClip, assetId: undefined }),
+      useOverlayItems({ ...baseClip, assetId: undefined as unknown as string }),
     );
 
     expect(result.current).toEqual([]);

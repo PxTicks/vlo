@@ -112,7 +112,7 @@ function createParentClip(
     transformations: [],
     components: compositionComponent ? [...maskRefs, compositionComponent] : maskRefs,
     ...options.overrides,
-  };
+  } as StandardTimelineClip;
 }
 
 describe("useTimelineStore mask boolean expressions", () => {

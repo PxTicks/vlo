@@ -17,7 +17,7 @@ function makeWidget(
       valueType: "int",
     },
     ...overrides,
-  };
+  } as WorkflowWidgetInput;
 }
 
 describe("storedWidgetValues", () => {

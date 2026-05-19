@@ -145,11 +145,16 @@ async function createHtmlTextTexture(
   // so we express stroke width via cssOverrides instead. HTMLTextStyle must be
   // an actual instance — getTexturePromise reads `style.padding` directly off
   // the object and silently produces NaN dimensions for plain objects.
+  // lineHeight=fontSize collapses the browser's default ~1.2× leading so the
+  // texture height matches canvas Text; a small symmetric padding keeps
+  // descenders from clipping at the bottom of the foreignObject box.
   const style = new HTMLTextStyle({
     align: textData.align,
     fill: textData.fill,
     fontFamily: textData.fontFamily,
     fontSize: textData.fontSize,
+    lineHeight: textData.fontSize,
+    padding: Math.ceil(textData.fontSize * 0.1),
     whiteSpace: "pre-line",
     cssOverrides,
   });

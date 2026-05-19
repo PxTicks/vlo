@@ -24,6 +24,8 @@ function createTextClip(
       fontSize: 96,
       fill: "#ffffff",
       align: "center",
+      strokeColor: "#000000",
+      strokeWidth: 2,
     },
     ...overrides,
   } as TimelineClip;
@@ -65,6 +67,8 @@ describe("useTimelineStore text clip updates", () => {
           fontSize: 72,
           fill: "#ff8800",
           align: "right",
+          strokeColor: "#000000",
+          strokeWidth: 2,
         },
       }),
     ]);

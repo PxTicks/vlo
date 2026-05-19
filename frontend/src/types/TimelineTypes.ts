@@ -13,6 +13,8 @@ export interface TextClipData {
   fontSize: number;
   fill: string;
   align: TextAlignment;
+  strokeColor: string;
+  strokeWidth: number;
 }
 
 export interface TimelineSelection {

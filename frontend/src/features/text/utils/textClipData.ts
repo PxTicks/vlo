@@ -8,6 +8,9 @@ import {
   DEFAULT_TEXT_FILL,
   DEFAULT_TEXT_FONT_FAMILY,
   DEFAULT_TEXT_FONT_SIZE,
+  DEFAULT_TEXT_STROKE_COLOR,
+  DEFAULT_TEXT_STROKE_WIDTH,
+  MAX_TEXT_STROKE_WIDTH,
 } from "../constants";
 
 const VALID_TEXT_ALIGNMENTS = new Set<TextAlignment>([
@@ -37,6 +40,20 @@ function normalizeColor(value: unknown): string {
     : DEFAULT_TEXT_FILL;
 }
 
+function normalizeStrokeColor(value: unknown): string {
+  return typeof value === "string" && value.trim()
+    ? value
+    : DEFAULT_TEXT_STROKE_COLOR;
+}
+
+function normalizeStrokeWidth(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_TEXT_STROKE_WIDTH;
+  }
+
+  return Math.max(0, Math.min(MAX_TEXT_STROKE_WIDTH, Math.round(value)));
+}
+
 export function resolveTextClipData(
   value?: Partial<TextClipData> | null,
 ): TextClipData {
@@ -52,6 +69,8 @@ export function resolveTextClipData(
     fontSize: normalizeFontSize(value?.fontSize),
     fill: normalizeColor(value?.fill),
     align: normalizeTextAlignment(value?.align),
+    strokeColor: normalizeStrokeColor(value?.strokeColor),
+    strokeWidth: normalizeStrokeWidth(value?.strokeWidth),
   };
 }
 

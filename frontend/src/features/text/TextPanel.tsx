@@ -23,7 +23,7 @@ import {
   PanelSection,
 } from "../panelUI";
 import { useTimelineStore } from "../timeline";
-import { TEXT_FONT_OPTIONS } from "./constants";
+import { MAX_TEXT_STROKE_WIDTH, TEXT_FONT_OPTIONS } from "./constants";
 import { livePreviewTextStore } from "./services/livePreviewTextStore";
 import { insertTextClipAtPlayhead } from "./utils/insertTextClipAtPlayhead";
 import { resolveTextClipData } from "./utils/textClipData";
@@ -39,6 +39,8 @@ interface TextFormFieldsProps {
   onContentEditEnd?: () => void;
   onColorPreview?: (fill: string) => void;
   onColorEditEnd?: () => void;
+  onStrokeColorPreview?: (strokeColor: string) => void;
+  onStrokeColorEditEnd?: () => void;
 }
 
 function hasPendingPreviewUpdates(value: Partial<TextClipData>): boolean {
@@ -53,6 +55,8 @@ function TextFormFields({
   onContentEditEnd,
   onColorPreview,
   onColorEditEnd,
+  onStrokeColorPreview,
+  onStrokeColorEditEnd,
 }: TextFormFieldsProps) {
   const handleAlignmentChange = useCallback(
     (_event: MouseEvent<HTMLElement>, nextAlignment: TextAlignment | null) => {
@@ -155,6 +159,39 @@ function TextFormFields({
             Right
           </ToggleButton>
         </ToggleButtonGroup>
+      </Box>
+
+      <Box>
+        <Typography
+          variant="caption"
+          sx={{ display: "block", mb: 0.75, color: "#a1a1aa" }}
+        >
+          Stroke
+        </Typography>
+        <Box sx={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 1.5 }}>
+          <TextField
+            label="Width"
+            size="small"
+            type="number"
+            value={value.strokeWidth}
+            onChange={(event) => {
+              const nextStrokeWidth = Number(event.target.value);
+              if (Number.isFinite(nextStrokeWidth)) {
+                onChange({ strokeWidth: nextStrokeWidth });
+              }
+            }}
+            inputProps={{ min: 0, max: MAX_TEXT_STROKE_WIDTH, step: 1 }}
+          />
+          <BufferedColorInput
+            label="Stroke"
+            value={value.strokeColor}
+            onCommit={(strokeColor) => onChange({ strokeColor })}
+            onPreview={onStrokeColorPreview}
+            onEditEnd={onStrokeColorEditEnd}
+            disabled={value.strokeWidth <= 0}
+            sx={{ minWidth: 96 }}
+          />
+        </Box>
       </Box>
     </Box>
   );
@@ -299,6 +336,13 @@ export function TextPanel() {
     [scheduleSelectedTextPreview],
   );
 
+  const handleSelectedStrokeColorPreview = useCallback(
+    (strokeColor: string) => {
+      scheduleSelectedTextPreview({ strokeColor });
+    },
+    [scheduleSelectedTextPreview],
+  );
+
   const handleAddTextClip = useCallback(() => {
     insertTextClipAtPlayhead(draftTextData);
   }, [draftTextData]);
@@ -333,6 +377,8 @@ export function TextPanel() {
             onContentEditEnd={() => clearSelectedTextPreview(["content"])}
             onColorPreview={handleSelectedColorPreview}
             onColorEditEnd={() => clearSelectedTextPreview(["fill"])}
+            onStrokeColorPreview={handleSelectedStrokeColorPreview}
+            onStrokeColorEditEnd={() => clearSelectedTextPreview(["strokeColor"])}
           />
         </PanelSection>
       ) : hasClipSelection ? (

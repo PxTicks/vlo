@@ -1205,6 +1205,8 @@ export class TrackRenderEngine {
       fontSize: textData.fontSize,
       fill: textData.fill,
       align: textData.align,
+      strokeColor: textData.strokeColor,
+      strokeWidth: textData.strokeWidth,
       logicalWidth: logicalDimensions.width,
       logicalHeight: logicalDimensions.height,
       renderResolution,
@@ -1245,6 +1247,15 @@ export class TrackRenderEngine {
         fontFamily: textData.fontFamily,
         fontSize: textData.fontSize,
         whiteSpace: "pre-line",
+        ...(textData.strokeWidth > 0
+          ? {
+              stroke: {
+                color: textData.strokeColor,
+                width: textData.strokeWidth,
+                join: "round",
+              },
+            }
+          : {}),
       },
     });
 

@@ -56,6 +56,7 @@ export type {
   MaskActiveRange,
   TextClipData,
   TextAlignment,
+  TextRun,
 } from "./TimelineTypes";
 export {
   isAssetBackedClip,

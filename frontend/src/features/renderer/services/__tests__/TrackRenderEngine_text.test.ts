@@ -9,6 +9,12 @@ const mockGenerateTexture = vi.fn(() => ({
   destroy: vi.fn(),
 }));
 
+const mockHtmlGetTexturePromise = vi.fn(async () => ({
+  width: 320,
+  height: 80,
+  destroy: vi.fn(),
+}));
+
 const mockWorkerInstances: Array<{
   postMessage: ReturnType<typeof vi.fn>;
   terminate: ReturnType<typeof vi.fn>;
@@ -107,6 +113,7 @@ describe("TrackRenderEngine text rendering", () => {
   beforeEach(() => {
     mockWorkerInstances.length = 0;
     mockGenerateTexture.mockClear();
+    mockHtmlGetTexturePromise.mockClear();
     livePreviewTextStore.clearAll();
     vi.clearAllMocks();
   });
@@ -177,6 +184,48 @@ describe("TrackRenderEngine text rendering", () => {
         fill: "#ff5500",
       }),
     });
+
+    engine.dispose();
+  });
+
+  it("renders rich-text runs via the HTMLText system with bold and italic spans", async () => {
+    const renderer = {
+      width: 3840,
+      height: 2160,
+      generateTexture: mockGenerateTexture,
+      htmlText: { getTexturePromise: mockHtmlGetTexturePromise },
+    } as unknown as Renderer;
+    const engine = new TrackRenderEngine(1, undefined, renderer);
+    const clip = createTextClip({
+      textData: {
+        content: "Hello world",
+        runs: [
+          { text: "Hello", bold: true },
+          { text: " " },
+          { text: "world", italic: true },
+        ],
+        fontFamily: "Arial",
+        fontSize: 96,
+        fill: "#ffffff",
+        align: "center",
+        strokeColor: "#000000",
+        strokeWidth: 2,
+      },
+    });
+    const dimensions = { width: 1920, height: 1080 };
+
+    await engine.update(10, [clip], new Map(), [], dimensions);
+
+    expect(mockGenerateTexture).not.toHaveBeenCalled();
+    expect(mockHtmlGetTexturePromise).toHaveBeenCalledTimes(1);
+    const firstCall = mockHtmlGetTexturePromise.mock.calls[0] as unknown as [
+      { text: string; style: { cssOverrides?: string[] } },
+    ];
+    expect(firstCall[0].text).toBe("<b>Hello</b> <i>world</i>");
+    expect(firstCall[0].style.cssOverrides).toEqual([
+      "-webkit-text-stroke: 2px #000000;",
+      "paint-order: stroke fill;",
+    ]);
 
     engine.dispose();
   });

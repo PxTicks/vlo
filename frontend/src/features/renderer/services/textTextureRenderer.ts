@@ -1,11 +1,15 @@
-import { Text } from "pixi.js";
+import { HTMLTextStyle, Text } from "pixi.js";
 import type { Renderer, Texture } from "pixi.js";
 import type {
   TextClipData,
   TextTimelineClip,
 } from "../../../types/TimelineTypes";
 import { livePreviewTextStore } from "../../text/services/livePreviewTextStore";
-import { resolveTextClipData } from "../../text/utils/textClipData";
+import {
+  hasRichFormatting,
+  resolveTextClipData,
+  runsToHtml,
+} from "../../text/utils/textClipData";
 
 const MIN_TEXT_RENDER_RESOLUTION = 1;
 const MAX_TEXT_RENDER_RESOLUTION = 8;
@@ -48,6 +52,7 @@ export function getTextTextureSignature(
 
   return JSON.stringify({
     content: textData.content,
+    runs: textData.runs ?? null,
     fontFamily: textData.fontFamily,
     fontSize: textData.fontSize,
     fill: textData.fill,
@@ -60,17 +65,11 @@ export function getTextTextureSignature(
   });
 }
 
-export function createTextTexture(
-  clip: TextTimelineClip,
-  renderer: Renderer | null,
-  logicalDimensions: { width: number; height: number },
-): Texture | null {
-  if (!renderer) {
-    return null;
-  }
-
-  const textData = getEffectiveTextClipData(clip);
-  const renderResolution = getTextRenderResolution(renderer, logicalDimensions);
+function createPlainTextTexture(
+  textData: TextClipData,
+  renderer: Renderer,
+  renderResolution: number,
+): Texture {
   const text = new Text({
     text: textData.content.length > 0 ? textData.content : " ",
     resolution: renderResolution,
@@ -85,7 +84,7 @@ export function createTextTexture(
             stroke: {
               color: textData.strokeColor,
               width: textData.strokeWidth,
-              join: "round",
+              join: "round" as const,
             },
           }
         : {}),
@@ -101,4 +100,110 @@ export function createTextTexture(
   } finally {
     text.destroy();
   }
+}
+
+interface HtmlTextCapableRenderer {
+  htmlText: {
+    getTexturePromise: (options: {
+      text: string;
+      style: HTMLTextStyle;
+      resolution?: number;
+    }) => Promise<Texture>;
+  };
+}
+
+function hasHtmlTextSystem(
+  renderer: Renderer,
+): renderer is Renderer & HtmlTextCapableRenderer {
+  return (
+    typeof (renderer as Partial<HtmlTextCapableRenderer>).htmlText
+      ?.getTexturePromise === "function"
+  );
+}
+
+async function createHtmlTextTexture(
+  textData: TextClipData,
+  renderer: Renderer,
+  renderResolution: number,
+): Promise<Texture | null> {
+  if (!hasHtmlTextSystem(renderer)) {
+    console.warn(
+      "[textTextureRenderer] renderer.htmlText.getTexturePromise unavailable; skipping rich text render",
+    );
+    return null;
+  }
+
+  const cssOverrides =
+    textData.strokeWidth > 0
+      ? [
+          `-webkit-text-stroke: ${textData.strokeWidth}px ${textData.strokeColor};`,
+          `paint-order: stroke fill;`,
+        ]
+      : [];
+
+  // HTMLText rejects object-form strokes (only color string/number is accepted),
+  // so we express stroke width via cssOverrides instead. HTMLTextStyle must be
+  // an actual instance — getTexturePromise reads `style.padding` directly off
+  // the object and silently produces NaN dimensions for plain objects.
+  const style = new HTMLTextStyle({
+    align: textData.align,
+    fill: textData.fill,
+    fontFamily: textData.fontFamily,
+    fontSize: textData.fontSize,
+    whiteSpace: "pre-line",
+    cssOverrides,
+  });
+
+  const html = runsToHtml(textData.runs ?? []);
+
+  try {
+    const texture = await renderer.htmlText.getTexturePromise({
+      text: html,
+      style,
+      resolution: renderResolution,
+    });
+    if (
+      !Number.isFinite(texture.width) ||
+      !Number.isFinite(texture.height) ||
+      texture.width === 0 ||
+      texture.height === 0
+    ) {
+      console.warn(
+        "[textTextureRenderer] HTMLText texture has invalid dimensions",
+        { width: texture.width, height: texture.height, html },
+      );
+    }
+    return texture;
+  } catch (error) {
+    console.error("[textTextureRenderer] HTMLText rendering failed", {
+      error,
+      html,
+      style: {
+        fill: textData.fill,
+        fontFamily: textData.fontFamily,
+        fontSize: textData.fontSize,
+        cssOverrides,
+      },
+    });
+    return null;
+  }
+}
+
+export async function createTextTexture(
+  clip: TextTimelineClip,
+  renderer: Renderer | null,
+  logicalDimensions: { width: number; height: number },
+): Promise<Texture | null> {
+  if (!renderer) {
+    return null;
+  }
+
+  const textData = getEffectiveTextClipData(clip);
+  const renderResolution = getTextRenderResolution(renderer, logicalDimensions);
+
+  if (textData.runs !== undefined && hasRichFormatting(textData.runs)) {
+    return createHtmlTextTexture(textData, renderer, renderResolution);
+  }
+
+  return createPlainTextTexture(textData, renderer, renderResolution);
 }

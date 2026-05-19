@@ -1216,7 +1216,11 @@ export class TrackRenderEngine {
       this.sprite.visible = true;
       this.currentTextureClipId = clip.id;
     } else {
-      const texture = createTextTexture(clip, this.renderer, logicalDimensions);
+      const texture = await createTextTexture(
+        clip,
+        this.renderer,
+        logicalDimensions,
+      );
       if (!texture) {
         this.sprite.visible = false;
         this.currentTextureClipId = null;

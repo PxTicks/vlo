@@ -154,10 +154,12 @@ describe("TextPanel", () => {
     render(<TextPanel />);
 
     const contentInput = screen.getByLabelText("Content");
-    fireEvent.change(contentInput, { target: { value: "Updated live preview" } });
+    contentInput.innerHTML = "Updated live preview";
+    fireEvent.input(contentInput);
 
     expect(mocks.livePreviewTextStore.set).toHaveBeenCalledWith("clip_text_1", {
       content: "Updated live preview",
+      runs: undefined,
     });
     expect(mocks.updateTextClipData).not.toHaveBeenCalled();
 
@@ -165,10 +167,32 @@ describe("TextPanel", () => {
 
     expect(mocks.updateTextClipData).toHaveBeenCalledWith("clip_text_1", {
       content: "Updated live preview",
+      runs: undefined,
     });
     expect(mocks.livePreviewTextStore.clear).toHaveBeenCalledWith(
       "clip_text_1",
-      ["content"],
+      ["content", "runs"],
     );
+  });
+
+  it("captures bold and italic formatting as TextRun entries on commit", () => {
+    mocks.clips = [createTextClip()];
+    mocks.selectedClipIds = ["clip_text_1"];
+
+    render(<TextPanel />);
+
+    const contentInput = screen.getByLabelText("Content");
+    contentInput.innerHTML = "<b>Hello</b> <i>world</i>";
+    fireEvent.input(contentInput);
+    fireEvent.blur(contentInput);
+
+    expect(mocks.updateTextClipData).toHaveBeenCalledWith("clip_text_1", {
+      content: "Hello world",
+      runs: [
+        { text: "Hello", bold: true },
+        { text: " " },
+        { text: "world", italic: true },
+      ],
+    });
   });
 });

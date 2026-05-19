@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import {
   Box,
@@ -14,28 +14,47 @@ import { useShallow } from "zustand/react/shallow";
 import type {
   TextAlignment,
   TextClipData,
+  TextRun,
 } from "../../types/TimelineTypes";
 import { isTextClip } from "../../types/TimelineTypes";
 import {
   BufferedColorInput,
-  BufferedTextInput,
-  CommittedTextInput,
   PanelSection,
+  RichTextInput,
 } from "../panelUI";
 import { useTimelineStore } from "../timeline";
 import { MAX_TEXT_STROKE_WIDTH, TEXT_FONT_OPTIONS } from "./constants";
 import { livePreviewTextStore } from "./services/livePreviewTextStore";
 import { insertTextClipAtPlayhead } from "./utils/insertTextClipAtPlayhead";
-import { resolveTextClipData } from "./utils/textClipData";
+import {
+  hasRichFormatting,
+  plainTextToRuns,
+  resolveTextClipData,
+  runsToPlainText,
+} from "./utils/textClipData";
 
 const PANEL_BG = "#121212";
 const SECTION_BG = "#18181b";
 
+function textDataToInitialRuns(value: TextClipData): TextRun[] {
+  if (value.runs !== undefined && value.runs.length > 0) {
+    return value.runs;
+  }
+  return plainTextToRuns(value.content);
+}
+
+function buildContentUpdate(runs: TextRun[]): Partial<TextClipData> {
+  const content = runsToPlainText(runs);
+  return hasRichFormatting(runs)
+    ? { content, runs }
+    : { content, runs: undefined };
+}
+
 interface TextFormFieldsProps {
   value: TextClipData;
+  editorKey: string;
   onChange: (updates: Partial<TextClipData>) => void;
-  contentMode: "draft" | "selected";
-  onContentPreview?: (content: string) => void;
+  onContentPreview?: (runs: TextRun[]) => void;
   onContentEditEnd?: () => void;
   onColorPreview?: (fill: string) => void;
   onColorEditEnd?: () => void;
@@ -49,8 +68,8 @@ function hasPendingPreviewUpdates(value: Partial<TextClipData>): boolean {
 
 function TextFormFields({
   value,
+  editorKey,
   onChange,
-  contentMode,
   onContentPreview,
   onContentEditEnd,
   onColorPreview,
@@ -69,33 +88,27 @@ function TextFormFields({
     [onChange],
   );
 
+  const initialRuns = useMemo(() => textDataToInitialRuns(value), [editorKey]);
+
+  const handleContentCommit = useCallback(
+    (runs: TextRun[]) => {
+      onChange(buildContentUpdate(runs));
+    },
+    [onChange],
+  );
+
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-      {contentMode === "draft" ? (
-        <BufferedTextInput
-          label="Content"
-          value={value.content}
-          onCommit={(content) => onChange({ content })}
-          onPreview={onContentPreview}
-          onEditEnd={onContentEditEnd}
-          multiline={true}
-          minRows={4}
-          maxRows={10}
-          placeholder="Write something"
-        />
-      ) : (
-        <CommittedTextInput
-          label="Content"
-          initialValue={value.content}
-          onCommit={(content) => onChange({ content })}
-          onPreview={onContentPreview}
-          onEditEnd={onContentEditEnd}
-          multiline={true}
-          minRows={4}
-          maxRows={10}
-          placeholder="Write something"
-        />
-      )}
+      <RichTextInput
+        key={editorKey}
+        label="Content"
+        initialValue={initialRuns}
+        onCommit={handleContentCommit}
+        onPreview={onContentPreview}
+        onEditEnd={onContentEditEnd}
+        minRows={4}
+        placeholder="Write something"
+      />
 
       <TextField
         select={true}
@@ -211,8 +224,6 @@ export function TextPanel() {
   const previewFrameIdRef = useRef<number | null>(null);
   const pendingPreviewUpdatesRef = useRef<Partial<TextClipData>>({});
 
-  // Keep the panel selection logic local for now: editing needs exactly one
-  // selected clip, and only if that clip is a text clip.
   const selectedTextClip = (() => {
     if (selectedClipIds.length !== 1) {
       return null;
@@ -243,7 +254,9 @@ export function TextPanel() {
   }, [selectedTextClipId]);
 
   const handleDraftChange = useCallback((updates: Partial<TextClipData>) => {
-    setDraftTextData((current) => resolveTextClipData({ ...current, ...updates }));
+    setDraftTextData((current) =>
+      resolveTextClipData({ ...current, ...updates }),
+    );
   }, []);
 
   const handleSelectedClipChange = useCallback(
@@ -323,8 +336,8 @@ export function TextPanel() {
   );
 
   const handleSelectedContentPreview = useCallback(
-    (content: string) => {
-      scheduleSelectedTextPreview({ content });
+    (runs: TextRun[]) => {
+      scheduleSelectedTextPreview(buildContentUpdate(runs));
     },
     [scheduleSelectedTextPreview],
   );
@@ -371,10 +384,12 @@ export function TextPanel() {
         >
           <TextFormFields
             value={selectedTextClip.textData}
+            editorKey={selectedTextClip.id}
             onChange={handleSelectedClipChange}
-            contentMode="selected"
             onContentPreview={handleSelectedContentPreview}
-            onContentEditEnd={() => clearSelectedTextPreview(["content"])}
+            onContentEditEnd={() =>
+              clearSelectedTextPreview(["content", "runs"])
+            }
             onColorPreview={handleSelectedColorPreview}
             onColorEditEnd={() => clearSelectedTextPreview(["fill"])}
             onStrokeColorPreview={handleSelectedStrokeColorPreview}
@@ -392,8 +407,8 @@ export function TextPanel() {
         <PanelSection title="New Text" bgColor={SECTION_BG} defaultOpen={true}>
           <TextFormFields
             value={draftTextData}
+            editorKey="draft"
             onChange={handleDraftChange}
-            contentMode="draft"
           />
           <Divider sx={{ borderColor: "#2b2b31", my: 1.5 }} />
           <Button

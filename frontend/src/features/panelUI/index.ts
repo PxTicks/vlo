@@ -26,6 +26,10 @@ export {
   BufferedTextInput,
   CommittedTextInput,
 } from "./components/BufferedTextInput";
+export {
+  RichTextInput,
+  type RichTextInputProps,
+} from "./components/RichTextInput";
 export { ControlGroup } from "./components/ControlGroup";
 export type { NumberControlProps } from "./components/NumberControl";
 export { NumberControl } from "./components/NumberControl";

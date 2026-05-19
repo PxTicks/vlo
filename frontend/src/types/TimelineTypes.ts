@@ -7,8 +7,15 @@ export type ClipType = "video" | "image" | "audio" | "text" | "shape" | "mask";
 
 export type TextAlignment = "left" | "center" | "right";
 
+export interface TextRun {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+}
+
 export interface TextClipData {
   content: string;
+  runs?: TextRun[];
   fontFamily: string;
   fontSize: number;
   fill: string;

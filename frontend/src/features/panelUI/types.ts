@@ -5,6 +5,7 @@ export type ControlType =
   | "select"
   | "checkbox"
   | "text"
+  | "richtext"
   | "color"
   | "link"
   | "slider"

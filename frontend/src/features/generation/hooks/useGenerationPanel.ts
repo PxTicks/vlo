@@ -504,6 +504,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTextValues((prev) =>
       hydrateReplayTextValues(
         prev,

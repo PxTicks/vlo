@@ -432,6 +432,7 @@ export function GenerationPanel() {
 
   useEffect(() => {
     if (!hasRulesMode && workflowMode === "rules") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWorkflowMode("manual");
     }
   }, [hasRulesMode, workflowMode]);
@@ -526,6 +527,7 @@ export function GenerationPanel() {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLastEditorSessionKey(currentEditorSessionKey);
     if (!editorOpen) {
       setSavePromptOpen(false);
@@ -543,6 +545,7 @@ export function GenerationPanel() {
       currentWorkflowSignature &&
       editorSessionBaselineSignature === null
     ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditorSessionBaselineSignature(currentWorkflowSignature);
     }
   }, [
@@ -560,6 +563,7 @@ export function GenerationPanel() {
       currentWorkflowSignature !== editorSessionBaselineSignature &&
       !editorHasUnsavedChanges
     ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditorHasUnsavedChanges(true);
     }
   }, [

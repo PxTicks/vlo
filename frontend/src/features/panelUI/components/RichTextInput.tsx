@@ -83,7 +83,7 @@ function pushRun(runs: TextRun[], text: string, attrs: ActiveAttrs): void {
   runs.push(run);
 }
 
-export function domToRuns(root: Node): TextRun[] {
+function domToRuns(root: Node): TextRun[] {
   const runs: TextRun[] = [];
 
   function appendNewline(attrs: ActiveAttrs): void {

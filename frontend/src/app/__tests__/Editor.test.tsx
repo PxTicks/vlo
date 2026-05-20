@@ -70,6 +70,10 @@ vi.mock("../../features/timeline", () => ({
     id: "markers-overlay",
     useItems: () => [],
   }),
+  useTimelineReverseStatusOverlay: () => ({
+    id: "reverse-status-overlay",
+    useItems: () => [],
+  }),
 }));
 
 vi.mock("../../features/transformations", () => ({

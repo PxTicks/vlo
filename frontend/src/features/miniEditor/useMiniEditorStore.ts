@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { TICKS_PER_SECOND } from "../timeline";
+import { getTicksPerFrame, snapFrameCountToStep } from "../timelineSelection";
 import type {
   EditorRangeMask,
   ResolvedEditorSource,
@@ -15,6 +16,49 @@ const MIN_SPAN_TICKS = Math.round(TICKS_PER_SECOND / 10);
 interface MiniEditorInternal {
   prepare: MiniEditorOpenArgs["prepare"] | null;
   onSave: MiniEditorOpenArgs["onSave"] | null;
+  /** Crop frame quantization (null = unconstrained, free dragging). */
+  ticksPerFrame: number | null;
+  frameStep: number;
+}
+
+/**
+ * Snaps a crop window so its length is a valid selection frame count
+ * (`frameStep * n + 1` frames), keeping whichever endpoint the user is not
+ * dragging fixed. Endpoints land on frame boundaries; the span is clamped to
+ * the source so it never runs past the available frames.
+ */
+function snapCropToFrameStep(
+  startTicks: number,
+  endTicks: number,
+  durationTicks: number,
+  ticksPerFrame: number,
+  frameStep: number,
+  anchor: "start" | "end",
+): { start: number; end: number } {
+  const totalFrames = Math.max(1, Math.round(durationTicks / ticksPerFrame));
+  const rawCount = Math.max(1, Math.round((endTicks - startTicks) / ticksPerFrame));
+  const count = Math.min(
+    totalFrames,
+    snapFrameCountToStep(rawCount, frameStep, "nearest"),
+  );
+
+  if (anchor === "start") {
+    let startFrame = Math.min(Math.max(0, Math.round(startTicks / ticksPerFrame)), totalFrames - 1);
+    let endFrame = startFrame + count;
+    if (endFrame > totalFrames) {
+      endFrame = totalFrames;
+      startFrame = Math.max(0, endFrame - count);
+    }
+    return { start: startFrame * ticksPerFrame, end: endFrame * ticksPerFrame };
+  }
+
+  let endFrame = Math.min(Math.max(1, Math.round(endTicks / ticksPerFrame)), totalFrames);
+  let startFrame = endFrame - count;
+  if (startFrame < 0) {
+    startFrame = 0;
+    endFrame = Math.min(totalFrames, count);
+  }
+  return { start: startFrame * ticksPerFrame, end: endFrame * ticksPerFrame };
 }
 
 export interface MiniEditorState {
@@ -91,7 +135,7 @@ const INITIAL: Omit<
   selectedRangeId: null,
   playheadTicks: 0,
   isPlaying: false,
-  _internal: { prepare: null, onSave: null },
+  _internal: { prepare: null, onSave: null, ticksPerFrame: null, frameStep: 1 },
 };
 
 export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
@@ -105,7 +149,15 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
       status: "preparing",
       title: args.title ?? "Edit video",
       ranges: args.initial?.ranges ?? [],
-      _internal: { prepare: args.prepare, onSave: args.onSave },
+      _internal: {
+        prepare: args.prepare,
+        onSave: args.onSave,
+        ticksPerFrame:
+          args.frameConstraint && args.frameConstraint.fps > 0
+            ? getTicksPerFrame(args.frameConstraint.fps)
+            : null,
+        frameStep: Math.max(1, Math.round(args.frameConstraint?.frameStep ?? 1)),
+      },
     });
 
     try {
@@ -158,13 +210,31 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
   },
 
   setCrop: (startTicks, endTicks) => {
-    const { durationTicks } = get();
-    const start = clamp(
-      startTicks,
-      0,
-      Math.max(0, durationTicks - MIN_SPAN_TICKS),
-    );
-    const end = clamp(endTicks, start + MIN_SPAN_TICKS, durationTicks);
+    const state = get();
+    const { durationTicks } = state;
+    const { ticksPerFrame, frameStep } = state._internal;
+
+    let start = clamp(startTicks, 0, Math.max(0, durationTicks - MIN_SPAN_TICKS));
+    let end = clamp(endTicks, start + MIN_SPAN_TICKS, durationTicks);
+
+    if (ticksPerFrame && ticksPerFrame > 0) {
+      // Anchor the endpoint the user is not dragging, then quantize the span.
+      const startMoved = startTicks !== state.cropStartTicks;
+      const endMoved = endTicks !== state.cropEndTicks;
+      const anchor: "start" | "end" =
+        endMoved && !startMoved ? "start" : "end";
+      const snapped = snapCropToFrameStep(
+        start,
+        end,
+        durationTicks,
+        ticksPerFrame,
+        frameStep,
+        anchor,
+      );
+      start = snapped.start;
+      end = snapped.end;
+    }
+
     set({
       cropStartTicks: start,
       cropEndTicks: end,

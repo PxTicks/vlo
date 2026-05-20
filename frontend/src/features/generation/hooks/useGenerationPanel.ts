@@ -1247,10 +1247,33 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         );
       };
 
+      // Inherit the workflow's frame-step constraint so the crop is stepped:
+      // from the selection itself when present, else the input's selection rule.
+      const projectFps = Math.max(1, useProjectStore.getState().config.fps);
+      const selectionConfig =
+        input?.dispatch && "selectionConfig" in input.dispatch
+          ? input.dispatch.selectionConfig
+          : undefined;
+      const constraintFps = sourceSelection
+        ? sourceSelection.fps && sourceSelection.fps > 0
+          ? sourceSelection.fps
+          : projectFps
+        : selectionConfig?.exportFps && selectionConfig.exportFps > 0
+          ? selectionConfig.exportFps
+          : projectFps;
+      const constraintFrameStep = sourceSelection
+        ? sourceSelection.frameStep && sourceSelection.frameStep > 0
+          ? sourceSelection.frameStep
+          : 1
+        : selectionConfig?.frameStep && selectionConfig.frameStep > 0
+          ? selectionConfig.frameStep
+          : 1;
+
       void useMiniEditorStore.getState().open({
         title: input?.label ? `Edit: ${input.label}` : "Edit video",
         prepare,
         onSave,
+        frameConstraint: { fps: constraintFps, frameStep: constraintFrameStep },
       });
     },
     [

@@ -37,6 +37,17 @@ export interface MiniEditorInitialState {
   ranges?: EditorRangeMask[];
 }
 
+/**
+ * Frame-quantization constraint inherited from the workflow's timeline-selection
+ * rules. When provided, the crop snaps so its length is always a valid frame
+ * count (`frameStep * n + 1` frames at `fps`), matching what the generation
+ * pipeline requires of the rendered selection.
+ */
+export interface MiniEditorFrameConstraint {
+  fps: number;
+  frameStep: number;
+}
+
 export interface MiniEditorOpenArgs {
   title?: string;
   /** Resolve the editable source video. May be slow (e.g. rendering a selection). */
@@ -47,4 +58,6 @@ export interface MiniEditorOpenArgs {
     source: ResolvedEditorSource,
   ) => Promise<void>;
   initial?: MiniEditorInitialState;
+  /** Optional frame-step quantization for the crop. */
+  frameConstraint?: MiniEditorFrameConstraint;
 }

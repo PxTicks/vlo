@@ -75,6 +75,13 @@ import {
   buildFrontendStateValueKey,
 } from "../services/frontendRuleState";
 import { shouldShowHistoricalGenerationJob } from "../utils/panelDisplayJob";
+import {
+  areWidgetValueMapsEqual,
+  hydrateReplayRandomizeToggles,
+  hydrateReplayTextValues,
+  resolveReplayWidgetValues,
+  shouldWaitForReplayPanelHydration,
+} from "../utils/replayPanelHydration";
 import { parseStoredWidgetValue } from "../utils/storedWidgetValues";
 
 function applySelectionConfigDefaults(
@@ -490,108 +497,62 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     });
   }, [lastAppliedWidgetValues]);
 
-  // Hydrate panel state from a queued generation-replay snapshot during render
-  // (using the "store previous render value" pattern) so the hydrated values
-  // land in the same commit that exposed them, without an intermediate effect.
-  const [lastReplaySyncKey, setLastReplaySyncKey] = useState<{
-    pending: typeof pendingReplayPanelState;
-    widgets: typeof widgetInputs;
-    workflow: typeof workflowInputs;
-  }>({
-    pending: pendingReplayPanelState,
-    widgets: widgetInputs,
-    workflow: workflowInputs,
-  });
-  if (
-    lastReplaySyncKey.pending !== pendingReplayPanelState ||
-    lastReplaySyncKey.widgets !== widgetInputs ||
-    lastReplaySyncKey.workflow !== workflowInputs
-  ) {
-    setLastReplaySyncKey({
-      pending: pendingReplayPanelState,
-      widgets: widgetInputs,
-      workflow: workflowInputs,
-    });
-
-    if (pendingReplayPanelState) {
-      setTextValues((prev) => {
-        const next = { ...prev };
-        for (const input of workflowInputs) {
-          if (input.inputType !== "text") {
-            continue;
-          }
-          const inputId = getWorkflowInputId(input);
-          if (
-            Object.prototype.hasOwnProperty.call(
-              pendingReplayPanelState.textValues,
-              inputId,
-            )
-          ) {
-            next[inputId] = pendingReplayPanelState.textValues[inputId] ?? "";
-          }
-        }
-        return next;
-      });
-
-      if (
-        Object.keys(pendingReplayPanelState.widgetValues).length > 0 ||
-        Object.keys(pendingReplayPanelState.derivedWidgetValues).length > 0
-      ) {
-        const nextWidgetValues: Record<string, Record<string, unknown>> = {};
-
-        for (const widget of widgetInputs) {
-          if (!nextWidgetValues[widget.nodeId]) {
-            nextWidgetValues[widget.nodeId] = {};
-          }
-
-          let restoredValue: unknown = widget.currentValue;
-          if (widget.kind === "derived") {
-            const replayKey = `derived_widget_${widget.derivedWidgetId}`;
-            const storedValue =
-              pendingReplayPanelState.derivedWidgetValues[replayKey];
-            if (typeof storedValue === "string") {
-              restoredValue = parseStoredWidgetValue(widget, storedValue);
-            }
-          } else {
-            const replayKey = buildFrontendStateValueKey({
-              nodeId: widget.nodeId,
-              widget: widget.param,
-              frontendControlId: widget.frontendControlId,
-            });
-            const storedValue =
-              pendingReplayPanelState.widgetValues[replayKey];
-            if (typeof storedValue === "string") {
-              restoredValue = parseStoredWidgetValue(widget, storedValue);
-            }
-          }
-
-          nextWidgetValues[widget.nodeId][widget.param] = restoredValue;
-        }
-
-        // widgetValuesRef is kept in sync via the dedicated useEffect below.
-        setWidgetValues(nextWidgetValues);
-      }
-
-      if (Object.keys(pendingReplayPanelState.widgetModes).length > 0) {
-        setRandomizeToggles((prev) => {
-          const next = { ...prev };
-          for (const widget of widgetInputs) {
-            if (!widget.config.controlAfterGenerate) {
-              continue;
-            }
-            const replayKey = `widget_mode_${widget.nodeId}_${widget.param}`;
-            const restoredMode = pendingReplayPanelState.widgetModes[replayKey];
-            if (!restoredMode) {
-              continue;
-            }
-            next[`${widget.nodeId}:${widget.param}`] =
-              restoredMode === "randomize";
-          }
-          return next;
-        });
-      }
+  // Hydrate panel state from a queued generation-replay snapshot after the
+  // workflow/widget inputs are visible. Doing this in an effect keeps React's
+  // render phase pure while still restoring saved seed/widget values once.
+  useEffect(() => {
+    if (!pendingReplayPanelState) {
+      return;
     }
-  }
+
+    if (
+      shouldWaitForReplayPanelHydration(
+        pendingReplayPanelState,
+        workflowInputs,
+        widgetInputs,
+        isWorkflowLoading,
+      )
+    ) {
+      return;
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTextValues((prev) =>
+      hydrateReplayTextValues(
+        prev,
+        pendingReplayPanelState,
+        workflowInputs,
+      ).value,
+    );
+
+    const nextWidgetValues = resolveReplayWidgetValues(
+      pendingReplayPanelState,
+      widgetInputs,
+    );
+    if (
+      nextWidgetValues &&
+      !areWidgetValueMapsEqual(widgetValuesRef.current, nextWidgetValues)
+    ) {
+      widgetValuesRef.current = nextWidgetValues;
+      setWidgetValues(nextWidgetValues);
+    }
+
+    setRandomizeToggles((prev) =>
+      hydrateReplayRandomizeToggles(
+        prev,
+        pendingReplayPanelState,
+        widgetInputs,
+      ).value,
+    );
+
+    clearPendingReplayPanelState();
+  }, [
+    clearPendingReplayPanelState,
+    isWorkflowLoading,
+    pendingReplayPanelState,
+    widgetInputs,
+    workflowInputs,
+  ]);
 
   useEffect(() => {
     const store = useGenerationStore.getState();

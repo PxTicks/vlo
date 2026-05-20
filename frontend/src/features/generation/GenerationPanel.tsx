@@ -432,12 +432,12 @@ export function GenerationPanel() {
     [syncedGraphData],
   );
 
-  // Fall back to "manual" the moment the rules sidecar disappears. Adjusted
-  // during render so the next render observes the corrected value without
-  // requiring an intermediate effect-driven re-render.
-  if (!hasRulesMode && workflowMode === "rules") {
-    setWorkflowMode("manual");
-  }
+  useEffect(() => {
+    if (!hasRulesMode && workflowMode === "rules") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setWorkflowMode("manual");
+    }
+  }, [hasRulesMode, workflowMode]);
 
   useEffect(() => {
     const workflowChanged =
@@ -520,42 +520,61 @@ export function GenerationPanel() {
     }
   }, [hasInferredInputs, selectedWorkflowId, workflowRuleWarnings]);
 
-  // Reset editor-session bookkeeping whenever the editor toggles open/closed
-  // or the active workflow changes. Tracked during render via "store prior
-  // render value" so dependent state lands in the same commit.
   const [lastEditorSessionKey, setLastEditorSessionKey] = useState<
     string | null
   >(`${editorOpen}|${selectedWorkflowId ?? ""}`);
   const currentEditorSessionKey = `${editorOpen}|${selectedWorkflowId ?? ""}`;
-  if (lastEditorSessionKey !== currentEditorSessionKey) {
+  useEffect(() => {
+    if (lastEditorSessionKey === currentEditorSessionKey) {
+      return;
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLastEditorSessionKey(currentEditorSessionKey);
     if (!editorOpen) {
       setSavePromptOpen(false);
     }
     setEditorSessionBaselineSignature(null);
     setEditorHasUnsavedChanges(false);
-  }
+  }, [currentEditorSessionKey, editorOpen, lastEditorSessionKey]);
 
   // Capture the workflow signature baseline as soon as it becomes available
   // and flag unsaved changes once the signature drifts from the baseline.
-  if (
-    editorOpen &&
-    !isWorkflowLoading &&
-    currentWorkflowSignature &&
-    editorSessionBaselineSignature === null
-  ) {
-    setEditorSessionBaselineSignature(currentWorkflowSignature);
-  }
-  if (
-    editorOpen &&
-    !isWorkflowLoading &&
-    currentWorkflowSignature &&
-    editorSessionBaselineSignature !== null &&
-    currentWorkflowSignature !== editorSessionBaselineSignature &&
-    !editorHasUnsavedChanges
-  ) {
-    setEditorHasUnsavedChanges(true);
-  }
+  useEffect(() => {
+    if (
+      editorOpen &&
+      !isWorkflowLoading &&
+      currentWorkflowSignature &&
+      editorSessionBaselineSignature === null
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEditorSessionBaselineSignature(currentWorkflowSignature);
+    }
+  }, [
+    currentWorkflowSignature,
+    editorOpen,
+    editorSessionBaselineSignature,
+    isWorkflowLoading,
+  ]);
+  useEffect(() => {
+    if (
+      editorOpen &&
+      !isWorkflowLoading &&
+      currentWorkflowSignature &&
+      editorSessionBaselineSignature !== null &&
+      currentWorkflowSignature !== editorSessionBaselineSignature &&
+      !editorHasUnsavedChanges
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEditorHasUnsavedChanges(true);
+    }
+  }, [
+    currentWorkflowSignature,
+    editorHasUnsavedChanges,
+    editorOpen,
+    editorSessionBaselineSignature,
+    isWorkflowLoading,
+  ]);
 
   const handleSaveWorkflowToBackend = async (): Promise<boolean> => {
     if (!syncedGraphData || !selectedWorkflowId) return false;

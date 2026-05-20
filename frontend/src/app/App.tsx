@@ -18,6 +18,7 @@ const darkTheme = createTheme({
 import { useProjectStore, ProjectManager } from "../features/project";
 import { Suspense, lazy, useEffect } from "react";
 import { Box, CircularProgress, Typography } from "@mui/material";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 // 1. Lazy load the heavy editor to separate it from the initial bundle
 const Editor = lazy(() =>
@@ -61,9 +62,15 @@ export function App() {
 
   return (
     <ThemeProvider theme={darkTheme}>
-      <Suspense fallback={<LoadingScreen />}>
-        {!project || !rootHandle ? <ProjectManager /> : <Editor />}
-      </Suspense>
+      <ErrorBoundary
+        boundaryName="App"
+        variant="screen"
+        resetKeys={[project?.id ?? null, Boolean(rootHandle)]}
+      >
+        <Suspense fallback={<LoadingScreen />}>
+          {!project || !rootHandle ? <ProjectManager /> : <Editor />}
+        </Suspense>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }

@@ -168,7 +168,6 @@ export function MiniEditorModal() {
               <video
                 ref={videoRef}
                 src={source?.videoUrl}
-                muted
                 playsInline
                 style={{ maxHeight: 360, maxWidth: "100%" }}
                 onLoadedMetadata={(event) => {

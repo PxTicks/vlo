@@ -42,8 +42,6 @@ const TEXT_CLIP: BaseClip = {
     fontSize: 42,
     fill: "#ffffff",
     align: "center",
-    strokeColor: "#000000",
-    strokeWidth: 0,
   },
 };
 

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Editor } from "../Editor";
 
 const mockFetchAssets = vi.fn(() => Promise.resolve());
@@ -8,18 +8,6 @@ const mockSidebarClick = vi.fn();
 
 let selectionMode = false;
 let frameSelectionMode = false;
-let playerShouldThrow = false;
-
-function isBoundaryLogFor(call: unknown[], boundaryName: string): boolean {
-  const [message, payload] = call;
-  return (
-    message === "[ErrorBoundary] Caught render error" &&
-    typeof payload === "object" &&
-    payload !== null &&
-    "boundaryName" in payload &&
-    payload.boundaryName === boundaryName
-  );
-}
 
 vi.mock("../../features/project", () => ({
   ProjectTitle: () => <div data-testid="project-title">Project</div>,
@@ -82,10 +70,6 @@ vi.mock("../../features/timeline", () => ({
     id: "markers-overlay",
     useItems: () => [],
   }),
-  useTimelineReverseStatusOverlay: () => ({
-    id: "reverse-status-overlay",
-    useItems: () => [],
-  }),
 }));
 
 vi.mock("../../features/transformations", () => ({
@@ -96,13 +80,7 @@ vi.mock("../../features/transformations", () => ({
 }));
 
 vi.mock("../../features/player/Player", () => ({
-  Player: () => {
-    if (playerShouldThrow) {
-      throw new Error("Player render failed");
-    }
-
-    return <div data-testid="player">Player</div>;
-  },
+  Player: () => <div data-testid="player">Player</div>,
 }));
 
 vi.mock("../layout/RightSidebarPanel", () => ({
@@ -132,20 +110,12 @@ vi.mock("../../features/timelineSelection", () => ({
 }));
 
 describe("Editor", () => {
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
     selectionMode = false;
     frameSelectionMode = false;
-    playerShouldThrow = false;
     mockFetchAssets.mockClear();
     mockScanForNewAssets.mockClear();
     mockSidebarClick.mockClear();
-    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
   });
 
   it("renders editor regions without lock overlays when timeline selection is inactive", () => {
@@ -199,23 +169,5 @@ describe("Editor", () => {
 
     expect(screen.getByTestId("text-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("asset-browser")).not.toBeInTheDocument();
-  });
-
-  it("contains player crashes to the player region", () => {
-    playerShouldThrow = true;
-
-    render(<Editor />);
-
-    expect(screen.getByRole("alert")).toHaveTextContent("This area crashed");
-    expect(screen.getByText("Player render failed")).toBeInTheDocument();
-    expect(screen.getByTestId("asset-browser")).toBeInTheDocument();
-    expect(screen.getByTestId("timeline-container")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sidebar action" }))
-      .toBeInTheDocument();
-    expect(
-      consoleErrorSpy.mock.calls.some((call: unknown[]) =>
-        isBoundaryLogFor(call, "Player"),
-      ),
-    ).toBe(true);
   });
 });

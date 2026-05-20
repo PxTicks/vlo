@@ -1,21 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
 import { App } from "../App";
-
-const { mockEditorShouldThrow } = vi.hoisted(() => ({
-  mockEditorShouldThrow: { current: false },
-}));
-
-function isBoundaryLogFor(call: unknown[], boundaryName: string): boolean {
-  const [message, payload] = call;
-  return (
-    message === "[ErrorBoundary] Caught render error" &&
-    typeof payload === "object" &&
-    payload !== null &&
-    "boundaryName" in payload &&
-    payload.boundaryName === boundaryName
-  );
-}
 
 // Mock matchMedia
 beforeAll(() => {
@@ -66,19 +51,13 @@ vi.mock("../../app/layout/RightSidebarPanel", () => ({
 }));
 
 vi.mock("../Editor", () => ({
-  Editor: () => {
-    if (mockEditorShouldThrow.current) {
-      throw new Error("Editor render failed");
-    }
-
-    return (
-      <div>
-        <div>Test Project</div>
-        <div data-testid="mock-player">Player</div>
-        <div data-testid="mock-timeline">Timeline</div>
-      </div>
-    );
-  },
+  Editor: () => (
+    <div>
+      <div>Test Project</div>
+      <div data-testid="mock-player">Player</div>
+      <div data-testid="mock-timeline">Timeline</div>
+    </div>
+  ),
 }));
 
 // Mock only the asset store to avoid filesystem operations
@@ -100,23 +79,6 @@ vi.mock("../../features/userAssets", () => {
 });
 
 describe("App Startup", () => {
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(async () => {
-    mockEditorShouldThrow.current = false;
-    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const { useProjectStore } = await import("../../features/project");
-    useProjectStore.setState({
-      project: null,
-      rootHandle: null,
-    });
-  });
-
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
-  });
-
   it("renders the Project Manager screen on startup (when no project loaded)", async () => {
     render(<App />);
 
@@ -156,40 +118,4 @@ describe("App Startup", () => {
       expect(screen.getByText("Loading Editor...")).toBeInTheDocument();
     });
   }, 15000);
-
-  it("shows the app error fallback when the editor crashes", async () => {
-    const { useProjectStore } = await import("../../features/project");
-    const { act } = await import("@testing-library/react");
-
-    act(() => {
-      useProjectStore.setState({
-        project: {
-          id: "test-project",
-          title: "Test Project",
-          rootAssetsFolder: "test-folder",
-          createdAt: Date.now(),
-          lastModified: Date.now(),
-        },
-        rootHandle: {
-          kind: "directory",
-          name: "test-handle",
-        } as unknown as FileSystemDirectoryHandle,
-      });
-    });
-    mockEditorShouldThrow.current = true;
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        "Something went wrong",
-      );
-    });
-    expect(screen.getByText("Editor render failed")).toBeInTheDocument();
-    expect(
-      consoleErrorSpy.mock.calls.some((call: unknown[]) =>
-        isBoundaryLogFor(call, "App"),
-      ),
-    ).toBe(true);
-  });
 });

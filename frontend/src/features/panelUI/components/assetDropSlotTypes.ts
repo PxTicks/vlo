@@ -20,6 +20,8 @@ export interface AssetDropSlotProps {
   value?: AssetDropSlotValue | null;
   /** Callback to clear the assigned asset */
   onClear?: () => void;
+  /** When provided and the slot is filled, shows a pencil button to edit the value. */
+  onEdit?: () => void;
   /** Called when a compatible asset is dropped on this slot */
   onDrop?: (asset: Asset) => void;
   /** Called when a compatible external file is dropped on this slot */

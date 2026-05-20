@@ -5,6 +5,7 @@ import { useDroppable, useDndContext, useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import CloseIcon from "@mui/icons-material/Close";
+import EditIcon from "@mui/icons-material/Edit";
 import type { Asset, AssetType } from "../../../types/Asset";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import type { AssetDropSlotProps } from "./assetDropSlotTypes";
@@ -68,6 +69,20 @@ const ClearButton = styled(IconButton)({
   },
 });
 
+const EditButton = styled(IconButton)({
+  position: "absolute",
+  top: 2,
+  left: 2,
+  padding: 2,
+  backgroundColor: "rgba(0, 0, 0, 0.6)",
+  color: "#fff",
+  opacity: 0,
+  transition: "opacity 0.15s",
+  "&:hover": {
+    backgroundColor: "rgba(33, 150, 243, 0.85)",
+  },
+});
+
 function formatAcceptLabel(accept: AssetType[]): string {
   return accept.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join(" / ");
 }
@@ -77,6 +92,7 @@ function AssetDropSlotComponent({
   accept,
   value,
   onClear,
+  onEdit,
   onDrop,
   onExternalDrop,
   onSelect,
@@ -161,6 +177,9 @@ function AssetDropSlotComponent({
         {...(isReorderable ? listeners : {})}
         sx={{
           "&:hover .drop-slot-clear": {
+            opacity: 1,
+          },
+          "&:hover .drop-slot-edit": {
             opacity: 1,
           },
           cursor: isReorderable
@@ -259,6 +278,21 @@ function AssetDropSlotComponent({
               >
                 No Preview
               </Typography>
+            )}
+            {onEdit && (
+              <EditButton
+                className="drop-slot-edit"
+                size="small"
+                aria-label="Edit"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <EditIcon sx={{ fontSize: 12 }} />
+              </EditButton>
             )}
             {onClear && (
               <ClearButton

@@ -26,9 +26,21 @@ import {
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
 import {
+  buildEditedTimelineSelection,
+  captureVideoFrameFile,
+  probeVideoDurationTicks,
+  renderSyntheticEditedOutputs,
+} from "../utils/miniEditorEdit";
+import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
 } from "../utils/manualSlotMedia";
+import { useMiniEditorStore } from "../../miniEditor";
+import type {
+  ResolvedEditorSource,
+  MiniEditorEditSpec,
+} from "../../miniEditor";
+import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { resolveWidgetInputs } from "../store/workflowState";
 import {
   parseInputsFromGraphData,
@@ -63,13 +75,6 @@ import {
   buildFrontendStateValueKey,
 } from "../services/frontendRuleState";
 import { shouldShowHistoricalGenerationJob } from "../utils/panelDisplayJob";
-import {
-  areWidgetValueMapsEqual,
-  hydrateReplayRandomizeToggles,
-  hydrateReplayTextValues,
-  resolveReplayWidgetValues,
-  shouldWaitForReplayPanelHydration,
-} from "../utils/replayPanelHydration";
 import { parseStoredWidgetValue } from "../utils/storedWidgetValues";
 
 function applySelectionConfigDefaults(
@@ -485,62 +490,108 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     });
   }, [lastAppliedWidgetValues]);
 
-  // Hydrate panel state from a queued generation-replay snapshot after the
-  // workflow/widget inputs are visible. Doing this in an effect keeps React's
-  // render phase pure while still restoring saved seed/widget values once.
-  useEffect(() => {
-    if (!pendingReplayPanelState) {
-      return;
+  // Hydrate panel state from a queued generation-replay snapshot during render
+  // (using the "store previous render value" pattern) so the hydrated values
+  // land in the same commit that exposed them, without an intermediate effect.
+  const [lastReplaySyncKey, setLastReplaySyncKey] = useState<{
+    pending: typeof pendingReplayPanelState;
+    widgets: typeof widgetInputs;
+    workflow: typeof workflowInputs;
+  }>({
+    pending: pendingReplayPanelState,
+    widgets: widgetInputs,
+    workflow: workflowInputs,
+  });
+  if (
+    lastReplaySyncKey.pending !== pendingReplayPanelState ||
+    lastReplaySyncKey.widgets !== widgetInputs ||
+    lastReplaySyncKey.workflow !== workflowInputs
+  ) {
+    setLastReplaySyncKey({
+      pending: pendingReplayPanelState,
+      widgets: widgetInputs,
+      workflow: workflowInputs,
+    });
+
+    if (pendingReplayPanelState) {
+      setTextValues((prev) => {
+        const next = { ...prev };
+        for (const input of workflowInputs) {
+          if (input.inputType !== "text") {
+            continue;
+          }
+          const inputId = getWorkflowInputId(input);
+          if (
+            Object.prototype.hasOwnProperty.call(
+              pendingReplayPanelState.textValues,
+              inputId,
+            )
+          ) {
+            next[inputId] = pendingReplayPanelState.textValues[inputId] ?? "";
+          }
+        }
+        return next;
+      });
+
+      if (
+        Object.keys(pendingReplayPanelState.widgetValues).length > 0 ||
+        Object.keys(pendingReplayPanelState.derivedWidgetValues).length > 0
+      ) {
+        const nextWidgetValues: Record<string, Record<string, unknown>> = {};
+
+        for (const widget of widgetInputs) {
+          if (!nextWidgetValues[widget.nodeId]) {
+            nextWidgetValues[widget.nodeId] = {};
+          }
+
+          let restoredValue: unknown = widget.currentValue;
+          if (widget.kind === "derived") {
+            const replayKey = `derived_widget_${widget.derivedWidgetId}`;
+            const storedValue =
+              pendingReplayPanelState.derivedWidgetValues[replayKey];
+            if (typeof storedValue === "string") {
+              restoredValue = parseStoredWidgetValue(widget, storedValue);
+            }
+          } else {
+            const replayKey = buildFrontendStateValueKey({
+              nodeId: widget.nodeId,
+              widget: widget.param,
+              frontendControlId: widget.frontendControlId,
+            });
+            const storedValue =
+              pendingReplayPanelState.widgetValues[replayKey];
+            if (typeof storedValue === "string") {
+              restoredValue = parseStoredWidgetValue(widget, storedValue);
+            }
+          }
+
+          nextWidgetValues[widget.nodeId][widget.param] = restoredValue;
+        }
+
+        // widgetValuesRef is kept in sync via the dedicated useEffect below.
+        setWidgetValues(nextWidgetValues);
+      }
+
+      if (Object.keys(pendingReplayPanelState.widgetModes).length > 0) {
+        setRandomizeToggles((prev) => {
+          const next = { ...prev };
+          for (const widget of widgetInputs) {
+            if (!widget.config.controlAfterGenerate) {
+              continue;
+            }
+            const replayKey = `widget_mode_${widget.nodeId}_${widget.param}`;
+            const restoredMode = pendingReplayPanelState.widgetModes[replayKey];
+            if (!restoredMode) {
+              continue;
+            }
+            next[`${widget.nodeId}:${widget.param}`] =
+              restoredMode === "randomize";
+          }
+          return next;
+        });
+      }
     }
-
-    if (
-      shouldWaitForReplayPanelHydration(
-        pendingReplayPanelState,
-        workflowInputs,
-        widgetInputs,
-        isWorkflowLoading,
-      )
-    ) {
-      return;
-    }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTextValues((prev) =>
-      hydrateReplayTextValues(
-        prev,
-        pendingReplayPanelState,
-        workflowInputs,
-      ).value,
-    );
-
-    const nextWidgetValues = resolveReplayWidgetValues(
-      pendingReplayPanelState,
-      widgetInputs,
-    );
-    if (
-      nextWidgetValues &&
-      !areWidgetValueMapsEqual(widgetValuesRef.current, nextWidgetValues)
-    ) {
-      widgetValuesRef.current = nextWidgetValues;
-      setWidgetValues(nextWidgetValues);
-    }
-
-    setRandomizeToggles((prev) =>
-      hydrateReplayRandomizeToggles(
-        prev,
-        pendingReplayPanelState,
-        widgetInputs,
-      ).value,
-    );
-
-    clearPendingReplayPanelState();
-  }, [
-    clearPendingReplayPanelState,
-    isWorkflowLoading,
-    pendingReplayPanelState,
-    widgetInputs,
-    workflowInputs,
-  ]);
+  }
 
   useEffect(() => {
     const store = useGenerationStore.getState();
@@ -1063,6 +1114,153 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     ],
   );
 
+  const handleEditMedia = useCallback(
+    (inputId: string, inputType: "video") => {
+      if (inputType !== "video") return;
+      const input = workflowInputById.get(inputId);
+      const currentMediaInputs = useGenerationStore.getState().mediaInputs;
+      const value = input
+        ? getWorkflowInputValue(currentMediaInputs, input, workflowInputById)
+        : currentMediaInputs[inputId];
+      if (!value) return;
+
+      if (usePlayerStore.getState().isPlaying) {
+        usePlayerStore.getState().setIsPlaying(false);
+      }
+
+      // Resolve the editable source. When the input is a timeline selection,
+      // the edit rebuilds a real selection (crop + range_mask components) that
+      // re-renders through the normal pipeline; `sourceSelection` carries it
+      // through to onSave. A plain asset has no backing timeline, so it falls
+      // back to a synthetic single-clip bake.
+      let sourceSelection: TimelineSelection | null = null;
+      let prepare: () => Promise<ResolvedEditorSource>;
+
+      if (value.kind === "asset" && value.asset.type === "video") {
+        const asset = value.asset;
+        prepare = async () => {
+          const blob =
+            asset.file ?? (await (await fetch(asset.src)).blob());
+          const file =
+            asset.file ??
+            new File([blob], asset.name || "video.mp4", {
+              type: blob.type || "video/mp4",
+            });
+          const videoUrl = URL.createObjectURL(blob);
+          const durationTicks =
+            typeof asset.duration === "number" && asset.duration > 0
+              ? Math.round(asset.duration * TICKS_PER_SECOND)
+              : await probeVideoDurationTicks(videoUrl);
+          return { videoUrl, videoFile: file, durationTicks };
+        };
+      } else if (
+        value.kind === "timelineSelection" &&
+        value.mediaType === "video"
+      ) {
+        const selection = value.timelineSelection;
+        const existingPrepared = value.preparedVideoFile;
+        sourceSelection = selection;
+        prepare = async () => {
+          const file =
+            existingPrepared ??
+            (await renderTimelineSelectionToMp4(selection));
+          const videoUrl = URL.createObjectURL(file);
+          const durationTicks =
+            typeof selection.end === "number"
+              ? Math.max(0, selection.end - selection.start)
+              : await probeVideoDurationTicks(videoUrl);
+          return { videoUrl, videoFile: file, durationTicks };
+        };
+      } else {
+        return;
+      }
+
+      const onSave = async (
+        spec: MiniEditorEditSpec,
+        source: ResolvedEditorSource,
+      ) => {
+        const thumbnailFile = await captureVideoFrameFile(
+          source.videoUrl,
+          spec.cropStartTicks / TICKS_PER_SECOND,
+          `mini-editor-thumb-${Date.now()}.png`,
+        );
+        const extractionRequestId =
+          (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+        selectionExtractionRequestIdsRef.current[inputId] = extractionRequestId;
+
+        // Timeline-selection inputs: build a true edited selection and render
+        // it through the standard extraction path so timeline masks, transforms
+        // and metadata are preserved and the derived mask is recomputed.
+        if (sourceSelection) {
+          const editedSelection = buildEditedTimelineSelection(
+            sourceSelection,
+            spec,
+          );
+          setMediaInputTimelineSelection(
+            inputId,
+            editedSelection,
+            thumbnailFile,
+            {
+              mediaType: "video",
+              isExtracting: true,
+              extractionRequestId,
+            },
+          );
+          await extractVideoTimelineSelection({
+            inputId,
+            inputNodeId: input?.nodeId,
+            timelineSelection: editedSelection,
+            thumbnailFile,
+            extractionRequestId,
+            mode,
+            derivedMaskMappings,
+            setMediaInputTimelineSelection,
+            selectionExtractionRequestIdsRef,
+          });
+          return;
+        }
+
+        // Plain asset inputs: no backing timeline, so bake a synthetic clip.
+        const { sourceWidth, sourceHeight } = useMiniEditorStore.getState();
+        const dims = {
+          width: sourceWidth > 0 ? sourceWidth : 1280,
+          height: sourceHeight > 0 ? sourceHeight : 720,
+        };
+        const { video, mask } = await renderSyntheticEditedOutputs(
+          spec,
+          source,
+          dims,
+        );
+        const cropLen = Math.max(1, spec.cropEndTicks - spec.cropStartTicks);
+
+        setMediaInputTimelineSelection(
+          inputId,
+          { start: 0, end: cropLen, clips: [] },
+          thumbnailFile,
+          {
+            mediaType: "video",
+            isExtracting: false,
+            extractionRequestId,
+            preparedVideoFile: video,
+            preparedMaskFile: mask,
+          },
+        );
+      };
+
+      void useMiniEditorStore.getState().open({
+        title: input?.label ? `Edit: ${input.label}` : "Edit video",
+        prepare,
+        onSave,
+      });
+    },
+    [
+      derivedMaskMappings,
+      mode,
+      setMediaInputTimelineSelection,
+      workflowInputById,
+    ],
+  );
+
   const handleTextValueCommit = useCallback((inputId: string, value: string) => {
     clearPendingReplayPanelState();
     const canonicalInputId =
@@ -1265,5 +1463,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     handleInputClear,
     handleSwapMediaInputs,
     handleClickSelect,
+    handleEditMedia,
   };
 }

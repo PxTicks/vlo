@@ -492,8 +492,6 @@ describe("useTrackRenderEngine Integration", () => {
           fontSize: 96,
           fill: "#ffffff",
           align: "center",
-          strokeColor: "#000000",
-          strokeWidth: 0,
         },
       },
     ];

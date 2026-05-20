@@ -120,6 +120,7 @@ function makeHookState(
     handleInputClear: vi.fn(),
     handleSwapMediaInputs: vi.fn(),
     handleClickSelect: vi.fn(),
+    handleEditMedia: vi.fn(),
     widgetInputs: [],
     widgetValues: {},
     randomizeToggles: {},

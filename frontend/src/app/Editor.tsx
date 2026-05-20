@@ -18,7 +18,6 @@ import { EditorLayout } from "./layout/EditorLayout";
 import { EditorLeftSidebar } from "./layout/EditorLeftSidebar";
 import { EditorTopBar } from "./layout/EditorTopBar";
 import { RightSidebarPanel } from "./layout/RightSidebarPanel";
-import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useEditorAssetLibrary } from "./hooks/useEditorAssetLibrary";
 import { useEditorClipOverlays } from "./hooks/useEditorClipOverlays";
 import { useEditorSelectionLock } from "./hooks/useEditorSelectionLock";
@@ -74,33 +73,15 @@ export function Editor() {
         onTimelineMouseDownCapture={() =>
           useTimelineStore.getState().setFocused(true)
         }
-        leftSidebar={
-          <ErrorBoundary boundaryName="Left sidebar" variant="region">
-            <EditorLeftSidebar />
-          </ErrorBoundary>
-        }
-        topBar={
-          <ErrorBoundary boundaryName="Top bar" variant="region">
-            <EditorTopBar />
-          </ErrorBoundary>
-        }
-        player={
-          <ErrorBoundary boundaryName="Player" variant="region">
-            <Player />
-          </ErrorBoundary>
-        }
-        rightSidebar={
-          <ErrorBoundary boundaryName="Right sidebar" variant="region">
-            <RightSidebarPanel />
-          </ErrorBoundary>
-        }
+        leftSidebar={<EditorLeftSidebar />}
+        topBar={<EditorTopBar />}
+        player={<Player />}
+        rightSidebar={<RightSidebarPanel />}
         timeline={
-          <ErrorBoundary boundaryName="Timeline" variant="region">
-            <Timeline
-              scrollContainerRef={scrollContainerRef}
-              clipOverlays={clipOverlays}
-            />
-          </ErrorBoundary>
+          <Timeline
+            scrollContainerRef={scrollContainerRef}
+            clipOverlays={clipOverlays}
+          />
         }
       />
 

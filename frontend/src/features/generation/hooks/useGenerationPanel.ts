@@ -26,9 +26,20 @@ import {
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
 import {
+  captureVideoFrameFile,
+  probeVideoDurationTicks,
+  renderMiniEditorOutputs,
+} from "../utils/miniEditorRender";
+import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
 } from "../utils/manualSlotMedia";
+import { useMiniEditorStore } from "../../miniEditor";
+import type {
+  ResolvedEditorSource,
+  MiniEditorEditSpec,
+} from "../../miniEditor";
+import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { resolveWidgetInputs } from "../store/workflowState";
 import {
   parseInputsFromGraphData,
@@ -1102,6 +1113,117 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     ],
   );
 
+  const handleEditMedia = useCallback(
+    (inputId: string, inputType: "video") => {
+      if (inputType !== "video") return;
+      const input = workflowInputById.get(inputId);
+      const currentMediaInputs = useGenerationStore.getState().mediaInputs;
+      const value = input
+        ? getWorkflowInputValue(currentMediaInputs, input, workflowInputById)
+        : currentMediaInputs[inputId];
+      if (!value) return;
+
+      if (usePlayerStore.getState().isPlaying) {
+        usePlayerStore.getState().setIsPlaying(false);
+      }
+
+      // Resolve the editable source and the selection shown after saving.
+      // When the input was a timeline selection, edits happen on its render.
+      let displaySelection: TimelineSelection | null = null;
+      // An already-derived (transparency) mask carried by the input. We crop
+      // and OR the new range masks into it rather than overwriting it.
+      let originalMaskFile: File | null = null;
+      let prepare: () => Promise<ResolvedEditorSource>;
+
+      if (value.kind === "asset" && value.asset.type === "video") {
+        const asset = value.asset;
+        prepare = async () => {
+          const blob =
+            asset.file ?? (await (await fetch(asset.src)).blob());
+          const file =
+            asset.file ??
+            new File([blob], asset.name || "video.mp4", {
+              type: blob.type || "video/mp4",
+            });
+          const videoUrl = URL.createObjectURL(blob);
+          const durationTicks =
+            typeof asset.duration === "number" && asset.duration > 0
+              ? Math.round(asset.duration * TICKS_PER_SECOND)
+              : await probeVideoDurationTicks(videoUrl);
+          return { videoUrl, videoFile: file, durationTicks };
+        };
+      } else if (
+        value.kind === "timelineSelection" &&
+        value.mediaType === "video"
+      ) {
+        const selection = value.timelineSelection;
+        const existingPrepared = value.preparedVideoFile;
+        displaySelection = selection;
+        originalMaskFile = value.preparedMaskFile ?? null;
+        prepare = async () => {
+          const file =
+            existingPrepared ??
+            (await renderTimelineSelectionToMp4(selection));
+          const videoUrl = URL.createObjectURL(file);
+          const durationTicks =
+            typeof selection.end === "number"
+              ? Math.max(0, selection.end - selection.start)
+              : await probeVideoDurationTicks(videoUrl);
+          return { videoUrl, videoFile: file, durationTicks };
+        };
+      } else {
+        return;
+      }
+
+      const onSave = async (
+        spec: MiniEditorEditSpec,
+        source: ResolvedEditorSource,
+      ) => {
+        const { sourceWidth, sourceHeight } = useMiniEditorStore.getState();
+        const dims = {
+          width: sourceWidth > 0 ? sourceWidth : 1280,
+          height: sourceHeight > 0 ? sourceHeight : 720,
+        };
+        const { video, mask } = await renderMiniEditorOutputs(spec, source, dims, {
+          originalMaskFile,
+        });
+        const thumbnailFile = await captureVideoFrameFile(
+          source.videoUrl,
+          spec.cropStartTicks / TICKS_PER_SECOND,
+          `mini-editor-thumb-${Date.now()}.png`,
+        );
+
+        const cropLen = Math.max(1, spec.cropEndTicks - spec.cropStartTicks);
+        const selectionForStore: TimelineSelection =
+          displaySelection ?? { start: 0, end: cropLen, clips: [] };
+
+        const extractionRequestId =
+          (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+        selectionExtractionRequestIdsRef.current[inputId] = extractionRequestId;
+
+        setMediaInputTimelineSelection(
+          inputId,
+          selectionForStore,
+          thumbnailFile,
+          {
+            mediaType: "video",
+            isExtracting: false,
+            extractionRequestId,
+            preparedVideoFile: video,
+            preparedMaskFile: mask,
+          },
+        );
+      };
+
+      void useMiniEditorStore.getState().open({
+        title: input?.label ? `Edit: ${input.label}` : "Edit video",
+        prepare,
+        onSave,
+      });
+    },
+    [setMediaInputTimelineSelection, workflowInputById],
+  );
+
   const handleTextValueCommit = useCallback((inputId: string, value: string) => {
     clearPendingReplayPanelState();
     const canonicalInputId =
@@ -1304,5 +1426,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     handleInputClear,
     handleSwapMediaInputs,
     handleClickSelect,
+    handleEditMedia,
   };
 }

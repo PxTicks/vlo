@@ -37,6 +37,7 @@ interface GenerationInputsProps {
   onInputClear: (inputId: string) => void;
   onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
+  onEditMedia?: (inputId: string, inputType: "video") => void;
   widgetInputs: WorkflowWidgetInput[];
   sections?: WorkflowSection[];
   widgetValues: Record<string, Record<string, unknown>>;
@@ -786,6 +787,7 @@ interface MediaInputSectionProps {
   onExternalInputDrop: (inputId: string, file: File) => void | Promise<void>;
   onInputClear: (inputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
+  onEditMedia?: (inputId: string, inputType: "video") => void;
 }
 
 function MediaInputSection({
@@ -796,6 +798,7 @@ function MediaInputSection({
   onExternalInputDrop,
   onInputClear,
   onClickSelect,
+  onEditMedia,
 }: MediaInputSectionProps) {
   const inputId = getWorkflowInputId(input);
   const mediaInputType = input.inputType;
@@ -814,6 +817,11 @@ function MediaInputSection({
         accept={acceptTypes}
         value={slotValue}
         onClear={() => onInputClear(inputId)}
+        onEdit={
+          mediaInputType === "video" && slotValue && onEditMedia
+            ? () => onEditMedia(inputId, "video")
+            : undefined
+        }
         onDrop={(asset: Asset) => onInputDrop(inputId, asset)}
         onExternalDrop={(file: File) => onExternalInputDrop(inputId, file)}
         onSelect={() => onClickSelect(inputId, mediaInputType)}
@@ -834,6 +842,7 @@ interface MediaInputGroupSectionProps {
   onInputClear: (inputId: string) => void;
   onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
+  onEditMedia?: (inputId: string, inputType: "video") => void;
 }
 
 function MediaInputGroupSection({
@@ -846,6 +855,7 @@ function MediaInputGroupSection({
   onInputClear,
   onSwapMediaInputs,
   onClickSelect,
+  onEditMedia,
 }: MediaInputGroupSectionProps) {
   return (
     <PanelSection title={title} bgColor={bgColor} defaultOpen={true}>
@@ -876,6 +886,11 @@ function MediaInputGroupSection({
                   onSwapMediaInputs(data.inputId, inputId)
                 }
                 onClear={() => onInputClear(inputId)}
+                onEdit={
+                  mediaInputType === "video" && slotValue && onEditMedia
+                    ? () => onEditMedia(inputId, "video")
+                    : undefined
+                }
                 onDrop={(asset: Asset) => onInputDrop(inputId, asset)}
                 onExternalDrop={(file: File) =>
                   onExternalInputDrop(inputId, file)
@@ -1244,6 +1259,7 @@ export const GenerationInputs = memo(function GenerationInputs({
   onInputClear,
   onSwapMediaInputs,
   onClickSelect,
+  onEditMedia,
   widgetInputs,
   sections = [],
   widgetValues,
@@ -1333,6 +1349,7 @@ export const GenerationInputs = memo(function GenerationInputs({
           onInputClear={onInputClear}
           onSwapMediaInputs={onSwapMediaInputs}
           onClickSelect={onClickSelect}
+          onEditMedia={onEditMedia}
         />
       );
     }
@@ -1349,6 +1366,7 @@ export const GenerationInputs = memo(function GenerationInputs({
         onExternalInputDrop={onExternalInputDrop}
         onInputClear={onInputClear}
         onClickSelect={onClickSelect}
+        onEditMedia={onEditMedia}
       />
     );
   };

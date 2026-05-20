@@ -39,7 +39,6 @@ import {
   Timeline,
 } from "@mui/icons-material";
 import { ComfyUIEditor } from "./components/ComfyUIEditor";
-import { MiniEditorModal } from "../miniEditor";
 import { GenerationInputs } from "./components/GenerationInputs";
 import {
   DEFAULT_GENERATION_RESOLUTION_OPTIONS,
@@ -331,7 +330,6 @@ export function GenerationPanel() {
     handleInputClear,
     handleSwapMediaInputs,
     handleClickSelect,
-    handleEditMedia,
 
     // Send to timeline
     importedAssets,
@@ -432,12 +430,11 @@ export function GenerationPanel() {
     [syncedGraphData],
   );
 
-  // Fall back to "manual" the moment the rules sidecar disappears. Adjusted
-  // during render so the next render observes the corrected value without
-  // requiring an intermediate effect-driven re-render.
-  if (!hasRulesMode && workflowMode === "rules") {
-    setWorkflowMode("manual");
-  }
+  useEffect(() => {
+    if (!hasRulesMode && workflowMode === "rules") {
+      setWorkflowMode("manual");
+    }
+  }, [hasRulesMode, workflowMode]);
 
   useEffect(() => {
     const workflowChanged =
@@ -520,42 +517,58 @@ export function GenerationPanel() {
     }
   }, [hasInferredInputs, selectedWorkflowId, workflowRuleWarnings]);
 
-  // Reset editor-session bookkeeping whenever the editor toggles open/closed
-  // or the active workflow changes. Tracked during render via "store prior
-  // render value" so dependent state lands in the same commit.
   const [lastEditorSessionKey, setLastEditorSessionKey] = useState<
     string | null
   >(`${editorOpen}|${selectedWorkflowId ?? ""}`);
   const currentEditorSessionKey = `${editorOpen}|${selectedWorkflowId ?? ""}`;
-  if (lastEditorSessionKey !== currentEditorSessionKey) {
+  useEffect(() => {
+    if (lastEditorSessionKey === currentEditorSessionKey) {
+      return;
+    }
+
     setLastEditorSessionKey(currentEditorSessionKey);
     if (!editorOpen) {
       setSavePromptOpen(false);
     }
     setEditorSessionBaselineSignature(null);
     setEditorHasUnsavedChanges(false);
-  }
+  }, [currentEditorSessionKey, editorOpen, lastEditorSessionKey]);
 
   // Capture the workflow signature baseline as soon as it becomes available
   // and flag unsaved changes once the signature drifts from the baseline.
-  if (
-    editorOpen &&
-    !isWorkflowLoading &&
-    currentWorkflowSignature &&
-    editorSessionBaselineSignature === null
-  ) {
-    setEditorSessionBaselineSignature(currentWorkflowSignature);
-  }
-  if (
-    editorOpen &&
-    !isWorkflowLoading &&
-    currentWorkflowSignature &&
-    editorSessionBaselineSignature !== null &&
-    currentWorkflowSignature !== editorSessionBaselineSignature &&
-    !editorHasUnsavedChanges
-  ) {
-    setEditorHasUnsavedChanges(true);
-  }
+  useEffect(() => {
+    if (
+      editorOpen &&
+      !isWorkflowLoading &&
+      currentWorkflowSignature &&
+      editorSessionBaselineSignature === null
+    ) {
+      setEditorSessionBaselineSignature(currentWorkflowSignature);
+    }
+  }, [
+    currentWorkflowSignature,
+    editorOpen,
+    editorSessionBaselineSignature,
+    isWorkflowLoading,
+  ]);
+  useEffect(() => {
+    if (
+      editorOpen &&
+      !isWorkflowLoading &&
+      currentWorkflowSignature &&
+      editorSessionBaselineSignature !== null &&
+      currentWorkflowSignature !== editorSessionBaselineSignature &&
+      !editorHasUnsavedChanges
+    ) {
+      setEditorHasUnsavedChanges(true);
+    }
+  }, [
+    currentWorkflowSignature,
+    editorHasUnsavedChanges,
+    editorOpen,
+    editorSessionBaselineSignature,
+    isWorkflowLoading,
+  ]);
 
   const handleSaveWorkflowToBackend = async (): Promise<boolean> => {
     if (!syncedGraphData || !selectedWorkflowId) return false;
@@ -1069,7 +1082,6 @@ export function GenerationPanel() {
               onInputClear={handleInputClear}
               onSwapMediaInputs={handleSwapMediaInputs}
               onClickSelect={handleClickSelect}
-              onEditMedia={handleEditMedia}
               widgetInputs={displayWidgetInputs}
               widgetValues={widgetValues}
               randomizeToggles={randomizeToggles}
@@ -1585,9 +1597,6 @@ export function GenerationPanel() {
 
       {/* ComfyUI Node Editor Dialog */}
       <ComfyUIEditor open={editorOpen} onClose={handleRequestCloseEditor} />
-
-      {/* Modal trim + range-mask editor for video inputs */}
-      <MiniEditorModal />
     </Box>
   );
 }

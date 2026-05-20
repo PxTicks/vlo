@@ -46,27 +46,15 @@ export async function captureFramePngAtTick(
   });
 }
 
-export interface RenderInputsOverride {
-  exportConfig: ExportConfig;
-  projectData: ProjectData;
-}
-
 export async function renderTimelineSelectionToMp4(
   timelineSelection: TimelineSelection,
   options: {
     includeTimelineMasks?: boolean;
     signal?: AbortSignal;
-    /**
-     * Render against a caller-supplied project/export config instead of the
-     * global timeline store. Used by the modal video editor to render a
-     * single-clip in-memory timeline.
-     */
-    renderInputs?: RenderInputsOverride;
   } = {},
 ): Promise<File> {
   throwIfAborted(options.signal);
-  const { exportConfig, projectData } =
-    options.renderInputs ?? buildProjectRenderInputs();
+  const { exportConfig, projectData } = buildProjectRenderInputs();
   const normalizedSelection = normalizeTimelineSelection(
     timelineSelection,
     projectData.clips,
@@ -722,12 +710,10 @@ export async function renderTimelineSelectionToMp4WithMask(
   options: {
     signal?: AbortSignal;
     sourceVideoTreatment?: DerivedMaskSourceVideoTreatment;
-    renderInputs?: RenderInputsOverride;
   } = {},
 ): Promise<TimelineSelectionWithMaskResult> {
   throwIfAborted(options.signal);
-  const { exportConfig, projectData } =
-    options.renderInputs ?? buildProjectRenderInputs();
+  const { exportConfig, projectData } = buildProjectRenderInputs();
   const normalizedSelection = normalizeTimelineSelection(
     timelineSelection,
     projectData.clips,

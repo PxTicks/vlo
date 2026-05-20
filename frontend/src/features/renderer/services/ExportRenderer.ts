@@ -177,8 +177,6 @@ export interface ExportConfig {
   outputWidth: number;
   outputHeight: number;
   backgroundAlpha?: number;
-  /** Clear color for the headless stage. Defaults to black (0x000000). */
-  backgroundColor?: number;
   fileHandle?: FileSystemFileHandle;
 }
 
@@ -234,7 +232,6 @@ export class ExportRenderer {
       outputWidth,
       outputHeight,
       backgroundAlpha = 1,
-      backgroundColor = 0x000000,
     } = config;
 
     // 1. Initialize Headless App (Physical Resolution)
@@ -243,7 +240,7 @@ export class ExportRenderer {
     await app.init({
       width: outputWidth,
       height: outputHeight,
-      backgroundColor,
+      backgroundColor: 0x000000,
       backgroundAlpha,
       antialias: true,
       resolution: 1,

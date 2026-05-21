@@ -16,6 +16,13 @@ function isEditableTextTarget(target: EventTarget | null): boolean {
   );
 }
 
+function isMaskEquationTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    target.closest('[data-mask-equation-editor="true"]') !== null
+  );
+}
+
 function getFallbackMaskId(
   clipId: string,
   removedMaskId: string,
@@ -42,6 +49,7 @@ export function useCanvasSelectionKeyboard() {
       if (event.defaultPrevented) return;
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       if (isEditableTextTarget(event.target)) return;
+      if (isMaskEquationTarget(event.target)) return;
       if (useAssetBrowserSelectionStore.getState().selectedAssetIds.length > 0) {
         return;
       }

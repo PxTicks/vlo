@@ -339,12 +339,19 @@ export function MaskEquationBuilder({
       return (
         <Chip
           data-testid={`mask-equation-mask-${pathKey}`}
+          data-mask-equation-editor="true"
           label={maskLabelById.get(node.maskId) ?? `Mask ${node.maskId}`}
           size="small"
           color={isSelected || isHovered ? "primary" : "default"}
           variant={isSelected || isHovered ? "filled" : "outlined"}
+          tabIndex={0}
           onClick={(event) => {
             event.stopPropagation();
+            event.currentTarget.focus();
+            handleSelectPath(path);
+            setSelectedLocalId(node.maskId);
+          }}
+          onFocus={() => {
             handleSelectPath(path);
             setSelectedLocalId(node.maskId);
           }}
@@ -589,6 +596,7 @@ export function MaskEquationBuilder({
         </Typography>
         <Box
           data-testid="mask-equation"
+          data-mask-equation-editor="true"
           onKeyDown={handleEquationKeyDown}
           onDragOver={handleEquationAreaDragOver}
           onDragLeave={handleEquationAreaDragLeave}

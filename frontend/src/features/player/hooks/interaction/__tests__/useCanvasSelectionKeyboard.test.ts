@@ -140,4 +140,44 @@ describe("useCanvasSelectionKeyboard", () => {
     expect(useTimelineStore.getState().selectedClipIds).toEqual([]);
     expect(useCanvasSelectionStore.getState().activeSelection).toBeNull();
   });
+
+  it("ignores delete presses coming from the mask equation editor", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const firstMask = createMaskClip(parent, "mask_a");
+    const secondMask = createMaskClip(parent, "mask_b");
+
+    useTimelineStore.setState({
+      clips: [parent, firstMask, secondMask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_a");
+    useCanvasSelectionStore.getState().selectMask(parent.id, "mask_a");
+
+    renderHook(() => useCanvasSelectionKeyboard());
+
+    const equationRoot = document.createElement("div");
+    equationRoot.setAttribute("data-mask-equation-editor", "true");
+    const equationChip = document.createElement("button");
+    equationRoot.appendChild(equationChip);
+    document.body.appendChild(equationRoot);
+
+    try {
+      fireEvent.keyDown(equationChip, { key: "Delete" });
+    } finally {
+      document.body.removeChild(equationRoot);
+    }
+
+    const clips = useTimelineStore.getState().clips;
+    expect(clips.some((clip) => clip.id === firstMask.id)).toBe(true);
+    expect(clips.some((clip) => clip.id === secondMask.id)).toBe(true);
+    expect(
+      useMaskViewStore.getState().selectedMaskByClipId[parent.id],
+    ).toBe("mask_a");
+    expect(useCanvasSelectionStore.getState().activeSelection).toEqual({
+      kind: "mask",
+      clipId: parent.id,
+      maskId: "mask_a",
+    });
+  });
 });

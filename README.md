@@ -19,10 +19,25 @@ Vlo requires chromium-based browsers to work. I have tested in edge and chrome, 
   - Includes automatic aspect ratio adjustment (video models such as WAN and LTX2.3 cannot do all aspect ratios exactly).
 - Built in stackable adjustments and filters
 - Keyframes and spline editor for all transformations (layout, adjustments and filter effects)
+- Snappable markers and beat detection
+- Asset organisation (automatic groups, favourites)
+- ComfyUI-backed workflows for interpolation and image and video upscaling.
+- Mask algebera (unions, intersections etc)
+
+## Changelog (v0.2.0)
+
+- Updated ComfyUI bridge for more responsiveness
+- Updated workflow rules schema
+- Added waveform visualisation for audio
+- Added text rendering
+- Added new workflows, including Wan TTM, animate, LTX edit and inpaint, SeedVR upscaling, GIMM-VFI interpolation.
+- Added composite clips [caution - very experimental!]
+- Added asset groups and favourites
+- Updated mask rendering entirely, greatly improved efficiency and usability
 
 ## Install
 
-If the idea of the command line makes you uncomfortable, you can skip to the [one-click install](#one-click-setup) section, although you still do need to the command line for SAM2 if you want segmentation (for the moment).
+If the idea of the command line makes you uncomfortable, you can skip to the [one-click install](#one-click-setup) section. You will still need to install ComfyUI and some custom nodes yourself.
 
 ### Manual Setup
 
@@ -112,6 +127,11 @@ After installation, continue to [Using Scripts](#using-scripts-almost-one-click-
 Run ComfyUI separately on the machine that will host Vlo. By default Vlo expects
 it at `http://127.0.0.1:8188`, but you can change that from the editor UI.
 
+Optionally, point `COMFYUI_INSTALL_DIR` in `backend/.env` at your existing ComfyUI
+installation directory. When set, Vlo activates its in-app model download facility,
+letting you fetch models required by workflows directly from the editor (downloaded
+into `<COMFYUI_INSTALL_DIR>/models/...`). Leave it unset to disable in-app downloads.
+
 ### 2. Run vlo
 
 #### Option 1: Build and run in production mode manually:
@@ -161,16 +181,19 @@ Opens `http://127.0.0.1:6332` in your browser. Pass `--no-browser` to skip that.
 If needed `backend/.env` to adjust settings (created automatically by the installer). You may be able to ignore this step.
 
 - `COMFYUI_URL`: default `http://127.0.0.1:8188`
+- `COMFYUI_INSTALL_DIR`: path to an existing ComfyUI install. When set, enables the in-app model download facility (models are saved to `<COMFYUI_INSTALL_DIR>/models/...`); leave unset to disable
 - `SAM2_DEVICE`: `auto`, `cpu`, or a CUDA/MPS-capable value supported by your environment
 - `SAM2_CACHE_DIR`: cache location for prepared SAM2 data
 
 ## ComfyUI Integration
 
+It should be possible for the majority of workflows to function with vlo as-is. If you need enhanced functionality, then there is a sidecar rules system, which deals with aspect ratio adjustment, mask processing etc.
+
 For details on how workflows interact with Vlo — sidecars, widget exposure,
 aspect ratio processing, and the generation pipeline — see the
-[Generation Pipeline docs](backend/services/gen_pipeline/README.md). The
+[Workflow rule guide](backend/assets/workflows/HOW_TO_WRITE_WORKFLOW_RULES.md). The
 [default workflows](backend/assets/.config/default_workflows/) include working
-sidecar examples.
+sidecar examples. A custom GPT is available [here](https://chatgpt.com/g/g-69f93b02dc108191a7b6cfed9dd6b08e-vlo-workflow-rules), into which you can plug in a workflow and request a rules file for if you need more complex functionality.
 
 ## License
 

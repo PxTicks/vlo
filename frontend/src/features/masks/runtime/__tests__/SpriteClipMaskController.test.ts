@@ -260,7 +260,7 @@ describe("SpriteClipMaskController mask composition", () => {
     expect(mockBrushSetHydrationContext).toHaveBeenCalledWith({
       canvasWidth: 1920,
       canvasHeight: 1080,
-      paintedBounds: null,
+      paintedBounds: { x: 0, y: 0, width: 1920, height: 1080 },
     });
     expect(mockBrushSetSource).toHaveBeenCalledWith(sam2Asset);
 

@@ -1,6 +1,9 @@
 import { Sprite } from "pixi.js";
 import type { Asset } from "../../../types/Asset";
-import type { MaskTimelineClip } from "../../../types/TimelineTypes";
+import type {
+  BrushPaintedBounds,
+  MaskTimelineClip,
+} from "../../../types/TimelineTypes";
 import { createMaskBinaryThresholdFilter } from "../../transformations/catalogue/mask/maskBinaryThresholdFilter";
 import { getBrushBuffer } from "./brushBufferRegistry";
 import { BrushBufferMaskSource } from "./BrushBufferMaskSource";
@@ -49,6 +52,37 @@ export function getSam2MaskGrowAmount(maskClip: MaskTimelineClip): number {
 
   const amount = maskClip.sam2GrowAmount ?? 0;
   return Number.isFinite(amount) ? Math.max(0, amount) : 0;
+}
+
+function getImageMaskHydrationContext(
+  maskClip: MaskTimelineClip,
+  parentClipContentSize: { width: number; height: number },
+): {
+  canvasWidth: number;
+  canvasHeight: number;
+  paintedBounds: BrushPaintedBounds | null;
+} {
+  if (maskClip.maskType === "brush") {
+    const params = maskClip.maskParameters;
+    return {
+      canvasWidth: Math.max(1, params?.baseWidth ?? 1),
+      canvasHeight: Math.max(1, params?.baseHeight ?? 1),
+      paintedBounds: maskClip.brushPaintedBounds ?? null,
+    };
+  }
+
+  const canvasWidth = Math.max(1, Math.round(parentClipContentSize.width));
+  const canvasHeight = Math.max(1, Math.round(parentClipContentSize.height));
+  return {
+    canvasWidth,
+    canvasHeight,
+    paintedBounds: {
+      x: 0,
+      y: 0,
+      width: canvasWidth,
+      height: canvasHeight,
+    },
+  };
 }
 
 export class AssetMaskSourceFactory {
@@ -121,20 +155,12 @@ export class AssetMaskSourceFactory {
     const asset = isBrushBuffer ? null : options.assetsById.get(maskAssetId);
 
     if (node.player instanceof BrushBufferMaskSource) {
-      if (maskClip.maskType === "brush") {
-        const params = maskClip.maskParameters;
-        node.player.setHydrationContext({
-          canvasWidth: Math.max(1, params?.baseWidth ?? 1),
-          canvasHeight: Math.max(1, params?.baseHeight ?? 1),
-          paintedBounds: maskClip.brushPaintedBounds ?? null,
-        });
-      } else {
-        node.player.setHydrationContext({
-          canvasWidth: Math.max(1, Math.round(options.parentClipContentSize.width)),
-          canvasHeight: Math.max(1, Math.round(options.parentClipContentSize.height)),
-          paintedBounds: null,
-        });
-      }
+      node.player.setHydrationContext(
+        getImageMaskHydrationContext(
+          maskClip,
+          options.parentClipContentSize,
+        ),
+      );
     }
 
     if (asset) {

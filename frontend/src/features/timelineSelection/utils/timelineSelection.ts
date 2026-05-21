@@ -112,6 +112,18 @@ function collectSubordinateClipReferences(
   return references;
 }
 
+export function getReferencedSubordinateClipIds(
+  clips: readonly TimelineClip[],
+): string[] {
+  const clipIds = new Set<string>();
+  for (const clip of clips) {
+    for (const reference of collectSubordinateClipReferences(clip)) {
+      clipIds.add(reference.clipId);
+    }
+  }
+  return [...clipIds];
+}
+
 function clipReferencesMask(clip: TimelineClip): boolean {
   return collectSubordinateClipReferences(clip).some(
     (reference) => reference.role === "mask",

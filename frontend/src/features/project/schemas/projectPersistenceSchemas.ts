@@ -107,7 +107,15 @@ const clipTransformSchema = z
 const timelineClipSchema = z
   .object({
     id: z.string(),
-    type: z.enum(["video", "image", "audio", "text", "shape", "mask"]),
+    type: z.enum([
+      "video",
+      "image",
+      "audio",
+      "text",
+      "shape",
+      "mask",
+      "composite",
+    ]),
     trackId: z.string(),
     name: z.string(),
     sourceDuration: z.number().nullable(),

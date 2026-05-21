@@ -4,15 +4,31 @@ import {
   getTimelineDuration,
   useTimelineStore,
 } from "../../timeline";
-import type { TimelineSelection } from "../../../types/TimelineTypes";
+import type {
+  NonMaskTimelineClip,
+  TimelineClip,
+  TimelineSelection,
+  TimelineTrack,
+} from "../../../types/TimelineTypes";
 import { useTimelineSelectionStore } from "../useTimelineSelectionStore";
 import {
   getClipsInSelection,
+  getReferencedSubordinateClipIds,
   getTicksPerFrame,
   resolveSelectionFps,
   resolveSelectionFrameStep,
   snapFrameCountToStep,
 } from "./timelineSelection";
+
+export interface CreateTimelineSelectionFromClipIdsOptions {
+  clipIds: readonly string[];
+  clips?: readonly TimelineClip[];
+  tracks?: readonly TimelineTrack[];
+  fps?: number;
+  frameStep?: number;
+  message?: string;
+  includedTrackIds?: readonly string[];
+}
 
 export function createTimelineSelection(
   startTick: number,
@@ -67,6 +83,52 @@ export function createPointTimelineSelection(
     }),
     tracks,
     fps: projectFps,
+  };
+}
+
+export function createTimelineSelectionFromClipIds({
+  clipIds,
+  clips,
+  tracks,
+  fps,
+  frameStep,
+  message,
+  includedTrackIds,
+}: CreateTimelineSelectionFromClipIdsOptions): TimelineSelection | null {
+  const sourceClips = clips ?? useTimelineStore.getState().clips;
+  const sourceTracks = tracks ?? useTimelineStore.getState().tracks;
+  const selectedClipIds = new Set(clipIds);
+  const primaryClips = sourceClips.filter(
+    (clip): clip is NonMaskTimelineClip =>
+      selectedClipIds.has(clip.id) && clip.type !== "mask",
+  );
+
+  if (primaryClips.length === 0) {
+    return null;
+  }
+
+  const start = Math.min(...primaryClips.map((clip) => clip.start));
+  const end = Math.max(
+    ...primaryClips.map((clip) => clip.start + clip.timelineDuration),
+  );
+  const subordinateClipIds = new Set(
+    getReferencedSubordinateClipIds(primaryClips),
+  );
+  const selectionClips = sourceClips.filter(
+    (clip) => selectedClipIds.has(clip.id) || subordinateClipIds.has(clip.id),
+  );
+
+  return {
+    start,
+    end,
+    clips: structuredClone(selectionClips),
+    tracks: sourceTracks.map((track) => structuredClone(track)),
+    ...(message ? { message } : {}),
+    ...(includedTrackIds && includedTrackIds.length > 0
+      ? { includedTrackIds: [...includedTrackIds] }
+      : {}),
+    ...(typeof fps === "number" ? { fps } : {}),
+    ...(typeof frameStep === "number" ? { frameStep } : {}),
   };
 }
 

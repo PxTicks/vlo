@@ -118,6 +118,14 @@ export type CreationMetadata =
       extractedAudioClip?: ExtractedAudioClipMetadata;
     }
   | {
+      /** Baked proxy video for a Composite clip; the selection is its content
+       *  replayed at local zero. Distinct from "extracted" so the proxy isn't
+       *  treated as a user-extracted library clip. */
+      source: "composite";
+      timelineSelection?: TimelineSelection;
+      contentHash?: string;
+    }
+  | {
       source: "sam2_mask";
       parentAssetId: string;
       parentClipId: string;

@@ -9,6 +9,7 @@ import {
   selectionHasMaskClip,
   snapFrameCountToStep,
 } from "../timelineSelection";
+import { createTimelineSelectionFromClipIds } from "../createTimelineSelection";
 import { TICKS_PER_SECOND } from "../../../timeline";
 
 describe("timelineSelection helpers", () => {
@@ -361,5 +362,87 @@ describe("timelineSelection helpers", () => {
       end: 100,
       clips: [visualClip, maskClip],
     });
+  });
+
+  it("creates a selection from clip ids and carries linked mask clips", () => {
+    const visualTrack = {
+      id: "track-visual",
+      label: "Visual",
+      type: "visual" as const,
+      isVisible: true,
+      isMuted: false,
+      isLocked: false,
+    };
+    const maskTrack = {
+      id: "track-mask",
+      label: "Mask",
+      type: "mask" as const,
+      isVisible: true,
+      isMuted: false,
+      isLocked: false,
+    };
+    const visualClip = {
+      id: "clip-visual",
+      type: "video" as const,
+      name: "Visual Clip",
+      assetId: "asset-1",
+      sourceDuration: 300,
+      transformedDuration: 300,
+      transformedOffset: 0,
+      timelineDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformations: [],
+      trackId: "track-visual",
+      start: 200,
+      components: [
+        {
+          id: "mask-ref-1",
+          type: "mask_ref" as const,
+          parameters: {
+            maskClipId: "clip-mask",
+          },
+        },
+      ],
+    };
+    const maskClip = {
+      id: "clip-mask",
+      type: "mask" as const,
+      name: "Mask Clip",
+      sourceDuration: 100,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      timelineDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformations: [],
+      trackId: "track-mask",
+      start: 200,
+      maskType: "circle" as const,
+      maskMode: "apply" as const,
+      maskInverted: false,
+      maskParameters: {
+        baseWidth: 100,
+        baseHeight: 100,
+      },
+    };
+
+    const selection = createTimelineSelectionFromClipIds({
+      clipIds: [visualClip.id],
+      clips: [visualClip, maskClip],
+      tracks: [visualTrack, maskTrack],
+      fps: 24,
+      frameStep: 4,
+    });
+
+    expect(selection).toEqual({
+      start: 200,
+      end: 300,
+      clips: [visualClip, maskClip],
+      tracks: [visualTrack, maskTrack],
+      fps: 24,
+      frameStep: 4,
+    });
+    expect(selection?.clips[0]).not.toBe(visualClip);
   });
 });

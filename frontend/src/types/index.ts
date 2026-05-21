@@ -26,6 +26,9 @@ export type {
   AssetBackedTimelineClip,
   BaseClip,
   BaseClipByType,
+  CompositeBaseClip,
+  CompositeContent,
+  CompositeTimelineClip,
   TimelineClip,
   TimelineClipByType,
   StandardTimelineClip,
@@ -60,6 +63,7 @@ export type {
 } from "./TimelineTypes";
 export {
   isAssetBackedClip,
+  isCompositeClip,
   isMaskClip,
   isNonMaskTimelineClip,
   isTextClip,

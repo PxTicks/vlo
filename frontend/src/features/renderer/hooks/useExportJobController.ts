@@ -10,6 +10,7 @@ import {
   type ProjectData,
   type ExportConfig,
 } from "../services/ExportRenderer";
+import { renderSelectionToVideoFile } from "../services/renderSelectionToVideoFile";
 import { deriveTrueDimensionsFromShortEdge } from "../utils/dimensions";
 import type { AspectRatio } from "../../project/useProjectStore";
 
@@ -163,24 +164,17 @@ export function useExportJobController({
       };
 
       try {
-        const renderer = await ExportRenderer.create(exportConfig);
-        registerRenderer(renderer, sessionId);
-
-        const result = await renderer.render(
-          projectData,
-          exportConfig,
-          (progress) => onProgress?.(progress),
+        const file = await renderSelectionToVideoFile(
+          selectionTimelineSelection,
           {
-            timelineSelection: selectionTimelineSelection,
-            format: "mp4",
+            renderInputs: { exportConfig, projectData },
+            onProgress,
+            skipNormalize: true,
+            filenamePrefix: "selection",
+            onRendererCreated: (renderer) =>
+              registerRenderer(renderer, sessionId),
           },
         );
-
-        const filename = `selection-${Date.now()}.mp4`;
-        const file = new File([result.video], filename, {
-          type: "video/mp4",
-          lastModified: Date.now(),
-        });
 
         await addLocalAsset(file, {
           source: "extracted",
@@ -233,17 +227,15 @@ export function useExportJobController({
       };
 
       try {
-        const renderer = await ExportRenderer.create(exportConfig);
-        registerRenderer(renderer, sessionId);
-
-        await renderer.render(
-          projectData,
-          exportConfig,
-          (progress) => onProgress?.(progress),
-          {
-            timelineSelection: fullTimelineSelection,
-          },
-        );
+        // The encoder writes to config.fileHandle; the returned File is unused.
+        await renderSelectionToVideoFile(fullTimelineSelection, {
+          renderInputs: { exportConfig, projectData },
+          onProgress,
+          skipNormalize: true,
+          filenamePrefix: "export",
+          onRendererCreated: (renderer) =>
+            registerRenderer(renderer, sessionId),
+        });
       } catch (e) {
         if (!isAbortError(e)) {
           console.error("Export failed", e);

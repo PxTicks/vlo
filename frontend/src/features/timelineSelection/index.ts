@@ -14,7 +14,15 @@ export {
 } from "./utils/timelineSelection";
 export {
   createTimelineSelection,
+  createTimelineSelectionFromClipIds,
   createPointTimelineSelection,
   getDefaultSelectionEnd,
 } from "./utils/createTimelineSelection";
+export type { CreateTimelineSelectionFromClipIdsOptions } from "./utils/createTimelineSelection";
 export { getTimelineSelectionFromAsset } from "./utils/assetSelection";
+export {
+  selectionToCompositeContent,
+  compositeContentToSelection,
+  hashCompositeContent,
+  isCompositeProxyStale,
+} from "./utils/composite";

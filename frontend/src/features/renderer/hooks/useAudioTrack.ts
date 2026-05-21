@@ -7,6 +7,7 @@ import { usePlayerStore } from "../../player/usePlayerStore";
 import { audioSystem } from "../../player/services/AudioSystem";
 import { TrackAudioRenderer } from "../services/TrackAudioRenderer";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
+import { resolveRenderableClips } from "../utils/resolveRenderableClip";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 
 const SHARED_LOOKAHEAD_SECONDS = 2.0;
@@ -115,12 +116,18 @@ export function useAudioTrack(trackId: string) {
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const trackClips = useTimelineClipsForTrack(trackId, false);
   const getInput = useAssetStore((state) => state.getInput);
+  const assets = useAssetStore((state) => state.assets);
   const trackClipsRef = useRef<TimelineClip[]>(trackClips);
   const getInputRef = useRef(getInput);
 
   useEffect(() => {
-    trackClipsRef.current = sortTrackClipsByStart(trackClips);
-  }, [trackClips]);
+    // Flatten Composite clips to their baked proxy so their audio is scheduled
+    // through the asset path like any video clip.
+    const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
+    trackClipsRef.current = sortTrackClipsByStart(
+      resolveRenderableClips(trackClips, assetsById),
+    );
+  }, [trackClips, assets]);
 
   useEffect(() => {
     getInputRef.current = getInput;

@@ -6,19 +6,25 @@ import ContentCutIcon from "@mui/icons-material/ContentCut";
 import VerticalAlignCenterIcon from "@mui/icons-material/VerticalAlignCenter";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
+import LayersIcon from "@mui/icons-material/Layers";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useTimelineStore } from "../useTimelineStore";
 import { playbackClock } from "../../player/services/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
 import { calculateClipTime } from "../../transformations";
-import { getTicksPerFrame, snapTickToFrame } from "../../timelineSelection";
+import {
+  createTimelineSelectionFromClipIds,
+  getTicksPerFrame,
+  snapTickToFrame,
+} from "../../timelineSelection";
 import type {
   MarkerEntry,
   MarkersComponent,
 } from "../../../types/Components";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClip } from "../../../types/TimelineTypes";
+import { groupSelectionIntoComposite } from "../../composite";
 import { MIN_ZOOM, MAX_ZOOM, TICKS_PER_SECOND } from "../constants";
 import { ensureAssetSourceLoaded } from "../../userAssets/publicApi";
 import { mediaProcessingService } from "../../userAssets/services/MediaProcessingService";
@@ -36,6 +42,43 @@ export const TimelineToolbar = () => {
   );
 
   const [isDetectingBeats, setIsDetectingBeats] = useState(false);
+  const [isGrouping, setIsGrouping] = useState(false);
+
+  const selectedVisualClipCount = useTimelineStore(
+    (state) =>
+      state.selectedClipIds.filter((id) => {
+        const clip = state.clips.find((c) => c.id === id);
+        return clip != null && clip.type !== "mask" && clip.type !== "audio";
+      }).length,
+  );
+
+  /**
+   * Groups the currently selected clips into a single Composite clip. The
+   * region is the selected clips' bounding window; subordinate mask clips are
+   * carried along so they travel into (and are removed with) the selection.
+   */
+  const handleGroupIntoComposite = async () => {
+    const state = useTimelineStore.getState();
+    const visualClipIds = state.selectedClipIds.filter((id) => {
+      const clip = state.clips.find((candidate) => candidate.id === id);
+      return clip != null && clip.type !== "mask" && clip.type !== "audio";
+    });
+    const selection = createTimelineSelectionFromClipIds({
+      clipIds: visualClipIds,
+      clips: state.clips,
+      tracks: state.tracks,
+    });
+    if (!selection) return;
+
+    setIsGrouping(true);
+    try {
+      await groupSelectionIntoComposite(selection);
+    } catch (error) {
+      console.error("Failed to group selection into composite", error);
+    } finally {
+      setIsGrouping(false);
+    }
+  };
 
   const selectedClipsHaveBeats = useTimelineStore((state) => {
     if (state.selectedClipIds.length === 0) return false;
@@ -371,6 +414,25 @@ export const TimelineToolbar = () => {
           >
             <ContentCutIcon fontSize="small" />
           </IconButton>
+        </Tooltip>
+
+        <Tooltip title="Group selection into Composite">
+          <span>
+            <IconButton
+              size="small"
+              disabled={selectedVisualClipCount === 0 || isGrouping}
+              onClick={() => {
+                void handleGroupIntoComposite();
+              }}
+              sx={{ color: "#eee" }}
+            >
+              {isGrouping ? (
+                <CircularProgress size={16} sx={{ color: "#eee" }} />
+              ) : (
+                <LayersIcon fontSize="small" />
+              )}
+            </IconButton>
+          </span>
         </Tooltip>
       </Stack>
 

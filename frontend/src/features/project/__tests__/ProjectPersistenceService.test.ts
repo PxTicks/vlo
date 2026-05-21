@@ -167,6 +167,101 @@ describe("ProjectPersistenceService", () => {
     expect(fileSystemService.writeFile).not.toHaveBeenCalled();
   });
 
+  it("loads composite clips from a split timeline document", async () => {
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(
+      ".vloproject/timeline.json",
+      JSON.stringify({
+        ...timeline,
+        clips: [
+          {
+            id: "composite-1",
+            trackId: "track-1",
+            type: "composite",
+            name: "Composite",
+            sourceDuration: 100,
+            transformedDuration: 100,
+            transformedOffset: 0,
+            timelineDuration: 100,
+            croppedSourceDuration: 100,
+            offset: 0,
+            start: 0,
+            transformations: [],
+            content: {
+              durationTicks: 100,
+              clips: [
+                {
+                  id: "nested-clip",
+                  trackId: "track-1",
+                  type: "video",
+                  name: "Nested",
+                  assetId: "asset-1",
+                  sourceDuration: 100,
+                  transformedDuration: 100,
+                  transformedOffset: 0,
+                  timelineDuration: 100,
+                  croppedSourceDuration: 100,
+                  offset: 0,
+                  start: 0,
+                  transformations: [],
+                },
+              ],
+            },
+            proxyAssetId: "proxy-1",
+            proxyContentHash: "hash-1",
+          },
+        ],
+      }),
+    );
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loaded = await projectPersistenceService.loadOrMigrateProject();
+
+    expect(loaded.timeline?.clips[0]?.type).toBe("composite");
+    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("sidecars composite proxy timeline metadata when persisting assets", async () => {
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    await projectPersistenceService.persistAssetEntry({
+      id: "proxy-1",
+      hash: "hash-proxy-1",
+      name: "composite.mp4",
+      type: "video",
+      src: "composite.mp4",
+      createdAt: 1,
+      creationMetadata: {
+        source: "composite",
+        contentHash: "content-hash-1",
+        timelineSelection: {
+          start: 0,
+          end: 100,
+          clips: [],
+        },
+      },
+    });
+
+    const persistedAssets = JSON.parse(
+      files.get(".vloproject/assets.json") ?? "{}",
+    );
+    const persistedProxy = persistedAssets.assets["proxy-1"];
+    expect(persistedProxy.creationMetadata).toEqual({
+      source: "composite",
+      contentHash: "content-hash-1",
+    });
+    expect(persistedProxy.metadataRef).toBe("asset-metadata/proxy-1.json");
+
+    const sidecar = JSON.parse(
+      files.get(".vloproject/asset-metadata/proxy-1.json") ?? "{}",
+    );
+    expect(sidecar.creationMetadata.timelineSelection).toEqual({
+      start: 0,
+      end: 100,
+      clips: [],
+    });
+  });
+
   it("rejects an invalid v3 manifest without overwriting files", async () => {
     files.set(
       ".vloproject/project.json",

@@ -19,6 +19,7 @@ import {
   findActiveClipAtTicks,
   sortTrackClipsByStart,
 } from "../utils/clipLookup";
+import { resolveRenderableClips } from "../utils/resolveRenderableClip";
 
 /**
  * Build a Map<parentClipId, maskClip[]> from parent clips' mask components.
@@ -87,20 +88,31 @@ export function useTrackRenderEngine(
   // OPTIMIZATION: Filter clips for this track.
   // Separate non-mask clips (for track rendering) from mask clips (for mask controller).
   const allTrackClips = useTimelineClipsForTrack(trackId);
-
-  const sortedTrackClips = useMemo(
-    () => sortTrackClipsByStart(allTrackClips.filter((c) => c.type !== "mask")),
-    [allTrackClips],
-  );
-
-  const maskClipsByParent = useMemo(
-    () => buildMaskClipIndex(allTrackClips),
-    [allTrackClips],
-  );
   const assets = useAssetStore((state) => state.assets);
   const assetsById = useMemo(
     () => new Map(assets.map((asset) => [asset.id, asset] as const)),
     [assets],
+  );
+
+  // Flatten Composite clips to their baked proxy video before any indexing, so
+  // the engine and mask controller stay composite-agnostic. Recomputes when a
+  // proxy lands in the asset store, swapping the composite in for rendering.
+  const renderableTrackClips = useMemo(
+    () => resolveRenderableClips(allTrackClips, assetsById),
+    [allTrackClips, assetsById],
+  );
+
+  const sortedTrackClips = useMemo(
+    () =>
+      sortTrackClipsByStart(
+        renderableTrackClips.filter((c) => c.type !== "mask"),
+      ),
+    [renderableTrackClips],
+  );
+
+  const maskClipsByParent = useMemo(
+    () => buildMaskClipIndex(renderableTrackClips),
+    [renderableTrackClips],
   );
   const fps = useProjectStore((state) => state.config.fps);
   const isPlaying = usePlayerStore((state) => state.isPlaying);

@@ -13,6 +13,7 @@ import {
   findActiveClipAtTicks,
   sortTrackClipsByStart,
 } from "../utils/clipLookup";
+import { resolveRenderableClips } from "../utils/resolveRenderableClip";
 import { getAssetInput } from "../../userAssets";
 import {
   getIncludedClipsForSelection,
@@ -83,9 +84,15 @@ interface PreparedVisualRenderData {
 
 function buildVisualRenderData(
   tracks: TimelineTrack[],
-  selectedClips: TimelineClip[],
+  rawSelectedClips: TimelineClip[],
   includeTimelineMasks: boolean,
+  assetsById: Map<string, Asset>,
 ): PreparedVisualRenderData {
+  // Flatten Composite clips to their baked proxy (a plain video clip) before
+  // any track/mask indexing, so the rest of the export path stays
+  // composite-agnostic. Composites without a usable proxy are dropped.
+  const selectedClips = resolveRenderableClips(rawSelectedClips, assetsById);
+
   // When timeline masks are excluded, also strip range_mask components.
   // Spatial masks (mask_ref) and range masks both contribute timeline-driven
   // transparency to the source output; range masks are applied via an
@@ -320,13 +327,14 @@ export class ExportRenderer {
     }));
     const hasAudioOutput = outputDefinitions.some((output) => output.includeAudio);
 
+    const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
     const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
       buildVisualRenderData(
         effectiveTracks,
         selectedClips,
         options.includeTimelineMasks !== false,
+        assetsById,
       );
-    const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
 
     const relevantForAudio = effectiveTracks.filter((t) => !t.isMuted && t.isVisible);
     const shouldRenderAudio = hasAudioOutput && relevantForAudio.length > 0;
@@ -547,13 +555,14 @@ export class ExportRenderer {
       ? getIncludedClipsForSelection(options.timelineSelection, availableClips)
       : availableClips;
     const { logicalWidth, logicalHeight } = config;
+    const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
     const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
       buildVisualRenderData(
         tracks,
         clips,
         options.includeTimelineMasks !== false,
+        assetsById,
       );
-    const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
 
     try {
       this.engines = visualTracks.map((_, index) => {

@@ -18,6 +18,11 @@ export {
   buildProjectRenderInputs,
   renderProjectFrameFileAtTick,
 } from "./services/projectFrameCapture";
+export { renderSelectionToVideoFile } from "./services/renderSelectionToVideoFile";
+export type {
+  SelectionRenderInputs,
+  RenderSelectionToVideoFileOptions,
+} from "./services/renderSelectionToVideoFile";
 export type { ProjectFrameCaptureOptions } from "./services/projectFrameCapture";
 export {
   getProjectDimensions,

@@ -8,11 +8,11 @@ import type { Asset } from "../../types/Asset";
 import type {
   ClipMask,
   ClipTransform,
+  CompositeContent,
   MaskBooleanExpression,
   TextClipData,
   TimelineClip,
 } from "../../types/TimelineTypes";
-import { isAssetBackedClip } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
   countBrushMaskAssetConsumers,
@@ -27,6 +27,8 @@ import {
   addClipToDraft,
   addClipTransformToDraft,
   addTrackToDraft,
+  clipReferencesAssetId,
+  collectUnusedCompositeProxyAssetIds,
   copySelectedClips,
   duplicateClipMaskInDraft,
   duplicateTimelineClip,
@@ -97,6 +99,28 @@ interface TimelineState extends TimelineModelState {
   insertTrack: (index: number) => string;
 
   addClip: (clip: TimelineClip) => void;
+  /**
+   * Atomically replaces `sourceClipIds` (and their subordinate clips) with a
+   * single composite clip in one undoable step. Deliberately skips SAM2/brush
+   * post-commit cleanup: the absorbed clips' mask assets live on inside the
+   * composite's content for re-baking.
+   */
+  groupClipsIntoComposite: (
+    sourceClipIds: string[],
+    compositeClip: TimelineClip,
+  ) => boolean;
+  /**
+   * Replaces a composite clip's internal content (the source of truth for
+   * re-baking). Timing is reset to the new content's natural length, so an edit
+   * that changes the region duration yields a full-length composite again.
+   */
+  setCompositeContent: (clipId: string, content: CompositeContent) => void;
+  /** Points a composite clip at a freshly baked proxy asset. */
+  setCompositeProxy: (
+    clipId: string,
+    proxyAssetId: string,
+    proxyContentHash: string,
+  ) => void;
 
   removeClip: (id: string) => void;
   removeClipsByAssetId: (assetId: string) => number;
@@ -227,6 +251,77 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
     },
 
+    groupClipsIntoComposite: (sourceClipIds, compositeClip) => {
+      const removalPlan = planTimelineRemoval(get().clips, sourceClipIds);
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
+        addClipToDraft(draft, compositeClip);
+      });
+
+      // Note: post-commit cleanup is intentionally NOT run — the absorbed
+      // clips' SAM2/brush mask assets are still referenced by the composite's
+      // content and must survive for editing/re-baking.
+      if (didCommit) {
+        set({ selectedClipIds: [compositeClip.id] });
+      }
+      return didCommit;
+    },
+
+    setCompositeContent: (clipId, content) => {
+      const duration = Math.max(1, Math.round(content.durationTicks));
+      mutationPipeline.commitModelMutation((draft) => {
+        draft.clips = draft.clips.map((clip) => {
+          if (clip.id !== clipId || clip.type !== "composite") {
+            return clip;
+          }
+          return {
+            ...clip,
+            content,
+            sourceDuration: duration,
+            timelineDuration: duration,
+            croppedSourceDuration: duration,
+            offset: 0,
+            transformedDuration: duration,
+            transformedOffset: 0,
+            // Proxy is now stale until re-baked; clear the hash so consumers
+            // know not to trust the existing proxy.
+            proxyContentHash: undefined,
+          };
+        });
+      });
+    },
+
+    setCompositeProxy: (clipId, proxyAssetId, proxyContentHash) => {
+      const previousCompositeClip = get().clips.find(
+        (clip) => clip.id === clipId && clip.type === "composite",
+      );
+      const previousProxyAssetId =
+        previousCompositeClip?.type === "composite"
+          ? previousCompositeClip.proxyAssetId
+          : undefined;
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        draft.clips = draft.clips.map((clip) =>
+          clip.id === clipId && clip.type === "composite"
+            ? { ...clip, proxyAssetId, proxyContentHash }
+            : clip,
+        );
+      });
+
+      if (
+        didCommit &&
+        previousProxyAssetId &&
+        previousProxyAssetId !== proxyAssetId
+      ) {
+        const compositeProxyAssetIdsToDelete = collectUnusedCompositeProxyAssetIds(
+          get().clips,
+          [previousProxyAssetId],
+        );
+        mutationPipeline.runPostCommitEffects({
+          compositeProxyAssetIdsToDelete,
+        });
+      }
+    },
+
     duplicateClip: (clip) => duplicateTimelineClip(clip, get().clips),
 
     copySelectedClip: () => {
@@ -287,7 +382,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     removeClipsByAssetId: (assetId) => {
       const directlyReferencedClipIds = get()
         .clips
-        .filter((clip) => isAssetBackedClip(clip) && clip.assetId === assetId)
+        .filter((clip) => clipReferencesAssetId(clip, assetId))
         .map((clip) => clip.id);
 
       if (directlyReferencedClipIds.length === 0) {
@@ -300,6 +395,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
 
       if (didCommit) {
+        removalPlan.compositeProxyAssetIdsToDelete.delete(assetId);
         mutationPipeline.runPostCommitEffects(removalPlan);
       }
 

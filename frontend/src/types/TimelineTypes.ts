@@ -3,7 +3,14 @@ import type { Component } from "./Components";
 
 export type TrackType = "visual" | "audio" | "prompt" | "effects" | "mask";
 
-export type ClipType = "video" | "image" | "audio" | "text" | "shape" | "mask";
+export type ClipType =
+  | "video"
+  | "image"
+  | "audio"
+  | "text"
+  | "shape"
+  | "mask"
+  | "composite";
 
 export type TextAlignment = "left" | "center" | "right";
 
@@ -24,23 +31,24 @@ export interface TextClipData {
   strokeWidth: number;
 }
 
-export interface TimelineSelection {
-  start: number;
-  end?: number;
+/**
+ * The anchor-free payload describing a region of the timeline: the clips and
+ * tracks that make it up plus the render-time hints (fps, frame step, track
+ * filter). This is the shared core between an in-place {@link TimelineSelection}
+ * (anchored at absolute timeline ticks) and a {@link CompositeContent} (whose
+ * clips are normalized to local zero so the region is portable).
+ */
+export interface TimelineRegionData {
   clips: TimelineClip[];
   tracks?: TimelineTrack[];
   /**
-   * Optional workflow-provided guidance shown while the selection is being made.
-   */
-  message?: string;
-  /**
    * Optional overlay filter that limits renders/extractions to an explicit set
    * of track ids while preserving the original `tracks` metadata.
-   * When omitted or empty, consumers should treat the selection as "all tracks".
+   * When omitted or empty, consumers should treat the region as "all tracks".
    */
   includedTrackIds?: string[];
   /**
-   * Effective FPS used for renders/extractions from this selection.
+   * Effective FPS used for renders/extractions from this region.
    * When omitted, consumers fall back to project FPS.
    */
   fps?: number;
@@ -49,6 +57,26 @@ export interface TimelineSelection {
    * matching `frameStep * n + 1` (for integer n). Defaults to 1.
    */
   frameStep?: number;
+}
+
+export interface TimelineSelection extends TimelineRegionData {
+  start: number;
+  end?: number;
+  /**
+   * Optional workflow-provided guidance shown while the selection is being made.
+   */
+  message?: string;
+}
+
+/**
+ * The internal payload of a Composite clip: a self-contained timeline region
+ * normalized to local zero (its clips start at tick 0, like a tiny project).
+ * Mirrors {@link TimelineSelection} minus the absolute anchor — convert with
+ * the adapters in `features/timelineSelection/utils/composite`.
+ */
+export interface CompositeContent extends TimelineRegionData {
+  /** Natural length of the region in ticks (max clip end), the composite's source duration. */
+  durationTicks: number;
 }
 
 export interface ClipTransform {
@@ -236,6 +264,25 @@ export interface ShapeBaseClip extends InsertableClipBaseCommon {
   type: "shape";
 }
 
+/**
+ * A clip formed from a section of the timeline. Strategy A (prebaked proxy):
+ * `content` is the editable source of truth; `proxyAssetId` points at a baked
+ * video asset rendered from `content` that the renderer treats exactly like a
+ * normal video clip. `proxyContentHash` records which `content` the current
+ * proxy was baked from, so a live edit can detect staleness and re-bake.
+ */
+export interface CompositeClipExtras {
+  content: CompositeContent;
+  proxyAssetId?: string;
+  proxyContentHash?: string;
+}
+
+export interface CompositeBaseClip
+  extends InsertableClipBaseCommon,
+    CompositeClipExtras {
+  type: "composite";
+}
+
 export interface VideoTimelineClip extends AssetBackedTimelineClipCommon {
   type: "video";
 }
@@ -257,12 +304,19 @@ export interface ShapeTimelineClip extends NonMaskTimelineClipCommon {
   type: "shape";
 }
 
+export interface CompositeTimelineClip
+  extends NonMaskTimelineClipCommon,
+    CompositeClipExtras {
+  type: "composite";
+}
+
 export interface BaseClipByType {
   video: VideoBaseClip;
   image: ImageBaseClip;
   audio: AudioBaseClip;
   text: TextBaseClip;
   shape: ShapeBaseClip;
+  composite: CompositeBaseClip;
 }
 
 export interface NonMaskTimelineClipByType {
@@ -271,6 +325,7 @@ export interface NonMaskTimelineClipByType {
   audio: AudioTimelineClip;
   text: TextTimelineClip;
   shape: ShapeTimelineClip;
+  composite: CompositeTimelineClip;
 }
 
 export type AssetBackedBaseClip =
@@ -351,6 +406,12 @@ export function isTextClip(
   clip: BaseClip | TimelineClip | undefined | null,
 ): clip is TextBaseClip | TextTimelineClip {
   return clip?.type === "text";
+}
+
+export function isCompositeClip(
+  clip: BaseClip | TimelineClip | undefined | null,
+): clip is CompositeBaseClip | CompositeTimelineClip {
+  return clip?.type === "composite";
 }
 
 export interface TimelineTrack {

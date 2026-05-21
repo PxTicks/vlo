@@ -10,6 +10,7 @@ import {
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
   renderProjectFrameFileAtTick,
+  renderSelectionToVideoFile,
   type ExportConfig,
   type ProjectData,
 } from "../../renderer";
@@ -65,27 +66,15 @@ export async function renderTimelineSelectionToMp4(
   } = {},
 ): Promise<File> {
   throwIfAborted(options.signal);
-  const { exportConfig, projectData } =
-    options.renderInputs ?? buildProjectRenderInputs();
-  const normalizedSelection = normalizeTimelineSelection(
-    timelineSelection,
-    projectData.clips,
-  );
-
-  const renderer = await ExportRenderer.create(exportConfig);
   try {
-    const result = await renderer.render(projectData, exportConfig, () => {}, {
-      timelineSelection: normalizedSelection,
-      format: "mp4" as const,
+    const file = await renderSelectionToVideoFile(timelineSelection, {
+      renderInputs: options.renderInputs,
       includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,
+      filenamePrefix: "generation-selection",
     });
     throwIfAborted(options.signal);
-
-    return new File([result.video], `generation-selection-${Date.now()}.mp4`, {
-      type: "video/mp4",
-      lastModified: Date.now(),
-    });
+    return file;
   } catch (error) {
     if (options.signal?.aborted && error instanceof Error) {
       throw createGenerationAbortError(error.message);

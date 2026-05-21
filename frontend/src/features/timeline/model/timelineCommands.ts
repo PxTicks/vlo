@@ -11,7 +11,11 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import { isNonMaskTimelineClip, isTextClip } from "../../../types/TimelineTypes";
+import {
+  isAssetBackedClip,
+  isNonMaskTimelineClip,
+  isTextClip,
+} from "../../../types/TimelineTypes";
 import { useProjectStore } from "../../project/useProjectStore";
 import {
   deriveTextClipName,
@@ -90,6 +94,67 @@ export interface TimelineRemovalPlan {
   clipIdsToRemove: Set<string>;
   brushMaskClipIdsToDispose: string[];
   sam2MaskAssetIdsToDelete: Set<string>;
+  compositeProxyAssetIdsToDelete: Set<string>;
+}
+
+function collectCompositeProxyAssetIdsFromClip(
+  clip: TimelineClip,
+  proxyAssetIds: Set<string>,
+): void {
+  if (clip.type !== "composite") {
+    return;
+  }
+
+  if (clip.proxyAssetId) {
+    proxyAssetIds.add(clip.proxyAssetId);
+  }
+
+  clip.content.clips.forEach((contentClip) => {
+    collectCompositeProxyAssetIdsFromClip(contentClip, proxyAssetIds);
+  });
+}
+
+export function clipReferencesAssetId(
+  clip: TimelineClip,
+  assetId: string,
+): boolean {
+  if (isAssetBackedClip(clip) && clip.assetId === assetId) {
+    return true;
+  }
+
+  if (clip.type !== "composite") {
+    return false;
+  }
+
+  return (
+    clip.proxyAssetId === assetId ||
+    clip.content.clips.some((contentClip) =>
+      clipReferencesAssetId(contentClip, assetId),
+    )
+  );
+}
+
+export function collectUnusedCompositeProxyAssetIds(
+  clips: readonly TimelineClip[],
+  candidateAssetIds: Iterable<string>,
+): Set<string> {
+  const unusedAssetIds = new Set([...candidateAssetIds].filter(Boolean));
+  if (unusedAssetIds.size === 0) {
+    return unusedAssetIds;
+  }
+
+  for (const clip of clips) {
+    for (const assetId of [...unusedAssetIds]) {
+      if (clipReferencesAssetId(clip, assetId)) {
+        unusedAssetIds.delete(assetId);
+      }
+    }
+    if (unusedAssetIds.size === 0) {
+      break;
+    }
+  }
+
+  return unusedAssetIds;
 }
 
 function createDefaultFitModeTransform(): ClipTransform {
@@ -126,7 +191,13 @@ export function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
     };
   }
 
-  if (clip.type !== "video" && clip.type !== "image") {
+  // Composites render through a project-sized proxy video, so they get the same
+  // default fit-mode layout as a video/image clip.
+  if (
+    clip.type !== "video" &&
+    clip.type !== "image" &&
+    clip.type !== "composite"
+  ) {
     return baseClip;
   }
 
@@ -395,11 +466,23 @@ export function planTimelineRemoval(
         clip.maskType === "brush",
     )
     .map((clip) => clip.id);
+  const compositeProxyCandidates = new Set<string>();
+  for (const clip of clips) {
+    if (clipIdsToRemove.has(clip.id)) {
+      collectCompositeProxyAssetIdsFromClip(clip, compositeProxyCandidates);
+    }
+  }
+  const remainingClips = clips.filter((clip) => !clipIdsToRemove.has(clip.id));
+  const compositeProxyAssetIdsToDelete = collectUnusedCompositeProxyAssetIds(
+    remainingClips,
+    compositeProxyCandidates,
+  );
 
   return {
     clipIdsToRemove,
     brushMaskClipIdsToDispose,
     sam2MaskAssetIdsToDelete,
+    compositeProxyAssetIdsToDelete,
   };
 }
 

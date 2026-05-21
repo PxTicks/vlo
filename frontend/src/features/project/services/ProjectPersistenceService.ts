@@ -195,7 +195,15 @@ function stringifyByteLength(value: unknown): number {
 function shouldSplitCreationMetadata(
   metadata: CreationMetadata | undefined,
 ): metadata is CreationMetadata {
-  if (!metadata || metadata.source !== "generated") {
+  if (!metadata) {
+    return false;
+  }
+
+  if (metadata.source === "composite") {
+    return Boolean(metadata.timelineSelection);
+  }
+
+  if (metadata.source !== "generated") {
     return false;
   }
 
@@ -213,6 +221,13 @@ function shouldSplitCreationMetadata(
 function toLightweightCreationMetadata(
   metadata: CreationMetadata,
 ): CreationMetadata {
+  if (metadata.source === "composite") {
+    return {
+      source: "composite",
+      ...(metadata.contentHash ? { contentHash: metadata.contentHash } : {}),
+    };
+  }
+
   if (metadata.source !== "generated") {
     return metadata;
   }

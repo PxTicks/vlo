@@ -5,10 +5,10 @@ import type {
   TimelineClip,
 } from "../../../types/TimelineTypes";
 import {
-  isAssetBackedClip,
   isNonMaskTimelineClip,
 } from "../../../types/TimelineTypes";
 import { resolveMaskBooleanExpression } from "../../masks/model/maskBooleanExpression";
+import { clipReferencesAssetId } from "../model/timelineCommands";
 import { getChildMaskClipIds } from "../model/maskClipModel";
 
 export interface TimelineClipCollectionState {
@@ -86,7 +86,7 @@ export function selectTimelineClipCountForAsset(
 
   return state.clips.reduce(
     (count, clip) =>
-      count + (isAssetBackedClip(clip) && clip.assetId === assetId ? 1 : 0),
+      count + (clipReferencesAssetId(clip, assetId) ? 1 : 0),
     0,
   );
 }

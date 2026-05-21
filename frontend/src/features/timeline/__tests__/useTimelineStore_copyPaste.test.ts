@@ -324,10 +324,10 @@ describe("useTimelineStore copy/paste (single and multiple clips)", () => {
     expect(pastedComposite?.proxyAssetId).toBeUndefined();
     expect(pastedComposite?.proxyContentHash).toBeUndefined();
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(compositeMocks.scheduleCompositeProxyRender).toHaveBeenCalledWith(
-      pastedComposite?.id,
-    );
+    await vi.waitFor(() => {
+      expect(compositeMocks.scheduleCompositeProxyRender).toHaveBeenCalledWith(
+        pastedComposite?.id,
+      );
+    });
   });
 });

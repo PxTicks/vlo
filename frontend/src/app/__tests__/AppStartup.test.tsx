@@ -125,6 +125,12 @@ describe("App Startup", () => {
         screen.getByRole("heading", { name: /^vlo$/i }),
       ).toBeInTheDocument();
     });
+
+    // App preloads the editor chunk via a fire-and-forget dynamic import. Let
+    // that first import settle before this test tears down; otherwise the
+    // in-flight module load is orphaned and the lazy <Editor> import in the
+    // following tests joins it and hangs forever.
+    await import("../Editor");
   });
 
   it("renders the editor loading state when a project is loaded", async () => {

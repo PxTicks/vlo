@@ -96,6 +96,34 @@ export function CompositePanel() {
       }}
       data-testid="composite-panel"
     >
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 0.5,
+          bgcolor: "rgba(255, 193, 7, 0.06)",
+          border: "1px solid rgba(255, 193, 7, 0.15)",
+          borderRadius: 1,
+          p: 1.25,
+        }}
+      >
+        <Typography
+          variant="caption"
+          sx={{
+            color: "#ffb020",
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: 0.5,
+          }}
+        >
+          ⚠️ Experimental Feature
+        </Typography>
+        <Typography variant="caption" sx={{ color: "#aeb4bd", lineHeight: 1.3 }}>
+          Scenes and subtimelines are under development.
+        </Typography>
+      </Box>
+
       {isSubtimeline ? (
         <>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
@@ -131,7 +159,14 @@ export function CompositePanel() {
       ) : (
         <>
           <Stack direction="row" spacing={2}>
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 1,
+              }}
+            >
               <Tooltip title="Add scene">
                 <IconButton
                   aria-label="Add scene"
@@ -150,11 +185,21 @@ export function CompositePanel() {
                   <AddBoxIcon />
                 </IconButton>
               </Tooltip>
-              <Typography variant="caption" sx={{ color: "#aeb4bd" }}>
+              <Typography
+                variant="caption"
+                sx={{ color: "#aeb4bd", textAlign: "center" }}
+              >
                 Add scene
               </Typography>
             </Box>
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 1,
+              }}
+            >
               <Tooltip title="Create from selection">
                 <span>
                   <IconButton
@@ -186,7 +231,10 @@ export function CompositePanel() {
                   </IconButton>
                 </span>
               </Tooltip>
-              <Typography variant="caption" sx={{ color: "#aeb4bd" }}>
+              <Typography
+                variant="caption"
+                sx={{ color: "#aeb4bd", textAlign: "center" }}
+              >
                 Create from selection
               </Typography>
             </Box>

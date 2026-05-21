@@ -11,6 +11,7 @@ import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
 import { createSourceTimeOverlayItem } from "../clipOverlayApi";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { MarkersComponent } from "../../../types/Components";
+import { isBeatMarker } from "../../../types/Components";
 import { useTimelineStore } from "../useTimelineStore";
 import { useTimelineViewStore } from "./useTimelineViewStore";
 import { useProjectStore } from "../../project/useProjectStore";
@@ -18,6 +19,7 @@ import { getTicksPerFrame } from "../../timelineSelection";
 import { buildFrameSnappedSourceTimeDrag } from "../utils/snapDragOverlay";
 
 export const MARKER_COLOR = "#fbc02d";
+export const BEAT_MARKER_COLOR = "#00e5ff";
 const MARKER_ICON_FONT_SIZE = 32;
 /** Lane "top" sits at 30% of clip height; this offset pulls the icon
  *  up so its top edge is flush with the clip's top edge. */
@@ -114,6 +116,9 @@ function useClipMarkersOverlayItems({ clip }: { clip: TimelineClip }) {
       // so its position is independent of which marker triggered it.
       const isMenuRoot = index === 0;
 
+      const isBeat = isBeatMarker(marker);
+      const markerColor = isBeat ? BEAT_MARKER_COLOR : MARKER_COLOR;
+
       return createSourceTimeOverlayItem({
         id: `clip-marker:${marker.id}`,
         sourceTimeTicks: marker.sourceTimeTicks,
@@ -131,12 +136,12 @@ function useClipMarkersOverlayItems({ clip }: { clip: TimelineClip }) {
           <>
             <ArrowDropDownIcon
               sx={{
-                color: MARKER_COLOR,
+                color: markerColor,
                 fontSize: MARKER_ICON_FONT_SIZE,
                 filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.6))",
                 cursor: "default",
                 outline: isMenuTarget
-                  ? `2px solid ${MARKER_COLOR}`
+                  ? `2px solid ${markerColor}`
                   : undefined,
                 outlineOffset: 2,
                 pointerEvents: "none",

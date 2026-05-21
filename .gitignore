@@ -58,3 +58,4 @@ backend/assets/models/sams/sam2_hiera_small.pt
 backend/assets/.config/object_info.json
 ComfyUI-vlo
 backend/assets/workflows/Invert_Image.json
+backend/sam2

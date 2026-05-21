@@ -109,6 +109,8 @@ export function insertBaseClipAtTime(
     return clip.id;
   };
 
+  // Find the topmost compatible track with content in the drop zone
+  let topmostOccupiedIndex = -1;
   for (let i = 0; i < store.tracks.length; i++) {
     const track = store.tracks[i];
     if (!isCompatibleTrackType(track.type, expectedTrackType)) {
@@ -120,19 +122,47 @@ export function insertBaseClipAtTime(
         clip.trackId === track.id && clipOverlapsRange(clip, startTick, endTick),
     );
 
-    if (!occupied) {
-      return placeClip(track.id);
+    if (occupied) {
+      topmostOccupiedIndex = i;
+      break;
     }
   }
 
-  const firstCompatibleTrackIndex = store.tracks.findIndex((track) =>
-    isCompatibleTrackType(track.type, expectedTrackType),
-  );
-  const insertIndex =
-    firstCompatibleTrackIndex >= 0 ? firstCompatibleTrackIndex : 0;
-  const newTrackId = store.insertTrack(insertIndex);
+  if (topmostOccupiedIndex === -1) {
+    // Nothing occupied — use the bottom-most compatible track
+    for (let i = store.tracks.length - 1; i >= 0; i--) {
+      const track = store.tracks[i];
+      if (isCompatibleTrackType(track.type, expectedTrackType)) {
+        return placeClip(track.id);
+      }
+    }
+  } else {
+    // We found an occupied compatible track.
+    // Try to find the first compatible track above it.
+    let aboveTrackId: string | null = null;
+    for (let i = topmostOccupiedIndex - 1; i >= 0; i--) {
+      const track = store.tracks[i];
+      if (isCompatibleTrackType(track.type, expectedTrackType)) {
+        aboveTrackId = track.id;
+        break;
+      }
+    }
+
+    if (aboveTrackId) {
+      return placeClip(aboveTrackId);
+    }
+
+    // No compatible track above the topmost occupied track — insert a new one
+    // directly above the topmost occupied track index.
+    const newTrackId = store.insertTrack(topmostOccupiedIndex);
+    return placeClip(newTrackId);
+  }
+
+  // Fallback: insert a new track at 0
+  const newTrackId = store.insertTrack(0);
   return placeClip(newTrackId);
 }
+
 
 /**
  * Inserts an asset into the timeline at the given start tick.

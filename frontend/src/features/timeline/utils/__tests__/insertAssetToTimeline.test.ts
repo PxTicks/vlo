@@ -130,7 +130,7 @@ describe("insertAssetToTimeline", () => {
     ]);
   });
 
-  it("places new clips on the topmost compatible track that is free in range", () => {
+  it("places new clips on the bottom-most compatible track when nothing is occupied in range", () => {
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [
         createTrack("track_top"),
@@ -152,7 +152,58 @@ describe("insertAssetToTimeline", () => {
       .getState()
       .clips.find((clip) => clip.id === clipId);
 
+    expect(insertedClip?.trackId).toBe("track_bottom");
+  });
+
+  it("places new clips on the track directly above the topmost occupied track in range", () => {
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        createTrack("track_top"),
+        createTrack("track_middle"),
+        createTrack("track_bottom"),
+      ],
+      clips: [
+        {
+          ...createParentClip(),
+          id: "clip_existing",
+          trackId: "track_middle",
+          start: 0,
+        },
+      ],
+    });
+
+    const clipId = insertBaseClipAtTime(createBaseClip(), 0);
+    const insertedClip = useTimelineStore
+      .getState()
+      .clips.find((clip) => clip.id === clipId);
+
     expect(insertedClip?.trackId).toBe("track_top");
+  });
+
+  it("places new clips on the track directly above the topmost occupied track, skipping incompatible tracks", () => {
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        createTrack("track_top"),
+        createTrack("track_audio", "audio"),
+        createTrack("track_middle"),
+        createTrack("track_bottom"),
+      ],
+      clips: [
+        {
+          ...createParentClip(),
+          id: "clip_existing",
+          trackId: "track_bottom",
+          start: 0,
+        },
+      ],
+    });
+
+    const clipId = insertBaseClipAtTime(createBaseClip(), 0);
+    const insertedClip = useTimelineStore
+      .getState()
+      .clips.find((clip) => clip.id === clipId);
+
+    expect(insertedClip?.trackId).toBe("track_middle");
   });
 
   it("inserts a new compatible track above the occupied stack when needed", () => {

@@ -345,9 +345,63 @@ else
     info "backend/.env already exists, skipping"
 fi
 
-# -- 6. Projects directory -------------------------------------------
+# -- 6. Install SAM2 (Optional) --------------------------------------
+
+printf '\n'
+read -r -p "Would you like to install SAM2 for video segmentation and masking? (Requires CUDA for GPU acceleration) [y/N]: " install_sam2
+
+case "${install_sam2}" in
+    y|Y|yes|YES)
+        info "Installing SAM2..."
+        # The backend venv is created by `uv sync` and does NOT contain pip, so
+        # install through `uv pip` targeting that venv rather than `python -m pip`.
+        VENV_PY="$SCRIPT_DIR/backend/.venv/bin/python"
+
+        # 1. Install CUDA-enabled Torch if requested
+        read -r -p "Would you like to install PyTorch with CUDA 12.8 support? (Highly recommended for SAM2 on Nvidia GPUs) [Y/n]: " install_cuda_torch
+        case "${install_cuda_torch}" in
+            n|N|no|NO)
+                info "Skipping CUDA PyTorch installation, using existing PyTorch."
+                ;;
+            *)
+                info "Installing CUDA PyTorch..."
+                if ! "$UV_BIN" pip install --python "$VENV_PY" torch torchvision --index-url https://download.pytorch.org/whl/cu128; then
+                    warn "CUDA PyTorch installation failed. Attempting to proceed anyway..."
+                fi
+                ;;
+        esac
+
+        # 2. Clone and install SAM2 (guard each step so a failure does not abort the installer)
+        sam2_ready=1
+        if ! command -v git >/dev/null 2>&1; then
+            warn "git was not found; cannot clone SAM2. Skipping SAM2 install."
+            sam2_ready=0
+        elif [ ! -d "$SCRIPT_DIR/backend/sam2" ]; then
+            info "Cloning facebookresearch/sam2..."
+            if ! git clone https://github.com/facebookresearch/sam2.git "$SCRIPT_DIR/backend/sam2"; then
+                warn "Failed to clone SAM2 repository. Skipping SAM2 install."
+                sam2_ready=0
+            fi
+        else
+            info "sam2 directory already exists, skipping clone."
+        fi
+
+        if [ "$sam2_ready" -eq 1 ]; then
+            info "Installing SAM2 into the backend virtual environment..."
+            if ! "$UV_BIN" pip install --python "$VENV_PY" -e "$SCRIPT_DIR/backend/sam2"; then
+                warn "SAM2 installation failed."
+            fi
+        fi
+        ;;
+    *)
+        info "Skipping SAM2 installation. You can install it manually later if needed."
+        ;;
+esac
+
+# -- 7. Projects & Models directories ---------------------------------
 
 mkdir -p "$SCRIPT_DIR/projects"
+mkdir -p "$SCRIPT_DIR/backend/assets/models/sams"
 
 # -- Done ------------------------------------------------------------
 

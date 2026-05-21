@@ -101,7 +101,7 @@ install.bat
 This installs all dependencies (npm + Python via [uv](https://docs.astral.sh/uv/)),
 builds the frontend, and creates `backend/.venv` for later runs.
 
-The one-click installer does not currently install SAM2 itself. After running it. If you want masking capabilities follow the instructions further up.
+The one-click installer will prompt you to optionally set up SAM2 (including installing PyTorch with CUDA and cloning/installing SAM2) automatically.
 
 After installation, continue to [Using Scripts](#using-scripts-almost-one-click-installer) to start Vlo.
 

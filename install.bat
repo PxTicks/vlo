@@ -173,9 +173,63 @@ if not exist "%SCRIPT_DIR%backend\.env" (
     echo [INFO]  backend\.env already exists, skipping
 )
 
-:: -- 8. Projects directory ------------------------------------------
+:: -- 8. Install SAM2 (Optional) -------------------------------------
+
+echo.
+set "INSTALL_SAM2="
+set /p INSTALL_SAM2=Would you like to install SAM2 for video segmentation and masking? (Requires CUDA for GPU acceleration) [y/N]: 
+if /I "!INSTALL_SAM2!"=="Y" goto :do_install_sam2
+if /I "!INSTALL_SAM2!"=="YES" goto :do_install_sam2
+echo [INFO]  Skipping SAM2 installation.
+goto :skip_sam2
+
+:do_install_sam2
+set "INSTALL_CUDA_TORCH="
+set /p INSTALL_CUDA_TORCH=Would you like to install PyTorch with CUDA 12.8 support? (Highly recommended for SAM2 on Nvidia GPUs) [Y/n]: 
+if /I "!INSTALL_CUDA_TORCH!"=="N" goto :skip_cuda_torch
+if /I "!INSTALL_CUDA_TORCH!"=="NO" goto :skip_cuda_torch
+
+echo [INFO]  Installing CUDA PyTorch...
+:: The backend venv is created by `uv sync` and does NOT contain pip, so install
+:: through `uv pip` targeting that venv rather than `python -m pip`.
+call "%UV_BIN%" pip install --python "%SCRIPT_DIR%backend\.venv\Scripts\python.exe" torch torchvision --index-url https://download.pytorch.org/whl/cu128
+if %errorlevel% neq 0 (
+    echo [WARN]  CUDA PyTorch installation failed. Attempting to proceed anyway...
+)
+goto :clone_sam2
+
+:skip_cuda_torch
+echo [INFO]  Skipping CUDA PyTorch installation, using existing PyTorch.
+
+:clone_sam2
+where git >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ERROR] git was not found; cannot clone SAM2. Skipping SAM2 install.
+    goto :skip_sam2
+)
+if not exist "%SCRIPT_DIR%backend\sam2" (
+    echo [INFO]  Cloning facebookresearch/sam2...
+    git clone https://github.com/facebookresearch/sam2.git "%SCRIPT_DIR%backend\sam2"
+    if %errorlevel% neq 0 (
+        echo [ERROR] Failed to clone SAM2 repository.
+        goto :skip_sam2
+    )
+) else (
+    echo [INFO]  sam2 directory already exists, skipping clone.
+)
+
+echo [INFO]  Installing SAM2 into the backend virtual environment...
+call "%UV_BIN%" pip install --python "%SCRIPT_DIR%backend\.venv\Scripts\python.exe" -e "%SCRIPT_DIR%backend\sam2"
+if %errorlevel% neq 0 (
+    echo [ERROR] SAM2 installation failed.
+)
+
+:skip_sam2
+
+:: -- 9. Projects & Models directories -------------------------------
 
 if not exist "%SCRIPT_DIR%projects" mkdir "%SCRIPT_DIR%projects"
+if not exist "%SCRIPT_DIR%backend\assets\models\sams" mkdir "%SCRIPT_DIR%backend\assets\models\sams"
 
 :: -- Done -----------------------------------------------------------
 

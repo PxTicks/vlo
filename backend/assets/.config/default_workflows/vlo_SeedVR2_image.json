@@ -7,14 +7,8 @@
     {
       "id": 18,
       "type": "Note",
-      "pos": [
-        420,
-        -80
-      ],
-      "size": [
-        210,
-        100
-      ],
+      "pos": [420, -80],
+      "size": [210, 100],
       "flags": {},
       "order": 0,
       "mode": 0,
@@ -32,14 +26,8 @@
     {
       "id": 13,
       "type": "SeedVR2LoadVAEModel",
-      "pos": [
-        60,
-        500
-      ],
-      "size": [
-        320,
-        300
-      ],
+      "pos": [60, 500],
+      "size": [320, 300],
       "flags": {},
       "order": 5,
       "mode": 0,
@@ -55,9 +43,7 @@
         {
           "name": "SEEDVR2_VAE",
           "type": "SEEDVR2_VAE",
-          "links": [
-            10
-          ]
+          "links": [10]
         }
       ],
       "properties": {
@@ -96,14 +82,8 @@
     {
       "id": 17,
       "type": "JoinImageWithAlpha",
-      "pos": [
-        450,
-        -180
-      ],
-      "size": [
-        190,
-        50
-      ],
+      "pos": [450, -180],
+      "size": [190, 50],
       "flags": {},
       "order": 6,
       "mode": 0,
@@ -123,9 +103,7 @@
         {
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            16
-          ]
+          "links": [16]
         }
       ],
       "properties": {
@@ -139,14 +117,8 @@
     {
       "id": 20,
       "type": "Note",
-      "pos": [
-        -350,
-        640
-      ],
-      "size": [
-        300,
-        100
-      ],
+      "pos": [-350, 640],
+      "size": [300, 100],
       "flags": {},
       "order": 1,
       "mode": 0,
@@ -164,14 +136,8 @@
     {
       "id": 19,
       "type": "SeedVR2TorchCompileSettings",
-      "pos": [
-        -370,
-        400
-      ],
-      "size": [
-        310,
-        180
-      ],
+      "pos": [-370, 400],
+      "size": [310, 180],
       "flags": {},
       "order": 2,
       "mode": 4,
@@ -180,10 +146,7 @@
         {
           "name": "TORCH_COMPILE_ARGS",
           "type": "TORCH_COMPILE_ARGS",
-          "links": [
-            18,
-            19
-          ]
+          "links": [18, 19]
         }
       ],
       "properties": {
@@ -200,26 +163,13 @@
           "dynamo_recompile_limit": true
         }
       },
-      "widgets_values": [
-        "inductor",
-        "default",
-        false,
-        false,
-        64,
-        128
-      ]
+      "widgets_values": ["inductor", "default", false, false, 64, 128]
     },
     {
       "id": 10,
       "type": "SeedVR2VideoUpscaler",
-      "pos": [
-        610,
-        190
-      ],
-      "size": [
-        270,
-        390
-      ],
+      "pos": [610, 190],
+      "size": [270, 390],
       "flags": {},
       "order": 7,
       "mode": 0,
@@ -244,9 +194,7 @@
         {
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            20
-          ]
+          "links": [20]
         }
       ],
       "properties": {
@@ -288,14 +236,8 @@
     {
       "id": 21,
       "type": "SaveImageWebsocket",
-      "pos": [
-        1010,
-        190
-      ],
-      "size": [
-        185.929296875,
-        26
-      ],
+      "pos": [1010, 190],
+      "size": [185.929296875, 26],
       "flags": {},
       "order": 8,
       "mode": 0,
@@ -315,14 +257,8 @@
     {
       "id": 22,
       "type": "vloMemoryLoadImage",
-      "pos": [
-        60,
-        -180
-      ],
-      "size": [
-        272.990234375,
-        386
-      ],
+      "pos": [60, -180],
+      "size": [272.990234375, 386],
       "flags": {},
       "order": 3,
       "mode": 0,
@@ -331,16 +267,12 @@
         {
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            21
-          ]
+          "links": [21]
         },
         {
           "name": "MASK",
           "type": "MASK",
-          "links": [
-            22
-          ]
+          "links": [22]
         }
       ],
       "properties": {
@@ -349,25 +281,13 @@
         "widget_ue_connectable": {},
         "Node name for S&R": "vloMemoryLoadImage"
       },
-      "widgets_values": [
-        "Loading...",
-        false,
-        "refresh",
-        false,
-        "image"
-      ]
+      "widgets_values": ["Loading...", false, "refresh", false, "image"]
     },
     {
       "id": 14,
       "type": "SeedVR2LoadDiTModel",
-      "pos": [
-        60,
-        210
-      ],
-      "size": [
-        310,
-        210
-      ],
+      "pos": [60, 210],
+      "size": [310, 210],
       "flags": {},
       "order": 4,
       "mode": 0,
@@ -383,9 +303,7 @@
         {
           "name": "SEEDVR2_DIT",
           "type": "SEEDVR2_DIT",
-          "links": [
-            11
-          ]
+          "links": [11]
         }
       ],
       "properties": {
@@ -415,80 +333,21 @@
     }
   ],
   "links": [
-    [
-      10,
-      13,
-      0,
-      10,
-      2,
-      "SEEDVR2_VAE"
-    ],
-    [
-      11,
-      14,
-      0,
-      10,
-      1,
-      "SEEDVR2_DIT"
-    ],
-    [
-      16,
-      17,
-      0,
-      10,
-      0,
-      "IMAGE"
-    ],
-    [
-      18,
-      19,
-      0,
-      14,
-      0,
-      "TORCH_COMPILE_ARGS"
-    ],
-    [
-      19,
-      19,
-      0,
-      13,
-      0,
-      "TORCH_COMPILE_ARGS"
-    ],
-    [
-      20,
-      10,
-      0,
-      21,
-      0,
-      "IMAGE"
-    ],
-    [
-      21,
-      22,
-      0,
-      17,
-      0,
-      "IMAGE"
-    ],
-    [
-      22,
-      22,
-      1,
-      17,
-      1,
-      "MASK"
-    ]
+    [10, 13, 0, 10, 2, "SEEDVR2_VAE"],
+    [11, 14, 0, 10, 1, "SEEDVR2_DIT"],
+    [16, 17, 0, 10, 0, "IMAGE"],
+    [18, 19, 0, 14, 0, "TORCH_COMPILE_ARGS"],
+    [19, 19, 0, 13, 0, "TORCH_COMPILE_ARGS"],
+    [20, 10, 0, 21, 0, "IMAGE"],
+    [21, 22, 0, 17, 0, "IMAGE"],
+    [22, 22, 1, 17, 1, "MASK"]
   ],
   "groups": [],
   "config": {},
   "extra": {
     "ds": {
       "scale": 0.31774221806156494,
-      "offset": [
-        930.3544624023313,
-        1076.9167681632016
-      ]
+      "offset": [930.3544624023313, 1076.9167681632016]
     },
     "ue_links": [],
     "frontendVersion": "1.42.15",

@@ -3,6 +3,7 @@ import type { Input } from "mediabunny";
 import type { Asset, AssetFamily, AssetFamilyCompatibility } from "../../types/Asset";
 import { buildAssetFamilyCompatibility } from "../../shared/utils/assetFamilies";
 import { useAssetStore } from "./useAssetStore";
+import type { AssetIngestOptions } from "./services/AssetService";
 import { mediaProcessingService } from "./services/MediaProcessingService";
 
 function findAssetById(
@@ -74,8 +75,11 @@ export async function addLocalAsset(
   file: File,
   creationMetadata?: Asset["creationMetadata"],
   familyId?: Asset["familyId"],
+  options?: AssetIngestOptions,
 ): Promise<Asset | null> {
-  return useAssetStore.getState().addLocalAsset(file, creationMetadata, familyId);
+  return useAssetStore
+    .getState()
+    .addLocalAsset(file, creationMetadata, familyId, options);
 }
 
 export async function addLocalAssetWithFamily(

@@ -375,6 +375,10 @@ export function pasteCopiedClipsAboveDraft(
       const pastedClip = cloneTimelineClip(clip, crypto.randomUUID());
       pastedClip.trackId = targetTrackId;
       pastedClip.start = clip.start;
+      if (pastedClip.type === "composite") {
+        pastedClip.proxyAssetId = undefined;
+        pastedClip.proxyContentHash = undefined;
+      }
 
       const targetTrack = draft.tracks.find((track) => track.id === targetTrackId);
       if (targetTrack && !targetTrack.type) {

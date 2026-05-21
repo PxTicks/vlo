@@ -224,6 +224,9 @@ function toLightweightCreationMetadata(
   if (metadata.source === "composite") {
     return {
       source: "composite",
+      ...(metadata.compositeClipId
+        ? { compositeClipId: metadata.compositeClipId }
+        : {}),
       ...(metadata.contentHash ? { contentHash: metadata.contentHash } : {}),
     };
   }

@@ -11,13 +11,15 @@ import {
   compositeContentToSelection,
   hashCompositeContent,
 } from "../../timelineSelection";
-import { useProjectStore } from "../../project";
+import { useProjectStore } from "../../project/useProjectStore";
 import { getAssets, addLocalAsset } from "../../userAssets";
-import { useTimelineStore } from "../../timeline";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 
 export interface BakeCompositeProxyOptions {
   signal?: AbortSignal;
   onProgress?: (percentage: number) => void;
+  compositeClipId?: string;
+  allowDuplicateHash?: boolean;
 }
 
 export interface BakedCompositeProxy {
@@ -88,11 +90,23 @@ export async function bakeCompositeProxy(
     filenamePrefix: "composite",
   });
 
-  const asset = await addLocalAsset(file, {
-    source: "composite",
-    timelineSelection: selection,
-    contentHash,
-  });
+  const asset = await addLocalAsset(
+    file,
+    {
+      source: "composite",
+      ...(options.compositeClipId
+        ? { compositeClipId: options.compositeClipId }
+        : {}),
+      timelineSelection: selection,
+      contentHash,
+    },
+    undefined,
+    {
+      // Composite proxies are clip-private working assets. Identical bytes should
+      // still produce separate assets so copied composites can be edited alone.
+      allowDuplicateHash: options.allowDuplicateHash ?? true,
+    },
+  );
   if (!asset) {
     throw new Error("Failed to register composite proxy asset");
   }

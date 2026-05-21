@@ -233,6 +233,7 @@ describe("ProjectPersistenceService", () => {
       createdAt: 1,
       creationMetadata: {
         source: "composite",
+        compositeClipId: "clip-composite-1",
         contentHash: "content-hash-1",
         timelineSelection: {
           start: 0,
@@ -248,6 +249,7 @@ describe("ProjectPersistenceService", () => {
     const persistedProxy = persistedAssets.assets["proxy-1"];
     expect(persistedProxy.creationMetadata).toEqual({
       source: "composite",
+      compositeClipId: "clip-composite-1",
       contentHash: "content-hash-1",
     });
     expect(persistedProxy.metadataRef).toBe("asset-metadata/proxy-1.json");

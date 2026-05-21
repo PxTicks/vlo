@@ -1,6 +1,6 @@
 import type { Asset } from "../../../types/Asset";
 import type { CompositeContent } from "../../../types/TimelineTypes";
-import { useTimelineStore } from "../../timeline";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 import {
   bakeCompositeProxy,
   type BakeCompositeProxyOptions,
@@ -22,7 +22,10 @@ export async function rebakeCompositeClip(
     return null;
   }
 
-  const { asset, contentHash } = await bakeCompositeProxy(clip.content, options);
+  const { asset, contentHash } = await bakeCompositeProxy(clip.content, {
+    ...options,
+    compositeClipId: options.compositeClipId ?? clipId,
+  });
   useTimelineStore.getState().setCompositeProxy(clipId, asset.id, contentHash);
   return asset;
 }

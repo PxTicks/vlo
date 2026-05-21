@@ -4,6 +4,7 @@ import type {
 } from "../../../types/TimelineTypes";
 
 export interface CreateCompositeClipArgs {
+  id?: string;
   content: CompositeContent;
   trackId: string;
   /** Global timeline start position (ticks). */
@@ -25,7 +26,7 @@ export function createCompositeTimelineClip(
   const duration = Math.max(1, Math.round(args.content.durationTicks));
 
   return {
-    id: `clip_${crypto.randomUUID()}`,
+    id: args.id ?? `clip_${crypto.randomUUID()}`,
     type: "composite",
     name: args.name ?? "Composite",
     trackId: args.trackId,

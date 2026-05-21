@@ -3,6 +3,7 @@ import { useDraggable } from "@dnd-kit/core";
 import {
   Alert,
   Box,
+  ButtonBase,
   ListItemIcon,
   ListItemText,
   Menu,
@@ -29,6 +30,8 @@ import {
   RULER_HEIGHT,
 } from "../constants";
 import type {
+  AssetBackedBaseClip,
+  AssetBackedTimelineClip,
   BaseClip,
   StandardTimelineClip,
   TimelineClip as TimelineClipType,
@@ -41,6 +44,7 @@ import { useAsset } from "../../userAssets/publicApi";
 import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStore";
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
+import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
 import { extractTimelineClipAudioAsset } from "../utils/clipAudioExtraction";
 import { reverseTimelineClip } from "../utils/reverseClip";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
@@ -126,9 +130,24 @@ function TimelineClipComponent({
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [isExtractionSnackbarOpen, setIsExtractionSnackbarOpen] = useState(false);
   const [isReversingClip, setIsReversingClip] = useState(false);
+  const openCompositeClip = useCompositeTimelineStore(
+    (state) => state.openCompositeClip,
+  );
 
   const startTime = "start" in clip ? (clip as TimelineClipType).start : 0;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
+  const canOpenCompositeClip =
+    timelineClip !== null && timelineClip.type === "composite" && !isOverlay;
+  const thumbnailClip: AssetBackedBaseClip | AssetBackedTimelineClip | null =
+    isAssetBackedClip(clip)
+      ? clip
+      : timelineClip?.type === "composite" && timelineClip.proxyAssetId
+        ? {
+            ...timelineClip,
+            type: "video",
+            assetId: timelineClip.proxyAssetId,
+          }
+        : null;
   const isClipMuted =
     timelineClip !== null && timelineClip.type !== "mask"
       ? timelineClip.isMuted === true
@@ -310,6 +329,13 @@ function TimelineClipComponent({
 
   const closeContextMenu = () => setContextMenuPos(null);
 
+  const handleOpenCompositeClip = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (timelineClip === null || timelineClip.type !== "composite") return;
+    openCompositeClip(timelineClip.id);
+  };
+
   const handleContextDelete = () => {
     const store = useTimelineStore.getState();
     const ids =
@@ -462,8 +488,44 @@ function TimelineClipComponent({
       data-selected={isSelected ? "true" : "false"}
       data-track-visible={isTrackVisible ? "true" : "false"}
     >
-      {isAssetBackedClip(clip) ? (
-        <ThumbnailCanvas clip={clip} isDragging={isDragging} />
+      {canOpenCompositeClip ? (
+        <ButtonBase
+          component="button"
+          type="button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={handleOpenCompositeClip}
+          aria-label={`Open ${clip.name} composite`}
+          data-testid="timeline-clip-composite-open"
+          sx={{
+            position: "absolute",
+            top: 3,
+            left: 4,
+            zIndex: 18,
+            height: 18,
+            maxWidth: "calc(100% - 8px)",
+            px: 0.75,
+            borderRadius: "3px",
+            border: "1px solid rgba(255,255,255,0.35)",
+            bgcolor: "rgba(0,0,0,0.38)",
+            color: "#fff",
+            fontSize: "0.58rem",
+            fontWeight: 700,
+            lineHeight: 1,
+            textTransform: "uppercase",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+            "&:hover": {
+              bgcolor: "rgba(0,0,0,0.58)",
+            },
+          }}
+        >
+          Composite
+        </ButtonBase>
+      ) : null}
+      {thumbnailClip ? (
+        <ThumbnailCanvas clip={thumbnailClip} isDragging={isDragging} />
       ) : null}
       {!isDragging && !isOverlay && timelineClip ? (
         <TimelineClipOverlayLayer
@@ -490,7 +552,11 @@ function TimelineClipComponent({
       <Typography
         variant="caption"
         noWrap
-        sx={{ fontWeight: "bold", pointerEvents: "none" }}
+        sx={{
+          fontWeight: "bold",
+          pointerEvents: "none",
+          mt: canOpenCompositeClip ? 2.25 : 0,
+        }}
       >
         {clip.name}
       </Typography>

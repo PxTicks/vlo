@@ -152,6 +152,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
   let pendingDocumentPatches: Patch[] = [];
   let pendingPersistTimer: ReturnType<typeof setTimeout> | null = null;
   let flushInFlight: Promise<void> | null = null;
+  let persistenceSuspended = false;
 
   const applyHistoryFlags = () => ({
     canUndo: undoStack.length > 0,
@@ -160,6 +161,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
 
   const queueTimelinePatchesForPersistence = (timelinePatches: Patch[]): void => {
     if (timelinePatches.length === 0) return;
+    if (persistenceSuspended) return;
     if (!fileSystemService.getHandle()) return;
 
     pendingDocumentPatches.push(...timelinePatches);
@@ -173,6 +175,15 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
   };
 
   const flushPendingPersistence = async (): Promise<void> => {
+    if (persistenceSuspended) {
+      if (pendingPersistTimer !== null) {
+        clearTimeout(pendingPersistTimer);
+        pendingPersistTimer = null;
+      }
+      pendingDocumentPatches = [];
+      return;
+    }
+
     if (pendingPersistTimer !== null) {
       clearTimeout(pendingPersistTimer);
       pendingPersistTimer = null;
@@ -338,6 +349,17 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     });
   };
 
+  const setPersistenceSuspended = (suspended: boolean): void => {
+    persistenceSuspended = suspended;
+    if (!suspended) return;
+
+    if (pendingPersistTimer !== null) {
+      clearTimeout(pendingPersistTimer);
+      pendingPersistTimer = null;
+    }
+    pendingDocumentPatches = [];
+  };
+
   const registerBeforeUnloadPersistence = (): void => {
     if (typeof window === "undefined" || didRegisterBeforeUnloadListener) {
       return;
@@ -370,6 +392,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     registerBeforeUnloadPersistence,
     replaceTimelineSnapshot,
     runPostCommitEffects,
+    setPersistenceSuspended,
     undo,
   };
 }

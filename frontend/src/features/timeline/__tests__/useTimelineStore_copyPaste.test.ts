@@ -1,7 +1,19 @@
 import { act } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useTimelineStore } from "../useTimelineStore";
-import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
+import type {
+  CompositeTimelineClip,
+  TimelineClip,
+  TimelineTrack,
+} from "../../../types/TimelineTypes";
+
+const compositeMocks = vi.hoisted(() => ({
+  scheduleCompositeProxyRender: vi.fn(),
+}));
+
+vi.mock("../../composite", () => ({
+  scheduleCompositeProxyRender: compositeMocks.scheduleCompositeProxyRender,
+}));
 
 const createTrack = (id: string, label: string): TimelineTrack => ({
   id,
@@ -35,6 +47,7 @@ const createClip = (
 
 describe("useTimelineStore copy/paste (single and multiple clips)", () => {
   beforeEach(() => {
+    compositeMocks.scheduleCompositeProxyRender.mockReset();
     useTimelineStore.setState({
       tracks: [],
       clips: [],
@@ -259,6 +272,62 @@ describe("useTimelineStore copy/paste (single and multiple clips)", () => {
     expect(pastedB1?.trackId).not.toBe("track_above_b");
     expect(tracks.map((track) => track.id)).not.toContain(
       pastedB1?.trackId ?? "",
+    );
+  });
+
+  it("detaches and queues a fresh proxy when pasting a composite clip", async () => {
+    const tracks = [
+      createTrack("track_top_pad", "Track 1"),
+      createTrack("track_current", "Track 2"),
+    ];
+    const sourceClip: CompositeTimelineClip = {
+      id: "composite-source",
+      trackId: "track_current",
+      type: "composite",
+      name: "Composite Source",
+      start: 100,
+      timelineDuration: 50,
+      offset: 0,
+      croppedSourceDuration: 50,
+      transformedOffset: 0,
+      sourceDuration: 50,
+      transformedDuration: 50,
+      transformations: [],
+      proxyAssetId: "proxy-source",
+      proxyContentHash: "source-hash",
+      content: {
+        durationTicks: 50,
+        clips: [],
+        tracks: [],
+      },
+    };
+
+    useTimelineStore.setState({
+      tracks,
+      clips: [sourceClip],
+      selectedClipIds: [sourceClip.id],
+      copiedClips: [],
+    });
+
+    act(() => {
+      expect(useTimelineStore.getState().copySelectedClip()).toBe(true);
+      expect(useTimelineStore.getState().pasteCopiedClipAbove()).toBe(true);
+    });
+
+    const pastedComposite = useTimelineStore
+      .getState()
+      .clips.find(
+        (clip): clip is CompositeTimelineClip =>
+          clip.id !== sourceClip.id && clip.type === "composite",
+      );
+    expect(pastedComposite).toBeDefined();
+    expect(pastedComposite?.proxyAssetId).toBeUndefined();
+    expect(pastedComposite?.proxyContentHash).toBeUndefined();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(compositeMocks.scheduleCompositeProxyRender).toHaveBeenCalledWith(
+      pastedComposite?.id,
     );
   });
 });

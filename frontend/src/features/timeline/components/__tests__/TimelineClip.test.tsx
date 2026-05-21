@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TimelineClipItem } from "../TimelineClip";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../../hooks/useInteractionStore";
+import { useCompositeTimelineStore } from "../../../composite/useCompositeTimelineStore";
 import type { Asset } from "../../../../types/Asset";
 import type {
   TimelineClip as TimelineClipType,
@@ -29,6 +30,7 @@ const extractionState = vi.hoisted(() => ({
   mockUseAsset: vi.fn(),
   mockExtractTimelineClipAudioAsset: vi.fn(),
   mockRevealAssetInBrowser: vi.fn(),
+  mockThumbnailCanvas: vi.fn(),
 }));
 
 // Mock dnd-kit hooks to prevent errors during render
@@ -44,7 +46,10 @@ vi.mock("@dnd-kit/core", () => ({
 
 // Mock the canvas component to avoid canvas context errors
 vi.mock("../ThumbnailCanvas", () => ({
-  ThumbnailCanvas: () => <div data-testid="thumbnail-canvas" />,
+  ThumbnailCanvas: (props: unknown) => {
+    extractionState.mockThumbnailCanvas(props);
+    return <div data-testid="thumbnail-canvas" />;
+  },
 }));
 
 // Mock View Store for zoom/pixel conversion
@@ -129,6 +134,12 @@ describe("TimelineClip Visual Geometry", () => {
       selectedClipIds: [],
       tracks: [{ id: "track_1", label: "Track 1" } as unknown as TimelineTrack],
     });
+    useTimelineStore.getState().setTimelinePersistenceSuspended(false);
+    useCompositeTimelineStore.setState({
+      stack: [],
+      isBusy: false,
+      lastError: null,
+    });
     useInteractionStore.setState({ activeId: null, operation: null });
     extractionState.mockUseAsset.mockReset();
     extractionState.mockUseAsset.mockImplementation(
@@ -143,6 +154,7 @@ describe("TimelineClip Visual Geometry", () => {
     extractionState.mockExtractTimelineClipAudioAsset.mockReset();
     extractionState.mockExtractTimelineClipAudioAsset.mockResolvedValue(null);
     extractionState.mockRevealAssetInBrowser.mockReset();
+    extractionState.mockThumbnailCanvas.mockReset();
 
     if (!HTMLElement.prototype.setPointerCapture) {
       HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -189,6 +201,104 @@ describe("TimelineClip Visual Geometry", () => {
     render(<TimelineClipItem clip={mockClip} isOverlay={false} />);
 
     expect(screen.getByTestId("timeline-clip").style.cursor).toBe("default");
+  });
+
+  it("opens composite clips from the timeline badge", () => {
+    const compositeClip: TimelineClipType = {
+      id: "composite_1",
+      trackId: "track_1",
+      start: 100,
+      timelineDuration: 200,
+      type: "composite",
+      name: "Nested Scene",
+      transformations: [],
+      offset: 0,
+      sourceDuration: 200,
+      transformedDuration: 200,
+      transformedOffset: 0,
+      croppedSourceDuration: 200,
+      content: {
+        durationTicks: 200,
+        clips: [],
+        tracks: [
+          {
+            id: "inner_track_1",
+            label: "Track 1",
+            isVisible: true,
+            isMuted: false,
+            isLocked: false,
+          },
+        ],
+      },
+    };
+    useTimelineStore.setState({
+      clips: [compositeClip],
+      tracks: [
+        {
+          id: "track_1",
+          label: "Track 1",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+      ],
+    });
+
+    render(<TimelineClipItem clip={compositeClip} isOverlay={false} />);
+
+    fireEvent.click(screen.getByTestId("timeline-clip-composite-open"));
+
+    expect(useCompositeTimelineStore.getState().stack).toHaveLength(1);
+    expect(useTimelineStore.getState().clips).toEqual([]);
+    expect(useTimelineStore.getState().tracks[0].id).toBe("inner_track_1");
+  });
+
+  it("renders composite proxy thumbnails through the normal thumbnail canvas", () => {
+    const compositeClip: TimelineClipType = {
+      id: "composite_1",
+      trackId: "track_1",
+      start: 100,
+      timelineDuration: 200,
+      type: "composite",
+      name: "Nested Scene",
+      transformations: [],
+      offset: 0,
+      sourceDuration: 200,
+      transformedDuration: 200,
+      transformedOffset: 0,
+      croppedSourceDuration: 200,
+      proxyAssetId: "proxy-asset-1",
+      content: {
+        durationTicks: 200,
+        clips: [],
+        tracks: [],
+      },
+    };
+    useTimelineStore.setState({
+      clips: [compositeClip],
+      tracks: [
+        {
+          id: "track_1",
+          label: "Track 1",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+      ],
+    });
+
+    render(<TimelineClipItem clip={compositeClip} isOverlay={false} />);
+
+    expect(screen.getByTestId("thumbnail-canvas")).toBeInTheDocument();
+    expect(extractionState.mockThumbnailCanvas).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clip: expect.objectContaining({
+          id: compositeClip.id,
+          type: "video",
+          assetId: "proxy-asset-1",
+        }),
+      }),
+    );
   });
 
   it("applies resize deltas via CSS variables", () => {

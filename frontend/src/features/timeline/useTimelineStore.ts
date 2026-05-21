@@ -197,6 +197,7 @@ interface TimelineState extends TimelineModelState {
   redo: () => boolean;
 
   replaceTimelineSnapshot: (snapshot: TimelineSnapshot | null) => void;
+  setTimelinePersistenceSuspended: (suspended: boolean) => void;
   flushPendingPersistence: () => Promise<void>;
 
   getClipsAtTime: (timeTicks: number) => TimelineClip[];
@@ -345,6 +346,20 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
       if (!didCommit || pastedClipIds.length === 0) {
         return false;
+      }
+
+      const pastedCompositeClipIds = get()
+        .clips
+        .filter(
+          (clip) => pastedClipIds.includes(clip.id) && clip.type === "composite",
+        )
+        .map((clip) => clip.id);
+      if (pastedCompositeClipIds.length > 0) {
+        void import("../composite").then(({ scheduleCompositeProxyRender }) => {
+          pastedCompositeClipIds.forEach((clipId) => {
+            scheduleCompositeProxyRender(clipId);
+          });
+        });
       }
 
       set({ selectedClipIds: pastedClipIds });
@@ -579,6 +594,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     undo: () => mutationPipeline.undo(),
     redo: () => mutationPipeline.redo(),
     replaceTimelineSnapshot: mutationPipeline.replaceTimelineSnapshot,
+    setTimelinePersistenceSuspended: mutationPipeline.setPersistenceSuspended,
     flushPendingPersistence: mutationPipeline.flushPendingPersistence,
 
     getClipsAtTime: (timeTicks) => getTimelineClipsAtTime(get().clips, timeTicks),

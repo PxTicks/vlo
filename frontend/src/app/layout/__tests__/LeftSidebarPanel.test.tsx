@@ -16,6 +16,7 @@ describe("LeftSidebarPanel", () => {
     );
     expect(screen.getByRole("tab", { name: "Assets" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Text" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Composite" })).toBeInTheDocument();
   });
 
   it("switches to the text tab when clicked", () => {
@@ -28,5 +29,17 @@ describe("LeftSidebarPanel", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Text" }));
 
     expect(handleTabChange).toHaveBeenCalledWith("text");
+  });
+
+  it("switches to the composite tab when clicked", () => {
+    const handleTabChange = vi.fn();
+
+    render(
+      <LeftSidebarPanel activeTab="assets" onTabChange={handleTabChange} />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Composite" }));
+
+    expect(handleTabChange).toHaveBeenCalledWith("composite");
   });
 });

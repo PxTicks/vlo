@@ -122,6 +122,7 @@ export type CreationMetadata =
        *  replayed at local zero. Distinct from "extracted" so the proxy isn't
        *  treated as a user-extracted library clip. */
       source: "composite";
+      compositeClipId?: string;
       timelineSelection?: TimelineSelection;
       contentHash?: string;
     }

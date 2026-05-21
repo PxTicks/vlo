@@ -1,12 +1,20 @@
 import { useState } from "react";
-import { Box, CircularProgress, Slider, Stack, IconButton, Tooltip } from "@mui/material";
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Slider,
+  Stack,
+  IconButton,
+  Tooltip,
+} from "@mui/material";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
 import VerticalAlignCenterIcon from "@mui/icons-material/VerticalAlignCenter";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
-import LayersIcon from "@mui/icons-material/Layers";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useTimelineStore } from "../useTimelineStore";
@@ -14,7 +22,6 @@ import { playbackClock } from "../../player/services/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
 import { calculateClipTime } from "../../transformations";
 import {
-  createTimelineSelectionFromClipIds,
   getTicksPerFrame,
   snapTickToFrame,
 } from "../../timelineSelection";
@@ -24,7 +31,7 @@ import type {
 } from "../../../types/Components";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { groupSelectionIntoComposite } from "../../composite";
+import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
 import { MIN_ZOOM, MAX_ZOOM, TICKS_PER_SECOND } from "../constants";
 import { ensureAssetSourceLoaded } from "../../userAssets/publicApi";
 import { mediaProcessingService } from "../../userAssets/services/MediaProcessingService";
@@ -42,43 +49,12 @@ export const TimelineToolbar = () => {
   );
 
   const [isDetectingBeats, setIsDetectingBeats] = useState(false);
-  const [isGrouping, setIsGrouping] = useState(false);
-
-  const selectedVisualClipCount = useTimelineStore(
-    (state) =>
-      state.selectedClipIds.filter((id) => {
-        const clip = state.clips.find((c) => c.id === id);
-        return clip != null && clip.type !== "mask" && clip.type !== "audio";
-      }).length,
+  const subtimelineDepth = useCompositeTimelineStore((state) => state.stack.length);
+  const isCompositeTimelineActive = subtimelineDepth > 0;
+  const isCompositeBusy = useCompositeTimelineStore((state) => state.isBusy);
+  const exitToMainTimeline = useCompositeTimelineStore(
+    (state) => state.exitToMainTimeline,
   );
-
-  /**
-   * Groups the currently selected clips into a single Composite clip. The
-   * region is the selected clips' bounding window; subordinate mask clips are
-   * carried along so they travel into (and are removed with) the selection.
-   */
-  const handleGroupIntoComposite = async () => {
-    const state = useTimelineStore.getState();
-    const visualClipIds = state.selectedClipIds.filter((id) => {
-      const clip = state.clips.find((candidate) => candidate.id === id);
-      return clip != null && clip.type !== "mask" && clip.type !== "audio";
-    });
-    const selection = createTimelineSelectionFromClipIds({
-      clipIds: visualClipIds,
-      clips: state.clips,
-      tracks: state.tracks,
-    });
-    if (!selection) return;
-
-    setIsGrouping(true);
-    try {
-      await groupSelectionIntoComposite(selection);
-    } catch (error) {
-      console.error("Failed to group selection into composite", error);
-    } finally {
-      setIsGrouping(false);
-    }
-  };
 
   const selectedClipsHaveBeats = useTimelineStore((state) => {
     if (state.selectedClipIds.length === 0) return false;
@@ -227,9 +203,9 @@ export const TimelineToolbar = () => {
       sx={{
         p: 1,
         borderBottom: "1px solid #333",
-        display: "flex",
+        display: "grid",
+        gridTemplateColumns: "1fr auto 1fr",
         alignItems: "center",
-        justifyContent: "space-between", // Spread out
         height: "40px",
         bgcolor: "#1a1a1a",
       }}
@@ -416,32 +392,38 @@ export const TimelineToolbar = () => {
           </IconButton>
         </Tooltip>
 
-        <Tooltip title="Group selection into Composite">
-          <span>
-            <IconButton
-              size="small"
-              disabled={selectedVisualClipCount === 0 || isGrouping}
-              onClick={() => {
-                void handleGroupIntoComposite();
-              }}
-              sx={{ color: "#eee" }}
-            >
-              {isGrouping ? (
-                <CircularProgress size={16} sx={{ color: "#eee" }} />
-              ) : (
-                <LayersIcon fontSize="small" />
-              )}
-            </IconButton>
-          </span>
-        </Tooltip>
       </Stack>
+
+      <Box sx={{ justifySelf: "center" }}>
+        {isCompositeTimelineActive ? (
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={
+              isCompositeBusy ? (
+                <CircularProgress size={18} color="inherit" />
+              ) : (
+                <ArrowBackIcon fontSize="small" />
+              )
+            }
+            disabled={isCompositeBusy}
+            onClick={() => {
+              void exitToMainTimeline();
+            }}
+            data-testid="timeline-back-to-main"
+            sx={{ minWidth: 240, fontWeight: 700 }}
+          >
+            Back to main timeline
+          </Button>
+        ) : null}
+      </Box>
 
       {/* Right Zoom Controls */}
       <Stack
         direction="row"
         spacing={2}
         alignItems="center"
-        sx={{ width: 200, mr: 2 }}
+        sx={{ width: 200, mr: 2, justifySelf: "end" }}
       >
         <ZoomOutIcon sx={{ color: "#888", fontSize: 20 }} />
         <Slider

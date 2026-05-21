@@ -2,8 +2,9 @@ import { memo } from "react";
 import { Box, Tab, Tabs } from "@mui/material";
 import VideoLibraryIcon from "@mui/icons-material/VideoLibrary";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
+import LayersIcon from "@mui/icons-material/Layers";
 
-export type LeftSidebarTab = "assets" | "text";
+export type LeftSidebarTab = "assets" | "text" | "composite";
 
 interface LeftSidebarPanelProps {
   activeTab: LeftSidebarTab;
@@ -64,6 +65,25 @@ function LeftSidebarPanelComponent({
           icon={<TextFieldsIcon fontSize="small" />}
           aria-label="Text"
           data-testid="left-sidebar-tab-text"
+          sx={{
+            minWidth: 40,
+            minHeight: 40,
+            width: 40,
+            borderRadius: 2,
+            color: "#9aa0a6",
+            mx: 1,
+            my: 0.5,
+            "&.Mui-selected": {
+              color: "#4dabf5",
+              bgcolor: "rgba(77, 171, 245, 0.12)",
+            },
+          }}
+        />
+        <Tab
+          value="composite"
+          icon={<LayersIcon fontSize="small" />}
+          aria-label="Composite"
+          data-testid="left-sidebar-tab-composite"
           sx={{
             minWidth: 40,
             minHeight: 40,

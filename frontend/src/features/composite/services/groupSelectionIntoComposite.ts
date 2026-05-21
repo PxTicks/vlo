@@ -3,7 +3,7 @@ import type {
   TimelineSelection,
 } from "../../../types/TimelineTypes";
 import { selectionToCompositeContent } from "../../timelineSelection";
-import { useTimelineStore } from "../../timeline";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { bakeCompositeProxy } from "./bakeCompositeProxy";
 import { createCompositeTimelineClip } from "../utils/createCompositeClip";
 
@@ -53,12 +53,15 @@ export async function groupSelectionIntoComposite(
   }
 
   const content = selectionToCompositeContent(selection);
+  const compositeClipId = `clip_${crypto.randomUUID()}`;
   const { asset, contentHash } = await bakeCompositeProxy(content, {
     signal: options.signal,
     onProgress: options.onProgress,
+    compositeClipId,
   });
 
   const compositeClip = createCompositeTimelineClip({
+    id: compositeClipId,
     content,
     trackId,
     start: selection.start,

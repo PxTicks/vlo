@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TimelineToolbar } from "../TimelineToolbar";
 import { useTimelineStore } from "../../useTimelineStore";
+import { useCompositeTimelineStore } from "../../../composite/useCompositeTimelineStore";
 import type {
   StandardTimelineClip,
   TimelineTrack,
@@ -76,6 +77,11 @@ describe("TimelineToolbar beat detection", () => {
     beatApiMocks.detectBeats.mockReset();
     assetMocks.ensureAssetSourceLoaded.mockReset();
     mediaMocks.extractPrimaryAudioTrack.mockReset();
+    useCompositeTimelineStore.setState({
+      stack: [],
+      isBusy: false,
+      lastError: null,
+    });
 
     assetMocks.ensureAssetSourceLoaded.mockResolvedValue({
       id: "asset-1",
@@ -220,5 +226,28 @@ describe("TimelineToolbar beat detection", () => {
         "hash-1",
       );
     });
+  });
+
+  it("shows the centered back button while keeping timeline tools in a subtimeline", () => {
+    useCompositeTimelineStore.setState({
+      stack: [
+        {
+          previousSnapshot: { tracks: [track], clips: [audioClip] },
+          ownerClipId: "composite-1",
+          insertStartTick: 0,
+          name: "Composite",
+        },
+      ],
+      isBusy: false,
+      lastError: null,
+    });
+
+    render(<TimelineToolbar />);
+
+    expect(screen.getByTestId("timeline-back-to-main")).toHaveTextContent(
+      "Back to main timeline",
+    );
+    expect(screen.getByTestId("timeline-detect-beats")).toBeInTheDocument();
+    expect(screen.getByTestId("timeline-snapping-toggle")).toBeInTheDocument();
   });
 });

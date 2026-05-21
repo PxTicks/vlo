@@ -195,6 +195,16 @@ aspect ratio processing, and the generation pipeline — see the
 [default workflows](backend/assets/.config/default_workflows/) include working
 sidecar examples. A custom GPT is available [here](https://chatgpt.com/g/g-69f93b02dc108191a7b6cfed9dd6b08e-vlo-workflow-rules), into which you can plug in a workflow and request a rules file for if you need more complex functionality.
 
+The following nodes are used in some capacity in the default workflows
+
+https://github.com/kijai/ComfyUI-GIMM-VFI
+https://github.com/kijai/ComfyUI-MelBandRoFormer
+https://github.com/kijai/ComfyUI-WanVideoWrapper
+https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
+https://github.com/Lightricks/ComfyUI-LTXVideo
+https://github.com/PxTicks/ComfyUI-vlo
+https://github.com/Fannovel16/comfyui_controlnet_aux
+
 ## License
 
 Vlo is licensed under the GNU Affero General Public License v3.0 or later

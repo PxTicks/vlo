@@ -44,9 +44,10 @@ vi.mock("../TransformationGroup", () => ({
 }));
 
 describe("TransformationPanel Moving Reproduction", () => {
-  const mockUpdateClipShape = vi.fn();
-  const mockUpdateClipTransform = vi.fn();
-  const mockAddClipTransform = vi.fn();
+  const mockSetClipTransforms = vi.fn();
+  const mockSetClipTransformsAndShape = vi.fn();
+  const mockSetClipMaskCompositeTransforms = vi.fn();
+  const mockUpdateClipMask = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -89,12 +90,17 @@ describe("TransformationPanel Moving Reproduction", () => {
             ],
           },
         ],
-        updateClipShape: (_id: string, updates: Record<string, unknown>) => {
+        setClipTransforms: mockSetClipTransforms,
+        setClipTransformsAndShape: (
+          _id: string,
+          _transforms: unknown,
+          updates: Record<string, unknown>,
+        ) => {
           capturedUpdates0 = updates;
-          mockUpdateClipShape(_id, updates);
+          mockSetClipTransformsAndShape(_id, _transforms, updates);
         },
-        updateClipTransform: mockUpdateClipTransform,
-        addClipTransform: mockAddClipTransform,
+        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+        updateClipMask: mockUpdateClipMask,
         activeClip: {
           id: "clip_0",
           start: 0,
@@ -162,12 +168,17 @@ describe("TransformationPanel Moving Reproduction", () => {
             ],
           },
         ],
-        updateClipShape: (_id: string, updates: Record<string, unknown>) => {
+        setClipTransforms: mockSetClipTransforms,
+        setClipTransformsAndShape: (
+          _id: string,
+          _transforms: unknown,
+          updates: Record<string, unknown>,
+        ) => {
           capturedUpdatesMoved = updates;
-          mockUpdateClipShape(_id, updates);
+          mockSetClipTransformsAndShape(_id, _transforms, updates);
         },
-        updateClipTransform: mockUpdateClipTransform,
-        addClipTransform: mockAddClipTransform,
+        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+        updateClipMask: mockUpdateClipMask,
         activeClip: {
           id: "clip_moved",
           start: 5000, // MOVED
@@ -239,11 +250,16 @@ describe("TransformationPanel Moving Reproduction", () => {
             ],
           },
         ],
-        updateClipShape: (_id: string, updates: Record<string, unknown>) => {
+        setClipTransforms: mockSetClipTransforms,
+        setClipTransformsAndShape: (
+          _id: string,
+          _transforms: unknown,
+          updates: Record<string, unknown>,
+        ) => {
           capturedUpdates0 = updates;
         },
-        updateClipTransform: mockUpdateClipTransform,
-        addClipTransform: mockAddClipTransform,
+        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+        updateClipMask: mockUpdateClipMask,
         activeClip: {
           id: "clip_0",
           start: 0,
@@ -311,11 +327,16 @@ describe("TransformationPanel Moving Reproduction", () => {
             ],
           },
         ],
-        updateClipShape: (_id: string, updates: Record<string, unknown>) => {
+        setClipTransforms: mockSetClipTransforms,
+        setClipTransformsAndShape: (
+          _id: string,
+          _transforms: unknown,
+          updates: Record<string, unknown>,
+        ) => {
           capturedUpdatesMoved = updates;
         },
-        updateClipTransform: mockUpdateClipTransform,
-        addClipTransform: mockAddClipTransform,
+        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+        updateClipMask: mockUpdateClipMask,
         activeClip: {
           id: "clip_moved",
           start: 5000,

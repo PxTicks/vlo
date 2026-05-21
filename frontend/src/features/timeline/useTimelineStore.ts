@@ -43,6 +43,7 @@ import {
   setClipMaskBooleanExpressionInDraft,
   setClipMaskCompositionAlgebraInDraft,
   setClipMaskCompositeTransformsInDraft,
+  setClipTransformsAndShapeInDraft,
   setClipTransformsInDraft,
   splitClipInDraft,
   toggleClipMuteInDraft,
@@ -154,6 +155,11 @@ interface TimelineState extends TimelineModelState {
   ) => void;
 
   setClipTransforms: (clipId: string, transforms: ClipTransform[]) => void;
+  setClipTransformsAndShape: (
+    clipId: string,
+    transforms: ClipTransform[],
+    shape: TimelineClipShape,
+  ) => void;
   setClipMaskCompositeTransforms: (
     clipId: string,
     transforms: ClipTransform[],
@@ -488,6 +494,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     setClipTransforms: (clipId, transforms) => {
       mutationPipeline.commitModelMutation((draft) => {
         setClipTransformsInDraft(draft, clipId, transforms);
+      });
+    },
+
+    setClipTransformsAndShape: (clipId, transforms, shape) => {
+      mutationPipeline.commitModelMutation((draft) => {
+        setClipTransformsAndShapeInDraft(draft, clipId, transforms, shape);
       });
     },
 

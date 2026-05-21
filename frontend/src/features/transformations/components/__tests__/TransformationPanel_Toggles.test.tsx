@@ -11,7 +11,10 @@ describe("TransformationPanel toggles", () => {
   const mockUpdateClipTransform = vi.fn();
   const mockRemoveClipTransform = vi.fn();
   const mockSetClipTransforms = vi.fn();
+  const mockSetClipTransformsAndShape = vi.fn();
   const mockUpdateClipShape = vi.fn();
+  const mockSetClipMaskCompositeTransforms = vi.fn();
+  const mockUpdateClipMask = vi.fn();
 
   const baseClip = {
     id: "clip_1",
@@ -58,7 +61,10 @@ describe("TransformationPanel toggles", () => {
       updateClipTransform: typeof mockUpdateClipTransform;
       removeClipTransform: typeof mockRemoveClipTransform;
       setClipTransforms: typeof mockSetClipTransforms;
+      setClipTransformsAndShape: typeof mockSetClipTransformsAndShape;
       updateClipShape: typeof mockUpdateClipShape;
+      setClipMaskCompositeTransforms: typeof mockSetClipMaskCompositeTransforms;
+      updateClipMask: typeof mockUpdateClipMask;
     }) => unknown) =>
       selector({
         selectedClipIds: ["clip_1"],
@@ -72,7 +78,10 @@ describe("TransformationPanel toggles", () => {
         updateClipTransform: mockUpdateClipTransform,
         removeClipTransform: mockRemoveClipTransform,
         setClipTransforms: mockSetClipTransforms,
+        setClipTransformsAndShape: mockSetClipTransformsAndShape,
         updateClipShape: mockUpdateClipShape,
+        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+        updateClipMask: mockUpdateClipMask,
       }),
     );
   }

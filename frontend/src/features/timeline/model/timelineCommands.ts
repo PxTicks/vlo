@@ -567,6 +567,33 @@ export function updateClipPositionInDraft(
   maybeTrimAndPadTracks(draft);
 }
 
+function applyClipShape(
+  clip: TimelineClip,
+  shape: TimelineClipShape,
+): TimelineClip {
+  return {
+    ...clip,
+    start: shape.start !== undefined ? Math.round(shape.start) : clip.start,
+    timelineDuration:
+      shape.timelineDuration !== undefined
+        ? Math.round(shape.timelineDuration)
+        : clip.timelineDuration,
+    offset: shape.offset !== undefined ? Math.round(shape.offset) : clip.offset,
+    transformedDuration:
+      shape.transformedDuration !== undefined
+        ? Math.round(shape.transformedDuration)
+        : clip.transformedDuration,
+    transformedOffset:
+      shape.transformedOffset !== undefined
+        ? Math.round(shape.transformedOffset)
+        : clip.transformedOffset,
+    croppedSourceDuration:
+      shape.croppedSourceDuration !== undefined
+        ? Math.round(shape.croppedSourceDuration)
+        : clip.croppedSourceDuration,
+  };
+}
+
 export function updateClipShapeInDraft(
   draft: TimelineModelState,
   id: string,
@@ -577,27 +604,7 @@ export function updateClipShapeInDraft(
   draft.clips = draft.clips.map((clip) => {
     if (clip.id !== id) return clip;
 
-    const updated = {
-      ...clip,
-      start: shape.start !== undefined ? Math.round(shape.start) : clip.start,
-      timelineDuration:
-        shape.timelineDuration !== undefined
-          ? Math.round(shape.timelineDuration)
-          : clip.timelineDuration,
-      offset: shape.offset !== undefined ? Math.round(shape.offset) : clip.offset,
-      transformedDuration:
-        shape.transformedDuration !== undefined
-          ? Math.round(shape.transformedDuration)
-          : clip.transformedDuration,
-      transformedOffset:
-        shape.transformedOffset !== undefined
-          ? Math.round(shape.transformedOffset)
-          : clip.transformedOffset,
-      croppedSourceDuration:
-        shape.croppedSourceDuration !== undefined
-          ? Math.round(shape.croppedSourceDuration)
-          : clip.croppedSourceDuration,
-    };
+    const updated = applyClipShape(clip, shape);
 
     updatedParent = updated;
     return updated;
@@ -707,13 +714,30 @@ export function setClipTransformsInDraft(
   clipId: string,
   transforms: ClipTransform[],
 ): void {
-  draft.clips = draft.clips.map((clip) =>
-    clip.id === clipId ? { ...clip, transformations: transforms } : clip,
-  );
+  setClipTransformsAndShapeInDraft(draft, clipId, transforms);
+}
 
-  const parent = draft.clips.find((clip) => clip.id === clipId);
-  if (parent && parent.type !== "mask") {
-    draft.clips = propagateParentToMasks(draft.clips, parent);
+export function setClipTransformsAndShapeInDraft(
+  draft: TimelineModelState,
+  clipId: string,
+  transforms: ClipTransform[],
+  shape?: TimelineClipShape,
+): void {
+  let updatedParent: TimelineClip | null = null;
+
+  draft.clips = draft.clips.map((clip) => {
+    if (clip.id !== clipId) {
+      return clip;
+    }
+
+    const withTransforms = { ...clip, transformations: transforms };
+    const updated = shape ? applyClipShape(withTransforms, shape) : withTransforms;
+    updatedParent = updated;
+    return updated;
+  });
+
+  if (updatedParent && updatedParent.type !== "mask") {
+    draft.clips = propagateParentToMasks(draft.clips, updatedParent);
   }
 }
 

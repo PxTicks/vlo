@@ -12,10 +12,7 @@ import {
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { isDefaultTransform } from "../catalogue/TransformationRegistry";
 import { computeCommitMutation } from "./controller/commitComputation";
-import {
-  computeSpeedShapeUpdate,
-  computeSpeedShapeUpdateForTransforms,
-} from "./controller/speedDuration";
+import { computeSpeedShapeUpdateForTransforms } from "./controller/speedDuration";
 import { createAddTransform } from "./controller/transformFactory";
 import {
   insertTransformRespectingDefaultOrder,
@@ -55,12 +52,9 @@ export function useTransformationController(
   const targetMode = options.target ?? "clip";
   const {
     selectedClipIds,
-    addClipTransform,
-    updateClipTransform,
-    removeClipTransform,
     setClipTransforms,
+    setClipTransformsAndShape,
     setClipMaskCompositeTransforms,
-    updateClipShape,
     updateClipMask,
     activeClip,
   } = useTimelineStore(
@@ -69,11 +63,8 @@ export function useTransformationController(
       const clip = selectTimelineClipById(state, firstId);
       return {
         selectedClipIds: state.selectedClipIds,
-        addClipTransform: state.addClipTransform,
-        updateClipTransform: state.updateClipTransform,
-        removeClipTransform: state.removeClipTransform,
-        updateClipShape: state.updateClipShape,
         setClipTransforms: state.setClipTransforms,
+        setClipTransformsAndShape: state.setClipTransformsAndShape,
         setClipMaskCompositeTransforms: state.setClipMaskCompositeTransforms,
         updateClipMask: state.updateClipMask,
         activeClip: clip,
@@ -166,12 +157,48 @@ export function useTransformationController(
     activeTargetRef.current = activeTarget;
   }, [activeTarget]);
 
+  const getChangedClipShapeUpdate = useCallback(
+    (clip: TimelineClip, nextTransforms: ClipTransform[]) => {
+      const shapeUpdate = computeSpeedShapeUpdateForTransforms({
+        clip,
+        nextTransforms,
+      });
+      if (!shapeUpdate) {
+        return null;
+      }
+
+      const didTimelineDurationChange =
+        shapeUpdate.timelineDuration !== clip.timelineDuration;
+      const didTransformedDurationChange =
+        shapeUpdate.transformedDuration !== undefined &&
+        shapeUpdate.transformedDuration !== clip.transformedDuration;
+
+      return didTimelineDurationChange || didTransformedDurationChange
+        ? shapeUpdate
+        : null;
+    },
+    [],
+  );
+
   const applyTargetTransforms = useCallback(
     (nextTransforms: ClipTransform[]) => {
       const currentTarget = activeTargetRef.current;
       if (!currentTarget) return;
 
       if (currentTarget.kind === "clip") {
+        const shapeUpdate = getChangedClipShapeUpdate(
+          currentTarget.timelineClip,
+          nextTransforms,
+        );
+        if (shapeUpdate) {
+          setClipTransformsAndShape(
+            currentTarget.clipId,
+            nextTransforms,
+            shapeUpdate,
+          );
+          return;
+        }
+
         setClipTransforms(currentTarget.clipId, nextTransforms);
         return;
       }
@@ -187,7 +214,13 @@ export function useTransformationController(
         transformations: nextTransforms,
       });
     },
-    [setClipMaskCompositeTransforms, setClipTransforms, updateClipMask],
+    [
+      getChangedClipShapeUpdate,
+      setClipMaskCompositeTransforms,
+      setClipTransforms,
+      setClipTransformsAndShape,
+      updateClipMask,
+    ],
   );
 
   const updateTargetTransform = useCallback(
@@ -195,52 +228,12 @@ export function useTransformationController(
       transformId: string,
       updates: Partial<Omit<ClipTransform, "id" | "type">>,
     ) => {
-      const currentTarget = activeTargetRef.current;
-      if (!currentTarget) return;
-
-      if (currentTarget.kind === "clip") {
-        updateClipTransform(currentTarget.clipId, transformId, updates);
-        return;
-      }
-
       const nextTransforms = activeTransformsRef.current.map((transform) =>
         transform.id === transformId ? { ...transform, ...updates } : transform,
       );
       applyTargetTransforms(nextTransforms);
     },
-    [applyTargetTransforms, updateClipTransform],
-  );
-
-  const appendTargetTransform = useCallback(
-    (target: ActiveTransformTarget, transform: ClipTransform) => {
-      if (target.kind === "clip") {
-        addClipTransform(target.clipId, transform);
-        return;
-      }
-
-      applyTargetTransforms([...activeTransformsRef.current, transform]);
-    },
-    [addClipTransform, applyTargetTransforms],
-  );
-
-  const applyClipShapeUpdate = useCallback(
-    (
-      target: ActiveTransformTarget,
-      shapeUpdate:
-        | ReturnType<typeof computeSpeedShapeUpdate>
-        | ReturnType<typeof computeSpeedShapeUpdateForTransforms>,
-    ) => {
-      if (
-        !shapeUpdate ||
-        target.kind !== "clip" ||
-        typeof updateClipShape !== "function"
-      ) {
-        return;
-      }
-
-      updateClipShape(target.clipId, shapeUpdate);
-    },
-    [updateClipShape],
+    [applyTargetTransforms],
   );
 
   const applyEnabledState = useCallback(
@@ -251,7 +244,6 @@ export function useTransformationController(
 
       let nextTransforms = [...activeTransformsRef.current];
       let didChange = false;
-      let touchedSpeed = false;
 
       targets.forEach((target) => {
         const index =
@@ -269,9 +261,6 @@ export function useTransformationController(
 
           nextTransforms[index] = { ...existingTransform, isEnabled: enabled };
           didChange = true;
-          if (existingTransform.type === "speed") {
-            touchedSpeed = true;
-          }
           return;
         }
 
@@ -287,26 +276,13 @@ export function useTransformationController(
           created,
         );
         didChange = true;
-        if (created.type === "speed") {
-          touchedSpeed = true;
-        }
       });
 
       if (!didChange) return;
 
       applyTargetTransforms(nextTransforms);
-
-      if (touchedSpeed) {
-        applyClipShapeUpdate(
-          currentTarget,
-          computeSpeedShapeUpdateForTransforms({
-            clip: currentTarget.timelineClip,
-            nextTransforms,
-          }),
-        );
-      }
     },
-    [applyClipShapeUpdate, applyTargetTransforms],
+    [applyTargetTransforms],
   );
 
   const handleAddTransform = useCallback(
@@ -317,28 +293,25 @@ export function useTransformationController(
       const newTransform = createAddTransform(typeOrFilterName, isFilter);
       if (!newTransform) return;
 
-      appendTargetTransform(currentTarget, newTransform);
+      applyTargetTransforms(
+        insertTransformRespectingDefaultOrder(
+          activeTransformsRef.current,
+          newTransform,
+        ),
+      );
     },
-    [appendTargetTransform],
+    [applyTargetTransforms],
   );
 
   const handleRemoveTransform = useCallback(
     (transformId: string) => {
-      const currentTarget = activeTargetRef.current;
-      if (!currentTarget) return;
-
-      if (currentTarget.kind === "clip") {
-        removeClipTransform(currentTarget.clipId, transformId);
-        return;
-      }
-
       applyTargetTransforms(
         activeTransformsRef.current.filter(
           (transform) => transform.id !== transformId,
         ),
       );
     },
-    [applyTargetTransforms, removeClipTransform],
+    [applyTargetTransforms],
   );
 
   const handleSetTransformEnabled = useCallback(
@@ -387,45 +360,17 @@ export function useTransformationController(
             ? { keyframeTimes: commit.keyframeTimes }
             : {}),
         });
-      } else if (isDefaultTransform(commit.createdTransform.type)) {
-        const ordered = insertTransformRespectingDefaultOrder(
-          currentTransforms,
-          commit.createdTransform,
-        );
-        const appendedAtEnd =
-          ordered[ordered.length - 1]?.id === commit.createdTransform.id;
-
-        if (currentTarget.kind === "clip" && appendedAtEnd) {
-          addClipTransform(currentTarget.clipId, commit.createdTransform);
-        } else {
-          applyTargetTransforms(ordered);
-        }
       } else {
-        appendTargetTransform(currentTarget, commit.createdTransform);
+        const nextTransforms = isDefaultTransform(commit.createdTransform.type)
+          ? insertTransformRespectingDefaultOrder(
+              currentTransforms,
+              commit.createdTransform,
+            )
+          : [...currentTransforms, commit.createdTransform];
+        applyTargetTransforms(nextTransforms);
       }
-
-      applyClipShapeUpdate(
-        currentTarget,
-        computeSpeedShapeUpdate({
-          groupId,
-          controlName,
-          clip:
-            currentTarget.kind === "clip"
-              ? currentTarget.timelineClip
-              : undefined,
-          existingTransform:
-            commit.mode === "update" ? commit.existingTransform : undefined,
-          parameters: commit.parameters,
-        }),
-      );
     },
-    [
-      addClipTransform,
-      appendTargetTransform,
-      applyClipShapeUpdate,
-      applyTargetTransforms,
-      updateTargetTransform,
-    ],
+    [applyTargetTransforms, updateTargetTransform],
   );
 
   const handleReorder = useCallback(
@@ -439,15 +384,9 @@ export function useTransformationController(
         overId,
       );
       if (!reordered) return;
-
-      if (currentTarget.kind === "clip") {
-        setClipTransforms(currentTarget.clipId, reordered);
-        return;
-      }
-
       applyTargetTransforms(reordered);
     },
-    [applyTargetTransforms, setClipTransforms],
+    [applyTargetTransforms],
   );
 
   return {

@@ -231,6 +231,42 @@ describe("SpriteClipMaskController mask composition", () => {
     controller.dispose();
   });
 
+  it("hydrates image-backed SAM2 masks through the image mask path", async () => {
+    mockBrushSetHydrationContext.mockClear();
+    mockBrushSetSource.mockClear();
+
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite();
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = createParentClip();
+    const sam2Mask = createMaskClip("mask_sam2_image", {
+      maskType: "sam2",
+      sam2MaskAssetId: "sam2-image-mask-asset",
+    });
+    const sam2Asset = createImageAsset("sam2-image-mask-asset");
+
+    await controller.syncMaskClips(
+      [sam2Mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map([[sam2Asset.id, sam2Asset]]),
+    );
+
+    expect(mockBrushSetHydrationContext).toHaveBeenCalledWith({
+      canvasWidth: 1920,
+      canvasHeight: 1080,
+      paintedBounds: null,
+    });
+    expect(mockBrushSetSource).toHaveBeenCalledWith(sam2Asset);
+
+    controller.dispose();
+  });
+
   it("keeps the alpha-mask sprite active without rendering it as scene content", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSpy = vi.fn();

@@ -903,23 +903,42 @@ export function useSam2MaskPanel({
         parentClip.croppedSourceDuration || 0,
       );
 
-      const generated = await generateMaskVideo({
-        sourceId: sourceRegistration.sourceId,
-        points: sam2Points,
-        ticksPerSecond: TICKS_PER_SECOND,
-        maskId: selectedMaskId,
-        visibleSourceStartTicks,
-        visibleSourceDurationTicks,
-      });
+      let outputFile: File;
+      if (parentAsset.type === "image") {
+        const generated = await generateMaskFrame({
+          sourceId: sourceRegistration.sourceId,
+          points: sam2Points,
+          ticksPerSecond: TICKS_PER_SECOND,
+          timeTicks: visibleSourceStartTicks,
+          maskId: selectedMaskId,
+        });
+        outputFile = new File(
+          [generated.blob],
+          `${parentAsset.name}_sam2_${selectedMaskId}_${now}.png`,
+          {
+            type: generated.blob.type || "image/png",
+            lastModified: now,
+          },
+        );
+      } else {
+        const generated = await generateMaskVideo({
+          sourceId: sourceRegistration.sourceId,
+          points: sam2Points,
+          ticksPerSecond: TICKS_PER_SECOND,
+          maskId: selectedMaskId,
+          visibleSourceStartTicks,
+          visibleSourceDurationTicks,
+        });
+        outputFile = new File(
+          [generated.blob],
+          `${parentAsset.name}_sam2_${selectedMaskId}_${now}.mp4`,
+          {
+            type: generated.blob.type || "video/mp4",
+            lastModified: now,
+          },
+        );
+      }
 
-      const outputFile = new File(
-        [generated.blob],
-        `${parentAsset.name}_sam2_${selectedMaskId}_${now}.mp4`,
-        {
-          type: "video/mp4",
-          lastModified: now,
-        },
-      );
       const maskClipId = `${selectedClipId}::mask::${selectedMaskId}`;
       const createdAsset = await addLocalAsset(outputFile, {
         source: "sam2_mask",

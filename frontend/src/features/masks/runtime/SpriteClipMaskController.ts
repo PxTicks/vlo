@@ -201,11 +201,14 @@ export class SpriteClipMaskController {
     const activeAssetMasks = activeMaskClips.filter((clip) =>
       isAssetBackedMask(clip),
     );
+    const clipContentSize = this.getActiveClipContentSize(logicalDimensions);
 
     this.nodeRegistry.reconcileVectorNodes(activeVectorMasks.map((clip) => clip.id));
     this.nodeRegistry.reconcileAssetMaskNodes(
       activeAssetMasks
-        .map((clip) => this.assetMaskSourceFactory.resolveMaskEntry(clip))
+        .map((clip) =>
+          this.assetMaskSourceFactory.resolveMaskEntry(clip, assetsById),
+        )
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
     );
 
@@ -219,7 +222,6 @@ export class SpriteClipMaskController {
       return;
     }
 
-    const clipContentSize = this.getActiveClipContentSize(logicalDimensions);
     activeVectorMasks.forEach((maskClip) => {
       const node = this.nodeRegistry.getVectorNode(maskClip.id);
       if (!node) {
@@ -282,6 +284,7 @@ export class SpriteClipMaskController {
         requestedTimeSeconds: requestedMaskTimeSeconds,
         waitForAssetFrame: waitForSam2,
         skipFrameRender: skipSam2FrameRender,
+        parentClipContentSize: clipContentSize,
         assetsById,
         hasUsableTexture: (candidate) => this.hasUsableTexture(candidate),
       });

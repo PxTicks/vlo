@@ -10,6 +10,11 @@ import { TICKS_PER_SECOND, useTimelineStore } from "../../../timeline";
 import { useAssetStore } from "../../../userAssets";
 import { useMaskViewStore } from "../../store/useMaskViewStore";
 import {
+  generateMaskFrame,
+  generateMaskVideo,
+  registerSourceVideo,
+} from "../../services/sam2Api";
+import {
   disposeBrushBuffer,
   ensureBrushBuffer,
   paintBrushDot,
@@ -29,12 +34,15 @@ vi.mock("../../services/sam2Api", () => ({
   registerSourceVideo: vi.fn(),
 }));
 
-function createParentClip(id: string): TimelineClip {
+function createParentClip(
+  id: string,
+  type: TimelineClip["type"] = "video",
+): TimelineClip {
   const duration = TICKS_PER_SECOND;
   return {
     id,
     trackId: useTimelineStore.getState().tracks[0].id,
-    type: "video",
+    type,
     name: `Clip ${id}`,
     assetId: `asset_${id}`,
     sourceDuration: duration,
@@ -170,6 +178,116 @@ describe("useMaskPanel", () => {
         error: "SAM2 disabled in tests",
       },
     } satisfies RuntimeStatus);
+  });
+
+  it("generates a PNG SAM2 mask asset for image clips", async () => {
+    vi.mocked(getRuntimeStatus).mockResolvedValue({
+      backend: {
+        status: "ok",
+        mode: "development",
+        frontendBuildPresent: true,
+      },
+      comfyui: {
+        status: "disconnected",
+        url: "",
+        error: null,
+      },
+      sam2: {
+        status: "available",
+        error: null,
+      },
+    } satisfies RuntimeStatus);
+
+    const parent = createParentClip("clip_image", "image");
+    const mask = createSam2MaskClip(parent, "mask_image", "apply");
+    mask.maskPoints = [
+      { x: 0.5, y: 0.5, label: 1, timeTicks: 0 },
+    ];
+
+    const sourceFile = new File(["image-bytes"], "poster.png", {
+      type: "image/png",
+    });
+    const parentAsset = {
+      id: parent.assetId,
+      type: "image" as const,
+      name: "poster.png",
+      src: "poster.png",
+      hash: "sam2-image-parent-hash",
+      file: sourceFile,
+      createdAt: 0,
+    };
+    const addLocalAsset = vi.fn(async (file: File) => ({
+      id: "sam2_generated_asset",
+      type: "image" as const,
+      name: file.name,
+      src: "sam2_generated.png",
+      hash: "generated-image-hash",
+      file,
+      createdAt: 0,
+    }));
+    const deleteAsset = vi.fn(async () => undefined);
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: { [parent.id]: "mask_image" },
+      isMaskTabActive: true,
+    });
+    useAssetStore.setState({
+      assets: [parentAsset],
+      addLocalAsset,
+      deleteAsset,
+    });
+
+    vi.mocked(registerSourceVideo).mockResolvedValue({
+      sourceId: "sam2_source_image",
+      width: 1920,
+      height: 1080,
+      fps: 25,
+      frameCount: 1,
+      durationSec: 0.04,
+    });
+    vi.mocked(generateMaskFrame).mockResolvedValue({
+      blob: new Blob(["mask-png"], { type: "image/png" }),
+      width: 1920,
+      height: 1080,
+      frameIndex: 0,
+      timeTicks: 0,
+    });
+    vi.mocked(generateMaskVideo).mockReset();
+
+    const { result } = renderHook(() => useMaskPanel());
+
+    await act(async () => {
+      await result.current.sam2.generateSam2Mask();
+    });
+
+    await waitFor(() => {
+      expect(registerSourceVideo).toHaveBeenCalledWith(
+        sourceFile,
+        "sam2-image-parent-hash",
+      );
+      expect(generateMaskFrame).toHaveBeenCalledWith({
+        sourceId: "sam2_source_image",
+        points: mask.maskPoints,
+        ticksPerSecond: TICKS_PER_SECOND,
+        timeTicks: 0,
+        maskId: "mask_image",
+      });
+      expect(generateMaskVideo).not.toHaveBeenCalled();
+      expect(addLocalAsset).toHaveBeenCalledTimes(1);
+    });
+
+    const savedFile = addLocalAsset.mock.calls[0]?.[0] as File;
+    expect(savedFile.name).toMatch(/_sam2_mask_image_\d+\.png$/);
+    expect(savedFile.type).toBe("image/png");
+
+    const updatedMask = useTimelineStore
+      .getState()
+      .clips.find((clip): clip is MaskTimelineClip => clip.id === mask.id);
+    expect(updatedMask?.sam2MaskAssetId).toBe("sam2_generated_asset");
   });
 
   it("promotes a preview mask to apply when leaving the mask tab", async () => {

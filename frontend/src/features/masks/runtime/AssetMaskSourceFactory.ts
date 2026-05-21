@@ -58,16 +58,25 @@ export class AssetMaskSourceFactory {
     this.onAssetMaskFrameReady = onAssetMaskFrameReady;
   }
 
-  public resolveMaskEntry(maskClip: MaskTimelineClip): AssetMaskNodeEntry | null {
+  public resolveMaskEntry(
+    maskClip: MaskTimelineClip,
+    assetsById?: Map<string, Asset>,
+  ): AssetMaskNodeEntry | null {
     const assetId = getAssetBackedMaskId(maskClip);
     if (!assetId) {
       return null;
     }
 
+    const isBrushBuffer = isBrushBufferAssetId(assetId);
+    const assetType = isBrushBuffer ? "image" : assetsById?.get(assetId)?.type;
+
     return {
       maskId: maskClip.id,
       assetId,
-      kind: maskClip.maskType === "brush" ? "image" : "video",
+      kind:
+        maskClip.maskType === "brush" || assetType === "image"
+          ? "image"
+          : "video",
     };
   }
 
@@ -98,6 +107,7 @@ export class AssetMaskSourceFactory {
       requestedTimeSeconds: number;
       waitForAssetFrame: boolean;
       skipFrameRender: boolean;
+      parentClipContentSize: { width: number; height: number };
       assetsById: Map<string, Asset>;
       hasUsableTexture: (sprite: Sprite) => boolean;
     },
@@ -110,13 +120,21 @@ export class AssetMaskSourceFactory {
     const isBrushBuffer = isBrushBufferAssetId(maskAssetId);
     const asset = isBrushBuffer ? null : options.assetsById.get(maskAssetId);
 
-    if (maskClip.maskType === "brush" && node.player instanceof BrushBufferMaskSource) {
-      const params = maskClip.maskParameters;
-      node.player.setHydrationContext({
-        canvasWidth: Math.max(1, params?.baseWidth ?? 1),
-        canvasHeight: Math.max(1, params?.baseHeight ?? 1),
-        paintedBounds: maskClip.brushPaintedBounds ?? null,
-      });
+    if (node.player instanceof BrushBufferMaskSource) {
+      if (maskClip.maskType === "brush") {
+        const params = maskClip.maskParameters;
+        node.player.setHydrationContext({
+          canvasWidth: Math.max(1, params?.baseWidth ?? 1),
+          canvasHeight: Math.max(1, params?.baseHeight ?? 1),
+          paintedBounds: maskClip.brushPaintedBounds ?? null,
+        });
+      } else {
+        node.player.setHydrationContext({
+          canvasWidth: Math.max(1, Math.round(options.parentClipContentSize.width)),
+          canvasHeight: Math.max(1, Math.round(options.parentClipContentSize.height)),
+          paintedBounds: null,
+        });
+      }
     }
 
     if (asset) {

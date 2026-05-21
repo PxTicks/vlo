@@ -186,6 +186,65 @@ def test_extract_video_frames_to_jpeg_uses_requested_window(tmp_path: Path) -> N
         assert image.size == (5, 4)
 
 
+def test_initialize_inference_state_falls_back_to_jpeg_frames_when_prepare_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakePredictor:
+        def __init__(self) -> None:
+            self.init_calls: list[str] = []
+
+        def init_state(self, video_path: str) -> dict[str, str]:
+            self.init_calls.append(video_path)
+            return {"video_path": video_path}
+
+    source_path = tmp_path / "source.png"
+    source_path.write_bytes(b"image")
+    source = Sam2SourceMetadata(
+        source_id="source_1",
+        source_hash="source_1",
+        path=source_path,
+        width=5,
+        height=3,
+        fps=25.0,
+        frame_count=1,
+        duration_sec=1 / 25.0,
+    )
+    prepared_frames_path = tmp_path / "frames"
+    fake_predictor = FakePredictor()
+
+    def fake_ensure_prepared_video(
+        _source: Sam2SourceMetadata,
+        normalized_mp4: bool,
+    ) -> Path:
+        del normalized_mp4
+        raise Sam2RuntimeError("video normalization unavailable")
+
+    monkeypatch.setattr(
+        sam2_service,
+        "_ensure_prepared_video",
+        fake_ensure_prepared_video,
+    )
+    monkeypatch.setattr(
+        sam2_service,
+        "_ensure_prepared_jpeg_frames",
+        lambda _source, video_path, frame_window=None: prepared_frames_path,
+    )
+
+    inference_state, prepared_path, frame_index_offset, frame_count = (
+        sam2_service._initialize_inference_state(
+            predictor=fake_predictor,
+            source=source,
+        )
+    )
+
+    assert inference_state == {"video_path": str(prepared_frames_path)}
+    assert prepared_path == prepared_frames_path
+    assert frame_index_offset == 0
+    assert frame_count == 1
+    assert fake_predictor.init_calls == [str(prepared_frames_path)]
+
+
 def test_encode_png_frame_returns_valid_grayscale_png() -> None:
     frame = np.array(
         [

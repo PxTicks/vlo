@@ -873,19 +873,27 @@ def _initialize_inference_state(
     source_suffix = source_path.suffix.lower()
 
     if source_suffix != ".mp4":
-        prepared = _ensure_prepared_video(source, normalized_mp4=False)
-        initialized = _try_init(prepared)
-        if initialized is not None:
-            return initialized
+        try:
+            prepared = _ensure_prepared_video(source, normalized_mp4=False)
+        except Exception as exc:
+            errors.append(f"{source_path.name}/(prepared-mp4): {exc}")
+        else:
+            initialized = _try_init(prepared)
+            if initialized is not None:
+                return initialized
     else:
         initialized = _try_init(source_path)
         if initialized is not None:
             return initialized
 
-        prepared = _ensure_prepared_video(source, normalized_mp4=True)
-        initialized = _try_init(prepared)
-        if initialized is not None:
-            return initialized
+        try:
+            prepared = _ensure_prepared_video(source, normalized_mp4=True)
+        except Exception as exc:
+            errors.append(f"{source_path.name}/(normalized-mp4): {exc}")
+        else:
+            initialized = _try_init(prepared)
+            if initialized is not None:
+                return initialized
 
     # Some SAM2 variants accept a JPEG frame directory instead of a video file.
     fallback_video_path = attempted_video_paths[-1] if attempted_video_paths else source.path

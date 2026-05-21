@@ -101,14 +101,6 @@ export function WorkflowDependencyResolver({
   const [workflowModels, setWorkflowModels] = useState<DownloadableModel[]>([]);
   const [loading, setLoading] = useState(false);
   const workflowModelsRequestIdRef = useRef(0);
-  const missingModelsKey = useMemo(
-    () =>
-      warning.missingModels
-        .map((modelName) => normalizeModelName(modelName))
-        .sort()
-        .join("\n"),
-    [warning.missingModels],
-  );
 
   const fetchWorkflowModels = useCallback(async () => {
     const requestId = workflowModelsRequestIdRef.current + 1;
@@ -137,7 +129,7 @@ export function WorkflowDependencyResolver({
         setLoading(false);
       }
     }
-  }, [missingModelsKey, warning.missingModels.length, workflowId]);
+  }, [warning.missingModels.length, workflowId]);
 
   // Fetch-on-mount + refetch-on-dep-change is the documented escape hatch
   // for the react-hooks/set-state-in-effect rule when no data-fetching

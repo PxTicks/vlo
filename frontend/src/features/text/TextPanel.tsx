@@ -88,6 +88,9 @@ function TextFormFields({
     [onChange],
   );
 
+  // Keyed on editorKey, not value: RichTextInput is remounted via key={editorKey}
+  // and only reads initialValue at mount, so deliberately snapshot value then.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const initialRuns = useMemo(() => textDataToInitialRuns(value), [editorKey]);
 
   const handleContentCommit = useCallback(

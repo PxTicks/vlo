@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Graphics } from "pixi.js";
 import type { Application, Container, FederatedPointerEvent, Sprite } from "pixi.js";
 import { getTimelineClipById, useTimelineStore } from "../../../timeline";
@@ -151,13 +151,13 @@ export function useTransformInteractionController(
 
   const interactionRef = useRef<InteractionState>(createInitialInteractionState());
   const pathOverlayRef = useRef<Graphics | null>(null);
-  const resolveViewportCenter = (): Point2D | null => {
+  const resolveViewportCenter = useCallback((): Point2D | null => {
     if (!app || !viewport) return null;
     return toViewportLocal(viewport, {
       x: app.screen.width / 2,
       y: app.screen.height / 2,
     });
-  };
+  }, [app, viewport]);
 
   const handlers = useMemo(() => {
     const findClipById = (clipId: string): TimelineClip | null => {
@@ -1048,7 +1048,7 @@ export function useTransformInteractionController(
         pathOverlayRef.current.visible = false;
       }
     };
-  }, [activeClipRef, app, selectedClipId, sprite]);
+  }, [activeClipRef, app, selectedClipId, sprite, resolveViewportCenter]);
 
   useEffect(() => {
     return () => {

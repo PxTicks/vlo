@@ -41,9 +41,17 @@ export function useSplinePopover({
   const cancelSession = useSplineEditSessionStore((state) => state.cancelSession);
   const clearSession = useSplineEditSessionStore((state) => state.clearSession);
 
+  // `sessionId` drives render-time derivation; the ref mirrors it so handlers
+  // and the unmount cleanup can read the latest value without re-running.
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const updateSessionId = useCallback((id: string | null) => {
+    sessionIdRef.current = id;
+    setSessionId(id);
+  }, []);
+
   const sessionValue =
-    sessionIdRef.current !== null && activeSession?.id === sessionIdRef.current
+    sessionId !== null && activeSession?.id === sessionId
       ? activeSession.history[activeSession.historyIndex]
       : undefined;
   const effectiveValue = sessionValue ?? value;
@@ -122,7 +130,7 @@ export function useSplinePopover({
         originalTargetSnapshot,
         initialValue: initialSplineValue,
       });
-      sessionIdRef.current = sessionId;
+      updateSessionId(sessionId);
 
       if (!isSplineParameter(value)) {
         onCommit(initialSplineValue);
@@ -146,6 +154,7 @@ export function useSplinePopover({
       numericValue,
       onCommit,
       setActiveSpline,
+      updateSessionId,
       value,
     ],
   );
@@ -154,11 +163,11 @@ export function useSplinePopover({
     const sessionId = sessionIdRef.current;
     if (sessionId) {
       acceptSession(sessionId);
-      sessionIdRef.current = null;
+      updateSessionId(null);
     }
     setAnchorEl(null);
     setActiveSpline(null);
-  }, [acceptSession, setActiveSpline]);
+  }, [acceptSession, setActiveSpline, updateSessionId]);
 
   const handleCancel = useCallback(() => {
     const sessionId = sessionIdRef.current;
@@ -167,12 +176,12 @@ export function useSplinePopover({
       if (session) {
         restoreSnapshot?.(session.originalTargetSnapshot);
       }
-      sessionIdRef.current = null;
+      updateSessionId(null);
     }
 
     setAnchorEl(null);
     setActiveSpline(null);
-  }, [cancelSession, restoreSnapshot, setActiveSpline]);
+  }, [cancelSession, restoreSnapshot, setActiveSpline, updateSessionId]);
 
   const handleClear = useCallback(() => {
     // Flatten the spline to a constant default value

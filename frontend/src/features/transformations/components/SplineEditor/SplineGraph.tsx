@@ -124,6 +124,7 @@ export function SplineGraph({
     }
 
     const nextPoints = sanitizePoints(value.points);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalPointsState(nextPoints);
   }, [dragIdx, sanitizePoints, setLocalPointsState, value.points]);
 
@@ -140,6 +141,7 @@ export function SplineGraph({
       if (point.value > targetMax) targetMax = point.value;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setViewMin(Math.max(minY, targetMin));
     setViewMax(Math.min(maxY, targetMax));
   }, [dragIdx, maxY, minY, softMax, softMin, value.points]);
@@ -276,8 +278,6 @@ export function SplineGraph({
     [
       commitPoints,
       constrainMonotoneIncreasing,
-      duration,
-      graphWidth,
       height,
       maxTime,
       maxY,

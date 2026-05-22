@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeStatus } from "../../../../types/RuntimeStatus";
 import type {
+  AssetBackedClipType,
+  AssetBackedTimelineClip,
   MaskTimelineClip,
   TimelineClip,
 } from "../../../../types/TimelineTypes";
@@ -36,8 +38,8 @@ vi.mock("../../services/sam2Api", () => ({
 
 function createParentClip(
   id: string,
-  type: TimelineClip["type"] = "video",
-): TimelineClip {
+  type: AssetBackedClipType = "video",
+): AssetBackedTimelineClip {
   const duration = TICKS_PER_SECOND;
   return {
     id,
@@ -54,7 +56,7 @@ function createParentClip(
     croppedSourceDuration: duration,
     transformations: [],
     components: [],
-  };
+  } as AssetBackedTimelineClip;
 }
 
 function createSam2MaskClip(

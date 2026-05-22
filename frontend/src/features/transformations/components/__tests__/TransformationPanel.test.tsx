@@ -48,6 +48,7 @@ describe("TransformationPanel", () => {
         transformations: Array<{
           id: string;
           type: string;
+          isEnabled: boolean;
           parameters: Record<string, unknown>;
         }>;
       }>;

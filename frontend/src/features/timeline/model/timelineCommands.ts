@@ -723,19 +723,16 @@ export function setClipTransformsAndShapeInDraft(
   transforms: ClipTransform[],
   shape?: TimelineClipShape,
 ): void {
-  let updatedParent: TimelineClip | null = null;
-
   draft.clips = draft.clips.map((clip) => {
     if (clip.id !== clipId) {
       return clip;
     }
 
     const withTransforms = { ...clip, transformations: transforms };
-    const updated = shape ? applyClipShape(withTransforms, shape) : withTransforms;
-    updatedParent = updated;
-    return updated;
+    return shape ? applyClipShape(withTransforms, shape) : withTransforms;
   });
 
+  const updatedParent = draft.clips.find((clip) => clip.id === clipId);
   if (updatedParent && updatedParent.type !== "mask") {
     draft.clips = propagateParentToMasks(draft.clips, updatedParent);
   }

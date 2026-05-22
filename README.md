@@ -17,12 +17,13 @@ Vlo requires chromium-based browsers to work. I have tested in edge and chrome, 
   - Includes automatic cropping and stitching for video inpainting workflows.
 - ComfyUI bridge, allowing images, videos and timeline selections to be sent to ComfyUI
   - Includes automatic aspect ratio adjustment (video models such as WAN and LTX2.3 cannot do all aspect ratios exactly).
-- Built in stackable adjustments and filters
+- Built-in stackable adjustments and filters
 - Keyframes and spline editor for all transformations (layout, adjustments and filter effects)
 - Snappable markers and beat detection
 - Asset organisation (automatic groups, favourites)
 - ComfyUI-backed workflows for interpolation and image and video upscaling.
 - Mask algebera (unions, intersections etc)
+- Draggable motion paths
 
 ## Changelog (v0.2.0)
 
@@ -33,7 +34,9 @@ Vlo requires chromium-based browsers to work. I have tested in edge and chrome, 
 - Added new workflows, including Wan TTM, animate, LTX edit and inpaint, SeedVR upscaling, GIMM-VFI interpolation.
 - Added composite clips [caution - very experimental!]
 - Added asset groups and favourites
-- Updated mask rendering entirely, greatly improved efficiency and usability
+- Updated mask rendering entirely, improving efficiently
+- Added mask algebra, for creating complex masks (e.g. edge masks)
+- Added draggable motion paths
 
 ## Install
 

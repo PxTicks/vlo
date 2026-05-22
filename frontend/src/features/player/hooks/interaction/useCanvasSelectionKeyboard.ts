@@ -40,6 +40,7 @@ function getFallbackMaskId(
 
 export function useCanvasSelectionKeyboard() {
   const removeClip = useTimelineStore((state) => state.removeClip);
+  const removeClips = useTimelineStore((state) => state.removeClips);
   const removeClipMask = useTimelineStore((state) => state.removeClipMask);
   const selectClip = useTimelineStore((state) => state.selectClip);
   const setSelectedMask = useMaskViewStore((state) => state.setSelectedMask);
@@ -78,7 +79,16 @@ export function useCanvasSelectionKeyboard() {
         return;
       }
 
-      removeClip(activeSelection.clipId);
+      const { selectedClipIds } = useTimelineStore.getState();
+      const clipIdsToRemove = selectedClipIds.includes(activeSelection.clipId)
+        ? selectedClipIds
+        : [activeSelection.clipId];
+
+      if (clipIdsToRemove.length > 1) {
+        removeClips(clipIdsToRemove);
+      } else {
+        removeClip(activeSelection.clipId);
+      }
       selectClip(null);
       selectionStore.clearSelection();
     };
@@ -86,5 +96,5 @@ export function useCanvasSelectionKeyboard() {
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () =>
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, [removeClip, removeClipMask, selectClip, setSelectedMask]);
+  }, [removeClip, removeClips, removeClipMask, selectClip, setSelectedMask]);
 }

@@ -340,7 +340,7 @@ function TimelineClipComponent({
     const store = useTimelineStore.getState();
     const ids =
       store.selectedClipIds.length > 0 ? store.selectedClipIds : [clip.id];
-    ids.forEach((id) => store.removeClip(id));
+    store.removeClips(ids);
     store.selectClip(null);
     closeContextMenu();
   };

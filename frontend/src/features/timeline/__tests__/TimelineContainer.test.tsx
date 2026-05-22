@@ -344,7 +344,43 @@ describe("TimelineContainer", () => {
     });
   });
 
-  it("handles Delete key to remove selected clips", () => {
+  it("handles Delete key to remove all selected clips", () => {
+    useTimelineStore.setState({
+      clips: [
+        {
+          id: "c1",
+          trackId: "t1",
+          type: "video",
+          name: "Clip 1",
+          assetId: "asset-1",
+          start: 0,
+          timelineDuration: 100,
+          offset: 0,
+          croppedSourceDuration: 100,
+          transformedOffset: 0,
+          sourceDuration: 100,
+          transformedDuration: 100,
+          transformations: [],
+        },
+        {
+          id: "c2",
+          trackId: "t2",
+          type: "video",
+          name: "Clip 2",
+          assetId: "asset-2",
+          start: 120,
+          timelineDuration: 100,
+          offset: 0,
+          croppedSourceDuration: 100,
+          transformedOffset: 0,
+          sourceDuration: 100,
+          transformedDuration: 100,
+          transformations: [],
+        },
+      ],
+      selectedClipIds: ["c1", "c2"],
+    });
+
     render(
       <TimelineContainer
         scrollContainerRef={mockScrollRef}
@@ -354,6 +390,7 @@ describe("TimelineContainer", () => {
 
     fireEvent.keyDown(window, { key: "Delete" });
 
+    expect(useTimelineStore.getState().clips).toEqual([]);
     expect(useTimelineStore.getState().selectedClipIds).toEqual([]);
   });
 

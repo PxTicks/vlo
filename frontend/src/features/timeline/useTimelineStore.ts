@@ -124,6 +124,7 @@ interface TimelineState extends TimelineModelState {
   ) => void;
 
   removeClip: (id: string) => void;
+  removeClips: (ids: string[]) => boolean;
   removeClipsByAssetId: (assetId: string) => number;
   replaceClipAsset: (clipId: string, asset: Asset) => void;
 
@@ -226,6 +227,25 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   mutationPipeline.registerBeforeUnloadPersistence();
 
   const initial = createDefaultTimelineSnapshot();
+  const removeClipsFromTimeline = (clipIds: string[]): boolean => {
+    const normalizedClipIds = [...new Set(clipIds.filter(Boolean))];
+    if (normalizedClipIds.length === 0) {
+      return false;
+    }
+
+    // Group removals into a single commit so undo/redo restores the set
+    // atomically instead of stepping through one clip at a time.
+    const removalPlan = planTimelineRemoval(get().clips, normalizedClipIds);
+    const didCommit = mutationPipeline.commitModelMutation((draft) => {
+      removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
+    });
+
+    if (didCommit) {
+      mutationPipeline.runPostCommitEffects(removalPlan);
+    }
+
+    return didCommit;
+  };
 
   return {
     tracks: initial.tracks,
@@ -390,14 +410,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     removeClip: (id) => {
-      const removalPlan = planTimelineRemoval(get().clips, [id]);
-      const didCommit = mutationPipeline.commitModelMutation((draft) => {
-        removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
-      });
+      removeClipsFromTimeline([id]);
+    },
 
-      if (didCommit) {
-        mutationPipeline.runPostCommitEffects(removalPlan);
-      }
+    removeClips: (ids) => {
+      return removeClipsFromTimeline(ids);
     },
 
     removeClipsByAssetId: (assetId) => {

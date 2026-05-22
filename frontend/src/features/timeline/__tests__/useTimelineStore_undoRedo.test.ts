@@ -150,6 +150,31 @@ describe("useTimelineStore undo/redo", () => {
     expect(useTimelineStore.getState().clips).toHaveLength(1);
   });
 
+  it("undoes grouped clip removal in a single history step", () => {
+    const clipA = createClip("clip-a", "track_current", 0, 100);
+    const clipB = createClip("clip-b", "track_current", 150, 100);
+
+    act(() => {
+      useTimelineStore.getState().addClip(clipA);
+      useTimelineStore.getState().addClip(clipB);
+      expect(useTimelineStore.getState().removeClips([clipA.id, clipB.id])).toBe(
+        true,
+      );
+    });
+
+    expect(useTimelineStore.getState().clips).toHaveLength(0);
+
+    act(() => {
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+
+    expect(useTimelineStore.getState().clips.map((clip) => clip.id)).toEqual([
+      clipA.id,
+      clipB.id,
+    ]);
+    expect(useTimelineStore.getState().canRedo).toBe(true);
+  });
+
   it("preserves parent speed inheritance to masks through undo/redo", () => {
     const clip = createClip("parent", "track_current", 0, 120);
     const mask: ClipMask = {

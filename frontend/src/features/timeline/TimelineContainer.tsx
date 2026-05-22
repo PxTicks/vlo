@@ -78,7 +78,7 @@ function TimelineContainerComponent({
     tracks,
     clips,
     selectClip,
-    removeClip,
+    removeClips,
     copySelectedClip,
     pasteCopiedClipAbove,
     undo,
@@ -91,7 +91,7 @@ function TimelineContainerComponent({
       tracks: state.tracks,
       clips: state.clips,
       selectClip: state.selectClip,
-      removeClip: state.removeClip,
+      removeClips: state.removeClips,
       copySelectedClip: state.copySelectedClip,
       pasteCopiedClipAbove: state.pasteCopiedClipAbove,
       undo: state.undo,
@@ -331,7 +331,7 @@ function TimelineContainerComponent({
 
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
-        selectedClipIds.forEach((id) => removeClip(id));
+        removeClips(selectedClipIds);
         selectClip(null);
       }
     };
@@ -340,7 +340,7 @@ function TimelineContainerComponent({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     selectedClipIds,
-    removeClip,
+    removeClips,
     selectClip,
     copySelectedClip,
     pasteCopiedClipAbove,

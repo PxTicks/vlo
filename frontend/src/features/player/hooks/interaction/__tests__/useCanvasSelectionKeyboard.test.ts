@@ -11,10 +11,13 @@ import { useAssetBrowserSelectionStore } from "../../../../userAssets";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
 import { useCanvasSelectionKeyboard } from "../useCanvasSelectionKeyboard";
 
-function createParentClip(trackId: string): TimelineClip {
+function createParentClip(
+  trackId: string,
+  id: string = "clip_mask_parent",
+): TimelineClip {
   const duration = TICKS_PER_SECOND;
   return {
-    id: "clip_mask_parent",
+    id,
     trackId,
     type: "video",
     name: "Clip",
@@ -131,6 +134,26 @@ describe("useCanvasSelectionKeyboard", () => {
       selectedClipIds: [parent.id],
     });
     useCanvasSelectionStore.getState().selectClip(parent.id);
+
+    renderHook(() => useCanvasSelectionKeyboard());
+
+    fireEvent.keyDown(window, { key: "Delete" });
+
+    expect(useTimelineStore.getState().clips).toEqual([]);
+    expect(useTimelineStore.getState().selectedClipIds).toEqual([]);
+    expect(useCanvasSelectionStore.getState().activeSelection).toBeNull();
+  });
+
+  it("deletes all selected clips when the active sprite is multiselected", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const primary = createParentClip(trackId, "clip-primary");
+    const secondary = createParentClip(trackId, "clip-secondary");
+
+    useTimelineStore.setState({
+      clips: [primary, secondary],
+      selectedClipIds: [primary.id, secondary.id],
+    });
+    useCanvasSelectionStore.getState().selectClip(primary.id);
 
     renderHook(() => useCanvasSelectionKeyboard());
 

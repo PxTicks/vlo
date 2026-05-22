@@ -95,7 +95,7 @@ pip requirements files with `python scripts/sync-backend-requirements.py`.
 For SAM2 setup, make sure that torch with CUDA is installed in the backend venv, e.g.
 
 ```bash
-pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
 
 Being sure to install the version for your correct cuda environment, see <https://pytorch.org/>.

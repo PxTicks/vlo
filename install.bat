@@ -192,7 +192,7 @@ if /I "!INSTALL_CUDA_TORCH!"=="NO" goto :skip_cuda_torch
 echo [INFO]  Installing CUDA PyTorch...
 :: The backend venv is created by `uv sync` and does NOT contain pip, so install
 :: through `uv pip` targeting that venv rather than `python -m pip`.
-call "%UV_BIN%" pip install --python "%SCRIPT_DIR%backend\.venv\Scripts\python.exe" torch torchvision --index-url https://download.pytorch.org/whl/cu128
+call "%UV_BIN%" pip install --python "%SCRIPT_DIR%backend\.venv\Scripts\python.exe" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 if %errorlevel% neq 0 (
     echo [WARN]  CUDA PyTorch installation failed. Attempting to proceed anyway...
 )

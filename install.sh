@@ -365,7 +365,7 @@ case "${install_sam2}" in
                 ;;
             *)
                 info "Installing CUDA PyTorch..."
-                if ! "$UV_BIN" pip install --python "$VENV_PY" torch torchvision --index-url https://download.pytorch.org/whl/cu128; then
+                if ! "$UV_BIN" pip install --python "$VENV_PY" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128; then
                     warn "CUDA PyTorch installation failed. Attempting to proceed anyway..."
                 fi
                 ;;

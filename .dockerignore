@@ -1,0 +1,8 @@
+# Keep the repo-root Docker context tiny.
+# The Runpod image builds app code from the local git ref plus the startup script.
+*
+!.git
+!.git/**
+!deploy
+!deploy/runpod
+!deploy/runpod/**

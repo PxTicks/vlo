@@ -410,10 +410,6 @@ function resolveDualSamplerDenoiseWidget(
     startStep === null ||
     baseSplitStep === null
   ) {
-    console.warn(
-      "[resolveWidgetInputs] Skipping derived widget '%s': missing numeric workflow params",
-      rule.id,
-    );
     return null;
   }
 
@@ -477,10 +473,6 @@ function resolveSingleSamplerDenoiseWidget(
   );
 
   if (totalSteps === null || startStep === null) {
-    console.warn(
-      "[resolveWidgetInputs] Skipping derived widget '%s': missing numeric workflow params",
-      rule.id,
-    );
     return null;
   }
 
@@ -686,7 +678,6 @@ export function resolveWidgetInputsFromRules(
 ): WorkflowWidgetInput[] {
   const workflowNodes = workflow ?? {};
   if (!workflow && !options.graphData) {
-    console.debug("[resolveWidgetInputs] No workflow or graph data provided");
     return [];
   }
 
@@ -696,20 +687,6 @@ export function resolveWidgetInputsFromRules(
     options.inputMetadata ?? {},
   );
   const ruleNodes = rules.nodes ?? {};
-  const nodesWithWidgets = Object.entries(ruleNodes).filter(
-    ([, nodeRule]) => nodeRule.widgets && Object.keys(nodeRule.widgets).length > 0,
-  );
-  console.info(
-    "[resolveWidgetInputs] Rules have %d nodes with widgets: %s",
-    nodesWithWidgets.length,
-    nodesWithWidgets.map(([id]) => id),
-  );
-  console.info(
-    "[resolveWidgetInputs] Workflow has %d node IDs: %s",
-    Object.keys(workflowNodes).length,
-    Object.keys(workflowNodes).slice(0, 20),
-  );
-
   const rawWidgets: WorkflowWidgetInput[] = [];
 
   for (const [nodeId, nodeRule] of Object.entries(ruleNodes)) {
@@ -721,13 +698,6 @@ export function resolveWidgetInputsFromRules(
     const workflowNode = isRecord(nodeData) ? nodeData : null;
     const graphNode = resolveGraphNode(options.graphData, nodeId);
     const nodeExists = workflowNode !== null || graphNode !== null;
-    if (!nodeExists) {
-      console.debug(
-        "[resolveWidgetInputs] Node %s has widget rules but is not in workflow (keys sample: %s)",
-        nodeId,
-        Object.keys(workflowNodes).slice(0, 10),
-      );
-    }
     const nodeInputs =
       workflowNode && isRecord(workflowNode.inputs) ? workflowNode.inputs : {};
     const classType =
@@ -760,11 +730,6 @@ export function resolveWidgetInputsFromRules(
           : undefined;
       const hasGraphValue = resolvedGraphValue !== undefined;
       if (!nodeExists && !(entry.frontend_only === true && hasExplicitDefault)) {
-        console.debug(
-          "[resolveWidgetInputs] Skipping %s.%s: node is not present in workflow",
-          nodeId,
-          param,
-        );
         continue;
       }
 
@@ -774,22 +739,12 @@ export function resolveWidgetInputsFromRules(
         entry.frontend_only !== true &&
         !hasExplicitDefault
       ) {
-        console.debug(
-          "[resolveWidgetInputs] Skipping %s.%s: param is not present in workflow node inputs",
-          nodeId,
-          param,
-        );
         continue;
       }
 
       // Skip params whose value in the workflow is a link [nodeId, outputIndex]
       const rawValue = nodeInputs[param];
       if (Array.isArray(rawValue) && rawValue.length === 2) {
-        console.debug(
-          "[resolveWidgetInputs] Skipping %s.%s: value is a link",
-          nodeId,
-          param,
-        );
         continue;
       }
 
@@ -856,7 +811,6 @@ export function resolveWidgetInputsFromRules(
   );
   const result = [...frontendControls, ...rawWidgets, ...derivedWidgets];
 
-  console.info("[resolveWidgetInputs] Resolved %d widget inputs", result.length);
   return result;
 }
 

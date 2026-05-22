@@ -25,9 +25,11 @@ interface NumericControlProps {
   minTime: number;
   duration: number;
   groupId: string;
-  context?: { clipId: string; transformId: string; property: string };
+  context?: { contextId: string; transformId?: string; property: string };
   transformId?: string;
   disabled?: boolean;
+  captureSnapshot?: () => unknown | null;
+  restoreSnapshot?: (snapshot: unknown) => void;
 }
 
 // --- Spline toggle button (shared between ScalarControl and SliderControl) ---
@@ -71,17 +73,30 @@ function ScalarControl({
   context,
   transformId,
   disabled,
+  captureSnapshot,
+  restoreSnapshot,
 }: NumericControlProps) {
   const {
     isSpline,
     numericValue,
     anchorEl,
     open,
+    editorValue,
+    commitSessionValue,
     handleOpenGraph,
     handleAccept,
     handleCancel,
     handleClear,
-  } = useSplinePopover({ value, onCommit, minTime, duration, defaultValue: control.defaultValue, context });
+  } = useSplinePopover({
+    value,
+    onCommit,
+    minTime,
+    duration,
+    defaultValue: control.defaultValue,
+    context,
+    captureSnapshot,
+    restoreSnapshot,
+  });
 
   // Ref forwarded to the underlying <input> element of BufferedInput.
   // Updated imperatively by liveParamStore during playback — no React re-render.
@@ -124,8 +139,8 @@ function ScalarControl({
         onCancel={handleCancel}
         onClear={handleClear}
         isSpline={isSpline}
-        value={value}
-        onCommit={onCommit}
+        value={editorValue}
+        onCommit={commitSessionValue}
         control={control}
         minTime={minTime}
         duration={duration}
@@ -145,17 +160,30 @@ function TransformSliderControl({
   context,
   transformId,
   disabled,
+  captureSnapshot,
+  restoreSnapshot,
 }: NumericControlProps) {
   const {
     isSpline,
     numericValue,
     anchorEl,
     open,
+    editorValue,
+    commitSessionValue,
     handleOpenGraph,
     handleAccept,
     handleCancel,
     handleClear,
-  } = useSplinePopover({ value, onCommit, minTime, duration, defaultValue: control.defaultValue, context });
+  } = useSplinePopover({
+    value,
+    onCommit,
+    minTime,
+    duration,
+    defaultValue: control.defaultValue,
+    context,
+    captureSnapshot,
+    restoreSnapshot,
+  });
 
   const min = control.min ?? 0;
   const max = control.max ?? 100;
@@ -302,8 +330,8 @@ function TransformSliderControl({
         onCancel={handleCancel}
         onClear={handleClear}
         isSpline={isSpline}
-        value={value}
-        onCommit={onCommit}
+        value={editorValue}
+        onCommit={commitSessionValue}
         control={control}
         minTime={minTime}
         duration={duration}
@@ -329,6 +357,8 @@ interface ControlRendererProps {
   minTime?: number;
   duration?: number;
   disabled?: boolean;
+  captureSnapshot?: () => unknown | null;
+  restoreSnapshot?: (snapshot: unknown) => void;
 }
 
 export const ControlRenderer = memo(function ControlRenderer({
@@ -341,11 +371,13 @@ export const ControlRenderer = memo(function ControlRenderer({
   minTime = 0,
   duration = 10,
   disabled = false,
+  captureSnapshot,
+  restoreSnapshot,
 }: ControlRendererProps) {
   const context = useMemo(
     () =>
-      transformId && clipId
-        ? { clipId, transformId, property: control.name }
+      clipId
+        ? { contextId: clipId, transformId, property: control.name }
         : undefined,
     [transformId, clipId, control.name],
   );
@@ -361,6 +393,8 @@ export const ControlRenderer = memo(function ControlRenderer({
         context={context}
         transformId={transformId}
         groupId={groupId}
+        captureSnapshot={captureSnapshot}
+        restoreSnapshot={restoreSnapshot}
         disabled={disabled}
       />
     );
@@ -377,6 +411,8 @@ export const ControlRenderer = memo(function ControlRenderer({
         context={context}
         transformId={transformId}
         groupId={groupId}
+        captureSnapshot={captureSnapshot}
+        restoreSnapshot={restoreSnapshot}
         disabled={disabled}
       />
     );

@@ -39,6 +39,53 @@ interface ActiveTransformTarget {
   transforms: ClipTransform[];
 }
 
+interface ClipSplineEditTargetSnapshot {
+  kind: "clip";
+  clipId: string;
+  transforms: ClipTransform[];
+  shape: Pick<
+    TimelineClip,
+    | "timelineDuration"
+    | "offset"
+    | "transformedDuration"
+    | "transformedOffset"
+    | "croppedSourceDuration"
+  >;
+}
+
+interface MaskSplineEditTargetSnapshot {
+  kind: "mask";
+  clipId: string;
+  maskId: string;
+  transforms: ClipTransform[];
+}
+
+interface MaskCompositeSplineEditTargetSnapshot {
+  kind: "maskComposite";
+  clipId: string;
+  transforms: ClipTransform[];
+}
+
+type SplineEditTargetSnapshot =
+  | ClipSplineEditTargetSnapshot
+  | MaskSplineEditTargetSnapshot
+  | MaskCompositeSplineEditTargetSnapshot;
+
+function isSplineEditTargetSnapshot(
+  value: unknown,
+): value is SplineEditTargetSnapshot {
+  if (typeof value !== "object" || value === null || !("kind" in value)) {
+    return false;
+  }
+
+  const candidate = value as { kind?: unknown };
+  return (
+    candidate.kind === "clip" ||
+    candidate.kind === "mask" ||
+    candidate.kind === "maskComposite"
+  );
+}
+
 /** Get mask-local transforms (excluding inherited speed transforms). */
 function getMaskLocalTransforms(maskClip: TimelineClip): ClipTransform[] {
   return (maskClip.transformations || []).filter(
@@ -228,6 +275,83 @@ export function useTransformationController(
     ],
   );
 
+  const captureActiveTargetSnapshot =
+    useCallback((): SplineEditTargetSnapshot | null => {
+      const currentTarget = activeTargetRef.current;
+      if (!currentTarget) {
+        return null;
+      }
+
+      if (currentTarget.kind === "clip") {
+        return {
+          kind: "clip",
+          clipId: currentTarget.clipId,
+          transforms: structuredClone(currentTarget.transforms),
+          shape: {
+            timelineDuration: currentTarget.timelineClip.timelineDuration,
+            offset: currentTarget.timelineClip.offset,
+            transformedDuration: currentTarget.timelineClip.transformedDuration,
+            transformedOffset: currentTarget.timelineClip.transformedOffset,
+            croppedSourceDuration:
+              currentTarget.timelineClip.croppedSourceDuration,
+          },
+        };
+      }
+
+      if (currentTarget.kind === "mask") {
+        if (!currentTarget.maskId) {
+          return null;
+        }
+
+        return {
+          kind: "mask",
+          clipId: currentTarget.clipId,
+          maskId: currentTarget.maskId,
+          transforms: structuredClone(currentTarget.transforms),
+        };
+      }
+
+      return {
+        kind: "maskComposite",
+        clipId: currentTarget.clipId,
+        transforms: structuredClone(currentTarget.transforms),
+      };
+    }, []);
+
+  const restoreTargetSnapshot = useCallback(
+    (snapshot: unknown) => {
+      if (!isSplineEditTargetSnapshot(snapshot)) {
+        return;
+      }
+
+      if (snapshot.kind === "clip") {
+        setClipTransformsAndShape(
+          snapshot.clipId,
+          structuredClone(snapshot.transforms),
+          snapshot.shape,
+        );
+        return;
+      }
+
+      if (snapshot.kind === "mask") {
+        updateClipMask(snapshot.clipId, snapshot.maskId, {
+          transformations: structuredClone(snapshot.transforms),
+        });
+        return;
+      }
+
+      setClipMaskCompositeTransforms(
+        snapshot.clipId,
+        structuredClone(snapshot.transforms),
+      );
+    },
+    [
+      setClipMaskCompositeTransforms,
+      setClipTransformsAndShape,
+      updateClipMask,
+    ],
+  );
+
   const updateTargetTransform = useCallback(
     (
       transformId: string,
@@ -410,5 +534,7 @@ export function useTransformationController(
     handleSetDefaultGroupsEnabled,
     handleCommit,
     handleReorder,
+    captureActiveTargetSnapshot,
+    restoreTargetSnapshot,
   };
 }

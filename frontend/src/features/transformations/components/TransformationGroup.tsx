@@ -33,6 +33,8 @@ interface TransformationGroupProps {
   onSetTransforms?: (nextTransforms: ClipTransform[]) => void;
   keyframeColor?: string;
   onGroupEdited?: () => void;
+  captureSnapshot?: () => unknown | null;
+  restoreSnapshot?: (snapshot: unknown) => void;
 }
 
 export const TransformationGroup = memo(function TransformationGroup({
@@ -51,6 +53,8 @@ export const TransformationGroup = memo(function TransformationGroup({
   onSetTransforms,
   keyframeColor,
   onGroupEdited,
+  captureSnapshot,
+  restoreSnapshot,
 }: TransformationGroupProps) {
   const keyframeManager = useGroupKeyframeManager({
     group,
@@ -90,9 +94,19 @@ export const TransformationGroup = memo(function TransformationGroup({
         minTime={minTime}
         duration={duration}
         disabled={disabled}
+        captureSnapshot={captureSnapshot}
+        restoreSnapshot={restoreSnapshot}
       />
     ),
-    [transform?.id, clipId, minTime, duration, disabled],
+    [
+      captureSnapshot,
+      clipId,
+      disabled,
+      duration,
+      minTime,
+      restoreSnapshot,
+      transform?.id,
+    ],
   );
 
   return (

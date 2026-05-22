@@ -38,6 +38,8 @@ interface SortableTransformationItemProps {
   isActiveSection: boolean;
   onSectionClick: () => void;
   keyframeColor: string;
+  captureSnapshot?: () => unknown | null;
+  restoreSnapshot?: (snapshot: unknown) => void;
 }
 
 export function SortableTransformationItem({
@@ -63,6 +65,8 @@ export function SortableTransformationItem({
   isActiveSection,
   onSectionClick,
   keyframeColor,
+  captureSnapshot,
+  restoreSnapshot,
 }: SortableTransformationItemProps) {
   return (
     <SortableSection
@@ -97,6 +101,8 @@ export function SortableTransformationItem({
             onSetTransforms={onSetTransforms}
             keyframeColor={keyframeColor}
             onGroupEdited={onSectionClick}
+            captureSnapshot={captureSnapshot}
+            restoreSnapshot={restoreSnapshot}
           />
         ))}
       </Box>

@@ -19,6 +19,10 @@ interface SplineGraphProps {
   allowPointDeletion?: boolean;
 }
 
+function sanitizeInitialPoints(points: SplinePoint[]): SplinePoint[] {
+  return [...points].sort((left, right) => left.time - right.time);
+}
+
 export function SplineGraph({
   value,
   onChange,
@@ -35,7 +39,9 @@ export function SplineGraph({
   allowPointDeletion = true,
 }: SplineGraphProps) {
   // Local state for smooth dragging
-  const [localPoints, setLocalPoints] = useState<SplinePoint[]>(value.points);
+  const [localPoints, setLocalPoints] = useState<SplinePoint[]>(() =>
+    sanitizeInitialPoints(value.points),
+  );
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -94,51 +100,49 @@ export function SplineGraph({
   }, [onChange, sanitizePoints, value]);
 
   // Refs for drag-state access inside pointer handlers and RAF callbacks.
-  const stateRef = useRef({ localPoints, viewMin, viewMax });
+  const stateRef = useRef({
+    localPoints: sanitizeInitialPoints(value.points),
+    viewMin: softMin ?? minY,
+    viewMax: softMax ?? maxY,
+  });
   const mouseRef = useRef<{ x: number, y: number } | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-     stateRef.current = { localPoints, viewMin, viewMax };
-  }, [localPoints, viewMin, viewMax]);
+     stateRef.current.viewMin = viewMin;
+     stateRef.current.viewMax = viewMax;
+  }, [viewMin, viewMax]);
 
-  // Sync props to local state when not dragging
-  // Render-Time State Update Pattern
-  const [prevValuePoints, setPrevValuePoints] = useState(value.points);
-  
-  if (dragIdx === null && value.points !== prevValuePoints) {
-      setPrevValuePoints(value.points);
-      setLocalPoints(value.points);
-  }
+  const setLocalPointsState = useCallback((nextPoints: SplinePoint[]) => {
+    stateRef.current.localPoints = nextPoints;
+    setLocalPoints(nextPoints);
+  }, []);
 
-  // Sync view limits if soft limits change
-  // Sync view limits if soft limits change
-  // Render-Time State Update Pattern
-  const [prevLimits, setPrevLimits] = useState({ softMin, softMax, minY, maxY, points: value.points });
-  
-  const limitsChanged = 
-      prevLimits.softMin !== softMin ||
-      prevLimits.softMax !== softMax ||
-      prevLimits.minY !== minY ||
-      prevLimits.maxY !== maxY ||
-      prevLimits.points !== value.points;
+  useEffect(() => {
+    if (dragIdx !== null) {
+      return;
+    }
 
-  if (limitsChanged) {
-      setPrevLimits({ softMin, softMax, minY, maxY, points: value.points });
-      
-      let targetMin = softMin ?? minY;
-      let targetMax = softMax ?? maxY;
+    const nextPoints = sanitizePoints(value.points);
+    setLocalPointsState(nextPoints);
+  }, [dragIdx, sanitizePoints, setLocalPointsState, value.points]);
 
-      for (const p of value.points) {
-          if (p.value < targetMin) targetMin = p.value;
-          if (p.value > targetMax) targetMax = p.value;
-      }
-      
-      targetMin = Math.max(minY, targetMin);
-      targetMax = Math.min(maxY, targetMax);
+  useEffect(() => {
+    if (dragIdx !== null) {
+      return;
+    }
 
-      setViewMin(targetMin);
-      setViewMax(targetMax);
-  }
+    let targetMin = softMin ?? minY;
+    let targetMax = softMax ?? maxY;
+
+    for (const point of value.points) {
+      if (point.value < targetMin) targetMin = point.value;
+      if (point.value > targetMax) targetMax = point.value;
+    }
+
+    setViewMin(Math.max(minY, targetMin));
+    setViewMax(Math.min(maxY, targetMax));
+  }, [dragIdx, maxY, minY, softMax, softMin, value.points]);
 
   // 1. Coordinate Transform Helpers
   // X-axis domain is [minTime, minTime + duration] (layer input time)
@@ -170,6 +174,129 @@ export function SplineGraph({
     return spline.getSVGPath();
   }, [localPoints, duration, padding, graphWidth, height, viewMin, viewMax, graphHeight, minTime]); 
 
+  const startDrag = useCallback(
+    (index: number, initialMouse: { x: number; y: number }) => {
+      dragCleanupRef.current?.();
+
+      mouseRef.current = initialMouse;
+      setDragIdx(index);
+
+      let animationFrameId = 0;
+
+      const onWindowMove = (event: MouseEvent) => {
+        mouseRef.current = { x: event.clientX, y: event.clientY };
+      };
+
+      const cleanup = () => {
+        window.removeEventListener("mousemove", onWindowMove);
+        window.removeEventListener("mouseup", onWindowUp);
+        cancelAnimationFrame(animationFrameId);
+        if (dragCleanupRef.current === cleanup) {
+          dragCleanupRef.current = null;
+        }
+      };
+
+      const onWindowUp = () => {
+        commitPoints(stateRef.current.localPoints);
+        setDragIdx(null);
+        cleanup();
+      };
+
+      const loop = () => {
+        const mousePos = mouseRef.current;
+        if (!svgRef.current || !mousePos) {
+          animationFrameId = requestAnimationFrame(loop);
+          return;
+        }
+
+        const {
+          localPoints: currentPoints,
+          viewMin: currentMin,
+          viewMax: currentMax,
+        } = stateRef.current;
+
+        const rect = svgRef.current.getBoundingClientRect();
+        const mouseY = mousePos.y - rect.top;
+        const mouseX = mousePos.x - rect.left;
+
+        let newT = xToTime(mouseX);
+        let newV = yToVal(mouseY, currentMin, currentMax);
+
+        let nextViewMax = currentMax;
+        let nextViewMin = currentMin;
+
+        const currentRange = currentMax - currentMin;
+        const baseSpeed = Math.max(currentRange * 0.01, 0.05);
+
+        if (mouseY < padding) {
+          nextViewMax = Math.min(maxY, currentMax + baseSpeed);
+        } else if (mouseY > height - padding) {
+          nextViewMin = Math.max(minY, currentMin - baseSpeed);
+        }
+
+        if (nextViewMax !== currentMax || nextViewMin !== currentMin) {
+          setViewMax(nextViewMax);
+          setViewMin(nextViewMin);
+          newV = yToVal(mouseY, nextViewMin, nextViewMax);
+        }
+
+        newT = Math.max(minTime, Math.min(maxTime, newT));
+        newV = Math.max(minY, Math.min(maxY, newV));
+
+        const points = [...currentPoints];
+        const prev = points[index - 1];
+        const next = points[index + 1];
+
+        const prevT = prev ? prev.time : -Infinity;
+        const nextT = next ? next.time : Infinity;
+        const clampedT = Math.max(prevT + 0.01, Math.min(nextT - 0.01, newT));
+
+        if (constrainMonotoneIncreasing) {
+          const prevValue = prev ? prev.value : minY;
+          const nextValue = next ? next.value : maxY;
+          newV = Math.max(prevValue, Math.min(nextValue, newV));
+        }
+
+        if (
+          points[index] &&
+          (points[index].time !== clampedT || points[index].value !== newV)
+        ) {
+          points[index] = { time: clampedT, value: newV };
+          setLocalPointsState(points);
+        }
+
+        animationFrameId = requestAnimationFrame(loop);
+      };
+
+      window.addEventListener("mousemove", onWindowMove);
+      window.addEventListener("mouseup", onWindowUp);
+      dragCleanupRef.current = cleanup;
+      loop();
+    },
+    [
+      commitPoints,
+      constrainMonotoneIncreasing,
+      duration,
+      graphWidth,
+      height,
+      maxTime,
+      maxY,
+      minTime,
+      minY,
+      padding,
+      setLocalPointsState,
+      xToTime,
+      yToVal,
+    ],
+  );
+
+  useEffect(
+    () => () => {
+      dragCleanupRef.current?.();
+    },
+    [],
+  );
+
   // 3. Handlers
   const handleMouseDown = (e: React.MouseEvent, index: number) => {
     if (e.button !== 0) return; // Only drag on left-click
@@ -178,9 +305,7 @@ export function SplineGraph({
     }
     e.stopPropagation();
     e.preventDefault();
-    // Capture initial position immediately
-    mouseRef.current = { x: e.clientX, y: e.clientY };
-    setDragIdx(index);
+    startDrag(index, { x: e.clientX, y: e.clientY });
   };
 
   const handlePointContextMenu = (e: React.MouseEvent, index: number) => {
@@ -193,118 +318,13 @@ export function SplineGraph({
     const newPoints = [...localPoints];
     newPoints.splice(index, 1);
     const sanitized = sanitizePoints(newPoints);
-    setLocalPoints(sanitized);
+    setLocalPointsState(sanitized);
     commitPoints(sanitized);
   };
 
-  // Global Drag Handler (RAF Loop)
-  useEffect(() => {
-    if (dragIdx === null) return;
-
-    let animationFrameId: number;
-
-    const onWindowMove = (e: MouseEvent) => {
-        // Just update ref, logic happens in loop
-        mouseRef.current = { x: e.clientX, y: e.clientY };
-    };
-
-    const loop = () => {
-        const mousePos = mouseRef.current;
-        if (!svgRef.current || !mousePos) {
-             animationFrameId = requestAnimationFrame(loop);
-             return;
-        }
-        
-        // Read latest state
-        const { localPoints: currentPoints, viewMin: currentMin, viewMax: currentMax } = stateRef.current;
-
-        const rect = svgRef.current.getBoundingClientRect();
-        const mouseY = mousePos.y - rect.top;
-        const mouseX = mousePos.x - rect.left;
-
-        let newT = ((mouseX - padding) / graphWidth) * duration;
-        let newV = yToVal(mouseY, currentMin, currentMax);
-        
-        // --- Dynamic Expansion Logic ---
-        let nextViewMax = currentMax;
-        let nextViewMin = currentMin;
-        
-        const currentRange = currentMax - currentMin;
-        // Expand speed: Scale with range, but ensure minimum speed
-        // If holding at edge, we want continuous expansion
-        const baseSpeed = Math.max(currentRange * 0.01, 0.05); 
-        
-        // Distance from edge factor (0 to 1) for smoother accel?
-        // For now linear speed is fine.
-
-        if (mouseY < padding) {
-            nextViewMax = Math.min(maxY, currentMax + baseSpeed);
-        } else if (mouseY > height - padding) {
-            nextViewMin = Math.max(minY, currentMin - baseSpeed);
-        }
-        
-        // Update view state if changed
-        if (nextViewMax !== currentMax || nextViewMin !== currentMin) {
-            setViewMax(nextViewMax);
-            setViewMin(nextViewMin);
-            // Recalculate V with new bounds so point stays glued to mouse Y relative to value space
-            newV = yToVal(mouseY, nextViewMin, nextViewMax);
-        }
-
-        // --- Clamping ---
-        newT = Math.max(minTime, Math.min(maxTime, newT));
-        newV = Math.max(minY, Math.min(maxY, newV)); 
-
-        const points = [...currentPoints];
-        const prev = points[dragIdx - 1];
-        const next = points[dragIdx + 1];
-
-        const prevT = prev ? prev.time : -Infinity;
-        const nextT = next ? next.time : Infinity;
-        
-        // Clamp to maintain ordering
-        const clampedT = Math.max(prevT + 0.01, Math.min(nextT - 0.01, newT));
-
-        if (constrainMonotoneIncreasing) {
-          const prevValue = prev ? prev.value : minY;
-          const nextValue = next ? next.value : maxY;
-          newV = Math.max(prevValue, Math.min(nextValue, newV));
-        }
-        
-        // Check if point changed significantly
-        if (points[dragIdx].time !== clampedT || points[dragIdx].value !== newV) {
-            points[dragIdx] = { time: clampedT, value: newV };
-            setLocalPoints(points);
-        }
-
-        animationFrameId = requestAnimationFrame(loop);
-    };
-
-    // Start
-    window.addEventListener('mousemove', onWindowMove);
-    const onWindowUp = () => {
-        commitPoints(stateRef.current.localPoints);
-        setDragIdx(null);
-    };
-    window.addEventListener('mouseup', onWindowUp);
-    
-    // Kick off loop
-    loop();
-
-    return () => {
-        window.removeEventListener('mousemove', onWindowMove);
-        window.removeEventListener('mouseup', onWindowUp);
-        cancelAnimationFrame(animationFrameId);
-    };
-  }, [commitPoints, constrainMonotoneIncreasing, dragIdx, duration, graphHeight, graphWidth, height, maxTime, maxY, minTime, minY, onChange, padding, value, yToVal]); 
-
-
-  // Note: We removed handleMouseMove and handleMouseUp from here since they are now effect-driven.
-  // We keep handleBackgroundMouseDown as is.
-
   const handleBackgroundMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    
+
     const rect = e.currentTarget.getBoundingClientRect();
     const t = xToTime(e.clientX - rect.left);
     const v = yToVal(e.clientY - rect.top, viewMin, viewMax);
@@ -312,9 +332,9 @@ export function SplineGraph({
     // Clamp time
     const clampedT = Math.max(minTime, Math.min(maxTime, t));
 
-    const newPoint = { 
-        time: clampedT, 
-        value: Math.max(minY, Math.min(maxY, v)) 
+    const newPoint = {
+      time: clampedT,
+      value: Math.max(minY, Math.min(maxY, v)),
     };
 
     // Sort by time
@@ -326,9 +346,11 @@ export function SplineGraph({
         Math.abs(point.time - newPoint.time) <= 0.0001 &&
         Math.abs(point.value - newPoint.value) <= 0.0001,
     );
-    
-    setLocalPoints(newPoints);
-    setDragIdx(newIndex >= 0 ? newIndex : null);
+    mouseRef.current = { x: e.clientX, y: e.clientY };
+    setLocalPointsState(newPoints);
+    if (newIndex >= 0) {
+      startDrag(newIndex, { x: e.clientX, y: e.clientY });
+    }
   };
 
   return (

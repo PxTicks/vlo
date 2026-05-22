@@ -41,6 +41,8 @@ interface DefaultTransformationSectionsProps {
     disableKeyframe?: boolean;
     headerActions?: ReactNode;
   };
+  captureSnapshot?: () => unknown | null;
+  restoreSnapshot?: (snapshot: unknown) => void;
 }
 
 export function DefaultTransformationSections({
@@ -56,6 +58,8 @@ export function DefaultTransformationSections({
   onActivateSection,
   dimmed = false,
   getGroupProps,
+  captureSnapshot,
+  restoreSnapshot,
 }: DefaultTransformationSectionsProps) {
   return definitions.map((definition) => {
     const sectionId = getDefaultSectionId(definition.type);
@@ -106,6 +110,8 @@ export function DefaultTransformationSections({
                 onSetTransforms={onSetTransforms}
                 keyframeColor={getSectionGroupKeyframeColor(groupIndex)}
                 onGroupEdited={() => onActivateSection(sectionId)}
+                captureSnapshot={captureSnapshot}
+                restoreSnapshot={restoreSnapshot}
               />
             );
           })}

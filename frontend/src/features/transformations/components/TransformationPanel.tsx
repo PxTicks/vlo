@@ -61,6 +61,8 @@ export function TransformationPanel() {
     handleSetDefaultGroupsEnabled,
     handleCommit,
     handleReorder,
+    captureActiveTargetSnapshot,
+    restoreTargetSnapshot,
   } = useTransformationController();
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -470,6 +472,8 @@ export function TransformationPanel() {
           onActivateSection={activateSection}
           dimmed={!!activeDragId}
           getGroupProps={getDefaultGroupProps}
+          captureSnapshot={captureActiveTargetSnapshot}
+          restoreSnapshot={restoreTargetSnapshot}
         />
 
         {/* 2. Dynamic Sections */}
@@ -523,6 +527,8 @@ export function TransformationPanel() {
                   isActiveSection={isActiveSection}
                   onSectionClick={() => activateSection(sectionId)}
                   keyframeColor={getSectionGroupKeyframeColor(0)}
+                  captureSnapshot={captureActiveTargetSnapshot}
+                  restoreSnapshot={restoreTargetSnapshot}
                 />
               );
             })}
@@ -578,6 +584,8 @@ export function TransformationPanel() {
                           onUpdateTransform={updateActiveTransform}
                           onSetTransforms={setActiveTransforms}
                           keyframeColor={getSectionGroupKeyframeColor(0)}
+                          captureSnapshot={captureActiveTargetSnapshot}
+                          restoreSnapshot={restoreTargetSnapshot}
                         />
                       ))}
                     </Box>

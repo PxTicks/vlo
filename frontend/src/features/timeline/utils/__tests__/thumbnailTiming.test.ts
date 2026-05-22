@@ -30,6 +30,23 @@ describe("thumbnailTiming", () => {
     ).toBe(9000);
   });
 
+  it("never requests a frame before the real first frame (rounds up)", () => {
+    // Real repro: a proxy re-encoded at a 1/57600 timebase reports its first
+    // frame at 0.4686284722s, which scales to 44988.33 ticks. Rounding to
+    // nearest would floor to 44988 -> 0.468625s, BEFORE the frame, so mediabunny
+    // returns null and the first thumbnail slot renders blank.
+    const firstTimestampSeconds = 0.4686284722222222;
+
+    const requestSeconds = resolveThumbnailBucketRequestSeconds(
+      0,
+      90336,
+      firstTimestampSeconds,
+    );
+
+    expect(requestSeconds).toBeGreaterThanOrEqual(firstTimestampSeconds);
+    expect(getFirstPresentedFrameTicks(firstTimestampSeconds)).toBe(44989);
+  });
+
   it("uses the first presented frame when a bucket starts before it", () => {
     const firstTimestampSeconds = 0.0585;
     const requestSeconds = resolveThumbnailBucketRequestSeconds(

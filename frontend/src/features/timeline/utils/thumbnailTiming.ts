@@ -11,7 +11,13 @@ export function getFirstPresentedFrameTicks(
     return 0;
   }
 
-  return Math.round(firstTimestampSeconds * TICKS_PER_SECOND);
+  // Round UP so the resulting tick (and the seconds we derive from it for the
+  // sample request) never lands *before* the real first frame. A round-to-
+  // nearest can floor below the true timestamp — e.g. a proxy re-encoded at a
+  // 1/57600 timebase puts its first frame at 0.4686285s -> 44988.33 ticks ->
+  // round() = 44988 -> 0.468625s, which is before the frame, so mediabunny
+  // returns null and the first thumbnail slot renders blank.
+  return Math.ceil(firstTimestampSeconds * TICKS_PER_SECOND);
 }
 
 export function clampThumbnailAssetTickToFirstFrame(

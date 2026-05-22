@@ -35,6 +35,23 @@ describe("waveformTiming", () => {
     expect(clampWaveformAssetTickToFirstSample(3000, -0.02)).toBe(3000);
   });
 
+  it("never requests a sample before the real first sample (rounds up)", () => {
+    // A first timestamp that scales to a fractional tick below x.5 must round
+    // UP, otherwise the request lands before the first sample. See the
+    // thumbnail proxy repro in thumbnailTiming.test.ts.
+    const firstTimestampSeconds = 0.4686284722222222;
+
+    const requestSeconds = resolveWaveformBucketRequestSeconds(
+      0,
+      2048,
+      48_000,
+      firstTimestampSeconds,
+    );
+
+    expect(requestSeconds).toBeGreaterThanOrEqual(firstTimestampSeconds);
+    expect(getFirstPresentedSampleTicks(firstTimestampSeconds)).toBe(44989);
+  });
+
   it("uses the first presented sample when a requested bucket starts before it", () => {
     const firstTimestampSeconds = 0.041;
     const requestSeconds = resolveWaveformBucketRequestSeconds(

@@ -11,7 +11,10 @@ export function getFirstPresentedSampleTicks(
     return 0;
   }
 
-  return Math.round(firstTimestampSeconds * TICKS_PER_SECOND);
+  // Round UP for the same reason as the thumbnail path: a round-to-nearest can
+  // floor below the true first sample timestamp, producing a request before the
+  // first sample. See getFirstPresentedFrameTicks in thumbnailTiming.ts.
+  return Math.ceil(firstTimestampSeconds * TICKS_PER_SECOND);
 }
 
 export function clampWaveformAssetTickToFirstSample(

@@ -2,7 +2,9 @@
 
 Vlo is a free, local, open source video editor with ComfyUI-backed generative AI features.
 
-It is in early alpha and there will be bugs, but I am choosing to release it because it already makes it possible to do things which can be challenging otherwise.
+This project is in early alpha, but I believe its usefulness already outstrips its bugginess.
+
+The aim is to integrate the latest-and-greatest AI tools with real video editing workflows. It's designed to support an intentional creative process, not for churning out heaps of dross, so the development priority is control, not automation. In the long run, I'd like it to grow into a tool which anyone, including those who just want to make videos, not AI videos, can benefit from.
 
 ## IMPORTANT
 
@@ -20,7 +22,7 @@ Vlo requires chromium-based browsers to work. I have tested in edge and chrome, 
 - Built-in stackable adjustments and filters
 - Keyframes and spline editor for all transformations (layout, adjustments and filter effects)
 - Snappable markers and beat detection
-- Asset organisation (automatic groups, favourites)
+- Asset organisation (hot-swappable generation groups, favourites)
 - ComfyUI-backed workflows for interpolation and image and video upscaling.
 - Mask algebera (unions, intersections etc)
 - Draggable motion paths

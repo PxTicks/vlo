@@ -218,7 +218,7 @@ describe("useMaskPanel", () => {
       file: sourceFile,
       createdAt: 0,
     };
-    const addLocalAsset = vi.fn(async (file: File) => ({
+    const addLocalAsset = vi.fn(async (file: File, _metadata?: unknown) => ({
       id: "sam2_generated_asset",
       type: "image" as const,
       name: file.name,

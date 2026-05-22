@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
-  TimelineClip,
+  StandardTimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
 import { planMultiClipMove } from "../multiClipMove";
@@ -21,7 +21,7 @@ function createClip(
   trackId: string,
   start: number,
   duration: number,
-): TimelineClip {
+): StandardTimelineClip {
   return {
     id,
     trackId,
@@ -36,7 +36,7 @@ function createClip(
     sourceDuration: duration,
     transformedDuration: duration,
     transformations: [],
-  } as TimelineClip;
+  } as StandardTimelineClip;
 }
 
 describe("planMultiClipMove", () => {

@@ -504,8 +504,8 @@ export function removeClipIdsFromDraft(
 }
 
 function syncTrackTypesFromClips(draft: TimelineModelState): void {
-  const nextTrackTypeById = new Map(
-    draft.tracks.map((track) => [track.id, undefined] as const),
+  const nextTrackTypeById = new Map<string, TimelineTrack["type"] | undefined>(
+    draft.tracks.map((track) => [track.id, undefined]),
   );
 
   draft.clips.forEach((clip) => {
@@ -555,10 +555,15 @@ export function moveClipsInDraft(
   }
 
   draft.clips = draft.clips.map((candidate) => {
-    const move =
-      candidate.type === "mask"
+    const move = (() => {
+      if (candidate.type !== "mask") {
+        return normalizedMoves.get(candidate.id);
+      }
+
+      return candidate.parentClipId
         ? normalizedMoves.get(candidate.parentClipId)
-        : normalizedMoves.get(candidate.id);
+        : undefined;
+    })();
 
     if (!move) {
       return candidate;

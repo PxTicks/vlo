@@ -35,6 +35,14 @@ export interface AssetIngestOptions {
   allowDuplicateHash?: boolean;
 }
 
+type AssetCreationSource = Exclude<Asset["creationMetadata"], undefined>["source"];
+
+const MASK_ASSET_SOURCES = new Set<AssetCreationSource>([
+  "sam2_mask",
+  "brush_mask",
+  "generation_mask",
+]);
+
 function splitFilename(filename: string): { stem: string; extension: string } {
   const extensionIndex = filename.lastIndexOf(".");
   if (extensionIndex <= 0) {
@@ -69,6 +77,20 @@ function resolveUniqueAssetFilename(
     }
     suffix += 1;
   }
+}
+
+function resolveAssetStoragePath(
+  assetFileName: string,
+  creationMetadata?: Asset["creationMetadata"],
+): string {
+  if (
+    creationMetadata &&
+    MASK_ASSET_SOURCES.has(creationMetadata.source)
+  ) {
+    return `.vloproject/masks/${assetFileName}`;
+  }
+
+  return assetFileName;
 }
 
 export class AssetService {
@@ -314,7 +336,10 @@ export class AssetService {
       }
 
       // 3. Prepare Paths variables
-      const storageSrc = assetFileName;
+      const storageSrc = resolveAssetStoragePath(
+        assetFileName,
+        creationMetadata,
+      );
       let storageThumbnail: string | undefined;
       let storageProxy: string | undefined;
       let proxyBlob: Blob | null = null;

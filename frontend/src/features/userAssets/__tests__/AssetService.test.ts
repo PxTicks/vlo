@@ -362,6 +362,102 @@ describe("AssetService", () => {
     expect(mockProcessor.generateVideoMetadata).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      label: "SAM2",
+      creationMetadata: {
+        source: "sam2_mask" as const,
+        parentAssetId: "asset-1",
+        parentClipId: "clip-1",
+        maskClipId: "clip-1::mask::mask-1",
+        pointCount: 2,
+        sourceHash: "source-hash-1",
+      },
+    },
+    {
+      label: "brush",
+      creationMetadata: {
+        source: "brush_mask" as const,
+        parentClipId: "clip-1",
+        maskClipId: "clip-1::mask::mask-1",
+      },
+    },
+    {
+      label: "generation",
+      creationMetadata: {
+        source: "generation_mask" as const,
+        parentGeneratedAssetId: "generated-1",
+      },
+    },
+  ])(
+    "stores new $label mask sources under .vloproject/masks",
+    async ({ creationMetadata }) => {
+      const file = new File(["mask"], "mask.png", { type: "image/png" });
+
+      (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
+        `hash-${creationMetadata.source}`,
+      );
+      (mediaProcessingService.generateImageThumbnail as Mock).mockResolvedValue(
+        null,
+      );
+
+      const asset = await assetService.ingestAsset(
+        file,
+        false,
+        true,
+        [],
+        creationMetadata,
+      );
+
+      expect(asset).toMatchObject({
+        name: "mask.png",
+        type: "image",
+        sourcePath: ".vloproject/masks/mask.png",
+      });
+
+      await assetService.waitForAssetPersistence(asset!.id);
+
+      expect(fileSystemService.saveAssetFile).toHaveBeenCalledWith(
+        file,
+        ".vloproject/masks/mask.png",
+      );
+    },
+  );
+
+  it("keeps non-mask uploads at the project root", async () => {
+    const file = new File(["image"], "poster.png", { type: "image/png" });
+
+    (mediaProcessingService.computeChecksum as Mock).mockResolvedValue(
+      "upload-hash",
+    );
+    (mediaProcessingService.generateImageThumbnail as Mock).mockResolvedValue(
+      null,
+    );
+
+    const asset = await assetService.ingestAsset(
+      file,
+      false,
+      true,
+      [],
+      {
+        source: "uploaded",
+      },
+    );
+
+    expect(asset).toMatchObject({
+      name: "poster.png",
+      type: "image",
+      sourcePath: "poster.png",
+    });
+
+    await assetService.waitForAssetPersistence(asset!.id);
+
+    expect(fileSystemService.saveAssetFile).toHaveBeenCalledWith(
+      file,
+      "poster.png",
+    );
+  });
+
   it("creates a fresh generation mask when the matching hash belongs to a non-mask asset", async () => {
     const maskFile = new File(["mask"], "generation-mask.mp4", {
       type: "video/mp4",

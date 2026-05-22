@@ -283,8 +283,17 @@ describe("useMaskPanel", () => {
     });
 
     const savedFile = addLocalAsset.mock.calls[0]?.[0] as File;
+    const savedMetadata = addLocalAsset.mock.calls[0]?.[1];
     expect(savedFile.name).toMatch(/_sam2_mask_image_\d+\.png$/);
     expect(savedFile.type).toBe("image/png");
+    expect(savedMetadata).toEqual({
+      source: "sam2_mask",
+      parentAssetId: parent.assetId,
+      parentClipId: parent.id,
+      maskClipId: mask.id,
+      pointCount: 1,
+      sourceHash: "sam2-image-parent-hash",
+    });
 
     const updatedMask = useTimelineStore
       .getState()

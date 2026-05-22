@@ -185,6 +185,14 @@ describe("brushAssetSync", () => {
       brushMask.id,
       recalculatedBounds,
     );
+    expect(mockAddLocalAsset).toHaveBeenCalledWith(
+      expect.any(File),
+      {
+        source: "brush_mask",
+        parentClipId: "clip_1",
+        maskClipId: brushMask.id,
+      },
+    );
     const updatedMask = useTimelineStore
       .getState()
       .clips.find((clip): clip is MaskTimelineClip => clip.id === brushMask.id);

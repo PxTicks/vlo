@@ -1,8 +1,7 @@
 import type { ClipTransform, TimelineClip } from "../../../../types/TimelineTypes";
 import type { AnyTransform } from "../../types";
 import {
-  getSegmentContentDuration,
-  solveTimelineDuration,
+  pushTimeThroughTransforms,
 } from "../../utils/timeCalculation";
 import { isDefaultTransform } from "../../catalogue/TransformationRegistry";
 
@@ -17,6 +16,7 @@ export interface SpeedShapeUpdateInput {
 export interface SpeedShapeUpdateResult {
   timelineDuration: number;
   transformedDuration?: number;
+  transformedOffset?: number;
 }
 
 export interface SpeedShapeUpdateForTransformsInput {
@@ -32,25 +32,44 @@ export function computeSpeedShapeUpdateForTransforms({
     return null;
   }
 
-  const currentContentTicks = getSegmentContentDuration(
-    clip,
+  // Preserve the current source window as the ground truth when time-remapping
+  // changes. That keeps an existing trim anchored instead of reapplying speed
+  // from source zero.
+  const visibleSourceStart = Math.max(0, Math.round(clip.offset));
+  const visibleSourceDuration = Math.max(
     0,
-    clip.timelineDuration,
+    Math.round(clip.croppedSourceDuration),
   );
+  const visibleSourceEnd = visibleSourceStart + visibleSourceDuration;
 
-  const tempClip = { ...clip, transformations: nextTransforms };
-  const timelineDuration = solveTimelineDuration(tempClip, 0, currentContentTicks);
+  const transformedOffset = pushTimeThroughTransforms(
+    nextTransforms,
+    visibleSourceStart,
+  );
+  const transformedVisibleEnd = pushTimeThroughTransforms(
+    nextTransforms,
+    visibleSourceEnd,
+  );
+  const timelineDuration = Math.max(
+    0,
+    transformedVisibleEnd - transformedOffset,
+  );
   const fullSourceTicks =
     clip.type === "image"
       ? null
-      : (clip.sourceDuration ?? clip.timelineDuration);
+      : Math.max(
+          visibleSourceEnd,
+          clip.sourceDuration ?? clip.timelineDuration,
+        );
 
-  const shapeUpdates: SpeedShapeUpdateResult = { timelineDuration };
+  const shapeUpdates: SpeedShapeUpdateResult = {
+    timelineDuration,
+    transformedOffset,
+  };
   if (fullSourceTicks !== null) {
-    shapeUpdates.transformedDuration = solveTimelineDuration(
-      tempClip,
+    shapeUpdates.transformedDuration = Math.max(
       0,
-      fullSourceTicks,
+      pushTimeThroughTransforms(nextTransforms, fullSourceTicks),
     );
   }
 

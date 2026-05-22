@@ -125,4 +125,44 @@ describe("useTransformationController speed toggle", () => {
       true,
     );
   });
+
+  it("keeps the trimmed source window anchored when adding speed", () => {
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [track],
+      clips: [
+        {
+          id: clipId,
+          trackId: track.id,
+          start: 5 * TICKS_PER_SECOND,
+          timelineDuration: 10 * TICKS_PER_SECOND,
+          offset: 5 * TICKS_PER_SECOND,
+          type: "video",
+          croppedSourceDuration: 10 * TICKS_PER_SECOND,
+          name: "Trimmed Speed Clip",
+          assetId: `asset_${clipId}`,
+          sourceDuration: 15 * TICKS_PER_SECOND,
+          transformedDuration: 15 * TICKS_PER_SECOND,
+          transformedOffset: 5 * TICKS_PER_SECOND,
+          transformations: [],
+        },
+      ],
+    });
+    useTimelineStore.setState({ selectedClipIds: [clipId] });
+
+    const { result } = renderHook(() => useTransformationController());
+
+    act(() => {
+      result.current.handleCommit("speed", "factor", 2);
+    });
+
+    const clip = useTimelineStore
+      .getState()
+      .clips.find((currentClip) => currentClip.id === clipId);
+
+    expect(clip?.timelineDuration).toBe(5 * TICKS_PER_SECOND);
+    expect(clip?.transformedOffset).toBe(2.5 * TICKS_PER_SECOND);
+    expect(clip?.transformedDuration).toBe(7.5 * TICKS_PER_SECOND);
+    expect(clip?.offset).toBe(5 * TICKS_PER_SECOND);
+    expect(clip?.croppedSourceDuration).toBe(10 * TICKS_PER_SECOND);
+  });
 });

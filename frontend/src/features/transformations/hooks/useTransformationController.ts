@@ -172,8 +172,13 @@ export function useTransformationController(
       const didTransformedDurationChange =
         shapeUpdate.transformedDuration !== undefined &&
         shapeUpdate.transformedDuration !== clip.transformedDuration;
+      const didTransformedOffsetChange =
+        shapeUpdate.transformedOffset !== undefined &&
+        shapeUpdate.transformedOffset !== clip.transformedOffset;
 
-      return didTimelineDurationChange || didTransformedDurationChange
+      return didTimelineDurationChange ||
+        didTransformedDurationChange ||
+        didTransformedOffsetChange
         ? shapeUpdate
         : null;
     },

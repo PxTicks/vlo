@@ -3,7 +3,7 @@ import type { DragMoveEvent, DragEndEvent } from "@dnd-kit/core";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../useInteractionStore";
 import { useTimelineViewStore } from "../useTimelineViewStore";
-import { resolveCollision, hasAnyCollision } from "../../utils/collision";
+import { resolveCollision } from "../../utils/collision";
 import {
   TRACK_HEADER_WIDTH,
   TRACK_HEIGHT,
@@ -21,6 +21,8 @@ import {
 } from "../../../../types/TimelineTypes";
 import { getGhostClipPosition, GHOST_CLIP_HEIGHT } from "./dragGeometry";
 import { getTrackTypeFromClipType } from "../../utils/formatting";
+import { createNewTrack } from "../../model/timelineTrackModel";
+import { planMultiClipMove } from "../../utils/multiClipMove";
 import { getMoveSnapCandidate } from "./snapUtils";
 import { attachGenerationMask } from "../../utils/insertAssetToTimeline";
 import { getAssetById } from "../../../userAssets";
@@ -60,7 +62,7 @@ export const useClipMove = (
   };
 
   // Actions can be retrieved once (they are stable) or via getState()
-  const { insertTrack, updateClipPosition, addClip } =
+  const { insertTrack, updateClipPosition, moveClips, addClip } =
     useTimelineStore.getState();
 
   // Track exact mouse position to bypass dnd-kit's delta logic for new assets
@@ -382,23 +384,21 @@ export const useClipMove = (
       : Math.max(0, snapTickToFrame(unsnappedStartTicks, ticksPerFrame));
 
     // --- 2. Calculate Track (Vertical) ---
-    // We prioritize the gap index calculated during the move phase
-    let targetTrackId = "";
-    let shouldInsert = false;
+    // We prioritize the gap index calculated during the move phase.
     const currentInsertGapIndex = getInsertGapIndex();
+    let dropTargetTrackId = "";
 
-    if (currentInsertGapIndex !== null) {
-      // Case A: Insertion
-      targetTrackId = insertTrack(currentInsertGapIndex);
-      shouldInsert = true;
-    } else {
-      // Case B: Drop on existing track
+    if (currentInsertGapIndex === null) {
       if (over) {
-        targetTrackId = over.id as string;
+        dropTargetTrackId = over.id as string;
       }
 
       // Fallback: Coordinate Math (for Context Isolation)
-      if (!targetTrackId && scrollContainerRef.current && cursorRef.current) {
+      if (
+        !dropTargetTrackId &&
+        scrollContainerRef.current &&
+        cursorRef.current
+      ) {
         const container = scrollContainerRef.current;
         const rect = container.getBoundingClientRect();
         const { y: cursorY } = cursorRef.current;
@@ -412,16 +412,10 @@ export const useClipMove = (
             const trackIndex = Math.floor(relativeY / TRACK_HEIGHT);
             const tracks = useTimelineStore.getState().tracks;
             if (trackIndex >= 0 && trackIndex < tracks.length) {
-              targetTrackId = tracks[trackIndex].id;
+              dropTargetTrackId = tracks[trackIndex].id;
             }
           }
         }
-      }
-
-      if (!targetTrackId) {
-        // Case C: Dropped in empty space? Fallback or Cancel
-        setInsertGapIndex(null);
-        return;
       }
     }
 
@@ -433,6 +427,19 @@ export const useClipMove = (
 
     // --- SINGLE CLIP LOGIC ---
     if (isNewAsset || selectedClipIds.length <= 1) {
+      let targetTrackId = dropTargetTrackId;
+      let shouldInsert = false;
+
+      if (currentInsertGapIndex !== null) {
+        targetTrackId = insertTrack(currentInsertGapIndex);
+        shouldInsert = true;
+      }
+
+      if (!targetTrackId) {
+        setInsertGapIndex(null);
+        return;
+      }
+
       if (!shouldInsert) {
         // Check against explicit Track Type
         const targetTrack = tracks.find((t) => t.id === targetTrackId);
@@ -476,80 +483,44 @@ export const useClipMove = (
       return;
     }
 
-    // Multi-Selection Logic (simplified for brevity, assumes standard offset logic)
-    // ... [Multi-selection logic remains largely similar, but ensure it uses targetTrackId] ...
-    // For this specific fix, we focus on the single/new asset positioning which was broken.
-
-    // Fallback for multi-select if needed:
     const leaderClip = clip as TimelineClip;
-    const leaderOriginalTrackIndex = tracks.findIndex(
-      (t) => t.id === leaderClip.trackId,
-    );
-    const targetTrackIndex = tracks.findIndex((t) => t.id === targetTrackId);
-
-    if (targetTrackIndex === -1) {
+    if (!isNonMaskTimelineClip(leaderClip)) {
       setInsertGapIndex(null);
       return;
     }
 
-    const trackDelta = targetTrackIndex - leaderOriginalTrackIndex;
-    const deltaTicks = startTicks - leaderClip.start; // Calculate ticks delta based on drop position
+    const insertedTrack =
+      currentInsertGapIndex !== null
+        ? createNewTrack("New Track")
+        : undefined;
+    const plannedMoves = planMultiClipMove({
+      clips,
+      selectedClipIds,
+      tracks,
+      leaderClip,
+      targetStartTicks: startTicks,
+      targetTrackId: dropTargetTrackId,
+      ticksPerFrame,
+      insertedTrack,
+      insertTrackIndex: currentInsertGapIndex,
+    });
 
-    // Apply updates...
-    const selectedClips = clips.filter(
-      (c): c is StandardTimelineClip =>
-        selectedClipIds.includes(c.id) && isNonMaskTimelineClip(c),
-    );
-
-    // 1. Validate all moves first (Atomic Commit)
-    for (const clip of selectedClips) {
-      const newStart = snapTickToFrame(
-        Math.max(0, clip.start + deltaTicks),
-        ticksPerFrame,
-      );
-      const currentTrackIndex = tracks.findIndex((t) => t.id === clip.trackId);
-      const newTrackIndex = currentTrackIndex + trackDelta;
-
-      if (newTrackIndex < 0 || newTrackIndex >= tracks.length) {
-        setInsertGapIndex(null);
-        return;
-      }
-
-      // Check for type compatibility on the target track
-      const targetTrack = tracks[newTrackIndex];
-      if (
-        targetTrack.type &&
-        targetTrack.type !== getTrackTypeFromClipType(clip.type)
-      ) {
-        setInsertGapIndex(null);
-        return;
-      }
-
-      if (
-        hasAnyCollision(
-          newStart,
-          clip.timelineDuration,
-          tracks[newTrackIndex].id,
-          selectedClipIds,
-          clips,
-        )
-      ) {
-        setInsertGapIndex(null);
-        return;
-      }
+    if (!plannedMoves) {
+      setInsertGapIndex(null);
+      return;
     }
 
-    // 2. Execute updates
-    selectedClips.forEach((clip) => {
-      const newStart = snapTickToFrame(
-        Math.max(0, clip.start + deltaTicks),
-        ticksPerFrame,
-      );
-      const currentTrackIndex = tracks.findIndex((t) => t.id === clip.trackId);
-      const newTrackIndex = currentTrackIndex + trackDelta;
-
-      updateClipPosition(clip.id, newStart, tracks[newTrackIndex].id);
-    });
+    moveClips(
+      plannedMoves,
+      insertedTrack && currentInsertGapIndex !== null
+        ? {
+            insertTrack: {
+              index: currentInsertGapIndex,
+              track: insertedTrack,
+            },
+          }
+        : undefined,
+    );
 
     setInsertGapIndex(null);
   };

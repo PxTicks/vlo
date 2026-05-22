@@ -70,6 +70,12 @@ export type TimelineClipShape = Partial<
   >
 >;
 
+export interface TimelineClipMove {
+  clipId: string;
+  start: number;
+  trackId?: string;
+}
+
 export type TimelineMaskUpdate = Partial<
   Pick<
     MaskTimelineClip,
@@ -497,6 +503,82 @@ export function removeClipIdsFromDraft(
   removeClipsFromDraft(draft, clipIdsToRemove, maybeTrimAndPadTracks);
 }
 
+function syncTrackTypesFromClips(draft: TimelineModelState): void {
+  const nextTrackTypeById = new Map(
+    draft.tracks.map((track) => [track.id, undefined] as const),
+  );
+
+  draft.clips.forEach((clip) => {
+    if (clip.type === "mask") {
+      return;
+    }
+
+    nextTrackTypeById.set(clip.trackId, getTrackTypeFromClipType(clip.type));
+  });
+
+  draft.tracks = draft.tracks.map((track) => {
+    const nextType = nextTrackTypeById.get(track.id);
+    return track.type === nextType ? track : { ...track, type: nextType };
+  });
+}
+
+export function moveClipsInDraft(
+  draft: TimelineModelState,
+  moves: TimelineClipMove[],
+): void {
+  const clipsById = new Map(
+    draft.clips.map((clip) => [clip.id, clip] as const),
+  );
+  const normalizedMoves = new Map<string, { start: number; trackId: string }>();
+
+  moves.forEach((move) => {
+    const clip = clipsById.get(move.clipId);
+    if (!clip || clip.type === "mask") {
+      return;
+    }
+
+    const nextStart = Math.round(Math.max(0, move.start));
+    const nextTrackId = move.trackId ?? clip.trackId;
+
+    if (nextStart === clip.start && nextTrackId === clip.trackId) {
+      return;
+    }
+
+    normalizedMoves.set(move.clipId, {
+      start: nextStart,
+      trackId: nextTrackId,
+    });
+  });
+
+  if (normalizedMoves.size === 0) {
+    return;
+  }
+
+  draft.clips = draft.clips.map((candidate) => {
+    const move =
+      candidate.type === "mask"
+        ? normalizedMoves.get(candidate.parentClipId)
+        : normalizedMoves.get(candidate.id);
+
+    if (!move) {
+      return candidate;
+    }
+
+    if (candidate.start === move.start && candidate.trackId === move.trackId) {
+      return candidate;
+    }
+
+    return {
+      ...candidate,
+      start: move.start,
+      trackId: move.trackId,
+    };
+  });
+
+  syncTrackTypesFromClips(draft);
+  maybeTrimAndPadTracks(draft);
+}
+
 export function replaceClipAssetInDraft(
   draft: TimelineModelState,
   clipId: string,
@@ -525,46 +607,13 @@ export function updateClipPositionInDraft(
   newStartTicks: number,
   newTrackId?: string,
 ): void {
-  const clip = draft.clips.find((candidate) => candidate.id === id);
-  if (!clip) return;
-
-  if (newTrackId && newTrackId !== clip.trackId) {
-    const targetTrack = draft.tracks.find((track) => track.id === newTrackId);
-    if (targetTrack && !targetTrack.type) {
-      targetTrack.type = getTrackTypeFromClipType(clip.type);
-    }
-
-    const isOldTrackEmpty = !draft.clips.some(
-      (candidate) =>
-        candidate.trackId === clip.trackId &&
-        candidate.id !== id &&
-        candidate.type !== "mask",
-    );
-
-    if (isOldTrackEmpty) {
-      draft.tracks = draft.tracks.map((track) =>
-        track.id === clip.trackId ? { ...track, type: undefined } : track,
-      );
-    }
-  }
-
-  const updatedParentStart = Math.round(Math.max(0, newStartTicks));
-  const updatedTrackId = newTrackId ?? clip.trackId;
-  const maskChildIds = new Set(getChildMaskClipIds(clip));
-
-  draft.clips = draft.clips.map((candidate) => {
-    if (candidate.id === id || maskChildIds.has(candidate.id)) {
-      return {
-        ...candidate,
-        start: updatedParentStart,
-        trackId: updatedTrackId,
-      };
-    }
-
-    return candidate;
-  });
-
-  maybeTrimAndPadTracks(draft);
+  moveClipsInDraft(draft, [
+    {
+      clipId: id,
+      start: newStartTicks,
+      trackId: newTrackId,
+    },
+  ]);
 }
 
 function applyClipShape(

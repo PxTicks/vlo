@@ -12,6 +12,7 @@ import type {
   MaskBooleanExpression,
   TextClipData,
   TimelineClip,
+  TimelineTrack,
 } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
@@ -34,6 +35,7 @@ import {
   duplicateTimelineClip,
   getTimelineClipsAtTime,
   insertTrackIntoDraft,
+  moveClipsInDraft,
   pasteCopiedClipsAboveDraft,
   planTimelineRemoval,
   removeClipComponentFromDraft,
@@ -58,6 +60,7 @@ import {
   updateTextClipDataInDraft,
   updateClipTransformInDraft,
   withTimelineClipDefaults,
+  type TimelineClipMove,
   type TimelineClipShape,
   type TimelineMaskUpdate,
 } from "./model/timelineCommands";
@@ -125,6 +128,12 @@ interface TimelineState extends TimelineModelState {
 
   removeClip: (id: string) => void;
   removeClips: (ids: string[]) => boolean;
+  moveClips: (
+    moves: TimelineClipMove[],
+    options?: {
+      insertTrack?: { index: number; track: TimelineTrack };
+    },
+  ) => boolean;
   removeClipsByAssetId: (assetId: string) => number;
   replaceClipAsset: (clipId: string, asset: Asset) => void;
 
@@ -245,6 +254,42 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     }
 
     return didCommit;
+  };
+  const moveClipsOnTimeline = (
+    moves: TimelineClipMove[],
+    options?: {
+      insertTrack?: { index: number; track: TimelineTrack };
+    },
+  ): boolean => {
+    const clipsById = new Map(
+      get().clips.map((clip) => [clip.id, clip] as const),
+    );
+    const effectiveMoves = moves.filter((move) => {
+      const clip = clipsById.get(move.clipId);
+      if (!clip || clip.type === "mask") {
+        return false;
+      }
+
+      const nextStart = Math.round(Math.max(0, move.start));
+      const nextTrackId = move.trackId ?? clip.trackId;
+      return nextStart !== clip.start || nextTrackId !== clip.trackId;
+    });
+
+    if (effectiveMoves.length === 0) {
+      return false;
+    }
+
+    return mutationPipeline.commitModelMutation((draft) => {
+      if (options?.insertTrack) {
+        insertTrackIntoDraft(
+          draft,
+          options.insertTrack.index,
+          options.insertTrack.track,
+        );
+      }
+
+      moveClipsInDraft(draft, effectiveMoves);
+    });
   };
 
   return {
@@ -415,6 +460,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     removeClips: (ids) => {
       return removeClipsFromTimeline(ids);
+    },
+
+    moveClips: (moves, options) => {
+      return moveClipsOnTimeline(moves, options);
     },
 
     removeClipsByAssetId: (assetId) => {

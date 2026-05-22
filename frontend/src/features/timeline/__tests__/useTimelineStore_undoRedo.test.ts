@@ -175,6 +175,68 @@ describe("useTimelineStore undo/redo", () => {
     expect(useTimelineStore.getState().canRedo).toBe(true);
   });
 
+  it("undoes grouped clip moves and inserted tracks in a single history step", () => {
+    const tracks = [
+      createTrack("track_top_pad", "Track 1"),
+      createTrack("track_a", "Track 2"),
+      createTrack("track_b", "Track 3"),
+      createTrack("track_bottom_pad", "Track 4"),
+    ];
+    const clipA = createClip("clip-a", "track_a", 0, 100);
+    const clipB = createClip("clip-b", "track_b", 50, 100);
+    const insertedTrack = createTrack("track_inserted", "Inserted");
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks,
+      clips: [clipA, clipB],
+    });
+
+    act(() => {
+      expect(
+        useTimelineStore.getState().moveClips(
+          [
+            {
+              clipId: clipA.id,
+              start: 120,
+              trackId: insertedTrack.id,
+            },
+            {
+              clipId: clipB.id,
+              start: 170,
+              trackId: clipA.trackId,
+            },
+          ],
+          {
+            insertTrack: {
+              index: 1,
+              track: insertedTrack,
+            },
+          },
+        ),
+      ).toBe(true);
+    });
+
+    expect(useTimelineStore.getState().clips).toMatchObject([
+      { id: clipA.id, start: 120, trackId: insertedTrack.id },
+      { id: clipB.id, start: 170, trackId: clipA.trackId },
+    ]);
+    expect(
+      useTimelineStore.getState().tracks.some((track) => track.id === insertedTrack.id),
+    ).toBe(true);
+
+    act(() => {
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+
+    expect(useTimelineStore.getState().clips).toMatchObject([
+      { id: clipA.id, start: clipA.start, trackId: clipA.trackId },
+      { id: clipB.id, start: clipB.start, trackId: clipB.trackId },
+    ]);
+    expect(useTimelineStore.getState().tracks.map((track) => track.id)).toEqual(
+      tracks.map((track) => track.id),
+    );
+  });
+
   it("preserves parent speed inheritance to masks through undo/redo", () => {
     const clip = createClip("parent", "track_current", 0, 120);
     const mask: ClipMask = {

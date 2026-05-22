@@ -201,7 +201,9 @@ export const TimelineToolbar = () => {
   return (
     <Box
       sx={{
-        p: 1,
+        px: 1,
+        pt: 0.25,
+        pb: 1.25,
         borderBottom: "1px solid #333",
         display: "grid",
         gridTemplateColumns: "1fr auto 1fr",
@@ -398,10 +400,10 @@ export const TimelineToolbar = () => {
         {isCompositeTimelineActive ? (
           <Button
             variant="contained"
-            size="large"
+            size="small"
             startIcon={
               isCompositeBusy ? (
-                <CircularProgress size={18} color="inherit" />
+                <CircularProgress size={14} color="inherit" />
               ) : (
                 <ArrowBackIcon fontSize="small" />
               )
@@ -411,7 +413,7 @@ export const TimelineToolbar = () => {
               void exitToMainTimeline();
             }}
             data-testid="timeline-back-to-main"
-            sx={{ minWidth: 240, fontWeight: 700 }}
+            sx={{ fontWeight: 700, whiteSpace: "nowrap" }}
           >
             Back to main timeline
           </Button>

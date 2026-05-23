@@ -4886,46 +4886,6 @@
             "widgets_values": [true]
           },
           {
-            "id": 486,
-            "type": "easy showAnything",
-            "pos": [-160, 5760],
-            "size": [370, 360],
-            "flags": {
-              "collapsed": false
-            },
-            "order": 3,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "anything",
-                "name": "anything",
-                "shape": 7,
-                "type": "*",
-                "link": 838
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "output",
-                "name": "output",
-                "type": "*",
-                "links": null
-              }
-            ],
-            "title": "Enhanced Prompt",
-            "properties": {
-              "cnr_id": "comfyui-easy-use",
-              "ver": "b11c63487243d183a967261bdf019c5afcec2cf7",
-              "Node name for S&R": "easy showAnything",
-              "widget_ue_connectable": {}
-            },
-            "widgets_values": [
-              "Style: realistic - cinematic - The camera slowly rotates around a man sitting at a table in a cafe. He speaks in a serious, concerned voice, \"Tired of getting the perfect video, only to find you have a typo in your dialogue?\". His expression then turns and he smiles warmly, \"Me neither.\" The sound of gentle cafe chatter and the clinking of cups blends with the man's voice."
-            ],
-            "color": "#008181",
-            "bgcolor": "rgba(24,24,27,.9)"
-          },
-          {
             "id": 485,
             "type": "TextGenerateLTX2Prompt",
             "pos": [-160, 5500],
@@ -4964,7 +4924,7 @@
                 "localized_name": "generated_text",
                 "name": "generated_text",
                 "type": "STRING",
-                "links": [838, 1068, 1077]
+                "links": [1068, 1077]
               }
             ],
             "properties": {
@@ -5012,14 +4972,6 @@
             "origin_slot": 0,
             "target_id": 485,
             "target_slot": 2,
-            "type": "STRING"
-          },
-          {
-            "id": 838,
-            "origin_id": 485,
-            "origin_slot": 0,
-            "target_id": 486,
-            "target_slot": 0,
             "type": "STRING"
           },
           {

@@ -8,7 +8,7 @@ ComfyUI, and the frontend finalizes the outputs into importable assets.
 
 For sidecar authoring (how to write a `*.rules.json` file to control what
 the user sees in the Generate panel and how the workflow is transformed),
-see [AUTHORING.md](AUTHORING.md).
+see [HOW_TO_WRITE_WORKFLOW_RULES.md](../../assets/workflows/HOW_TO_WRITE_WORKFLOW_RULES.md).
 
 ---
 
@@ -138,18 +138,41 @@ loaded. No sidecar is required.
 ### `load_rules`
 
 Loads and parses the sidecar via `load_rules_model_for_workflow` in
-[../workflow_rules/normalize.py](../workflow_rules/normalize.py):
+[../workflow_rules/normalize.py](../workflow_rules/normalize.py). The
+resolution itself is implemented by `sidecar_path_for_workflow()` in the
+same module.
+
+Sidecar resolution order: `workflows_dir/<stem>.rules.json`, then each of
+`fallback_workflow_dirs` in order. In production these are wired via
+`WORKFLOWS_DIR` + `fallback_workflow_dirs=[DEFAULT_WORKFLOWS_DIR]` in
+[../comfyui/comfyui_generate.py](../comfyui/comfyui_generate.py) and
+[../../routers/comfyui.py](../../routers/comfyui.py) to
+`backend/assets/workflows/` (user-authored + saved) and
+`backend/assets/.config/default_workflows/` (packaged) respectively — see
+[HOW_TO_WRITE_WORKFLOW_RULES.md](../../assets/workflows/HOW_TO_WRITE_WORKFLOW_RULES.md)
+for the author-facing view.
+
+Sidecars are loaded for:
+
+- `GET /comfy/workflow/rules/{filename}` — drives frontend presentation.
+- `POST /comfy/generate` — accepts a frontend pre-resolved prompt and
+  applies preprocessing rules.
+
+`POST /comfy/workflow/save/{filename}` writes modified workflows into
+`WORKFLOWS_DIR`, where they shadow any packaged version.
+
+Failure modes:
 
 - Missing sidecar → defaults, no warnings.
 - Malformed JSON → defaults + `invalid_rules_json` warning.
 - Schema-invalid fields → defaults + pydantic-derived warnings. Generation
   is not failed; field-level fallbacks are applied.
 
-Sidecar resolution order: `workflows_dir/<stem>.rules.json`, then each of
-`fallback_workflow_dirs` in order. In production these are wired to
-`backend/assets/workflows/` (user-authored + saved) and
-`backend/assets/.config/default_workflows/` (packaged) respectively — see
-[AUTHORING.md](AUTHORING.md) for the author-facing view.
+The schema is **strict**: unrecognized legacy top-level fields
+(`mask_processing`, `aspect_ratio_processing`, `postprocessing`) and legacy
+node-level derived-mask fields (`binary_derived_mask_of`,
+`soft_derived_mask_of`, etc.) are rejected rather than silently migrated.
+New sidecars must declare `"version": 3`.
 
 ### `validate_inputs`
 

@@ -3,6 +3,7 @@ import {
   cancelDownload,
   subscribeToProgress,
   type DownloadProgressEvent,
+  type StartBatchResponse,
   type StartDownloadResponse,
 } from "../../services/downloadApi";
 
@@ -14,39 +15,69 @@ export interface ActiveModelDownload {
   external: boolean;
 }
 
-interface UseModelDownloadControllerOptions {
-  startDownload: (modelKey: string, context?: DownloadContext) => Promise<StartDownloadResponse>;
-  onDownloadComplete?: () => void;
-  /** How long to keep the completed entry visible before removing it. */
-  completionDelayMs?: number;
-}
-
 export interface DownloadContext {
   hfToken?: string;
+}
+
+interface UseModelDownloadControllerOptions {
+  startDownload: (modelKey: string, context?: DownloadContext) => Promise<StartDownloadResponse>;
+  /** If supplied, "Download all" hands the whole list to the server (one
+   * request, one queue) instead of starting jobs from the client. */
+  startBatch?: (modelKeys: string[], context?: DownloadContext) => Promise<StartBatchResponse>;
+  /** Fires after every individual job completes. Cheap callers can use this
+   * to refresh the model list silently. */
+  onDownloadComplete?: () => void;
+  /** Fires once after the in-flight set drains to empty (i.e. the batch is
+   * fully done). Heavier-weight callers (refreshing iframe state, retrying
+   * workflow load) should hook this instead of onDownloadComplete. */
+  onAllDownloadsComplete?: () => void;
+  /** How long to keep the completed entry visible before removing it. */
+  completionDelayMs?: number;
 }
 
 type JobOutcome = "complete" | "failed" | "cancelled" | "error";
 
 export function useModelDownloadController({
   startDownload,
+  startBatch,
   onDownloadComplete,
+  onAllDownloadsComplete,
   completionDelayMs = 1000,
 }: UseModelDownloadControllerOptions) {
   const [activeDownloads, setActiveDownloads] = useState<Record<string, ActiveModelDownload>>({});
   const [error, setError] = useState<string | null>(null);
-  const [downloadAllRunning, setDownloadAllRunning] = useState(false);
 
   const subscriptionsRef = useRef<Map<string, () => void>>(new Map());
   const completionTimersRef = useRef<Map<string, number>>(new Map());
   const adoptedJobIdsRef = useRef<Set<string>>(new Set());
-  const downloadAllCancelledRef = useRef(false);
 
-  // Mirror activeDownloads into a ref so async callbacks (subscription
-  // handlers, the download-all loop) can read fresh state without depending
-  // on the value (which would re-create every callback).
   const activeDownloadsRef = useRef(activeDownloads);
   useEffect(() => {
     activeDownloadsRef.current = activeDownloads;
+  }, [activeDownloads]);
+
+  // Latest callbacks (refs so they don't rebuild beginTracking).
+  const onDownloadCompleteRef = useRef(onDownloadComplete);
+  useEffect(() => {
+    onDownloadCompleteRef.current = onDownloadComplete;
+  }, [onDownloadComplete]);
+  const onAllDownloadsCompleteRef = useRef(onAllDownloadsComplete);
+  useEffect(() => {
+    onAllDownloadsCompleteRef.current = onAllDownloadsComplete;
+  }, [onAllDownloadsComplete]);
+
+  // Edge-trigger onAllDownloadsComplete when activeDownloads drains.
+  const wasNonEmptyRef = useRef(false);
+  useEffect(() => {
+    const isEmpty = Object.keys(activeDownloads).length === 0;
+    if (!isEmpty) {
+      wasNonEmptyRef.current = true;
+      return;
+    }
+    if (wasNonEmptyRef.current) {
+      wasNonEmptyRef.current = false;
+      onAllDownloadsCompleteRef.current?.();
+    }
   }, [activeDownloads]);
 
   const teardownSubscription = useCallback((modelKey: string) => {
@@ -114,7 +145,7 @@ export function useModelDownloadController({
                 completionTimersRef.current.delete(modelKey);
                 adoptedJobIdsRef.current.delete(jobId);
                 removeEntry();
-                onDownloadComplete?.();
+                onDownloadCompleteRef.current?.();
               }, completionDelayMs);
               completionTimersRef.current.set(modelKey, timer);
               resolve("complete");
@@ -144,7 +175,7 @@ export function useModelDownloadController({
         subscriptionsRef.current.set(modelKey, unsub);
       });
     },
-    [completionDelayMs, onDownloadComplete, teardownSubscription],
+    [completionDelayMs, teardownSubscription],
   );
 
   const handleDownload = useCallback(
@@ -175,8 +206,6 @@ export function useModelDownloadController({
   const adoptExternalJob = useCallback(
     (modelKey: string, jobId: string) => {
       if (adoptedJobIdsRef.current.has(jobId)) return;
-      // Guard against re-adopting a job we already track for this model.
-      // We read the latest map via the ref to avoid stale-closure issues.
       const existing = activeDownloadsRef.current[modelKey];
       if (existing && existing.jobId === jobId) return;
       adoptedJobIdsRef.current.add(jobId);
@@ -189,9 +218,6 @@ export function useModelDownloadController({
     async (modelKey?: string) => {
       const snapshot = activeDownloadsRef.current;
       const keys = modelKey ? [modelKey] : Object.keys(snapshot);
-      if (!modelKey) {
-        downloadAllCancelledRef.current = true;
-      }
       for (const key of keys) {
         const entry = snapshot[key];
         if (!entry) continue;
@@ -205,33 +231,70 @@ export function useModelDownloadController({
     [],
   );
 
-  /** Run downloads serially. Any non-complete outcome (failure, cancel,
-   * SSE error, or a per-row cancel via handleCancel(modelKey)) stops the
-   * batch — the user almost certainly didn't mean to keep going. */
+  /** Queue several downloads. With `startBatch` set this is one server
+   * request; queue ordering and "one at a time" are enforced server-side,
+   * so switching workflows (which unmounts this hook) does not interrupt
+   * the batch — re-mounting will re-adopt the in-flight jobs via
+   * `adoptExternalJob`. */
   const handleDownloadAll = useCallback(
     async (modelKeys: string[], context?: DownloadContext) => {
-      downloadAllCancelledRef.current = false;
-      setDownloadAllRunning(true);
-      try {
-        for (const modelKey of modelKeys) {
-          if (downloadAllCancelledRef.current) break;
-          const outcome = await handleDownload(modelKey, context);
-          if (outcome !== "complete") break;
+      setError(null);
+      if (modelKeys.length === 0) return;
+
+      if (startBatch) {
+        let result: StartBatchResponse;
+        try {
+          result = await startBatch(modelKeys, context);
+        } catch (batchError) {
+          setError(
+            batchError instanceof Error
+              ? batchError.message
+              : "Failed to start downloads",
+          );
+          return;
         }
-      } finally {
-        setDownloadAllRunning(false);
+
+        for (const job of result.jobs) {
+          clearCompletionTimer(job.modelKey);
+          void beginTracking(job.modelKey, job.jobId, false);
+        }
+
+        if (result.errors.length > 0) {
+          const summary = result.errors
+            .map((entry) => `${entry.modelKey}: ${entry.message}`)
+            .join("\n");
+          setError(
+            result.errors.length === 1
+              ? result.errors[0].message
+              : `Some downloads couldn't be queued:\n${summary}`,
+          );
+        }
+        return;
+      }
+
+      // Legacy fallback for callers that haven't wired up startBatch: run
+      // them serially. Stops on any non-complete outcome.
+      for (const modelKey of modelKeys) {
+        const outcome = await handleDownload(modelKey, context);
+        if (outcome !== "complete") break;
       }
     },
-    [handleDownload],
+    [beginTracking, clearCompletionTimer, handleDownload, startBatch],
   );
 
   const dismissError = useCallback(() => setError(null), []);
+
+  const anyLocalDownloadActive = Object.values(activeDownloads).some(
+    (entry) => !entry.external,
+  );
 
   return {
     activeDownloads,
     error,
     dismissError,
-    downloadAllRunning,
+    /** True while we have local in-flight downloads. The old
+     * `downloadAllRunning` flag was redundant with this. */
+    anyLocalDownloadActive,
     handleDownload,
     handleCancel,
     handleDownloadAll,

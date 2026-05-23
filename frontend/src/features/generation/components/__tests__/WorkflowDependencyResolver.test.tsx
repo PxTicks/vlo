@@ -10,6 +10,7 @@ import {
 vi.mock("../../../../services/downloadApi", () => ({
   getAvailableModels: vi.fn(),
   startModelDownload: vi.fn(),
+  startModelDownloadBatch: vi.fn(),
   cancelDownload: vi.fn(),
   subscribeToProgress: vi.fn(),
 }));
@@ -322,6 +323,123 @@ describe("WorkflowDependencyResolver", () => {
 
     await waitFor(() => {
       expect(screen.queryByText("ltx-model.safetensors")).not.toBeInTheDocument();
+    });
+  });
+
+  it("queues every downloadable model in one batch request when Download all is clicked", async () => {
+    const { startModelDownloadBatch } = await import(
+      "../../../../services/downloadApi"
+    );
+
+    vi.mocked(getAvailableModels).mockResolvedValue({
+      sam2: [],
+      comfyui: {
+        modelDownloadsEnabled: true,
+        workflowModels: [
+          {
+            key: "checkpoints:a.safetensors",
+            label: "a.safetensors",
+            description: "Save to ComfyUI/models/checkpoints",
+            installed: false,
+            filename: "a.safetensors",
+            directory: "checkpoints",
+          },
+          {
+            key: "checkpoints:b.safetensors",
+            label: "b.safetensors",
+            description: "Save to ComfyUI/models/checkpoints",
+            installed: false,
+            filename: "b.safetensors",
+            directory: "checkpoints",
+          },
+        ],
+      },
+    });
+    vi.mocked(startModelDownloadBatch).mockResolvedValue({
+      jobs: [
+        {
+          modelKey: "checkpoints:a.safetensors",
+          jobId: "job-a",
+          label: "a.safetensors",
+          status: "queued",
+        },
+        {
+          modelKey: "checkpoints:b.safetensors",
+          jobId: "job-b",
+          label: "b.safetensors",
+          status: "queued",
+        },
+      ],
+      errors: [],
+    });
+
+    render(
+      <WorkflowDependencyResolver
+        workflowId="wf.json"
+        warning={{
+          missingNodeTypes: [],
+          missingModels: ["a.safetensors", "b.safetensors"],
+        }}
+        onOpenEditor={vi.fn()}
+        onRefreshWarning={vi.fn()}
+      />,
+    );
+
+    const downloadAll = await screen.findByRole("button", {
+      name: /download all \(2\)/i,
+    });
+    fireEvent.click(downloadAll);
+
+    await waitFor(() => {
+      expect(startModelDownloadBatch).toHaveBeenCalledWith(
+        "comfyui-workflow",
+        ["checkpoints:a.safetensors", "checkpoints:b.safetensors"],
+        { workflowId: "wf.json" },
+      );
+    });
+    // Per-row "Download" should not have been called — the batch endpoint
+    // owns the queue server-side.
+    expect(startModelDownload).not.toHaveBeenCalled();
+  });
+
+  it("adopts an in-flight job started by another workflow so its progress shows here", async () => {
+    vi.mocked(getAvailableModels).mockResolvedValue({
+      sam2: [],
+      comfyui: {
+        modelDownloadsEnabled: true,
+        workflowModels: [
+          {
+            key: "checkpoints:shared.safetensors",
+            label: "shared.safetensors",
+            description: "Save to ComfyUI/models/checkpoints",
+            installed: false,
+            filename: "shared.safetensors",
+            directory: "checkpoints",
+            activeJobId: "job-from-other-tab",
+          },
+        ],
+      },
+    });
+
+    render(
+      <WorkflowDependencyResolver
+        workflowId="wf.json"
+        warning={{
+          missingNodeTypes: [],
+          missingModels: ["shared.safetensors"],
+        }}
+        onOpenEditor={vi.fn()}
+        onRefreshWarning={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      // The first arg to subscribeToProgress is the jobId we adopted.
+      expect(subscribeToProgress).toHaveBeenCalledWith(
+        "job-from-other-tab",
+        expect.any(Function),
+        expect.any(Function),
+      );
     });
   });
 });

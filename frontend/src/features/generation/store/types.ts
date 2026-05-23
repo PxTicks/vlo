@@ -149,6 +149,12 @@ export interface GenerationWorkflowState {
   fetchWorkflows: () => Promise<void>;
   loadWorkflow: (filename: string) => Promise<void>;
   loadWorkflowFromAssetMetadata: (asset: Asset) => Promise<void>;
+  /** Re-run ComfyUI's missing-model pipeline in the iframe (after model
+   * downloads land on disk) and refresh `workflowWarning` from the new
+   * pendingWarnings. Cheap compared to loadWorkflow. Returns `true` when
+   * the iframe call ran (regardless of whether warnings still remain);
+   * callers can fall back to a full workflow reload on `false`. */
+  refreshMissingModelsFromIframe: () => Promise<boolean>;
 }
 
 export interface GenerationRuntimeState {

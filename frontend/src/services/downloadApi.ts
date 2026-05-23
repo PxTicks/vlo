@@ -90,10 +90,27 @@ export interface StartDownloadResponse {
   status: string;
 }
 
+export interface StartBatchJob {
+  modelKey: string;
+  jobId: string;
+  label: string;
+  status: string;
+}
+
+export interface StartBatchError {
+  modelKey: string;
+  message: string;
+}
+
+export interface StartBatchResponse {
+  jobs: StartBatchJob[];
+  errors: StartBatchError[];
+}
+
 export interface DownloadProgressEvent {
   jobId: string;
   label: string;
-  status: "pending" | "downloading" | "complete" | "failed" | "cancelled";
+  status: "queued" | "downloading" | "complete" | "failed" | "cancelled";
   progress: {
     currentFileIndex: number;
     totalFiles: number;
@@ -102,6 +119,9 @@ export interface DownloadProgressEvent {
     overallBytes: number;
     overallBytesTotal: number | null;
   };
+  /** 0 = front of queue (about to start), N = N jobs ahead. Meaningful only
+   * while `status === "queued"`. */
+  queuePosition?: number;
   error: string | null;
 }
 
@@ -154,6 +174,34 @@ export async function startModelDownload(
   );
 }
 
+export async function startModelDownloadBatch(
+  modelType: string,
+  modelKeys: string[],
+  options: {
+    workflowId?: string;
+    hfToken?: string;
+  } = {},
+): Promise<StartBatchResponse> {
+  const body: Record<string, unknown> = {
+    modelType,
+    modelKeys,
+    workflowId: options.workflowId,
+  };
+  if (options.hfToken) {
+    body.hfToken = options.hfToken;
+  }
+
+  const response = await fetch(`${DOWNLOADS_API}/start-batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return parseJsonResponse<StartBatchResponse>(
+    response,
+    "Unable to start model downloads",
+  );
+}
+
 export async function cancelDownload(jobId: string): Promise<void> {
   const response = await fetch(`${DOWNLOADS_API}/${jobId}/cancel`, {
     method: "POST",
@@ -180,7 +228,7 @@ export function subscribeToProgress(
     }
   }
 
-  eventSource.addEventListener("pending", handleMessage);
+  eventSource.addEventListener("queued", handleMessage);
   eventSource.addEventListener("downloading", handleMessage);
   eventSource.addEventListener("complete", handleMessage);
   eventSource.addEventListener("failed", handleMessage);

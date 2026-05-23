@@ -3,6 +3,7 @@ import { CloudDownload } from "@mui/icons-material";
 import {
   getAvailableModels,
   startModelDownload,
+  startModelDownloadBatch,
   type DownloadableModel,
 } from "../../../services/downloadApi";
 import { ModelDownloadPanel } from "../../../shared/components/ModelDownloadPanel";
@@ -70,27 +71,24 @@ export function Sam2ModelDownloadOverlay({
     activeDownloads,
     error,
     dismissError,
-    downloadAllRunning,
+    anyLocalDownloadActive,
     handleDownload,
     handleCancel,
     handleDownloadAll,
     adoptExternalJob,
   } = useModelDownloadController({
     startDownload: (modelKey) => startModelDownload("sam2", modelKey),
+    startBatch: (modelKeys) => startModelDownloadBatch("sam2", modelKeys),
     onDownloadComplete: () => {
       void fetchModels({ silent: true });
     },
   });
 
-  // Fetch-on-mount is the documented escape hatch for the
-  // react-hooks/set-state-in-effect rule when no data-fetching library is
-  // in play. See https://react.dev/reference/react/useEffect#fetching-data-with-effects
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchModels();
   }, [fetchModels]);
 
-  // Poll while the overlay is mounted so cross-workflow downloads surface here.
   useEffect(() => {
     const interval = globalThis.setInterval(() => {
       void fetchModels({ silent: true });
@@ -108,7 +106,7 @@ export function Sam2ModelDownloadOverlay({
       loadingLabel="Loading available SAM2 models..."
       error={error}
       activeDownloads={activeDownloads}
-      downloadAllRunning={downloadAllRunning}
+      anyLocalDownloadActive={anyLocalDownloadActive}
       onDownload={handleDownload}
       onDownloadAll={handleDownloadAll}
       onCancel={handleCancel}

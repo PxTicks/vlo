@@ -35,6 +35,70 @@ class StartDownloadRequest(BaseModel):
     hfToken: str | None = None
 
 
+class StartBatchRequest(BaseModel):
+    modelType: str
+    modelKeys: list[str]
+    workflowId: str | None = None
+    hfToken: str | None = None
+
+
+def _resolve_download_request(
+    model_type: str,
+    model_key: str,
+    workflow_id: str | None,
+    hf_token: str | None,
+) -> tuple[str, list, str | None]:
+    """Return (label, specs, auth_token) or raise HTTPException."""
+    if model_type == "sam2":
+        try:
+            specs = get_sam2_download_specs(model_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        label = model_key
+        for model in get_available_sam2_models():
+            if model["key"] == model_key:
+                label = model["label"]
+                break
+        return label, specs, None
+
+    if model_type == "comfyui-workflow":
+        if not workflow_id:
+            raise HTTPException(
+                status_code=400,
+                detail="workflowId is required for ComfyUI workflow downloads",
+            )
+
+        try:
+            specs = get_workflow_download_specs(workflow_id, model_key)
+            workflow_models = get_available_workflow_models(workflow_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        label = model_key
+        for model in workflow_models:
+            if model["key"] == model_key:
+                label = model["label"]
+                break
+
+        auth_token: str | None = None
+        if is_workflow_model_gated(workflow_id, model_key):
+            token = (hf_token or "").strip()
+            if not token:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "This model is gated on HuggingFace. Accept the "
+                        "license on the model's repository and provide a "
+                        "HuggingFace access token to download it."
+                    ),
+                )
+            auth_token = token
+        return label, specs, auth_token
+
+    raise HTTPException(status_code=400, detail=f"Unknown model type: {model_type}")
+
+
 @router.get("/models")
 def list_available_models(workflowId: str | None = None):
     workflow_models: list[dict] = []
@@ -97,52 +161,9 @@ def list_available_models(workflowId: str | None = None):
 
 @router.post("/start")
 async def start_download(request: StartDownloadRequest):
-    auth_token: str | None = None
-
-    if request.modelType == "sam2":
-        try:
-            specs = get_sam2_download_specs(request.modelKey)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-
-        label = request.modelKey
-        for model in get_available_sam2_models():
-            if model["key"] == request.modelKey:
-                label = model["label"]
-                break
-    elif request.modelType == "comfyui-workflow":
-        if not request.workflowId:
-            raise HTTPException(
-                status_code=400,
-                detail="workflowId is required for ComfyUI workflow downloads",
-            )
-
-        try:
-            specs = get_workflow_download_specs(request.workflowId, request.modelKey)
-            workflow_models = get_available_workflow_models(request.workflowId)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-
-        label = request.modelKey
-        for model in workflow_models:
-            if model["key"] == request.modelKey:
-                label = model["label"]
-                break
-
-        if is_workflow_model_gated(request.workflowId, request.modelKey):
-            token = (request.hfToken or "").strip()
-            if not token:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "This model is gated on HuggingFace. Accept the "
-                        "license on the model's repository and provide a "
-                        "HuggingFace access token to download it."
-                    ),
-                )
-            auth_token = token
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown model type: {request.modelType}")
+    label, specs, auth_token = _resolve_download_request(
+        request.modelType, request.modelKey, request.workflowId, request.hfToken
+    )
 
     try:
         job = download_service.start_download(
@@ -154,6 +175,44 @@ async def start_download(request: StartDownloadRequest):
         raise HTTPException(status_code=409, detail=str(exc))
 
     return {"jobId": job.job_id, "label": job.label, "status": job.status}
+
+
+@router.post("/start-batch")
+async def start_batch_download(request: StartBatchRequest):
+    """Queue several model downloads server-side. The worker runs them
+    one at a time, so the queue survives client navigation and tab
+    throttling. Per-key errors (gating, conflicts) are returned alongside
+    the started jobs rather than aborting the whole batch."""
+    jobs: list[dict] = []
+    errors: list[dict] = []
+
+    for model_key in request.modelKeys:
+        try:
+            label, specs, auth_token = _resolve_download_request(
+                request.modelType, model_key, request.workflowId, request.hfToken
+            )
+        except HTTPException as exc:
+            errors.append({"modelKey": model_key, "message": str(exc.detail)})
+            continue
+
+        try:
+            job = download_service.start_download(
+                label=label,
+                files=specs,
+                auth_token=auth_token,
+            )
+        except ValueError as exc:
+            errors.append({"modelKey": model_key, "message": str(exc)})
+            continue
+
+        jobs.append({
+            "modelKey": model_key,
+            "jobId": job.job_id,
+            "label": job.label,
+            "status": job.status,
+        })
+
+    return {"jobs": jobs, "errors": errors}
 
 
 @router.get("/{job_id}/progress")

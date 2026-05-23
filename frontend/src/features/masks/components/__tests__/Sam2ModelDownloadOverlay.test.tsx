@@ -6,6 +6,7 @@ import { getAvailableModels, subscribeToProgress } from "../../../../services/do
 vi.mock("../../../../services/downloadApi", () => ({
   getAvailableModels: vi.fn(),
   startModelDownload: vi.fn(),
+  startModelDownloadBatch: vi.fn(),
   cancelDownload: vi.fn(),
   subscribeToProgress: vi.fn(),
 }));

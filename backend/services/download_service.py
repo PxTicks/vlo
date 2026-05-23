@@ -3,6 +3,13 @@
 Provides a reusable download engine that streams files from URLs to local paths
 with progress tracking via callbacks. Downloads write to .tmp files and rename
 on completion to prevent partial files from being discovered.
+
+Jobs are processed by a single server-side worker (one at a time), so any
+caller — individual download, "download all" batch, or a different workflow tab
+— enqueues onto the same FIFO queue. This makes the queue robust against
+client navigation, tab throttling, or page reload: jobs continue running
+server-side and reappear via /downloads/models?activeJobId when the client
+returns.
 """
 
 from __future__ import annotations
@@ -12,11 +19,13 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 import httpx
 
 CHUNK_SIZE = 256 * 1024  # 256 KB
+
+JobStatus = Literal["queued", "downloading", "complete", "failed", "cancelled"]
 
 
 @dataclass
@@ -51,12 +60,13 @@ class DownloadJob:
     job_id: str
     label: str
     files: list[DownloadFileSpec]
-    status: Literal["pending", "downloading", "complete", "failed", "cancelled"] = "pending"
+    status: JobStatus = "queued"
     progress: DownloadProgress = field(default_factory=DownloadProgress)
     error: str | None = None
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     progress_event: asyncio.Event | None = None
     auth_token: str | None = None
+    queue_position: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -65,6 +75,7 @@ class DownloadJob:
             "status": self.status,
             "progress": self.progress.to_dict(),
             "error": self.error,
+            "queuePosition": self.queue_position,
         }
 
 
@@ -72,6 +83,11 @@ _active_jobs: dict[str, DownloadJob] = {}
 _active_destinations: dict[str, str] = {}
 _job_destinations: dict[str, set[str]] = {}
 _registry_lock = threading.Lock()
+
+# At-most-one in-flight download. Created lazily on the first job inside the
+# running event loop (Semaphore is loop-affine in older Python builds).
+_download_semaphore: asyncio.Semaphore | None = None
+_pending_job_ids: list[str] = []  # FIFO ordering, mirrors semaphore queue
 
 
 def _normalize_destinations(files: list[DownloadFileSpec]) -> set[str]:
@@ -86,79 +102,139 @@ def _release_job_destinations(job_id: str) -> None:
                 del _active_destinations[dest_path]
 
 
-async def _execute_download_job(
-    job: DownloadJob,
-    on_progress: Callable[[], None] | None = None,
-) -> None:
+def _recompute_queue_positions() -> None:
+    """Update each queued job's position so the SSE stream tells clients
+    how many jobs are ahead of theirs."""
+    with _registry_lock:
+        for position, job_id in enumerate(_pending_job_ids):
+            job = _active_jobs.get(job_id)
+            if job is None:
+                continue
+            new_position = position
+            if job.queue_position != new_position:
+                job.queue_position = new_position
+                event = job.progress_event
+                if event is not None:
+                    event.set()
+
+
+def _remove_from_pending(job_id: str) -> None:
+    with _registry_lock:
+        try:
+            _pending_job_ids.remove(job_id)
+        except ValueError:
+            pass
+    _recompute_queue_positions()
+
+
+def _notify_progress(job: DownloadJob) -> None:
+    event = job.progress_event
+    if event is not None:
+        event.set()
+
+
+async def _execute_download_job(job: DownloadJob) -> None:
+    job.status = "downloading"
+    job.queue_position = 0
+    _notify_progress(job)
+    job.progress.total_files = len(job.files)
+
+    overall_downloaded_prior_files: int = 0
+
+    # httpx strips Authorization on cross-origin redirects by default, so
+    # the Bearer token is only sent to the initial huggingface.co request
+    # — the CDN URL it redirects to is already presigned and rejects
+    # forwarded auth.
+    request_headers: dict[str, str] = {}
+    if job.auth_token:
+        request_headers["Authorization"] = f"Bearer {job.auth_token}"
+
+    async with httpx.AsyncClient(
+        follow_redirects=True, timeout=httpx.Timeout(30.0, read=300.0)
+    ) as client:
+        for file_index, file_spec in enumerate(job.files):
+            if job.cancel_event.is_set():
+                job.status = "cancelled"
+                _notify_progress(job)
+                return
+
+            job.progress.current_file_index = file_index
+            job.progress.current_file_bytes = 0
+            job.progress.current_file_total = None
+
+            dest = Path(file_spec.dest_path)
+            tmp_path = dest.with_suffix(dest.suffix + ".tmp")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            try:
+                async with client.stream(
+                    "GET", file_spec.url, headers=request_headers or None
+                ) as response:
+                    response.raise_for_status()
+
+                    content_length = response.headers.get("content-length")
+                    if content_length is not None:
+                        job.progress.current_file_total = int(content_length)
+
+                    with open(tmp_path, "wb") as f:
+                        async for chunk in response.aiter_bytes(CHUNK_SIZE):
+                            if job.cancel_event.is_set():
+                                job.status = "cancelled"
+                                tmp_path.unlink(missing_ok=True)
+                                _notify_progress(job)
+                                return
+
+                            f.write(chunk)
+                            job.progress.current_file_bytes += len(chunk)
+                            job.progress.overall_bytes = (
+                                overall_downloaded_prior_files
+                                + job.progress.current_file_bytes
+                            )
+                            _notify_progress(job)
+
+                tmp_path.rename(dest)
+                overall_downloaded_prior_files += job.progress.current_file_bytes
+
+            except Exception as exc:
+                tmp_path.unlink(missing_ok=True)
+                job.status = "failed"
+                job.error = f"Failed to download {file_spec.filename}: {exc}"
+                _notify_progress(job)
+                return
+
+    job.status = "complete"
+    _notify_progress(job)
+
+
+async def _process_job(job: DownloadJob) -> None:
+    """Wait for the queue slot, then run the job. Always releases the
+    destination reservation when the job leaves the queue, regardless of
+    outcome — so a cancelled queued job frees its slot immediately."""
+    global _download_semaphore
     try:
-        job.status = "downloading"
-        job.progress.total_files = len(job.files)
+        if job.cancel_event.is_set():
+            job.status = "cancelled"
+            _notify_progress(job)
+            return
 
-        # Pre-scan to estimate overall total if possible
-        overall_downloaded_prior_files: int = 0
+        if _download_semaphore is None:
+            _download_semaphore = asyncio.Semaphore(1)
 
-        # httpx strips Authorization on cross-origin redirects by default, so
-        # the Bearer token is only sent to the initial huggingface.co request
-        # — the CDN URL it redirects to is already presigned and rejects
-        # forwarded auth.
-        request_headers: dict[str, str] = {}
-        if job.auth_token:
-            request_headers["Authorization"] = f"Bearer {job.auth_token}"
-
-        async with httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=300.0)) as client:
-            for file_index, file_spec in enumerate(job.files):
-                if job.cancel_event.is_set():
-                    job.status = "cancelled"
-                    return
-
-                job.progress.current_file_index = file_index
-                job.progress.current_file_bytes = 0
-                job.progress.current_file_total = None
-
-                dest = Path(file_spec.dest_path)
-                tmp_path = dest.with_suffix(dest.suffix + ".tmp")
-                dest.parent.mkdir(parents=True, exist_ok=True)
-
-                try:
-                    async with client.stream(
-                        "GET", file_spec.url, headers=request_headers or None
-                    ) as response:
-                        response.raise_for_status()
-
-                        content_length = response.headers.get("content-length")
-                        if content_length is not None:
-                            job.progress.current_file_total = int(content_length)
-
-                        with open(tmp_path, "wb") as f:
-                            async for chunk in response.aiter_bytes(CHUNK_SIZE):
-                                if job.cancel_event.is_set():
-                                    job.status = "cancelled"
-                                    tmp_path.unlink(missing_ok=True)
-                                    return
-
-                                f.write(chunk)
-                                job.progress.current_file_bytes += len(chunk)
-                                job.progress.overall_bytes = overall_downloaded_prior_files + job.progress.current_file_bytes
-
-                                if on_progress:
-                                    on_progress()
-
-                    # Rename .tmp to final path
-                    tmp_path.rename(dest)
-                    overall_downloaded_prior_files += job.progress.current_file_bytes
-
-                except Exception as exc:
-                    tmp_path.unlink(missing_ok=True)
-                    job.status = "failed"
-                    job.error = f"Failed to download {file_spec.filename}: {exc}"
-                    if on_progress:
-                        on_progress()
-                    return
-
-        job.status = "complete"
-        if on_progress:
-            on_progress()
+        async with _download_semaphore:
+            _remove_from_pending(job.job_id)
+            if job.cancel_event.is_set():
+                job.status = "cancelled"
+                _notify_progress(job)
+                return
+            await _execute_download_job(job)
+    except Exception as exc:  # noqa: BLE001 — last-resort failure surface
+        job.status = "failed"
+        job.error = f"Download worker crashed: {exc}"
+        _notify_progress(job)
     finally:
+        # If the job never entered the semaphore (cancel before slot), still
+        # clean up its queue entry.
+        _remove_from_pending(job.job_id)
         _release_job_destinations(job.job_id)
 
 
@@ -167,6 +243,9 @@ def start_download(
     files: list[DownloadFileSpec],
     auth_token: str | None = None,
 ) -> DownloadJob:
+    """Enqueue a download. Returns immediately; the worker processes
+    queued jobs one at a time. If another job already holds any of these
+    destination paths, returns that job instead of creating a duplicate."""
     requested_destinations = _normalize_destinations(files)
 
     with _registry_lock:
@@ -182,32 +261,34 @@ def start_download(
                 existing_destinations = _job_destinations.get(existing_job_id, set())
                 if (
                     existing_job is not None
-                    and existing_job.status in ("pending", "downloading")
+                    and existing_job.status in ("queued", "downloading")
                     and existing_destinations == requested_destinations
                 ):
                     return existing_job
 
-            raise ValueError("A download is already in progress for one or more destination files")
+            raise ValueError(
+                "A download is already in progress for one or more destination files"
+            )
 
         job = DownloadJob(
             job_id=str(uuid.uuid4()),
             label=label,
             files=files,
             auth_token=auth_token,
+            status="queued",
         )
         _active_jobs[job.job_id] = job
         _job_destinations[job.job_id] = requested_destinations
         for dest_path in requested_destinations:
             _active_destinations[dest_path] = job.job_id
+        _pending_job_ids.append(job.job_id)
 
-    progress_event = asyncio.Event()
-    job.progress_event = progress_event
-
-    def notify_progress() -> None:
-        progress_event.set()
+    job.progress_event = asyncio.Event()
 
     loop = asyncio.get_running_loop()
-    loop.create_task(_execute_download_job(job, on_progress=notify_progress))
+    loop.create_task(_process_job(job))
+
+    _recompute_queue_positions()
     return job
 
 
@@ -217,8 +298,8 @@ def get_job(job_id: str) -> DownloadJob | None:
 
 
 def find_active_jobs_for_paths(paths: set[str]) -> dict[str, str]:
-    """Return a mapping of {destination_path: job_id} for any of `paths` that
-    are currently being downloaded (pending or downloading)."""
+    """Return a mapping of {destination_path: job_id} for any of `paths`
+    that are currently queued or downloading."""
     if not paths:
         return {}
 
@@ -230,7 +311,7 @@ def find_active_jobs_for_paths(paths: set[str]) -> dict[str, str]:
             if job_id is None:
                 continue
             job = _active_jobs.get(job_id)
-            if job is None or job.status not in ("pending", "downloading"):
+            if job is None or job.status not in ("queued", "downloading"):
                 continue
             result[path] = job_id
     return result
@@ -242,4 +323,5 @@ def cancel_job(job_id: str) -> bool:
     if job is None:
         return False
     job.cancel_event.set()
+    _notify_progress(job)
     return True

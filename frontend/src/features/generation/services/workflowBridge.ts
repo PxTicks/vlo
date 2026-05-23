@@ -305,6 +305,9 @@ interface ComfyUIApp {
     openSource?: string,
     options?: { deferWarnings?: boolean },
   ) => Promise<void>;
+  refreshMissingModels?: (
+    options?: { silent?: boolean },
+  ) => Promise<unknown>;
   canvas?: unknown;
   extensionManager?: {
     workflow?: ComfyUIWorkflowApi;
@@ -732,6 +735,31 @@ export function readAndClearPendingWarningsFromIframe(
     clearPendingWarningsFromIframe(iframe);
   }
   return warnings;
+}
+
+/**
+ * Ask the ComfyUI iframe to re-scan its model folders and re-evaluate
+ * `pendingWarnings.missingModelCandidates`. Used after a batch of model
+ * downloads finishes so the warning summary updates without forcing a
+ * full handleFile re-injection.
+ *
+ * ComfyUI's `app.refreshMissingModels` (defined in their scripts/app.ts)
+ * runs `reloadNodeDefs()` then re-runs the missing-model pipeline, which
+ * is the same path their MissingModelCard "Refresh" button takes.
+ */
+export async function refreshMissingModelsInIframe(
+  iframe: HTMLIFrameElement,
+): Promise<boolean> {
+  try {
+    const win = iframe.contentWindow as ComfyUIWindow | null;
+    const refresh = win?.app?.refreshMissingModels;
+    if (typeof refresh !== "function") return false;
+    await refresh.call(win!.app, { silent: true });
+    return true;
+  } catch (err) {
+    console.warn("[workflowBridge] refreshMissingModelsInIframe failed:", err);
+    return false;
+  }
 }
 
 const WARNING_CAPTURE_POLL_MS = 50;

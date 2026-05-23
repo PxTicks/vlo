@@ -4,11 +4,13 @@ import { OpenInNew, WarningAmberOutlined } from "@mui/icons-material";
 import {
   getAvailableModels,
   startModelDownload,
+  startModelDownloadBatch,
   type DownloadableModel,
 } from "../../../services/downloadApi";
 import { ModelDownloadPanel } from "../../../shared/components/ModelDownloadPanel";
 import { useModelDownloadController } from "../../../shared/hooks/useModelDownloadController";
 import type { WorkflowWarningSummary } from "../services/workflowBridge";
+import { useGenerationStore } from "../useGenerationStore";
 
 interface WorkflowDependencyResolverProps {
   workflowId: string | null;
@@ -159,11 +161,15 @@ export function WorkflowDependencyResolver({
     [warning.missingModels, workflowModels],
   );
 
+  const refreshMissingModelsFromIframe = useGenerationStore(
+    (state) => state.refreshMissingModelsFromIframe,
+  );
+
   const {
     activeDownloads,
     error,
     dismissError,
-    downloadAllRunning,
+    anyLocalDownloadActive,
     handleDownload,
     handleCancel,
     handleDownloadAll,
@@ -174,9 +180,34 @@ export function WorkflowDependencyResolver({
         workflowId: workflowId ?? undefined,
         hfToken: context?.hfToken,
       }),
+    startBatch: (modelKeys, context) =>
+      startModelDownloadBatch("comfyui-workflow", modelKeys, {
+        workflowId: workflowId ?? undefined,
+        hfToken: context?.hfToken,
+      }),
     onDownloadComplete: () => {
-      onRefreshWarning();
+      // Refresh model list so the just-downloaded entry flips to "installed"
+      // (and drops out of the Download all candidate set). Cheap call.
       void fetchWorkflowModels({ silent: true });
+    },
+    onAllDownloadsComplete: () => {
+      // Refresh the cheap backend model listing alongside the iframe work;
+      // these are independent reads and the model list does not gate the
+      // fallback decision below.
+      void fetchWorkflowModels({ silent: true });
+      // Ask ComfyUI to re-scan its model folders and re-evaluate
+      // pendingWarnings — the same path the MissingModelCard "Refresh"
+      // button takes. Only fall back to the full workflow reload when the
+      // iframe call could not run (no editor ref, or app.refreshMissingModels
+      // unavailable). If the lightweight refresh ran, trust its warning
+      // result — even when models remain missing, the resolver stays
+      // visible with the updated list.
+      void (async () => {
+        const refreshed = await refreshMissingModelsFromIframe();
+        if (!refreshed) {
+          onRefreshWarning();
+        }
+      })();
     },
   });
 
@@ -194,7 +225,7 @@ export function WorkflowDependencyResolver({
       loadingLabel="Loading workflow download options..."
       error={error}
       activeDownloads={activeDownloads}
-      downloadAllRunning={downloadAllRunning}
+      anyLocalDownloadActive={anyLocalDownloadActive}
       variant="plain"
       fillHeight
       beforeModels={

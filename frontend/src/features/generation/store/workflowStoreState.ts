@@ -2,6 +2,8 @@ import * as comfyApi from "../services/comfyuiApi";
 import {
   buildWorkflowResultFromGraphData,
   isIframeAppReady,
+  readPendingWarningsFromIframe,
+  refreshMissingModelsInIframe,
 } from "../services/workflowBridge";
 import {
   DEFAULT_GENERATION_TARGET_RESOLUTION,
@@ -199,6 +201,17 @@ export function buildWorkflowStoreState(
 
     clearWorkflowWarning: () => set({ workflowWarning: null }),
     clearWorkflowLoadError: () => set({ workflowLoadError: null }),
+    refreshMissingModelsFromIframe: async () => {
+      const { editorRef } = get();
+      if (!editorRef) return false;
+      const ok = await refreshMissingModelsInIframe(editorRef);
+      if (!ok) return false;
+      // The ComfyUI pipeline mutates `activeWorkflow.pendingWarnings`
+      // in-place. Re-read and let an empty result clear the warning.
+      const warnings = readPendingWarningsFromIframe(editorRef);
+      set({ workflowWarning: warnings });
+      return true;
+    },
     ...buildMediaInputActions(set, get),
 
     syncWorkflow: (workflow, graphData, inputs, options) => {

@@ -47,7 +47,7 @@ def test_start_download_route_runs_inside_event_loop(monkeypatch, tmp_path):
     assert response == {
         "jobId": "job-1",
         "label": "SAM2.1 Small",
-        "status": "pending",
+        "status": "queued",
     }
 
 
@@ -177,7 +177,7 @@ def test_start_download_route_supports_workflow_models(monkeypatch, tmp_path):
     assert response == {
         "jobId": "job-2",
         "label": "model.safetensors",
-        "status": "pending",
+        "status": "queued",
     }
 
 
@@ -346,3 +346,132 @@ def test_start_gated_workflow_download_forwards_token(monkeypatch, tmp_path):
 
     assert response["jobId"] == "job-3"
     assert received_tokens == ["hf_secret123"]
+
+
+def test_start_batch_enqueues_per_key_and_surfaces_errors(monkeypatch, tmp_path):
+    monkeypatch.setattr(download_service, "_active_jobs", {})
+    monkeypatch.setattr(download_service, "_active_destinations", {})
+    monkeypatch.setattr(download_service, "_job_destinations", {})
+    monkeypatch.setattr(download_service, "_pending_job_ids", [])
+
+    monkeypatch.setattr(
+        "routers.downloads.is_workflow_model_gated",
+        lambda workflow_id, model_key: model_key.startswith("gated:"),
+    )
+
+    def fake_specs(workflow_id, model_key):
+        return [
+            DownloadFileSpec(
+                url=f"https://example.com/{model_key}",
+                dest_path=str(tmp_path / model_key.replace(":", "_")),
+                filename=model_key.replace(":", "_"),
+            )
+        ]
+
+    monkeypatch.setattr("routers.downloads.get_workflow_download_specs", fake_specs)
+    monkeypatch.setattr(
+        "routers.downloads.get_available_workflow_models",
+        lambda workflow_id: [
+            {"key": "checkpoints:a.safetensors", "label": "a"},
+            {"key": "checkpoints:b.safetensors", "label": "b"},
+            {"key": "gated:c.safetensors", "label": "c"},
+        ],
+    )
+
+    counter = {"n": 0}
+
+    def fake_start_download(label, files, auth_token=None):
+        asyncio.get_running_loop()
+        counter["n"] += 1
+        return DownloadJob(
+            job_id=f"job-{counter['n']}",
+            label=label,
+            files=files,
+            auth_token=auth_token,
+            status="queued",
+        )
+
+    monkeypatch.setattr(
+        "routers.downloads.download_service.start_download", fake_start_download
+    )
+
+    response = asyncio.run(
+        downloads.start_batch_download(
+            downloads.StartBatchRequest(
+                modelType="comfyui-workflow",
+                modelKeys=[
+                    "checkpoints:a.safetensors",
+                    "checkpoints:b.safetensors",
+                    "gated:c.safetensors",  # missing hfToken — should error, not raise
+                ],
+                workflowId="wf.json",
+                hfToken=None,
+            )
+        )
+    )
+
+    assert [job["modelKey"] for job in response["jobs"]] == [
+        "checkpoints:a.safetensors",
+        "checkpoints:b.safetensors",
+    ]
+    assert all(job["status"] == "queued" for job in response["jobs"])
+    assert response["errors"] == [
+        {
+            "modelKey": "gated:c.safetensors",
+            "message": (
+                "This model is gated on HuggingFace. Accept the license on the "
+                "model's repository and provide a HuggingFace access token to "
+                "download it."
+            ),
+        }
+    ]
+
+
+def test_queue_runs_one_job_at_a_time_in_fifo_order(monkeypatch, tmp_path):
+    """The worker should release the in-flight slot before the next job's
+    semaphore acquire returns. Two jobs started back-to-back should run
+    strictly serially."""
+    monkeypatch.setattr(download_service, "_active_jobs", {})
+    monkeypatch.setattr(download_service, "_active_destinations", {})
+    monkeypatch.setattr(download_service, "_job_destinations", {})
+    monkeypatch.setattr(download_service, "_pending_job_ids", [])
+    monkeypatch.setattr(download_service, "_download_semaphore", None)
+
+    started_order: list[str] = []
+    completed_order: list[str] = []
+
+    gate_a = asyncio.Event()
+    gate_b = asyncio.Event()
+
+    async def fake_execute(job):
+        started_order.append(job.label)
+        if job.label == "a":
+            await gate_a.wait()
+        else:
+            await gate_b.wait()
+        job.status = "complete"
+        completed_order.append(job.label)
+
+    monkeypatch.setattr(download_service, "_execute_download_job", fake_execute)
+
+    async def scenario():
+        spec_a = DownloadFileSpec(url="x", dest_path=str(tmp_path / "a"), filename="a")
+        spec_b = DownloadFileSpec(url="x", dest_path=str(tmp_path / "b"), filename="b")
+        job_a = download_service.start_download("a", [spec_a])
+        job_b = download_service.start_download("b", [spec_b])
+        await asyncio.sleep(0.05)
+        assert started_order == ["a"], "second job ran before first finished"
+        assert job_b.status == "queued"
+        # queue_position is recomputed after each pending removal; b should be
+        # ahead of an empty queue once a starts.
+        gate_a.set()
+        await asyncio.sleep(0.05)
+        assert started_order == ["a", "b"]
+        assert completed_order == ["a"]
+        gate_b.set()
+        await asyncio.sleep(0.05)
+        assert completed_order == ["a", "b"]
+        assert job_a.status == "complete"
+        assert job_b.status == "complete"
+
+    asyncio.run(scenario())

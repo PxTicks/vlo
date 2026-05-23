@@ -272,19 +272,25 @@ def get_available_workflow_models(workflow_id: str) -> list[dict[str, Any]]:
     workflow = _load_workflow_json(workflow_id)
     models = _extract_workflow_models(workflow)
 
-    return [
-        {
+    result: list[dict[str, Any]] = []
+    for model in models:
+        dest_path = (
+            COMFYUI_INSTALL_DIR / "models" / model["directory"] / model["filename"]
+            if COMFYUI_INSTALL_DIR is not None
+            else None
+        )
+        installed = dest_path.is_file() if dest_path is not None else False
+        result.append({
             "key": model["key"],
             "label": model["label"],
             "description": model["description"],
-            "installed": False,
+            "installed": installed,
             "directory": model["directory"],
             "filename": model["filename"],
             "gated": model["gated"],
             "gatedRepoUrl": model["gatedRepoUrl"],
-        }
-        for model in models
-    ]
+        })
+    return result
 
 
 def is_workflow_model_gated(workflow_id: str, model_key: str) -> bool:

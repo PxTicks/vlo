@@ -42,7 +42,7 @@ interface ModelDownloadPanelProps {
   loadingLabel: string;
   error: string | null;
   activeDownloads: Record<string, ActiveModelDownload>;
-  downloadAllRunning?: boolean;
+  anyLocalDownloadActive: boolean;
   beforeModels?: ReactNode;
   emptyState?: ReactNode;
   onDownload: (modelKey: string, context?: DownloadContext) => void;
@@ -85,7 +85,7 @@ export function ModelDownloadPanel({
   loadingLabel,
   error,
   activeDownloads,
-  downloadAllRunning = false,
+  anyLocalDownloadActive,
   beforeModels,
   emptyState,
   onDownload,
@@ -151,15 +151,10 @@ export function ModelDownloadPanel({
     [models, activeDownloads, trimmedToken],
   );
 
-  const anyLocalDownloadActive = Object.values(activeDownloads).some(
-    (entry) => !entry.external,
-  );
-
   const showDownloadAll = onDownloadAll !== undefined && models.length >= 2;
   const downloadAllDisabled =
     downloadableModels.length === 0 ||
     anyLocalDownloadActive ||
-    downloadAllRunning ||
     (hasGatedModels && trimmedToken.length === 0);
 
   return (
@@ -295,11 +290,9 @@ export function ModelDownloadPanel({
               }
               sx={{ textTransform: "none" }}
             >
-              {downloadAllRunning
-                ? `Downloading ${downloadableModels.length} models...`
-                : downloadableModels.length === 0
-                  ? "All available models in progress or installed"
-                  : `Download all (${downloadableModels.length})`}
+              {downloadableModels.length === 0
+                ? "All available models in progress or installed"
+                : `Download all (${downloadableModels.length})`}
             </Button>
           ) : null}
 
@@ -308,6 +301,8 @@ export function ModelDownloadPanel({
             const isDownloading = activeEntry !== null;
             const isExternal = activeEntry?.external === true;
             const progress = activeEntry?.progress ?? null;
+            const isQueued = progress?.status === "queued";
+            const queuePosition = progress?.queuePosition ?? 0;
             const pct =
               progress?.progress.overallBytesTotal &&
               progress.progress.overallBytesTotal > 0
@@ -389,14 +384,24 @@ export function ModelDownloadPanel({
                         variant="caption"
                         sx={{ color: "info.light", display: "block", mb: 0.5 }}
                       >
-                        Downloading in another workflow
+                        {isQueued
+                          ? "Queued in another workflow"
+                          : "Downloading in another workflow"}
                       </Typography>
                     ) : null}
-                    <LinearProgress
-                      variant={pct !== null ? "determinate" : "indeterminate"}
-                      value={pct ?? undefined}
-                      sx={{ mb: 0.5, borderRadius: 1 }}
-                    />
+                    {isQueued ? (
+                      <Typography variant="caption" sx={{ color: "text.secondary", display: "block", mb: 0.5 }}>
+                        {queuePosition > 0
+                          ? `Queued — ${queuePosition} job${queuePosition === 1 ? "" : "s"} ahead`
+                          : "Queued — starting soon"}
+                      </Typography>
+                    ) : (
+                      <LinearProgress
+                        variant={pct !== null ? "determinate" : "indeterminate"}
+                        value={pct ?? undefined}
+                        sx={{ mb: 0.5, borderRadius: 1 }}
+                      />
+                    )}
                     <Box
                       sx={{
                         display: "flex",
@@ -405,13 +410,15 @@ export function ModelDownloadPanel({
                       }}
                     >
                       <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                        {progress?.progress.overallBytes != null
-                          ? formatBytes(progress.progress.overallBytes)
-                          : "Starting..."}
-                        {progress?.progress.overallBytesTotal != null
-                          ? ` / ${formatBytes(progress.progress.overallBytesTotal)}`
-                          : ""}
-                        {pct !== null ? ` (${pct}%)` : ""}
+                        {isQueued
+                          ? "Waiting for queue slot"
+                          : progress?.progress.overallBytes != null
+                            ? `${formatBytes(progress.progress.overallBytes)}${
+                                progress.progress.overallBytesTotal != null
+                                  ? ` / ${formatBytes(progress.progress.overallBytesTotal)}`
+                                  : ""
+                              }${pct !== null ? ` (${pct}%)` : ""}`
+                            : "Starting..."}
                       </Typography>
                       {!isExternal ? (
                         <Button
@@ -437,7 +444,6 @@ export function ModelDownloadPanel({
                     }
                     disabled={
                       anyLocalDownloadActive ||
-                      downloadAllRunning ||
                       (model.gated === true && trimmedToken.length === 0)
                     }
                     sx={{ textTransform: "none", width: "100%" }}

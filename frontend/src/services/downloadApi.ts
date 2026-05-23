@@ -72,6 +72,8 @@ export interface DownloadableModel {
   filename?: string;
   gated?: boolean;
   gatedRepoUrl?: string | null;
+  /** Set when the model's destination is already being downloaded by another job. */
+  activeJobId?: string | null;
 }
 
 export interface AvailableModelsResponse {

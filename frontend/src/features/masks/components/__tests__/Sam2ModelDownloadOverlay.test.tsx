@@ -71,7 +71,11 @@ describe("Sam2ModelDownloadOverlay", () => {
     expect(screen.getByText("Faster, ~185 MB")).toBeInTheDocument();
     expect(screen.getByText("SAM2.1 Large")).toBeInTheDocument();
     expect(screen.getByText("Higher quality, ~900 MB")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /download/i })).toHaveLength(2);
+    // 2 per-model "Download" buttons + 1 "Download all (2)" button
+    expect(screen.getAllByRole("button", { name: /download/i })).toHaveLength(3);
+    expect(
+      screen.getByRole("button", { name: /download all/i }),
+    ).toBeInTheDocument();
   });
 
   it("does not notify the parent when no SAM2 models are installed", async () => {
@@ -114,7 +118,8 @@ describe("Sam2ModelDownloadOverlay", () => {
     });
 
     expect(screen.getByText("SAM2.1 Large")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /download/i })).toHaveLength(2);
+    // 2 per-model "Download" buttons + 1 "Download all (2)" button
+    expect(screen.getAllByRole("button", { name: /download/i })).toHaveLength(3);
     expect(
       screen.queryByText(/showing built-in download options/i),
     ).not.toBeInTheDocument();

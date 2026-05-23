@@ -216,6 +216,26 @@ def get_job(job_id: str) -> DownloadJob | None:
         return _active_jobs.get(job_id)
 
 
+def find_active_jobs_for_paths(paths: set[str]) -> dict[str, str]:
+    """Return a mapping of {destination_path: job_id} for any of `paths` that
+    are currently being downloaded (pending or downloading)."""
+    if not paths:
+        return {}
+
+    normalized = {str(Path(p).resolve()) for p in paths}
+    result: dict[str, str] = {}
+    with _registry_lock:
+        for path in normalized:
+            job_id = _active_destinations.get(path)
+            if job_id is None:
+                continue
+            job = _active_jobs.get(job_id)
+            if job is None or job.status not in ("pending", "downloading"):
+                continue
+            result[path] = job_id
+    return result
+
+
 def cancel_job(job_id: str) -> bool:
     with _registry_lock:
         job = _active_jobs.get(job_id)

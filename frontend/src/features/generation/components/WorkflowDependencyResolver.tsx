@@ -18,6 +18,7 @@ interface WorkflowDependencyResolverProps {
 }
 
 const MAX_VISIBLE_ITEMS = 6;
+const EXTERNAL_POLL_INTERVAL_MS = 5000;
 
 function normalizeModelName(value: string): string {
   const normalized = value.trim().replace(/\\/g, "/");
@@ -102,34 +103,39 @@ export function WorkflowDependencyResolver({
   const [loading, setLoading] = useState(false);
   const workflowModelsRequestIdRef = useRef(0);
 
-  const fetchWorkflowModels = useCallback(async () => {
-    const requestId = workflowModelsRequestIdRef.current + 1;
-    workflowModelsRequestIdRef.current = requestId;
+  const fetchWorkflowModels = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      const requestId = workflowModelsRequestIdRef.current + 1;
+      workflowModelsRequestIdRef.current = requestId;
 
-    if (!workflowId || warning.missingModels.length === 0) {
-      setWorkflowModels([]);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await getAvailableModels({ workflowId });
-      if (workflowModelsRequestIdRef.current !== requestId) {
-        return;
-      }
-      setWorkflowModels(response.comfyui?.workflowModels ?? []);
-    } catch {
-      if (workflowModelsRequestIdRef.current !== requestId) {
-        return;
-      }
-      setWorkflowModels([]);
-    } finally {
-      if (workflowModelsRequestIdRef.current === requestId) {
+      if (!workflowId || warning.missingModels.length === 0) {
+        setWorkflowModels([]);
         setLoading(false);
+        return;
       }
-    }
-  }, [warning.missingModels.length, workflowId]);
+
+      if (!options.silent) {
+        setLoading(true);
+      }
+      try {
+        const response = await getAvailableModels({ workflowId });
+        if (workflowModelsRequestIdRef.current !== requestId) {
+          return;
+        }
+        setWorkflowModels(response.comfyui?.workflowModels ?? []);
+      } catch {
+        if (workflowModelsRequestIdRef.current !== requestId) {
+          return;
+        }
+        setWorkflowModels([]);
+      } finally {
+        if (workflowModelsRequestIdRef.current === requestId && !options.silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [warning.missingModels.length, workflowId],
+  );
 
   // Fetch-on-mount + refetch-on-dep-change is the documented escape hatch
   // for the react-hooks/set-state-in-effect rule when no data-fetching
@@ -139,16 +145,29 @@ export function WorkflowDependencyResolver({
     void fetchWorkflowModels();
   }, [fetchWorkflowModels]);
 
+  // Poll silently so this panel reflects downloads started by other workflows.
+  useEffect(() => {
+    if (!workflowId || warning.missingModels.length === 0) return;
+    const interval = globalThis.setInterval(() => {
+      void fetchWorkflowModels({ silent: true });
+    }, EXTERNAL_POLL_INTERVAL_MS);
+    return () => globalThis.clearInterval(interval);
+  }, [fetchWorkflowModels, warning.missingModels.length, workflowId]);
+
   const modelsToShow = useMemo(
     () => resolveSuggestedModels(workflowModels, warning.missingModels),
     [warning.missingModels, workflowModels],
   );
 
   const {
-    activeDownload,
+    activeDownloads,
     error,
+    dismissError,
+    downloadAllRunning,
     handleDownload,
     handleCancel,
+    handleDownloadAll,
+    adoptExternalJob,
   } = useModelDownloadController({
     startDownload: (modelKey, context) =>
       startModelDownload("comfyui-workflow", modelKey, {
@@ -157,7 +176,7 @@ export function WorkflowDependencyResolver({
       }),
     onDownloadComplete: () => {
       onRefreshWarning();
-      void fetchWorkflowModels();
+      void fetchWorkflowModels({ silent: true });
     },
   });
 
@@ -174,7 +193,8 @@ export function WorkflowDependencyResolver({
       loading={loading}
       loadingLabel="Loading workflow download options..."
       error={error}
-      activeDownload={activeDownload}
+      activeDownloads={activeDownloads}
+      downloadAllRunning={downloadAllRunning}
       variant="plain"
       fillHeight
       beforeModels={
@@ -194,7 +214,10 @@ export function WorkflowDependencyResolver({
         </Box>
       }
       onDownload={handleDownload}
+      onDownloadAll={handleDownloadAll}
       onCancel={handleCancel}
+      onDismissError={dismissError}
+      onAdoptExternalJob={adoptExternalJob}
     />
   );
 }

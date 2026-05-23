@@ -1,8 +1,13 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   IconButton,
   Link,
   LinearProgress,
@@ -12,6 +17,8 @@ import {
 import {
   Check,
   Close,
+  CloudDownload,
+  ErrorOutline,
   OpenInNew,
   Visibility,
   VisibilityOff,
@@ -34,11 +41,15 @@ interface ModelDownloadPanelProps {
   loading: boolean;
   loadingLabel: string;
   error: string | null;
-  activeDownload: ActiveModelDownload | null;
+  activeDownloads: Record<string, ActiveModelDownload>;
+  downloadAllRunning?: boolean;
   beforeModels?: ReactNode;
   emptyState?: ReactNode;
   onDownload: (modelKey: string, context?: DownloadContext) => void;
-  onCancel: () => void;
+  onDownloadAll?: (modelKeys: string[], context?: DownloadContext) => void;
+  onCancel: (modelKey?: string) => void;
+  onDismissError: () => void;
+  onAdoptExternalJob: (modelKey: string, jobId: string) => void;
   variant?: "card" | "plain";
   fillHeight?: boolean;
 }
@@ -73,11 +84,15 @@ export function ModelDownloadPanel({
   loading,
   loadingLabel,
   error,
-  activeDownload,
+  activeDownloads,
+  downloadAllRunning = false,
   beforeModels,
   emptyState,
   onDownload,
+  onDownloadAll,
   onCancel,
+  onDismissError,
+  onAdoptExternalJob,
   variant = "card",
   fillHeight = false,
 }: ModelDownloadPanelProps) {
@@ -114,6 +129,39 @@ export function ModelDownloadPanel({
 
   const trimmedToken = hfToken.trim();
 
+  // Auto-adopt any external jobs surfaced by the backend so the panel shows
+  // their live progress without the user having to click anything.
+  useEffect(() => {
+    for (const model of models) {
+      if (!model.activeJobId) continue;
+      if (activeDownloads[model.key]?.jobId === model.activeJobId) continue;
+      onAdoptExternalJob(model.key, model.activeJobId);
+    }
+  }, [models, activeDownloads, onAdoptExternalJob]);
+
+  const downloadableModels = useMemo(
+    () =>
+      models.filter(
+        (model) =>
+          !model.installed &&
+          !activeDownloads[model.key] &&
+          !model.activeJobId &&
+          (!model.gated || trimmedToken.length > 0),
+      ),
+    [models, activeDownloads, trimmedToken],
+  );
+
+  const anyLocalDownloadActive = Object.values(activeDownloads).some(
+    (entry) => !entry.external,
+  );
+
+  const showDownloadAll = onDownloadAll !== undefined && models.length >= 2;
+  const downloadAllDisabled =
+    downloadableModels.length === 0 ||
+    anyLocalDownloadActive ||
+    downloadAllRunning ||
+    (hasGatedModels && trimmedToken.length === 0);
+
   return (
     <Box
       sx={{
@@ -146,12 +194,6 @@ export function ModelDownloadPanel({
       >
         {description}
       </Typography>
-
-      {error ? (
-        <Typography variant="caption" sx={{ color: "error.main" }}>
-          {error}
-        </Typography>
-      ) : null}
 
       {beforeModels ? <Box sx={{ width: "100%" }}>{beforeModels}</Box> : null}
 
@@ -239,9 +281,33 @@ export function ModelDownloadPanel({
         </Box>
       ) : models.length > 0 ? (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
+          {showDownloadAll ? (
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<CloudDownload />}
+              disabled={downloadAllDisabled}
+              onClick={() =>
+                onDownloadAll?.(
+                  downloadableModels.map((model) => model.key),
+                  hasGatedModels ? { hfToken: trimmedToken } : undefined,
+                )
+              }
+              sx={{ textTransform: "none" }}
+            >
+              {downloadAllRunning
+                ? `Downloading ${downloadableModels.length} models...`
+                : downloadableModels.length === 0
+                  ? "All available models in progress or installed"
+                  : `Download all (${downloadableModels.length})`}
+            </Button>
+          ) : null}
+
           {models.map((model) => {
-            const isDownloading = activeDownload?.modelKey === model.key;
-            const progress = isDownloading ? activeDownload.progress : null;
+            const activeEntry = activeDownloads[model.key] ?? null;
+            const isDownloading = activeEntry !== null;
+            const isExternal = activeEntry?.external === true;
+            const progress = activeEntry?.progress ?? null;
             const pct =
               progress?.progress.overallBytesTotal &&
               progress.progress.overallBytesTotal > 0
@@ -318,6 +384,14 @@ export function ModelDownloadPanel({
                   </Typography>
                 ) : isDownloading ? (
                   <Box>
+                    {isExternal ? (
+                      <Typography
+                        variant="caption"
+                        sx={{ color: "info.light", display: "block", mb: 0.5 }}
+                      >
+                        Downloading in another workflow
+                      </Typography>
+                    ) : null}
                     <LinearProgress
                       variant={pct !== null ? "determinate" : "indeterminate"}
                       value={pct ?? undefined}
@@ -339,14 +413,16 @@ export function ModelDownloadPanel({
                           : ""}
                         {pct !== null ? ` (${pct}%)` : ""}
                       </Typography>
-                      <Button
-                        size="small"
-                        color="error"
-                        onClick={() => void onCancel()}
-                        sx={{ minWidth: 0, p: 0.5, textTransform: "none" }}
-                      >
-                        <Close sx={{ fontSize: 14 }} />
-                      </Button>
+                      {!isExternal ? (
+                        <Button
+                          size="small"
+                          color="error"
+                          onClick={() => void onCancel(model.key)}
+                          sx={{ minWidth: 0, p: 0.5, textTransform: "none" }}
+                        >
+                          <Close sx={{ fontSize: 14 }} />
+                        </Button>
+                      ) : null}
                     </Box>
                   </Box>
                 ) : (
@@ -360,7 +436,8 @@ export function ModelDownloadPanel({
                       )
                     }
                     disabled={
-                      activeDownload !== null ||
+                      anyLocalDownloadActive ||
+                      downloadAllRunning ||
                       (model.gated === true && trimmedToken.length === 0)
                     }
                     sx={{ textTransform: "none", width: "100%" }}
@@ -377,6 +454,28 @@ export function ModelDownloadPanel({
       ) : (
         emptyState ?? null
       )}
+
+      <Dialog
+        open={error !== null}
+        onClose={onDismissError}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <ErrorOutline color="error" />
+          Download failed
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {error}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onDismissError} autoFocus>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

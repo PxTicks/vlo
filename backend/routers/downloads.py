@@ -13,6 +13,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from pathlib import Path
+
 from services import download_service
 from services.model_registry import (
     get_available_sam2_models,
@@ -42,8 +44,50 @@ def list_available_models(workflowId: str | None = None):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    sam2_models = get_available_sam2_models()
+
+    # Map each model to its destination paths, then look up any active jobs.
+    sam2_paths: dict[str, list[str]] = {}
+    for model in sam2_models:
+        try:
+            specs = get_sam2_download_specs(model["key"])
+        except ValueError:
+            continue
+        sam2_paths[model["key"]] = [str(Path(s.dest_path).resolve()) for s in specs]
+
+    workflow_paths: dict[str, list[str]] = {}
+    if workflowId:
+        for model in workflow_models:
+            try:
+                specs = get_workflow_download_specs(workflowId, model["key"])
+            except ValueError:
+                continue
+            workflow_paths[model["key"]] = [str(Path(s.dest_path).resolve()) for s in specs]
+
+    all_paths: set[str] = set()
+    for paths in sam2_paths.values():
+        all_paths.update(paths)
+    for paths in workflow_paths.values():
+        all_paths.update(paths)
+
+    active_jobs_by_path = download_service.find_active_jobs_for_paths(all_paths)
+
+    for model in sam2_models:
+        for path in sam2_paths.get(model["key"], []):
+            job_id = active_jobs_by_path.get(path)
+            if job_id is not None:
+                model["activeJobId"] = job_id
+                break
+
+    for model in workflow_models:
+        for path in workflow_paths.get(model["key"], []):
+            job_id = active_jobs_by_path.get(path)
+            if job_id is not None:
+                model["activeJobId"] = job_id
+                break
+
     return {
-        "sam2": get_available_sam2_models(),
+        "sam2": sam2_models,
         "comfyui": {
             "modelDownloadsEnabled": is_comfyui_model_downloads_enabled(),
             "workflowModels": workflow_models,

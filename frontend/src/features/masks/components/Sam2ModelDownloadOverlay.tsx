@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CloudDownload } from "@mui/icons-material";
 import {
   getAvailableModels,
@@ -27,39 +27,58 @@ const FALLBACK_SAM2_MODELS: DownloadableModel[] = [
   },
 ];
 
+const EXTERNAL_POLL_INTERVAL_MS = 5000;
+
 export function Sam2ModelDownloadOverlay({
   onModelsInstalled,
 }: Sam2ModelDownloadOverlayProps) {
   const [models, setModels] = useState<DownloadableModel[]>([]);
   const [loading, setLoading] = useState(true);
+  const requestIdRef = useRef(0);
 
-  const fetchModels = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await getAvailableModels();
-      const nextModels =
-        response.sam2.length > 0 ? response.sam2 : FALLBACK_SAM2_MODELS;
-      setModels(nextModels);
+  const fetchModels = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
 
-      if (response.sam2.some((model) => model.installed)) {
-        onModelsInstalled();
+      if (!options.silent) {
+        setLoading(true);
       }
-    } catch {
-      setModels(FALLBACK_SAM2_MODELS);
-    } finally {
-      setLoading(false);
-    }
-  }, [onModelsInstalled]);
+      try {
+        const response = await getAvailableModels();
+        if (requestIdRef.current !== requestId) return;
+        const nextModels =
+          response.sam2.length > 0 ? response.sam2 : FALLBACK_SAM2_MODELS;
+        setModels(nextModels);
+
+        if (response.sam2.some((model) => model.installed)) {
+          onModelsInstalled();
+        }
+      } catch {
+        if (requestIdRef.current !== requestId) return;
+        setModels(FALLBACK_SAM2_MODELS);
+      } finally {
+        if (requestIdRef.current === requestId && !options.silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [onModelsInstalled],
+  );
 
   const {
-    activeDownload,
+    activeDownloads,
     error,
+    dismissError,
+    downloadAllRunning,
     handleDownload,
     handleCancel,
+    handleDownloadAll,
+    adoptExternalJob,
   } = useModelDownloadController({
     startDownload: (modelKey) => startModelDownload("sam2", modelKey),
     onDownloadComplete: () => {
-      void fetchModels();
+      void fetchModels({ silent: true });
     },
   });
 
@@ -71,6 +90,14 @@ export function Sam2ModelDownloadOverlay({
     void fetchModels();
   }, [fetchModels]);
 
+  // Poll while the overlay is mounted so cross-workflow downloads surface here.
+  useEffect(() => {
+    const interval = globalThis.setInterval(() => {
+      void fetchModels({ silent: true });
+    }, EXTERNAL_POLL_INTERVAL_MS);
+    return () => globalThis.clearInterval(interval);
+  }, [fetchModels]);
+
   return (
     <ModelDownloadPanel
       icon={<CloudDownload sx={{ fontSize: 40, color: "text.secondary" }} />}
@@ -80,9 +107,13 @@ export function Sam2ModelDownloadOverlay({
       loading={loading}
       loadingLabel="Loading available SAM2 models..."
       error={error}
-      activeDownload={activeDownload}
+      activeDownloads={activeDownloads}
+      downloadAllRunning={downloadAllRunning}
       onDownload={handleDownload}
+      onDownloadAll={handleDownloadAll}
       onCancel={handleCancel}
+      onDismissError={dismissError}
+      onAdoptExternalJob={adoptExternalJob}
     />
   );
 }

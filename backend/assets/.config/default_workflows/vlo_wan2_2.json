@@ -68,8 +68,8 @@
         "widget_ue_connectable": {},
         "models": [
           {
-            "name": "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
-            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+            "name": "wan2.2_i2v_high_noise_14B_fp16.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp16.safetensors",
             "directory": "diffusion_models"
           }
         ]
@@ -123,8 +123,8 @@
         "widget_ue_connectable": {},
         "models": [
           {
-            "name": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
-            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+            "name": "wan2.2_i2v_low_noise_14B_fp16.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp16.safetensors",
             "directory": "diffusion_models"
           }
         ]
@@ -391,7 +391,14 @@
         "cnr_id": "comfy-core",
         "ver": "0.3.48",
         "Node name for S&R": "LoraLoader",
-        "widget_ue_connectable": {}
+        "widget_ue_connectable": {},
+        "models": [
+          {
+            "name": "Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
+            "url": "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/LoRAs/Wan22-Lightning/old/Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
+            "directory": "loras"
+          }
+        ]
       },
       "widgets_values": [
         "Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",

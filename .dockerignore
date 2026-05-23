@@ -3,6 +3,15 @@
 *
 !.git
 !.git/**
+!package.json
+!package-lock.json
+!frontend
+!frontend/package.json
+!frontend/package-lock.json
+!backend
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/requirements.txt
 !deploy
 !deploy/runpod
 !deploy/runpod/**

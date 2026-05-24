@@ -164,16 +164,7 @@ if %errorlevel% neq 0 (
     goto :eof
 )
 
-:: -- 7. Environment config ------------------------------------------
-
-if not exist "%SCRIPT_DIR%backend\.env" (
-    copy "%SCRIPT_DIR%backend\.env.example" "%SCRIPT_DIR%backend\.env" >nul
-    echo [INFO]  Created backend\.env from .env.example
-) else (
-    echo [INFO]  backend\.env already exists, skipping
-)
-
-:: -- 8. Install SAM2 (Optional) -------------------------------------
+:: -- 7. Install SAM2 (Optional) -------------------------------------
 
 echo.
 set "INSTALL_SAM2="
@@ -226,7 +217,7 @@ if %errorlevel% neq 0 (
 
 :skip_sam2
 
-:: -- 9. Projects & Models directories -------------------------------
+:: -- 8. Projects & Models directories -------------------------------
 
 if not exist "%SCRIPT_DIR%projects" mkdir "%SCRIPT_DIR%projects"
 if not exist "%SCRIPT_DIR%backend\assets\models\sams" mkdir "%SCRIPT_DIR%backend\assets\models\sams"

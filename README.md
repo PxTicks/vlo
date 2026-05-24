@@ -183,7 +183,7 @@ Opens `http://127.0.0.1:6332` in your browser. Pass `--no-browser` to skip that.
 
 ### Configuration
 
-If needed `backend/.env` to adjust settings (created automatically by the installer). You may be able to ignore this step.
+If needed, create `backend/.env` from `backend/.env.example` to adjust settings. You may be able to ignore this step.
 
 - `COMFYUI_URL`: default `http://127.0.0.1:8188`
 - `COMFYUI_INSTALL_DIR`: path to an existing ComfyUI install. When set, enables the in-app model download facility (models are saved to `<COMFYUI_INSTALL_DIR>/models/...`); leave unset to disable

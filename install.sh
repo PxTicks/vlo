@@ -323,16 +323,7 @@ info "Installing backend Python dependencies..."
 cd "$SCRIPT_DIR/backend"
 "$UV_BIN" sync --frozen --python "$PYTHON_CMD"
 
-# -- 5. Environment config -------------------------------------------
-
-if [ ! -f "$SCRIPT_DIR/backend/.env" ]; then
-    cp "$SCRIPT_DIR/backend/.env.example" "$SCRIPT_DIR/backend/.env"
-    info "Created backend/.env from .env.example"
-else
-    info "backend/.env already exists, skipping"
-fi
-
-# -- 6. Install SAM2 (Optional) --------------------------------------
+# -- 5. Install SAM2 (Optional) --------------------------------------
 
 printf '\n'
 read -r -p "Would you like to install SAM2 for video segmentation and masking? (Requires CUDA for GPU acceleration) [y/N]: " install_sam2

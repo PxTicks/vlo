@@ -165,6 +165,17 @@ export function WorkflowDependencyResolver({
     (state) => state.refreshMissingModelsFromIframe,
   );
 
+  // Ask ComfyUI to re-scan its model folders and re-evaluate pendingWarnings
+  // — same path the MissingModelCard "Refresh" button takes. Falls back to a
+  // full workflow reload when the iframe call can't execute (no editor ref,
+  // or app.refreshMissingModels unavailable).
+  const refreshWarningAfterDownloads = useCallback(async () => {
+    const refreshed = await refreshMissingModelsFromIframe();
+    if (!refreshed) {
+      onRefreshWarning();
+    }
+  }, [onRefreshWarning, refreshMissingModelsFromIframe]);
+
   const {
     activeDownloads,
     error,
@@ -191,25 +202,23 @@ export function WorkflowDependencyResolver({
       void fetchWorkflowModels({ silent: true });
     },
     onAllDownloadsComplete: () => {
-      // Refresh the cheap backend model listing alongside the iframe work;
-      // these are independent reads and the model list does not gate the
-      // fallback decision below.
+      // Independent reads; model list does not gate the iframe refresh.
       void fetchWorkflowModels({ silent: true });
-      // Ask ComfyUI to re-scan its model folders and re-evaluate
-      // pendingWarnings — the same path the MissingModelCard "Refresh"
-      // button takes. Only fall back to the full workflow reload when the
-      // iframe call could not run (no editor ref, or app.refreshMissingModels
-      // unavailable). If the lightweight refresh ran, trust its warning
-      // result — even when models remain missing, the resolver stays
-      // visible with the updated list.
-      void (async () => {
-        const refreshed = await refreshMissingModelsFromIframe();
-        if (!refreshed) {
-          onRefreshWarning();
-        }
-      })();
+      void refreshWarningAfterDownloads();
     },
   });
+
+  // If we re-mount the resolver and every suggested model is already on
+  // disk (a "Download all" finished while the user was on a different
+  // workflow, or the user dropped models in manually), the per-job
+  // active→empty signal never reached this hook. Trigger the same refresh
+  // path so the stale warning clears and the gen tab activates.
+  const allSuggestedInstalled =
+    modelsToShow.length > 0 && modelsToShow.every((model) => model.installed);
+  useEffect(() => {
+    if (!allSuggestedInstalled) return;
+    void refreshWarningAfterDownloads();
+  }, [allSuggestedInstalled, refreshWarningAfterDownloads]);
 
   return (
     <ModelDownloadPanel

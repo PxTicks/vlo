@@ -577,13 +577,13 @@
       },
       "widgets_values": [
         "enable",
-        47930696440210,
+        6332,
         "randomize",
         10,
         2,
         "euler",
         "simple",
-        2,
+        0,
         4,
         "enable"
       ]
@@ -1456,7 +1456,7 @@
       },
       "widgets_values": [
         "disable",
-        0,
+        6332,
         "fixed",
         10,
         1,
@@ -2089,9 +2089,7 @@
         "Node name for S&R": "CLIPTextEncode",
         "widget_ue_connectable": {}
       },
-      "widgets_values": [
-        "A flame sprite dashes in the air, flying left and right, before exiting the screen."
-      ],
+      "widgets_values": [""],
       "color": "#232",
       "bgcolor": "#353"
     }

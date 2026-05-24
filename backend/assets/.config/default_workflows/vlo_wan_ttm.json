@@ -1654,7 +1654,7 @@
         ]
       },
       "widgets_values": [
-        "diffusion_models/wan2.2_i2v_high_noise_14B_fp16.safetensors",
+        "wan2.2_i2v_high_noise_14B_fp16.safetensors",
         "fp16_fast",
         "disabled",
         "offload_device",
@@ -1815,7 +1815,7 @@
         ]
       },
       "widgets_values": [
-        "diffusion_models/wan2.2_i2v_low_noise_14B_fp16.safetensors",
+        "wan2.2_i2v_low_noise_14B_fp16.safetensors",
         "fp16_fast",
         "disabled",
         "offload_device",

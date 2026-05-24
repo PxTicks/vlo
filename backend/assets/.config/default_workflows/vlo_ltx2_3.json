@@ -2140,7 +2140,7 @@
         "secondTabWidth": 65,
         "widget_ue_connectable": {}
       },
-      "widgets_values": [42, "fixed"],
+      "widgets_values": [6332, "randomize"],
       "color": "#006691",
       "bgcolor": "rgba(24,24,27,.9)"
     },

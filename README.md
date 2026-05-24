@@ -202,13 +202,15 @@ sidecar examples. A custom GPT is available [here](https://chatgpt.com/g/g-69f93
 
 The following nodes are used in some capacity in the default workflows
 
-https://github.com/kijai/ComfyUI-GIMM-VFI
-https://github.com/kijai/ComfyUI-MelBandRoFormer
-https://github.com/kijai/ComfyUI-WanVideoWrapper
-https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
-https://github.com/Lightricks/ComfyUI-LTXVideo
-https://github.com/PxTicks/ComfyUI-vlo
-https://github.com/Fannovel16/comfyui_controlnet_aux
+- https://github.com/kijai/ComfyUI-WanVideoWrapper
+- https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
+- https://github.com/Lightricks/ComfyUI-LTXVideo
+- https://github.com/PxTicks/ComfyUI-vlo
+- https://github.com/Fannovel16/comfyui_controlnet_aux
+- https://github.com/kijai/ComfyUI-GIMM-VFI
+- https://github.com/kijai/ComfyUI-MelBandRoFormer
+
+Special thanks to kijai for nodes and workflows I adapted, and to RuneXX for workflows I adapted.
 
 ## License
 

@@ -250,4 +250,85 @@ describe("resolveManualWidgetInputs", () => {
     expect(widgets[0]?.config.label).toBe("Seed");
     expect(widgets[0]?.currentValue).toBe(456);
   });
+
+  it("surfaces RandomNoise noise_seed from graph data when object_info is missing", () => {
+    const widgets = resolveManualWidgetInputs(
+      null,
+      null,
+      {
+        nodes: [
+          {
+            id: 134,
+            type: "RandomNoise",
+            widgets_values: [524621350995903, "randomize"],
+          },
+        ],
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.nodeId).toBe("134");
+    expect(widgets[0]?.param).toBe("noise_seed");
+    expect(widgets[0]?.currentValue).toBe(524621350995903);
+    expect(widgets[0]?.config.controlAfterGenerate).toBe(true);
+    expect(widgets[0]?.config.defaultRandomize).toBe(true);
+  });
+
+  it("surfaces PrimitiveInt value as fallback only when its mode is randomize", () => {
+    const widgets = resolveManualWidgetInputs(
+      null,
+      null,
+      {
+        nodes: [
+          {
+            id: 50,
+            type: "PrimitiveInt",
+            title: "Width",
+            widgets_values: [1024, "fixed"],
+          },
+          {
+            id: 51,
+            type: "PrimitiveInt",
+            title: "Random Width",
+            widgets_values: [768, "randomize"],
+          },
+        ],
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.nodeId).toBe("51");
+    expect(widgets[0]?.param).toBe("value");
+    expect(widgets[0]?.currentValue).toBe(768);
+    expect(widgets[0]?.config.defaultRandomize).toBe(true);
+  });
+
+  it("does not duplicate widgets when object_info path and fallback both apply", () => {
+    const widgets = resolveManualWidgetInputs(
+      null,
+      {
+        RandomNoise: {
+          input: {
+            required: {
+              noise_seed: ["INT", { control_after_generate: true, default: 0 }],
+            },
+          },
+          input_order: { required: ["noise_seed"] },
+        },
+      },
+      {
+        nodes: [
+          {
+            id: 134,
+            type: "RandomNoise",
+            widgets_values: [42, "randomize"],
+          },
+        ],
+      },
+    );
+
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]?.param).toBe("noise_seed");
+    expect(widgets[0]?.currentValue).toBe(42);
+  });
 });

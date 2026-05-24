@@ -38,6 +38,60 @@ function hasControlAfterGenerate(opts: Record<string, unknown>): boolean {
   return false;
 }
 
+// Fallback widget layouts used when object_info hasn't loaded or doesn't contain
+// the class — e.g. on cold start before ComfyUI publishes object_info, or for
+// stock seed-providing nodes that aren't yet registered. Ordering matches the
+// slot order ComfyUI uses in widgets_values.
+const SEED_FALLBACK_WIDGETS: Record<
+  string,
+  ReadonlyArray<{ name: string; controlAfterGenerate?: boolean }>
+> = {
+  RandomNoise: [{ name: "noise_seed", controlAfterGenerate: true }],
+  KSampler: [
+    { name: "seed", controlAfterGenerate: true },
+    { name: "steps" },
+    { name: "cfg" },
+    { name: "sampler_name" },
+    { name: "scheduler" },
+    { name: "denoise" },
+  ],
+  KSamplerAdvanced: [
+    { name: "add_noise" },
+    { name: "noise_seed", controlAfterGenerate: true },
+    { name: "steps" },
+    { name: "cfg" },
+    { name: "sampler_name" },
+    { name: "scheduler" },
+    { name: "start_at_step" },
+    { name: "end_at_step" },
+    { name: "return_with_leftover_noise" },
+  ],
+  PrimitiveInt: [{ name: "value", controlAfterGenerate: true }],
+  PrimitiveNode: [{ name: "value", controlAfterGenerate: true }],
+};
+
+interface FallbackWidgetSlot {
+  name: string;
+  slot: number;
+  controlAfterGenerate: boolean;
+}
+
+function buildFallbackWidgetSlots(
+  classType: string | undefined,
+): FallbackWidgetSlot[] {
+  if (!classType) return [];
+  const layout = SEED_FALLBACK_WIDGETS[classType];
+  if (!layout) return [];
+  const slots: FallbackWidgetSlot[] = [];
+  let slot = 0;
+  for (const param of layout) {
+    const cag = param.controlAfterGenerate === true;
+    slots.push({ name: param.name, slot, controlAfterGenerate: cag });
+    slot += cag ? 2 : 1;
+  }
+  return slots;
+}
+
 function resolveGraphNode(
   graphData: Record<string, unknown> | null,
   nodeId: string,
@@ -406,6 +460,7 @@ export function resolveManualWidgetInputs(
       }
     }
 
+    const surfacedParams = new Set<string>();
     for (const param of candidateParams) {
       const definition = resolveParamDefinition(inputSpec, param);
       const typeSpec = definition?.[0];
@@ -468,8 +523,82 @@ export function resolveManualWidgetInputs(
           options,
         },
       });
+      surfacedParams.add(param);
     }
+
+    appendFallbackWidgets({
+      widgets,
+      nodeId,
+      nodeTitle,
+      classType,
+      graphData,
+      surfacedParams,
+    });
   }
 
   return widgets;
+}
+
+function appendFallbackWidgets(args: {
+  widgets: WorkflowWidgetInput[];
+  nodeId: string;
+  nodeTitle: string;
+  classType: string | undefined;
+  graphData: Record<string, unknown> | null;
+  surfacedParams: Set<string>;
+}): void {
+  const { widgets, nodeId, nodeTitle, classType, graphData, surfacedParams } =
+    args;
+  const slots = buildFallbackWidgetSlots(classType);
+  if (slots.length === 0) return;
+
+  const graphNode = resolveGraphNode(graphData, nodeId);
+  const rawWidgetsValues = graphNode?.widgets_values;
+  const widgetsValues = Array.isArray(rawWidgetsValues)
+    ? rawWidgetsValues
+    : null;
+
+  for (const slot of slots) {
+    if (surfacedParams.has(slot.name)) continue;
+
+    const value =
+      widgetsValues && slot.slot < widgetsValues.length
+        ? widgetsValues[slot.slot]
+        : undefined;
+    const modeCandidate =
+      slot.controlAfterGenerate &&
+      widgetsValues &&
+      slot.slot + 1 < widgetsValues.length
+        ? widgetsValues[slot.slot + 1]
+        : undefined;
+    const mode =
+      typeof modeCandidate === "string" &&
+      CONTROL_MODE_VALUES.has(modeCandidate)
+        ? (modeCandidate as "fixed" | "randomize" | "increment" | "decrement")
+        : null;
+
+    const isSeed = isSeedWidgetParam(slot.name);
+    const isRandomize = mode === "randomize";
+    // Surface seed/noise_seed unconditionally (matches isManualWidgetParam
+    // behavior) and any other control widget only when its current mode is
+    // randomize. Fixed-mode non-seed widgets stay hidden, matching the
+    // primary discovery's policy.
+    if (!isSeed && !isRandomize) continue;
+
+    widgets.push({
+      nodeId,
+      param: slot.name,
+      currentValue: value ?? null,
+      config: {
+        label: slot.name === "value" ? nodeTitle : slot.name,
+        controlAfterGenerate: slot.controlAfterGenerate,
+        defaultRandomize:
+          mode === "randomize" ? true : mode ? false : undefined,
+        defaultValue: undefined,
+        nodeTitle,
+        valueType: inferWidgetValueType(value ?? null),
+      },
+    });
+    surfacedParams.add(slot.name);
+  }
 }

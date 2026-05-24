@@ -520,6 +520,11 @@ export function GenerationPanel() {
     }
   }, [hasInferredInputs, selectedWorkflowId, workflowRuleWarnings]);
 
+  const refreshMissingModelsFromIframe = useGenerationStore(
+    (s) => s.refreshMissingModelsFromIframe,
+  );
+  const previousEditorOpenRef = useRef(editorOpen);
+
   const [lastEditorSessionKey, setLastEditorSessionKey] = useState<
     string | null
   >(`${editorOpen}|${selectedWorkflowId ?? ""}`);
@@ -537,6 +542,20 @@ export function GenerationPanel() {
     setEditorSessionBaselineSignature(null);
     setEditorHasUnsavedChanges(false);
   }, [currentEditorSessionKey, editorOpen, lastEditorSessionKey]);
+
+  // When the user closes the ComfyUI editor, re-run the missing-model
+  // pipeline in the iframe so anything they fixed in there (picking a
+  // different model in a combo widget, downloading via ComfyUI's own UI)
+  // updates pendingWarnings; otherwise the panel keeps showing the stale
+  // download options and the gen inputs stay hidden. Do not fall back to a
+  // full workflow reload here: closing the editor may be preserving manual
+  // widget/model selections that only live in the iframe.
+  useEffect(() => {
+    const wasOpen = previousEditorOpenRef.current;
+    previousEditorOpenRef.current = editorOpen;
+    if (!wasOpen || editorOpen) return;
+    void refreshMissingModelsFromIframe();
+  }, [editorOpen, refreshMissingModelsFromIframe]);
 
   // Capture the workflow signature baseline as soon as it becomes available
   // and flag unsaved changes once the signature drifts from the baseline.

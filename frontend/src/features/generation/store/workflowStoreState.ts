@@ -516,7 +516,13 @@ export function buildWorkflowStoreState(
     },
 
     fetchWorkflows: async () => {
-      if (get().connectionStatus === "connected" && !get().objectInfoSynced) {
+      // Attempt sync even while the WS is still "connecting" — the backend
+      // owns the HTTP path to ComfyUI and can succeed before the proxied WS
+      // delivers its first "status" event. `syncObjectInfo` itself guards
+      // against the genuinely-unreachable cases.
+      const status = get().connectionStatus;
+      const canAttemptSync = status !== "disconnected" && status !== "error";
+      if (canAttemptSync && !get().objectInfoSynced) {
         await get().syncObjectInfo();
       }
       try {

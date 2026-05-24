@@ -4,7 +4,7 @@ import { ComfyUIWebSocket } from "../services/ComfyUIWebSocket";
 import { GenerationDeliveryWebSocket } from "../services/GenerationDeliveryWebSocket";
 import * as comfyApi from "../services/comfyuiApi";
 import { mergeInputNodeMap } from "../constants/inputNodeMap";
-import { IDLE_PIPELINE_STATUS } from "./constants";
+import { IDLE_PIPELINE_STATUS, TEMP_WORKFLOW_ID } from "./constants";
 import { revokeJobPostprocessPreview, revokePreviewAnimation } from "./previewState";
 import { attachDeliveryClientHandlers } from "./deliveryEvents";
 import { attachRuntimeClientHandlers } from "./runtimeEvents";
@@ -29,6 +29,11 @@ export function buildRuntimeStoreState(
   set: GenerationStoreSet,
   get: GenerationStoreGet,
 ): GenerationRuntimeState {
+  // Module-local promise singleton: dedupe concurrent syncObjectInfo calls
+  // so a parallel `fetchWorkflows` race (initial connect + WS "status" event)
+  // doesn't fire two backend sync requests. Cleared on settle.
+  let inFlightSyncPromise: Promise<void> | null = null;
+
   function createDeliveryClient(projectId: string): GenerationDeliveryWebSocket {
     const deliveryClient = new GenerationDeliveryWebSocket(API_BASE_URL, projectId);
     attachDeliveryClientHandlers(deliveryClient, set, get);
@@ -123,19 +128,50 @@ export function buildRuntimeStoreState(
     },
 
     syncObjectInfo: async () => {
-      if (get().connectionStatus !== "connected") return;
-      try {
-        console.info("[Generation] Syncing object_info from ComfyUI...");
-        const result = await comfyApi.syncObjectInfo();
-        const inputNodeMap = mergeInputNodeMap(result.input_node_map);
-        set({
-          objectInfoSynced: true,
-          rawObjectInfo: result.object_info ?? null,
-          inputNodeMap,
-        });
-      } catch (err) {
-        console.error("[Generation] Failed to sync object_info:", err);
-      }
+      // Skip only when ComfyUI is definitely unreachable. Allow "connecting"
+      // so the very first fetchWorkflows (fired before the WS "status" event
+      // flips the store to "connected") can still populate the cache: the
+      // backend will return 503 if it genuinely can't reach ComfyUI, and we
+      // leave objectInfoSynced=false so the next trigger retries.
+      const status = get().connectionStatus;
+      if (status === "disconnected" || status === "error") return;
+
+      if (inFlightSyncPromise) return inFlightSyncPromise;
+
+      const hadObjectInfo = get().rawObjectInfo !== null;
+      inFlightSyncPromise = (async () => {
+        try {
+          console.info("[Generation] Syncing object_info from ComfyUI...");
+          const result = await comfyApi.syncObjectInfo();
+          const inputNodeMap = mergeInputNodeMap(result.input_node_map);
+          set({
+            objectInfoSynced: true,
+            rawObjectInfo: result.object_info ?? null,
+            inputNodeMap,
+          });
+
+          // The first workflow load can race ahead of object_info on a cold
+          // start, leaving the backend's enrich pass to run against an empty
+          // cache and the panel rendering without auto-discovered widgets, AR
+          // targets, or default validation. Re-resolve the active workflow now
+          // that object_info is populated so its rules pick up enrichment.
+          if (!hadObjectInfo) {
+            const { selectedWorkflowId, loadWorkflow } = get();
+            if (
+              selectedWorkflowId &&
+              selectedWorkflowId !== TEMP_WORKFLOW_ID
+            ) {
+              void loadWorkflow(selectedWorkflowId);
+            }
+          }
+        } catch (err) {
+          console.error("[Generation] Failed to sync object_info:", err);
+        } finally {
+          inFlightSyncPromise = null;
+        }
+      })();
+
+      return inFlightSyncPromise;
     },
 
     connect: () => {

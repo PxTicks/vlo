@@ -340,23 +340,22 @@ function AssetBrowserComponent() {
         : undefined,
     [families, familyScope],
   );
+  const effectiveFamilyScope = selectedFamily ? familyScope : null;
 
   const scopedFamilyAssets = useMemo(() => {
-    if (!familyScope || !selectedFamily) {
+    if (!effectiveFamilyScope || !selectedFamily) {
       return [];
     }
 
-    return getFamilyMembers(assets, selectedFamily, familyScope.assetType);
-  }, [assets, selectedFamily, familyScope]);
-
-  // Clear the family scope when its underlying family disappears. Adjusted
-  // during render so dependent memos in the same pass observe the cleared value.
-  if (familyScope && !selectedFamily) {
-    setFamilyScope(null);
-  }
+    return getFamilyMembers(
+      assets,
+      selectedFamily,
+      effectiveFamilyScope.assetType,
+    );
+  }, [assets, selectedFamily, effectiveFamilyScope]);
 
   React.useEffect(() => {
-    if (!familyScope) {
+    if (!effectiveFamilyScope) {
       return;
     }
 
@@ -376,11 +375,11 @@ function AssetBrowserComponent() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [familyScope]);
+  }, [effectiveFamilyScope]);
 
   const sortedAssets = useMemo(() => {
-    const baseAssets = familyScope
-      ? activeTab === familyScope.assetType
+    const baseAssets = effectiveFamilyScope
+      ? activeTab === effectiveFamilyScope.assetType
         ? scopedFamilyAssets
         : []
       : assets.filter(
@@ -417,7 +416,7 @@ function AssetBrowserComponent() {
     families,
     activeTab,
     assetBrowserDisplay,
-    familyScope,
+    effectiveFamilyScope,
     scopedFamilyAssets,
     sortOption,
     showFavouritesOnly,
@@ -450,7 +449,7 @@ function AssetBrowserComponent() {
   );
 
   const handleClearFamilyScope = () => setFamilyScope(null);
-  const isFamilyScopeActive = Boolean(familyScope && selectedFamily);
+  const isFamilyScopeActive = Boolean(effectiveFamilyScope);
   const emptyStateMessage = isFamilyScopeActive
     ? `No ${activeTab} assets in this family.`
     : `No ${activeTab} assets.`;
@@ -709,13 +708,6 @@ function AssetBrowserComponent() {
     [previewAssetId, sortedAssets],
   );
   const previewAsset = previewIndex >= 0 ? sortedAssets[previewIndex] : null;
-
-  // Drop the preview state if the previewed asset is no longer visible in the
-  // current view (e.g. it was deleted, or tab/family scope changed). Adjusted
-  // during render so dependent values in the same pass observe the cleared id.
-  if (previewAssetId && previewIndex === -1) {
-    setPreviewAssetId(null);
-  }
 
   const handleRequestPreview = React.useCallback((assetId: string) => {
     setPreviewAssetId(assetId);

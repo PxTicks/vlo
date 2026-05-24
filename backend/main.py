@@ -1,5 +1,5 @@
 import httpx
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from config import (
@@ -8,7 +8,7 @@ from config import (
     CORS_ALLOW_ORIGINS,
     CORS_ALLOW_ORIGIN_REGEX,
 )
-from services.legacy_core import project_service, asset_service
+from services.legacy_core import project_service
 from models import ProjectCreateRequest, ProjectResponse, AssetResponse, ProjectUpdateRequest
 from fastapi.responses import FileResponse
 from services.legacy_core.project_service import get_project_path_by_id
@@ -92,14 +92,6 @@ def create_project(request: ProjectCreateRequest):
     except FileExistsError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
-@app.post("/projects/{project_id}/assets", response_model=AssetResponse)
-async def upload_asset(project_id: str, file: UploadFile = File(...)):
-    try:
-        asset = await asset_service.process_upload(project_id, file)
-        return asset
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
 @app.patch("/projects/{project_id}")
 def update_project(project_id: str, request: ProjectUpdateRequest):
     try:
@@ -130,17 +122,6 @@ def get_project_assets(project_id: str):
         return project_service.get_project_assets(project_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Project not found")
-
-@app.post("/projects/{project_id}/assets/sync", response_model=List[AssetResponse])
-def sync_project_assets(project_id: str):
-    """
-    Forces a disk scan to find orphan files and add them to the project.json
-    """
-    try:
-        return asset_service.scan_project_assets(project_id)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Project not found")
-
 
 @app.get("/app/status")
 async def get_app_status():

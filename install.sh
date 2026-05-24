@@ -305,19 +305,6 @@ fi
 
 info "Python ${PY_VERSION} found via ${PYTHON_SOURCE}"
 
-# libmagic (Linux/macOS)
-if [ "$PLATFORM" = "Linux" ]; then
-    if command -v ldconfig >/dev/null 2>&1 && ! ldconfig -p 2>/dev/null | grep -q libmagic; then
-        warn "libmagic not found. Install it:"
-        warn "  Debian/Ubuntu: sudo apt install libmagic1"
-        warn "  Fedora/RHEL:   sudo dnf install file-libs"
-    fi
-elif [ "$PLATFORM" = "Darwin" ]; then
-    if command -v brew >/dev/null 2>&1 && ! brew list libmagic &>/dev/null 2>&1; then
-        warn "libmagic not found. Install it: brew install libmagic"
-    fi
-fi
-
 # -- 2. Install frontend dependencies --------------------------------
 
 info "Installing npm dependencies..."

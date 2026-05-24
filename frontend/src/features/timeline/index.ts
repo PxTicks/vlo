@@ -47,6 +47,14 @@ export {
 } from "./utils/insertAssetToTimeline";
 export { createClipFromAsset } from "./utils/clipFactory";
 export {
+  CollisionType,
+  getCollisionType,
+  getMinimumClipDurationTicks,
+  getResizeConstraints,
+  hasAnyCollision,
+  resolveCollision,
+} from "./utils/collision";
+export {
   getTimelineClips,
   getTimelineClipById,
   getPrimaryActiveClip,

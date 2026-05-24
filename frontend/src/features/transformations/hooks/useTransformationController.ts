@@ -8,6 +8,7 @@ import {
   useTimelineStore,
   parseMaskClipId,
   selectMaskClipsForParent,
+  hasAnyCollision,
 } from "../../timeline";
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { isDefaultTransform } from "../catalogue/TransformationRegistry";
@@ -238,11 +239,23 @@ export function useTransformationController(
       if (!currentTarget) return;
 
       if (currentTarget.kind === "clip") {
-        const shapeUpdate = getChangedClipShapeUpdate(
-          currentTarget.timelineClip,
-          nextTransforms,
-        );
+        const clip = currentTarget.timelineClip;
+        const shapeUpdate = getChangedClipShapeUpdate(clip, nextTransforms);
         if (shapeUpdate) {
+          const nextTimelineDuration =
+            shapeUpdate.timelineDuration ?? clip.timelineDuration;
+          const allClips = useTimelineStore.getState().clips;
+          if (
+            hasAnyCollision(
+              clip.start,
+              nextTimelineDuration,
+              clip.trackId,
+              [clip.id],
+              allClips,
+            )
+          ) {
+            return;
+          }
           setClipTransformsAndShape(
             currentTarget.clipId,
             nextTransforms,

@@ -419,6 +419,84 @@ def test_resolve_workflow_rules_prefers_graph_widget_values_over_object_info_def
     }
 
 
+def test_resolve_workflow_rules_uses_hardcoded_fallback_when_object_info_missing():
+    """When object_info has no entry for a class, the hardcoded fallback
+    surfaces seed/randomize widgets from graph widgets_values."""
+    payload = {
+        "workflow_id": "wf.json",
+        "workflow": {
+            "134": {
+                "class_type": "RandomNoise",
+                "inputs": {},
+            }
+        },
+        "graph_data": {
+            "nodes": [
+                {
+                    "id": 134,
+                    "type": "RandomNoise",
+                    "widgets_values": [524621350995903, "randomize"],
+                }
+            ]
+        },
+    }
+
+    # object_info empty — the class isn't registered
+    set_object_info_cache({})
+    try:
+        result = asyncio.run(
+            comfyui.resolve_workflow_rules(DummyRequest(payload))
+        )
+    finally:
+        set_object_info_cache(None)
+
+    widgets = result["rules"]["nodes"]["134"]["widgets"]
+    assert "noise_seed" in widgets
+    assert widgets["noise_seed"]["default"] == 524621350995903
+    assert widgets["noise_seed"]["control_after_generate"] is True
+    assert widgets["noise_seed"]["default_randomize"] is True
+
+
+def test_resolve_workflow_rules_fallback_skips_fixed_primitive_int():
+    """PrimitiveInt with mode=fixed should NOT surface via fallback (only
+    randomize mode and named seeds get surfaced)."""
+    payload = {
+        "workflow_id": "wf.json",
+        "workflow": {
+            "163": {"class_type": "PrimitiveInt", "inputs": {}},
+            "165": {"class_type": "PrimitiveInt", "inputs": {}},
+        },
+        "graph_data": {
+            "nodes": [
+                {
+                    "id": 163,
+                    "type": "PrimitiveInt",
+                    "widgets_values": [1280, "fixed"],
+                },
+                {
+                    "id": 165,
+                    "type": "PrimitiveInt",
+                    "widgets_values": [720, "randomize"],
+                },
+            ]
+        },
+    }
+
+    set_object_info_cache({})
+    try:
+        result = asyncio.run(
+            comfyui.resolve_workflow_rules(DummyRequest(payload))
+        )
+    finally:
+        set_object_info_cache(None)
+
+    node_163 = result["rules"]["nodes"].get("163") or {}
+    node_165 = result["rules"]["nodes"]["165"]
+    assert not node_163.get("widgets")
+    assert node_165["widgets"]["value"]["default"] == 720
+    assert node_165["widgets"]["value"]["default_randomize"] is True
+
+
 def test_parse_workflow_inputs_includes_vhs_load_video_ffmpeg_static_fallback(
     monkeypatch,
 ):

@@ -35,6 +35,109 @@ log = logging.getLogger(__name__)
 
 _ALWAYS_DISCOVERED_WIDGET_PARAMS = frozenset({"seed", "noise_seed"})
 
+_CONTROL_MODE_VALUES = frozenset({"fixed", "randomize", "increment", "decrement"})
+
+# Fallback widget layouts used when object_info hasn't loaded or doesn't contain
+# the class. Ordering matches the slot order ComfyUI uses when serializing
+# widgets_values. Keep in sync with SEED_FALLBACK_WIDGETS in the frontend's
+# manualWorkflowWidgets.ts.
+_SEED_FALLBACK_WIDGETS: dict[str, list[dict[str, Any]]] = {
+    "RandomNoise": [{"name": "noise_seed", "control_after_generate": True}],
+    "KSampler": [
+        {"name": "seed", "control_after_generate": True},
+        {"name": "steps"},
+        {"name": "cfg"},
+        {"name": "sampler_name"},
+        {"name": "scheduler"},
+        {"name": "denoise"},
+    ],
+    "KSamplerAdvanced": [
+        {"name": "add_noise"},
+        {"name": "noise_seed", "control_after_generate": True},
+        {"name": "steps"},
+        {"name": "cfg"},
+        {"name": "sampler_name"},
+        {"name": "scheduler"},
+        {"name": "start_at_step"},
+        {"name": "end_at_step"},
+        {"name": "return_with_leftover_noise"},
+    ],
+    "PrimitiveInt": [{"name": "value", "control_after_generate": True}],
+    "PrimitiveNode": [{"name": "value", "control_after_generate": True}],
+}
+
+
+def _build_fallback_widget_entries(
+    class_type: str,
+    *,
+    node_title: str | None,
+    widgets_values: list[Any] | None,
+) -> dict[str, dict[str, Any]]:
+    """Surface seed/randomize widgets from graph data when object_info is missing.
+
+    Walks the hardcoded ``_SEED_FALLBACK_WIDGETS`` layout for ``class_type`` and
+    pulls value/mode out of ``widgets_values`` by slot index. Returns an empty
+    dict when the class isn't in the fallback map or no eligible widget is
+    found. Surfaces seed-named params always; surfaces other control widgets
+    only when their current mode is ``"randomize"`` (matches the primary
+    discovery's policy for hiding fixed-mode generic int widgets).
+    """
+    layout = _SEED_FALLBACK_WIDGETS.get(class_type)
+    if not layout:
+        return {}
+
+    result: dict[str, dict[str, Any]] = {}
+    slot = 0
+    for param in layout:
+        name = param["name"]
+        control_after_generate = bool(param.get("control_after_generate"))
+        value: Any = None
+        mode: str | None = None
+        if isinstance(widgets_values, list) and slot < len(widgets_values):
+            value = widgets_values[slot]
+        if (
+            control_after_generate
+            and isinstance(widgets_values, list)
+            and slot + 1 < len(widgets_values)
+        ):
+            candidate = widgets_values[slot + 1]
+            if isinstance(candidate, str) and candidate in _CONTROL_MODE_VALUES:
+                mode = candidate
+
+        slot += 2 if control_after_generate else 1
+
+        normalized = name.strip().lower()
+        is_seed = normalized in _ALWAYS_DISCOVERED_WIDGET_PARAMS
+        is_randomize = mode == "randomize"
+        if not is_seed and not is_randomize:
+            continue
+
+        value_type: str
+        if isinstance(value, bool):
+            value_type = "boolean"
+        elif isinstance(value, int):
+            value_type = "int"
+        elif isinstance(value, float):
+            value_type = "float"
+        elif isinstance(value, str):
+            value_type = "string"
+        else:
+            value_type = "unknown"
+
+        entry: dict[str, Any] = {
+            "label": node_title if name == "value" and node_title else name,
+            "control_after_generate": control_after_generate,
+            "value_type": value_type,
+        }
+        if value is not None:
+            entry["default"] = value
+        if mode is not None:
+            entry["default_randomize"] = is_randomize
+        result[name] = entry
+
+    return result
+
+
 OBJECT_INFO_PATH = (
     Path(__file__).parent.parent.parent / "assets" / ".config" / "object_info.json"
 )
@@ -544,8 +647,11 @@ def enrich_rules_with_object_info(
     """
     object_info = _load_object_info()
     if not object_info:
-        log.warning("[enrich] object_info is empty or failed to load")
-        return rules
+        log.warning(
+            "[enrich] object_info is empty or failed to load — only hardcoded "
+            "seed/randomize fallback will apply"
+        )
+        object_info = {}
 
     node_infos = _extract_node_info(workflow_data)
     log.info("[enrich] Extracted %d node infos from workflow", len(node_infos))
@@ -616,6 +722,25 @@ def enrich_rules_with_object_info(
             )
             if policy_widgets:
                 discovered_widgets = policy_widgets
+
+        # Fallback: when object_info hasn't loaded or doesn't contain the class,
+        # the primary discovery yields nothing. Pull seed/randomize widgets out
+        # of the raw widgets_values for known classes so the panel still gets
+        # something to render.
+        if not discovered_widgets:
+            fallback_widgets = _build_fallback_widget_entries(
+                info.class_type,
+                node_title=info.title,
+                widgets_values=info.widgets_values,
+            )
+            if fallback_widgets:
+                discovered_widgets = fallback_widgets
+                log.info(
+                    "[enrich] Node %s (%s): using hardcoded fallback widgets %s",
+                    node_id,
+                    info.class_type,
+                    list(fallback_widgets.keys()),
+                )
 
         existing_widgets = existing.get("widgets")
         if include_all_widgets and discovered_widgets:

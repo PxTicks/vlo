@@ -1,4 +1,4 @@
-# Vlo
+# vlo
 
 Vlo is a free, local, open source video editor with ComfyUI-backed generative AI features.
 
@@ -123,17 +123,17 @@ builds the frontend, and creates `backend/.venv` for later runs.
 
 The one-click installer will prompt you to optionally set up SAM2 (including installing PyTorch with CUDA and cloning/installing SAM2) automatically.
 
-After installation, continue to [Using Scripts](#using-scripts-almost-one-click-installer) to start Vlo.
+After installation, continue to [Using Scripts](#using-scripts-almost-one-click-installer) to start vlo.
 
 ## Run
 
 ### 1. Start ComfyUI
 
-Run ComfyUI separately on the machine that will host Vlo. By default Vlo expects
+Run ComfyUI separately on the machine that will host vlo. By default vlo expects
 it at `http://127.0.0.1:8188`, but you can change that from the editor UI.
 
 Optionally, point `COMFYUI_INSTALL_DIR` in `backend/.env` at your existing ComfyUI
-installation directory. When set, Vlo activates its in-app model download facility,
+installation directory. When set, vlo activates its in-app model download facility,
 letting you fetch models required by workflows directly from the editor (downloaded
 into `<COMFYUI_INSTALL_DIR>/models/...`). Leave it unset to disable in-app downloads.
 
@@ -194,7 +194,7 @@ If needed, create `backend/.env` from `backend/.env.example` to adjust settings.
 
 It should be possible for the majority of workflows to function with vlo as-is. If you need enhanced functionality, then there is a sidecar rules system, which deals with aspect ratio adjustment, mask processing etc.
 
-For details on how workflows interact with Vlo — sidecars, widget exposure,
+For details on how workflows interact with vlo — sidecars, widget exposure,
 aspect ratio processing, and the generation pipeline — see the
 [Workflow rule guide](backend/assets/workflows/HOW_TO_WRITE_WORKFLOW_RULES.md). The
 [default workflows](backend/assets/.config/default_workflows/) include working

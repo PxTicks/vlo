@@ -19,11 +19,12 @@ import type {
 import { isTextClip } from "../../types/TimelineTypes";
 import {
   BufferedColorInput,
+  BufferedInput,
   PanelSection,
   RichTextInput,
 } from "../panelUI";
 import { useTimelineStore } from "../timeline";
-import { MAX_TEXT_STROKE_WIDTH, TEXT_FONT_OPTIONS } from "./constants";
+import { TEXT_FONT_OPTIONS } from "./constants";
 import { livePreviewTextStore } from "./services/livePreviewTextStore";
 import { insertTextClipAtPlayhead } from "./utils/insertTextClipAtPlayhead";
 import {
@@ -129,18 +130,11 @@ function TextFormFields({
       </TextField>
 
       <Box sx={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 1.5 }}>
-        <TextField
+        <BufferedInput
           label="Size"
-          size="small"
-          type="number"
           value={value.fontSize}
-          onChange={(event) => {
-            const nextFontSize = Number(event.target.value);
-            if (Number.isFinite(nextFontSize)) {
-              onChange({ fontSize: nextFontSize });
-            }
-          }}
-          inputProps={{ min: 8, max: 400, step: 1 }}
+          onCommit={(fontSize) => onChange({ fontSize })}
+          step={1}
         />
         <BufferedColorInput
           value={value.fill}
@@ -185,18 +179,11 @@ function TextFormFields({
           Stroke
         </Typography>
         <Box sx={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 1.5 }}>
-          <TextField
+          <BufferedInput
             label="Width"
-            size="small"
-            type="number"
             value={value.strokeWidth}
-            onChange={(event) => {
-              const nextStrokeWidth = Number(event.target.value);
-              if (Number.isFinite(nextStrokeWidth)) {
-                onChange({ strokeWidth: nextStrokeWidth });
-              }
-            }}
-            inputProps={{ min: 0, max: MAX_TEXT_STROKE_WIDTH, step: 1 }}
+            onCommit={(strokeWidth) => onChange({ strokeWidth })}
+            step={1}
           />
           <BufferedColorInput
             label="Stroke"

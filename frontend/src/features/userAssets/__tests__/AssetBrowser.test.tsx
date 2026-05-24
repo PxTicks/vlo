@@ -210,6 +210,7 @@ describe("AssetBrowser Component", () => {
     vi.mocked(useAssetStore).mockImplementation((selector) =>
       selector(mergedState),
     );
+    vi.mocked(useAssetStore.getState).mockReturnValue(mergedState);
   };
 
   it("renders empty state correctly", () => {
@@ -818,6 +819,65 @@ describe("AssetBrowser Component", () => {
     expect(
       screen.getByRole("button", { name: "Show favourite assets" }),
     ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("opens a preview dialog when an asset's preview button is clicked and navigates with arrow keys", async () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+    useProjectStore.setState((state) => ({
+      ...state,
+      config: {
+        ...state.config,
+        assetBrowserDisplay: "ungrouped",
+      },
+    }));
+
+    render(<AssetBrowser />);
+
+    // Video tab is default; sortedAssets (newest first):
+    //   b-roll.mp4 (createdAt: 2), solo.mp4 (1), vacation.mp4 (0)
+    const firstPreviewBtn = screen.getAllByRole("button", {
+      name: "Preview video",
+    })[0];
+    fireEvent.click(firstPreviewBtn);
+
+    expect(
+      screen.getByRole("dialog", { name: "b-roll.mp4" }),
+    ).toBeInTheDocument();
+
+    // ArrowRight -> next visible asset (solo.mp4)
+    fireEvent.keyDown(window, { key: "ArrowRight", code: "ArrowRight" });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "solo.mp4" }),
+      ).toBeInTheDocument();
+    });
+
+    // ArrowLeft -> back to b-roll.mp4
+    fireEvent.keyDown(window, { key: "ArrowLeft", code: "ArrowLeft" });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "b-roll.mp4" }),
+      ).toBeInTheDocument();
+    });
+
+    // ArrowLeft at first asset -> no change
+    fireEvent.keyDown(window, { key: "ArrowLeft", code: "ArrowLeft" });
+    expect(
+      screen.getByRole("dialog", { name: "b-roll.mp4" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an image preview button that opens the preview dialog", () => {
+    mockStore({ assets: mockAssets, families: mockFamilies });
+
+    render(<AssetBrowser />);
+    fireEvent.click(screen.getByLabelText("Images"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview image" }));
+
+    expect(
+      screen.getByRole("dialog", { name: "thumbnail.jpg" }),
+    ).toBeInTheDocument();
   });
 
   it("does not reopen a previously revealed family when unrelated assets are ingested later", async () => {

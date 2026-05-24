@@ -14,6 +14,7 @@ import { useDraggable } from "@dnd-kit/core";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
 import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import DeleteIcon from "@mui/icons-material/Delete";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import ReplayIcon from "@mui/icons-material/Replay";
@@ -34,7 +35,6 @@ import {
 import { getTimelineSelectionFromAsset } from "../../timelineSelection";
 import { useAssetStore } from "../useAssetStore";
 import { deleteAssetWithConfirmation } from "../utils/deleteAssetWithConfirmation";
-import { AssetPreviewDialog } from "./AssetPreviewDialog";
 
 interface AssetCardProps {
   asset: Asset;
@@ -43,6 +43,7 @@ interface AssetCardProps {
   onDeleteAll?: (familyId: string) => void;
   onShowFamily?: (familyId: string) => void;
   onSelect?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onRequestPreview?: (assetId: string) => void;
   layout?: "default" | "square";
 }
 
@@ -206,10 +207,10 @@ function AssetCardContent({
   asset,
   onDeleteAll,
   onShowFamily,
+  onRequestPreview,
   layout = "default",
 }: AssetCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
 
   const displayImage =
@@ -304,8 +305,8 @@ function AssetCardContent({
     (event: React.MouseEvent) => {
       event.stopPropagation();
 
-      if (asset.type === "video") {
-        setIsPreviewOpen(true);
+      if (asset.type === "video" || asset.type === "image") {
+        onRequestPreview?.(asset.id);
         return;
       }
 
@@ -313,12 +314,8 @@ function AssetCardContent({
         setIsPlaying((prev) => !prev);
       }
     },
-    [asset.type],
+    [asset.id, asset.type, onRequestPreview],
   );
-
-  const handlePreviewClose = useCallback(() => {
-    setIsPreviewOpen(false);
-  }, []);
 
   return (
     <>
@@ -348,8 +345,10 @@ function AssetCardContent({
             <audio src={asset.src} autoPlay loop />
           )}
 
-          {/* Video/Audio Overlay Controls */}
-          {(asset.type === "video" || asset.type === "audio") && (
+          {/* Preview / Playback Overlay Controls */}
+          {asset.type === "video" ||
+          asset.type === "audio" ||
+          (asset.type === "image" && displayImage) ? (
             <OverlayControls isPlaying={asset.type === "audio" && isPlaying}>
               <IconButton
                 onClick={handlePlayToggle}
@@ -357,20 +356,24 @@ function AssetCardContent({
                 aria-label={
                   asset.type === "video"
                     ? "Preview video"
-                    : isPlaying
-                      ? "Pause audio"
-                      : "Play audio"
+                    : asset.type === "image"
+                      ? "Preview image"
+                      : isPlaying
+                        ? "Pause audio"
+                        : "Play audio"
                 }
                 sx={MEDIA_ACTION_STYLES}
               >
-                {asset.type === "audio" && isPlaying ? (
+                {asset.type === "image" ? (
+                  <ZoomInIcon sx={{ fontSize: 32 }} />
+                ) : asset.type === "audio" && isPlaying ? (
                   <PauseCircleOutlineIcon sx={{ fontSize: 32 }} />
                 ) : (
                   <PlayCircleOutlineIcon sx={{ fontSize: 32 }} />
                 )}
               </IconButton>
             </OverlayControls>
-          )}
+          ) : null}
 
           {/* Duration Badge */}
           {asset.type !== "image" && asset.duration && (
@@ -499,14 +502,6 @@ function AssetCardContent({
           </Typography>
         </MetadataArea>
       </ContentRoot>
-
-      {asset.type === "video" && isPreviewOpen ? (
-        <AssetPreviewDialog
-          asset={asset}
-          open
-          onClose={handlePreviewClose}
-        />
-      ) : null}
     </>
   );
 }
@@ -520,6 +515,7 @@ function AssetCardComponent({
   onDeleteAll,
   onShowFamily,
   onSelect,
+  onRequestPreview,
   layout = "default",
 }: AssetCardProps) {
   const draggableData = React.useMemo(
@@ -560,6 +556,7 @@ function AssetCardComponent({
         asset={asset}
         onDeleteAll={onDeleteAll}
         onShowFamily={onShowFamily}
+        onRequestPreview={onRequestPreview}
         layout={layout}
       />
     </StyledCard>

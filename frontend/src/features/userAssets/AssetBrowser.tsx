@@ -30,6 +30,7 @@ import { useInteractionStore } from "../timeline/hooks/useInteractionStore";
 import { useProjectStore } from "../project/useProjectStore";
 import { useAssetStore } from "./useAssetStore";
 import { AssetCard } from "./components/AssetCard";
+import { AssetPreviewDialog } from "./components/AssetPreviewDialog";
 import { useAssetBrowserRevealStore } from "./useAssetBrowserRevealStore";
 import { useAssetBrowserSelectionStore } from "./useAssetBrowserSelectionStore";
 import {
@@ -133,6 +134,7 @@ function AssetBrowserComponent() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [showFavouritesOnly, setShowFavouritesOnly] = useState(false);
   const [familyScope, setFamilyScope] = useState<FamilyScope | null>(null);
+  const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
 
   const assets = useAssetStore((state) => state.assets);
   const families = useAssetStore((state) => state.families);
@@ -699,6 +701,42 @@ function AssetBrowserComponent() {
     [selectAsset, selectedAssetIds, setSelectedAssetIds],
   );
 
+  const previewIndex = React.useMemo(
+    () =>
+      previewAssetId
+        ? sortedAssets.findIndex((asset) => asset.id === previewAssetId)
+        : -1,
+    [previewAssetId, sortedAssets],
+  );
+  const previewAsset = previewIndex >= 0 ? sortedAssets[previewIndex] : null;
+
+  // Drop the preview state if the previewed asset is no longer visible in the
+  // current view (e.g. it was deleted, or tab/family scope changed). Adjusted
+  // during render so dependent values in the same pass observe the cleared id.
+  if (previewAssetId && previewIndex === -1) {
+    setPreviewAssetId(null);
+  }
+
+  const handleRequestPreview = React.useCallback((assetId: string) => {
+    setPreviewAssetId(assetId);
+  }, []);
+
+  const handleClosePreview = React.useCallback(() => {
+    setPreviewAssetId(null);
+  }, []);
+
+  const handlePreviewPrev = React.useCallback(() => {
+    if (previewIndex > 0) {
+      setPreviewAssetId(sortedAssets[previewIndex - 1].id);
+    }
+  }, [previewIndex, sortedAssets]);
+
+  const handlePreviewNext = React.useCallback(() => {
+    if (previewIndex >= 0 && previewIndex < sortedAssets.length - 1) {
+      setPreviewAssetId(sortedAssets[previewIndex + 1].id);
+    }
+  }, [previewIndex, sortedAssets]);
+
   const handleBrowserBackgroundClick = React.useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target;
@@ -993,6 +1031,7 @@ function AssetBrowserComponent() {
                       : undefined
                   }
                   onSelect={(event) => handleAssetSelect(asset.id, event)}
+                  onRequestPreview={handleRequestPreview}
                 />
               </Grid>
             ))}
@@ -1047,6 +1086,17 @@ function AssetBrowserComponent() {
           </Box>
         </Box>
       )}
+
+      {previewAsset ? (
+        <AssetPreviewDialog
+          asset={previewAsset}
+          onClose={handleClosePreview}
+          onPrev={handlePreviewPrev}
+          onNext={handlePreviewNext}
+          hasPrev={previewIndex > 0}
+          hasNext={previewIndex < sortedAssets.length - 1}
+        />
+      ) : null}
     </Box>
   );
 }

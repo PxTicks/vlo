@@ -104,6 +104,17 @@ export function buildRuntimeStoreState(
         if (shouldReconnectEditor) {
           get().requestEditorReconnect();
         }
+        // Sync-retry handoff: if the backend reports ComfyUI as connected but
+        // we still haven't synced (e.g. an earlier sync 503'd because ComfyUI
+        // was briefly unreachable), retry now. The panel's 5s polling loop
+        // calls refreshRuntimeStatus while !objectInfoSynced, giving us
+        // bounded passive retries without a separate timer.
+        if (
+          runtimeStatus.comfyui.status === "connected" &&
+          !get().objectInfoSynced
+        ) {
+          void get().syncObjectInfo();
+        }
         return runtimeStatus;
       } catch (error) {
         const message =

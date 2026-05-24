@@ -561,9 +561,14 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
     const intervalId = window.setInterval(() => {
       const current = useGenerationStore.getState();
+      // Also tick while !objectInfoSynced so a transient sync failure (e.g.
+      // ComfyUI briefly unreachable when the WS first connected) gets a
+      // retry via refreshRuntimeStatus → syncObjectInfo. Once the sync
+      // succeeds and the connection is healthy the poll falls idle.
       if (
         current.connectionStatus !== "connected" ||
-        current.workflowLoadError !== null
+        current.workflowLoadError !== null ||
+        !current.objectInfoSynced
       ) {
         void current.refreshRuntimeStatus();
       }

@@ -244,6 +244,19 @@ python scripts/install-comfyui-nodes.py
 - https://github.com/kijai/ComfyUI-KJNodes
 <!-- comfyui-custom-nodes:end -->
 
+For better live previews from Wan workflows, start ComfyUI with TAESD previews
+enabled:
+
+```bash
+cd /path/to/ComfyUI
+python main.py --preview-method taesd
+```
+
+You will also need the Wan TAESD approximation model. Download
+[`taew2_1.safetensors`](https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/taew2_1.safetensors)
+and place it at `ComfyUI/models/vae_approx/taew2_1.safetensors`, creating the
+`vae_approx` directory if it does not already exist.
+
 ## Acknowledgements
 
 The following three open source projects are central to vlo:

@@ -6,9 +6,23 @@ This project is in early alpha, but I believe its usefulness already outstrips i
 
 The aim is to integrate the latest-and-greatest AI tools with real video editing workflows. It's designed to support an intentional creative process, not for churning out heaps of dross, so the development priority is control, not automation. In the long run, I'd like it to grow into a tool which anyone, including those who just want to make videos, not AI videos, can benefit from.
 
+## Demo videos
+
+1. A sample workflow. Some steps have been skipped for brevity, but it demonstrates the interaction between timeline and generation
+
+   <video src="https://github.com/PxTicks/vlo/releases/download/v0.2.0/vlo_full_2.mp4" controls width="720"></video>
+
+2. Patch-based inpainting. This is necessary for optimising quality and avoiding degradation both from VAE and video encoding.
+
+   <video src="https://github.com/PxTicks/vlo/releases/download/v0.2.0/selection-1779469164713.mp4" controls width="720"></video>
+
+3. Motion guidance. This is using the [time-to-move](https://time-to-move.github.io/) framework. In this case we show precise control by animating the input 6332 - the default vlo port - on a keypad.
+
+   <video src="https://github.com/PxTicks/vlo/releases/download/v0.2.0/selection-1779470129551.mp4" controls width="720"></video>
+
 ## IMPORTANT
 
-Vlo requires chromium-based browsers to work. I have tested in edge and chrome, but other chromium browsers (e.g. opera) may also function. The are two fundamental reasons for this limitation.
+Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, but other Chromium browsers (e.g. Opera) may also function. The are two fundamental reasons for this limitation.
 
 1. It uses the File System Access API for smooth and efficient file management directly on disk. This allows for a unified file management interface, whether you launch vlo on your own computer or on a remote service (e.g. runpod). You can still access your locally-stored project files. One caveat: it is best to keep your projects in a folder where you can easily find them, as clearing browser data will forget their location.
 2. The media renderer is built on mediabunny, which wraps webcodecs. Webcodecs has implementation differences between firefox and chrome, and during early testing, this led to noticeable lag. The Webcodecs API is the basis of frame-accurate web video, and is indispensable for a project like this.
@@ -209,8 +223,21 @@ The following nodes are used in some capacity in the default workflows
 - https://github.com/Fannovel16/comfyui_controlnet_aux
 - https://github.com/kijai/ComfyUI-GIMM-VFI
 - https://github.com/kijai/ComfyUI-MelBandRoFormer
+- https://github.com/kosinkadink/ComfyUI-VideoHelperSuite
 
-Special thanks to kijai for nodes and workflows I adapted, and to RuneXX for workflows I adapted.
+## Acknowledgements
+
+The following three open source projects are critical to this software
+
+- [ComfyUI](https://comfy.org/)
+- [PixiJS](https://pixijs.com/)
+- [Mediabunny](https://mediabunny.dev/)
+
+The work of the following users has also been valuable
+
+- [kijai](https://github.com/kijai) nodes, workflows and code.
+- [kosinkadink](https://github.com/kosinkadink) nodes and code.
+- [RuneXX](https://huggingface.co/RuneXX) workflow.
 
 ## License
 

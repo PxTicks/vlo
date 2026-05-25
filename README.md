@@ -241,21 +241,22 @@ python scripts/install-comfyui-nodes.py
 - https://github.com/kijai/ComfyUI-GIMM-VFI
 - https://github.com/kijai/ComfyUI-MelBandRoFormer
 - https://github.com/kosinkadink/ComfyUI-VideoHelperSuite
+- https://github.com/kijai/ComfyUI-KJNodes
 <!-- comfyui-custom-nodes:end -->
 
 ## Acknowledgements
 
-The following three open source projects are critical to this software
+The following three open source projects are central to vlo:
 
 - [ComfyUI](https://comfy.org/)
 - [PixiJS](https://pixijs.com/)
 - [Mediabunny](https://mediabunny.dev/)
 
-The work of the following users has also been valuable
+The work of the following users has also been valuable:
 
-- [kijai](https://github.com/kijai) nodes, workflows and code.
-- [kosinkadink](https://github.com/kosinkadink) nodes and code.
-- [RuneXX](https://huggingface.co/RuneXX) workflow.
+- [kijai](https://github.com/kijai) nodes, workflows and reference code.
+- [kosinkadink](https://github.com/kosinkadink) nodes and reference code.
+- [RuneXX](https://huggingface.co/RuneXX) workflows.
 
 ## License
 

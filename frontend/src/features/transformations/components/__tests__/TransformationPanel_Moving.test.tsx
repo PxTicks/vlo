@@ -63,45 +63,10 @@ describe("TransformationPanel Moving Reproduction", () => {
     // --- Run 1: Start 0 ---
     let capturedUpdates0: Record<string, unknown> | null = null;
 
-    (
-      useTimelineStore as unknown as {
-        mockImplementation: (
-          fn: (selector: (state: unknown) => unknown) => unknown,
-        ) => void;
-      }
-    ).mockImplementation((selector) => {
-      return selector({
-        selectedClipIds: ["clip_0"],
-        clips: [
-          {
-            id: "clip_0",
-            start: 0,
-            timelineDuration: 96000 * 10,
-            sourceDuration: 96000 * 10,
-            offset: 0,
-            transformedOffset: 0,
-            transformations: [
-              {
-                id: "speed_1",
-                type: "speed",
-                isEnabled: true,
-                parameters: { factor: 1 },
-              },
-            ],
-          },
-        ],
-        setClipTransforms: mockSetClipTransforms,
-        setClipTransformsAndShape: (
-          _id: string,
-          _transforms: unknown,
-          updates: Record<string, unknown>,
-        ) => {
-          capturedUpdates0 = updates;
-          mockSetClipTransformsAndShape(_id, _transforms, updates);
-        },
-        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
-        updateClipMask: mockUpdateClipMask,
-        activeClip: {
+    const state0 = {
+      selectedClipIds: ["clip_0"],
+      clips: [
+        {
           id: "clip_0",
           start: 0,
           timelineDuration: 96000 * 10,
@@ -117,7 +82,26 @@ describe("TransformationPanel Moving Reproduction", () => {
             },
           ],
         },
-        activeTransforms: [
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: (
+        _id: string,
+        _transforms: unknown,
+        updates: Record<string, unknown>,
+      ) => {
+        capturedUpdates0 = updates;
+        mockSetClipTransformsAndShape(_id, _transforms, updates);
+      },
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+      activeClip: {
+        id: "clip_0",
+        start: 0,
+        timelineDuration: 96000 * 10,
+        sourceDuration: 96000 * 10,
+        offset: 0,
+        transformedOffset: 0,
+        transformations: [
           {
             id: "speed_1",
             type: "speed",
@@ -125,10 +109,32 @@ describe("TransformationPanel Moving Reproduction", () => {
             parameters: { factor: 1 },
           },
         ],
-        activeClipDuration: 10,
-        activeClipSourceDuration: 10,
-      });
-    });
+      },
+      activeTransforms: [
+        {
+          id: "speed_1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 1 },
+        },
+      ],
+      activeClipDuration: 10,
+      activeClipSourceDuration: 10,
+    };
+
+    (
+      useTimelineStore as unknown as {
+        mockImplementation: (
+          fn: (selector: (state: unknown) => unknown) => unknown,
+        ) => void;
+        getState: ReturnType<typeof vi.fn>;
+      }
+    ).mockImplementation((selector) => selector(state0));
+    (
+      useTimelineStore as unknown as {
+        getState: ReturnType<typeof vi.fn>;
+      }
+    ).getState = vi.fn(() => state0);
 
     const { unmount } = render(<TransformationPanel />);
 
@@ -141,45 +147,10 @@ describe("TransformationPanel Moving Reproduction", () => {
     // --- Run 2: Start 5000 ---
     let capturedUpdatesMoved: Record<string, unknown> | null = null;
 
-    (
-      useTimelineStore as unknown as {
-        mockImplementation: (
-          fn: (selector: (state: unknown) => unknown) => unknown,
-        ) => void;
-      }
-    ).mockImplementation((selector) => {
-      return selector({
-        selectedClipIds: ["clip_moved"],
-        clips: [
-          {
-            id: "clip_moved",
-            start: 5000, // MOVED
-            timelineDuration: 96000 * 10,
-            sourceDuration: 96000 * 10,
-            offset: 0,
-            transformedOffset: 0,
-            transformations: [
-              {
-                id: "speed_1",
-                type: "speed",
-                isEnabled: true,
-                parameters: { factor: 1 },
-              },
-            ],
-          },
-        ],
-        setClipTransforms: mockSetClipTransforms,
-        setClipTransformsAndShape: (
-          _id: string,
-          _transforms: unknown,
-          updates: Record<string, unknown>,
-        ) => {
-          capturedUpdatesMoved = updates;
-          mockSetClipTransformsAndShape(_id, _transforms, updates);
-        },
-        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
-        updateClipMask: mockUpdateClipMask,
-        activeClip: {
+    const stateMoved = {
+      selectedClipIds: ["clip_moved"],
+      clips: [
+        {
           id: "clip_moved",
           start: 5000, // MOVED
           timelineDuration: 96000 * 10,
@@ -195,7 +166,26 @@ describe("TransformationPanel Moving Reproduction", () => {
             },
           ],
         },
-        activeTransforms: [
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: (
+        _id: string,
+        _transforms: unknown,
+        updates: Record<string, unknown>,
+      ) => {
+        capturedUpdatesMoved = updates;
+        mockSetClipTransformsAndShape(_id, _transforms, updates);
+      },
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+      activeClip: {
+        id: "clip_moved",
+        start: 5000, // MOVED
+        timelineDuration: 96000 * 10,
+        sourceDuration: 96000 * 10,
+        offset: 0,
+        transformedOffset: 0,
+        transformations: [
           {
             id: "speed_1",
             type: "speed",
@@ -203,10 +193,31 @@ describe("TransformationPanel Moving Reproduction", () => {
             parameters: { factor: 1 },
           },
         ],
-        activeClipDuration: 10,
-        activeClipSourceDuration: 10,
-      });
-    });
+      },
+      activeTransforms: [
+        {
+          id: "speed_1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 1 },
+        },
+      ],
+      activeClipDuration: 10,
+      activeClipSourceDuration: 10,
+    };
+
+    (
+      useTimelineStore as unknown as {
+        mockImplementation: (
+          fn: (selector: (state: unknown) => unknown) => unknown,
+        ) => void;
+      }
+    ).mockImplementation((selector) => selector(stateMoved));
+    (
+      useTimelineStore as unknown as {
+        getState: ReturnType<typeof vi.fn>;
+      }
+    ).getState = vi.fn(() => stateMoved);
 
     render(<TransformationPanel />);
 
@@ -223,49 +234,15 @@ describe("TransformationPanel Moving Reproduction", () => {
     // --- Run 1: Start 0 ---
     let capturedUpdates0: Record<string, unknown> | null = null;
 
-    (
-      useTimelineStore as unknown as {
-        mockImplementation: (
-          fn: (selector: (state: unknown) => unknown) => unknown,
-        ) => void;
-      }
-    ).mockImplementation((selector) => {
-      return selector({
-        selectedClipIds: ["clip_0"],
-        clips: [
-          {
-            id: "clip_0",
-            start: 0,
-            timelineDuration: 96000 * 5, // Visual: 5s
-            sourceDuration: 96000 * 10,
-            offset: 96000 * 2, // Offset 2s (Content starts at 2s)
-            transformedOffset: 0,
-            transformations: [
-              {
-                id: "speed_1",
-                type: "speed",
-                isEnabled: true,
-                parameters: { factor: 1 },
-              },
-            ],
-          },
-        ],
-        setClipTransforms: mockSetClipTransforms,
-        setClipTransformsAndShape: (
-          _id: string,
-          _transforms: unknown,
-          updates: Record<string, unknown>,
-        ) => {
-          capturedUpdates0 = updates;
-        },
-        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
-        updateClipMask: mockUpdateClipMask,
-        activeClip: {
+    const state0 = {
+      selectedClipIds: ["clip_0"],
+      clips: [
+        {
           id: "clip_0",
           start: 0,
-          timelineDuration: 96000 * 5,
+          timelineDuration: 96000 * 5, // Visual: 5s
           sourceDuration: 96000 * 10,
-          offset: 96000 * 2,
+          offset: 96000 * 2, // Offset 2s (Content starts at 2s)
           transformedOffset: 0,
           transformations: [
             {
@@ -276,7 +253,25 @@ describe("TransformationPanel Moving Reproduction", () => {
             },
           ],
         },
-        activeTransforms: [
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: (
+        _id: string,
+        _transforms: unknown,
+        updates: Record<string, unknown>,
+      ) => {
+        capturedUpdates0 = updates;
+      },
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+      activeClip: {
+        id: "clip_0",
+        start: 0,
+        timelineDuration: 96000 * 5,
+        sourceDuration: 96000 * 10,
+        offset: 96000 * 2,
+        transformedOffset: 0,
+        transformations: [
           {
             id: "speed_1",
             type: "speed",
@@ -284,10 +279,31 @@ describe("TransformationPanel Moving Reproduction", () => {
             parameters: { factor: 1 },
           },
         ],
-        activeClipDuration: 5,
-        activeClipSourceDuration: 10,
-      });
-    });
+      },
+      activeTransforms: [
+        {
+          id: "speed_1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 1 },
+        },
+      ],
+      activeClipDuration: 5,
+      activeClipSourceDuration: 10,
+    };
+
+    (
+      useTimelineStore as unknown as {
+        mockImplementation: (
+          fn: (selector: (state: unknown) => unknown) => unknown,
+        ) => void;
+      }
+    ).mockImplementation((selector) => selector(state0));
+    (
+      useTimelineStore as unknown as {
+        getState: ReturnType<typeof vi.fn>;
+      }
+    ).getState = vi.fn(() => state0);
 
     const { unmount } = render(<TransformationPanel />);
 
@@ -300,49 +316,15 @@ describe("TransformationPanel Moving Reproduction", () => {
     // --- Run 2: Start 5000 ---
     let capturedUpdatesMoved: Record<string, unknown> | null = null;
 
-    (
-      useTimelineStore as unknown as {
-        mockImplementation: (
-          fn: (selector: (state: unknown) => unknown) => unknown,
-        ) => void;
-      }
-    ).mockImplementation((selector) => {
-      return selector({
-        selectedClipIds: ["clip_moved"],
-        clips: [
-          {
-            id: "clip_moved",
-            start: 5000, // MOVED
-            timelineDuration: 96000 * 5,
-            sourceDuration: 96000 * 10,
-            offset: 96000 * 2, // SAME OFFSET
-            transformedOffset: 0,
-            transformations: [
-              {
-                id: "speed_1",
-                type: "speed",
-                isEnabled: true,
-                parameters: { factor: 1 },
-              },
-            ],
-          },
-        ],
-        setClipTransforms: mockSetClipTransforms,
-        setClipTransformsAndShape: (
-          _id: string,
-          _transforms: unknown,
-          updates: Record<string, unknown>,
-        ) => {
-          capturedUpdatesMoved = updates;
-        },
-        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
-        updateClipMask: mockUpdateClipMask,
-        activeClip: {
+    const stateMoved = {
+      selectedClipIds: ["clip_moved"],
+      clips: [
+        {
           id: "clip_moved",
-          start: 5000,
+          start: 5000, // MOVED
           timelineDuration: 96000 * 5,
           sourceDuration: 96000 * 10,
-          offset: 96000 * 2,
+          offset: 96000 * 2, // SAME OFFSET
           transformedOffset: 0,
           transformations: [
             {
@@ -353,7 +335,25 @@ describe("TransformationPanel Moving Reproduction", () => {
             },
           ],
         },
-        activeTransforms: [
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: (
+        _id: string,
+        _transforms: unknown,
+        updates: Record<string, unknown>,
+      ) => {
+        capturedUpdatesMoved = updates;
+      },
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+      activeClip: {
+        id: "clip_moved",
+        start: 5000,
+        timelineDuration: 96000 * 5,
+        sourceDuration: 96000 * 10,
+        offset: 96000 * 2,
+        transformedOffset: 0,
+        transformations: [
           {
             id: "speed_1",
             type: "speed",
@@ -361,10 +361,31 @@ describe("TransformationPanel Moving Reproduction", () => {
             parameters: { factor: 1 },
           },
         ],
-        activeClipDuration: 5,
-        activeClipSourceDuration: 10,
-      });
-    });
+      },
+      activeTransforms: [
+        {
+          id: "speed_1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 1 },
+        },
+      ],
+      activeClipDuration: 5,
+      activeClipSourceDuration: 10,
+    };
+
+    (
+      useTimelineStore as unknown as {
+        mockImplementation: (
+          fn: (selector: (state: unknown) => unknown) => unknown,
+        ) => void;
+      }
+    ).mockImplementation((selector) => selector(stateMoved));
+    (
+      useTimelineStore as unknown as {
+        getState: ReturnType<typeof vi.fn>;
+      }
+    ).getState = vi.fn(() => stateMoved);
 
     render(<TransformationPanel />);
 

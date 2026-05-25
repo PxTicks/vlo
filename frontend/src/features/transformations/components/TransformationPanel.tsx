@@ -15,7 +15,6 @@ import { TransformationGroup } from "./TransformationGroup";
 import { TransformationSection } from "./TransformationSection";
 import { SortableTransformationItem } from "./SortableTransformationItem";
 import { DefaultTransformationSections } from "./DefaultTransformationSections";
-import { AdjustmentDepthSection } from "./AdjustmentDepthSection";
 import { useTimelineClip, parseMaskClipId } from "../../timeline";
 import { useAsset } from "../../userAssets";
 import { useActiveTransformationSection } from "../hooks/useActiveTransformationSection";
@@ -127,10 +126,9 @@ export function TransformationPanel() {
   }, [compatibilityClipType, compatibilityHasAudio]);
 
   const compatibleAddableTransforms = useMemo(() => {
-    return getAddableTransforms({
-      clipType: compatibilityClipType,
-      hasAudio: compatibilityHasAudio,
-    });
+    return getAddableTransforms().filter((def) =>
+      isTransformCompatible(def, compatibilityClipType, compatibilityHasAudio),
+    );
   }, [compatibilityClipType, compatibilityHasAudio]);
 
   const sensors = useSensors(
@@ -461,9 +459,6 @@ export function TransformationPanel() {
       }}
     >
       <Box sx={{ display: "flex", flexDirection: "column" }}>
-        {selectedClip?.type === "adjustment" ? (
-          <AdjustmentDepthSection clip={selectedClip} />
-        ) : null}
         <DefaultTransformationSections
           definitions={compatibleDefaultTransforms}
           activeTransforms={activeTransforms}

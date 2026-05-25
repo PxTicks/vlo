@@ -14,8 +14,6 @@ import type {
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
 import { applyClipTransforms, livePreviewParamStore } from "../../transformations";
-import type { AdjustmentEffectResolver } from "../services/AdjustmentEffectResolver";
-import { RenderGroupOrchestrator } from "../services/RenderGroupOrchestrator";
 import { TrackRenderEngine } from "../services/TrackRenderEngine";
 import {
   findActiveClipAtTicks,
@@ -77,14 +75,6 @@ export function useTrackRenderEngine(
     trackId: string,
     renderer: ((time: number) => Promise<void>) | null,
   ) => void,
-  /**
-   * When provided, the orchestrator owns Pixi parenting (register on mount,
-   * unregister on cleanup) so group containers can interpose between
-   * `container` and the engine. When omitted, falls back to the legacy
-   * `engine.addTo(container)` direct attachment used by existing tests.
-   */
-  orchestrator?: RenderGroupOrchestrator | null,
-  adjustmentEffectResolver?: AdjustmentEffectResolver | null,
 ): TrackRenderEngineResult {
   const engineRef = useRef<TrackRenderEngine | null>(null);
   const [spriteInstance, setSpriteInstance] = useState<Sprite | null>(null);
@@ -135,29 +125,6 @@ export function useTrackRenderEngine(
     sortedTrackClips,
   });
 
-  /**
-   * Per-clip presentation lookup: returns the active clip at `presentationTick`
-   * on this track (or null) plus the rebased effective tick. Equivalent to
-   * the engine's `resolveActiveClipAtPresentation` but at the hook level —
-   * the hook only needs the active clip for state syncing.
-   */
-  const findActiveClip = useCallback(
-    (
-      trackClips: TimelineClip[],
-      presentationTick: number,
-    ): TimelineClip | undefined => {
-      if (adjustmentEffectResolver) {
-        return (
-          adjustmentEffectResolver
-            .getPresentationLookup()
-            .findActiveClipAt(trackId, presentationTick)?.clip ?? undefined
-        );
-      }
-      return findActiveClipAtTicks(trackClips, presentationTick);
-    },
-    [adjustmentEffectResolver, trackId],
-  );
-
   useEffect(() => {
     // Keep the rAF playback loop reading the latest snapshot of playback
     // inputs without taking them as callback dependencies.
@@ -173,7 +140,7 @@ export function useTrackRenderEngine(
     currentTime: number,
     trackClips: TimelineClip[],
   ) => {
-    const activeClip = findActiveClip(trackClips, currentTime);
+    const activeClip = findActiveClipAtTicks(trackClips, currentTime);
     activeClipRef.current = activeClip || null;
 
     if (activeClip && activeClip.id !== currentClipIdRef.current) {
@@ -185,7 +152,7 @@ export function useTrackRenderEngine(
     }
 
     return activeClip;
-  }, [findActiveClip]);
+  }, []);
 
   useEffect(() => {
     logicalDimensionsRef.current = logicalDimensions;
@@ -397,36 +364,26 @@ export function useTrackRenderEngine(
         }
       },
       app.renderer,
-      { trackId, adjustmentEffectResolver },
     );
 
-    if (orchestrator) {
-      orchestrator.registerTrack(trackId, engine.container);
-    } else {
-      engine.addTo(container);
-      // Ensure sorting on the Pixi container (justified above on the useEffect).
-      // eslint-disable-next-line react-hooks/immutability
-      container.sortableChildren = true;
-      container.sortChildren();
-    }
+    engine.addTo(container);
     engineRef.current = engine;
     setSpriteInstance(engine.sprite);
 
+    // Ensure sorting on the Pixi container (justified above on the useEffect).
+    // eslint-disable-next-line react-hooks/immutability
+    container.sortableChildren = true;
+    container.sortChildren();
+
     return () => {
       engine.dispose();
-      if (orchestrator) {
-        orchestrator.unregisterTrack(trackId, engine.container);
-      } else if (
-        container &&
-        !container.destroyed &&
-        !engine.container.destroyed
-      ) {
+      if (container && !container.destroyed && !engine.container.destroyed) {
         container.removeChild(engine.container);
       }
       engineRef.current = null;
       setSpriteInstance(null);
     };
-  }, [trackId, app, zIndex, container, orchestrator, adjustmentEffectResolver]);
+  }, [trackId, app, zIndex, container]);
 
   useEffect(() => {
     if (!registerSynchronizedPlaybackRenderer) return;

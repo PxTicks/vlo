@@ -66,11 +66,9 @@ describe("sectionKeyframes", () => {
     const colorsByGroup = new Map(
       markers.map((marker) => [marker.groupId, marker.color]),
     );
-    // Layout's UI groups are now [position, scale, rotation] (indices
-    // 0/1/2) since fitMode was split into its own catalogue entry.
-    expect(colorsByGroup.get("position")).toBe(getSectionGroupKeyframeColor(0));
-    expect(colorsByGroup.get("scale")).toBe(getSectionGroupKeyframeColor(1));
-    expect(colorsByGroup.get("rotation")).toBe(getSectionGroupKeyframeColor(2));
+    expect(colorsByGroup.get("position")).toBe(getSectionGroupKeyframeColor(1));
+    expect(colorsByGroup.get("scale")).toBe(getSectionGroupKeyframeColor(2));
+    expect(colorsByGroup.get("rotation")).toBe(getSectionGroupKeyframeColor(3));
   });
 
   it("collects keyframes for a dynamic section and uses the first group color", () => {

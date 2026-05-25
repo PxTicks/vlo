@@ -11,7 +11,6 @@ import {
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
-import TuneIcon from "@mui/icons-material/Tune";
 import VerticalAlignCenterIcon from "@mui/icons-material/VerticalAlignCenter";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -350,27 +349,6 @@ export const TimelineToolbar = () => {
               )}
             </IconButton>
           </span>
-        </Tooltip>
-
-        <Tooltip title="Add adjustment clip at playhead">
-          <IconButton
-            size="small"
-            onClick={() => {
-              // Default to 3 seconds at the playhead — enough to scrub
-              // into and out of without immediately needing a resize.
-              const start = Math.max(0, Math.round(playbackClock.time));
-              const durationTicks = 3 * TICKS_PER_SECOND;
-              useTimelineStore.getState().addAdjustmentClip({
-                start,
-                timelineDuration: durationTicks,
-                depth: 1,
-              });
-            }}
-            data-testid="timeline-toolbar-add-adjustment"
-            sx={{ color: "#eee" }}
-          >
-            <TuneIcon fontSize="small" />
-          </IconButton>
         </Tooltip>
 
         <Tooltip title="Split Clip (Cut)">

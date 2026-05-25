@@ -7,11 +7,12 @@ import type {
 } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../timeline";
-import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
-import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
 import { TrackAudioRenderer } from "./TrackAudioRenderer";
-import { sortTrackClipsByStart } from "../utils/clipLookup";
+import {
+  findActiveClipAtTicks,
+  sortTrackClipsByStart,
+} from "../utils/clipLookup";
 import { resolveRenderableClips } from "../utils/resolveRenderableClip";
 import { getAssetInput } from "../../userAssets";
 import {
@@ -221,7 +222,6 @@ export class ExportRenderer {
   private app: Application;
   private logicalStage: Container;
   private engines: TrackRenderEngine[] = [];
-  private orchestrator: RenderGroupOrchestrator | null = null;
   private cancelController: AbortController | null = null;
   private isCancelled = false;
 
@@ -354,18 +354,12 @@ export class ExportRenderer {
     await outputEncoder.start();
 
     try {
-      const adjustmentEffectResolver = new AdjustmentEffectResolver();
-      adjustmentEffectResolver.setAdjustmentSource(
-        projectData.tracks,
-        projectData.clips,
-      );
-
       // --- AUDIO EXPORT LOOP ---
       const rangeDurationSec = rangeDurationTicks / TICKS_PER_SECOND;
 
       if (shouldRenderAudio) {
         const audioRenderers = relevantForAudio.map(
-          (t) => new TrackAudioRenderer(t.id, adjustmentEffectResolver),
+          (t) => new TrackAudioRenderer(t.id),
         );
 
         const CHUNK_DURATION_SEC = 10;
@@ -434,40 +428,15 @@ export class ExportRenderer {
 
       const startProgress = shouldRenderAudio ? 10 : 0;
 
-      this.logicalStage.sortableChildren = true;
-      this.orchestrator = new RenderGroupOrchestrator(this.logicalStage, {
-        logicalDimensions: { width: logicalWidth, height: logicalHeight },
-        adjustmentEffectResolver,
-      });
-      this.engines = visualTracks.map((track, index) => {
+      this.engines = visualTracks.map((_, index) => {
         const zIndex = visualTracks.length - 1 - index;
-        const engine = new TrackRenderEngine(
-          zIndex,
-          undefined,
-          this.app.renderer,
-          {
-            trackId: track.id,
-            adjustmentEffectResolver,
-          },
-        );
-        this.orchestrator!.registerTrack(track.id, engine.container);
+        const engine = new TrackRenderEngine(zIndex, undefined, this.app.renderer);
+        engine.addTo(this.logicalStage);
         return engine;
       });
-      // Adjustment-clip derivation reads the *full* project tracks + clips
-      // (not the selection-filtered subset). The orchestrator still creates
-      // and attaches a container for every derived group — even ones whose
-      // reach contains no registered visual tracks — but those containers
-      // hold no engines and so produce no pixels on the GPU. We tolerate
-      // the empty-container cost so that adjustments whose adjustment
-      // track was excluded from a selection export still apply to the
-      // included visual tracks below, and to keep room for non-visual
-      // engines (audio effects, etc.) to ride through the same forest in
-      // the future without an a-priori filter.
-      this.orchestrator.setAdjustmentSource(
-        projectData.tracks,
-        projectData.clips,
-      );
-      const visualTrackOrder = visualTracks.map((track) => track.id);
+
+      this.logicalStage.sortableChildren = true;
+      this.logicalStage.sortChildren();
 
       for (let i = 0; i < totalFrames; i += 1) {
         this.throwIfCancelled();
@@ -490,17 +459,7 @@ export class ExportRenderer {
             { shouldRender: false, fps: renderFps },
           );
 
-          // The presentation lookup is keyed off the resolver's full clip
-          // source (with range_mask intact); re-bind the result against the
-          // stripped `trackClips` so downstream `renderFrame` sees the
-          // export-effective version of the clip.
-          const resolvedClipId = engine.resolveActiveClipAtPresentation(
-            trackClips,
-            currentTime,
-          )?.activeClip.id;
-          const activeClip = resolvedClipId
-            ? trackClips.find((candidate) => candidate.id === resolvedClipId)
-            : undefined;
+          const activeClip = findActiveClipAtTicks(trackClips, currentTime);
 
           if (activeClip) {
             const activeMaskClips = maskClipsByParent.get(activeClip.id) ?? [];
@@ -525,10 +484,6 @@ export class ExportRenderer {
 
         await Promise.all(promises);
         this.throwIfCancelled();
-
-        // Rewrite parenting (track engines into / out of group containers) and
-        // apply group transforms before the GPU frame submit.
-        this.orchestrator.sync(currentTime, visualTrackOrder);
 
         // Render timeline frame once to an offscreen texture.
         this.app.renderer.render({
@@ -610,39 +565,15 @@ export class ExportRenderer {
       );
 
     try {
-      const adjustmentEffectResolver = new AdjustmentEffectResolver();
-      adjustmentEffectResolver.setAdjustmentSource(
-        projectData.tracks,
-        projectData.clips,
-      );
-
-      this.logicalStage.sortableChildren = true;
-      this.orchestrator = new RenderGroupOrchestrator(this.logicalStage, {
-        logicalDimensions: { width: logicalWidth, height: logicalHeight },
-        adjustmentEffectResolver,
-      });
-      this.engines = visualTracks.map((track, index) => {
+      this.engines = visualTracks.map((_, index) => {
         const zIndex = visualTracks.length - 1 - index;
-        const engine = new TrackRenderEngine(
-          zIndex,
-          undefined,
-          this.app.renderer,
-          {
-            trackId: track.id,
-            adjustmentEffectResolver,
-          },
-        );
-        this.orchestrator!.registerTrack(track.id, engine.container);
+        const engine = new TrackRenderEngine(zIndex, undefined, this.app.renderer);
+        engine.addTo(this.logicalStage);
         return engine;
       });
-      // Derivation reads the *full* project tracks + clips, including
-      // empty-container behaviour for unregistered reach. See the comment
-      // on the same call in render() above.
-      this.orchestrator.setAdjustmentSource(
-        projectData.tracks,
-        projectData.clips,
-      );
-      const visualTrackOrder = visualTracks.map((track) => track.id);
+
+      this.logicalStage.sortableChildren = true;
+      this.logicalStage.sortChildren();
 
       const promises: Promise<void>[] = [];
 
@@ -659,14 +590,7 @@ export class ExportRenderer {
           { shouldRender: false, fps },
         );
 
-        // See note above re: re-binding to the stripped `trackClips`.
-        const resolvedClipId = engine.resolveActiveClipAtPresentation(
-          trackClips,
-          tick,
-        )?.activeClip.id;
-        const activeClip = resolvedClipId
-          ? trackClips.find((candidate) => candidate.id === resolvedClipId)
-          : undefined;
+        const activeClip = findActiveClipAtTicks(trackClips, tick);
         if (!activeClip) return;
 
         const activeMaskClips = maskClipsByParent.get(activeClip.id) ?? [];
@@ -690,9 +614,6 @@ export class ExportRenderer {
 
       await Promise.all(promises);
       this.throwIfCancelled();
-
-      // Rewrite parenting and apply group transforms before the GPU submit.
-      this.orchestrator.sync(tick, visualTrackOrder);
 
       this.app.renderer.render({
         container: this.logicalStage,
@@ -721,8 +642,6 @@ export class ExportRenderer {
   }
 
   public dispose() {
-    this.orchestrator?.dispose();
-    this.orchestrator = null;
     this.engines.forEach((engine) => engine.dispose());
     this.engines = [];
     this.app.destroy(false, { children: true, texture: true });

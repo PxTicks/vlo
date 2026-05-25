@@ -27,9 +27,6 @@ interface UseWaveformRendererProps {
   height: number;
   enabled?: boolean;
   isDragging?: boolean;
-  presentationStart?: number;
-  presentationDuration?: number;
-  mapPresentationOffsetToClipOffset?: (presentationOffset: number) => number;
 }
 
 interface UseWaveformRendererResult {
@@ -145,14 +142,9 @@ function getAssetTickForPixel(
   pixelOffset: number,
   ticksPerPixel: number,
   firstTimestampSeconds?: number,
-  mapPresentationOffsetToClipOffset?: (presentationOffset: number) => number,
 ): number {
-  const presentationOffset = pixelOffset * ticksPerPixel;
-  const clipOffset =
-    mapPresentationOffsetToClipOffset?.(presentationOffset) ??
-    presentationOffset;
   return clampWaveformAssetTickToFirstSample(
-    calculateClipTime(clip as TimelineClip, clipOffset),
+    calculateClipTime(clip as TimelineClip, pixelOffset * ticksPerPixel),
     firstTimestampSeconds,
   );
 }
@@ -171,9 +163,6 @@ export function useWaveformRenderer({
   height,
   enabled = true,
   isDragging = false,
-  presentationStart,
-  presentationDuration,
-  mapPresentationOffsetToClipOffset,
 }: UseWaveformRendererProps): UseWaveformRendererResult {
   const asset = useAsset(clip.assetId);
   const [waveformStatus, setWaveformStatus] = useState<WaveformStatus>("loading");
@@ -194,8 +183,6 @@ export function useWaveformRenderer({
     height,
     enabled,
     isDragging,
-    presentationStart,
-    presentationDuration,
   });
   const clipOffset = "offset" in clip ? (clip as TimelineClip).offset : 0;
   const clipSourceDuration =
@@ -270,7 +257,6 @@ export function useWaveformRenderer({
         pixelOffset,
         ticksPerPixel,
         metadata.firstTimestampSeconds,
-        mapPresentationOffsetToClipOffset,
       );
 
       if (
@@ -285,7 +271,6 @@ export function useWaveformRenderer({
         pixelOffset + 1,
         ticksPerPixel,
         metadata.firstTimestampSeconds,
-        mapPresentationOffsetToClipOffset,
       );
       const sourceFrame = ticksToSampleFrame(assetTick, metadata.sampleRate);
       const nextSourceFrame = ticksToSampleFrame(nextAssetTick, metadata.sampleRate);
@@ -321,7 +306,6 @@ export function useWaveformRenderer({
     clip,
     height,
     leftWingPx,
-    mapPresentationOffsetToClipOffset,
     markWaveformReady,
     updateCanvasGeometry,
     zoomScale,
@@ -410,7 +394,6 @@ export function useWaveformRenderer({
           pixelOffset,
           ticksPerPixel,
           metadata.firstTimestampSeconds,
-          mapPresentationOffsetToClipOffset,
         );
 
         if (
@@ -425,7 +408,6 @@ export function useWaveformRenderer({
           pixelOffset + 1,
           ticksPerPixel,
           metadata.firstTimestampSeconds,
-          mapPresentationOffsetToClipOffset,
         );
         const sourceFrame = ticksToSampleFrame(assetTick, metadata.sampleRate);
         const nextSourceFrame = ticksToSampleFrame(nextAssetTick, metadata.sampleRate);
@@ -679,7 +661,6 @@ export function useWaveformRenderer({
     height,
     isDragging,
     leftWingPx,
-    mapPresentationOffsetToClipOffset,
     scrollContainer,
     updateCanvasGeometry,
     updateViewportState,

@@ -110,26 +110,8 @@ describe("useTimelineStore fit mode defaults", () => {
   });
 
   it("does not stamp fit mode onto audio clips", () => {
-    // Add an audio track so the audio clip has a compatible destination —
-    // addClipToDraft's track-type compatibility check (the same gate that
-    // already excludes audio from visual lanes and vice versa) would
-    // otherwise reject the add.
-    useTimelineStore.getState().replaceTimelineSnapshot({
-      tracks: [
-        {
-          id: "audio_track",
-          label: "Audio",
-          isVisible: true,
-          isMuted: false,
-          isLocked: false,
-          type: "audio",
-        },
-      ],
-      clips: [],
-    });
     useTimelineStore.getState().addClip(
       createTimelineClip({
-        trackId: "audio_track",
         type: "audio",
         transformations: [],
       }),

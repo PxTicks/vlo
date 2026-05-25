@@ -36,15 +36,6 @@ function RightSidebarPanelComponent() {
   const hasSelection = useTimelineStore(
     (state) => state.selectedClipIds.length > 0,
   );
-  // Hide the Mask tab when an adjustment clip is the primary selection:
-  // adjustment clips bypass `applyClipTransforms`, so neither ClipMask
-  // attachments nor range-mask components have any render-time effect.
-  const isAdjustmentSelected = useTimelineStore((state) => {
-    const id = state.selectedClipIds[0];
-    if (!id) return false;
-    const clip = state.clips.find((c) => c.id === id);
-    return clip?.type === "adjustment";
-  });
   const [activeTab, setActiveTab] = useState<RightSidebarTab>("generate");
 
   useEffect(() => {
@@ -54,17 +45,7 @@ function RightSidebarPanelComponent() {
     }
   }, [activeTab, hasSelection]);
 
-  // Derive visibleTab synchronously so the Tabs `value` never points at a
-  // tab that isn't currently rendered: if the user had Mask open and then
-  // selected an adjustment clip, we fall through to Transform on the same
-  // render rather than via a follow-up effect (which would briefly leave
-  // value="mask" without a Mask child, triggering MUI warnings and a
-  // spurious setMaskTabActive(true) tick).
-  const visibleTab = !hasSelection
-    ? "generate"
-    : isAdjustmentSelected && activeTab === "mask"
-      ? "transform"
-      : activeTab;
+  const visibleTab = hasSelection ? activeTab : "generate";
 
   useEffect(() => {
     const { setMaskTabActive } = useMaskViewStore.getState();
@@ -87,9 +68,7 @@ function RightSidebarPanelComponent() {
       >
         <Tab data-testid="right-sidebar-tab-generate" label="Generate" value="generate" />
         {hasSelection && <Tab data-testid="right-sidebar-tab-transform" label="Transform" value="transform" />}
-        {hasSelection && !isAdjustmentSelected && (
-          <Tab data-testid="right-sidebar-tab-mask" label="Mask" value="mask" />
-        )}
+        {hasSelection && <Tab data-testid="right-sidebar-tab-mask" label="Mask" value="mask" />}
       </Tabs>
       <Box sx={{ flexGrow: 1, position: "relative", overflow: "hidden" }}>
         <TabPanel active={visibleTab === "generate"}>
@@ -100,7 +79,7 @@ function RightSidebarPanelComponent() {
             <TransformationPanel />
           </TabPanel>
         )}
-        {hasSelection && !isAdjustmentSelected && visibleTab === "mask" && (
+        {hasSelection && visibleTab === "mask" && (
           <TabPanel active={visibleTab === "mask"}>
             <MaskPanel />
           </TabPanel>

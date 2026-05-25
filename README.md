@@ -6,6 +6,8 @@ This project is in early alpha, but I believe its usefulness already outstrips i
 
 The aim is to integrate the latest-and-greatest AI tools with real video editing workflows. It's designed to support an intentional creative process, not for churning out heaps of dross, so the development priority is control, not automation. In the long run, I'd like it to grow into a tool which anyone, including those who just want to make videos, not AI videos, can benefit from.
 
+Skip to install instructions [here](#install), or continue reading.
+
 ## Demo videos
 
 1. A sample workflow. Some steps have been skipped for brevity, but it demonstrates the interaction between timeline and generation
@@ -56,7 +58,15 @@ Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, 
 
 ## Install
 
-If the idea of the command line makes you uncomfortable, you can skip to the [one-click install](#one-click-setup) section. You will still need to install ComfyUI and some custom nodes yourself.
+If the idea of the command line makes you uncomfortable, you can skip to the [one-click install](#one-click-setup) section. You will still need to install ComfyUI and some custom nodes yourself if you want to use generative AI features.
+
+### Manual install prerequisites
+
+- Git
+- Python 3.10 or newer
+- Node.js 22 LTS or newer (includes npm)
+- ComfyUI for generative AI features
+- \[optional\] the nodes listed [here](#comfyui-integration) for default workflows
 
 ### Manual Setup
 
@@ -214,7 +224,14 @@ aspect ratio processing, and the generation pipeline — see the
 [default workflows](backend/assets/.config/default_workflows/) include working
 sidecar examples. A custom GPT is available [here](https://chatgpt.com/g/g-69f93b02dc108191a7b6cfed9dd6b08e-vlo-workflow-rules), into which you can plug in a workflow and request a rules file for if you need more complex functionality.
 
-The following nodes are used in some capacity in the default workflows
+The following nodes are used in some capacity in the default workflows. Either install them yourself, or use the small helper script:
+[`scripts/install-comfyui-nodes.py`](scripts/install-comfyui-nodes.py), running it in whichever venv ComfyUI uses on your machine.
+
+```bash
+python scripts/install-comfyui-nodes.py
+```
+
+<!-- comfyui-custom-nodes:start -->
 
 - https://github.com/kijai/ComfyUI-WanVideoWrapper
 - https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
@@ -224,6 +241,7 @@ The following nodes are used in some capacity in the default workflows
 - https://github.com/kijai/ComfyUI-GIMM-VFI
 - https://github.com/kijai/ComfyUI-MelBandRoFormer
 - https://github.com/kosinkadink/ComfyUI-VideoHelperSuite
+<!-- comfyui-custom-nodes:end -->
 
 ## Acknowledgements
 

@@ -16,7 +16,7 @@
       "selection": {
         "export_fps": 16,
         "frame_step": 4,
-        "max_frames": 77
+        "max_frames": 229
       }
     },
     "193": {
@@ -168,6 +168,19 @@
           "expose": "widget",
           "options": ["crop", "full"],
           "default": "crop",
+          "default_rules": [
+            {
+              "when": {
+                "ref": {
+                  "kind": "frontend_control",
+                  "control_id": "animate_mode"
+                },
+                "operator": "eq",
+                "value": "Animate character in image"
+              },
+              "value": "full"
+            }
+          ],
           "group_id": "mask",
           "group_title": "Mask",
           "group_order": 0
@@ -186,6 +199,32 @@
           "group_id": "mask",
           "group_title": "Mask",
           "group_order": 1
+        }
+      ]
+    },
+    {
+      "id": "output_assembly",
+      "kind": "output_assembly",
+      "controls": [
+        {
+          "key": "attach_generation_mask",
+          "value_type": "boolean",
+          "expose": "none",
+          "source": "backend",
+          "default": true,
+          "default_rules": [
+            {
+              "when": {
+                "ref": {
+                  "kind": "frontend_control",
+                  "control_id": "animate_mode"
+                },
+                "operator": "eq",
+                "value": "Animate character in image"
+              },
+              "value": false
+            }
+          ]
         }
       ]
     }

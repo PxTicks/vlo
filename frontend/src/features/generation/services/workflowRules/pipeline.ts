@@ -1,13 +1,28 @@
 import type {
+  ConditionExpression,
   PipelineControl,
+  PipelineControlCondition,
   WorkflowAspectRatioStage,
   WorkflowMaskProcessingStage,
   WorkflowOutputAssemblyStage,
   WorkflowPostprocessingConfig,
   WorkflowRules,
 } from "./types";
+import type { WorkflowInputMetadataMap } from "../../pipeline/types";
+import {
+  coerceRuleBoolean,
+  createFrontendRuleState,
+  evaluateCondition,
+  resolveStateReference,
+} from "../frontendRuleState";
 
 type WorkflowPipelineStage = NonNullable<WorkflowRules["pipeline"]>[number];
+
+export interface WorkflowControlResolutionOptions {
+  frontendStateWidgetValues?: Readonly<Record<string, unknown>>;
+  inputMetadata?: Readonly<WorkflowInputMetadataMap>;
+  providedInputIds?: ReadonlySet<string>;
+}
 
 export function findWorkflowStageByKind<TStage extends WorkflowPipelineStage>(
   rules: WorkflowRules | null | undefined,
@@ -74,26 +89,158 @@ export function getOutputAssemblyStage(
 
 export function getMaskCropModeDefault(
   rules: WorkflowRules | null | undefined,
+  options: WorkflowControlResolutionOptions = {},
 ): "crop" | "full" {
   const control = getWorkflowStageControl(getMaskProcessingStage(rules), "crop_mode");
-  return control?.default === "full" ? "full" : "crop";
+  return resolvePipelineControlDefaultValue(control, options) === "full"
+    ? "full"
+    : "crop";
 }
 
 export function getMaskCropDilationDefault(
   rules: WorkflowRules | null | undefined,
-  fallback = 0.1,
+  fallbackOrOptions: number | WorkflowControlResolutionOptions = 0.1,
+  maybeOptions: WorkflowControlResolutionOptions = {},
 ): number {
+  const fallback =
+    typeof fallbackOrOptions === "number" ? fallbackOrOptions : 0.1;
+  const options =
+    typeof fallbackOrOptions === "number" ? maybeOptions : fallbackOrOptions;
   const control = getWorkflowStageControl(
     getMaskProcessingStage(rules),
     "crop_dilation",
   );
-  return typeof control?.default === "number" ? control.default : fallback;
+  const resolvedValue = resolvePipelineControlDefaultValue(control, options);
+  return typeof resolvedValue === "number" ? resolvedValue : fallback;
+}
+
+function normalizePipelineControlValue(
+  control: PipelineControl,
+  value: unknown,
+): unknown {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  let normalizedValue: unknown = value;
+  if (control.value_type === "boolean") {
+    normalizedValue = coerceRuleBoolean(value);
+  } else if (control.value_type === "int") {
+    if (typeof value === "number" && Number.isInteger(value)) {
+      normalizedValue = value;
+    } else if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      normalizedValue = Number.isInteger(parsed) ? parsed : null;
+    } else {
+      normalizedValue = null;
+    }
+  } else if (control.value_type === "float") {
+    if (typeof value === "number") {
+      normalizedValue = Number.isFinite(value) ? value : null;
+    } else if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      normalizedValue = Number.isFinite(parsed) ? parsed : null;
+    } else {
+      normalizedValue = null;
+    }
+  } else if (control.value_type === "string" && typeof value !== "string") {
+    normalizedValue = null;
+  }
+
+  if (normalizedValue === null || normalizedValue === undefined) {
+    return null;
+  }
+
+  if (
+    Array.isArray(control.options) &&
+    control.options.length > 0 &&
+    !control.options.some((option) => Object.is(option, normalizedValue))
+  ) {
+    return null;
+  }
+
+  return normalizedValue;
+}
+
+function matchesPipelineControlCondition(
+  condition: PipelineControlCondition,
+  options: WorkflowControlResolutionOptions,
+): boolean {
+  const frontendState = createFrontendRuleState(
+    options.providedInputIds ?? new Set<string>(),
+    options.frontendStateWidgetValues ?? {},
+    options.inputMetadata ?? {},
+  );
+  const compareCondition: ConditionExpression = {
+    kind: "compare",
+    ref: condition.ref,
+    operator: condition.operator ?? "eq",
+    value: condition.value,
+  };
+
+  return evaluateCondition(compareCondition, frontendState);
+}
+
+export function resolvePipelineControlDefaultValue(
+  control: PipelineControl | null,
+  options: WorkflowControlResolutionOptions,
+): unknown {
+  if (!control) {
+    return undefined;
+  }
+
+  if (control.bind) {
+    const frontendState = createFrontendRuleState(
+      options.providedInputIds ?? new Set<string>(),
+      options.frontendStateWidgetValues ?? {},
+      options.inputMetadata ?? {},
+    );
+    const boundValue = normalizePipelineControlValue(
+      control,
+      resolveStateReference(control.bind, frontendState),
+    );
+    if (boundValue !== null && boundValue !== undefined) {
+      return boundValue;
+    }
+  }
+
+  for (const defaultRule of control.default_rules ?? []) {
+    if (!matchesPipelineControlCondition(defaultRule.when, options)) {
+      continue;
+    }
+
+    const ruleValue = normalizePipelineControlValue(control, defaultRule.value);
+    if (ruleValue !== null && ruleValue !== undefined) {
+      return ruleValue;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(control, "default")) {
+    return normalizePipelineControlValue(control, control.default);
+  }
+
+  return undefined;
 }
 
 export function getWorkflowPostprocessingConfig(
   rules: WorkflowRules | null | undefined,
+  options: WorkflowControlResolutionOptions = {},
 ): WorkflowPostprocessingConfig {
-  const config = getOutputAssemblyStage(rules)?.config;
+  const outputAssemblyStage = getOutputAssemblyStage(rules);
+  const config = outputAssemblyStage?.config;
+  const attachGenerationMaskControl = getWorkflowStageControl(
+    outputAssemblyStage,
+    "attach_generation_mask",
+  );
+  const resolvedAttachGenerationMask = resolvePipelineControlDefaultValue(
+    attachGenerationMaskControl,
+    options,
+  );
+  const shouldAttachGenerationMask =
+    resolvedAttachGenerationMask === false
+      ? false
+      : config?.attach_generation_mask;
+
   return {
     mode: config?.mode ?? "auto",
     panel_preview: config?.panel_preview ?? "raw_outputs",
@@ -101,7 +248,7 @@ export function getWorkflowPostprocessingConfig(
     ...(typeof config?.stitch_fps === "number"
       ? { stitch_fps: config.stitch_fps }
       : {}),
-    ...(config?.attach_generation_mask === false
+    ...(shouldAttachGenerationMask === false
       ? { attach_generation_mask: false }
       : {}),
   };

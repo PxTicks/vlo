@@ -28,6 +28,7 @@ import { preResolvePrompt } from "../services/preResolvePrompt";
 import { readActiveWorkflowFromIframe } from "../services/workflowBridge";
 import { normalizeWorkflowFilename } from "../services/workflowFilenames";
 import {
+  getMaskCropModeDefault,
   getWorkflowPostprocessingConfig,
   pruneRulesForSubmittedWorkflow,
 } from "../services/workflowRules";
@@ -42,7 +43,7 @@ import {
   createGenerationAbortError,
   isAbortError,
 } from "../pipeline/utils/abort";
-import type { WorkflowPostprocessingConfig } from "../types";
+import type { WorkflowInput, WorkflowPostprocessingConfig } from "../types";
 import { createSubmissionErrorJob } from "./submission";
 import {
   GENERATION_CANCELLED_BY_USER_MESSAGE,
@@ -57,6 +58,7 @@ import { buildGenerationFamilyRequestKey } from "../utils/familyAssignment";
 import { revokePreviewAnimation } from "./previewState";
 import { resolveWorkflowDisplayName } from "./workflowCatalog";
 import { isTemporaryWorkflowPersistenceId } from "./workflowCatalog";
+import { buildWorkflowInputMetadataMap } from "../utils/inputMetadata";
 import type {
   GenerationExecutionState,
   GenerationStoreGet,
@@ -181,8 +183,18 @@ function collectProvidedInputIds(
     return ids;
   }
 
+  return collectProvidedInputIdsFromSlotValues(
+    plan.workflow.workflowInputs,
+    plan.preprocess.slotValues,
+  );
+}
+
+function collectProvidedInputIdsFromSlotValues(
+  workflowInputs: readonly WorkflowInput[],
+  slotValues: Record<string, SlotValue>,
+): Set<string> {
   const ids = new Set<string>();
-  for (const [id, value] of Object.entries(plan.preprocess.slotValues)) {
+  for (const [id, value] of Object.entries(slotValues)) {
     if (value.type === "text") {
       if (typeof value.value === "string" && value.value.trim().length > 0) {
         ids.add(id);
@@ -191,7 +203,7 @@ function collectProvidedInputIds(
       ids.add(id);
     }
   }
-  for (const input of plan.workflow.workflowInputs) {
+  for (const input of workflowInputs) {
     const nodeId = input.nodeId;
     if (!nodeId) continue;
     const primaryId = input.id ?? `${nodeId}:${input.param}`;
@@ -330,6 +342,39 @@ function buildGenerationPlanFromState(
     state.selectedWorkflowId,
     workflowId,
   );
+  const projectConfig = {
+    aspectRatio: useProjectStore.getState().config.aspectRatio,
+    fps: useProjectStore.getState().config.fps,
+  };
+  const inputMetadata = buildWorkflowInputMetadataMap(
+    state.workflowInputs,
+    state.mediaInputs,
+    projectConfig,
+  );
+  const providedInputIds = collectProvidedInputIdsFromSlotValues(
+    state.workflowInputs,
+    slotValues,
+  );
+  const controlResolutionOptions = {
+    frontendStateWidgetValues,
+    inputMetadata,
+    providedInputIds,
+  };
+  const postprocessConfig = resolvePostprocessConfig(
+    getWorkflowPostprocessingConfig(
+      state.activeWorkflowRules,
+      controlResolutionOptions,
+    ),
+  );
+  const baseMaskCropMode = getMaskCropModeDefault(state.activeWorkflowRules);
+  const resolvedMaskCropMode = getMaskCropModeDefault(
+    state.activeWorkflowRules,
+    controlResolutionOptions,
+  );
+  const maskCropMode =
+    resolvedMaskCropMode !== baseMaskCropMode
+      ? resolvedMaskCropMode
+      : state.maskCropMode;
 
   return createGenerationPlan({
     workflow: state.syncedWorkflow,
@@ -343,21 +388,16 @@ function buildGenerationPlanFromState(
     derivedMaskMappings: state.derivedMaskMappings,
     exactAspectRatio: state.exactAspectRatio,
     targetResolution: state.targetResolution,
-    maskCropMode: state.maskCropMode,
+    maskCropMode,
     maskCropDilation: state.maskCropDilation,
     widgetInputs,
     frontendStateWidgetValues,
     widgetModes,
     derivedWidgetInputs,
     bypassNodeIds,
-    postprocessConfig: resolvePostprocessConfig(
-      getWorkflowPostprocessingConfig(state.activeWorkflowRules),
-    ),
+    postprocessConfig,
     workflowWarnings: state.activeRulesWarnings,
-    projectConfig: {
-      aspectRatio: useProjectStore.getState().config.aspectRatio,
-      fps: useProjectStore.getState().config.fps,
-    },
+    projectConfig,
   });
 }
 

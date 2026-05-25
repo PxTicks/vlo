@@ -83,6 +83,18 @@ def test_wan_animate_sidecar_loads_mask_processing_rules():
         "crop_mode",
         "crop_dilation",
     ]
+    assert mask_stage.controls[0].default_rules is not None
+    assert mask_stage.controls[0].default_rules[0].when.ref.control_id == "animate_mode"
+    assert mask_stage.controls[0].default_rules[0].value == "full"
+
+    output_assembly = get_pipeline_stage(rules, "output_assembly")
+    assert output_assembly is not None
+    attach_mask_control = output_assembly.controls[0]
+    assert attach_mask_control.key == "attach_generation_mask"
+    assert attach_mask_control.default is True
+    assert attach_mask_control.default_rules is not None
+    assert attach_mask_control.default_rules[0].when.ref.control_id == "animate_mode"
+    assert attach_mask_control.default_rules[0].value is False
 
 
 def test_wan_ttm_sidecar_loads_track_selection_message_and_mask_selection_modes():

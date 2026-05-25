@@ -9,6 +9,7 @@ import {
   getSupportedWorkflowResolutions,
   getWorkflowPostprocessingConfig,
 } from "../workflowRules";
+import { buildFrontendStateControlKey } from "../frontendRuleState";
 import { resolvePipelineWidgetInputs } from "../workflowRules/pipelineWidgets";
 
 
@@ -53,6 +54,68 @@ describe("workflowRules pipeline helpers", () => {
     expect(getMaskCropDilationDefault(rules)).toBe(0.2);
   });
 
+  it("resolves mask defaults from pipeline-control default rules", () => {
+    const rules = createDefaultWorkflowRules({
+      pipeline: [
+        {
+          id: "mask_processing",
+          kind: "mask_processing",
+          controls: [
+            {
+              key: "crop_mode",
+              value_type: "enum",
+              options: ["crop", "full"],
+              default: "crop",
+              default_rules: [
+                {
+                  when: {
+                    ref: {
+                      kind: "frontend_control",
+                      control_id: "animate_mode",
+                    },
+                    operator: "eq",
+                    value: "Animate character in image",
+                  },
+                  value: "full",
+                },
+              ],
+            },
+            {
+              key: "crop_dilation",
+              value_type: "float",
+              default: 0.1,
+              default_rules: [
+                {
+                  when: {
+                    ref: {
+                      kind: "frontend_control",
+                      control_id: "animate_mode",
+                    },
+                    operator: "eq",
+                    value: "Animate character in image",
+                  },
+                  value: "0.2",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const animateModeState = {
+      frontendStateWidgetValues: {
+        [buildFrontendStateControlKey("animate_mode")]:
+          "Animate character in image",
+      },
+    };
+
+    expect(getMaskCropModeDefault(rules)).toBe("crop");
+    expect(getMaskCropModeDefault(rules, animateModeState)).toBe("full");
+    expect(getMaskCropDilationDefault(rules)).toBe(0.1);
+    expect(getMaskCropDilationDefault(rules, animateModeState)).toBe(0.2);
+  });
+
   it("reads output-assembly config from the v3 pipeline", () => {
     const rules = createDefaultWorkflowRules({
       pipeline: [
@@ -75,6 +138,66 @@ describe("workflowRules pipeline helpers", () => {
       panel_preview: "replace_outputs",
       on_failure: "show_error",
       stitch_fps: 24,
+      attach_generation_mask: false,
+    });
+  });
+
+  it("resolves output-assembly mask attachment from frontend-control defaults", () => {
+    const rules = createDefaultWorkflowRules({
+      pipeline: [
+        {
+          id: "output_assembly",
+          kind: "output_assembly",
+          controls: [
+            {
+              key: "attach_generation_mask",
+              value_type: "boolean",
+              expose: "none",
+              source: "backend",
+              default: true,
+              default_rules: [
+                {
+                  when: {
+                    ref: {
+                      kind: "frontend_control",
+                      control_id: "animate_mode",
+                    },
+                    operator: "eq",
+                    value: "Animate character in image",
+                  },
+                  value: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(
+      getWorkflowPostprocessingConfig(rules, {
+        frontendStateWidgetValues: {
+          [buildFrontendStateControlKey("animate_mode")]:
+            "Replace character in video",
+        },
+      }),
+    ).toEqual({
+      mode: "auto",
+      panel_preview: "raw_outputs",
+      on_failure: "fallback_raw",
+    });
+
+    expect(
+      getWorkflowPostprocessingConfig(rules, {
+        frontendStateWidgetValues: {
+          [buildFrontendStateControlKey("animate_mode")]:
+            "Animate character in image",
+        },
+      }),
+    ).toEqual({
+      mode: "auto",
+      panel_preview: "raw_outputs",
+      on_failure: "fallback_raw",
       attach_generation_mask: false,
     });
   });

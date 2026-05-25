@@ -87,7 +87,8 @@ export type StateReference =
   | import("./generated").WorkflowParamValueReference
   | import("./generated").PipelineControlReference
   | import("./generated").FrontendControlStateReference
-  | import("./generated").DerivedWidgetStateReference;
+  | import("./generated").DerivedWidgetStateReference
+  | import("./generated").InputMetadataReference;
 
 export type ConditionExpression =
   | ConditionAlways

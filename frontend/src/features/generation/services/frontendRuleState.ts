@@ -106,14 +106,14 @@ function coerceNumeric(value: unknown): number | null {
   return null;
 }
 
-function coerceBoolean(value: unknown): boolean | null {
+export function coerceRuleBoolean(value: unknown): boolean | null {
   if (typeof value === "boolean") {
     return value;
   }
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
-    if (normalized === "true") return true;
-    if (normalized === "false") return false;
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
   }
   return null;
 }
@@ -204,8 +204,8 @@ function compareValues(
   }
 
   let matches: boolean;
-  const currentBoolean = coerceBoolean(current);
-  const expectedBoolean = coerceBoolean(expected);
+  const currentBoolean = coerceRuleBoolean(current);
+  const expectedBoolean = coerceRuleBoolean(expected);
   if (currentBoolean !== null && expectedBoolean !== null) {
     matches = currentBoolean === expectedBoolean;
   } else {

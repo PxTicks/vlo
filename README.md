@@ -56,6 +56,10 @@ Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, 
 - Added mask algebra, for creating complex masks (e.g. edge masks)
 - Added draggable motion paths
 
+## Try it on runpod
+
+Runpod is a paid GPU-rental service. You can try vlo on runpod [here](https://console.runpod.io/deploy?template=vunh5oyg9t&ref=7o87c4ii).
+
 ## Install
 
 If the idea of the command line makes you uncomfortable, you can skip to the [one-click install](#one-click-setup) section. You will still need to install ComfyUI and some custom nodes yourself if you want to use generative AI features.
@@ -252,7 +256,7 @@ cd /path/to/ComfyUI
 python main.py --preview-method taesd
 ```
 
-You will also need the Wan TAESD approximation model. Download
+You will also need the Wan TAESD model. Download
 [`taew2_1.safetensors`](https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/taew2_1.safetensors)
 and place it at `ComfyUI/models/vae_approx/taew2_1.safetensors`, creating the
 `vae_approx` directory if it does not already exist.

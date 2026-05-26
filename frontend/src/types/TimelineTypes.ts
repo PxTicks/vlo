@@ -422,3 +422,33 @@ export interface TimelineTrack {
   isMuted: boolean;
   isLocked: boolean;
 }
+
+/**
+ * A time-bounded wrapper spanning a contiguous run of visual tracks. Rendered
+ * as a PixiJS Container parented between `logicalStage` and the member tracks
+ * whenever the current tick falls inside the group's window.
+ *
+ * Two structural invariants are enforced at the command layer:
+ *  1. No two groups may be simultaneously active over the same track.
+ *  2. `trackIds` must form a contiguous run in the project's visual-track order.
+ *
+ * `transformations` is reserved for future group-level effects (adjustment
+ * layers). v1 of the render-group scaffolding leaves it as an empty array.
+ */
+export interface TimelineGroup {
+  id: string;
+  label: string;
+  trackIds: string[];
+  start: number;
+  timelineDuration: number;
+  transformations: ClipTransform[];
+  isVisible: boolean;
+  isCollapsed?: boolean;
+}
+
+export function isGroupActiveAtTick(
+  group: TimelineGroup,
+  tick: number,
+): boolean {
+  return tick >= group.start && tick < group.start + group.timelineDuration;
+}

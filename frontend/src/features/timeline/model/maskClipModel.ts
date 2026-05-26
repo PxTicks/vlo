@@ -17,6 +17,7 @@ import type {
   MaskTimelineClip,
   StandardTimelineClip,
   TimelineClip,
+  TimelineGroup,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 import { isNonMaskTimelineClip } from "../../../types/TimelineTypes";
@@ -32,6 +33,7 @@ const MASK_EDGE_TRANSFORM_TYPES = new Set(["mask_grow", "feather"]);
 interface TimelineModelStateLike {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
+  groups: TimelineGroup[];
 }
 
 function areClipTransformArraysEqual(

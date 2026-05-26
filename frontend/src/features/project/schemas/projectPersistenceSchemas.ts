@@ -8,6 +8,7 @@ import type {
 } from "../../../types/Asset";
 import type {
   TimelineClip,
+  TimelineGroup,
   TimelineTrack,
   TrackType,
 } from "../../../types/TimelineTypes";
@@ -129,6 +130,19 @@ const timelineClipSchema = z
   })
   .passthrough() as unknown as z.ZodType<TimelineClip>;
 
+const timelineGroupSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    trackIds: z.array(z.string()),
+    start: z.number(),
+    timelineDuration: z.number(),
+    transformations: z.array(clipTransformSchema),
+    isVisible: z.boolean(),
+    isCollapsed: z.boolean().optional(),
+  })
+  .passthrough() as unknown as z.ZodType<TimelineGroup>;
+
 const assetFamilyCompatibilitySchema = z
   .object({
     assetType: assetTypeSchema,
@@ -177,6 +191,20 @@ export const timelineDocumentSchema = z.object({
   updated_at: z.number(),
   tracks: z.array(timelineTrackSchema),
   clips: z.array(timelineClipSchema),
+  groups: z.array(timelineGroupSchema).default([]),
+});
+
+/**
+ * v1 timeline documents predate render groups. The persistence service reads
+ * with this schema as a fallback and rewrites the document to the current
+ * version, injecting `groups: []`.
+ */
+export const timelineDocumentSchemaV1 = z.object({
+  documentType: z.literal("vlo.timeline"),
+  schemaVersion: z.literal(1),
+  updated_at: z.number(),
+  tracks: z.array(timelineTrackSchema),
+  clips: z.array(timelineClipSchema),
 });
 
 export const persistedAssetIndexEntrySchema = z
@@ -219,6 +247,7 @@ export const legacyTimelineSnapshotSchema = z
   .object({
     tracks: z.array(timelineTrackSchema).optional(),
     clips: z.array(timelineClipSchema).optional(),
+    groups: z.array(timelineGroupSchema).optional(),
   })
   .passthrough();
 

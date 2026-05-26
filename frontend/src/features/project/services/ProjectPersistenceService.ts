@@ -27,6 +27,7 @@ import {
   legacyProjectDocumentSchema,
   projectManifestDocumentSchema,
   timelineDocumentSchema,
+  timelineDocumentSchemaV1,
   type AssetIndexDocument,
   type AssetMetadataDocument,
   type LegacyProjectDocument,
@@ -114,6 +115,7 @@ function createDefaultTimelineSnapshot(): TimelineSnapshot {
   return {
     tracks: [createDefaultTrack()],
     clips: [],
+    groups: [],
   };
 }
 
@@ -124,6 +126,7 @@ function createTimelineDocument(snapshot: TimelineSnapshot): TimelineDocument {
     updated_at: Date.now(),
     tracks: clone(snapshot.tracks),
     clips: clone(snapshot.clips),
+    groups: clone(snapshot.groups ?? []),
   };
 }
 
@@ -390,9 +393,31 @@ export class ProjectPersistenceService {
       return clone(this.timelineCache);
     }
 
-    const timeline = await readJson(TIMELINE_PATH, timelineDocumentSchema);
-    this.timelineCache = timeline;
-    return clone(timeline);
+    const file = await fileSystemService.readFile(TIMELINE_PATH);
+    const raw = JSON.parse(await file.text()) as unknown;
+
+    const currentParsed = timelineDocumentSchema.safeParse(raw);
+    if (currentParsed.success) {
+      this.timelineCache = currentParsed.data;
+      return clone(currentParsed.data);
+    }
+
+    // Fall back to v1 (no groups) and migrate forward.
+    const v1Parsed = timelineDocumentSchemaV1.safeParse(raw);
+    if (!v1Parsed.success) {
+      throw currentParsed.error;
+    }
+
+    const migrated: TimelineDocument = {
+      documentType: "vlo.timeline",
+      schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
+      updated_at: v1Parsed.data.updated_at,
+      tracks: v1Parsed.data.tracks,
+      clips: v1Parsed.data.clips,
+      groups: [],
+    };
+
+    return this.persistTimeline(migrated);
   }
 
   async updateTimeline(
@@ -670,6 +695,7 @@ export class ProjectPersistenceService {
           ? clone(legacy.timeline.tracks)
           : createDefaultTimelineSnapshot().tracks,
       clips: clone(legacy.timeline?.clips ?? []),
+      groups: clone(legacy.timeline?.groups ?? []),
     });
 
     const manifest = createManifestDocument({

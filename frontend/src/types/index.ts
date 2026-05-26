@@ -47,6 +47,7 @@ export type {
   AudioTimelineClip,
   ShapeBaseClip,
   ShapeTimelineClip,
+  TimelineGroup,
   TimelineTrack,
   TrackType,
   ClipType,
@@ -64,6 +65,7 @@ export type {
 export {
   isAssetBackedClip,
   isCompositeClip,
+  isGroupActiveAtTick,
   isMaskClip,
   isNonMaskTimelineClip,
   isTextClip,

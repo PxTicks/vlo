@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useTimelineStore } from "../useTimelineStore";
 import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
 import { fileSystemService } from "../../project/services/FileSystemService";
+import { TIMELINE_DOCUMENT_SCHEMA_VERSION } from "../../project/constants";
 import type { Patch } from "../../../lib/immerLite";
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 
@@ -47,10 +48,11 @@ describe("useTimelineStore persistence", () => {
       .spyOn(projectPersistenceService, "applyTimelinePatches")
       .mockResolvedValue({
         documentType: "vlo.timeline",
-        schemaVersion: 1,
+        schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
         updated_at: Date.now(),
         tracks: [],
         clips: [],
+        groups: [],
       });
 
     useTimelineStore.getState().replaceTimelineSnapshot({

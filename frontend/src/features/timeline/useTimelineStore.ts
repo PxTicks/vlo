@@ -230,6 +230,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         structuredClone(snapshot.clips),
         withTimelineClipDefaults,
       ),
+      groups: structuredClone(snapshot.groups ?? []),
     }),
   });
 
@@ -295,6 +296,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   return {
     tracks: initial.tracks,
     clips: initial.clips,
+    groups: initial.groups ?? [],
     isFocused: false,
     selectedClipIds: [],
     copiedClips: [],

@@ -1,9 +1,14 @@
-import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
+import type {
+  TimelineClip,
+  TimelineGroup,
+  TimelineTrack,
+} from "../../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../../project/types/ProjectDocument";
 
 export interface TimelineModelState {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
+  groups: TimelineGroup[];
 }
 
 export const generateTrackId = () => `track_${crypto.randomUUID()}`;
@@ -22,6 +27,7 @@ export function createDefaultTimelineSnapshot(): TimelineSnapshot {
   return {
     tracks: [createNewTrack("Track 1")],
     clips: [],
+    groups: [],
   };
 }
 

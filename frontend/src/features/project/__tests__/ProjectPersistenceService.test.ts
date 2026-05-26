@@ -3,7 +3,10 @@ import {
   projectPersistenceService,
 } from "../services/ProjectPersistenceService";
 import { fileSystemService } from "../services/FileSystemService";
-import { PROJECT_MANIFEST_SCHEMA_VERSION } from "../constants";
+import {
+  PROJECT_MANIFEST_SCHEMA_VERSION,
+  TIMELINE_DOCUMENT_SCHEMA_VERSION,
+} from "../constants";
 import { isSafeProjectRelativePath } from "../schemas/projectPersistenceSchemas";
 
 vi.mock("../services/FileSystemService", () => ({
@@ -34,7 +37,7 @@ describe("ProjectPersistenceService", () => {
 
   const timeline = {
     documentType: "vlo.timeline",
-    schemaVersion: 1,
+    schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
     updated_at: 1000,
     tracks: [
       {
@@ -46,6 +49,7 @@ describe("ProjectPersistenceService", () => {
       },
     ],
     clips: [],
+    groups: [],
   };
 
   const assetIndex = {
@@ -353,6 +357,91 @@ describe("ProjectPersistenceService", () => {
     );
 
     expect(document).toBeNull();
+  });
+
+  it("persists and re-reads timeline groups", async () => {
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(
+      ".vloproject/timeline.json",
+      JSON.stringify({
+        ...timeline,
+        groups: [
+          {
+            id: "group-1",
+            label: "Adjustment",
+            trackIds: ["track-1"],
+            start: 0,
+            timelineDuration: 500,
+            transformations: [],
+            isVisible: true,
+          },
+        ],
+      }),
+    );
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loaded = await projectPersistenceService.loadOrMigrateProject();
+
+    expect(loaded.timeline?.groups).toEqual([
+      {
+        id: "group-1",
+        label: "Adjustment",
+        trackIds: ["track-1"],
+        start: 0,
+        timelineDuration: 500,
+        transformations: [],
+        isVisible: true,
+      },
+    ]);
+    expect(loaded.migrated).toBe(false);
+    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("migrates a v1 timeline document by injecting an empty groups array", async () => {
+    const v1Timeline = {
+      documentType: "vlo.timeline",
+      schemaVersion: 1,
+      updated_at: 1000,
+      tracks: timeline.tracks,
+      clips: [],
+    };
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(".vloproject/timeline.json", JSON.stringify(v1Timeline));
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loaded = await projectPersistenceService.loadOrMigrateProject();
+
+    expect(loaded.timeline?.schemaVersion).toBe(TIMELINE_DOCUMENT_SCHEMA_VERSION);
+    expect(loaded.timeline?.groups).toEqual([]);
+
+    const rewrittenTimeline = JSON.parse(
+      files.get(".vloproject/timeline.json")!,
+    );
+    expect(rewrittenTimeline.schemaVersion).toBe(
+      TIMELINE_DOCUMENT_SCHEMA_VERSION,
+    );
+    expect(rewrittenTimeline.groups).toEqual([]);
+  });
+
+  it("defaults missing groups to an empty array on a current-version document", async () => {
+    const timelineWithoutGroups = {
+      documentType: "vlo.timeline",
+      schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
+      updated_at: 1000,
+      tracks: timeline.tracks,
+      clips: [],
+    };
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(
+      ".vloproject/timeline.json",
+      JSON.stringify(timelineWithoutGroups),
+    );
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loaded = await projectPersistenceService.loadOrMigrateProject();
+
+    expect(loaded.timeline?.groups).toEqual([]);
+    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
   });
 
   it("validates persisted project-relative paths", () => {

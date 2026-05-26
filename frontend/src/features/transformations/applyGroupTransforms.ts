@@ -1,26 +1,31 @@
 import type { Container } from "pixi.js";
 import type { TimelineGroup } from "../../types/TimelineTypes";
 import { useDebugStore } from "../../shared/debug/useDebugStore";
+import { applyTransformStack, runApplicators } from "./applyTransformations";
 
 /**
  * Apply a render group's transformations to its Pixi container. This is the
- * single seam through which group-level effects will engage.
+ * single seam through which group-level effects engage.
  *
- * v1 scaffolding: no transforms are wired up yet. We reset to identity so the
- * group container is a pure pass-through whenever it's attached. The follow-up
- * pass will dispatch through a shared `applyTransformStack(...)` extracted from
- * `applyClipTransforms` using:
- *   - target = container (satisfies ClipTransformTarget unchanged)
- *   - contentSizeOverride = logicalDimensions (bypasses the no-texture early
- *     return in applyTransformations.ts)
- *   - baseLayoutMode = "origin" (avoids re-centering each frame)
- *   - time = currentTick (group keyframes live in absolute project ticks)
- * Speed and range-mask paths are clip-specific and will not apply here.
+ * The container has no texture; the filter applicator needs an explicit
+ * content size for spatial-parameter scaling (worldX/worldY/worldUniform,
+ * point-bound filters). We pass `logicalDimensions` for both `container` and
+ * `content` in the stack context — group containers are textureless covers
+ * over the project's logical viewport.
+ *
+ * Time domain: keyframes on a group are clip-local. `stackTime = currentTick
+ * - group.start`, so moving a group on the timeline moves its keyframes
+ * with it. Speed transforms are ignored at the store layer for adjustment
+ * clips; if one is somehow present here `applyTransformStack` skips it.
  *
  * Composite-clip interaction: composites are baked to a proxy by
- * resolveRenderableClip before any engine sees them, so a composite-on-a-track
- * -in-a-group is identical to a video-on-a-track-in-a-group from the
+ * resolveRenderableClip before any engine sees them, so a composite-on-a-
+ * track-in-a-group is identical to a video-on-a-track-in-a-group from the
  * orchestrator's perspective.
+ *
+ * In v2 the orchestrator still hands the legacy `TimelineGroup` shape here.
+ * Phase 3c/3d renames it to `DerivedRenderGroup` (computed per-tick from
+ * adjustment clips); the call signature here stays compatible.
  */
 export function applyGroupTransforms(
   container: Container,
@@ -28,18 +33,41 @@ export function applyGroupTransforms(
   logicalDimensions: { width: number; height: number },
   currentTick: number,
 ): void {
+  // Reset to identity before dispatch so toggling a transform off — or a
+  // group's `transformations` array shrinking — reverts cleanly without
+  // leaving residual state from a prior frame.
   container.position.set(0, 0);
   container.scale.set(1, 1);
   container.rotation = 0;
   container.filters = null;
-  // Debug-only visible cue: this function only runs for groups that are
-  // active at `currentTick` (the orchestrator detaches inactive group
-  // containers), so flipping alpha here makes "the group is engaging"
-  // obvious in the player without committing to a UX in production. Toggled
-  // from the project-settings menu's Debug section (dev builds only).
+  // Debug-mode visible cue (separate from any transform-driven alpha): this
+  // function only runs for groups active at `currentTick` (the orchestrator
+  // detaches inactive group containers), so flipping alpha here makes "the
+  // group is engaging" obvious in the player. Toggled from the project-
+  // settings menu's Debug section in dev builds.
   container.alpha = useDebugStore.getState().debugMode ? 0.5 : 1;
 
-  void group;
-  void logicalDimensions;
-  void currentTick;
+  // Identity is in place; no work to do.
+  if (!group.transformations || group.transformations.length === 0) {
+    return;
+  }
+
+  const stackTime = currentTick - group.start;
+  const { state } = applyTransformStack(
+    group.transformations,
+    {
+      container: logicalDimensions,
+      content: logicalDimensions,
+      visualTime: stackTime,
+      visualDuration: group.timelineDuration,
+    },
+    stackTime,
+    {
+      baseLayoutMode: "origin",
+      // No live-param subscribers for group transforms yet; skip the
+      // notify pass to avoid touching the per-clip store.
+      notifyLiveParams: false,
+    },
+  );
+  runApplicators(container, state, logicalDimensions);
 }

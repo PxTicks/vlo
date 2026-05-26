@@ -21,6 +21,7 @@ import {
 } from "../timelineSelection";
 import { groupSelectionIntoComposite } from "./services/groupSelectionIntoComposite";
 import { useCompositeTimelineStore } from "./useCompositeTimelineStore";
+import { RenderGroupTesterPanel } from "../timeline/components/RenderGroupTesterPanel";
 
 export function CompositePanel() {
   const [isCreatingFromSelection, setIsCreatingFromSelection] = useState(false);
@@ -246,6 +247,8 @@ export function CompositePanel() {
           ) : null}
         </>
       )}
+
+      {import.meta.env.DEV ? <RenderGroupTesterPanel /> : null}
     </Box>
   );
 }

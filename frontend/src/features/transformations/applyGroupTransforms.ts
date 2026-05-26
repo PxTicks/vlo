@@ -31,6 +31,12 @@ export function applyGroupTransforms(
   container.scale.set(1, 1);
   container.rotation = 0;
   container.filters = null;
+  // Dev-only visible cue: this function only runs for groups that are active
+  // at `currentTick` (the orchestrator detaches inactive group containers),
+  // so flipping alpha here makes "the group is engaging" obvious in the
+  // player without committing to a UX in production. Stripped from prod
+  // bundles by Vite's import.meta.env.DEV dead-code elimination.
+  container.alpha = import.meta.env.DEV ? 0.5 : 1;
 
   void group;
   void logicalDimensions;

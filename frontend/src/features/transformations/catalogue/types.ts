@@ -80,6 +80,18 @@ export type TransformTemplate<P = TransformState> = (
 export type StateApplicator = (
   target: ClipTransformTarget,
   state: TransformState,
+  /**
+   * Optional content size override. Sprite targets normally have a `.texture`
+   * the filter applicator can read for spatial-parameter scaling; textureless
+   * targets (Pixi Containers used by render groups) carry no texture and need
+   * an explicit size or `worldX`/`worldY`/`worldUniform` params and
+   * `filterParameterPoints` would scale against a 1×1 fallback.
+   *
+   * `applyClipTransforms` passes the clip texture size here; group callers
+   * pass the logical project size. Applicators that don't care about content
+   * size (e.g. `layoutApplicator`) ignore this parameter.
+   */
+  contentSize?: { width: number; height: number },
 ) => void;
 
 // Import UI types

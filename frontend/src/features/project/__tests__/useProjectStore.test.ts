@@ -99,7 +99,6 @@ describe("useProjectStore", () => {
       updated_at: 1000,
       tracks: [],
       clips: [],
-      groups: [],
     };
     const assets = options.assets ?? {
       documentType: "vlo.assets",
@@ -306,41 +305,6 @@ describe("useProjectStore", () => {
         ],
       }),
     ]);
-  });
-
-  it("should hydrate persisted render groups into the timeline store on load", async () => {
-    const persistedGroup = {
-      id: "group-1",
-      label: "Adjustment",
-      trackIds: ["track-1"],
-      start: 0,
-      timelineDuration: 500,
-      transformations: [],
-      isVisible: true,
-    };
-
-    mockSplitProjectReadFiles({
-      timeline: {
-        documentType: "vlo.timeline",
-        schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
-        updated_at: 1000,
-        tracks: [
-          {
-            id: "track-1",
-            label: "Track 1",
-            isVisible: true,
-            isLocked: false,
-            isMuted: false,
-          },
-        ],
-        clips: [],
-        groups: [persistedGroup],
-      },
-    });
-
-    await useProjectStore.getState().loadProject(mockHandle);
-
-    expect(useTimelineStore.getState().groups).toEqual([persistedGroup]);
   });
 
   it("should hydrate config from project manifest when present", async () => {

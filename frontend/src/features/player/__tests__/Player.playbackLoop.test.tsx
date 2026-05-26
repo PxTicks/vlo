@@ -63,14 +63,12 @@ vi.mock("../../timeline/useTimelineStore", async () => {
   interface TimelineStoreState {
     tracks: TimelineTrack[];
     clips: TimelineClip[];
-    groups: never[];
     selectedClipIds: string[];
   }
 
   const useTimelineStore = create<TimelineStoreState>(() => ({
     tracks: [],
     clips: [],
-    groups: [],
     selectedClipIds: [],
   }));
 

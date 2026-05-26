@@ -262,7 +262,6 @@ export const useProjectStore = create<ProjectState>()(
             ? {
                 tracks: loaded.timeline.tracks,
                 clips: loaded.timeline.clips,
-                groups: loaded.timeline.groups ?? [],
               }
             : null;
           useTimelineStore.getState().replaceTimelineSnapshot(timeline);

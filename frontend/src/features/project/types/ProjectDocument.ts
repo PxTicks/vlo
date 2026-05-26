@@ -1,21 +1,10 @@
 import type { Asset } from "../../../types/Asset";
 import type { AssetFamily } from "../../../types/Asset";
-import type {
-  TimelineClip,
-  TimelineGroup,
-  TimelineTrack,
-} from "../../../types/TimelineTypes";
+import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 
 export interface TimelineSnapshot {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
-  /**
-   * Optional in the snapshot type so legacy in-memory snapshots and test
-   * fixtures that predate render groups continue to type-check. Persisted
-   * documents always carry `groups: []` once schema-migrated; the store's
-   * migrateTimelineSnapshot adapter normalises missing values to `[]`.
-   */
-  groups?: TimelineGroup[];
 }
 
 export interface ProjectDocumentConfig {

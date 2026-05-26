@@ -59,7 +59,6 @@ function getCurrentModelState<State extends TimelineMutationState>(
   return {
     tracks: state.tracks,
     clips: state.clips,
-    groups: state.groups,
   };
 }
 
@@ -206,7 +205,6 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     const fallbackSnapshot: TimelineSnapshot = {
       tracks: structuredClone(get().tracks),
       clips: structuredClone(get().clips),
-      groups: structuredClone(get().groups),
     };
 
     flushInFlight = projectPersistenceService
@@ -221,7 +219,6 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
         await projectPersistenceService.updateTimeline((draft) => {
           draft.tracks = structuredClone(fallbackSnapshot.tracks);
           draft.clips = structuredClone(fallbackSnapshot.clips);
-          draft.groups = structuredClone(fallbackSnapshot.groups ?? []);
         });
       })
       .finally(() => {
@@ -260,7 +257,6 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set((state) => ({
       tracks: nextModel.tracks,
       clips: nextModel.clips,
-      groups: nextModel.groups,
       selectedClipIds: sanitizeSelectedClipIds(
         state.selectedClipIds,
         nextModel.clips,
@@ -290,7 +286,6 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set((state) => ({
       tracks: nextModel.tracks,
       clips: nextModel.clips,
-      groups: nextModel.groups,
       selectedClipIds: sanitizeSelectedClipIds(
         state.selectedClipIds,
         nextModel.clips,
@@ -320,7 +315,6 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set((state) => ({
       tracks: nextModel.tracks,
       clips: nextModel.clips,
-      groups: nextModel.groups,
       selectedClipIds: sanitizeSelectedClipIds(
         state.selectedClipIds,
         nextModel.clips,
@@ -348,7 +342,6 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set({
       tracks: next.tracks,
       clips: next.clips,
-      groups: next.groups ?? [],
       selectedClipIds: [],
       copiedClips: [],
       canUndo: false,

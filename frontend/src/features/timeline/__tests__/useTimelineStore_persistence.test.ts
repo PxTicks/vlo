@@ -52,7 +52,6 @@ describe("useTimelineStore persistence", () => {
         updated_at: Date.now(),
         tracks: [],
         clips: [],
-        groups: [],
       });
 
     useTimelineStore.getState().replaceTimelineSnapshot({

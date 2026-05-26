@@ -40,30 +40,24 @@ function cloneTimelineSnapshot(snapshot: TimelineSnapshot): TimelineSnapshot {
   return {
     tracks: structuredClone(snapshot.tracks),
     clips: structuredClone(snapshot.clips),
-    groups: structuredClone(snapshot.groups ?? []),
   };
 }
 
 function getCurrentTimelineSnapshot(): TimelineSnapshot {
-  const { tracks, clips, groups } = useTimelineStore.getState();
+  const { tracks, clips } = useTimelineStore.getState();
   return {
     tracks: structuredClone(tracks),
     clips: structuredClone(clips),
-    groups: structuredClone(groups),
   };
 }
 
 function getSnapshotForCompositeClip(clip: CompositeTimelineClip): TimelineSnapshot {
-  // Composite content doesn't carry its own render groups today; subtimelines
-  // start with an empty groups array. The main-timeline's groups live on the
-  // CompositeTimelineFrame.previousSnapshot and are restored on exit.
   return {
     tracks:
       clip.content.tracks && clip.content.tracks.length > 0
         ? structuredClone(clip.content.tracks)
         : createDefaultTimelineSnapshot().tracks,
     clips: structuredClone(clip.content.clips),
-    groups: [],
   };
 }
 

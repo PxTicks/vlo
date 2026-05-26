@@ -21,14 +21,11 @@ import {
 } from "../timelineSelection";
 import { groupSelectionIntoComposite } from "./services/groupSelectionIntoComposite";
 import { useCompositeTimelineStore } from "./useCompositeTimelineStore";
-import { RenderGroupTesterPanel } from "../timeline/components/RenderGroupTesterPanel";
-import { useDebugStore } from "../../shared/debug/useDebugStore";
 
 export function CompositePanel() {
   const [isCreatingFromSelection, setIsCreatingFromSelection] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
 
-  const debugMode = useDebugStore((state) => state.debugMode);
   const subtimelineDepth = useCompositeTimelineStore((state) => state.stack.length);
   const isSubtimeline = subtimelineDepth > 0;
   const isCompositeBusy = useCompositeTimelineStore((state) => state.isBusy);
@@ -253,7 +250,6 @@ export function CompositePanel() {
         </>
       )}
 
-      {debugMode ? <RenderGroupTesterPanel /> : null}
     </Box>
   );
 }

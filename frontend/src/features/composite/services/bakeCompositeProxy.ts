@@ -59,9 +59,6 @@ function buildCompositeRenderInputs(
   const projectData: ProjectData = {
     tracks: content.tracks ?? useTimelineStore.getState().tracks,
     clips: content.clips,
-    // Composite content has no render groups of its own; the main-timeline's
-    // groups live outside this proxy bake.
-    groups: [],
     assets: getAssets(),
     duration: content.durationTicks,
     fps,

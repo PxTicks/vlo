@@ -8,7 +8,6 @@ import type {
 } from "../../../types/Asset";
 import type {
   TimelineClip,
-  TimelineGroup,
   TimelineTrack,
   TrackType,
 } from "../../../types/TimelineTypes";
@@ -144,19 +143,6 @@ const timelineClipSchema = z
     }
   }) as unknown as z.ZodType<TimelineClip>;
 
-const timelineGroupSchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    trackIds: z.array(z.string()),
-    start: z.number(),
-    timelineDuration: z.number(),
-    transformations: z.array(clipTransformSchema),
-    isVisible: z.boolean(),
-    isCollapsed: z.boolean().optional(),
-  })
-  .passthrough() as unknown as z.ZodType<TimelineGroup>;
-
 const assetFamilyCompatibilitySchema = z
   .object({
     assetType: assetTypeSchema,
@@ -205,13 +191,19 @@ export const timelineDocumentSchema = z.object({
   updated_at: z.number(),
   tracks: z.array(timelineTrackSchema),
   clips: z.array(timelineClipSchema),
-  groups: z.array(timelineGroupSchema).default([]),
 });
 
 /**
- * v1 timeline documents predate render groups. The persistence service reads
- * with this schema as a fallback and rewrites the document to the current
- * version, injecting `groups: []`.
+ * v1 timeline documents predate render groups and adjustment clips. The
+ * persistence service reads with this schema as a fallback and rewrites the
+ * document at the current version.
+ *
+ * Note on the scaffolding interlude: an unshipped branch experimented with a
+ * top-level `groups: TimelineGroup[]` field under schemaVersion 2 before the
+ * adjustment-clip design replaced it. That shape was never blessed as a
+ * production schema; stale dev-branch docs are tolerated implicitly through
+ * Zod's strip-on-parse default — the current v2 schema simply drops the
+ * unknown `groups` key when reading.
  */
 export const timelineDocumentSchemaV1 = z.object({
   documentType: z.literal("vlo.timeline"),
@@ -261,7 +253,6 @@ export const legacyTimelineSnapshotSchema = z
   .object({
     tracks: z.array(timelineTrackSchema).optional(),
     clips: z.array(timelineClipSchema).optional(),
-    groups: z.array(timelineGroupSchema).optional(),
   })
   .passthrough();
 

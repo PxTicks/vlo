@@ -49,7 +49,6 @@ describe("ProjectPersistenceService", () => {
       },
     ],
     clips: [],
-    groups: [],
   };
 
   const assetIndex = {
@@ -359,45 +358,7 @@ describe("ProjectPersistenceService", () => {
     expect(document).toBeNull();
   });
 
-  it("persists and re-reads timeline groups", async () => {
-    files.set(".vloproject/project.json", JSON.stringify(manifest));
-    files.set(
-      ".vloproject/timeline.json",
-      JSON.stringify({
-        ...timeline,
-        groups: [
-          {
-            id: "group-1",
-            label: "Adjustment",
-            trackIds: ["track-1"],
-            start: 0,
-            timelineDuration: 500,
-            transformations: [],
-            isVisible: true,
-          },
-        ],
-      }),
-    );
-    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
-
-    const loaded = await projectPersistenceService.loadOrMigrateProject();
-
-    expect(loaded.timeline?.groups).toEqual([
-      {
-        id: "group-1",
-        label: "Adjustment",
-        trackIds: ["track-1"],
-        start: 0,
-        timelineDuration: 500,
-        transformations: [],
-        isVisible: true,
-      },
-    ]);
-    expect(loaded.migrated).toBe(false);
-    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
-  });
-
-  it("migrates a v1 timeline document by injecting an empty groups array", async () => {
+  it("migrates a v1 timeline document forward to the current version", async () => {
     const v1Timeline = {
       documentType: "vlo.timeline",
       schemaVersion: 1,
@@ -412,7 +373,7 @@ describe("ProjectPersistenceService", () => {
     const loaded = await projectPersistenceService.loadOrMigrateProject();
 
     expect(loaded.timeline?.schemaVersion).toBe(TIMELINE_DOCUMENT_SCHEMA_VERSION);
-    expect(loaded.timeline?.groups).toEqual([]);
+    expect(loaded.timeline?.tracks).toEqual(timeline.tracks);
 
     const rewrittenTimeline = JSON.parse(
       files.get(".vloproject/timeline.json")!,
@@ -420,27 +381,48 @@ describe("ProjectPersistenceService", () => {
     expect(rewrittenTimeline.schemaVersion).toBe(
       TIMELINE_DOCUMENT_SCHEMA_VERSION,
     );
-    expect(rewrittenTimeline.groups).toEqual([]);
+    // v2 has no top-level `groups` field; the migration must not reintroduce it.
+    expect(rewrittenTimeline.groups).toBeUndefined();
   });
 
-  it("defaults missing groups to an empty array on a current-version document", async () => {
-    const timelineWithoutGroups = {
+  it("silently drops a stray `groups` field from a stale dev-branch v2 document", async () => {
+    // The never-shipped scaffolding branch wrote v2 docs with a top-level
+    // groups field. We tolerate that implicitly through Zod's strip-on-parse
+    // default — no migration step, no version bump. The field disappears
+    // from the in-memory document; the on-disk doc is rewritten without it
+    // on the next persistence flush.
+    const staleDevTimeline = {
       documentType: "vlo.timeline",
       schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
       updated_at: 1000,
       tracks: timeline.tracks,
       clips: [],
+      groups: [
+        {
+          id: "scaffolding-group",
+          label: "Scaffolding",
+          trackIds: ["track-1"],
+          start: 0,
+          timelineDuration: 500,
+          transformations: [],
+          isVisible: true,
+        },
+      ],
     };
     files.set(".vloproject/project.json", JSON.stringify(manifest));
-    files.set(
-      ".vloproject/timeline.json",
-      JSON.stringify(timelineWithoutGroups),
-    );
+    files.set(".vloproject/timeline.json", JSON.stringify(staleDevTimeline));
     files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
 
     const loaded = await projectPersistenceService.loadOrMigrateProject();
 
-    expect(loaded.timeline?.groups).toEqual([]);
+    expect(loaded.timeline?.schemaVersion).toBe(TIMELINE_DOCUMENT_SCHEMA_VERSION);
+    expect(loaded.timeline?.tracks).toEqual(timeline.tracks);
+    // groups stripped from the loaded document.
+    expect((loaded.timeline as Record<string, unknown> | undefined)?.groups)
+      .toBeUndefined();
+    // Stale-dev docs aren't a formal migration: no automatic rewrite happens
+    // until the user mutates the timeline.
+    expect(loaded.migrated).toBe(false);
     expect(fileSystemService.writeFile).not.toHaveBeenCalled();
   });
 

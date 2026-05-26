@@ -8,7 +8,6 @@ import { TrackRenderEngine } from "../TrackRenderEngine";
 import type {
   StandardTimelineClip,
   TimelineClip,
-  TimelineGroup,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
 import type { Component } from "../../../../types/Components";
@@ -563,11 +562,10 @@ describe("ExportRenderer", () => {
           type: "video",
         },
       ] as TimelineClip[],
-      groups: [],
       assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
       duration: 96000 * 0.1,
       fps: 30,
-    };
+    } satisfies ProjectData;
 
     const renderer = await ExportRenderer.create(config);
     const testRenderer = renderer as unknown as TestExportRenderer;
@@ -607,22 +605,12 @@ describe("ExportRenderer", () => {
     renderer.dispose();
   });
 
-  it("hands projectData.groups to the orchestrator and syncs once per video frame", async () => {
+  it("registers visual tracks with the orchestrator and syncs once per video frame", async () => {
     const config = {
       logicalWidth: 1920,
       logicalHeight: 1080,
       outputWidth: 1920,
       outputHeight: 1080,
-    };
-
-    const group: TimelineGroup = {
-      id: "g1",
-      label: "Adjustment",
-      trackIds: ["t1"],
-      start: 0,
-      timelineDuration: 96000 * 10,
-      transformations: [],
-      isVisible: true,
     };
 
     const projectData = {
@@ -640,7 +628,6 @@ describe("ExportRenderer", () => {
           type: "video",
         },
       ] as TimelineClip[],
-      groups: [group],
       assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
       // 0.1s @ 30fps -> 3 frames; gives us a deterministic frame count to assert.
       duration: 96000 * 0.1,
@@ -654,9 +641,6 @@ describe("ExportRenderer", () => {
     // RenderGroupOrchestrator.test.ts with real Pixi Containers.
     const registerTrackSpy = vi
       .spyOn(RenderGroupOrchestrator.prototype, "registerTrack")
-      .mockImplementation(() => {});
-    const setGroupsSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "setGroups")
       .mockImplementation(() => {});
     const syncSpy = vi
       .spyOn(RenderGroupOrchestrator.prototype, "sync")
@@ -673,7 +657,6 @@ describe("ExportRenderer", () => {
         "t1",
         expect.anything(),
       );
-      expect(setGroupsSpy).toHaveBeenCalledWith([group]);
 
       const syncCalls = syncSpy.mock.calls;
       expect(syncCalls.length).toBeGreaterThanOrEqual(3);
@@ -685,28 +668,17 @@ describe("ExportRenderer", () => {
       expect(disposeSpy).toHaveBeenCalled();
     } finally {
       registerTrackSpy.mockRestore();
-      setGroupsSpy.mockRestore();
       syncSpy.mockRestore();
       disposeSpy.mockRestore();
     }
   });
 
-  it("hands projectData.groups to the orchestrator and syncs once during renderStill", async () => {
+  it("registers visual tracks with the orchestrator and syncs once during renderStill", async () => {
     const config = {
       logicalWidth: 1920,
       logicalHeight: 1080,
       outputWidth: 1920,
       outputHeight: 1080,
-    };
-
-    const group: TimelineGroup = {
-      id: "g1",
-      label: "Adjustment",
-      trackIds: ["t1"],
-      start: 0,
-      timelineDuration: 96000 * 10,
-      transformations: [],
-      isVisible: true,
     };
 
     const projectData = {
@@ -724,7 +696,6 @@ describe("ExportRenderer", () => {
           type: "video",
         },
       ] as TimelineClip[],
-      groups: [group],
       assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
       duration: 96000 * 0.1,
       fps: 30,
@@ -732,9 +703,6 @@ describe("ExportRenderer", () => {
 
     const registerTrackSpy = vi
       .spyOn(RenderGroupOrchestrator.prototype, "registerTrack")
-      .mockImplementation(() => {});
-    const setGroupsSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "setGroups")
       .mockImplementation(() => {});
     const syncSpy = vi
       .spyOn(RenderGroupOrchestrator.prototype, "sync")
@@ -764,7 +732,6 @@ describe("ExportRenderer", () => {
       });
 
       expect(registerTrackSpy).toHaveBeenCalledWith("t1", expect.anything());
-      expect(setGroupsSpy).toHaveBeenCalledWith([group]);
       expect(syncSpy).toHaveBeenCalledTimes(1);
       const [tick, visualTrackOrder] = syncSpy.mock.calls[0];
       expect(tick).toBe(0);
@@ -772,7 +739,6 @@ describe("ExportRenderer", () => {
       expect(disposeSpy).toHaveBeenCalled();
     } finally {
       registerTrackSpy.mockRestore();
-      setGroupsSpy.mockRestore();
       syncSpy.mockRestore();
       disposeSpy.mockRestore();
       renderFrameSpy.mockRestore();

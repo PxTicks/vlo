@@ -138,11 +138,12 @@ function PlayerImpl() {
   }, [visualTrackIds]);
 
   // Render-group orchestrator. Owns Pixi parenting of track engine
-  // containers and time-bounded group containers under `viewport`. The
-  // sync ref fires per frame inside processPendingPlaybackFrames below,
-  // between awaited per-track renderers and pixiApp.render(). The hook
-  // also imperatively syncs on `groups` / `visualTrackIds` changes so
-  // paused edits reflect without waiting for the next clock tick.
+  // containers and (in phase 3) time-bounded group containers under
+  // `viewport`. The sync ref fires per frame inside
+  // processPendingPlaybackFrames below, between awaited per-track
+  // renderers and pixiApp.render(). The hook also imperatively syncs on
+  // `visualTrackIds` changes so paused edits to track order reflect
+  // without waiting for the next clock tick.
   const { orchestrator: renderGroupOrchestrator, syncRef: renderGroupSyncRef } =
     useRenderGroupOrchestrator(viewport, logicalDimensions, visualTrackIds);
 

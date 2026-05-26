@@ -2,7 +2,6 @@ import { Application, Container, RenderTexture } from "pixi.js";
 import type {
   TimelineTrack,
   TimelineClip,
-  TimelineGroup,
   MaskTimelineClip,
   TimelineSelection,
 } from "../../../types/TimelineTypes";
@@ -192,8 +191,6 @@ export interface ExportConfig {
 export interface ProjectData {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
-  /** Render groups in flat order. Empty array if the project has none. */
-  groups: TimelineGroup[];
   assets: Asset[];
   duration: number;
   fps: number;
@@ -443,7 +440,8 @@ export class ExportRenderer {
         this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
-      this.orchestrator.setGroups(projectData.groups ?? []);
+      // Adjustment-clip-derived groups land in phase 3; until then the
+      // orchestrator's group set stays empty (its constructor default).
       const visualTrackOrder = visualTracks.map((track) => track.id);
 
       for (let i = 0; i < totalFrames; i += 1) {
@@ -587,7 +585,8 @@ export class ExportRenderer {
         this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
-      this.orchestrator.setGroups(projectData.groups ?? []);
+      // Adjustment-clip-derived groups land in phase 3; until then the
+      // orchestrator's group set stays empty (its constructor default).
       const visualTrackOrder = visualTracks.map((track) => track.id);
 
       const promises: Promise<void>[] = [];

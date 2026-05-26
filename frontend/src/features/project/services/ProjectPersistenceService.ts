@@ -115,7 +115,6 @@ function createDefaultTimelineSnapshot(): TimelineSnapshot {
   return {
     tracks: [createDefaultTrack()],
     clips: [],
-    groups: [],
   };
 }
 
@@ -126,7 +125,6 @@ function createTimelineDocument(snapshot: TimelineSnapshot): TimelineDocument {
     updated_at: Date.now(),
     tracks: clone(snapshot.tracks),
     clips: clone(snapshot.clips),
-    groups: clone(snapshot.groups ?? []),
   };
 }
 
@@ -396,13 +394,17 @@ export class ProjectPersistenceService {
     const file = await fileSystemService.readFile(TIMELINE_PATH);
     const raw = JSON.parse(await file.text()) as unknown;
 
+    // Zod's strip-on-parse default means a stale dev-branch v2 document that
+    // still carries the never-shipped top-level `groups` field parses cleanly
+    // here — the field is silently dropped from the in-memory doc and won't
+    // be written back on the next persistence flush.
     const currentParsed = timelineDocumentSchema.safeParse(raw);
     if (currentParsed.success) {
       this.timelineCache = currentParsed.data;
       return clone(currentParsed.data);
     }
 
-    // Fall back to v1 (no groups) and migrate forward.
+    // Fall back to v1 and migrate forward.
     const v1Parsed = timelineDocumentSchemaV1.safeParse(raw);
     if (!v1Parsed.success) {
       throw currentParsed.error;
@@ -414,7 +416,6 @@ export class ProjectPersistenceService {
       updated_at: v1Parsed.data.updated_at,
       tracks: v1Parsed.data.tracks,
       clips: v1Parsed.data.clips,
-      groups: [],
     };
 
     return this.persistTimeline(migrated);
@@ -695,7 +696,6 @@ export class ProjectPersistenceService {
           ? clone(legacy.timeline.tracks)
           : createDefaultTimelineSnapshot().tracks,
       clips: clone(legacy.timeline?.clips ?? []),
-      groups: clone(legacy.timeline?.groups ?? []),
     });
 
     const manifest = createManifestDocument({

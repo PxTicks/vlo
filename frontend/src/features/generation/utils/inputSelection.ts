@@ -510,6 +510,7 @@ export async function renderAssetToMaskMp4(
   const projectData: ProjectData = {
     tracks: [syntheticTrack],
     clips: [syntheticClip],
+    groups: [],
     assets: [asset],
     duration: durationTicks,
     fps,

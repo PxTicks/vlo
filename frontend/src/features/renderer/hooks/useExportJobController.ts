@@ -101,6 +101,7 @@ export function useExportJobController({
     return {
       tracks: store.tracks,
       clips: store.clips,
+      groups: store.groups,
       assets,
       duration,
       fps: projectFps,

@@ -245,6 +245,7 @@ function buildSyntheticRenderInputs(
   const projectData: ProjectData = {
     tracks: [track],
     clips: [clip],
+    groups: [],
     assets: [asset],
     duration: cropLen,
     fps,

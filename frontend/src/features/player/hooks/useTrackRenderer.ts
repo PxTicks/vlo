@@ -7,6 +7,7 @@ import { useMaskInteractionController } from "./interaction/useMaskInteractionCo
 import { registerCanvasSelectable } from "./interaction/useCanvasSelectionManager";
 import { useCanvasSelectionStore } from "../useCanvasSelectionStore";
 import { useTrackRenderEngine } from "../../renderer";
+import type { RenderGroupOrchestrator } from "../../renderer/services/RenderGroupOrchestrator";
 
 /**
  * Composition hook that wires the renderer's TrackRenderEngine
@@ -24,6 +25,7 @@ export function useTrackRenderer(
     trackId: string,
     renderer: ((time: number) => Promise<void>) | null,
   ) => void,
+  orchestrator?: RenderGroupOrchestrator | null,
 ) {
   // 1. Delegate rendering to the renderer feature
   const {
@@ -38,6 +40,7 @@ export function useTrackRenderer(
     zIndex,
     logicalDimensions,
     registerSynchronizedPlaybackRenderer,
+    orchestrator,
   );
 
   // 2. Selection state

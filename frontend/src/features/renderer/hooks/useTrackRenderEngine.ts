@@ -14,6 +14,7 @@ import type {
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
 import { applyClipTransforms, livePreviewParamStore } from "../../transformations";
+import { RenderGroupOrchestrator } from "../services/RenderGroupOrchestrator";
 import { TrackRenderEngine } from "../services/TrackRenderEngine";
 import {
   findActiveClipAtTicks,
@@ -75,6 +76,13 @@ export function useTrackRenderEngine(
     trackId: string,
     renderer: ((time: number) => Promise<void>) | null,
   ) => void,
+  /**
+   * When provided, the orchestrator owns Pixi parenting (register on mount,
+   * unregister on cleanup) so group containers can interpose between
+   * `container` and the engine. When omitted, falls back to the legacy
+   * `engine.addTo(container)` direct attachment used by existing tests.
+   */
+  orchestrator?: RenderGroupOrchestrator | null,
 ): TrackRenderEngineResult {
   const engineRef = useRef<TrackRenderEngine | null>(null);
   const [spriteInstance, setSpriteInstance] = useState<Sprite | null>(null);
@@ -366,24 +374,33 @@ export function useTrackRenderEngine(
       app.renderer,
     );
 
-    engine.addTo(container);
+    if (orchestrator) {
+      orchestrator.registerTrack(trackId, engine.container);
+    } else {
+      engine.addTo(container);
+      // Ensure sorting on the Pixi container (justified above on the useEffect).
+      // eslint-disable-next-line react-hooks/immutability
+      container.sortableChildren = true;
+      container.sortChildren();
+    }
     engineRef.current = engine;
     setSpriteInstance(engine.sprite);
 
-    // Ensure sorting on the Pixi container (justified above on the useEffect).
-    // eslint-disable-next-line react-hooks/immutability
-    container.sortableChildren = true;
-    container.sortChildren();
-
     return () => {
       engine.dispose();
-      if (container && !container.destroyed && !engine.container.destroyed) {
+      if (orchestrator) {
+        orchestrator.unregisterTrack(trackId, engine.container);
+      } else if (
+        container &&
+        !container.destroyed &&
+        !engine.container.destroyed
+      ) {
         container.removeChild(engine.container);
       }
       engineRef.current = null;
       setSpriteInstance(null);
     };
-  }, [trackId, app, zIndex, container]);
+  }, [trackId, app, zIndex, container, orchestrator]);
 
   useEffect(() => {
     if (!registerSynchronizedPlaybackRenderer) return;

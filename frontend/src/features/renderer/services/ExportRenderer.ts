@@ -2,11 +2,13 @@ import { Application, Container, RenderTexture } from "pixi.js";
 import type {
   TimelineTrack,
   TimelineClip,
+  TimelineGroup,
   MaskTimelineClip,
   TimelineSelection,
 } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../timeline";
+import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
 import { TrackAudioRenderer } from "./TrackAudioRenderer";
 import {
@@ -190,6 +192,8 @@ export interface ExportConfig {
 export interface ProjectData {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
+  /** Render groups in flat order. Empty array if the project has none. */
+  groups: TimelineGroup[];
   assets: Asset[];
   duration: number;
   fps: number;
@@ -222,6 +226,7 @@ export class ExportRenderer {
   private app: Application;
   private logicalStage: Container;
   private engines: TrackRenderEngine[] = [];
+  private orchestrator: RenderGroupOrchestrator | null = null;
   private cancelController: AbortController | null = null;
   private isCancelled = false;
 
@@ -428,15 +433,18 @@ export class ExportRenderer {
 
       const startProgress = shouldRenderAudio ? 10 : 0;
 
-      this.engines = visualTracks.map((_, index) => {
+      this.logicalStage.sortableChildren = true;
+      this.orchestrator = new RenderGroupOrchestrator(this.logicalStage, {
+        logicalDimensions: { width: logicalWidth, height: logicalHeight },
+      });
+      this.engines = visualTracks.map((track, index) => {
         const zIndex = visualTracks.length - 1 - index;
         const engine = new TrackRenderEngine(zIndex, undefined, this.app.renderer);
-        engine.addTo(this.logicalStage);
+        this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
-
-      this.logicalStage.sortableChildren = true;
-      this.logicalStage.sortChildren();
+      this.orchestrator.setGroups(projectData.groups ?? []);
+      const visualTrackOrder = visualTracks.map((track) => track.id);
 
       for (let i = 0; i < totalFrames; i += 1) {
         this.throwIfCancelled();
@@ -484,6 +492,10 @@ export class ExportRenderer {
 
         await Promise.all(promises);
         this.throwIfCancelled();
+
+        // Rewrite parenting (track engines into / out of group containers) and
+        // apply group transforms before the GPU frame submit.
+        this.orchestrator.sync(currentTime, visualTrackOrder);
 
         // Render timeline frame once to an offscreen texture.
         this.app.renderer.render({
@@ -565,15 +577,18 @@ export class ExportRenderer {
       );
 
     try {
-      this.engines = visualTracks.map((_, index) => {
+      this.logicalStage.sortableChildren = true;
+      this.orchestrator = new RenderGroupOrchestrator(this.logicalStage, {
+        logicalDimensions: { width: logicalWidth, height: logicalHeight },
+      });
+      this.engines = visualTracks.map((track, index) => {
         const zIndex = visualTracks.length - 1 - index;
         const engine = new TrackRenderEngine(zIndex, undefined, this.app.renderer);
-        engine.addTo(this.logicalStage);
+        this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
-
-      this.logicalStage.sortableChildren = true;
-      this.logicalStage.sortChildren();
+      this.orchestrator.setGroups(projectData.groups ?? []);
+      const visualTrackOrder = visualTracks.map((track) => track.id);
 
       const promises: Promise<void>[] = [];
 
@@ -615,6 +630,9 @@ export class ExportRenderer {
       await Promise.all(promises);
       this.throwIfCancelled();
 
+      // Rewrite parenting and apply group transforms before the GPU submit.
+      this.orchestrator.sync(tick, visualTrackOrder);
+
       this.app.renderer.render({
         container: this.logicalStage,
         clear: true,
@@ -642,6 +660,8 @@ export class ExportRenderer {
   }
 
   public dispose() {
+    this.orchestrator?.dispose();
+    this.orchestrator = null;
     this.engines.forEach((engine) => engine.dispose());
     this.engines = [];
     this.app.destroy(false, { children: true, texture: true });

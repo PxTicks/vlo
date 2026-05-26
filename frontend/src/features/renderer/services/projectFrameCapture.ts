@@ -51,6 +51,7 @@ export function buildProjectRenderInputs(): ProjectRenderInputs {
   const projectData: ProjectData = {
     tracks: timelineStore.tracks,
     clips: timelineStore.clips,
+    groups: timelineStore.groups,
     assets,
     duration: getTimelineDuration(),
     fps: projectStore.config.fps,

@@ -10,17 +10,16 @@ Skip to install instructions [here](#install), or continue reading.
 
 ## Demo videos
 
-1. A sample workflow. Some steps have been skipped for brevity, but it demonstrates the interaction between timeline and generation
 
-   <video src="https://github.com/PxTicks/vlo/releases/download/v0.2.0/vlo_full_2.mp4" controls width="720"></video>
+1. Patch-based inpainting. This is necessary for optimising quality and avoiding degradation both from VAE and video encoding.
 
-2. Patch-based inpainting. This is necessary for optimising quality and avoiding degradation both from VAE and video encoding.
+   <video src="https://github.com/user-attachments/assets/b6d32bef-df06-4e1a-ad79-82a1925cbe77" controls width="720"></video>
 
-   <video src="https://github.com/PxTicks/vlo/releases/download/v0.2.0/selection-1779469164713.mp4" controls width="720"></video>
+2. Motion guidance. This is using the [time-to-move](https://time-to-move.github.io/) framework. In this case we show precise control by animating the input 6332 - the default vlo port - on a keypad.
 
-3. Motion guidance. This is using the [time-to-move](https://time-to-move.github.io/) framework. In this case we show precise control by animating the input 6332 - the default vlo port - on a keypad.
+   <video src="https://github.com/user-attachments/assets/de32746d-4b16-4f3c-8951-5407aeb864e6" controls width="720"></video>
 
-   <video src="https://github.com/PxTicks/vlo/releases/download/v0.2.0/selection-1779470129551.mp4" controls width="720"></video>
+3. A video of a sample workflow can be [downloaded](https://github.com/PxTicks/vlo/releases/download/v0.2.0/vlo_full_2.mp4) from the release assets. Some steps have been skipped for brevity, but it demonstrates the interaction between timeline and generation
 
 ## IMPORTANT
 

@@ -5,6 +5,7 @@ import type {
   StandardTimelineClip,
 } from "../TimelineTypes";
 import {
+  isAdjustmentClip,
   isAssetBackedClip,
   isMaskClip,
   isNonMaskTimelineClip,
@@ -89,5 +90,30 @@ describe("TimelineTypes guards", () => {
   it("identifies non-mask timeline clips", () => {
     expect(isNonMaskTimelineClip(TIMELINE_VIDEO_CLIP)).toBe(true);
     expect(isNonMaskTimelineClip(MASK_CLIP)).toBe(false);
+  });
+
+  it("identifies adjustment clips and excludes other variants", () => {
+    const adjustment: BaseClip = {
+      id: "adj-1",
+      type: "adjustment",
+      name: "Adjustment",
+      sourceDuration: null,
+      timelineDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      transformations: [],
+      depth: 1,
+    };
+    expect(isAdjustmentClip(adjustment)).toBe(true);
+    expect(isAdjustmentClip(VIDEO_CLIP)).toBe(false);
+    expect(isAdjustmentClip(TEXT_CLIP)).toBe(false);
+    expect(isAdjustmentClip(MASK_CLIP)).toBe(false);
+    expect(isAdjustmentClip(null)).toBe(false);
+    // Adjustment clips are non-asset-backed and non-text/non-mask.
+    expect(isAssetBackedClip(adjustment)).toBe(false);
+    expect(isTextClip(adjustment)).toBe(false);
+    expect(isMaskClip(adjustment)).toBe(false);
   });
 });

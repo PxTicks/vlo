@@ -1,7 +1,13 @@
 import type { ClipComponentBase } from "./ClipComponents";
 import type { Component } from "./Components";
 
-export type TrackType = "visual" | "audio" | "prompt" | "effects" | "mask";
+export type TrackType =
+  | "visual"
+  | "audio"
+  | "prompt"
+  | "effects"
+  | "mask"
+  | "adjustment";
 
 export type ClipType =
   | "video"
@@ -10,7 +16,8 @@ export type ClipType =
   | "text"
   | "shape"
   | "mask"
-  | "composite";
+  | "composite"
+  | "adjustment";
 
 export type TextAlignment = "left" | "center" | "right";
 
@@ -283,6 +290,28 @@ export interface CompositeBaseClip
   type: "composite";
 }
 
+/**
+ * An adjustment clip defines a render group at its position on the timeline.
+ * Carries no visual content of its own; the renderer skips it. Its
+ * `transformations` apply to the group container created by the orchestrator,
+ * affecting every clip currently rendered through the reach below.
+ */
+export interface AdjustmentClipExtras {
+  /**
+   * Number of tracks BELOW the adjustment's own track that the group reaches.
+   * Counts all track types; only visual tracks among them are wrapped by the
+   * group container. Must be ≥ 1. Clamped at the bottom of the track stack at
+   * derivation time, not at the store layer.
+   */
+  depth: number;
+}
+
+export interface AdjustmentBaseClip
+  extends InsertableClipBaseCommon,
+    AdjustmentClipExtras {
+  type: "adjustment";
+}
+
 export interface VideoTimelineClip extends AssetBackedTimelineClipCommon {
   type: "video";
 }
@@ -310,6 +339,12 @@ export interface CompositeTimelineClip
   type: "composite";
 }
 
+export interface AdjustmentTimelineClip
+  extends NonMaskTimelineClipCommon,
+    AdjustmentClipExtras {
+  type: "adjustment";
+}
+
 export interface BaseClipByType {
   video: VideoBaseClip;
   image: ImageBaseClip;
@@ -317,6 +352,7 @@ export interface BaseClipByType {
   text: TextBaseClip;
   shape: ShapeBaseClip;
   composite: CompositeBaseClip;
+  adjustment: AdjustmentBaseClip;
 }
 
 export interface NonMaskTimelineClipByType {
@@ -326,6 +362,7 @@ export interface NonMaskTimelineClipByType {
   text: TextTimelineClip;
   shape: ShapeTimelineClip;
   composite: CompositeTimelineClip;
+  adjustment: AdjustmentTimelineClip;
 }
 
 export type AssetBackedBaseClip =
@@ -412,6 +449,12 @@ export function isCompositeClip(
   clip: BaseClip | TimelineClip | undefined | null,
 ): clip is CompositeBaseClip | CompositeTimelineClip {
   return clip?.type === "composite";
+}
+
+export function isAdjustmentClip(
+  clip: BaseClip | TimelineClip | undefined | null,
+): clip is AdjustmentBaseClip | AdjustmentTimelineClip {
+  return clip?.type === "adjustment";
 }
 
 export interface TimelineTrack {

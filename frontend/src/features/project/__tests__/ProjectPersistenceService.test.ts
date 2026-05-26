@@ -453,4 +453,100 @@ describe("ProjectPersistenceService", () => {
     expect(isSafeProjectRelativePath("/tmp/clip.mp4")).toBe(false);
     expect(isSafeProjectRelativePath("blob:clip")).toBe(false);
   });
+
+  it("round-trips an adjustment clip with depth and adjustment-type track", async () => {
+    const adjustmentTimeline = {
+      ...timeline,
+      tracks: [
+        ...timeline.tracks,
+        {
+          id: "track-adj",
+          type: "adjustment",
+          label: "Adjustment Lane",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+      ],
+      clips: [
+        {
+          id: "adj-1",
+          type: "adjustment",
+          trackId: "track-adj",
+          name: "Color",
+          sourceDuration: null,
+          transformedDuration: 200,
+          transformedOffset: 0,
+          timelineDuration: 200,
+          croppedSourceDuration: 200,
+          offset: 0,
+          start: 50,
+          transformations: [],
+          depth: 2,
+        },
+      ],
+    };
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(".vloproject/timeline.json", JSON.stringify(adjustmentTimeline));
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loaded = await projectPersistenceService.loadOrMigrateProject();
+
+    expect(loaded.timeline?.tracks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "track-adj", type: "adjustment" }),
+      ]),
+    );
+    expect(loaded.timeline?.clips).toEqual([
+      expect.objectContaining({
+        id: "adj-1",
+        type: "adjustment",
+        depth: 2,
+        trackId: "track-adj",
+      }),
+    ]);
+    expect(loaded.migrated).toBe(false);
+    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("rejects an adjustment clip missing the required depth field", async () => {
+    const invalidTimeline = {
+      ...timeline,
+      tracks: [
+        ...timeline.tracks,
+        {
+          id: "track-adj",
+          type: "adjustment",
+          label: "Adjustment Lane",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+      ],
+      clips: [
+        {
+          id: "adj-1",
+          type: "adjustment",
+          trackId: "track-adj",
+          name: "Broken",
+          sourceDuration: null,
+          transformedDuration: 200,
+          transformedOffset: 0,
+          timelineDuration: 200,
+          croppedSourceDuration: 200,
+          offset: 0,
+          start: 0,
+          transformations: [],
+          // depth deliberately omitted
+        },
+      ],
+    };
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(".vloproject/timeline.json", JSON.stringify(invalidTimeline));
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    await expect(
+      projectPersistenceService.loadOrMigrateProject(),
+    ).rejects.toThrow(/depth/i);
+  });
 });

@@ -74,6 +74,7 @@ const trackTypeSchema = z.enum([
   "prompt",
   "effects",
   "mask",
+  "adjustment",
 ]) satisfies z.ZodType<TrackType>;
 
 export const projectDocumentConfigSchema = z
@@ -116,6 +117,7 @@ const timelineClipSchema = z
       "shape",
       "mask",
       "composite",
+      "adjustment",
     ]),
     trackId: z.string(),
     name: z.string(),
@@ -127,8 +129,20 @@ const timelineClipSchema = z
     offset: z.number(),
     start: z.number(),
     transformations: z.array(clipTransformSchema),
+    // Adjustment-clip extras (sit on the same passthrough; required when
+    // type === "adjustment", enforced by the superRefine below).
+    depth: z.number().int().min(1).optional(),
   })
-  .passthrough() as unknown as z.ZodType<TimelineClip>;
+  .passthrough()
+  .superRefine((clip, ctx) => {
+    if (clip.type === "adjustment" && typeof clip.depth !== "number") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Adjustment clips require an integer depth ≥ 1.",
+        path: ["depth"],
+      });
+    }
+  }) as unknown as z.ZodType<TimelineClip>;
 
 const timelineGroupSchema = z
   .object({

@@ -14,13 +14,20 @@ export interface TimelineModelState {
 
 export const generateTrackId = () => `track_${crypto.randomUUID()}`;
 
-export function createNewTrack(label: string): TimelineTrack {
+export function createNewTrack(
+  label: string,
+  type?: TimelineTrack["type"],
+): TimelineTrack {
+  // Only spread `type` when explicitly provided so the returned object keeps
+  // its old shape (no enumerable `type: undefined`) for callers that don't
+  // need a typed track. Keeps fixture / snapshot parity for the common case.
   return {
     id: generateTrackId(),
     label,
     isVisible: true,
     isLocked: false,
     isMuted: false,
+    ...(type !== undefined ? { type } : {}),
   };
 }
 

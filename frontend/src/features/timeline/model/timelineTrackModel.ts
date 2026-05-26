@@ -4,6 +4,7 @@ import type {
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../../project/types/ProjectDocument";
+import { pruneOrphanedGroupTrackIds } from "./renderGroupCommands";
 
 export interface TimelineModelState {
   tracks: TimelineTrack[];
@@ -44,6 +45,7 @@ export function maybeTrimAndPadTracks(model: TimelineModelState): void {
   if (populatedIndices.length === 0) {
     if (tracks.length === 1 && !hasClips(tracks[0].id)) return;
     model.tracks = [createNewTrack("Track 1")];
+    pruneOrphanedGroupTrackIds(model);
     return;
   }
 
@@ -72,4 +74,5 @@ export function maybeTrimAndPadTracks(model: TimelineModelState): void {
   if (currentIds === nextIds) return;
 
   model.tracks = newTracks;
+  pruneOrphanedGroupTrackIds(model);
 }

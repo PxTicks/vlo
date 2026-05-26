@@ -260,6 +260,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set((state) => ({
       tracks: nextModel.tracks,
       clips: nextModel.clips,
+      groups: nextModel.groups,
       selectedClipIds: sanitizeSelectedClipIds(
         state.selectedClipIds,
         nextModel.clips,
@@ -289,6 +290,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set((state) => ({
       tracks: nextModel.tracks,
       clips: nextModel.clips,
+      groups: nextModel.groups,
       selectedClipIds: sanitizeSelectedClipIds(
         state.selectedClipIds,
         nextModel.clips,
@@ -318,6 +320,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set((state) => ({
       tracks: nextModel.tracks,
       clips: nextModel.clips,
+      groups: nextModel.groups,
       selectedClipIds: sanitizeSelectedClipIds(
         state.selectedClipIds,
         nextModel.clips,

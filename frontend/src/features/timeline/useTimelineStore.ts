@@ -70,6 +70,15 @@ import {
   type TimelineModelState,
 } from "./model/timelineTrackModel";
 import {
+  createGroupInDraft,
+  deleteGroupFromDraft,
+  setGroupTimeRangeInDraft,
+  setGroupTrackIdsInDraft,
+  setGroupTransformationsInDraft,
+  setGroupVisibilityInDraft,
+  type CreateRenderGroupInput,
+} from "./model/renderGroupCommands";
+import {
   selectMaskClipsForParent,
   selectResolvedMaskBooleanExpressionForParent,
 } from "./selectors/timelineSelectors";
@@ -208,6 +217,25 @@ interface TimelineState extends TimelineModelState {
   toggleTrackMute: (trackId: string) => void;
   toggleClipMute: (clipId: string) => void;
   trimAndPadTracks: () => void;
+
+  /**
+   * Creates a render group spanning a contiguous run of visual tracks over a
+   * time window. Returns the new group's id, or `null` if the inputs violate
+   * the contiguity / overlap invariants.
+   */
+  createGroup: (input: CreateRenderGroupInput) => string | null;
+  deleteGroup: (groupId: string) => boolean;
+  setGroupTrackIds: (groupId: string, trackIds: readonly string[]) => boolean;
+  setGroupTimeRange: (
+    groupId: string,
+    start: number,
+    timelineDuration: number,
+  ) => boolean;
+  setGroupVisibility: (groupId: string, isVisible: boolean) => boolean;
+  setGroupTransformations: (
+    groupId: string,
+    transformations: ClipTransform[],
+  ) => boolean;
 
   undo: () => boolean;
   redo: () => boolean;
@@ -669,6 +697,55 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       mutationPipeline.commitModelMutation((draft) => {
         trimAndPadTracksInDraft(draft);
       });
+    },
+
+    createGroup: (input) => {
+      let createdId: string | null = null;
+      mutationPipeline.commitModelMutation((draft) => {
+        const group = createGroupInDraft(draft, input);
+        if (group) createdId = group.id;
+      });
+      return createdId;
+    },
+
+    deleteGroup: (groupId) => {
+      let deleted = false;
+      mutationPipeline.commitModelMutation((draft) => {
+        deleted = deleteGroupFromDraft(draft, groupId);
+      });
+      return deleted;
+    },
+
+    setGroupTrackIds: (groupId, trackIds) => {
+      let ok = false;
+      mutationPipeline.commitModelMutation((draft) => {
+        ok = setGroupTrackIdsInDraft(draft, groupId, trackIds);
+      });
+      return ok;
+    },
+
+    setGroupTimeRange: (groupId, start, timelineDuration) => {
+      let ok = false;
+      mutationPipeline.commitModelMutation((draft) => {
+        ok = setGroupTimeRangeInDraft(draft, groupId, start, timelineDuration);
+      });
+      return ok;
+    },
+
+    setGroupVisibility: (groupId, isVisible) => {
+      let ok = false;
+      mutationPipeline.commitModelMutation((draft) => {
+        ok = setGroupVisibilityInDraft(draft, groupId, isVisible);
+      });
+      return ok;
+    },
+
+    setGroupTransformations: (groupId, transformations) => {
+      let ok = false;
+      mutationPipeline.commitModelMutation((draft) => {
+        ok = setGroupTransformationsInDraft(draft, groupId, transformations);
+      });
+      return ok;
     },
 
     undo: () => mutationPipeline.undo(),

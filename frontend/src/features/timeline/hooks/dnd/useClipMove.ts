@@ -356,6 +356,7 @@ export const useClipMove = (
     event: DragEndEvent,
     clip: BaseClip | TimelineClip,
     snapStartTicks: number | null = null,
+    insertGapIndexOverride?: number | null,
   ) => {
     const { over, activatorEvent, delta } = event;
 
@@ -385,7 +386,10 @@ export const useClipMove = (
 
     // --- 2. Calculate Track (Vertical) ---
     // We prioritize the gap index calculated during the move phase.
-    const currentInsertGapIndex = getInsertGapIndex();
+    const currentInsertGapIndex =
+      insertGapIndexOverride !== undefined
+        ? insertGapIndexOverride
+        : getInsertGapIndex();
     let dropTargetTrackId = "";
 
     if (currentInsertGapIndex === null) {

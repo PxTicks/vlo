@@ -66,6 +66,7 @@ export const useAssetDrag = () => {
       const interaction = useInteractionStore.getState();
       const activeClip = interaction.activeClip;
       const snappedStartTicks = interaction.snappedStartTicks;
+      const insertGapIndex = interaction.externalInsertGapIndex;
       const activeData = event.active.data.current;
       const overData = event.over?.data.current;
 
@@ -101,7 +102,12 @@ export const useAssetDrag = () => {
       // Check if we effectively dropped "on" the timeline
       // The moveStrategy.handleEnd contains the logic to calculate coordinates
       // and decide if it was a valid drop.
-      moveStrategy.handleEnd(event, activeClip as BaseClip, snappedStartTicks);
+      moveStrategy.handleEnd(
+        event,
+        activeClip as BaseClip,
+        snappedStartTicks,
+        insertGapIndex,
+      );
     },
     [moveStrategy],
   );

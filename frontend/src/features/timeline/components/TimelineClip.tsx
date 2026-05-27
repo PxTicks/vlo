@@ -304,6 +304,8 @@ function TimelineClipComponent({
         return "#16a34a";
       case "composite":
         return "#7c3aed";
+      case "adjustment":
+        return "#5fa8ff";
       default:
         return "#4b5563";
     }

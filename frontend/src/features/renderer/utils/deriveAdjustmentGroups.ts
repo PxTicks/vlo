@@ -89,6 +89,9 @@ export function computeAdjustmentApplications(
     if (clip.type !== "adjustment") continue;
     const adjustment = clip as AdjustmentTimelineClip;
     if (!isAdjustmentClipActiveAtTick(adjustment, currentTick)) continue;
+    // Honor per-clip mute: matches the timeline-clip mute button, which
+    // would otherwise be a no-op on adjustment clips.
+    if (adjustment.isMuted === true) continue;
 
     const clipTrackPosition = trackPositionById.get(adjustment.trackId);
     if (clipTrackPosition === undefined) continue; // orphaned

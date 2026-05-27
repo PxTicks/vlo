@@ -43,17 +43,23 @@ vi.mock("../../../features/generation", () => ({
 
 describe("RightSidebarPanel", () => {
   let selectedClipIds: string[] = [];
+  let clips: Array<{ id: string; type: string }> = [];
   const setMaskTabActive = vi.fn();
 
   beforeEach(() => {
     selectedClipIds = [];
+    clips = [];
     vi.clearAllMocks();
 
     (
       useTimelineStore as unknown as ReturnType<typeof vi.fn>
     ).mockImplementation(
-      (selector: (state: { selectedClipIds: string[] }) => unknown) =>
-        selector({ selectedClipIds }),
+      (
+        selector: (state: {
+          selectedClipIds: string[];
+          clips: Array<{ id: string; type: string }>;
+        }) => unknown,
+      ) => selector({ selectedClipIds, clips }),
     );
     (
       useMaskViewStore as unknown as {
@@ -137,4 +143,21 @@ describe("RightSidebarPanel", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Transform" }));
     expect(setMaskTabActive).toHaveBeenCalledWith(false);
   });
+
+  it("hides the Mask tab and panel for adjustment clips", () => {
+    // Adjustment clips bypass applyClipTransforms entirely, so neither
+    // ClipMask attachments nor range-mask components have any render-time
+    // effect. We hide the tab AND assert the panel doesn't mount —
+    // visibleTab is derived synchronously so the Tabs `value` never points
+    // at a tab whose child isn't rendered (no MUI invalid-value warning).
+    selectedClipIds = ["adj-1"];
+    clips = [{ id: "adj-1", type: "adjustment" }];
+
+    render(<RightSidebarPanel />);
+
+    expect(screen.getByRole("tab", { name: "Transform" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Mask" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mock-mask-panel")).not.toBeInTheDocument();
+  });
+
 });

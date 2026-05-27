@@ -44,12 +44,37 @@ type ManifestMutator = (draft: Draft<ProjectManifestDocument>) => void;
 type TimelineMutator = (draft: Draft<TimelineDocument>) => void;
 type AssetIndexMutator = (draft: Draft<AssetIndexDocument>) => void;
 
+interface NewerSchemaVersionCheck {
+  path: string;
+  documentType: string;
+  documentLabel: string;
+  supportedSchemaVersion: number;
+}
+
 const PROJECT_DIR = ".vloproject";
 const MANIFEST_PATH = `${PROJECT_DIR}/project.json`;
 const LEGACY_BACKUP_PATH = `${PROJECT_DIR}/project.legacy-v2.json`;
 const TIMELINE_PATH = `${PROJECT_DIR}/${PROJECT_PERSISTENCE_FILE_NAMES.timeline}`;
 const ASSET_INDEX_PATH = `${PROJECT_DIR}/${PROJECT_PERSISTENCE_FILE_NAMES.assets}`;
 const ASSET_METADATA_DIR = PROJECT_PERSISTENCE_FILE_NAMES.assetMetadataDir;
+const MANIFEST_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
+  path: MANIFEST_PATH,
+  documentType: "vlo.project",
+  documentLabel: "Project metadata",
+  supportedSchemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION,
+};
+const TIMELINE_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
+  path: TIMELINE_PATH,
+  documentType: "vlo.timeline",
+  documentLabel: "Timeline data",
+  supportedSchemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
+};
+const ASSET_INDEX_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
+  path: ASSET_INDEX_PATH,
+  documentType: "vlo.assets",
+  documentLabel: "Asset index data",
+  supportedSchemaVersion: ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
+};
 
 export interface LoadedProjectPersistenceDocuments {
   manifest: ProjectManifestDocument | null;
@@ -72,13 +97,57 @@ export interface PreparedPersistedAsset {
   sidecarMetadata?: CreationMetadata;
 }
 
-export async function readJson<T>(
-  path: string,
-  schema: z.ZodType<T>,
-): Promise<T> {
-  const file = await fileSystemService.readFile(path);
-  const text = await file.text();
-  return schema.parse(JSON.parse(text));
+export class ProjectSchemaVersionError extends Error {
+  readonly documentPath: string;
+  readonly documentType: string;
+  readonly documentLabel: string;
+  readonly foundSchemaVersion: number;
+  readonly supportedSchemaVersion: number;
+
+  constructor(
+    documentPath: string,
+    documentType: string,
+    documentLabel: string,
+    foundSchemaVersion: number,
+    supportedSchemaVersion: number,
+  ) {
+    super(
+      `This project was created with a newer version of VLO and can't be opened here yet. ` +
+        `${documentLabel} uses schema version ${foundSchemaVersion}, but this build supports up to version ${supportedSchemaVersion}.`,
+    );
+    this.name = "ProjectSchemaVersionError";
+    this.documentPath = documentPath;
+    this.documentType = documentType;
+    this.documentLabel = documentLabel;
+    this.foundSchemaVersion = foundSchemaVersion;
+    this.supportedSchemaVersion = supportedSchemaVersion;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function throwIfNewerSchemaVersion(
+  raw: unknown,
+  check: NewerSchemaVersionCheck,
+): void {
+  if (!isRecord(raw) || raw.documentType !== check.documentType) {
+    return;
+  }
+
+  if (
+    typeof raw.schemaVersion === "number" &&
+    raw.schemaVersion > check.supportedSchemaVersion
+  ) {
+    throw new ProjectSchemaVersionError(
+      check.path,
+      check.documentType,
+      check.documentLabel,
+      raw.schemaVersion,
+      check.supportedSchemaVersion,
+    );
+  }
 }
 
 export async function writeJson<T>(
@@ -367,7 +436,10 @@ export class ProjectPersistenceService {
       return clone(this.manifestCache);
     }
 
-    const manifest = await readJson(MANIFEST_PATH, projectManifestDocumentSchema);
+    const file = await fileSystemService.readFile(MANIFEST_PATH);
+    const raw = JSON.parse(await file.text()) as unknown;
+    throwIfNewerSchemaVersion(raw, MANIFEST_NEWER_SCHEMA_CHECK);
+    const manifest = projectManifestDocumentSchema.parse(raw);
     this.manifestCache = manifest;
     return clone(manifest);
   }
@@ -393,6 +465,7 @@ export class ProjectPersistenceService {
 
     const file = await fileSystemService.readFile(TIMELINE_PATH);
     const raw = JSON.parse(await file.text()) as unknown;
+    throwIfNewerSchemaVersion(raw, TIMELINE_NEWER_SCHEMA_CHECK);
 
     // Zod's strip-on-parse default means a stale dev-branch v2 document that
     // still carries the never-shipped top-level `groups` field parses cleanly
@@ -462,7 +535,10 @@ export class ProjectPersistenceService {
       return clone(this.assetIndexCache);
     }
 
-    const assetIndex = await readJson(ASSET_INDEX_PATH, assetIndexDocumentSchema);
+    const file = await fileSystemService.readFile(ASSET_INDEX_PATH);
+    const raw = JSON.parse(await file.text()) as unknown;
+    throwIfNewerSchemaVersion(raw, ASSET_INDEX_NEWER_SCHEMA_CHECK);
+    const assetIndex = assetIndexDocumentSchema.parse(raw);
     this.assetIndexCache = assetIndex;
     return clone(assetIndex);
   }
@@ -500,7 +576,15 @@ export class ProjectPersistenceService {
     }
 
     try {
-      const document = await readJson(path, assetMetadataDocumentSchema);
+      const file = await fileSystemService.readFile(path);
+      const raw = JSON.parse(await file.text()) as unknown;
+      throwIfNewerSchemaVersion(raw, {
+        path,
+        documentType: "vlo.assetMetadata",
+        documentLabel: `Asset metadata for '${assetId}'`,
+        supportedSchemaVersion: ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
+      });
+      const document = assetMetadataDocumentSchema.parse(raw);
       if (document.assetId !== assetId) {
         throw new Error(
           `Asset metadata '${path}' belongs to '${document.assetId}', not '${assetId}'`,
@@ -509,6 +593,10 @@ export class ProjectPersistenceService {
       this.assetMetadataCache.set(path, document);
       return clone(document);
     } catch (error) {
+      if (error instanceof ProjectSchemaVersionError) {
+        throw error;
+      }
+
       console.warn(
         `[ProjectPersistenceService] Could not read asset metadata '${path}'.`,
         error,
@@ -625,6 +713,7 @@ export class ProjectPersistenceService {
     }
 
     const rawDocument = JSON.parse(rawText) as unknown;
+    throwIfNewerSchemaVersion(rawDocument, MANIFEST_NEWER_SCHEMA_CHECK);
     if (isProjectManifestCandidate(rawDocument)) {
       const manifest = projectManifestDocumentSchema.parse(rawDocument);
       this.manifestCache = manifest;

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   projectPersistenceService,
+  ProjectSchemaVersionError,
 } from "../services/ProjectPersistenceService";
 import { fileSystemService } from "../services/FileSystemService";
 import {
@@ -282,6 +283,24 @@ describe("ProjectPersistenceService", () => {
     expect(fileSystemService.writeFile).not.toHaveBeenCalled();
   });
 
+  it("rejects a newer project manifest schema with an informative error", async () => {
+    files.set(
+      ".vloproject/project.json",
+      JSON.stringify({
+        ...manifest,
+        schemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION + 1,
+      }),
+    );
+
+    const loadPromise = projectPersistenceService.loadOrMigrateProject();
+
+    await expect(loadPromise).rejects.toThrow(ProjectSchemaVersionError);
+    await expect(loadPromise).rejects.toThrow(
+      `Project metadata uses schema version ${PROJECT_MANIFEST_SCHEMA_VERSION + 1}, but this build supports up to version ${PROJECT_MANIFEST_SCHEMA_VERSION}.`,
+    );
+    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
+  });
+
   it("migrates legacy projects into split files and sidecars heavy metadata", async () => {
     const legacyProject = {
       id: "legacy-project",
@@ -383,6 +402,26 @@ describe("ProjectPersistenceService", () => {
     );
     // v2 has no top-level `groups` field; the migration must not reintroduce it.
     expect(rewrittenTimeline.groups).toBeUndefined();
+  });
+
+  it("rejects a newer timeline schema with an informative error", async () => {
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(
+      ".vloproject/timeline.json",
+      JSON.stringify({
+        ...timeline,
+        schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION + 1,
+      }),
+    );
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loadPromise = projectPersistenceService.loadOrMigrateProject();
+
+    await expect(loadPromise).rejects.toThrow(ProjectSchemaVersionError);
+    await expect(loadPromise).rejects.toThrow(
+      `Timeline data uses schema version ${TIMELINE_DOCUMENT_SCHEMA_VERSION + 1}, but this build supports up to version ${TIMELINE_DOCUMENT_SCHEMA_VERSION}.`,
+    );
+    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
   });
 
   it("silently drops a stray `groups` field from a stale dev-branch v2 document", async () => {

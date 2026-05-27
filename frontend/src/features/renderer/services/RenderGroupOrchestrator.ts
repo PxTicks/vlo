@@ -155,6 +155,17 @@ export class RenderGroupOrchestrator {
    * Order: per-clip transforms (run inside engine.update() / awaited
    * synchronized renderers) MUST complete before this call;
    * renderer.render(...) MUST be called after.
+   *
+   * Performance note: the forest is re-derived from scratch every tick,
+   * but the Pixi scene graph is NOT rebuilt — `groupContainers` is cached
+   * across ticks and reparenting is diff-only (`engineContainer.parent
+   * !== desiredParent` short-circuits). The derivation itself is
+   * O(adjustments × depth + visualTracks × stackDepth) and allocates a
+   * few small JS objects per tick. For realistic project sizes this is
+   * comfortably sub-millisecond. If profiling ever flags it, memoise by
+   * (clipsRevision, tracksRevision, transition-window-index) — the forest
+   * is constant between adjacent active-window boundary ticks, so a
+   * window cache fed by `setAdjustmentSource` would skip most ticks.
    */
   sync(currentTick: number, visualTrackOrder: readonly string[]): void {
     if (this.disposed) return;

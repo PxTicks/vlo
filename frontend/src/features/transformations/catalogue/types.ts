@@ -122,6 +122,18 @@ export interface TransformationDefinition {
   hidden?: boolean;
 
   /**
+   * Whether this transformation applies sensibly to adjustment clips (which
+   * dispatch to a textureless Pixi Container instead of a sprite).
+   * Defaults to `false`. Opt in explicitly per definition — `compatibleClips`
+   * is not enough on its own because adjustment-incompatible entries
+   * (speed, volume, mask, fitMode) span multiple `compatibleClips` values.
+   *
+   * Set true for: the layout definition (position/scale/rotation) and
+   * every filter that scales sensibly against an explicit content size.
+   */
+  adjustmentCompatible?: boolean;
+
+  /**
    * List of specific transform types handled by this definition.
    * Used when a single definition (like Layout) handles multiple clip transform types (position, scale, etc).
    */

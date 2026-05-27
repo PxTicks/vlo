@@ -126,9 +126,10 @@ export function TransformationPanel() {
   }, [compatibilityClipType, compatibilityHasAudio]);
 
   const compatibleAddableTransforms = useMemo(() => {
-    return getAddableTransforms().filter((def) =>
-      isTransformCompatible(def, compatibilityClipType, compatibilityHasAudio),
-    );
+    return getAddableTransforms({
+      clipType: compatibilityClipType,
+      hasAudio: compatibilityHasAudio,
+    });
   }, [compatibilityClipType, compatibilityHasAudio]);
 
   const sensors = useSensors(

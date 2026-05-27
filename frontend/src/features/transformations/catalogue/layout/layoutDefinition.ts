@@ -107,27 +107,11 @@ export const layoutDefinition: TransformationDefinition = {
   type: "layout",
   label: "Layout",
   compatibleClips: "visual",
-  handledTypes: ["position", "scale", "rotation", "fitMode"],
+  adjustmentCompatible: true,
+  handledTypes: ["position", "scale", "rotation"],
   handler: layoutHandler,
   uiConfig: {
     groups: [
-      {
-        id: "fitMode",
-        title: "FIT MODE",
-        columns: 1,
-        controls: [
-          {
-            type: "select",
-            label: "Fit",
-            name: "fitMode",
-            defaultValue: "contain",
-            options: [
-              { label: "Contain (Letterbox)", value: "contain" },
-              { label: "Cover (Fill)", value: "cover" },
-            ],
-          },
-        ],
-      },
       {
         id: "position",
         title: "POSITION (PX)",

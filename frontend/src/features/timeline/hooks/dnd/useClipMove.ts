@@ -431,7 +431,10 @@ export const useClipMove = (
       let shouldInsert = false;
 
       if (currentInsertGapIndex !== null) {
-        targetTrackId = insertTrack(currentInsertGapIndex);
+        targetTrackId = insertTrack(
+          currentInsertGapIndex,
+          getTrackTypeFromClipType(clip.type),
+        );
         shouldInsert = true;
       }
 
@@ -491,7 +494,7 @@ export const useClipMove = (
 
     const insertedTrack =
       currentInsertGapIndex !== null
-        ? createNewTrack("New Track")
+        ? createNewTrack("New Track", getTrackTypeFromClipType(leaderClip.type))
         : undefined;
     const plannedMoves = planMultiClipMove({
       clips,

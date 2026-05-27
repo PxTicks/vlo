@@ -38,8 +38,16 @@ export function maybeTrimAndPadTracks(model: TimelineModelState): void {
   const hasClips = (trackId: string) =>
     clips.some((clip) => clip.trackId === trackId && clip.type !== "mask");
 
+  // Adjustment lanes are user-authored structural elements: an empty
+  // adjustment track was created deliberately and must survive trimming
+  // until the user explicitly removes it. Treat them as significant for
+  // both the populated-range computation and the core-tracks filter so
+  // they're never aggregated as padding nor dropped.
+  const isSignificant = (track: TimelineTrack) =>
+    hasClips(track.id) || track.type === "adjustment";
+
   const populatedIndices = tracks
-    .map((track, index) => (hasClips(track.id) ? index : -1))
+    .map((track, index) => (isSignificant(track) ? index : -1))
     .filter((index) => index !== -1);
 
   if (populatedIndices.length === 0) {
@@ -53,7 +61,7 @@ export function maybeTrimAndPadTracks(model: TimelineModelState): void {
 
   const coreTracks = tracks
     .slice(firstIndex, lastIndex + 1)
-    .filter((track) => hasClips(track.id));
+    .filter((track) => isSignificant(track));
 
   const topPadding =
     firstIndex > 0 ? tracks[firstIndex - 1] : createNewTrack("Track Top");

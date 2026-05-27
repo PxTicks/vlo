@@ -1,7 +1,10 @@
 import { Container } from "pixi.js";
-import type { TimelineGroup } from "../../../types/TimelineTypes";
-import { isGroupActiveAtTick } from "../../../types/TimelineTypes";
+import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { applyGroupTransforms } from "../../transformations/applyGroupTransforms";
+import {
+  deriveActiveAdjustmentGroups,
+  type DerivedRenderGroup,
+} from "../utils/deriveAdjustmentGroups";
 
 export interface RenderGroupOrchestratorOptions {
   /** Project resolution used by applyGroupTransforms. Defaults to 1920x1080
@@ -9,26 +12,53 @@ export interface RenderGroupOrchestratorOptions {
   logicalDimensions?: { width: number; height: number };
 }
 
+interface ForestEntry {
+  group: DerivedRenderGroup;
+  /** The Pixi parent this group container should be attached to: either
+   *  another active group's container (nested) or `root` (top-level). */
+  desiredParent: Container;
+  /** Visual-index of the top-most track this group wraps. Used for zIndex
+   *  assignment within its immediate parent. */
+  topMostVisualIndex: number;
+}
+
 /**
- * Owns Pixi-side parenting of track engine containers and time-bounded render
- * group containers under a shared `root` container (typically the
- * ExportRenderer's `logicalStage` or the Player's viewport).
+ * Owns Pixi-side parenting of track engine containers and adjustment-clip-
+ * derived render group containers under a shared `root` container (typically
+ * the ExportRenderer's `logicalStage` or the Player's viewport).
  *
- * - Track engines register their containers once; the orchestrator decides
- *   their parent each tick based on which group (if any) is active over them.
- * - Group containers are cached: created lazily on first activation, retained
- *   when the group goes inactive (so re-entering its window is a cheap
- *   re-attach), and destroyed only when the group itself is removed from the
- *   model (via `setGroups`) or when the orchestrator is disposed.
- * - All ordering follows the codebase's z-index convention
- *   (`visualTrackOrder.length - 1 - index`); a group container sits at the
- *   slot of its top-most member.
+ * Inputs:
+ * - `registerTrack(trackId, engineContainer)`: track engines hand the
+ *   orchestrator their container; the orchestrator decides its parent each
+ *   tick based on the derived forest.
+ * - `setAdjustmentSource(tracks, clips)`: the canonical source of truth for
+ *   deriving render groups. Pushed by the Player whenever `tracks` or
+ *   `clips` change (structural edits), and by the ExportRenderer once
+ *   before its frame loop.
+ *
+ * Per tick (`sync(currentTick, visualTrackOrder)`):
+ * - Run `deriveActiveAdjustmentGroups(tracks, clips, currentTick)` to get
+ *   the nested forest of render groups for this tick.
+ * - Diff against the cached group containers; create new ones lazily,
+ *   destroy any whose `id` no longer appears in the forest (topology
+ *   change), detach (but keep cached) containers that aren't active at
+ *   this tick.
+ * - Reparent group containers to match the forest's parent-of relation
+ *   (nested groups parent under their outer container; top-level groups
+ *   under `root`).
+ * - Reparent each registered track engine container to its innermost
+ *   wrapping group (or `root` if none).
+ * - Assign zIndex using the codebase's `length - 1 - index` convention
+ *   (engine containers from their visual-track index; group containers
+ *   from their top-most member's visual-track index).
+ * - Call `applyGroupTransforms` on each active group container.
  */
 export class RenderGroupOrchestrator {
   private readonly root: Container;
   private readonly tracks = new Map<string, Container>();
-  private readonly groupDefs = new Map<string, TimelineGroup>();
   private readonly groupContainers = new Map<string, Container>();
+  private sourceTracks: readonly TimelineTrack[] = [];
+  private sourceClips: readonly TimelineClip[] = [];
   private logicalDimensions: { width: number; height: number };
   private disposed = false;
 
@@ -86,30 +116,45 @@ export class RenderGroupOrchestrator {
   }
 
   /**
-   * Update the group definitions. Groups removed from the model have their
-   * cached container detached and destroyed (children: false — the engine
-   * containers underneath are owned by their TrackRenderEngine). Does not
-   * reparent registered tracks; that happens on the next `sync()`.
+   * Push the canonical source-of-truth for adjustment-clip-derived groups.
+   * Called by the Player whenever `tracks` or `clips` change (structural
+   * edits) and by the ExportRenderer once before its frame loop. The
+   * derivation runs inside `sync(...)` against this cached source.
+   *
+   * Evicts cached group containers whose source adjustment clip has been
+   * removed from the new `clips` list. Containers whose source clip is
+   * still live but whose first-track-in-run changes (a `<clipId>@<trackId>`
+   * id no longer in the forest) stay cached until the source clip itself
+   * is removed — the cache stays permissive across reach edits.
    */
-  setGroups(groups: readonly TimelineGroup[]): void {
+  setAdjustmentSource(
+    tracks: readonly TimelineTrack[],
+    clips: readonly TimelineClip[],
+  ): void {
     if (this.disposed) return;
-    const nextIds = new Set(groups.map((g) => g.id));
-    for (const [id, container] of this.groupContainers) {
-      if (nextIds.has(id)) continue;
-      this.destroyGroupContainer(container);
-      this.groupContainers.delete(id);
+    this.sourceTracks = tracks;
+    this.sourceClips = clips;
+
+    const liveAdjustmentClipIds = new Set<string>();
+    for (const clip of clips) {
+      if (clip.type === "adjustment") liveAdjustmentClipIds.add(clip.id);
     }
-    this.groupDefs.clear();
-    for (const group of groups) {
-      this.groupDefs.set(group.id, group);
+    for (const [containerId, container] of this.groupContainers) {
+      const sourceClipId = containerId.split("@")[0];
+      if (!liveAdjustmentClipIds.has(sourceClipId)) {
+        this.destroyGroupContainer(container);
+        this.groupContainers.delete(containerId);
+      }
     }
   }
 
   /**
-   * Rewrite parenting for the current tick. Diffs against the orchestrator's
-   * internal cache and applies the minimum reparenting. Order: per-clip
-   * transforms (run inside engine.update() / awaited synchronized renderers)
-   * MUST complete before this call; renderer.render(...) MUST be called after.
+   * Rewrite parenting for the current tick. Diffs the derived forest
+   * against the orchestrator's cache and applies the minimum reparenting.
+   *
+   * Order: per-clip transforms (run inside engine.update() / awaited
+   * synchronized renderers) MUST complete before this call;
+   * renderer.render(...) MUST be called after.
    */
   sync(currentTick: number, visualTrackOrder: readonly string[]): void {
     if (this.disposed) return;
@@ -121,60 +166,108 @@ export class RenderGroupOrchestrator {
     const zIndexForVisualIndex = (index: number): number =>
       visualTrackOrder.length - 1 - index;
 
-    // 1. For each registered track, pick its single active group (if any).
-    const activeGroupByTrack = new Map<string, TimelineGroup>();
-    for (const group of this.groupDefs.values()) {
-      if (!isGroupActiveAtTick(group, currentTick)) continue;
-      for (const trackId of group.trackIds) {
-        if (this.tracks.has(trackId)) {
-          activeGroupByTrack.set(trackId, group);
-        }
-      }
-    }
+    // 1. Derive the forest for this tick.
+    const forest = deriveActiveAdjustmentGroups(
+      this.sourceTracks,
+      this.sourceClips,
+      currentTick,
+    );
 
-    // 2. Active groups = groups with at least one registered member track.
-    const activeGroupIds = new Set<string>();
-    for (const group of activeGroupByTrack.values()) {
-      activeGroupIds.add(group.id);
-    }
-
-    const sortDirtyParents = new Set<Container>();
-
-    // 3. Ensure each active group has an attached container; detach inactive
-    //    group containers (without destroying them).
-    for (const groupId of activeGroupIds) {
-      let container = this.groupContainers.get(groupId);
+    // 2. Walk the forest depth-first to enumerate every group node, its
+    //    desired parent container, and its top-most member visual index.
+    const entries: ForestEntry[] = [];
+    const innermostGroupByTrack = new Map<string, DerivedRenderGroup>();
+    const walk = (
+      group: DerivedRenderGroup,
+      parentContainer: Container,
+    ): void => {
+      // Compute or reuse this group's container.
+      let container = this.groupContainers.get(group.id);
       if (!container) {
         container = new Container();
         container.sortableChildren = true;
-        this.groupContainers.set(groupId, container);
+        this.groupContainers.set(group.id, container);
       }
-      if (container.parent !== this.root) {
-        this.root.addChild(container);
-        sortDirtyParents.add(this.root);
+
+      let topMostVisualIndex = Number.MAX_SAFE_INTEGER;
+      for (const trackId of group.trackIds) {
+        const idx = visualIndexByTrackId.get(trackId);
+        if (idx !== undefined && idx < topMostVisualIndex) {
+          topMostVisualIndex = idx;
+        }
+        // Initially mark the track's innermost group as this one; nested
+        // children below will overwrite for the tracks they cover.
+        innermostGroupByTrack.set(trackId, group);
       }
+      entries.push({
+        group,
+        desiredParent: parentContainer,
+        topMostVisualIndex,
+      });
+
+      for (const child of group.children) {
+        walk(child, container);
+      }
+    };
+    for (const root of forest) {
+      walk(root, this.root);
     }
+
+    const activeGroupIds = new Set(entries.map((entry) => entry.group.id));
+    const sortDirtyParents = new Set<Container>();
+
+    // 3. Pre-prune: destroy any cached container whose id no longer appears
+    //    in the forest (topology change — the source clip is gone or its
+    //    reach now starts on a different first-track). Detach (but keep)
+    //    containers that exist in the cache but aren't active this tick.
     for (const [groupId, container] of this.groupContainers) {
       if (activeGroupIds.has(groupId)) continue;
       if (container.parent) {
-        // Detach the group's children first so they don't ride along into
-        // the detached subtree (they'll be reparented in step 4 anyway, but
-        // belt-and-braces keeps the scene graph consistent between steps).
         if (container.children.length > 0) {
           container.removeChildren();
         }
         container.parent.removeChild(container);
       }
     }
+    // (Containers stay cached when merely inactive; destroyed only on
+    // dispose or when the orchestrator's setAdjustmentSource elides them.
+    // Phase-3 keeps the cache permissive — the cache eviction policy can
+    // tighten in a follow-up if memory pressure becomes a concern.)
 
-    // 4. Reparent track engine containers; assign per-track zIndex.
+    // 4. Reparent group containers to match the forest. Top-down so each
+    //    child sees its desired parent already attached at the right level.
+    for (const entry of entries) {
+      const container = this.groupContainers.get(entry.group.id);
+      if (!container) continue;
+      if (container.parent !== entry.desiredParent) {
+        if (container.parent && !container.parent.destroyed) {
+          sortDirtyParents.add(container.parent);
+        }
+        entry.desiredParent.addChild(container);
+        sortDirtyParents.add(entry.desiredParent);
+      }
+      const z =
+        entry.topMostVisualIndex === Number.MAX_SAFE_INTEGER
+          ? 0
+          : zIndexForVisualIndex(entry.topMostVisualIndex);
+      if (container.zIndex !== z) {
+        container.zIndex = z;
+        sortDirtyParents.add(entry.desiredParent);
+      }
+    }
+
+    // 5. Reparent track engine containers to their innermost wrapping group
+    //    (or root if none) and assign zIndex from visualTrackOrder.
     for (const [trackId, engineContainer] of this.tracks) {
       if (engineContainer.destroyed) continue;
-      const activeGroup = activeGroupByTrack.get(trackId);
-      const desiredParent = activeGroup
-        ? this.groupContainers.get(activeGroup.id) ?? this.root
+      const innermost = innermostGroupByTrack.get(trackId);
+      const desiredParent = innermost
+        ? this.groupContainers.get(innermost.id) ?? this.root
         : this.root;
       if (engineContainer.parent !== desiredParent) {
+        if (engineContainer.parent && !engineContainer.parent.destroyed) {
+          sortDirtyParents.add(engineContainer.parent);
+        }
         desiredParent.addChild(engineContainer);
         sortDirtyParents.add(desiredParent);
       }
@@ -188,34 +281,21 @@ export class RenderGroupOrchestrator {
       }
     }
 
-    // 5. Assign zIndex to active group containers based on their top-most
-    //    member (lowest visual index). Apply visibility + transforms.
-    for (const groupId of activeGroupIds) {
-      const container = this.groupContainers.get(groupId);
-      const group = this.groupDefs.get(groupId);
-      if (!container || !group) continue;
-
-      let minVisualIndex = Number.MAX_SAFE_INTEGER;
-      for (const trackId of group.trackIds) {
-        if (!this.tracks.has(trackId)) continue;
-        const idx = visualIndexByTrackId.get(trackId);
-        if (idx !== undefined && idx < minVisualIndex) {
-          minVisualIndex = idx;
-        }
-      }
-      const z =
-        minVisualIndex === Number.MAX_SAFE_INTEGER
-          ? 0
-          : zIndexForVisualIndex(minVisualIndex);
-      if (container.zIndex !== z) {
-        container.zIndex = z;
-        sortDirtyParents.add(this.root);
-      }
-      container.visible = group.isVisible;
-      applyGroupTransforms(container, group, this.logicalDimensions, currentTick);
+    // 6. Apply group transforms to each active group container.
+    for (const entry of entries) {
+      const container = this.groupContainers.get(entry.group.id);
+      if (!container) continue;
+      // The derived group exposes start/timelineDuration/transformations,
+      // matching what applyGroupTransforms expects on its `group` arg.
+      applyGroupTransforms(
+        container,
+        entry.group,
+        this.logicalDimensions,
+        currentTick,
+      );
     }
 
-    // 6. Re-sort any parent that received reparenting / zIndex changes.
+    // 7. Re-sort dirty parents.
     for (const parent of sortDirtyParents) {
       if (parent.destroyed) continue;
       parent.sortChildren();
@@ -231,8 +311,9 @@ export class RenderGroupOrchestrator {
       this.destroyGroupContainer(container);
     }
     this.groupContainers.clear();
-    this.groupDefs.clear();
     this.tracks.clear();
+    this.sourceTracks = [];
+    this.sourceClips = [];
   }
 
   /** Test helper. Returns the cached Pixi container for a group, or null. */
@@ -243,8 +324,6 @@ export class RenderGroupOrchestrator {
   private destroyGroupContainer(container: Container): void {
     if (container.destroyed) return;
     if (container.children.length > 0) {
-      // Detach engine containers before destroying so they aren't orphaned
-      // under a destroyed parent reference.
       container.removeChildren();
     }
     if (container.parent && !container.parent.destroyed) {

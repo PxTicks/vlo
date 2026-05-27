@@ -440,8 +440,20 @@ export class ExportRenderer {
         this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
-      // Adjustment-clip-derived groups land in phase 3; until then the
-      // orchestrator's group set stays empty (its constructor default).
+      // Adjustment-clip derivation reads the *full* project tracks + clips
+      // (not the selection-filtered subset). The orchestrator still creates
+      // and attaches a container for every derived group — even ones whose
+      // reach contains no registered visual tracks — but those containers
+      // hold no engines and so produce no pixels on the GPU. We tolerate
+      // the empty-container cost so that adjustments whose adjustment
+      // track was excluded from a selection export still apply to the
+      // included visual tracks below, and to keep room for non-visual
+      // engines (audio effects, etc.) to ride through the same forest in
+      // the future without an a-priori filter.
+      this.orchestrator.setAdjustmentSource(
+        projectData.tracks,
+        projectData.clips,
+      );
       const visualTrackOrder = visualTracks.map((track) => track.id);
 
       for (let i = 0; i < totalFrames; i += 1) {
@@ -585,8 +597,13 @@ export class ExportRenderer {
         this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
-      // Adjustment-clip-derived groups land in phase 3; until then the
-      // orchestrator's group set stays empty (its constructor default).
+      // Derivation reads the *full* project tracks + clips, including
+      // empty-container behaviour for unregistered reach. See the comment
+      // on the same call in render() above.
+      this.orchestrator.setAdjustmentSource(
+        projectData.tracks,
+        projectData.clips,
+      );
       const visualTrackOrder = visualTracks.map((track) => track.id);
 
       const promises: Promise<void>[] = [];

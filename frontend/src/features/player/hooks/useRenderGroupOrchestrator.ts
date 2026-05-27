@@ -1,23 +1,21 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { Container } from "pixi.js";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { RenderGroupOrchestrator } from "../../renderer/services/RenderGroupOrchestrator";
 import { playbackClock } from "../services/PlaybackClock";
 
 /**
  * Owns a single `RenderGroupOrchestrator` tied to the Player's viewport
- * container. In v2 the orchestrator's group set is always empty — the
- * adjustment-clip derivation (phase 3) will push computed groups in via the
- * orchestrator's per-tick `sync(...)`.
- *
- * For now, an imperative `sync(playbackClock.time, visualTrackIds)` still runs
- * whenever `visualTrackIds` changes so registered engine containers settle
- * under the (always empty) root on paused edits.
+ * container. Pushes the timeline's tracks + clips into the orchestrator
+ * (the source of truth for adjustment-clip-derived groups), and triggers
+ * an imperative sync whenever the source or `visualTrackIds` change so
+ * paused edits reflect without waiting for the next clock tick.
  *
  * Returns:
  *   - `orchestrator`: instance to thread through `<TrackLayer />`.
  *   - `syncRef`: stable ref to the per-tick sync function the Player's
- *     synchronized-playback loop invokes between awaited frame renderers and
- *     `pixiApp.render()`.
+ *     synchronized-playback loop invokes between awaited frame renderers
+ *     and `pixiApp.render()`.
  */
 export function useRenderGroupOrchestrator(
   viewport: Container | null,
@@ -44,12 +42,21 @@ export function useRenderGroupOrchestrator(
     return () => orchestrator.dispose();
   }, [orchestrator]);
 
-  // Imperative sync whenever the visual-track order changes (paused edits to
-  // structure should reflect without waiting for the next clock tick).
+  // Subscribe to the canonical source-of-truth for adjustment-clip
+  // derivation. Tolerate undefined from test mocks that don't include the
+  // store fields — defaults to empty arrays.
+  const tracks = useTimelineStore((s) => s.tracks ?? []);
+  const clips = useTimelineStore((s) => s.clips ?? []);
+  useEffect(() => {
+    orchestrator?.setAdjustmentSource(tracks, clips);
+  }, [orchestrator, tracks, clips]);
+
+  // Imperative sync whenever the source or visual-track order changes,
+  // so paused edits to either reflect without waiting for the next tick.
   useEffect(() => {
     if (!orchestrator) return;
     orchestrator.sync(playbackClock.time, visualTrackIds);
-  }, [orchestrator, visualTrackIds]);
+  }, [orchestrator, tracks, clips, visualTrackIds]);
 
   const visualTrackIdsRef = useRef<readonly string[]>(visualTrackIds);
   useEffect(() => {

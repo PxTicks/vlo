@@ -1,7 +1,24 @@
 import type { Container } from "pixi.js";
-import type { TimelineGroup } from "../../types/TimelineTypes";
+import type { ClipTransform } from "../../types/TimelineTypes";
 import { useDebugStore } from "../../shared/debug/useDebugStore";
 import { applyTransformStack, runApplicators } from "./applyTransformations";
+
+/**
+ * Minimal shape `applyGroupTransforms` consumes from its `group` argument.
+ * Satisfied by both the legacy `TimelineGroup` (kept around as internal
+ * scaffolding) and the new `DerivedRenderGroup` (computed per-tick from
+ * adjustment clips). Picked deliberately so the orchestrator can hand
+ * either through without an adapter.
+ */
+export interface AppliableGroup {
+  transformations: ClipTransform[];
+  /** Clip-local origin tick — keyframe sampling is anchored here so
+   *  moving the group on the timeline moves its keyframes with it. */
+  start: number;
+  /** Visible window length, forwarded to handlers that care about output-
+   *  domain math (visual-duration ratios, etc.). */
+  timelineDuration: number;
+}
 
 /**
  * Apply a render group's transformations to its Pixi container. This is the
@@ -23,13 +40,14 @@ import { applyTransformStack, runApplicators } from "./applyTransformations";
  * track-in-a-group is identical to a video-on-a-track-in-a-group from the
  * orchestrator's perspective.
  *
- * In v2 the orchestrator still hands the legacy `TimelineGroup` shape here.
- * Phase 3c/3d renames it to `DerivedRenderGroup` (computed per-tick from
- * adjustment clips); the call signature here stays compatible.
+ * The orchestrator hands a `DerivedRenderGroup` here, computed per tick
+ * from the adjustment clips on the timeline. The `AppliableGroup`
+ * structural type below is the minimal contract this function consumes —
+ * the legacy `TimelineGroup` shape also satisfies it for tests.
  */
 export function applyGroupTransforms(
   container: Container,
-  group: TimelineGroup,
+  group: AppliableGroup,
   logicalDimensions: { width: number; height: number },
   currentTick: number,
 ): void {

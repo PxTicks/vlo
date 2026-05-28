@@ -546,6 +546,7 @@ function TimelineClipComponent({
           clip={timelineClip}
           isSelected={isSelected}
           clipOverlays={clipOverlays}
+          presentation={presentation}
         />
       ) : null}
       {isSelected && !isDragging && !isOverlay && (

@@ -17,6 +17,11 @@ import {
   TICKS_PER_SECOND,
 } from "../constants";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
+import type { TimelineClipPresentation } from "../utils/clipPresentation";
+import {
+  resolveClipOffsetForPresentationOffset,
+  resolvePresentationOffsetForClipOffset,
+} from "../utils/clipPresentation";
 import type {
   TimelineClipOverlayDefinition,
   TimelineClipOverlayDragContext,
@@ -28,6 +33,7 @@ interface TimelineClipOverlayLayerProps {
   clip: TimelineClip;
   isSelected: boolean;
   clipOverlays?: readonly TimelineClipOverlayDefinition[];
+  presentation?: TimelineClipPresentation;
 }
 
 interface TimelineClipOverlayItemNodeProps {
@@ -35,18 +41,21 @@ interface TimelineClipOverlayItemNodeProps {
   isSelected: boolean;
   item: TimelineClipOverlayItem;
   style?: CSSProperties;
+  presentation?: TimelineClipPresentation;
 }
 
 interface TimelineClipOverlayEndpointGroupProps {
   clip: TimelineClip;
   isSelected: boolean;
   items: readonly TimelineClipOverlayItem[];
+  presentation?: TimelineClipPresentation;
 }
 
 interface TimelineClipOverlayItemCollectionProps {
   clip: TimelineClip;
   isSelected: boolean;
   items: readonly TimelineClipOverlayItem[];
+  presentation?: TimelineClipPresentation;
 }
 
 const LANE_TOP_OFFSET = "30%";
@@ -79,7 +88,10 @@ function toBasePixels(ticks: number): number {
   return (ticks / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
 }
 
-function toVisualTicks(clipLocalX: number, zoomScale: number): number {
+function toPresentationOffsetTicks(
+  clipLocalX: number,
+  zoomScale: number,
+): number {
   const safeScale = Math.max(0.001, zoomScale);
   return Math.round(
     (clipLocalX / safeScale / PIXELS_PER_SECOND) * TICKS_PER_SECOND,
@@ -136,12 +148,21 @@ function buildDragContext(
   event: PointerEvent,
   targetElement: HTMLElement,
   startClipLocalX: number,
+  startPresentationOffsetTicks: number,
   startVisualTimeTicks: number,
   startSourceTimeTicks: number,
   clipLocalX: number,
   zoomScale: number,
+  presentation?: TimelineClipPresentation,
 ): TimelineClipOverlayDragContext {
-  const visualTimeTicks = toVisualTicks(clipLocalX, zoomScale);
+  const presentationOffsetTicks = toPresentationOffsetTicks(
+    clipLocalX,
+    zoomScale,
+  );
+  const visualTimeTicks = resolveClipOffsetForPresentationOffset(
+    presentation,
+    presentationOffsetTicks,
+  );
   const sourceTimeTicks = calculateClipTime(clip, visualTimeTicks, true);
 
   return {
@@ -149,11 +170,18 @@ function buildDragContext(
     event,
     targetElement,
     clipLocalX,
+    presentationOffsetTicks,
     visualTimeTicks,
     sourceTimeTicks,
     deltaClipX: clipLocalX - startClipLocalX,
+    deltaPresentationOffsetTicks:
+      presentationOffsetTicks - startPresentationOffsetTicks,
     deltaVisualTimeTicks: visualTimeTicks - startVisualTimeTicks,
     deltaSourceTimeTicks: sourceTimeTicks - startSourceTimeTicks,
+    mapPresentationOffsetToClipOffset: (offset) =>
+      resolveClipOffsetForPresentationOffset(presentation, offset),
+    mapClipOffsetToPresentationOffset: (offset) =>
+      resolvePresentationOffsetForClipOffset(presentation, offset),
   };
 }
 
@@ -176,6 +204,7 @@ function TimelineClipOverlayItemNode({
   isSelected,
   item,
   style,
+  presentation,
 }: TimelineClipOverlayItemNodeProps) {
   const isInteractive =
     item.onClick !== undefined ||
@@ -187,6 +216,7 @@ function TimelineClipOverlayItemNode({
   const suppressClickRef = useRef(false);
   const dragStartRef = useRef<{
     clipLocalX: number;
+    presentationOffsetTicks: number;
     visualTimeTicks: number;
     sourceTimeTicks: number;
     moved: boolean;
@@ -204,11 +234,19 @@ function TimelineClipOverlayItemNode({
     }
 
     if (item.drag) {
-      const visualTimeTicks = toVisualTicks(clipLocalX, zoomScale);
+      const presentationOffsetTicks = toPresentationOffsetTicks(
+        clipLocalX,
+        zoomScale,
+      );
+      const visualTimeTicks = resolveClipOffsetForPresentationOffset(
+        presentation,
+        presentationOffsetTicks,
+      );
       const sourceTimeTicks = calculateClipTime(clip, visualTimeTicks, true);
 
       dragStartRef.current = {
         clipLocalX,
+        presentationOffsetTicks,
         visualTimeTicks,
         sourceTimeTicks,
         moved: false,
@@ -223,10 +261,12 @@ function TimelineClipOverlayItemNode({
           event.nativeEvent,
           event.currentTarget,
           clipLocalX,
+          presentationOffsetTicks,
           visualTimeTicks,
           sourceTimeTicks,
           clipLocalX,
           zoomScale,
+          presentation,
         ),
       );
     }
@@ -258,10 +298,12 @@ function TimelineClipOverlayItemNode({
         event.nativeEvent,
         event.currentTarget,
         dragStart.clipLocalX,
+        dragStart.presentationOffsetTicks,
         dragStart.visualTimeTicks,
         dragStart.sourceTimeTicks,
         clipLocalX,
         zoomScale,
+        presentation,
       ),
     );
   };
@@ -288,10 +330,12 @@ function TimelineClipOverlayItemNode({
         event.nativeEvent,
         event.currentTarget,
         dragStart.clipLocalX,
+        dragStart.presentationOffsetTicks,
         dragStart.visualTimeTicks,
         dragStart.sourceTimeTicks,
         clipLocalX,
         zoomScale,
+        presentation,
       ),
     );
 
@@ -314,10 +358,12 @@ function TimelineClipOverlayItemNode({
         event.nativeEvent,
         event.currentTarget,
         dragStart.clipLocalX,
+        dragStart.presentationOffsetTicks,
         dragStart.visualTimeTicks,
         dragStart.sourceTimeTicks,
         dragStart.clipLocalX,
         zoomScale,
+        presentation,
       ),
     );
 
@@ -370,6 +416,7 @@ function TimelineClipOverlayEndpointGroup({
   clip,
   isSelected,
   items,
+  presentation,
 }: TimelineClipOverlayEndpointGroupProps) {
   const sortedItems = useMemo(
     () =>
@@ -439,6 +486,7 @@ function TimelineClipOverlayEndpointGroup({
             isSelected={isSelected}
             item={item}
             style={marginStyle}
+            presentation={presentation}
           />
         );
       })}
@@ -450,6 +498,7 @@ function TimelineClipOverlayItemCollection({
   clip,
   isSelected,
   items,
+  presentation,
 }: TimelineClipOverlayItemCollectionProps) {
   const endpointGroups = useMemo(() => {
     const groups = new Map<string, TimelineClipOverlayItem[]>();
@@ -481,6 +530,7 @@ function TimelineClipOverlayItemCollection({
           clip={clip}
           isSelected={isSelected}
           items={groupItems}
+          presentation={presentation}
         />
       ))}
 
@@ -507,7 +557,11 @@ function TimelineClipOverlayItemCollection({
           return null;
         }
 
-        const baseLeftPx = toBasePixels(visualTicks);
+        const presentationTicks = resolvePresentationOffsetForClipOffset(
+          presentation,
+          visualTicks,
+        );
+        const baseLeftPx = toBasePixels(presentationTicks);
 
         return (
           <TimelineClipOverlayItemNode
@@ -515,6 +569,7 @@ function TimelineClipOverlayItemCollection({
             clip={clip}
             isSelected={isSelected}
             item={item}
+            presentation={presentation}
             style={{
               position: "absolute",
               // Subtract the parent clip's `--drag-delta-x` so source-time
@@ -540,9 +595,11 @@ function TimelineClipWidthSensitiveItemCollection({
   clip,
   isSelected,
   items,
+  presentation,
 }: TimelineClipOverlayItemCollectionProps) {
   const zoomScale = useTimelineViewStore((state) => state.zoomScale);
-  const clipWidthPx = toBasePixels(clip.timelineDuration) * zoomScale;
+  const displayDuration = presentation?.duration ?? clip.timelineDuration;
+  const clipWidthPx = toBasePixels(displayDuration) * zoomScale;
   const visibleItems = useMemo(
     () =>
       items.filter((item) => isItemVisible(item, isSelected, clipWidthPx)),
@@ -558,6 +615,7 @@ function TimelineClipWidthSensitiveItemCollection({
       clip={clip}
       isSelected={isSelected}
       items={visibleItems}
+      presentation={presentation}
     />
   );
 }
@@ -566,6 +624,7 @@ function TimelineClipOverlaySourceSlot({
   clip,
   isSelected,
   definition,
+  presentation,
 }: TimelineClipOverlayLayerProps & {
   definition: TimelineClipOverlayDefinition;
 }) {
@@ -594,6 +653,7 @@ function TimelineClipOverlaySourceSlot({
           clip={clip}
           isSelected={isSelected}
           items={visibleItems}
+          presentation={presentation}
         />
       ) : null}
       {widthSensitiveItems.length > 0 ? (
@@ -601,6 +661,7 @@ function TimelineClipOverlaySourceSlot({
           clip={clip}
           isSelected={isSelected}
           items={widthSensitiveItems}
+          presentation={presentation}
         />
       ) : null}
     </>
@@ -611,6 +672,7 @@ function TimelineClipOverlayLayerComponent({
   clip,
   isSelected,
   clipOverlays = [],
+  presentation,
 }: TimelineClipOverlayLayerProps) {
   if (clipOverlays.length === 0) {
     return null;
@@ -624,6 +686,7 @@ function TimelineClipOverlayLayerComponent({
           clip={clip}
           isSelected={isSelected}
           definition={definition}
+          presentation={presentation}
         />
       ))}
     </OverlayLayerRoot>

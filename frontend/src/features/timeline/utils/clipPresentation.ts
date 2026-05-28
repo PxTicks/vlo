@@ -24,6 +24,11 @@ export interface TimelineClipPresentation {
    * speed transforms are honoured exactly.
    */
   mapPresentationOffsetToClipOffset: (presentationOffset: number) => number;
+  /**
+   * Given a stored offset within the clip, return where that source-owned
+   * position appears inside the clip's presentation footprint.
+   */
+  mapClipOffsetToPresentationOffset: (clipOffset: number) => number;
 }
 
 export interface TimelineClipPresentationCollision {
@@ -85,6 +90,36 @@ interface InternalClipPresentation extends TimelineClipPresentation {
   resolveEffectiveTrackTick: (presentationTick: number) => number;
   resolvePresentationInputTick: (presentationTick: number) => number;
   clipRef: TimelineClip;
+}
+
+export function resolveClipOffsetForPresentationOffset(
+  presentation: TimelineClipPresentation | undefined,
+  presentationOffset: number,
+): number {
+  return (
+    presentation?.mapPresentationOffsetToClipOffset(presentationOffset) ??
+    presentationOffset
+  );
+}
+
+export function resolvePresentationOffsetForClipOffset(
+  presentation: TimelineClipPresentation | undefined,
+  clipOffset: number,
+): number {
+  return (
+    presentation?.mapClipOffsetToPresentationOffset(clipOffset) ?? clipOffset
+  );
+}
+
+export function resolvePresentationTickForClipOffset(
+  clip: TimelineClip,
+  presentation: TimelineClipPresentation | undefined,
+  clipOffset: number,
+): number {
+  return (
+    (presentation?.start ?? clip.start) +
+    resolvePresentationOffsetForClipOffset(presentation, clipOffset)
+  );
 }
 
 function applyProposedClipTimingChange(
@@ -158,6 +193,14 @@ function buildPresentation(
     duration,
     mapPresentationOffsetToClipOffset(presentationOffset) {
       return resolveEffectiveTrackTick(start + presentationOffset) - clip.start;
+    },
+    mapClipOffsetToPresentationOffset(clipOffset) {
+      return (
+        resolver.resolvePresentationTick(
+          clip.trackId,
+          baseEffectiveTick + clipOffset,
+        ) - start
+      );
     },
     resolveEffectiveTrackTick,
     resolvePresentationInputTick,

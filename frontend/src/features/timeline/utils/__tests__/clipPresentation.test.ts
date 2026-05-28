@@ -132,6 +132,7 @@ describe("clip presentation placement (per-clip model)", () => {
     // At the halfway point of the compressed footprint, we should be at
     // halfway through the clip's 100-tick source range.
     expect(presentation?.mapPresentationOffsetToClipOffset(25)).toBe(50);
+    expect(presentation?.mapClipOffsetToPresentationOffset(50)).toBe(25);
   });
 
   it("expands an intersecting clip under a slow (0.5x) adjustment", () => {
@@ -163,6 +164,7 @@ describe("clip presentation placement (per-clip model)", () => {
     expect(presentation?.end).toBe(200);
     expect(presentation?.duration).toBe(200);
     expect(presentation?.mapPresentationOffsetToClipOffset(150)).toBe(75);
+    expect(presentation?.mapClipOffsetToPresentationOffset(75)).toBe(150);
   });
 
   it("leaves a later non-intersecting clip in place (no global shift)", () => {
@@ -260,6 +262,8 @@ describe("clip presentation placement (per-clip model)", () => {
     expect(presentation?.duration).toBe(75);
     expect(presentation?.mapPresentationOffsetToClipOffset(25)).toBe(50);
     expect(presentation?.mapPresentationOffsetToClipOffset(75)).toBe(100);
+    expect(presentation?.mapClipOffsetToPresentationOffset(50)).toBe(25);
+    expect(presentation?.mapClipOffsetToPresentationOffset(100)).toBe(75);
   });
 
   it("identity-maps clips when only non-speed adjustments are present", () => {

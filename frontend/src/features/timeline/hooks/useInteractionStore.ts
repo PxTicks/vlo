@@ -3,7 +3,11 @@ import { create } from "zustand";
 import type { BaseClip } from "../../../types/TimelineTypes";
 import { useTimelineStore } from "../useTimelineStore";
 import { mapSourceTimeToVisualTime } from "../../transformations";
-import { buildTimelineClipPresentationIndex } from "../utils/clipPresentation";
+import {
+  buildTimelineClipPresentationIndex,
+  resolvePresentationTickForClipOffset,
+  resolvePresentationOffsetForClipOffset,
+} from "../utils/clipPresentation";
 
 export type InteractionOperation = "move" | "resize_left" | "resize_right";
 
@@ -87,7 +91,27 @@ export const buildTimelineSnapPoints = (
         if (visualTicks < 0 || visualTicks > timelineClip.timelineDuration) {
           return;
         }
-        points.add(Math.round(timelineClip.start + visualTicks));
+        const presentationOffset = resolvePresentationOffsetForClipOffset(
+          presentation,
+          visualTicks,
+        );
+        const presentationDuration =
+          presentation?.duration ?? timelineClip.timelineDuration;
+        if (
+          presentationOffset < 0 ||
+          presentationOffset > presentationDuration
+        ) {
+          return;
+        }
+        points.add(
+          Math.round(
+            resolvePresentationTickForClipOffset(
+              timelineClip,
+              presentation,
+              visualTicks,
+            ),
+          ),
+        );
       });
     });
   });

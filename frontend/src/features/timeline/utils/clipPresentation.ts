@@ -34,6 +34,7 @@ export interface TimelineClipPresentationCollision {
 
 export interface ProposedClipTimingChange {
   clipId: string;
+  trackId?: string;
   transformations?: ClipTransform[];
   timelineDuration?: number;
   transformedDuration?: number;
@@ -90,6 +91,7 @@ function applyProposedClipTimingChange(
 
   return {
     ...clip,
+    trackId: change.trackId ?? clip.trackId,
     transformations: change.transformations ?? clip.transformations,
     start: change.start !== undefined ? Math.round(change.start) : clip.start,
     timelineDuration:
@@ -312,6 +314,35 @@ export function collectTimelineClipPresentationCollisions(
   return collectPresentationCollisionsFromIndex(
     buildTimelineClipPresentationIndex(tracks, clips),
   );
+}
+
+/**
+ * Adapter for legacy collision utilities. They already understand
+ * `{ start, timelineDuration }`; this view simply feeds those fields in the
+ * presentation domain while preserving every other clip property.
+ */
+export function buildTimelineClipPresentationCollisionView(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  change?: ProposedClipTimingChange,
+): TimelineClip[] {
+  const nextClips = change
+    ? clips.map((clip) => applyProposedClipTimingChange(clip, change))
+    : [...clips];
+  const presentationByClipId = buildTimelineClipPresentationIndex(
+    tracks,
+    nextClips,
+  );
+
+  return nextClips.map((clip) => {
+    const presentation = presentationByClipId.get(clip.id);
+    if (!presentation) return clip;
+    return {
+      ...clip,
+      start: Math.round(presentation.start),
+      timelineDuration: Math.round(presentation.duration),
+    };
+  });
 }
 
 export function introducesTimelineClipPresentationCollision(

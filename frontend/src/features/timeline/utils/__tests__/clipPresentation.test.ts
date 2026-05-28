@@ -6,6 +6,7 @@ import type {
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
 import {
+  buildTimelineClipPresentationCollisionView,
   buildTimelineClipPresentationIndex,
   buildTimelineClipPresentationLookup,
   collectTimelineClipPresentationCollisions,
@@ -326,6 +327,71 @@ describe("resolveStoredEndForPresentationEnd", () => {
 });
 
 describe("presentation collisions", () => {
+  it("builds a collision view using presentation durations", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-1",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 200,
+        sourceDuration: 100,
+        depth: 1,
+        transformations: [speedTransform(0.5)],
+      }),
+      videoClip({
+        id: "video-1",
+        trackId: "v1",
+        start: 0,
+        timelineDuration: 100,
+      }),
+    ];
+
+    const collisionClip = buildTimelineClipPresentationCollisionView(
+      tracks,
+      clips,
+    ).find((clip) => clip.id === "video-1");
+
+    expect(collisionClip?.start).toBe(0);
+    expect(collisionClip?.timelineDuration).toBe(200);
+  });
+
+  it("reports descendant collisions introduced by an adjustment speed change", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-1",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 100,
+        sourceDuration: 100,
+        depth: 1,
+        transformations: [],
+      }),
+      videoClip({
+        id: "left",
+        trackId: "v1",
+        start: 0,
+        timelineDuration: 100,
+      }),
+      videoClip({
+        id: "right",
+        trackId: "v1",
+        start: 150,
+        timelineDuration: 50,
+      }),
+    ];
+
+    expect(
+      introducesTimelineClipPresentationCollision(tracks, clips, {
+        clipId: "adj-1",
+        transformations: [speedTransform(0.5)],
+        timelineDuration: 200,
+        transformedDuration: 200,
+      }),
+    ).toBe(true);
+  });
+
   it("reports collisions when a proposed timing change introduces one", () => {
     const tracks = [visualTrack("v1")];
     const clips: TimelineClip[] = [

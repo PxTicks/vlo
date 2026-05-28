@@ -4,6 +4,7 @@ import { useTimelineViewStore } from "../useTimelineViewStore";
 import {
   getMinimumClipDurationTicks,
   getResizeConstraints,
+  hasAnyCollision,
 } from "../../utils/collision";
 import { SNAP_THRESHOLD_PX } from "../../constants";
 import { getResizedClipLeft, getResizedClipRight } from "../../utils/clipMath";
@@ -16,6 +17,7 @@ import {
   snapTickToFrame,
 } from "../../../timelineSelection";
 import {
+  buildTimelineClipPresentationCollisionView,
   buildTimelineClipPresentationIndex,
   resolveStoredEndForPresentationEnd,
 } from "../../utils/clipPresentation";
@@ -211,6 +213,33 @@ export const useClipResize = () => {
       const validDelta = newStart - clip.start;
 
       const newShape = getResizedClipLeft(clip, validDelta);
+      const collisionClips = buildTimelineClipPresentationCollisionView(
+        tracks,
+        clips,
+        {
+          clipId: clip.id,
+          start: newShape.start,
+          timelineDuration: newShape.timelineDuration,
+          offset: newShape.offset,
+          transformedOffset: newShape.transformedOffset,
+          croppedSourceDuration: newShape.croppedSourceDuration,
+        },
+      );
+      const collisionClip = collisionClips.find(
+        (candidate) => candidate.id === clip.id,
+      );
+      if (
+        !collisionClip ||
+        hasAnyCollision(
+          collisionClip.start,
+          collisionClip.timelineDuration,
+          collisionClip.trackId,
+          [clip.id],
+          collisionClips,
+        )
+      ) {
+        return;
+      }
 
       useTimelineStore.getState().updateClipShape(clip.id, {
         start: newShape.start,
@@ -245,6 +274,30 @@ export const useClipResize = () => {
       const validDelta = newEnd - clip.start - clip.timelineDuration;
 
       const newShape = getResizedClipRight(clip, validDelta);
+      const collisionClips = buildTimelineClipPresentationCollisionView(
+        tracks,
+        clips,
+        {
+          clipId: clip.id,
+          timelineDuration: newShape.timelineDuration,
+          croppedSourceDuration: newShape.croppedSourceDuration,
+        },
+      );
+      const collisionClip = collisionClips.find(
+        (candidate) => candidate.id === clip.id,
+      );
+      if (
+        !collisionClip ||
+        hasAnyCollision(
+          collisionClip.start,
+          collisionClip.timelineDuration,
+          collisionClip.trackId,
+          [clip.id],
+          collisionClips,
+        )
+      ) {
+        return;
+      }
 
       useTimelineStore.getState().updateClipShape(clip.id, {
         timelineDuration: newShape.timelineDuration,

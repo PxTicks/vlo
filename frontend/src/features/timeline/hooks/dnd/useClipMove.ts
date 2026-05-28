@@ -25,7 +25,10 @@ import { createNewTrack } from "../../model/timelineTrackModel";
 import { planMultiClipMove } from "../../utils/multiClipMove";
 import { getMoveSnapCandidate } from "./snapUtils";
 import { attachGenerationMask } from "../../utils/insertAssetToTimeline";
-import { buildTimelineClipPresentationIndex } from "../../utils/clipPresentation";
+import {
+  buildTimelineClipPresentationCollisionView,
+  buildTimelineClipPresentationIndex,
+} from "../../utils/clipPresentation";
 import { getAssetById } from "../../../userAssets";
 import { useProjectStore } from "../../../project";
 import {
@@ -471,14 +474,41 @@ export const useClipMove = (
         }
       }
 
+      const collisionTracks = useTimelineStore.getState().tracks;
+      const collisionSourceClips = isNewAsset
+        ? [
+            ...clips,
+            {
+              ...(clip as BaseClip),
+              trackId: targetTrackId,
+              start: presentationStartTicks,
+            } as StandardTimelineClip,
+          ]
+        : clips;
+      const collisionClips = buildTimelineClipPresentationCollisionView(
+        collisionTracks,
+        collisionSourceClips,
+        isNewAsset
+          ? undefined
+          : {
+              clipId: clip.id,
+              trackId: targetTrackId,
+              start: presentationStartTicks,
+            },
+      );
+      const movingCollisionClip = collisionClips.find(
+        (candidate) => candidate.id === clip.id,
+      );
+
       // Per-clip presentation model: presentation_start == stored start, so
-      // the drop position is the stored start directly. No engine rebase.
+      // the drop position is the stored start directly. Collisions, however,
+      // must use the derived presentation duration.
       const finalStartTicks = resolveCollision(
         clip.id,
         presentationStartTicks,
-        clip.timelineDuration,
+        movingCollisionClip?.timelineDuration ?? clip.timelineDuration,
         targetTrackId,
-        clips,
+        collisionClips,
       );
 
       if (finalStartTicks !== null) {

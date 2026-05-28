@@ -259,7 +259,6 @@ export function useTransformationController(
             return;
           }
           if (
-            clip.type === "adjustment" &&
             introducesTimelineClipPresentationCollision(tracks, allClips, {
               clipId: clip.id,
               transformations: nextTransforms,

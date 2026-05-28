@@ -3,16 +3,26 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import { buildTrackTimeResolver } from "../../renderer/utils/resolveTrackTime";
+import {
+  buildTrackTimeResolver,
+  type TrackTimeResolver,
+} from "../../renderer/utils/resolveTrackTime";
 
 const COLLISION_EPSILON_TICKS = 0.5;
 
 export interface TimelineClipPresentation {
   clipId: string;
   trackId: string;
+  /** Pinned to `clip.start` — adjustments do not shift clip presentation. */
   start: number;
   end: number;
   duration: number;
+  /**
+   * Given a presentation-offset within this clip's footprint, return the
+   * stored offset within the clip (i.e. `effectiveTrackTick - clip.start`).
+   * Uses the internal `TrackTimeResolver` after a per-clip rebase, so spline
+   * speed transforms are honoured exactly.
+   */
   mapPresentationOffsetToClipOffset: (presentationOffset: number) => number;
 }
 
@@ -31,6 +41,43 @@ export interface ProposedClipTimingChange {
   croppedSourceDuration?: number;
   offset?: number;
   start?: number;
+}
+
+/**
+ * Renderer/audio-renderer facing index. Wraps the per-clip presentation map
+ * with an active-clip lookup keyed by presentation tick, plus an
+ * effective-track-tick resolver that does the per-clip rebase internally.
+ */
+export interface TimelineClipPresentationLookup {
+  readonly byClipId: Map<string, TimelineClipPresentation>;
+  /**
+   * Return the clip whose presentation footprint contains `presentationTick`
+   * on `trackId`, plus the corresponding `effectiveTrackTick` (the value the
+   * internal time-warp engine would emit for that clip — feed it straight
+   * into `calculatePlayerFrameTime` / `calculateClipTime`).
+   */
+  findActiveClipAt(
+    trackId: string,
+    presentationTick: number,
+  ): { clip: TimelineClip; effectiveTick: number } | null;
+  /**
+   * Map a presentation tick that is known to fall within `clip`'s footprint
+   * to the corresponding effective track tick. Returns the input unchanged
+   * if the clip has no presentation entry (defensive identity).
+   */
+  resolveEffectiveTrackTickWithinClip(
+    clip: TimelineClip,
+    presentationTick: number,
+  ): number;
+}
+
+/**
+ * Internal augmented presentation entry. Carries the per-clip rebase state
+ * needed by `findActiveClipAt` without exposing it to UI consumers.
+ */
+interface InternalClipPresentation extends TimelineClipPresentation {
+  resolveEffectiveTrackTick: (presentationTick: number) => number;
+  clipRef: TimelineClip;
 }
 
 function applyProposedClipTimingChange(
@@ -65,55 +112,157 @@ function applyProposedClipTimingChange(
   };
 }
 
+function buildPresentation(
+  clip: TimelineClip,
+  resolver: TrackTimeResolver,
+): InternalClipPresentation {
+  const oldPresStart = resolver.resolvePresentationTick(
+    clip.trackId,
+    clip.start,
+  );
+  const oldPresEnd = resolver.resolvePresentationTick(
+    clip.trackId,
+    clip.start + clip.timelineDuration,
+  );
+  const duration = Math.max(0, oldPresEnd - oldPresStart);
+  const start = clip.start;
+  const end = start + duration;
+
+  const resolveEffectiveTrackTick = (presentationTick: number): number => {
+    const localOffset = presentationTick - start;
+    const engineTick = oldPresStart + localOffset;
+    return resolver.resolveEffectiveTrackTick(clip.trackId, engineTick);
+  };
+
+  return {
+    clipId: clip.id,
+    trackId: clip.trackId,
+    start,
+    end,
+    duration,
+    mapPresentationOffsetToClipOffset(presentationOffset) {
+      return resolveEffectiveTrackTick(start + presentationOffset) - clip.start;
+    },
+    resolveEffectiveTrackTick,
+    clipRef: clip,
+  };
+}
+
+function indexClipsByTrack(
+  presentationByClipId: Map<string, InternalClipPresentation>,
+): Map<string, InternalClipPresentation[]> {
+  const byTrack = new Map<string, InternalClipPresentation[]>();
+  for (const presentation of presentationByClipId.values()) {
+    const list = byTrack.get(presentation.trackId) ?? [];
+    list.push(presentation);
+    byTrack.set(presentation.trackId, list);
+  }
+  for (const list of byTrack.values()) {
+    list.sort((left, right) => left.start - right.start);
+  }
+  return byTrack;
+}
+
+function buildInternalPresentationMap(
+  resolver: TrackTimeResolver,
+  clips: readonly TimelineClip[],
+): Map<string, InternalClipPresentation> {
+  const presentationByClipId = new Map<string, InternalClipPresentation>();
+  for (const clip of clips) {
+    if (clip.type === "mask") continue;
+    presentationByClipId.set(clip.id, buildPresentation(clip, resolver));
+  }
+  return presentationByClipId;
+}
+
+/**
+ * UI-facing presentation index: a plain `Map<clipId, presentation>` whose
+ * entries describe each clip's on-screen footprint. The `start` field is
+ * pinned to the clip's stored `start` — adjustments above only compress
+ * `duration` for clips whose stored range intersects them.
+ */
 export function buildTimelineClipPresentationIndex(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
 ): Map<string, TimelineClipPresentation> {
   const resolver = buildTrackTimeResolver(tracks, clips);
-  const presentationByClipId = new Map<string, TimelineClipPresentation>();
-
-  for (const clip of clips) {
-    if (clip.type === "mask") {
-      continue;
-    }
-
-    const start = resolver.resolvePresentationTick(clip.trackId, clip.start);
-    const end = resolver.resolvePresentationTick(
-      clip.trackId,
-      clip.start + clip.timelineDuration,
-    );
-    const duration = Math.max(0, end - start);
-
-    presentationByClipId.set(clip.id, {
-      clipId: clip.id,
-      trackId: clip.trackId,
-      start,
-      end,
-      duration,
-      mapPresentationOffsetToClipOffset(presentationOffset) {
-        return (
-          resolver.resolveEffectiveTrackTick(
-            clip.trackId,
-            start + presentationOffset,
-          ) - clip.start
-        );
-      },
-    });
+  const internalMap = buildInternalPresentationMap(resolver, clips);
+  const publicMap = new Map<string, TimelineClipPresentation>();
+  for (const [clipId, presentation] of internalMap) {
+    publicMap.set(clipId, presentation);
   }
-
-  return presentationByClipId;
+  return publicMap;
 }
 
-export function resolveStoredTrackTickForPresentation(
+/**
+ * Renderer-facing index: same per-clip presentation map plus the active-clip
+ * lookup the renderer / audio engine consume. The lookup encapsulates the
+ * per-clip rebase so call sites no longer touch the internal resolver.
+ */
+export function buildTimelineClipPresentationLookup(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
-  trackId: string,
-  presentationTick: number,
+): TimelineClipPresentationLookup {
+  const resolver = buildTrackTimeResolver(tracks, clips);
+  const internalMap = buildInternalPresentationMap(resolver, clips);
+  const byTrack = indexClipsByTrack(internalMap);
+
+  const byClipId = new Map<string, TimelineClipPresentation>();
+  for (const [clipId, presentation] of internalMap) {
+    byClipId.set(clipId, presentation);
+  }
+
+  return {
+    byClipId,
+    findActiveClipAt(trackId, presentationTick) {
+      const list = byTrack.get(trackId);
+      if (!list || list.length === 0) return null;
+      let low = 0;
+      let high = list.length - 1;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        const entry = list[mid];
+        if (presentationTick < entry.start) {
+          high = mid - 1;
+        } else if (presentationTick >= entry.end) {
+          low = mid + 1;
+        } else {
+          return {
+            clip: entry.clipRef,
+            effectiveTick: entry.resolveEffectiveTrackTick(presentationTick),
+          };
+        }
+      }
+      return null;
+    },
+    resolveEffectiveTrackTickWithinClip(clip, presentationTick) {
+      const entry = internalMap.get(clip.id);
+      if (!entry) return presentationTick;
+      return entry.resolveEffectiveTrackTick(presentationTick);
+    },
+  };
+}
+
+/**
+ * For DnD right-resize: given a clip whose presentation start is pinned to
+ * its stored start, compute the new stored end such that its presentation
+ * end lands at `targetPresentationEnd`. Inverts the per-clip rebase using
+ * the engine's stored-track-tick resolver.
+ */
+export function resolveStoredEndForPresentationEnd(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  clip: TimelineClip,
+  targetPresentationEnd: number,
 ): number {
-  return buildTrackTimeResolver(tracks, clips).resolveEffectiveTrackTick(
-    trackId,
-    presentationTick,
+  const resolver = buildTrackTimeResolver(tracks, clips);
+  const oldPresStart = resolver.resolvePresentationTick(
+    clip.trackId,
+    clip.start,
   );
+  const desiredEnginePresTick =
+    oldPresStart + (targetPresentationEnd - clip.start);
+  return resolver.resolveEffectiveTrackTick(clip.trackId, desiredEnginePresTick);
 }
 
 function collectPresentationCollisionsFromIndex(

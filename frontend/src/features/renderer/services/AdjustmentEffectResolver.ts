@@ -4,20 +4,25 @@ import {
   type DerivedRenderGroup,
 } from "../utils/deriveAdjustmentGroups";
 import {
-  buildTrackTimeResolver,
-  type TrackTimeResolver,
-} from "../utils/resolveTrackTime";
+  buildTimelineClipPresentationLookup,
+  type TimelineClipPresentationLookup,
+} from "../../timeline/utils/clipPresentation";
 
 /**
  * Shared source-of-truth for adjustment-derived visual grouping and
- * time-warping. The player/export layers push `(tracks, clips)` once and the
- * renderer/audio/orchestrator consume sibling derived views from the same
- * snapshot.
+ * presentation lookup. The player/export layers push `(tracks, clips)` once
+ * and the renderer/audio/orchestrator consume sibling derived views from
+ * the same snapshot.
+ *
+ * Presentation model: per-clip — adjustments compress only clips whose
+ * stored range intersects them; non-intersecting clips stay put. The
+ * lookup hides the rebase onto the internal `TrackTimeResolver` so callers
+ * never touch the global-warp engine directly.
  */
 export class AdjustmentEffectResolver {
   private tracks: readonly TimelineTrack[] = [];
   private clips: readonly TimelineClip[] = [];
-  private timeResolver: TrackTimeResolver | null = null;
+  private presentationLookup: TimelineClipPresentationLookup | null = null;
 
   setAdjustmentSource(
     tracks: readonly TimelineTrack[],
@@ -25,17 +30,20 @@ export class AdjustmentEffectResolver {
   ): void {
     this.tracks = tracks;
     this.clips = clips;
-    this.timeResolver = null;
+    this.presentationLookup = null;
   }
 
   deriveGroups(currentTick: number): DerivedRenderGroup[] {
     return deriveActiveAdjustmentGroups(this.tracks, this.clips, currentTick);
   }
 
-  getTimeResolver(): TrackTimeResolver {
-    if (!this.timeResolver) {
-      this.timeResolver = buildTrackTimeResolver(this.tracks, this.clips);
+  getPresentationLookup(): TimelineClipPresentationLookup {
+    if (!this.presentationLookup) {
+      this.presentationLookup = buildTimelineClipPresentationLookup(
+        this.tracks,
+        this.clips,
+      );
     }
-    return this.timeResolver;
+    return this.presentationLookup;
   }
 }

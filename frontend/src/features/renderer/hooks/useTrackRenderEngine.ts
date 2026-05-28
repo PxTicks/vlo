@@ -135,12 +135,26 @@ export function useTrackRenderEngine(
     sortedTrackClips,
   });
 
-  const resolveTrackTick = useCallback(
-    (presentationTick: number) =>
-      adjustmentEffectResolver
-        ?.getTimeResolver()
-        .resolveEffectiveTrackTick(trackId, presentationTick) ??
-      presentationTick,
+  /**
+   * Per-clip presentation lookup: returns the active clip at `presentationTick`
+   * on this track (or null) plus the rebased effective tick. Equivalent to
+   * the engine's `resolveActiveClipAtPresentation` but at the hook level —
+   * the hook only needs the active clip for state syncing.
+   */
+  const findActiveClip = useCallback(
+    (
+      trackClips: TimelineClip[],
+      presentationTick: number,
+    ): TimelineClip | undefined => {
+      if (adjustmentEffectResolver) {
+        return (
+          adjustmentEffectResolver
+            .getPresentationLookup()
+            .findActiveClipAt(trackId, presentationTick)?.clip ?? undefined
+        );
+      }
+      return findActiveClipAtTicks(trackClips, presentationTick);
+    },
     [adjustmentEffectResolver, trackId],
   );
 
@@ -159,10 +173,7 @@ export function useTrackRenderEngine(
     currentTime: number,
     trackClips: TimelineClip[],
   ) => {
-    const activeClip = findActiveClipAtTicks(
-      trackClips,
-      resolveTrackTick(currentTime),
-    );
+    const activeClip = findActiveClip(trackClips, currentTime);
     activeClipRef.current = activeClip || null;
 
     if (activeClip && activeClip.id !== currentClipIdRef.current) {
@@ -174,7 +185,7 @@ export function useTrackRenderEngine(
     }
 
     return activeClip;
-  }, [resolveTrackTick]);
+  }, [findActiveClip]);
 
   useEffect(() => {
     logicalDimensionsRef.current = logicalDimensions;

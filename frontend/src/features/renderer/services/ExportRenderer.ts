@@ -11,10 +11,7 @@ import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
 import { TrackAudioRenderer } from "./TrackAudioRenderer";
-import {
-  findActiveClipAtTicks,
-  sortTrackClipsByStart,
-} from "../utils/clipLookup";
+import { sortTrackClipsByStart } from "../utils/clipLookup";
 import { resolveRenderableClips } from "../utils/resolveRenderableClip";
 import { getAssetInput } from "../../userAssets";
 import {
@@ -493,10 +490,17 @@ export class ExportRenderer {
             { shouldRender: false, fps: renderFps },
           );
 
-          const activeClip = findActiveClipAtTicks(
+          // The presentation lookup is keyed off the resolver's full clip
+          // source (with range_mask intact); re-bind the result against the
+          // stripped `trackClips` so downstream `renderFrame` sees the
+          // export-effective version of the clip.
+          const resolvedClipId = engine.resolveActiveClipAtPresentation(
             trackClips,
-            engine.resolveEffectiveTrackTick(currentTime),
-          );
+            currentTime,
+          )?.activeClip.id;
+          const activeClip = resolvedClipId
+            ? trackClips.find((candidate) => candidate.id === resolvedClipId)
+            : undefined;
 
           if (activeClip) {
             const activeMaskClips = maskClipsByParent.get(activeClip.id) ?? [];
@@ -655,10 +659,14 @@ export class ExportRenderer {
           { shouldRender: false, fps },
         );
 
-        const activeClip = findActiveClipAtTicks(
+        // See note above re: re-binding to the stripped `trackClips`.
+        const resolvedClipId = engine.resolveActiveClipAtPresentation(
           trackClips,
-          engine.resolveEffectiveTrackTick(tick),
-        );
+          tick,
+        )?.activeClip.id;
+        const activeClip = resolvedClipId
+          ? trackClips.find((candidate) => candidate.id === resolvedClipId)
+          : undefined;
         if (!activeClip) return;
 
         const activeMaskClips = maskClipsByParent.get(activeClip.id) ?? [];

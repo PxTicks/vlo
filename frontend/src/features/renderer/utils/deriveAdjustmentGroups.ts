@@ -16,6 +16,11 @@ import {
  * `start` / `timelineDuration` live in the adjustment clip's own input-level
  * time domain. Inner adjustments evaluate their activation window against the
  * tick after every outer remap has been applied.
+ *
+ * @remarks
+ * Used both by visual-effect grouping (active path) and by the legacy
+ * global track-time warp engine in `resolveTrackTime.ts` (kept reachable but
+ * not consumed by UI/DnD/renderer directly — see clipPresentation.ts).
  */
 export interface AdjustmentApplication {
   sourceClipId: string;
@@ -97,13 +102,16 @@ function buildApplication(
 }
 
 /**
+ * @internal — engine for clipPresentation; not for direct consumption.
+ *
  * Apply an adjustment clip's time remap at `tick`, where `tick` is expressed
  * in the clip's input-level domain.
  *
  * Before the clip window the remap is identity. Inside the window it reuses
  * the same backward speed pass as per-clip speed. After the window the full
  * accumulated delta is carried forward so descendants never jump backward at
- * the clip boundary.
+ * the clip boundary — this carry-forward is what produces the *global*
+ * track-time shift that the per-clip presentation model rebases away.
  */
 export function applyAdjustmentTimeRemap(
   application: AdjustmentTimeApplication,
@@ -125,6 +133,12 @@ export function applyAdjustmentTimeRemap(
   return application.start + sourceOffset;
 }
 
+/**
+ * @internal — engine for clipPresentation; not for direct consumption.
+ *
+ * Inverse of `applyAdjustmentTimeRemap`. Composes with itself across a stack
+ * to recover the presentation tick that a stored track tick maps from.
+ */
 export function applyAdjustmentTimeRemapInverse(
   application: AdjustmentTimeApplication,
   tick: number,
@@ -249,6 +263,8 @@ export function computeAdjustmentApplications(
 }
 
 /**
+ * @internal — engine for clipPresentation; not for direct consumption.
+ *
  * For each visual/audio track, compute the full stack of descendant
  * adjustment speed applications, ordered innermost-first → outermost-last.
  *
@@ -276,6 +292,13 @@ export function computeAdjustmentTimeApplications(
   return timeApplicationsByTrack;
 }
 
+/**
+ * @internal — engine for clipPresentation; not for direct consumption.
+ *
+ * Sibling of `computeAdjustmentTimeApplications` that also includes
+ * adjustment tracks as reachable presentation targets (so adjustment clips
+ * themselves can be presentation-mapped by the global-warp engine).
+ */
 export function computeAdjustmentPresentationApplications(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],

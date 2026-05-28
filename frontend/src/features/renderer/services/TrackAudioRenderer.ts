@@ -110,21 +110,53 @@ export class TrackAudioRenderer {
     return this.nextScheduleTime;
   }
 
-  private resolveEffectiveTrackTick(presentationTick: number): number {
+  /**
+   * Per-clip presentation rebase for an arbitrary presentation tick: we
+   * resolve it against the clip's own footprint via the lookup, falling
+   * back to identity when no resolver is wired (tests / simple cases).
+   */
+  private resolveEffectiveTrackTickForClip(
+    clip: TimelineClip,
+    presentationTick: number,
+  ): number {
     if (!this.adjustmentEffectResolver) {
       return presentationTick;
     }
-
     return this.adjustmentEffectResolver
-      .getTimeResolver()
-      .resolveEffectiveTrackTick(this.trackId, presentationTick);
+      .getPresentationLookup()
+      .resolveEffectiveTrackTickWithinClip(clip, presentationTick);
+  }
+
+  private findActiveClipAtPresentation(
+    trackClips: TimelineClip[],
+    presentationTick: number,
+  ): { clip: TimelineClip; effectiveTick: number } | null {
+    if (!this.adjustmentEffectResolver) {
+      // Fallback to stored-range lookup when running without a resolver.
+      for (const candidate of trackClips) {
+        const clipEnd = candidate.start + candidate.timelineDuration;
+        if (
+          candidate.start <= presentationTick &&
+          presentationTick < clipEnd
+        ) {
+          return { clip: candidate, effectiveTick: presentationTick };
+        }
+      }
+      return null;
+    }
+    return this.adjustmentEffectResolver
+      .getPresentationLookup()
+      .findActiveClipAt(this.trackId, presentationTick);
   }
 
   private getSourceTicksAtPresentationTick(
     clip: TimelineClip,
     presentationTick: number,
   ): number {
-    const effectiveTick = this.resolveEffectiveTrackTick(presentationTick);
+    const effectiveTick = this.resolveEffectiveTrackTickForClip(
+      clip,
+      presentationTick,
+    );
     return calculatePlayerFrameTime(clip, effectiveTick) * TICKS_PER_SECOND;
   }
 
@@ -327,51 +359,6 @@ export class TrackAudioRenderer {
       };
     };
 
-    let clipCursor = 0;
-    const getActiveClipAtTicks = (
-      targetTicks: number,
-    ): TimelineClip | undefined => {
-      if (trackClips.length === 0) return undefined;
-
-      if (clipCursor < 0) clipCursor = 0;
-      if (clipCursor >= trackClips.length) clipCursor = trackClips.length - 1;
-
-      while (clipCursor < trackClips.length) {
-        const clip = trackClips[clipCursor];
-        const clipEnd = clip.start + clip.timelineDuration;
-        if (targetTicks < clip.start) break;
-        if (targetTicks >= clipEnd) {
-          clipCursor += 1;
-          continue;
-        }
-        return clip;
-      }
-
-      while (clipCursor > 0) {
-        const candidate = trackClips[clipCursor - 1];
-        if (targetTicks < candidate.start) {
-          clipCursor -= 1;
-          continue;
-        }
-        if (targetTicks < candidate.start + candidate.timelineDuration) {
-          clipCursor -= 1;
-          return trackClips[clipCursor];
-        }
-        break;
-      }
-
-      const candidate = trackClips[clipCursor];
-      if (
-        candidate &&
-        targetTicks >= candidate.start &&
-        targetTicks < candidate.start + candidate.timelineDuration
-      ) {
-        return candidate;
-      }
-
-      return undefined;
-    };
-
     const flushStagingBuffer = async () => {
       const {
         buffers,
@@ -508,7 +495,10 @@ export class TrackAudioRenderer {
 
         for (let i = 0; i < sampleCount; i++) {
           const t = startTargetTicks + i * volumeTimeStep;
-          const effectiveTick = this.resolveEffectiveTrackTick(t);
+          const effectiveTick = this.resolveEffectiveTrackTickForClip(
+            activeClip,
+            t,
+          );
           const volumeGain = clipCurves.evaluateVolume(
             effectiveTick - activeClip.start,
           );
@@ -571,9 +561,12 @@ export class TrackAudioRenderer {
 
     while (this.nextScheduleTime < ctx.currentTime + options.lookahead) {
       const targetTicks = getTargetTicks(this.nextScheduleTime);
-      const effectiveTrackTick = this.resolveEffectiveTrackTick(targetTicks);
-
-      const activeClip = getActiveClipAtTicks(effectiveTrackTick);
+      // Active clip lookup by *presentation* tick (per-clip model). The
+      // returned `effectiveTick` is the rebased stored-track tick that
+      // feeds calculatePlayerFrameTime below.
+      const resolved = this.findActiveClipAtPresentation(trackClips, targetTicks);
+      const activeClip = resolved?.clip;
+      const effectiveTrackTick = resolved?.effectiveTick ?? targetTicks;
 
       if (
         !activeClip ||

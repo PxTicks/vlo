@@ -25,10 +25,7 @@ import { createNewTrack } from "../../model/timelineTrackModel";
 import { planMultiClipMove } from "../../utils/multiClipMove";
 import { getMoveSnapCandidate } from "./snapUtils";
 import { attachGenerationMask } from "../../utils/insertAssetToTimeline";
-import {
-  buildTimelineClipPresentationIndex,
-  resolveStoredTrackTickForPresentation,
-} from "../../utils/clipPresentation";
+import { buildTimelineClipPresentationIndex } from "../../utils/clipPresentation";
 import { getAssetById } from "../../../userAssets";
 import { useProjectStore } from "../../../project";
 import {
@@ -474,16 +471,11 @@ export const useClipMove = (
         }
       }
 
-      const storedStartTicks = resolveStoredTrackTickForPresentation(
-        tracks,
-        clips,
-        targetTrackId,
-        presentationStartTicks,
-      );
-
+      // Per-clip presentation model: presentation_start == stored start, so
+      // the drop position is the stored start directly. No engine rebase.
       const finalStartTicks = resolveCollision(
         clip.id,
-        storedStartTicks,
+        presentationStartTicks,
         clip.timelineDuration,
         targetTrackId,
         clips,
@@ -527,12 +519,7 @@ export const useClipMove = (
       selectedClipIds,
       tracks,
       leaderClip,
-      targetStartTicks: resolveStoredTrackTickForPresentation(
-        tracks,
-        clips,
-        dropTargetTrackId,
-        presentationStartTicks,
-      ),
+      targetStartTicks: presentationStartTicks,
       targetTrackId: dropTargetTrackId,
       ticksPerFrame,
       insertedTrack,

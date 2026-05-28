@@ -17,7 +17,7 @@ import {
 } from "../../../timelineSelection";
 import {
   buildTimelineClipPresentationIndex,
-  resolveStoredTrackTickForPresentation,
+  resolveStoredEndForPresentationEnd,
 } from "../../utils/clipPresentation";
 
 export const useClipResize = () => {
@@ -200,20 +200,11 @@ export const useClipResize = () => {
     const timelineState = useTimelineStore.getState();
     const clips = timelineState.clips ?? [];
     const tracks = timelineState.tracks ?? [];
-    const presentation = buildTimelineClipPresentationIndex(
-      tracks,
-      clips,
-    ).get(clip.id);
 
     if (side === "left") {
-      const proposedPresentationStart =
-        (presentation?.start ?? clip.start) + deltaTicks;
-      let newStart = resolveStoredTrackTickForPresentation(
-        tracks,
-        clips,
-        clip.trackId,
-        proposedPresentationStart,
-      );
+      // presentation_start == stored start in the per-clip model, so the
+      // drag delta maps 1:1 onto the clip's stored start.
+      let newStart = clip.start + deltaTicks;
       newStart = clamp(newStart, constraints.min, constraints.max);
       newStart = snapTickToFrame(newStart, ticksPerFrame);
       newStart = clamp(newStart, constraints.min, constraints.max);
@@ -229,23 +220,28 @@ export const useClipResize = () => {
         croppedSourceDuration: newShape.croppedSourceDuration,
       });
     } else {
-      const proposedPresentationEnd =
-        (presentation?.end ?? clip.start + clip.timelineDuration) + deltaTicks;
-      let newEnd = resolveStoredTrackTickForPresentation(
+      // The right edge is dragged in presentation space. Outside any
+      // adjustment this is identity (stored end shifts by deltaTicks). Inside
+      // a speed-up region, a small presentation delta maps to a larger
+      // stored-tick delta: `resolveStoredEndForPresentationEnd` does the
+      // per-clip rebase through the internal time-warp engine and is exact
+      // for spline-shaped speed transforms.
+      const presentation = buildTimelineClipPresentationIndex(tracks, clips).get(
+        clip.id,
+      );
+      const currentPresentationEnd =
+        presentation?.end ?? clip.start + clip.timelineDuration;
+      const targetPresentationEnd = currentPresentationEnd + deltaTicks;
+      let newEnd = resolveStoredEndForPresentationEnd(
         tracks,
         clips,
-        clip.trackId,
-        proposedPresentationEnd,
+        clip,
+        targetPresentationEnd,
       );
       newEnd = clamp(newEnd, constraints.min, constraints.max);
       newEnd = snapTickToFrame(newEnd, ticksPerFrame);
       newEnd = clamp(newEnd, constraints.min, constraints.max);
 
-      // Calculate the valid delta from the original end
-      // validDelta = newEnd - (start + timelineDuration)
-      // But getResizedClipRight takes deltaTicks.
-
-      // Let's just calculate the delta we want to apply to the timelineDuration
       const validDelta = newEnd - clip.start - clip.timelineDuration;
 
       const newShape = getResizedClipRight(clip, validDelta);

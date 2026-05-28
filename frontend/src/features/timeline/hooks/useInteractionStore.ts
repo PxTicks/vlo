@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { BaseClip } from "../../../types/TimelineTypes";
 import { useTimelineStore } from "../useTimelineStore";
 import { mapSourceTimeToVisualTime } from "../../transformations";
+import { buildTimelineClipPresentationIndex } from "../utils/clipPresentation";
 
 export type InteractionOperation = "move" | "resize_left" | "resize_right";
 
@@ -59,14 +60,20 @@ export const buildTimelineSnapPoints = (
   options: BuildTimelineSnapPointsOptions = {},
 ) => {
   const excludedIds = new Set(options.excludedClipIds ?? []);
-  const { clips } = useTimelineStore.getState();
+  const { clips, tracks } = useTimelineStore.getState();
+  const presentationByClipId = buildTimelineClipPresentationIndex(tracks, clips);
 
   const points = new Set<number>();
   clips.forEach((timelineClip) => {
     if (timelineClip.type === "mask") return;
     if (excludedIds.has(timelineClip.id)) return;
-    points.add(Math.round(timelineClip.start));
-    points.add(Math.round(timelineClip.start + timelineClip.timelineDuration));
+    const presentation = presentationByClipId.get(timelineClip.id);
+    points.add(Math.round(presentation?.start ?? timelineClip.start));
+    points.add(
+      Math.round(
+        presentation?.end ?? timelineClip.start + timelineClip.timelineDuration,
+      ),
+    );
 
     const components = timelineClip.components ?? [];
     components.forEach((component) => {

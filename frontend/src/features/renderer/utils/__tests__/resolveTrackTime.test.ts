@@ -91,6 +91,8 @@ describe("buildTrackTimeResolver", () => {
     expect(resolver.resolveEffectiveTrackTick("v1", 110)).toBe(120);
     expect(resolver.resolveEffectiveTrackTick("v1", 150)).toBe(200);
     expect(resolver.resolveEffectiveTrackTick("v1", 180)).toBe(230);
+    expect(resolver.resolvePresentationTick("v1", 120)).toBe(110);
+    expect(resolver.resolvePresentationTick("v1", 230)).toBe(180);
   });
 
   it("composes nested adjustments by function composition", () => {
@@ -122,6 +124,29 @@ describe("buildTrackTimeResolver", () => {
 
     const resolver = buildTrackTimeResolver(tracks, clips);
     expect(resolver.resolveEffectiveTrackTick("v1", 80)).toBe(170);
+    expect(resolver.resolvePresentationTick("v1", 170)).toBe(80);
+  });
+
+  it("resolves presentation ticks for nested adjustment tracks", () => {
+    const tracks: TimelineTrack[] = [
+      adjustmentTrack("adjA"),
+      adjustmentTrack("adjB"),
+      visualTrack("v1"),
+    ];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "A",
+        trackId: "adjA",
+        start: 0,
+        timelineDuration: 100,
+        sourceDuration: 200,
+        depth: 2,
+        transformations: [speedTransform(2)],
+      }),
+    ];
+
+    const resolver = buildTrackTimeResolver(tracks, clips);
+    expect(resolver.resolvePresentationTick("adjB", 160)).toBe(80);
   });
 
   it("returns identity when only non-speed adjustments are present", () => {

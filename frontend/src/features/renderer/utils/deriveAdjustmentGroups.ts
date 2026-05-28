@@ -4,7 +4,10 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import { pullTimeThroughTransforms } from "../../transformations/utils/timeCalculation";
+import {
+  pullTimeThroughTransforms,
+  pushTimeThroughTransforms,
+} from "../../transformations/utils/timeCalculation";
 
 /**
  * A single adjustment clip's effective application to a single descendant
@@ -63,7 +66,15 @@ function isTimeAffectedTrack(track: TimelineTrack): boolean {
   );
 }
 
-function hasEnabledSpeedTransform(
+function isPresentationAffectedTrack(track: TimelineTrack): boolean {
+  return (
+    track.type === "visual" ||
+    track.type === "audio" ||
+    track.type === "adjustment"
+  );
+}
+
+export function hasEnabledSpeedTransform(
   transformations: readonly ClipTransform[],
 ): boolean {
   return transformations.some(
@@ -112,6 +123,26 @@ export function applyAdjustmentTimeRemap(
     localOffset,
   );
   return application.start + sourceOffset;
+}
+
+export function applyAdjustmentTimeRemapInverse(
+  application: AdjustmentTimeApplication,
+  tick: number,
+): number {
+  if (tick < application.start) {
+    return tick;
+  }
+
+  const localOffset = tick - application.start;
+  if (localOffset >= application.sourceDuration) {
+    return tick - (application.sourceDuration - application.timelineDuration);
+  }
+
+  const presentationOffset = pushTimeThroughTransforms(
+    application.transformations,
+    localOffset,
+  );
+  return application.start + presentationOffset;
 }
 
 function buildApplicationsByTrack(
@@ -243,6 +274,29 @@ export function computeAdjustmentTimeApplications(
   }
 
   return timeApplicationsByTrack;
+}
+
+export function computeAdjustmentPresentationApplications(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+): Map<string, AdjustmentTimeApplication[]> {
+  const applicationsByTrack = buildApplicationsByTrack(
+    tracks,
+    clips,
+    isPresentationAffectedTrack,
+    (adjustment) => hasEnabledSpeedTransform(adjustment.transformations),
+  );
+  const presentationApplicationsByTrack = new Map<
+    string,
+    AdjustmentTimeApplication[]
+  >();
+
+  for (const [trackId, applications] of applicationsByTrack) {
+    if (applications.length === 0) continue;
+    presentationApplicationsByTrack.set(trackId, [...applications].reverse());
+  }
+
+  return presentationApplicationsByTrack;
 }
 
 function makeGroupId(sourceClipId: string, firstTrackId: string): string {

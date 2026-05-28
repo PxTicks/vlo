@@ -25,6 +25,10 @@ import { createNewTrack } from "../../model/timelineTrackModel";
 import { planMultiClipMove } from "../../utils/multiClipMove";
 import { getMoveSnapCandidate } from "./snapUtils";
 import { attachGenerationMask } from "../../utils/insertAssetToTimeline";
+import {
+  buildTimelineClipPresentationIndex,
+  resolveStoredTrackTickForPresentation,
+} from "../../utils/clipPresentation";
 import { getAssetById } from "../../../userAssets";
 import { useProjectStore } from "../../../project";
 import {
@@ -338,8 +342,19 @@ export const useClipMove = (
 
       // Get timelineDuration from the active clip
       // Note: active.data.current.clip is reliable for both Assets and Clips
-      const clipDuration = (active.data.current?.clip as BaseClip)
-        .timelineDuration;
+      const activeClip = active.data.current?.clip as BaseClip | TimelineClip;
+      const timelineState = useTimelineStore.getState();
+      const timelineTracks = timelineState.tracks ?? [];
+      const timelineClips = timelineState.clips ?? [];
+      const presentation =
+        "trackId" in activeClip
+          ? buildTimelineClipPresentationIndex(
+              timelineTracks,
+              timelineClips,
+            ).get(activeClip.id)
+          : undefined;
+      const clipDuration =
+        presentation?.duration ?? activeClip.timelineDuration;
       const snappedStartTicks = resolveMoveSnap(
         projectedStartTicks,
         clipDuration,
@@ -380,7 +395,7 @@ export const useClipMove = (
       useProjectStore.getState().config.fps,
     );
     // Snap to frame grid; clip-to-clip snap (snapStartTicks) takes priority
-    const startTicks = snapStartTicks != null
+    const presentationStartTicks = snapStartTicks != null
       ? snapStartTicks
       : Math.max(0, snapTickToFrame(unsnappedStartTicks, ticksPerFrame));
 
@@ -459,9 +474,16 @@ export const useClipMove = (
         }
       }
 
+      const storedStartTicks = resolveStoredTrackTickForPresentation(
+        tracks,
+        clips,
+        targetTrackId,
+        presentationStartTicks,
+      );
+
       const finalStartTicks = resolveCollision(
         clip.id,
-        startTicks,
+        storedStartTicks,
         clip.timelineDuration,
         targetTrackId,
         clips,
@@ -505,7 +527,12 @@ export const useClipMove = (
       selectedClipIds,
       tracks,
       leaderClip,
-      targetStartTicks: startTicks,
+      targetStartTicks: resolveStoredTrackTickForPresentation(
+        tracks,
+        clips,
+        dropTargetTrackId,
+        presentationStartTicks,
+      ),
       targetTrackId: dropTargetTrackId,
       ticksPerFrame,
       insertedTrack,

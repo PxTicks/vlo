@@ -15,6 +15,10 @@ import {
   getTicksPerFrame,
   snapTickToFrame,
 } from "../../../timelineSelection";
+import {
+  buildTimelineClipPresentationIndex,
+  resolveStoredTrackTickForPresentation,
+} from "../../utils/clipPresentation";
 
 export const useClipResize = () => {
   // No subscriptions!
@@ -193,9 +197,23 @@ export const useClipResize = () => {
     const ticksPerFrame = getTicksPerFrame(
       useProjectStore.getState().config.fps,
     );
+    const timelineState = useTimelineStore.getState();
+    const clips = timelineState.clips ?? [];
+    const tracks = timelineState.tracks ?? [];
+    const presentation = buildTimelineClipPresentationIndex(
+      tracks,
+      clips,
+    ).get(clip.id);
 
     if (side === "left") {
-      let newStart = clip.start + deltaTicks;
+      const proposedPresentationStart =
+        (presentation?.start ?? clip.start) + deltaTicks;
+      let newStart = resolveStoredTrackTickForPresentation(
+        tracks,
+        clips,
+        clip.trackId,
+        proposedPresentationStart,
+      );
       newStart = clamp(newStart, constraints.min, constraints.max);
       newStart = snapTickToFrame(newStart, ticksPerFrame);
       newStart = clamp(newStart, constraints.min, constraints.max);
@@ -211,7 +229,14 @@ export const useClipResize = () => {
         croppedSourceDuration: newShape.croppedSourceDuration,
       });
     } else {
-      let newEnd = clip.start + clip.timelineDuration + deltaTicks;
+      const proposedPresentationEnd =
+        (presentation?.end ?? clip.start + clip.timelineDuration) + deltaTicks;
+      let newEnd = resolveStoredTrackTickForPresentation(
+        tracks,
+        clips,
+        clip.trackId,
+        proposedPresentationEnd,
+      );
       newEnd = clamp(newEnd, constraints.min, constraints.max);
       newEnd = snapTickToFrame(newEnd, ticksPerFrame);
       newEnd = clamp(newEnd, constraints.min, constraints.max);

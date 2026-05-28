@@ -28,6 +28,9 @@ interface UseThumbnailRendererProps {
   height: number;
   enabled?: boolean;
   isDragging?: boolean;
+  presentationStart?: number;
+  presentationDuration?: number;
+  mapPresentationOffsetToClipOffset?: (presentationOffset: number) => number;
 }
 
 export function useThumbnailRenderer({
@@ -37,6 +40,9 @@ export function useThumbnailRenderer({
   height,
   enabled = true,
   isDragging = false,
+  presentationStart,
+  presentationDuration,
+  mapPresentationOffsetToClipOffset,
 }: UseThumbnailRendererProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const pendingDrawRef = useRef<boolean>(false);
@@ -55,6 +61,8 @@ export function useThumbnailRenderer({
     height,
     enabled,
     isDragging,
+    presentationStart,
+    presentationDuration,
   });
 
   // Get asset immediately for synchronous draw checks
@@ -147,7 +155,10 @@ export function useThumbnailRenderer({
       }
 
       const pixelDeltaFromClipStart = globalX - leftWingPx;
-      const tickDelta = pixelDeltaFromClipStart * currentTicksPerPixel;
+      const presentationTickDelta = pixelDeltaFromClipStart * currentTicksPerPixel;
+      const tickDelta =
+        mapPresentationOffsetToClipOffset?.(presentationTickDelta) ??
+        presentationTickDelta;
       const assetTick = clampThumbnailAssetTickToFirstFrame(
         calculateClipTime(clip as TimelineClip, tickDelta),
         firstTimestampSeconds,
@@ -187,6 +198,7 @@ export function useThumbnailRenderer({
     zoomScale,
     height,
     leftWingPx,
+    mapPresentationOffsetToClipOffset,
     updateCanvasGeometry,
   ]);
 
@@ -294,11 +306,12 @@ export function useThumbnailRenderer({
           for (let i = startIdx; i < endIdx; i++) {
             const globalX = i * slotWidth;
             const pixelDelta = globalX - leftWingPx;
+            const presentationTickDelta = pixelDelta * currentTicksPerPixel;
+            const tickDelta =
+              mapPresentationOffsetToClipOffset?.(presentationTickDelta) ??
+              presentationTickDelta;
             const assetTick = clampThumbnailAssetTickToFirstFrame(
-              calculateClipTime(
-                clip as TimelineClip,
-                pixelDelta * currentTicksPerPixel,
-              ),
+              calculateClipTime(clip as TimelineClip, tickDelta),
               firstTimestampSeconds,
             );
 
@@ -436,5 +449,6 @@ export function useThumbnailRenderer({
     isDragging,
     asset,
     draw,
+    mapPresentationOffsetToClipOffset,
   ]);
 }

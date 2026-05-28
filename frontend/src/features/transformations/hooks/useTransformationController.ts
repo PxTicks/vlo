@@ -10,6 +10,7 @@ import {
   selectMaskClipsForParent,
   hasAnyCollision,
 } from "../../timeline";
+import { introducesTimelineClipPresentationCollision } from "../../timeline/utils/clipPresentation";
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { isDefaultTransform } from "../catalogue/TransformationRegistry";
 import { computeCommitMutation } from "./controller/commitComputation";
@@ -245,6 +246,7 @@ export function useTransformationController(
           const nextTimelineDuration =
             shapeUpdate.timelineDuration ?? clip.timelineDuration;
           const allClips = useTimelineStore.getState().clips;
+          const tracks = useTimelineStore.getState().tracks;
           if (
             hasAnyCollision(
               clip.start,
@@ -253,6 +255,18 @@ export function useTransformationController(
               [clip.id],
               allClips,
             )
+          ) {
+            return;
+          }
+          if (
+            clip.type === "adjustment" &&
+            introducesTimelineClipPresentationCollision(tracks, allClips, {
+              clipId: clip.id,
+              transformations: nextTransforms,
+              timelineDuration: shapeUpdate.timelineDuration,
+              transformedDuration: shapeUpdate.transformedDuration,
+              transformedOffset: shapeUpdate.transformedOffset,
+            })
           ) {
             return;
           }

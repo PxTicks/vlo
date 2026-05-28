@@ -27,6 +27,8 @@ interface UseClipCanvasWindowProps {
   height: number;
   enabled?: boolean;
   isDragging?: boolean;
+  presentationStart?: number;
+  presentationDuration?: number;
 }
 
 interface UseClipCanvasWindowResult {
@@ -45,6 +47,8 @@ export function useClipCanvasWindow({
   height,
   enabled = true,
   isDragging = false,
+  presentationStart,
+  presentationDuration,
 }: UseClipCanvasWindowProps): UseClipCanvasWindowResult {
   const [dynamicWings, setDynamicWings] = useState({
     left: INITIAL_WING_SIZE,
@@ -126,8 +130,9 @@ export function useClipCanvasWindow({
     };
   }, [clip.assetId]);
 
+  const visibleDurationTicks = presentationDuration ?? clip.timelineDuration;
   const visibleDurationPx =
-    (clip.timelineDuration / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
+    (visibleDurationTicks / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
   const maxLeftPx =
     (clip.transformedOffset / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
   const leftWingPx = Math.min(maxLeftPx, dynamicWings.left);
@@ -157,8 +162,9 @@ export function useClipCanvasWindow({
       intWidth = Math.min(MAX_DRAGGING_CANVAS_WIDTH, Math.ceil(fullCanvasWidth));
     } else {
       const { scrollLeft, containerWidth } = viewportRef.current;
+      const layoutStart = presentationStart ?? clipStart;
       const clipGlobalStart =
-        (clipStart / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
+        (layoutStart / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
       const virtualGlobalStart = clipGlobalStart - leftWingPx;
       const viewStart = scrollLeft - VIEWPORT_BUFFER_PX;
       const viewEnd = scrollLeft + containerWidth + VIEWPORT_BUFFER_PX;
@@ -205,6 +211,7 @@ export function useClipCanvasWindow({
     height,
     isDragging,
     leftWingPx,
+    presentationStart,
     scrollContainer,
     zoomScale,
   ]);

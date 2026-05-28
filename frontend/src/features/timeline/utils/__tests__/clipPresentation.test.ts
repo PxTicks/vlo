@@ -199,6 +199,69 @@ describe("clip presentation placement (per-clip model)", () => {
     expect(presentation?.duration).toBe(20);
   });
 
+  it("does not retime a clip that starts at a fast adjustment's visible end", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-1",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 50,
+        sourceDuration: 100,
+        depth: 1,
+        transformations: [speedTransform(2)],
+      }),
+      videoClip({
+        id: "video-1",
+        trackId: "v1",
+        start: 50,
+        timelineDuration: 100,
+      }),
+    ];
+
+    const presentation = buildTimelineClipPresentationIndex(
+      tracks,
+      clips,
+    ).get("video-1");
+
+    expect(presentation?.start).toBe(50);
+    expect(presentation?.end).toBe(150);
+    expect(presentation?.duration).toBe(100);
+    expect(presentation?.mapPresentationOffsetToClipOffset(25)).toBe(25);
+  });
+
+  it("retimes only the visible overlap with an adjustment footprint", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-1",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 50,
+        sourceDuration: 100,
+        depth: 1,
+        transformations: [speedTransform(2)],
+      }),
+      videoClip({
+        id: "video-1",
+        trackId: "v1",
+        start: 25,
+        timelineDuration: 100,
+      }),
+    ];
+
+    const presentation = buildTimelineClipPresentationIndex(
+      tracks,
+      clips,
+    ).get("video-1");
+
+    expect(presentation?.start).toBe(25);
+    expect(presentation?.end).toBe(100);
+    expect(presentation?.duration).toBe(75);
+    expect(presentation?.mapPresentationOffsetToClipOffset(25)).toBe(50);
+    expect(presentation?.mapPresentationOffsetToClipOffset(75)).toBe(100);
+  });
+
   it("identity-maps clips when only non-speed adjustments are present", () => {
     const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
     const clips: TimelineClip[] = [
@@ -265,6 +328,7 @@ describe("findActiveClipAt lookup", () => {
     // Halfway through a 50-presentation-tick footprint maps to source
     // tick 50 (halfway through 100 stored ticks).
     expect(resolved?.effectiveTick).toBe(50);
+    expect(resolved?.presentationInputTick).toBe(25);
   });
 
   it("returns null outside any clip's presentation footprint", () => {
@@ -323,6 +387,29 @@ describe("resolveStoredEndForPresentationEnd", () => {
     expect(
       resolveStoredEndForPresentationEnd(tracks, [adj, clip], clip, 25),
     ).toBe(50);
+  });
+
+  it("keeps right resize identity after a fast adjustment's visible end", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clip = videoClip({
+      id: "video-1",
+      trackId: "v1",
+      start: 50,
+      timelineDuration: 100,
+    });
+    const adj = adjustmentClip({
+      id: "adj-1",
+      trackId: "adj",
+      start: 0,
+      timelineDuration: 50,
+      sourceDuration: 100,
+      depth: 1,
+      transformations: [speedTransform(2)],
+    });
+
+    expect(
+      resolveStoredEndForPresentationEnd(tracks, [adj, clip], clip, 75),
+    ).toBe(75);
   });
 });
 

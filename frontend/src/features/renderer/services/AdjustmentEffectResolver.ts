@@ -34,7 +34,19 @@ export class AdjustmentEffectResolver {
   }
 
   deriveGroups(currentTick: number): DerivedRenderGroup[] {
-    return deriveActiveAdjustmentGroups(this.tracks, this.clips, currentTick);
+    const lookup = this.getPresentationLookup();
+    const activationTickByTrack = new Map<string, number>();
+
+    for (const track of this.tracks) {
+      if (track.type !== "visual" || !track.isVisible) continue;
+      const resolved = lookup.findActiveClipAt(track.id, currentTick);
+      if (!resolved) continue;
+      activationTickByTrack.set(track.id, resolved.presentationInputTick);
+    }
+
+    return deriveActiveAdjustmentGroups(this.tracks, this.clips, currentTick, {
+      activationTickByTrack,
+    });
   }
 
   getPresentationLookup(): TimelineClipPresentationLookup {

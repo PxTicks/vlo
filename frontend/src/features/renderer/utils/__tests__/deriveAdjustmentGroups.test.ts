@@ -621,4 +621,61 @@ describe("deriveActiveAdjustmentGroups", () => {
     expect(forest[0].children[0].sourceClipId).toBe("B");
     expect(forest[0].children[0].trackIds).toEqual(["v1"]);
   });
+
+  it("can use a caller-supplied per-track activation tick", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips = [
+      adjustmentClip({
+        id: "A",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 50,
+        sourceDuration: 100,
+        depth: 1,
+        transformations: [speedTransform(2)],
+      }),
+    ];
+
+    expect(deriveActiveAdjustmentGroups(tracks, clips, 60)).toEqual([]);
+
+    const forest = deriveActiveAdjustmentGroups(tracks, clips, 60, {
+      activationTickByTrack: new Map([["v1", 47.5]]),
+    });
+
+    expect(forest).toHaveLength(1);
+    expect(forest[0].sourceClipId).toBe("A");
+    expect(forest[0].sampleTick).toBe(47.5);
+  });
+
+  it("splits tracks that need different group transform sample times", () => {
+    const tracks = [
+      adjustmentTrack("adj"),
+      visualTrack("v1"),
+      visualTrack("v2"),
+    ];
+    const clips = [
+      adjustmentClip({
+        id: "A",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 50,
+        sourceDuration: 100,
+        depth: 2,
+        transformations: [speedTransform(2)],
+      }),
+    ];
+
+    const forest = deriveActiveAdjustmentGroups(tracks, clips, 60, {
+      activationTickByTrack: new Map([
+        ["v1", 47.5],
+        ["v2", 40],
+      ]),
+    });
+
+    expect(forest).toHaveLength(2);
+    expect(forest[0].trackIds).toEqual(["v1"]);
+    expect(forest[0].sampleTick).toBe(47.5);
+    expect(forest[1].trackIds).toEqual(["v2"]);
+    expect(forest[1].sampleTick).toBe(40);
+  });
 });

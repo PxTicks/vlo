@@ -54,13 +54,18 @@ export interface TimelineClipPresentationLookup {
   /**
    * Return the clip whose presentation footprint contains `presentationTick`
    * on `trackId`, plus the corresponding `effectiveTrackTick` (the value the
-   * internal time-warp engine would emit for that clip — feed it straight
-   * into `calculatePlayerFrameTime` / `calculateClipTime`).
+   * per-clip rebase emits for that clip — feed it straight into
+   * `calculatePlayerFrameTime` / `calculateClipTime`).
    */
   findActiveClipAt(
     trackId: string,
     presentationTick: number,
-  ): { clip: TimelineClip; effectiveTick: number } | null;
+  ): {
+    clip: TimelineClip;
+    effectiveTick: number;
+    /** The tick visual adjustment grouping should use for activation. */
+    presentationInputTick: number;
+  } | null;
   /**
    * Map a presentation tick that is known to fall within `clip`'s footprint
    * to the corresponding effective track tick. Returns the input unchanged
@@ -78,6 +83,7 @@ export interface TimelineClipPresentationLookup {
  */
 interface InternalClipPresentation extends TimelineClipPresentation {
   resolveEffectiveTrackTick: (presentationTick: number) => number;
+  resolvePresentationInputTick: (presentationTick: number) => number;
   clipRef: TimelineClip;
 }
 
@@ -118,23 +124,31 @@ function buildPresentation(
   clip: TimelineClip,
   resolver: TrackTimeResolver,
 ): InternalClipPresentation {
-  const oldPresStart = resolver.resolvePresentationTick(
+  // Sample the global warp at the clip's actual presentation start, then use
+  // only subsequent deltas from that point. This prevents an earlier
+  // adjustment's post-window delta from shifting unrelated later clips while
+  // still preserving exact spline integration for any visible overlap.
+  const baseEffectiveTick = resolver.resolveEffectiveTrackTick(
     clip.trackId,
     clip.start,
   );
-  const oldPresEnd = resolver.resolvePresentationTick(
+  const presentationEnd = resolver.resolvePresentationTick(
     clip.trackId,
-    clip.start + clip.timelineDuration,
+    baseEffectiveTick + clip.timelineDuration,
   );
-  const duration = Math.max(0, oldPresEnd - oldPresStart);
   const start = clip.start;
+  const duration = Math.max(0, presentationEnd - start);
   const end = start + duration;
 
   const resolveEffectiveTrackTick = (presentationTick: number): number => {
-    const localOffset = presentationTick - start;
-    const engineTick = oldPresStart + localOffset;
-    return resolver.resolveEffectiveTrackTick(clip.trackId, engineTick);
+    const effectiveTick = resolver.resolveEffectiveTrackTick(
+      clip.trackId,
+      presentationTick,
+    );
+    return clip.start + (effectiveTick - baseEffectiveTick);
   };
+  const resolvePresentationInputTick = (presentationTick: number): number =>
+    presentationTick;
 
   return {
     clipId: clip.id,
@@ -146,6 +160,7 @@ function buildPresentation(
       return resolveEffectiveTrackTick(start + presentationOffset) - clip.start;
     },
     resolveEffectiveTrackTick,
+    resolvePresentationInputTick,
     clipRef: clip,
   };
 }
@@ -232,6 +247,8 @@ export function buildTimelineClipPresentationLookup(
           return {
             clip: entry.clipRef,
             effectiveTick: entry.resolveEffectiveTrackTick(presentationTick),
+            presentationInputTick:
+              entry.resolvePresentationInputTick(presentationTick),
           };
         }
       }
@@ -258,13 +275,15 @@ export function resolveStoredEndForPresentationEnd(
   targetPresentationEnd: number,
 ): number {
   const resolver = buildTrackTimeResolver(tracks, clips);
-  const oldPresStart = resolver.resolvePresentationTick(
+  const baseEffectiveTick = resolver.resolveEffectiveTrackTick(
     clip.trackId,
     clip.start,
   );
-  const desiredEnginePresTick =
-    oldPresStart + (targetPresentationEnd - clip.start);
-  return resolver.resolveEffectiveTrackTick(clip.trackId, desiredEnginePresTick);
+  const targetEffectiveTick = resolver.resolveEffectiveTrackTick(
+    clip.trackId,
+    targetPresentationEnd,
+  );
+  return clip.start + (targetEffectiveTick - baseEffectiveTick);
 }
 
 function collectPresentationCollisionsFromIndex(

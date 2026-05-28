@@ -31,6 +31,9 @@ export interface AdjustmentApplication {
   start: number;
   timelineDuration: number;
   sourceDuration: number;
+  /** Absolute tick in this adjustment's input-level domain for this frame.
+   *  Present only on active applications derived for a specific render tick. */
+  sampleTick?: number;
 }
 
 export type AdjustmentTimeApplication = AdjustmentApplication;
@@ -53,6 +56,8 @@ export interface DerivedRenderGroup {
   transformations: ClipTransform[];
   start: number;
   timelineDuration: number;
+  /** Absolute tick in the adjustment's input-level domain for this frame. */
+  sampleTick?: number;
   /** Visual tracks wrapped by this container, in visual-track order. */
   trackIds: string[];
   /** Nested groups whose reach is a contiguous subset of this group's
@@ -223,13 +228,23 @@ function resolveActiveApplications(
       inputTick < application.start + application.timelineDuration;
 
     if (isActive) {
-      active.push(application);
+      active.push({ ...application, sampleTick: inputTick });
     }
 
     inputTick = applyAdjustmentTimeRemap(application, inputTick);
   }
 
   return active;
+}
+
+export interface ComputeAdjustmentApplicationsOptions {
+  /**
+   * Per-track presentation tick in the global adjustment-warp domain. The
+   * per-clip presentation model rebases each clip to keep its stored start
+   * stable; visual grouping has to undo that rebase before deciding whether
+   * an adjustment's visual transforms are active for that track.
+   */
+  activationTickByTrack?: ReadonlyMap<string, number>;
 }
 
 /**
@@ -244,6 +259,7 @@ export function computeAdjustmentApplications(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
   currentTick: number,
+  options: ComputeAdjustmentApplicationsOptions = {},
 ): Map<string, AdjustmentApplication[]> {
   const allApplicationsByTrack = buildApplicationsByTrack(
     tracks,
@@ -254,7 +270,9 @@ export function computeAdjustmentApplications(
   const activeApplicationsByTrack = new Map<string, AdjustmentApplication[]>();
 
   for (const [trackId, applications] of allApplicationsByTrack) {
-    const active = resolveActiveApplications(applications, currentTick);
+    const activationTick =
+      options.activationTickByTrack?.get(trackId) ?? currentTick;
+    const active = resolveActiveApplications(applications, activationTick);
     if (active.length === 0) continue;
     activeApplicationsByTrack.set(trackId, [...active].reverse());
   }
@@ -341,11 +359,13 @@ export function deriveActiveAdjustmentGroups(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
   currentTick: number,
+  options: ComputeAdjustmentApplicationsOptions = {},
 ): DerivedRenderGroup[] {
   const applicationsByTrack = computeAdjustmentApplications(
     tracks,
     clips,
     currentTick,
+    options,
   );
 
   const visualTracks = tracks.filter(isVisibleVisualTrack);
@@ -371,7 +391,7 @@ export function deriveActiveAdjustmentGroups(
         const nextStack = applicationsByTrack.get(tracksSlice[j].id) ?? [];
         const nextAppAtDepth = nextStack[nextStack.length - 1 - depth];
         if (!nextAppAtDepth) break;
-        if (nextAppAtDepth.sourceClipId !== appAtDepth.sourceClipId) break;
+        if (!canShareRenderGroup(appAtDepth, nextAppAtDepth)) break;
         j += 1;
       }
 
@@ -385,6 +405,7 @@ export function deriveActiveAdjustmentGroups(
         transformations: appAtDepth.transformations,
         start: appAtDepth.start,
         timelineDuration: appAtDepth.timelineDuration,
+        sampleTick: appAtDepth.sampleTick,
         trackIds,
         children,
       });
@@ -396,4 +417,15 @@ export function deriveActiveAdjustmentGroups(
   }
 
   return buildForest(visualTracks, 0);
+}
+
+function canShareRenderGroup(
+  left: AdjustmentApplication,
+  right: AdjustmentApplication,
+): boolean {
+  if (left.sourceClipId !== right.sourceClipId) return false;
+  if (left.sampleTick === undefined || right.sampleTick === undefined) {
+    return left.sampleTick === right.sampleTick;
+  }
+  return Math.abs(left.sampleTick - right.sampleTick) < 1e-6;
 }

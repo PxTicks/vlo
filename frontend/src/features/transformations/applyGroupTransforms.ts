@@ -18,6 +18,8 @@ export interface AppliableGroup {
   /** Visible window length, forwarded to handlers that care about output-
    *  domain math (visual-duration ratios, etc.). */
   timelineDuration: number;
+  /** Optional per-frame sample tick in the group's own input-level domain. */
+  sampleTick?: number;
 }
 
 /**
@@ -30,10 +32,10 @@ export interface AppliableGroup {
  * `content` in the stack context — group containers are textureless covers
  * over the project's logical viewport.
  *
- * Time domain: keyframes on a group are clip-local. `stackTime = currentTick
- * - group.start`, so moving a group on the timeline moves its keyframes
- * with it. Speed transforms are ignored at the store layer for adjustment
- * clips; if one is somehow present here `applyTransformStack` skips it.
+ * Time domain: keyframes on a group are clip-local. Usually `stackTime =
+ * currentTick - group.start`; per-clip adjustment retimes can provide
+ * `sampleTick` so visual keyframes follow the same rebased timing as the
+ * underlying clip content.
  *
  * Composite-clip interaction: composites are baked to a proxy by
  * resolveRenderableClip before any engine sees them, so a composite-on-a-
@@ -70,7 +72,7 @@ export function applyGroupTransforms(
     return;
   }
 
-  const stackTime = currentTick - group.start;
+  const stackTime = (group.sampleTick ?? currentTick) - group.start;
   const { state } = applyTransformStack(
     group.transformations,
     {

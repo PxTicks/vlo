@@ -73,7 +73,7 @@ export const TransformationRegistry: TransformationDefinition[] = [
 
   // Dynamic groups (addable). Filters all opt into adjustmentCompatible via
   // a spread below so the menu offers them on adjustment clips too.
-  { ...speedDefinition, isDefault: false },
+  { ...speedDefinition, isDefault: false, adjustmentCompatible: true },
 
   // Filters (all spatial / pixel-based; safe on textureless containers
   // now that filterApplicator accepts an explicit contentSize).
@@ -255,7 +255,7 @@ export function isTransformCompatible(
   // We can't rely on `compatibleClips === "visual"` here because that's
   // shared by fitMode (meaningless for textureless group containers) and
   // the layout / filter definitions (meaningful). The flag is set on
-  // layoutDefinition + every filter; speed, volume, fitMode, and mask
+  // layoutDefinition, speed, and every filter; volume, fitMode, and mask
   // transforms are excluded by default.
   if (clipType === "adjustment") {
     return definition.adjustmentCompatible === true;

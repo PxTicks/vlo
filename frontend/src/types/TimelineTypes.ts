@@ -307,9 +307,10 @@ export interface AdjustmentClipExtras {
 }
 
 export interface AdjustmentBaseClip
-  extends InsertableClipBaseCommon,
+  extends Omit<InsertableClipBaseCommon, "type" | "sourceDuration">,
     AdjustmentClipExtras {
   type: "adjustment";
+  sourceDuration: number;
 }
 
 export interface VideoTimelineClip extends AssetBackedTimelineClipCommon {
@@ -340,9 +341,10 @@ export interface CompositeTimelineClip
 }
 
 export interface AdjustmentTimelineClip
-  extends NonMaskTimelineClipCommon,
+  extends Omit<NonMaskTimelineClipCommon, "type" | "sourceDuration">,
     AdjustmentClipExtras {
   type: "adjustment";
+  sourceDuration: number;
 }
 
 export interface BaseClipByType {

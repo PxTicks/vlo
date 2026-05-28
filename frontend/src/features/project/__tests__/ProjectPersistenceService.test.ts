@@ -495,7 +495,7 @@ describe("ProjectPersistenceService", () => {
           type: "adjustment",
           trackId: "track-adj",
           name: "Color",
-          sourceDuration: null,
+          sourceDuration: 200,
           transformedDuration: 200,
           transformedOffset: 0,
           timelineDuration: 200,
@@ -524,10 +524,67 @@ describe("ProjectPersistenceService", () => {
         type: "adjustment",
         depth: 2,
         trackId: "track-adj",
+        sourceDuration: 200,
       }),
     ]);
     expect(loaded.migrated).toBe(false);
     expect(fileSystemService.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("normalizes legacy adjustment clips with null sourceDuration before validation", async () => {
+    const legacyTimeline = {
+      ...timeline,
+      tracks: [
+        ...timeline.tracks,
+        {
+          id: "track-adj",
+          type: "adjustment",
+          label: "Adjustment Lane",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+      ],
+      clips: [
+        {
+          id: "adj-1",
+          type: "adjustment",
+          trackId: "track-adj",
+          name: "Legacy Color",
+          sourceDuration: null,
+          transformedDuration: 200,
+          transformedOffset: 0,
+          timelineDuration: 200,
+          croppedSourceDuration: 200,
+          offset: 0,
+          start: 50,
+          transformations: [],
+          depth: 2,
+        },
+      ],
+    };
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(".vloproject/timeline.json", JSON.stringify(legacyTimeline));
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loaded = await projectPersistenceService.loadOrMigrateProject();
+
+    expect(loaded.timeline?.clips).toEqual([
+      expect.objectContaining({
+        id: "adj-1",
+        type: "adjustment",
+        sourceDuration: 200,
+      }),
+    ]);
+    expect(loaded.migrated).toBe(false);
+    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
+      ".vloproject/timeline.json",
+      expect.any(String),
+    );
+    expect(
+      JSON.parse(files.get(".vloproject/timeline.json") ?? "{}").clips?.[0]
+        ?.sourceDuration,
+    ).toBe(200);
   });
 
   it("rejects an adjustment clip missing the required depth field", async () => {
@@ -550,7 +607,7 @@ describe("ProjectPersistenceService", () => {
           type: "adjustment",
           trackId: "track-adj",
           name: "Broken",
-          sourceDuration: null,
+          sourceDuration: 200,
           transformedDuration: 200,
           transformedOffset: 0,
           timelineDuration: 200,

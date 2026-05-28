@@ -67,18 +67,21 @@ function adjustmentClip(overrides: {
   start?: number;
   timelineDuration?: number;
   depth?: number;
+  sourceDuration?: number;
 }): AdjustmentTimelineClip {
+  const timelineDuration = overrides.timelineDuration ?? 100;
+  const sourceDuration = overrides.sourceDuration ?? timelineDuration;
   return {
     id: overrides.id,
     type: "adjustment",
     name: overrides.id,
     trackId: overrides.trackId,
     start: overrides.start ?? 0,
-    timelineDuration: overrides.timelineDuration ?? 100,
-    sourceDuration: null,
-    transformedDuration: overrides.timelineDuration ?? 100,
+    timelineDuration,
+    sourceDuration,
+    transformedDuration: timelineDuration,
     transformedOffset: 0,
-    croppedSourceDuration: overrides.timelineDuration ?? 100,
+    croppedSourceDuration: sourceDuration,
     offset: 0,
     transformations: [],
     depth: overrides.depth ?? 1,
@@ -198,8 +201,8 @@ describe("track-type compatibility (general)", () => {
     });
   });
 
-  describe("speed-transform rejection on adjustment clips", () => {
-    it("addClipTransformToDraft rejects a speed transform on an adjustment clip", () => {
+  describe("speed transforms on adjustment clips", () => {
+    it("addClipTransformToDraft accepts a speed transform on an adjustment clip", () => {
       const draft = makeDraft([adjustmentTrack("adj")]);
       addClipToDraft(draft, adjustmentClip({ id: "a", trackId: "adj" }));
       addClipTransformToDraft(draft, "a", {
@@ -209,7 +212,7 @@ describe("track-type compatibility (general)", () => {
         parameters: { factor: 2 },
       });
       const a = draft.clips.find((c) => c.id === "a")!;
-      expect(a.transformations).toEqual([]);
+      expect(a.transformations.find((t) => t.type === "speed")).toBeTruthy();
     });
 
     it("addClipTransformToDraft permits a non-speed transform on an adjustment clip", () => {
@@ -240,7 +243,7 @@ describe("track-type compatibility (general)", () => {
       expect(v1.transformations.find((t) => t.type === "speed")).toBeTruthy();
     });
 
-    it("setClipTransformsInDraft (bulk replace) rejects a batch containing speed on an adjustment", () => {
+    it("setClipTransformsAndShapeInDraft accepts a batch containing speed on an adjustment", () => {
       const draft = makeDraft([adjustmentTrack("adj")]);
       addClipToDraft(draft, adjustmentClip({ id: "a", trackId: "adj" }));
       // First add a valid transform.
@@ -250,7 +253,7 @@ describe("track-type compatibility (general)", () => {
         isEnabled: true,
         parameters: { x: 10, y: 20 },
       });
-      // Try to bulk-replace including a speed transform.
+      // Bulk-replace including a speed transform.
       setClipTransformsAndShapeInDraft(draft, "a", [
         {
           id: "pos-2",
@@ -266,9 +269,11 @@ describe("track-type compatibility (general)", () => {
         },
       ]);
       const a = draft.clips.find((c) => c.id === "a")!;
-      // Whole batch rejected — original single position transform preserved.
-      expect(a.transformations).toHaveLength(1);
-      expect(a.transformations[0].id).toBe("pos-1");
+      expect(a.transformations).toHaveLength(2);
+      expect(a.transformations.map((transform) => transform.id)).toEqual([
+        "pos-2",
+        "speed-1",
+      ]);
     });
   });
 });
@@ -307,6 +312,15 @@ describe("adjustment-clip commands", () => {
       const clip = draft.clips.find((c) => c.id === id);
       expect(clip).toBeDefined();
       expect(clip!.type).toBe("adjustment");
+      expect(clip).toMatchObject({
+        type: "adjustment",
+        sourceDuration: 100,
+        croppedSourceDuration: 100,
+        timelineDuration: 100,
+        transformedDuration: 100,
+        transformedOffset: 0,
+        offset: 0,
+      });
       expect((clip as AdjustmentTimelineClip).depth).toBe(2);
     });
 
@@ -460,4 +474,3 @@ describe("adjustment-clip commands", () => {
     });
   });
 });
-

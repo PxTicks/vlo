@@ -97,7 +97,7 @@ describe("TimelineTypes guards", () => {
       id: "adj-1",
       type: "adjustment",
       name: "Adjustment",
-      sourceDuration: null,
+      sourceDuration: 100,
       timelineDuration: 100,
       croppedSourceDuration: 100,
       offset: 0,

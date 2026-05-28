@@ -29,8 +29,8 @@ describe("isTransformCompatible — adjustment clips", () => {
     expect(isTransformCompatible(defByType("fitMode"), "adjustment")).toBe(false);
   });
 
-  it("rejects speed", () => {
-    expect(isTransformCompatible(defByType("speed"), "adjustment")).toBe(false);
+  it("accepts speed", () => {
+    expect(isTransformCompatible(defByType("speed"), "adjustment")).toBe(true);
   });
 
   it("rejects volume (audio-only)", () => {
@@ -100,10 +100,9 @@ describe("default + addable menus for adjustment clips", () => {
     expect(defaults.map((d) => d.type)).not.toContain("volume");
   });
 
-  it("the addable menu contains filters but not speed", () => {
+  it("the addable menu contains filters and speed", () => {
     const addable = getAddableTransforms({ clipType: "adjustment" });
-    // Speed is excluded for adjustment clips.
-    expect(addable.find((d) => d.type === "speed")).toBeUndefined();
+    expect(addable.find((d) => d.type === "speed")).toBeDefined();
     // At least one filter is present.
     expect(addable.find((d) => d.type === "filter")).toBeDefined();
   });

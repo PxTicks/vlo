@@ -134,12 +134,21 @@ const timelineClipSchema = z
   })
   .passthrough()
   .superRefine((clip, ctx) => {
-    if (clip.type === "adjustment" && typeof clip.depth !== "number") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Adjustment clips require an integer depth ≥ 1.",
-        path: ["depth"],
-      });
+    if (clip.type === "adjustment") {
+      if (typeof clip.depth !== "number") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Adjustment clips require an integer depth ≥ 1.",
+          path: ["depth"],
+        });
+      }
+      if (typeof clip.sourceDuration !== "number") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Adjustment clips require a numeric sourceDuration.",
+          path: ["sourceDuration"],
+        });
+      }
     }
   }) as unknown as z.ZodType<TimelineClip>;
 

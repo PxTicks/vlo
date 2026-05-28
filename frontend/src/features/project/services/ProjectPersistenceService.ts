@@ -170,6 +170,39 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
+function normalizeAdjustmentSourceDurationInTimelineDocument(
+  raw: unknown,
+): { value: unknown; changed: boolean } {
+  if (!isRecord(raw) || !Array.isArray(raw.clips)) {
+    return { value: raw, changed: false };
+  }
+
+  let changed = false;
+  const next = clone(raw);
+  if (!isRecord(next) || !Array.isArray(next.clips)) {
+    return { value: raw, changed: false };
+  }
+
+  next.clips = next.clips.map((clip) => {
+    if (!isRecord(clip) || clip.type !== "adjustment") {
+      return clip;
+    }
+
+    if (typeof clip.sourceDuration === "number") {
+      return clip;
+    }
+
+    changed = true;
+    return {
+      ...clip,
+      sourceDuration:
+        typeof clip.timelineDuration === "number" ? clip.timelineDuration : 0,
+    };
+  });
+
+  return { value: next, changed };
+}
+
 function createDefaultTrack(): TimelineTrack {
   return {
     id: `track_${crypto.randomUUID()}`,
@@ -466,19 +499,29 @@ export class ProjectPersistenceService {
     const file = await fileSystemService.readFile(TIMELINE_PATH);
     const raw = JSON.parse(await file.text()) as unknown;
     throwIfNewerSchemaVersion(raw, TIMELINE_NEWER_SCHEMA_CHECK);
+    const normalizedCurrent = normalizeAdjustmentSourceDurationInTimelineDocument(
+      raw,
+    );
 
     // Zod's strip-on-parse default means a stale dev-branch v2 document that
     // still carries the never-shipped top-level `groups` field parses cleanly
     // here — the field is silently dropped from the in-memory doc and won't
     // be written back on the next persistence flush.
-    const currentParsed = timelineDocumentSchema.safeParse(raw);
+    const currentParsed = timelineDocumentSchema.safeParse(
+      normalizedCurrent.value,
+    );
     if (currentParsed.success) {
+      if (normalizedCurrent.changed) {
+        return this.persistTimeline(currentParsed.data);
+      }
       this.timelineCache = currentParsed.data;
       return clone(currentParsed.data);
     }
 
     // Fall back to v1 and migrate forward.
-    const v1Parsed = timelineDocumentSchemaV1.safeParse(raw);
+    const normalizedLegacy =
+      normalizeAdjustmentSourceDurationInTimelineDocument(raw);
+    const v1Parsed = timelineDocumentSchemaV1.safeParse(normalizedLegacy.value);
     if (!v1Parsed.success) {
       throw currentParsed.error;
     }

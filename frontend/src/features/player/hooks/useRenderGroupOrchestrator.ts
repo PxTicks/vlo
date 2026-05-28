@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { Container } from "pixi.js";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { RenderGroupOrchestrator } from "../../renderer/services/RenderGroupOrchestrator";
+import { AdjustmentEffectResolver } from "../../renderer/services/AdjustmentEffectResolver";
 import { playbackClock } from "../services/PlaybackClock";
 
 /**
@@ -23,15 +24,23 @@ export function useRenderGroupOrchestrator(
   visualTrackIds: readonly string[],
 ): {
   orchestrator: RenderGroupOrchestrator | null;
+  adjustmentEffectResolver: AdjustmentEffectResolver | null;
   syncRef: React.RefObject<(currentTick: number) => void>;
 } {
+  const adjustmentEffectResolver = useMemo(
+    () => new AdjustmentEffectResolver(),
+    [],
+  );
   const orchestrator = useMemo(() => {
     if (!viewport) return null;
-    return new RenderGroupOrchestrator(viewport, { logicalDimensions });
+    return new RenderGroupOrchestrator(viewport, {
+      logicalDimensions,
+      adjustmentEffectResolver,
+    });
     // logicalDimensions intentionally omitted; pushed via setLogicalDimensions
     // below so the orchestrator (and its registered tracks) survives resizes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewport]);
+  }, [adjustmentEffectResolver, viewport]);
 
   useEffect(() => {
     orchestrator?.setLogicalDimensions(logicalDimensions);
@@ -48,8 +57,9 @@ export function useRenderGroupOrchestrator(
   const tracks = useTimelineStore((s) => s.tracks ?? []);
   const clips = useTimelineStore((s) => s.clips ?? []);
   useEffect(() => {
+    adjustmentEffectResolver.setAdjustmentSource(tracks, clips);
     orchestrator?.setAdjustmentSource(tracks, clips);
-  }, [orchestrator, tracks, clips]);
+  }, [adjustmentEffectResolver, orchestrator, tracks, clips]);
 
   // Imperative sync whenever the source or visual-track order changes,
   // so paused edits to either reflect without waiting for the next tick.
@@ -70,5 +80,5 @@ export function useRenderGroupOrchestrator(
     };
   }, [orchestrator]);
 
-  return { orchestrator, syncRef };
+  return { orchestrator, adjustmentEffectResolver, syncRef };
 }

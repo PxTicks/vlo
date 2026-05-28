@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type {
   AdjustmentTimelineClip,
+  ClipTransform,
   TimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
 import {
   computeAdjustmentApplications,
+  computeAdjustmentTimeApplications,
   deriveActiveAdjustmentGroups,
 } from "../deriveAdjustmentGroups";
 
@@ -48,21 +50,34 @@ function adjustmentClip(overrides: {
   start: number;
   timelineDuration: number;
   depth: number;
+  sourceDuration?: number;
+  transformations?: ClipTransform[];
 }): AdjustmentTimelineClip {
+  const timelineDuration = overrides.timelineDuration;
+  const sourceDuration = overrides.sourceDuration ?? timelineDuration;
   return {
     id: overrides.id,
     type: "adjustment",
     name: overrides.id,
     trackId: overrides.trackId,
     start: overrides.start,
-    timelineDuration: overrides.timelineDuration,
-    sourceDuration: null,
-    transformedDuration: overrides.timelineDuration,
+    timelineDuration,
+    sourceDuration,
+    transformedDuration: timelineDuration,
     transformedOffset: 0,
-    croppedSourceDuration: overrides.timelineDuration,
+    croppedSourceDuration: sourceDuration,
     offset: 0,
-    transformations: [],
+    transformations: overrides.transformations ?? [],
     depth: overrides.depth,
+  };
+}
+
+function speedTransform(factor: number): ClipTransform {
+  return {
+    id: `speed-${factor}`,
+    type: "speed",
+    isEnabled: true,
+    parameters: { factor },
   };
 }
 
@@ -238,6 +253,88 @@ describe("computeAdjustmentApplications", () => {
     const clips = [videoClip("clip1", "v1")];
     const apps = computeAdjustmentApplications(tracks, clips, 50);
     expect(apps.size).toBe(0);
+  });
+
+  it("activates inner adjustments in the outer-warped input domain", () => {
+    const tracks = [
+      adjustmentTrack("adjA"),
+      adjustmentTrack("adjB"),
+      visualTrack("v1"),
+    ];
+    const clips = [
+      adjustmentClip({
+        id: "A",
+        trackId: "adjA",
+        start: 0,
+        timelineDuration: 100,
+        sourceDuration: 200,
+        depth: 2,
+        transformations: [speedTransform(2)],
+      }),
+      adjustmentClip({
+        id: "B",
+        trackId: "adjB",
+        start: 150,
+        timelineDuration: 25,
+        depth: 1,
+      }),
+    ];
+
+    const apps = computeAdjustmentApplications(tracks, clips, 80);
+    expect((apps.get("v1") ?? []).map((application) => application.sourceClipId)).toEqual([
+      "B",
+      "A",
+    ]);
+  });
+});
+
+describe("computeAdjustmentTimeApplications", () => {
+  it("includes audio tracks in reach but excludes adjustment tracks", () => {
+    const tracks = [
+      adjustmentTrack("adjOuter"),
+      audioTrack("a1"),
+      adjustmentTrack("adjInner"),
+      visualTrack("v1"),
+    ];
+    const clips = [
+      adjustmentClip({
+        id: "outer",
+        trackId: "adjOuter",
+        start: 0,
+        timelineDuration: 100,
+        sourceDuration: 200,
+        depth: 3,
+        transformations: [speedTransform(2)],
+      }),
+    ];
+
+    const apps = computeAdjustmentTimeApplications(tracks, clips);
+    expect(apps.get("a1")).toHaveLength(1);
+    expect(apps.get("v1")).toHaveLength(1);
+    expect(apps.get("adjInner")).toBeUndefined();
+  });
+
+  it("skips adjustments with no enabled speed transforms", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips = [
+      adjustmentClip({
+        id: "A",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 100,
+        depth: 1,
+        transformations: [
+          {
+            id: "blur-1",
+            type: "filter",
+            isEnabled: true,
+            parameters: { strength: 4 },
+          },
+        ],
+      }),
+    ];
+
+    expect(computeAdjustmentTimeApplications(tracks, clips).size).toBe(0);
   });
 });
 
@@ -490,5 +587,38 @@ describe("deriveActiveAdjustmentGroups", () => {
     expect(forest[0].transformations).toBe(adjustment.transformations);
     expect(forest[0].start).toBe(0);
     expect(forest[0].timelineDuration).toBe(100);
+  });
+
+  it("activates nested visual groups using the outer-warped time domain", () => {
+    const tracks = [
+      adjustmentTrack("adjA"),
+      adjustmentTrack("adjB"),
+      visualTrack("v1"),
+    ];
+    const clips = [
+      adjustmentClip({
+        id: "A",
+        trackId: "adjA",
+        start: 0,
+        timelineDuration: 100,
+        sourceDuration: 200,
+        depth: 2,
+        transformations: [speedTransform(2)],
+      }),
+      adjustmentClip({
+        id: "B",
+        trackId: "adjB",
+        start: 150,
+        timelineDuration: 25,
+        depth: 1,
+      }),
+    ];
+
+    const forest = deriveActiveAdjustmentGroups(tracks, clips, 80);
+    expect(forest).toHaveLength(1);
+    expect(forest[0].sourceClipId).toBe("A");
+    expect(forest[0].children).toHaveLength(1);
+    expect(forest[0].children[0].sourceClipId).toBe("B");
+    expect(forest[0].children[0].trackIds).toEqual(["v1"]);
   });
 });

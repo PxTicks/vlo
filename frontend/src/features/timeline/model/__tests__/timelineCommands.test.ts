@@ -53,7 +53,7 @@ describe("withTimelineClipDefaults", () => {
       name: "Color",
       trackId: "track-adj",
       start: 0,
-      sourceDuration: null,
+      sourceDuration: 100,
       timelineDuration: 100,
       croppedSourceDuration: 100,
       offset: 0,

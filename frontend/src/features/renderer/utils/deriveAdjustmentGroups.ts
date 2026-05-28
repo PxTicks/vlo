@@ -4,15 +4,15 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
+import { pullTimeThroughTransforms } from "../../transformations/utils/timeCalculation";
 
 /**
- * A single adjustment clip's effective application to a single visual track.
- * One adjustment clip produces one `AdjustmentApplication` per visual track
- * in its reach.
+ * A single adjustment clip's effective application to a single descendant
+ * track. One adjustment clip produces one application per reached track.
  *
- * `start` / `timelineDuration` mirror the source clip's fields — keyframe
- * sampling in `applyGroupTransforms` is clip-local
- * (`stackTime = currentTick - group.start`).
+ * `start` / `timelineDuration` live in the adjustment clip's own input-level
+ * time domain. Inner adjustments evaluate their activation window against the
+ * tick after every outer remap has been applied.
  */
 export interface AdjustmentApplication {
   sourceClipId: string;
@@ -22,7 +22,10 @@ export interface AdjustmentApplication {
   adjustmentTrackPosition: number;
   start: number;
   timelineDuration: number;
+  sourceDuration: number;
 }
+
+export type AdjustmentTimeApplication = AdjustmentApplication;
 
 /**
  * One Pixi container in the orchestrator's nested forest. May reference the
@@ -49,34 +52,73 @@ export interface DerivedRenderGroup {
   children: DerivedRenderGroup[];
 }
 
-function isVisualTrack(track: TimelineTrack): boolean {
-  return (track.type === undefined || track.type === "visual") && track.isVisible;
+function isVisibleVisualTrack(track: TimelineTrack): boolean {
+  return track.type === "visual" && track.isVisible;
 }
 
-function isAdjustmentClipActiveAtTick(
-  clip: AdjustmentTimelineClip,
-  tick: number,
+function isTimeAffectedTrack(track: TimelineTrack): boolean {
+  return (
+    (track.type === "visual" || track.type === "audio") &&
+    track.isVisible
+  );
+}
+
+function hasEnabledSpeedTransform(
+  transformations: readonly ClipTransform[],
 ): boolean {
-  return tick >= clip.start && tick < clip.start + clip.timelineDuration;
+  return transformations.some(
+    (transform) => transform.isEnabled && transform.type === "speed",
+  );
+}
+
+function buildApplication(
+  adjustment: AdjustmentTimelineClip,
+  adjustmentTrackPosition: number,
+): AdjustmentApplication {
+  return {
+    sourceClipId: adjustment.id,
+    transformations: adjustment.transformations,
+    adjustmentTrackPosition,
+    start: adjustment.start,
+    timelineDuration: adjustment.timelineDuration,
+    sourceDuration: adjustment.sourceDuration,
+  };
 }
 
 /**
- * For each visual track, compute the stack of adjustment applications
- * applied at `currentTick`, ordered innermost-first → outermost-last.
+ * Apply an adjustment clip's time remap at `tick`, where `tick` is expressed
+ * in the clip's input-level domain.
  *
- * "Outermost" = the adjustment clip whose own track sits highest in the
- * stack (= lowest position index = applied last on the GPU = wraps
- * everything below).
- *
- * Depth counts the next N tracks of any type below the adjustment's own
- * track; only visual tracks among those N are included. Non-visual tracks
- * (audio, mask, other adjustment tracks) consume a slot but contribute
- * nothing to the group.
+ * Before the clip window the remap is identity. Inside the window it reuses
+ * the same backward speed pass as per-clip speed. After the window the full
+ * accumulated delta is carried forward so descendants never jump backward at
+ * the clip boundary.
  */
-export function computeAdjustmentApplications(
+export function applyAdjustmentTimeRemap(
+  application: AdjustmentTimeApplication,
+  tick: number,
+): number {
+  if (tick < application.start) {
+    return tick;
+  }
+
+  const localOffset = tick - application.start;
+  if (localOffset >= application.timelineDuration) {
+    return tick + (application.sourceDuration - application.timelineDuration);
+  }
+
+  const sourceOffset = pullTimeThroughTransforms(
+    application.transformations,
+    localOffset,
+  );
+  return application.start + sourceOffset;
+}
+
+function buildApplicationsByTrack(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
-  currentTick: number,
+  shouldIncludeTrack: (track: TimelineTrack) => boolean,
+  shouldIncludeAdjustment: (adjustment: AdjustmentTimelineClip) => boolean,
 ): Map<string, AdjustmentApplication[]> {
   const trackPositionById = new Map<string, number>();
   tracks.forEach((track, index) => {
@@ -88,41 +130,23 @@ export function computeAdjustmentApplications(
   for (const clip of clips) {
     if (clip.type !== "adjustment") continue;
     const adjustment = clip as AdjustmentTimelineClip;
-    if (!isAdjustmentClipActiveAtTick(adjustment, currentTick)) continue;
-    // Honor per-clip mute: matches the timeline-clip mute button, which
-    // would otherwise be a no-op on adjustment clips.
     if (adjustment.isMuted === true) continue;
+    if (!shouldIncludeAdjustment(adjustment)) continue;
 
     const clipTrackPosition = trackPositionById.get(adjustment.trackId);
-    if (clipTrackPosition === undefined) continue; // orphaned
+    if (clipTrackPosition === undefined) continue;
 
-    // Honor the adjustment track's visibility toggle: if the user hides the
-    // adjustment track, its clips contribute no transforms. (Hiding the
-    // adjustment *track* is a fast A/B compare; the clips themselves
-    // remain authored.)
     const adjustmentTrack = tracks[clipTrackPosition];
     if (!adjustmentTrack || adjustmentTrack.isVisible === false) continue;
-
     if (adjustment.depth < 1) continue;
 
-    // Reach: next `depth` track positions strictly below clip's own track,
-    // clamped at the bottom of the stack. Visual tracks among those are
-    // included; non-visual tracks consume a slot but contribute nothing.
+    const application = buildApplication(adjustment, clipTrackPosition);
     const reachStart = clipTrackPosition + 1;
     const reachEnd = Math.min(tracks.length, reachStart + adjustment.depth);
 
     for (let pos = reachStart; pos < reachEnd; pos += 1) {
       const track = tracks[pos];
-      if (!track) continue;
-      if (!isVisualTrack(track)) continue;
-
-      const application: AdjustmentApplication = {
-        sourceClipId: adjustment.id,
-        transformations: adjustment.transformations,
-        adjustmentTrackPosition: clipTrackPosition,
-        start: adjustment.start,
-        timelineDuration: adjustment.timelineDuration,
-      };
+      if (!track || !shouldIncludeTrack(track)) continue;
 
       const list = applicationsByTrack.get(track.id) ?? [];
       list.push(application);
@@ -130,13 +154,95 @@ export function computeAdjustmentApplications(
     }
   }
 
-  // Sort innermost-first → outermost-last. Outermost = lowest position
-  // (topmost adjustment track). So we want descending by position.
+  // Outermost-first: lowest position index sits highest in the stack.
   for (const list of applicationsByTrack.values()) {
-    list.sort((a, b) => b.adjustmentTrackPosition - a.adjustmentTrackPosition);
+    list.sort(
+      (left, right) =>
+        left.adjustmentTrackPosition - right.adjustmentTrackPosition,
+    );
   }
 
   return applicationsByTrack;
+}
+
+function resolveActiveApplications(
+  applications: readonly AdjustmentApplication[],
+  presentationTick: number,
+): AdjustmentApplication[] {
+  const active: AdjustmentApplication[] = [];
+  let inputTick = presentationTick;
+
+  for (const application of applications) {
+    const isActive =
+      inputTick >= application.start &&
+      inputTick < application.start + application.timelineDuration;
+
+    if (isActive) {
+      active.push(application);
+    }
+
+    inputTick = applyAdjustmentTimeRemap(application, inputTick);
+  }
+
+  return active;
+}
+
+/**
+ * For each visual track, compute the active stack of adjustment applications
+ * applied at `currentTick`, ordered innermost-first → outermost-last.
+ *
+ * Inner activation is evaluated in the outer-warped input domain so nested
+ * adjustment filters/layout stay aligned with the same content the time
+ * resolver warps underneath them.
+ */
+export function computeAdjustmentApplications(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  currentTick: number,
+): Map<string, AdjustmentApplication[]> {
+  const allApplicationsByTrack = buildApplicationsByTrack(
+    tracks,
+    clips,
+    isVisibleVisualTrack,
+    () => true,
+  );
+  const activeApplicationsByTrack = new Map<string, AdjustmentApplication[]>();
+
+  for (const [trackId, applications] of allApplicationsByTrack) {
+    const active = resolveActiveApplications(applications, currentTick);
+    if (active.length === 0) continue;
+    activeApplicationsByTrack.set(trackId, [...active].reverse());
+  }
+
+  return activeApplicationsByTrack;
+}
+
+/**
+ * For each visual/audio track, compute the full stack of descendant
+ * adjustment speed applications, ordered innermost-first → outermost-last.
+ *
+ * The resolver consumes the full static stack and evaluates activation at
+ * lookup time, carrying every outer post-window delta forward into inner
+ * activation checks by function composition.
+ */
+export function computeAdjustmentTimeApplications(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+): Map<string, AdjustmentTimeApplication[]> {
+  const applicationsByTrack = buildApplicationsByTrack(
+    tracks,
+    clips,
+    isTimeAffectedTrack,
+    (adjustment) => hasEnabledSpeedTransform(adjustment.transformations),
+  );
+  const timeApplicationsByTrack = new Map<string, AdjustmentTimeApplication[]>();
+
+  for (const [trackId, applications] of applicationsByTrack) {
+    if (applications.length === 0) continue;
+    timeApplicationsByTrack.set(trackId, [...applications].reverse());
+  }
+
+  return timeApplicationsByTrack;
 }
 
 function makeGroupId(sourceClipId: string, firstTrackId: string): string {
@@ -148,10 +254,10 @@ function makeGroupId(sourceClipId: string, firstTrackId: string): string {
  * group containers that attach to the orchestrator's root; nested children
  * are wrapped inside their parent.
  *
- * A contiguous run of visual tracks that share the same outermost
- * application gets ONE container at that level; tracks with a deeper
- * application are handled by recursion into the next stack layer. Tracks
- * with no applications at all are not represented here — the orchestrator
+ * A contiguous run of visual tracks that share the same outermost active
+ * application gets one container at that level; tracks with a deeper active
+ * application are handled by recursion into the next stack layer. Tracks with
+ * no active applications at all are not represented here — the orchestrator
  * parents their engine containers directly to root.
  */
 export function deriveActiveAdjustmentGroups(
@@ -165,38 +271,24 @@ export function deriveActiveAdjustmentGroups(
     currentTick,
   );
 
-  // Walk visual tracks in project order.
-  const visualTracks = tracks.filter(isVisualTrack);
+  const visualTracks = tracks.filter(isVisibleVisualTrack);
 
-  /**
-   * Build the forest at `depth` (0 = outermost). For each contiguous run of
-   * tracks sharing the same application at this depth, emit one container
-   * and recurse into depth+1 for nested groups.
-   *
-   * `depth` indexes into the per-track stack from the OUTER end:
-   *   - stack is innermost-first, outermost-last
-   *   - so the application at depth `d` is `stack[stack.length - 1 - d]`.
-   */
   function buildForest(
     tracksSlice: readonly TimelineTrack[],
     depth: number,
   ): DerivedRenderGroup[] {
     const result: DerivedRenderGroup[] = [];
     let i = 0;
+
     while (i < tracksSlice.length) {
       const stack = applicationsByTrack.get(tracksSlice[i].id) ?? [];
       const appAtDepth = stack[stack.length - 1 - depth];
 
       if (!appAtDepth) {
-        // No wrapper at this level for this track; it's "exposed" inside
-        // the parent's container (handled by the orchestrator) or attached
-        // directly to root if depth === 0.
         i += 1;
         continue;
       }
 
-      // Run forward while the next track also has this same application
-      // at this depth.
       let j = i + 1;
       while (j < tracksSlice.length) {
         const nextStack = applicationsByTrack.get(tracksSlice[j].id) ?? [];
@@ -207,7 +299,7 @@ export function deriveActiveAdjustmentGroups(
       }
 
       const run = tracksSlice.slice(i, j);
-      const trackIds = run.map((t) => t.id);
+      const trackIds = run.map((track) => track.id);
       const children = buildForest(run, depth + 1);
 
       result.push({
@@ -222,6 +314,7 @@ export function deriveActiveAdjustmentGroups(
 
       i = j;
     }
+
     return result;
   }
 

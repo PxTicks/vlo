@@ -1,15 +1,14 @@
 import { Container } from "pixi.js";
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { applyGroupTransforms } from "../../transformations/applyGroupTransforms";
-import {
-  deriveActiveAdjustmentGroups,
-  type DerivedRenderGroup,
-} from "../utils/deriveAdjustmentGroups";
+import { type DerivedRenderGroup } from "../utils/deriveAdjustmentGroups";
+import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 
 export interface RenderGroupOrchestratorOptions {
   /** Project resolution used by applyGroupTransforms. Defaults to 1920x1080
    *  until the caller wires the real logicalDimensions. */
   logicalDimensions?: { width: number; height: number };
+  adjustmentEffectResolver?: AdjustmentEffectResolver;
 }
 
 interface ForestEntry {
@@ -55,15 +54,16 @@ interface ForestEntry {
  */
 export class RenderGroupOrchestrator {
   private readonly root: Container;
+  private readonly adjustmentEffectResolver: AdjustmentEffectResolver;
   private readonly tracks = new Map<string, Container>();
   private readonly groupContainers = new Map<string, Container>();
-  private sourceTracks: readonly TimelineTrack[] = [];
-  private sourceClips: readonly TimelineClip[] = [];
   private logicalDimensions: { width: number; height: number };
   private disposed = false;
 
   constructor(root: Container, options: RenderGroupOrchestratorOptions = {}) {
     this.root = root;
+    this.adjustmentEffectResolver =
+      options.adjustmentEffectResolver ?? new AdjustmentEffectResolver();
     this.logicalDimensions = options.logicalDimensions ?? {
       width: 1920,
       height: 1080,
@@ -132,8 +132,7 @@ export class RenderGroupOrchestrator {
     clips: readonly TimelineClip[],
   ): void {
     if (this.disposed) return;
-    this.sourceTracks = tracks;
-    this.sourceClips = clips;
+    this.adjustmentEffectResolver.setAdjustmentSource(tracks, clips);
 
     const liveAdjustmentClipIds = new Set<string>();
     for (const clip of clips) {
@@ -178,11 +177,7 @@ export class RenderGroupOrchestrator {
       visualTrackOrder.length - 1 - index;
 
     // 1. Derive the forest for this tick.
-    const forest = deriveActiveAdjustmentGroups(
-      this.sourceTracks,
-      this.sourceClips,
-      currentTick,
-    );
+    const forest = this.adjustmentEffectResolver.deriveGroups(currentTick);
 
     // 2. Walk the forest depth-first to enumerate every group node, its
     //    desired parent container, and its top-most member visual index.
@@ -323,8 +318,6 @@ export class RenderGroupOrchestrator {
     }
     this.groupContainers.clear();
     this.tracks.clear();
-    this.sourceTracks = [];
-    this.sourceClips = [];
   }
 
   /** Test helper. Returns the cached Pixi container for a group, or null. */

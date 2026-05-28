@@ -144,8 +144,11 @@ function PlayerImpl() {
   // renderers and pixiApp.render(). The hook also imperatively syncs on
   // `visualTrackIds` changes so paused edits to track order reflect
   // without waiting for the next clock tick.
-  const { orchestrator: renderGroupOrchestrator, syncRef: renderGroupSyncRef } =
-    useRenderGroupOrchestrator(viewport, logicalDimensions, visualTrackIds);
+  const {
+    orchestrator: renderGroupOrchestrator,
+    adjustmentEffectResolver,
+    syncRef: renderGroupSyncRef,
+  } = useRenderGroupOrchestrator(viewport, logicalDimensions, visualTrackIds);
 
   const registerSynchronizedPlaybackRenderer = useCallback(
     (
@@ -616,11 +619,16 @@ function PlayerImpl() {
                 registerSynchronizedPlaybackRenderer
               }
               orchestrator={renderGroupOrchestrator}
+              adjustmentEffectResolver={adjustmentEffectResolver}
             />
           ))}
         {/* Render Audio Layers (Invisible) */}
         {tracksWithAudio.map((track) => (
-          <AudioTrackLayer key={track.id} trackId={track.id} />
+          <AudioTrackLayer
+            key={track.id}
+            trackId={track.id}
+            adjustmentEffectResolver={adjustmentEffectResolver}
+          />
         ))}
       </Box>
 

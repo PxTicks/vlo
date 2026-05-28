@@ -326,11 +326,14 @@ export function pasteCopiedClipsAboveDraft(
     return [];
   }
 
-  const maskCopiesByParent = new Map<string, TimelineClip[]>();
+  const maskCopiesByParent = new Map<string, MaskTimelineClip[]>();
   parentCopies.forEach((parent) => {
     const maskChildIds = new Set(getChildMaskClipIds(parent));
     if (maskChildIds.size === 0) return;
-    const masks = copiedClips.filter((clip) => maskChildIds.has(clip.id));
+    const masks = copiedClips.filter(
+      (clip): clip is MaskTimelineClip =>
+        maskChildIds.has(clip.id) && clip.type === "mask",
+    );
     if (masks.length > 0) {
       maskCopiesByParent.set(parent.id, masks);
     }
@@ -413,11 +416,11 @@ export function pasteCopiedClipsAboveDraft(
       const pastedMasks = (maskCopiesByParent.get(clip.id) || []).map((maskClip) => {
         const parsed = parseMaskClipId(maskClip.id);
         const maskLocalId = parsed?.maskId ?? crypto.randomUUID();
-        const clonedMask = {
-          ...cloneTimelineClip(
+        const clonedMask: MaskTimelineClip = {
+          ...(cloneTimelineClip(
             maskClip,
             makeMaskClipId(pastedClip.id, maskLocalId),
-          ),
+          ) as MaskTimelineClip),
           parentClipId: pastedClip.id,
           trackId: pastedClip.trackId,
         };
@@ -773,22 +776,6 @@ export function addClipTransformToDraft(
   clipId: string,
   effect: ClipTransform,
 ): void {
-  // Speed transforms are rejected on adjustment clips. The clip-level
-  // applyTransformStack path skips speed entries silently, but adjustments
-  // bypass applyClipTransforms entirely (no source asset to remap), so
-  // letting speed accumulate here would be a UI/store inconsistency. Reject
-  // at the command boundary; the inspector catalogue (4b) hides the entry
-  // separately so users never see it offered for an adjustment clip.
-  if (effect.type === "speed") {
-    const target = draft.clips.find((clip) => clip.id === clipId);
-    if (target && target.type === "adjustment") {
-      console.warn(
-        `[addClipTransformToDraft] rejecting speed transform on adjustment clip ${clipId}.`,
-      );
-      return;
-    }
-  }
-
   draft.clips = draft.clips.map((clip) =>
     clip.id === clipId
       ? { ...clip, transformations: [...(clip.transformations || []), effect] }
@@ -843,18 +830,6 @@ export function setClipTransformsAndShapeInDraft(
   transforms: ClipTransform[],
   shape?: TimelineClipShape,
 ): void {
-  // Mirror addClipTransformToDraft's invariant: a bulk replace must not
-  // smuggle a speed transform onto an adjustment clip.
-  const target = draft.clips.find((clip) => clip.id === clipId);
-  if (target && target.type === "adjustment") {
-    if (transforms.some((t) => t.type === "speed")) {
-      console.warn(
-        `[setClipTransformsInDraft] rejecting batch with speed transform on adjustment clip ${clipId}.`,
-      );
-      return;
-    }
-  }
-
   draft.clips = draft.clips.map((clip) => {
     if (clip.id !== clipId) {
       return clip;

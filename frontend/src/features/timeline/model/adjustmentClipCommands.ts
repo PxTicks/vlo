@@ -82,7 +82,7 @@ export function createAdjustmentClipInDraft(
     trackId,
     start: input.start,
     timelineDuration: input.timelineDuration,
-    sourceDuration: null,
+    sourceDuration: input.timelineDuration,
     transformedDuration: input.timelineDuration,
     transformedOffset: 0,
     croppedSourceDuration: input.timelineDuration,

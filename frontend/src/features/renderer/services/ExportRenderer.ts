@@ -7,6 +7,7 @@ import type {
 } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../timeline";
+import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
 import { TrackAudioRenderer } from "./TrackAudioRenderer";
@@ -356,12 +357,18 @@ export class ExportRenderer {
     await outputEncoder.start();
 
     try {
+      const adjustmentEffectResolver = new AdjustmentEffectResolver();
+      adjustmentEffectResolver.setAdjustmentSource(
+        projectData.tracks,
+        projectData.clips,
+      );
+
       // --- AUDIO EXPORT LOOP ---
       const rangeDurationSec = rangeDurationTicks / TICKS_PER_SECOND;
 
       if (shouldRenderAudio) {
         const audioRenderers = relevantForAudio.map(
-          (t) => new TrackAudioRenderer(t.id),
+          (t) => new TrackAudioRenderer(t.id, adjustmentEffectResolver),
         );
 
         const CHUNK_DURATION_SEC = 10;
@@ -433,10 +440,19 @@ export class ExportRenderer {
       this.logicalStage.sortableChildren = true;
       this.orchestrator = new RenderGroupOrchestrator(this.logicalStage, {
         logicalDimensions: { width: logicalWidth, height: logicalHeight },
+        adjustmentEffectResolver,
       });
       this.engines = visualTracks.map((track, index) => {
         const zIndex = visualTracks.length - 1 - index;
-        const engine = new TrackRenderEngine(zIndex, undefined, this.app.renderer);
+        const engine = new TrackRenderEngine(
+          zIndex,
+          undefined,
+          this.app.renderer,
+          {
+            trackId: track.id,
+            adjustmentEffectResolver,
+          },
+        );
         this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
@@ -477,7 +493,10 @@ export class ExportRenderer {
             { shouldRender: false, fps: renderFps },
           );
 
-          const activeClip = findActiveClipAtTicks(trackClips, currentTime);
+          const activeClip = findActiveClipAtTicks(
+            trackClips,
+            engine.resolveEffectiveTrackTick(currentTime),
+          );
 
           if (activeClip) {
             const activeMaskClips = maskClipsByParent.get(activeClip.id) ?? [];
@@ -587,13 +606,28 @@ export class ExportRenderer {
       );
 
     try {
+      const adjustmentEffectResolver = new AdjustmentEffectResolver();
+      adjustmentEffectResolver.setAdjustmentSource(
+        projectData.tracks,
+        projectData.clips,
+      );
+
       this.logicalStage.sortableChildren = true;
       this.orchestrator = new RenderGroupOrchestrator(this.logicalStage, {
         logicalDimensions: { width: logicalWidth, height: logicalHeight },
+        adjustmentEffectResolver,
       });
       this.engines = visualTracks.map((track, index) => {
         const zIndex = visualTracks.length - 1 - index;
-        const engine = new TrackRenderEngine(zIndex, undefined, this.app.renderer);
+        const engine = new TrackRenderEngine(
+          zIndex,
+          undefined,
+          this.app.renderer,
+          {
+            trackId: track.id,
+            adjustmentEffectResolver,
+          },
+        );
         this.orchestrator!.registerTrack(track.id, engine.container);
         return engine;
       });
@@ -621,7 +655,10 @@ export class ExportRenderer {
           { shouldRender: false, fps },
         );
 
-        const activeClip = findActiveClipAtTicks(trackClips, tick);
+        const activeClip = findActiveClipAtTicks(
+          trackClips,
+          engine.resolveEffectiveTrackTick(tick),
+        );
         if (!activeClip) return;
 
         const activeMaskClips = maskClipsByParent.get(activeClip.id) ?? [];

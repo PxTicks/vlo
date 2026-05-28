@@ -14,6 +14,7 @@ import type {
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
 import { applyClipTransforms, livePreviewParamStore } from "../../transformations";
+import type { AdjustmentEffectResolver } from "../services/AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "../services/RenderGroupOrchestrator";
 import { TrackRenderEngine } from "../services/TrackRenderEngine";
 import {
@@ -83,6 +84,7 @@ export function useTrackRenderEngine(
    * `engine.addTo(container)` direct attachment used by existing tests.
    */
   orchestrator?: RenderGroupOrchestrator | null,
+  adjustmentEffectResolver?: AdjustmentEffectResolver | null,
 ): TrackRenderEngineResult {
   const engineRef = useRef<TrackRenderEngine | null>(null);
   const [spriteInstance, setSpriteInstance] = useState<Sprite | null>(null);
@@ -133,6 +135,15 @@ export function useTrackRenderEngine(
     sortedTrackClips,
   });
 
+  const resolveTrackTick = useCallback(
+    (presentationTick: number) =>
+      adjustmentEffectResolver
+        ?.getTimeResolver()
+        .resolveEffectiveTrackTick(trackId, presentationTick) ??
+      presentationTick,
+    [adjustmentEffectResolver, trackId],
+  );
+
   useEffect(() => {
     // Keep the rAF playback loop reading the latest snapshot of playback
     // inputs without taking them as callback dependencies.
@@ -148,7 +159,10 @@ export function useTrackRenderEngine(
     currentTime: number,
     trackClips: TimelineClip[],
   ) => {
-    const activeClip = findActiveClipAtTicks(trackClips, currentTime);
+    const activeClip = findActiveClipAtTicks(
+      trackClips,
+      resolveTrackTick(currentTime),
+    );
     activeClipRef.current = activeClip || null;
 
     if (activeClip && activeClip.id !== currentClipIdRef.current) {
@@ -160,7 +174,7 @@ export function useTrackRenderEngine(
     }
 
     return activeClip;
-  }, []);
+  }, [resolveTrackTick]);
 
   useEffect(() => {
     logicalDimensionsRef.current = logicalDimensions;
@@ -372,6 +386,7 @@ export function useTrackRenderEngine(
         }
       },
       app.renderer,
+      { trackId, adjustmentEffectResolver },
     );
 
     if (orchestrator) {
@@ -400,7 +415,7 @@ export function useTrackRenderEngine(
       engineRef.current = null;
       setSpriteInstance(null);
     };
-  }, [trackId, app, zIndex, container, orchestrator]);
+  }, [trackId, app, zIndex, container, orchestrator, adjustmentEffectResolver]);
 
   useEffect(() => {
     if (!registerSynchronizedPlaybackRenderer) return;

@@ -8,6 +8,7 @@ import { registerCanvasSelectable } from "./interaction/useCanvasSelectionManage
 import { useCanvasSelectionStore } from "../useCanvasSelectionStore";
 import { useTrackRenderEngine } from "../../renderer";
 import type { RenderGroupOrchestrator } from "../../renderer/services/RenderGroupOrchestrator";
+import type { AdjustmentEffectResolver } from "../../renderer/services/AdjustmentEffectResolver";
 
 /**
  * Composition hook that wires the renderer's TrackRenderEngine
@@ -26,6 +27,7 @@ export function useTrackRenderer(
     renderer: ((time: number) => Promise<void>) | null,
   ) => void,
   orchestrator?: RenderGroupOrchestrator | null,
+  adjustmentEffectResolver?: AdjustmentEffectResolver | null,
 ) {
   // 1. Delegate rendering to the renderer feature
   const {
@@ -41,6 +43,7 @@ export function useTrackRenderer(
     logicalDimensions,
     registerSynchronizedPlaybackRenderer,
     orchestrator,
+    adjustmentEffectResolver,
   );
 
   // 2. Selection state

@@ -30,6 +30,7 @@ import {
   createTextTexture,
   getTextTextureSignature,
 } from "./textTextureRenderer";
+import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -84,6 +85,11 @@ interface LatestMaskSyncContext {
   fps?: number;
 }
 
+interface TrackRenderEngineOptions {
+  trackId?: string;
+  adjustmentEffectResolver?: AdjustmentEffectResolver | null;
+}
+
 /**
  * Encapsulates the rendering logic for a single track.
  * Manages the WebWorker, PIXI.Sprite, and frame synchronization.
@@ -102,6 +108,8 @@ export class TrackRenderEngine {
   public readonly container: Container;
   private worker: Worker;
   private readonly renderer: Renderer | null;
+  private readonly trackId: string | null;
+  private readonly adjustmentEffectResolver: AdjustmentEffectResolver | null;
 
   // State
   private preparedClips = new Map<string, string>(); // clipId -> assetId
@@ -152,8 +160,11 @@ export class TrackRenderEngine {
     zIndex: number,
     onFrameReady?: (clipId: string, transformTime: number) => void,
     renderer?: Renderer | null,
+    options: TrackRenderEngineOptions = {},
   ) {
     this.renderer = renderer ?? null;
+    this.trackId = options.trackId ?? null;
+    this.adjustmentEffectResolver = options.adjustmentEffectResolver ?? null;
     this.worker = this.createWorker();
     this.onFrameReady = onFrameReady;
 
@@ -191,6 +202,16 @@ export class TrackRenderEngine {
     this.container.zIndex = zIndex;
   }
 
+  public resolveEffectiveTrackTick(presentationTick: number): number {
+    if (!this.trackId || !this.adjustmentEffectResolver) {
+      return presentationTick;
+    }
+
+    return this.adjustmentEffectResolver
+      .getTimeResolver()
+      .resolveEffectiveTrackTick(this.trackId, presentationTick);
+  }
+
   /**
    * Main Render Loop
    * @param currentTime Global time in ticks
@@ -210,8 +231,9 @@ export class TrackRenderEngine {
     const { shouldRender = true, fps = 30 } = options;
     const nowMs = performance.now();
     const isLikelyScrubbing = this.detectScrubbing(currentTime, fps, nowMs);
+    const effectiveTick = this.resolveEffectiveTrackTick(currentTime);
     const assetById = this.syncPreparedClips(
-      currentTime,
+      effectiveTick,
       trackClips,
       assets,
       nowMs,
@@ -219,7 +241,7 @@ export class TrackRenderEngine {
     );
 
     // 3. Identify Active Clip
-    const activeClip = findActiveClipAtTicks(trackClips, currentTime);
+    const activeClip = findActiveClipAtTicks(trackClips, effectiveTick);
 
     // 4. Handle Blank Space
     if (!activeClip) {
@@ -237,8 +259,8 @@ export class TrackRenderEngine {
     }
 
     // 5. Calculate Time
-    const localTimeSeconds = calculatePlayerFrameTime(activeClip, currentTime);
-    const rawTimeSeconds = currentTime - activeClip.start;
+    const localTimeSeconds = calculatePlayerFrameTime(activeClip, effectiveTick);
+    const rawTimeSeconds = effectiveTick - activeClip.start;
 
     if (typeof localTimeSeconds !== "number" || isNaN(localTimeSeconds)) {
       if (this.pendingResolve) {
@@ -384,7 +406,8 @@ export class TrackRenderEngine {
     options: { fps?: number } = {},
   ): Promise<void> {
     const { fps = 30 } = options;
-    const activeClip = findActiveClipAtTicks(trackClips, currentTime);
+    const effectiveTick = this.resolveEffectiveTrackTick(currentTime);
+    const activeClip = findActiveClipAtTicks(trackClips, effectiveTick);
     if (!activeClip) {
       this.invalidateLivePipeline();
       this.sprite.visible = false;
@@ -393,8 +416,8 @@ export class TrackRenderEngine {
       return;
     }
 
-    const localTimeSeconds = calculatePlayerFrameTime(activeClip, currentTime);
-    const rawTimeSeconds = currentTime - activeClip.start;
+    const localTimeSeconds = calculatePlayerFrameTime(activeClip, effectiveTick);
+    const rawTimeSeconds = effectiveTick - activeClip.start;
 
     if (typeof localTimeSeconds !== "number" || isNaN(localTimeSeconds)) {
       return;
@@ -429,12 +452,12 @@ export class TrackRenderEngine {
     }
 
     const renderPromise = this.renderSynchronizedPlaybackFrameInternal(
-      currentTime,
       trackClips,
       assets,
       logicalDimensions,
       {
         activeClip,
+        effectiveTick,
         fps,
         localTimeSeconds,
         maskClips,
@@ -461,12 +484,12 @@ export class TrackRenderEngine {
   }
 
   private async renderSynchronizedPlaybackFrameInternal(
-    currentTime: number,
     trackClips: TimelineClip[],
     assets: Asset[],
     logicalDimensions: { width: number; height: number },
     request: {
       activeClip: TimelineClip;
+      effectiveTick: number;
       fps: number;
       localTimeSeconds: number;
       maskClips: MaskTimelineClip[];
@@ -475,6 +498,7 @@ export class TrackRenderEngine {
   ): Promise<void> {
     const {
       activeClip,
+      effectiveTick,
       fps,
       localTimeSeconds,
       maskClips,
@@ -507,7 +531,7 @@ export class TrackRenderEngine {
     ) {
       const nowMs = performance.now();
       const assetById = this.syncPreparedClips(
-        currentTime,
+        effectiveTick,
         trackClips,
         assets,
         nowMs,
@@ -637,12 +661,13 @@ export class TrackRenderEngine {
     options: { fps?: number; signal?: AbortSignal } = {},
   ): Promise<void> {
     this.invalidateLivePipeline();
+    const effectiveTick = this.resolveEffectiveTrackTick(currentTime);
 
     if (activeClip.type === "text") {
       await this.renderTextClip(
         activeClip,
         logicalDimensions,
-        currentTime - activeClip.start,
+        effectiveTick - activeClip.start,
         maskClips,
         assetsById,
         options.fps,
@@ -660,7 +685,7 @@ export class TrackRenderEngine {
     const asset = assetsById.get(activeClip.assetId);
     const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : (options.fps ?? 30);
 
-    const rawTime = currentTime - activeClip.start;
+    const rawTime = effectiveTick - activeClip.start;
     await this.maskController.syncMaskClips(
       maskClips,
       activeClip,
@@ -731,7 +756,7 @@ export class TrackRenderEngine {
       };
       this.pendingReject = (error) => rejectFrame(error);
 
-      const localTime = calculatePlayerFrameTime(activeClip, currentTime);
+      const localTime = calculatePlayerFrameTime(activeClip, effectiveTick);
       const renderTime =
         typeof clipFps === "number" && clipFps > 0
           ? snapFrameTimeSeconds(localTime, clipFps)
@@ -1314,7 +1339,8 @@ export class TrackRenderEngine {
     assetsById: Map<string, Asset> = new Map<string, Asset>(),
   ) {
     if (!this.sprite.visible) return;
-    const rawTimeSeconds = currentTime - activeClip.start;
+    const effectiveTick = this.resolveEffectiveTrackTick(currentTime);
+    const rawTimeSeconds = effectiveTick - activeClip.start;
     this.applyClipTransformsForClip(
       activeClip,
       logicalDimensions,

@@ -43,7 +43,7 @@ function adjustmentClip(overrides: {
     trackId: overrides.trackId,
     start: overrides.start,
     timelineDuration: overrides.timelineDuration,
-    sourceDuration: null,
+    sourceDuration: overrides.timelineDuration,
     transformedDuration: overrides.timelineDuration,
     transformedOffset: 0,
     croppedSourceDuration: overrides.timelineDuration,

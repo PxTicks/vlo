@@ -278,14 +278,17 @@ export function addClipToDraft(
     (track) => track.id === clipWithDefaults.trackId,
   );
 
-  // Track-type compatibility: a TYPED track only accepts clips whose
-  // derived track-type matches. Untyped tracks accept anything (and will
-  // acquire the type from the first clip below). This is the same
-  // mechanism that already excludes audio clips from visual tracks and
-  // vice versa — adjustment clips fall out naturally because
-  // getTrackTypeFromClipType("adjustment") === "adjustment".
+  // Track-type compatibility: a populated typed track only accepts clips whose
+  // derived track-type matches. Empty tracks accept anything and acquire the
+  // type from the next non-mask clip.
+  const targetTrackHasClips = draft.clips.some(
+    (candidate) =>
+      candidate.trackId === clipWithDefaults.trackId &&
+      candidate.type !== "mask",
+  );
   if (
     targetTrack?.type &&
+    targetTrackHasClips &&
     targetTrack.type !== getTrackTypeFromClipType(clipWithDefaults.type)
   ) {
     console.warn(
@@ -296,7 +299,7 @@ export function addClipToDraft(
     return;
   }
 
-  if (targetTrack && !targetTrack.type) {
+  if (targetTrack && (!targetTrack.type || !targetTrackHasClips)) {
     targetTrack.type = getTrackTypeFromClipType(clipWithDefaults.type);
   }
 
@@ -528,9 +531,7 @@ export function removeClipIdsFromDraft(
 function syncTrackTypesFromClips(draft: TimelineModelState): void {
   // For each track, derive type from the clips on it. A clip's presence
   // dictates the track's type (the clip is authoritative for whatever lane
-  // it's in). For tracks with NO clips, preserve any explicit type the
-  // user authored — empty adjustment lanes especially must survive moves
-  // on other tracks, since the user inserted them deliberately.
+  // it's in). Empty tracks become untyped so they can accept any future clip.
   const inferredTypeById = new Map<string, TimelineTrack["type"]>();
   draft.clips.forEach((clip) => {
     if (clip.type === "mask") return;
@@ -539,9 +540,12 @@ function syncTrackTypesFromClips(draft: TimelineModelState): void {
 
   draft.tracks = draft.tracks.map((track) => {
     const inferred = inferredTypeById.get(track.id);
-    // No clip on this track: leave the type alone (preserves explicit
-    // "adjustment", "audio", etc. on freshly inserted empty lanes).
-    if (inferred === undefined) return track;
+    if (inferred === undefined) {
+      if (track.type === undefined) return track;
+      const nextTrack = { ...track };
+      delete nextTrack.type;
+      return nextTrack;
+    }
     // Clip present and disagrees: clip wins.
     return track.type === inferred ? track : { ...track, type: inferred };
   });
@@ -563,17 +567,24 @@ export function moveClipsInDraft(
   // on any violation — the UI drag planner already checks this
   // (multiClipMove.ts:108-113, useClipMove.ts:457-464), so this is the
   // safety net for direct callers and undo/redo paths. Same check as
-  // addClipToDraft: typed tracks only accept matching clips; untyped
-  // tracks accept anything and acquire the type from the moved clip via
-  // syncTrackTypesFromClips after the move commits.
+  // addClipToDraft: populated typed tracks only accept matching clips; empty
+  // tracks acquire the type from the moved clip via syncTrackTypesFromClips
+  // after the move commits.
   for (const move of moves) {
     const clip = clipsById.get(move.clipId);
     if (!clip || clip.type === "mask") continue;
     const destTrackId = move.trackId ?? clip.trackId;
     const destTrack = tracksById.get(destTrackId);
     if (!destTrack) continue;
+    const destTrackHasClips = draft.clips.some(
+      (candidate) =>
+        candidate.trackId === destTrackId &&
+        candidate.type !== "mask" &&
+        candidate.id !== clip.id,
+    );
     if (
       destTrack.type &&
+      destTrackHasClips &&
       destTrack.type !== getTrackTypeFromClipType(clip.type)
     ) {
       console.warn(

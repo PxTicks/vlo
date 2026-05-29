@@ -38,13 +38,7 @@ export function maybeTrimAndPadTracks(model: TimelineModelState): void {
   const hasClips = (trackId: string) =>
     clips.some((clip) => clip.trackId === trackId && clip.type !== "mask");
 
-  // Adjustment lanes are user-authored structural elements: an empty
-  // adjustment track was created deliberately and must survive trimming
-  // until the user explicitly removes it. Treat them as significant for
-  // both the populated-range computation and the core-tracks filter so
-  // they're never aggregated as padding nor dropped.
-  const isSignificant = (track: TimelineTrack) =>
-    hasClips(track.id) || track.type === "adjustment";
+  const isSignificant = (track: TimelineTrack) => hasClips(track.id);
 
   const populatedIndices = tracks
     .map((track, index) => (isSignificant(track) ? index : -1))
@@ -70,15 +64,26 @@ export function maybeTrimAndPadTracks(model: TimelineModelState): void {
       ? tracks[lastIndex + 1]
       : createNewTrack("Track Bottom");
 
-  const newTracks = [topPadding, ...coreTracks, bottomPadding].map((track, i) => ({
-    ...track,
-    label: `Track ${i + 1}`,
-  }));
+  const newTracks = [topPadding, ...coreTracks, bottomPadding].map((track, i) => {
+    const nextTrack = { ...track };
+    if (!hasClips(track.id)) {
+      delete nextTrack.type;
+    }
 
-  const currentIds = tracks.map((track) => track.id).join(",");
-  const nextIds = newTracks.map((track) => track.id).join(",");
+    return {
+      ...nextTrack,
+      label: `Track ${i + 1}`,
+    };
+  });
 
-  if (currentIds === nextIds) return;
+  const currentSignature = tracks
+    .map((track) => `${track.id}:${track.label}:${track.type ?? ""}`)
+    .join(",");
+  const nextSignature = newTracks
+    .map((track) => `${track.id}:${track.label}:${track.type ?? ""}`)
+    .join(",");
+
+  if (currentSignature === nextSignature) return;
 
   model.tracks = newTracks;
 }

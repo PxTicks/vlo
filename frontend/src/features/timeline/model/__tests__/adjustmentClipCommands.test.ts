@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  AdjustmentDepth,
   AdjustmentTimelineClip,
   TimelineClip,
   TimelineTrack,
@@ -14,6 +15,7 @@ import {
   addClipToDraft,
   moveClipsInDraft,
   addClipTransformToDraft,
+  removeClipIdsFromDraft,
   setClipTransformsAndShapeInDraft,
 } from "../timelineCommands";
 import type { TimelineModelState } from "../timelineTrackModel";
@@ -67,7 +69,7 @@ function adjustmentClip(overrides: {
   trackId: string;
   start?: number;
   timelineDuration?: number;
-  depth?: number;
+  depth?: AdjustmentDepth;
   sourceDuration?: number;
 }): AdjustmentTimelineClip {
   const timelineDuration = overrides.timelineDuration ?? 100;
@@ -90,26 +92,36 @@ function adjustmentClip(overrides: {
 }
 
 describe("track-type compatibility (general)", () => {
-  // The store-layer enforcement is type-agnostic: a typed track only
-  // accepts clips whose `getTrackTypeFromClipType` matches its `type`.
-  // Adjustment clips fall through that same mechanism with no special
-  // case — these tests cover the adjustment path alongside the existing
-  // visual / audio exclusions to document the unified contract.
+  // The store-layer enforcement is type-agnostic: populated typed tracks only
+  // accept clips whose `getTrackTypeFromClipType` matches their type. Empty
+  // tracks are flexible and acquire the type of the next non-mask clip.
   beforeEach(() => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   describe("addClipToDraft", () => {
-    it("rejects a video clip on an adjustment track", () => {
+    it("rejects a video clip on a populated adjustment track", () => {
       const draft = makeDraft([adjustmentTrack("adj")]);
+      addClipToDraft(draft, adjustmentClip({ id: "a", trackId: "adj" }));
       addClipToDraft(draft, videoClip("v1", "adj"));
-      expect(draft.clips).toEqual([]);
+      expect(draft.clips.map((clip) => clip.id)).toEqual(["a"]);
     });
 
-    it("rejects an adjustment clip on a visual track", () => {
+    it("rejects an adjustment clip on a populated visual track", () => {
       const draft = makeDraft([visualTrack("v")]);
+      addClipToDraft(draft, videoClip("v1", "v"));
       addClipToDraft(draft, adjustmentClip({ id: "adj1", trackId: "v" }));
-      expect(draft.clips).toEqual([]);
+      expect(draft.clips.map((clip) => clip.id)).toEqual(["v1"]);
+    });
+
+    it("accepts any clip on an empty typed track and retargets the track type", () => {
+      const draft = makeDraft([adjustmentTrack("adj")]);
+      addClipToDraft(draft, videoClip("v1", "adj"));
+
+      expect(draft.clips).toHaveLength(1);
+      expect(draft.tracks.find((track) => track.id === "adj")?.type).toBe(
+        "visual",
+      );
     });
 
     it("accepts an adjustment clip on an adjustment track", () => {
@@ -145,6 +157,7 @@ describe("track-type compatibility (general)", () => {
         draft,
         adjustmentClip({ id: "adj2", trackId: "adj", start: 200 }),
       );
+      addClipToDraft(draft, videoClip("v1", "v"));
       // One valid move (stays on adj), one invalid (moves to visual v).
       // Whole batch rejected.
       moveClipsInDraft(draft, [
@@ -161,6 +174,7 @@ describe("track-type compatibility (general)", () => {
     it("rejects moving a video clip onto an adjustment track", () => {
       const draft = makeDraft([visualTrack("v"), adjustmentTrack("adj")]);
       addClipToDraft(draft, videoClip("v1", "v"));
+      addClipToDraft(draft, adjustmentClip({ id: "a", trackId: "adj" }));
       moveClipsInDraft(draft, [
         { clipId: "v1", start: 100, trackId: "adj" },
       ]);
@@ -411,8 +425,9 @@ describe("adjustment-clip commands", () => {
       ).toBeNull();
     });
 
-    it("rejects when trackId points at a non-adjustment track (rule 2)", () => {
+    it("rejects when trackId points at a populated non-adjustment track", () => {
       const draft = makeDraft([visualTrack("v")]);
+      addClipToDraft(draft, videoClip("v1", "v"));
       const id = createAdjustmentClipInDraft(draft, {
         trackId: "v",
         start: 0,
@@ -420,37 +435,59 @@ describe("adjustment-clip commands", () => {
         depth: 1,
       });
       expect(id).toBeNull();
-      expect(draft.clips).toEqual([]);
+      expect(draft.clips.map((clip) => clip.id)).toEqual(["v1"]);
     });
   });
 
-  describe("empty-lane type survival across moves", () => {
-    it("an empty adjustment track keeps its `adjustment` type after an unrelated clip move", () => {
-      // Layout: [adjustment lane (empty), visual lane with v1].
-      const adjId = "adj-lane";
+  describe("empty adjustment lane cleanup", () => {
+    it("clears the adjustment type after removing the last adjustment clip from a track", () => {
+      const draft: TimelineModelState = {
+        tracks: [visualTrack("v"), adjustmentTrack("adj")],
+        clips: [
+          videoClip("v1", "v"),
+          adjustmentClip({ id: "a", trackId: "adj" }),
+        ],
+      };
+
+      removeClipIdsFromDraft(draft, new Set(["a"]));
+
+      const emptiedTrack = draft.tracks.find((track) => track.id === "adj");
+      expect(emptiedTrack).toBeDefined();
+      expect(emptiedTrack!.type).toBeUndefined();
+
+      addClipToDraft(draft, videoClip("v2", "adj"));
+      expect(draft.clips.find((clip) => clip.id === "v2")).toBeDefined();
+    });
+
+    it("clears and trims the source track when moving its last adjustment clip away", () => {
       const draft: TimelineModelState = {
         tracks: [
-          { ...adjustmentTrack(adjId) },
+          adjustmentTrack("source"),
+          {
+            id: "target",
+            label: "target",
+            isVisible: true,
+            isMuted: false,
+            isLocked: false,
+          },
           visualTrack("v"),
-          visualTrack("v2"),
         ],
-        clips: [],
+        clips: [
+          adjustmentClip({ id: "a", trackId: "source" }),
+          videoClip("v1", "v"),
+        ],
       };
-      addClipToDraft(draft, videoClip("v1", "v"));
 
-      // Pre-condition: the explicit adjustment lane exists with type set.
-      const adjBefore = draft.tracks.find((t) => t.id === adjId)!;
-      expect(adjBefore.type).toBe("adjustment");
-
-      // Move the video clip from v to v2. The empty adjustment lane must
-      // not have its type wiped by syncTrackTypesFromClips.
       moveClipsInDraft(draft, [
-        { clipId: "v1", start: 0, trackId: "v2" },
+        { clipId: "a", start: 0, trackId: "target" },
       ]);
 
-      const adjAfter = draft.tracks.find((t) => t.id === adjId);
-      expect(adjAfter).toBeDefined();
-      expect(adjAfter!.type).toBe("adjustment");
+      const sourceTrack = draft.tracks.find((track) => track.id === "source");
+      expect(sourceTrack).toBeDefined();
+      expect(sourceTrack!.type).toBeUndefined();
+      expect(draft.tracks.find((track) => track.id === "target")?.type).toBe(
+        "adjustment",
+      );
     });
   });
 

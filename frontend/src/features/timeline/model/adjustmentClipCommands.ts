@@ -47,8 +47,8 @@ export function insertAdjustmentTrackInDraft(
  * the inputs were invalid (numeric depth < 1, non-positive duration,
  * negative start) — same no-op + warn shape as the v1 group helpers.
  *
- * Rule 2 enforcement happens inside `addClipToDraft`; if the caller hands
- * a non-adjustment trackId, that helper rejects and we return null.
+ * Track compatibility happens inside `addClipToDraft`; if the target is a
+ * populated incompatible track, that helper rejects and we return null.
  */
 export function createAdjustmentClipInDraft(
   draft: TimelineModelState,

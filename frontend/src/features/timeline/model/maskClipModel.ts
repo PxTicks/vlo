@@ -842,7 +842,13 @@ export function removeClipsFromDraft(
     const hasNonMaskClips = draft.clips.some(
       (clip) => clip.trackId === track.id && clip.type !== "mask",
     );
-    return hasNonMaskClips ? track : { ...track, type: undefined };
+    if (hasNonMaskClips) {
+      return track;
+    }
+
+    const nextTrack = { ...track };
+    delete nextTrack.type;
+    return nextTrack;
   });
 
   trimAndPadTracks(draft);

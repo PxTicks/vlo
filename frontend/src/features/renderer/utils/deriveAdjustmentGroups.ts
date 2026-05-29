@@ -1,11 +1,15 @@
 import type {
   AdjustmentDepth,
+  AdjustmentRetimingMode,
   AdjustmentTimelineClip,
   ClipTransform,
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import { isAdjustmentDepthAll } from "../../../types/TimelineTypes";
+import {
+  getAdjustmentRetimingMode,
+  isAdjustmentDepthAll,
+} from "../../../types/TimelineTypes";
 import {
   pullTimeThroughTransforms,
   pushTimeThroughTransforms,
@@ -33,6 +37,7 @@ export interface AdjustmentApplication {
   start: number;
   timelineDuration: number;
   sourceDuration: number;
+  retimingMode: AdjustmentRetimingMode;
   /** Absolute tick in this adjustment's input-level domain for this frame.
    *  Present only on active applications derived for a specific render tick. */
   sampleTick?: number;
@@ -105,6 +110,7 @@ function buildApplication(
     start: adjustment.start,
     timelineDuration: adjustment.timelineDuration,
     sourceDuration: adjustment.sourceDuration,
+    retimingMode: getAdjustmentRetimingMode(adjustment),
   };
 }
 
@@ -258,12 +264,15 @@ function resolveActiveApplications(
 
 export interface ComputeAdjustmentApplicationsOptions {
   /**
-   * Per-track presentation tick in the global adjustment-warp domain. The
-   * per-clip presentation model rebases each clip to keep its stored start
-   * stable; visual grouping has to undo that rebase before deciding whether
-   * an adjustment's visual transforms are active for that track.
+   * Per-track presentation tick after the active clip's placement/rebase has
+   * been resolved. Visual grouping uses this to decide whether an adjustment's
+   * visual transforms are active for that track.
    */
   activationTickByTrack?: ReadonlyMap<string, number>;
+}
+
+export interface ComputeAdjustmentTimeApplicationsOptions {
+  retimingModes?: ReadonlySet<AdjustmentRetimingMode>;
 }
 
 /**
@@ -305,19 +314,23 @@ export function computeAdjustmentApplications(
  * For each visual/audio track, compute the full stack of descendant
  * adjustment speed applications, ordered innermost-first → outermost-last.
  *
- * The resolver consumes the full static stack and evaluates activation at
- * lookup time, carrying every outer post-window delta forward into inner
+ * The resolver consumes the requested retiming stack and evaluates activation
+ * at lookup time, carrying every outer post-window delta forward into inner
  * activation checks by function composition.
  */
 export function computeAdjustmentTimeApplications(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
+  options: ComputeAdjustmentTimeApplicationsOptions = {},
 ): Map<string, AdjustmentTimeApplication[]> {
   const applicationsByTrack = buildApplicationsByTrack(
     tracks,
     clips,
     isTimeAffectedTrack,
-    (adjustment) => hasEnabledSpeedTransform(adjustment.transformations),
+    (adjustment) =>
+      hasEnabledSpeedTransform(adjustment.transformations) &&
+      (options.retimingModes === undefined ||
+        options.retimingModes.has(getAdjustmentRetimingMode(adjustment))),
   );
   const timeApplicationsByTrack = new Map<string, AdjustmentTimeApplication[]>();
 
@@ -339,12 +352,16 @@ export function computeAdjustmentTimeApplications(
 export function computeAdjustmentPresentationApplications(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
+  options: ComputeAdjustmentTimeApplicationsOptions = {},
 ): Map<string, AdjustmentTimeApplication[]> {
   const applicationsByTrack = buildApplicationsByTrack(
     tracks,
     clips,
     isPresentationAffectedTrack,
-    (adjustment) => hasEnabledSpeedTransform(adjustment.transformations),
+    (adjustment) =>
+      hasEnabledSpeedTransform(adjustment.transformations) &&
+      (options.retimingModes === undefined ||
+        options.retimingModes.has(getAdjustmentRetimingMode(adjustment))),
   );
   const presentationApplicationsByTrack = new Map<
     string,

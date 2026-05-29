@@ -1,4 +1,8 @@
-import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
+import type {
+  AdjustmentRetimingMode,
+  TimelineClip,
+  TimelineTrack,
+} from "../../../types/TimelineTypes";
 import {
   applyAdjustmentTimeRemapInverse,
   applyAdjustmentTimeRemap,
@@ -10,21 +14,16 @@ import {
 /**
  * @internal — engine for clipPresentation; not for direct consumption.
  *
- * Implements the *global track-time warp* adjustment model: a 2x speed
- * adjustment compresses the entire track's time below it, shifting every
- * downstream clip to the left (even ones not under the adjustment). This
- * model gives a single coherent warped time axis per track and handles
- * spline-shaped speed transforms exactly via pullTimeThroughTransforms.
+ * Implements the track-time warp used by adjustment speed transforms. By
+ * default it includes both retiming modes; callers can pass `retimingModes`
+ * when they need only the ripple/layout subset.
  *
- * The active presentation model (clipPresentation.ts) instead compresses
- * *only* clips that intersect an adjustment and pins every clip's
- * presentation_start to its stored start (no global shift). That module
- * composes this resolver under a per-clip rebase so the within-clip
- * compression math — including splines — is reused without duplication.
+ * clipPresentation.ts composes this resolver twice: ripple adjustments pick
+ * the on-screen placement, while static adjustments are locally rebased so
+ * they retime covered clip content without shifting later clips.
  *
  * Do not consume this resolver from UI / DnD / renderer code; route those
- * through the presentation index. Kept reachable so the global-warp model
- * can be revived as the active presentation later if desired.
+ * through the presentation index.
  */
 export interface TrackTimeResolver {
   /**
@@ -39,6 +38,10 @@ export interface TrackTimeResolver {
    * which a given stored-track tick appears in the warped axis.
    */
   resolvePresentationTick(trackId: string, effectiveTrackTick: number): number;
+}
+
+export interface BuildTrackTimeResolverOptions {
+  retimingModes?: readonly AdjustmentRetimingMode[];
 }
 
 function resolveStackTick(
@@ -70,13 +73,21 @@ function resolveStackPresentationTick(
 export function buildTrackTimeResolver(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
+  options: BuildTrackTimeResolverOptions = {},
 ): TrackTimeResolver {
+  const retimingModes =
+    options.retimingModes === undefined
+      ? undefined
+      : new Set(options.retimingModes);
   const timeApplicationsByTrack = computeAdjustmentTimeApplications(
     tracks,
     clips,
+    { retimingModes },
   );
   const presentationApplicationsByTrack =
-    computeAdjustmentPresentationApplications(tracks, clips);
+    computeAdjustmentPresentationApplications(tracks, clips, {
+      retimingModes,
+    });
 
   return {
     resolveEffectiveTrackTick(trackId, presentationTick) {

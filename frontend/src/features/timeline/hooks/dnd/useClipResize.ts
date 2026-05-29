@@ -20,6 +20,7 @@ import {
   buildTimelineClipPresentationCollisionView,
   buildTimelineClipPresentationIndex,
   resolveStoredEndForPresentationEnd,
+  resolveStoredStartForPresentationStart,
 } from "../../utils/clipPresentation";
 
 export const useClipResize = () => {
@@ -51,12 +52,19 @@ export const useClipResize = () => {
       minDuration,
     );
     const ticksToPx = useTimelineViewStore.getState().ticksToPx;
+    const timelineState = useTimelineStore.getState();
+    const clips = timelineState.clips ?? [];
+    const tracks = timelineState.tracks ?? [];
+    const presentation = buildTimelineClipPresentationIndex(
+      tracks,
+      clips,
+    ).get(clip.id);
 
     const hysteresisPx = SNAP_THRESHOLD_PX + 3;
 
     if (side === "left") {
       // 1. Calculate the raw unclamped position based on cursor
-      const rawProposedStart = clip.start + deltaTicks;
+      const rawProposedStart = (presentation?.start ?? clip.start) + deltaTicks;
 
       // 2. Find the best snap candidate for that raw position among *all* points
       const candidate = getEdgeSnapCandidate(
@@ -68,10 +76,21 @@ export const useClipResize = () => {
 
       // 3. Verify the candidate doesn't violate hard constraints
       // Also apply hysteresis if we were already snapping
+      const candidateStoredStart =
+        candidate === null
+          ? null
+          : resolveStoredStartForPresentationStart(
+              tracks,
+              clips,
+              clip.trackId,
+              candidate.snapTick,
+            );
+
       if (
-        !candidate ||
-        candidate.snapTick < constraints.min ||
-        candidate.snapTick > constraints.max
+        candidate === null ||
+        candidateStoredStart === null ||
+        candidateStoredStart < constraints.min ||
+        candidateStoredStart > constraints.max
       ) {
         if (interaction.snapTick !== null) {
           // Are we trying to break out of an existing snap?
@@ -91,7 +110,7 @@ export const useClipResize = () => {
     }
 
     // RIGHT SIDE
-    const originalEnd = clip.start + clip.timelineDuration;
+    const originalEnd = presentation?.end ?? clip.start + clip.timelineDuration;
     const rawProposedEnd = originalEnd + deltaTicks;
 
     const candidate = getEdgeSnapCandidate(
@@ -100,11 +119,21 @@ export const useClipResize = () => {
       ticksToPx,
       SNAP_THRESHOLD_PX,
     );
+    const candidateStoredEnd =
+      candidate === null
+        ? null
+        : resolveStoredEndForPresentationEnd(
+            tracks,
+            clips,
+            clip,
+            candidate.snapTick,
+          );
 
     if (
-      !candidate ||
-      candidate.snapTick < constraints.min ||
-      candidate.snapTick > constraints.max
+      candidate === null ||
+      candidateStoredEnd === null ||
+      candidateStoredEnd < constraints.min ||
+      candidateStoredEnd > constraints.max
     ) {
       if (interaction.snapTick !== null) {
         const keepCurrent =
@@ -133,6 +162,18 @@ export const useClipResize = () => {
     const minDuration = getMinimumClipDurationTicks(
       useProjectStore.getState().config.fps,
     );
+    const ticksPerFrame = getTicksPerFrame(
+      useProjectStore.getState().config.fps,
+    );
+    const timelineState = useTimelineStore.getState();
+    const clips = timelineState.clips ?? [];
+    const tracks = timelineState.tracks ?? [];
+    const presentation = buildTimelineClipPresentationIndex(tracks, clips).get(
+      clip.id,
+    );
+    const currentPresentationStart = presentation?.start ?? clip.start;
+    const currentPresentationEnd =
+      presentation?.end ?? clip.start + clip.timelineDuration;
 
     // Re-calculate constraints for final validation (safety check)
     // We access clips fresh here
@@ -148,16 +189,21 @@ export const useClipResize = () => {
     const snapPoints = snapContext?.points ?? [];
     if (snapEnabled && snapPoints.length > 0) {
       const ticksToPx = useTimelineViewStore.getState().ticksToPx;
-      const rangeSnapPoints = snapPoints.filter(
-        (tick) => tick >= constraints.min && tick <= constraints.max,
-      );
+      const rangeSnapPoints = snapPoints.filter((tick) => {
+        const storedTick =
+          side === "left"
+            ? resolveStoredStartForPresentationStart(
+                tracks,
+                clips,
+                clip.trackId,
+                tick,
+              )
+            : resolveStoredEndForPresentationEnd(tracks, clips, clip, tick);
+        return storedTick >= constraints.min && storedTick <= constraints.max;
+      });
 
       if (side === "left") {
-        const proposedStart = clamp(
-          clip.start + deltaTicks,
-          constraints.min,
-          constraints.max,
-        );
+        const proposedStart = currentPresentationStart + deltaTicks;
         const candidate = getEdgeSnapCandidate(
           proposedStart,
           rangeSnapPoints,
@@ -165,20 +211,22 @@ export const useClipResize = () => {
           SNAP_THRESHOLD_PX,
         );
         if (candidate) {
-          const snappedStart = clamp(
+          const candidateStoredStart = resolveStoredStartForPresentationStart(
+            tracks,
+            clips,
+            clip.trackId,
             candidate.snapTick,
-            constraints.min,
-            constraints.max,
           );
-          deltaTicks = snappedStart - clip.start;
+          if (
+            candidateStoredStart >= constraints.min &&
+            candidateStoredStart <= constraints.max
+          ) {
+            deltaTicks = candidate.snapTick - currentPresentationStart;
+          }
         }
       } else {
-        const originalEnd = clip.start + clip.timelineDuration;
-        const proposedEnd = clamp(
-          originalEnd + deltaTicks,
-          constraints.min,
-          constraints.max,
-        );
+        const originalEnd = currentPresentationEnd;
+        const proposedEnd = originalEnd + deltaTicks;
         const candidate = getEdgeSnapCandidate(
           proposedEnd,
           rangeSnapPoints,
@@ -186,27 +234,30 @@ export const useClipResize = () => {
           SNAP_THRESHOLD_PX,
         );
         if (candidate) {
-          const snappedEnd = clamp(
+          const candidateStoredEnd = resolveStoredEndForPresentationEnd(
+            tracks,
+            clips,
+            clip,
             candidate.snapTick,
-            constraints.min,
-            constraints.max,
           );
-          deltaTicks = snappedEnd - originalEnd;
+          if (
+            candidateStoredEnd >= constraints.min &&
+            candidateStoredEnd <= constraints.max
+          ) {
+            deltaTicks = candidate.snapTick - originalEnd;
+          }
         }
       }
     }
 
-    const ticksPerFrame = getTicksPerFrame(
-      useProjectStore.getState().config.fps,
-    );
-    const timelineState = useTimelineStore.getState();
-    const clips = timelineState.clips ?? [];
-    const tracks = timelineState.tracks ?? [];
-
     if (side === "left") {
-      // presentation_start == stored start in the per-clip model, so the
-      // drag delta maps 1:1 onto the clip's stored start.
-      let newStart = clip.start + deltaTicks;
+      const targetPresentationStart = currentPresentationStart + deltaTicks;
+      let newStart = resolveStoredStartForPresentationStart(
+        tracks,
+        clips,
+        clip.trackId,
+        targetPresentationStart,
+      );
       newStart = clamp(newStart, constraints.min, constraints.max);
       newStart = snapTickToFrame(newStart, ticksPerFrame);
       newStart = clamp(newStart, constraints.min, constraints.max);
@@ -252,14 +303,9 @@ export const useClipResize = () => {
       // The right edge is dragged in presentation space. Outside any
       // adjustment this is identity (stored end shifts by deltaTicks). Inside
       // a speed-up region, a small presentation delta maps to a larger
-      // stored-tick delta: `resolveStoredEndForPresentationEnd` does the
-      // per-clip rebase through the internal time-warp engine and is exact
-      // for spline-shaped speed transforms.
-      const presentation = buildTimelineClipPresentationIndex(tracks, clips).get(
-        clip.id,
-      );
-      const currentPresentationEnd =
-        presentation?.end ?? clip.start + clip.timelineDuration;
+      // stored-tick delta: `resolveStoredEndForPresentationEnd` goes through
+      // the shared presentation model and is exact for spline-shaped speed
+      // transforms.
       const targetPresentationEnd = currentPresentationEnd + deltaTicks;
       let newEnd = resolveStoredEndForPresentationEnd(
         tracks,

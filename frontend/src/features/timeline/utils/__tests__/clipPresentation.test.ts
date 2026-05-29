@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type {
+  AdjustmentRetimingMode,
   AdjustmentTimelineClip,
   ClipTransform,
   TimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
+import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../../types/TimelineTypes";
 import {
   buildTimelineClipPresentationCollisionView,
   buildTimelineClipPresentationIndex,
@@ -12,6 +14,7 @@ import {
   collectTimelineClipPresentationCollisions,
   introducesTimelineClipPresentationCollision,
   resolveStoredEndForPresentationEnd,
+  resolveStoredStartForPresentationStart,
 } from "../clipPresentation";
 
 function adjustmentTrack(id: string): TimelineTrack {
@@ -52,6 +55,7 @@ function adjustmentClip(overrides: {
   timelineDuration: number;
   sourceDuration?: number;
   depth: number;
+  retimingMode?: AdjustmentRetimingMode;
   transformations?: ClipTransform[];
 }): AdjustmentTimelineClip {
   const sourceDuration = overrides.sourceDuration ?? overrides.timelineDuration;
@@ -69,6 +73,7 @@ function adjustmentClip(overrides: {
     offset: 0,
     transformations: overrides.transformations ?? [],
     depth: overrides.depth,
+    retimingMode: overrides.retimingMode,
   };
 }
 
@@ -95,7 +100,7 @@ function videoClip(overrides: {
   };
 }
 
-describe("clip presentation placement (per-clip model)", () => {
+describe("clip presentation placement", () => {
   it("compresses an intersecting clip's footprint under a fast (2x) adjustment", () => {
     // adj on its own track: timelineDuration=50, sourceDuration=100 → speed = 2x.
     // Adjustment's stored range on adj track is [0, 50). Clip stored fully
@@ -168,10 +173,8 @@ describe("clip presentation placement (per-clip model)", () => {
   });
 
   it("leaves a later non-intersecting clip in place (no global shift)", () => {
-    // This is the key per-clip-model property: a clip that does NOT
-    // intersect the adjustment's stored reach stays at its stored start.
-    // In the old global-warp model this clip would have been shifted left
-    // by the accumulated post-window delta.
+    // Static retiming pins clips that do NOT intersect the adjustment's
+    // stored reach. Ripple retiming covers the old global-warp behavior.
     const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
     const clips: TimelineClip[] = [
       adjustmentClip({
@@ -199,6 +202,76 @@ describe("clip presentation placement (per-clip model)", () => {
     expect(presentation?.start).toBe(120);
     expect(presentation?.end).toBe(140);
     expect(presentation?.duration).toBe(20);
+  });
+
+  it("ripples later clips when the adjustment uses ripple retiming", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-1",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 50,
+        sourceDuration: 100,
+        depth: 1,
+        retimingMode: ADJUSTMENT_RETIMING_RIPPLE,
+        transformations: [speedTransform(2)],
+      }),
+      videoClip({
+        id: "video-1",
+        trackId: "v1",
+        start: 120,
+        timelineDuration: 20,
+      }),
+    ];
+
+    const presentation = buildTimelineClipPresentationIndex(
+      tracks,
+      clips,
+    ).get("video-1");
+
+    expect(presentation?.start).toBe(70);
+    expect(presentation?.end).toBe(90);
+    expect(presentation?.duration).toBe(20);
+  });
+
+  it("inverts ripple placement so drops commit to the visual target", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-1",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 50,
+        sourceDuration: 100,
+        depth: 1,
+        retimingMode: ADJUSTMENT_RETIMING_RIPPLE,
+        transformations: [speedTransform(2)],
+      }),
+      videoClip({
+        id: "video-1",
+        trackId: "v1",
+        start: 0,
+        timelineDuration: 20,
+      }),
+    ];
+
+    const storedStart = resolveStoredStartForPresentationStart(
+      tracks,
+      clips,
+      "v1",
+      70,
+    );
+    const movedClips = clips.map((clip) =>
+      clip.id === "video-1" ? { ...clip, start: storedStart } : clip,
+    );
+    const presentation = buildTimelineClipPresentationIndex(
+      tracks,
+      movedClips,
+    ).get("video-1");
+
+    expect(storedStart).toBe(120);
+    expect(presentation?.start).toBe(70);
   });
 
   it("does not retime a clip that starts at a fast adjustment's visible end", () => {

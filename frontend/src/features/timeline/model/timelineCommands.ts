@@ -12,6 +12,7 @@ import type {
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 import {
+  getAdjustmentRetimingMode,
   isAssetBackedClip,
   isNonMaskTimelineClip,
   isTextClip,
@@ -194,6 +195,13 @@ export function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
       ...baseClip,
       name: deriveTextClipName(textData.content),
       textData,
+    };
+  }
+
+  if (baseClip.type === "adjustment") {
+    return {
+      ...baseClip,
+      retimingMode: getAdjustmentRetimingMode(baseClip),
     };
   }
 

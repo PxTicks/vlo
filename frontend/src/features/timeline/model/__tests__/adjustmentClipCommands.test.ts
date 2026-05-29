@@ -5,11 +5,16 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
-import { ADJUSTMENT_DEPTH_ALL } from "../../../../types/TimelineTypes";
+import {
+  ADJUSTMENT_DEPTH_ALL,
+  ADJUSTMENT_RETIMING_RIPPLE,
+  ADJUSTMENT_RETIMING_STATIC,
+} from "../../../../types/TimelineTypes";
 import {
   createAdjustmentClipInDraft,
   insertAdjustmentTrackInDraft,
   setAdjustmentDepthInDraft,
+  setAdjustmentRetimingModeInDraft,
 } from "../adjustmentClipCommands";
 import {
   addClipToDraft,
@@ -386,6 +391,34 @@ describe("adjustment-clip commands", () => {
       expect(id).not.toBeNull();
       const clip = draft.clips.find((c) => c.id === id) as AdjustmentTimelineClip;
       expect(clip.depth).toBe(ADJUSTMENT_DEPTH_ALL);
+    });
+
+    it("defaults retiming to static/pinned mode", () => {
+      const draft = makeDraft([adjustmentTrack("adj"), visualTrack("v1")]);
+      const id = createAdjustmentClipInDraft(draft, {
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 100,
+      });
+
+      const clip = draft.clips.find((c) => c.id === id) as AdjustmentTimelineClip;
+      expect(clip.retimingMode).toBe(ADJUSTMENT_RETIMING_STATIC);
+    });
+
+    it("updates adjustment retiming mode", () => {
+      const draft = makeDraft([adjustmentTrack("adj"), visualTrack("v1")]);
+      addClipToDraft(draft, adjustmentClip({ id: "a", trackId: "adj" }));
+
+      expect(
+        setAdjustmentRetimingModeInDraft(
+          draft,
+          "a",
+          ADJUSTMENT_RETIMING_RIPPLE,
+        ),
+      ).toBe(true);
+      expect((draft.clips[0] as AdjustmentTimelineClip).retimingMode).toBe(
+        ADJUSTMENT_RETIMING_RIPPLE,
+      );
     });
 
     it("rejects depth < 1", () => {

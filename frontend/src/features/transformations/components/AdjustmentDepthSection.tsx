@@ -8,6 +8,9 @@ import {
 } from "@mui/material";
 import {
   ADJUSTMENT_DEPTH_ALL,
+  ADJUSTMENT_RETIMING_RIPPLE,
+  ADJUSTMENT_RETIMING_STATIC,
+  getAdjustmentRetimingMode,
   isAdjustmentDepthAll,
   type AdjustmentTimelineClip,
 } from "../../../types/TimelineTypes";
@@ -30,6 +33,9 @@ export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
   const setAdjustmentDepth = useTimelineStore(
     (state) => state.setAdjustmentDepth,
   );
+  const setAdjustmentRetimingMode = useTimelineStore(
+    (state) => state.setAdjustmentRetimingMode,
+  );
   const tracksBelowCount = useTimelineStore((state) => {
     const trackIndex = state.tracks.findIndex((track) => track.id === clip.trackId);
     if (trackIndex < 0) {
@@ -38,6 +44,8 @@ export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
     return Math.max(0, state.tracks.length - trackIndex - 1);
   });
   const isAllTracksBelow = isAdjustmentDepthAll(clip.depth);
+  const isRippleRetiming =
+    getAdjustmentRetimingMode(clip) === ADJUSTMENT_RETIMING_RIPPLE;
   const fallbackNumericDepth = Math.max(1, tracksBelowCount);
 
   // Local draft state so the user can backspace through the value without
@@ -81,6 +89,13 @@ export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
     setAdjustmentDepth(clip.id, fallbackNumericDepth);
   };
 
+  const handleRetimingToggle = (checked: boolean) => {
+    setAdjustmentRetimingMode(
+      clip.id,
+      checked ? ADJUSTMENT_RETIMING_RIPPLE : ADJUSTMENT_RETIMING_STATIC,
+    );
+  };
+
   return (
     <Box
       data-testid="adjustment-depth-section"
@@ -104,6 +119,29 @@ export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
         the next <strong>depth</strong> tracks when you switch to a custom
         value. Visual tracks among those get the transforms below; non-visual
         tracks are passed through unchanged.
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={isRippleRetiming}
+            onChange={(_, checked) => handleRetimingToggle(checked)}
+          />
+        }
+        label="Ripple timeline timing"
+        sx={{
+          mt: 0.5,
+          mr: 0,
+          "& .MuiFormControlLabel-label": {
+            color: "#d6dade",
+            fontSize: "0.875rem",
+          },
+        }}
+      />
+      <Typography variant="caption" sx={{ color: "#8f98a3", lineHeight: 1.3 }}>
+        {isRippleRetiming
+          ? "Speed changes stretch or contract the affected lanes, so later clips shift in presentation time."
+          : "Speed changes retime covered clip content while keeping clip starts pinned on the timeline."}
       </Typography>
       <FormControlLabel
         control={

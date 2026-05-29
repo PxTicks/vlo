@@ -14,10 +14,9 @@ import {
  * and the renderer/audio/orchestrator consume sibling derived views from
  * the same snapshot.
  *
- * Presentation model: per-clip — adjustments compress only clips whose
- * stored range intersects them; non-intersecting clips stay put. The
- * lookup hides the rebase onto the internal `TrackTimeResolver` so callers
- * never touch the global-warp engine directly.
+ * Presentation model: adjustment clips choose per-clip static retiming or
+ * ripple retiming. The lookup hides the placement/rebase details so callers
+ * never touch the track-time resolver directly.
  */
 export class AdjustmentEffectResolver {
   private tracks: readonly TimelineTrack[] = [];

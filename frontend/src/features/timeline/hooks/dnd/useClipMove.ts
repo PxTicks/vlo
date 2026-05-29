@@ -28,6 +28,7 @@ import { attachGenerationMask } from "../../utils/insertAssetToTimeline";
 import {
   buildTimelineClipPresentationCollisionView,
   buildTimelineClipPresentationIndex,
+  resolveStoredStartForPresentationStart,
 } from "../../utils/clipPresentation";
 import { getAssetById } from "../../../userAssets";
 import { useProjectStore } from "../../../project";
@@ -475,35 +476,41 @@ export const useClipMove = (
       }
 
       const collisionTracks = useTimelineStore.getState().tracks;
-      const collisionSourceClips = isNewAsset
-        ? [
-            ...clips,
-            {
-              ...(clip as BaseClip),
-              trackId: targetTrackId,
-              start: presentationStartTicks,
-            } as StandardTimelineClip,
-          ]
-        : clips;
+      const proposedStoredStart = resolveStoredStartForPresentationStart(
+        collisionTracks,
+        clips,
+        targetTrackId,
+        presentationStartTicks,
+      );
+      const proposedTimelineClip = {
+        ...(clip as BaseClip),
+        trackId: targetTrackId,
+        start: proposedStoredStart,
+      } as StandardTimelineClip;
+      const proposedClips = isNewAsset
+        ? [...clips, proposedTimelineClip]
+        : clips.map((candidate) =>
+            candidate.id === clip.id
+              ? {
+                  ...candidate,
+                  trackId: targetTrackId,
+                  start: proposedStoredStart,
+                }
+              : candidate,
+          );
       const collisionClips = buildTimelineClipPresentationCollisionView(
         collisionTracks,
-        collisionSourceClips,
-        isNewAsset
-          ? undefined
-          : {
-              clipId: clip.id,
-              trackId: targetTrackId,
-              start: presentationStartTicks,
-            },
+        proposedClips,
       );
       const movingCollisionClip = collisionClips.find(
         (candidate) => candidate.id === clip.id,
       );
 
-      // Per-clip presentation model: presentation_start == stored start, so
-      // the drop position is the stored start directly. Collisions, however,
-      // must use the derived presentation duration.
-      const finalStartTicks = resolveCollision(
+      // DnD is visual, so resolve collisions in presentation space first.
+      // Only after we know the accepted visual start do we invert placement
+      // back to the stored tick domain. This keeps ripple-mode drops from
+      // landing somewhere different than the preview.
+      const finalPresentationStartTicks = resolveCollision(
         clip.id,
         presentationStartTicks,
         movingCollisionClip?.timelineDuration ?? clip.timelineDuration,
@@ -511,7 +518,13 @@ export const useClipMove = (
         collisionClips,
       );
 
-      if (finalStartTicks !== null) {
+      if (finalPresentationStartTicks !== null) {
+        const finalStartTicks = resolveStoredStartForPresentationStart(
+          collisionTracks,
+          proposedClips,
+          targetTrackId,
+          finalPresentationStartTicks,
+        );
         if (isNewAsset) {
           const newClip = {
             ...(clip as BaseClip),
@@ -544,13 +557,22 @@ export const useClipMove = (
       currentInsertGapIndex !== null
         ? createNewTrack("New Track", getTrackTypeFromClipType(leaderClip.type))
         : undefined;
+    const resolvedLeaderTargetTrackId =
+      insertedTrack && currentInsertGapIndex !== null
+        ? insertedTrack.id
+        : dropTargetTrackId;
     const plannedMoves = planMultiClipMove({
       clips,
       selectedClipIds,
       tracks,
       leaderClip,
-      targetStartTicks: presentationStartTicks,
-      targetTrackId: dropTargetTrackId,
+      targetStartTicks: resolveStoredStartForPresentationStart(
+        tracks,
+        clips,
+        resolvedLeaderTargetTrackId,
+        presentationStartTicks,
+      ),
+      targetTrackId: resolvedLeaderTargetTrackId,
       ticksPerFrame,
       insertedTrack,
       insertTrackIndex: currentInsertGapIndex,

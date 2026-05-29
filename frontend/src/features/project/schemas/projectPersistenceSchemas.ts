@@ -11,7 +11,11 @@ import type {
   TimelineTrack,
   TrackType,
 } from "../../../types/TimelineTypes";
-import { ADJUSTMENT_DEPTH_ALL } from "../../../types/TimelineTypes";
+import {
+  ADJUSTMENT_DEPTH_ALL,
+  ADJUSTMENT_RETIMING_RIPPLE,
+  ADJUSTMENT_RETIMING_STATIC,
+} from "../../../types/TimelineTypes";
 import {
   ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
   ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
@@ -136,6 +140,9 @@ const timelineClipSchema = z
         z.number().int().min(1),
         z.literal(ADJUSTMENT_DEPTH_ALL),
       ])
+      .optional(),
+    retimingMode: z
+      .enum([ADJUSTMENT_RETIMING_STATIC, ADJUSTMENT_RETIMING_RIPPLE])
       .optional(),
   })
   .passthrough()

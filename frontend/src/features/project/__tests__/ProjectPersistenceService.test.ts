@@ -9,7 +9,10 @@ import {
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
 } from "../constants";
 import { isSafeProjectRelativePath } from "../schemas/projectPersistenceSchemas";
-import { ADJUSTMENT_DEPTH_ALL } from "../../../types/TimelineTypes";
+import {
+  ADJUSTMENT_DEPTH_ALL,
+  ADJUSTMENT_RETIMING_RIPPLE,
+} from "../../../types/TimelineTypes";
 
 vi.mock("../services/FileSystemService", () => ({
   fileSystemService: {
@@ -505,6 +508,7 @@ describe("ProjectPersistenceService", () => {
           start: 50,
           transformations: [],
           depth: 2,
+          retimingMode: ADJUSTMENT_RETIMING_RIPPLE,
         },
       ],
     };
@@ -524,6 +528,7 @@ describe("ProjectPersistenceService", () => {
         id: "adj-1",
         type: "adjustment",
         depth: 2,
+        retimingMode: ADJUSTMENT_RETIMING_RIPPLE,
         trackId: "track-adj",
         sourceDuration: 200,
       }),

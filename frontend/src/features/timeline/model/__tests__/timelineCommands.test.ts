@@ -3,6 +3,7 @@ import type {
   AdjustmentTimelineClip,
   TextTimelineClip,
 } from "../../../../types/TimelineTypes";
+import { ADJUSTMENT_RETIMING_STATIC } from "../../../../types/TimelineTypes";
 import { withTimelineClipDefaults } from "../timelineCommands";
 
 describe("withTimelineClipDefaults", () => {
@@ -66,6 +67,10 @@ describe("withTimelineClipDefaults", () => {
     const normalized = withTimelineClipDefaults(clip);
 
     expect(normalized.type).toBe("adjustment");
+    if (normalized.type !== "adjustment") {
+      throw new Error("Expected an adjustment clip");
+    }
     expect(normalized.transformations).toEqual([]);
+    expect(normalized.retimingMode).toBe(ADJUSTMENT_RETIMING_STATIC);
   });
 });

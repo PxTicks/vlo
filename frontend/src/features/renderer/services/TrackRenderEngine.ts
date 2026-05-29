@@ -203,12 +203,9 @@ export class TrackRenderEngine {
   }
 
   /**
-   * Per-clip presentation lookup. In the per-clip model adjustments don't
-   * warp track time globally; instead each clip carries its own rebase. So
-   * "the effective track tick at presentation X" only has meaning when an
-   * active clip exists at X on this track — we resolve through that clip.
-   * When no clip is active, identity (presentationTick) is the correct
-   * answer (and findActiveClipAtPresentation returns null upstream).
+   * Presentation lookup resolves through the active clip so static rebases and
+   * ripple placement both feed the renderer the stored-track tick that should
+   * play at this presentation tick.
    */
   public resolveActiveClipAtPresentation(
     trackClips: TimelineClip[],

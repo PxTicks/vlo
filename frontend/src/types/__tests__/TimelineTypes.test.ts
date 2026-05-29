@@ -5,6 +5,9 @@ import type {
   StandardTimelineClip,
 } from "../TimelineTypes";
 import {
+  ADJUSTMENT_RETIMING_RIPPLE,
+  ADJUSTMENT_RETIMING_STATIC,
+  getAdjustmentRetimingMode,
   isAdjustmentClip,
   isAssetBackedClip,
   isMaskClip,
@@ -115,5 +118,14 @@ describe("TimelineTypes guards", () => {
     expect(isAssetBackedClip(adjustment)).toBe(false);
     expect(isTextClip(adjustment)).toBe(false);
     expect(isMaskClip(adjustment)).toBe(false);
+    expect(getAdjustmentRetimingMode(adjustment)).toBe(
+      ADJUSTMENT_RETIMING_STATIC,
+    );
+    expect(
+      getAdjustmentRetimingMode({
+        ...adjustment,
+        retimingMode: ADJUSTMENT_RETIMING_RIPPLE,
+      }),
+    ).toBe(ADJUSTMENT_RETIMING_RIPPLE);
   });
 });

@@ -7,6 +7,7 @@ import type {
 import type { Asset } from "../../types/Asset";
 import type {
   AdjustmentDepth,
+  AdjustmentRetimingMode,
   ClipMask,
   ClipTransform,
   CompositeContent,
@@ -74,6 +75,7 @@ import {
   createAdjustmentClipInDraft,
   insertAdjustmentTrackInDraft,
   setAdjustmentDepthInDraft,
+  setAdjustmentRetimingModeInDraft,
   type CreateAdjustmentClipInput,
 } from "./model/adjustmentClipCommands";
 import {
@@ -225,6 +227,11 @@ interface TimelineState extends TimelineModelState {
   addAdjustmentClip: (input: CreateAdjustmentClipInput) => string | null;
   /** Update an existing adjustment clip's depth. */
   setAdjustmentDepth: (clipId: string, depth: AdjustmentDepth) => boolean;
+  /** Update how adjustment speed transforms affect timeline placement. */
+  setAdjustmentRetimingMode: (
+    clipId: string,
+    retimingMode: AdjustmentRetimingMode,
+  ) => boolean;
 
   undo: () => boolean;
   redo: () => boolean;
@@ -706,6 +713,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       let ok = false;
       mutationPipeline.commitModelMutation((draft) => {
         ok = setAdjustmentDepthInDraft(draft, clipId, depth);
+      });
+      return ok;
+    },
+
+    setAdjustmentRetimingMode: (clipId, retimingMode) => {
+      let ok = false;
+      mutationPipeline.commitModelMutation((draft) => {
+        ok = setAdjustmentRetimingModeInDraft(draft, clipId, retimingMode);
       });
       return ok;
     },

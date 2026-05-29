@@ -2,7 +2,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   ADJUSTMENT_DEPTH_ALL,
+  ADJUSTMENT_RETIMING_RIPPLE,
+  ADJUSTMENT_RETIMING_STATIC,
   type AdjustmentDepth,
+  type AdjustmentRetimingMode,
   type AdjustmentTimelineClip,
   type TimelineTrack,
 } from "../../../../types/TimelineTypes";
@@ -31,7 +34,10 @@ function visualTrack(id: string): TimelineTrack {
   };
 }
 
-function seedAdjustmentClip(depth: AdjustmentDepth): void {
+function seedAdjustmentClip(
+  depth: AdjustmentDepth,
+  retimingMode: AdjustmentRetimingMode = ADJUSTMENT_RETIMING_STATIC,
+): void {
   const clip: AdjustmentTimelineClip = {
     id: "adj-1",
     type: "adjustment",
@@ -46,6 +52,7 @@ function seedAdjustmentClip(depth: AdjustmentDepth): void {
     offset: 0,
     transformations: [],
     depth,
+    retimingMode,
   };
 
   useTimelineStore.setState({
@@ -101,6 +108,25 @@ describe("AdjustmentDepthSection", () => {
 
     expect(clip.depth).toBe(2);
     expect(screen.getByRole("spinbutton")).toHaveValue(2);
+  });
+
+  it("toggles ripple retiming mode", () => {
+    render(<Harness />);
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Ripple timeline timing" }),
+    );
+
+    const clip = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === "adj-1") as AdjustmentTimelineClip;
+
+    expect(clip.retimingMode).toBe(ADJUSTMENT_RETIMING_RIPPLE);
+    expect(
+      screen.getByText(
+        "Speed changes stretch or contract the affected lanes, so later clips shift in presentation time.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it('switches a numeric depth back to the "all" sentinel', () => {

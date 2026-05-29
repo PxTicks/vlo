@@ -561,9 +561,9 @@ export class TrackAudioRenderer {
 
     while (this.nextScheduleTime < ctx.currentTime + options.lookahead) {
       const targetTicks = getTargetTicks(this.nextScheduleTime);
-      // Active clip lookup by *presentation* tick (per-clip model). The
-      // returned `effectiveTick` is the rebased stored-track tick that
-      // feeds calculatePlayerFrameTime below.
+      // Active clip lookup by *presentation* tick. The returned
+      // `effectiveTick` has already applied the clip's static/ripple
+      // placement model and feeds calculatePlayerFrameTime below.
       const resolved = this.findActiveClipAtPresentation(trackClips, targetTicks);
       const activeClip = resolved?.clip;
       const effectiveTrackTick = resolved?.effectiveTick ?? targetTicks;

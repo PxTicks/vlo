@@ -292,6 +292,11 @@ export interface CompositeBaseClip
 
 export const ADJUSTMENT_DEPTH_ALL = "all";
 export type AdjustmentDepth = number | typeof ADJUSTMENT_DEPTH_ALL;
+export const ADJUSTMENT_RETIMING_STATIC = "static";
+export const ADJUSTMENT_RETIMING_RIPPLE = "ripple";
+export type AdjustmentRetimingMode =
+  | typeof ADJUSTMENT_RETIMING_STATIC
+  | typeof ADJUSTMENT_RETIMING_RIPPLE;
 
 /**
  * An adjustment clip defines a render group at its position on the timeline.
@@ -308,6 +313,15 @@ export interface AdjustmentClipExtras {
    * Reach is clamped at the bottom of the track stack at derivation time.
    */
   depth: AdjustmentDepth;
+  /**
+   * How speed transforms on this adjustment affect timeline placement.
+   * "static" pins descendant clip starts and only retimes intersecting clip
+   * content; "ripple" uses the older global warp where later clips shift as
+   * the affected track stretches/contracts.
+   *
+   * Optional for legacy project files; runtime helpers default to "static".
+   */
+  retimingMode?: AdjustmentRetimingMode;
 }
 
 export interface AdjustmentBaseClip
@@ -467,6 +481,12 @@ export function isAdjustmentDepthAll(
   depth: AdjustmentDepth,
 ): depth is typeof ADJUSTMENT_DEPTH_ALL {
   return depth === ADJUSTMENT_DEPTH_ALL;
+}
+
+export function getAdjustmentRetimingMode(
+  clip: AdjustmentBaseClip | AdjustmentTimelineClip,
+): AdjustmentRetimingMode {
+  return clip.retimingMode ?? ADJUSTMENT_RETIMING_STATIC;
 }
 
 export interface TimelineTrack {

@@ -3,6 +3,7 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
+import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../types/TimelineTypes";
 import {
   buildTrackTimeResolver,
   type TrackTimeResolver,
@@ -13,15 +14,16 @@ const COLLISION_EPSILON_TICKS = 0.5;
 export interface TimelineClipPresentation {
   clipId: string;
   trackId: string;
-  /** Pinned to `clip.start` — adjustments do not shift clip presentation. */
+  /** On-screen start after applying ripple retiming and static rebases. */
   start: number;
   end: number;
   duration: number;
   /**
    * Given a presentation-offset within this clip's footprint, return the
    * stored offset within the clip (i.e. `effectiveTrackTick - clip.start`).
-   * Uses the internal `TrackTimeResolver` after a per-clip rebase, so spline
-   * speed transforms are honoured exactly.
+   * Uses the internal `TrackTimeResolver` after applying the clip's selected
+   * static/ripple placement model, so spline speed transforms are honoured
+   * exactly.
    */
   mapPresentationOffsetToClipOffset: (presentationOffset: number) => number;
   /**
@@ -50,16 +52,16 @@ export interface ProposedClipTimingChange {
 }
 
 /**
- * Renderer/audio-renderer facing index. Wraps the per-clip presentation map
- * with an active-clip lookup keyed by presentation tick, plus an
- * effective-track-tick resolver that does the per-clip rebase internally.
+ * Renderer/audio-renderer facing index. Wraps the presentation map with an
+ * active-clip lookup keyed by presentation tick, plus an effective-track-tick
+ * resolver that hides static rebases and ripple placement.
  */
 export interface TimelineClipPresentationLookup {
   readonly byClipId: Map<string, TimelineClipPresentation>;
   /**
    * Return the clip whose presentation footprint contains `presentationTick`
    * on `trackId`, plus the corresponding `effectiveTrackTick` (the value the
-   * per-clip rebase emits for that clip — feed it straight into
+   * presentation model emits for that clip — feed it straight into
    * `calculatePlayerFrameTime` / `calculateClipTime`).
    */
   findActiveClipAt(
@@ -155,23 +157,35 @@ function applyProposedClipTimingChange(
   };
 }
 
+function buildRippleLayoutResolver(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+): TrackTimeResolver {
+  return buildTrackTimeResolver(tracks, clips, {
+    retimingModes: [ADJUSTMENT_RETIMING_RIPPLE],
+  });
+}
+
 function buildPresentation(
   clip: TimelineClip,
   resolver: TrackTimeResolver,
+  layoutResolver: TrackTimeResolver,
 ): InternalClipPresentation {
-  // Sample the global warp at the clip's actual presentation start, then use
-  // only subsequent deltas from that point. This prevents an earlier
-  // adjustment's post-window delta from shifting unrelated later clips while
-  // still preserving exact spline integration for any visible overlap.
-  const baseEffectiveTick = resolver.resolveEffectiveTrackTick(
+  // Ripple-mode adjustments choose the clip's lane position. Static-mode
+  // adjustments are then rebased around that position so they retime only the
+  // clip content they visibly cover, not every later clip on the track.
+  const start = layoutResolver.resolvePresentationTick(
     clip.trackId,
     clip.start,
+  );
+  const baseEffectiveTick = resolver.resolveEffectiveTrackTick(
+    clip.trackId,
+    start,
   );
   const presentationEnd = resolver.resolvePresentationTick(
     clip.trackId,
     baseEffectiveTick + clip.timelineDuration,
   );
-  const start = clip.start;
   const duration = Math.max(0, presentationEnd - start);
   const end = start + duration;
 
@@ -225,28 +239,37 @@ function indexClipsByTrack(
 
 function buildInternalPresentationMap(
   resolver: TrackTimeResolver,
+  layoutResolver: TrackTimeResolver,
   clips: readonly TimelineClip[],
 ): Map<string, InternalClipPresentation> {
   const presentationByClipId = new Map<string, InternalClipPresentation>();
   for (const clip of clips) {
     if (clip.type === "mask") continue;
-    presentationByClipId.set(clip.id, buildPresentation(clip, resolver));
+    presentationByClipId.set(
+      clip.id,
+      buildPresentation(clip, resolver, layoutResolver),
+    );
   }
   return presentationByClipId;
 }
 
 /**
  * UI-facing presentation index: a plain `Map<clipId, presentation>` whose
- * entries describe each clip's on-screen footprint. The `start` field is
- * pinned to the clip's stored `start` — adjustments above only compress
- * `duration` for clips whose stored range intersects them.
+ * entries describe each clip's on-screen footprint. Static adjustment retiming
+ * pins descendant clip starts; ripple retiming stretches/contracts the lane and
+ * shifts later clips through the same global warp used by the renderer.
  */
 export function buildTimelineClipPresentationIndex(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
 ): Map<string, TimelineClipPresentation> {
   const resolver = buildTrackTimeResolver(tracks, clips);
-  const internalMap = buildInternalPresentationMap(resolver, clips);
+  const layoutResolver = buildRippleLayoutResolver(tracks, clips);
+  const internalMap = buildInternalPresentationMap(
+    resolver,
+    layoutResolver,
+    clips,
+  );
   const publicMap = new Map<string, TimelineClipPresentation>();
   for (const [clipId, presentation] of internalMap) {
     publicMap.set(clipId, presentation);
@@ -255,16 +278,21 @@ export function buildTimelineClipPresentationIndex(
 }
 
 /**
- * Renderer-facing index: same per-clip presentation map plus the active-clip
- * lookup the renderer / audio engine consume. The lookup encapsulates the
- * per-clip rebase so call sites no longer touch the internal resolver.
+ * Renderer-facing index: same presentation map plus the active-clip lookup the
+ * renderer / audio engine consume. The lookup encapsulates static rebases and
+ * ripple placement so call sites no longer touch the internal resolver.
  */
 export function buildTimelineClipPresentationLookup(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
 ): TimelineClipPresentationLookup {
   const resolver = buildTrackTimeResolver(tracks, clips);
-  const internalMap = buildInternalPresentationMap(resolver, clips);
+  const layoutResolver = buildRippleLayoutResolver(tracks, clips);
+  const internalMap = buildInternalPresentationMap(
+    resolver,
+    layoutResolver,
+    clips,
+  );
   const byTrack = indexClipsByTrack(internalMap);
 
   const byClipId = new Map<string, TimelineClipPresentation>();
@@ -306,10 +334,9 @@ export function buildTimelineClipPresentationLookup(
 }
 
 /**
- * For DnD right-resize: given a clip whose presentation start is pinned to
- * its stored start, compute the new stored end such that its presentation
- * end lands at `targetPresentationEnd`. Inverts the per-clip rebase using
- * the engine's stored-track-tick resolver.
+ * For DnD right-resize: compute the new stored end such that the clip's
+ * presentation end lands at `targetPresentationEnd` under its selected
+ * static/ripple placement model.
  */
 export function resolveStoredEndForPresentationEnd(
   tracks: readonly TimelineTrack[],
@@ -318,15 +345,38 @@ export function resolveStoredEndForPresentationEnd(
   targetPresentationEnd: number,
 ): number {
   const resolver = buildTrackTimeResolver(tracks, clips);
-  const baseEffectiveTick = resolver.resolveEffectiveTrackTick(
+  const layoutResolver = buildRippleLayoutResolver(tracks, clips);
+  const presentationStart = layoutResolver.resolvePresentationTick(
     clip.trackId,
     clip.start,
+  );
+  const baseEffectiveTick = resolver.resolveEffectiveTrackTick(
+    clip.trackId,
+    presentationStart,
   );
   const targetEffectiveTick = resolver.resolveEffectiveTrackTick(
     clip.trackId,
     targetPresentationEnd,
   );
   return clip.start + (targetEffectiveTick - baseEffectiveTick);
+}
+
+/**
+ * Invert the placement part of the presentation model. Drag/drop works in
+ * presentation coordinates; committed clips store track-time coordinates.
+ * Static adjustments are ignored for placement, while ripple adjustments use
+ * the global inverse so the final rendered start lands under the cursor.
+ */
+export function resolveStoredStartForPresentationStart(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  trackId: string,
+  targetPresentationStart: number,
+): number {
+  return buildRippleLayoutResolver(tracks, clips).resolveEffectiveTrackTick(
+    trackId,
+    targetPresentationStart,
+  );
 }
 
 function collectPresentationCollisionsFromIndex(

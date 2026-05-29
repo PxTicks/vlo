@@ -1,7 +1,10 @@
 import {
   ADJUSTMENT_DEPTH_ALL,
+  ADJUSTMENT_RETIMING_STATIC,
+  getAdjustmentRetimingMode,
   isAdjustmentDepthAll,
   type AdjustmentDepth,
+  type AdjustmentRetimingMode,
   type AdjustmentTimelineClip,
 } from "../../../types/TimelineTypes";
 import { addClipToDraft, insertTrackIntoDraft } from "./timelineCommands";
@@ -21,6 +24,8 @@ export interface CreateAdjustmentClipInput {
   timelineDuration: number;
   /** Optional. Defaults to the `"all"` sentinel. */
   depth?: AdjustmentDepth;
+  /** Optional. Defaults to static/pinned retiming. */
+  retimingMode?: AdjustmentRetimingMode;
   name?: string;
 }
 
@@ -101,6 +106,7 @@ export function createAdjustmentClipInDraft(
     offset: 0,
     transformations: [],
     depth,
+    retimingMode: input.retimingMode ?? ADJUSTMENT_RETIMING_STATIC,
   };
 
   // Snapshot length before the add — addClipToDraft no-ops on rule-2
@@ -149,6 +155,35 @@ export function setAdjustmentDepthInDraft(
   draft.clips = draft.clips.map((clip) =>
     clip.id === clipId && clip.type === "adjustment"
       ? { ...clip, depth }
+      : clip,
+  );
+  return true;
+}
+
+export function setAdjustmentRetimingModeInDraft(
+  draft: TimelineModelState,
+  clipId: string,
+  retimingMode: AdjustmentRetimingMode,
+): boolean {
+  const target = draft.clips.find((c) => c.id === clipId);
+  if (!target) {
+    console.warn(
+      `[setAdjustmentRetimingModeInDraft] no clip found with id ${clipId}.`,
+    );
+    return false;
+  }
+  if (target.type !== "adjustment") {
+    console.warn(
+      `[setAdjustmentRetimingModeInDraft] clip ${clipId} is not an adjustment clip (type=${target.type}).`,
+    );
+    return false;
+  }
+  if (getAdjustmentRetimingMode(target) === retimingMode) {
+    return true;
+  }
+  draft.clips = draft.clips.map((clip) =>
+    clip.id === clipId && clip.type === "adjustment"
+      ? { ...clip, retimingMode }
       : clip,
   );
   return true;

@@ -25,6 +25,7 @@ export type {
   AssetBackedClipType,
   AssetBackedTimelineClip,
   AdjustmentDepth,
+  AdjustmentRetimingMode,
   BaseClip,
   BaseClipByType,
   AdjustmentBaseClip,
@@ -66,6 +67,9 @@ export type {
 } from "./TimelineTypes";
 export {
   ADJUSTMENT_DEPTH_ALL,
+  ADJUSTMENT_RETIMING_RIPPLE,
+  ADJUSTMENT_RETIMING_STATIC,
+  getAdjustmentRetimingMode,
   isAdjustmentClip,
   isAdjustmentDepthAll,
   isAssetBackedClip,

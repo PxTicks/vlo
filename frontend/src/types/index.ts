@@ -26,8 +26,6 @@ export type {
   AssetBackedTimelineClip,
   BaseClip,
   BaseClipByType,
-  AdjustmentBaseClip,
-  AdjustmentTimelineClip,
   CompositeBaseClip,
   CompositeContent,
   CompositeTimelineClip,
@@ -64,7 +62,6 @@ export type {
   TextRun,
 } from "./TimelineTypes";
 export {
-  isAdjustmentClip,
   isAssetBackedClip,
   isCompositeClip,
   isMaskClip,

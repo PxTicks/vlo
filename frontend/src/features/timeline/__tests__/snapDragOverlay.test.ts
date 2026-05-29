@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildFrameSnappedLayerTimeDrag,
-  buildFrameSnappedSourceTimeDrag,
-} from "../utils/snapDragOverlay";
-import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../constants";
+import { buildFrameSnappedLayerTimeDrag } from "../utils/snapDragOverlay";
+import { TICKS_PER_SECOND } from "../constants";
 import type { TimelineClip, ClipTransform } from "../../../types/TimelineTypes";
 import type { TimelineClipOverlayDragContext } from "../clipOverlayApi";
 
@@ -48,15 +45,11 @@ function makeContext(deltaVisualTimeTicks: number): TimelineClipOverlayDragConte
     event: new Event("pointer") as unknown as PointerEvent,
     targetElement: document.createElement("div"),
     clipLocalX: 0,
-    presentationOffsetTicks: 0,
     visualTimeTicks: 0,
     sourceTimeTicks: 0,
     deltaClipX: 0,
-    deltaPresentationOffsetTicks: deltaVisualTimeTicks,
     deltaVisualTimeTicks,
     deltaSourceTimeTicks: 0,
-    mapPresentationOffsetToClipOffset: (offset) => offset,
-    mapClipOffsetToPresentationOffset: (offset) => offset,
   };
 }
 
@@ -228,29 +221,5 @@ describe("buildFrameSnappedLayerTimeDrag", () => {
 
     handlers.onDragEnd?.(makeContext(TPF * 0.3));
     expect(onCommit).toHaveBeenCalledWith(TPF * 10 + 50);
-  });
-});
-
-describe("buildFrameSnappedSourceTimeDrag", () => {
-  it("uses presentation-space distance for the live drag offset", () => {
-    const handlers = buildFrameSnappedSourceTimeDrag({
-      clip: makeClip([]),
-      initialSourceTimeTicks: TPF * 10,
-      getTicksPerFrame: () => TPF,
-      getZoomScale: () => 1,
-      onCommit: vi.fn(),
-    });
-    const context = {
-      ...makeContext(TPF * 2.2),
-      mapClipOffsetToPresentationOffset: (offset: number) => offset / 2,
-    };
-
-    handlers.onDrag?.(context);
-
-    const dx = Number.parseFloat(
-      context.targetElement.style.getPropertyValue("--overlay-drag-dx"),
-    );
-    const expectedDx = (TPF / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
-    expect(dx).toBeCloseTo(expectedDx);
   });
 });

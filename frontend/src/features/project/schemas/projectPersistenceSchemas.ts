@@ -73,7 +73,6 @@ const trackTypeSchema = z.enum([
   "prompt",
   "effects",
   "mask",
-  "adjustment",
 ]) satisfies z.ZodType<TrackType>;
 
 export const projectDocumentConfigSchema = z
@@ -116,7 +115,6 @@ const timelineClipSchema = z
       "shape",
       "mask",
       "composite",
-      "adjustment",
     ]),
     trackId: z.string(),
     name: z.string(),
@@ -128,29 +126,8 @@ const timelineClipSchema = z
     offset: z.number(),
     start: z.number(),
     transformations: z.array(clipTransformSchema),
-    // Adjustment-clip extras (sit on the same passthrough; required when
-    // type === "adjustment", enforced by the superRefine below).
-    depth: z.number().int().min(1).optional(),
   })
-  .passthrough()
-  .superRefine((clip, ctx) => {
-    if (clip.type === "adjustment") {
-      if (typeof clip.depth !== "number") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Adjustment clips require an integer depth ≥ 1.",
-          path: ["depth"],
-        });
-      }
-      if (typeof clip.sourceDuration !== "number") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Adjustment clips require a numeric sourceDuration.",
-          path: ["sourceDuration"],
-        });
-      }
-    }
-  }) as unknown as z.ZodType<TimelineClip>;
+  .passthrough() as unknown as z.ZodType<TimelineClip>;
 
 const assetFamilyCompatibilitySchema = z
   .object({
@@ -197,26 +174,6 @@ export const projectManifestDocumentSchema = z.object({
 export const timelineDocumentSchema = z.object({
   documentType: z.literal("vlo.timeline"),
   schemaVersion: z.literal(TIMELINE_DOCUMENT_SCHEMA_VERSION),
-  updated_at: z.number(),
-  tracks: z.array(timelineTrackSchema),
-  clips: z.array(timelineClipSchema),
-});
-
-/**
- * v1 timeline documents predate render groups and adjustment clips. The
- * persistence service reads with this schema as a fallback and rewrites the
- * document at the current version.
- *
- * Note on the scaffolding interlude: an unshipped branch experimented with a
- * top-level `groups: TimelineGroup[]` field under schemaVersion 2 before the
- * adjustment-clip design replaced it. That shape was never blessed as a
- * production schema; stale dev-branch docs are tolerated implicitly through
- * Zod's strip-on-parse default — the current v2 schema simply drops the
- * unknown `groups` key when reading.
- */
-export const timelineDocumentSchemaV1 = z.object({
-  documentType: z.literal("vlo.timeline"),
-  schemaVersion: z.literal(1),
   updated_at: z.number(),
   tracks: z.array(timelineTrackSchema),
   clips: z.array(timelineClipSchema),

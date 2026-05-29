@@ -27,7 +27,6 @@ import { alpha, styled } from "@mui/material/styles";
 import vloLogo from "../../../assets/vlo.svg";
 import { VLO_APP_VERSION } from "../constants";
 import { fileSystemService } from "../services/FileSystemService";
-import { ProjectSchemaVersionError } from "../services/ProjectPersistenceService";
 import {
   recentProjectsService,
   type RecentProject,
@@ -111,14 +110,6 @@ function formatLastOpened(lastOpened: number): string {
   return recentDateFormatter.format(new Date(lastOpened));
 }
 
-function getRecentProjectOpenErrorMessage(error: unknown): string {
-  if (error instanceof ProjectSchemaVersionError) {
-    return `Failed to open recent project: ${error.message}`;
-  }
-
-  return "Failed to open recent project. It may have been moved or deleted.";
-}
-
 export function ProjectManager() {
   const [recents, setRecents] = useState<RecentProject[]>([]);
   const [loading, setLoading] = useState(false);
@@ -180,7 +171,9 @@ export function ProjectManager() {
       await loadProject(recent.handle);
     } catch (e: unknown) {
       console.error(e);
-      alert(getRecentProjectOpenErrorMessage(e));
+      alert(
+        "Failed to open recent project. It may have been moved or deleted.",
+      );
     } finally {
       setLoading(false);
     }

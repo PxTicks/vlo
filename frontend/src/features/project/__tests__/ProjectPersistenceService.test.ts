@@ -1,13 +1,9 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   projectPersistenceService,
-  ProjectSchemaVersionError,
 } from "../services/ProjectPersistenceService";
 import { fileSystemService } from "../services/FileSystemService";
-import {
-  PROJECT_MANIFEST_SCHEMA_VERSION,
-  TIMELINE_DOCUMENT_SCHEMA_VERSION,
-} from "../constants";
+import { PROJECT_MANIFEST_SCHEMA_VERSION } from "../constants";
 import { isSafeProjectRelativePath } from "../schemas/projectPersistenceSchemas";
 
 vi.mock("../services/FileSystemService", () => ({
@@ -38,7 +34,7 @@ describe("ProjectPersistenceService", () => {
 
   const timeline = {
     documentType: "vlo.timeline",
-    schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
+    schemaVersion: 1,
     updated_at: 1000,
     tracks: [
       {
@@ -283,24 +279,6 @@ describe("ProjectPersistenceService", () => {
     expect(fileSystemService.writeFile).not.toHaveBeenCalled();
   });
 
-  it("rejects a newer project manifest schema with an informative error", async () => {
-    files.set(
-      ".vloproject/project.json",
-      JSON.stringify({
-        ...manifest,
-        schemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION + 1,
-      }),
-    );
-
-    const loadPromise = projectPersistenceService.loadOrMigrateProject();
-
-    await expect(loadPromise).rejects.toThrow(ProjectSchemaVersionError);
-    await expect(loadPromise).rejects.toThrow(
-      `Project metadata uses schema version ${PROJECT_MANIFEST_SCHEMA_VERSION + 1}, but this build supports up to version ${PROJECT_MANIFEST_SCHEMA_VERSION}.`,
-    );
-    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
-  });
-
   it("migrates legacy projects into split files and sidecars heavy metadata", async () => {
     const legacyProject = {
       id: "legacy-project",
@@ -377,94 +355,6 @@ describe("ProjectPersistenceService", () => {
     expect(document).toBeNull();
   });
 
-  it("migrates a v1 timeline document forward to the current version", async () => {
-    const v1Timeline = {
-      documentType: "vlo.timeline",
-      schemaVersion: 1,
-      updated_at: 1000,
-      tracks: timeline.tracks,
-      clips: [],
-    };
-    files.set(".vloproject/project.json", JSON.stringify(manifest));
-    files.set(".vloproject/timeline.json", JSON.stringify(v1Timeline));
-    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
-
-    const loaded = await projectPersistenceService.loadOrMigrateProject();
-
-    expect(loaded.timeline?.schemaVersion).toBe(TIMELINE_DOCUMENT_SCHEMA_VERSION);
-    expect(loaded.timeline?.tracks).toEqual(timeline.tracks);
-
-    const rewrittenTimeline = JSON.parse(
-      files.get(".vloproject/timeline.json")!,
-    );
-    expect(rewrittenTimeline.schemaVersion).toBe(
-      TIMELINE_DOCUMENT_SCHEMA_VERSION,
-    );
-    // v2 has no top-level `groups` field; the migration must not reintroduce it.
-    expect(rewrittenTimeline.groups).toBeUndefined();
-  });
-
-  it("rejects a newer timeline schema with an informative error", async () => {
-    files.set(".vloproject/project.json", JSON.stringify(manifest));
-    files.set(
-      ".vloproject/timeline.json",
-      JSON.stringify({
-        ...timeline,
-        schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION + 1,
-      }),
-    );
-    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
-
-    const loadPromise = projectPersistenceService.loadOrMigrateProject();
-
-    await expect(loadPromise).rejects.toThrow(ProjectSchemaVersionError);
-    await expect(loadPromise).rejects.toThrow(
-      `Timeline data uses schema version ${TIMELINE_DOCUMENT_SCHEMA_VERSION + 1}, but this build supports up to version ${TIMELINE_DOCUMENT_SCHEMA_VERSION}.`,
-    );
-    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
-  });
-
-  it("silently drops a stray `groups` field from a stale dev-branch v2 document", async () => {
-    // The never-shipped scaffolding branch wrote v2 docs with a top-level
-    // groups field. We tolerate that implicitly through Zod's strip-on-parse
-    // default — no migration step, no version bump. The field disappears
-    // from the in-memory document; the on-disk doc is rewritten without it
-    // on the next persistence flush.
-    const staleDevTimeline = {
-      documentType: "vlo.timeline",
-      schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
-      updated_at: 1000,
-      tracks: timeline.tracks,
-      clips: [],
-      groups: [
-        {
-          id: "scaffolding-group",
-          label: "Scaffolding",
-          trackIds: ["track-1"],
-          start: 0,
-          timelineDuration: 500,
-          transformations: [],
-          isVisible: true,
-        },
-      ],
-    };
-    files.set(".vloproject/project.json", JSON.stringify(manifest));
-    files.set(".vloproject/timeline.json", JSON.stringify(staleDevTimeline));
-    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
-
-    const loaded = await projectPersistenceService.loadOrMigrateProject();
-
-    expect(loaded.timeline?.schemaVersion).toBe(TIMELINE_DOCUMENT_SCHEMA_VERSION);
-    expect(loaded.timeline?.tracks).toEqual(timeline.tracks);
-    // groups stripped from the loaded document.
-    expect((loaded.timeline as Record<string, unknown> | undefined)?.groups)
-      .toBeUndefined();
-    // Stale-dev docs aren't a formal migration: no automatic rewrite happens
-    // until the user mutates the timeline.
-    expect(loaded.migrated).toBe(false);
-    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
-  });
-
   it("validates persisted project-relative paths", () => {
     expect(isSafeProjectRelativePath("clip.mp4")).toBe(true);
     expect(isSafeProjectRelativePath(".vloproject/thumbnails/clip.webp")).toBe(
@@ -473,158 +363,5 @@ describe("ProjectPersistenceService", () => {
     expect(isSafeProjectRelativePath("../clip.mp4")).toBe(false);
     expect(isSafeProjectRelativePath("/tmp/clip.mp4")).toBe(false);
     expect(isSafeProjectRelativePath("blob:clip")).toBe(false);
-  });
-
-  it("round-trips an adjustment clip with depth and adjustment-type track", async () => {
-    const adjustmentTimeline = {
-      ...timeline,
-      tracks: [
-        ...timeline.tracks,
-        {
-          id: "track-adj",
-          type: "adjustment",
-          label: "Adjustment Lane",
-          isVisible: true,
-          isMuted: false,
-          isLocked: false,
-        },
-      ],
-      clips: [
-        {
-          id: "adj-1",
-          type: "adjustment",
-          trackId: "track-adj",
-          name: "Color",
-          sourceDuration: 200,
-          transformedDuration: 200,
-          transformedOffset: 0,
-          timelineDuration: 200,
-          croppedSourceDuration: 200,
-          offset: 0,
-          start: 50,
-          transformations: [],
-          depth: 2,
-        },
-      ],
-    };
-    files.set(".vloproject/project.json", JSON.stringify(manifest));
-    files.set(".vloproject/timeline.json", JSON.stringify(adjustmentTimeline));
-    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
-
-    const loaded = await projectPersistenceService.loadOrMigrateProject();
-
-    expect(loaded.timeline?.tracks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "track-adj", type: "adjustment" }),
-      ]),
-    );
-    expect(loaded.timeline?.clips).toEqual([
-      expect.objectContaining({
-        id: "adj-1",
-        type: "adjustment",
-        depth: 2,
-        trackId: "track-adj",
-        sourceDuration: 200,
-      }),
-    ]);
-    expect(loaded.migrated).toBe(false);
-    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
-  });
-
-  it("normalizes legacy adjustment clips with null sourceDuration before validation", async () => {
-    const legacyTimeline = {
-      ...timeline,
-      tracks: [
-        ...timeline.tracks,
-        {
-          id: "track-adj",
-          type: "adjustment",
-          label: "Adjustment Lane",
-          isVisible: true,
-          isMuted: false,
-          isLocked: false,
-        },
-      ],
-      clips: [
-        {
-          id: "adj-1",
-          type: "adjustment",
-          trackId: "track-adj",
-          name: "Legacy Color",
-          sourceDuration: null,
-          transformedDuration: 200,
-          transformedOffset: 0,
-          timelineDuration: 200,
-          croppedSourceDuration: 200,
-          offset: 0,
-          start: 50,
-          transformations: [],
-          depth: 2,
-        },
-      ],
-    };
-    files.set(".vloproject/project.json", JSON.stringify(manifest));
-    files.set(".vloproject/timeline.json", JSON.stringify(legacyTimeline));
-    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
-
-    const loaded = await projectPersistenceService.loadOrMigrateProject();
-
-    expect(loaded.timeline?.clips).toEqual([
-      expect.objectContaining({
-        id: "adj-1",
-        type: "adjustment",
-        sourceDuration: 200,
-      }),
-    ]);
-    expect(loaded.migrated).toBe(false);
-    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
-      ".vloproject/timeline.json",
-      expect.any(String),
-    );
-    expect(
-      JSON.parse(files.get(".vloproject/timeline.json") ?? "{}").clips?.[0]
-        ?.sourceDuration,
-    ).toBe(200);
-  });
-
-  it("rejects an adjustment clip missing the required depth field", async () => {
-    const invalidTimeline = {
-      ...timeline,
-      tracks: [
-        ...timeline.tracks,
-        {
-          id: "track-adj",
-          type: "adjustment",
-          label: "Adjustment Lane",
-          isVisible: true,
-          isMuted: false,
-          isLocked: false,
-        },
-      ],
-      clips: [
-        {
-          id: "adj-1",
-          type: "adjustment",
-          trackId: "track-adj",
-          name: "Broken",
-          sourceDuration: 200,
-          transformedDuration: 200,
-          transformedOffset: 0,
-          timelineDuration: 200,
-          croppedSourceDuration: 200,
-          offset: 0,
-          start: 0,
-          transformations: [],
-          // depth deliberately omitted
-        },
-      ],
-    };
-    files.set(".vloproject/project.json", JSON.stringify(manifest));
-    files.set(".vloproject/timeline.json", JSON.stringify(invalidTimeline));
-    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
-
-    await expect(
-      projectPersistenceService.loadOrMigrateProject(),
-    ).rejects.toThrow(/depth/i);
   });
 });

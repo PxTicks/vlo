@@ -39,17 +39,11 @@ const AudioIconOverlay = styled(Box)({
 interface ThumbnailCanvasProps {
   clip: AssetBackedBaseClip | AssetBackedTimelineClip;
   isDragging?: boolean;
-  presentationStart?: number;
-  presentationDuration?: number;
-  mapPresentationOffsetToClipOffset?: (presentationOffset: number) => number;
 }
 
 export function ThumbnailCanvasBase({
   clip,
   isDragging,
-  presentationStart,
-  presentationDuration,
-  mapPresentationOffsetToClipOffset,
 }: ThumbnailCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const zoomScale = useTimelineViewStore((state) => state.zoomScale);
@@ -68,9 +62,6 @@ export function ThumbnailCanvasBase({
     height,
     enabled: !isAudioClip,
     isDragging,
-    presentationStart,
-    presentationDuration,
-    mapPresentationOffsetToClipOffset,
   });
 
   const { showFallbackOverlay } = useWaveformRenderer({
@@ -80,9 +71,6 @@ export function ThumbnailCanvasBase({
     height,
     enabled: isAudioClip,
     isDragging,
-    presentationStart,
-    presentationDuration,
-    mapPresentationOffsetToClipOffset,
   });
 
   return (

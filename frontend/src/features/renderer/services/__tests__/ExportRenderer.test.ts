@@ -3,7 +3,6 @@ import type { ProjectData } from "../ExportRenderer";
 import { describe, it, expect, vi } from "vitest";
 import type { Mock } from "vitest";
 import { Application, Container } from "pixi.js";
-import { RenderGroupOrchestrator } from "../RenderGroupOrchestrator";
 import { TrackRenderEngine } from "../TrackRenderEngine";
 import type {
   StandardTimelineClip,
@@ -565,7 +564,7 @@ describe("ExportRenderer", () => {
       assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
       duration: 96000 * 0.1,
       fps: 30,
-    } satisfies ProjectData;
+    };
 
     const renderer = await ExportRenderer.create(config);
     const testRenderer = renderer as unknown as TestExportRenderer;
@@ -603,146 +602,6 @@ describe("ExportRenderer", () => {
 
     renderFrameSpy.mockRestore();
     renderer.dispose();
-  });
-
-  it("registers visual tracks with the orchestrator and syncs once per video frame", async () => {
-    const config = {
-      logicalWidth: 1920,
-      logicalHeight: 1080,
-      outputWidth: 1920,
-      outputHeight: 1080,
-    };
-
-    const projectData = {
-      tracks: [
-        { id: "t1", type: "visual", isVisible: true },
-      ] as TimelineTrack[],
-      clips: [
-        {
-          id: "c1",
-          trackId: "t1",
-          assetId: "a1",
-          start: 0,
-          timelineDuration: 96000 * 2,
-          offset: 0,
-          type: "video",
-        },
-      ] as TimelineClip[],
-      assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
-      // 0.1s @ 30fps -> 3 frames; gives us a deterministic frame count to assert.
-      duration: 96000 * 0.1,
-      fps: 30,
-    };
-
-    // The pixi.js mock used by this file is intentionally minimal (no
-    // `children`/`parent`/`removeChild` on Container). Stub the orchestrator's
-    // methods so this test only verifies the *handoff* from ExportRenderer to
-    // the orchestrator — its own scene-graph behavior is covered by
-    // RenderGroupOrchestrator.test.ts with real Pixi Containers.
-    const registerTrackSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "registerTrack")
-      .mockImplementation(() => {});
-    const syncSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "sync")
-      .mockImplementation(() => {});
-    const disposeSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "dispose")
-      .mockImplementation(() => {});
-
-    try {
-      const renderer = await ExportRenderer.create(config);
-      await renderer.render(projectData as ProjectData, config, () => {});
-
-      expect(registerTrackSpy).toHaveBeenCalledWith(
-        "t1",
-        expect.anything(),
-      );
-
-      const syncCalls = syncSpy.mock.calls;
-      expect(syncCalls.length).toBeGreaterThanOrEqual(3);
-      for (const [, visualTrackOrder] of syncCalls) {
-        expect(visualTrackOrder).toEqual(["t1"]);
-      }
-
-      renderer.dispose();
-      expect(disposeSpy).toHaveBeenCalled();
-    } finally {
-      registerTrackSpy.mockRestore();
-      syncSpy.mockRestore();
-      disposeSpy.mockRestore();
-    }
-  });
-
-  it("registers visual tracks with the orchestrator and syncs once during renderStill", async () => {
-    const config = {
-      logicalWidth: 1920,
-      logicalHeight: 1080,
-      outputWidth: 1920,
-      outputHeight: 1080,
-    };
-
-    const projectData = {
-      tracks: [
-        { id: "t1", type: "visual", isVisible: true },
-      ] as TimelineTrack[],
-      clips: [
-        {
-          id: "c1",
-          trackId: "t1",
-          assetId: "a1",
-          start: 0,
-          timelineDuration: 96000 * 2,
-          offset: 0,
-          type: "video",
-        },
-      ] as TimelineClip[],
-      assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
-      duration: 96000 * 0.1,
-      fps: 30,
-    };
-
-    const registerTrackSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "registerTrack")
-      .mockImplementation(() => {});
-    const syncSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "sync")
-      .mockImplementation(() => {});
-    const disposeSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "dispose")
-      .mockImplementation(() => {});
-
-    const renderFrameSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "renderFrame")
-      .mockResolvedValue(undefined);
-
-    try {
-      const renderer = await ExportRenderer.create(config);
-      const testRenderer = renderer as unknown as TestExportRenderer;
-      const toBlobSpy = vi.fn(
-        (callback: BlobCallback, type?: string) =>
-          callback(new Blob(["frame"], { type: type ?? "image/png" })),
-      );
-      Object.defineProperty(testRenderer.app.canvas, "toBlob", {
-        value: toBlobSpy,
-        configurable: true,
-      });
-
-      await testRenderer.renderStill(projectData as ProjectData, config, 0, {
-        mimeType: "image/png",
-      });
-
-      expect(registerTrackSpy).toHaveBeenCalledWith("t1", expect.anything());
-      expect(syncSpy).toHaveBeenCalledTimes(1);
-      const [tick, visualTrackOrder] = syncSpy.mock.calls[0];
-      expect(tick).toBe(0);
-      expect(visualTrackOrder).toEqual(["t1"]);
-      expect(disposeSpy).toHaveBeenCalled();
-    } finally {
-      registerTrackSpy.mockRestore();
-      syncSpy.mockRestore();
-      disposeSpy.mockRestore();
-      renderFrameSpy.mockRestore();
-    }
   });
 
   it("should cancel an in-flight render", async () => {

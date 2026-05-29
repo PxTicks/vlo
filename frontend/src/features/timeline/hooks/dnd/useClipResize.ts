@@ -4,6 +4,7 @@ import { useTimelineViewStore } from "../useTimelineViewStore";
 import {
   getMinimumClipDurationTicks,
   getResizeConstraints,
+  hasAnyCollision,
 } from "../../utils/collision";
 import { SNAP_THRESHOLD_PX } from "../../constants";
 import { getResizedClipLeft, getResizedClipRight } from "../../utils/clipMath";
@@ -15,6 +16,11 @@ import {
   getTicksPerFrame,
   snapTickToFrame,
 } from "../../../timelineSelection";
+import {
+  buildTimelineClipPresentationCollisionView,
+  buildTimelineClipPresentationIndex,
+  resolveStoredEndForPresentationEnd,
+} from "../../utils/clipPresentation";
 
 export const useClipResize = () => {
   // No subscriptions!
@@ -193,8 +199,13 @@ export const useClipResize = () => {
     const ticksPerFrame = getTicksPerFrame(
       useProjectStore.getState().config.fps,
     );
+    const timelineState = useTimelineStore.getState();
+    const clips = timelineState.clips ?? [];
+    const tracks = timelineState.tracks ?? [];
 
     if (side === "left") {
+      // presentation_start == stored start in the per-clip model, so the
+      // drag delta maps 1:1 onto the clip's stored start.
       let newStart = clip.start + deltaTicks;
       newStart = clamp(newStart, constraints.min, constraints.max);
       newStart = snapTickToFrame(newStart, ticksPerFrame);
@@ -202,6 +213,33 @@ export const useClipResize = () => {
       const validDelta = newStart - clip.start;
 
       const newShape = getResizedClipLeft(clip, validDelta);
+      const collisionClips = buildTimelineClipPresentationCollisionView(
+        tracks,
+        clips,
+        {
+          clipId: clip.id,
+          start: newShape.start,
+          timelineDuration: newShape.timelineDuration,
+          offset: newShape.offset,
+          transformedOffset: newShape.transformedOffset,
+          croppedSourceDuration: newShape.croppedSourceDuration,
+        },
+      );
+      const collisionClip = collisionClips.find(
+        (candidate) => candidate.id === clip.id,
+      );
+      if (
+        !collisionClip ||
+        hasAnyCollision(
+          collisionClip.start,
+          collisionClip.timelineDuration,
+          collisionClip.trackId,
+          [clip.id],
+          collisionClips,
+        )
+      ) {
+        return;
+      }
 
       useTimelineStore.getState().updateClipShape(clip.id, {
         start: newShape.start,
@@ -211,19 +249,55 @@ export const useClipResize = () => {
         croppedSourceDuration: newShape.croppedSourceDuration,
       });
     } else {
-      let newEnd = clip.start + clip.timelineDuration + deltaTicks;
+      // The right edge is dragged in presentation space. Outside any
+      // adjustment this is identity (stored end shifts by deltaTicks). Inside
+      // a speed-up region, a small presentation delta maps to a larger
+      // stored-tick delta: `resolveStoredEndForPresentationEnd` does the
+      // per-clip rebase through the internal time-warp engine and is exact
+      // for spline-shaped speed transforms.
+      const presentation = buildTimelineClipPresentationIndex(tracks, clips).get(
+        clip.id,
+      );
+      const currentPresentationEnd =
+        presentation?.end ?? clip.start + clip.timelineDuration;
+      const targetPresentationEnd = currentPresentationEnd + deltaTicks;
+      let newEnd = resolveStoredEndForPresentationEnd(
+        tracks,
+        clips,
+        clip,
+        targetPresentationEnd,
+      );
       newEnd = clamp(newEnd, constraints.min, constraints.max);
       newEnd = snapTickToFrame(newEnd, ticksPerFrame);
       newEnd = clamp(newEnd, constraints.min, constraints.max);
 
-      // Calculate the valid delta from the original end
-      // validDelta = newEnd - (start + timelineDuration)
-      // But getResizedClipRight takes deltaTicks.
-
-      // Let's just calculate the delta we want to apply to the timelineDuration
       const validDelta = newEnd - clip.start - clip.timelineDuration;
 
       const newShape = getResizedClipRight(clip, validDelta);
+      const collisionClips = buildTimelineClipPresentationCollisionView(
+        tracks,
+        clips,
+        {
+          clipId: clip.id,
+          timelineDuration: newShape.timelineDuration,
+          croppedSourceDuration: newShape.croppedSourceDuration,
+        },
+      );
+      const collisionClip = collisionClips.find(
+        (candidate) => candidate.id === clip.id,
+      );
+      if (
+        !collisionClip ||
+        hasAnyCollision(
+          collisionClip.start,
+          collisionClip.timelineDuration,
+          collisionClip.trackId,
+          [clip.id],
+          collisionClips,
+        )
+      ) {
+        return;
+      }
 
       useTimelineStore.getState().updateClipShape(clip.id, {
         timelineDuration: newShape.timelineDuration,

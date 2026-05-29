@@ -25,6 +25,10 @@ import { createNewTrack } from "../../model/timelineTrackModel";
 import { planMultiClipMove } from "../../utils/multiClipMove";
 import { getMoveSnapCandidate } from "./snapUtils";
 import { attachGenerationMask } from "../../utils/insertAssetToTimeline";
+import {
+  buildTimelineClipPresentationCollisionView,
+  buildTimelineClipPresentationIndex,
+} from "../../utils/clipPresentation";
 import { getAssetById } from "../../../userAssets";
 import { useProjectStore } from "../../../project";
 import {
@@ -338,8 +342,19 @@ export const useClipMove = (
 
       // Get timelineDuration from the active clip
       // Note: active.data.current.clip is reliable for both Assets and Clips
-      const clipDuration = (active.data.current?.clip as BaseClip)
-        .timelineDuration;
+      const activeClip = active.data.current?.clip as BaseClip | TimelineClip;
+      const timelineState = useTimelineStore.getState();
+      const timelineTracks = timelineState.tracks ?? [];
+      const timelineClips = timelineState.clips ?? [];
+      const presentation =
+        "trackId" in activeClip
+          ? buildTimelineClipPresentationIndex(
+              timelineTracks,
+              timelineClips,
+            ).get(activeClip.id)
+          : undefined;
+      const clipDuration =
+        presentation?.duration ?? activeClip.timelineDuration;
       const snappedStartTicks = resolveMoveSnap(
         projectedStartTicks,
         clipDuration,
@@ -356,6 +371,7 @@ export const useClipMove = (
     event: DragEndEvent,
     clip: BaseClip | TimelineClip,
     snapStartTicks: number | null = null,
+    insertGapIndexOverride?: number | null,
   ) => {
     const { over, activatorEvent, delta } = event;
 
@@ -379,13 +395,16 @@ export const useClipMove = (
       useProjectStore.getState().config.fps,
     );
     // Snap to frame grid; clip-to-clip snap (snapStartTicks) takes priority
-    const startTicks = snapStartTicks != null
+    const presentationStartTicks = snapStartTicks != null
       ? snapStartTicks
       : Math.max(0, snapTickToFrame(unsnappedStartTicks, ticksPerFrame));
 
     // --- 2. Calculate Track (Vertical) ---
     // We prioritize the gap index calculated during the move phase.
-    const currentInsertGapIndex = getInsertGapIndex();
+    const currentInsertGapIndex =
+      insertGapIndexOverride !== undefined
+        ? insertGapIndexOverride
+        : getInsertGapIndex();
     let dropTargetTrackId = "";
 
     if (currentInsertGapIndex === null) {
@@ -431,7 +450,10 @@ export const useClipMove = (
       let shouldInsert = false;
 
       if (currentInsertGapIndex !== null) {
-        targetTrackId = insertTrack(currentInsertGapIndex);
+        targetTrackId = insertTrack(
+          currentInsertGapIndex,
+          getTrackTypeFromClipType(clip.type),
+        );
         shouldInsert = true;
       }
 
@@ -452,12 +474,41 @@ export const useClipMove = (
         }
       }
 
+      const collisionTracks = useTimelineStore.getState().tracks;
+      const collisionSourceClips = isNewAsset
+        ? [
+            ...clips,
+            {
+              ...(clip as BaseClip),
+              trackId: targetTrackId,
+              start: presentationStartTicks,
+            } as StandardTimelineClip,
+          ]
+        : clips;
+      const collisionClips = buildTimelineClipPresentationCollisionView(
+        collisionTracks,
+        collisionSourceClips,
+        isNewAsset
+          ? undefined
+          : {
+              clipId: clip.id,
+              trackId: targetTrackId,
+              start: presentationStartTicks,
+            },
+      );
+      const movingCollisionClip = collisionClips.find(
+        (candidate) => candidate.id === clip.id,
+      );
+
+      // Per-clip presentation model: presentation_start == stored start, so
+      // the drop position is the stored start directly. Collisions, however,
+      // must use the derived presentation duration.
       const finalStartTicks = resolveCollision(
         clip.id,
-        startTicks,
-        clip.timelineDuration,
+        presentationStartTicks,
+        movingCollisionClip?.timelineDuration ?? clip.timelineDuration,
         targetTrackId,
-        clips,
+        collisionClips,
       );
 
       if (finalStartTicks !== null) {
@@ -491,14 +542,14 @@ export const useClipMove = (
 
     const insertedTrack =
       currentInsertGapIndex !== null
-        ? createNewTrack("New Track")
+        ? createNewTrack("New Track", getTrackTypeFromClipType(leaderClip.type))
         : undefined;
     const plannedMoves = planMultiClipMove({
       clips,
       selectedClipIds,
       tracks,
       leaderClip,
-      targetStartTicks: startTicks,
+      targetStartTicks: presentationStartTicks,
       targetTrackId: dropTargetTrackId,
       ticksPerFrame,
       insertedTrack,

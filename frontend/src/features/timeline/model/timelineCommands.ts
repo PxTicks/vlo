@@ -277,6 +277,25 @@ export function addClipToDraft(
   const targetTrack = draft.tracks.find(
     (track) => track.id === clipWithDefaults.trackId,
   );
+
+  // Track-type compatibility: a TYPED track only accepts clips whose
+  // derived track-type matches. Untyped tracks accept anything (and will
+  // acquire the type from the first clip below). This is the same
+  // mechanism that already excludes audio clips from visual tracks and
+  // vice versa — adjustment clips fall out naturally because
+  // getTrackTypeFromClipType("adjustment") === "adjustment".
+  if (
+    targetTrack?.type &&
+    targetTrack.type !== getTrackTypeFromClipType(clipWithDefaults.type)
+  ) {
+    console.warn(
+      `[addClipToDraft] rejecting clip ${clipWithDefaults.id}: track ` +
+        `${targetTrack.id} type is "${targetTrack.type}" but clip resolves to ` +
+        `"${getTrackTypeFromClipType(clipWithDefaults.type)}".`,
+    );
+    return;
+  }
+
   if (targetTrack && !targetTrack.type) {
     targetTrack.type = getTrackTypeFromClipType(clipWithDefaults.type);
   }
@@ -307,11 +326,14 @@ export function pasteCopiedClipsAboveDraft(
     return [];
   }
 
-  const maskCopiesByParent = new Map<string, TimelineClip[]>();
+  const maskCopiesByParent = new Map<string, MaskTimelineClip[]>();
   parentCopies.forEach((parent) => {
     const maskChildIds = new Set(getChildMaskClipIds(parent));
     if (maskChildIds.size === 0) return;
-    const masks = copiedClips.filter((clip) => maskChildIds.has(clip.id));
+    const masks = copiedClips.filter(
+      (clip): clip is MaskTimelineClip =>
+        maskChildIds.has(clip.id) && clip.type === "mask",
+    );
     if (masks.length > 0) {
       maskCopiesByParent.set(parent.id, masks);
     }
@@ -394,11 +416,11 @@ export function pasteCopiedClipsAboveDraft(
       const pastedMasks = (maskCopiesByParent.get(clip.id) || []).map((maskClip) => {
         const parsed = parseMaskClipId(maskClip.id);
         const maskLocalId = parsed?.maskId ?? crypto.randomUUID();
-        const clonedMask = {
-          ...cloneTimelineClip(
+        const clonedMask: MaskTimelineClip = {
+          ...(cloneTimelineClip(
             maskClip,
             makeMaskClipId(pastedClip.id, maskLocalId),
-          ),
+          ) as MaskTimelineClip),
           parentClipId: pastedClip.id,
           trackId: pastedClip.trackId,
         };
@@ -504,21 +526,24 @@ export function removeClipIdsFromDraft(
 }
 
 function syncTrackTypesFromClips(draft: TimelineModelState): void {
-  const nextTrackTypeById = new Map<string, TimelineTrack["type"] | undefined>(
-    draft.tracks.map((track) => [track.id, undefined]),
-  );
-
+  // For each track, derive type from the clips on it. A clip's presence
+  // dictates the track's type (the clip is authoritative for whatever lane
+  // it's in). For tracks with NO clips, preserve any explicit type the
+  // user authored — empty adjustment lanes especially must survive moves
+  // on other tracks, since the user inserted them deliberately.
+  const inferredTypeById = new Map<string, TimelineTrack["type"]>();
   draft.clips.forEach((clip) => {
-    if (clip.type === "mask") {
-      return;
-    }
-
-    nextTrackTypeById.set(clip.trackId, getTrackTypeFromClipType(clip.type));
+    if (clip.type === "mask") return;
+    inferredTypeById.set(clip.trackId, getTrackTypeFromClipType(clip.type));
   });
 
   draft.tracks = draft.tracks.map((track) => {
-    const nextType = nextTrackTypeById.get(track.id);
-    return track.type === nextType ? track : { ...track, type: nextType };
+    const inferred = inferredTypeById.get(track.id);
+    // No clip on this track: leave the type alone (preserves explicit
+    // "adjustment", "audio", etc. on freshly inserted empty lanes).
+    if (inferred === undefined) return track;
+    // Clip present and disagrees: clip wins.
+    return track.type === inferred ? track : { ...track, type: inferred };
   });
 }
 
@@ -529,7 +554,35 @@ export function moveClipsInDraft(
   const clipsById = new Map(
     draft.clips.map((clip) => [clip.id, clip] as const),
   );
+  const tracksById = new Map(
+    draft.tracks.map((track) => [track.id, track] as const),
+  );
   const normalizedMoves = new Map<string, { start: number; trackId: string }>();
+
+  // Track-type compatibility on every destination. Reject the whole batch
+  // on any violation — the UI drag planner already checks this
+  // (multiClipMove.ts:108-113, useClipMove.ts:457-464), so this is the
+  // safety net for direct callers and undo/redo paths. Same check as
+  // addClipToDraft: typed tracks only accept matching clips; untyped
+  // tracks accept anything and acquire the type from the moved clip via
+  // syncTrackTypesFromClips after the move commits.
+  for (const move of moves) {
+    const clip = clipsById.get(move.clipId);
+    if (!clip || clip.type === "mask") continue;
+    const destTrackId = move.trackId ?? clip.trackId;
+    const destTrack = tracksById.get(destTrackId);
+    if (!destTrack) continue;
+    if (
+      destTrack.type &&
+      destTrack.type !== getTrackTypeFromClipType(clip.type)
+    ) {
+      console.warn(
+        `[moveClipsInDraft] rejecting batch: clip ${clip.id} (resolves to "${getTrackTypeFromClipType(clip.type)}") ` +
+          `cannot move onto track ${destTrack.id} (type "${destTrack.type}").`,
+      );
+      return;
+    }
+  }
 
   moves.forEach((move) => {
     const clip = clipsById.get(move.clipId);

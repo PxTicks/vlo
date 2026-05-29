@@ -6,6 +6,7 @@ import { useAssetStore } from "../../userAssets";
 import { usePlayerStore } from "../../player/usePlayerStore";
 import { audioSystem } from "../../player/services/AudioSystem";
 import { TrackAudioRenderer } from "../services/TrackAudioRenderer";
+import type { AdjustmentEffectResolver } from "../services/AdjustmentEffectResolver";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
 import { resolveRenderableClips } from "../utils/resolveRenderableClip";
 import type { TimelineClip } from "../../../types/TimelineTypes";
@@ -107,7 +108,10 @@ function ensureSharedSchedulerLoop() {
   void runSharedSchedulerTick();
 }
 
-export function useAudioTrack(trackId: string) {
+export function useAudioTrack(
+  trackId: string,
+  adjustmentEffectResolver?: AdjustmentEffectResolver | null,
+) {
   // --- Refs ---
   const rendererRef = useRef<TrackAudioRenderer | null>(null);
   const lastStartTimeRef = useRef<number>(0);
@@ -135,7 +139,10 @@ export function useAudioTrack(trackId: string) {
 
   // --- Initialize Renderer ---
   useEffect(() => {
-    rendererRef.current = new TrackAudioRenderer(trackId);
+    rendererRef.current = new TrackAudioRenderer(
+      trackId,
+      adjustmentEffectResolver,
+    );
 
     sharedTrackEntries.set(trackId, {
       rendererRef,
@@ -154,7 +161,7 @@ export function useAudioTrack(trackId: string) {
       rendererRef.current = null;
       maybeStopSharedSchedulerLoop();
     };
-  }, [trackId]);
+  }, [adjustmentEffectResolver, trackId]);
 
   // --- Handle Play/Pause ---
   useEffect(() => {

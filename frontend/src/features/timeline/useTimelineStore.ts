@@ -6,6 +6,7 @@ import type {
 } from "../../types/Components";
 import type { Asset } from "../../types/Asset";
 import type {
+  AdjustmentDepth,
   ClipMask,
   ClipTransform,
   CompositeContent,
@@ -70,6 +71,12 @@ import {
   type TimelineModelState,
 } from "./model/timelineTrackModel";
 import {
+  createAdjustmentClipInDraft,
+  insertAdjustmentTrackInDraft,
+  setAdjustmentDepthInDraft,
+  type CreateAdjustmentClipInput,
+} from "./model/adjustmentClipCommands";
+import {
   selectMaskClipsForParent,
   selectResolvedMaskBooleanExpressionForParent,
 } from "./selectors/timelineSelectors";
@@ -100,7 +107,7 @@ interface TimelineState extends TimelineModelState {
   splitClip: (clipId: string, splitTime: number) => void;
 
   addTrack: () => void;
-  insertTrack: (index: number) => string;
+  insertTrack: (index: number, type?: TimelineTrack["type"]) => string;
 
   addClip: (clip: TimelineClip) => void;
   /**
@@ -209,6 +216,16 @@ interface TimelineState extends TimelineModelState {
   toggleClipMute: (clipId: string) => void;
   trimAndPadTracks: () => void;
 
+  /** Insert a new adjustment-type track at `index` (default: top of stack).
+   *  Returns the new track's id. */
+  insertAdjustmentTrack: (index?: number) => string;
+  /** Create an adjustment clip. If `trackId` is omitted, reuses the
+   *  top-most adjustment track or inserts a fresh one. Returns the new
+   *  clip's id, or null if inputs were invalid / rule 2 rejected. */
+  addAdjustmentClip: (input: CreateAdjustmentClipInput) => string | null;
+  /** Update an existing adjustment clip's depth. */
+  setAdjustmentDepth: (clipId: string, depth: AdjustmentDepth) => boolean;
+
   undo: () => boolean;
   redo: () => boolean;
 
@@ -309,8 +326,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
     },
 
-    insertTrack: (index) => {
-      const newTrack = createNewTrack("New Track");
+    insertTrack: (index, type) => {
+      const newTrack = createNewTrack("New Track", type);
       mutationPipeline.commitModelMutation((draft) => {
         insertTrackIntoDraft(draft, index, newTrack);
       });
@@ -667,6 +684,30 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       mutationPipeline.commitModelMutation((draft) => {
         trimAndPadTracksInDraft(draft);
       });
+    },
+
+    insertAdjustmentTrack: (index) => {
+      let trackId = "";
+      mutationPipeline.commitModelMutation((draft) => {
+        trackId = insertAdjustmentTrackInDraft(draft, index);
+      });
+      return trackId;
+    },
+
+    addAdjustmentClip: (input) => {
+      let id: string | null = null;
+      mutationPipeline.commitModelMutation((draft) => {
+        id = createAdjustmentClipInDraft(draft, input);
+      });
+      return id;
+    },
+
+    setAdjustmentDepth: (clipId, depth) => {
+      let ok = false;
+      mutationPipeline.commitModelMutation((draft) => {
+        ok = setAdjustmentDepthInDraft(draft, clipId, depth);
+      });
+      return ok;
     },
 
     undo: () => mutationPipeline.undo(),

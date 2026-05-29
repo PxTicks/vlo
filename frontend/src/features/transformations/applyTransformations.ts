@@ -4,7 +4,11 @@ import {
 } from "./catalogue/TransformationRegistry";
 import { getBaseLayout } from "./catalogue/layout/layoutDefinition";
 import { Texture } from "pixi.js";
-import type { ClipTransformTarget, TransformState } from "./catalogue/types";
+import type { ClipTransform } from "../../types/TimelineTypes";
+import type {
+  ClipTransformTarget,
+  TransformState,
+} from "./catalogue/types";
 import type { TimelineClip } from "../../types/TimelineTypes";
 import { getIdempotentTimeMap } from "./utils/timeCalculation";
 import { resolveScalar } from "./utils/resolveScalar";
@@ -38,9 +42,7 @@ function getTargetTextureSize(
   return isSizeLike(maybeTexture) ? maybeTexture : null;
 }
 
-function applyLivePreviewOverrides<T extends TimelineClip["transformations"][number]>(
-  transform: T,
-): T {
+function applyLivePreviewOverrides<T extends ClipTransform>(transform: T): T {
   let nextParameters: Record<string, unknown> | null = null;
 
   for (const paramName of Object.keys(transform.parameters)) {
@@ -65,36 +67,62 @@ function applyLivePreviewOverrides<T extends TimelineClip["transformations"][num
   };
 }
 
-export function applyClipTransforms(
-  target: ClipTransformTarget,
-  clip: TimelineClip,
-  logicalContainerSize: { width: number; height: number },
-  time?: number, // REFACTOR: Now expects TICKS
-  contentSizeOverride?: { width: number; height: number },
-  options?: ApplyClipTransformsOptions,
-) {
-  const targetTextureSize = getTargetTextureSize(target);
-  if (
-    !contentSizeOverride &&
-    !targetTextureSize
-  ) {
-    return;
-  }
+// ============================================================================
+// applyTransformStack — shared transform-stack dispatch
+// ============================================================================
 
-  const texWidth = contentSizeOverride?.width ?? targetTextureSize?.width ?? 1;
-  const texHeight = contentSizeOverride?.height ?? targetTextureSize?.height ?? 1;
+export interface ApplyTransformStackContext {
+  /** Project / output container size used by transforms that depend on
+   *  container dimensions (e.g. layout's contain/cover math). */
+  container: { width: number; height: number };
+  /** Renderable content size — clip texture for clips, project size for
+   *  group containers. Passed into transform dispatch and forwarded to the
+   *  filter applicator so spatial filter parameters scale correctly on
+   *  textureless targets (Pixi Containers). */
+  content: { width: number; height: number };
+  /** Visible / output time at which this dispatch is happening, *before* any
+   *  source-time remapping from the backward speed pass. Forwarded into each
+   *  handler's `TransformContext.visualTime` for effects that need
+   *  output-domain math (e.g. visual-duration ratios, output-time-driven
+   *  animation). Per-transform keyframe sampling does NOT read this — it
+   *  reads `effectiveTimes[index]`, derived from the `time` argument and the
+   *  backward speed pass. Falls back to `time` when omitted.
+   *
+   *  Clip callers pass the raw input tick (pre-`transformedOffset`); group
+   *  callers pass the clip-local tick. */
+  visualTime?: number;
+  /** Visible duration of the target, forwarded as `TransformContext.
+   *  visualDuration`. Used by handlers whose output depends on the target's
+   *  visual length (e.g. progress-bar animations). */
+  visualDuration?: number;
+}
 
-  // Per-clip fitMode override (from a "fitMode" transform entry) takes priority
-  const clipFitTransform = clip.transformations?.find(
-    (t) => t.type === "fitMode" && t.isEnabled,
-  );
-  const clipFitMode =
-    clipFitTransform?.parameters?.fitMode === "contain" ||
-    clipFitTransform?.parameters?.fitMode === "cover"
-      ? (clipFitTransform.parameters.fitMode as FitMode)
-      : undefined;
+export interface ApplyTransformStackOptions {
+  baseLayoutMode?: FitMode | "origin";
+  notifyLiveParams?: boolean;
+}
 
-  const baseLayoutMode = clipFitMode ?? options?.baseLayoutMode ?? "contain";
+/**
+ * Run the shared transform stack: backward speed-pass to derive per-transform
+ * effective times, then forward dispatch through `dispatchTransform`.
+ *
+ * Returns the resolved `TransformState` and the post-speed `sourceTimeTicks`.
+ * The caller is responsible for running applicators (via `runApplicators`)
+ * once it has finished pushing any clip- or group-specific extras into
+ * `state.filters` (e.g. range-mask alpha ops).
+ *
+ * Used by `applyClipTransforms` (clip-side wrapper that resolves fitMode and
+ * pushes range-mask filter ops before applicators run) and
+ * `applyGroupTransforms` (group-side wrapper that passes
+ * `baseLayoutMode: "origin"` and content = logical project size).
+ */
+export function applyTransformStack(
+  transformations: readonly ClipTransform[] | undefined,
+  ctx: ApplyTransformStackContext,
+  time?: number,
+  options: ApplyTransformStackOptions = {},
+): { state: TransformState; sourceTimeTicks: number } {
+  const baseLayoutMode = options.baseLayoutMode ?? "contain";
   const layoutDefaults =
     baseLayoutMode === "origin"
       ? {
@@ -104,57 +132,39 @@ export function applyClipTransforms(
           y: 0,
           rotation: 0,
         }
-      : getBaseLayout(logicalContainerSize, {
-          width: texWidth,
-          height: texHeight,
-        }, baseLayoutMode);
+      : getBaseLayout(ctx.container, ctx.content, baseLayoutMode);
 
   const state: TransformState = {
     ...TransformationSystem.getDefaults(),
     ...layoutDefaults,
   } as TransformState;
-  const shouldNotifyLiveParams = options?.notifyLiveParams !== false;
+  const shouldNotifyLiveParams = options.notifyLiveParams !== false;
 
   const defaultTime = time || 0;
-  const sourceTimeOffset = clip.transformedOffset || 0;
-  let sourceTimeTicks = defaultTime + sourceTimeOffset;
+  let sourceTimeTicks = defaultTime;
 
-  if (clip.transformations && clip.transformations.length > 0) {
-    // REFACTOR: Logic entirely in Ticks
-
-    // 2. Initialize Pulled Time (Ticks)
+  if (transformations && transformations.length > 0) {
     let pulledTime = sourceTimeTicks;
+    const effectiveTimes = new Array(transformations.length).fill(pulledTime);
 
-    const effectiveTimes = new Array(clip.transformations.length).fill(
-      pulledTime,
-    );
-
-    // --- Pass 1: Backward Time Propagation (Ticks) ---
-    for (let i = clip.transformations.length - 1; i >= 0; i--) {
-      const transform = clip.transformations[i];
-
-      // Store Ticks
+    // Pass 1: Backward time propagation through speed transforms.
+    for (let i = transformations.length - 1; i >= 0; i--) {
+      const transform = transformations[i];
       effectiveTimes[i] = pulledTime;
-
       if (transform.isEnabled && transform.type === "speed") {
         const params = (
           transform as unknown as import("./types").SpeedTransform
         ).parameters;
-        // getIdempotentTimeMap now handles Ticks -> Ticks natively
         pulledTime = getIdempotentTimeMap(params.factor, pulledTime);
       }
     }
-
     sourceTimeTicks = pulledTime;
 
     if (shouldNotifyLiveParams) {
-      // Notify speed-transform parameters for live UI display.
-      // `effectiveTimes[i]` for speed is output (visual) time. Speed splines are
-      // keyed on speed-layer input time, so we map output->input before sampling.
-      for (let i = 0; i < clip.transformations.length; i++) {
-        const transform = clip.transformations[i];
+      // Speed-transform live param notifications use post-speed (input) time.
+      for (let i = 0; i < transformations.length; i++) {
+        const transform = transformations[i];
         if (!transform.isEnabled || transform.type !== "speed") continue;
-
         const speedParams = (
           transform as unknown as import("./types").SpeedTransform
         ).parameters;
@@ -162,7 +172,6 @@ export function applyClipTransforms(
           speedParams.factor,
           effectiveTimes[i],
         );
-
         for (const [paramName, param] of Object.entries(transform.parameters)) {
           liveParamStore.notify(
             transform.id,
@@ -173,27 +182,21 @@ export function applyClipTransforms(
       }
     }
 
-    // --- Pass 2: Forward Application ---
-    clip.transformations.forEach((transform, index) => {
+    // Pass 2: Forward dispatch of non-speed transforms.
+    transformations.forEach((transform, index) => {
       if (!transform.isEnabled) return;
       if (transform.type === "speed") return;
       const effectiveTransform = applyLivePreviewOverrides(transform);
 
-      // CRITICAL: The Boundary Layer
-      // We pass SECONDS to the visual applicator, because shaders/math
-      // (e.g. Math.sin(t)) usually expect physical time, not 48,000 ticks.
       dispatchTransform(state, effectiveTransform, {
-        container: logicalContainerSize,
-        content: { width: texWidth, height: texHeight },
+        container: ctx.container,
+        content: ctx.content,
         time: effectiveTimes[index],
-        visualTime: defaultTime,
-        visualDuration: clip.timelineDuration,
+        visualTime: ctx.visualTime ?? defaultTime,
+        visualDuration: ctx.visualDuration,
       });
 
       if (shouldNotifyLiveParams) {
-        // Publish resolved parameter values for live UI display.
-        // liveParamStore.notify is a no-op when no UI subscribers are active,
-        // so this loop has negligible cost when the panel is closed.
         for (const [paramName, param] of Object.entries(
           effectiveTransform.parameters,
         )) {
@@ -206,6 +209,76 @@ export function applyClipTransforms(
       }
     });
   }
+
+  return { state, sourceTimeTicks };
+}
+
+/**
+ * Run every registered state applicator (layout, filter, ...) against the
+ * resolved transform state. Separated from `applyTransformStack` so the
+ * clip-side wrapper can push range-mask filter ops into `state.filters`
+ * before the applicators run.
+ */
+export function runApplicators(
+  target: ClipTransformTarget,
+  state: TransformState,
+  contentSize: { width: number; height: number },
+): void {
+  TransformationSystem.applicators.forEach((apply) =>
+    apply(target, state, contentSize),
+  );
+}
+
+// ============================================================================
+// applyClipTransforms — clip-side wrapper
+// ============================================================================
+
+export function applyClipTransforms(
+  target: ClipTransformTarget,
+  clip: TimelineClip,
+  logicalContainerSize: { width: number; height: number },
+  time?: number, // REFACTOR: Now expects TICKS
+  contentSizeOverride?: { width: number; height: number },
+  options?: ApplyClipTransformsOptions,
+) {
+  const targetTextureSize = getTargetTextureSize(target);
+  if (!contentSizeOverride && !targetTextureSize) {
+    return;
+  }
+
+  const texWidth = contentSizeOverride?.width ?? targetTextureSize?.width ?? 1;
+  const texHeight = contentSizeOverride?.height ?? targetTextureSize?.height ?? 1;
+  const contentSize = { width: texWidth, height: texHeight };
+
+  // Per-clip fitMode override (from a "fitMode" transform entry) takes priority
+  // over the caller's baseLayoutMode option.
+  const clipFitTransform = clip.transformations?.find(
+    (t) => t.type === "fitMode" && t.isEnabled,
+  );
+  const clipFitMode =
+    clipFitTransform?.parameters?.fitMode === "contain" ||
+    clipFitTransform?.parameters?.fitMode === "cover"
+      ? (clipFitTransform.parameters.fitMode as FitMode)
+      : undefined;
+
+  const baseLayoutMode = clipFitMode ?? options?.baseLayoutMode ?? "contain";
+  const sourceTimeOffset = clip.transformedOffset || 0;
+  const stackTime = (time ?? 0) + sourceTimeOffset;
+
+  const { state, sourceTimeTicks } = applyTransformStack(
+    clip.transformations,
+    {
+      container: logicalContainerSize,
+      content: contentSize,
+      visualTime: time ?? 0,
+      visualDuration: clip.timelineDuration,
+    },
+    stackTime,
+    {
+      baseLayoutMode,
+      notifyLiveParams: options?.notifyLiveParams,
+    },
+  );
 
   // Range-mask components: evaluate at clip source time (post-speed).
   // If any active range covers the current source tick, push a single alpha=0
@@ -228,5 +301,5 @@ export function applyClipTransforms(
     }
   }
 
-  TransformationSystem.applicators.forEach((apply) => apply(target, state));
+  runApplicators(target, state, contentSize);
 }

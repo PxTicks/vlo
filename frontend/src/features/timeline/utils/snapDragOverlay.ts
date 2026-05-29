@@ -6,7 +6,10 @@ import {
   mapSourceTimeToVisualTime,
 } from "../../transformations";
 import { snapTickToFrame } from "../../timelineSelection";
-import type { TimelineClipOverlayItemDrag } from "../clipOverlayApi";
+import type {
+  TimelineClipOverlayDragContext,
+  TimelineClipOverlayItemDrag,
+} from "../clipOverlayApi";
 import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../constants";
 
 /**
@@ -26,6 +29,15 @@ function clearLiveDx(element: HTMLElement): void {
 
 function ticksToBasePixels(visualTicks: number): number {
   return (visualTicks / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
+}
+
+function clipOffsetToPresentationBasePixels(
+  context: TimelineClipOverlayDragContext,
+  clipOffsetTicks: number,
+): number {
+  return ticksToBasePixels(
+    context.mapClipOffsetToPresentationOffset(clipOffsetTicks),
+  );
 }
 
 interface BuildSourceTimeDragOptions {
@@ -97,8 +109,8 @@ export function buildFrameSnappedSourceTimeDrag(
     onDrag: (context) => {
       const snappedVisualTicks = snapCandidate(context.deltaVisualTimeTicks);
       const dxBasePx =
-        ticksToBasePixels(snappedVisualTicks) -
-        ticksToBasePixels(anchorVisualTicks);
+        clipOffsetToPresentationBasePixels(context, snappedVisualTicks) -
+        clipOffsetToPresentationBasePixels(context, anchorVisualTicks);
       applyLiveDx(context.targetElement, dxBasePx * getZoomScale());
     },
 
@@ -290,7 +302,8 @@ export function buildFrameSnappedLayerTimeDrag(
     onDrag: (context) => {
       const { visualTicks } = resolveDrop(context.deltaVisualTimeTicks);
       const dxBasePx =
-        ticksToBasePixels(visualTicks) - ticksToBasePixels(anchorVisualTicks);
+        clipOffsetToPresentationBasePixels(context, visualTicks) -
+        clipOffsetToPresentationBasePixels(context, anchorVisualTicks);
       applyLiveDx(context.targetElement, dxBasePx * getZoomScale());
     },
 

@@ -40,6 +40,7 @@ import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
 import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
+import { buildTimelineClipPresentationIndex } from "./utils/clipPresentation";
 
 const containerStyles = {
   width: "100%",
@@ -104,6 +105,10 @@ function TimelineContainerComponent({
   const timelineClips = React.useMemo(
     () => clips.filter((clip) => clip.type !== "mask"),
     [clips],
+  );
+  const clipPresentationById = React.useMemo(
+    () => buildTimelineClipPresentationIndex(tracks, clips),
+    [tracks, clips],
   );
 
   const { zoomScale, setZoomScale, ticksToPx, pxToTicks, setScrollContainer } =
@@ -233,7 +238,12 @@ function TimelineContainerComponent({
 
   const calculateTimelineWidth = () => {
     let maxClipEnd = timelineClips.reduce(
-      (max, clip) => Math.max(max, clip.start + clip.timelineDuration),
+      (max, clip) =>
+        Math.max(
+          max,
+          clipPresentationById.get(clip.id)?.end ??
+            clip.start + clip.timelineDuration,
+        ),
       0,
     );
 
@@ -254,11 +264,14 @@ function TimelineContainerComponent({
         const activeClip = interactionActiveClip as TimelineClip;
 
         if (interactionOperation === "resize_right") {
+          const activePresentation = clipPresentationById.get(activeClip.id);
           const projectedDuration = Math.max(
             0,
-            activeClip.timelineDuration + deltaTicks,
+            (activePresentation?.duration ?? activeClip.timelineDuration) +
+              deltaTicks,
           );
-          const projectedEnd = activeClip.start + projectedDuration;
+          const projectedEnd =
+            (activePresentation?.start ?? activeClip.start) + projectedDuration;
           maxClipEnd = Math.max(maxClipEnd, projectedEnd);
         }
       }
@@ -480,6 +493,7 @@ function TimelineContainerComponent({
                 <TimelineClipItem
                   key={clip.id}
                   clip={clip}
+                  presentation={clipPresentationById.get(clip.id)}
                   clipOverlays={clipOverlays}
                 />
               ))}

@@ -154,12 +154,12 @@ export function insertBaseClipAtTime(
 
     // No compatible track above the topmost occupied track — insert a new one
     // directly above the topmost occupied track index.
-    const newTrackId = store.insertTrack(topmostOccupiedIndex);
+    const newTrackId = store.insertTrack(topmostOccupiedIndex, expectedTrackType);
     return placeClip(newTrackId);
   }
 
   // Fallback: insert a new track at 0
-  const newTrackId = store.insertTrack(0);
+  const newTrackId = store.insertTrack(0, expectedTrackType);
   return placeClip(newTrackId);
 }
 

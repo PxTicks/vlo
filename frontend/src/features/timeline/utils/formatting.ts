@@ -10,6 +10,8 @@ export const getTrackTypeFromClipType = (clipType: ClipType): TrackType => {
       return "visual";
     case "audio":
       return "audio";
+    case "adjustment":
+      return "adjustment";
     default:
       return "visual";
   }
@@ -25,6 +27,8 @@ const getTrackColor = (type: TrackType) => {
       return "#9c27b0";
     case "prompt":
       return "#ff9800";
+    case "adjustment":
+      return "#5fa8ff";
     default:
       return "#607d8b";
   }

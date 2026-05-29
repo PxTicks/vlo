@@ -85,6 +85,7 @@ function getObjectBounds(
 function getScaleContext(
   target: ClipTransformTarget,
   padding: number = 0,
+  contentSize?: { width: number; height: number },
 ): ScaleContext {
   const targetAny = target as ClipTransformTarget & {
     getGlobalTransform?: (
@@ -104,8 +105,11 @@ function getScaleContext(
   const scaleX = matrix ? Math.hypot(matrix.a, matrix.b) || 1 : 1;
   const scaleY = matrix ? Math.hypot(matrix.c, matrix.d) || 1 : 1;
 
-  const texW = targetAny.texture?.width ?? 1;
-  const texH = targetAny.texture?.height ?? 1;
+  // Prefer the explicit override (clip texture for clip targets, project
+  // logical size for group containers). Fall back to the sprite's texture
+  // size for legacy callers, then to 1×1.
+  const texW = contentSize?.width ?? targetAny.texture?.width ?? 1;
+  const texH = contentSize?.height ?? targetAny.texture?.height ?? 1;
   const anchor = {
     x: targetAny.anchor?.x ?? 0,
     y: targetAny.anchor?.y ?? 0,
@@ -183,12 +187,13 @@ function applyPointBindings(
   bindings: readonly FilterParameterPointBinding[] | undefined,
   target: ClipTransformTarget,
   padding: number = 0,
+  contentSize?: { width: number; height: number },
 ): Record<string, unknown> {
   if (!bindings || bindings.length === 0) {
     return params;
   }
 
-  const ctx = getScaleContext(target, padding);
+  const ctx = getScaleContext(target, padding, contentSize);
   const nextParams: Record<string, unknown> = { ...params };
 
   for (const binding of bindings) {
@@ -208,12 +213,13 @@ function getScaledFilterParams(
   scaleConfig: Readonly<Record<string, FilterParameterScaleMode>> | undefined,
   target: ClipTransformTarget,
   padding: number = 0,
+  contentSize?: { width: number; height: number },
 ): Record<string, unknown> {
   if (!scaleConfig || Object.keys(scaleConfig).length === 0) {
     return params;
   }
 
-  const ctx = getScaleContext(target, padding);
+  const ctx = getScaleContext(target, padding, contentSize);
   const scaledParams: Record<string, unknown> = { ...params };
 
   for (const [key, mode] of Object.entries(scaleConfig)) {
@@ -230,6 +236,7 @@ function getScaledFilterParams(
 export const filterApplicator = (
   target: ClipTransformTarget,
   state: TransformState,
+  contentSize?: { width: number; height: number },
 ) => {
   const mutableTarget = target as { filters?: Filter[] | null };
   const existingFilters = mutableTarget.filters || [];
@@ -271,19 +278,24 @@ export const filterApplicator = (
       filterOp.params,
       registryEntry.filterParameterScale,
       target,
+      0,
+      contentSize,
     );
     const nextPadding = registryEntry.filterPadding?.(preliminaryParams) ?? 0;
+    const safePadding = Number.isFinite(nextPadding) ? nextPadding : 0;
     const params = getScaledFilterParams(
       filterOp.params,
       registryEntry.filterParameterScale,
       target,
-      Number.isFinite(nextPadding) ? nextPadding : 0,
+      safePadding,
+      contentSize,
     );
     const resolvedParams = applyPointBindings(
       params,
       registryEntry.filterParameterPoints,
       target,
-      Number.isFinite(nextPadding) ? nextPadding : 0,
+      safePadding,
+      contentSize,
     );
     for (const [key, value] of Object.entries(resolvedParams)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,7 +1,13 @@
 import type { ClipComponentBase } from "./ClipComponents";
 import type { Component } from "./Components";
 
-export type TrackType = "visual" | "audio" | "prompt" | "effects" | "mask";
+export type TrackType =
+  | "visual"
+  | "audio"
+  | "prompt"
+  | "effects"
+  | "mask"
+  | "adjustment";
 
 export type ClipType =
   | "video"
@@ -10,7 +16,8 @@ export type ClipType =
   | "text"
   | "shape"
   | "mask"
-  | "composite";
+  | "composite"
+  | "adjustment";
 
 export type TextAlignment = "left" | "center" | "right";
 
@@ -283,6 +290,33 @@ export interface CompositeBaseClip
   type: "composite";
 }
 
+export const ADJUSTMENT_DEPTH_ALL = "all";
+export type AdjustmentDepth = number | typeof ADJUSTMENT_DEPTH_ALL;
+
+/**
+ * An adjustment clip defines a render group at its position on the timeline.
+ * Carries no visual content of its own; the renderer skips it. Its
+ * `transformations` apply to the group container created by the orchestrator,
+ * affecting every clip currently rendered through the reach below.
+ */
+export interface AdjustmentClipExtras {
+  /**
+   * Number of tracks BELOW the adjustment's own track that the group reaches,
+   * or the `"all"` sentinel to keep following the bottom of the stack as
+   * tracks are added and removed. Counts all track types; only visual tracks
+   * among them are wrapped by the group container. Numeric depths must be ≥ 1.
+   * Reach is clamped at the bottom of the track stack at derivation time.
+   */
+  depth: AdjustmentDepth;
+}
+
+export interface AdjustmentBaseClip
+  extends Omit<InsertableClipBaseCommon, "type" | "sourceDuration">,
+    AdjustmentClipExtras {
+  type: "adjustment";
+  sourceDuration: number;
+}
+
 export interface VideoTimelineClip extends AssetBackedTimelineClipCommon {
   type: "video";
 }
@@ -310,6 +344,13 @@ export interface CompositeTimelineClip
   type: "composite";
 }
 
+export interface AdjustmentTimelineClip
+  extends Omit<NonMaskTimelineClipCommon, "type" | "sourceDuration">,
+    AdjustmentClipExtras {
+  type: "adjustment";
+  sourceDuration: number;
+}
+
 export interface BaseClipByType {
   video: VideoBaseClip;
   image: ImageBaseClip;
@@ -317,6 +358,7 @@ export interface BaseClipByType {
   text: TextBaseClip;
   shape: ShapeBaseClip;
   composite: CompositeBaseClip;
+  adjustment: AdjustmentBaseClip;
 }
 
 export interface NonMaskTimelineClipByType {
@@ -326,6 +368,7 @@ export interface NonMaskTimelineClipByType {
   text: TextTimelineClip;
   shape: ShapeTimelineClip;
   composite: CompositeTimelineClip;
+  adjustment: AdjustmentTimelineClip;
 }
 
 export type AssetBackedBaseClip =
@@ -414,6 +457,18 @@ export function isCompositeClip(
   return clip?.type === "composite";
 }
 
+export function isAdjustmentClip(
+  clip: BaseClip | TimelineClip | undefined | null,
+): clip is AdjustmentBaseClip | AdjustmentTimelineClip {
+  return clip?.type === "adjustment";
+}
+
+export function isAdjustmentDepthAll(
+  depth: AdjustmentDepth,
+): depth is typeof ADJUSTMENT_DEPTH_ALL {
+  return depth === ADJUSTMENT_DEPTH_ALL;
+}
+
 export interface TimelineTrack {
   id: string;
   type?: TrackType;
@@ -421,4 +476,34 @@ export interface TimelineTrack {
   isVisible: boolean;
   isMuted: boolean;
   isLocked: boolean;
+}
+
+/**
+ * A time-bounded wrapper spanning a contiguous run of visual tracks. Rendered
+ * as a PixiJS Container parented between `logicalStage` and the member tracks
+ * whenever the current tick falls inside the group's window.
+ *
+ * Two structural invariants are enforced at the command layer:
+ *  1. No two groups may be simultaneously active over the same track.
+ *  2. `trackIds` must form a contiguous run in the project's visual-track order.
+ *
+ * `transformations` is reserved for future group-level effects (adjustment
+ * layers). v1 of the render-group scaffolding leaves it as an empty array.
+ */
+export interface TimelineGroup {
+  id: string;
+  label: string;
+  trackIds: string[];
+  start: number;
+  timelineDuration: number;
+  transformations: ClipTransform[];
+  isVisible: boolean;
+  isCollapsed?: boolean;
+}
+
+export function isGroupActiveAtTick(
+  group: TimelineGroup,
+  tick: number,
+): boolean {
+  return tick >= group.start && tick < group.start + group.timelineDuration;
 }

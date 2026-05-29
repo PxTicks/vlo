@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { TextTimelineClip } from "../../../../types/TimelineTypes";
+import type {
+  AdjustmentTimelineClip,
+  TextTimelineClip,
+} from "../../../../types/TimelineTypes";
 import { withTimelineClipDefaults } from "../timelineCommands";
 
 describe("withTimelineClipDefaults", () => {
@@ -37,5 +40,32 @@ describe("withTimelineClipDefaults", () => {
       fill: expect.any(String),
       align: expect.any(String),
     });
+  });
+
+  it("does not inject a default fitMode transform on adjustment clips", () => {
+    // Adjustment clips have no visual content of their own — the fitMode
+    // default is meaningless for them. Pinning this so a later broadening of
+    // visual defaults (e.g. adding "shape" or "text" to the fitMode branch)
+    // doesn't accidentally sweep adjustments in too.
+    const clip = {
+      id: "adj-1",
+      type: "adjustment",
+      name: "Color",
+      trackId: "track-adj",
+      start: 0,
+      sourceDuration: 100,
+      timelineDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      transformations: [],
+      depth: 2,
+    } as unknown as AdjustmentTimelineClip;
+
+    const normalized = withTimelineClipDefaults(clip);
+
+    expect(normalized.type).toBe("adjustment");
+    expect(normalized.transformations).toEqual([]);
   });
 });

@@ -48,11 +48,19 @@ export interface TimelineClipOverlayDragContext
    *  effects during drag (e.g. setting CSS variables). */
   targetElement: HTMLElement;
   clipLocalX: number;
+  /** Pointer position as an offset inside the clip's presentation footprint. */
+  presentationOffsetTicks: number;
+  /** Pointer position expressed as the clip's stored/visible local offset. */
   visualTimeTicks: number;
   sourceTimeTicks: number;
   deltaClipX: number;
+  deltaPresentationOffsetTicks: number;
   deltaVisualTimeTicks: number;
   deltaSourceTimeTicks: number;
+  mapPresentationOffsetToClipOffset: (
+    presentationOffsetTicks: number,
+  ) => number;
+  mapClipOffsetToPresentationOffset: (clipOffsetTicks: number) => number;
 }
 
 export interface TimelineClipOverlayItemDrag {

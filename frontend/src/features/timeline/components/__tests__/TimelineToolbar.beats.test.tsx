@@ -4,10 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TimelineToolbar } from "../TimelineToolbar";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useCompositeTimelineStore } from "../../../composite/useCompositeTimelineStore";
+import { playbackClock } from "../../../player/services/PlaybackClock";
 import type {
+  AdjustmentTimelineClip,
   StandardTimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
+import { ADJUSTMENT_DEPTH_ALL } from "../../../../types/TimelineTypes";
 import type { MarkersComponent } from "../../../../types/Components";
 
 const beatApiMocks = vi.hoisted(() => ({
@@ -77,6 +80,7 @@ describe("TimelineToolbar beat detection", () => {
     beatApiMocks.detectBeats.mockReset();
     assetMocks.ensureAssetSourceLoaded.mockReset();
     mediaMocks.extractPrimaryAudioTrack.mockReset();
+    playbackClock.setTime(0);
     useCompositeTimelineStore.setState({
       stack: [],
       isBusy: false,
@@ -249,5 +253,54 @@ describe("TimelineToolbar beat detection", () => {
     );
     expect(screen.getByTestId("timeline-detect-beats")).toBeInTheDocument();
     expect(screen.getByTestId("timeline-snapping-toggle")).toBeInTheDocument();
+  });
+
+  it('creates adjustment clips that default to the "all" depth sentinel', () => {
+    playbackClock.setTime(12_345);
+    useTimelineStore.setState({
+      clips: [],
+      tracks: [
+        {
+          id: "adj-track",
+          type: "adjustment",
+          label: "Adjustment",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+        {
+          id: "video-1",
+          type: "visual",
+          label: "Video 1",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+        {
+          id: "video-2",
+          type: "visual",
+          label: "Video 2",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+      ],
+      selectedClipIds: [],
+    });
+
+    render(<TimelineToolbar />);
+
+    fireEvent.click(screen.getByTestId("timeline-toolbar-add-adjustment"));
+
+    const clip = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.type === "adjustment") as
+      | AdjustmentTimelineClip
+      | undefined;
+
+    expect(clip).toBeDefined();
+    expect(clip?.start).toBe(12_345);
+    expect(clip?.trackId).toBe("adj-track");
+    expect(clip?.depth).toBe(ADJUSTMENT_DEPTH_ALL);
   });
 });

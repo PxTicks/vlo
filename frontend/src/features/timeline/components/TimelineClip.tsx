@@ -49,6 +49,7 @@ import { extractTimelineClipAudioAsset } from "../utils/clipAudioExtraction";
 import { reverseTimelineClip } from "../utils/reverseClip";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
+import type { TimelineClipPresentation } from "../utils/clipPresentation";
 
 // --- Sub-component for Handles ---
 interface HandleProps {
@@ -116,12 +117,14 @@ interface TimelineClipProps {
   clip: BaseClip | TimelineClipType;
   isOverlay?: boolean;
   clipOverlays?: readonly TimelineClipOverlayDefinition[];
+  presentation?: TimelineClipPresentation;
 }
 
 function TimelineClipComponent({
   clip,
   isOverlay = false,
   clipOverlays = [],
+  presentation,
 }: TimelineClipProps) {
   const domRef = useRef<HTMLElement | null>(null);
   const [contextMenuPos, setContextMenuPos] = useState<
@@ -134,7 +137,8 @@ function TimelineClipComponent({
     (state) => state.openCompositeClip,
   );
 
-  const startTime = "start" in clip ? (clip as TimelineClipType).start : 0;
+  const startTime = presentation?.start ?? ("start" in clip ? (clip as TimelineClipType).start : 0);
+  const displayDuration = presentation?.duration ?? clip.timelineDuration;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
   const canOpenCompositeClip =
     timelineClip !== null && timelineClip.type === "composite" && !isOverlay;
@@ -202,7 +206,7 @@ function TimelineClipComponent({
 
   // 3. Base Geometry Calculations
   const baseWidth =
-    (clip.timelineDuration / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
+    (displayDuration / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
   const baseLeft = (startTime / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
 
   const { attributes, listeners, setNodeRef, isDragging, transform } =
@@ -304,6 +308,8 @@ function TimelineClipComponent({
         return "#16a34a";
       case "composite":
         return "#7c3aed";
+      case "adjustment":
+        return "#5fa8ff";
       default:
         return "#4b5563";
     }
@@ -525,13 +531,22 @@ function TimelineClipComponent({
         </ButtonBase>
       ) : null}
       {thumbnailClip ? (
-        <ThumbnailCanvas clip={thumbnailClip} isDragging={isDragging} />
+        <ThumbnailCanvas
+          clip={thumbnailClip}
+          isDragging={isDragging}
+          presentationStart={presentation?.start}
+          presentationDuration={presentation?.duration}
+          mapPresentationOffsetToClipOffset={
+            presentation?.mapPresentationOffsetToClipOffset
+          }
+        />
       ) : null}
       {!isDragging && !isOverlay && timelineClip ? (
         <TimelineClipOverlayLayer
           clip={timelineClip}
           isSelected={isSelected}
           clipOverlays={clipOverlays}
+          presentation={presentation}
         />
       ) : null}
       {isSelected && !isDragging && !isOverlay && (
@@ -564,7 +579,7 @@ function TimelineClipComponent({
         variant="caption"
         sx={{ fontSize: "0.6rem", opacity: 0.8, pointerEvents: "none" }}
       >
-        {(clip.timelineDuration / TICKS_PER_SECOND).toFixed(2)}s
+        {(displayDuration / TICKS_PER_SECOND).toFixed(2)}s
       </Typography>
       <Menu
         open={contextMenuPos !== null}

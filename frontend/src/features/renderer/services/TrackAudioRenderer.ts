@@ -1,15 +1,11 @@
 import { Input, AudioBufferSink } from "mediabunny";
 import type { WrappedAudioBuffer } from "mediabunny";
 import { TICKS_PER_SECOND } from "../../timeline";
-import {
-  pullTimeThroughTransforms,
-  solveTimelineDuration,
-  resolveScalar,
-} from "../../transformations";
+import { resolveScalar } from "../../transformations";
 import { calculatePlayerFrameTime } from "../utils/renderTime";
 import type { ScalarParameter } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
-// Asset unused
+import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 
 const REALTIME_CURVE_SAMPLE_COUNT = 64;
 const OFFLINE_CURVE_SAMPLE_COUNT = 256;
@@ -20,19 +16,6 @@ function isRealtimeAudioContext(ctx: BaseAudioContext): boolean {
     typeof OfflineAudioContext === "undefined" ||
     !(ctx instanceof OfflineAudioContext)
   );
-}
-
-function getConstantSpeedFactor(clip: TimelineClip): number | null {
-  let factor = 1;
-
-  for (const transform of clip.transformations || []) {
-    if (!transform.isEnabled || transform.type !== "speed") continue;
-    const speedFactor = (transform.parameters as { factor?: unknown }).factor;
-    if (typeof speedFactor !== "number") return null;
-    factor *= speedFactor;
-  }
-
-  return factor;
 }
 
 function getConstantVolumeGain(clip: TimelineClip): number | null {
@@ -47,16 +30,12 @@ function getConstantVolumeGain(clip: TimelineClip): number | null {
 }
 
 interface ClipCurveEvaluators {
-  constantSpeedFactor: number | null;
   constantVolumeGain: number | null;
-  evaluateSpeed: (localTimeTicks: number) => number;
   evaluateVolume: (localTimeTicks: number) => number;
 }
 
 function createClipCurveEvaluators(clip: TimelineClip): ClipCurveEvaluators {
   const transforms = clip.transformations || [];
-  const transformedOffset = clip.transformedOffset || 0;
-  const constantSpeedFactor = getConstantSpeedFactor(clip);
   const constantVolumeGain = getConstantVolumeGain(clip);
   const volumeTransform = transforms.find(
     (t) => t.isEnabled && t.type === "volume",
@@ -66,35 +45,7 @@ function createClipCurveEvaluators(clip: TimelineClip): ClipCurveEvaluators {
   )?.gain;
 
   return {
-    constantSpeedFactor,
     constantVolumeGain,
-    evaluateSpeed: (localTimeTicks: number) => {
-      if (
-        constantSpeedFactor !== null &&
-        Number.isFinite(constantSpeedFactor) &&
-        Math.abs(constantSpeedFactor) > 1e-6
-      ) {
-        return constantSpeedFactor;
-      }
-
-      const dt = 100;
-      const t0 = Math.max(0, localTimeTicks - dt);
-      const t1 = localTimeTicks + dt;
-      const c0 = pullTimeThroughTransforms(
-        transforms,
-        t0 + transformedOffset,
-        true,
-      );
-      const c1 = pullTimeThroughTransforms(
-        transforms,
-        t1 + transformedOffset,
-        true,
-      );
-      const deltaTimeline = t1 - t0;
-      if (Math.abs(deltaTimeline) <= 1e-9) return 1.0;
-      const speed = (c1 - c0) / deltaTimeline;
-      return Number.isFinite(speed) ? speed : 1.0;
-    },
     evaluateVolume: (localTimeTicks: number) => {
       if (constantVolumeGain !== null) return Math.max(0, constantVolumeGain);
       return Math.max(0, resolveScalar(volumeParam, localTimeTicks, 1.0));
@@ -145,13 +96,132 @@ export class TrackAudioRenderer {
   // We will accept a `getInput` function.
 
   public readonly trackId: string;
+  private readonly adjustmentEffectResolver: AdjustmentEffectResolver | null;
 
-  constructor(trackId: string) {
+  constructor(
+    trackId: string,
+    adjustmentEffectResolver?: AdjustmentEffectResolver | null,
+  ) {
     this.trackId = trackId;
+    this.adjustmentEffectResolver = adjustmentEffectResolver ?? null;
   }
 
   public getNextScheduleTime() {
     return this.nextScheduleTime;
+  }
+
+  /**
+   * Per-clip presentation rebase for an arbitrary presentation tick: we
+   * resolve it against the clip's own footprint via the lookup, falling
+   * back to identity when no resolver is wired (tests / simple cases).
+   */
+  private resolveEffectiveTrackTickForClip(
+    clip: TimelineClip,
+    presentationTick: number,
+  ): number {
+    if (!this.adjustmentEffectResolver) {
+      return presentationTick;
+    }
+    return this.adjustmentEffectResolver
+      .getPresentationLookup()
+      .resolveEffectiveTrackTickWithinClip(clip, presentationTick);
+  }
+
+  private findActiveClipAtPresentation(
+    trackClips: TimelineClip[],
+    presentationTick: number,
+  ): { clip: TimelineClip; effectiveTick: number } | null {
+    if (!this.adjustmentEffectResolver) {
+      // Fallback to stored-range lookup when running without a resolver.
+      for (const candidate of trackClips) {
+        const clipEnd = candidate.start + candidate.timelineDuration;
+        if (
+          candidate.start <= presentationTick &&
+          presentationTick < clipEnd
+        ) {
+          return { clip: candidate, effectiveTick: presentationTick };
+        }
+      }
+      return null;
+    }
+    return this.adjustmentEffectResolver
+      .getPresentationLookup()
+      .findActiveClipAt(this.trackId, presentationTick);
+  }
+
+  private getSourceTicksAtPresentationTick(
+    clip: TimelineClip,
+    presentationTick: number,
+  ): number {
+    const effectiveTick = this.resolveEffectiveTrackTickForClip(
+      clip,
+      presentationTick,
+    );
+    return calculatePlayerFrameTime(clip, effectiveTick) * TICKS_PER_SECOND;
+  }
+
+  private evaluateCompositePlaybackRate(
+    clip: TimelineClip,
+    presentationTick: number,
+  ): number {
+    const sampleDeltaTicks = 100;
+    const t0 = Math.max(0, presentationTick - sampleDeltaTicks);
+    const t1 = presentationTick + sampleDeltaTicks;
+    const s0 = this.getSourceTicksAtPresentationTick(clip, t0);
+    const s1 = this.getSourceTicksAtPresentationTick(clip, t1);
+    const deltaTicks = t1 - t0;
+
+    if (Math.abs(deltaTicks) <= 1e-9) {
+      return 1.0;
+    }
+
+    const rate = (s1 - s0) / deltaTicks;
+    return Number.isFinite(rate) && rate > 0 ? rate : 1.0;
+  }
+
+  private solvePresentationDurationTicks(
+    clip: TimelineClip,
+    startPresentationTick: number,
+    sourceDurationTicks: number,
+  ): number {
+    if (!Number.isFinite(sourceDurationTicks) || sourceDurationTicks <= 0) {
+      return 0;
+    }
+
+    const startSourceTicks = this.getSourceTicksAtPresentationTick(
+      clip,
+      startPresentationTick,
+    );
+    const targetSourceTicks = startSourceTicks + sourceDurationTicks;
+
+    let low = 0;
+    let high = Math.max(sourceDurationTicks, TICKS_PER_SECOND / 60);
+
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const sourceAtHigh = this.getSourceTicksAtPresentationTick(
+        clip,
+        startPresentationTick + high,
+      );
+      if (sourceAtHigh >= targetSourceTicks) {
+        break;
+      }
+      high *= 2;
+    }
+
+    for (let iteration = 0; iteration < 24; iteration += 1) {
+      const mid = (low + high) / 2;
+      const sourceAtMid = this.getSourceTicksAtPresentationTick(
+        clip,
+        startPresentationTick + mid,
+      );
+      if (sourceAtMid >= targetSourceTicks) {
+        high = mid;
+      } else {
+        low = mid;
+      }
+    }
+
+    return high;
   }
 
   /**
@@ -289,51 +359,6 @@ export class TrackAudioRenderer {
       };
     };
 
-    let clipCursor = 0;
-    const getActiveClipAtTicks = (
-      targetTicks: number,
-    ): TimelineClip | undefined => {
-      if (trackClips.length === 0) return undefined;
-
-      if (clipCursor < 0) clipCursor = 0;
-      if (clipCursor >= trackClips.length) clipCursor = trackClips.length - 1;
-
-      while (clipCursor < trackClips.length) {
-        const clip = trackClips[clipCursor];
-        const clipEnd = clip.start + clip.timelineDuration;
-        if (targetTicks < clip.start) break;
-        if (targetTicks >= clipEnd) {
-          clipCursor += 1;
-          continue;
-        }
-        return clip;
-      }
-
-      while (clipCursor > 0) {
-        const candidate = trackClips[clipCursor - 1];
-        if (targetTicks < candidate.start) {
-          clipCursor -= 1;
-          continue;
-        }
-        if (targetTicks < candidate.start + candidate.timelineDuration) {
-          clipCursor -= 1;
-          return trackClips[clipCursor];
-        }
-        break;
-      }
-
-      const candidate = trackClips[clipCursor];
-      if (
-        candidate &&
-        targetTicks >= candidate.start &&
-        targetTicks < candidate.start + candidate.timelineDuration
-      ) {
-        return candidate;
-      }
-
-      return undefined;
-    };
-
     const flushStagingBuffer = async () => {
       const {
         buffers,
@@ -390,16 +415,11 @@ export class TrackAudioRenderer {
 
       const clipCurves = getClipCurveEvaluators(activeClip);
       const contentTicks = totalSourceDuration * TICKS_PER_SECOND;
-      const wallDurationTicks =
-        clipCurves.constantSpeedFactor !== null &&
-        Number.isFinite(clipCurves.constantSpeedFactor) &&
-        Math.abs(clipCurves.constantSpeedFactor) > 1e-6
-          ? contentTicks / clipCurves.constantSpeedFactor
-          : solveTimelineDuration(
-              activeClip,
-              startTargetTicks - activeClip.start,
-              contentTicks,
-            );
+      const wallDurationTicks = this.solvePresentationDurationTicks(
+        activeClip,
+        startTargetTicks,
+        contentTicks,
+      );
       const wallDuration = wallDurationTicks / TICKS_PER_SECOND;
 
       if (!Number.isFinite(wallDuration) || wallDuration <= 0) {
@@ -414,34 +434,24 @@ export class TrackAudioRenderer {
           : OFFLINE_CURVE_SAMPLE_COUNT,
       );
 
-      let startPlaybackRate = 1;
-      if (
-        clipCurves.constantSpeedFactor !== null &&
-        Number.isFinite(clipCurves.constantSpeedFactor) &&
-        Math.abs(clipCurves.constantSpeedFactor) > 1e-6
-      ) {
-        startPlaybackRate = clipCurves.constantSpeedFactor;
-        source.playbackRate.value = clipCurves.constantSpeedFactor;
-      } else {
-        const speedCurve = new Float32Array(sampleCount);
-        const timeStep = (wallDuration * TICKS_PER_SECOND) / (sampleCount - 1);
+      const speedCurve = new Float32Array(sampleCount);
+      const timeStep = (wallDuration * TICKS_PER_SECOND) / (sampleCount - 1);
 
-        for (let i = 0; i < sampleCount; i++) {
-          const t = startTargetTicks + i * timeStep;
-          speedCurve[i] = clipCurves.evaluateSpeed(t - activeClip.start);
-        }
+      for (let i = 0; i < sampleCount; i++) {
+        const t = startTargetTicks + i * timeStep;
+        speedCurve[i] = this.evaluateCompositePlaybackRate(activeClip, t);
+      }
 
-        startPlaybackRate = speedCurve[0];
+      const startPlaybackRate = speedCurve[0];
 
-        try {
-          source.playbackRate.setValueCurveAtTime(
-            speedCurve,
-            startContextTime,
-            wallDuration,
-          );
-        } catch {
-          source.playbackRate.value = speedCurve[0];
-        }
+      try {
+        source.playbackRate.setValueCurveAtTime(
+          speedCurve,
+          startContextTime,
+          wallDuration,
+        );
+      } catch {
+        source.playbackRate.value = speedCurve[0];
       }
 
       // De-clicking parameters
@@ -485,7 +495,13 @@ export class TrackAudioRenderer {
 
         for (let i = 0; i < sampleCount; i++) {
           const t = startTargetTicks + i * volumeTimeStep;
-          const volumeGain = clipCurves.evaluateVolume(t - activeClip.start);
+          const effectiveTick = this.resolveEffectiveTrackTickForClip(
+            activeClip,
+            t,
+          );
+          const volumeGain = clipCurves.evaluateVolume(
+            effectiveTick - activeClip.start,
+          );
 
           // Apply de-clicking envelope
           let deClickMultiplier = 1.0;
@@ -545,8 +561,12 @@ export class TrackAudioRenderer {
 
     while (this.nextScheduleTime < ctx.currentTime + options.lookahead) {
       const targetTicks = getTargetTicks(this.nextScheduleTime);
-
-      const activeClip = getActiveClipAtTicks(targetTicks);
+      // Active clip lookup by *presentation* tick (per-clip model). The
+      // returned `effectiveTick` is the rebased stored-track tick that
+      // feeds calculatePlayerFrameTime below.
+      const resolved = this.findActiveClipAtPresentation(trackClips, targetTicks);
+      const activeClip = resolved?.clip;
+      const effectiveTrackTick = resolved?.effectiveTick ?? targetTicks;
 
       if (
         !activeClip ||
@@ -621,7 +641,7 @@ export class TrackAudioRenderer {
       // Get/Create Iterator
       const localTimeSeconds = calculatePlayerFrameTime(
         activeClip,
-        targetTicks,
+        effectiveTrackTick,
       );
       const epsilon = 0.1;
       const isSequential =
@@ -668,18 +688,12 @@ export class TrackAudioRenderer {
       c.staging.totalLength += buffer.length;
       c.staging.totalSourceDuration += buffer.duration;
 
-      const clipCurves = getClipCurveEvaluators(activeClip);
       const chunkContentTicks = buffer.duration * TICKS_PER_SECOND;
-      const chunkWallDurationTicks =
-        clipCurves.constantSpeedFactor !== null &&
-        Number.isFinite(clipCurves.constantSpeedFactor) &&
-        Math.abs(clipCurves.constantSpeedFactor) > 1e-6
-          ? chunkContentTicks / clipCurves.constantSpeedFactor
-          : solveTimelineDuration(
-              activeClip,
-              targetTicks - activeClip.start,
-              chunkContentTicks,
-            );
+      const chunkWallDurationTicks = this.solvePresentationDurationTicks(
+        activeClip,
+        targetTicks,
+        chunkContentTicks,
+      );
       const chunkWallDuration = chunkWallDurationTicks / TICKS_PER_SECOND;
 
       if (!Number.isFinite(chunkWallDuration) || chunkWallDuration <= 0) {

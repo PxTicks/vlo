@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { Application, Container } from "pixi.js";
 import { useTrackRenderer } from "../hooks/useTrackRenderer";
+import type { RenderGroupOrchestrator } from "../../renderer/services/RenderGroupOrchestrator";
+import type { AdjustmentEffectResolver } from "../../renderer/services/AdjustmentEffectResolver";
 
 interface TrackLayerProps {
   trackId: string;
@@ -12,6 +14,8 @@ interface TrackLayerProps {
     trackId: string,
     renderer: ((time: number) => Promise<void>) | null,
   ) => void;
+  orchestrator?: RenderGroupOrchestrator | null;
+  adjustmentEffectResolver?: AdjustmentEffectResolver | null;
 }
 
 function TrackLayerComponent({
@@ -21,6 +25,8 @@ function TrackLayerComponent({
   zIndex,
   logicalDimensions,
   registerSynchronizedPlaybackRenderer,
+  orchestrator,
+  adjustmentEffectResolver,
 }: TrackLayerProps) {
   useTrackRenderer(
     trackId,
@@ -29,6 +35,8 @@ function TrackLayerComponent({
     zIndex,
     logicalDimensions,
     registerSynchronizedPlaybackRenderer,
+    orchestrator,
+    adjustmentEffectResolver,
   );
   return null;
 }

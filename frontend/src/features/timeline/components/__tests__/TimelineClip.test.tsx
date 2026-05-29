@@ -500,6 +500,68 @@ describe("TimelineClip Visual Geometry", () => {
     expect(layerItem.style.left).toContain(expectedBaseLeft);
   });
 
+  it("positions timed overlay items through the clip presentation map", () => {
+    const clipWithKeyframeTransform: TimelineClipType = {
+      ...mockClip,
+      start: 0,
+      timelineDuration: 2 * TICKS_PER_SECOND,
+      sourceDuration: 2 * TICKS_PER_SECOND,
+      transformedDuration: 2 * TICKS_PER_SECOND,
+      croppedSourceDuration: 2 * TICKS_PER_SECOND,
+      transformations: [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: { x: 0, y: 0 },
+        },
+      ],
+    };
+
+    const presentation = {
+      clipId: clipWithKeyframeTransform.id,
+      trackId: clipWithKeyframeTransform.trackId,
+      start: 0,
+      end: TICKS_PER_SECOND,
+      duration: TICKS_PER_SECOND,
+      mapPresentationOffsetToClipOffset: (offset: number) => offset * 2,
+      mapClipOffsetToPresentationOffset: (offset: number) => offset / 2,
+    };
+
+    const overlays = [
+      createOverlay("overlay-presentation-mapping", [
+        createSourceTimeOverlayItem({
+          id: "source-item",
+          sourceTimeTicks: TICKS_PER_SECOND,
+          content: <div>Source</div>,
+        }),
+        createLayerTimeOverlayItem({
+          id: "layer-item",
+          transformId: "position_1",
+          layerInputTicks: TICKS_PER_SECOND,
+          content: <div>Layer</div>,
+        }),
+      ]),
+    ];
+
+    render(
+      <TimelineClipItem
+        clip={clipWithKeyframeTransform}
+        presentation={presentation}
+        clipOverlays={overlays}
+      />,
+    );
+
+    const expectedBaseLeft = `${
+      (TICKS_PER_SECOND / 2 / TICKS_PER_SECOND) * PIXELS_PER_SECOND
+    }px`;
+    const sourceItem = screen.getByText("Source").parentElement as HTMLElement;
+    const layerItem = screen.getByText("Layer").parentElement as HTMLElement;
+
+    expect(sourceItem.style.left).toContain(expectedBaseLeft);
+    expect(layerItem.style.left).toContain(expectedBaseLeft);
+  });
+
   it("emits pointer-drag callbacks with clip-local and time-mapped positions without firing click handlers", () => {
     const onClick = vi.fn();
     const onDragStart = vi.fn();
@@ -569,5 +631,89 @@ describe("TimelineClip Visual Geometry", () => {
       clipLocalX: 120,
       deltaClipX: 70,
     });
+  });
+
+  it("maps pointer-drag positions from presentation space back to clip-local time", () => {
+    const onDragStart = vi.fn();
+    const onDrag = vi.fn();
+    const onDragEnd = vi.fn();
+
+    const clip: TimelineClipType = {
+      ...mockClip,
+      start: 0,
+      timelineDuration: 2 * TICKS_PER_SECOND,
+      sourceDuration: 2 * TICKS_PER_SECOND,
+      transformedDuration: 2 * TICKS_PER_SECOND,
+      croppedSourceDuration: 2 * TICKS_PER_SECOND,
+    };
+
+    const presentation = {
+      clipId: clip.id,
+      trackId: clip.trackId,
+      start: 0,
+      end: TICKS_PER_SECOND,
+      duration: TICKS_PER_SECOND,
+      mapPresentationOffsetToClipOffset: (offset: number) => offset * 2,
+      mapClipOffsetToPresentationOffset: (offset: number) => offset / 2,
+    };
+
+    const overlays = [
+      createOverlay("overlay-drag-presentation", [
+        createEndpointOverlayItem({
+          id: "drag-item",
+          edge: "start",
+          content: <div>Drag</div>,
+          drag: {
+            onDragStart,
+            onDrag,
+            onDragEnd,
+          },
+        }),
+      ]),
+    ];
+
+    render(
+      <TimelineClipItem
+        clip={clip}
+        presentation={presentation}
+        clipOverlays={overlays}
+      />,
+    );
+
+    const clipElement = screen.getByTestId("timeline-clip");
+    Object.defineProperty(clipElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 10,
+        top: 0,
+        width: 100,
+        height: 40,
+        right: 110,
+        bottom: 40,
+        x: 10,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    const dragItem = screen.getByText("Drag").parentElement as HTMLElement;
+
+    fireEvent.pointerDown(dragItem, { pointerId: 1, clientX: 60 });
+    fireEvent.pointerMove(dragItem, { pointerId: 1, clientX: 85 });
+    fireEvent.pointerUp(dragItem, { pointerId: 1, clientX: 85 });
+
+    expect(onDragStart.mock.calls[0][0]).toMatchObject({
+      clipLocalX: 50,
+      presentationOffsetTicks: 0.5 * TICKS_PER_SECOND,
+      visualTimeTicks: TICKS_PER_SECOND,
+      sourceTimeTicks: TICKS_PER_SECOND,
+    });
+    expect(onDrag.mock.calls[0][0]).toMatchObject({
+      clipLocalX: 75,
+      presentationOffsetTicks: 0.75 * TICKS_PER_SECOND,
+      visualTimeTicks: 1.5 * TICKS_PER_SECOND,
+      deltaPresentationOffsetTicks: 0.25 * TICKS_PER_SECOND,
+      deltaVisualTimeTicks: 0.5 * TICKS_PER_SECOND,
+    });
+    expect(onDragEnd).toHaveBeenCalledTimes(1);
   });
 });

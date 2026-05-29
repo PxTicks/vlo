@@ -15,6 +15,7 @@ import {
   pointerWithin,
   type DragStartEvent,
   type DragEndEvent,
+  type DragMoveEvent,
 } from "@dnd-kit/core";
 import { AssetCard } from "../../../../userAssets";
 import { useAssetDrag } from "../useAssetDrag";
@@ -300,5 +301,80 @@ describe("Asset Drag Integration", () => {
       type: "fitMode",
       parameters: { fitMode: "cover" },
     });
+  });
+
+  it("REGRESSION: inserts a new track when an asset is dropped on an interstitial gap", async () => {
+    render(<TestDragApp asset={mockAsset} forceNoCollision={true} />);
+
+    const container = screen.getByTestId("timeline-container");
+    const gapDisplay = screen.getByTestId("gap-index-indicator");
+    expect(latestAssetDragHandlersRef.current).not.toBeNull();
+    const payloadClip = createClipFromAsset(mockAsset);
+
+    mockRect(container, { left: 0, top: 0, width: 800, height: 600 });
+
+    await act(async () => {
+      latestAssetDragHandlersRef.current?.handleAssetDragStart({
+        active: {
+          id: `asset_${mockAsset.id}`,
+          data: {
+            current: {
+              type: "asset",
+              asset: mockAsset,
+              clip: payloadClip,
+            },
+          },
+        },
+      } as unknown as DragStartEvent);
+    });
+
+    await act(async () => {
+      fireEvent.pointerMove(window, { clientX: 250, clientY: 50, buttons: 1 });
+      latestAssetDragHandlersRef.current?.handleAssetDragMove({
+        active: {
+          data: {
+            current: {
+              type: "asset",
+              asset: mockAsset,
+              clip: payloadClip,
+            },
+          },
+        },
+        over: null,
+        delta: { x: 0, y: 0 },
+        activatorEvent: null,
+      } as unknown as DragMoveEvent);
+    });
+
+    await waitFor(() => {
+      expect(gapDisplay.textContent).toBe("1");
+    });
+
+    await act(async () => {
+      latestAssetDragHandlersRef.current?.handleAssetDragEnd({
+        active: {
+          id: `asset_${mockAsset.id}`,
+          data: {
+            current: {
+              type: "asset",
+              asset: mockAsset,
+              clip: payloadClip,
+            },
+          },
+        },
+        over: null,
+        delta: { x: 0, y: 0 },
+        activatorEvent: null,
+      } as unknown as DragEndEvent);
+    });
+
+    await waitFor(() => {
+      expect(useTimelineStore.getState().tracks.length).toBeGreaterThan(1);
+      expect(useTimelineStore.getState().clips).toHaveLength(1);
+    });
+
+    const { tracks, clips } = useTimelineStore.getState();
+    expect(clips[0].trackId).toBe(tracks[1].id);
+    expect(clips[0].trackId).not.toBe("track-0");
   });
 });

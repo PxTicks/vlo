@@ -24,8 +24,11 @@ export type {
   AssetBackedBaseClip,
   AssetBackedClipType,
   AssetBackedTimelineClip,
+  AdjustmentDepth,
   BaseClip,
   BaseClipByType,
+  AdjustmentBaseClip,
+  AdjustmentTimelineClip,
   CompositeBaseClip,
   CompositeContent,
   CompositeTimelineClip,
@@ -62,6 +65,9 @@ export type {
   TextRun,
 } from "./TimelineTypes";
 export {
+  ADJUSTMENT_DEPTH_ALL,
+  isAdjustmentClip,
+  isAdjustmentDepthAll,
   isAssetBackedClip,
   isCompositeClip,
   isMaskClip,

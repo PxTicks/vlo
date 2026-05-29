@@ -6,6 +6,7 @@ import type {
 import { isNonMaskTimelineClip } from "../../../types/TimelineTypes";
 import { snapTickToFrame } from "../../timelineSelection";
 import { hasAnyCollision } from "./collision";
+import { buildTimelineClipPresentationCollisionView } from "./clipPresentation";
 import { getTrackTypeFromClipType } from "./formatting";
 
 export interface PlannedTimelineClipMove {
@@ -117,23 +118,48 @@ export function planMultiClipMove(
       ticksPerFrame,
     );
 
-    if (
-      hasAnyCollision(
-        newStart,
-        clip.timelineDuration,
-        destinationTrack.id,
-        selectedClipIds,
-        clips,
-      )
-    ) {
-      return null;
-    }
-
     plannedMoves.push({
       clipId: clip.id,
       start: newStart,
       trackId: destinationTrack.id,
     });
+  }
+
+  const plannedMoveById = new Map(
+    plannedMoves.map((move) => [move.clipId, move]),
+  );
+  const nextClips = clips.map((clip) => {
+    const move = plannedMoveById.get(clip.id);
+    return move
+      ? {
+          ...clip,
+          start: move.start,
+          trackId: move.trackId,
+        }
+      : clip;
+  });
+  const collisionClips = buildTimelineClipPresentationCollisionView(
+    virtualTracks,
+    nextClips,
+  );
+
+  for (const move of plannedMoves) {
+    const collisionClip = collisionClips.find((clip) => clip.id === move.clipId);
+    if (!collisionClip) {
+      return null;
+    }
+
+    if (
+      hasAnyCollision(
+        collisionClip.start,
+        collisionClip.timelineDuration,
+        collisionClip.trackId,
+        selectedClipIds,
+        collisionClips,
+      )
+    ) {
+      return null;
+    }
   }
 
   return plannedMoves;

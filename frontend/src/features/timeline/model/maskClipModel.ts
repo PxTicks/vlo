@@ -495,9 +495,9 @@ export function maskToClip(parentClip: TimelineClip, mask: ClipMask): TimelineCl
  * Returns a new clip object only if something changed.
  */
 export function syncMaskTiming(
-  maskClip: TimelineClip,
+  maskClip: MaskTimelineClip,
   parent: TimelineClip,
-): TimelineClip {
+): MaskTimelineClip {
   if (
     maskClip.start === parent.start &&
     maskClip.timelineDuration === parent.timelineDuration &&
@@ -635,9 +635,9 @@ export function migrateLegacyMaskEdgeTransforms(
  * Only produces a new object when the speed transforms actually differ.
  */
 export function syncMaskInheritedSpeed(
-  maskClip: TimelineClip,
+  maskClip: MaskTimelineClip,
   parentClip: TimelineClip,
-): TimelineClip {
+): MaskTimelineClip {
   const localTransforms = getMaskLocalTransforms(maskClip);
   const parentSpeed = getInheritedSpeedTransforms(parentClip);
 
@@ -671,7 +671,7 @@ export function propagateParentToMasks(
   if (maskChildIds.size === 0) return clips;
 
   return clips.map((clip) => {
-    if (!maskChildIds.has(clip.id)) return clip;
+    if (!maskChildIds.has(clip.id) || clip.type !== "mask") return clip;
     let updated = syncMaskTiming(clip, parentClip);
     updated = syncMaskInheritedSpeed(updated, parentClip);
     return updated;
@@ -693,8 +693,9 @@ export function cloneClipWithMasks(
   const maskChildIds = getChildMaskClipIds(clip);
   const maskChildIdSet = new Set(maskChildIds);
   const childMasks = maskChildIds.length > 0
-    ? allClips.filter((candidate) =>
-        maskChildIdSet.has(candidate.id) && candidate.type === "mask",
+    ? allClips.filter(
+        (candidate): candidate is MaskTimelineClip =>
+          maskChildIdSet.has(candidate.id) && candidate.type === "mask",
       )
     : [];
 
@@ -705,8 +706,8 @@ export function cloneClipWithMasks(
     const newMaskId = makeMaskClipId(parentId, maskLocalId);
     clonedMaskIds.push(newMaskId);
 
-    const clonedMask = {
-      ...cloneTimelineClip(maskClip, newMaskId),
+    const clonedMask: MaskTimelineClip = {
+      ...(cloneTimelineClip(maskClip, newMaskId) as MaskTimelineClip),
       parentClipId: parentId,
       trackId: clonedParent.trackId,
     };

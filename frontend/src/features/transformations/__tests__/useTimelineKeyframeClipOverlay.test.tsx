@@ -100,17 +100,23 @@ describe("useTimelineKeyframeClipOverlay", () => {
         item.placement.kind === "layerTime" ? item.placement.transformId : null,
       ),
     ).toEqual(["position_1", "scale_1", "position_1", "rotation_1"]);
+    // Layout's UI groups are now [position, scale, rotation] (indices
+    // 0/1/2) since fitMode was split into its own catalogue entry. Lanes
+    // and palette indices shift accordingly:
+    //   position (0) → top, orange  (#ffb000)
+    //   scale    (1) → middle, blue (#648fff)
+    //   rotation (2) → bottom
     expect(result.current.map((item) => item.placement.lane)).toEqual([
+      "top",
       "middle",
-      "middle",
-      "middle",
+      "top",
       "bottom",
     ]);
 
     const firstContent = result.current[0].content as ReactElement<{ sx?: { backgroundColor?: string } }>;
     const secondContent = result.current[1].content as ReactElement<{ sx?: { backgroundColor?: string } }>;
-    expect(firstContent.props.sx?.backgroundColor).toBe("#648fff");
-    expect(secondContent.props.sx?.backgroundColor).toBe("#dc267f");
+    expect(firstContent.props.sx?.backgroundColor).toBe("#ffb000");
+    expect(secondContent.props.sx?.backgroundColor).toBe("#648fff");
   });
 
   it("projects active mask section keyframes onto the parent clip overlay", () => {

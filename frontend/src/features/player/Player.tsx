@@ -26,6 +26,7 @@ import {
 import { usePixiApp } from "./hooks/usePixiApp";
 import { useCanvasSelectionManager } from "./hooks/interaction/useCanvasSelectionManager";
 import { useCanvasSelectionKeyboard } from "./hooks/interaction/useCanvasSelectionKeyboard";
+import { useRenderGroupOrchestrator } from "./hooks/useRenderGroupOrchestrator";
 
 import { PlayerControls } from "./components/PlayerControls";
 import { ExtractDialog } from "./components/ExtractDialog";
@@ -83,6 +84,17 @@ function PlayerImpl() {
   useCanvasSelectionManager(pixiApp);
   useCanvasSelectionKeyboard();
 
+  // --- Viewport Container ---
+  // Declared up here (rather than later in the function) so the render-group
+  // orchestrator can be parented to it and the playback loop can call into
+  // the orchestrator's sync ref.
+  const viewport = useViewport(pixiApp, {
+    screenWidth: canvasSize.width,
+    screenHeight: canvasSize.height,
+    logicalWidth: logicalDimensions.width,
+    logicalHeight: logicalDimensions.height,
+  });
+
   // Keep a ref to the latest currentTime to read inside the loop without restarting it
   const currentTimeRef = useRef(playbackClock.time);
   useEffect(() => {
@@ -116,10 +128,27 @@ function PlayerImpl() {
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
-  const visualTrackIdsRef = useRef<string[]>([]);
+  const visualTrackIds = useMemo(
+    () => visualTracks.map((track) => track.id),
+    [visualTracks],
+  );
+  const visualTrackIdsRef = useRef<string[]>(visualTrackIds);
   useEffect(() => {
-    visualTrackIdsRef.current = visualTracks.map((track) => track.id);
-  }, [visualTracks]);
+    visualTrackIdsRef.current = visualTrackIds;
+  }, [visualTrackIds]);
+
+  // Render-group orchestrator. Owns Pixi parenting of track engine
+  // containers and (in phase 3) time-bounded group containers under
+  // `viewport`. The sync ref fires per frame inside
+  // processPendingPlaybackFrames below, between awaited per-track
+  // renderers and pixiApp.render(). The hook also imperatively syncs on
+  // `visualTrackIds` changes so paused edits to track order reflect
+  // without waiting for the next clock tick.
+  const {
+    orchestrator: renderGroupOrchestrator,
+    adjustmentEffectResolver,
+    syncRef: renderGroupSyncRef,
+  } = useRenderGroupOrchestrator(viewport, logicalDimensions, visualTrackIds);
 
   const registerSynchronizedPlaybackRenderer = useCallback(
     (
@@ -268,6 +297,12 @@ function PlayerImpl() {
           if (isDisposed) {
             continue;
           }
+
+          // Per-track engine update is now settled. Rewrite scene-graph
+          // parenting (track engines into / out of group containers based on
+          // which group is active at this tick) and apply group transforms
+          // before submitting the frame to the GPU.
+          renderGroupSyncRef.current(nextFrame.time);
 
           if (pixiApp && pixiApp.renderer) {
             pixiApp.render();
@@ -466,14 +501,7 @@ function PlayerImpl() {
     [runProjectExport],
   );
 
-  // --- Viewport Container Logic ---
-  const viewport = useViewport(pixiApp, {
-    screenWidth: canvasSize.width,
-    screenHeight: canvasSize.height,
-    logicalWidth: logicalDimensions.width,
-    logicalHeight: logicalDimensions.height,
-  });
-
+  // --- Viewport Helpers ---
   const fitViewportToScreen = useCallback(() => {
     if (!viewport) return;
 
@@ -590,11 +618,17 @@ function PlayerImpl() {
               registerSynchronizedPlaybackRenderer={
                 registerSynchronizedPlaybackRenderer
               }
+              orchestrator={renderGroupOrchestrator}
+              adjustmentEffectResolver={adjustmentEffectResolver}
             />
           ))}
         {/* Render Audio Layers (Invisible) */}
         {tracksWithAudio.map((track) => (
-          <AudioTrackLayer key={track.id} trackId={track.id} />
+          <AudioTrackLayer
+            key={track.id}
+            trackId={track.id}
+            adjustmentEffectResolver={adjustmentEffectResolver}
+          />
         ))}
       </Box>
 

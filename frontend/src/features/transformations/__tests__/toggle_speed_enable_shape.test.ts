@@ -165,4 +165,116 @@ describe("useTransformationController speed toggle", () => {
     expect(clip?.offset).toBe(5 * TICKS_PER_SECOND);
     expect(clip?.croppedSourceDuration).toBe(10 * TICKS_PER_SECOND);
   });
+
+  it("recomputes an adjustment clip footprint when adding speed", () => {
+    const adjustmentTrack = {
+      id: "track-adj",
+      label: "Adjustment",
+      isVisible: true,
+      isLocked: false,
+      isMuted: false,
+      type: "adjustment" as const,
+    };
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [adjustmentTrack],
+      clips: [
+        {
+          id: clipId,
+          trackId: adjustmentTrack.id,
+          start: 0,
+          timelineDuration: 10 * TICKS_PER_SECOND,
+          offset: 0,
+          type: "adjustment",
+          croppedSourceDuration: 10 * TICKS_PER_SECOND,
+          name: "Adjustment Speed Clip",
+          sourceDuration: 10 * TICKS_PER_SECOND,
+          transformedDuration: 10 * TICKS_PER_SECOND,
+          transformedOffset: 0,
+          transformations: [],
+          depth: 1,
+        },
+      ],
+    });
+    useTimelineStore.setState({ selectedClipIds: [clipId] });
+
+    const { result } = renderHook(() => useTransformationController());
+
+    act(() => {
+      result.current.handleCommit("speed", "factor", 2);
+    });
+
+    const clip = useTimelineStore
+      .getState()
+      .clips.find((currentClip) => currentClip.id === clipId);
+
+    expect(clip?.timelineDuration).toBe(5 * TICKS_PER_SECOND);
+    expect(clip?.transformedDuration).toBe(5 * TICKS_PER_SECOND);
+    expect(clip?.transformations.some((transform) => transform.type === "speed")).toBe(
+      true,
+    );
+  });
+
+  it("rejects an adjustment speed change when the new footprint would collide", () => {
+    const adjustmentTrack = {
+      id: "track-adj",
+      label: "Adjustment",
+      isVisible: true,
+      isLocked: false,
+      isMuted: false,
+      type: "adjustment" as const,
+    };
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [adjustmentTrack],
+      clips: [
+        {
+          id: clipId,
+          trackId: adjustmentTrack.id,
+          start: 0,
+          timelineDuration: 10 * TICKS_PER_SECOND,
+          offset: 0,
+          type: "adjustment",
+          croppedSourceDuration: 10 * TICKS_PER_SECOND,
+          name: "Adjustment Speed Clip",
+          sourceDuration: 10 * TICKS_PER_SECOND,
+          transformedDuration: 10 * TICKS_PER_SECOND,
+          transformedOffset: 0,
+          transformations: [],
+          depth: 1,
+        },
+        {
+          id: "clip-neighbor",
+          trackId: adjustmentTrack.id,
+          start: 10 * TICKS_PER_SECOND,
+          timelineDuration: 10 * TICKS_PER_SECOND,
+          offset: 0,
+          type: "adjustment",
+          croppedSourceDuration: 10 * TICKS_PER_SECOND,
+          name: "Neighbor Adjustment",
+          sourceDuration: 10 * TICKS_PER_SECOND,
+          transformedDuration: 10 * TICKS_PER_SECOND,
+          transformedOffset: 0,
+          transformations: [],
+          depth: 1,
+        },
+      ],
+    });
+    useTimelineStore.setState({ selectedClipIds: [clipId] });
+
+    const { result } = renderHook(() => useTransformationController());
+
+    act(() => {
+      result.current.handleCommit("speed", "factor", 0.5);
+    });
+
+    const clip = useTimelineStore
+      .getState()
+      .clips.find((currentClip) => currentClip.id === clipId);
+
+    expect(clip?.timelineDuration).toBe(10 * TICKS_PER_SECOND);
+    expect(clip?.transformations.some((transform) => transform.type === "speed")).toBe(
+      false,
+    );
+  });
 });

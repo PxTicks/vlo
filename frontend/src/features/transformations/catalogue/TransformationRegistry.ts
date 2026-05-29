@@ -22,6 +22,7 @@ import type { GenericFilterTransform } from "../types";
 
 // Import self-contained transformation definitions
 import { layoutDefinition, layoutApplicator } from "./layout/layoutDefinition";
+import { fitModeDefinition } from "./layout/fitMode";
 import { speedDefinition } from "./time/speed";
 import { volumeDefinition } from "./audio/volume";
 import { hslFilterDefinition } from "./filters/hslAdjustment";
@@ -59,37 +60,54 @@ import { colorMatrixDefinition } from "./filters/colorMatrix";
  * Order matters: default (layout) groups should come first.
  */
 export const TransformationRegistry: TransformationDefinition[] = [
-  // Layout definition (handles position, scale, rotation) — always visible for visual clips
+  // Layout definition (handles position, scale, rotation) — always visible
+  // for visual clips and adjustment clips alike.
   { ...layoutDefinition, isDefault: true },
+
+  // FitMode — split out of layout so it can be hidden for adjustment
+  // clips. Still default for visual clips (matches prior UX).
+  { ...fitModeDefinition, isDefault: true },
 
   // Volume definition — always visible for audio clips
   { ...volumeDefinition, isDefault: true },
 
-  // Dynamic groups (addable)
-  { ...speedDefinition, isDefault: false },
+  // Dynamic groups (addable). Filters all opt into adjustmentCompatible via
+  // a spread below so the menu offers them on adjustment clips too.
+  { ...speedDefinition, isDefault: false, adjustmentCompatible: true },
 
-  // Filters
-  { ...hslFilterDefinition, isDefault: false },
-  { ...colorAdjustmentDefinition, isDefault: false },
-  { ...blurFilterDefinition, isDefault: false },
-  { ...bloomFilterDefinition, isDefault: false },
-  { ...bulgePinchFilterDefinition, isDefault: false },
-  { ...crtFilterDefinition, isDefault: false },
-  { ...glowFilterDefinition, isDefault: false },
-  { ...crossHatchFilterDefinition, isDefault: false },
-  { ...dotFilterDefinition, isDefault: false },
-  { ...glitchFilterDefinition, isDefault: false },
-  { ...godrayFilterDefinition, isDefault: false },
-  { ...asciiFilterDefinition, isDefault: false },
-  { ...oldFilmFilterDefinition, isDefault: false },
-  { ...reflectionFilterDefinition, isDefault: false },
-  { ...rgbSplitFilterDefinition, isDefault: false },
-  { ...pixelateFilterDefinition, isDefault: false },
-  { ...shockwaveFilterDefinition, isDefault: false },
-  { ...twistFilterDefinition, isDefault: false },
-  { ...zoomBlurFilterDefinition, isDefault: false },
-  { ...colorMatrixDefinition, isDefault: false, hidden: true },
-  { ...alphaFilterDefinition, isDefault: false, hidden: true },
+  // Filters (all spatial / pixel-based; safe on textureless containers
+  // now that filterApplicator accepts an explicit contentSize).
+  { ...hslFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...colorAdjustmentDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...blurFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...bloomFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...bulgePinchFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...crtFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...glowFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...crossHatchFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...dotFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...glitchFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...godrayFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...asciiFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...oldFilmFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...reflectionFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...rgbSplitFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...pixelateFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...shockwaveFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...twistFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  { ...zoomBlurFilterDefinition, isDefault: false, adjustmentCompatible: true },
+  {
+    ...colorMatrixDefinition,
+    isDefault: false,
+    hidden: true,
+    adjustmentCompatible: true,
+  },
+  {
+    ...alphaFilterDefinition,
+    isDefault: false,
+    hidden: true,
+    adjustmentCompatible: true,
+  },
 
   // Mask-only transforms
   { ...maskGrowDefinition, isDefault: false },
@@ -155,10 +173,16 @@ export function getLayoutDefinition(): TransformationDefinition {
 /**
  * Get all addable transformation entries (for the "+ Add" menu).
  */
-export function getAddableTransforms(): TransformationDefinition[] {
-  return TransformationRegistry.filter(
-    (entry) => !entry.isDefault && !entry.hidden,
-  );
+export function getAddableTransforms(options?: {
+  clipType?: string;
+  hasAudio?: boolean;
+}): TransformationDefinition[] {
+  return TransformationRegistry.filter((entry) => {
+    if (entry.isDefault) return false;
+    if (entry.hidden) return false;
+    if (!options?.clipType) return true;
+    return isTransformCompatible(entry, options.clipType, options.hasAudio);
+  });
 }
 
 /**
@@ -219,7 +243,7 @@ export function getDefaultTransforms(): TransformationDefinition[] {
 /**
  * Check if a transformation definition is compatible with a clip type.
  * @param definition - The transformation definition
- * @param clipType - The clip type ("video" | "image" | "audio" | "text" | "shape")
+ * @param clipType - The clip type ("video" | "image" | "audio" | "text" | "shape" | "adjustment")
  * @param hasAudio - For video clips, whether the video has audio
  */
 export function isTransformCompatible(
@@ -227,6 +251,16 @@ export function isTransformCompatible(
   clipType: string,
   hasAudio?: boolean,
 ): boolean {
+  // Adjustment clips: opt-in per definition via `adjustmentCompatible`.
+  // We can't rely on `compatibleClips === "visual"` here because that's
+  // shared by fitMode (meaningless for textureless group containers) and
+  // the layout / filter definitions (meaningful). The flag is set on
+  // layoutDefinition, speed, and every filter; volume, fitMode, and mask
+  // transforms are excluded by default.
+  if (clipType === "adjustment") {
+    return definition.adjustmentCompatible === true;
+  }
+
   const compatibleClips = definition.compatibleClips;
 
   // If no compatibility specified, assume compatible with all

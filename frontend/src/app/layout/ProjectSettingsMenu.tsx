@@ -13,12 +13,14 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
 import ViewStreamIcon from "@mui/icons-material/ViewStream";
 import CheckIcon from "@mui/icons-material/Check";
+import BugReportIcon from "@mui/icons-material/BugReport";
 import type {
   AspectRatio,
   AssetBrowserDisplay,
   ProjectFitMode,
 } from "../../features/project";
 import { useProjectStore } from "../../features/project/useProjectStore";
+import { useDebugStore } from "../../shared/debug/useDebugStore";
 
 const FPS_OPTIONS = [16, 24, 25, 30, 60];
 
@@ -41,6 +43,8 @@ export function ProjectSettingsMenu() {
 
   const config = useProjectStore((state) => state.config);
   const updateConfig = useProjectStore((state) => state.updateConfig);
+  const debugMode = useDebugStore((state) => state.debugMode);
+  const toggleDebugMode = useDebugStore((state) => state.toggleDebugMode);
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -209,6 +213,36 @@ export function ProjectSettingsMenu() {
             <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
           )}
         </MenuItem>
+
+        {import.meta.env.DEV && (
+          <Divider sx={{ borderColor: "#333" }} />
+        )}
+        {import.meta.env.DEV && (
+          <Box sx={{ px: 2, py: 1 }}>
+            <Typography variant="caption" color="gray">
+              DEBUG
+            </Typography>
+          </Box>
+        )}
+        {import.meta.env.DEV && (
+          <MenuItem
+            onClick={() => {
+              toggleDebugMode();
+            }}
+            data-testid="project-settings-debug-toggle"
+          >
+            <ListItemIcon>
+              <BugReportIcon
+                fontSize="small"
+                sx={{ color: debugMode ? "primary.main" : "white" }}
+              />
+            </ListItemIcon>
+            <ListItemText>Debug mode</ListItemText>
+            {debugMode && (
+              <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
+            )}
+          </MenuItem>
+        )}
       </Menu>
     </>
   );

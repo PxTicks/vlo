@@ -120,13 +120,29 @@ describe("TransformationPanel toggles", () => {
     const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
+    // FitMode is its own default section since the catalogue split — the
+    // Layout toggle materialises only position/scale/rotation.
     expect(typed.map((transform) => transform.type)).toEqual([
-      "fitMode",
       "position",
       "scale",
       "rotation",
     ]);
     expect(typed.every((transform) => transform.isEnabled === false)).toBe(true);
+  });
+
+  it("materializes and disables a missing default fitMode transform", () => {
+    mockTimeline([]);
+
+    render(<TransformationPanel />);
+
+    fireEvent.click(screen.getByLabelText("Fit Mode enabled"));
+
+    expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
+    const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
+    const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
+
+    expect(typed.map((transform) => transform.type)).toEqual(["fitMode"]);
+    expect(typed[0].isEnabled).toBe(false);
   });
 
   it("inserts disabled default layout transforms before dynamic transforms", () => {
@@ -148,18 +164,22 @@ describe("TransformationPanel toggles", () => {
     const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
+    // Layout toggle no longer materialises fitMode (catalogue split).
     expect(typed.map((transform) => transform.type)).toEqual([
-      "fitMode",
       "position",
       "scale",
       "rotation",
       "filter",
     ]);
+    // Only the materialised layout default-transforms (position/scale/
+    // rotation) should be disabled; the pre-existing dynamic filter
+    // remains enabled.
     expect(
       typed
-        .slice(0, 4)
+        .slice(0, 3)
         .every((transform) => transform.isEnabled === false),
     ).toBe(true);
+    expect(typed[3].isEnabled).toBe(true);
   });
 
   it("shows record path when no position path exists and can arm recording", () => {

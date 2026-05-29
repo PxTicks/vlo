@@ -92,6 +92,9 @@ export function CompositePanel() {
         gap: 2,
         p: 2,
         minWidth: 0,
+        minHeight: 0,
+        height: "100%",
+        overflowY: "auto",
         color: "#f5f5f5",
       }}
       data-testid="composite-panel"
@@ -246,6 +249,7 @@ export function CompositePanel() {
           ) : null}
         </>
       )}
+
     </Box>
   );
 }

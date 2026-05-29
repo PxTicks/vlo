@@ -80,6 +80,18 @@ export type TransformTemplate<P = TransformState> = (
 export type StateApplicator = (
   target: ClipTransformTarget,
   state: TransformState,
+  /**
+   * Optional content size override. Sprite targets normally have a `.texture`
+   * the filter applicator can read for spatial-parameter scaling; textureless
+   * targets (Pixi Containers used by render groups) carry no texture and need
+   * an explicit size or `worldX`/`worldY`/`worldUniform` params and
+   * `filterParameterPoints` would scale against a 1×1 fallback.
+   *
+   * `applyClipTransforms` passes the clip texture size here; group callers
+   * pass the logical project size. Applicators that don't care about content
+   * size (e.g. `layoutApplicator`) ignore this parameter.
+   */
+  contentSize?: { width: number; height: number },
 ) => void;
 
 // Import UI types
@@ -108,6 +120,18 @@ export interface TransformationDefinition {
 
   /** Whether to hide this transformation from the add menu. Defaults to false. */
   hidden?: boolean;
+
+  /**
+   * Whether this transformation applies sensibly to adjustment clips (which
+   * dispatch to a textureless Pixi Container instead of a sprite).
+   * Defaults to `false`. Opt in explicitly per definition — `compatibleClips`
+   * is not enough on its own because adjustment-incompatible entries
+   * (speed, volume, mask, fitMode) span multiple `compatibleClips` values.
+   *
+   * Set true for: the layout definition (position/scale/rotation) and
+   * every filter that scales sensibly against an explicit content size.
+   */
+  adjustmentCompatible?: boolean;
 
   /**
    * List of specific transform types handled by this definition.

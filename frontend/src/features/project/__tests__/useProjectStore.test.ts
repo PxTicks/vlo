@@ -5,6 +5,7 @@ import { projectPersistenceService } from "../services/ProjectPersistenceService
 import { recentProjectsService } from "../services/RecentProjectsService";
 import {
   PROJECT_MANIFEST_SCHEMA_VERSION,
+  TIMELINE_DOCUMENT_SCHEMA_VERSION,
   VLO_APP_VERSION,
 } from "../constants";
 import { useTimelineStore } from "../../timeline";
@@ -94,7 +95,7 @@ describe("useProjectStore", () => {
     };
     const timeline = options.timeline ?? {
       documentType: "vlo.timeline",
-      schemaVersion: 1,
+      schemaVersion: TIMELINE_DOCUMENT_SCHEMA_VERSION,
       updated_at: 1000,
       tracks: [],
       clips: [],

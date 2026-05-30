@@ -2,7 +2,6 @@ import { create } from "zustand";
 import type {
   CompositeContent,
   CompositeTimelineClip,
-  TimelineClip,
   TimelineTrack,
 } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
@@ -10,6 +9,7 @@ import { useProjectStore } from "../project/useProjectStore";
 import { playbackClock } from "../player/services/PlaybackClock";
 import { TICKS_PER_SECOND } from "../timeline/constants";
 import { createDefaultTimelineSnapshot } from "../timeline/model/timelineTrackModel";
+import { computeFurthestPresentationEnd } from "../timeline/utils/clipPresentation";
 import { useTimelineStore } from "../timeline/useTimelineStore";
 import { scheduleCompositeProxyRender } from "./services/renderCompositeProxyForClip";
 import { createCompositeTimelineClip } from "./utils/createCompositeClip";
@@ -63,7 +63,12 @@ function getSnapshotForCompositeClip(clip: CompositeTimelineClip): TimelineSnaps
 
 function getCurrentCompositeContent(): CompositeContent {
   const { clips, tracks } = useTimelineStore.getState();
-  const durationTicks = inferTimelineDuration(clips);
+  // Presentation-aware so an adjustment-speed clip inside the subtimeline bakes
+  // to its true rendered length; clamped to a 1s minimum like an empty scene.
+  const durationTicks = Math.max(
+    TICKS_PER_SECOND,
+    computeFurthestPresentationEnd(tracks, clips),
+  );
 
   return {
     clips: structuredClone(clips),
@@ -72,14 +77,6 @@ function getCurrentCompositeContent(): CompositeContent {
     fps: useProjectStore.getState().config.fps,
     frameStep: 1,
   };
-}
-
-function inferTimelineDuration(clips: TimelineClip[]): number {
-  const maxClipEnd = clips.reduce(
-    (max, clip) => Math.max(max, clip.start + clip.timelineDuration),
-    0,
-  );
-  return Math.max(TICKS_PER_SECOND, maxClipEnd);
 }
 
 function pickCompositeTrackId(tracks: TimelineTrack[]): string {

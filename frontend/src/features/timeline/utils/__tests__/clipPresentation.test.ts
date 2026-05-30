@@ -12,6 +12,7 @@ import {
   buildTimelineClipPresentationIndex,
   buildTimelineClipPresentationLookup,
   collectTimelineClipPresentationCollisions,
+  computeFurthestPresentationEnd,
   introducesTimelineClipPresentationCollision,
   resolveStoredEndForPresentationEnd,
   resolveStoredStartForPresentationStart,
@@ -580,5 +581,60 @@ describe("presentation collisions", () => {
         timelineDuration: 130,
       }),
     ).toBe(true);
+  });
+});
+
+describe("computeFurthestPresentationEnd", () => {
+  it("extends past the stored end when a slow ramp pushes a clip's tail forward", () => {
+    // 0.5x adjustment: source window [0, 100) → presentation [0, 200). The clip
+    // runs 150 stored ticks, so its tail [100, 150) carries forward to
+    // presentation [200, 250). Raw stored ends would top out at the
+    // adjustment's 200.
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-slow",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 200,
+        sourceDuration: 100,
+        depth: 1,
+        transformations: [speedTransform(0.5)],
+      }),
+      videoClip({ id: "v", trackId: "v1", start: 0, timelineDuration: 150 }),
+    ];
+
+    expect(computeFurthestPresentationEnd(tracks, clips)).toBe(250);
+  });
+
+  it("measures only the subset while resolving presentation against the full timeline", () => {
+    // adj reaches only v1 (depth 1). videoA on v1 expands under the ramp;
+    // videoB on the unreached v2 is the furthest stored clip.
+    const tracks = [
+      adjustmentTrack("adj"),
+      visualTrack("v1"),
+      visualTrack("v2"),
+    ];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-slow",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 200,
+        sourceDuration: 100,
+        depth: 1,
+        transformations: [speedTransform(0.5)],
+      }),
+      videoClip({ id: "a", trackId: "v1", start: 0, timelineDuration: 150 }),
+      videoClip({ id: "b", trackId: "v2", start: 0, timelineDuration: 400 }),
+    ];
+
+    // Whole timeline: videoB is furthest at 400.
+    expect(computeFurthestPresentationEnd(tracks, clips)).toBe(400);
+    // Subset = videoA only: its presentation still resolves through the
+    // adjustment (250), proving the full timeline drives presentation while the
+    // subset narrows what we measure.
+    const videoA = clips.filter((clip) => clip.id === "a");
+    expect(computeFurthestPresentationEnd(tracks, clips, videoA)).toBe(250);
   });
 });

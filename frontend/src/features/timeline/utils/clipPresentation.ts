@@ -278,6 +278,39 @@ export function buildTimelineClipPresentationIndex(
 }
 
 /**
+ * Furthest on-screen end tick across a timeline, resolved through the
+ * presentation layer so adjustment-speed retiming is honoured: a slow ramp
+ * pushes a clip's end past its stored `start + timelineDuration`, a fast ramp
+ * pulls it in. This is the single source of truth for "where does the content
+ * end" — timeline duration, export/bake length, and the player scrubber must
+ * all agree, so they share this instead of re-deriving from raw stored ends.
+ *
+ * `tracks` + `clips` must describe the full timeline context so the adjustment
+ * stack resolves correctly. `subset` is the set whose ends are measured; it
+ * defaults to every clip, but render/selection callers narrow it to the clips
+ * they actually emit while still resolving presentation against the full
+ * timeline. Clips with no presentation entry (e.g. masks) fall back to their
+ * stored end. Rounded to a whole tick to match stored timing.
+ */
+export function computeFurthestPresentationEnd(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  subset: readonly TimelineClip[] = clips,
+): number {
+  const presentationByClipId = buildTimelineClipPresentationIndex(
+    tracks,
+    clips,
+  );
+  const furthestEnd = subset.reduce((furthest, clip) => {
+    const presentationEnd =
+      presentationByClipId.get(clip.id)?.end ??
+      clip.start + clip.timelineDuration;
+    return Math.max(furthest, presentationEnd);
+  }, 0);
+  return Math.round(furthestEnd);
+}
+
+/**
  * Renderer-facing index: same presentation map plus the active-clip lookup the
  * renderer / audio engine consume. The lookup encapsulates static rebases and
  * ripple placement so call sites no longer touch the internal resolver.

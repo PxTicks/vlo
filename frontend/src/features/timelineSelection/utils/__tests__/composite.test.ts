@@ -6,6 +6,7 @@ import {
   selectionToCompositeContent,
 } from "../composite";
 import type {
+  AdjustmentTimelineClip,
   CompositeTimelineClip,
   TimelineSelection,
   VideoTimelineClip,
@@ -100,6 +101,57 @@ describe("composite adapters", () => {
       clips: [videoClip("a", 100, 700)],
     };
     expect(selectionToCompositeContent(selection).durationTicks).toBe(700);
+  });
+
+  it("infers presentation-aware duration when a slow adjustment is in the window", () => {
+    // 0.5x adjustment over source window [0, 100) stretches a 150-tick clip's
+    // tail out to presentation 250; raw stored ends would report only 200.
+    const adjustment: AdjustmentTimelineClip = {
+      id: "adj",
+      type: "adjustment",
+      name: "adj",
+      trackId: "track-adj",
+      start: 0,
+      timelineDuration: 200,
+      sourceDuration: 100,
+      transformedDuration: 200,
+      transformedOffset: 0,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformations: [
+        {
+          id: "speed",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 0.5 },
+        },
+      ],
+      depth: 1,
+    };
+    const selection: TimelineSelection = {
+      start: 0,
+      clips: [adjustment, videoClip("a", 0, 150)],
+      tracks: [
+        {
+          id: "track-adj",
+          type: "adjustment",
+          label: "Adj",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+        {
+          id: "track-1",
+          type: "visual",
+          label: "Track 1",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+      ],
+    };
+
+    expect(selectionToCompositeContent(selection).durationTicks).toBe(250);
   });
 
   it("round-trips content back to a zero-anchored selection", () => {

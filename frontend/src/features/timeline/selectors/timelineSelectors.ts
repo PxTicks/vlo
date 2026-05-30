@@ -3,6 +3,7 @@ import type {
   MaskTimelineClip,
   StandardTimelineClip,
   TimelineClip,
+  TimelineTrack,
 } from "../../../types/TimelineTypes";
 import {
   isNonMaskTimelineClip,
@@ -10,9 +11,14 @@ import {
 import { resolveMaskBooleanExpression } from "../../masks/model/maskBooleanExpression";
 import { clipReferencesAssetId } from "../model/timelineCommands";
 import { getChildMaskClipIds } from "../model/maskClipModel";
+import { computeFurthestPresentationEnd } from "../utils/clipPresentation";
 
 export interface TimelineClipCollectionState {
   clips: TimelineClip[];
+}
+
+export interface TimelineDurationState extends TimelineClipCollectionState {
+  tracks: TimelineTrack[];
 }
 
 export interface TimelineSelectionState extends TimelineClipCollectionState {
@@ -36,14 +42,6 @@ function matchesTrackSelection(
   includeMasks: boolean,
 ): boolean {
   return clip.trackId === trackId && (includeMasks || clip.type !== "mask");
-}
-
-function computeTimelineDuration(clips: readonly TimelineClip[]): number {
-  return clips.reduce(
-    (maxDuration, clip) =>
-      Math.max(maxDuration, clip.start + clip.timelineDuration),
-    0,
-  );
 }
 
 export function selectTimelineClipById(
@@ -71,9 +69,9 @@ export function selectTimelineClipsForTrack(
 }
 
 export function selectTimelineDuration(
-  state: TimelineClipCollectionState,
+  state: TimelineDurationState,
 ): number {
-  return computeTimelineDuration(state.clips);
+  return computeFurthestPresentationEnd(state.tracks, state.clips);
 }
 
 export function selectTimelineClipCountForAsset(

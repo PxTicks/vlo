@@ -5,6 +5,7 @@ import type {
   TimelineSelection,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
+import { computeFurthestPresentationEnd } from "../../timeline/utils/clipPresentation";
 
 /**
  * Adapters between a {@link TimelineSelection} (anchored at absolute timeline
@@ -32,14 +33,6 @@ function cloneTracks(tracks: TimelineTrack[] | undefined): TimelineTrack[] | und
   return tracks ? structuredClone(tracks) : undefined;
 }
 
-/** Largest clip end (absolute ticks) across a region's clips, or `fallback`. */
-function inferRegionEnd(clips: TimelineClip[], fallback: number): number {
-  return clips.reduce(
-    (max, clip) => Math.max(max, clip.start + clip.timelineDuration),
-    fallback,
-  );
-}
-
 /**
  * Captures a selection as portable composite content: every clip (including
  * subordinate mask clips) is shifted so the window's start lands on tick 0.
@@ -50,7 +43,11 @@ export function selectionToCompositeContent(
   selection: TimelineSelection,
 ): CompositeContent {
   const start = selection.start;
-  const end = selection.end ?? inferRegionEnd(selection.clips, start);
+  // Presentation-aware so a slow/fast adjustment inside the selection captures
+  // the true rendered length, not the raw stored clip ends.
+  const end =
+    selection.end ??
+    computeFurthestPresentationEnd(selection.tracks ?? [], selection.clips);
   const durationTicks = Math.max(0, end - start);
 
   return {

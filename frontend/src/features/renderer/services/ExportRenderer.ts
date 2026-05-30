@@ -7,6 +7,7 @@ import type {
 } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../timeline";
+import { computeFurthestPresentationEnd } from "../../timeline/utils/clipPresentation";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
@@ -303,9 +304,14 @@ export class ExportRenderer {
       timelineSelection.tracks ?? tracks,
     );
     const startTick = timelineSelection.start;
-    const inferredEndTick = selectedClips.reduce(
-      (max, clip) => Math.max(max, clip.start + clip.timelineDuration),
-      startTick,
+    // Falls back to the clips' furthest presentation end when the selection
+    // omits an explicit end. Presentation resolves against the full timeline
+    // (the same source the AdjustmentEffectResolver uses below) so adjustment
+    // speed is honoured; we measure only the clips this selection emits.
+    const inferredEndTick = computeFurthestPresentationEnd(
+      projectData.tracks,
+      projectData.clips,
+      selectedClips,
     );
     const requestedEndTick = Math.max(
       startTick,

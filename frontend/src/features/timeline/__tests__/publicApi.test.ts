@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
+import type {
+  AdjustmentTimelineClip,
+  ClipTransform,
+  TimelineClip,
+  TimelineTrack,
+} from "../../../types/TimelineTypes";
 import {
   createEndpointOverlayItem,
   createLayerTimeOverlayItem,
@@ -162,5 +167,122 @@ describe("timeline public API", () => {
       insetPx: 8,
       order: 0,
     });
+  });
+});
+
+function speedTransform(factor: number): ClipTransform {
+  return {
+    id: `speed-${factor}`,
+    type: "speed",
+    isEnabled: true,
+    parameters: { factor },
+  };
+}
+
+function adjustmentClip(overrides: {
+  id: string;
+  start: number;
+  timelineDuration: number;
+  sourceDuration: number;
+  factor: number;
+}): AdjustmentTimelineClip {
+  return {
+    id: overrides.id,
+    type: "adjustment",
+    name: overrides.id,
+    trackId: "track-adjustment",
+    start: overrides.start,
+    timelineDuration: overrides.timelineDuration,
+    sourceDuration: overrides.sourceDuration,
+    transformedDuration: overrides.timelineDuration,
+    transformedOffset: 0,
+    croppedSourceDuration: overrides.sourceDuration,
+    offset: 0,
+    transformations: [speedTransform(overrides.factor)],
+    depth: 1,
+  };
+}
+
+function affectedVideoClip(timelineDuration: number): TimelineClip {
+  return {
+    id: "clip-under-adjustment",
+    trackId: "track-under",
+    type: "video",
+    name: "Under Adjustment",
+    assetId: "asset-video",
+    sourceDuration: timelineDuration,
+    timelineDuration,
+    croppedSourceDuration: timelineDuration,
+    start: 0,
+    offset: 0,
+    transformedDuration: timelineDuration,
+    transformedOffset: 0,
+    transformations: [],
+  };
+}
+
+// An adjustment track must sit above the track it retimes.
+const ADJUSTMENT_TRACKS: TimelineTrack[] = [
+  {
+    id: "track-adjustment",
+    label: "Adjustment",
+    isVisible: true,
+    isLocked: false,
+    isMuted: false,
+    type: "adjustment",
+  },
+  {
+    id: "track-under",
+    label: "Under",
+    isVisible: true,
+    isLocked: false,
+    isMuted: false,
+    type: "visual",
+  },
+];
+
+describe("timeline duration under adjustment-speed retiming", () => {
+  it("extends past the stored end when a slow ramp expands a clip past its source window", () => {
+    // 0.5x adjustment: source window [0, 100) stretched to presentation [0, 200).
+    // The clip is 150 ticks, so its tail (stored [100, 150)) carries forward to
+    // presentation [200, 250). Stored max end is the adjustment's 200, but the
+    // clip actually renders out to 250.
+    useTimelineStore.setState({
+      tracks: ADJUSTMENT_TRACKS,
+      clips: [
+        adjustmentClip({
+          id: "adj-slow",
+          start: 0,
+          timelineDuration: 200,
+          sourceDuration: 100,
+          factor: 0.5,
+        }),
+        affectedVideoClip(150),
+      ],
+      selectedClipIds: [],
+    });
+
+    expect(getTimelineDuration()).toBe(250);
+  });
+
+  it("trims trailing dead air when a fast ramp compresses a clip", () => {
+    // 2x adjustment: stored clip [0, 100) compresses to presentation [0, 50).
+    // The old stored-end computation reported 100 (50 ticks of dead air).
+    useTimelineStore.setState({
+      tracks: ADJUSTMENT_TRACKS,
+      clips: [
+        adjustmentClip({
+          id: "adj-fast",
+          start: 0,
+          timelineDuration: 50,
+          sourceDuration: 100,
+          factor: 2,
+        }),
+        affectedVideoClip(100),
+      ],
+      selectedClipIds: [],
+    });
+
+    expect(getTimelineDuration()).toBe(50);
   });
 });

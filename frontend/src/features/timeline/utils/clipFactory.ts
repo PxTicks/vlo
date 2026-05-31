@@ -2,11 +2,11 @@ import type { Asset } from "../../../types/Asset";
 import type { BaseClip, ClipType } from "../../../types/TimelineTypes";
 import { getProjectDimensions } from "../../renderer/utils/dimensions";
 import { useProjectStore } from "../../project/useProjectStore";
-import { TICKS_PER_SECOND } from "../constants";
 import {
   deriveClipTransformsFromAsset,
   deriveExtractedAudioClipState,
 } from "./metadataTransforms";
+import { durationSecondsToTicks } from "./assetDuration";
 
 export const createClipFromAsset = (asset: Asset): BaseClip => {
   // AssetType is "video" | "image" | "audio", which matches ClipType subset
@@ -23,10 +23,7 @@ export const createClipFromAsset = (asset: Asset): BaseClip => {
     : isImage
       ? 5
       : 0;
-  const durationTicks = Math.max(
-    0,
-    Math.floor(durationSeconds * TICKS_PER_SECOND),
-  );
+  const durationTicks = durationSecondsToTicks(durationSeconds) ?? 0;
   const { aspectRatio } = useProjectStore.getState().config;
   const metadataClipState =
     asset.type === "audio"

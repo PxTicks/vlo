@@ -83,8 +83,22 @@ import {
   selectResolvedMaskBooleanExpressionForParent,
 } from "./selectors/timelineSelectors";
 import { createTimelineMutationPipeline } from "./store/timelineMutationPipeline";
+import { useAssetStore } from "../userAssets/useAssetStore";
+import { durationSecondsToTicks } from "./utils/assetDuration";
 
 enablePatches();
+
+function isCompositeFullLengthTiming(clip: TimelineClip): boolean {
+  return (
+    clip.type === "composite" &&
+    clip.sourceDuration !== null &&
+    clip.offset === 0 &&
+    clip.transformedOffset === 0 &&
+    clip.timelineDuration === clip.sourceDuration &&
+    clip.croppedSourceDuration === clip.sourceDuration &&
+    clip.transformedDuration === clip.sourceDuration
+  );
+}
 
 export {
   countBrushMaskAssetConsumers,
@@ -388,6 +402,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     setCompositeProxy: (clipId, proxyAssetId, proxyContentHash) => {
+      const proxyDurationTicks =
+        durationSecondsToTicks(
+          useAssetStore
+            .getState()
+            .assets.find((asset) => asset.id === proxyAssetId)?.duration,
+        ) ?? null;
       const previousCompositeClip = get().clips.find(
         (clip) => clip.id === clipId && clip.type === "composite",
       );
@@ -398,7 +418,30 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const didCommit = mutationPipeline.commitModelMutation((draft) => {
         draft.clips = draft.clips.map((clip) =>
           clip.id === clipId && clip.type === "composite"
-            ? { ...clip, proxyAssetId, proxyContentHash }
+            ? {
+                ...clip,
+                proxyAssetId,
+                proxyContentHash,
+                ...(
+                  proxyDurationTicks !== null &&
+                  isCompositeFullLengthTiming(clip)
+                    ? {
+                        // Composite content duration is stored in source ticks,
+                        // but a baked proxy is quantized to whole output
+                        // frames. With mismatched fps, that can make the proxy
+                        // land slightly longer than the content window, so keep
+                        // fresh full-length composites aligned to the baked
+                        // asset's real duration.
+                        sourceDuration: proxyDurationTicks,
+                        timelineDuration: proxyDurationTicks,
+                        croppedSourceDuration: proxyDurationTicks,
+                        offset: 0,
+                        transformedDuration: proxyDurationTicks,
+                        transformedOffset: 0,
+                      }
+                    : {}
+                ),
+              }
             : clip,
         );
       });

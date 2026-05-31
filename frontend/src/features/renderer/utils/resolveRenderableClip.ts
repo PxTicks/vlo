@@ -1,9 +1,22 @@
 import type { Asset } from "../../../types/Asset";
 import type {
+  CompositeTimelineClip,
   TimelineClip,
   VideoTimelineClip,
 } from "../../../types/TimelineTypes";
+import { durationSecondsToTicks } from "../../timeline/utils/assetDuration";
 import { isCompositeProxyStale } from "../../timelineSelection";
+
+function isCompositeFullLengthTiming(clip: CompositeTimelineClip): boolean {
+  return (
+    clip.sourceDuration !== null &&
+    clip.offset === 0 &&
+    clip.transformedOffset === 0 &&
+    clip.timelineDuration === clip.sourceDuration &&
+    clip.croppedSourceDuration === clip.sourceDuration &&
+    clip.transformedDuration === clip.sourceDuration
+  );
+}
 
 /**
  * The render boundary for Composite clips (prebaked-proxy strategy).
@@ -29,6 +42,12 @@ export function resolveRenderableClip(
   if (!proxyAssetId || isCompositeProxyStale(clip) || !assetsById.has(proxyAssetId)) {
     return null;
   }
+  const proxyAsset = assetsById.get(proxyAssetId);
+  const proxyDurationTicks = durationSecondsToTicks(proxyAsset?.duration);
+  const flattenedDurationTicks =
+    proxyDurationTicks !== null && isCompositeFullLengthTiming(clip)
+      ? proxyDurationTicks
+      : null;
 
   // Build the proxy-backed video clip explicitly so the composite-only fields
   // (content, proxy*) don't leak downstream.
@@ -39,11 +58,12 @@ export function resolveRenderableClip(
     assetId: proxyAssetId,
     trackId: clip.trackId,
     start: clip.start,
-    sourceDuration: clip.sourceDuration,
-    timelineDuration: clip.timelineDuration,
-    croppedSourceDuration: clip.croppedSourceDuration,
+    sourceDuration: flattenedDurationTicks ?? clip.sourceDuration,
+    timelineDuration: flattenedDurationTicks ?? clip.timelineDuration,
+    croppedSourceDuration:
+      flattenedDurationTicks ?? clip.croppedSourceDuration,
     offset: clip.offset,
-    transformedDuration: clip.transformedDuration,
+    transformedDuration: flattenedDurationTicks ?? clip.transformedDuration,
     transformedOffset: clip.transformedOffset,
     transformations: clip.transformations,
     ...(clip.components ? { components: clip.components } : {}),

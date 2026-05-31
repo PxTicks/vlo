@@ -3,6 +3,7 @@ import type {
   TimelineSelection,
 } from "../../../types/TimelineTypes";
 import { selectionToCompositeContent } from "../../timelineSelection";
+import { durationSecondsToTicks } from "../../timeline/utils/assetDuration";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { bakeCompositeProxy } from "./bakeCompositeProxy";
 import { createCompositeTimelineClip } from "../utils/createCompositeClip";
@@ -65,6 +66,7 @@ export async function groupSelectionIntoComposite(
     content,
     trackId,
     start: selection.start,
+    proxyDurationTicks: durationSecondsToTicks(asset.duration) ?? undefined,
     proxyAssetId: asset.id,
     proxyContentHash: contentHash,
     name: options.name,

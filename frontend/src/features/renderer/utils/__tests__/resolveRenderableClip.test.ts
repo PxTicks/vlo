@@ -4,6 +4,7 @@ import type {
   CompositeTimelineClip,
   VideoTimelineClip,
 } from "../../../../types/TimelineTypes";
+import { TICKS_PER_SECOND } from "../../../timeline";
 import { hashCompositeContent } from "../../../timelineSelection";
 import { resolveRenderableClip } from "../resolveRenderableClip";
 
@@ -25,13 +26,14 @@ function videoClip(id: string): VideoTimelineClip {
   };
 }
 
-function proxyAsset(id: string): Asset {
+function proxyAsset(id: string, duration?: number): Asset {
   return {
     id,
     name: `${id}.mp4`,
     src: `${id}.mp4`,
     type: "video",
     hash: `hash-${id}`,
+    ...(duration !== undefined ? { duration } : {}),
     createdAt: 1,
   };
 }
@@ -90,5 +92,33 @@ describe("resolveRenderableClip", () => {
         new Map([["proxy-1", proxyAsset("proxy-1")]]),
       ),
     ).toBeNull();
+  });
+
+  it("uses the baked proxy duration for full-length composites", () => {
+    const content = {
+      durationTicks: 100,
+      clips: [videoClip("nested")],
+    };
+    const clip = {
+      ...compositeClip(hashCompositeContent(content)),
+      content,
+    };
+
+    const resolved = resolveRenderableClip(
+      clip,
+      new Map([
+        ["proxy-1", proxyAsset("proxy-1", 120 / TICKS_PER_SECOND)],
+      ]),
+    );
+
+    expect(resolved).toEqual(
+      expect.objectContaining({
+        type: "video",
+        sourceDuration: 120,
+        timelineDuration: 120,
+        croppedSourceDuration: 120,
+        transformedDuration: 120,
+      }),
+    );
   });
 });

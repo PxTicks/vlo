@@ -5,6 +5,8 @@ import type {
   TimelineTrack,
   VideoTimelineClip,
 } from "../../../types/TimelineTypes";
+import { TICKS_PER_SECOND } from "../constants";
+import { useAssetStore } from "../../userAssets/useAssetStore";
 
 const { mockDeleteAsset } = vi.hoisted(() => ({
   mockDeleteAsset: vi.fn(async () => undefined),
@@ -72,6 +74,9 @@ function compositeClip(
 describe("useTimelineStore composite proxy lifecycle", () => {
   beforeEach(() => {
     mockDeleteAsset.mockClear();
+    useAssetStore.setState({
+      assets: [],
+    });
     act(() => {
       useTimelineStore.getState().replaceTimelineSnapshot({
         tracks: [createTrack("track-1")],
@@ -106,6 +111,20 @@ describe("useTimelineStore composite proxy lifecycle", () => {
   });
 
   it("cleans up an old proxy after rebaking to a new proxy", async () => {
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "proxy-new",
+          name: "proxy-new.mp4",
+          src: "proxy-new.mp4",
+          type: "video",
+          hash: "hash-proxy-new",
+          duration: 120 / TICKS_PER_SECOND,
+          createdAt: 1,
+        },
+      ],
+    });
+
     act(() => {
       useTimelineStore
         .getState()
@@ -118,5 +137,15 @@ describe("useTimelineStore composite proxy lifecycle", () => {
     await waitFor(() => {
       expect(mockDeleteAsset).toHaveBeenCalledWith("proxy-old");
     });
+
+    expect(useTimelineStore.getState().clips).toEqual([
+      expect.objectContaining({
+        id: "composite-1",
+        sourceDuration: 120,
+        timelineDuration: 120,
+        croppedSourceDuration: 120,
+        transformedDuration: 120,
+      }),
+    ]);
   });
 });

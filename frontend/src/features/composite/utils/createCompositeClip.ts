@@ -9,6 +9,7 @@ export interface CreateCompositeClipArgs {
   trackId: string;
   /** Global timeline start position (ticks). */
   start: number;
+  proxyDurationTicks?: number;
   proxyAssetId?: string;
   proxyContentHash?: string;
   name?: string;
@@ -23,7 +24,14 @@ export interface CreateCompositeClipArgs {
 export function createCompositeTimelineClip(
   args: CreateCompositeClipArgs,
 ): CompositeTimelineClip {
-  const duration = Math.max(1, Math.round(args.content.durationTicks));
+  // The selection content is measured in source ticks, but the baked proxy is
+  // snapped to whole output frames. When source fps and bake fps differ, the
+  // proxy can be a little longer than `content.durationTicks`, so prefer the
+  // baked duration whenever we already know it.
+  const duration = Math.max(
+    1,
+    args.proxyDurationTicks ?? Math.round(args.content.durationTicks),
+  );
 
   return {
     id: args.id ?? `clip_${crypto.randomUUID()}`,

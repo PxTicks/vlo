@@ -240,10 +240,15 @@ export const getResizeConstraints = (
       );
     }
 
-    // Constraint: Can't resize past the beginning of the source media
+    // Constraint: Can't resize past the beginning of the source media.
+    // Adjustment clips have no real underlying media — their "source" is the
+    // (effectively infinite) descendant timeline — so they may extend left
+    // arbitrarily; only neighbours and tick 0 bound them.
     // OLD: const sourceStartLimit = clip.start - clip.offset;
-    const sourceStartLimit = clip.start - clip.transformedOffset;
-    minStart = Math.max(minStart, sourceStartLimit);
+    if (clip.type !== "adjustment") {
+      const sourceStartLimit = clip.start - clip.transformedOffset;
+      minStart = Math.max(minStart, sourceStartLimit);
+    }
 
     // Constraint: Can't resize to make duration less than minDuration
     const maxStart = clip.start + clip.timelineDuration - minDuration;
@@ -263,8 +268,12 @@ export const getResizeConstraints = (
 
     // Constraint: Can't resize past the end of finite source media.
     // Images are intentionally unbounded and should be extendable arbitrarily.
+    // Adjustment clips are likewise unbounded — their "source" is the
+    // descendant timeline, not a fixed-length asset.
     const isUnboundedSource =
-      clip.type === "image" || clip.sourceDuration === null;
+      clip.type === "image" ||
+      clip.type === "adjustment" ||
+      clip.sourceDuration === null;
     if (!isUnboundedSource) {
       const sourceEndLimit =
         clip.transformedDuration + clip.start - clip.transformedOffset;

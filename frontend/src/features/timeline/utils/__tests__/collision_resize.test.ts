@@ -85,6 +85,23 @@ describe("getResizeConstraints with Nonlinear Time", () => {
     expect(result.max).toBe(Infinity);
   });
 
+  it("does not cap adjustment clips on either edge", () => {
+    const adjustmentClip: TimelineClip = {
+      ...baseClip,
+      type: "adjustment",
+      sourceDuration: 200,
+      transformedDuration: 100,
+      transformedOffset: 25,
+      depth: 1,
+    };
+
+    const leftResult = getResizeConstraints(adjustmentClip, [], "left");
+    const rightResult = getResizeConstraints(adjustmentClip, [], "right");
+
+    expect(leftResult.min).toBe(0);
+    expect(rightResult.max).toBe(Infinity);
+  });
+
   it("uses one frame as the minimum clip duration", () => {
     const minDuration = getMinimumClipDurationTicks(24);
 

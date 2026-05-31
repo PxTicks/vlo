@@ -35,7 +35,10 @@ export function computeSpeedShapeUpdateForTransforms({
   // Preserve the current source window as the ground truth when time-remapping
   // changes. That keeps an existing trim anchored instead of reapplying speed
   // from source zero.
-  const visibleSourceStart = Math.max(0, Math.round(clip.offset));
+  const visibleSourceStart =
+    clip.type === "adjustment"
+      ? Math.round(clip.offset)
+      : Math.max(0, Math.round(clip.offset));
   const visibleSourceDuration = Math.max(
     0,
     Math.round(clip.croppedSourceDuration),

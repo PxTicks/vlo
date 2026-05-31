@@ -37,6 +37,12 @@ export interface AdjustmentApplication {
   start: number;
   timelineDuration: number;
   sourceDuration: number;
+  /** Source-tick trim into the ramp (mirrors clip.offset). Non-zero after a
+   *  left-edge crop. */
+  offset: number;
+  /** Transformed/presentation-tick trim into the ramp (mirrors
+   *  clip.transformedOffset). Non-zero after a left-edge crop. */
+  transformedOffset: number;
   retimingMode: AdjustmentRetimingMode;
   /** Absolute tick in this adjustment's input-level domain for this frame.
    *  Present only on active applications derived for a specific render tick. */
@@ -110,6 +116,8 @@ function buildApplication(
     start: adjustment.start,
     timelineDuration: adjustment.timelineDuration,
     sourceDuration: adjustment.sourceDuration,
+    offset: adjustment.offset,
+    transformedOffset: adjustment.transformedOffset,
     retimingMode: getAdjustmentRetimingMode(adjustment),
   };
 }
@@ -150,10 +158,19 @@ export function applyAdjustmentTimeRemap(
     return tick + (application.sourceDuration - application.timelineDuration);
   }
 
-  const sourceOffset = pullTimeThroughTransforms(
+  // The window is a crop into the ramp: presentation-space `localOffset` is
+  // measured from `transformedOffset`, and the consumed source content is the
+  // span the ramp covers from the window start to that point. With no left
+  // crop (`transformedOffset === 0`) this reduces to `pull(localOffset)`.
+  const windowSourceStart = pullTimeThroughTransforms(
     application.transformations,
-    localOffset,
+    application.transformedOffset,
   );
+  const sourceOffset =
+    pullTimeThroughTransforms(
+      application.transformations,
+      application.transformedOffset + localOffset,
+    ) - windowSourceStart;
   return application.start + sourceOffset;
 }
 
@@ -176,10 +193,19 @@ export function applyAdjustmentTimeRemapInverse(
     return tick - (application.sourceDuration - application.timelineDuration);
   }
 
-  const presentationOffset = pushTimeThroughTransforms(
+  // Inverse of the cropped forward map: source-space `localOffset` is measured
+  // from the window's source start; push the absolute source position back to
+  // presentation space and rebase by `transformedOffset`. With no left crop
+  // (`transformedOffset === 0`) this reduces to `push(localOffset)`.
+  const windowSourceStart = pullTimeThroughTransforms(
     application.transformations,
-    localOffset,
+    application.transformedOffset,
   );
+  const presentationOffset =
+    pushTimeThroughTransforms(
+      application.transformations,
+      windowSourceStart + localOffset,
+    ) - application.transformedOffset;
   return application.start + presentationOffset;
 }
 

@@ -697,7 +697,7 @@ function applyClipShape(
   clip: TimelineClip,
   shape: TimelineClipShape,
 ): TimelineClip {
-  return {
+  const next = {
     ...clip,
     start: shape.start !== undefined ? Math.round(shape.start) : clip.start,
     timelineDuration:
@@ -718,6 +718,17 @@ function applyClipShape(
         ? Math.round(shape.croppedSourceDuration)
         : clip.croppedSourceDuration,
   };
+
+  // Adjustment clips have no fixed-length asset: their `sourceDuration` is the
+  // source/content span the window currently consumes. Keep it in lockstep with
+  // `croppedSourceDuration` on every shape edit (resize and speed) so the
+  // bounded carry-forward delta in the remap (`sourceDuration -
+  // timelineDuration`) stays continuous at the window's right boundary.
+  if (next.type === "adjustment") {
+    next.sourceDuration = next.croppedSourceDuration;
+  }
+
+  return next;
 }
 
 export function updateClipShapeInDraft(

@@ -132,7 +132,7 @@ function applyProposedClipTimingChange(
     return clip;
   }
 
-  return {
+  const next = {
     ...clip,
     trackId: change.trackId ?? clip.trackId,
     transformations: change.transformations ?? clip.transformations,
@@ -155,6 +155,12 @@ function applyProposedClipTimingChange(
         : clip.croppedSourceDuration,
     offset: change.offset !== undefined ? Math.round(change.offset) : clip.offset,
   };
+
+  if (next.type === "adjustment") {
+    next.sourceDuration = next.croppedSourceDuration;
+  }
+
+  return next;
 }
 
 function buildRippleLayoutResolver(

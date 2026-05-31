@@ -33,7 +33,12 @@ import type {
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
-import { MIN_ZOOM, MAX_ZOOM, TICKS_PER_SECOND } from "../constants";
+import {
+  ADJUSTMENT_DEFAULT_DURATION_TICKS,
+  MIN_ZOOM,
+  MAX_ZOOM,
+  TICKS_PER_SECOND,
+} from "../constants";
 import { ensureAssetSourceLoaded } from "../../userAssets/publicApi";
 import { mediaProcessingService } from "../../userAssets/services/MediaProcessingService";
 import {
@@ -356,10 +361,9 @@ export const TimelineToolbar = () => {
           <IconButton
             size="small"
             onClick={() => {
-              // Default to 3 seconds at the playhead — enough to scrub
-              // into and out of without immediately needing a resize.
+              // Initial length only — adjustment clips are freely resizable.
               const start = Math.max(0, Math.round(playbackClock.time));
-              const durationTicks = 3 * TICKS_PER_SECOND;
+              const durationTicks = ADJUSTMENT_DEFAULT_DURATION_TICKS;
               useTimelineStore.getState().addAdjustmentClip({
                 start,
                 timelineDuration: durationTicks,

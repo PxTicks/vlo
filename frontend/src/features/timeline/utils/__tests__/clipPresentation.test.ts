@@ -521,6 +521,40 @@ describe("presentation collisions", () => {
     expect(collisionClip?.timelineDuration).toBe(200);
   });
 
+  it("applies adjustment source-window growth when previewing descendant layout", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-1",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 50,
+        sourceDuration: 100,
+        depth: 1,
+        retimingMode: ADJUSTMENT_RETIMING_RIPPLE,
+        transformations: [speedTransform(2)],
+      }),
+      videoClip({
+        id: "video-1",
+        trackId: "v1",
+        start: 120,
+        timelineDuration: 20,
+      }),
+    ];
+
+    const collisionClip = buildTimelineClipPresentationCollisionView(
+      tracks,
+      clips,
+      {
+        clipId: "adj-1",
+        timelineDuration: 60,
+        croppedSourceDuration: 120,
+      },
+    ).find((clip) => clip.id === "video-1");
+
+    expect(collisionClip?.start).toBe(60);
+  });
+
   it("reports descendant collisions introduced by an adjustment speed change", () => {
     const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
     const clips: TimelineClip[] = [

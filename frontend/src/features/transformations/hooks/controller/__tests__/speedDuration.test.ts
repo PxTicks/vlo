@@ -140,4 +140,35 @@ describe("computeSpeedShapeUpdate", () => {
     expect(result?.transformedOffset).toBe(2.5 * TICKS_PER_SECOND);
     expect(result?.transformedDuration).toBe(7.5 * TICKS_PER_SECOND);
   });
+
+  it("preserves left-expanded adjustment windows when recomputing speed", () => {
+    const clip = createClip(
+      {
+        type: "adjustment",
+        timelineDuration: 15 * TICKS_PER_SECOND,
+        offset: -5 * TICKS_PER_SECOND,
+        croppedSourceDuration: 15 * TICKS_PER_SECOND,
+        sourceDuration: 15 * TICKS_PER_SECOND,
+        transformedDuration: 15 * TICKS_PER_SECOND,
+        transformedOffset: -5 * TICKS_PER_SECOND,
+      },
+      [],
+    );
+
+    const result = computeSpeedShapeUpdateForTransforms({
+      clip,
+      nextTransforms: [
+        {
+          id: "speed-1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 2 },
+        },
+      ],
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.timelineDuration).toBe(7.5 * TICKS_PER_SECOND);
+    expect(result?.transformedOffset).toBe(-2.5 * TICKS_PER_SECOND);
+  });
 });

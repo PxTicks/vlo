@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TimelineToolbar } from "../TimelineToolbar";
+import { ADJUSTMENT_DEFAULT_DURATION_TICKS } from "../../constants";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useCompositeTimelineStore } from "../../../composite/useCompositeTimelineStore";
 import { playbackClock } from "../../../player/services/PlaybackClock";
@@ -302,5 +303,6 @@ describe("TimelineToolbar beat detection", () => {
     expect(clip?.start).toBe(12_345);
     expect(clip?.trackId).toBe("adj-track");
     expect(clip?.depth).toBe(ADJUSTMENT_DEPTH_ALL);
+    expect(clip?.timelineDuration).toBe(ADJUSTMENT_DEFAULT_DURATION_TICKS);
   });
 });

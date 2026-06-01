@@ -65,6 +65,9 @@ describe("TransformationPanel Moving Reproduction", () => {
 
     const state0 = {
       selectedClipIds: ["clip_0"],
+      // Collision guard reads getState().tracks; a single clip never collides,
+      // so an empty track list keeps the guard a no-op for these duration tests.
+      tracks: [],
       clips: [
         {
           id: "clip_0",
@@ -149,6 +152,7 @@ describe("TransformationPanel Moving Reproduction", () => {
 
     const stateMoved = {
       selectedClipIds: ["clip_moved"],
+      tracks: [],
       clips: [
         {
           id: "clip_moved",
@@ -236,6 +240,9 @@ describe("TransformationPanel Moving Reproduction", () => {
 
     const state0 = {
       selectedClipIds: ["clip_0"],
+      // Collision guard reads getState().tracks; a single clip never collides,
+      // so an empty track list keeps the guard a no-op for these duration tests.
+      tracks: [],
       clips: [
         {
           id: "clip_0",
@@ -318,6 +325,7 @@ describe("TransformationPanel Moving Reproduction", () => {
 
     const stateMoved = {
       selectedClipIds: ["clip_moved"],
+      tracks: [],
       clips: [
         {
           id: "clip_moved",

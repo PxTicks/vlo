@@ -1,8 +1,8 @@
 import { useEffect } from "react";
+import { useEditorFocusStore } from "../../../editorFocus";
 import { useTimelineStore } from "../../../timeline";
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
-import { useEditorFocusStore } from "../../../../app/focus/useEditorFocusStore";
 
 function isEditableTextTarget(target: EventTarget | null): boolean {
   return (

@@ -1,5 +1,6 @@
 import { fireEvent, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
+import { useEditorFocusStore } from "../../../../editorFocus";
 import type {
   MaskTimelineClip,
   TimelineClip,
@@ -9,7 +10,6 @@ import { createMaskLayoutTransforms } from "../../../../masks/model/maskFactory"
 import { useMaskViewStore } from "../../../../masks/store/useMaskViewStore";
 import { useAssetBrowserSelectionStore } from "../../../../userAssets";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
-import { useEditorFocusStore } from "../../../../../app/focus/useEditorFocusStore";
 import { useCanvasSelectionKeyboard } from "../useCanvasSelectionKeyboard";
 
 function createParentClip(

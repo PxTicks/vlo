@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { Box } from "@mui/material";
 import type { ProjectConfig } from "../../features/project";
+import { useRegionFocus, useEditorFocusStore } from "../../features/editorFocus";
 import { EditorRegion } from "./EditorRegion";
-import { useRegionFocus, useEditorFocusStore } from "../focus/useEditorFocusStore";
 
 const LEFT_PANEL_WIDTH = 356;
 const RIGHT_SIDEBAR_WIDTH = 300;

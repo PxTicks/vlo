@@ -77,12 +77,15 @@ function resolveRegionFromNode(node: EventTarget | null): EditorRegion | null {
  */
 export function useEditorFocusReconciler(): void {
   useEffect(() => {
-    const handleFocusIn = (event: FocusEvent) => {
-      const region = resolveRegionFromNode(event.target);
-      if (region) {
-        useEditorFocusStore.getState().setRegion(region);
-      }
+    const syncRegion = (target: EventTarget | null) => {
+      useEditorFocusStore.getState().setRegion(resolveRegionFromNode(target));
     };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      syncRegion(event.target);
+    };
+
+    syncRegion(document.activeElement);
     document.addEventListener("focusin", handleFocusIn);
     return () => document.removeEventListener("focusin", handleFocusIn);
   }, []);

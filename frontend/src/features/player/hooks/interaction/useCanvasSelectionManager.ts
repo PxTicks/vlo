@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { Application, FederatedPointerEvent } from "pixi.js";
+import { claimEditorRegion } from "../../../editorFocus";
 import { useTimelineStore } from "../../../timeline";
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
-import { claimEditorRegion } from "../../../../app/focus/useEditorFocusStore";
 
 export type CanvasSelectableKind = "clip" | "mask";
 

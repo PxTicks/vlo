@@ -37,10 +37,10 @@ import { FrameSelectionOverlay } from "./components/FrameSelectionOverlay";
 import { playbackClock } from "../player/services/PlaybackClock";
 import { type TimelineClip } from "../../types";
 import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
+import { useEditorFocusStore } from "../editorFocus";
 import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
-import { useEditorFocusStore } from "../../app/focus/useEditorFocusStore";
 import { buildTimelineClipPresentationIndex } from "./utils/clipPresentation";
 
 const containerStyles = {

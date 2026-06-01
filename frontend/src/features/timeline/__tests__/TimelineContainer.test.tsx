@@ -1,9 +1,9 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { useEditorFocusStore } from "../../editorFocus";
 import { TimelineContainer } from "../TimelineContainer";
 import { useTimelineStore } from "../useTimelineStore";
-import { useEditorFocusStore } from "../../../app/focus/useEditorFocusStore";
 import type { TimelineTrack, TimelineClip } from "../../../types/TimelineTypes";
 import type { TimelineViewState } from "../hooks/useTimelineViewStore";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";

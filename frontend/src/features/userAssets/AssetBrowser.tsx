@@ -28,6 +28,10 @@ import { doesAssetBelongToFamily } from "../../shared/utils/assetFamilies";
 import { getTimelineClipCountForAsset, useTimelineStore } from "../timeline";
 import { useInteractionStore } from "../timeline/hooks/useInteractionStore";
 import { useProjectStore } from "../project/useProjectStore";
+import {
+  useRegionFocus,
+  useEditorFocusStore,
+} from "../editorFocus";
 import { useAssetStore } from "./useAssetStore";
 import { AssetCard } from "./components/AssetCard";
 import { AssetPreviewDialog } from "./components/AssetPreviewDialog";
@@ -39,10 +43,6 @@ import {
 } from "./utils/deleteAssetWithConfirmation";
 import { isAssetVisibleInBrowser } from "./utils/assetVisibility";
 import { getAssetsForFamilyId, getFamilyMembers } from "./utils/familyMembers";
-import {
-  useRegionFocus,
-  useEditorFocusStore,
-} from "../../app/focus/useEditorFocusStore";
 
 type SortOption = "dateDesc" | "dateAsc" | "nameAsc";
 const ASSET_TYPE_PRIORITY: AssetType[] = ["video", "image", "audio"];

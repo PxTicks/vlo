@@ -12,7 +12,7 @@ import {
   Timeline,
   useAssetDrag,
 } from "../features/timeline";
-import { useEditorFocusReconciler } from "./focus/useEditorFocusStore";
+import { useEditorFocusReconciler } from "../features/editorFocus";
 import { Player } from "../features/player/Player";
 import { EditorLayout } from "./layout/EditorLayout";
 import { EditorLeftSidebar } from "./layout/EditorLeftSidebar";

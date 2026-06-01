@@ -9,7 +9,7 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import {
   useRegionFocus,
   type EditorRegion as EditorFocusRegion,
-} from "../focus/useEditorFocusStore";
+} from "../../features/editorFocus";
 
 type SxValue = NonNullable<SxProps<Theme>>;
 type SxArray = Extract<SxValue, readonly unknown[]>;
@@ -63,7 +63,7 @@ export function EditorRegion({
         ...toSxArray(sx),
       ]}
       onMouseDown={onMouseDown}
-      {...(focusRegion ? focusProps : {})}
+      {...(focusRegion && !blocked ? focusProps : {})}
     >
       {children}
       {blocked ? (

@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useEditorFocusStore } from "../../editorFocus";
 import { AssetBrowser } from "../AssetBrowser";
 import { useAssetStore } from "../useAssetStore";
 import type { Asset, AssetFamily } from "../../../types/Asset";
@@ -19,7 +20,6 @@ import {
   useAssetBrowserRevealStore,
 } from "../useAssetBrowserRevealStore";
 import { useAssetBrowserSelectionStore } from "../useAssetBrowserSelectionStore";
-import { useEditorFocusStore } from "../../../app/focus/useEditorFocusStore";
 
 // Mock the Zustand store hook
 vi.mock("../useAssetStore");

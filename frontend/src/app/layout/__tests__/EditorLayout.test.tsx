@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useEditorFocusStore } from "../../../features/editorFocus";
 import { EditorLayout } from "../EditorLayout";
-import { useEditorFocusStore } from "../../focus/useEditorFocusStore";
 
 function renderEditorLayout({
   locked = false,
@@ -60,6 +60,19 @@ describe("EditorLayout", () => {
     fireEvent.click(screen.getByTestId("editor-lock-right"));
 
     expect(handleRightSidebarClick).not.toHaveBeenCalled();
+  });
+
+  it("does not let locked regions claim keyboard ownership", () => {
+    renderEditorLayout({ locked: true });
+    const region = () => useEditorFocusStore.getState().region;
+
+    useEditorFocusStore.getState().setRegion("timeline");
+    fireEvent.pointerDown(screen.getByTestId("editor-lock-right"));
+    expect(region()).toBeNull();
+
+    useEditorFocusStore.getState().setRegion("timeline");
+    fireEvent.pointerDown(screen.getByTestId("editor-lock-player"));
+    expect(region()).toBeNull();
   });
 
   it("claims keyboard ownership for the region the user interacts with", () => {

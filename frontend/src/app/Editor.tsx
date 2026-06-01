@@ -11,8 +11,8 @@ import {
   AssetDragOverlay,
   Timeline,
   useAssetDrag,
-  useTimelineStore,
 } from "../features/timeline";
+import { useEditorFocusReconciler } from "./focus/useEditorFocusStore";
 import { Player } from "../features/player/Player";
 import { EditorLayout } from "./layout/EditorLayout";
 import { EditorLeftSidebar } from "./layout/EditorLeftSidebar";
@@ -38,6 +38,7 @@ export function Editor() {
   const nonTimelineRegionsLocked = useEditorSelectionLock();
   const clipOverlays = useEditorClipOverlays();
 
+  useEditorFocusReconciler();
   useEditorAssetLibrary();
 
   const {
@@ -68,12 +69,6 @@ export function Editor() {
       <EditorLayout
         layoutMode={layoutMode}
         nonTimelineRegionsLocked={nonTimelineRegionsLocked}
-        onEditorMouseDownCapture={() =>
-          useTimelineStore.getState().setFocused(false)
-        }
-        onTimelineMouseDownCapture={() =>
-          useTimelineStore.getState().setFocused(true)
-        }
         leftSidebar={
           <ErrorBoundary boundaryName="Left sidebar" variant="region">
             <EditorLeftSidebar />

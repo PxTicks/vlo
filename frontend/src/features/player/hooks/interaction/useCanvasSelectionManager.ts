@@ -3,6 +3,7 @@ import type { Application, FederatedPointerEvent } from "pixi.js";
 import { useTimelineStore } from "../../../timeline";
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
+import { claimEditorRegion } from "../../../../app/focus/useEditorFocusStore";
 
 export type CanvasSelectableKind = "clip" | "mask";
 
@@ -106,11 +107,19 @@ export function useCanvasSelectionManager(app: Application | null) {
   const selectedClipId = useTimelineStore(
     (state) => state.selectedClipIds[0] ?? null,
   );
-  const selectedMaskId = useMaskViewStore((state) =>
+  const rememberedMaskId = useMaskViewStore((state) =>
     selectedClipId
       ? (state.selectedMaskByClipId[selectedClipId] ?? null)
       : null,
   );
+  const isMaskTabActive = useMaskViewStore((state) => state.isMaskTabActive);
+  // The canvas selection only resolves to a mask while mask editing is active.
+  // Otherwise selecting a clip that happens to have a remembered mask would
+  // surface the mask gizmo (and make Delete target the mask) even though the
+  // user is looking at the clip's transform gizmo. Keeping this gated here
+  // means `activeSelection` always equals the gizmo actually rendered on the
+  // canvas, so keyboard handlers can trust it directly.
+  const selectedMaskId = isMaskTabActive ? rememberedMaskId : null;
   const previousSelectionRef = useRef<{
     clipId: string | null;
     maskId: string | null;
@@ -189,6 +198,11 @@ export function useCanvasSelectionManager(app: Application | null) {
     const stageOff = stage.off.bind(stage);
 
     const handlePointerDown = (event: FederatedPointerEvent) => {
+      // The Pixi stage is not a focusable DOM node, so it claims keyboard
+      // ownership explicitly here. This is what makes canvas-scoped shortcuts
+      // (Delete) fire only when the user is actually working on the canvas.
+      claimEditorRegion("canvas");
+
       const candidates = resolveCanvasSelectableCandidates(
         canvasSelectables.values(),
         event.global,

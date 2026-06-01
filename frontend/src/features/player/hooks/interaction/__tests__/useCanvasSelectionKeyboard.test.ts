@@ -9,6 +9,7 @@ import { createMaskLayoutTransforms } from "../../../../masks/model/maskFactory"
 import { useMaskViewStore } from "../../../../masks/store/useMaskViewStore";
 import { useAssetBrowserSelectionStore } from "../../../../userAssets";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
+import { useEditorFocusStore } from "../../../../../app/focus/useEditorFocusStore";
 import { useCanvasSelectionKeyboard } from "../useCanvasSelectionKeyboard";
 
 function createParentClip(
@@ -89,13 +90,16 @@ describe("useCanvasSelectionKeyboard", () => {
       interactionContext: null,
     });
     useAssetBrowserSelectionStore.setState({ selectedAssetIds: [] });
+    // Default to the canvas owning the keyboard; region-gated behaviour is
+    // exercised explicitly below.
+    useEditorFocusStore.getState().setRegion("canvas");
     useTimelineStore.setState({
       clips: [],
       selectedClipIds: [],
     });
   });
 
-  it("deletes the active mask selection and selects the next mask", () => {
+  it("deletes the active mask and falls back to the clip transform gizmo", () => {
     const trackId = useTimelineStore.getState().tracks[0].id;
     const parent = createParentClip(trackId);
     const firstMask = createMaskClip(parent, "mask_a");
@@ -114,14 +118,37 @@ describe("useCanvasSelectionKeyboard", () => {
 
     const clips = useTimelineStore.getState().clips;
     expect(clips.some((clip) => clip.id === firstMask.id)).toBe(false);
+    // The sibling mask is untouched: deleting one mask does NOT walk to the
+    // next, which is what used to cascade a held Delete through every mask.
     expect(clips.some((clip) => clip.id === secondMask.id)).toBe(true);
     expect(
       useMaskViewStore.getState().selectedMaskByClipId[parent.id],
-    ).toBe("mask_b");
+    ).toBeUndefined();
     expect(useCanvasSelectionStore.getState().activeSelection).toEqual({
-      kind: "mask",
+      kind: "clip",
       clipId: parent.id,
-      maskId: "mask_b",
+    });
+  });
+
+  it("does nothing when the canvas does not own the keyboard", () => {
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+
+    useTimelineStore.setState({
+      clips: [parent],
+      selectedClipIds: [parent.id],
+    });
+    useCanvasSelectionStore.getState().selectClip(parent.id);
+    useEditorFocusStore.getState().setRegion("timeline");
+
+    renderHook(() => useCanvasSelectionKeyboard());
+
+    fireEvent.keyDown(window, { key: "Delete" });
+
+    expect(useTimelineStore.getState().clips).toHaveLength(1);
+    expect(useCanvasSelectionStore.getState().activeSelection).toEqual({
+      kind: "clip",
+      clipId: parent.id,
     });
   });
 

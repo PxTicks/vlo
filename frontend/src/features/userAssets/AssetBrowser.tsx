@@ -39,6 +39,10 @@ import {
 } from "./utils/deleteAssetWithConfirmation";
 import { isAssetVisibleInBrowser } from "./utils/assetVisibility";
 import { getAssetsForFamilyId, getFamilyMembers } from "./utils/familyMembers";
+import {
+  useRegionFocus,
+  useEditorFocusStore,
+} from "../../app/focus/useEditorFocusStore";
 
 type SortOption = "dateDesc" | "dateAsc" | "nameAsc";
 const ASSET_TYPE_PRIORITY: AssetType[] = ["video", "image", "audio"];
@@ -128,6 +132,7 @@ function resolveFamilyScopeForAsset(
 }
 
 function AssetBrowserComponent() {
+  const assetBrowserFocusProps = useRegionFocus("assetBrowser");
   const [activeTab, setActiveTab] = useState<AssetType>("video");
   const [sortOption, setSortOption] = useState<SortOption>("dateDesc");
   const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
@@ -537,6 +542,7 @@ function AssetBrowserComponent() {
   React.useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (
+        useEditorFocusStore.getState().region !== "assetBrowser" ||
         selectedAssetIds.length === 0 ||
         event.defaultPrevented ||
         isDeletingSelectedAssetsRef.current
@@ -746,6 +752,7 @@ function AssetBrowserComponent() {
   return (
     <Box
       data-testid="asset-browser"
+      {...assetBrowserFocusProps}
       sx={{
         display: "flex",
         flexDirection: "column",

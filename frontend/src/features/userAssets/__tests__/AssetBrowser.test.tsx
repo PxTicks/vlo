@@ -19,6 +19,7 @@ import {
   useAssetBrowserRevealStore,
 } from "../useAssetBrowserRevealStore";
 import { useAssetBrowserSelectionStore } from "../useAssetBrowserSelectionStore";
+import { useEditorFocusStore } from "../../../app/focus/useEditorFocusStore";
 
 // Mock the Zustand store hook
 vi.mock("../useAssetStore");
@@ -765,6 +766,9 @@ describe("AssetBrowser Component", () => {
     expect(assetCard).not.toBeNull();
 
     fireEvent.click(assetCard as HTMLElement);
+    // The asset browser must own the keyboard for its Delete handler to fire;
+    // in the app this is claimed on pointer interaction with the panel.
+    useEditorFocusStore.getState().setRegion("assetBrowser");
     fireEvent.keyDown(window, { key: "Delete" });
 
     await waitFor(() => {

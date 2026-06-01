@@ -1,7 +1,8 @@
-import type { MouseEventHandler, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Box } from "@mui/material";
 import type { ProjectConfig } from "../../features/project";
 import { EditorRegion } from "./EditorRegion";
+import { useRegionFocus, useEditorFocusStore } from "../focus/useEditorFocusStore";
 
 const LEFT_PANEL_WIDTH = 356;
 const RIGHT_SIDEBAR_WIDTH = 300;
@@ -15,8 +16,6 @@ interface EditorLayoutProps {
   readonly player: ReactNode;
   readonly rightSidebar: ReactNode;
   readonly timeline: ReactNode;
-  readonly onEditorMouseDownCapture?: MouseEventHandler<HTMLDivElement>;
-  readonly onTimelineMouseDownCapture?: MouseEventHandler<HTMLDivElement>;
 }
 
 export function EditorLayout({
@@ -27,9 +26,9 @@ export function EditorLayout({
   player,
   rightSidebar,
   timeline,
-  onEditorMouseDownCapture,
-  onTimelineMouseDownCapture,
 }: EditorLayoutProps) {
+  const timelineFocusProps = useRegionFocus("timeline");
+  const clearRegion = useEditorFocusStore((state) => state.setRegion);
   const gridTemplateColumns = `${LEFT_PANEL_WIDTH}px 1fr ${RIGHT_SIDEBAR_WIDTH}px`;
   const gridTemplateRows = `48px 1fr ${TIMELINE_HEIGHT}px`;
   const gridAreas =
@@ -47,7 +46,7 @@ export function EditorLayout({
 
   return (
     <Box
-      onMouseDownCapture={onEditorMouseDownCapture}
+      onPointerDownCapture={() => clearRegion(null)}
       sx={{
         display: "grid",
         gridTemplateColumns,
@@ -93,6 +92,7 @@ export function EditorLayout({
 
       <EditorRegion
         area="player"
+        focusRegion="canvas"
         blocked={nonTimelineRegionsLocked}
         overlayTestId="editor-lock-player"
         sx={{
@@ -109,6 +109,7 @@ export function EditorLayout({
 
       <EditorRegion
         area="right"
+        focusRegion="inspector"
         blocked={nonTimelineRegionsLocked}
         overlayTestId="editor-lock-right"
         sx={{
@@ -125,7 +126,7 @@ export function EditorLayout({
       </EditorRegion>
 
       <Box
-        onMouseDownCapture={onTimelineMouseDownCapture}
+        {...timelineFocusProps}
         sx={{
           gridArea: "bottom",
           bgcolor: "#000",

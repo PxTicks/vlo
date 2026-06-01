@@ -1,21 +1,18 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EditorLayout } from "../EditorLayout";
+import { useEditorFocusStore } from "../../focus/useEditorFocusStore";
 
 function renderEditorLayout({
   locked = false,
   layoutMode = "compact" as const,
 } = {}) {
-  const handleEditorMouseDownCapture = vi.fn();
-  const handleTimelineMouseDownCapture = vi.fn();
   const handleRightSidebarClick = vi.fn();
 
   render(
     <EditorLayout
       layoutMode={layoutMode}
       nonTimelineRegionsLocked={locked}
-      onEditorMouseDownCapture={handleEditorMouseDownCapture}
-      onTimelineMouseDownCapture={handleTimelineMouseDownCapture}
       leftSidebar={<div data-testid="left-sidebar">Left</div>}
       topBar={<div data-testid="top-bar">Top</div>}
       player={<div data-testid="player">Player</div>}
@@ -28,14 +25,14 @@ function renderEditorLayout({
     />,
   );
 
-  return {
-    handleEditorMouseDownCapture,
-    handleTimelineMouseDownCapture,
-    handleRightSidebarClick,
-  };
+  return { handleRightSidebarClick };
 }
 
 describe("EditorLayout", () => {
+  beforeEach(() => {
+    useEditorFocusStore.getState().setRegion(null);
+  });
+
   it("renders each editor region", () => {
     renderEditorLayout();
 
@@ -65,14 +62,19 @@ describe("EditorLayout", () => {
     expect(handleRightSidebarClick).not.toHaveBeenCalled();
   });
 
-  it("delegates editor and timeline mouse capture", () => {
-    const { handleEditorMouseDownCapture, handleTimelineMouseDownCapture } =
-      renderEditorLayout();
+  it("claims keyboard ownership for the region the user interacts with", () => {
+    renderEditorLayout();
+    const region = () => useEditorFocusStore.getState().region;
 
-    fireEvent.mouseDown(screen.getByTestId("left-sidebar"));
-    fireEvent.mouseDown(screen.getByTestId("timeline"));
+    fireEvent.pointerDown(screen.getByTestId("timeline"));
+    expect(region()).toBe("timeline");
 
-    expect(handleEditorMouseDownCapture).toHaveBeenCalledTimes(2);
-    expect(handleTimelineMouseDownCapture).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(screen.getByTestId("player"));
+    expect(region()).toBe("canvas");
+
+    // Neutral chrome (the top bar) releases ownership via the container's
+    // capture-phase reset, since no inner region re-claims it.
+    fireEvent.pointerDown(screen.getByTestId("top-bar"));
+    expect(region()).toBeNull();
   });
 });

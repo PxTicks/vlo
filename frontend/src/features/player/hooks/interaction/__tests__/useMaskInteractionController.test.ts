@@ -257,6 +257,7 @@ describe("useMaskInteractionController", () => {
       selectedClipIds: [parent.id],
     });
     useMaskViewStore.getState().setSelectedMask(parent.id, "mask_selected");
+    useMaskViewStore.getState().setMaskTabActive(true);
 
     const viewport = new Container();
     const spriteParent = new Container();
@@ -292,6 +293,7 @@ describe("useMaskInteractionController", () => {
       selectedClipIds: [parent.id],
     });
     useMaskViewStore.getState().setSelectedMask(parent.id, "mask_selected");
+    useMaskViewStore.getState().setMaskTabActive(true);
 
     const viewport = new Container();
     viewport.toLocal = vi.fn((point: { x: number; y: number }) => ({

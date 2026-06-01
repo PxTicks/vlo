@@ -33,6 +33,7 @@ describe("useCanvasSelectionManager", () => {
     });
     useMaskViewStore.setState({
       selectedMaskByClipId: {},
+      isMaskTabActive: false,
     });
   });
 
@@ -74,12 +75,42 @@ describe("useCanvasSelectionManager", () => {
     ]);
   });
 
+  it("keeps the selection on the clip while mask editing is inactive", () => {
+    // A clip that merely remembers a mask must still surface its own transform
+    // gizmo (and be the Delete target) until the user opens the mask tab.
+    useTimelineStore.setState({
+      selectedClipIds: ["clip-1"],
+    });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: { "clip-1": "mask-a" },
+      isMaskTabActive: false,
+    });
+
+    renderHook(() => useCanvasSelectionManager(null));
+
+    expect(useCanvasSelectionStore.getState().activeSelection).toEqual({
+      kind: "clip",
+      clipId: "clip-1",
+    });
+
+    act(() => {
+      useMaskViewStore.getState().setMaskTabActive(true);
+    });
+
+    expect(useCanvasSelectionStore.getState().activeSelection).toEqual({
+      kind: "mask",
+      clipId: "clip-1",
+      maskId: "mask-a",
+    });
+  });
+
   it("syncs the active canvas selection with clip and mask selection changes", () => {
     useTimelineStore.setState({
       selectedClipIds: ["clip-1"],
     });
     useMaskViewStore.setState({
       selectedMaskByClipId: { "clip-1": "mask-a" },
+      isMaskTabActive: true,
     });
 
     renderHook(() => useCanvasSelectionManager(null));

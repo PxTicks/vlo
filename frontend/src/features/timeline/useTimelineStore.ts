@@ -109,13 +109,10 @@ export {
 };
 
 interface TimelineState extends TimelineModelState {
-  isFocused: boolean;
   selectedClipIds: string[];
   copiedClips: TimelineClip[];
   canUndo: boolean;
   canRedo: boolean;
-
-  setFocused: (focused: boolean) => void;
 
   duplicateClip: (clip: TimelineClip) => TimelineClip;
   copySelectedClip: () => boolean;
@@ -333,13 +330,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   return {
     tracks: initial.tracks,
     clips: initial.clips,
-    isFocused: false,
     selectedClipIds: [],
     copiedClips: [],
     canUndo: false,
     canRedo: false,
-
-    setFocused: (focused) => set({ isFocused: focused }),
 
     addTrack: () => {
       mutationPipeline.commitModelMutation((draft) => {

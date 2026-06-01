@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TimelineContainer } from "../TimelineContainer";
 import { useTimelineStore } from "../useTimelineStore";
+import { useEditorFocusStore } from "../../../app/focus/useEditorFocusStore";
 import type { TimelineTrack, TimelineClip } from "../../../types/TimelineTypes";
 import type { TimelineViewState } from "../hooks/useTimelineViewStore";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
@@ -157,8 +158,10 @@ describe("TimelineContainer", () => {
       ],
       clips: [],
       selectedClipIds: ["c1"],
-      isFocused: true,
     });
+    // The timeline owns the keyboard by default for these specs; the
+    // out-of-timeline case overrides this explicitly.
+    useEditorFocusStore.getState().setRegion("timeline");
 
     // Reset View Store Mock Defaults
     viewStoreMocks.getState.mockReturnValue({
@@ -394,8 +397,11 @@ describe("TimelineContainer", () => {
     expect(useTimelineStore.getState().selectedClipIds).toEqual([]);
   });
 
-  it("ignores Delete when asset browser selection is active", () => {
+  it("ignores Delete when another region owns the keyboard", () => {
+    // The asset browser owning focus is now expressed through the focus
+    // authority rather than an asset-selection cross-check in this handler.
     useAssetBrowserSelectionStore.setState({ selectedAssetIds: ["asset-1"] });
+    useEditorFocusStore.getState().setRegion("assetBrowser");
 
     render(
       <TimelineContainer
@@ -413,10 +419,10 @@ describe("TimelineContainer", () => {
     const undo = vi.fn(() => true);
     const redo = vi.fn(() => true);
     useTimelineStore.setState({
-      isFocused: false,
       undo,
       redo,
     });
+    useEditorFocusStore.getState().setRegion("canvas");
 
     render(
       <TimelineContainer

@@ -6,6 +6,10 @@ import type {
 } from "react";
 import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
+import {
+  useRegionFocus,
+  type EditorRegion as EditorFocusRegion,
+} from "../focus/useEditorFocusStore";
 
 type SxValue = NonNullable<SxProps<Theme>>;
 type SxArray = Extract<SxValue, readonly unknown[]>;
@@ -19,6 +23,11 @@ interface EditorRegionProps {
   readonly sx?: SxProps<Theme>;
   readonly overlaySx?: SxProps<Theme>;
   readonly onMouseDown?: MouseEventHandler<HTMLDivElement>;
+  /**
+   * When set, this region claims keyboard ownership (Delete, etc.) on pointer
+   * interaction. See {@link useRegionFocus}.
+   */
+  readonly focusRegion?: EditorFocusRegion;
 }
 
 function isSxArray(sx: SxValue): sx is SxArray {
@@ -41,7 +50,9 @@ export function EditorRegion({
   sx,
   overlaySx,
   onMouseDown,
+  focusRegion,
 }: EditorRegionProps) {
+  const focusProps = useRegionFocus(focusRegion ?? "canvas");
   return (
     <Box
       sx={[
@@ -52,6 +63,7 @@ export function EditorRegion({
         ...toSxArray(sx),
       ]}
       onMouseDown={onMouseDown}
+      {...(focusRegion ? focusProps : {})}
     >
       {children}
       {blocked ? (

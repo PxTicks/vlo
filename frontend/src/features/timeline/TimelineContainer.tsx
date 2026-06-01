@@ -40,6 +40,7 @@ import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
 import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
+import { useEditorFocusStore } from "../../app/focus/useEditorFocusStore";
 import { buildTimelineClipPresentationIndex } from "./utils/clipPresentation";
 
 const containerStyles = {
@@ -319,7 +320,11 @@ function TimelineContainerComponent({
         return;
       }
 
-      if (!useTimelineStore.getState().isFocused) {
+      // Timeline-scoped shortcuts only fire when the timeline owns the
+      // keyboard. The focus authority makes the old asset-selection /
+      // canvas-selection cross-checks unnecessary: a different region owning
+      // focus means `region` simply isn't "timeline".
+      if (useEditorFocusStore.getState().region !== "timeline") {
         return;
       }
 
@@ -330,13 +335,6 @@ function TimelineContainerComponent({
 
       if (isShortcut && key === "v") {
         if (pasteCopiedClipAbove()) e.preventDefault();
-        return;
-      }
-
-      if (
-        (e.key === "Delete" || e.key === "Backspace") &&
-        useAssetBrowserSelectionStore.getState().selectedAssetIds.length > 0
-      ) {
         return;
       }
 

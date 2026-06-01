@@ -1,12 +1,8 @@
 import { useEffect } from "react";
-import {
-  parseMaskClipId,
-  selectMaskClipsForParent,
-  useTimelineStore,
-} from "../../../timeline";
+import { useTimelineStore } from "../../../timeline";
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
-import { useAssetBrowserSelectionStore } from "../../../userAssets";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
+import { useEditorFocusStore } from "../../../../app/focus/useEditorFocusStore";
 
 function isEditableTextTarget(target: EventTarget | null): boolean {
   return (
@@ -23,21 +19,6 @@ function isMaskEquationTarget(target: EventTarget | null): boolean {
   );
 }
 
-function getFallbackMaskId(
-  clipId: string,
-  removedMaskId: string,
-): string | null {
-  const state = useTimelineStore.getState();
-  const masks = selectMaskClipsForParent(state, clipId);
-  const selectedIndex = masks.findIndex(
-    (mask) => parseMaskClipId(mask.id)?.maskId === removedMaskId,
-  );
-  const fallbackMask =
-    masks[selectedIndex + 1] ?? masks[selectedIndex - 1] ?? null;
-
-  return fallbackMask ? (parseMaskClipId(fallbackMask.id)?.maskId ?? null) : null;
-}
-
 export function useCanvasSelectionKeyboard() {
   const removeClip = useTimelineStore((state) => state.removeClip);
   const removeClips = useTimelineStore((state) => state.removeClips);
@@ -51,9 +32,11 @@ export function useCanvasSelectionKeyboard() {
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       if (isEditableTextTarget(event.target)) return;
       if (isMaskEquationTarget(event.target)) return;
-      if (useAssetBrowserSelectionStore.getState().selectedAssetIds.length > 0) {
-        return;
-      }
+
+      // Canvas-scoped deletion only fires when the canvas owns the keyboard.
+      // This single check replaces the old asset-selection / canvas-selection
+      // cross-guards that each handler used to reconstruct independently.
+      if (useEditorFocusStore.getState().region !== "canvas") return;
 
       const selectionStore = useCanvasSelectionStore.getState();
       const activeSelection = selectionStore.activeSelection;
@@ -61,21 +44,18 @@ export function useCanvasSelectionKeyboard() {
 
       event.preventDefault();
 
+      // `activeSelection` mirrors the gizmo actually rendered on the canvas: it
+      // only resolves to a mask while mask editing is active, otherwise it is
+      // the clip (see useCanvasSelectionManager). Delete therefore acts on
+      // exactly the indicated object instead of walking through every mask.
       if (activeSelection.kind === "mask") {
-        const fallbackMaskId = getFallbackMaskId(
-          activeSelection.clipId,
-          activeSelection.maskId,
-        );
-
         removeClipMask(activeSelection.clipId, activeSelection.maskId);
-        setSelectedMask(activeSelection.clipId, fallbackMaskId);
+        // Fall back to the clip's transform gizmo rather than advancing to the
+        // next mask; a further, deliberate Delete then removes the clip. This
+        // is what prevents a held Delete from cascading through every mask.
+        setSelectedMask(activeSelection.clipId, null);
         selectClip(activeSelection.clipId, false);
-
-        if (fallbackMaskId) {
-          selectionStore.selectMask(activeSelection.clipId, fallbackMaskId);
-        } else {
-          selectionStore.selectClip(activeSelection.clipId);
-        }
+        selectionStore.selectClip(activeSelection.clipId);
         return;
       }
 

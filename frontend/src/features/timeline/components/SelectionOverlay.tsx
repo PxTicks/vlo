@@ -11,10 +11,16 @@ import {
   TRACK_HEADER_WIDTH,
   TRACK_HEIGHT,
   RULER_HEIGHT,
-  TICKS_PER_SECOND,
-  PIXELS_PER_SECOND,
   SNAP_THRESHOLD_PX,
 } from "../constants";
+import {
+  ticksToPx as ticksToPxAt,
+  pxToTicks as pxToTicksAt,
+} from "../utils/pixelGrid";
+import {
+  tickToMediaSeconds,
+  mediaSecondsToTickExact,
+} from "../../renderer/utils/mediaTime";
 import {
   getTicksPerFrame,
   resolveSelectionFps,
@@ -49,11 +55,15 @@ export function SelectionOverlay({
   const selectionStage = useTimelineSelectionStore((s) => s.selectionStage);
   const startTick = useTimelineSelectionStore((s) => s.selectionStartTick);
   const endTick = useTimelineSelectionStore((s) => s.selectionEndTick);
-  const updateSelectionEnd = useTimelineSelectionStore((s) => s.updateSelectionEnd);
+  const updateSelectionEnd = useTimelineSelectionStore(
+    (s) => s.updateSelectionEnd,
+  );
   const selectionFpsOverride = useTimelineSelectionStore(
     (s) => s.selectionFpsOverride,
   );
-  const selectionFrameStep = useTimelineSelectionStore((s) => s.selectionFrameStep);
+  const selectionFrameStep = useTimelineSelectionStore(
+    (s) => s.selectionFrameStep,
+  );
   const selectionMessage = useTimelineSelectionStore((s) => s.selectionMessage);
   const selectionIncludeModeEnabled = useTimelineSelectionStore(
     (s) => s.selectionIncludeModeEnabled,
@@ -128,7 +138,11 @@ export function SelectionOverlay({
 
   const clampFrameCount = useCallback(
     (rawFrameCount: number, mode: "nearest" | "floor" | "ceil" = "floor") => {
-      let frameCount = snapFrameCountToStep(rawFrameCount, effectiveFrameStep, mode);
+      let frameCount = snapFrameCountToStep(
+        rawFrameCount,
+        effectiveFrameStep,
+        mode,
+      );
       const maxFrameCount = getMaxFrameCount();
       if (maxFrameCount !== null) {
         frameCount = Math.min(frameCount, maxFrameCount);
@@ -167,16 +181,12 @@ export function SelectionOverlay({
   const dragOriginTickRef = useRef(0);
 
   const ticksToPx = useCallback(
-    (ticks: number) =>
-      (ticks / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale,
+    (ticks: number) => ticksToPxAt(ticks, zoomScale),
     [zoomScale],
   );
 
   const pxToTicks = useCallback(
-    (px: number) => {
-      const safeScale = Math.max(0.001, zoomScale);
-      return (px / (PIXELS_PER_SECOND * safeScale)) * TICKS_PER_SECOND;
-    },
+    (px: number) => pxToTicksAt(px, zoomScale),
     [zoomScale],
   );
 
@@ -293,7 +303,10 @@ export function SelectionOverlay({
       } = useTimelineSelectionStore.getState();
 
       if (draggingRef.current === "start") {
-        const rawStartTick = Math.max(0, dragOriginTickRef.current + deltaTicks);
+        const rawStartTick = Math.max(
+          0,
+          dragOriginTickRef.current + deltaTicks,
+        );
         const minStartTick = 0;
         const maxStartTick = Math.max(
           minStartTick,
@@ -347,10 +360,14 @@ export function SelectionOverlay({
         }
       } else if (draggingRef.current === "middle") {
         useInteractionStore.getState().clearSnapPreview();
-        const rawStartTick = Math.max(0, dragOriginTickRef.current + deltaTicks);
+        const rawStartTick = Math.max(
+          0,
+          dragOriginTickRef.current + deltaTicks,
+        );
         const snappedStartTick = snapTickToFrame(rawStartTick, ticksPerFrame);
         const durationFrameCount = clampFrameCount(
-          (selectionEndTick - selectionStartTick) / Math.max(1e-6, ticksPerFrame),
+          (selectionEndTick - selectionStartTick) /
+            Math.max(1e-6, ticksPerFrame),
           "floor",
         );
         const durationTicks = durationFrameCount * ticksPerFrame;
@@ -417,7 +434,7 @@ export function SelectionOverlay({
       ? null
       : TRACK_HEADER_WIDTH + ticksToPx(interactionSnapTick);
 
-  const currentDurationSeconds = (endTick - startTick) / TICKS_PER_SECOND;
+  const currentDurationSeconds = tickToMediaSeconds(endTick - startTick);
   const currentFrameCount = Math.max(
     1,
     Math.round((endTick - startTick) / Math.max(1e-6, ticksPerFrame)),
@@ -431,7 +448,7 @@ export function SelectionOverlay({
       }`
     : "No tracks selected";
   const trackSelectionPrompt = isTrackSelectionStage
-    ? selectionMessage ?? DEFAULT_TRACK_SELECTION_PROMPT
+    ? (selectionMessage ?? DEFAULT_TRACK_SELECTION_PROMPT)
     : null;
   const showRangeSelectionMessage =
     !!selectionMessage && !selectionIncludeModeEnabled;
@@ -455,13 +472,15 @@ export function SelectionOverlay({
 
     const val = parseFloat(valStr);
     if (!isNaN(val) && val > 0) {
-      const rawFrameCount = (val * TICKS_PER_SECOND) / ticksPerFrame;
+      const rawFrameCount = mediaSecondsToTickExact(val) / ticksPerFrame;
       const frameCount = snapFrameCountToStep(
         rawFrameCount,
         effectiveFrameStep,
         "floor",
       );
-      setLocalMaxTicksOverride(Math.max(ticksPerFrame, frameCount * ticksPerFrame));
+      setLocalMaxTicksOverride(
+        Math.max(ticksPerFrame, frameCount * ticksPerFrame),
+      );
       return;
     }
 
@@ -579,7 +598,9 @@ export function SelectionOverlay({
           pointerEvents: isTrackSelectionStage ? "none" : "auto",
         }}
         onPointerDown={
-          isTrackSelectionStage ? undefined : (e) => handlePointerDown("middle", e)
+          isTrackSelectionStage
+            ? undefined
+            : (e) => handlePointerDown("middle", e)
         }
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -675,7 +696,9 @@ export function SelectionOverlay({
                       width: 8,
                       height: 8,
                       borderRadius: "999px",
-                      bgcolor: isIncluded ? "#4fc3f7" : "rgba(255, 255, 255, 0.2)",
+                      bgcolor: isIncluded
+                        ? "#4fc3f7"
+                        : "rgba(255, 255, 255, 0.2)",
                       flexShrink: 0,
                     }}
                   />
@@ -718,20 +741,27 @@ export function SelectionOverlay({
           py: isTrackSelectionStage ? 0.75 : 1,
           display: "flex",
           flexDirection:
-            isTrackSelectionStage || showRangeSelectionMessage ? "column" : "row",
-          gap: isTrackSelectionStage ? 0.75 : showRangeSelectionMessage ? 1 : 1.5,
+            isTrackSelectionStage || showRangeSelectionMessage
+              ? "column"
+              : "row",
+          gap: isTrackSelectionStage
+            ? 0.75
+            : showRangeSelectionMessage
+              ? 1
+              : 1.5,
           alignItems:
             isTrackSelectionStage || showRangeSelectionMessage
               ? "stretch"
               : "center",
           borderRadius: 2,
-          width:
-            isTrackSelectionStage
-              ? "auto"
-              : isTrackSelectionStage || showRangeSelectionMessage
+          width: isTrackSelectionStage
+            ? "auto"
+            : isTrackSelectionStage || showRangeSelectionMessage
               ? "min(90vw, 920px)"
               : "max-content",
-          maxWidth: isTrackSelectionStage ? "min(88vw, 760px)" : "calc(100vw - 32px)",
+          maxWidth: isTrackSelectionStage
+            ? "min(88vw, 760px)"
+            : "calc(100vw - 32px)",
         }}
       >
         {trackSelectionPrompt ? (
@@ -766,13 +796,14 @@ export function SelectionOverlay({
           >
             <Box sx={{ display: "flex", alignItems: "center", mr: 1 }}>
               <Typography variant="body2" sx={{ color: "#aaa", mr: 0.5 }}>
-                Duration: {currentDurationSeconds.toFixed(2)}s ({currentFrameCount}f)
+                Duration: {currentDurationSeconds.toFixed(2)}s (
+                {currentFrameCount}f)
               </Typography>
               <BufferedTextInput
                 label=""
                 value={
                   localMaxTicks !== null
-                    ? (localMaxTicks / TICKS_PER_SECOND).toFixed(2)
+                    ? tickToMediaSeconds(localMaxTicks).toFixed(2)
                     : ""
                 }
                 placeholder="∞"
@@ -786,7 +817,9 @@ export function SelectionOverlay({
                     px: 0.5,
                     "& fieldset": {
                       border: "none",
-                      borderBottom: isOverRecommended ? "1px solid" : "1px dotted",
+                      borderBottom: isOverRecommended
+                        ? "1px solid"
+                        : "1px dotted",
                       borderColor: isOverRecommended ? "error.main" : "#666",
                       borderRadius: 0,
                     },
@@ -815,7 +848,9 @@ export function SelectionOverlay({
               <BufferedTextInput
                 label=""
                 value={
-                  selectionFpsOverride !== null ? String(selectionFpsOverride) : ""
+                  selectionFpsOverride !== null
+                    ? String(selectionFpsOverride)
+                    : ""
                 }
                 placeholder={String(resolvedRecommendedFps ?? projectFps)}
                 onCommit={handleFpsOverrideChange}
@@ -906,7 +941,9 @@ export function SelectionOverlay({
             display: "flex",
             alignItems: "center",
             gap: 1.5,
-            justifyContent: isTrackSelectionStage ? "space-between" : "flex-end",
+            justifyContent: isTrackSelectionStage
+              ? "space-between"
+              : "flex-end",
             flexWrap: "wrap",
             flexShrink: 0,
           }}

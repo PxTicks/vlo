@@ -12,10 +12,7 @@ import {
   mapSourceTimeToVisualTime,
 } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import {
-  PIXELS_PER_SECOND,
-  TICKS_PER_SECOND,
-} from "../constants";
+import { ticksToPx, pxToTicks } from "../utils/pixelGrid";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import type { TimelineClipPresentation } from "../utils/clipPresentation";
 import {
@@ -85,17 +82,14 @@ const OverlayItemRoot = styled(Box)({
 });
 
 function toBasePixels(ticks: number): number {
-  return (ticks / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
+  return ticksToPx(ticks, 1);
 }
 
 function toPresentationOffsetTicks(
   clipLocalX: number,
   zoomScale: number,
 ): number {
-  const safeScale = Math.max(0.001, zoomScale);
-  return Math.round(
-    (clipLocalX / safeScale / PIXELS_PER_SECOND) * TICKS_PER_SECOND,
-  );
+  return Math.round(pxToTicks(clipLocalX, zoomScale));
 }
 
 function getLanePosition(lane: "top" | "middle" | "bottom"): {
@@ -476,7 +470,10 @@ function TimelineClipOverlayEndpointGroup({
               ? { marginLeft: placement.insetPx, position: "relative" as const }
               : { position: "relative" as const }
             : index === 0
-              ? { marginRight: placement.insetPx, position: "relative" as const }
+              ? {
+                  marginRight: placement.insetPx,
+                  position: "relative" as const,
+                }
               : { position: "relative" as const };
 
         return (
@@ -542,7 +539,10 @@ function TimelineClipOverlayItemCollection({
         let verticalOffsetPx: number;
 
         if (placement.kind === "sourceTime") {
-          visualTicks = mapSourceTimeToVisualTime(clip, placement.sourceTimeTicks);
+          visualTicks = mapSourceTimeToVisualTime(
+            clip,
+            placement.sourceTimeTicks,
+          );
           offsetPx = placement.offsetPx;
           verticalOffsetPx = placement.verticalOffsetPx;
         } else if (placement.kind === "layerTime") {
@@ -601,8 +601,7 @@ function TimelineClipWidthSensitiveItemCollection({
   const displayDuration = presentation?.duration ?? clip.timelineDuration;
   const clipWidthPx = toBasePixels(displayDuration) * zoomScale;
   const visibleItems = useMemo(
-    () =>
-      items.filter((item) => isItemVisible(item, isSelected, clipWidthPx)),
+    () => items.filter((item) => isItemVisible(item, isSelected, clipWidthPx)),
     [clipWidthPx, isSelected, items],
   );
 
@@ -633,7 +632,8 @@ function TimelineClipOverlaySourceSlot({
     () =>
       items.filter(
         (item) =>
-          item.minClipWidthPx === undefined && isItemVisible(item, isSelected, null),
+          item.minClipWidthPx === undefined &&
+          isItemVisible(item, isSelected, null),
       ),
     [isSelected, items],
   );

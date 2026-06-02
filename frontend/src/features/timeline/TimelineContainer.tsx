@@ -21,11 +21,11 @@ import { TimelineRow } from "./components/TimelineRow";
 import { TimelineClipItem } from "./components/TimelineClip";
 import { TimelineToolbar } from "./components/TimelineToolbar";
 import { HoverGapIndicator } from "./components/HoverGapIndicator";
+import { snapTickToFrameGrid } from "./utils/frameGrid";
+import { mediaSecondsToTickExact } from "../renderer/utils/mediaTime";
 import {
   TRACK_HEIGHT,
-  TICKS_PER_SECOND,
   TRACK_HEADER_WIDTH,
-  PIXELS_PER_SECOND,
   MIN_ZOOM,
   MAX_ZOOM,
   RULER_HEIGHT,
@@ -278,8 +278,8 @@ function TimelineContainerComponent({
       }
     }
 
-    const minDurationTicks = 15 * TICKS_PER_SECOND;
-    const bufferTicks = 10 * TICKS_PER_SECOND;
+    const minDurationTicks = mediaSecondsToTickExact(15);
+    const bufferTicks = mediaSecondsToTickExact(10);
     const totalDurationTicks = Math.max(
       minDurationTicks,
       maxClipEnd + bufferTicks,
@@ -396,13 +396,10 @@ function TimelineContainerComponent({
             const clickX = e.clientX - rect.left;
             const timelineX = clickX + scrollLeft - TRACK_HEADER_WIDTH;
 
-            const newTime =
-              (timelineX / zoomScale / PIXELS_PER_SECOND) * TICKS_PER_SECOND;
+            const newTime = pxToTicks(timelineX);
 
             const fps = useProjectStore.getState().config.fps;
-            const ticksPerFrame = TICKS_PER_SECOND / fps;
-            const snappedTicks =
-              Math.round(newTime / ticksPerFrame) * ticksPerFrame;
+            const snappedTicks = snapTickToFrameGrid(newTime, fps);
 
             playbackClock.setTime(Math.max(0, snappedTicks));
           }

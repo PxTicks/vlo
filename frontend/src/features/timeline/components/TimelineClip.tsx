@@ -23,12 +23,12 @@ import FastRewindIcon from "@mui/icons-material/FastRewind";
 import { styled } from "@mui/material/styles";
 import {
   CLIP_HEIGHT,
-  TICKS_PER_SECOND,
-  PIXELS_PER_SECOND,
   TRACK_HEIGHT,
   TRACK_HEADER_WIDTH,
   RULER_HEIGHT,
 } from "../constants";
+import { ticksToPx } from "../utils/pixelGrid";
+import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import type {
   AssetBackedBaseClip,
   AssetBackedTimelineClip,
@@ -127,17 +127,21 @@ function TimelineClipComponent({
   presentation,
 }: TimelineClipProps) {
   const domRef = useRef<HTMLElement | null>(null);
-  const [contextMenuPos, setContextMenuPos] = useState<
-    { x: number; y: number } | null
-  >(null);
+  const [contextMenuPos, setContextMenuPos] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
-  const [isExtractionSnackbarOpen, setIsExtractionSnackbarOpen] = useState(false);
+  const [isExtractionSnackbarOpen, setIsExtractionSnackbarOpen] =
+    useState(false);
   const [isReversingClip, setIsReversingClip] = useState(false);
   const openCompositeClip = useCompositeTimelineStore(
     (state) => state.openCompositeClip,
   );
 
-  const startTime = presentation?.start ?? ("start" in clip ? (clip as TimelineClipType).start : 0);
+  const startTime =
+    presentation?.start ??
+    ("start" in clip ? (clip as TimelineClipType).start : 0);
   const displayDuration = presentation?.duration ?? clip.timelineDuration;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
   const canOpenCompositeClip =
@@ -194,7 +198,8 @@ function TimelineClipComponent({
     const liveClip = state.clips.find((candidate) => candidate.id === clip.id);
     if (!liveClip || liveClip.type === "mask") return null;
     const markers = (liveClip.components ?? []).find(
-      (component): component is MarkersComponent => component.type === "markers",
+      (component): component is MarkersComponent =>
+        component.type === "markers",
     );
     if (!markers) return null;
     return markers.parameters.markers.some(isBeatMarker) ? markers : null;
@@ -205,9 +210,8 @@ function TimelineClipComponent({
   const topPos = isOverlay ? 0 : trackIndex * TRACK_HEIGHT + RULER_HEIGHT + 5;
 
   // 3. Base Geometry Calculations
-  const baseWidth =
-    (displayDuration / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
-  const baseLeft = (startTime / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
+  const baseWidth = ticksToPx(displayDuration, 1);
+  const baseLeft = ticksToPx(startTime, 1);
 
   const { attributes, listeners, setNodeRef, isDragging, transform } =
     useDraggable({
@@ -375,13 +379,17 @@ function TimelineClipComponent({
     if (remaining.length === 0) {
       store.removeClipComponent(clip.id, beatMarkersComponent.id);
     } else {
-      store.updateClipComponent(clip.id, beatMarkersComponent.id, (component) => {
-        if (component.type !== "markers") return component;
-        return {
-          ...component,
-          parameters: { ...component.parameters, markers: remaining },
-        };
-      });
+      store.updateClipComponent(
+        clip.id,
+        beatMarkersComponent.id,
+        (component) => {
+          if (component.type !== "markers") return component;
+          return {
+            ...component,
+            parameters: { ...component.parameters, markers: remaining },
+          };
+        },
+      );
     }
     closeContextMenu();
   };
@@ -397,9 +405,7 @@ function TimelineClipComponent({
       await reverseTimelineClip(timelineClip.id);
     } catch (error) {
       window.alert(
-        error instanceof Error
-          ? error.message
-          : "Failed to reverse the clip.",
+        error instanceof Error ? error.message : "Failed to reverse the clip.",
       );
     } finally {
       setIsReversingClip(false);
@@ -579,7 +585,7 @@ function TimelineClipComponent({
         variant="caption"
         sx={{ fontSize: "0.6rem", opacity: 0.8, pointerEvents: "none" }}
       >
-        {(displayDuration / TICKS_PER_SECOND).toFixed(2)}s
+        {tickToMediaSeconds(displayDuration).toFixed(2)}s
       </Typography>
       <Menu
         open={contextMenuPos !== null}

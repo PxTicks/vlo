@@ -1,11 +1,8 @@
 import { useEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
-import {
-  PIXELS_PER_SECOND,
-  TICKS_PER_SECOND,
-  TRACK_HEADER_WIDTH,
-} from "../constants";
+import { TRACK_HEADER_WIDTH } from "../constants";
+import { ticksToPx } from "../utils/pixelGrid";
 import { playbackClock } from "../../player/services/PlaybackClock";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 
@@ -21,7 +18,7 @@ export const TimelinePlayhead = () => {
 
       // Match the exact formula structure of TimelineClip.tsx:
       // 1. Calculate base pixels (unzoomed)
-      const basePx = (currentTime / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
+      const basePx = ticksToPx(currentTime, 1);
       // 2. Apply zoom
       const x = basePx * zoomScale;
 

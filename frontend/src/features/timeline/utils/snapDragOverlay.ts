@@ -10,7 +10,7 @@ import type {
   TimelineClipOverlayDragContext,
   TimelineClipOverlayItemDrag,
 } from "../clipOverlayApi";
-import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../constants";
+import { ticksToPx } from "./pixelGrid";
 
 /**
  * Live-drag CSS variable read by `TimelineClipOverlayLayer`'s timed-item
@@ -28,7 +28,7 @@ function clearLiveDx(element: HTMLElement): void {
 }
 
 function ticksToBasePixels(visualTicks: number): number {
-  return (visualTicks / TICKS_PER_SECOND) * PIXELS_PER_SECOND;
+  return ticksToPx(visualTicks, 1);
 }
 
 function clipOffsetToPresentationBasePixels(
@@ -191,11 +191,19 @@ export function buildFrameSnappedLayerTimeDrag(
   const prevVisualTicks =
     prevNeighborLayerInputTicks === null
       ? null
-      : mapLayerInputToVisualTime(clip, transformId, prevNeighborLayerInputTicks);
+      : mapLayerInputToVisualTime(
+          clip,
+          transformId,
+          prevNeighborLayerInputTicks,
+        );
   const nextVisualTicks =
     nextNeighborLayerInputTicks === null
       ? null
-      : mapLayerInputToVisualTime(clip, transformId, nextNeighborLayerInputTicks);
+      : mapLayerInputToVisualTime(
+          clip,
+          transformId,
+          nextNeighborLayerInputTicks,
+        );
 
   function resolveDrop(deltaVisualTimeTicks: number): {
     visualTicks: number;

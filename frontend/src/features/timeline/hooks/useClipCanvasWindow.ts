@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { RefObject } from "react";
 import type {
   AssetBackedBaseClip,
   AssetBackedTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
-import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../constants";
+import { ticksToPx } from "../utils/pixelGrid";
 import { useInteractionStore } from "./useInteractionStore";
 import { useTimelineViewStore } from "./useTimelineViewStore";
 
@@ -56,9 +62,15 @@ export function useClipCanvasWindow({
   });
 
   const clipStart = "start" in clip ? (clip as TimelineClip).start : null;
-  const layoutRef = useRef({ canvasLeft: -1, canvasHeight: -1, canvasWidth: -1 });
+  const layoutRef = useRef({
+    canvasLeft: -1,
+    canvasHeight: -1,
+    canvasWidth: -1,
+  });
   const viewportRef = useRef({ scrollLeft: 0, containerWidth: 0 });
-  const scrollContainer = useTimelineViewStore((state) => state.scrollContainer);
+  const scrollContainer = useTimelineViewStore(
+    (state) => state.scrollContainer,
+  );
 
   // Reset wing sizes during render whenever the active clip/asset changes or
   // the hook is re-enabled, using the "store previous render value" pattern.
@@ -131,10 +143,8 @@ export function useClipCanvasWindow({
   }, [clip.assetId]);
 
   const visibleDurationTicks = presentationDuration ?? clip.timelineDuration;
-  const visibleDurationPx =
-    (visibleDurationTicks / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
-  const maxLeftPx =
-    (clip.transformedOffset / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
+  const visibleDurationPx = ticksToPx(visibleDurationTicks, zoomScale);
+  const maxLeftPx = ticksToPx(clip.transformedOffset, zoomScale);
   const leftWingPx = Math.min(maxLeftPx, dynamicWings.left);
   const hasUnboundedRightSide =
     clip.type === "image" || clip.sourceDuration === null;
@@ -143,7 +153,7 @@ export function useClipCanvasWindow({
     : clip.transformedDuration - clip.transformedOffset - clip.timelineDuration;
   const maxRightPx = hasUnboundedRightSide
     ? Number.POSITIVE_INFINITY
-    : (remainingRightTicks / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
+    : ticksToPx(remainingRightTicks, zoomScale);
   const rightWingPx = hasUnboundedRightSide
     ? dynamicWings.right
     : Math.min(Math.max(0, maxRightPx), dynamicWings.right);
@@ -159,12 +169,14 @@ export function useClipCanvasWindow({
 
     if (isDragging || clipStart === null) {
       intLocalStart = 0;
-      intWidth = Math.min(MAX_DRAGGING_CANVAS_WIDTH, Math.ceil(fullCanvasWidth));
+      intWidth = Math.min(
+        MAX_DRAGGING_CANVAS_WIDTH,
+        Math.ceil(fullCanvasWidth),
+      );
     } else {
       const { scrollLeft, containerWidth } = viewportRef.current;
       const layoutStart = presentationStart ?? clipStart;
-      const clipGlobalStart =
-        (layoutStart / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
+      const clipGlobalStart = ticksToPx(layoutStart, zoomScale);
       const virtualGlobalStart = clipGlobalStart - leftWingPx;
       const viewStart = scrollLeft - VIEWPORT_BUFFER_PX;
       const viewEnd = scrollLeft + containerWidth + VIEWPORT_BUFFER_PX;

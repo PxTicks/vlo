@@ -1,4 +1,4 @@
-import { TICKS_PER_SECOND } from "../constants";
+import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
 
 export function durationSecondsToTicks(
   durationSeconds: number | null | undefined,
@@ -11,5 +11,5 @@ export function durationSecondsToTicks(
     return null;
   }
 
-  return Math.max(0, Math.floor(durationSeconds * TICKS_PER_SECOND));
+  return Math.max(0, mediaSecondsToTick(durationSeconds, "floor"));
 }

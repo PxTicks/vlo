@@ -1,4 +1,8 @@
-import { TICKS_PER_SECOND } from "../constants";
+import {
+  mediaTimestampToFirstAvailableTick,
+  mediaSecondsToTick,
+  tickToMediaSeconds,
+} from "../../renderer/utils/mediaTime";
 
 export function getFirstPresentedSampleTicks(
   firstTimestampSeconds?: number | null,
@@ -14,14 +18,17 @@ export function getFirstPresentedSampleTicks(
   // Round UP for the same reason as the thumbnail path: a round-to-nearest can
   // floor below the true first sample timestamp, producing a request before the
   // first sample. See getFirstPresentedFrameTicks in thumbnailTiming.ts.
-  return Math.ceil(firstTimestampSeconds * TICKS_PER_SECOND);
+  return mediaTimestampToFirstAvailableTick(firstTimestampSeconds);
 }
 
 export function clampWaveformAssetTickToFirstSample(
   assetTick: number,
   firstTimestampSeconds?: number | null,
 ): number {
-  return Math.max(assetTick, getFirstPresentedSampleTicks(firstTimestampSeconds));
+  return Math.max(
+    assetTick,
+    getFirstPresentedSampleTicks(firstTimestampSeconds),
+  );
 }
 
 export function resolveWaveformBucketRequestSeconds(
@@ -34,13 +41,13 @@ export function resolveWaveformBucketRequestSeconds(
     return 0;
   }
 
-  const bucketStartTicks = Math.round(
-    (bucketIndex * bucketIntervalFrames * TICKS_PER_SECOND) / sampleRate,
+  const bucketStartTicks = mediaSecondsToTick(
+    (bucketIndex * bucketIntervalFrames) / sampleRate,
   );
   const requestTicks = clampWaveformAssetTickToFirstSample(
     bucketStartTicks,
     firstTimestampSeconds,
   );
 
-  return requestTicks / TICKS_PER_SECOND;
+  return tickToMediaSeconds(requestTicks);
 }

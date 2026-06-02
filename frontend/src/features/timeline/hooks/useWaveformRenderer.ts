@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type {
   AssetBackedBaseClip,
   AssetBackedTimelineClip,
@@ -7,6 +13,7 @@ import type {
 import { getAssetInput, useAsset } from "../../userAssets";
 import { calculateClipTime } from "../../transformations";
 import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../constants";
+import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import {
   waveformCacheService,
   WAVEFORM_BASE_SAMPLES_PER_PEAK,
@@ -122,7 +129,10 @@ function groupContiguousIndices(indices: number[]): BucketRange[] {
   return ranges;
 }
 
-function getFramesPerPeak(level: number, metadata: WaveformAssetMetadata): number {
+function getFramesPerPeak(
+  level: number,
+  metadata: WaveformAssetMetadata,
+): number {
   return metadata.baseSamplesPerPeak * 2 ** level;
 }
 
@@ -158,10 +168,7 @@ function getAssetTickForPixel(
 }
 
 function ticksToSampleFrame(assetTick: number, sampleRate: number): number {
-  return Math.max(
-    0,
-    Math.round((assetTick / TICKS_PER_SECOND) * sampleRate),
-  );
+  return Math.max(0, Math.round(tickToMediaSeconds(assetTick) * sampleRate));
 }
 
 export function useWaveformRenderer({
@@ -176,7 +183,8 @@ export function useWaveformRenderer({
   mapPresentationOffsetToClipOffset,
 }: UseWaveformRendererProps): UseWaveformRendererResult {
   const asset = useAsset(clip.assetId);
-  const [waveformStatus, setWaveformStatus] = useState<WaveformStatus>("loading");
+  const [waveformStatus, setWaveformStatus] =
+    useState<WaveformStatus>("loading");
   const abortControllerRef = useRef<AbortController | null>(null);
   const pendingDrawRef = useRef(false);
   const throttleLastRunRef = useRef(0);
@@ -288,10 +296,18 @@ export function useWaveformRenderer({
         mapPresentationOffsetToClipOffset,
       );
       const sourceFrame = ticksToSampleFrame(assetTick, metadata.sampleRate);
-      const nextSourceFrame = ticksToSampleFrame(nextAssetTick, metadata.sampleRate);
-      const framesPerPixel = Math.max(1, Math.abs(nextSourceFrame - sourceFrame));
+      const nextSourceFrame = ticksToSampleFrame(
+        nextAssetTick,
+        metadata.sampleRate,
+      );
+      const framesPerPixel = Math.max(
+        1,
+        Math.abs(nextSourceFrame - sourceFrame),
+      );
       const level = resolveWaveformLevel(framesPerPixel, metadata);
-      const peakIndex = Math.floor(sourceFrame / getFramesPerPeak(level, metadata));
+      const peakIndex = Math.floor(
+        sourceFrame / getFramesPerPeak(level, metadata),
+      );
       const match = waveformCacheService.findClosestBucket(
         clip.assetId,
         level,
@@ -304,7 +320,9 @@ export function useWaveformRenderer({
 
       const bucketOffset = match.peakIndex * 2;
       const minAmplitude = int16ToAmplitude(match.bucket[bucketOffset] ?? 0);
-      const maxAmplitude = int16ToAmplitude(match.bucket[bucketOffset + 1] ?? 0);
+      const maxAmplitude = int16ToAmplitude(
+        match.bucket[bucketOffset + 1] ?? 0,
+      );
       const barTop = Math.round(((1 - maxAmplitude) * height) / 2);
       const barBottom = Math.round(((1 - minAmplitude) * height) / 2);
       const barHeight = Math.max(1, barBottom - barTop);
@@ -428,13 +446,23 @@ export function useWaveformRenderer({
           mapPresentationOffsetToClipOffset,
         );
         const sourceFrame = ticksToSampleFrame(assetTick, metadata.sampleRate);
-        const nextSourceFrame = ticksToSampleFrame(nextAssetTick, metadata.sampleRate);
-        const framesPerPixel = Math.max(1, Math.abs(nextSourceFrame - sourceFrame));
+        const nextSourceFrame = ticksToSampleFrame(
+          nextAssetTick,
+          metadata.sampleRate,
+        );
+        const framesPerPixel = Math.max(
+          1,
+          Math.abs(nextSourceFrame - sourceFrame),
+        );
         const level = resolveWaveformLevel(framesPerPixel, metadata);
-        const peakIndex = Math.floor(sourceFrame / getFramesPerPeak(level, metadata));
+        const peakIndex = Math.floor(
+          sourceFrame / getFramesPerPeak(level, metadata),
+        );
         const bucketIndex = Math.floor(peakIndex / metadata.peaksPerBucket);
 
-        if (!waveformCacheService.hasBucket(clip.assetId!, level, bucketIndex)) {
+        if (
+          !waveformCacheService.hasBucket(clip.assetId!, level, bucketIndex)
+        ) {
           const bucketsAtLevel = bucketsByLevel.get(level) ?? new Set<number>();
           bucketsAtLevel.add(bucketIndex);
           bucketsByLevel.set(level, bucketsAtLevel);
@@ -463,7 +491,11 @@ export function useWaveformRenderer({
       );
       const endSeconds = endFrameExclusive / metadata.sampleRate;
 
-      for (let bucketIndex = range.start; bucketIndex <= range.end; bucketIndex++) {
+      for (
+        let bucketIndex = range.start;
+        bucketIndex <= range.end;
+        bucketIndex++
+      ) {
         mutableBuckets.set(bucketIndex, createMutableBucket());
       }
 
@@ -474,7 +506,11 @@ export function useWaveformRenderer({
         }
 
         const channelData: Float32Array[] = [];
-        for (let channelIndex = 0; channelIndex < sample.numberOfChannels; channelIndex++) {
+        for (
+          let channelIndex = 0;
+          channelIndex < sample.numberOfChannels;
+          channelIndex++
+        ) {
           const options = {
             planeIndex: channelIndex,
             format: "f32-planar" as const,
@@ -503,7 +539,11 @@ export function useWaveformRenderer({
             let frameMin = 1;
             let frameMax = -1;
 
-            for (let channelIndex = 0; channelIndex < channelData.length; channelIndex++) {
+            for (
+              let channelIndex = 0;
+              channelIndex < channelData.length;
+              channelIndex++
+            ) {
               const sampleValue = channelData[channelIndex]?.[localFrame] ?? 0;
               frameMin = Math.min(frameMin, sampleValue);
               frameMax = Math.max(frameMax, sampleValue);
@@ -520,8 +560,14 @@ export function useWaveformRenderer({
               (absoluteFrame - bucketStartFrame) / framesPerPeak,
             );
             bucket.initialized[peakIndex] = 1;
-            bucket.min[peakIndex] = Math.min(bucket.min[peakIndex] ?? 1, frameMin);
-            bucket.max[peakIndex] = Math.max(bucket.max[peakIndex] ?? -1, frameMax);
+            bucket.min[peakIndex] = Math.min(
+              bucket.min[peakIndex] ?? 1,
+              frameMin,
+            );
+            bucket.max[peakIndex] = Math.max(
+              bucket.max[peakIndex] ?? -1,
+              frameMax,
+            );
           }
         }
 
@@ -530,7 +576,11 @@ export function useWaveformRenderer({
 
       let storedAnyBucket = false;
 
-      for (let bucketIndex = range.start; bucketIndex <= range.end; bucketIndex++) {
+      for (
+        let bucketIndex = range.start;
+        bucketIndex <= range.end;
+        bucketIndex++
+      ) {
         const bucket = mutableBuckets.get(bucketIndex);
         if (!bucket || signal.aborted) {
           return false;
@@ -592,19 +642,26 @@ export function useWaveformRenderer({
         }
 
         const sink = new AudioSampleSink(track);
-        const sortedLevels = Array.from(missingBuckets.keys()).sort((a, b) => a - b);
+        const sortedLevels = Array.from(missingBuckets.keys()).sort(
+          (a, b) => a - b,
+        );
 
         for (const level of sortedLevels) {
           if (signal.aborted) {
             return;
           }
 
-          const bucketIndices = Array.from(missingBuckets.get(level) ?? []).sort(
-            (a, b) => a - b,
-          );
+          const bucketIndices = Array.from(
+            missingBuckets.get(level) ?? [],
+          ).sort((a, b) => a - b);
 
           for (const range of groupContiguousIndices(bucketIndices)) {
-            const stored = await analyzeBucketRange(sink, metadata, level, range);
+            const stored = await analyzeBucketRange(
+              sink,
+              metadata,
+              level,
+              range,
+            );
             if (stored) {
               scheduleDraw();
             }

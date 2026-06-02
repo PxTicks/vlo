@@ -1,4 +1,7 @@
-import { TICKS_PER_SECOND } from "../../timeline";
+import {
+  mediaSecondsToTickExact,
+  tickToMediaSeconds,
+} from "../../renderer/utils/mediaTime";
 
 declare global {
   interface Window {
@@ -65,8 +68,8 @@ export class AudioSystem {
     // Elapsed time in seconds since play started
     const elapsed = this.ctx.currentTime - this.startTime;
 
-    // Convert to ticks and add to start
-    return this.playbackStartTicks + elapsed * TICKS_PER_SECOND;
+    // Convert to ticks and add to start (fractional clock — no rounding)
+    return this.playbackStartTicks + mediaSecondsToTickExact(elapsed);
   }
 
   /**
@@ -75,7 +78,7 @@ export class AudioSystem {
   ticksToContextTime(ticks: number): number {
     if (!this.ctx) return 0;
     const ticksElapsed = ticks - this.playbackStartTicks;
-    const secondsElapsed = ticksElapsed / TICKS_PER_SECOND;
+    const secondsElapsed = tickToMediaSeconds(ticksElapsed);
     return this.startTime + secondsElapsed;
   }
 

@@ -5,6 +5,7 @@ export {
   snapFrameTimeSeconds,
   tickToMediaSeconds,
   mediaSecondsToTick,
+  mediaSecondsToTickExact,
   mediaTimestampToFirstAvailableTick,
   frameIndexToOutputTimestamp,
 } from "./utils/mediaTime";

@@ -6,8 +6,8 @@ import {
   PIXELS_PER_SECOND,
   TRACK_HEADER_WIDTH,
   RULER_HEIGHT,
-  TICKS_PER_SECOND,
 } from "../constants";
+import { snapTickToFrameGrid } from "../utils/frameGrid";
 import { playbackClock } from "../../player/services/PlaybackClock";
 
 interface TimelineRulerProps {
@@ -155,8 +155,7 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
 
     // Snap to Frame
     const fps = useProjectStore.getState().config.fps;
-    const ticksPerFrame = TICKS_PER_SECOND / fps; // TICKS_PER_SECOND / fps
-    const snappedTicks = Math.round(rawTicks / ticksPerFrame) * ticksPerFrame;
+    const snappedTicks = snapTickToFrameGrid(rawTicks, fps);
 
     playbackClock.setTime(snappedTicks);
   };

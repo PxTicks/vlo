@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { TICKS_PER_SECOND, PIXELS_PER_SECOND, CLIP_HEIGHT } from "../constants";
+import { mediaSecondsToTickExact } from "../../renderer/utils/mediaTime";
 import type {
   AssetBackedBaseClip,
   AssetBackedTimelineClip,
@@ -155,7 +156,8 @@ export function useThumbnailRenderer({
       }
 
       const pixelDeltaFromClipStart = globalX - leftWingPx;
-      const presentationTickDelta = pixelDeltaFromClipStart * currentTicksPerPixel;
+      const presentationTickDelta =
+        pixelDeltaFromClipStart * currentTicksPerPixel;
       const tickDelta =
         mapPresentationOffsetToClipOffset?.(presentationTickDelta) ??
         presentationTickDelta;
@@ -260,7 +262,9 @@ export function useThumbnailRenderer({
               : await ensureAssetSourceLoaded(asset.id);
           if (!hydratedVideoAsset) return;
 
-          const cachedMetadata = thumbnailCacheService.getMetadata(clip.assetId!);
+          const cachedMetadata = thumbnailCacheService.getMetadata(
+            clip.assetId!,
+          );
           let aspectRatio = cachedMetadata?.aspectRatio;
           let firstTimestampSeconds = cachedMetadata?.firstTimestampSeconds;
 
@@ -373,7 +377,8 @@ export function useThumbnailRenderer({
                 zoomLog,
                 requestedBucketIndex ??
                   Math.floor(
-                    (sample.timestamp * TICKS_PER_SECOND) / bucketIntervalTicks,
+                    mediaSecondsToTickExact(sample.timestamp) /
+                      bucketIntervalTicks,
                   ),
               ),
               bitmap,

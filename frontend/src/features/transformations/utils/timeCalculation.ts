@@ -1,7 +1,7 @@
 import type { TimelineClip, ClipTransform } from "../../../types/TimelineTypes";
 import type { ScalarParameter, SplinePoint, SpeedTransform } from "../types";
 import { MonotoneCubicSpline } from "./MonotoneCubicSpline";
-import { TICKS_PER_SECOND } from "../../timeline";
+import { TICKS_PER_SECOND } from "../../timeline/constants";
 
 // Cache for Spline Objects to avoid re-creation/sorting overhead
 const splineObjectCache = new Map<string, MonotoneCubicSpline>();
@@ -362,8 +362,10 @@ export function mapSourceTimeToVisualTime(
   clip: TimelineClip,
   sourceTime: number,
 ): number {
-  return pushTimeThroughTransforms(clip.transformations || [], sourceTime) -
-    (clip.transformedOffset || 0);
+  return (
+    pushTimeThroughTransforms(clip.transformations || [], sourceTime) -
+    (clip.transformedOffset || 0)
+  );
 }
 
 /**

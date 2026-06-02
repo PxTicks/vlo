@@ -1,8 +1,12 @@
 import { Input, AudioBufferSink } from "mediabunny";
 import type { WrappedAudioBuffer } from "mediabunny";
-import { TICKS_PER_SECOND } from "../../timeline";
+import { ticksPerFrame } from "../../timeline";
 import { resolveScalar } from "../../transformations";
-import { calculatePlayerFrameTime } from "../utils/renderTime";
+import {
+  calculatePlayerFrameTime,
+  mediaSecondsToTickExact,
+  tickToMediaSeconds,
+} from "../utils/mediaTime";
 import type { ScalarParameter } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
@@ -135,10 +139,7 @@ export class TrackAudioRenderer {
       // Fallback to stored-range lookup when running without a resolver.
       for (const candidate of trackClips) {
         const clipEnd = candidate.start + candidate.timelineDuration;
-        if (
-          candidate.start <= presentationTick &&
-          presentationTick < clipEnd
-        ) {
+        if (candidate.start <= presentationTick && presentationTick < clipEnd) {
           return { clip: candidate, effectiveTick: presentationTick };
         }
       }
@@ -157,7 +158,9 @@ export class TrackAudioRenderer {
       clip,
       presentationTick,
     );
-    return calculatePlayerFrameTime(clip, effectiveTick) * TICKS_PER_SECOND;
+    return mediaSecondsToTickExact(
+      calculatePlayerFrameTime(clip, effectiveTick),
+    );
   }
 
   private evaluateCompositePlaybackRate(
@@ -195,7 +198,7 @@ export class TrackAudioRenderer {
     const targetSourceTicks = startSourceTicks + sourceDurationTicks;
 
     let low = 0;
-    let high = Math.max(sourceDurationTicks, TICKS_PER_SECOND / 60);
+    let high = Math.max(sourceDurationTicks, ticksPerFrame(60));
 
     for (let attempt = 0; attempt < 24; attempt += 1) {
       const sourceAtHigh = this.getSourceTicksAtPresentationTick(
@@ -334,7 +337,7 @@ export class TrackAudioRenderer {
     // Determine target ticks mapping
     const getTargetTicks = (ctxTime: number) => {
       const deltaSeconds = ctxTime - timeMapping.baseContextTime;
-      return timeMapping.baseTicks + deltaSeconds * TICKS_PER_SECOND;
+      return timeMapping.baseTicks + mediaSecondsToTickExact(deltaSeconds);
     };
 
     const clipCurveCache = new Map<string, ClipCurveEvaluators>();
@@ -414,13 +417,13 @@ export class TrackAudioRenderer {
       gainNode.connect(destination);
 
       const clipCurves = getClipCurveEvaluators(activeClip);
-      const contentTicks = totalSourceDuration * TICKS_PER_SECOND;
+      const contentTicks = mediaSecondsToTickExact(totalSourceDuration);
       const wallDurationTicks = this.solvePresentationDurationTicks(
         activeClip,
         startTargetTicks,
         contentTicks,
       );
-      const wallDuration = wallDurationTicks / TICKS_PER_SECOND;
+      const wallDuration = tickToMediaSeconds(wallDurationTicks);
 
       if (!Number.isFinite(wallDuration) || wallDuration <= 0) {
         resetStagingState();
@@ -435,7 +438,8 @@ export class TrackAudioRenderer {
       );
 
       const speedCurve = new Float32Array(sampleCount);
-      const timeStep = (wallDuration * TICKS_PER_SECOND) / (sampleCount - 1);
+      const timeStep =
+        mediaSecondsToTickExact(wallDuration) / (sampleCount - 1);
 
       for (let i = 0; i < sampleCount; i++) {
         const t = startTargetTicks + i * timeStep;
@@ -486,7 +490,7 @@ export class TrackAudioRenderer {
         // Generate Volume Curve (combined with de-clicking envelope)
         const volumeCurve = new Float32Array(sampleCount);
         const volumeTimeStep =
-          (wallDuration * TICKS_PER_SECOND) / (sampleCount - 1);
+          mediaSecondsToTickExact(wallDuration) / (sampleCount - 1);
         const fadeInSamples = Math.max(
           1,
           Math.floor((actualFade / wallDuration) * sampleCount),
@@ -564,7 +568,10 @@ export class TrackAudioRenderer {
       // Active clip lookup by *presentation* tick. The returned
       // `effectiveTick` has already applied the clip's static/ripple
       // placement model and feeds calculatePlayerFrameTime below.
-      const resolved = this.findActiveClipAtPresentation(trackClips, targetTicks);
+      const resolved = this.findActiveClipAtPresentation(
+        trackClips,
+        targetTicks,
+      );
       const activeClip = resolved?.clip;
       const effectiveTrackTick = resolved?.effectiveTick ?? targetTicks;
 
@@ -688,13 +695,13 @@ export class TrackAudioRenderer {
       c.staging.totalLength += buffer.length;
       c.staging.totalSourceDuration += buffer.duration;
 
-      const chunkContentTicks = buffer.duration * TICKS_PER_SECOND;
+      const chunkContentTicks = mediaSecondsToTickExact(buffer.duration);
       const chunkWallDurationTicks = this.solvePresentationDurationTicks(
         activeClip,
         targetTicks,
         chunkContentTicks,
       );
-      const chunkWallDuration = chunkWallDurationTicks / TICKS_PER_SECOND;
+      const chunkWallDuration = tickToMediaSeconds(chunkWallDurationTicks);
 
       if (!Number.isFinite(chunkWallDuration) || chunkWallDuration <= 0) {
         await flushStagingBuffer();

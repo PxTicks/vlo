@@ -1,7 +1,7 @@
 // src/components/timeline/utils/collision.ts
 
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { TICKS_PER_SECOND } from "../constants";
+import { ticksPerFrame } from "./frameGrid";
 
 // --- TYPES & INTERFACES ---
 
@@ -33,7 +33,7 @@ function isCollisionObstacle(clip: TimelineClip): boolean {
 export const round = (num: number) => Math.round(num);
 
 export const getMinimumClipDurationTicks = (projectFps: number): number =>
-  TICKS_PER_SECOND / Math.max(1, projectFps);
+  ticksPerFrame(Math.max(1, projectFps));
 
 /**
  * Pure function: Determines the geometric relationship between two intervals.
@@ -103,7 +103,10 @@ export const resolveCollision = (
   // 1. Prepare Entities (Clips + Wall)
   const otherClips: CollisionEntity[] = allClips
     .filter(
-      (c) => c.trackId === trackId && c.id !== movingClipId && isCollisionObstacle(c),
+      (c) =>
+        c.trackId === trackId &&
+        c.id !== movingClipId &&
+        isCollisionObstacle(c),
     )
     .map((c) => ({
       id: c.id,
@@ -220,7 +223,8 @@ export const getResizeConstraints = (
   minDuration: number = 1,
 ) => {
   const trackClips = allClips.filter(
-    (c) => c.trackId === clip.trackId && c.id !== clip.id && isCollisionObstacle(c),
+    (c) =>
+      c.trackId === clip.trackId && c.id !== clip.id && isCollisionObstacle(c),
   );
 
   if (direction === "left") {

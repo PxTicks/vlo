@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getRuntimeStatus } from "../../../services/runtimeApi";
 import type {
   ClipMaskMode,
@@ -17,13 +11,12 @@ import {
   TICKS_PER_SECOND,
   countSam2MaskAssetConsumers,
   useTimelineStore,
+  tickToFrame,
+  ticksPerFrame,
 } from "../../timeline";
 import { playbackClock } from "../../player/services/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
-import {
-  ensureAssetFileLoaded,
-  useAssetStore,
-} from "../../userAssets";
+import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
 import { useMaskViewStore } from "../store/useMaskViewStore";
 import { toClipInputTimeTicks } from "../utils/clipTime";
 import {
@@ -52,9 +45,12 @@ function hashSam2Points(points: ClipMaskPoint[]): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-async function resolveAssetFile(
-  asset: { id: string; file?: File; src: string; name: string },
-): Promise<File> {
+async function resolveAssetFile(asset: {
+  id: string;
+  file?: File;
+  src: string;
+  name: string;
+}): Promise<File> {
   if (asset.file) return asset.file;
   const hydratedFile = await ensureAssetFileLoaded(asset.id);
   if (hydratedFile) {
@@ -100,7 +96,7 @@ function toSourceFrameIndex(
     0,
     Math.min(
       Math.max(0, frameCount - 1),
-      Math.floor((Math.max(0, timeTicks) / TICKS_PER_SECOND) * Math.max(1, fps)),
+      tickToFrame(Math.max(0, timeTicks), Math.max(1, fps), "floor"),
     ),
   );
 }
@@ -218,7 +214,10 @@ export function useSam2MaskPanel({
     () => selectedMask?.maskPoints ?? [],
     [selectedMask],
   );
-  const sam2PointsHash = useMemo(() => hashSam2Points(sam2Points), [sam2Points]);
+  const sam2PointsHash = useMemo(
+    () => hashSam2Points(sam2Points),
+    [sam2Points],
+  );
   const projectFps = useProjectStore((state) => state.config.fps);
   const pointTimeEpsilonTicks = useMemo(() => {
     const safeFps =
@@ -227,7 +226,7 @@ export function useSam2MaskPanel({
       projectFps > 0
         ? projectFps
         : 30;
-    return Math.max(1, TICKS_PER_SECOND / safeFps);
+    return Math.max(1, ticksPerFrame(safeFps));
   }, [projectFps]);
 
   const [currentInputTimeTicks, setCurrentInputTimeTicks] = useState(0);
@@ -237,10 +236,15 @@ export function useSam2MaskPanel({
     const update = (globalTimeTicks: number) => {
       const clampedGlobal = Math.max(
         selectedMask.start,
-        Math.min(globalTimeTicks, selectedMask.start + selectedMask.timelineDuration),
+        Math.min(
+          globalTimeTicks,
+          selectedMask.start + selectedMask.timelineDuration,
+        ),
       );
       const localVisualTicks = clampedGlobal - selectedMask.start;
-      setCurrentInputTimeTicks(calculateClipInputTicks(selectedMask, localVisualTicks));
+      setCurrentInputTimeTicks(
+        calculateClipInputTicks(selectedMask, localVisualTicks),
+      );
     };
     update(playbackClock.time);
     return playbackClock.subscribe(update);
@@ -387,7 +391,12 @@ export function useSam2MaskPanel({
         useMaskViewStore.getState().clearSam2LivePreview(selectedClipId);
       }
     }
-  }, [cancelSam2PreviewRequest, isSam2EditorOpen, selectedClipId, selectedMaskId]);
+  }, [
+    cancelSam2PreviewRequest,
+    isSam2EditorOpen,
+    selectedClipId,
+    selectedMaskId,
+  ]);
 
   useEffect(() => {
     const previousPreviewMask = activePreviewMaskRef.current;
@@ -420,7 +429,13 @@ export function useSam2MaskPanel({
     }
 
     activePreviewMaskRef.current = null;
-  }, [isMaskTabActive, selectedClipId, selectedMaskId, selectedMask, updateClipMask]);
+  }, [
+    isMaskTabActive,
+    selectedClipId,
+    selectedMaskId,
+    selectedMask,
+    updateClipMask,
+  ]);
 
   const sam2GrowAmount =
     selectedMask?.maskType === "sam2" ? (selectedMask.sam2GrowAmount ?? 0) : 0;
@@ -447,7 +462,8 @@ export function useSam2MaskPanel({
     if (!selectedClipId || !selectedMaskId) return;
     const remaining = sam2Points.filter(
       (point) =>
-        Math.abs(point.timeTicks - currentInputTimeTicks) > pointTimeEpsilonTicks,
+        Math.abs(point.timeTicks - currentInputTimeTicks) >
+        pointTimeEpsilonTicks,
     );
     updateClipMask(selectedClipId, selectedMaskId, { maskPoints: remaining });
   }, [
@@ -675,7 +691,11 @@ export function useSam2MaskPanel({
 
   useEffect(() => {
     if (!isSam2EditorOpen || !selectedClipId || !selectedMaskId) return;
-    if (!selectedClip || selectedClip.type === "mask" || selectedClip.type === "audio") {
+    if (
+      !selectedClip ||
+      selectedClip.type === "mask" ||
+      selectedClip.type === "audio"
+    ) {
       return;
     }
     if (!selectedMask || selectedMask.maskType !== "sam2") return;
@@ -816,7 +836,9 @@ export function useSam2MaskPanel({
       return;
     }
     if (sam2Points.length === 0) {
-      setSam2FramePreviewError("Add at least one SAM2 point before previewing.");
+      setSam2FramePreviewError(
+        "Add at least one SAM2 point before previewing.",
+      );
       return;
     }
 
@@ -842,7 +864,9 @@ export function useSam2MaskPanel({
       };
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "SAM2 single-frame preview failed";
+        error instanceof Error
+          ? error.message
+          : "SAM2 single-frame preview failed";
       setSam2FramePreviewError(message);
     } finally {
       setIsSam2FrameGenerating(false);
@@ -892,9 +916,8 @@ export function useSam2MaskPanel({
     const now = Date.now();
     try {
       const sourceHash = parentAsset.hash;
-      const sourceRegistration = await getOrRegisterSam2Source(
-        sourceHash,
-        () => resolveAssetFile(parentAsset),
+      const sourceRegistration = await getOrRegisterSam2Source(sourceHash, () =>
+        resolveAssetFile(parentAsset),
       );
 
       const visibleSourceStartTicks = Math.max(0, parentClip.offset || 0);

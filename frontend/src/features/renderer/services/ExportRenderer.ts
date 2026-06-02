@@ -6,9 +6,12 @@ import type {
   TimelineSelection,
 } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
-import { TICKS_PER_SECOND } from "../../timeline";
 import { computeFurthestPresentationEnd } from "../../timeline/utils/clipPresentation";
-import { frameIndexToOutputTimestamp } from "../utils/mediaTime";
+import {
+  frameIndexToOutputTimestamp,
+  mediaSecondsToTickExact,
+  tickToMediaSeconds,
+} from "../utils/mediaTime";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
@@ -384,7 +387,7 @@ export class ExportRenderer {
       );
 
       // --- AUDIO EXPORT LOOP ---
-      const rangeDurationSec = rangeDurationTicks / TICKS_PER_SECOND;
+      const rangeDurationSec = tickToMediaSeconds(rangeDurationTicks);
 
       if (shouldRenderAudio) {
         const audioRenderers = relevantForAudio.map(
@@ -425,7 +428,8 @@ export class ExportRenderer {
                   trackClips,
                   getAssetInput,
                   {
-                    baseTicks: startTick + chunkStartSec * TICKS_PER_SECOND,
+                    baseTicks:
+                      startTick + mediaSecondsToTickExact(chunkStartSec),
                     baseContextTime: 0,
                   },
                   {

@@ -11,6 +11,7 @@ import {
   useTimelineStore,
   useTimelineDuration,
   TICKS_PER_SECOND,
+  snapTickToFrameGrid,
 } from "../timeline";
 import { useProjectStore } from "../project";
 import { audioSystem } from "./services/AudioSystem";
@@ -151,10 +152,7 @@ function PlayerImpl() {
   } = useRenderGroupOrchestrator(viewport, logicalDimensions, visualTrackIds);
 
   const registerSynchronizedPlaybackRenderer = useCallback(
-    (
-      trackId: string,
-      renderer: SynchronizedPlaybackRenderer | null,
-    ) => {
+    (trackId: string, renderer: SynchronizedPlaybackRenderer | null) => {
       if (renderer) {
         synchronizedPlaybackRenderersRef.current.set(trackId, renderer);
         return;
@@ -175,10 +173,7 @@ function PlayerImpl() {
     } else {
       // Pause pressed: Snap playhead to the *next* frame boundary
       const currentTime = playbackClock.time;
-      const ticksPerFrame = TICKS_PER_SECOND / fps;
-
-      const snappedTicks =
-        Math.ceil(currentTime / ticksPerFrame) * ticksPerFrame;
+      const snappedTicks = snapTickToFrameGrid(currentTime, fps, "ceil");
       playbackFrameClock.setTime(snappedTicks);
       playbackClock.setTime(snappedTicks);
     }
@@ -321,17 +316,23 @@ function PlayerImpl() {
     };
 
     pendingPlaybackFrameQueueRef.current = [];
-    enqueueSynchronizedPlaybackQueueEntry(pendingPlaybackFrameQueueRef.current, {
-      time: activeClock.time,
-      enqueuedAtMs: performance.now(),
-    });
+    enqueueSynchronizedPlaybackQueueEntry(
+      pendingPlaybackFrameQueueRef.current,
+      {
+        time: activeClock.time,
+        enqueuedAtMs: performance.now(),
+      },
+    );
     void processPendingPlaybackFrames();
 
     const unsubscribe = activeClock.subscribe((time) => {
-      enqueueSynchronizedPlaybackQueueEntry(pendingPlaybackFrameQueueRef.current, {
-        time,
-        enqueuedAtMs: performance.now(),
-      });
+      enqueueSynchronizedPlaybackQueueEntry(
+        pendingPlaybackFrameQueueRef.current,
+        {
+          time,
+          enqueuedAtMs: performance.now(),
+        },
+      );
       void processPendingPlaybackFrames();
     });
 
@@ -442,8 +443,7 @@ function PlayerImpl() {
   }, [runSelectionExport]);
 
   const handleExtractSelection = useCallback(() => {
-    const { closeDialog, setOnConfirmSelection } =
-      useExtractStore.getState();
+    const { closeDialog, setOnConfirmSelection } = useExtractStore.getState();
     const { enterSelectionMode } = useTimelineSelectionStore.getState();
     const currentTime = playbackClock.time;
     const safeEnd = getDefaultSelectionEnd(currentTime);
@@ -462,9 +462,7 @@ function PlayerImpl() {
 
       let fileHandle: FileSystemFileHandle;
       try {
-        fileHandle = await useProjectStore
-          .getState()
-          .project?.title
+        fileHandle = (await useProjectStore.getState().project?.title)
           ? await import("../project").then((m) =>
               m.fileSystemService.showSaveVideoPicker(
                 `${useProjectStore.getState().project?.title}.mp4`,

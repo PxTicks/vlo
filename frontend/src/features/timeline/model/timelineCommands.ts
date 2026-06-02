@@ -1,4 +1,8 @@
-import { resolveMaskCompositionAlgebra, type Component, type MaskCompositionAlgebra } from "../../../types/Components";
+import {
+  resolveMaskCompositionAlgebra,
+  type Component,
+  type MaskCompositionAlgebra,
+} from "../../../types/Components";
 import type { Asset } from "../../../types/Asset";
 import type {
   ClipMask,
@@ -27,7 +31,7 @@ import {
   getMaskLocalId,
   resolveMaskBooleanExpression,
 } from "../../masks/model/maskBooleanExpression";
-import { TICKS_PER_SECOND } from "../constants";
+import { ticksPerFrame } from "../utils/frameGrid";
 import { getTrackTypeFromClipType } from "../utils/formatting";
 import { getResizedClipLeft, getResizedClipRight } from "../utils/clipMath";
 import { resolveCollision } from "../utils/collision";
@@ -180,7 +184,9 @@ export function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
     return clip;
   }
 
-  const normalizedComponents = normalizeComponentsMaskComposite(clip.components);
+  const normalizedComponents = normalizeComponentsMaskComposite(
+    clip.components,
+  );
   const baseClip: StandardTimelineClip =
     normalizedComponents === clip.components
       ? clip
@@ -419,29 +425,36 @@ export function pasteCopiedClipsAboveDraft(
         pastedClip.proxyContentHash = undefined;
       }
 
-      const targetTrack = draft.tracks.find((track) => track.id === targetTrackId);
+      const targetTrack = draft.tracks.find(
+        (track) => track.id === targetTrackId,
+      );
       if (targetTrack && !targetTrack.type) {
         targetTrack.type = getTrackTypeFromClipType(pastedClip.type);
       }
 
-      const pastedMasks = (maskCopiesByParent.get(clip.id) || []).map((maskClip) => {
-        const parsed = parseMaskClipId(maskClip.id);
-        const maskLocalId = parsed?.maskId ?? crypto.randomUUID();
-        const clonedMask: MaskTimelineClip = {
-          ...(cloneTimelineClip(
-            maskClip,
-            makeMaskClipId(pastedClip.id, maskLocalId),
-          ) as MaskTimelineClip),
-          parentClipId: pastedClip.id,
-          trackId: pastedClip.trackId,
-        };
-        return syncMaskInheritedSpeed(
-          syncMaskTiming(clonedMask, pastedClip),
-          pastedClip,
-        );
-      });
+      const pastedMasks = (maskCopiesByParent.get(clip.id) || []).map(
+        (maskClip) => {
+          const parsed = parseMaskClipId(maskClip.id);
+          const maskLocalId = parsed?.maskId ?? crypto.randomUUID();
+          const clonedMask: MaskTimelineClip = {
+            ...(cloneTimelineClip(
+              maskClip,
+              makeMaskClipId(pastedClip.id, maskLocalId),
+            ) as MaskTimelineClip),
+            parentClipId: pastedClip.id,
+            trackId: pastedClip.trackId,
+          };
+          return syncMaskInheritedSpeed(
+            syncMaskTiming(clonedMask, pastedClip),
+            pastedClip,
+          );
+        },
+      );
 
-      setChildMaskClipIds(pastedClip, pastedMasks.map((mask) => mask.id));
+      setChildMaskClipIds(
+        pastedClip,
+        pastedMasks.map((mask) => mask.id),
+      );
       draft.clips.push(pastedClip);
       draft.clips.push(...pastedMasks);
       pastedClipIds.push(pastedClip.id);
@@ -460,7 +473,10 @@ export function splitClipInDraft(
   const clip = draft.clips.find((candidate) => candidate.id === clipId);
   if (!clip) return null;
 
-  if (splitTime <= clip.start || splitTime >= clip.start + clip.timelineDuration) {
+  if (
+    splitTime <= clip.start ||
+    splitTime >= clip.start + clip.timelineDuration
+  ) {
     console.warn("[Store] Split time outside clip bounds");
     return null;
   }
@@ -788,7 +804,7 @@ export function updateClipDurationInDraft(
     const updated = {
       ...clip,
       timelineDuration: Math.round(
-        Math.max(TICKS_PER_SECOND / 60, newDurationTicks),
+        Math.max(ticksPerFrame(60), newDurationTicks),
       ),
     };
 
@@ -839,7 +855,9 @@ export function updateClipTransformInDraft(
 
   const parent = draft.clips.find((clip) => clip.id === clipId);
   if (parent && parent.type !== "mask") {
-    const transform = parent.transformations.find((candidate) => candidate.id === effectId);
+    const transform = parent.transformations.find(
+      (candidate) => candidate.id === effectId,
+    );
     if (transform && isInheritedTransformType(transform.type)) {
       draft.clips = propagateParentToMasks(draft.clips, parent);
     }
@@ -1051,7 +1069,8 @@ export function duplicateClipMaskInDraft(
   draft.clips.push(duplicatedMask);
 
   const currentMaskClipIds = getChildMaskClipIds(parent);
-  const insertIndex = sourceIndex >= 0 ? sourceIndex + 1 : currentMaskClipIds.length;
+  const insertIndex =
+    sourceIndex >= 0 ? sourceIndex + 1 : currentMaskClipIds.length;
   const nextMaskClipIds = [
     ...currentMaskClipIds.slice(0, insertIndex),
     nextMaskClipId,
@@ -1200,7 +1219,9 @@ export function removeClipComponentFromDraft(
   );
   if (!clip?.components) return;
 
-  const next = clip.components.filter((component) => component.id !== componentId);
+  const next = clip.components.filter(
+    (component) => component.id !== componentId,
+  );
   clip.components = next.length > 0 ? next : undefined;
 }
 

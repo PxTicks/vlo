@@ -1,4 +1,7 @@
-import { TICKS_PER_SECOND } from "../constants";
+import {
+  mediaTimestampToFirstAvailableTick,
+  tickToMediaSeconds,
+} from "../../renderer/utils/mediaTime";
 
 export function getFirstPresentedFrameTicks(
   firstTimestampSeconds?: number | null,
@@ -17,14 +20,17 @@ export function getFirstPresentedFrameTicks(
   // 1/57600 timebase puts its first frame at 0.4686285s -> 44988.33 ticks ->
   // round() = 44988 -> 0.468625s, which is before the frame, so mediabunny
   // returns null and the first thumbnail slot renders blank.
-  return Math.ceil(firstTimestampSeconds * TICKS_PER_SECOND);
+  return mediaTimestampToFirstAvailableTick(firstTimestampSeconds);
 }
 
 export function clampThumbnailAssetTickToFirstFrame(
   assetTick: number,
   firstTimestampSeconds?: number | null,
 ): number {
-  return Math.max(assetTick, getFirstPresentedFrameTicks(firstTimestampSeconds));
+  return Math.max(
+    assetTick,
+    getFirstPresentedFrameTicks(firstTimestampSeconds),
+  );
 }
 
 export function resolveThumbnailBucketRequestSeconds(
@@ -38,5 +44,5 @@ export function resolveThumbnailBucketRequestSeconds(
     firstTimestampSeconds,
   );
 
-  return requestTicks / TICKS_PER_SECOND;
+  return tickToMediaSeconds(requestTicks);
 }

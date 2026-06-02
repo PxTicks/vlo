@@ -31,6 +31,7 @@ export {
   snapFrameTimeSeconds,
   tickToMediaSeconds,
   mediaSecondsToTick,
+  mediaSecondsToTickExact,
   mediaTimestampToFirstAvailableTick,
   frameIndexToOutputTimestamp,
   createBinaryMaskOutputFilter,

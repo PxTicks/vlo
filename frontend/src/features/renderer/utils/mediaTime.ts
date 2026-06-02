@@ -1,6 +1,6 @@
-import { TICKS_PER_SECOND } from "../../timeline";
-import type { FrameSnapMode } from "../../timeline";
-import { calculateClipTime } from "../../transformations";
+import { TICKS_PER_SECOND } from "../../timeline/constants";
+import type { FrameSnapMode } from "../../timeline/utils/frameGrid";
+import { calculateClipTime } from "../../transformations/utils/timeCalculation";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 
 /**
@@ -19,6 +19,14 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
  * sampling, encoder add) should obtain its seconds from this module.
  */
 
+/**
+ * Tolerance (in ticks) for treating a seconds value as sitting exactly on an
+ * integer tick. Absorbs the floating-point dust from `tick / TICKS_PER_SECOND *
+ * TICKS_PER_SECOND` round-trips (~1e-10 even on multi-million-tick timelines)
+ * while staying far below one whole tick.
+ */
+const TICK_EPSILON = 1e-6;
+
 /** tick -> media seconds (exact rational; the only tick/seconds divide). */
 export function tickToMediaSeconds(tick: number): number {
   return tick / TICKS_PER_SECOND;
@@ -33,9 +41,28 @@ export function mediaSecondsToTick(
   mode: FrameSnapMode = "nearest",
 ): number {
   const raw = seconds * TICKS_PER_SECOND;
+  // Epsilon-tolerant: a value within floating-point dust of an integer tick is
+  // treated as ON that tick, so floor/ceil never drift a whole tick on
+  // tick-derived seconds — e.g. tickToMediaSeconds(7) * TICKS_PER_SECOND ===
+  // 7.000000000000001 must ceil to 7, not 8. Mirrors frameGrid's epsilon-
+  // tolerant frame ceiling, but in tick units (TICK_EPSILON << 1 tick, and far
+  // above the ~1e-10 dust even for multi-million-tick timelines).
+  const nearest = Math.round(raw);
+  if (Math.abs(raw - nearest) <= TICK_EPSILON) return nearest;
   if (mode === "floor") return Math.floor(raw);
   if (mode === "ceil") return Math.ceil(raw);
-  return Math.round(raw);
+  return nearest;
+}
+
+/**
+ * seconds -> tick WITHOUT rounding (keeps fractional ticks). For continuous
+ * clock arithmetic — the audio/playback clock represents time as fractional
+ * ticks and must not be quantized to integers (that would jitter sync). Use
+ * {@link mediaSecondsToTick} (rounded) for integer *timeline decisions*; use
+ * this for clock math. Exact inverse of {@link tickToMediaSeconds}.
+ */
+export function mediaSecondsToTickExact(seconds: number): number {
+  return seconds * TICKS_PER_SECOND;
 }
 
 /**

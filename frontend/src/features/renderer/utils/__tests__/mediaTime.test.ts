@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   tickToMediaSeconds,
   mediaSecondsToTick,
+  mediaSecondsToTickExact,
   mediaTimestampToFirstAvailableTick,
   frameIndexToOutputTimestamp,
   snapFrameTimeSeconds,
@@ -36,6 +37,42 @@ describe("mediaTime boundary", () => {
       expect(mediaTimestampToFirstAvailableTick(seconds)).toBe(3);
       // already-on-tick stays put
       expect(mediaTimestampToFirstAvailableTick(tickToMediaSeconds(5))).toBe(5);
+    });
+
+    it("ceil/floor of tick-derived seconds round-trip exactly (no FP-dust drift)", () => {
+      // tickToMediaSeconds(7) * TICKS_PER_SECOND === 7.000000000000001; a raw
+      // Math.ceil would return 8. These ticks all exhibit the dust.
+      for (const t of [7, 14, 28, 51, 95, 102, 1234567]) {
+        const s = tickToMediaSeconds(t);
+        expect(mediaSecondsToTick(s, "ceil")).toBe(t);
+        expect(mediaSecondsToTick(s, "floor")).toBe(t);
+        expect(mediaTimestampToFirstAvailableTick(s)).toBe(t);
+      }
+    });
+
+    it("still rounds genuinely fractional seconds (epsilon isn't over-eager)", () => {
+      const s = 2.1 / TICKS_PER_SECOND; // 2.1 ticks — well past the epsilon
+      expect(mediaSecondsToTick(s, "floor")).toBe(2);
+      expect(mediaSecondsToTick(s, "ceil")).toBe(3);
+    });
+
+    it("mediaSecondsToTickExact keeps fractional ticks (no rounding)", () => {
+      // Continuous-clock conversion must NOT quantize.
+      expect(mediaSecondsToTickExact(1.5 / TICKS_PER_SECOND)).toBeCloseTo(
+        1.5,
+        9,
+      );
+      expect(mediaSecondsToTickExact(2.7 / TICKS_PER_SECOND)).toBeCloseTo(
+        2.7,
+        9,
+      );
+      // exact inverse of tickToMediaSeconds for fractional ticks
+      for (const t of [0.25, 1.5, 3200.7, 99999.1]) {
+        expect(mediaSecondsToTickExact(tickToMediaSeconds(t))).toBeCloseTo(
+          t,
+          6,
+        );
+      }
     });
   });
 

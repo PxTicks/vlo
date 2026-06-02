@@ -12,8 +12,8 @@ import type {
 } from "../../../types/TimelineTypes";
 import { getAssetInput, useAsset } from "../../userAssets";
 import { calculateClipTime } from "../../transformations";
-import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../constants";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
+import { ticksPerPixel as ticksPerPixelAt } from "../utils/pixelGrid";
 import {
   waveformCacheService,
   WAVEFORM_BASE_SAMPLES_PER_PEAK,
@@ -262,7 +262,7 @@ export function useWaveformRenderer({
     }
 
     const { localStart, localWidth } = geometry;
-    const ticksPerPixel = TICKS_PER_SECOND / (PIXELS_PER_SECOND * zoomScale);
+    const ticksPerPixel = ticksPerPixelAt(zoomScale);
 
     ctx.fillStyle = WAVEFORM_BACKGROUND;
     ctx.fillRect(0, 0, localWidth, height);
@@ -418,7 +418,7 @@ export function useWaveformRenderer({
       localWidth: number,
     ): Map<number, Set<number>> => {
       const bucketsByLevel = new Map<number, Set<number>>();
-      const ticksPerPixel = TICKS_PER_SECOND / (PIXELS_PER_SECOND * zoomScale);
+      const ticksPerPixel = ticksPerPixelAt(zoomScale);
 
       for (let localX = 0; localX < localWidth; localX++) {
         const globalX = localStart + localX;

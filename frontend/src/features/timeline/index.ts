@@ -35,6 +35,12 @@ export {
   FRAME_INDEX_EPSILON,
 } from "./utils/frameGrid";
 export type { FrameSnapMode } from "./utils/frameGrid";
+export {
+  pixelsPerSecond,
+  ticksPerPixel,
+  ticksToPx,
+  pxToTicks,
+} from "./utils/pixelGrid";
 export { AssetDragOverlay } from "./components/AssetDragOverlay";
 export {
   createEndpointOverlayItem,

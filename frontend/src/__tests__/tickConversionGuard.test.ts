@@ -28,22 +28,23 @@ const RAW_FILES = import.meta.glob("../**/*.{ts,tsx}", {
 const CENTRAL = [
   "features/timeline/utils/frameGrid.ts",
   "features/renderer/utils/mediaTime.ts",
+  "features/timeline/utils/pixelGrid.ts",
   "features/timeline/constants.ts",
 ];
 
 // Grandfathered raw-conversion sites (see header). Subset-checked, so removing
 // usage from a listed file never fails the guard; only a NEW offending file does.
 const ALLOWLIST = [
-  // pixel-domain (tick <-> px / zoom)
+  // pixel-domain (tick <-> px / zoom) — inline math not yet moved to pixelGrid.
+  // The media-heavy hooks (useThumbnailRenderer/useWaveformRenderer) and the
+  // canonical view store now route through pixelGrid and are intentionally NOT
+  // here, so the guard fully covers them.
   "features/timeline/TimelineContainer.tsx",
   "features/timeline/components/TimelineClip.tsx",
   "features/timeline/components/TimelineClipOverlayLayer.tsx",
   "features/timeline/components/TimelinePlayhead.tsx",
   "features/timeline/components/SelectionOverlay.tsx",
   "features/timeline/hooks/useClipCanvasWindow.ts",
-  "features/timeline/hooks/useTimelineViewStore.ts",
-  "features/timeline/hooks/useThumbnailRenderer.ts",
-  "features/timeline/hooks/useWaveformRenderer.ts",
   "features/timeline/utils/snapDragOverlay.ts",
   // foundational time math (below mediaTime in the dep graph)
   "features/transformations/utils/timeCalculation.ts",

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useLayoutEffect } from "react";
-import { TICKS_PER_SECOND, PIXELS_PER_SECOND, CLIP_HEIGHT } from "../constants";
+import { CLIP_HEIGHT } from "../constants";
 import { mediaSecondsToTickExact } from "../../renderer/utils/mediaTime";
+import { pxToTicks, ticksPerPixel } from "../utils/pixelGrid";
 import type {
   AssetBackedBaseClip,
   AssetBackedTimelineClip,
@@ -120,16 +121,13 @@ export function useThumbnailRenderer({
     const startIdx = Math.floor(localStart / slotWidth);
     const endIdx = Math.ceil((localStart + localWidth) / slotWidth);
 
-    const currentPixelsPerSecond = PIXELS_PER_SECOND * zoomScale;
-    const currentTicksPerPixel = TICKS_PER_SECOND / currentPixelsPerSecond;
+    const currentTicksPerPixel = ticksPerPixel(zoomScale);
     const zoomLog = Math.max(
       0,
       Math.floor(Math.log2(Math.max(0.1, zoomScale))),
     );
     const bucketZoom = Math.pow(2, zoomLog);
-    const bucketIntervalTicks = Math.round(
-      (sinkWidth / (PIXELS_PER_SECOND * bucketZoom)) * TICKS_PER_SECOND,
-    );
+    const bucketIntervalTicks = Math.round(pxToTicks(sinkWidth, bucketZoom));
 
     const isImage = asset.type === "image";
     const imgBitmap = isImage
@@ -298,10 +296,9 @@ export function useThumbnailRenderer({
           );
           const bucketZoom = Math.pow(2, zoomLog);
           const bucketIntervalTicks = Math.round(
-            (sinkWidth / (PIXELS_PER_SECOND * bucketZoom)) * TICKS_PER_SECOND,
+            pxToTicks(sinkWidth, bucketZoom),
           );
-          const currentTicksPerPixel =
-            TICKS_PER_SECOND / (PIXELS_PER_SECOND * zoomScale);
+          const currentTicksPerPixel = ticksPerPixel(zoomScale);
 
           const startIdx = Math.floor(localStart / slotWidth);
           const endIdx = Math.ceil((localStart + localWidth) / slotWidth);

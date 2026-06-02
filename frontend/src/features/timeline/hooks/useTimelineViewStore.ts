@@ -1,11 +1,10 @@
 // hooks/useTimelineViewStore.ts
 import { create } from "zustand";
+import { MIN_ZOOM, MAX_ZOOM } from "../constants";
 import {
-  TICKS_PER_SECOND,
-  PIXELS_PER_SECOND,
-  MIN_ZOOM,
-  MAX_ZOOM,
-} from "../constants";
+  ticksToPx as ticksToPxAt,
+  pxToTicks as pxToTicksAt,
+} from "../utils/pixelGrid";
 
 export interface TimelineViewState {
   zoomScale: number;
@@ -26,18 +25,9 @@ export const useTimelineViewStore = create<TimelineViewState>((set, get) => ({
   setZoomScale: (scale) =>
     set({ zoomScale: Math.max(MIN_ZOOM, Math.min(scale, MAX_ZOOM)) }),
 
-  ticksToPx: (ticks: number) => {
-    const { zoomScale } = get();
-    return (ticks / TICKS_PER_SECOND) * PIXELS_PER_SECOND * zoomScale;
-  },
+  ticksToPx: (ticks: number) => ticksToPxAt(ticks, get().zoomScale),
 
-  pxToTicks: (px: number) => {
-    const { zoomScale } = get();
-    const safeScale = Math.max(0.001, zoomScale);
-    return Math.round(
-      (px / (PIXELS_PER_SECOND * safeScale)) * TICKS_PER_SECOND,
-    );
-  },
+  pxToTicks: (px: number) => Math.round(pxToTicksAt(px, get().zoomScale)),
 
   scrollContainer: null,
   setScrollContainer: (element) => set({ scrollContainer: element }),

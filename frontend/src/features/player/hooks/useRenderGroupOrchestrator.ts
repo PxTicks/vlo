@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { Container } from "pixi.js";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
+import { useProjectStore } from "../../project/useProjectStore";
 import { RenderGroupOrchestrator } from "../../renderer/services/RenderGroupOrchestrator";
 import { AdjustmentEffectResolver } from "../../renderer/services/AdjustmentEffectResolver";
 import { playbackClock } from "../services/PlaybackClock";
@@ -56,10 +57,11 @@ export function useRenderGroupOrchestrator(
   // store fields — defaults to empty arrays.
   const tracks = useTimelineStore((s) => s.tracks ?? []);
   const clips = useTimelineStore((s) => s.clips ?? []);
+  const projectFps = useProjectStore((s) => s.config.fps);
   useEffect(() => {
-    adjustmentEffectResolver.setAdjustmentSource(tracks, clips);
-    orchestrator?.setAdjustmentSource(tracks, clips);
-  }, [adjustmentEffectResolver, orchestrator, tracks, clips]);
+    adjustmentEffectResolver.setAdjustmentSource(tracks, clips, projectFps);
+    orchestrator?.setAdjustmentSource(tracks, clips, projectFps);
+  }, [adjustmentEffectResolver, orchestrator, tracks, clips, projectFps]);
 
   // Imperative sync whenever the source or visual-track order changes,
   // so paused edits to either reflect without waiting for the next tick.

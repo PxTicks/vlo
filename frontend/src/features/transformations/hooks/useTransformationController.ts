@@ -8,8 +8,8 @@ import {
   useTimelineStore,
   parseMaskClipId,
   selectMaskClipsForParent,
-  hasAnyCollision,
 } from "../../timeline";
+import { useProjectStore } from "../../project/useProjectStore";
 import { introducesTimelineClipPresentationCollision } from "../../timeline/utils/clipPresentation";
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { isDefaultTransform } from "../catalogue/TransformationRegistry";
@@ -243,29 +243,25 @@ export function useTransformationController(
         const clip = currentTarget.timelineClip;
         const shapeUpdate = getChangedClipShapeUpdate(clip, nextTransforms);
         if (shapeUpdate) {
-          const nextTimelineDuration =
-            shapeUpdate.timelineDuration ?? clip.timelineDuration;
           const allClips = useTimelineStore.getState().clips;
           const tracks = useTimelineStore.getState().tracks;
+          // Single, presentation-aware, frame-quantized collision gate — the
+          // same grid the renderer selects on. (The former raw hasAnyCollision
+          // pre-check is dropped: it tested stored timing and so disagreed with
+          // the warped presentation footprint under adjustment speed ramps.)
           if (
-            hasAnyCollision(
-              clip.start,
-              nextTimelineDuration,
-              clip.trackId,
-              [clip.id],
+            introducesTimelineClipPresentationCollision(
+              tracks,
               allClips,
+              useProjectStore.getState().config.fps,
+              {
+                clipId: clip.id,
+                transformations: nextTransforms,
+                timelineDuration: shapeUpdate.timelineDuration,
+                transformedDuration: shapeUpdate.transformedDuration,
+                transformedOffset: shapeUpdate.transformedOffset,
+              },
             )
-          ) {
-            return;
-          }
-          if (
-            introducesTimelineClipPresentationCollision(tracks, allClips, {
-              clipId: clip.id,
-              transformations: nextTransforms,
-              timelineDuration: shapeUpdate.timelineDuration,
-              transformedDuration: shapeUpdate.transformedDuration,
-              transformedOffset: shapeUpdate.transformedOffset,
-            })
           ) {
             return;
           }
@@ -371,11 +367,7 @@ export function useTransformationController(
         structuredClone(snapshot.transforms),
       );
     },
-    [
-      setClipMaskCompositeTransforms,
-      setClipTransformsAndShape,
-      updateClipMask,
-    ],
+    [setClipMaskCompositeTransforms, setClipTransformsAndShape, updateClipMask],
   );
 
   const updateTargetTransform = useCallback(

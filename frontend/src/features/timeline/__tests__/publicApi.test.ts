@@ -20,7 +20,9 @@ import {
   selectTimelineClipsForTrack,
   selectTimelineDuration,
   useTimelineStore,
+  TICKS_PER_SECOND,
 } from "..";
+import { useProjectStore } from "../../project/useProjectStore";
 
 const TRACKS: TimelineTrack[] = [
   {
@@ -122,6 +124,12 @@ describe("timeline public API", () => {
       clips: CLIPS,
       selectedClipIds: ["clip-video"],
     });
+    // Drive the frame grid at one tick per frame so the abstract tick fixtures
+    // here are already frame-aligned (quantization is identity); the duration
+    // assertions then test selector plumbing, not frame snapping.
+    useProjectStore.setState((s) => ({
+      config: { ...s.config, fps: TICKS_PER_SECOND },
+    }));
   });
 
   it("exposes clip lookups through selectors and getters", () => {
@@ -137,10 +145,12 @@ describe("timeline public API", () => {
     const state = useTimelineStore.getState();
 
     expect(selectTimelineClipsForTrack(state, "track-video")).toHaveLength(3);
-    expect(selectTimelineClipsForTrack(state, "track-video", false)).toHaveLength(2);
+    expect(
+      selectTimelineClipsForTrack(state, "track-video", false),
+    ).toHaveLength(2);
     expect(getTimelineClipsForTrack("track-video", false)).toHaveLength(2);
 
-    expect(selectTimelineDuration(state)).toBe(200);
+    expect(selectTimelineDuration(state, TICKS_PER_SECOND)).toBe(200);
     expect(getTimelineDuration()).toBe(200);
 
     expect(selectTimelineClipCountForAsset(state, "asset-video")).toBe(1);

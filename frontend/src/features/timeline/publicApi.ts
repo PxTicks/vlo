@@ -8,6 +8,7 @@ import {
   selectTimelineDuration,
 } from "./selectors/timelineSelectors";
 import { useTimelineStore } from "./useTimelineStore";
+import { useProjectStore } from "../project/useProjectStore";
 
 type TimelineStoreState = ReturnType<typeof useTimelineStore.getState>;
 
@@ -41,7 +42,8 @@ export function useTimelineClipsForTrack(
 }
 
 export function useTimelineDuration(): number {
-  return useTimelineStore(selectTimelineDuration);
+  const fps = useProjectStore((state) => state.config.fps);
+  return useTimelineStore((state) => selectTimelineDuration(state, fps));
 }
 
 export function useTimelineClipCountForAsset(
@@ -78,7 +80,10 @@ export function getTimelineClipsForTrack(
 }
 
 export function getTimelineDuration(): number {
-  return selectTimelineDuration(useTimelineStore.getState());
+  return selectTimelineDuration(
+    useTimelineStore.getState(),
+    useProjectStore.getState().config.fps,
+  );
 }
 
 export function getTimelineClipCountForAsset(

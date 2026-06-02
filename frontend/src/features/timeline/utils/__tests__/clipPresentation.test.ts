@@ -17,6 +17,13 @@ import {
   resolveStoredEndForPresentationEnd,
   resolveStoredStartForPresentationStart,
 } from "../clipPresentation";
+import { TICKS_PER_SECOND } from "../../constants";
+
+// These unit tests operate on abstract integer-tick geometry. Driving the
+// frame grid at one tick per frame (fps = TICKS_PER_SECOND) makes quantization
+// an identity on integers, so the assertions exercise presentation/collision
+// logic rather than frame snapping (which is covered in frameGrid.test.ts).
+const GRID_FPS = TICKS_PER_SECOND;
 
 function adjustmentTrack(id: string): TimelineTrack {
   return {
@@ -128,6 +135,7 @@ describe("clip presentation placement", () => {
     const presentation = buildTimelineClipPresentationIndex(
       tracks,
       clips,
+      GRID_FPS,
     ).get("video-1");
 
     // Stored start is preserved (no shift). The footprint compresses by 1/2:
@@ -164,6 +172,7 @@ describe("clip presentation placement", () => {
     const presentation = buildTimelineClipPresentationIndex(
       tracks,
       clips,
+      GRID_FPS,
     ).get("video-1");
 
     expect(presentation?.start).toBe(0);
@@ -198,6 +207,7 @@ describe("clip presentation placement", () => {
     const presentation = buildTimelineClipPresentationIndex(
       tracks,
       clips,
+      GRID_FPS,
     ).get("video-1");
 
     expect(presentation?.start).toBe(120);
@@ -229,6 +239,7 @@ describe("clip presentation placement", () => {
     const presentation = buildTimelineClipPresentationIndex(
       tracks,
       clips,
+      GRID_FPS,
     ).get("video-1");
 
     expect(presentation?.start).toBe(70);
@@ -269,6 +280,7 @@ describe("clip presentation placement", () => {
     const presentation = buildTimelineClipPresentationIndex(
       tracks,
       movedClips,
+      GRID_FPS,
     ).get("video-1");
 
     expect(storedStart).toBe(120);
@@ -298,6 +310,7 @@ describe("clip presentation placement", () => {
     const presentation = buildTimelineClipPresentationIndex(
       tracks,
       clips,
+      GRID_FPS,
     ).get("video-1");
 
     expect(presentation?.start).toBe(50);
@@ -329,6 +342,7 @@ describe("clip presentation placement", () => {
     const presentation = buildTimelineClipPresentationIndex(
       tracks,
       clips,
+      GRID_FPS,
     ).get("video-1");
 
     expect(presentation?.start).toBe(25);
@@ -369,6 +383,7 @@ describe("clip presentation placement", () => {
     const presentation = buildTimelineClipPresentationIndex(
       tracks,
       clips,
+      GRID_FPS,
     ).get("video-1");
 
     expect(presentation?.start).toBe(10);
@@ -398,7 +413,7 @@ describe("findActiveClipAt lookup", () => {
       }),
     ];
 
-    const lookup = buildTimelineClipPresentationLookup(tracks, clips);
+    const lookup = buildTimelineClipPresentationLookup(tracks, clips, GRID_FPS);
 
     // Presentation tick 25 is halfway through video-1's compressed footprint.
     const resolved = lookup.findActiveClipAt("v1", 25);
@@ -420,7 +435,7 @@ describe("findActiveClipAt lookup", () => {
       }),
     ];
 
-    const lookup = buildTimelineClipPresentationLookup(tracks, clips);
+    const lookup = buildTimelineClipPresentationLookup(tracks, clips, GRID_FPS);
     expect(lookup.findActiveClipAt("v1", 50)).toBeNull();
     expect(lookup.findActiveClipAt("v1", 200)).toBeNull();
   });
@@ -515,6 +530,7 @@ describe("presentation collisions", () => {
     const collisionClip = buildTimelineClipPresentationCollisionView(
       tracks,
       clips,
+      GRID_FPS,
     ).find((clip) => clip.id === "video-1");
 
     expect(collisionClip?.start).toBe(0);
@@ -545,6 +561,7 @@ describe("presentation collisions", () => {
     const collisionClip = buildTimelineClipPresentationCollisionView(
       tracks,
       clips,
+      GRID_FPS,
       {
         clipId: "adj-1",
         timelineDuration: 60,
@@ -582,7 +599,7 @@ describe("presentation collisions", () => {
     ];
 
     expect(
-      introducesTimelineClipPresentationCollision(tracks, clips, {
+      introducesTimelineClipPresentationCollision(tracks, clips, GRID_FPS, {
         clipId: "adj-1",
         transformations: [speedTransform(0.5)],
         timelineDuration: 200,
@@ -608,9 +625,11 @@ describe("presentation collisions", () => {
       }),
     ];
 
-    expect(collectTimelineClipPresentationCollisions(tracks, clips)).toEqual([]);
     expect(
-      introducesTimelineClipPresentationCollision(tracks, clips, {
+      collectTimelineClipPresentationCollisions(tracks, clips, GRID_FPS),
+    ).toEqual([]);
+    expect(
+      introducesTimelineClipPresentationCollision(tracks, clips, GRID_FPS, {
         clipId: "left",
         timelineDuration: 130,
       }),
@@ -638,7 +657,7 @@ describe("computeFurthestPresentationEnd", () => {
       videoClip({ id: "v", trackId: "v1", start: 0, timelineDuration: 150 }),
     ];
 
-    expect(computeFurthestPresentationEnd(tracks, clips)).toBe(250);
+    expect(computeFurthestPresentationEnd(tracks, clips, GRID_FPS)).toBe(250);
   });
 
   it("measures only the subset while resolving presentation against the full timeline", () => {
@@ -664,11 +683,13 @@ describe("computeFurthestPresentationEnd", () => {
     ];
 
     // Whole timeline: videoB is furthest at 400.
-    expect(computeFurthestPresentationEnd(tracks, clips)).toBe(400);
+    expect(computeFurthestPresentationEnd(tracks, clips, GRID_FPS)).toBe(400);
     // Subset = videoA only: its presentation still resolves through the
     // adjustment (250), proving the full timeline drives presentation while the
     // subset narrows what we measure.
     const videoA = clips.filter((clip) => clip.id === "a");
-    expect(computeFurthestPresentationEnd(tracks, clips, videoA)).toBe(250);
+    expect(
+      computeFurthestPresentationEnd(tracks, clips, GRID_FPS, videoA),
+    ).toBe(250);
   });
 });

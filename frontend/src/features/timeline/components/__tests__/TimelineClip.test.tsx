@@ -59,10 +59,13 @@ vi.mock("../../hooks/useTimelineViewStore", () => ({
       selector({
         zoomScale: viewStoreState.zoomScale,
         ticksToPx: (ticks: number) =>
-          (ticks / TICKS_PER_SECOND) * PIXELS_PER_SECOND * viewStoreState.zoomScale,
+          (ticks / TICKS_PER_SECOND) *
+          PIXELS_PER_SECOND *
+          viewStoreState.zoomScale,
         pxToTicks: (pixels: number) =>
           Math.round(
-            (pixels / (PIXELS_PER_SECOND * Math.max(0.001, viewStoreState.zoomScale))) *
+            (pixels /
+              (PIXELS_PER_SECOND * Math.max(0.001, viewStoreState.zoomScale))) *
               TICKS_PER_SECOND,
           ),
         setZoomScale: vi.fn(),
@@ -73,10 +76,13 @@ vi.mock("../../hooks/useTimelineViewStore", () => ({
       getState: () => ({
         zoomScale: viewStoreState.zoomScale,
         ticksToPx: (ticks: number) =>
-          (ticks / TICKS_PER_SECOND) * PIXELS_PER_SECOND * viewStoreState.zoomScale,
+          (ticks / TICKS_PER_SECOND) *
+          PIXELS_PER_SECOND *
+          viewStoreState.zoomScale,
         pxToTicks: (pixels: number) =>
           Math.round(
-            (pixels / (PIXELS_PER_SECOND * Math.max(0.001, viewStoreState.zoomScale))) *
+            (pixels /
+              (PIXELS_PER_SECOND * Math.max(0.001, viewStoreState.zoomScale))) *
               TICKS_PER_SECOND,
           ),
         setZoomScale: vi.fn(),
@@ -93,7 +99,8 @@ vi.mock("../../../userAssets/publicApi", () => ({
 }));
 
 vi.mock("../../utils/clipAudioExtraction", () => ({
-  extractTimelineClipAudioAsset: extractionState.mockExtractTimelineClipAudioAsset,
+  extractTimelineClipAudioAsset:
+    extractionState.mockExtractTimelineClipAudioAsset,
 }));
 
 vi.mock("../../../userAssets/useAssetBrowserRevealStore", () => ({
@@ -524,6 +531,9 @@ describe("TimelineClip Visual Geometry", () => {
       start: 0,
       end: TICKS_PER_SECOND,
       duration: TICKS_PER_SECOND,
+      startTick: 0,
+      endTick: TICKS_PER_SECOND,
+      durationTicks: TICKS_PER_SECOND,
       mapPresentationOffsetToClipOffset: (offset: number) => offset * 2,
       mapClipOffsetToPresentationOffset: (offset: number) => offset / 2,
     };
@@ -653,6 +663,9 @@ describe("TimelineClip Visual Geometry", () => {
       start: 0,
       end: TICKS_PER_SECOND,
       duration: TICKS_PER_SECOND,
+      startTick: 0,
+      endTick: TICKS_PER_SECOND,
+      durationTicks: TICKS_PER_SECOND,
       mapPresentationOffsetToClipOffset: (offset: number) => offset * 2,
       mapClipOffsetToPresentationOffset: (offset: number) => offset / 2,
     };

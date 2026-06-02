@@ -24,6 +24,17 @@ export {
   MIN_ZOOM,
   MAX_ZOOM,
 } from "./constants";
+export {
+  ticksPerFrame,
+  frameToTick,
+  tickToFrame,
+  snapTickToFrameGrid,
+  snapTickToGrid,
+  frameIndexFromTick,
+  tickFromFrameIndex,
+  FRAME_INDEX_EPSILON,
+} from "./utils/frameGrid";
+export type { FrameSnapMode } from "./utils/frameGrid";
 export { AssetDragOverlay } from "./components/AssetDragOverlay";
 export {
   createEndpointOverlayItem,

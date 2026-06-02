@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import type { BaseClip } from "../../../types/TimelineTypes";
 import { useTimelineStore } from "../useTimelineStore";
+import { useProjectStore } from "../../project/useProjectStore";
 import { mapSourceTimeToVisualTime } from "../../transformations";
 import {
   buildTimelineClipPresentationIndex,
@@ -65,7 +66,12 @@ export const buildTimelineSnapPoints = (
 ) => {
   const excludedIds = new Set(options.excludedClipIds ?? []);
   const { clips, tracks } = useTimelineStore.getState();
-  const presentationByClipId = buildTimelineClipPresentationIndex(tracks, clips);
+  const fps = useProjectStore.getState().config.fps;
+  const presentationByClipId = buildTimelineClipPresentationIndex(
+    tracks,
+    clips,
+    fps,
+  );
 
   const points = new Set<number>();
   clips.forEach((timelineClip) => {

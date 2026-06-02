@@ -32,10 +32,7 @@ import {
 } from "../../utils/clipPresentation";
 import { getAssetById } from "../../../userAssets";
 import { useProjectStore } from "../../../project";
-import {
-  getTicksPerFrame,
-  snapTickToFrame,
-} from "../../../timelineSelection";
+import { getTicksPerFrame, snapTickToFrame } from "../../../timelineSelection";
 
 type InsertGapMode = "local" | "external";
 
@@ -352,6 +349,7 @@ export const useClipMove = (
           ? buildTimelineClipPresentationIndex(
               timelineTracks,
               timelineClips,
+              useProjectStore.getState().config.fps,
             ).get(activeClip.id)
           : undefined;
       const clipDuration =
@@ -396,9 +394,10 @@ export const useClipMove = (
       useProjectStore.getState().config.fps,
     );
     // Snap to frame grid; clip-to-clip snap (snapStartTicks) takes priority
-    const presentationStartTicks = snapStartTicks != null
-      ? snapStartTicks
-      : Math.max(0, snapTickToFrame(unsnappedStartTicks, ticksPerFrame));
+    const presentationStartTicks =
+      snapStartTicks != null
+        ? snapStartTicks
+        : Math.max(0, snapTickToFrame(unsnappedStartTicks, ticksPerFrame));
 
     // --- 2. Calculate Track (Vertical) ---
     // We prioritize the gap index calculated during the move phase.
@@ -501,6 +500,7 @@ export const useClipMove = (
       const collisionClips = buildTimelineClipPresentationCollisionView(
         collisionTracks,
         proposedClips,
+        useProjectStore.getState().config.fps,
       );
       const movingCollisionClip = collisionClips.find(
         (candidate) => candidate.id === clip.id,
@@ -574,6 +574,7 @@ export const useClipMove = (
       ),
       targetTrackId: resolvedLeaderTargetTrackId,
       ticksPerFrame,
+      fps: useProjectStore.getState().config.fps,
       insertedTrack,
       insertTrackIndex: currentInsertGapIndex,
     });

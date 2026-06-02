@@ -5,9 +5,7 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import {
-  isNonMaskTimelineClip,
-} from "../../../types/TimelineTypes";
+import { isNonMaskTimelineClip } from "../../../types/TimelineTypes";
 import { resolveMaskBooleanExpression } from "../../masks/model/maskBooleanExpression";
 import { clipReferencesAssetId } from "../model/timelineCommands";
 import { getChildMaskClipIds } from "../model/maskClipModel";
@@ -70,8 +68,9 @@ export function selectTimelineClipsForTrack(
 
 export function selectTimelineDuration(
   state: TimelineDurationState,
+  fps: number,
 ): number {
-  return computeFurthestPresentationEnd(state.tracks, state.clips);
+  return computeFurthestPresentationEnd(state.tracks, state.clips, fps);
 }
 
 export function selectTimelineClipCountForAsset(
@@ -83,8 +82,7 @@ export function selectTimelineClipCountForAsset(
   }
 
   return state.clips.reduce(
-    (count, clip) =>
-      count + (clipReferencesAssetId(clip, assetId) ? 1 : 0),
+    (count, clip) => count + (clipReferencesAssetId(clip, assetId) ? 1 : 0),
     0,
   );
 }

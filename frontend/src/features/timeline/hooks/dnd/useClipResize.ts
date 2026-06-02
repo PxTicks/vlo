@@ -12,10 +12,7 @@ import type { TimelineClip } from "../../../../types/TimelineTypes";
 import { useInteractionStore } from "../useInteractionStore";
 import { getEdgeSnapCandidate } from "./snapUtils";
 import { useProjectStore } from "../../../project";
-import {
-  getTicksPerFrame,
-  snapTickToFrame,
-} from "../../../timelineSelection";
+import { getTicksPerFrame, snapTickToFrame } from "../../../timelineSelection";
 import {
   buildTimelineClipPresentationCollisionView,
   buildTimelineClipPresentationIndex,
@@ -58,6 +55,7 @@ export const useClipResize = () => {
     const presentation = buildTimelineClipPresentationIndex(
       tracks,
       clips,
+      useProjectStore.getState().config.fps,
     ).get(clip.id);
 
     const hysteresisPx = SNAP_THRESHOLD_PX + 3;
@@ -168,9 +166,11 @@ export const useClipResize = () => {
     const timelineState = useTimelineStore.getState();
     const clips = timelineState.clips ?? [];
     const tracks = timelineState.tracks ?? [];
-    const presentation = buildTimelineClipPresentationIndex(tracks, clips).get(
-      clip.id,
-    );
+    const presentation = buildTimelineClipPresentationIndex(
+      tracks,
+      clips,
+      useProjectStore.getState().config.fps,
+    ).get(clip.id);
     const currentPresentationStart = presentation?.start ?? clip.start;
     const currentPresentationEnd =
       presentation?.end ?? clip.start + clip.timelineDuration;
@@ -267,6 +267,7 @@ export const useClipResize = () => {
       const collisionClips = buildTimelineClipPresentationCollisionView(
         tracks,
         clips,
+        useProjectStore.getState().config.fps,
         {
           clipId: clip.id,
           start: newShape.start,
@@ -323,6 +324,7 @@ export const useClipResize = () => {
       const collisionClips = buildTimelineClipPresentationCollisionView(
         tracks,
         clips,
+        useProjectStore.getState().config.fps,
         {
           clipId: clip.id,
           timelineDuration: newShape.timelineDuration,

@@ -88,7 +88,7 @@ describe("RenderGroupOrchestrator", () => {
     });
 
     it("initial sync with no adjustment clips leaves every track parented under root", () => {
-      fx.orchestrator.setAdjustmentSource(fx.visualTracks, []);
+      fx.orchestrator.setAdjustmentSource(fx.visualTracks, [], 30);
       fx.orchestrator.sync(0, ["track-1", "track-2", "track-3"]);
       for (const engineContainer of fx.engineByTrackId.values()) {
         expect(engineContainer.parent).toBe(fx.root);
@@ -96,7 +96,7 @@ describe("RenderGroupOrchestrator", () => {
     });
 
     it("assigns zIndex following the top-track = highest-zIndex convention", () => {
-      fx.orchestrator.setAdjustmentSource(fx.visualTracks, []);
+      fx.orchestrator.setAdjustmentSource(fx.visualTracks, [], 30);
       fx.orchestrator.sync(0, ["track-1", "track-2", "track-3"]);
       expect(fx.engineByTrackId.get("track-1")!.zIndex).toBe(2);
       expect(fx.engineByTrackId.get("track-2")!.zIndex).toBe(1);
@@ -147,12 +147,10 @@ describe("RenderGroupOrchestrator", () => {
         timelineDuration: 100,
         depth: 2,
       });
-      fx.orchestrator.setAdjustmentSource(tracks, [adjustment]);
+      fx.orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
 
-      const groupContainer = fx.orchestrator.getGroupContainer(
-        "a@track-1",
-      );
+      const groupContainer = fx.orchestrator.getGroupContainer("a@track-1");
       expect(groupContainer).not.toBeNull();
       expect(groupContainer!.parent).toBe(fx.root);
       expect(fx.engineByTrackId.get("track-1")!.parent).toBe(groupContainer);
@@ -179,7 +177,7 @@ describe("RenderGroupOrchestrator", () => {
         timelineDuration: 100,
         depth: 2,
       });
-      fx.orchestrator.setAdjustmentSource(tracks, [adjustment]);
+      fx.orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
       const container = fx.orchestrator.getGroupContainer("a@track-2")!;
       // visualTrackOrder length 3; top-most member track-2 at visual index 1
@@ -196,7 +194,7 @@ describe("RenderGroupOrchestrator", () => {
         timelineDuration: 100,
         depth: 1,
       });
-      fx.orchestrator.setAdjustmentSource(tracks, [adjustment]);
+      fx.orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
       const activeContainer = fx.orchestrator.getGroupContainer("a@track-1");
       expect(activeContainer!.parent).toBe(fx.root);
@@ -227,14 +225,13 @@ describe("RenderGroupOrchestrator", () => {
         timelineDuration: 100,
         depth: 2,
       });
-      fx.orchestrator.setAdjustmentSource(tracks, [early, late]);
+      fx.orchestrator.setAdjustmentSource(tracks, [early, late], 30);
 
       const engine = fx.engineByTrackId.get("track-1")!;
 
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
-      const earlyContainer = fx.orchestrator.getGroupContainer(
-        "early@track-1",
-      )!;
+      const earlyContainer =
+        fx.orchestrator.getGroupContainer("early@track-1")!;
       expect(engine.parent).toBe(earlyContainer);
 
       fx.orchestrator.sync(150, ["track-1", "track-2", "track-3"]);
@@ -256,7 +253,7 @@ describe("RenderGroupOrchestrator", () => {
         timelineDuration: 100,
         depth: 5,
       });
-      fx.orchestrator.setAdjustmentSource(tracks, [adjustment]);
+      fx.orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
       expect(fx.orchestrator.getGroupContainer("a@track-1")).toBeNull();
     });
@@ -291,7 +288,7 @@ describe("RenderGroupOrchestrator", () => {
       const engine3 = new Container();
       orchestrator.registerTrack("track-3", engine3);
 
-      orchestrator.setAdjustmentSource(tracks, [adjustment]);
+      orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
       // visualTrackOrder only contains the registered track.
       orchestrator.sync(50, ["track-3"]);
 
@@ -340,7 +337,7 @@ describe("RenderGroupOrchestrator", () => {
         timelineDuration: 100,
         depth: 3,
       });
-      fx.orchestrator.setAdjustmentSource(tracks, [A, B]);
+      fx.orchestrator.setAdjustmentSource(tracks, [A, B], 30);
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
 
       const outerA = fx.orchestrator.getGroupContainer("A@track-1");
@@ -376,13 +373,13 @@ describe("RenderGroupOrchestrator", () => {
         timelineDuration: 100,
         depth: 2,
       });
-      fx.orchestrator.setAdjustmentSource(tracks, [adjustment]);
+      fx.orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
       const container = fx.orchestrator.getGroupContainer("a@track-1")!;
       expect(container.destroyed).toBe(false);
 
       // Remove the adjustment clip from the source.
-      fx.orchestrator.setAdjustmentSource(tracks, []);
+      fx.orchestrator.setAdjustmentSource(tracks, [], 30);
       expect(container.destroyed).toBe(true);
       expect(fx.orchestrator.getGroupContainer("a@track-1")).toBeNull();
 
@@ -401,7 +398,7 @@ describe("RenderGroupOrchestrator", () => {
         timelineDuration: 100,
         depth: 2,
       });
-      fx.orchestrator.setAdjustmentSource(tracks, [adjustment]);
+      fx.orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
       const before = fx.orchestrator.getGroupContainer("a@track-1");
       expect(before).not.toBeNull();
@@ -409,7 +406,7 @@ describe("RenderGroupOrchestrator", () => {
       // Edit depth — same clip id, same first-track-in-run → same cached
       // container.
       adjustment = { ...adjustment, depth: 3 };
-      fx.orchestrator.setAdjustmentSource(tracks, [adjustment]);
+      fx.orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
       const after = fx.orchestrator.getGroupContainer("a@track-1");
       expect(after).toBe(before);
@@ -427,7 +424,7 @@ describe("RenderGroupOrchestrator", () => {
         timelineDuration: 100,
         depth: 1,
       });
-      fx.orchestrator.setAdjustmentSource(tracks, [adjustment]);
+      fx.orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
       const container = fx.orchestrator.getGroupContainer("a@track-1")!;
 
@@ -435,9 +432,7 @@ describe("RenderGroupOrchestrator", () => {
       expect(container.destroyed).toBe(true);
       expect(fx.orchestrator.getGroupContainer("a@track-1")).toBeNull();
       // Further calls are inert.
-      expect(() =>
-        fx.orchestrator.sync(50, ["track-1"]),
-      ).not.toThrow();
+      expect(() => fx.orchestrator.sync(50, ["track-1"])).not.toThrow();
     });
   });
 
@@ -469,7 +464,7 @@ describe("RenderGroupOrchestrator", () => {
       offset: 0,
       transformations: [],
     } as unknown as TimelineClip;
-    fx.orchestrator.setAdjustmentSource(tracks, [adjustment, videoClip]);
+    fx.orchestrator.setAdjustmentSource(tracks, [adjustment, videoClip], 30);
     expect(() =>
       fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]),
     ).not.toThrow();

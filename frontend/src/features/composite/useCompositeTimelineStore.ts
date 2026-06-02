@@ -51,7 +51,9 @@ function getCurrentTimelineSnapshot(): TimelineSnapshot {
   };
 }
 
-function getSnapshotForCompositeClip(clip: CompositeTimelineClip): TimelineSnapshot {
+function getSnapshotForCompositeClip(
+  clip: CompositeTimelineClip,
+): TimelineSnapshot {
   return {
     tracks:
       clip.content.tracks && clip.content.tracks.length > 0
@@ -67,7 +69,11 @@ function getCurrentCompositeContent(): CompositeContent {
   // to its true rendered length; clamped to a 1s minimum like an empty scene.
   const durationTicks = Math.max(
     TICKS_PER_SECOND,
-    computeFurthestPresentationEnd(tracks, clips),
+    computeFurthestPresentationEnd(
+      tracks,
+      clips,
+      useProjectStore.getState().config.fps,
+    ),
   );
 
   return {
@@ -119,128 +125,137 @@ function saveContentToRestoredTimeline(
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Composite timeline update failed.";
+  return error instanceof Error
+    ? error.message
+    : "Composite timeline update failed.";
 }
 
-export const useCompositeTimelineStore = create<CompositeTimelineState>((set, get) => ({
-  stack: [],
-  isBusy: false,
-  lastError: null,
+export const useCompositeTimelineStore = create<CompositeTimelineState>(
+  (set, get) => ({
+    stack: [],
+    isBusy: false,
+    lastError: null,
 
-  startBlankSubtimeline: () => {
-    const state = get();
-    if (state.isBusy) return false;
+    startBlankSubtimeline: () => {
+      const state = get();
+      if (state.isBusy) return false;
 
-    const previousSnapshot = getCurrentTimelineSnapshot();
-    const insertStartTick = playbackClock.time;
-    useTimelineStore.getState().setTimelinePersistenceSuspended(true);
-    useTimelineStore
-      .getState()
-      .replaceTimelineSnapshot(createDefaultTimelineSnapshot());
-    playbackClock.setTime(0);
+      const previousSnapshot = getCurrentTimelineSnapshot();
+      const insertStartTick = playbackClock.time;
+      useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+      useTimelineStore
+        .getState()
+        .replaceTimelineSnapshot(createDefaultTimelineSnapshot());
+      playbackClock.setTime(0);
 
-    set({
-      stack: [
-        ...state.stack,
-        {
-          previousSnapshot,
-          ownerClipId: null,
-          insertStartTick,
-          name: "Scene",
-        },
-      ],
-      lastError: null,
-    });
-    return true;
-  },
-
-  openCompositeClip: (clipId) => {
-    const state = get();
-    if (state.isBusy) return false;
-
-    const timelineSnapshot = getCurrentTimelineSnapshot();
-    const clip = timelineSnapshot.clips.find(
-      (candidate): candidate is CompositeTimelineClip =>
-        candidate.id === clipId && candidate.type === "composite",
-    );
-    if (!clip) return false;
-
-    useTimelineStore.getState().setTimelinePersistenceSuspended(true);
-    useTimelineStore.getState().replaceTimelineSnapshot(getSnapshotForCompositeClip(clip));
-    playbackClock.setTime(0);
-
-    set({
-      stack: [
-        ...state.stack,
-        {
-          previousSnapshot: timelineSnapshot,
-          ownerClipId: clip.id,
-          insertStartTick: clip.start,
-          name: clip.name,
-        },
-      ],
-      lastError: null,
-    });
-    return true;
-  },
-
-  exitToMainTimeline: async () => {
-    const state = get();
-    if (state.isBusy || state.stack.length === 0) return false;
-
-    set({ isBusy: true, lastError: null });
-
-    try {
-      let stack = [...get().stack];
-      let contentToSave = getCurrentCompositeContent();
-      const renderJobs: CompositeRenderJob[] = [];
-
-      while (stack.length > 0) {
-        const frame = stack[stack.length - 1];
-        stack = stack.slice(0, -1);
-
-        useTimelineStore
-          .getState()
-          .replaceTimelineSnapshot(cloneTimelineSnapshot(frame.previousSnapshot));
-
-        const returningToMainTimeline = stack.length === 0;
-        if (returningToMainTimeline) {
-          useTimelineStore.getState().setTimelinePersistenceSuspended(false);
-        }
-
-        const shouldCommitFrame =
-          frame.ownerClipId !== null || !isEmptyNewSceneContent(contentToSave);
-        const savedClip = shouldCommitFrame
-          ? saveContentToRestoredTimeline(frame, contentToSave)
-          : null;
-
-        if (savedClip && returningToMainTimeline) {
-          renderJobs.push({
-            clipId: savedClip.id,
-            content: structuredClone(savedClip.content),
-          });
-        }
-
-        set({ stack });
-
-        if (stack.length > 0) {
-          contentToSave = getCurrentCompositeContent();
-        }
-      }
-
-      set({ isBusy: false, lastError: null });
-      renderJobs.forEach((job) => {
-        scheduleCompositeProxyRender(job.clipId, job.content);
+      set({
+        stack: [
+          ...state.stack,
+          {
+            previousSnapshot,
+            ownerClipId: null,
+            insertStartTick,
+            name: "Scene",
+          },
+        ],
+        lastError: null,
       });
       return true;
-    } catch (error) {
-      const message = getErrorMessage(error);
-      useTimelineStore.getState().setTimelinePersistenceSuspended(false);
-      set({ isBusy: false, lastError: message });
-      console.error("Failed to save composite subtimeline", error);
-      return false;
-    }
-  },
+    },
 
-  clearLastError: () => set({ lastError: null }),
-}));
+    openCompositeClip: (clipId) => {
+      const state = get();
+      if (state.isBusy) return false;
+
+      const timelineSnapshot = getCurrentTimelineSnapshot();
+      const clip = timelineSnapshot.clips.find(
+        (candidate): candidate is CompositeTimelineClip =>
+          candidate.id === clipId && candidate.type === "composite",
+      );
+      if (!clip) return false;
+
+      useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+      useTimelineStore
+        .getState()
+        .replaceTimelineSnapshot(getSnapshotForCompositeClip(clip));
+      playbackClock.setTime(0);
+
+      set({
+        stack: [
+          ...state.stack,
+          {
+            previousSnapshot: timelineSnapshot,
+            ownerClipId: clip.id,
+            insertStartTick: clip.start,
+            name: clip.name,
+          },
+        ],
+        lastError: null,
+      });
+      return true;
+    },
+
+    exitToMainTimeline: async () => {
+      const state = get();
+      if (state.isBusy || state.stack.length === 0) return false;
+
+      set({ isBusy: true, lastError: null });
+
+      try {
+        let stack = [...get().stack];
+        let contentToSave = getCurrentCompositeContent();
+        const renderJobs: CompositeRenderJob[] = [];
+
+        while (stack.length > 0) {
+          const frame = stack[stack.length - 1];
+          stack = stack.slice(0, -1);
+
+          useTimelineStore
+            .getState()
+            .replaceTimelineSnapshot(
+              cloneTimelineSnapshot(frame.previousSnapshot),
+            );
+
+          const returningToMainTimeline = stack.length === 0;
+          if (returningToMainTimeline) {
+            useTimelineStore.getState().setTimelinePersistenceSuspended(false);
+          }
+
+          const shouldCommitFrame =
+            frame.ownerClipId !== null ||
+            !isEmptyNewSceneContent(contentToSave);
+          const savedClip = shouldCommitFrame
+            ? saveContentToRestoredTimeline(frame, contentToSave)
+            : null;
+
+          if (savedClip && returningToMainTimeline) {
+            renderJobs.push({
+              clipId: savedClip.id,
+              content: structuredClone(savedClip.content),
+            });
+          }
+
+          set({ stack });
+
+          if (stack.length > 0) {
+            contentToSave = getCurrentCompositeContent();
+          }
+        }
+
+        set({ isBusy: false, lastError: null });
+        renderJobs.forEach((job) => {
+          scheduleCompositeProxyRender(job.clipId, job.content);
+        });
+        return true;
+      } catch (error) {
+        const message = getErrorMessage(error);
+        useTimelineStore.getState().setTimelinePersistenceSuspended(false);
+        set({ isBusy: false, lastError: message });
+        console.error("Failed to save composite subtimeline", error);
+        return false;
+      }
+    },
+
+    clearLastError: () => set({ lastError: null }),
+  }),
+);

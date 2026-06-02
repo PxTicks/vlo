@@ -8,16 +8,31 @@ import {
   buildTrackTimeResolver,
   type TrackTimeResolver,
 } from "../../renderer/utils/resolveTrackTime";
-
-const COLLISION_EPSILON_TICKS = 0.5;
+import { snapTickToFrameGrid, ticksPerFrame } from "./frameGrid";
 
 export interface TimelineClipPresentation {
   clipId: string;
   trackId: string;
-  /** On-screen start after applying ripple retiming and static rebases. */
+  /**
+   * Raw (continuous) on-screen footprint after ripple retiming and static
+   * rebases — may be fractional. Basis for the offset mappers and the
+   * decode-time effective-tick mapping, and still the source for timeline
+   * *display* geometry (clip width/left) pending the deferred display-width
+   * quantization. For frame-grid *decisions* use the quantized `*Tick` fields.
+   */
   start: number;
   end: number;
   duration: number;
+  /**
+   * Frame-grid-quantized integer footprint: epsilon-tolerant ceiling on BOTH
+   * boundaries, guaranteed >= 1 frame. The single grid that frame-grid
+   * decisions — selection (`findActiveClipAt`), collision, and timeline length
+   * — share so they cannot drift. (Display geometry still reads the raw float
+   * fields above; moving it onto this grid is a deferred, coordinated change.)
+   */
+  startTick: number;
+  endTick: number;
+  durationTicks: number;
   /**
    * Given a presentation-offset within this clip's footprint, return the
    * stored offset within the clip (i.e. `effectiveTrackTick - clip.start`).
@@ -153,7 +168,8 @@ function applyProposedClipTimingChange(
       change.croppedSourceDuration !== undefined
         ? Math.round(change.croppedSourceDuration)
         : clip.croppedSourceDuration,
-    offset: change.offset !== undefined ? Math.round(change.offset) : clip.offset,
+    offset:
+      change.offset !== undefined ? Math.round(change.offset) : clip.offset,
   };
 
   if (next.type === "adjustment") {
@@ -172,10 +188,34 @@ function buildRippleLayoutResolver(
   });
 }
 
+/**
+ * Quantize a raw (continuous) presentation footprint to the integer frame grid.
+ * Epsilon-tolerant ceiling on BOTH boundaries so that:
+ *  - adjacent abutting clips (whose shared boundary the resolver maps to the
+ *    same tick) quantize identically and stay abutting (no gap / no overlap);
+ *  - the final partial content frame is included (never truncates below the
+ *    clip's content), while an already-frame-aligned boundary is NOT pushed to
+ *    the next frame by floating-point error;
+ *  - every clip occupies at least one frame.
+ */
+export function computeQuantizedPresentation(
+  rawStart: number,
+  rawEnd: number,
+  fps: number,
+): { startTick: number; endTick: number; durationTicks: number } {
+  const startTick = snapTickToFrameGrid(rawStart, fps, "ceil");
+  let endTick = snapTickToFrameGrid(rawEnd, fps, "ceil");
+  if (endTick <= startTick) {
+    endTick = startTick + ticksPerFrame(fps);
+  }
+  return { startTick, endTick, durationTicks: endTick - startTick };
+}
+
 function buildPresentation(
   clip: TimelineClip,
   resolver: TrackTimeResolver,
   layoutResolver: TrackTimeResolver,
+  fps: number,
 ): InternalClipPresentation {
   // Ripple-mode adjustments choose the clip's lane position. Static-mode
   // adjustments are then rebased around that position so they retime only the
@@ -194,6 +234,7 @@ function buildPresentation(
   );
   const duration = Math.max(0, presentationEnd - start);
   const end = start + duration;
+  const quantized = computeQuantizedPresentation(start, end, fps);
 
   const resolveEffectiveTrackTick = (presentationTick: number): number => {
     const effectiveTick = resolver.resolveEffectiveTrackTick(
@@ -211,6 +252,9 @@ function buildPresentation(
     start,
     end,
     duration,
+    startTick: quantized.startTick,
+    endTick: quantized.endTick,
+    durationTicks: quantized.durationTicks,
     mapPresentationOffsetToClipOffset(presentationOffset) {
       return resolveEffectiveTrackTick(start + presentationOffset) - clip.start;
     },
@@ -238,7 +282,7 @@ function indexClipsByTrack(
     byTrack.set(presentation.trackId, list);
   }
   for (const list of byTrack.values()) {
-    list.sort((left, right) => left.start - right.start);
+    list.sort((left, right) => left.startTick - right.startTick);
   }
   return byTrack;
 }
@@ -247,13 +291,14 @@ function buildInternalPresentationMap(
   resolver: TrackTimeResolver,
   layoutResolver: TrackTimeResolver,
   clips: readonly TimelineClip[],
+  fps: number,
 ): Map<string, InternalClipPresentation> {
   const presentationByClipId = new Map<string, InternalClipPresentation>();
   for (const clip of clips) {
     if (clip.type === "mask") continue;
     presentationByClipId.set(
       clip.id,
-      buildPresentation(clip, resolver, layoutResolver),
+      buildPresentation(clip, resolver, layoutResolver, fps),
     );
   }
   return presentationByClipId;
@@ -268,6 +313,7 @@ function buildInternalPresentationMap(
 export function buildTimelineClipPresentationIndex(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
+  fps: number,
 ): Map<string, TimelineClipPresentation> {
   const resolver = buildTrackTimeResolver(tracks, clips);
   const layoutResolver = buildRippleLayoutResolver(tracks, clips);
@@ -275,6 +321,7 @@ export function buildTimelineClipPresentationIndex(
     resolver,
     layoutResolver,
     clips,
+    fps,
   );
   const publicMap = new Map<string, TimelineClipPresentation>();
   for (const [clipId, presentation] of internalMap) {
@@ -301,15 +348,20 @@ export function buildTimelineClipPresentationIndex(
 export function computeFurthestPresentationEnd(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
+  fps: number,
   subset: readonly TimelineClip[] = clips,
 ): number {
   const presentationByClipId = buildTimelineClipPresentationIndex(
     tracks,
     clips,
+    fps,
   );
   const furthestEnd = subset.reduce((furthest, clip) => {
+    // Quantized end so timeline length sits on the frame grid and never
+    // truncates the final partial frame. Masks (no presentation) fall back to
+    // their stored end.
     const presentationEnd =
-      presentationByClipId.get(clip.id)?.end ??
+      presentationByClipId.get(clip.id)?.endTick ??
       clip.start + clip.timelineDuration;
     return Math.max(furthest, presentationEnd);
   }, 0);
@@ -324,6 +376,7 @@ export function computeFurthestPresentationEnd(
 export function buildTimelineClipPresentationLookup(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
+  fps: number,
 ): TimelineClipPresentationLookup {
   const resolver = buildTrackTimeResolver(tracks, clips);
   const layoutResolver = buildRippleLayoutResolver(tracks, clips);
@@ -331,6 +384,7 @@ export function buildTimelineClipPresentationLookup(
     resolver,
     layoutResolver,
     clips,
+    fps,
   );
   const byTrack = indexClipsByTrack(internalMap);
 
@@ -349,9 +403,14 @@ export function buildTimelineClipPresentationLookup(
       while (low <= high) {
         const mid = (low + high) >> 1;
         const entry = list[mid];
-        if (presentationTick < entry.start) {
+        // Half-open [startTick, endTick) on the integer frame grid: a frame
+        // boundary tick equal to a clip's startTick is owned by that clip; the
+        // tick equal to its endTick belongs to the next clip. Integer bounds
+        // make this exact — no tolerance, and a clip starting on a boundary
+        // always renders that frame.
+        if (presentationTick < entry.startTick) {
           high = mid - 1;
-        } else if (presentationTick >= entry.end) {
+        } else if (presentationTick >= entry.endTick) {
           low = mid + 1;
         } else {
           return {
@@ -431,17 +490,18 @@ function collectPresentationCollisionsFromIndex(
 
   const collisions: TimelineClipPresentationCollision[] = [];
   for (const [trackId, placements] of placementsByTrack) {
+    // Quantized integer footprints — sort and overlap-test are exact, no
+    // tolerance. A clip ending exactly where the next starts (endTick ===
+    // startTick) is a clean half-open abut, not a collision.
     placements.sort((left, right) => {
-      const startDelta = left.start - right.start;
-      return Math.abs(startDelta) > COLLISION_EPSILON_TICKS
-        ? startDelta
-        : left.end - right.end;
+      const startDelta = left.startTick - right.startTick;
+      return startDelta !== 0 ? startDelta : left.endTick - right.endTick;
     });
 
     for (let index = 1; index < placements.length; index += 1) {
       const previous = placements[index - 1];
       const current = placements[index];
-      if (previous.end > current.start + COLLISION_EPSILON_TICKS) {
+      if (previous.endTick > current.startTick) {
         collisions.push({
           trackId,
           leftClipId: previous.clipId,
@@ -461,9 +521,10 @@ function collisionKey(collision: TimelineClipPresentationCollision): string {
 export function collectTimelineClipPresentationCollisions(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
+  fps: number,
 ): TimelineClipPresentationCollision[] {
   return collectPresentationCollisionsFromIndex(
-    buildTimelineClipPresentationIndex(tracks, clips),
+    buildTimelineClipPresentationIndex(tracks, clips, fps),
   );
 }
 
@@ -475,6 +536,7 @@ export function collectTimelineClipPresentationCollisions(
 export function buildTimelineClipPresentationCollisionView(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
+  fps: number,
   change?: ProposedClipTimingChange,
 ): TimelineClip[] {
   const nextClips = change
@@ -483,15 +545,18 @@ export function buildTimelineClipPresentationCollisionView(
   const presentationByClipId = buildTimelineClipPresentationIndex(
     tracks,
     nextClips,
+    fps,
   );
 
   return nextClips.map((clip) => {
     const presentation = presentationByClipId.get(clip.id);
     if (!presentation) return clip;
+    // Feed legacy collision utilities the quantized frame-grid footprint so
+    // their notion of overlap matches the renderer's selection grid exactly.
     return {
       ...clip,
-      start: Math.round(presentation.start),
-      timelineDuration: Math.round(presentation.duration),
+      start: presentation.startTick,
+      timelineDuration: presentation.durationTicks,
     };
   });
 }
@@ -499,16 +564,19 @@ export function buildTimelineClipPresentationCollisionView(
 export function introducesTimelineClipPresentationCollision(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
+  fps: number,
   change: ProposedClipTimingChange,
 ): boolean {
   const beforeCollisions = new Set(
-    collectTimelineClipPresentationCollisions(tracks, clips).map(collisionKey),
+    collectTimelineClipPresentationCollisions(tracks, clips, fps).map(
+      collisionKey,
+    ),
   );
   const nextClips = clips.map((clip) =>
     applyProposedClipTimingChange(clip, change),
   );
 
-  return collectTimelineClipPresentationCollisions(tracks, nextClips).some(
+  return collectTimelineClipPresentationCollisions(tracks, nextClips, fps).some(
     (collision) => !beforeCollisions.has(collisionKey(collision)),
   );
 }

@@ -107,9 +107,10 @@ function TimelineContainerComponent({
     () => clips.filter((clip) => clip.type !== "mask"),
     [clips],
   );
+  const projectFps = useProjectStore((state) => state.config.fps);
   const clipPresentationById = React.useMemo(
-    () => buildTimelineClipPresentationIndex(tracks, clips),
-    [tracks, clips],
+    () => buildTimelineClipPresentationIndex(tracks, clips, projectFps),
+    [tracks, clips, projectFps],
   );
 
   const { zoomScale, setZoomScale, ticksToPx, pxToTicks, setScrollContainer } =
@@ -137,15 +138,14 @@ function TimelineContainerComponent({
     interactionOperation,
     interactionDeltaX,
     externalInsertGapIndex,
-  } =
-    useInteractionStore(
-      useShallow((state) => ({
-        interactionActiveClip: state.activeClip,
-        interactionOperation: state.operation,
-        interactionDeltaX: state.currentDeltaX,
-        externalInsertGapIndex: state.externalInsertGapIndex,
-      })),
-    );
+  } = useInteractionStore(
+    useShallow((state) => ({
+      interactionActiveClip: state.activeClip,
+      interactionOperation: state.operation,
+      interactionDeltaX: state.currentDeltaX,
+      externalInsertGapIndex: state.externalInsertGapIndex,
+    })),
+  );
   const interactionSnapTick = useInteractionStore((state) => state.snapTick);
   const resolvedExternalInsertGapIndex =
     externalInsertGapIndexProp !== undefined

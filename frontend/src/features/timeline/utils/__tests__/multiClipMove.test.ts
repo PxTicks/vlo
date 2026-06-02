@@ -4,8 +4,13 @@ import type {
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
 import { planMultiClipMove } from "../multiClipMove";
+import { TICKS_PER_SECOND } from "../../constants";
 
-function createTrack(id: string, label: string, type?: TimelineTrack["type"]): TimelineTrack {
+function createTrack(
+  id: string,
+  label: string,
+  type?: TimelineTrack["type"],
+): TimelineTrack {
   return {
     id,
     label,
@@ -57,6 +62,7 @@ describe("planMultiClipMove", () => {
       leaderClip: clipA,
       targetStartTicks: 120,
       ticksPerFrame: 1,
+      fps: TICKS_PER_SECOND,
       insertedTrack,
       insertTrackIndex: 1,
     });
@@ -93,6 +99,7 @@ describe("planMultiClipMove", () => {
       targetStartTicks: 0,
       targetTrackId: "track-b",
       ticksPerFrame: 1,
+      fps: TICKS_PER_SECOND,
     });
 
     expect(plan).toBeNull();

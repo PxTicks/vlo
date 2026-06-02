@@ -29,7 +29,9 @@ function cloneClipWithStartShift<T extends TimelineClip>(
   return { ...cloned, start: cloned.start + deltaTicks };
 }
 
-function cloneTracks(tracks: TimelineTrack[] | undefined): TimelineTrack[] | undefined {
+function cloneTracks(
+  tracks: TimelineTrack[] | undefined,
+): TimelineTrack[] | undefined {
   return tracks ? structuredClone(tracks) : undefined;
 }
 
@@ -41,13 +43,18 @@ function cloneTracks(tracks: TimelineTrack[] | undefined): TimelineTrack[] | und
  */
 export function selectionToCompositeContent(
   selection: TimelineSelection,
+  fps: number,
 ): CompositeContent {
   const start = selection.start;
   // Presentation-aware so a slow/fast adjustment inside the selection captures
   // the true rendered length, not the raw stored clip ends.
   const end =
     selection.end ??
-    computeFurthestPresentationEnd(selection.tracks ?? [], selection.clips);
+    computeFurthestPresentationEnd(
+      selection.tracks ?? [],
+      selection.clips,
+      fps,
+    );
   const durationTicks = Math.max(0, end - start);
 
   return {

@@ -23,6 +23,8 @@ export interface PlanMultiClipMoveOptions {
   targetStartTicks: number;
   targetTrackId?: string;
   ticksPerFrame: number;
+  /** Project (output) fps — quantizes the presentation collision grid. */
+  fps: number;
   insertedTrack?: TimelineTrack;
   insertTrackIndex?: number | null;
 }
@@ -38,6 +40,7 @@ export function planMultiClipMove(
     targetStartTicks,
     targetTrackId,
     ticksPerFrame,
+    fps,
     insertedTrack,
     insertTrackIndex,
   } = options;
@@ -141,10 +144,13 @@ export function planMultiClipMove(
   const collisionClips = buildTimelineClipPresentationCollisionView(
     virtualTracks,
     nextClips,
+    fps,
   );
 
   for (const move of plannedMoves) {
-    const collisionClip = collisionClips.find((clip) => clip.id === move.clipId);
+    const collisionClip = collisionClips.find(
+      (clip) => clip.id === move.clipId,
+    );
     if (!collisionClip) {
       return null;
     }

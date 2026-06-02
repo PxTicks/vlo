@@ -5,6 +5,10 @@ import {
   isCompositeProxyStale,
   selectionToCompositeContent,
 } from "../composite";
+import { TICKS_PER_SECOND } from "../../../timeline";
+
+// One tick per frame -> quantization is identity on the abstract tick fixtures.
+const GRID_FPS = TICKS_PER_SECOND;
 import type {
   AdjustmentTimelineClip,
   CompositeTimelineClip,
@@ -44,7 +48,7 @@ describe("composite adapters", () => {
       frameStep: 4,
     };
 
-    const content = selectionToCompositeContent(selection);
+    const content = selectionToCompositeContent(selection, GRID_FPS);
 
     expect(content.durationTicks).toBe(1000);
     expect(content.clips.map((clip) => clip.start)).toEqual([0, 300]);
@@ -69,7 +73,7 @@ describe("composite adapters", () => {
       ],
     };
 
-    const content = selectionToCompositeContent(selection);
+    const content = selectionToCompositeContent(selection, GRID_FPS);
 
     expect(content.clips[0]).not.toBe(selection.clips[0]);
     expect(content.tracks?.[0]).not.toBe(selection.tracks?.[0]);
@@ -90,7 +94,7 @@ describe("composite adapters", () => {
       clips: [videoClip("a", 600, 2000)],
     };
 
-    const content = selectionToCompositeContent(selection);
+    const content = selectionToCompositeContent(selection, GRID_FPS);
     expect(content.clips[0].start).toBe(-400);
     expect(content.durationTicks).toBe(1000);
   });
@@ -100,7 +104,9 @@ describe("composite adapters", () => {
       start: 100,
       clips: [videoClip("a", 100, 700)],
     };
-    expect(selectionToCompositeContent(selection).durationTicks).toBe(700);
+    expect(selectionToCompositeContent(selection, GRID_FPS).durationTicks).toBe(
+      700,
+    );
   });
 
   it("infers presentation-aware duration when a slow adjustment is in the window", () => {
@@ -151,7 +157,9 @@ describe("composite adapters", () => {
       ],
     };
 
-    expect(selectionToCompositeContent(selection).durationTicks).toBe(250);
+    expect(selectionToCompositeContent(selection, GRID_FPS).durationTicks).toBe(
+      250,
+    );
   });
 
   it("round-trips content back to a zero-anchored selection", () => {
@@ -163,7 +171,7 @@ describe("composite adapters", () => {
     };
 
     const replayed = compositeContentToSelection(
-      selectionToCompositeContent(selection),
+      selectionToCompositeContent(selection, GRID_FPS),
     );
 
     expect(replayed.start).toBe(0);
@@ -173,32 +181,46 @@ describe("composite adapters", () => {
   });
 
   it("hashes stably and changes when bake-affecting content changes", () => {
-    const content = selectionToCompositeContent({
-      start: 0,
-      end: 1000,
-      clips: [videoClip("a", 0, 1000)],
-    });
-    const same = selectionToCompositeContent({
-      start: 0,
-      end: 1000,
-      clips: [videoClip("a", 0, 1000)],
-    });
+    const content = selectionToCompositeContent(
+      {
+        start: 0,
+        end: 1000,
+        clips: [videoClip("a", 0, 1000)],
+      },
+      GRID_FPS,
+    );
+    const same = selectionToCompositeContent(
+      {
+        start: 0,
+        end: 1000,
+        clips: [videoClip("a", 0, 1000)],
+      },
+      GRID_FPS,
+    );
     expect(hashCompositeContent(content)).toBe(hashCompositeContent(same));
 
-    const edited = selectionToCompositeContent({
-      start: 0,
-      end: 1000,
-      clips: [videoClip("a", 0, 800)],
-    });
-    expect(hashCompositeContent(edited)).not.toBe(hashCompositeContent(content));
+    const edited = selectionToCompositeContent(
+      {
+        start: 0,
+        end: 1000,
+        clips: [videoClip("a", 0, 800)],
+      },
+      GRID_FPS,
+    );
+    expect(hashCompositeContent(edited)).not.toBe(
+      hashCompositeContent(content),
+    );
   });
 
   it("detects stale or unbaked proxies", () => {
-    const content = selectionToCompositeContent({
-      start: 0,
-      end: 1000,
-      clips: [videoClip("a", 0, 1000)],
-    });
+    const content = selectionToCompositeContent(
+      {
+        start: 0,
+        end: 1000,
+        clips: [videoClip("a", 0, 1000)],
+      },
+      GRID_FPS,
+    );
     const base: CompositeTimelineClip = {
       id: "composite-1",
       type: "composite",

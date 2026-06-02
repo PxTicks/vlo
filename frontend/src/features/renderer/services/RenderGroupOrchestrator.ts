@@ -130,9 +130,10 @@ export class RenderGroupOrchestrator {
   setAdjustmentSource(
     tracks: readonly TimelineTrack[],
     clips: readonly TimelineClip[],
+    fps: number,
   ): void {
     if (this.disposed) return;
-    this.adjustmentEffectResolver.setAdjustmentSource(tracks, clips);
+    this.adjustmentEffectResolver.setAdjustmentSource(tracks, clips, fps);
 
     const liveAdjustmentClipIds = new Set<string>();
     for (const clip of clips) {
@@ -268,7 +269,7 @@ export class RenderGroupOrchestrator {
       if (engineContainer.destroyed) continue;
       const innermost = innermostGroupByTrack.get(trackId);
       const desiredParent = innermost
-        ? this.groupContainers.get(innermost.id) ?? this.root
+        ? (this.groupContainers.get(innermost.id) ?? this.root)
         : this.root;
       if (engineContainer.parent !== desiredParent) {
         if (engineContainer.parent && !engineContainer.parent.destroyed) {

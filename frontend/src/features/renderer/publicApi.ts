@@ -3,7 +3,11 @@ export { syncContainerTransformToTarget } from "./utils/displayObjectSync";
 export {
   calculatePlayerFrameTime,
   snapFrameTimeSeconds,
-} from "./utils/renderTime";
+  tickToMediaSeconds,
+  mediaSecondsToTick,
+  mediaTimestampToFirstAvailableTick,
+  frameIndexToOutputTimestamp,
+} from "./utils/mediaTime";
 export {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,

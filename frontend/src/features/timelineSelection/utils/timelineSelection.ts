@@ -3,9 +3,13 @@ import type {
   TimelineSelection,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import { TICKS_PER_SECOND } from "../../timeline";
+import {
+  ticksPerFrame as frameGridTicksPerFrame,
+  snapTickToGrid,
+} from "../../timeline/utils/frameGrid";
+import type { FrameSnapMode } from "../../timeline/utils/frameGrid";
 
-export type FrameSnapMode = "nearest" | "floor" | "ceil";
+export type { FrameSnapMode };
 
 const MIN_FPS = 1;
 const MIN_FRAME_STEP = 1;
@@ -35,13 +39,13 @@ export function resolveSelectionFrameStep(
 }
 
 export function getTicksPerFrame(fps: number): number {
-  const safeFps = clampToPositiveInteger(fps, MIN_FPS);
-  return TICKS_PER_SECOND / safeFps;
+  // Selection fps is integer; preserve the integer clamp, then route the
+  // division through the canonical frameGrid so there is one source of truth.
+  return frameGridTicksPerFrame(clampToPositiveInteger(fps, MIN_FPS));
 }
 
 export function snapTickToFrame(tick: number, ticksPerFrame: number): number {
-  const safeTicksPerFrame = Math.max(1e-6, ticksPerFrame);
-  return Math.round(tick / safeTicksPerFrame) * safeTicksPerFrame;
+  return snapTickToGrid(tick, ticksPerFrame, "nearest");
 }
 
 export function snapFrameCountToStep(
@@ -267,9 +271,7 @@ function recoverReferencedSubordinateClips(
     }
   }
 
-  return recoveredClips.length > 0
-    ? [...clips, ...recoveredClips]
-    : clips;
+  return recoveredClips.length > 0 ? [...clips, ...recoveredClips] : clips;
 }
 
 function isTimelineClip(value: unknown): value is TimelineClip {
@@ -292,7 +294,9 @@ export function normalizeTimelineSelection(
 ): TimelineSelection {
   const rawClips = Array.isArray(selection.clips) ? selection.clips : [];
   const validClips = rawClips.filter(isTimelineClip);
-  const availableTracks = Array.isArray(selection.tracks) ? selection.tracks : [];
+  const availableTracks = Array.isArray(selection.tracks)
+    ? selection.tracks
+    : [];
   const normalizedIncludedTrackIds = normalizeIncludedTrackIds(
     selection.includedTrackIds,
     availableTracks,

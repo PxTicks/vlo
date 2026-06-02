@@ -5,6 +5,7 @@ import type {
 import { selectionToCompositeContent } from "../../timelineSelection";
 import { durationSecondsToTicks } from "../../timeline/utils/assetDuration";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
+import { useProjectStore } from "../../project/useProjectStore";
 import { bakeCompositeProxy } from "./bakeCompositeProxy";
 import { createCompositeTimelineClip } from "../utils/createCompositeClip";
 
@@ -53,7 +54,10 @@ export async function groupSelectionIntoComposite(
     return null;
   }
 
-  const content = selectionToCompositeContent(selection);
+  const content = selectionToCompositeContent(
+    selection,
+    useProjectStore.getState().config.fps,
+  );
   const compositeClipId = `clip_${crypto.randomUUID()}`;
   const { asset, contentHash } = await bakeCompositeProxy(content, {
     signal: options.signal,

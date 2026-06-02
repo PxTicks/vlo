@@ -21,14 +21,17 @@ import {
 export class AdjustmentEffectResolver {
   private tracks: readonly TimelineTrack[] = [];
   private clips: readonly TimelineClip[] = [];
+  private fps = 30;
   private presentationLookup: TimelineClipPresentationLookup | null = null;
 
   setAdjustmentSource(
     tracks: readonly TimelineTrack[],
     clips: readonly TimelineClip[],
+    fps: number,
   ): void {
     this.tracks = tracks;
     this.clips = clips;
+    this.fps = fps;
     this.presentationLookup = null;
   }
 
@@ -53,6 +56,7 @@ export class AdjustmentEffectResolver {
       this.presentationLookup = buildTimelineClipPresentationLookup(
         this.tracks,
         this.clips,
+        this.fps,
       );
     }
     return this.presentationLookup;

@@ -8,6 +8,7 @@ import type {
 import type { Asset } from "../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../timeline";
 import { computeFurthestPresentationEnd } from "../../timeline/utils/clipPresentation";
+import { frameIndexToOutputTimestamp } from "../utils/mediaTime";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
@@ -125,7 +126,9 @@ function buildVisualRenderData(
 
   const maskClipsByParent = new Map<string, MaskTimelineClip[]>();
   if (includeTimelineMasks) {
-    const clipsById = new Map(selectedClips.map((clip) => [clip.id, clip] as const));
+    const clipsById = new Map(
+      selectedClips.map((clip) => [clip.id, clip] as const),
+    );
     for (const clip of selectedClips) {
       if (clip.type === "mask") continue;
       const maskChildIds = (clip.components ?? [])
@@ -304,20 +307,25 @@ export class ExportRenderer {
       timelineSelection.tracks ?? tracks,
     );
     const startTick = timelineSelection.start;
+    const renderFps = resolveSelectionFps(timelineSelection, fps);
     // Falls back to the clips' furthest presentation end when the selection
     // omits an explicit end. Presentation resolves against the full timeline
     // (the same source the AdjustmentEffectResolver uses below) so adjustment
     // speed is honoured; we measure only the clips this selection emits.
+    // Quantize presentation on the canonical PROJECT-fps timeline grid (not
+    // renderFps) so export and preview resolve identical clip footprints for
+    // the same tick. renderFps only drives the export sample cadence + output
+    // timestamps below.
     const inferredEndTick = computeFurthestPresentationEnd(
       projectData.tracks,
       projectData.clips,
+      fps,
       selectedClips,
     );
     const requestedEndTick = Math.max(
       startTick,
       timelineSelection.end ?? inferredEndTick,
     );
-    const renderFps = resolveSelectionFps(timelineSelection, fps);
     const frameStep = resolveSelectionFrameStep(timelineSelection);
     const ticksPerFrame = getTicksPerFrame(renderFps);
     const rawFrameCount = Math.max(
@@ -331,9 +339,13 @@ export class ExportRenderer {
       ...def,
       fileHandle: config.fileHandle,
     }));
-    const hasAudioOutput = outputDefinitions.some((output) => output.includeAudio);
+    const hasAudioOutput = outputDefinitions.some(
+      (output) => output.includeAudio,
+    );
 
-    const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
+    const assetsById = new Map(
+      assets.map((asset) => [asset.id, asset] as const),
+    );
     const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
       buildVisualRenderData(
         effectiveTracks,
@@ -342,7 +354,9 @@ export class ExportRenderer {
         assetsById,
       );
 
-    const relevantForAudio = effectiveTracks.filter((t) => !t.isMuted && t.isVisible);
+    const relevantForAudio = effectiveTracks.filter(
+      (t) => !t.isMuted && t.isVisible,
+    );
     const shouldRenderAudio = hasAudioOutput && relevantForAudio.length > 0;
 
     const frameTexture = RenderTexture.create({
@@ -361,9 +375,12 @@ export class ExportRenderer {
 
     try {
       const adjustmentEffectResolver = new AdjustmentEffectResolver();
+      // Project fps: the presentation grid must match preview, not the export
+      // sample rate (renderFps).
       adjustmentEffectResolver.setAdjustmentSource(
         projectData.tracks,
         projectData.clips,
+        fps,
       );
 
       // --- AUDIO EXPORT LOOP ---
@@ -472,6 +489,7 @@ export class ExportRenderer {
       this.orchestrator.setAdjustmentSource(
         projectData.tracks,
         projectData.clips,
+        fps,
       );
       const visualTrackOrder = visualTracks.map((track) => track.id);
 
@@ -479,7 +497,9 @@ export class ExportRenderer {
         this.throwIfCancelled();
 
         const currentTime = startTick + i * ticksPerFrame;
-        const timestamp = i / renderFps; // Seconds relative to output start
+        // Output timestamp from the frame index (drift-free, monotonic) via the
+        // single media-time boundary — never accumulated from ticks/seconds.
+        const timestamp = frameIndexToOutputTimestamp(i, renderFps);
 
         const promises: Promise<void>[] = [];
 
@@ -544,7 +564,11 @@ export class ExportRenderer {
         });
 
         // Encode one or more outputs by applying per-output transform stacks.
-        await outputEncoder.addTextureFrame(frameTexture, timestamp, 1 / renderFps);
+        await outputEncoder.addTextureFrame(
+          frameTexture,
+          timestamp,
+          1 / renderFps,
+        );
 
         this.throwIfCancelled();
 
@@ -561,7 +585,7 @@ export class ExportRenderer {
         await outputEncoder.finalize();
       const primaryOutputId = outputs.video
         ? "video"
-        : Object.keys(outputs)[0] ?? null;
+        : (Object.keys(outputs)[0] ?? null);
       if (!primaryOutputId) {
         throw new Error("Renderer produced no video outputs");
       }
@@ -597,16 +621,23 @@ export class ExportRenderer {
     options.signal?.addEventListener("abort", onAbort, { once: true });
 
     const { assets, fps } = projectData;
-    const availableTracks = options.timelineSelection?.tracks ?? projectData.tracks;
-    const availableClips = options.timelineSelection?.clips ?? projectData.clips;
+    const availableTracks =
+      options.timelineSelection?.tracks ?? projectData.tracks;
+    const availableClips =
+      options.timelineSelection?.clips ?? projectData.clips;
     const tracks = options.timelineSelection
-      ? getIncludedTracksForSelection(options.timelineSelection, availableTracks)
+      ? getIncludedTracksForSelection(
+          options.timelineSelection,
+          availableTracks,
+        )
       : availableTracks;
     const clips = options.timelineSelection
       ? getIncludedClipsForSelection(options.timelineSelection, availableClips)
       : availableClips;
     const { logicalWidth, logicalHeight } = config;
-    const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
+    const assetsById = new Map(
+      assets.map((asset) => [asset.id, asset] as const),
+    );
     const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
       buildVisualRenderData(
         tracks,
@@ -620,6 +651,7 @@ export class ExportRenderer {
       adjustmentEffectResolver.setAdjustmentSource(
         projectData.tracks,
         projectData.clips,
+        fps,
       );
 
       this.logicalStage.sortableChildren = true;
@@ -647,6 +679,7 @@ export class ExportRenderer {
       this.orchestrator.setAdjustmentSource(
         projectData.tracks,
         projectData.clips,
+        fps,
       );
       const visualTrackOrder = visualTracks.map((track) => track.id);
 

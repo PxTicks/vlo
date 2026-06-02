@@ -7,7 +7,11 @@ import type {
   VideoTimelineClip,
 } from "../../../types/TimelineTypes";
 import type { ExportConfig, ProjectData } from "../../renderer";
-import { TICKS_PER_SECOND, createClipFromAsset } from "../../timeline";
+import { createClipFromAsset } from "../../timeline";
+import {
+  tickToMediaSeconds,
+  mediaSecondsToTick,
+} from "../../renderer/utils/mediaTime";
 import { calculateClipTime } from "../../transformations";
 import { getTicksPerFrame, snapTickToFrame } from "../../timelineSelection";
 import { useProjectStore } from "../../project";
@@ -30,7 +34,10 @@ function clamp(value: number, min: number, max: number): number {
  * reversal-aware), clamped to the clip's visible extent. Mirrors the masks
  * feature's `toClipInputTimeTicks` but avoids a generation -> masks edge.
  */
-function toClipInputTimeTicks(clip: TimelineClip, globalTimeTicks: number): number {
+function toClipInputTimeTicks(
+  clip: TimelineClip,
+  globalTimeTicks: number,
+): number {
   const clamped = clamp(
     globalTimeTicks,
     clip.start,
@@ -192,7 +199,7 @@ function buildSyntheticRenderInputs(
     type: "video",
     src: source.videoUrl,
     file: source.videoFile,
-    duration: durationTicks / TICKS_PER_SECOND,
+    duration: tickToMediaSeconds(durationTicks),
     createdAt: Date.now(),
   };
 
@@ -301,14 +308,16 @@ export async function renderSyntheticEditedOutputs(
 }
 
 /** Loads enough of a video URL to read its duration, in timeline ticks. */
-export async function probeVideoDurationTicks(videoUrl: string): Promise<number> {
+export async function probeVideoDurationTicks(
+  videoUrl: string,
+): Promise<number> {
   return new Promise<number>((resolve, reject) => {
     const video = document.createElement("video");
     video.preload = "metadata";
     video.muted = true;
     video.onloadedmetadata = () => {
       const seconds = Number.isFinite(video.duration) ? video.duration : 0;
-      resolve(Math.max(0, Math.round(seconds * TICKS_PER_SECOND)));
+      resolve(Math.max(0, mediaSecondsToTick(seconds)));
     };
     video.onerror = () => reject(new Error("Could not read video metadata"));
     video.src = videoUrl;
@@ -328,12 +337,15 @@ export async function captureVideoFrameFile(
 
   await new Promise<void>((resolve, reject) => {
     video.onloadeddata = () => resolve();
-    video.onerror = () => reject(new Error("Could not load video for thumbnail"));
+    video.onerror = () =>
+      reject(new Error("Could not load video for thumbnail"));
   });
 
   await new Promise<void>((resolve) => {
     video.onseeked = () => resolve();
-    const max = Number.isFinite(video.duration) ? Math.max(0, video.duration - 0.05) : 0;
+    const max = Number.isFinite(video.duration)
+      ? Math.max(0, video.duration - 0.05)
+      : 0;
     video.currentTime = Math.min(Math.max(0, atSeconds), max);
   });
 
@@ -349,5 +361,8 @@ export async function captureVideoFrameFile(
   if (!blob) {
     throw new Error("Could not encode video thumbnail");
   }
-  return new File([blob], filename, { type: "image/png", lastModified: Date.now() });
+  return new File([blob], filename, {
+    type: "image/png",
+    lastModified: Date.now(),
+  });
 }

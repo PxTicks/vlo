@@ -11,11 +11,12 @@ import DecoderWorker from "../workers/decoder.worker?worker";
 import {
   calculatePlayerFrameTime,
   snapFrameTimeSeconds,
-} from "../utils/renderTime";
+  mediaSecondsToTickExact,
+} from "../utils/mediaTime";
 import { findActiveClipAtTicks } from "../utils/clipLookup";
 import { applyClipTransforms } from "../../transformations";
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
-import { TICKS_PER_SECOND } from "../../timeline";
+import { ticksPerFrame } from "../../timeline";
 import { ensureAssetSourceLoaded } from "../../userAssets";
 import { hasEmbeddedAssetSource } from "../utils/assetSource";
 import {
@@ -38,10 +39,7 @@ function createRenderAbortError(): Error {
   return error;
 }
 
-function createLiveFrameTimeoutError(
-  timeoutMs: number,
-  clipId: string,
-): Error {
+function createLiveFrameTimeoutError(timeoutMs: number, clipId: string): Error {
   const error = new Error(
     `Timed out waiting ${timeoutMs}ms for live frame ${clipId}`,
   );
@@ -213,7 +211,9 @@ export class TrackRenderEngine {
   ): { activeClip: TimelineClip; effectiveTick: number } | null {
     if (!this.trackId || !this.adjustmentEffectResolver) {
       const activeClip = findActiveClipAtTicks(trackClips, presentationTick);
-      return activeClip ? { activeClip, effectiveTick: presentationTick } : null;
+      return activeClip
+        ? { activeClip, effectiveTick: presentationTick }
+        : null;
     }
     const lookup = this.adjustmentEffectResolver.getPresentationLookup();
     const found = lookup.findActiveClipAt(this.trackId, presentationTick);
@@ -289,7 +289,10 @@ export class TrackRenderEngine {
     }
 
     // 5. Calculate Time
-    const localTimeSeconds = calculatePlayerFrameTime(activeClip, effectiveTick);
+    const localTimeSeconds = calculatePlayerFrameTime(
+      activeClip,
+      effectiveTick,
+    );
     const rawTimeSeconds = effectiveTick - activeClip.start;
 
     if (typeof localTimeSeconds !== "number" || isNaN(localTimeSeconds)) {
@@ -316,7 +319,10 @@ export class TrackRenderEngine {
       this.invalidateLivePipeline();
 
       if (!shouldRender) {
-        if (this.sprite.visible && this.currentTextureClipId === activeClip.id) {
+        if (
+          this.sprite.visible &&
+          this.currentTextureClipId === activeClip.id
+        ) {
           this.applyClipTransformsForClip(
             activeClip,
             logicalDimensions,
@@ -369,8 +375,7 @@ export class TrackRenderEngine {
         activeClip,
         currentFrameIndex,
         renderTimeSeconds,
-      ) ||
-      this.pendingResolve !== null; // Always send if strictly awaiting (Export)
+      ) || this.pendingResolve !== null; // Always send if strictly awaiting (Export)
 
     if (shouldSend && shouldRender) {
       this.lastRenderRequest = {
@@ -449,7 +454,10 @@ export class TrackRenderEngine {
     }
     const { activeClip, effectiveTick } = resolved;
 
-    const localTimeSeconds = calculatePlayerFrameTime(activeClip, effectiveTick);
+    const localTimeSeconds = calculatePlayerFrameTime(
+      activeClip,
+      effectiveTick,
+    );
     const rawTimeSeconds = effectiveTick - activeClip.start;
 
     if (typeof localTimeSeconds !== "number" || isNaN(localTimeSeconds)) {
@@ -463,7 +471,9 @@ export class TrackRenderEngine {
         logicalDimensions,
         rawTimeSeconds,
         maskClips,
-        new Map<string, Asset>(assets.map((asset) => [asset.id, asset] as const)),
+        new Map<string, Asset>(
+          assets.map((asset) => [asset.id, asset] as const),
+        ),
         fps,
       );
       return;
@@ -543,7 +553,9 @@ export class TrackRenderEngine {
         logicalDimensions,
         rawTimeSeconds,
         maskClips,
-        new Map<string, Asset>(assets.map((asset) => [asset.id, asset] as const)),
+        new Map<string, Asset>(
+          assets.map((asset) => [asset.id, asset] as const),
+        ),
         fps,
       );
       return;
@@ -719,7 +731,8 @@ export class TrackRenderEngine {
     }
 
     const asset = assetsById.get(activeClip.assetId);
-    const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : (options.fps ?? 30);
+    const clipFps =
+      asset?.fps && asset.fps > 0 ? asset.fps : (options.fps ?? 30);
 
     const rawTime = effectiveTick - activeClip.start;
     await this.maskController.syncMaskClips(
@@ -738,7 +751,9 @@ export class TrackRenderEngine {
       }
 
       if (this.pendingReject) {
-        this.rejectPendingFrame(new Error("Concurrent renderFrame() is not supported"));
+        this.rejectPendingFrame(
+          new Error("Concurrent renderFrame() is not supported"),
+        );
       }
 
       let isSettled = false;
@@ -871,9 +886,10 @@ export class TrackRenderEngine {
     isLikelyScrubbing: boolean,
   ): Map<string, Asset> {
     // These windows are defined in seconds, then converted to ticks.
-    const LOOKAHEAD_WINDOW_TICKS = 2.0 * TICKS_PER_SECOND;
-    const CLEANUP_DELAY_TICKS =
-      (isLikelyScrubbing ? 6.0 : 1.0) * TICKS_PER_SECOND;
+    const LOOKAHEAD_WINDOW_TICKS = mediaSecondsToTickExact(2.0);
+    const CLEANUP_DELAY_TICKS = mediaSecondsToTickExact(
+      isLikelyScrubbing ? 6.0 : 1.0,
+    );
     const MIN_PREPARED_LIFETIME_MS = isLikelyScrubbing ? 1200 : 0;
     const assetById = new Map(assets.map((asset) => [asset.id, asset]));
     const clipById = new Map<string, TimelineClip>();
@@ -939,7 +955,10 @@ export class TrackRenderEngine {
                 file: hydratedAsset.file,
               });
               this.preparedClips.set(expectedClipId, expectedAssetId);
-              this.preparedClipTouchedAtMs.set(expectedClipId, performance.now());
+              this.preparedClipTouchedAtMs.set(
+                expectedClipId,
+                performance.now(),
+              );
             })
             .finally(() => {
               this.pendingAssetHydrations.delete(asset.id);
@@ -1087,7 +1106,10 @@ export class TrackRenderEngine {
             }
           }
 
-          if (this.sprite.visible && this.currentTextureClipId === request.clip.id) {
+          if (
+            this.sprite.visible &&
+            this.currentTextureClipId === request.clip.id
+          ) {
             applyClipTransforms(
               this.sprite,
               request.clip,
@@ -1172,7 +1194,9 @@ export class TrackRenderEngine {
       this.liveRenderQueue.shift();
     }
 
-    if (this.liveRenderQueue.length <= TrackRenderEngine.MAX_LIVE_RENDER_QUEUE) {
+    if (
+      this.liveRenderQueue.length <= TrackRenderEngine.MAX_LIVE_RENDER_QUEUE
+    ) {
       return;
     }
 
@@ -1455,7 +1479,7 @@ export class TrackRenderEngine {
     const absDeltaTicks = Math.abs(deltaTicks);
     const direction: -1 | 0 | 1 =
       deltaTicks === 0 ? 0 : deltaTicks > 0 ? 1 : -1;
-    const frameTicks = TICKS_PER_SECOND / Math.max(1, fps);
+    const frameTicks = ticksPerFrame(Math.max(1, fps));
     const largeJump = absDeltaTicks > frameTicks * 1.5;
     const directionFlip =
       direction !== 0 &&
@@ -1497,5 +1521,4 @@ export class TrackRenderEngine {
     this.pendingLiveFrame = null;
     rejectPending(error);
   }
-
 }

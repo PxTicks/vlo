@@ -18,12 +18,15 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
-import { TICKS_PER_SECOND } from "../timeline";
+import {
+  tickToMediaSeconds,
+  mediaSecondsToTick,
+} from "../renderer/utils/mediaTime";
 import { useMiniEditorStore } from "./useMiniEditorStore";
 import { EditorTrack } from "./components/EditorTrack";
 
 function formatTicks(ticks: number): string {
-  const totalSeconds = Math.max(0, ticks) / TICKS_PER_SECOND;
+  const totalSeconds = tickToMediaSeconds(Math.max(0, ticks));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = Math.floor(totalSeconds % 60);
   const centis = Math.floor((totalSeconds % 1) * 100);
@@ -74,7 +77,7 @@ export function MiniEditorModal() {
   useEffect(() => {
     const video = videoRef.current;
     if (!video || isPlaying) return;
-    const target = playheadTicks / TICKS_PER_SECOND;
+    const target = tickToMediaSeconds(playheadTicks);
     if (Math.abs(video.currentTime - target) > 0.02) {
       video.currentTime = target;
     }
@@ -94,8 +97,8 @@ export function MiniEditorModal() {
       return;
     }
 
-    const cropStartSec = cropStartTicks / TICKS_PER_SECOND;
-    const cropEndSec = cropEndTicks / TICKS_PER_SECOND;
+    const cropStartSec = tickToMediaSeconds(cropStartTicks);
+    const cropEndSec = tickToMediaSeconds(cropEndTicks);
     if (video.currentTime < cropStartSec || video.currentTime >= cropEndSec) {
       video.currentTime = cropStartSec;
     }
@@ -107,7 +110,7 @@ export function MiniEditorModal() {
       if (current.currentTime >= cropEndSec) {
         current.currentTime = cropStartSec;
       }
-      setPlayhead(Math.round(current.currentTime * TICKS_PER_SECOND));
+      setPlayhead(mediaSecondsToTick(current.currentTime));
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -187,7 +190,10 @@ export function MiniEditorModal() {
               </IconButton>
               <Typography
                 variant="caption"
-                sx={{ color: "text.secondary", fontVariantNumeric: "tabular-nums" }}
+                sx={{
+                  color: "text.secondary",
+                  fontVariantNumeric: "tabular-nums",
+                }}
               >
                 {formatTicks(playheadTicks)} / {formatTicks(durationTicks)}
               </Typography>
@@ -300,7 +306,12 @@ export function MiniEditorModal() {
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} color="inherit" size="small" disabled={isSaving}>
+        <Button
+          onClick={handleClose}
+          color="inherit"
+          size="small"
+          disabled={isSaving}
+        >
           Cancel
         </Button>
         <Button

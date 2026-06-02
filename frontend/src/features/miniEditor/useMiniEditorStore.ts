@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { TICKS_PER_SECOND } from "../timeline";
+import { mediaSecondsToTick } from "../renderer/utils/mediaTime";
 import { getTicksPerFrame, snapFrameCountToStep } from "../timelineSelection";
 import type {
   EditorRangeMask,
@@ -11,7 +12,7 @@ import type {
 export type MiniEditorStatus = "preparing" | "ready" | "saving" | "error";
 
 /** Minimum trim/range width so handles never collapse onto each other. */
-const MIN_SPAN_TICKS = Math.round(TICKS_PER_SECOND / 10);
+const MIN_SPAN_TICKS = mediaSecondsToTick(0.1);
 
 interface MiniEditorInternal {
   prepare: MiniEditorOpenArgs["prepare"] | null;
@@ -36,14 +37,20 @@ function snapCropToFrameStep(
   anchor: "start" | "end",
 ): { start: number; end: number } {
   const totalFrames = Math.max(1, Math.round(durationTicks / ticksPerFrame));
-  const rawCount = Math.max(1, Math.round((endTicks - startTicks) / ticksPerFrame));
+  const rawCount = Math.max(
+    1,
+    Math.round((endTicks - startTicks) / ticksPerFrame),
+  );
   const count = Math.min(
     totalFrames,
     snapFrameCountToStep(rawCount, frameStep, "nearest"),
   );
 
   if (anchor === "start") {
-    let startFrame = Math.min(Math.max(0, Math.round(startTicks / ticksPerFrame)), totalFrames - 1);
+    let startFrame = Math.min(
+      Math.max(0, Math.round(startTicks / ticksPerFrame)),
+      totalFrames - 1,
+    );
     let endFrame = startFrame + count;
     if (endFrame > totalFrames) {
       endFrame = totalFrames;
@@ -52,7 +59,10 @@ function snapCropToFrameStep(
     return { start: startFrame * ticksPerFrame, end: endFrame * ticksPerFrame };
   }
 
-  let endFrame = Math.min(Math.max(1, Math.round(endTicks / ticksPerFrame)), totalFrames);
+  let endFrame = Math.min(
+    Math.max(1, Math.round(endTicks / ticksPerFrame)),
+    totalFrames,
+  );
   let startFrame = endFrame - count;
   if (startFrame < 0) {
     startFrame = 0;
@@ -156,7 +166,10 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
           args.frameConstraint && args.frameConstraint.fps > 0
             ? getTicksPerFrame(args.frameConstraint.fps)
             : null,
-        frameStep: Math.max(1, Math.round(args.frameConstraint?.frameStep ?? 1)),
+        frameStep: Math.max(
+          1,
+          Math.round(args.frameConstraint?.frameStep ?? 1),
+        ),
       },
     });
 
@@ -214,15 +227,18 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
     const { durationTicks } = state;
     const { ticksPerFrame, frameStep } = state._internal;
 
-    let start = clamp(startTicks, 0, Math.max(0, durationTicks - MIN_SPAN_TICKS));
+    let start = clamp(
+      startTicks,
+      0,
+      Math.max(0, durationTicks - MIN_SPAN_TICKS),
+    );
     let end = clamp(endTicks, start + MIN_SPAN_TICKS, durationTicks);
 
     if (ticksPerFrame && ticksPerFrame > 0) {
       // Anchor the endpoint the user is not dragging, then quantize the span.
       const startMoved = startTicks !== state.cropStartTicks;
       const endMoved = endTicks !== state.cropEndTicks;
-      const anchor: "start" | "end" =
-        endMoved && !startMoved ? "start" : "end";
+      const anchor: "start" | "end" = endMoved && !startMoved ? "start" : "end";
       const snapped = snapCropToFrameStep(
         start,
         end,
@@ -243,14 +259,19 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
   },
 
   addRangeAtPlayhead: () => {
-    const { playheadTicks, cropStartTicks, cropEndTicks, durationTicks } = get();
+    const { playheadTicks, cropStartTicks, cropEndTicks, durationTicks } =
+      get();
     const anchor = clamp(playheadTicks, 0, durationTicks);
     const defaultLen = Math.min(TICKS_PER_SECOND, durationTicks);
     let start = clamp(anchor, 0, Math.max(0, durationTicks - defaultLen));
     let end = clamp(start + defaultLen, start + MIN_SPAN_TICKS, durationTicks);
     // Bias the seed toward the visible crop window when possible.
     if (cropEndTicks > cropStartTicks) {
-      start = clamp(start, cropStartTicks, Math.max(cropStartTicks, cropEndTicks - MIN_SPAN_TICKS));
+      start = clamp(
+        start,
+        cropStartTicks,
+        Math.max(cropStartTicks, cropEndTicks - MIN_SPAN_TICKS),
+      );
       end = clamp(end, start + MIN_SPAN_TICKS, cropEndTicks);
     }
     const range: EditorRangeMask = {
@@ -267,7 +288,11 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
 
   updateRange: (id, startTicks, endTicks) => {
     const { durationTicks } = get();
-    const start = clamp(startTicks, 0, Math.max(0, durationTicks - MIN_SPAN_TICKS));
+    const start = clamp(
+      startTicks,
+      0,
+      Math.max(0, durationTicks - MIN_SPAN_TICKS),
+    );
     const end = clamp(endTicks, start + MIN_SPAN_TICKS, durationTicks);
     set((state) => ({
       ranges: state.ranges.map((range) =>

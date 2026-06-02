@@ -14,7 +14,7 @@ import {
   type ExportConfig,
   type ProjectData,
 } from "../../renderer";
-import { TICKS_PER_SECOND } from "../../timeline";
+import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
 import {
   getTicksPerFrame,
   normalizeTimelineSelection,
@@ -466,7 +466,7 @@ export async function renderAssetToMaskMp4(
 
   const durationTicks = Math.max(
     1,
-    Math.floor(durationSeconds * TICKS_PER_SECOND),
+    mediaSecondsToTick(durationSeconds, "floor"),
   );
 
   const syntheticClip: StandardTimelineClip = {

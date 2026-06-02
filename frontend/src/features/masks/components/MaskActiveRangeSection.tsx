@@ -1,7 +1,7 @@
 import { Box, Chip, IconButton, Typography } from "@mui/material";
 import { Add, DeleteOutline, EditOutlined } from "@mui/icons-material";
 import type { MaskActiveRange } from "../../../types/TimelineTypes";
-import { TICKS_PER_SECOND } from "../../timeline";
+import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 
 interface MaskActiveRangeSectionProps {
   activeRange: MaskActiveRange | null;
@@ -11,8 +11,8 @@ interface MaskActiveRangeSectionProps {
 }
 
 function formatRangeLabel(range: MaskActiveRange): string {
-  const startSeconds = range.startSourceTicks / TICKS_PER_SECOND;
-  const endSeconds = range.endSourceTicks / TICKS_PER_SECOND;
+  const startSeconds = tickToMediaSeconds(range.startSourceTicks);
+  const endSeconds = tickToMediaSeconds(range.endSourceTicks);
   return `${startSeconds.toFixed(2)}s–${endSeconds.toFixed(2)}s`;
 }
 
@@ -38,9 +38,7 @@ export function MaskActiveRangeSection({
       </Typography>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
         {activeRange ? (
-          <Box
-            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
-          >
+          <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
             <Chip
               data-testid="mask-active-range-chip"
               label={formatRangeLabel(activeRange)}

@@ -8,12 +8,11 @@ import { describe, it, expect } from "vitest";
  * list below): tick<->frame in `frameGrid`, tick<->media-seconds in `mediaTime`,
  * tick<->pixel in `pixelGrid`. New code must go through those modules.
  *
- * The allowlist freezes the files that still convert raw. Pixel-domain math has
- * all moved to `pixelGrid`, so no pixel files remain here; what's left is:
- *   - foundational time math that sits BELOW mediaTime in the dep graph and so
- *     cannot import it without a cycle (timeCalculation);
- *   - seconds-sized threshold constants / lookahead windows;
- *   - cold display-seconds + default-duration seeds pending the optional B3.
+ * The migration is complete: every tick conversion now goes through a boundary
+ * module. The allowlist is down to its irreducible core — a single file,
+ * `timeCalculation`, which sits BELOW mediaTime in the dependency graph
+ * (mediaTime imports `calculateClipTime` from it) and so cannot route through
+ * mediaTime without an import cycle.
  *
  * Do NOT add entries without cause — prefer migrating to a boundary module.
  * A new file appearing here means raw conversion crept back in.
@@ -33,29 +32,12 @@ const CENTRAL = [
   "features/timeline/constants.ts",
 ];
 
-// Grandfathered raw-conversion sites (see header). Subset-checked, so removing
-// usage from a listed file never fails the guard; only a NEW offending file does.
-const ALLOWLIST = [
-  // (pixel-domain tick<->px math now all routes through pixelGrid — no files
-  // remain on the allowlist for it.)
-  // foundational time math (below mediaTime in the dep graph)
-  "features/transformations/utils/timeCalculation.ts",
-  // seconds-sized threshold constants / hot lookahead windows
-  "features/renderer/services/TrackRenderEngine.ts",
-  "features/player/Player.tsx",
-  "features/player/hooks/interaction/useMaskInteractionController.ts",
-  // cold display-seconds + default-duration seeds (optional Part B3)
-  "features/transformations/utils/layerDomain.ts",
-  "features/text/utils/createTextClip.ts",
-  "features/miniEditor/MiniEditorModal.tsx",
-  "features/miniEditor/useMiniEditorStore.ts",
-  "features/generation/hooks/useGenerationPanel.ts",
-  "features/generation/utils/inputMetadata.ts",
-  "features/generation/utils/inputSelection.ts",
-  "features/generation/utils/miniEditorEdit.ts",
-  "features/masks/components/MaskActiveRangeSection.tsx",
-  "features/masks/components/RangeMaskSection.tsx",
-];
+// The single legitimately-exempt non-boundary file. `timeCalculation` sits
+// BELOW mediaTime in the dependency graph (mediaTime imports calculateClipTime
+// from it), so it cannot route through mediaTime without an import cycle. Every
+// other tick conversion now goes through a boundary module (frameGrid /
+// mediaTime / pixelGrid). Subset-checked: a NEW file doing raw conversion fails.
+const ALLOWLIST = ["features/transformations/utils/timeCalculation.ts"];
 
 const RAW_CONVERSION =
   /\*\s*TICKS_PER_SECOND|\/\s*TICKS_PER_SECOND|TICKS_PER_SECOND\s*\*|TICKS_PER_SECOND\s*\//;

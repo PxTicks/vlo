@@ -4,7 +4,11 @@ import type { Asset } from "../../../types/Asset";
 import { useExtractStore } from "../../player/useExtractStore";
 import { usePlayerStore } from "../../player/usePlayerStore";
 import { playbackClock } from "../../player/services/PlaybackClock";
-import { TICKS_PER_SECOND, insertAssetAtTime } from "../../timeline";
+import { insertAssetAtTime, frameToTick } from "../../timeline";
+import {
+  tickToMediaSeconds,
+  mediaSecondsToTick,
+} from "../../renderer/utils/mediaTime";
 import {
   createPointTimelineSelection,
   createTimelineSelection,
@@ -14,10 +18,7 @@ import {
 } from "../../timelineSelection";
 import { useGenerationStore } from "../useGenerationStore";
 import { useProjectStore } from "../../project";
-import type {
-  WorkflowSelectionConfig,
-  WorkflowInput,
-} from "../types";
+import type { WorkflowSelectionConfig, WorkflowInput } from "../types";
 import type { SlotValue } from "../utils/pipeline";
 import {
   captureFramePngAtTick,
@@ -42,14 +43,10 @@ import type {
 } from "../../miniEditor";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { resolveWidgetInputs } from "../store/workflowState";
-import {
-  parseInputsFromGraphData,
-} from "../services/workflowBridge";
+import { parseInputsFromGraphData } from "../services/workflowBridge";
 import { parseInputsFromApiWorkflow } from "../services/apiWorkflowInputs";
 import { addLocalAsset, useAssetStore } from "../../userAssets";
-import {
-  findWorkflowInputValidationFailures,
-} from "../services/workflowRules";
+import { findWorkflowInputValidationFailures } from "../services/workflowRules";
 import {
   buildWorkflowInputLookup,
   getWorkflowInputId,
@@ -138,7 +135,9 @@ async function extractAudioTimelineSelection({
   const preparedAudioFile = await extractAudioFromSelection(timelineSelection, {
     exportFps,
   });
-  if (selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId) {
+  if (
+    selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId
+  ) {
     return;
   }
   setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
@@ -160,7 +159,9 @@ interface VideoSelectionExtractionOptions {
   thumbnailFile: File;
   extractionRequestId: number;
   mode: "rules" | "manual";
-  derivedMaskMappings: ReturnType<typeof useGenerationStore.getState>["derivedMaskMappings"];
+  derivedMaskMappings: ReturnType<
+    typeof useGenerationStore.getState
+  >["derivedMaskMappings"];
   setMediaInputTimelineSelection: ReturnType<
     typeof useGenerationStore.getState
   >["setMediaInputTimelineSelection"];
@@ -195,7 +196,9 @@ async function extractVideoTimelineSelection({
       timelineSelection,
       cachedVisualMasks,
     );
-    if (selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId) {
+    if (
+      selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId
+    ) {
       return;
     }
     setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
@@ -208,10 +211,11 @@ async function extractVideoTimelineSelection({
     return;
   }
 
-  const preparedVideoFile = await renderTimelineSelectionToMp4(
-    timelineSelection,
-  );
-  if (selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId) {
+  const preparedVideoFile =
+    await renderTimelineSelectionToMp4(timelineSelection);
+  if (
+    selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId
+  ) {
     return;
   }
   setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
@@ -256,7 +260,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const postprocessingCount = useGenerationStore(
     (s) => s.postprocessingJobIds.length,
   );
-  const clearGenerationQueue = useGenerationStore((s) => s.clearGenerationQueue);
+  const clearGenerationQueue = useGenerationStore(
+    (s) => s.clearGenerationQueue,
+  );
   const interruptCurrentGeneration = useGenerationStore(
     (s) => s.interruptCurrentGeneration,
   );
@@ -281,7 +287,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const clearWorkflowLoadError = useGenerationStore(
     (s) => s.clearWorkflowLoadError,
   );
-  const refreshRuntimeStatus = useGenerationStore((s) => s.refreshRuntimeStatus);
+  const refreshRuntimeStatus = useGenerationStore(
+    (s) => s.refreshRuntimeStatus,
+  );
   const queueGeneration = useGenerationStore((s) => s.queueGeneration);
   const fetchWorkflows = useGenerationStore((s) => s.fetchWorkflows);
   const setMediaInputAsset = useGenerationStore((s) => s.setMediaInputAsset);
@@ -332,7 +340,11 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const manualWorkflowInputs = useMemo(
     () =>
       syncedWorkflow
-        ? parseInputsFromApiWorkflow(syncedWorkflow, inputNodeMap, rawObjectInfo)
+        ? parseInputsFromApiWorkflow(
+            syncedWorkflow,
+            inputNodeMap,
+            rawObjectInfo,
+          )
         : syncedGraphData
           ? parseInputsFromGraphData(syncedGraphData, {
               inputNodeMap,
@@ -376,11 +388,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   }, [mediaInputs, textValues, workflowInputById, workflowInputs]);
   const inputMetadata = useMemo(
     () =>
-      buildWorkflowInputMetadataMap(
-        workflowInputs,
-        mediaInputs,
-        projectConfig,
-      ),
+      buildWorkflowInputMetadataMap(workflowInputs, mediaInputs, projectConfig),
     [mediaInputs, projectConfig, workflowInputs],
   );
   const rulesWidgetInputs = useMemo(
@@ -404,11 +412,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   );
   const manualWidgetInputs = useMemo(
     () =>
-      resolveManualWidgetInputs(
-        syncedWorkflow,
-        rawObjectInfo,
-        syncedGraphData,
-      ),
+      resolveManualWidgetInputs(syncedWorkflow, rawObjectInfo, syncedGraphData),
     [rawObjectInfo, syncedGraphData, syncedWorkflow],
   );
   const widgetInputs =
@@ -517,12 +521,10 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     }
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTextValues((prev) =>
-      hydrateReplayTextValues(
-        prev,
-        pendingReplayPanelState,
-        workflowInputs,
-      ).value,
+    setTextValues(
+      (prev) =>
+        hydrateReplayTextValues(prev, pendingReplayPanelState, workflowInputs)
+          .value,
     );
 
     const nextWidgetValues = resolveReplayWidgetValues(
@@ -537,12 +539,13 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       setWidgetValues(nextWidgetValues);
     }
 
-    setRandomizeToggles((prev) =>
-      hydrateReplayRandomizeToggles(
-        prev,
-        pendingReplayPanelState,
-        widgetInputs,
-      ).value,
+    setRandomizeToggles(
+      (prev) =>
+        hydrateReplayRandomizeToggles(
+          prev,
+          pendingReplayPanelState,
+          widgetInputs,
+        ).value,
     );
 
     clearPendingReplayPanelState();
@@ -579,185 +582,195 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     };
   }, []);
 
-  const handleGenerate = useCallback(async (count = 1) => {
-    const store = useGenerationStore.getState();
-    const currentWidgetValues = widgetValuesRef.current;
+  const handleGenerate = useCallback(
+    async (count = 1) => {
+      const store = useGenerationStore.getState();
+      const currentWidgetValues = widgetValuesRef.current;
 
-    if (store.connectionStatus !== "connected") {
-      store.connect();
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+      if (store.connectionStatus !== "connected") {
+        store.connect();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
 
-    // Build slot values from current UI state
-    const slotValues: Record<string, SlotValue> = {};
-    const bypassNodeIds = new Set<string>();
+      // Build slot values from current UI state
+      const slotValues: Record<string, SlotValue> = {};
+      const bypassNodeIds = new Set<string>();
 
-    for (const input of workflowInputs) {
-      const inputId = getWorkflowInputId(input);
-      if (input.inputType === "text") {
-        const text =
-          getWorkflowInputValue(textValues, input, workflowInputById) ?? "";
-        slotValues[inputId] = { type: "text", value: text };
-      } else {
-        const value = getWorkflowInputValue(
-          store.mediaInputs,
-          input,
-          workflowInputById,
-        );
-        if (!value) {
-          if (mode === "manual") {
-            bypassNodeIds.add(input.nodeId);
-          }
-          continue;
-        }
-
-        if (input.inputType === "image") {
-          if (value.kind === "asset") {
-            if (!assetMatchesType(value.asset, "image")) {
-              continue;
+      for (const input of workflowInputs) {
+        const inputId = getWorkflowInputId(input);
+        if (input.inputType === "text") {
+          const text =
+            getWorkflowInputValue(textValues, input, workflowInputById) ?? "";
+          slotValues[inputId] = { type: "text", value: text };
+        } else {
+          const value = getWorkflowInputValue(
+            store.mediaInputs,
+            input,
+            workflowInputById,
+          );
+          if (!value) {
+            if (mode === "manual") {
+              bypassNodeIds.add(input.nodeId);
             }
-            const file = await resolveAssetFileForGeneration(value.asset);
-            slotValues[inputId] = {
-              type: "image",
-              file,
-            };
-          } else if (value.kind === "frame") {
-            slotValues[inputId] = {
-              type: "image",
-              file: value.file,
-            };
-          }
-          continue;
-        }
-
-        if (input.inputType === "audio") {
-          if (value.kind === "asset") {
-            if (!assetMatchesType(value.asset, "audio")) {
-              continue;
-            }
-            const file = await resolveAssetFileForGeneration(value.asset);
-            slotValues[inputId] = {
-              type: "audio",
-              file,
-            };
-          } else if (
-            value.kind === "timelineSelection" &&
-            value.mediaType === "audio" &&
-            value.preparedAudioFile
-          ) {
-            slotValues[inputId] = {
-              type: "audio",
-              file: value.preparedAudioFile,
-            };
-          }
-          continue;
-        }
-
-        if (value.kind === "asset") {
-          if (!assetMatchesType(value.asset, "video")) {
             continue;
           }
-          const file = await resolveAssetFileForGeneration(value.asset);
-          slotValues[inputId] = {
-            type: "video",
-            file,
-            assetId: value.asset.id,
-          };
+
+          if (input.inputType === "image") {
+            if (value.kind === "asset") {
+              if (!assetMatchesType(value.asset, "image")) {
+                continue;
+              }
+              const file = await resolveAssetFileForGeneration(value.asset);
+              slotValues[inputId] = {
+                type: "image",
+                file,
+              };
+            } else if (value.kind === "frame") {
+              slotValues[inputId] = {
+                type: "image",
+                file: value.file,
+              };
+            }
+            continue;
+          }
+
+          if (input.inputType === "audio") {
+            if (value.kind === "asset") {
+              if (!assetMatchesType(value.asset, "audio")) {
+                continue;
+              }
+              const file = await resolveAssetFileForGeneration(value.asset);
+              slotValues[inputId] = {
+                type: "audio",
+                file,
+              };
+            } else if (
+              value.kind === "timelineSelection" &&
+              value.mediaType === "audio" &&
+              value.preparedAudioFile
+            ) {
+              slotValues[inputId] = {
+                type: "audio",
+                file: value.preparedAudioFile,
+              };
+            }
+            continue;
+          }
+
+          if (value.kind === "asset") {
+            if (!assetMatchesType(value.asset, "video")) {
+              continue;
+            }
+            const file = await resolveAssetFileForGeneration(value.asset);
+            slotValues[inputId] = {
+              type: "video",
+              file,
+              assetId: value.asset.id,
+            };
+            continue;
+          }
+
+          if (
+            value.kind === "timelineSelection" &&
+            value.mediaType === "video"
+          ) {
+            slotValues[inputId] = {
+              type: "video_selection",
+              selection: value.timelineSelection,
+              preparedVideoFile: value.preparedVideoFile ?? undefined,
+              preparedMaskFile: value.preparedMaskFile ?? undefined,
+              pendingExtractionRequestId: value.isExtracting
+                ? value.extractionRequestId
+                : undefined,
+            };
+          }
+        }
+      }
+
+      // Build widget overrides and randomization modes.
+      // Actual random number generation happens in the backend to preserve
+      // precision for large integer domains (for example seed ranges).
+      const widgetOverrides: Record<string, string> = {};
+      const frontendStateWidgetValues: Record<string, unknown> = {};
+      const derivedWidgetInputs: Record<string, string> = {};
+      const widgetModes: Record<string, "fixed" | "randomize"> = {};
+      for (const w of widgetInputs) {
+        const value =
+          currentWidgetValues[w.nodeId]?.[w.param] ?? w.currentValue;
+        if (w.kind === "derived") {
+          if (value !== undefined && value !== null) {
+            derivedWidgetInputs[`derived_widget_${w.derivedWidgetId}`] =
+              String(value);
+            frontendStateWidgetValues[
+              buildFrontendStateDerivedWidgetKey(w.derivedWidgetId)
+            ] =
+              typeof value === "string"
+                ? parseStoredWidgetValue(w, value)
+                : value;
+          }
           continue;
         }
 
-        if (value.kind === "timelineSelection" && value.mediaType === "video") {
-          slotValues[inputId] = {
-            type: "video_selection",
-            selection: value.timelineSelection,
-            preparedVideoFile: value.preparedVideoFile ?? undefined,
-            preparedMaskFile: value.preparedMaskFile ?? undefined,
-            pendingExtractionRequestId: value.isExtracting
-              ? value.extractionRequestId
-              : undefined,
-          };
-        }
-      }
-    }
-
-    // Build widget overrides and randomization modes.
-    // Actual random number generation happens in the backend to preserve
-    // precision for large integer domains (for example seed ranges).
-    const widgetOverrides: Record<string, string> = {};
-    const frontendStateWidgetValues: Record<string, unknown> = {};
-    const derivedWidgetInputs: Record<string, string> = {};
-    const widgetModes: Record<string, "fixed" | "randomize"> = {};
-    for (const w of widgetInputs) {
-      const value = currentWidgetValues[w.nodeId]?.[w.param] ?? w.currentValue;
-      if (w.kind === "derived") {
         if (value !== undefined && value !== null) {
-          derivedWidgetInputs[`derived_widget_${w.derivedWidgetId}`] =
-            String(value);
-          frontendStateWidgetValues[
-            buildFrontendStateDerivedWidgetKey(w.derivedWidgetId)
-          ] =
-            typeof value === "string" ? parseStoredWidgetValue(w, value) : value;
+          const frontendStateKey = buildFrontendStateValueKey({
+            nodeId: w.nodeId,
+            widget: w.param,
+            frontendControlId: w.frontendControlId,
+          });
+          frontendStateWidgetValues[frontendStateKey] =
+            typeof value === "string"
+              ? parseStoredWidgetValue(w, value)
+              : value;
         }
-        continue;
-      }
 
-      if (value !== undefined && value !== null) {
-        const frontendStateKey = buildFrontendStateValueKey({
-          nodeId: w.nodeId,
-          widget: w.param,
-          frontendControlId: w.frontendControlId,
-        });
-        frontendStateWidgetValues[frontendStateKey] =
-          typeof value === "string"
-            ? parseStoredWidgetValue(w, value)
-            : value;
-      }
+        const key = `${w.nodeId}:${w.param}`;
+        const isRandomized = randomizeToggles[key] ?? false;
+        if (w.config.controlAfterGenerate) {
+          widgetModes[`widget_mode_${w.nodeId}_${w.param}`] = isRandomized
+            ? "randomize"
+            : "fixed";
+        }
+        if (w.config.frontendOnly) {
+          continue;
+        }
 
-      const key = `${w.nodeId}:${w.param}`;
-      const isRandomized = randomizeToggles[key] ?? false;
-      if (w.config.controlAfterGenerate) {
-        widgetModes[`widget_mode_${w.nodeId}_${w.param}`] = isRandomized
-          ? "randomize"
-          : "fixed";
-      }
-      if (w.config.frontendOnly) {
-        continue;
-      }
-
-      if (isRandomized && w.config.controlAfterGenerate) {
-        continue;
-      }
-      if (value !== undefined && value !== null) {
-        let storedValue: unknown = value;
-        if (w.config.valueType === "boolean") {
-          if (value === true && w.config.trueValue !== undefined) {
-            storedValue = w.config.trueValue;
-          } else if (value === false && w.config.falseValue !== undefined) {
-            storedValue = w.config.falseValue;
+        if (isRandomized && w.config.controlAfterGenerate) {
+          continue;
+        }
+        if (value !== undefined && value !== null) {
+          let storedValue: unknown = value;
+          if (w.config.valueType === "boolean") {
+            if (value === true && w.config.trueValue !== undefined) {
+              storedValue = w.config.trueValue;
+            } else if (value === false && w.config.falseValue !== undefined) {
+              storedValue = w.config.falseValue;
+            }
           }
+          widgetOverrides[`widget_${w.nodeId}_${w.param}`] =
+            String(storedValue);
         }
-        widgetOverrides[`widget_${w.nodeId}_${w.param}`] = String(storedValue);
       }
-    }
 
-    await queueGeneration(
-      slotValues,
-      widgetOverrides,
-      widgetModes,
-      derivedWidgetInputs,
-      count,
-      frontendStateWidgetValues,
-      [...bypassNodeIds],
-    );
-  }, [
-    mode,
-    queueGeneration,
-    workflowInputById,
-    workflowInputs,
-    textValues,
-    widgetInputs,
-    randomizeToggles,
-  ]);
+      await queueGeneration(
+        slotValues,
+        widgetOverrides,
+        widgetModes,
+        derivedWidgetInputs,
+        count,
+        frontendStateWidgetValues,
+        [...bypassNodeIds],
+      );
+    },
+    [
+      mode,
+      queueGeneration,
+      workflowInputById,
+      workflowInputs,
+      textValues,
+      widgetInputs,
+      randomizeToggles,
+    ],
+  );
 
   const handleClearQueue = useCallback(() => {
     clearGenerationQueue();
@@ -943,8 +956,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       const recommendedMaxTicks =
         typeof selectionConfig?.maxFrames === "number" &&
         selectionConfig.maxFrames > 0
-          ? (selectionConfig.maxFrames / (recommendedFps ?? projectFps)) *
-            TICKS_PER_SECOND
+          ? frameToTick(selectionConfig.maxFrames, recommendedFps ?? projectFps)
           : null;
       timelineSelectionStore.setSelectionFpsOverride(recommendedFps);
       timelineSelectionStore.setSelectionFrameStep(recommendedFrameStep ?? 1);
@@ -1105,8 +1117,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       if (value.kind === "asset" && value.asset.type === "video") {
         const asset = value.asset;
         prepare = async () => {
-          const blob =
-            asset.file ?? (await (await fetch(asset.src)).blob());
+          const blob = asset.file ?? (await (await fetch(asset.src)).blob());
           const file =
             asset.file ??
             new File([blob], asset.name || "video.mp4", {
@@ -1115,7 +1126,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
           const videoUrl = URL.createObjectURL(blob);
           const durationTicks =
             typeof asset.duration === "number" && asset.duration > 0
-              ? Math.round(asset.duration * TICKS_PER_SECOND)
+              ? mediaSecondsToTick(asset.duration)
               : await probeVideoDurationTicks(videoUrl);
           return { videoUrl, videoFile: file, durationTicks };
         };
@@ -1128,8 +1139,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         sourceSelection = selection;
         prepare = async () => {
           const file =
-            existingPrepared ??
-            (await renderTimelineSelectionToMp4(selection));
+            existingPrepared ?? (await renderTimelineSelectionToMp4(selection));
           const videoUrl = URL.createObjectURL(file);
           const durationTicks =
             typeof selection.end === "number"
@@ -1147,7 +1157,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       ) => {
         const thumbnailFile = await captureVideoFrameFile(
           source.videoUrl,
-          spec.cropStartTicks / TICKS_PER_SECOND,
+          tickToMediaSeconds(spec.cropStartTicks),
           `mini-editor-thumb-${Date.now()}.png`,
         );
         const extractionRequestId =
@@ -1250,15 +1260,18 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     ],
   );
 
-  const handleTextValueCommit = useCallback((inputId: string, value: string) => {
-    clearPendingReplayPanelState();
-    const canonicalInputId =
-      resolveWorkflowInputKeys(inputId, workflowInputById)[0] ?? inputId;
-    setTextValues((prev) => {
-      if (prev[canonicalInputId] === value) return prev;
-      return { ...prev, [canonicalInputId]: value };
-    });
-  }, [clearPendingReplayPanelState, workflowInputById]);
+  const handleTextValueCommit = useCallback(
+    (inputId: string, value: string) => {
+      clearPendingReplayPanelState();
+      const canonicalInputId =
+        resolveWorkflowInputKeys(inputId, workflowInputById)[0] ?? inputId;
+      setTextValues((prev) => {
+        if (prev[canonicalInputId] === value) return prev;
+        return { ...prev, [canonicalInputId]: value };
+      });
+    },
+    [clearPendingReplayPanelState, workflowInputById],
+  );
 
   const handleWidgetChange = useCallback(
     (nodeId: string, param: string, value: unknown) => {
@@ -1279,14 +1292,17 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     [clearPendingReplayPanelState],
   );
 
-  const handleToggleRandomize = useCallback((nodeId: string, param: string) => {
-    clearPendingReplayPanelState();
-    const key = `${nodeId}:${param}`;
-    setRandomizeToggles((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  }, [clearPendingReplayPanelState]);
+  const handleToggleRandomize = useCallback(
+    (nodeId: string, param: string) => {
+      clearPendingReplayPanelState();
+      const key = `${nodeId}:${param}`;
+      setRandomizeToggles((prev) => ({
+        ...prev,
+        [key]: !prev[key],
+      }));
+    },
+    [clearPendingReplayPanelState],
+  );
 
   const isRunning =
     activeJob?.status === "running" || activeJob?.status === "queued";
@@ -1349,7 +1365,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
   const connectionSummary = runtimeStatusError
     ? runtimeStatusError
-    : runtimeStatus?.comfyui.error ?? null;
+    : (runtimeStatus?.comfyui.error ?? null);
   const comfyuiModelDownloadsEnabled =
     runtimeStatus?.comfyui.modelDownloadsEnabled === true;
 

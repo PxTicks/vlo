@@ -6,11 +6,11 @@ import {
   renderProjectFrameFileAtTick,
   useExportJobController,
   useViewport,
+  mediaSecondsToTickExact,
 } from "../renderer";
 import {
   useTimelineStore,
   useTimelineDuration,
-  TICKS_PER_SECOND,
   snapTickToFrameGrid,
 } from "../timeline";
 import { useProjectStore } from "../project";
@@ -214,7 +214,8 @@ function PlayerImpl() {
       // 0.1 seconds is a reasonable buffer that allows for frame jitter but catches deliberate seeks.
       const isUserSeek =
         lastSetTimeRef.current !== null &&
-        Math.abs(storeTime - lastSetTimeRef.current) > 0.1 * TICKS_PER_SECOND;
+        Math.abs(storeTime - lastSetTimeRef.current) >
+          mediaSecondsToTickExact(0.1);
 
       if (isUserSeek) {
         // Detected a Seek or significant drift initiated by user

@@ -1,5 +1,5 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { TICKS_PER_SECOND } from "../../timeline";
+import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { getLayerInputDomain } from "./timeCalculation";
 
 interface LayerDomain {
@@ -13,7 +13,7 @@ const EMPTY_DOMAIN: LayerDomain = {
 };
 
 function getDomainFallbackDuration(clip: TimelineClip): number {
-  return (clip.croppedSourceDuration || 0) / TICKS_PER_SECOND;
+  return tickToMediaSeconds(clip.croppedSourceDuration || 0);
 }
 
 /**

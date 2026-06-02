@@ -1,7 +1,7 @@
 import { Box, Chip, IconButton, Typography } from "@mui/material";
 import { Add, DeleteOutline, EditOutlined } from "@mui/icons-material";
 import type { RangeMaskComponent } from "../../../types/Components";
-import { TICKS_PER_SECOND } from "../../timeline";
+import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 
 interface RangeMaskSectionProps {
   rangeMaskComponents: RangeMaskComponent[];
@@ -15,8 +15,10 @@ function formatRangeLabel(
   component: RangeMaskComponent,
   index: number,
 ): string {
-  const startSeconds = component.parameters.startSourceTicks / TICKS_PER_SECOND;
-  const endSeconds = component.parameters.endSourceTicks / TICKS_PER_SECOND;
+  const startSeconds = tickToMediaSeconds(
+    component.parameters.startSourceTicks,
+  );
+  const endSeconds = tickToMediaSeconds(component.parameters.endSourceTicks);
   return `Range ${index + 1} — ${startSeconds.toFixed(2)}s–${endSeconds.toFixed(2)}s`;
 }
 
@@ -47,9 +49,7 @@ export function RangeMaskSection({
                 label={formatRangeLabel(component, index)}
                 size="small"
                 color={component.parameters.isActive ? "primary" : "default"}
-                variant={
-                  component.parameters.isActive ? "filled" : "outlined"
-                }
+                variant={component.parameters.isActive ? "filled" : "outlined"}
                 onClick={() => onToggleActive(component.id)}
                 sx={{ height: 24 }}
               />

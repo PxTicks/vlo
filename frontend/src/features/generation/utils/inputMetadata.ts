@@ -1,4 +1,4 @@
-import { TICKS_PER_SECOND } from "../../timeline";
+import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import {
   getIncludedTracksForSelection,
   getTicksPerFrame,
@@ -47,7 +47,7 @@ function buildTimelineSelectionInputMetadata(
     startTick: selection.start,
     endTick: selection.start + durationTicks,
     durationTicks,
-    durationSeconds: durationTicks / TICKS_PER_SECOND,
+    durationSeconds: tickToMediaSeconds(durationTicks),
     effectiveFps,
     frameStep,
     frameCount,
@@ -70,7 +70,9 @@ function buildWorkflowInputMetadata(
       sourceKind: "asset",
       inputType: workflowInput.inputType,
       mediaType:
-        workflowInput.inputType === "text" ? undefined : workflowInput.inputType,
+        workflowInput.inputType === "text"
+          ? undefined
+          : workflowInput.inputType,
     };
   }
 
@@ -130,4 +132,3 @@ export function buildWorkflowInputMetadataMap(
 
   return metadata;
 }
-

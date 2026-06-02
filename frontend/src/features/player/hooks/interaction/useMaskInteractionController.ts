@@ -14,7 +14,8 @@ import type {
   MaskTimelineClip,
 } from "../../../../types/TimelineTypes";
 import {
-  TICKS_PER_SECOND,
+  ticksPerFrame,
+  tickToFrame,
   getTimelineClipById,
   useTimelineStore,
   selectMaskClipsForParent,
@@ -48,7 +49,10 @@ import {
   type MaskLayoutState,
   type MaskShapeSource,
 } from "../../../masks/model/maskFactory";
-import type { PositionPathParameter, PositionTransform } from "../../../transformations";
+import type {
+  PositionPathParameter,
+  PositionTransform,
+} from "../../../transformations";
 import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
 import { type Point2D } from "../../../transformations/utils/catmullRomUtils";
 import {
@@ -153,7 +157,9 @@ function notifyLiveMaskLayout(
   }
 }
 
-function clearLiveMaskLayoutPreviewParams(transformIds: MaskLayoutTransformIds) {
+function clearLiveMaskLayoutPreviewParams(
+  transformIds: MaskLayoutTransformIds,
+) {
   if (transformIds.position) {
     livePreviewParamStore.clear(transformIds.position, "x");
     livePreviewParamStore.clear(transformIds.position, "y");
@@ -365,13 +371,16 @@ export function useMaskInteractionController(
       projectFps > 0
         ? projectFps
         : 30;
-    return Math.max(MIN_POINT_TIME_EPSILON_TICKS, TICKS_PER_SECOND / safeFps);
+    return Math.max(MIN_POINT_TIME_EPSILON_TICKS, ticksPerFrame(safeFps));
   }, [projectFps]);
 
-  const toClipLocal = useCallback((global: { x: number; y: number }) => {
-    if (!clipOverlayRef.current) return { x: 0, y: 0 };
-    return clipOverlayRef.current.toLocal(global);
-  }, [clipOverlayRef]);
+  const toClipLocal = useCallback(
+    (global: { x: number; y: number }) => {
+      if (!clipOverlayRef.current) return { x: 0, y: 0 };
+      return clipOverlayRef.current.toLocal(global);
+    },
+    [clipOverlayRef],
+  );
 
   const toMaskOverlayLocal = useCallback(
     (global: { x: number; y: number }) => {
@@ -436,7 +445,10 @@ export function useMaskInteractionController(
   );
 
   const createEditableMaskTarget = useCallback(
-    (clipId: string, maskClip: MaskTimelineClip): MaskInteractionTarget | null => {
+    (
+      clipId: string,
+      maskClip: MaskTimelineClip,
+    ): MaskInteractionTarget | null => {
       const activeClip = activeClipRef.current;
       const parsed = parseMaskClipId(maskClip.id);
       const maskLocalId = parsed?.maskId ?? null;
@@ -497,15 +509,18 @@ export function useMaskInteractionController(
     return syncContainerTransformToTarget(clipOverlay, sprite);
   }, [clipOverlayRef, sprite]);
 
-  const applyLayoutToOverlay = useCallback((layout: MaskLayoutState) => {
-    const clipOverlay = clipOverlayRef.current;
-    const maskOverlay = maskOverlayRef.current;
-    if (!clipOverlay || !maskOverlay) return;
-    clipOverlay.visible = true;
-    maskOverlay.position.set(layout.x, layout.y);
-    maskOverlay.scale.set(layout.scaleX, layout.scaleY);
-    maskOverlay.rotation = layout.rotation;
-  }, [clipOverlayRef, maskOverlayRef]);
+  const applyLayoutToOverlay = useCallback(
+    (layout: MaskLayoutState) => {
+      const clipOverlay = clipOverlayRef.current;
+      const maskOverlay = maskOverlayRef.current;
+      if (!clipOverlay || !maskOverlay) return;
+      clipOverlay.visible = true;
+      maskOverlay.position.set(layout.x, layout.y);
+      maskOverlay.scale.set(layout.scaleX, layout.scaleY);
+      maskOverlay.rotation = layout.rotation;
+    },
+    [clipOverlayRef, maskOverlayRef],
+  );
 
   const setLiveMaskLayoutPreview = useCallback(
     (clipId: string, maskId: string, layout: MaskLayoutState) => {
@@ -562,17 +577,18 @@ export function useMaskInteractionController(
       }
 
       const layout =
-        layoutOverride ??
-        getMaskLayoutState(mask as unknown as ClipMask);
+        layoutOverride ?? getMaskLayoutState(mask as unknown as ClipMask);
       applyLayoutToOverlay(layout);
 
       const params = mask.maskParameters ??
         mask.parameters ?? { baseWidth: 1, baseHeight: 1 };
       const shapeType = mask.maskType ?? mask.type ?? "rectangle";
       const isDraft = mask.id === "draft_mask";
-      const maskMode = (mask as MaskShapeSource & {
-        maskMode?: MaskTimelineClip["maskMode"];
-      }).maskMode;
+      const maskMode = (
+        mask as MaskShapeSource & {
+          maskMode?: MaskTimelineClip["maskMode"];
+        }
+      ).maskMode;
 
       const shapeSignature = `${mask.id ?? ""}:${shapeType}:${params.baseWidth}:${params.baseHeight}`;
       if (overlayShapeSignatureRef.current !== shapeSignature) {
@@ -661,9 +677,7 @@ export function useMaskInteractionController(
       const sourceFps = Math.max(1, livePreview.sourceFps);
       const currentFrameIndex = Math.max(
         0,
-        Math.floor(
-          (Math.max(0, currentInputTime) / TICKS_PER_SECOND) * sourceFps,
-        ),
+        tickToFrame(Math.max(0, currentInputTime), sourceFps, "floor"),
       );
       // Predictor frame responses can lag the playhead by a frame or two during
       // scrubbing. Allow small drift so preview mode remains visibly continuous.
@@ -697,7 +711,11 @@ export function useMaskInteractionController(
       previewSprite.height = contentSize.height;
       previewSprite.visible = true;
     },
-    [resolveActiveClipContentSize, resolveMaskInputTimeAtPlayhead, sam2PreviewSpriteRef],
+    [
+      resolveActiveClipContentSize,
+      resolveMaskInputTimeAtPlayhead,
+      sam2PreviewSpriteRef,
+    ],
   );
 
   const clearSam2PreviewSprite = useCallback(() => {
@@ -772,22 +790,23 @@ export function useMaskInteractionController(
     [updateClipMask],
   );
 
-  const getTargetMaskForEditing = useCallback((): MaskInteractionTarget | null => {
-    const context = resolveSelectedMaskContext();
+  const getTargetMaskForEditing =
+    useCallback((): MaskInteractionTarget | null => {
+      const context = resolveSelectedMaskContext();
 
-    if (
-      !context.selectedClipId ||
-      !context.selectedMaskClip ||
-      !context.maskLocalId
-    ) {
-      return null;
-    }
+      if (
+        !context.selectedClipId ||
+        !context.selectedMaskClip ||
+        !context.maskLocalId
+      ) {
+        return null;
+      }
 
-    return createEditableMaskTarget(
-      context.selectedClipId,
-      context.selectedMaskClip,
-    );
-  }, [createEditableMaskTarget]);
+      return createEditableMaskTarget(
+        context.selectedClipId,
+        context.selectedMaskClip,
+      );
+    }, [createEditableMaskTarget]);
 
   const getTargetBrushMaskForPainting = useCallback((): {
     clipId: string;
@@ -865,16 +884,17 @@ export function useMaskInteractionController(
 
       // Only pass mask-local transforms — inherited speed transforms are
       // re-derived from the parent by buildMaskClipTransformations.
-      const nextTransforms = getMaskLocalTransforms(maskClip).map((transform) =>
-        transform.id === positionTransform.id
-          ? {
-              ...transform,
-              parameters: {
-                ...transform.parameters,
-                path,
-              },
-            }
-          : transform,
+      const nextTransforms = getMaskLocalTransforms(maskClip).map(
+        (transform) =>
+          transform.id === positionTransform.id
+            ? {
+                ...transform,
+                parameters: {
+                  ...transform.parameters,
+                  path,
+                },
+              }
+            : transform,
       );
 
       updateClipMask(parsed.clipId, parsed.maskId, {
@@ -1129,7 +1149,12 @@ export function useMaskInteractionController(
       const current = interactionRef.current;
       if (!current.active) return;
 
-      if (current.mode === "brush" && current.brush && current.clipId && current.maskId) {
+      if (
+        current.mode === "brush" &&
+        current.brush &&
+        current.clipId &&
+        current.maskId
+      ) {
         const clipId = current.clipId;
         const maskLocalId = current.brush.maskLocalId;
 
@@ -1296,11 +1321,11 @@ export function useMaskInteractionController(
       selectCanvasMask(target.clipId, target.maskLocalId);
       clearLiveMaskLayoutPreview();
 
-      const armed =
-        useTransformationViewStore.getState().armedPathRecording;
+      const armed = useTransformationViewStore.getState().armedPathRecording;
       const isArmedRecording = armed?.clipId === target.maskClip.id;
 
-      const editorState = useTransformationViewStore.getState().activePathEditor;
+      const editorState =
+        useTransformationViewStore.getState().activePathEditor;
       const viewMode = useTransformationViewStore.getState().pathPanelView;
       const positionTransform = getMaskPositionTransform(target.maskClip);
       const positionPath = getMaskPositionPath(target.maskClip);
@@ -1818,8 +1843,7 @@ export function useMaskInteractionController(
 
       const currentInteraction = interactionRef.current;
       const interactionMatchesMask =
-        currentInteraction.active &&
-        currentInteraction.maskId === maskClip.id;
+        currentInteraction.active && currentInteraction.maskId === maskClip.id;
 
       let controlPoints: Point2D[] | null = null;
       let currentPoint: Point2D | null = null;

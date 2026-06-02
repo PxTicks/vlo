@@ -1,5 +1,5 @@
 import type { BaseClip, TextClipData } from "../../../types/TimelineTypes";
-import { TICKS_PER_SECOND } from "../../timeline";
+import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
 import { TEXT_DEFAULT_DURATION_SECONDS } from "../constants";
 import { deriveTextClipName, resolveTextClipData } from "./textClipData";
 
@@ -7,7 +7,7 @@ export function createTextClip(
   textOverrides: Partial<TextClipData> = {},
 ): BaseClip & { type: "text"; textData: TextClipData } {
   const textData = resolveTextClipData(textOverrides);
-  const durationTicks = TEXT_DEFAULT_DURATION_SECONDS * TICKS_PER_SECOND;
+  const durationTicks = mediaSecondsToTick(TEXT_DEFAULT_DURATION_SECONDS);
 
   return {
     id: `clip_${crypto.randomUUID()}`,

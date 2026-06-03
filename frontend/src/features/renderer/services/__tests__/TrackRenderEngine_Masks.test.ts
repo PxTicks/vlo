@@ -439,8 +439,139 @@ describe("TrackRenderEngine masks", () => {
     engine.dispose();
   });
 
+  it("refreshes masks at the paused frame and fetches asset-mask frames", async () => {
+    const engine = new TrackRenderEngine(1);
+    const internals = engine as unknown as {
+      sprite: { visible: boolean };
+      currentTextureClipId: string | null;
+      latestMaskSyncContext: {
+        maskClips: MaskTimelineClip[];
+        clip: StandardTimelineClip;
+        logicalDimensions: { width: number; height: number };
+        rawTimeTicks: number;
+        assetsById: Map<string, Asset>;
+        fps?: number;
+      } | null;
+      maskController: {
+        syncMaskClips: (...args: unknown[]) => Promise<void>;
+      };
+      resyncMasksForLatestAssetMaskFrame: () => Promise<void>;
+    };
+    const syncMaskClipsSpy = vi.spyOn(internals.maskController, "syncMaskClips");
+
+    const clip = createParentClip();
+    const sam2Mask = createSam2MaskClip("mask_sam2", "sam2_asset");
+    const assets: Asset[] = [
+      {
+        id: "asset_1",
+        src: "file://asset.mp4",
+        name: "asset",
+        hash: "hash",
+        type: "video",
+        createdAt: 0,
+      },
+      {
+        id: "sam2_asset",
+        src: "file://sam2.mp4",
+        name: "sam2",
+        hash: "sam2_hash",
+        type: "video",
+        createdAt: 0,
+      },
+    ];
+    const masksByParent = new Map<string, MaskTimelineClip[]>([
+      [clip.id, [sam2Mask]],
+    ]);
+
+    // Simulate a frame already being displayed for this clip while paused.
+    internals.currentTextureClipId = clip.id;
+    internals.sprite.visible = true;
+    internals.latestMaskSyncContext = {
+      maskClips: [],
+      clip,
+      logicalDimensions: { width: 1920, height: 1080 },
+      rawTimeTicks: 10,
+      assetsById: new Map(assets.map((asset) => [asset.id, asset] as const)),
+      fps: 30,
+    };
+
+    await engine.refreshMasksAtPausedFrame(
+      10,
+      [clip],
+      masksByParent,
+      assets,
+      { width: 1920, height: 1080 },
+      { fps: 30 },
+    );
+
+    expect(syncMaskClipsSpy).toHaveBeenCalledTimes(1);
+    expect(syncMaskClipsSpy.mock.calls[0]?.[5]).toEqual(
+      expect.objectContaining({ skipSam2FrameRender: false }),
+    );
+    expect(sam2RenderAtSpy).toHaveBeenCalledTimes(1);
+
+    await internals.resyncMasksForLatestAssetMaskFrame();
+
+    expect(syncMaskClipsSpy).toHaveBeenCalledTimes(2);
+    expect(syncMaskClipsSpy.mock.calls[1]?.[0]).toEqual([sam2Mask]);
+    expect(syncMaskClipsSpy.mock.calls[1]?.[5]).toEqual(
+      expect.objectContaining({ skipSam2FrameRender: true }),
+    );
+
+    engine.dispose();
+  });
+
+  it("does not refresh masks when the clip is not the one currently displayed", async () => {
+    const engine = new TrackRenderEngine(1);
+    const internals = engine as unknown as {
+      sprite: { visible: boolean };
+      currentTextureClipId: string | null;
+      maskController: {
+        syncMaskClips: (...args: unknown[]) => Promise<void>;
+      };
+    };
+    const syncMaskClipsSpy = vi.spyOn(internals.maskController, "syncMaskClips");
+
+    const clip = createParentClip();
+    const maskApply = createMaskClip("mask_apply", "apply");
+    const assets: Asset[] = [
+      {
+        id: "asset_1",
+        src: "file://asset.mp4",
+        name: "asset",
+        hash: "hash",
+        type: "video",
+        createdAt: 0,
+      },
+    ];
+    const masksByParent = new Map<string, MaskTimelineClip[]>([
+      [clip.id, [maskApply]],
+    ]);
+
+    // No frame for this clip is on screen yet.
+    internals.currentTextureClipId = null;
+
+    await engine.refreshMasksAtPausedFrame(
+      10,
+      [clip],
+      masksByParent,
+      assets,
+      { width: 1920, height: 1080 },
+      { fps: 30 },
+    );
+
+    expect(syncMaskClipsSpy).not.toHaveBeenCalled();
+
+    engine.dispose();
+  });
+
   it("snaps synchronized playback mask sampling to the presentation frame grid", async () => {
     const engine = new TrackRenderEngine(1);
+    const internals = engine as unknown as {
+      latestMaskSyncContext: {
+        maskClips: MaskTimelineClip[];
+      } | null;
+    };
     const clip = createParentClip({
       sourceDuration: 10 * TICKS_PER_SECOND,
       timelineDuration: 10 * TICKS_PER_SECOND,
@@ -482,6 +613,7 @@ describe("TrackRenderEngine masks", () => {
 
     expect(sam2RenderAtSpy).toHaveBeenCalledTimes(1);
     expect(sam2RenderAtSpy.mock.calls[0]?.[0]).toBeCloseTo(1 / 30, 6);
+    expect(internals.latestMaskSyncContext?.maskClips).toEqual([sam2Mask]);
 
     engine.dispose();
   });

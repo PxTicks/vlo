@@ -53,6 +53,34 @@ function buildMaskClipIndex(
   return index;
 }
 
+/**
+ * Stable string capturing which masks are present and their
+ * render-affecting identity (mode + backing source), but not their layout
+ * transforms. Used to detect when a paused frame must re-composite masks.
+ */
+function buildMaskSetSignature(
+  maskClipsByParent: Map<string, MaskTimelineClip[]>,
+): string {
+  const parts: string[] = [];
+  for (const [parentId, maskClips] of maskClipsByParent) {
+    for (const mask of maskClips) {
+      parts.push(
+        [
+          parentId,
+          mask.id,
+          mask.maskMode,
+          mask.maskType,
+          mask.maskInverted ? "1" : "0",
+          mask.sam2MaskAssetId ?? "",
+          mask.generationMaskAssetId ?? "",
+          mask.brushMaskAssetId ?? "",
+        ].join(":"),
+      );
+    }
+  }
+  return parts.join("|");
+}
+
 export interface TrackRenderEngineResult {
   spriteInstance: Sprite | null;
   activeClipRef: React.MutableRefObject<TimelineClip | null>;
@@ -123,6 +151,16 @@ export function useTrackRenderEngine(
   const maskClipsByParent = useMemo(
     () => buildMaskClipIndex(renderableTrackClips),
     [renderableTrackClips],
+  );
+
+  // Signature of the mask *set* (membership, mode, and asset/source identity)
+  // — deliberately excludes layout transforms, which already preview live. It
+  // changes when a mask is added/removed, a mask's mode is toggled, or a
+  // SAM2/generation/brush mask result lands, which is exactly when a paused
+  // frame needs to re-composite to show the change immediately.
+  const maskSetSignature = useMemo(
+    () => buildMaskSetSignature(maskClipsByParent),
+    [maskClipsByParent],
   );
   const fps = useProjectStore((state) => state.config.fps);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
@@ -308,6 +346,38 @@ export function useTrackRenderEngine(
     spriteInstance,
     syncActiveClipState,
   ]);
+
+  // Make mask-set changes (add/remove, mode toggle, SAM2/generation/brush
+  // result landing) visible on a paused frame without waiting for a playhead move.
+  // Deferred to the next frame so the engine has committed the new mask scene
+  // nodes before we re-composite; the paused ticker then flushes the result.
+  useEffect(() => {
+    if (isPlaying || !engineRef.current || !spriteInstance) {
+      return;
+    }
+
+    let cancelled = false;
+    const rafId = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const engine = engineRef.current;
+      if (!engine) return;
+
+      const state = livePlaybackStateRef.current;
+      void engine.refreshMasksAtPausedFrame(
+        playbackClock.time,
+        state.sortedTrackClips,
+        state.maskClipsByParent,
+        state.assets,
+        logicalDimensionsRef.current,
+        { fps: state.fps },
+      );
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
+  }, [isPlaying, maskSetSignature, spriteInstance]);
 
   useEffect(() => {
     const engine = engineRef.current;

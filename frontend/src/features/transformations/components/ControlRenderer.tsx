@@ -16,7 +16,7 @@ import { SplineEditorPopover } from "./SplineEditorPopover";
 import { useSplinePopover } from "../hooks/useSplinePopover";
 import { liveParamStore } from "../services/liveParamStore";
 import { livePreviewParamStore } from "../services/livePreviewParamStore";
-import type { GraphTimeAxis } from "../utils/keyframeSourceTime";
+import type { GraphTimeAxis } from "../utils/clipTimeDomains";
 
 // --- Shared props for controls that support splines ---
 interface NumericControlProps {

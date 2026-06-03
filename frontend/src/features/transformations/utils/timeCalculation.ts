@@ -3,6 +3,13 @@ import type { ScalarParameter, SplinePoint, SpeedTransform } from "../types";
 import { MonotoneCubicSpline } from "./MonotoneCubicSpline";
 import { TICKS_PER_SECOND } from "../../timeline/constants";
 
+/**
+ * Low-level tick engine for clip-local visual time <-> source-media time.
+ * Feature code should prefer `clipTimeDomains` so presentation time,
+ * adjustment-effective time, clip-local visual time, and source-media time are
+ * named explicitly at the boundary.
+ */
+
 // Cache for Spline Objects to avoid re-creation/sorting overhead
 const splineObjectCache = new Map<string, MonotoneCubicSpline>();
 

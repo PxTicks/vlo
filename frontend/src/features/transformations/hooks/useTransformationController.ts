@@ -12,11 +12,13 @@ import {
 import { useProjectStore } from "../../project/useProjectStore";
 import {
   introducesTimelineClipPresentationCollision,
-  resolveClipEffectiveTrackTick,
 } from "../../timeline/utils/clipPresentation";
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { isDefaultTransform } from "../catalogue/TransformationRegistry";
-import { getSourceKeyframeTime } from "../utils/keyframeSourceTime";
+import {
+  clipVisualToSourceTime,
+  presentationToClipSourceTime,
+} from "../utils/clipTimeDomains";
 import { computeCommitMutation } from "./controller/commitComputation";
 import { computeSpeedShapeUpdateForTransforms } from "./controller/speedDuration";
 import { createAddTransform } from "./controller/transformFactory";
@@ -495,9 +497,8 @@ export function useTransformationController(
       const currentTransforms = activeTransformsRef.current;
       const activeClip = currentTarget.timelineClip;
 
-      // Resolve the keyframe's source tick through any adjustment-layer retiming
-      // (matching the renderer) so a commit lands on the source frame the viewer
-      // shows. Identity when no adjustment covers the clip.
+      // Resolve the keyframe's source-media time (in project ticks) through any
+      // adjustment-layer retiming, matching the frame shown by the viewer.
       let keyframeSourceTimeTicks: number | undefined;
       if (activeClip) {
         const timelineState = useTimelineStore.getState();
@@ -509,20 +510,21 @@ export function useTransformationController(
             activeClip.start + activeClip.timelineDuration,
           ),
         );
-        const effectiveTrackTick =
+        keyframeSourceTimeTicks =
           timelineState?.tracks && timelineState?.clips && fps != null
-            ? resolveClipEffectiveTrackTick(
-                timelineState.tracks,
-                timelineState.clips,
-                fps,
+            ? presentationToClipSourceTime(
+                {
+                  tracks: timelineState.tracks,
+                  clips: timelineState.clips,
+                  fps,
+                },
                 activeClip,
                 presentationTick,
               )
-            : presentationTick;
-        keyframeSourceTimeTicks = getSourceKeyframeTime(
-          activeClip,
-          effectiveTrackTick - activeClip.start,
-        );
+            : clipVisualToSourceTime(
+                activeClip,
+                presentationTick - activeClip.start,
+              );
       }
 
       const commit = computeCommitMutation({

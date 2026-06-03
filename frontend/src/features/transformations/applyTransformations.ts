@@ -185,14 +185,15 @@ export function applyTransformStack(
     // Pass 2: Forward dispatch of non-speed transforms.
     //
     // Source-time anchoring: every value transform samples its keyframes at the
-    // fully-resolved `sourceTimeTicks` (the time after pulling the visual tick
-    // back through the *entire* speed stack), NOT at its per-index effective
-    // time. This makes a transform's output a property of the source frame, so
-    // speed only reschedules *when* a frame appears, never *what* its values
-    // are — and the result is independent of where speed sits in the stack.
+    // fully-resolved `sourceTimeTicks` (source-media time in project ticks, after
+    // pulling the visual tick back through the *entire* speed stack), NOT at its
+    // per-index effective time. This makes a transform's output a property of
+    // the displayed source content, so speed only reschedules *when* that
+    // content appears, never *what* its values are — and the result is
+    // independent of where speed sits in the stack.
     // For the common layout-before-speed case `effectiveTimes[layoutIndex]`
     // already equals `sourceTimeTicks`, so this is a no-op there. Keyframe times
-    // are stored to match via `getSourceKeyframeTime` (see keyframeSourceTime).
+    // are stored to match via `clipVisualToSourceTime` (see clipTimeDomains).
     transformations.forEach((transform) => {
       if (!transform.isEnabled) return;
       if (transform.type === "speed") return;
@@ -291,8 +292,9 @@ export function applyClipTransforms(
   );
 
   // Range-mask components: evaluate at clip source time (post-speed).
-  // If any active range covers the current source tick, push a single alpha=0
-  // filter op — the filter applicator will turn it into a PixiJS AlphaFilter.
+  // If any active range covers the current source-media time, push a single
+  // alpha=0 filter op — the filter applicator will turn it into a PixiJS
+  // AlphaFilter.
   if (clip.type !== "mask" && clip.components?.length) {
     for (const component of clip.components) {
       if (component.type !== "range_mask") continue;

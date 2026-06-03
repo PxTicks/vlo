@@ -2,19 +2,19 @@ import { useRef, useState, useMemo, useEffect, useCallback } from "react";
 import { Box } from "@mui/material";
 import { MonotoneCubicSpline, type SplinePoint } from "../../utils/MonotoneCubicSpline";
 import type { SplineParameter } from "../../types";
-import type { GraphTimeAxis } from "../../utils/keyframeSourceTime";
+import type { GraphTimeAxis } from "../../utils/clipTimeDomains";
 
 interface SplineGraphProps {
   value: SplineParameter;
   onChange: (newValue: SplineParameter) => void;
   width: number;
   height: number;
-  minTime?: number;  // Min Time (X axis start, source ticks)
-  duration: number;  // Duration (X axis extent, source ticks)
+  minTime?: number;  // X-axis start, source-media time in project ticks
+  duration: number;  // X-axis extent, source-media time in project ticks
   /**
-   * Optional speed-warped time axis. Point data stays in source ticks; this only
-   * remaps source<->screen position so a speed ramp curves the X axis. When
-   * omitted, the axis is linear over [minTime, minTime + duration].
+   * Optional speed-warped time axis. Point data stays in source-media time; this
+   * only remaps source<->screen position so a speed ramp curves the X axis.
+   * When omitted, the axis is linear over [minTime, minTime + duration].
    */
   timeAxis?: GraphTimeAxis;
   minY?: number;     // Hard Min
@@ -155,14 +155,14 @@ export function SplineGraph({
   }, [dragIdx, maxY, minY, softMax, softMin, value.points]);
 
   // 1. Coordinate Transform Helpers
-  // Point data is in source ticks over [minTime, minTime + duration]. The X
-  // pixel mapping is linear in source by default; when `timeAxis` is supplied it
-  // warps source<->screen by the clip's speed stack (a ramp curves the axis)
-  // while leaving the stored source times untouched.
+  // Point data is in source-media time over [minTime, minTime + duration]. The
+  // X pixel mapping is linear in source by default; when `timeAxis` is supplied
+  // it warps source<->screen by the clip's speed stack while leaving stored
+  // source times untouched.
   const padding = 10;
   const graphWidth = width - padding * 2;
   const graphHeight = height - padding * 2;
-  const maxTime = minTime + duration; // Used for clamping and rendering (source ticks)
+  const maxTime = minTime + duration; // Used for clamping and rendering.
 
   // Convert source time to X pixel
   const timeToX = useCallback(

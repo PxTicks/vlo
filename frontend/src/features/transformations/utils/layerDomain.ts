@@ -1,5 +1,5 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { getSourceKeyframeDomain } from "./keyframeSourceTime";
+import { clipSourceTimeWindow } from "./clipTimeDomains";
 
 interface LayerDomain {
   minTime: number;
@@ -11,7 +11,7 @@ const EMPTY_DOMAIN: LayerDomain = {
   duration: 0,
 };
 
-// Fallback when the source window collapses (e.g. croppedSourceDuration <= 0).
+// Fallback when the source-time window collapses (e.g. croppedSourceDuration <= 0).
 // Returns ticks to match the primary domain — the full source length, or the
 // clip's timeline length as a last resort — so the editor axis never divides by
 // a zero-width domain. (Previously returned media *seconds*, a units mismatch.)
@@ -20,8 +20,8 @@ function getDomainFallbackDuration(clip: TimelineClip): number {
 }
 
 /**
- * Resolves the source-time data domain for a transform's keyframe graph, with a
- * safe fallback duration when the source window collapses.
+ * Resolves the source-media-time data domain for a transform's keyframe graph,
+ * with a safe fallback duration when the source-time window collapses.
  *
  * Keyframes are source-anchored, so this is the clip's own source window —
  * independent of the transform's position relative to any speed transform
@@ -36,7 +36,7 @@ export function getTransformLayerDomain(
 ): LayerDomain {
   if (!clip) return EMPTY_DOMAIN;
 
-  const { minTime, duration } = getSourceKeyframeDomain(clip);
+  const { minTime, duration } = clipSourceTimeWindow(clip);
 
   return {
     minTime,

@@ -14,7 +14,7 @@ import type {
 import {
   computeCommitMutation,
   createAddTransform,
-  getSourceKeyframeTime,
+  clipVisualToSourceTime,
   insertTransformRespectingDefaultOrder,
   liveParamStore,
   resolveScalar,
@@ -206,7 +206,7 @@ export function useTransformInteractionController(
       }
 
       const transformInputTime = transform
-        ? getSourceKeyframeTime(clip, localVisualTime)
+        ? clipVisualToSourceTime(clip, localVisualTime)
         : localVisualTime;
 
       return {
@@ -829,10 +829,10 @@ export function useTransformInteractionController(
       );
       const localVisualTime = clampedGlobal - activeClip.start;
       const scaleInputTime = scaleTransform
-        ? getSourceKeyframeTime(activeClip, localVisualTime)
+        ? clipVisualToSourceTime(activeClip, localVisualTime)
         : localVisualTime;
       const rotationInputTime = rotationTransform
-        ? getSourceKeyframeTime(activeClip, localVisualTime)
+        ? clipVisualToSourceTime(activeClip, localVisualTime)
         : localVisualTime;
 
       const paramX = scaleTransform

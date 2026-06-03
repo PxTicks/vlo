@@ -8,7 +8,7 @@ import type {
   TimelineClip,
 } from "../../../types/TimelineTypes";
 import { useGroupKeyframeManager } from "../hooks/useGroupKeyframeManager";
-import { buildClipGraphTimeAxis } from "../utils/keyframeSourceTime";
+import { buildClipGraphTimeAxis } from "../utils/clipTimeDomains";
 
 interface TransformationGroupProps {
   group: LayoutGroup;

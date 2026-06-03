@@ -92,9 +92,10 @@ export interface ClipTransform {
   isEnabled: boolean;
   templateId?: string;
   parameters: Record<string, unknown>;
-  /** Shared keyframe times (in transform-local input ticks) for all controls in this group.
-   *  This is the primary source of truth for keyframe existence — independent of whether
-   *  any parameter is stored as a scalar (constant shortcut) or SplineParameter. */
+  /** Shared keyframe source-media times, expressed in project ticks, for all
+   *  controls in this group. This is the primary source of truth for keyframe
+   *  existence — independent of whether any parameter is stored as a scalar
+   *  (constant shortcut) or SplineParameter. */
   keyframeTimes?: number[];
 }
 
@@ -211,7 +212,7 @@ export interface ClipBaseCommon {
 
   // --- TIMING (In Ticks) ---
   timelineDuration: number; // Visible duration on timeline
-  croppedSourceDuration: number; // The true distance from start to end frame in source ticks (excluding speed effects)
+  croppedSourceDuration: number; // Source-media span in project ticks, excluding speed effects
   offset: number; // "Trim start": how many ticks into the asset we start playing (Source Time)
 
   // --- META ---
@@ -423,7 +424,7 @@ export interface MaskTimelineClip extends TimelineClipBaseCommon {
   brushPaintedBounds?: BrushPaintedBounds;
   /**
    * When set, the mask is only active inside this source-time window
-   * (parent-clip source ticks). Outside the window the mask is treated as a
+   * (parent-clip sourceTimeTicks). Outside the window the mask is treated as a
    * no-op, similar to a SAM2 mask before its asset has been generated.
    */
   activeRange?: MaskActiveRange;

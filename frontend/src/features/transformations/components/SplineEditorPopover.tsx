@@ -2,7 +2,7 @@ import { Box, Button, Popover, Typography } from "@mui/material";
 import { SplineGraph } from "./SplineEditor";
 import type { SplineParameter } from "../types";
 import type { ControlDefinition } from "../../panelUI/types";
-import type { GraphTimeAxis } from "../utils/keyframeSourceTime";
+import type { GraphTimeAxis } from "../utils/clipTimeDomains";
 
 interface SplineEditorPopoverProps {
   open: boolean;

@@ -14,11 +14,13 @@ export {
 export {
   buildClipGraphTimeAxis,
   buildLinearGraphTimeAxis,
-  getKeyframeVisualTime,
-  getSourceKeyframeDomain,
-  getSourceKeyframeTime,
+  clipSourceTimeToVisual,
+  clipSourceTimeWindow,
+  clipVisualToSourceTime,
+  presentationToClipSourceTime,
+  type ClipPresentationContext,
   type GraphTimeAxis,
-} from "./utils/keyframeSourceTime";
+} from "./utils/clipTimeDomains";
 export { resolveScalar } from "./utils/resolveScalar";
 export {
   collectSectionKeyframes,

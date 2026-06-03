@@ -123,6 +123,10 @@ export function useTrackRenderer(
     app,
     container,
     transformGizmoInteractions,
+    // Never show the clip gizmo when the sprite itself isn't drawn (e.g. no
+    // active frame / missing texture), which would otherwise leave a stale or
+    // zero-size gizmo.
+    () => !!spriteInstance && spriteInstance.visible,
   );
   useGizmoBehavior(
     maskInteractionHandlers.gizmoTarget,

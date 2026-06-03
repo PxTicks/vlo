@@ -466,23 +466,14 @@ export class TrackRenderEngine {
 
     const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
     if (activeClip.type === "text") {
-      const assetById = new Map<string, Asset>(
-        assets.map((asset) => [asset.id, asset] as const),
-      );
-      this.latestMaskSyncContext = {
-        maskClips,
-        clip: activeClip,
-        logicalDimensions,
-        rawTimeTicks: rawTimeSeconds,
-        assetsById: assetById,
-        fps,
-      };
       await this.renderTextClip(
         activeClip,
         logicalDimensions,
         rawTimeSeconds,
         maskClips,
-        assetById,
+        new Map<string, Asset>(
+          assets.map((asset) => [asset.id, asset] as const),
+        ),
         fps,
       );
       return;
@@ -535,79 +526,6 @@ export class TrackRenderEngine {
     }
   }
 
-  /**
-   * Re-sync masks for the clip visible at the current paused time without
-   * re-requesting the content frame. Used when the mask set changes while
-   * paused (a mask is added, a SAM2/asset mask result arrives, a mask's mode
-   * is toggled) so the applied mask appears immediately instead of waiting for
-   * the next playhead move.
-   *
-   * Unlike the transform-only paused paths this does NOT skip the asset-mask
-   * frame render, so freshly arrived SAM2/asset masks kick off their frame
-   * fetch here; the resulting `onAssetMaskFrameReady` callback re-syncs once
-   * the frame decodes. The paused Pixi ticker flushes the updated scene graph.
-   */
-  public async refreshMasksAtPausedFrame(
-    currentTime: number,
-    trackClips: TimelineClip[],
-    maskClipsByParent: Map<string, MaskTimelineClip[]>,
-    assets: Asset[],
-    logicalDimensions: { width: number; height: number },
-    options: { fps?: number } = {},
-  ): Promise<void> {
-    if (this.disposed) return;
-    const { fps = 30 } = options;
-
-    const resolved = this.resolveActiveClipAtPresentation(
-      trackClips,
-      currentTime,
-    );
-    if (!resolved) return;
-    const { activeClip, effectiveTick } = resolved;
-
-    // Only clips that own a rendered texture can carry an applied mask; bail on
-    // anything we are not currently displaying so we never composite against a
-    // stale frame.
-    if (!this.hasRenderableTextureForClip(activeClip.id)) {
-      return;
-    }
-
-    const rawTimeSeconds = effectiveTick - activeClip.start;
-    const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
-    const assetById = new Map(
-      assets.map((asset) => [asset.id, asset] as const),
-    );
-    const asset = isAssetBackedClip(activeClip)
-      ? assetById.get(activeClip.assetId)
-      : undefined;
-    const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
-    this.latestMaskSyncContext = {
-      maskClips,
-      clip: activeClip,
-      logicalDimensions,
-      rawTimeTicks: rawTimeSeconds,
-      assetsById: assetById,
-      fps: clipFps,
-    };
-
-    try {
-      await this.maskController.syncMaskClips(
-        maskClips,
-        activeClip,
-        logicalDimensions,
-        rawTimeSeconds,
-        assetById,
-        { fps: clipFps, skipSam2FrameRender: false },
-      );
-    } catch (error) {
-      console.warn("Failed to refresh paused masks", error);
-    }
-
-    if (this.sprite.visible && this.currentTextureClipId === activeClip.id) {
-      this.maskController.syncMaskSpriteTransform();
-    }
-  }
-
   private async renderSynchronizedPlaybackFrameInternal(
     trackClips: TimelineClip[],
     assets: Asset[],
@@ -630,23 +548,14 @@ export class TrackRenderEngine {
       rawTimeSeconds,
     } = request;
     if (activeClip.type === "text") {
-      const assetById = new Map<string, Asset>(
-        assets.map((asset) => [asset.id, asset] as const),
-      );
-      this.latestMaskSyncContext = {
-        maskClips,
-        clip: activeClip,
-        logicalDimensions,
-        rawTimeTicks: rawTimeSeconds,
-        assetsById: assetById,
-        fps,
-      };
       await this.renderTextClip(
         activeClip,
         logicalDimensions,
         rawTimeSeconds,
         maskClips,
-        assetById,
+        new Map<string, Asset>(
+          assets.map((asset) => [asset.id, asset] as const),
+        ),
         fps,
       );
       return;
@@ -676,14 +585,6 @@ export class TrackRenderEngine {
 
       const asset = assetById.get(activeClip.assetId);
       const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
-      this.latestMaskSyncContext = {
-        maskClips,
-        clip: activeClip,
-        logicalDimensions,
-        rawTimeTicks: rawTimeSeconds,
-        assetsById: assetById,
-        fps: clipFps,
-      };
 
       const renderTimeSeconds = snapFrameTimeSeconds(localTimeSeconds, clipFps);
       const currentFrameIndex = this.getFrameIndex(renderTimeSeconds, clipFps);

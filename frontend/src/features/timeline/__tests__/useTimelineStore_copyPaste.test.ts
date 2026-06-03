@@ -1,12 +1,19 @@
 import { act } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useTimelineStore } from "../useTimelineStore";
-import {
-  isCompositeClip,
-  type TimelineClip,
-  type TimelineTrack,
-  type VideoTimelineClip,
+import type {
+  CompositeTimelineClip,
+  TimelineClip,
+  TimelineTrack,
 } from "../../../types/TimelineTypes";
+
+const compositeMocks = vi.hoisted(() => ({
+  scheduleCompositeProxyRender: vi.fn(),
+}));
+
+vi.mock("../../composite", () => ({
+  scheduleCompositeProxyRender: compositeMocks.scheduleCompositeProxyRender,
+}));
 
 const createTrack = (id: string, label: string): TimelineTrack => ({
   id,
@@ -40,6 +47,7 @@ const createClip = (
 
 describe("useTimelineStore copy/paste (single and multiple clips)", () => {
   beforeEach(() => {
+    compositeMocks.scheduleCompositeProxyRender.mockReset();
     useTimelineStore.setState({
       tracks: [],
       clips: [],
@@ -267,18 +275,16 @@ describe("useTimelineStore copy/paste (single and multiple clips)", () => {
     );
   });
 
-  it("pastes a composite placement that shares the source's composite asset", () => {
+  it("detaches and queues a fresh proxy when pasting a composite clip", async () => {
     const tracks = [
       createTrack("track_top_pad", "Track 1"),
       createTrack("track_current", "Track 2"),
     ];
-    const sourceClip: VideoTimelineClip = {
+    const sourceClip: CompositeTimelineClip = {
       id: "composite-source",
       trackId: "track_current",
-      type: "video",
+      type: "composite",
       name: "Composite Source",
-      assetId: "bake-1",
-      compositeId: "composite-asset-1",
       start: 100,
       timelineDuration: 50,
       offset: 0,
@@ -287,6 +293,13 @@ describe("useTimelineStore copy/paste (single and multiple clips)", () => {
       sourceDuration: 50,
       transformedDuration: 50,
       transformations: [],
+      proxyAssetId: "proxy-source",
+      proxyContentHash: "source-hash",
+      content: {
+        durationTicks: 50,
+        clips: [],
+        tracks: [],
+      },
     };
 
     useTimelineStore.setState({
@@ -303,16 +316,18 @@ describe("useTimelineStore copy/paste (single and multiple clips)", () => {
 
     const pastedComposite = useTimelineStore
       .getState()
-      .clips.find((clip) => clip.id !== sourceClip.id && isCompositeClip(clip));
+      .clips.find(
+        (clip): clip is CompositeTimelineClip =>
+          clip.id !== sourceClip.id && clip.type === "composite",
+      );
     expect(pastedComposite).toBeDefined();
-    expect(pastedComposite?.id).not.toBe(sourceClip.id);
-    // The placement is a link: the paste references the same composite asset
-    // and the same baked asset (the CompositeAsset owns the bake, not the clip).
-    expect(isCompositeClip(pastedComposite) && pastedComposite.compositeId).toBe(
-      "composite-asset-1",
-    );
-    expect(isCompositeClip(pastedComposite) && pastedComposite.assetId).toBe(
-      "bake-1",
-    );
+    expect(pastedComposite?.proxyAssetId).toBeUndefined();
+    expect(pastedComposite?.proxyContentHash).toBeUndefined();
+
+    await vi.waitFor(() => {
+      expect(compositeMocks.scheduleCompositeProxyRender).toHaveBeenCalledWith(
+        pastedComposite?.id,
+      );
+    });
   });
 });

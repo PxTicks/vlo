@@ -7,7 +7,7 @@ import { isNonMaskTimelineClip } from "../../../types/TimelineTypes";
 import { snapTickToFrame } from "../../timelineSelection";
 import { hasAnyCollision } from "./collision";
 import { buildTimelineClipPresentationCollisionView } from "./clipPresentation";
-import { getTrackTypeFromClipType } from "./formatting";
+import { getTrackTypeFromClip } from "./formatting";
 
 export interface PlannedTimelineClipMove {
   clipId: string;
@@ -111,7 +111,7 @@ export function planMultiClipMove(
     const destinationTrack = virtualTracks[newTrackIndex];
     if (
       destinationTrack.type &&
-      destinationTrack.type !== getTrackTypeFromClipType(clip.type)
+      destinationTrack.type !== getTrackTypeFromClip(clip)
     ) {
       return null;
     }

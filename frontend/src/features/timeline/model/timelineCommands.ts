@@ -32,7 +32,7 @@ import {
   resolveMaskBooleanExpression,
 } from "../../masks/model/maskBooleanExpression";
 import { ticksPerFrame } from "../utils/frameGrid";
-import { getTrackTypeFromClipType } from "../utils/formatting";
+import { getTrackTypeFromClip } from "../utils/formatting";
 import { getResizedClipLeft, getResizedClipRight } from "../utils/clipMath";
 import { resolveCollision } from "../utils/collision";
 import {
@@ -105,13 +105,67 @@ export interface TimelineRemovalPlan {
   clipIdsToRemove: Set<string>;
   brushMaskClipIdsToDispose: string[];
   sam2MaskAssetIdsToDelete: Set<string>;
+  compositeProxyAssetIdsToDelete: Set<string>;
+}
+
+function collectCompositeProxyAssetIdsFromClip(
+  clip: TimelineClip,
+  proxyAssetIds: Set<string>,
+): void {
+  if (clip.type !== "composite") {
+    return;
+  }
+
+  if (clip.proxyAssetId) {
+    proxyAssetIds.add(clip.proxyAssetId);
+  }
+
+  clip.content.clips.forEach((contentClip) => {
+    collectCompositeProxyAssetIdsFromClip(contentClip, proxyAssetIds);
+  });
 }
 
 export function clipReferencesAssetId(
   clip: TimelineClip,
   assetId: string,
 ): boolean {
-  return isAssetBackedClip(clip) && clip.assetId === assetId;
+  if (isAssetBackedClip(clip) && clip.assetId === assetId) {
+    return true;
+  }
+
+  if (clip.type !== "composite") {
+    return false;
+  }
+
+  return (
+    clip.proxyAssetId === assetId ||
+    clip.content.clips.some((contentClip) =>
+      clipReferencesAssetId(contentClip, assetId),
+    )
+  );
+}
+
+export function collectUnusedCompositeProxyAssetIds(
+  clips: readonly TimelineClip[],
+  candidateAssetIds: Iterable<string>,
+): Set<string> {
+  const unusedAssetIds = new Set([...candidateAssetIds].filter(Boolean));
+  if (unusedAssetIds.size === 0) {
+    return unusedAssetIds;
+  }
+
+  for (const clip of clips) {
+    for (const assetId of [...unusedAssetIds]) {
+      if (clipReferencesAssetId(clip, assetId)) {
+        unusedAssetIds.delete(assetId);
+      }
+    }
+    if (unusedAssetIds.size === 0) {
+      break;
+    }
+  }
+
+  return unusedAssetIds;
 }
 
 function createDefaultFitModeTransform(): ClipTransform {
@@ -157,7 +211,13 @@ export function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
     };
   }
 
-  if (clip.type !== "video" && clip.type !== "image") {
+  // Composites render through a project-sized proxy video, so they get the same
+  // default fit-mode layout as a video/image clip.
+  if (
+    clip.type !== "video" &&
+    clip.type !== "image" &&
+    clip.type !== "composite"
+  ) {
     return baseClip;
   }
 
@@ -228,25 +288,9 @@ export function addClipToDraft(
   clip: TimelineClip,
 ): void {
   const clipWithDefaults = withTimelineClipDefaults(clip);
-  let targetTrack = draft.tracks.find(
+  const targetTrack = draft.tracks.find(
     (track) => track.id === clipWithDefaults.trackId,
   );
-
-  // Never orphan a clip onto a track that doesn't exist. A clip whose trackId
-  // has no matching track is invisible (the UI only draws clips per existing
-  // track) and effectively lost — that's how an interrupted multi-step
-  // mutation (e.g. group-into-composite emptying every track, which makes
-  // maybeTrimAndPadTracks rebuild the track list with fresh ids) can silently
-  // wipe content. Materialize the referenced track so the clip always lands
-  // somewhere real; maybeTrimAndPadTracks below will normalize its label/type.
-  if (!targetTrack) {
-    console.warn(
-      `[addClipToDraft] target track ${clipWithDefaults.trackId} missing; ` +
-        `materializing it for clip ${clipWithDefaults.id} to avoid orphaning.`,
-    );
-    targetTrack = { ...createNewTrack("Track"), id: clipWithDefaults.trackId };
-    draft.tracks.push(targetTrack);
-  }
 
   // Track-type compatibility: a populated typed track only accepts clips whose
   // derived track-type matches. Empty tracks accept anything and acquire the
@@ -259,18 +303,18 @@ export function addClipToDraft(
   if (
     targetTrack?.type &&
     targetTrackHasClips &&
-    targetTrack.type !== getTrackTypeFromClipType(clipWithDefaults.type)
+      targetTrack.type !== getTrackTypeFromClip(clipWithDefaults)
   ) {
     console.warn(
       `[addClipToDraft] rejecting clip ${clipWithDefaults.id}: track ` +
         `${targetTrack.id} type is "${targetTrack.type}" but clip resolves to ` +
-        `"${getTrackTypeFromClipType(clipWithDefaults.type)}".`,
+        `"${getTrackTypeFromClip(clipWithDefaults)}".`,
     );
     return;
   }
 
   if (targetTrack && (!targetTrack.type || !targetTrackHasClips)) {
-    targetTrack.type = getTrackTypeFromClipType(clipWithDefaults.type);
+    targetTrack.type = getTrackTypeFromClip(clipWithDefaults);
   }
 
   draft.clips.push(clipWithDefaults);
@@ -347,7 +391,7 @@ export function pasteCopiedClipsAboveDraft(
       clipsInGroup.every((clip) => {
         if (
           aboveTrack.type &&
-          aboveTrack.type !== getTrackTypeFromClipType(clip.type)
+          aboveTrack.type !== getTrackTypeFromClip(clip)
         ) {
           return false;
         }
@@ -376,12 +420,16 @@ export function pasteCopiedClipsAboveDraft(
       const pastedClip = cloneTimelineClip(clip, crypto.randomUUID());
       pastedClip.trackId = targetTrackId;
       pastedClip.start = clip.start;
+      if (pastedClip.type === "composite") {
+        pastedClip.proxyAssetId = undefined;
+        pastedClip.proxyContentHash = undefined;
+      }
 
       const targetTrack = draft.tracks.find(
         (track) => track.id === targetTrackId,
       );
       if (targetTrack && !targetTrack.type) {
-        targetTrack.type = getTrackTypeFromClipType(pastedClip.type);
+        targetTrack.type = getTrackTypeFromClip(pastedClip);
       }
 
       const pastedMasks = (maskCopiesByParent.get(clip.id) || []).map(
@@ -477,10 +525,23 @@ export function planTimelineRemoval(
         clip.maskType === "brush",
     )
     .map((clip) => clip.id);
+  const compositeProxyCandidates = new Set<string>();
+  for (const clip of clips) {
+    if (clipIdsToRemove.has(clip.id)) {
+      collectCompositeProxyAssetIdsFromClip(clip, compositeProxyCandidates);
+    }
+  }
+  const remainingClips = clips.filter((clip) => !clipIdsToRemove.has(clip.id));
+  const compositeProxyAssetIdsToDelete = collectUnusedCompositeProxyAssetIds(
+    remainingClips,
+    compositeProxyCandidates,
+  );
+
   return {
     clipIdsToRemove,
     brushMaskClipIdsToDispose,
     sam2MaskAssetIdsToDelete,
+    compositeProxyAssetIdsToDelete,
   };
 }
 
@@ -498,7 +559,7 @@ function syncTrackTypesFromClips(draft: TimelineModelState): void {
   const inferredTypeById = new Map<string, TimelineTrack["type"]>();
   draft.clips.forEach((clip) => {
     if (clip.type === "mask") return;
-    inferredTypeById.set(clip.trackId, getTrackTypeFromClipType(clip.type));
+    inferredTypeById.set(clip.trackId, getTrackTypeFromClip(clip));
   });
 
   draft.tracks = draft.tracks.map((track) => {
@@ -548,10 +609,10 @@ export function moveClipsInDraft(
     if (
       destTrack.type &&
       destTrackHasClips &&
-      destTrack.type !== getTrackTypeFromClipType(clip.type)
+      destTrack.type !== getTrackTypeFromClip(clip)
     ) {
       console.warn(
-        `[moveClipsInDraft] rejecting batch: clip ${clip.id} (resolves to "${getTrackTypeFromClipType(clip.type)}") ` +
+        `[moveClipsInDraft] rejecting batch: clip ${clip.id} (resolves to "${getTrackTypeFromClip(clip)}") ` +
           `cannot move onto track ${destTrack.id} (type "${destTrack.type}").`,
       );
       return;

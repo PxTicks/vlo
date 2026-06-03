@@ -36,7 +36,7 @@ export interface RenderSelectionToVideoFileOptions {
 /**
  * Single source of truth for "render a {@link TimelineSelection} to an mp4
  * File". Wraps the `ExportRenderer.create → render → File` sequence so callers
- * (generation input prep, the composite bake, selection/project export)
+ * (generation input prep, the composite proxy bake, selection/project export)
  * don't each re-implement it. The renderer disposes itself in `render()`.
  */
 export async function renderSelectionToVideoFile(

@@ -391,7 +391,6 @@ export function useSam2MaskPanel({
     if (
       existing &&
       (!selectedMaskId ||
-        !isSam2EditorOpen ||
         existing.maskId !== selectedMaskId)
     ) {
       cancelSam2PreviewRequest();
@@ -407,7 +406,6 @@ export function useSam2MaskPanel({
     }
   }, [
     cancelSam2PreviewRequest,
-    isSam2EditorOpen,
     selectedClipId,
     selectedMaskId,
   ]);

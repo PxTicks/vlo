@@ -18,6 +18,7 @@ from routers.comfyui import (
     close_http_client,
 )
 from routers.sam2 import router as sam2_router
+from routers.sam_audio import router as sam_audio_router
 from routers.beats import router as beats_router
 from routers.downloads import router as downloads_router
 from routers.generation_delivery import router as generation_delivery_router
@@ -30,6 +31,7 @@ from services.comfyui.comfyui_client import (
     get_http_client,
 )
 from services.sam2 import sam2_service
+from services.sam_audio import sam_audio_service
 from services.beats import beats_service
 
 app = FastAPI()
@@ -37,6 +39,7 @@ app = FastAPI()
 app.include_router(comfyui_router)
 app.include_router(comfyui_compat_router)
 app.include_router(sam2_router)
+app.include_router(sam_audio_router)
 app.include_router(beats_router)
 app.include_router(downloads_router)
 app.include_router(generation_delivery_router)
@@ -171,6 +174,20 @@ async def get_app_status():
         beats_status = "unavailable"
         beats_error = str(exc)
 
+    try:
+        sam_audio_health = sam_audio_service.get_health()
+        sam_audio_runtime = sam_audio_health.get("runtime") or {}
+        sam_audio_ready = bool(sam_audio_runtime.get("ready"))
+        sam_audio_status = "available" if sam_audio_ready else "unavailable"
+        sam_audio_error = (
+            None
+            if sam_audio_ready
+            else (sam_audio_runtime.get("error") or "No SAM-Audio model configured")
+        )
+    except Exception as exc:  # pragma: no cover - defensive status fallback
+        sam_audio_status = "unavailable"
+        sam_audio_error = str(exc)
+
     return {
         "backend": {
             "status": "ok",
@@ -186,6 +203,10 @@ async def get_app_status():
         "sam2": {
             "status": sam2_status,
             "error": sam2_error,
+        },
+        "sam_audio": {
+            "status": sam_audio_status,
+            "error": sam_audio_error,
         },
         "beat_this": {
             "status": beats_status,

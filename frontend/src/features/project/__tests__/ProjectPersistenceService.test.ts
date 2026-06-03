@@ -215,8 +215,8 @@ describe("ProjectPersistenceService", () => {
                 },
               ],
             },
-            bakedAssetId: "proxy-1",
-            bakedContentHash: "hash-1",
+            proxyAssetId: "proxy-1",
+            proxyContentHash: "hash-1",
           },
         ],
       }),
@@ -350,7 +350,6 @@ describe("ProjectPersistenceService", () => {
       ".vloproject/project.legacy-v2.json",
       ".vloproject/asset-metadata/asset-1.json",
       ".vloproject/assets.json",
-      ".vloproject/composites.json",
       ".vloproject/timeline.json",
       ".vloproject/project.json",
     ]);

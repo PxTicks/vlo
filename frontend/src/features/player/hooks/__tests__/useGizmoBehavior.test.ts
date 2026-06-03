@@ -11,8 +11,6 @@ vi.mock("../../utils/SelectionGizmo", () => {
     SelectionGizmo: vi.fn().mockImplementation(function () {
       return {
         zIndex: 0,
-        visible: true,
-        destroyed: false,
         update: vi.fn(),
         destroy: vi.fn(),
         getHandle: vi.fn(),
@@ -113,35 +111,5 @@ describe("useGizmoBehavior", () => {
     tickerCallback();
 
     expect(gizmoMock.update).toHaveBeenCalledWith(mockSprite, 2);
-  });
-
-  it("hides the gizmo without updating it when the target is not renderable", () => {
-    let renderable = false;
-    renderHook(() =>
-      useGizmoBehavior(
-        mockSprite,
-        true,
-        mockApp,
-        mockViewport,
-        interactions,
-        () => renderable,
-      ),
-    );
-
-    const gizmoMock = vi.mocked(SelectionGizmo).mock.instances[0] as unknown as {
-      update: Mock;
-      visible: boolean;
-    };
-    const tickerCallback = vi.mocked(mockApp.ticker.add).mock
-      .calls[0][0] as () => void;
-
-    // Not renderable: gizmo stays hidden and is never positioned.
-    expect(gizmoMock.update).not.toHaveBeenCalled();
-    expect(gizmoMock.visible).toBe(false);
-
-    // Becomes renderable: gizmo updates again.
-    renderable = true;
-    tickerCallback();
-    expect(gizmoMock.update).toHaveBeenCalledWith(mockSprite, 1);
   });
 });

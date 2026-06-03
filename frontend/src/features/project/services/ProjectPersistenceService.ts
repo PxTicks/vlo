@@ -10,7 +10,6 @@ import type { TimelineTrack } from "../../../types/TimelineTypes";
 import {
   ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
   ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
-  COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
   VLO_APP_VERSION,
@@ -25,7 +24,6 @@ import {
   assertSafePathSegment,
   assetIndexDocumentSchema,
   assetMetadataDocumentSchema,
-  compositeLibraryDocumentSchema,
   legacyProjectDocumentSchema,
   projectManifestDocumentSchema,
   timelineDocumentSchema,
@@ -33,7 +31,6 @@ import {
   timelineDocumentSchemaV1,
   type AssetIndexDocument,
   type AssetMetadataDocument,
-  type CompositeLibraryDocument,
   type LegacyProjectDocument,
   type PersistedAssetIndexEntry,
   type ProjectManifestDocument,
@@ -47,7 +44,6 @@ enablePatches();
 type ManifestMutator = (draft: Draft<ProjectManifestDocument>) => void;
 type TimelineMutator = (draft: Draft<TimelineDocument>) => void;
 type AssetIndexMutator = (draft: Draft<AssetIndexDocument>) => void;
-type CompositeLibraryMutator = (draft: Draft<CompositeLibraryDocument>) => void;
 
 interface NewerSchemaVersionCheck {
   path: string;
@@ -61,7 +57,6 @@ const MANIFEST_PATH = `${PROJECT_DIR}/project.json`;
 const LEGACY_BACKUP_PATH = `${PROJECT_DIR}/project.legacy-v2.json`;
 const TIMELINE_PATH = `${PROJECT_DIR}/${PROJECT_PERSISTENCE_FILE_NAMES.timeline}`;
 const ASSET_INDEX_PATH = `${PROJECT_DIR}/${PROJECT_PERSISTENCE_FILE_NAMES.assets}`;
-const COMPOSITE_LIBRARY_PATH = `${PROJECT_DIR}/${PROJECT_PERSISTENCE_FILE_NAMES.composites}`;
 const ASSET_METADATA_DIR = PROJECT_PERSISTENCE_FILE_NAMES.assetMetadataDir;
 const MANIFEST_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
   path: MANIFEST_PATH,
@@ -81,18 +76,11 @@ const ASSET_INDEX_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
   documentLabel: "Asset index data",
   supportedSchemaVersion: ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
 };
-const COMPOSITE_LIBRARY_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
-  path: COMPOSITE_LIBRARY_PATH,
-  documentType: "vlo.composites",
-  documentLabel: "Composite library data",
-  supportedSchemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
-};
 
 export interface LoadedProjectPersistenceDocuments {
   manifest: ProjectManifestDocument | null;
   timeline: TimelineDocument | null;
   assetIndex: AssetIndexDocument | null;
-  compositeLibrary: CompositeLibraryDocument | null;
   migrated: boolean;
 }
 
@@ -103,7 +91,6 @@ export interface InitializeProjectDocumentsInput {
   config: ProjectDocumentConfig;
   timeline: TimelineSnapshot;
   assetIndex?: AssetIndexDocument;
-  compositeLibrary?: CompositeLibraryDocument;
 }
 
 export interface PreparedPersistedAsset {
@@ -256,17 +243,6 @@ function createAssetIndexDocument(
   };
 }
 
-function createCompositeLibraryDocument(
-  overrides: Partial<Pick<CompositeLibraryDocument, "composites">> = {},
-): CompositeLibraryDocument {
-  return {
-    documentType: "vlo.composites",
-    schemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
-    updated_at: Date.now(),
-    composites: overrides.composites ?? {},
-  };
-}
-
 function createManifestDocument(
   input: InitializeProjectDocumentsInput & {
     migratedFromSchemaVersion?: number;
@@ -288,7 +264,6 @@ function createManifestDocument(
     files: {
       timeline: PROJECT_PERSISTENCE_FILE_NAMES.timeline,
       assets: PROJECT_PERSISTENCE_FILE_NAMES.assets,
-      composites: PROJECT_PERSISTENCE_FILE_NAMES.composites,
       assetMetadataDir: PROJECT_PERSISTENCE_FILE_NAMES.assetMetadataDir,
     },
   };
@@ -353,9 +328,6 @@ function toLightweightCreationMetadata(
   if (metadata.source === "composite") {
     return {
       source: "composite",
-      ...(metadata.compositeAssetId
-        ? { compositeAssetId: metadata.compositeAssetId }
-        : {}),
       ...(metadata.compositeClipId
         ? { compositeClipId: metadata.compositeClipId }
         : {}),
@@ -454,7 +426,6 @@ export class ProjectPersistenceService {
   private manifestCache: ProjectManifestDocument | null = null;
   private timelineCache: TimelineDocument | null = null;
   private assetIndexCache: AssetIndexDocument | null = null;
-  private compositeLibraryCache: CompositeLibraryDocument | null = null;
   private assetMetadataCache = new Map<string, AssetMetadataDocument | null>();
 
   private enqueue<T>(key: string, operation: () => Promise<T>): Promise<T> {
@@ -491,18 +462,6 @@ export class ProjectPersistenceService {
   ): Promise<AssetIndexDocument> {
     await writeJson(ASSET_INDEX_PATH, document, assetIndexDocumentSchema);
     this.assetIndexCache = document;
-    return clone(document);
-  }
-
-  private async persistCompositeLibrary(
-    document: CompositeLibraryDocument,
-  ): Promise<CompositeLibraryDocument> {
-    await writeJson(
-      COMPOSITE_LIBRARY_PATH,
-      document,
-      compositeLibraryDocumentSchema,
-    );
-    this.compositeLibraryCache = document;
     return clone(document);
   }
 
@@ -663,41 +622,6 @@ export class ProjectPersistenceService {
     });
   }
 
-  async readCompositeLibrary(): Promise<CompositeLibraryDocument> {
-    if (this.compositeLibraryCache) {
-      return clone(this.compositeLibraryCache);
-    }
-
-    try {
-      const file = await fileSystemService.readFile(COMPOSITE_LIBRARY_PATH);
-      const raw = JSON.parse(await file.text()) as unknown;
-      throwIfNewerSchemaVersion(raw, COMPOSITE_LIBRARY_NEWER_SCHEMA_CHECK);
-      const compositeLibrary = compositeLibraryDocumentSchema.parse(raw);
-      this.compositeLibraryCache = compositeLibrary;
-      return clone(compositeLibrary);
-    } catch (error) {
-      if (!isNotFoundError(error)) {
-        throw error;
-      }
-      const empty = createCompositeLibraryDocument();
-      this.compositeLibraryCache = empty;
-      return clone(empty);
-    }
-  }
-
-  async updateCompositeLibrary(
-    mutator: CompositeLibraryMutator,
-  ): Promise<CompositeLibraryDocument> {
-    return this.enqueue(COMPOSITE_LIBRARY_PATH, async () => {
-      const current = await this.readCompositeLibrary();
-      const next = produce(current, (draft) => {
-        mutator(draft);
-        draft.updated_at = Date.now();
-      });
-      return this.persistCompositeLibrary(next);
-    });
-  }
-
   async readAssetMetadata(
     assetId: string,
     metadataRef?: string,
@@ -818,13 +742,10 @@ export class ProjectPersistenceService {
     input: InitializeProjectDocumentsInput,
   ): Promise<ProjectManifestDocument> {
     const assetIndex = input.assetIndex ?? createAssetIndexDocument();
-    const compositeLibrary =
-      input.compositeLibrary ?? createCompositeLibraryDocument();
     const timeline = createTimelineDocument(input.timeline);
     const manifest = createManifestDocument(input);
 
     await this.persistAssetIndex(assetIndex);
-    await this.persistCompositeLibrary(compositeLibrary);
     await this.persistTimeline(timeline);
     return this.persistManifest(manifest);
   }
@@ -842,7 +763,6 @@ export class ProjectPersistenceService {
           manifest: null,
           timeline: null,
           assetIndex: null,
-          compositeLibrary: null,
           migrated: false,
         };
       }
@@ -856,12 +776,10 @@ export class ProjectPersistenceService {
       this.manifestCache = manifest;
       const timeline = await this.readTimeline();
       const assetIndex = await this.readAssetIndex();
-      const compositeLibrary = await this.readCompositeLibrary();
       return {
         manifest: clone(manifest),
         timeline,
         assetIndex,
-        compositeLibrary,
         migrated: false,
       };
     }
@@ -872,7 +790,6 @@ export class ProjectPersistenceService {
         manifest: null,
         timeline: null,
         assetIndex: null,
-        compositeLibrary: null,
         migrated: false,
       };
     }
@@ -918,7 +835,6 @@ export class ProjectPersistenceService {
       assets,
       assetFamilies: clone(legacy.assetFamilies ?? {}),
     });
-    const compositeLibrary = createCompositeLibraryDocument();
 
     const timeline = createTimelineDocument({
       tracks:
@@ -943,7 +859,6 @@ export class ProjectPersistenceService {
     });
 
     await this.persistAssetIndex(assetIndex);
-    await this.persistCompositeLibrary(compositeLibrary);
     await this.persistTimeline(timeline);
     await this.persistManifest(manifest);
 
@@ -951,7 +866,6 @@ export class ProjectPersistenceService {
       manifest: clone(manifest),
       timeline: clone(timeline),
       assetIndex: clone(assetIndex),
-      compositeLibrary: clone(compositeLibrary),
       migrated: true,
     };
   }
@@ -960,7 +874,6 @@ export class ProjectPersistenceService {
     this.manifestCache = null;
     this.timelineCache = null;
     this.assetIndexCache = null;
-    this.compositeLibraryCache = null;
     this.assetMetadataCache.clear();
   }
 
@@ -974,7 +887,6 @@ export const projectPersistenceService = new ProjectPersistenceService();
 export type {
   AssetIndexDocument,
   AssetMetadataDocument,
-  CompositeLibraryDocument,
   PersistedAssetIndexEntry,
   ProjectManifestDocument,
   TimelineDocument,

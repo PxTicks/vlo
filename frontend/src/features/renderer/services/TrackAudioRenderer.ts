@@ -145,9 +145,26 @@ export class TrackAudioRenderer {
       }
       return null;
     }
-    return this.adjustmentEffectResolver
+    const resolved = this.adjustmentEffectResolver
       .getPresentationLookup()
       .findActiveClipAt(this.trackId, presentationTick);
+    if (
+      resolved &&
+      trackClips.some((candidate) => candidate.id === resolved.clip.id)
+    ) {
+      return resolved;
+    }
+
+    // Audio-only composites expand into synthetic lane clips that do not exist
+    // in the adjustment lookup. They already carry parent timing, so scan the
+    // supplied lane directly when the lookup returns the parent composite.
+    for (const candidate of trackClips) {
+      const clipEnd = candidate.start + candidate.timelineDuration;
+      if (candidate.start <= presentationTick && presentationTick < clipEnd) {
+        return { clip: candidate, effectiveTick: presentationTick };
+      }
+    }
+    return null;
   }
 
   private getSourceTicksAtPresentationTick(

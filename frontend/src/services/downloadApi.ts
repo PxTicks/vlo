@@ -78,6 +78,7 @@ export interface DownloadableModel {
 
 export interface AvailableModelsResponse {
   sam2: DownloadableModel[];
+  samAudio?: DownloadableModel[];
   comfyui?: {
     modelDownloadsEnabled: boolean;
     workflowModels: DownloadableModel[];

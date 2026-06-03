@@ -22,7 +22,7 @@ export type { CreateTimelineSelectionFromClipIdsOptions } from "./utils/createTi
 export { getTimelineSelectionFromAsset } from "./utils/assetSelection";
 export {
   selectionToCompositeContent,
-  renamespaceCompositeContentTracks,
   compositeContentToSelection,
   hashCompositeContent,
+  isCompositeProxyStale,
 } from "./utils/composite";

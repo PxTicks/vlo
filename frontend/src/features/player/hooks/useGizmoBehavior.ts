@@ -13,23 +13,8 @@ export function useGizmoBehavior(
   app: Application | null,
   viewport: Container | null,
   interactions: GizmoInteractionHandlers,
-  /**
-   * Optional per-tick gate. A gizmo must never be drawn when the object it
-   * decorates is not actually on screen — otherwise a missing/invisible
-   * sprite leaves a stale or zero-size gizmo behind. Return false to keep the
-   * gizmo hidden (and non-interactive) while the target is not renderable.
-   */
-  isTargetRenderable?: () => boolean,
 ) {
   const gizmoRef = useRef<SelectionGizmo | null>(null);
-
-  // Read the latest predicate from the ticker without re-subscribing each
-  // render (the predicate closes over imperative Pixi state that mutates
-  // outside React).
-  const isTargetRenderableRef = useRef(isTargetRenderable);
-  useEffect(() => {
-    isTargetRenderableRef.current = isTargetRenderable;
-  });
 
   // 1. Lifecycle: create/destroy visual overlay only.
   useEffect(() => {
@@ -67,16 +52,9 @@ export function useGizmoBehavior(
 
     const ticker = app.ticker;
     const update = () => {
-      const gizmo = gizmoRef.current;
-      if (!gizmo || gizmo.destroyed) return;
-
-      const renderable = isTargetRenderableRef.current?.() ?? true;
-      if (!renderable) {
-        gizmo.visible = false;
-        return;
+      if (gizmoRef.current && !gizmoRef.current.destroyed) {
+        gizmoRef.current.update(target, viewport.scale.x);
       }
-
-      gizmo.update(target, viewport.scale.x);
     };
 
     ticker.add(update);

@@ -20,7 +20,7 @@ import {
   isNonMaskTimelineClip,
 } from "../../../../types/TimelineTypes";
 import { getGhostClipPosition, GHOST_CLIP_HEIGHT } from "./dragGeometry";
-import { getTrackTypeFromClipType } from "../../utils/formatting";
+import { getTrackTypeFromClip } from "../../utils/formatting";
 import { createNewTrack } from "../../model/timelineTrackModel";
 import { planMultiClipMove } from "../../utils/multiClipMove";
 import { getMoveSnapCandidate } from "./snapUtils";
@@ -452,7 +452,7 @@ export const useClipMove = (
       if (currentInsertGapIndex !== null) {
         targetTrackId = insertTrack(
           currentInsertGapIndex,
-          getTrackTypeFromClipType(clip.type),
+          getTrackTypeFromClip(clip as BaseClip | TimelineClip),
         );
         shouldInsert = true;
       }
@@ -467,7 +467,7 @@ export const useClipMove = (
         const targetTrack = tracks.find((t) => t.id === targetTrackId);
         if (
           targetTrack?.type &&
-          targetTrack.type !== getTrackTypeFromClipType(clip.type)
+          targetTrack.type !== getTrackTypeFromClip(clip as BaseClip | TimelineClip)
         ) {
           setInsertGapIndex(null);
           return;
@@ -555,7 +555,7 @@ export const useClipMove = (
 
     const insertedTrack =
       currentInsertGapIndex !== null
-        ? createNewTrack("New Track", getTrackTypeFromClipType(leaderClip.type))
+        ? createNewTrack("New Track", getTrackTypeFromClip(leaderClip))
         : undefined;
     const resolvedLeaderTargetTrackId =
       insertedTrack && currentInsertGapIndex !== null

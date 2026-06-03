@@ -102,6 +102,16 @@ class Sam2GeneratedMaskFrame:
     time_ticks: float
 
 
+@dataclass(frozen=True)
+class Sam2CachedMaskFrames:
+    frames: np.ndarray
+    width: int
+    height: int
+    fps: float
+    frame_window_start_frame: int
+    frame_window_end_frame: int
+
+
 class _Sam2PredictorRuntime:
     """Lazy-loaded singleton wrapper around the native SAM2 video predictor."""
 
@@ -1668,6 +1678,64 @@ def generate_single_frame_mask(
         height=source.height,
         frame_index=target_frame_index,
         time_ticks=float(time_ticks),
+    )
+
+
+def get_cached_mask_frames(
+    source_id: str,
+    mask_id: str,
+    ticks_per_second: float,
+    visible_source_start_ticks: float | None = None,
+    visible_source_duration_ticks: float | None = None,
+) -> Sam2CachedMaskFrames:
+    normalized_mask_id = mask_id.strip()
+    if not normalized_mask_id:
+        raise ValueError("mask_id is required")
+
+    source = get_source_metadata(source_id)
+    frame_window = _source_ticks_range_to_frame_window(
+        source=source,
+        ticks_per_second=ticks_per_second,
+        visible_source_start_ticks=visible_source_start_ticks,
+        visible_source_duration_ticks=visible_source_duration_ticks,
+    )
+    session = _get_or_create_editor_session(
+        source,
+        normalized_mask_id,
+        frame_window=frame_window,
+    )
+
+    frames: list[np.ndarray] = []
+    start_frame, end_frame = frame_window
+    for source_frame_index in range(start_frame, end_frame + 1):
+        predictor_frame_index = _source_frame_to_predictor_frame(
+            source_frame_index,
+            frame_index_offset=session.frame_index_offset,
+            predictor_frame_count=session.frame_count,
+        )
+        if predictor_frame_index is None:
+            raise Sam2RuntimeError(
+                "The SAM2 editor session does not cover the requested visual prompt range"
+            )
+        frame = _extract_cached_frame_from_inference_state(
+            inference_state=session.inference_state,
+            source=source,
+            frame_index=predictor_frame_index,
+        )
+        if frame is None:
+            raise Sam2RuntimeError(
+                "No cached SAM2 mask frames are available for the requested visual "
+                "prompt range. Generate the SAM2 mask first, then run SAM-Audio."
+            )
+        frames.append(_resize_binary_frame_to_source(frame, source))
+
+    return Sam2CachedMaskFrames(
+        frames=np.stack(frames, axis=0).astype(np.uint8),
+        width=source.width,
+        height=source.height,
+        fps=source.fps,
+        frame_window_start_frame=start_frame,
+        frame_window_end_frame=end_frame,
     )
 
 

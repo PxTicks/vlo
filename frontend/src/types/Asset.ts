@@ -118,11 +118,10 @@ export type CreationMetadata =
       extractedAudioClip?: ExtractedAudioClipMetadata;
     }
   | {
-      /** Baked video for a Composite clip; the selection is its content
-       *  replayed at local zero. Distinct from "extracted" so the bake isn't
+      /** Baked proxy video for a Composite clip; the selection is its content
+       *  replayed at local zero. Distinct from "extracted" so the proxy isn't
        *  treated as a user-extracted library clip. */
       source: "composite";
-      compositeAssetId?: string;
       compositeClipId?: string;
       timelineSelection?: TimelineSelection;
       contentHash?: string;
@@ -134,6 +133,15 @@ export type CreationMetadata =
       maskClipId: string;
       pointCount: number;
       sourceHash: string;
+    }
+  | {
+      source: "sam_audio";
+      stem: "target" | "residual";
+      sourceAssetId: string;
+      sourceClipId: string;
+      jobId: string;
+      startTicks: number;
+      durationTicks: number;
     }
   | {
       source: "brush_mask";

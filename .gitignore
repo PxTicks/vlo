@@ -57,8 +57,8 @@ backend/assets/models/sams/sam2_hiera_s.yaml
 backend/assets/models/sams/sam2_hiera_small.pt
 backend/assets/models/sams/sam2.1_hiera_l.yaml
 backend/assets/models/sams/sam2.1_hiera_large.pt
+backend/assets/models/sam_audio/
 backend/assets/.config/object_info.json
 ComfyUI-vlo
 backend/assets/workflows/Invert_Image.json
 backend/sam2
-.claude

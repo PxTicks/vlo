@@ -1,6 +1,9 @@
 import { create } from "zustand";
-import type { CompositeContent } from "../../types/TimelineTypes";
-import { isCompositeClip } from "../../types/TimelineTypes";
+import type {
+  CompositeContent,
+  CompositeTimelineClip,
+  TimelineTrack,
+} from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import { useProjectStore } from "../project/useProjectStore";
 import { playbackClock } from "../player/services/PlaybackClock";
@@ -8,23 +11,26 @@ import { TICKS_PER_SECOND } from "../timeline/constants";
 import { createDefaultTimelineSnapshot } from "../timeline/model/timelineTrackModel";
 import { computeFurthestPresentationEnd } from "../timeline/utils/clipPresentation";
 import { useTimelineStore } from "../timeline/useTimelineStore";
-import { useCompositeLibraryStore } from "./useCompositeLibraryStore";
+import { scheduleCompositeProxyRender } from "./services/renderCompositeProxyForClip";
+import { createCompositeTimelineClip } from "./utils/createCompositeClip";
 
 interface CompositeTimelineFrame {
   previousSnapshot: TimelineSnapshot;
-  ownerCompositeAssetId?: string | null;
+  ownerClipId: string | null;
+  insertStartTick: number;
   name: string;
-  ownerClipId?: string | null;
-  insertStartTick?: number;
+}
+
+interface CompositeRenderJob {
+  clipId: string;
+  content: CompositeContent;
 }
 
 interface CompositeTimelineState {
   stack: CompositeTimelineFrame[];
   isBusy: boolean;
   lastError: string | null;
-  startBlankCompositeAsset: () => boolean;
   startBlankSubtimeline: () => boolean;
-  openCompositeAsset: (compositeAssetId: string) => boolean;
   openCompositeClip: (clipId: string) => boolean;
   exitToMainTimeline: () => Promise<boolean>;
   clearLastError: () => void;
@@ -45,13 +51,15 @@ function getCurrentTimelineSnapshot(): TimelineSnapshot {
   };
 }
 
-function getSnapshotForCompositeContent(content: CompositeContent): TimelineSnapshot {
+function getSnapshotForCompositeClip(
+  clip: CompositeTimelineClip,
+): TimelineSnapshot {
   return {
     tracks:
-      content.tracks && content.tracks.length > 0
-        ? structuredClone(content.tracks)
+      clip.content.tracks && clip.content.tracks.length > 0
+        ? structuredClone(clip.content.tracks)
         : createDefaultTimelineSnapshot().tracks,
-    clips: structuredClone(content.clips),
+    clips: structuredClone(clip.content.clips),
   };
 }
 
@@ -77,8 +85,43 @@ function getCurrentCompositeContent(): CompositeContent {
   };
 }
 
+function pickCompositeTrackId(tracks: TimelineTrack[]): string {
+  const visualTrack = tracks.find(
+    (track) => track.type === "visual" || track.type === undefined,
+  );
+  if (visualTrack) return visualTrack.id;
+  if (tracks[0]) return tracks[0].id;
+  return useTimelineStore.getState().insertTrack(0);
+}
+
 function isEmptyNewSceneContent(content: CompositeContent): boolean {
   return content.clips.length === 0;
+}
+
+function saveContentToRestoredTimeline(
+  frame: CompositeTimelineFrame,
+  content: CompositeContent,
+): CompositeTimelineClip | null {
+  const timeline = useTimelineStore.getState();
+
+  if (frame.ownerClipId) {
+    timeline.setCompositeContent(frame.ownerClipId, content);
+    const updatedClip = useTimelineStore
+      .getState()
+      .clips.find((clip) => clip.id === frame.ownerClipId);
+    return updatedClip?.type === "composite" ? updatedClip : null;
+  }
+
+  const trackId = pickCompositeTrackId(timeline.tracks);
+  const compositeClip = createCompositeTimelineClip({
+    content,
+    trackId,
+    start: frame.insertStartTick,
+    name: frame.name,
+  });
+  timeline.addClip(compositeClip);
+  timeline.selectClip(compositeClip.id);
+  return compositeClip;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -93,20 +136,12 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
     isBusy: false,
     lastError: null,
 
-    startBlankCompositeAsset: () => {
+    startBlankSubtimeline: () => {
       const state = get();
       if (state.isBusy) return false;
 
-      // Blank composites are browser-only: they create a top-level asset and
-      // never place a clip. Starting one while already inside a subtimeline
-      // edit would push a frame whose content `exitToMainTimeline` saves as a
-      // fresh asset the parent composite never references — orphaning it. The
-      // UI hides this entry point during subtimeline editing
-      // (CompositePanel gates on stack depth), but guard here too so the store
-      // stays self-consistent regardless of caller.
-      if (state.stack.length > 0) return false;
-
       const previousSnapshot = getCurrentTimelineSnapshot();
+      const insertStartTick = playbackClock.time;
       useTimelineStore.getState().setTimelinePersistenceSuspended(true);
       useTimelineStore
         .getState()
@@ -118,7 +153,8 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
           ...state.stack,
           {
             previousSnapshot,
-            ownerCompositeAssetId: null,
+            ownerClipId: null,
+            insertStartTick,
             name: "Scene",
           },
         ],
@@ -127,28 +163,21 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
       return true;
     },
 
-    startBlankSubtimeline: () => get().startBlankCompositeAsset(),
-
-    openCompositeAsset: (compositeAssetId) => {
+    openCompositeClip: (clipId) => {
       const state = get();
       if (state.isBusy) return false;
 
       const timelineSnapshot = getCurrentTimelineSnapshot();
-      const compositeAsset = useCompositeLibraryStore
-        .getState()
-        .composites.find(
-          (candidate) => candidate.id === compositeAssetId,
-        );
-      if (!compositeAsset) {
-        return false;
-      }
+      const clip = timelineSnapshot.clips.find(
+        (candidate): candidate is CompositeTimelineClip =>
+          candidate.id === clipId && candidate.type === "composite",
+      );
+      if (!clip) return false;
 
       useTimelineStore.getState().setTimelinePersistenceSuspended(true);
       useTimelineStore
         .getState()
-        .replaceTimelineSnapshot(
-          getSnapshotForCompositeContent(compositeAsset.content),
-        );
+        .replaceTimelineSnapshot(getSnapshotForCompositeClip(clip));
       playbackClock.setTime(0);
 
       set({
@@ -156,23 +185,14 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
           ...state.stack,
           {
             previousSnapshot: timelineSnapshot,
-            ownerCompositeAssetId: compositeAsset.id,
-            name: compositeAsset.name,
+            ownerClipId: clip.id,
+            insertStartTick: clip.start,
+            name: clip.name,
           },
         ],
         lastError: null,
       });
       return true;
-    },
-
-    openCompositeClip: (clipId) => {
-      const clip = useTimelineStore
-        .getState()
-        .clips.find((candidate) => candidate.id === clipId);
-      if (!isCompositeClip(clip)) {
-        return false;
-      }
-      return get().openCompositeAsset(clip.compositeId);
     },
 
     exitToMainTimeline: async () => {
@@ -184,22 +204,12 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
       try {
         let stack = [...get().stack];
         let contentToSave = getCurrentCompositeContent();
+        const renderJobs: CompositeRenderJob[] = [];
 
         while (stack.length > 0) {
           const frame = stack[stack.length - 1];
           stack = stack.slice(0, -1);
 
-          const shouldCommitFrame =
-            typeof frame.ownerCompositeAssetId === "string" ||
-            !isEmptyNewSceneContent(contentToSave);
-
-          // Restore the parent timeline BEFORE committing. Committing an edit
-          // re-bakes and relinks every placement of this composite to the fresh
-          // asset; that relink must run against the parent timeline's
-          // placements, not the subtimeline content we just captured. Restoring
-          // first (and dropping persistence suspension when we're back on the
-          // main timeline) keeps the placement's `assetId` consistent with the
-          // bake we keep, so it never points at the deleted old bake.
           useTimelineStore
             .getState()
             .replaceTimelineSnapshot(
@@ -211,19 +221,22 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
             useTimelineStore.getState().setTimelinePersistenceSuspended(false);
           }
 
-          if (shouldCommitFrame) {
-            if (typeof frame.ownerCompositeAssetId === "string") {
-              await useCompositeLibraryStore
-                .getState()
-                .updateCompositeAssetContent(frame.ownerCompositeAssetId, {
-                  content: contentToSave,
-                });
-            } else {
-              await useCompositeLibraryStore.getState().createCompositeAsset({
-                name: frame.name,
-                content: contentToSave,
-              });
-            }
+          const shouldCommitFrame =
+            frame.ownerClipId !== null ||
+            !isEmptyNewSceneContent(contentToSave);
+          const savedClip = shouldCommitFrame
+            ? saveContentToRestoredTimeline(frame, contentToSave)
+            : null;
+
+          if (
+            savedClip &&
+            returningToMainTimeline &&
+            savedClip.contentKind !== "audio"
+          ) {
+            renderJobs.push({
+              clipId: savedClip.id,
+              content: structuredClone(savedClip.content),
+            });
           }
 
           set({ stack });
@@ -234,12 +247,13 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
         }
 
         set({ isBusy: false, lastError: null });
+        renderJobs.forEach((job) => {
+          scheduleCompositeProxyRender(job.clipId, job.content);
+        });
         return true;
       } catch (error) {
         const message = getErrorMessage(error);
-        useTimelineStore
-          .getState()
-          .setTimelinePersistenceSuspended(get().stack.length > 0);
+        useTimelineStore.getState().setTimelinePersistenceSuspended(false);
         set({ isBusy: false, lastError: message });
         console.error("Failed to save composite subtimeline", error);
         return false;

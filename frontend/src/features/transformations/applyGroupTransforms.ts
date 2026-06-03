@@ -37,6 +37,11 @@ export interface AppliableGroup {
  * `sampleTick` so visual keyframes follow the same rebased timing as the
  * underlying clip content.
  *
+ * Composite-clip interaction: composites are baked to a proxy by
+ * resolveRenderableClip before any engine sees them, so a composite-on-a-
+ * track-in-a-group is identical to a video-on-a-track-in-a-group from the
+ * orchestrator's perspective.
+ *
  * The orchestrator hands a `DerivedRenderGroup` here, computed per tick
  * from the adjustment clips on the timeline. The `AppliableGroup`
  * structural type below is the minimal contract this function consumes —

@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from config import COMFYUI_INSTALL_DIR, SAM2_SEARCH_PATHS
+from config import COMFYUI_INSTALL_DIR, SAM2_SEARCH_PATHS, SAM_AUDIO_MODEL_DIR
 from services.download_service import DownloadFileSpec
 from services.sam2.sam2_discovery import discover_sam2_models
+from services.sam_audio.sam_audio_discovery import discover_sam_audio_models
 
 _HF_RESOLVE = "https://huggingface.co/{repo}/resolve/main/{filename}"
 _WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
@@ -50,6 +51,24 @@ SAM2_MODELS: dict[str, dict] = {
         "files": [
             {"filename": "sam2.1_hiera_small.pt"},
             {"filename": "sam2.1_hiera_s.yaml"},
+        ],
+    },
+}
+
+SAM_AUDIO_MODELS: dict[str, dict] = {
+    "sam-audio-large-tv": {
+        "label": "SAM-Audio Large TV",
+        "description": (
+            "High-quality text/span/visual audio separation; gated on Hugging Face. "
+            "First runtime load may also need authenticated cached dependencies such as "
+            "PE-AV, T5, and the SAM-Audio judge model."
+        ),
+        "repo": "facebook/sam-audio-large-tv",
+        "gated": True,
+        "gatedRepoUrl": "https://huggingface.co/facebook/sam-audio-large-tv",
+        "files": [
+            {"filename": "config.json"},
+            {"filename": "checkpoint.pt"},
         ],
     },
 }
@@ -247,6 +266,24 @@ def get_sam2_download_specs(model_key: str) -> list[DownloadFileSpec]:
     ]
 
 
+def get_sam_audio_download_specs(model_key: str) -> list[DownloadFileSpec]:
+    model = SAM_AUDIO_MODELS.get(model_key)
+    if model is None:
+        raise ValueError(f"Unknown SAM-Audio model key: {model_key}")
+
+    dest_dir = SAM_AUDIO_MODEL_DIR / model_key
+    repo = model["repo"]
+
+    return [
+        DownloadFileSpec(
+            url=_HF_RESOLVE.format(repo=repo, filename=f["filename"]),
+            dest_path=str(dest_dir / f["filename"]),
+            filename=f["filename"],
+        )
+        for f in model["files"]
+    ]
+
+
 def get_available_sam2_models() -> list[dict]:
     discovered = discover_sam2_models()
     discovered_names = {m["name"] for m in discovered}
@@ -263,6 +300,28 @@ def get_available_sam2_models() -> list[dict]:
             "installed": checkpoint_filename in discovered_names,
         })
     return result
+
+
+def get_available_sam_audio_models() -> list[dict]:
+    discovered = discover_sam_audio_models()
+    discovered_keys = {m["key"] for m in discovered}
+
+    result = []
+    for key, model in SAM_AUDIO_MODELS.items():
+        result.append({
+            "key": key,
+            "label": model["label"],
+            "description": model["description"],
+            "installed": key in discovered_keys,
+            "gated": bool(model.get("gated")),
+            "gatedRepoUrl": model.get("gatedRepoUrl"),
+        })
+    return result
+
+
+def is_sam_audio_model_gated(model_key: str) -> bool:
+    model = SAM_AUDIO_MODELS.get(model_key)
+    return bool(model and model.get("gated"))
 
 
 def get_available_workflow_models(workflow_id: str) -> list[dict[str, Any]]:

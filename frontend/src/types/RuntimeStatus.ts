@@ -4,6 +4,7 @@ export type ComfyUiRuntimeStatus =
   | "disconnected"
   | "invalid_config";
 export type Sam2RuntimeStatus = "available" | "unavailable";
+export type SamAudioRuntimeStatus = "available" | "unavailable";
 
 export interface RuntimeStatus {
   backend: {
@@ -19,6 +20,10 @@ export interface RuntimeStatus {
   };
   sam2: {
     status: Sam2RuntimeStatus;
+    error: string | null;
+  };
+  sam_audio?: {
+    status: SamAudioRuntimeStatus;
     error: string | null;
   };
 }

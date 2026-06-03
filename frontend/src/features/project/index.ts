@@ -18,7 +18,6 @@ export type {
 export type {
   AssetIndexDocument,
   AssetMetadataDocument,
-  CompositeLibraryDocument,
   PersistedAssetIndexEntry,
   ProjectDocument,
   ProjectManifestDocument,

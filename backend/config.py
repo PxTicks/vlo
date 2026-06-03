@@ -30,6 +30,23 @@ SAM2_CACHE_DIR = Path(
 )
 SAM2_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+SAM_AUDIO_DEVICE = os.environ.get("SAM_AUDIO_DEVICE", "auto").strip() or "auto"
+SAM_AUDIO_DEFAULT_MODEL = (
+    os.environ.get("SAM_AUDIO_MODEL", "sam-audio-large-tv").strip()
+    or "sam-audio-large-tv"
+)
+SAM_AUDIO_CACHE_DIR = Path(
+    os.environ.get("SAM_AUDIO_CACHE_DIR", str(PROJECTS_ROOT / ".sam_audio_cache"))
+)
+SAM_AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+SAM_AUDIO_MODEL_DIR = Path(
+    os.environ.get(
+        "SAM_AUDIO_MODEL_DIR",
+        str(Path(__file__).parent / "assets" / "models" / "sam_audio"),
+    )
+)
+SAM_AUDIO_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
 BEATTHIS_DEVICE = os.environ.get("BEATTHIS_DEVICE", "auto").strip() or "auto"
 BEATTHIS_DEFAULT_MODEL = (
     os.environ.get("BEATTHIS_MODEL", "final0").strip() or "final0"

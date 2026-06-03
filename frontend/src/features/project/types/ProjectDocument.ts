@@ -1,10 +1,6 @@
 import type { Asset } from "../../../types/Asset";
 import type { AssetFamily } from "../../../types/Asset";
-import type {
-  CompositeAsset,
-  TimelineClip,
-  TimelineTrack,
-} from "../../../types/TimelineTypes";
+import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 
 export interface TimelineSnapshot {
   tracks: TimelineTrack[];
@@ -31,7 +27,6 @@ export interface ProjectDocument {
   config?: ProjectDocumentConfig;
   assets?: Record<string, Asset>;
   assetFamilies?: Record<string, AssetFamily>;
-  composites?: Record<string, CompositeAsset>;
   timeline?: TimelineSnapshot;
   [key: string]: unknown;
 }
@@ -39,7 +34,6 @@ export interface ProjectDocument {
 export type {
   AssetIndexDocument,
   AssetMetadataDocument,
-  CompositeLibraryDocument,
   LegacyProjectDocument,
   PersistedAssetIndexEntry,
   ProjectManifestDocument,

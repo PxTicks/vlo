@@ -10,20 +10,17 @@ Skip to install instructions [here](#install), or continue reading.
 
 ## Demo videos
 
+1. A sample workflow. Some steps have been skipped for brevity, but it demonstrates the interaction between timeline and generation
 
-1. Patch-based inpainting. This is necessary for optimising quality and avoiding degradation both from VAE and video encoding.
+   <video src="https://github.com/PxTicks/vlo/releases/download/v0.2.0/vlo_full_2.mp4" controls width="720"></video>
 
+2. Patch-based inpainting. This is necessary for optimising quality and avoiding degradation both from VAE and video encoding.
 
-<video src="https://github.com/user-attachments/assets/a29d1b1d-097d-4526-b2c8-1dc99ec4fcc2" controls width="720"></video>
+   <video src="https://github.com/PxTicks/vlo/releases/download/v0.2.0/selection-1779469164713.mp4" controls width="720"></video>
 
+3. Motion guidance. This is using the [time-to-move](https://time-to-move.github.io/) framework. In this case we show precise control by animating the input 6332 - the default vlo port - on a keypad.
 
-2. Motion guidance. This is using the [time-to-move](https://time-to-move.github.io/) framework. In this case we show precise control by animating the input 6332 - the default vlo port - on a keypad.
-
-<video src="https://github.com/user-attachments/assets/d66962c4-7b37-4fea-b05a-4e0a073140ff" controls width="720"></video>
-
-3. An sample video of a longer workflow can be [downloaded](
-https://github.com/PxTicks/vlo/releases/download/v0.2.0/vlo_full_2.mp4) from the release assets (too big a file to upload inline). Some steps have been skipped for brevity, but it demonstrates the interaction between timeline and generation
-
+   <video src="https://github.com/PxTicks/vlo/releases/download/v0.2.0/selection-1779470129551.mp4" controls width="720"></video>
 
 ## IMPORTANT
 
@@ -134,6 +131,10 @@ Being sure to install the version for your correct cuda environment, see <https:
 Then follow the official instructions at <https://github.com/facebookresearch/sam2> and install it into the same active backend virtual environment.
 
 Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/models/sams`. Models can be found on Hugging Face, for example <https://huggingface.co/facebook/sam2.1-hiera-large>. Use the native `.pt` checkpoint from the official repository, such as `sam2.1_hiera_large.pt`. Do not use the repository's `model.safetensors` file with vlo's native SAM2 runtime, because that artifact uses Hugging Face Transformers parameter naming and is not compatible with `facebookresearch/sam2`.
+
+### SAM-Audio
+
+SAM-Audio model downloads are stored under `vlo/backend/assets/models/sam_audio/<model-key>`, for example `vlo/backend/assets/models/sam_audio/sam-audio-large-tv/config.json` and `checkpoint.pt`. Transient source uploads, stems, and Hugging Face scratch files use `projects/.sam_audio_cache`.
 
 ### Almost-one-click Setup
 

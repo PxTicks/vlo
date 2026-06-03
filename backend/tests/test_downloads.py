@@ -24,6 +24,10 @@ def test_start_download_route_runs_inside_event_loop(monkeypatch, tmp_path):
         "routers.downloads.get_available_sam2_models",
         lambda: [{"key": "sam2.1_hiera_small", "label": "SAM2.1 Small"}],
     )
+    monkeypatch.setattr(
+        "routers.downloads.get_available_sam_audio_models",
+        lambda: [],
+    )
 
     def fake_start_download(
         label: str,
@@ -107,6 +111,7 @@ def test_list_available_models_includes_workflow_models(monkeypatch):
 
     assert response == {
         "sam2": [{"key": "sam2.1_hiera_small", "label": "SAM2.1 Small"}],
+        "samAudio": [],
         "comfyui": {
             "modelDownloadsEnabled": True,
             "workflowModels": [
@@ -265,6 +270,10 @@ def test_list_available_models_includes_active_job_for_in_flight_destination(mon
         lambda: [{"key": "sam2.1_hiera_small", "label": "SAM2.1 Small"}],
     )
     monkeypatch.setattr(
+        "routers.downloads.get_available_sam_audio_models",
+        lambda: [],
+    )
+    monkeypatch.setattr(
         "routers.downloads.get_sam2_download_specs",
         lambda _model_key: [
             DownloadFileSpec(
@@ -293,6 +302,94 @@ def test_list_available_models_includes_active_job_for_in_flight_destination(mon
             "activeJobId": "job-active",
         }
     ]
+    assert response["samAudio"] == []
+
+
+def test_start_gated_sam_audio_download_requires_hf_token(monkeypatch, tmp_path):
+    spec = DownloadFileSpec(
+        url="https://huggingface.co/facebook/sam-audio-large-tv/resolve/main/checkpoint.pt",
+        dest_path=str(tmp_path / "checkpoint.pt"),
+        filename="checkpoint.pt",
+    )
+
+    monkeypatch.setattr(
+        "routers.downloads.get_sam_audio_download_specs",
+        lambda _model_key: [spec],
+    )
+    monkeypatch.setattr(
+        "routers.downloads.get_available_sam_audio_models",
+        lambda: [{"key": "sam-audio-large-tv", "label": "SAM-Audio Large TV"}],
+    )
+    monkeypatch.setattr(
+        "routers.downloads.is_sam_audio_model_gated",
+        lambda _model_key: True,
+    )
+
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            downloads.start_download(
+                downloads.StartDownloadRequest(
+                    modelType="sam-audio",
+                    modelKey="sam-audio-large-tv",
+                )
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "gated" in exc_info.value.detail.lower()
+
+
+def test_start_gated_sam_audio_download_forwards_token(monkeypatch, tmp_path):
+    spec = DownloadFileSpec(
+        url="https://huggingface.co/facebook/sam-audio-large-tv/resolve/main/checkpoint.pt",
+        dest_path=str(tmp_path / "checkpoint.pt"),
+        filename="checkpoint.pt",
+    )
+    seen: dict[str, str | None] = {}
+
+    monkeypatch.setattr(
+        "routers.downloads.get_sam_audio_download_specs",
+        lambda _model_key: [spec],
+    )
+    monkeypatch.setattr(
+        "routers.downloads.get_available_sam_audio_models",
+        lambda: [{"key": "sam-audio-large-tv", "label": "SAM-Audio Large TV"}],
+    )
+    monkeypatch.setattr(
+        "routers.downloads.is_sam_audio_model_gated",
+        lambda _model_key: True,
+    )
+
+    def fake_start_download(
+        label: str,
+        files: list[DownloadFileSpec],
+        auth_token: str | None = None,
+    ) -> DownloadJob:
+        del files
+        seen["label"] = label
+        seen["auth_token"] = auth_token
+        return DownloadJob(job_id="job-sam-audio", label=label, files=[spec])
+
+    monkeypatch.setattr("routers.downloads.download_service.start_download", fake_start_download)
+
+    response = asyncio.run(
+        downloads.start_download(
+            downloads.StartDownloadRequest(
+                modelType="sam-audio",
+                modelKey="sam-audio-large-tv",
+                hfToken="hf_token",
+            )
+        )
+    )
+
+    assert response["jobId"] == "job-sam-audio"
+    assert seen == {
+        "label": "SAM-Audio Large TV",
+        "auth_token": "hf_token",
+    }
 
 
 def test_start_gated_workflow_download_forwards_token(monkeypatch, tmp_path):

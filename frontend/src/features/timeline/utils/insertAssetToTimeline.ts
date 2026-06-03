@@ -6,7 +6,7 @@ import type {
 } from "../../../types/TimelineTypes";
 import { createClipFromAsset } from "./clipFactory";
 import { useTimelineStore } from "../useTimelineStore";
-import { getTrackTypeFromClipType } from "./formatting";
+import { getTrackTypeFromClip } from "./formatting";
 
 const DEFAULT_GENERATED_MASK_OUTER_FEATHER = 30;
 
@@ -96,7 +96,7 @@ export function insertBaseClipAtTime(
   startTick: number,
 ): string | null {
   const store = useTimelineStore.getState();
-  const expectedTrackType = getTrackTypeFromClipType(baseClip.type);
+  const expectedTrackType = getTrackTypeFromClip(baseClip);
   const endTick = startTick + baseClip.timelineDuration;
 
   const placeClip = (trackId: string): string => {

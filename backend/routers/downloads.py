@@ -17,11 +17,14 @@ from pathlib import Path
 
 from services import download_service
 from services.model_registry import (
+    get_available_sam_audio_models,
     get_available_sam2_models,
     get_available_workflow_models,
+    get_sam_audio_download_specs,
     get_sam2_download_specs,
     get_workflow_download_specs,
     is_comfyui_model_downloads_enabled,
+    is_sam_audio_model_gated,
     is_workflow_model_gated,
 )
 
@@ -61,6 +64,33 @@ def _resolve_download_request(
                 label = model["label"]
                 break
         return label, specs, None
+
+    if model_type == "sam-audio":
+        try:
+            specs = get_sam_audio_download_specs(model_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        label = model_key
+        for model in get_available_sam_audio_models():
+            if model["key"] == model_key:
+                label = model["label"]
+                break
+
+        auth_token: str | None = None
+        if is_sam_audio_model_gated(model_key):
+            token = (hf_token or "").strip()
+            if not token:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "This SAM-Audio model is gated on Hugging Face. Accept "
+                        "the license on the model repository and provide a "
+                        "Hugging Face access token to download it."
+                    ),
+                )
+            auth_token = token
+        return label, specs, auth_token
 
     if model_type == "comfyui-workflow":
         if not workflow_id:
@@ -109,6 +139,7 @@ def list_available_models(workflowId: str | None = None):
             raise HTTPException(status_code=400, detail=str(exc))
 
     sam2_models = get_available_sam2_models()
+    sam_audio_models = get_available_sam_audio_models()
 
     # Map each model to its destination paths, then look up any active jobs.
     sam2_paths: dict[str, list[str]] = {}
@@ -118,6 +149,16 @@ def list_available_models(workflowId: str | None = None):
         except ValueError:
             continue
         sam2_paths[model["key"]] = [str(Path(s.dest_path).resolve()) for s in specs]
+
+    sam_audio_paths: dict[str, list[str]] = {}
+    for model in sam_audio_models:
+        try:
+            specs = get_sam_audio_download_specs(model["key"])
+        except ValueError:
+            continue
+        sam_audio_paths[model["key"]] = [
+            str(Path(s.dest_path).resolve()) for s in specs
+        ]
 
     workflow_paths: dict[str, list[str]] = {}
     if workflowId:
@@ -131,6 +172,8 @@ def list_available_models(workflowId: str | None = None):
     all_paths: set[str] = set()
     for paths in sam2_paths.values():
         all_paths.update(paths)
+    for paths in sam_audio_paths.values():
+        all_paths.update(paths)
     for paths in workflow_paths.values():
         all_paths.update(paths)
 
@@ -138,6 +181,13 @@ def list_available_models(workflowId: str | None = None):
 
     for model in sam2_models:
         for path in sam2_paths.get(model["key"], []):
+            job_id = active_jobs_by_path.get(path)
+            if job_id is not None:
+                model["activeJobId"] = job_id
+                break
+
+    for model in sam_audio_models:
+        for path in sam_audio_paths.get(model["key"], []):
             job_id = active_jobs_by_path.get(path)
             if job_id is not None:
                 model["activeJobId"] = job_id
@@ -152,6 +202,7 @@ def list_available_models(workflowId: str | None = None):
 
     return {
         "sam2": sam2_models,
+        "samAudio": sam_audio_models,
         "comfyui": {
             "modelDownloadsEnabled": is_comfyui_model_downloads_enabled(),
             "workflowModels": workflow_models,

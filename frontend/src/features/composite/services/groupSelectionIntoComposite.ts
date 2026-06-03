@@ -1,15 +1,13 @@
 import type {
+  CompositeTimelineClip,
   TimelineSelection,
-  VideoTimelineClip,
 } from "../../../types/TimelineTypes";
-import {
-  renamespaceCompositeContentTracks,
-  selectionToCompositeContent,
-} from "../../timelineSelection";
+import { selectionToCompositeContent } from "../../timelineSelection";
+import { durationSecondsToTicks } from "../../timeline/utils/assetDuration";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { useProjectStore } from "../../project/useProjectStore";
-import { createCompositeTimelineClipFromAsset } from "../utils/createCompositeClip";
-import { useCompositeLibraryStore } from "../useCompositeLibraryStore";
+import { bakeCompositeProxy } from "./bakeCompositeProxy";
+import { createCompositeTimelineClip } from "../utils/createCompositeClip";
 
 export interface GroupSelectionOptions {
   name?: string;
@@ -50,47 +48,38 @@ function pickTargetTrackId(selection: TimelineSelection): string | null {
 export async function groupSelectionIntoComposite(
   selection: TimelineSelection,
   options: GroupSelectionOptions = {},
-): Promise<VideoTimelineClip | null> {
+): Promise<CompositeTimelineClip | null> {
   const trackId = pickTargetTrackId(selection);
   if (!trackId) {
     return null;
   }
 
-  // Re-namespace the captured tracks so the composite's content never shares
-  // track ids with the parent timeline it was cut from. selectionToCompositeContent
-  // clones the parent's tracks verbatim, which would otherwise leave the content
-  // colliding with the live timeline and cause cross-talk in any trackId-keyed
-  // lookup.
-  const content = renamespaceCompositeContentTracks(
-    selectionToCompositeContent(
-      selection,
-      useProjectStore.getState().config.fps,
-    ),
+  const content = selectionToCompositeContent(
+    selection,
+    useProjectStore.getState().config.fps,
   );
-  const compositeAsset = await useCompositeLibraryStore
-    .getState()
-    .createCompositeAsset({
-      name: options.name,
-      content,
-      signal: options.signal,
-      onProgress: options.onProgress,
-    });
+  const compositeClipId = `clip_${crypto.randomUUID()}`;
+  const { asset, contentHash } = await bakeCompositeProxy(content, {
+    signal: options.signal,
+    onProgress: options.onProgress,
+    compositeClipId,
+  });
 
-  const compositeClip = createCompositeTimelineClipFromAsset(compositeAsset, {
+  const compositeClip = createCompositeTimelineClip({
+    id: compositeClipId,
+    content,
     trackId,
     start: selection.start,
+    proxyDurationTicks: durationSecondsToTicks(asset.duration) ?? undefined,
+    proxyAssetId: asset.id,
+    proxyContentHash: contentHash,
+    name: options.name,
   });
 
   const sourceClipIds = selection.clips.map((clip) => clip.id);
   const didCommit = useTimelineStore
     .getState()
     .groupClipsIntoComposite(sourceClipIds, compositeClip);
-
-  if (!didCommit) {
-    await useCompositeLibraryStore
-      .getState()
-      .deleteCompositeAsset(compositeAsset.id);
-  }
 
   return didCommit ? compositeClip : null;
 }

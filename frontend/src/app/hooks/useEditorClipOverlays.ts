@@ -7,10 +7,7 @@ import {
 import type { TimelineClipOverlayDefinition } from "../../features/timeline";
 import { useTimelineKeyframeClipOverlay } from "../../features/transformations";
 import { useTimelineAssetRevealClipOverlay } from "../../features/userAssets";
-import {
-  useTimelineCompositeRevealClipOverlay,
-  useTimelineCompositeRenderStatusOverlay,
-} from "../../features/composite";
+import { useTimelineCompositeRenderStatusOverlay } from "../../features/composite";
 
 export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[] {
   const keyframeClipOverlay = useTimelineKeyframeClipOverlay();
@@ -20,13 +17,11 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
   const reverseStatusClipOverlay = useTimelineReverseStatusOverlay();
   const compositeRenderStatusClipOverlay =
     useTimelineCompositeRenderStatusOverlay();
-  const compositeRevealClipOverlay = useTimelineCompositeRevealClipOverlay();
 
   return useMemo(
     () => [
       keyframeClipOverlay,
       assetRevealClipOverlay,
-      compositeRevealClipOverlay,
       muteClipOverlay,
       markersClipOverlay,
       reverseStatusClipOverlay,
@@ -34,7 +29,6 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
     ],
     [
       assetRevealClipOverlay,
-      compositeRevealClipOverlay,
       compositeRenderStatusClipOverlay,
       keyframeClipOverlay,
       markersClipOverlay,

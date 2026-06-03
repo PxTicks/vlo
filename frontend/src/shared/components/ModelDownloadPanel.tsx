@@ -213,8 +213,8 @@ export function ModelDownloadPanel({
             </Typography>
           </Box>
           <Typography variant="caption" sx={{ color: "text.secondary", lineHeight: 1.5 }}>
-            Some FLUX models are gated. Open each gated model's repository
-            below to accept the license, create a read-scoped token at{" "}
+            Some models are gated. Open each gated model's repository below to
+            accept the license, create a read-scoped token at{" "}
             <Link
               href={HF_TOKEN_PAGE_URL}
               target="_blank"

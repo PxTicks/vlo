@@ -1,4 +1,9 @@
-import type { TrackType, ClipType } from "../../../types/TimelineTypes";
+import type {
+  BaseClip,
+  ClipType,
+  TimelineClip,
+  TrackType,
+} from "../../../types/TimelineTypes";
 
 export const getTrackTypeFromClipType = (clipType: ClipType): TrackType => {
   switch (clipType) {
@@ -6,6 +11,7 @@ export const getTrackTypeFromClipType = (clipType: ClipType): TrackType => {
     case "image":
     case "text":
     case "shape":
+    case "composite":
       return "visual";
     case "audio":
       return "audio";
@@ -14,6 +20,15 @@ export const getTrackTypeFromClipType = (clipType: ClipType): TrackType => {
     default:
       return "visual";
   }
+};
+
+export const getTrackTypeFromClip = (
+  clip: Pick<BaseClip | TimelineClip, "type"> & { contentKind?: "visual" | "audio" },
+): TrackType => {
+  if (clip.type === "composite" && clip.contentKind === "audio") {
+    return "audio";
+  }
+  return getTrackTypeFromClipType(clip.type);
 };
 
 const getTrackColor = (type: TrackType) => {

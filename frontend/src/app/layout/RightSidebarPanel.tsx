@@ -47,12 +47,14 @@ function RightSidebarPanelComponent() {
   });
   const [activeTab, setActiveTab] = useState<RightSidebarTab>("generate");
 
+  // On the selection edge, snap to a sensible default tab: Transform when a
+  // clip becomes selected, Generate when selection is cleared. Keyed solely on
+  // `hasSelection` so it fires only on the transition, leaving the user free to
+  // switch tabs afterwards (and to keep their tab when changing selection).
   useEffect(() => {
-    if (!hasSelection && activeTab !== "generate") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setActiveTab("generate");
-    }
-  }, [activeTab, hasSelection]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveTab(hasSelection ? "transform" : "generate");
+  }, [hasSelection]);
 
   // Derive visibleTab synchronously so the Tabs `value` never points at a
   // tab that isn't currently rendered: if the user had Mask open and then

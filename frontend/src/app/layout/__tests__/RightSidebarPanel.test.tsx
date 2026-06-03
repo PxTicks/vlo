@@ -80,7 +80,7 @@ describe("RightSidebarPanel", () => {
     expect(screen.getByTestId("mock-generation-panel")).toBeInTheDocument();
   });
 
-  it("keeps Generate as the default tab when a clip is selected", () => {
+  it("defaults to the Transform tab when a clip is selected", () => {
     selectedClipIds = ["clip-1"];
 
     render(<RightSidebarPanel />);
@@ -88,8 +88,7 @@ describe("RightSidebarPanel", () => {
     expect(screen.getByRole("tab", { name: "Transform" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Mask" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Generate" })).toBeInTheDocument();
-    expect(screen.getByTestId("mock-generation-panel")).toBeInTheDocument();
-    expect(screen.queryByTestId("mock-transform-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mock-transform-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("mock-mask-panel")).not.toBeInTheDocument();
   });
 

@@ -9,7 +9,11 @@ import { TICKS_PER_SECOND, useTimelineStore } from "../../timeline";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useExtractStore } from "../../player/useExtractStore";
 import { playbackClock } from "../../player/services/PlaybackClock";
-import { mapSourceTimeToVisualTime } from "../../transformations";
+import {
+  mapSourceTimeToVisualTime,
+  type ClipPresentationContext,
+} from "../../transformations";
+import { useProjectStore } from "../../project/useProjectStore";
 import { toClipInputTimeTicks } from "../utils/clipTime";
 
 interface UpdateClipMaskFn {
@@ -28,6 +32,15 @@ interface UseRangeMaskSelectionArgs {
   selectedMaskId: string | null;
   selectedMask: MaskTimelineClip | null;
   updateClipMask: UpdateClipMaskFn;
+}
+
+function getClipPresentationContext(): ClipPresentationContext {
+  const timelineState = useTimelineStore.getState();
+  return {
+    tracks: timelineState.tracks,
+    clips: timelineState.clips,
+    fps: useProjectStore.getState().config.fps,
+  };
 }
 
 export interface UseRangeMaskSelectionResult {
@@ -81,8 +94,17 @@ export function useRangeMaskSelection({
       extractStore.setOnConfirmSelection(() => {
         const { selectionStartTick, selectionEndTick } =
           useTimelineSelectionStore.getState();
-        const startSourceTicks = toClipInputTimeTicks(clip, selectionStartTick);
-        const endSourceTicks = toClipInputTimeTicks(clip, selectionEndTick);
+        const presentationContext = getClipPresentationContext();
+        const startSourceTicks = toClipInputTimeTicks(
+          clip,
+          selectionStartTick,
+          presentationContext,
+        );
+        const endSourceTicks = toClipInputTimeTicks(
+          clip,
+          selectionEndTick,
+          presentationContext,
+        );
         const orderedStart = Math.min(startSourceTicks, endSourceTicks);
         const orderedEnd = Math.max(startSourceTicks, endSourceTicks);
 

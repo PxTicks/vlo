@@ -17,6 +17,7 @@ import {
 import { playbackClock } from "../../player/services/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
+import type { ClipPresentationContext } from "../../transformations";
 import { useMaskViewStore } from "../store/useMaskViewStore";
 import { toClipInputTimeTicks } from "../utils/clipTime";
 import {
@@ -32,6 +33,15 @@ const sam2SourceRegistrationCache = new Map<
   string,
   Promise<Sam2SourceRegistration>
 >();
+
+function getClipPresentationContext(): ClipPresentationContext {
+  const timelineState = useTimelineStore.getState();
+  return {
+    tracks: timelineState.tracks,
+    clips: timelineState.clips,
+    fps: useProjectStore.getState().config.fps,
+  };
+}
 
 function hashSam2Points(points: ClipMaskPoint[]): string {
   let hash = 2166136261;
@@ -243,7 +253,11 @@ export function useSam2MaskPanel({
       );
       const localVisualTicks = clampedGlobal - selectedMask.start;
       setCurrentInputTimeTicks(
-        calculateClipInputTicks(selectedMask, localVisualTicks),
+        calculateClipInputTicks(
+          selectedMask,
+          localVisualTicks,
+          getClipPresentationContext(),
+        ),
       );
     };
     update(playbackClock.time);
@@ -632,10 +646,12 @@ export function useSam2MaskPanel({
       const session = await ensureSam2EditorSession();
       if (!session) return null;
       const { sourceRegistration, parentClip } = session;
+      const presentationContext = getClipPresentationContext();
 
       const safeInputTimeTicks = toClipInputTimeTicks(
         parentClip,
         options?.globalTimeTicks ?? playbackClock.time,
+        presentationContext,
       );
       const targetFrameIndex = toSourceFrameIndex(
         safeInputTimeTicks,
@@ -723,8 +739,13 @@ export function useSam2MaskPanel({
         livePreview.maskId === selectedMaskId &&
         livePreview.sourceFps > 0
       ) {
+        const presentationContext = getClipPresentationContext();
         const targetFrameIndex = toSourceFrameIndex(
-          toClipInputTimeTicks(selectedClip, globalTimeTicks),
+          toClipInputTimeTicks(
+            selectedClip,
+            globalTimeTicks,
+            presentationContext,
+          ),
           livePreview.sourceFps,
           Number.MAX_SAFE_INTEGER,
         );
@@ -1045,6 +1066,11 @@ export function useSam2MaskPanel({
 function calculateClipInputTicks(
   clip: TimelineClip,
   localVisualTimeTicks: number,
+  presentationContext?: ClipPresentationContext,
 ): number {
-  return toClipInputTimeTicks(clip, clip.start + localVisualTimeTicks);
+  return toClipInputTimeTicks(
+    clip,
+    clip.start + localVisualTimeTicks,
+    presentationContext,
+  );
 }

@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import { ControlGroup } from "../../panelUI/components/ControlGroup";
 import { ControlRenderer } from "./ControlRenderer";
@@ -8,6 +8,7 @@ import type {
   TimelineClip,
 } from "../../../types/TimelineTypes";
 import { useGroupKeyframeManager } from "../hooks/useGroupKeyframeManager";
+import { buildClipGraphTimeAxis } from "../utils/keyframeSourceTime";
 
 interface TransformationGroupProps {
   group: LayoutGroup;
@@ -67,6 +68,19 @@ export const TransformationGroup = memo(function TransformationGroup({
     onToggleKeyframe: onGroupEdited,
   });
 
+  // Speed-warped X axis for the spline editor. Built from the clip's OWN speed
+  // stack so value-transform keyframes (stored in source time) display against
+  // the warped visual timeline. The speed transform's own factor graph is
+  // excluded — it's authored in source time and must not self-warp; it falls
+  // back to the linear minTime/duration axis.
+  const timeAxis = useMemo(
+    () =>
+      timelineClip && transform?.type !== "speed"
+        ? buildClipGraphTimeAxis(timelineClip)
+        : undefined,
+    [timelineClip, transform?.type],
+  );
+
   // Adapt: extract parameters from ClipTransform
   const values = transform?.parameters ?? {};
 
@@ -93,6 +107,7 @@ export const TransformationGroup = memo(function TransformationGroup({
         clipId={clipId}
         minTime={minTime}
         duration={duration}
+        timeAxis={timeAxis}
         disabled={disabled}
         captureSnapshot={captureSnapshot}
         restoreSnapshot={restoreSnapshot}
@@ -105,6 +120,7 @@ export const TransformationGroup = memo(function TransformationGroup({
       duration,
       minTime,
       restoreSnapshot,
+      timeAxis,
       transform?.id,
     ],
   );

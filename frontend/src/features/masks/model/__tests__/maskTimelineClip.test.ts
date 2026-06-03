@@ -93,9 +93,11 @@ describe("maskTimelineClip", () => {
       transformedOffset: 0,
     });
 
-    // Runtime layout resolution uses the provided clip-local raw time.
+    // Position keyframes are source-anchored: the clip-local raw time (50) is
+    // pulled through the 2x speed to source time 100, so the spline (1px/unit)
+    // resolves x=100. Speed reschedules when a frame shows, not its position.
     const layout = resolveMaskLayoutStateAtTime(clip, 50);
-    expect(layout.x).toBeCloseTo(50, 3);
+    expect(layout.x).toBeCloseTo(100, 3);
     expect(layout.y).toBeCloseTo(0, 3);
   });
 

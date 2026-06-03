@@ -31,14 +31,20 @@ export {
   collectSectionKeyframes,
 } from "./publicApi";
 export {
+  buildClipGraphTimeAxis,
+  buildLinearGraphTimeAxis,
   calculateClipTime,
   getDefaultTransforms,
   getEntryByType,
+  getKeyframeVisualTime,
   getSegmentContentDuration,
+  getSourceKeyframeDomain,
+  getSourceKeyframeTime,
   getTransformInputTimeAtVisualOffset,
   mapLayerInputToVisualTime,
   mapSourceTimeToVisualTime,
   pullTimeThroughTransforms,
   resolveScalar,
   solveTimelineDuration,
+  type GraphTimeAxis,
 } from "./publicApi";

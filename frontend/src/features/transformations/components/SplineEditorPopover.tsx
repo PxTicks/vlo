@@ -2,6 +2,7 @@ import { Box, Button, Popover, Typography } from "@mui/material";
 import { SplineGraph } from "./SplineEditor";
 import type { SplineParameter } from "../types";
 import type { ControlDefinition } from "../../panelUI/types";
+import type { GraphTimeAxis } from "../utils/keyframeSourceTime";
 
 interface SplineEditorPopoverProps {
   open: boolean;
@@ -15,6 +16,7 @@ interface SplineEditorPopoverProps {
   control: ControlDefinition;
   minTime: number;
   duration: number;
+  timeAxis?: GraphTimeAxis;
 }
 
 export function SplineEditorPopover({
@@ -29,6 +31,7 @@ export function SplineEditorPopover({
   control,
   minTime,
   duration,
+  timeAxis,
 }: SplineEditorPopoverProps) {
   return (
     <Popover
@@ -69,6 +72,7 @@ export function SplineEditorPopover({
               height={250}
               minTime={minTime}
               duration={duration}
+              timeAxis={timeAxis}
               minY={control.min ?? 0}
               maxY={control.max ?? 2}
               softMin={control.softMin}

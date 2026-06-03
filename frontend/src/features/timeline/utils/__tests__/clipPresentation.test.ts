@@ -14,6 +14,7 @@ import {
   collectTimelineClipPresentationCollisions,
   computeFurthestPresentationEnd,
   introducesTimelineClipPresentationCollision,
+  resolveClipEffectiveTrackTick,
   resolveStoredEndForPresentationEnd,
   resolveStoredStartForPresentationStart,
 } from "../clipPresentation";
@@ -438,6 +439,48 @@ describe("findActiveClipAt lookup", () => {
     const lookup = buildTimelineClipPresentationLookup(tracks, clips, GRID_FPS);
     expect(lookup.findActiveClipAt("v1", 50)).toBeNull();
     expect(lookup.findActiveClipAt("v1", 200)).toBeNull();
+  });
+});
+
+describe("resolveClipEffectiveTrackTick (authoring presentation-awareness)", () => {
+  it("maps a playhead through a 2x adjustment to the same effective tick the renderer uses", () => {
+    const tracks = [adjustmentTrack("adj"), visualTrack("v1")];
+    const clips: TimelineClip[] = [
+      adjustmentClip({
+        id: "adj-1",
+        trackId: "adj",
+        start: 0,
+        timelineDuration: 50,
+        sourceDuration: 100,
+        depth: 1,
+        transformations: [speedTransform(2)],
+      }),
+      videoClip({ id: "video-1", trackId: "v1", start: 0, timelineDuration: 100 }),
+    ];
+    const video = clips[1];
+
+    // Renderer ground truth: presentation tick 25 shows effective tick 50.
+    const lookup = buildTimelineClipPresentationLookup(tracks, clips, GRID_FPS);
+    expect(lookup.resolveEffectiveTrackTickWithinClip(video, 25)).toBe(50);
+
+    // Authoring accessor must agree, so a keyframe committed at the playhead
+    // lands on the same source frame the viewer shows.
+    expect(
+      resolveClipEffectiveTrackTick(tracks, clips, GRID_FPS, video, 25),
+    ).toBe(50);
+  });
+
+  it("is identity when no adjustment retimes the clip", () => {
+    const tracks = [visualTrack("v1")];
+    const clip = videoClip({
+      id: "video-1",
+      trackId: "v1",
+      start: 50,
+      timelineDuration: 100,
+    });
+    expect(
+      resolveClipEffectiveTrackTick(tracks, [clip], GRID_FPS, clip, 80),
+    ).toBe(80);
   });
 });
 

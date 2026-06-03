@@ -2,14 +2,21 @@ import { useRef, useState, useMemo, useEffect, useCallback } from "react";
 import { Box } from "@mui/material";
 import { MonotoneCubicSpline, type SplinePoint } from "../../utils/MonotoneCubicSpline";
 import type { SplineParameter } from "../../types";
+import type { GraphTimeAxis } from "../../utils/keyframeSourceTime";
 
 interface SplineGraphProps {
   value: SplineParameter;
   onChange: (newValue: SplineParameter) => void;
   width: number;
   height: number;
-  minTime?: number;  // Min Time (X axis start, layer input time)
-  duration: number;  // Duration (X axis extent)
+  minTime?: number;  // Min Time (X axis start, source ticks)
+  duration: number;  // Duration (X axis extent, source ticks)
+  /**
+   * Optional speed-warped time axis. Point data stays in source ticks; this only
+   * remaps source<->screen position so a speed ramp curves the X axis. When
+   * omitted, the axis is linear over [minTime, minTime + duration].
+   */
+  timeAxis?: GraphTimeAxis;
   minY?: number;     // Hard Min
   maxY?: number;     // Hard Max
   softMin?: number;  // Default View Min
@@ -30,6 +37,7 @@ export function SplineGraph({
   height,
   minTime = 0,
   duration,
+  timeAxis,
   minY = 0,
   maxY = 2,
   softMin,
@@ -147,34 +155,57 @@ export function SplineGraph({
   }, [dragIdx, maxY, minY, softMax, softMin, value.points]);
 
   // 1. Coordinate Transform Helpers
-  // X-axis domain is [minTime, minTime + duration] (layer input time)
-  // Points are stored in source time, which maps to layer input time via upstream transforms
+  // Point data is in source ticks over [minTime, minTime + duration]. The X
+  // pixel mapping is linear in source by default; when `timeAxis` is supplied it
+  // warps source<->screen by the clip's speed stack (a ramp curves the axis)
+  // while leaving the stored source times untouched.
   const padding = 10;
   const graphWidth = width - padding * 2;
   const graphHeight = height - padding * 2;
-  const maxTime = minTime + duration; // Used for clamping and rendering
+  const maxTime = minTime + duration; // Used for clamping and rendering (source ticks)
 
-  // Convert time (in layer input time) to X pixel
-  const timeToX = useCallback((t: number) => padding + ((t - minTime) / duration) * graphWidth, [duration, graphWidth, padding, minTime]);
+  // Convert source time to X pixel
+  const timeToX = useCallback(
+    (t: number) =>
+      padding +
+      (timeAxis ? timeAxis.sourceToNorm(t) : (t - minTime) / duration) *
+        graphWidth,
+    [timeAxis, duration, graphWidth, padding, minTime],
+  );
   // Convert Y value to pixel
   const valToY = useCallback((v: number) => height - padding - ((v - viewMin) / (viewMax - viewMin)) * graphHeight, [graphHeight, height, padding, viewMax, viewMin]);
 
-  // Convert X pixel to time (in layer input time)
-  const xToTime = useCallback((x: number) => minTime + ((x - padding) / graphWidth) * duration, [duration, graphWidth, padding, minTime]);
+  // Convert X pixel to source time
+  const xToTime = useCallback(
+    (x: number) => {
+      const norm = (x - padding) / graphWidth;
+      return timeAxis ? timeAxis.normToSource(norm) : minTime + norm * duration;
+    },
+    [timeAxis, duration, graphWidth, padding, minTime],
+  );
   // Convert Y pixel to value
   const yToVal = useCallback((y: number, vMin: number, vMax: number) => vMin + ((height - padding - y) / graphHeight) * (vMax - vMin), [graphHeight, height, padding]);
 
-  // 2. Generate Screen Path (from local points)
+  // 2. Generate Screen Path.
+  // Evaluate the spline in its SOURCE domain, then map each sample through the
+  // (possibly warped) X axis. Sampling across screen X and inverting to source
+  // via `xToTime` keeps the rendered curve consistent with the draggable handles
+  // (which sit at `timeToX(point.time)`) — under a ramp the two would otherwise
+  // disagree. Dense sampling renders the warp faithfully rather than fitting a
+  // straight-in-screen-space spline through the control points.
   const pathD = useMemo(() => {
-    const screenPoints = localPoints.map((p) => {
-      return {
-        time: padding + ((p.time - minTime) / duration) * graphWidth,
-        value: height - padding - ((p.value - viewMin) / (viewMax - viewMin)) * graphHeight,
-      };
-    });
-    const spline = new MonotoneCubicSpline(screenPoints);
-    return spline.getSVGPath();
-  }, [localPoints, duration, padding, graphWidth, height, viewMin, viewMax, graphHeight, minTime]); 
+    if (localPoints.length === 0) return "";
+    const valueSpline = new MonotoneCubicSpline(localPoints);
+    const SAMPLE_COUNT = 120;
+    let path = "";
+    for (let i = 0; i <= SAMPLE_COUNT; i += 1) {
+      const x = padding + (i / SAMPLE_COUNT) * graphWidth;
+      const sourceT = xToTime(x);
+      const y = valToY(valueSpline.at(sourceT));
+      path += `${i === 0 ? "M" : "L"} ${x} ${y} `;
+    }
+    return path.trim();
+  }, [localPoints, padding, graphWidth, xToTime, valToY]);
 
   const startDrag = useCallback(
     (index: number, initialMouse: { x: number; y: number }) => {

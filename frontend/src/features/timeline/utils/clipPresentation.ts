@@ -579,3 +579,49 @@ export function introducesTimelineClipPresentationCollision(
     (collision) => !beforeCollisions.has(collisionKey(collision)),
   );
 }
+
+// Single-entry memo of the presentation lookup, keyed on the (tracks, clips,
+// fps) snapshot identity. Authoring callers (keyframe commit/toggle/display)
+// resolve the effective tick once per playback frame; rebuilding the full
+// presentation map each frame would be wasteful, and the store hands back stable
+// array refs between edits so this hits on every frame during playback.
+let effectiveTickLookupCache: {
+  tracks: readonly TimelineTrack[];
+  clips: readonly TimelineClip[];
+  fps: number;
+  lookup: TimelineClipPresentationLookup;
+} | null = null;
+
+/**
+ * Map a presentation (playhead) tick to a clip's effective track tick, applying
+ * the same adjustment-layer retiming the renderer uses (`getPresentationLookup`
+ * on the renderer side). Authoring code must resolve keyframe times through this
+ * so an adjustment clip's speed retimes *which source frame* a keyframe edit /
+ * toggle / display lands on — matching what the viewer shows. A no-op (identity)
+ * when the clip sits under no adjustment retiming.
+ */
+export function resolveClipEffectiveTrackTick(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  fps: number,
+  clip: TimelineClip,
+  presentationTick: number,
+): number {
+  if (
+    !effectiveTickLookupCache ||
+    effectiveTickLookupCache.tracks !== tracks ||
+    effectiveTickLookupCache.clips !== clips ||
+    effectiveTickLookupCache.fps !== fps
+  ) {
+    effectiveTickLookupCache = {
+      tracks,
+      clips,
+      fps,
+      lookup: buildTimelineClipPresentationLookup(tracks, clips, fps),
+    };
+  }
+  return effectiveTickLookupCache.lookup.resolveEffectiveTrackTickWithinClip(
+    clip,
+    presentationTick,
+  );
+}

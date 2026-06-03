@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutGroup, ControlDefinition } from "../../panelUI/types";
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 import { useTimelineStore, useTimelineClip } from "../../timeline";
+import { resolveClipEffectiveTrackTick } from "../../timeline/utils/clipPresentation";
+import { useProjectStore } from "../../project/useProjectStore";
 import { playbackClock } from "../../player/services/PlaybackClock";
-import {
-  calculateClipTime,
-  getTransformInputTimeAtVisualOffset,
-} from "../utils/timeCalculation";
+import { getSourceKeyframeTime } from "../utils/keyframeSourceTime";
 import { resolveScalar } from "../utils/resolveScalar";
 import { isSplineParameter, type SplineParameter } from "../types";
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
@@ -113,15 +112,28 @@ export function useGroupKeyframeManager({
       const clipStart = currentClip.start;
       const clipEnd = currentClip.start + currentClip.timelineDuration;
       const clampedTime = Math.min(Math.max(ticks, clipStart), clipEnd);
-      const localVisualTime = clampedTime - clipStart;
 
-      const keyframeTime = currentTransform?.id
-        ? getTransformInputTimeAtVisualOffset(
-            currentClip,
-            currentTransform.id,
-            localVisualTime,
-          )
-        : calculateClipTime(currentClip, localVisualTime, true);
+      // Presentation-aware: map the playhead through any adjustment-layer
+      // retiming first (matching the renderer), so the keyframe lands on the
+      // same source frame the viewer shows. Identity when no adjustment covers
+      // this clip (or when timeline state is unavailable).
+      const timelineState = useTimelineStore.getState();
+      const fps = useProjectStore.getState()?.config?.fps;
+      const effectiveTrackTick =
+        timelineState?.tracks && timelineState?.clips && fps != null
+          ? resolveClipEffectiveTrackTick(
+              timelineState.tracks,
+              timelineState.clips,
+              fps,
+              currentClip,
+              clampedTime,
+            )
+          : clampedTime;
+      const localVisualTime = effectiveTrackTick - clipStart;
+
+      // Source-anchored: pull the (adjustment-effective) playhead fully back
+      // through the clip's own speed stack, regardless of transform order.
+      const keyframeTime = getSourceKeyframeTime(currentClip, localVisualTime);
 
       keyframeTimeRef.current = keyframeTime;
 

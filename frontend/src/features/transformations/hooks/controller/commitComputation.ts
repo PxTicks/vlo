@@ -10,7 +10,7 @@ import {
 } from "../../catalogue/TransformationRegistry";
 import type { LayoutGroup } from "../../catalogue/ui/UITypes";
 import { calculateLinkedParameter } from "../../utils/aspectRatio";
-import { getTransformInputTimeAtVisualOffset } from "../../utils/timeCalculation";
+import { getSourceKeyframeTime } from "../../utils/keyframeSourceTime";
 import { resolveScalar } from "../../utils/resolveScalar";
 import {
   upsertSplinePoint,
@@ -64,6 +64,14 @@ export interface CommitComputationInput {
   activeClip?: TimelineClip;
   playheadTicks: number;
   pointEpsilonTicks: number;
+  /**
+   * Pre-resolved absolute source tick for the keyframe being committed. Callers
+   * with timeline context supply this so the keyframe is anchored at the
+   * adjustment-effective source frame (see `resolveClipEffectiveTrackTick`).
+   * When omitted, the source tick is derived from `playheadTicks` directly,
+   * which is correct only when no adjustment retimes the clip.
+   */
+  keyframeSourceTimeTicks?: number;
 }
 
 interface CommitComputationBase {
@@ -98,6 +106,7 @@ export function computeCommitMutation({
   activeClip,
   playheadTicks,
   pointEpsilonTicks,
+  keyframeSourceTimeTicks,
 }: CommitComputationInput): CommitComputationResult {
   // 1. Resolve configuration
   let groupConfig: LayoutGroup | undefined;
@@ -196,16 +205,20 @@ export function computeCommitMutation({
 
     if (shouldSyncGroup && activeClip) {
       const clipStart = activeClip.start;
-      const clampedGlobal = Math.max(
-        clipStart,
-        Math.min(playheadTicks, activeClip.start + activeClip.timelineDuration),
-      );
-      const localVisual = clampedGlobal - clipStart;
-      const keyframeTime = getTransformInputTimeAtVisualOffset(
-        activeClip,
-        existingTransform.id,
-        localVisual,
-      );
+      // Keyframes are anchored in absolute source time (independent of where
+      // speed sits in the stack). Prefer the caller's pre-resolved,
+      // adjustment-effective source tick; otherwise pull the raw playhead back
+      // through the clip's own speed stack (correct when no adjustment retimes
+      // the clip).
+      const keyframeTime =
+        keyframeSourceTimeTicks ??
+        getSourceKeyframeTime(
+          activeClip,
+          Math.max(
+            clipStart,
+            Math.min(playheadTicks, clipStart + activeClip.timelineDuration),
+          ) - clipStart,
+        );
 
       newKeyframeTimes = [...currentKeyframeTimes];
       if (

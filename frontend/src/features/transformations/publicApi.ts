@@ -11,6 +11,14 @@ export {
   pullTimeThroughTransforms,
   solveTimelineDuration,
 } from "./utils/timeCalculation";
+export {
+  buildClipGraphTimeAxis,
+  buildLinearGraphTimeAxis,
+  getKeyframeVisualTime,
+  getSourceKeyframeDomain,
+  getSourceKeyframeTime,
+  type GraphTimeAxis,
+} from "./utils/keyframeSourceTime";
 export { resolveScalar } from "./utils/resolveScalar";
 export {
   collectSectionKeyframes,

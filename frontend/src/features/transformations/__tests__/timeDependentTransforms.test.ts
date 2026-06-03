@@ -296,10 +296,13 @@ describe("Time-Dependent Transformations", () => {
         }
       });
 
-      it("DOES NOT Speed up Position of SUBSEQUENT transforms (Forward Isolation)", () => {
-        // Speed is at Index 0. Position at Index 1.
-        // Backward propagation from 1: Position uses unwarped time.
-        // Speed warps time for indices < 0 (none).
+      it("source-anchors Position regardless of speed order (speed upstream)", () => {
+        // Speed at Index 0, Position at Index 1 — i.e. Position sits *downstream*
+        // of Speed. Keyframes are source-anchored, so Position samples at the
+        // fully-resolved source time (speed only reschedules *when* a source
+        // frame shows, never *what* its values are). This is the mirror of the
+        // "filter upstream of speed" case above: both must give the same warped
+        // result, proving order-independence.
         mockClip.transformations = [
           {
             id: "s1",
@@ -317,19 +320,18 @@ describe("Time-Dependent Transformations", () => {
                 points: [
                   { time: 0, value: 0 },
                   { time: 10, value: 100 },
-                ], // 10px/s
+                ], // 10px/s in source time
               },
               y: 0,
             },
           },
         ];
 
-        // Time 5. Position runs at Wall Time (5).
-        // Pos = 50. Base 50 + 50 = 100.
-
+        // Visual time 5, Speed 2x -> source time 10 -> spline value 100.
+        // Base(50) + 100 = 150.
         applyClipTransforms(mockSprite, mockClip, containerSize, 5);
 
-        expect(mockSprite.position.x).toBe(100);
+        expect(mockSprite.position.x).toBe(150);
       });
     });
   });

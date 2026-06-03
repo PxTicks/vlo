@@ -183,7 +183,17 @@ export function applyTransformStack(
     }
 
     // Pass 2: Forward dispatch of non-speed transforms.
-    transformations.forEach((transform, index) => {
+    //
+    // Source-time anchoring: every value transform samples its keyframes at the
+    // fully-resolved `sourceTimeTicks` (the time after pulling the visual tick
+    // back through the *entire* speed stack), NOT at its per-index effective
+    // time. This makes a transform's output a property of the source frame, so
+    // speed only reschedules *when* a frame appears, never *what* its values
+    // are — and the result is independent of where speed sits in the stack.
+    // For the common layout-before-speed case `effectiveTimes[layoutIndex]`
+    // already equals `sourceTimeTicks`, so this is a no-op there. Keyframe times
+    // are stored to match via `getSourceKeyframeTime` (see keyframeSourceTime).
+    transformations.forEach((transform) => {
       if (!transform.isEnabled) return;
       if (transform.type === "speed") return;
       const effectiveTransform = applyLivePreviewOverrides(transform);
@@ -191,7 +201,7 @@ export function applyTransformStack(
       dispatchTransform(state, effectiveTransform, {
         container: ctx.container,
         content: ctx.content,
-        time: effectiveTimes[index],
+        time: sourceTimeTicks,
         visualTime: ctx.visualTime ?? defaultTime,
         visualDuration: ctx.visualDuration,
       });
@@ -203,7 +213,7 @@ export function applyTransformStack(
           liveParamStore.notify(
             effectiveTransform.id,
             paramName,
-            resolveScalar(param as ScalarParameter, effectiveTimes[index], 0),
+            resolveScalar(param as ScalarParameter, sourceTimeTicks, 0),
           );
         }
       }

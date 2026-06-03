@@ -16,6 +16,7 @@ import { SplineEditorPopover } from "./SplineEditorPopover";
 import { useSplinePopover } from "../hooks/useSplinePopover";
 import { liveParamStore } from "../services/liveParamStore";
 import { livePreviewParamStore } from "../services/livePreviewParamStore";
+import type { GraphTimeAxis } from "../utils/keyframeSourceTime";
 
 // --- Shared props for controls that support splines ---
 interface NumericControlProps {
@@ -24,6 +25,7 @@ interface NumericControlProps {
   onCommit: (val: unknown) => void;
   minTime: number;
   duration: number;
+  timeAxis?: GraphTimeAxis;
   groupId: string;
   context?: { contextId: string; transformId?: string; property: string };
   transformId?: string;
@@ -70,6 +72,7 @@ function ScalarControl({
   onCommit,
   minTime,
   duration,
+  timeAxis,
   context,
   transformId,
   disabled,
@@ -144,6 +147,7 @@ function ScalarControl({
         control={control}
         minTime={minTime}
         duration={duration}
+        timeAxis={timeAxis}
       />
     </Box>
   );
@@ -156,6 +160,7 @@ function TransformSliderControl({
   onCommit,
   minTime,
   duration,
+  timeAxis,
   groupId,
   context,
   transformId,
@@ -335,6 +340,7 @@ function TransformSliderControl({
         control={control}
         minTime={minTime}
         duration={duration}
+        timeAxis={timeAxis}
       />
     </Box>
   );
@@ -356,6 +362,7 @@ interface ControlRendererProps {
 
   minTime?: number;
   duration?: number;
+  timeAxis?: GraphTimeAxis;
   disabled?: boolean;
   captureSnapshot?: () => unknown | null;
   restoreSnapshot?: (snapshot: unknown) => void;
@@ -370,6 +377,7 @@ export const ControlRenderer = memo(function ControlRenderer({
   clipId,
   minTime = 0,
   duration = 10,
+  timeAxis,
   disabled = false,
   captureSnapshot,
   restoreSnapshot,
@@ -390,6 +398,7 @@ export const ControlRenderer = memo(function ControlRenderer({
         onCommit={onCommit}
         minTime={minTime}
         duration={duration}
+        timeAxis={timeAxis}
         context={context}
         transformId={transformId}
         groupId={groupId}
@@ -408,6 +417,7 @@ export const ControlRenderer = memo(function ControlRenderer({
         onCommit={onCommit}
         minTime={minTime}
         duration={duration}
+        timeAxis={timeAxis}
         context={context}
         transformId={transformId}
         groupId={groupId}

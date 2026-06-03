@@ -1,6 +1,5 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
-import { getLayerInputDomain } from "./timeCalculation";
+import { getSourceKeyframeDomain } from "./keyframeSourceTime";
 
 interface LayerDomain {
   minTime: number;
@@ -12,32 +11,35 @@ const EMPTY_DOMAIN: LayerDomain = {
   duration: 0,
 };
 
+// Fallback when the source window collapses (e.g. croppedSourceDuration <= 0).
+// Returns ticks to match the primary domain — the full source length, or the
+// clip's timeline length as a last resort — so the editor axis never divides by
+// a zero-width domain. (Previously returned media *seconds*, a units mismatch.)
 function getDomainFallbackDuration(clip: TimelineClip): number {
-  return tickToMediaSeconds(clip.croppedSourceDuration || 0);
+  return clip.sourceDuration || clip.timelineDuration || 0;
 }
 
 /**
- * Resolves the input-time domain for a transform layer, with a safe fallback
- * duration when the computed layer domain collapses.
+ * Resolves the source-time data domain for a transform's keyframe graph, with a
+ * safe fallback duration when the source window collapses.
+ *
+ * Keyframes are source-anchored, so this is the clip's own source window —
+ * independent of the transform's position relative to any speed transform
+ * (`transformId` is accepted for call-site compatibility but no longer selects a
+ * per-layer domain). The speed-warped *display* axis is applied separately by
+ * the spline editor via `buildClipGraphTimeAxis`.
  */
 export function getTransformLayerDomain(
   clip: TimelineClip | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   transformId?: string,
 ): LayerDomain {
   if (!clip) return EMPTY_DOMAIN;
 
-  const transforms = clip.transformations || [];
-  const index = transformId
-    ? transforms.findIndex((transform) => transform.id === transformId)
-    : 0;
-  const effectiveIndex = index === -1 ? 0 : index;
-  const layerDomain = getLayerInputDomain(clip, effectiveIndex);
+  const { minTime, duration } = getSourceKeyframeDomain(clip);
 
   return {
-    minTime: layerDomain.minTime,
-    duration:
-      layerDomain.duration > 0
-        ? layerDomain.duration
-        : getDomainFallbackDuration(clip),
+    minTime,
+    duration: duration > 0 ? duration : getDomainFallbackDuration(clip),
   };
 }

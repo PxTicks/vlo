@@ -232,6 +232,47 @@ describe("buildFrameSnappedLayerTimeDrag", () => {
 });
 
 describe("buildFrameSnappedSourceTimeDrag", () => {
+  it("commits snapped source time under clip speed", () => {
+    const onCommit = vi.fn();
+    const handlers = buildFrameSnappedSourceTimeDrag({
+      clip: makeClip([
+        {
+          id: "speed_1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 2 },
+        },
+      ]),
+      initialSourceTimeTicks: TPF * 10,
+      getTicksPerFrame: () => TPF,
+      getZoomScale: () => 1,
+      onCommit,
+    });
+
+    // Source 10f renders at visual 5f under 2x speed. Dropping 1.4
+    // visual frames later snaps to visual 6f, which is source 12f.
+    handlers.onDragEnd?.(makeContext(TPF * 1.4));
+    expect(onCommit).toHaveBeenCalledWith(TPF * 12);
+  });
+
+  it("steps further from a neighbor when source-time separation would collapse", () => {
+    const onCommit = vi.fn();
+    const interstitialNext = TPF * 12 + 100;
+    const handlers = buildFrameSnappedSourceTimeDrag({
+      clip: makeClip([]),
+      initialSourceTimeTicks: TPF * 10,
+      prevNeighborSourceTimeTicks: null,
+      nextNeighborSourceTimeTicks: interstitialNext,
+      minNeighborSeparationTicks: 500,
+      getTicksPerFrame: () => TPF,
+      getZoomScale: () => 1,
+      onCommit,
+    });
+
+    handlers.onDragEnd?.(makeContext(TPF * 5));
+    expect(onCommit).toHaveBeenCalledWith(TPF * 11);
+  });
+
   it("uses presentation-space distance for the live drag offset", () => {
     const handlers = buildFrameSnappedSourceTimeDrag({
       clip: makeClip([]),

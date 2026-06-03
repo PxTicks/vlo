@@ -6,7 +6,7 @@ import {
   getDefaultTransforms,
   getEntryForTransform,
 } from "../catalogue/TransformationRegistry";
-import { mapLayerInputToVisualTime } from "./timeCalculation";
+import { clipSourceTimeToVisual } from "./clipTimeDomains";
 
 export const SECTION_GROUP_KEYFRAME_COLORS = [
   "#ffb000",
@@ -32,6 +32,7 @@ export interface SectionKeyframeMarker {
   groupId: string;
   groupIndex: number;
   transformId: string;
+  /** Stored keyframe time, encoded as source-media time in project ticks. */
   inputTime: number;
   visualTime: number;
   color: string;
@@ -150,11 +151,7 @@ export function collectSectionKeyframes(
         groupIndex: group.groupIndex,
         transformId: group.transform.id,
         inputTime,
-        visualTime: mapLayerInputToVisualTime(
-          clip,
-          group.transform.id,
-          inputTime,
-        ),
+        visualTime: clipSourceTimeToVisual(clip, inputTime),
         color: group.color,
       })),
     )

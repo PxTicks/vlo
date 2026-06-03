@@ -94,6 +94,35 @@ describe("sectionKeyframes", () => {
     expect(markers.every((marker) => marker.color === "#ffb000")).toBe(true);
   });
 
+  it("derives visual positions from source-time keyframes under clip speed", () => {
+    const clip: TimelineClip = {
+      ...baseClip,
+      transformations: [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: { x: 0, y: 0 },
+          keyframeTimes: [TICKS_PER_SECOND],
+        },
+        {
+          id: "speed_1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 2 },
+        },
+      ],
+    };
+
+    const markers = collectSectionKeyframes(clip, getDefaultSectionId("layout"));
+
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({
+      inputTime: TICKS_PER_SECOND,
+      visualTime: TICKS_PER_SECOND / 2,
+    });
+  });
+
   it("uses off-white for the fourth group color slot", () => {
     expect(getSectionGroupKeyframeColor(3)).toBe("#f5f5f5");
   });

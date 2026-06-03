@@ -1,9 +1,13 @@
+import type { ComponentProps } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TimelineClipItem } from "../TimelineClip";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../../hooks/useInteractionStore";
 import { useCompositeTimelineStore } from "../../../composite/useCompositeTimelineStore";
+import { useTimelineKeyframeClipOverlay } from "../../../transformations/hooks/useTimelineKeyframeClipOverlay";
+import { getDefaultSectionId } from "../../../transformations/publicApi";
+import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
 import type { Asset } from "../../../../types/Asset";
 import type {
   TimelineClip as TimelineClipType,
@@ -134,6 +138,23 @@ describe("TimelineClip Visual Geometry", () => {
     };
   }
 
+  function TimelineClipWithKeyframeOverlay({
+    clip,
+    presentation,
+  }: {
+    clip: TimelineClipType;
+    presentation?: ComponentProps<typeof TimelineClipItem>["presentation"];
+  }) {
+    const keyframeOverlay = useTimelineKeyframeClipOverlay();
+    return (
+      <TimelineClipItem
+        clip={clip}
+        presentation={presentation}
+        clipOverlays={[keyframeOverlay]}
+      />
+    );
+  }
+
   beforeEach(() => {
     // Reset stores
     viewStoreState.zoomScale = 1;
@@ -146,6 +167,10 @@ describe("TimelineClip Visual Geometry", () => {
       stack: [],
       isBusy: false,
       lastError: null,
+    });
+    useTransformationViewStore.setState({
+      activeSection: null,
+      activeSpline: null,
     });
     useInteractionStore.setState({ activeId: null, operation: null });
     extractionState.mockUseAsset.mockReset();
@@ -567,6 +592,60 @@ describe("TimelineClip Visual Geometry", () => {
 
     expect(sourceItem.style.left).toContain(expectedBaseLeft);
     expect(layerItem.style.left).toContain(expectedBaseLeft);
+  });
+
+  it("positions keyframe diamonds through the clip presentation map", () => {
+    const clipWithKeyframes: TimelineClipType = {
+      ...mockClip,
+      id: "keyframe_clip",
+      start: 0,
+      timelineDuration: 2 * TICKS_PER_SECOND,
+      sourceDuration: 2 * TICKS_PER_SECOND,
+      transformedDuration: 2 * TICKS_PER_SECOND,
+      croppedSourceDuration: 2 * TICKS_PER_SECOND,
+      transformations: [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: { x: 0, y: 0 },
+          keyframeTimes: [TICKS_PER_SECOND],
+        },
+      ],
+    };
+
+    const presentation = {
+      clipId: clipWithKeyframes.id,
+      trackId: clipWithKeyframes.trackId,
+      start: 0,
+      end: TICKS_PER_SECOND,
+      duration: TICKS_PER_SECOND,
+      mapPresentationOffsetToClipOffset: (offset: number) => offset * 2,
+      mapClipOffsetToPresentationOffset: (offset: number) => offset / 2,
+    };
+
+    useTimelineStore.setState({ clips: [clipWithKeyframes] });
+    useTransformationViewStore.setState({
+      activeSection: {
+        clipId: clipWithKeyframes.id,
+        sectionId: getDefaultSectionId("layout"),
+      },
+    });
+
+    render(
+      <TimelineClipWithKeyframeOverlay
+        clip={clipWithKeyframes}
+        presentation={presentation}
+      />,
+    );
+
+    const expectedBaseLeft = `${
+      (TICKS_PER_SECOND / 2 / TICKS_PER_SECOND) * PIXELS_PER_SECOND
+    }px`;
+    const diamond = screen.getByTestId("timeline-keyframe-diamond");
+    const overlayNode = diamond.parentElement as HTMLElement;
+
+    expect(overlayNode.style.left).toContain(expectedBaseLeft);
   });
 
   it("emits pointer-drag callbacks with clip-local and time-mapped positions without firing click handlers", () => {

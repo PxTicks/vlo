@@ -3,14 +3,14 @@ import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useShallow } from "zustand/react/shallow";
 import type { TimelineClipOverlayDefinition } from "../../timeline/clipOverlayApi";
-import { createLayerTimeOverlayItem } from "../../timeline/clipOverlayApi";
+import { createSourceTimeOverlayItem } from "../../timeline/clipOverlayApi";
 import {
   parseMaskClipId,
   selectMaskClipsForParent,
   useTimelineStore,
 } from "../../timeline/useTimelineStore";
 import { useTimelineViewStore } from "../../timeline/hooks/useTimelineViewStore";
-import { buildFrameSnappedLayerTimeDrag } from "../../timeline/utils/snapDragOverlay";
+import { buildFrameSnappedSourceTimeDrag } from "../../timeline/utils/snapDragOverlay";
 import { useProjectStore } from "../../project/useProjectStore";
 import { getTicksPerFrame } from "../../timelineSelection";
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
@@ -90,9 +90,9 @@ function resolveHostClip(
   );
 }
 
-function findNeighborInputTimes(
+function findNeighborSourceTimes(
   transform: ClipTransform | undefined,
-  inputTime: number,
+  sourceTimeTicks: number,
 ): { prev: number | null; next: number | null } {
   const times = transform?.keyframeTimes ?? [];
   if (times.length === 0) return { prev: null, next: null };
@@ -101,7 +101,7 @@ function findNeighborInputTimes(
   // tolerant equality so we don't trip on float drift.
   const sorted = [...times].sort((a, b) => a - b);
   const index = sorted.findIndex(
-    (t) => Math.abs(t - inputTime) <= POINT_EPSILON_TICKS,
+    (t) => Math.abs(t - sourceTimeTicks) <= POINT_EPSILON_TICKS,
   );
   if (index === -1) return { prev: null, next: null };
 
@@ -114,8 +114,8 @@ function findNeighborInputTimes(
 function commitKeyframeMove(
   hostClipId: string,
   transformId: string,
-  oldInputTime: number,
-  newInputTime: number,
+  oldSourceTimeTicks: number,
+  newSourceTimeTicks: number,
 ): void {
   const store = useTimelineStore.getState();
   const hostClip = store.clips.find((candidate) => candidate.id === hostClipId);
@@ -123,11 +123,17 @@ function commitKeyframeMove(
   const transform = hostClip.transformations.find((t) => t.id === transformId);
   if (!transform) return;
 
-  if (Math.abs(newInputTime - oldInputTime) <= POINT_EPSILON_TICKS) return;
+  if (
+    Math.abs(newSourceTimeTicks - oldSourceTimeTicks) <= POINT_EPSILON_TICKS
+  ) {
+    return;
+  }
 
   const nextTimes = (transform.keyframeTimes ?? [])
     .map((time) =>
-      Math.abs(time - oldInputTime) <= POINT_EPSILON_TICKS ? newInputTime : time,
+      Math.abs(time - oldSourceTimeTicks) <= POINT_EPSILON_TICKS
+        ? newSourceTimeTicks
+        : time,
     )
     .sort((a, b) => a - b);
 
@@ -139,8 +145,8 @@ function commitKeyframeMove(
     }
     const newPoints = value.points
       .map((point) =>
-        Math.abs(point.time - oldInputTime) <= POINT_EPSILON_TICKS
-          ? { ...point, time: newInputTime }
+        Math.abs(point.time - oldSourceTimeTicks) <= POINT_EPSILON_TICKS
+          ? { ...point, time: newSourceTimeTicks }
           : point,
       )
       .sort((a, b) => a.time - b.time);
@@ -197,44 +203,43 @@ function useKeyframeOverlayItems({
 
     return keyframes.map((marker) => {
       const dragHandlers = hostClip
-        ? buildFrameSnappedLayerTimeDrag({
-            clip: hostClip,
-            transformId: marker.transformId,
-            initialLayerInputTicks: marker.inputTime,
+        ? buildFrameSnappedSourceTimeDrag({
+            clip,
+            initialSourceTimeTicks: marker.inputTime,
             ...(() => {
               const transform = hostClip.transformations.find(
                 (t) => t.id === marker.transformId,
               );
-              const { prev, next } = findNeighborInputTimes(
+              const { prev, next } = findNeighborSourceTimes(
                 transform,
                 marker.inputTime,
               );
               return {
-                prevNeighborLayerInputTicks: prev,
-                nextNeighborLayerInputTicks: next,
+                prevNeighborSourceTimeTicks: prev,
+                nextNeighborSourceTimeTicks: next,
               };
             })(),
             getTicksPerFrame: () =>
               getTicksPerFrame(useProjectStore.getState().config.fps),
             getZoomScale: () => useTimelineViewStore.getState().zoomScale,
-            onCommit: (snappedLayerInputTicks) => {
+            onCommit: (snappedSourceTimeTicks) => {
               commitKeyframeMove(
                 hostClip.id,
                 marker.transformId,
                 marker.inputTime,
-                snappedLayerInputTicks,
+                snappedSourceTimeTicks,
               );
             },
           })
         : undefined;
 
-      return createLayerTimeOverlayItem({
+      return createSourceTimeOverlayItem({
         id: marker.id,
-        transformId: marker.transformId,
-        layerInputTicks: marker.inputTime,
+        sourceTimeTicks: marker.inputTime,
         lane: resolveKeyframeLane(marker.groupIndex, maxGroupIndex),
         content: (
           <DiamondMarker
+            data-testid="timeline-keyframe-diamond"
             sx={{
               backgroundColor: marker.color,
               cursor: dragHandlers ? "default" : undefined,

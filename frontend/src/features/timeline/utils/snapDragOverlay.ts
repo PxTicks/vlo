@@ -1,9 +1,9 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import {
-  calculateClipTime,
+  clipSourceTimeToVisual,
+  clipVisualToSourceTime,
   getTransformInputTimeAtVisualOffset,
   mapLayerInputToVisualTime,
-  mapSourceTimeToVisualTime,
 } from "../../transformations";
 import { snapTickToFrame } from "../../timelineSelection";
 import type {
@@ -49,6 +49,23 @@ interface BuildSourceTimeDragOptions {
    */
   initialSourceTimeTicks: number;
   /**
+   * Source-media time of the previous keyframe/marker in the same sequence.
+   * Pass `null` if the dragged item is the first.
+   */
+  prevNeighborSourceTimeTicks?: number | null;
+  /**
+   * Source-media time of the next keyframe/marker in the same sequence.
+   * Pass `null` if the dragged item is the last.
+   */
+  nextNeighborSourceTimeTicks?: number | null;
+  /**
+   * Minimum required source-time separation between the committed time and
+   * either neighbor. This protects spline keyframes from collapsing into
+   * each other when a speed transform compresses several visual frames into
+   * a tiny source-time interval.
+   */
+  minNeighborSeparationTicks?: number;
+  /**
    * Returns ticks-per-frame at drag time. A function so callers can pull
    * the live FPS from project state without stale captures.
    */
@@ -80,6 +97,9 @@ export function buildFrameSnappedSourceTimeDrag(
   const {
     clip,
     initialSourceTimeTicks,
+    prevNeighborSourceTimeTicks = null,
+    nextNeighborSourceTimeTicks = null,
+    minNeighborSeparationTicks = 2,
     getTicksPerFrame,
     getZoomScale,
     onCommit,
@@ -87,19 +107,100 @@ export function buildFrameSnappedSourceTimeDrag(
 
   // Where the icon is rendered on the timeline at drag-start (clip-local
   // visual ticks). With a speed transform this may sit between frames.
-  const anchorVisualTicks = mapSourceTimeToVisualTime(
-    clip,
-    initialSourceTimeTicks,
-  );
+  const anchorVisualTicks = clipSourceTimeToVisual(clip, initialSourceTimeTicks);
 
-  // The candidate visual position on each frame is anchorVisualTicks +
-  // deltaVisualTimeTicks. Snapping that to the nearest project frame
-  // gives the live drop preview.
-  const snapCandidate = (deltaVisualTimeTicks: number): number =>
-    snapTickToFrame(
+  const prevVisualTicks =
+    prevNeighborSourceTimeTicks === null
+      ? null
+      : clipSourceTimeToVisual(clip, prevNeighborSourceTimeTicks);
+  const nextVisualTicks =
+    nextNeighborSourceTimeTicks === null
+      ? null
+      : clipSourceTimeToVisual(clip, nextNeighborSourceTimeTicks);
+
+  function resolveDrop(deltaVisualTimeTicks: number): {
+    visualTicks: number;
+    sourceTimeTicks: number;
+  } {
+    const ticksPerFrame = getTicksPerFrame();
+    const candidateVisual = snapTickToFrame(
       anchorVisualTicks + deltaVisualTimeTicks,
-      getTicksPerFrame(),
+      ticksPerFrame,
     );
+
+    // Smallest frame strictly greater than prev's visual position; largest
+    // frame strictly less than next's visual position.
+    const lbVisual =
+      prevVisualTicks === null
+        ? -Infinity
+        : (Math.floor(prevVisualTicks / ticksPerFrame) + 1) * ticksPerFrame;
+    const ubVisual =
+      nextVisualTicks === null
+        ? Infinity
+        : (Math.ceil(nextVisualTicks / ticksPerFrame) - 1) * ticksPerFrame;
+
+    const fallback = {
+      visualTicks: anchorVisualTicks,
+      sourceTimeTicks: initialSourceTimeTicks,
+    };
+
+    if (lbVisual > ubVisual) {
+      return fallback;
+    }
+
+    let chosenVisual = Math.max(lbVisual, Math.min(candidateVisual, ubVisual));
+
+    const isSourceSafe = (visualTicks: number): boolean => {
+      const sourceTimeTicks = clipVisualToSourceTime(clip, visualTicks);
+      if (
+        prevNeighborSourceTimeTicks !== null &&
+        sourceTimeTicks - prevNeighborSourceTimeTicks <
+          minNeighborSeparationTicks
+      ) {
+        return false;
+      }
+      if (
+        nextNeighborSourceTimeTicks !== null &&
+        nextNeighborSourceTimeTicks - sourceTimeTicks <
+          minNeighborSeparationTicks
+      ) {
+        return false;
+      }
+      return true;
+    };
+
+    if (!isSourceSafe(chosenVisual)) {
+      let bestVisual: number | null = null;
+      let bestDistance = Infinity;
+      const maxStep = Math.max(
+        Math.ceil((ubVisual - lbVisual) / ticksPerFrame) + 1,
+        1,
+      );
+      for (let step = 1; step <= maxStep; step += 1) {
+        const offset = step * ticksPerFrame;
+        for (const direction of [-1, 1] as const) {
+          const probe = chosenVisual + direction * offset;
+          if (probe < lbVisual || probe > ubVisual) continue;
+          if (!isSourceSafe(probe)) continue;
+          const distance = Math.abs(probe - candidateVisual);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestVisual = probe;
+          }
+        }
+        if (bestVisual !== null) break;
+      }
+      if (bestVisual === null) {
+        return fallback;
+      }
+      chosenVisual = bestVisual;
+    }
+
+    return {
+      visualTicks: chosenVisual,
+      sourceTimeTicks: clipVisualToSourceTime(clip, chosenVisual),
+    };
+  }
 
   return {
     onDragStart: (context) => {
@@ -107,17 +208,16 @@ export function buildFrameSnappedSourceTimeDrag(
     },
 
     onDrag: (context) => {
-      const snappedVisualTicks = snapCandidate(context.deltaVisualTimeTicks);
+      const { visualTicks } = resolveDrop(context.deltaVisualTimeTicks);
       const dxBasePx =
-        clipOffsetToPresentationBasePixels(context, snappedVisualTicks) -
+        clipOffsetToPresentationBasePixels(context, visualTicks) -
         clipOffsetToPresentationBasePixels(context, anchorVisualTicks);
       applyLiveDx(context.targetElement, dxBasePx * getZoomScale());
     },
 
     onDragEnd: (context) => {
-      const snappedVisualTicks = snapCandidate(context.deltaVisualTimeTicks);
-      const snappedSourceTime = calculateClipTime(clip, snappedVisualTicks);
-      onCommit(snappedSourceTime);
+      const { sourceTimeTicks } = resolveDrop(context.deltaVisualTimeTicks);
+      onCommit(sourceTimeTicks);
       clearLiveDx(context.targetElement);
     },
   };

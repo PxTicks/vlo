@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { TimelineClip } from "../../../types/TimelineTypes";
+import type { TimelineClipOverlayDragContext } from "../../timeline";
 import { TICKS_PER_SECOND, useTimelineStore } from "../../timeline";
 import { useTimelineKeyframeClipOverlay } from "../hooks/useTimelineKeyframeClipOverlay";
 import { getDefaultSectionId, getDynamicSectionId } from "../publicApi";
@@ -28,6 +29,40 @@ function useOverlayItems(clip: TimelineClip) {
   return overlay.useItems({ clip, isSelected: false });
 }
 
+function makeDragContext(
+  clip: TimelineClip,
+  deltaVisualTimeTicks: number,
+): TimelineClipOverlayDragContext {
+  return {
+    clip,
+    isSelected: false,
+    item: {
+      id: "keyframe",
+      content: null,
+      visibility: "always",
+      placement: {
+        kind: "sourceTime",
+        sourceTimeTicks: 0,
+        lane: "middle",
+        offsetPx: 0,
+        verticalOffsetPx: 0,
+      },
+    },
+    event: new Event("pointer") as unknown as PointerEvent,
+    targetElement: document.createElement("div"),
+    clipLocalX: 0,
+    presentationOffsetTicks: 0,
+    visualTimeTicks: 0,
+    sourceTimeTicks: 0,
+    deltaClipX: 0,
+    deltaPresentationOffsetTicks: deltaVisualTimeTicks,
+    deltaVisualTimeTicks,
+    deltaSourceTimeTicks: 0,
+    mapPresentationOffsetToClipOffset: (offset) => offset,
+    mapClipOffsetToPresentationOffset: (offset) => offset,
+  };
+}
+
 describe("useTimelineKeyframeClipOverlay", () => {
   beforeEach(() => {
     useTransformationViewStore.setState({
@@ -50,7 +85,7 @@ describe("useTimelineKeyframeClipOverlay", () => {
     });
   });
 
-  it("returns layer-time overlay items for the active clip section with stable lanes and colors", () => {
+  it("returns source-time overlay items for the active clip section with stable lanes and colors", () => {
     const clip: TimelineClip = {
       ...baseClip,
       transformations: [
@@ -90,16 +125,18 @@ describe("useTimelineKeyframeClipOverlay", () => {
 
     expect(result.current).toHaveLength(4);
     expect(result.current.map((item) => item.placement.kind)).toEqual([
-      "layerTime",
-      "layerTime",
-      "layerTime",
-      "layerTime",
+      "sourceTime",
+      "sourceTime",
+      "sourceTime",
+      "sourceTime",
     ]);
     expect(
       result.current.map((item) =>
-        item.placement.kind === "layerTime" ? item.placement.transformId : null,
+        item.placement.kind === "sourceTime"
+          ? item.placement.sourceTimeTicks
+          : null,
       ),
-    ).toEqual(["position_1", "scale_1", "position_1", "rotation_1"]);
+    ).toEqual([120, 240, 360, 480]);
     // Layout's UI groups are now [position, scale, rotation] (indices
     // 0/1/2) since fitMode was split into its own catalogue entry. Lanes
     // and palette indices shift accordingly:
@@ -163,13 +200,77 @@ describe("useTimelineKeyframeClipOverlay", () => {
 
     expect(result.current).toHaveLength(2);
     expect(
-      result.current.every(
-        (item) =>
-          item.placement.kind === "layerTime" &&
-          item.placement.transformId === "speed_1",
+      result.current.map((item) =>
+        item.placement.kind === "sourceTime"
+          ? item.placement.sourceTimeTicks
+          : null,
       ),
-    ).toBe(true);
+    ).toEqual([100, 200]);
     expect(result.current.every((item) => item.placement.lane === "middle")).toBe(true);
+  });
+
+  it("commits dragged keyframes as source-media time under clip speed", () => {
+    const clip: TimelineClip = {
+      ...baseClip,
+      transformations: [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: {
+            x: {
+              type: "spline",
+              points: [
+                { time: TICKS_PER_SECOND, value: 0 },
+                { time: 3 * TICKS_PER_SECOND, value: 100 },
+              ],
+            },
+            y: 0,
+          },
+          keyframeTimes: [TICKS_PER_SECOND, 3 * TICKS_PER_SECOND],
+        },
+        {
+          id: "speed_1",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 2 },
+        },
+      ],
+    };
+
+    useTimelineStore.setState({ clips: [clip] });
+    useTransformationViewStore.setState({
+      activeSection: {
+        clipId: clip.id,
+        sectionId: getDefaultSectionId("layout"),
+      },
+    });
+
+    const { result } = renderHook(() => useOverlayItems(clip));
+    result.current[0].drag?.onDragEnd?.(
+      makeDragContext(clip, TICKS_PER_SECOND / 2),
+    );
+
+    const updatedClip = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === clip.id);
+    const updatedTransform = updatedClip?.transformations.find(
+      (transform) => transform.id === "position_1",
+    );
+
+    expect(updatedTransform?.keyframeTimes).toEqual([
+      2 * TICKS_PER_SECOND,
+      3 * TICKS_PER_SECOND,
+    ]);
+    expect(updatedTransform?.parameters).toMatchObject({
+      x: {
+        type: "spline",
+        points: [
+          { time: 2 * TICKS_PER_SECOND, value: 0 },
+          { time: 3 * TICKS_PER_SECOND, value: 100 },
+        ],
+      },
+    });
   });
 
   it("uses the default cursor for draggable overlay keyframes", () => {

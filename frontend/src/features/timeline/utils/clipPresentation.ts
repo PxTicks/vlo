@@ -14,25 +14,18 @@ export interface TimelineClipPresentation {
   clipId: string;
   trackId: string;
   /**
-   * Raw (continuous) on-screen footprint after ripple retiming and static
-   * rebases — may be fractional. Basis for the offset mappers and the
-   * decode-time effective-tick mapping, and still the source for timeline
-   * *display* geometry (clip width/left) pending the deferred display-width
-   * quantization. For frame-grid *decisions* use the quantized `*Tick` fields.
+   * On-screen footprint, quantized to the frame grid — this IS the render
+   * reality (which whole frames the clip occupies): epsilon-tolerant ceiling on
+   * both boundaries, >= 1 frame, integer ticks. Display geometry, selection
+   * (`findActiveClipAt`), collision, snapping, and timeline length all read this
+   * one footprint, so the drawn rectangle, the rendered frames, and the
+   * frame-snapped playhead always agree. The continuous source<->presentation
+   * mapping (which can be fractional) lives in the offset mappers /
+   * `resolveEffectiveTrackTick` below, not in these boundary fields.
    */
   start: number;
   end: number;
   duration: number;
-  /**
-   * Frame-grid-quantized integer footprint: epsilon-tolerant ceiling on BOTH
-   * boundaries, guaranteed >= 1 frame. The single grid that frame-grid
-   * decisions — selection (`findActiveClipAt`), collision, and timeline length
-   * — share so they cannot drift. (Display geometry still reads the raw float
-   * fields above; moving it onto this grid is a deferred, coordinated change.)
-   */
-  startTick: number;
-  endTick: number;
-  durationTicks: number;
   /**
    * Given a presentation-offset within this clip's footprint, return the
    * stored offset within the clip (i.e. `effectiveTrackTick - clip.start`).
@@ -220,21 +213,29 @@ function buildPresentation(
   // Ripple-mode adjustments choose the clip's lane position. Static-mode
   // adjustments are then rebased around that position so they retime only the
   // clip content they visibly cover, not every later clip on the track.
-  const start = layoutResolver.resolvePresentationTick(
+  const rawStart = layoutResolver.resolvePresentationTick(
     clip.trackId,
     clip.start,
   );
   const baseEffectiveTick = resolver.resolveEffectiveTrackTick(
     clip.trackId,
-    start,
+    rawStart,
   );
-  const presentationEnd = resolver.resolvePresentationTick(
+  const rawPresentationEnd = resolver.resolvePresentationTick(
     clip.trackId,
     baseEffectiveTick + clip.timelineDuration,
   );
-  const duration = Math.max(0, presentationEnd - start);
-  const end = start + duration;
-  const quantized = computeQuantizedPresentation(start, end, fps);
+  const rawEnd = rawStart + Math.max(0, rawPresentationEnd - rawStart);
+  // The footprint IS the frame grid the renderer samples — quantize the raw
+  // (possibly fractional, source-derived) span up to whole frames. Offsets
+  // below are expressed relative to this quantized start so markers/snapping
+  // sit inside the same rectangle; the decode mapping stays continuous (raw
+  // `baseEffectiveTick`) so a frame tick still maps to the true source frame.
+  const { startTick, endTick, durationTicks } = computeQuantizedPresentation(
+    rawStart,
+    rawEnd,
+    fps,
+  );
 
   const resolveEffectiveTrackTick = (presentationTick: number): number => {
     const effectiveTick = resolver.resolveEffectiveTrackTick(
@@ -249,21 +250,20 @@ function buildPresentation(
   return {
     clipId: clip.id,
     trackId: clip.trackId,
-    start,
-    end,
-    duration,
-    startTick: quantized.startTick,
-    endTick: quantized.endTick,
-    durationTicks: quantized.durationTicks,
+    start: startTick,
+    end: endTick,
+    duration: durationTicks,
     mapPresentationOffsetToClipOffset(presentationOffset) {
-      return resolveEffectiveTrackTick(start + presentationOffset) - clip.start;
+      return (
+        resolveEffectiveTrackTick(startTick + presentationOffset) - clip.start
+      );
     },
     mapClipOffsetToPresentationOffset(clipOffset) {
       return (
         resolver.resolvePresentationTick(
           clip.trackId,
           baseEffectiveTick + clipOffset,
-        ) - start
+        ) - startTick
       );
     },
     resolveEffectiveTrackTick,
@@ -282,7 +282,7 @@ function indexClipsByTrack(
     byTrack.set(presentation.trackId, list);
   }
   for (const list of byTrack.values()) {
-    list.sort((left, right) => left.startTick - right.startTick);
+    list.sort((left, right) => left.start - right.start);
   }
   return byTrack;
 }
@@ -361,7 +361,7 @@ export function computeFurthestPresentationEnd(
     // truncates the final partial frame. Masks (no presentation) fall back to
     // their stored end.
     const presentationEnd =
-      presentationByClipId.get(clip.id)?.endTick ??
+      presentationByClipId.get(clip.id)?.end ??
       clip.start + clip.timelineDuration;
     return Math.max(furthest, presentationEnd);
   }, 0);
@@ -403,14 +403,13 @@ export function buildTimelineClipPresentationLookup(
       while (low <= high) {
         const mid = (low + high) >> 1;
         const entry = list[mid];
-        // Half-open [startTick, endTick) on the integer frame grid: a frame
-        // boundary tick equal to a clip's startTick is owned by that clip; the
-        // tick equal to its endTick belongs to the next clip. Integer bounds
-        // make this exact — no tolerance, and a clip starting on a boundary
-        // always renders that frame.
-        if (presentationTick < entry.startTick) {
+        // Half-open [start, end) on the integer frame grid: a frame boundary
+        // tick equal to a clip's start is owned by that clip; the tick equal to
+        // its end belongs to the next clip. Integer bounds make this exact — no
+        // tolerance, and a clip starting on a boundary always renders that frame.
+        if (presentationTick < entry.start) {
           high = mid - 1;
-        } else if (presentationTick >= entry.endTick) {
+        } else if (presentationTick >= entry.end) {
           low = mid + 1;
         } else {
           return {
@@ -491,17 +490,17 @@ function collectPresentationCollisionsFromIndex(
   const collisions: TimelineClipPresentationCollision[] = [];
   for (const [trackId, placements] of placementsByTrack) {
     // Quantized integer footprints — sort and overlap-test are exact, no
-    // tolerance. A clip ending exactly where the next starts (endTick ===
-    // startTick) is a clean half-open abut, not a collision.
+    // tolerance. A clip ending exactly where the next starts (end === start) is
+    // a clean half-open abut, not a collision.
     placements.sort((left, right) => {
-      const startDelta = left.startTick - right.startTick;
-      return startDelta !== 0 ? startDelta : left.endTick - right.endTick;
+      const startDelta = left.start - right.start;
+      return startDelta !== 0 ? startDelta : left.end - right.end;
     });
 
     for (let index = 1; index < placements.length; index += 1) {
       const previous = placements[index - 1];
       const current = placements[index];
-      if (previous.endTick > current.startTick) {
+      if (previous.end > current.start) {
         collisions.push({
           trackId,
           leftClipId: previous.clipId,
@@ -555,8 +554,8 @@ export function buildTimelineClipPresentationCollisionView(
     // their notion of overlap matches the renderer's selection grid exactly.
     return {
       ...clip,
-      start: presentation.startTick,
-      timelineDuration: presentation.durationTicks,
+      start: presentation.start,
+      timelineDuration: presentation.duration,
     };
   });
 }

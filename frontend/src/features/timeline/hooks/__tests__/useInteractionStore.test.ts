@@ -7,6 +7,8 @@ import type {
 } from "../../../../types/TimelineTypes";
 import { buildTimelineSnapPoints } from "../useInteractionStore";
 import { useTimelineStore } from "../../useTimelineStore";
+import { useProjectStore } from "../../../project/useProjectStore";
+import { TICKS_PER_SECOND } from "../../constants";
 
 function adjustmentTrack(id: string): TimelineTrack {
   return {
@@ -111,6 +113,12 @@ describe("buildTimelineSnapPoints", () => {
       clips: [],
       selectedClipIds: [],
     });
+    // Drive the frame grid at one tick per frame so the abstract tick fixtures
+    // here aren't dominated by frame quantization; this isolates the marker
+    // projection through the presentation map (the point of this test).
+    useProjectStore.setState((s) => ({
+      config: { ...s.config, fps: TICKS_PER_SECOND },
+    }));
   });
 
   it("projects marker snap points through the clip presentation map", () => {

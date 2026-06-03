@@ -531,9 +531,6 @@ describe("TimelineClip Visual Geometry", () => {
       start: 0,
       end: TICKS_PER_SECOND,
       duration: TICKS_PER_SECOND,
-      startTick: 0,
-      endTick: TICKS_PER_SECOND,
-      durationTicks: TICKS_PER_SECOND,
       mapPresentationOffsetToClipOffset: (offset: number) => offset * 2,
       mapClipOffsetToPresentationOffset: (offset: number) => offset / 2,
     };
@@ -663,9 +660,6 @@ describe("TimelineClip Visual Geometry", () => {
       start: 0,
       end: TICKS_PER_SECOND,
       duration: TICKS_PER_SECOND,
-      startTick: 0,
-      endTick: TICKS_PER_SECOND,
-      durationTicks: TICKS_PER_SECOND,
       mapPresentationOffsetToClipOffset: (offset: number) => offset * 2,
       mapClipOffsetToPresentationOffset: (offset: number) => offset / 2,
     };

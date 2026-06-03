@@ -40,8 +40,6 @@ export {
   getSegmentContentDuration,
   clipSourceTimeWindow,
   clipVisualToSourceTime,
-  getTransformInputTimeAtVisualOffset,
-  mapLayerInputToVisualTime,
   mapSourceTimeToVisualTime,
   presentationToClipSourceTime,
   pullTimeThroughTransforms,

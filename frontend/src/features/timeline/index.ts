@@ -44,7 +44,6 @@ export {
 export { AssetDragOverlay } from "./components/AssetDragOverlay";
 export {
   createEndpointOverlayItem,
-  createLayerTimeOverlayItem,
   createSourceTimeOverlayItem,
 } from "./clipOverlayApi";
 export type {

@@ -16,7 +16,6 @@ import type {
 import type { TimelineClipOverlayDefinition } from "../../clipOverlayApi";
 import {
   createEndpointOverlayItem,
-  createLayerTimeOverlayItem,
   createSourceTimeOverlayItem,
 } from "../../clipOverlayApi";
 import {
@@ -486,7 +485,7 @@ describe("TimelineClip Visual Geometry", () => {
     expect(edgeItem.style.left).toBe("");
   });
 
-  it("positions source-time and layer-time overlay items using transformed visual time", () => {
+  it("positions source-time overlay items using transformed visual time", () => {
     const speedClip: TimelineClipType = {
       ...mockClip,
       start: 0,
@@ -511,12 +510,6 @@ describe("TimelineClip Visual Geometry", () => {
           sourceTimeTicks: TICKS_PER_SECOND,
           content: <div>Source</div>,
         }),
-        createLayerTimeOverlayItem({
-          id: "layer-item",
-          transformId: "speed_1",
-          layerInputTicks: TICKS_PER_SECOND,
-          content: <div>Layer</div>,
-        }),
       ]),
     ];
 
@@ -526,13 +519,11 @@ describe("TimelineClip Visual Geometry", () => {
       (TICKS_PER_SECOND / 2 / TICKS_PER_SECOND) * PIXELS_PER_SECOND
     }px`;
     const sourceItem = screen.getByText("Source").parentElement as HTMLElement;
-    const layerItem = screen.getByText("Layer").parentElement as HTMLElement;
 
     expect(sourceItem.style.left).toContain(expectedBaseLeft);
-    expect(layerItem.style.left).toContain(expectedBaseLeft);
   });
 
-  it("positions timed overlay items through the clip presentation map", () => {
+  it("positions source-time overlay items through the clip presentation map", () => {
     const clipWithKeyframeTransform: TimelineClipType = {
       ...mockClip,
       start: 0,
@@ -567,12 +558,6 @@ describe("TimelineClip Visual Geometry", () => {
           sourceTimeTicks: TICKS_PER_SECOND,
           content: <div>Source</div>,
         }),
-        createLayerTimeOverlayItem({
-          id: "layer-item",
-          transformId: "position_1",
-          layerInputTicks: TICKS_PER_SECOND,
-          content: <div>Layer</div>,
-        }),
       ]),
     ];
 
@@ -588,10 +573,8 @@ describe("TimelineClip Visual Geometry", () => {
       (TICKS_PER_SECOND / 2 / TICKS_PER_SECOND) * PIXELS_PER_SECOND
     }px`;
     const sourceItem = screen.getByText("Source").parentElement as HTMLElement;
-    const layerItem = screen.getByText("Layer").parentElement as HTMLElement;
 
     expect(sourceItem.style.left).toContain(expectedBaseLeft);
-    expect(layerItem.style.left).toContain(expectedBaseLeft);
   });
 
   it("positions keyframe diamonds through the clip presentation map", () => {

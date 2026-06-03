@@ -7,7 +7,6 @@ import type {
 } from "../../../types/TimelineTypes";
 import {
   createEndpointOverlayItem,
-  createLayerTimeOverlayItem,
   createSourceTimeOverlayItem,
   getPrimaryActiveClip,
   getTimelineClipById,
@@ -162,7 +161,6 @@ describe("timeline public API", () => {
   it("exposes clip overlay builders through the timeline public API", () => {
     expect(typeof createEndpointOverlayItem).toBe("function");
     expect(typeof createSourceTimeOverlayItem).toBe("function");
-    expect(typeof createLayerTimeOverlayItem).toBe("function");
 
     expect(
       createEndpointOverlayItem({

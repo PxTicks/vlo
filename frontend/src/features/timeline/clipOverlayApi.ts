@@ -21,19 +21,9 @@ export interface TimelineSourceTimeOverlayPlacement {
   verticalOffsetPx: number;
 }
 
-export interface TimelineLayerTimeOverlayPlacement {
-  kind: "layerTime";
-  transformId: string;
-  layerInputTicks: number;
-  lane: TimelineClipOverlayLane;
-  offsetPx: number;
-  verticalOffsetPx: number;
-}
-
 export type TimelineClipOverlayPlacement =
   | TimelineEndpointOverlayPlacement
-  | TimelineSourceTimeOverlayPlacement
-  | TimelineLayerTimeOverlayPlacement;
+  | TimelineSourceTimeOverlayPlacement;
 
 export interface TimelineClipOverlayRenderContext {
   clip: TimelineClip;
@@ -118,15 +108,6 @@ interface CreateSourceTimeOverlayItemInput
   verticalOffsetPx?: number;
 }
 
-interface CreateLayerTimeOverlayItemInput
-  extends TimelineClipOverlayItemBaseInput {
-  transformId: string;
-  layerInputTicks: number;
-  lane?: TimelineClipOverlayLane;
-  offsetPx?: number;
-  verticalOffsetPx?: number;
-}
-
 function withSharedDefaults(
   item: TimelineClipOverlayItem,
 ): TimelineClipOverlayItem {
@@ -171,28 +152,6 @@ export function createSourceTimeOverlayItem(
     placement: {
       kind: "sourceTime",
       sourceTimeTicks: input.sourceTimeTicks,
-      lane: input.lane ?? "middle",
-      offsetPx: input.offsetPx ?? 0,
-      verticalOffsetPx: input.verticalOffsetPx ?? 0,
-    },
-  });
-}
-
-export function createLayerTimeOverlayItem(
-  input: CreateLayerTimeOverlayItemInput,
-): TimelineClipOverlayItem {
-  return withSharedDefaults({
-    id: input.id,
-    content: input.content,
-    visibility: input.visibility ?? "always",
-    minClipWidthPx: input.minClipWidthPx,
-    onClick: input.onClick,
-    onContextMenu: input.onContextMenu,
-    drag: input.drag,
-    placement: {
-      kind: "layerTime",
-      transformId: input.transformId,
-      layerInputTicks: input.layerInputTicks,
       lane: input.lane ?? "middle",
       offsetPx: input.offsetPx ?? 0,
       verticalOffsetPx: input.verticalOffsetPx ?? 0,

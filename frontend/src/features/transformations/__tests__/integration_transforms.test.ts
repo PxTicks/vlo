@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { Sprite } from "pixi.js";
 import { applyClipTransforms } from "../applyTransformations";
-import {
-  getLayerInputDomain,
-  solveTimelineDuration,
-} from "../utils/timeCalculation";
+import { solveTimelineDuration } from "../utils/timeCalculation";
+import { clipSourceTimeWindow } from "../utils/clipTimeDomains";
 import { TICKS_PER_SECOND } from "../../timeline";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { GenericFilterTransform } from "../types";
@@ -13,11 +11,23 @@ import { HslAdjustmentFilter } from "pixi-filters";
 describe("Integration: Transforms on Cropped Clips", () => {
   // Shared constants & Setup Helper
   const T = TICKS_PER_SECOND;
+  type SourceTimeDomain = {
+    minTime: number;
+    maxTime: number;
+    duration: number;
+  };
+
+  function getSourceTimeDomain(clip: TimelineClip): SourceTimeDomain {
+    const domain = clipSourceTimeWindow(clip);
+    return {
+      ...domain,
+      maxTime: domain.minTime + domain.duration,
+    };
+  }
 
   function createTestClipWithSplines(): {
     clip: TimelineClip;
-    speedDomain: { minTime: number; maxTime: number };
-    posDomain: { minTime: number; maxTime: number };
+    sourceTimeDomain: SourceTimeDomain;
   } {
     // 1. Define Base Clip State (No Transforms)
     const originalSourceDuration = 10 * T;
@@ -43,13 +53,16 @@ describe("Integration: Transforms on Cropped Clips", () => {
       transformations: [],
     };
 
-    // 2. Add Speed Transform (Index 0)
-    const speedDomain = getLayerInputDomain(clip, 0);
+    // 2. Add Speed Transform
+    const sourceTimeDomain = getSourceTimeDomain(clip);
 
     const speedSplinePoints = [
-      { time: speedDomain.minTime, value: 1 },
-      { time: speedDomain.minTime + speedDomain.duration / 2, value: 1 },
-      { time: speedDomain.minTime + speedDomain.duration, value: 1 },
+      { time: sourceTimeDomain.minTime, value: 1 },
+      {
+        time: sourceTimeDomain.minTime + sourceTimeDomain.duration / 2,
+        value: 1,
+      },
+      { time: sourceTimeDomain.maxTime, value: 1 },
     ];
 
     clip.transformations.push({
@@ -64,13 +77,13 @@ describe("Integration: Transforms on Cropped Clips", () => {
       },
     });
 
-    // 3. Add Position Transform (Index 1)
-    const posDomain = getLayerInputDomain(clip, 1);
-
     const xSplinePoints = [
-      { time: posDomain.minTime, value: 0 },
-      { time: posDomain.minTime + posDomain.duration / 2, value: 300 },
-      { time: posDomain.minTime + posDomain.duration, value: 0 },
+      { time: sourceTimeDomain.minTime, value: 0 },
+      {
+        time: sourceTimeDomain.minTime + sourceTimeDomain.duration / 2,
+        value: 300,
+      },
+      { time: sourceTimeDomain.maxTime, value: 0 },
     ];
 
     clip.transformations.push({
@@ -86,13 +99,13 @@ describe("Integration: Transforms on Cropped Clips", () => {
       },
     });
 
-    // 4. Add Hue Transform (Index 2)
-    const hueDomain = getLayerInputDomain(clip, 2);
-
     const hueSplinePoints = [
-      { time: hueDomain.minTime, value: 0 },
-      { time: hueDomain.minTime + hueDomain.duration / 2, value: 180 },
-      { time: hueDomain.minTime + hueDomain.duration, value: 0 },
+      { time: sourceTimeDomain.minTime, value: 0 },
+      {
+        time: sourceTimeDomain.minTime + sourceTimeDomain.duration / 2,
+        value: 180,
+      },
+      { time: sourceTimeDomain.maxTime, value: 0 },
     ];
 
     clip.transformations.push({
@@ -113,16 +126,12 @@ describe("Integration: Transforms on Cropped Clips", () => {
 
     return {
       clip,
-      speedDomain: {
-        minTime: speedDomain.minTime,
-        maxTime: speedDomain.maxTime,
-      },
-      posDomain: { minTime: posDomain.minTime, maxTime: posDomain.maxTime },
+      sourceTimeDomain,
     };
   }
 
   it("should correctly apply splines (Speed, Position, Hue) relative to source time on a cropped clip", () => {
-    const { clip, speedDomain, posDomain } = createTestClipWithSplines();
+    const { clip, sourceTimeDomain } = createTestClipWithSplines();
 
     // Assertions
     const sprite = new Sprite();
@@ -165,11 +174,9 @@ describe("Integration: Transforms on Cropped Clips", () => {
       );
     }
 
-    // --- CHECK 4: Domain Correctness ---
-    expect(speedDomain.minTime).toBeCloseTo(2 * T);
-    expect(speedDomain.maxTime).toBeCloseTo(8 * T);
-    expect(posDomain.minTime).toBeCloseTo(2 * T);
-    expect(posDomain.maxTime).toBeCloseTo(8 * T);
+    // --- CHECK 4: Source-time window correctness ---
+    expect(sourceTimeDomain.minTime).toBeCloseTo(2 * T);
+    expect(sourceTimeDomain.maxTime).toBeCloseTo(8 * T);
   });
 
   it("should preserve duration when applying an identity speed spline", () => {
@@ -185,8 +192,8 @@ describe("Integration: Transforms on Cropped Clips", () => {
     // Should be close to 6s
     expect(durationBefore).toBeCloseTo(visibleDuration, 1);
 
-    // 2. Add Identity Speed Transform (Index 3)
-    const identitySpeedDomain = getLayerInputDomain(clip, 3);
+    // 2. Add Identity Speed Transform
+    const identitySpeedDomain = getSourceTimeDomain(clip);
 
     const identityPoints = [
       { time: identitySpeedDomain.minTime, value: 1 },

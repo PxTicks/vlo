@@ -8,7 +8,6 @@ import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import {
   calculateClipTime,
-  mapLayerInputToVisualTime,
   mapSourceTimeToVisualTime,
 } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
@@ -534,28 +533,12 @@ function TimelineClipOverlayItemCollection({
       {timedItems.map((item) => {
         const placement = item.placement;
         const { top, translateY } = getLanePosition(placement.lane);
-        let visualTicks: number;
-        let offsetPx: number;
-        let verticalOffsetPx: number;
-
-        if (placement.kind === "sourceTime") {
-          visualTicks = mapSourceTimeToVisualTime(
-            clip,
-            placement.sourceTimeTicks,
-          );
-          offsetPx = placement.offsetPx;
-          verticalOffsetPx = placement.verticalOffsetPx;
-        } else if (placement.kind === "layerTime") {
-          visualTicks = mapLayerInputToVisualTime(
-            clip,
-            placement.transformId,
-            placement.layerInputTicks,
-          );
-          offsetPx = placement.offsetPx;
-          verticalOffsetPx = placement.verticalOffsetPx;
-        } else {
-          return null;
-        }
+        const visualTicks = mapSourceTimeToVisualTime(
+          clip,
+          placement.sourceTimeTicks,
+        );
+        const offsetPx = placement.offsetPx;
+        const verticalOffsetPx = placement.verticalOffsetPx;
 
         const presentationTicks = resolvePresentationOffsetForClipOffset(
           presentation,
@@ -572,12 +555,12 @@ function TimelineClipOverlayItemCollection({
             presentation={presentation}
             style={{
               position: "absolute",
-              // Subtract the parent clip's `--drag-delta-x` so source-time
-              // and layer-time items stay anchored to their committed
-              // content position during a live left-edge resize. The clip's
-              // `left` is shifted by `+var(--drag-delta-x)` while the model
-              // is unchanged, so without this cancellation the marker would
-              // ride along with the clip and snap back only on commit.
+              // Subtract the parent clip's `--drag-delta-x` so timed items
+              // stay anchored to their committed content position during a
+              // live left-edge resize. The clip's `left` is shifted by
+              // `+var(--drag-delta-x)` while the model is unchanged, so
+              // without this cancellation the marker would ride along with
+              // the clip and snap back only on commit.
               // Same trick used by ThumbnailCanvas to keep thumbnails
               // screen-stable during a crop.
               left: `calc((${baseLeftPx}px * var(--timeline-zoom, 1)) + ${offsetPx}px - var(--drag-delta-x, 0px))`,

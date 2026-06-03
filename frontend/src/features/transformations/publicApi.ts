@@ -5,8 +5,6 @@ export {
 export {
   calculateClipTime,
   getSegmentContentDuration,
-  getTransformInputTimeAtVisualOffset,
-  mapLayerInputToVisualTime,
   mapSourceTimeToVisualTime,
   pullTimeThroughTransforms,
   solveTimelineDuration,

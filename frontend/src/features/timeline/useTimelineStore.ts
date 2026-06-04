@@ -358,8 +358,27 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     groupClipsIntoComposite: (sourceClipIds, compositeClip) => {
       const removalPlan = planTimelineRemoval(get().clips, sourceClipIds);
       const didCommit = mutationPipeline.commitModelMutation((draft) => {
-        removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
+        // Add the composite BEFORE removing the source clips. If we removed
+        // first, grouping the *entire* timeline would leave every track empty
+        // mid-mutation, at which point maybeTrimAndPadTracks rebuilds the track
+        // list with brand-new ids — deleting the very track the composite was
+        // about to land on. The composite would then be pushed onto a track
+        // that no longer exists, orphaning it and wiping the timeline. Adding
+        // first keeps the target track populated throughout, so it survives the
+        // removal.
         addClipToDraft(draft, compositeClip);
+
+        // Safety net: if the composite could not be placed (e.g. addClipToDraft
+        // rejected it on a track-type mismatch), bail out without removing
+        // anything. Returning here leaves the draft untouched, so the commit
+        // produces no patches and the timeline is left exactly as it was rather
+        // than being emptied.
+        const placed = draft.clips.some((clip) => clip.id === compositeClip.id);
+        if (!placed) {
+          return;
+        }
+
+        removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
       });
 
       // Note: post-commit cleanup is intentionally NOT run — the absorbed

@@ -5,6 +5,7 @@ import { TimelineClipItem } from "../TimelineClip";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../../hooks/useInteractionStore";
 import { useCompositeTimelineStore } from "../../../composite/useCompositeTimelineStore";
+import { useCompositeLibraryStore } from "../../../composite/useCompositeLibraryStore";
 import { useTimelineKeyframeClipOverlay } from "../../../transformations/hooks/useTimelineKeyframeClipOverlay";
 import { getDefaultSectionId } from "../../../transformations/publicApi";
 import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
@@ -167,6 +168,12 @@ describe("TimelineClip Visual Geometry", () => {
       isBusy: false,
       lastError: null,
     });
+    useCompositeLibraryStore.setState({
+      composites: [],
+      selectedCompositeIds: [],
+      revealRequest: null,
+      isLoading: false,
+    });
     useTransformationViewStore.setState({
       activeSection: null,
       activeSpline: null,
@@ -234,33 +241,22 @@ describe("TimelineClip Visual Geometry", () => {
     expect(screen.getByTestId("timeline-clip").style.cursor).toBe("default");
   });
 
-  it("opens composite clips from the timeline badge", () => {
+  it("renders an inert composite label on timeline composite clips", () => {
     const compositeClip: TimelineClipType = {
       id: "composite_1",
       trackId: "track_1",
       start: 100,
       timelineDuration: 200,
-      type: "composite",
+      type: "video",
       name: "Nested Scene",
+      assetId: "proxy-asset-1",
+      compositeId: "composite-asset-1",
       transformations: [],
       offset: 0,
       sourceDuration: 200,
       transformedDuration: 200,
       transformedOffset: 0,
       croppedSourceDuration: 200,
-      content: {
-        durationTicks: 200,
-        clips: [],
-        tracks: [
-          {
-            id: "inner_track_1",
-            label: "Track 1",
-            isVisible: true,
-            isMuted: false,
-            isLocked: false,
-          },
-        ],
-      },
     };
     useTimelineStore.setState({
       clips: [compositeClip],
@@ -277,33 +273,32 @@ describe("TimelineClip Visual Geometry", () => {
 
     render(<TimelineClipItem clip={compositeClip} isOverlay={false} />);
 
-    fireEvent.click(screen.getByTestId("timeline-clip-composite-open"));
+    const label = screen.getByTestId("timeline-clip-composite-label");
+    expect(label).toHaveTextContent("Composite");
+    expect(screen.queryByTestId("timeline-clip-composite-open")).toBeNull();
 
-    expect(useCompositeTimelineStore.getState().stack).toHaveLength(1);
-    expect(useTimelineStore.getState().clips).toEqual([]);
-    expect(useTimelineStore.getState().tracks[0].id).toBe("inner_track_1");
+    fireEvent.click(label);
+
+    expect(useCompositeTimelineStore.getState().stack).toHaveLength(0);
+    expect(useTimelineStore.getState().clips).toEqual([compositeClip]);
   });
 
-  it("renders composite proxy thumbnails through the normal thumbnail canvas", () => {
+  it("renders composite thumbnails through the normal thumbnail canvas", () => {
     const compositeClip: TimelineClipType = {
       id: "composite_1",
       trackId: "track_1",
       start: 100,
       timelineDuration: 200,
-      type: "composite",
+      type: "video",
       name: "Nested Scene",
+      assetId: "proxy-asset-1",
+      compositeId: "composite-asset-1",
       transformations: [],
       offset: 0,
       sourceDuration: 200,
       transformedDuration: 200,
       transformedOffset: 0,
       croppedSourceDuration: 200,
-      proxyAssetId: "proxy-asset-1",
-      content: {
-        durationTicks: 200,
-        clips: [],
-        tracks: [],
-      },
     };
     useTimelineStore.setState({
       clips: [compositeClip],

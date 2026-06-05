@@ -1,7 +1,6 @@
 import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  CompositeTimelineClip,
   TimelineTrack,
   VideoTimelineClip,
 } from "../../../types/TimelineTypes";
@@ -39,12 +38,14 @@ function videoClip(id: string, trackId: string, start: number): VideoTimelineCli
   };
 }
 
-function compositeClip(id: string, trackId: string): CompositeTimelineClip {
+function compositeClip(id: string, trackId: string): VideoTimelineClip {
   return {
     id,
     trackId,
-    type: "composite",
+    type: "video",
     name: "Composite",
+    assetId: "bake-1",
+    compositeId: "composite-asset-1",
     start: 0,
     timelineDuration: 200,
     offset: 0,
@@ -53,12 +54,6 @@ function compositeClip(id: string, trackId: string): CompositeTimelineClip {
     sourceDuration: 200,
     transformedDuration: 200,
     transformations: [],
-    proxyAssetId: "proxy-1",
-    proxyContentHash: "hash-1",
-    content: {
-      durationTicks: 200,
-      clips: [],
-    },
   };
 }
 

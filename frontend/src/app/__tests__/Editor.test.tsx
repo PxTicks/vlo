@@ -65,6 +65,12 @@ vi.mock("../../features/composite", () => ({
     id: "composite-render-status-overlay",
     useItems: () => [],
   }),
+  useTimelineCompositeRevealClipOverlay: () => ({
+    id: "composite-reveal-overlay",
+    useItems: () => [],
+  }),
+  useCompositeLibraryStore: (selector: (state: unknown) => unknown) =>
+    selector({ fetchComposites: () => Promise.resolve() }),
 }));
 
 vi.mock("../../features/timeline", () => ({

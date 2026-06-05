@@ -105,67 +105,15 @@ export interface TimelineRemovalPlan {
   clipIdsToRemove: Set<string>;
   brushMaskClipIdsToDispose: string[];
   sam2MaskAssetIdsToDelete: Set<string>;
-  compositeProxyAssetIdsToDelete: Set<string>;
-}
-
-function collectCompositeProxyAssetIdsFromClip(
-  clip: TimelineClip,
-  proxyAssetIds: Set<string>,
-): void {
-  if (clip.type !== "composite") {
-    return;
-  }
-
-  if (clip.proxyAssetId) {
-    proxyAssetIds.add(clip.proxyAssetId);
-  }
-
-  clip.content.clips.forEach((contentClip) => {
-    collectCompositeProxyAssetIdsFromClip(contentClip, proxyAssetIds);
-  });
 }
 
 export function clipReferencesAssetId(
   clip: TimelineClip,
   assetId: string,
 ): boolean {
-  if (isAssetBackedClip(clip) && clip.assetId === assetId) {
-    return true;
-  }
-
-  if (clip.type !== "composite") {
-    return false;
-  }
-
-  return (
-    clip.proxyAssetId === assetId ||
-    clip.content.clips.some((contentClip) =>
-      clipReferencesAssetId(contentClip, assetId),
-    )
-  );
-}
-
-export function collectUnusedCompositeProxyAssetIds(
-  clips: readonly TimelineClip[],
-  candidateAssetIds: Iterable<string>,
-): Set<string> {
-  const unusedAssetIds = new Set([...candidateAssetIds].filter(Boolean));
-  if (unusedAssetIds.size === 0) {
-    return unusedAssetIds;
-  }
-
-  for (const clip of clips) {
-    for (const assetId of [...unusedAssetIds]) {
-      if (clipReferencesAssetId(clip, assetId)) {
-        unusedAssetIds.delete(assetId);
-      }
-    }
-    if (unusedAssetIds.size === 0) {
-      break;
-    }
-  }
-
-  return unusedAssetIds;
+  // Composite placements are ordinary asset-backed clips (their `assetId` is
+  // the baked video), so this single check covers them too.
+  return isAssetBackedClip(clip) && clip.assetId === assetId;
 }
 
 function createDefaultFitModeTransform(): ClipTransform {
@@ -211,13 +159,7 @@ export function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
     };
   }
 
-  // Composites render through a project-sized proxy video, so they get the same
-  // default fit-mode layout as a video/image clip.
-  if (
-    clip.type !== "video" &&
-    clip.type !== "image" &&
-    clip.type !== "composite"
-  ) {
+  if (clip.type !== "video" && clip.type !== "image") {
     return baseClip;
   }
 
@@ -436,10 +378,6 @@ export function pasteCopiedClipsAboveDraft(
       const pastedClip = cloneTimelineClip(clip, crypto.randomUUID());
       pastedClip.trackId = targetTrackId;
       pastedClip.start = clip.start;
-      if (pastedClip.type === "composite") {
-        pastedClip.proxyAssetId = undefined;
-        pastedClip.proxyContentHash = undefined;
-      }
 
       const targetTrack = draft.tracks.find(
         (track) => track.id === targetTrackId,
@@ -541,23 +479,10 @@ export function planTimelineRemoval(
         clip.maskType === "brush",
     )
     .map((clip) => clip.id);
-  const compositeProxyCandidates = new Set<string>();
-  for (const clip of clips) {
-    if (clipIdsToRemove.has(clip.id)) {
-      collectCompositeProxyAssetIdsFromClip(clip, compositeProxyCandidates);
-    }
-  }
-  const remainingClips = clips.filter((clip) => !clipIdsToRemove.has(clip.id));
-  const compositeProxyAssetIdsToDelete = collectUnusedCompositeProxyAssetIds(
-    remainingClips,
-    compositeProxyCandidates,
-  );
-
   return {
     clipIdsToRemove,
     brushMaskClipIdsToDispose,
     sam2MaskAssetIdsToDelete,
-    compositeProxyAssetIdsToDelete,
   };
 }
 

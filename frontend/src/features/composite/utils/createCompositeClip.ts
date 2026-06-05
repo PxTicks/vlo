@@ -1,44 +1,32 @@
 import type {
-  CompositeContent,
-  CompositeTimelineClip,
+  CompositeAsset,
+  VideoBaseClip,
+  VideoTimelineClip,
 } from "../../../types/TimelineTypes";
 
-export interface CreateCompositeClipArgs {
+/**
+ * A composite placement is an ordinary asset-backed video clip pointed at the
+ * composite's baked asset, tagged with `compositeId` purely so the timeline UI
+ * can show the badge / reveal / open-to-edit. The renderer treats it like any
+ * other video clip — there is no composite-specific render path.
+ */
+export interface CreateCompositePlacementArgs {
   id?: string;
-  content: CompositeContent;
-  trackId: string;
-  /** Global timeline start position (ticks). */
-  start: number;
-  proxyDurationTicks?: number;
-  proxyAssetId?: string;
-  proxyContentHash?: string;
+  compositeId: string;
+  assetId: string;
+  /** Untrimmed clip length in ticks (defaults to the composite content length). */
+  durationTicks: number;
   name?: string;
 }
 
-/**
- * Builds a Composite timeline clip whose timing mirrors its content's natural
- * length. Because a composite renders through its baked proxy (a project-sized
- * video), its timing fields are a 1:1, untrimmed, unsped mapping of the
- * content duration — trims/speed are then applied like any other clip.
- */
-export function createCompositeTimelineClip(
-  args: CreateCompositeClipArgs,
-): CompositeTimelineClip {
-  // The selection content is measured in source ticks, but the baked proxy is
-  // snapped to whole output frames. When source fps and bake fps differ, the
-  // proxy can be a little longer than `content.durationTicks`, so prefer the
-  // baked duration whenever we already know it.
-  const duration = Math.max(
-    1,
-    args.proxyDurationTicks ?? Math.round(args.content.durationTicks),
-  );
-
+function buildCompositeBaseClip(args: CreateCompositePlacementArgs): VideoBaseClip {
+  const duration = Math.max(1, Math.round(args.durationTicks));
   return {
     id: args.id ?? `clip_${crypto.randomUUID()}`,
-    type: "composite",
+    type: "video",
     name: args.name ?? "Composite",
-    trackId: args.trackId,
-    start: args.start,
+    assetId: args.assetId,
+    compositeId: args.compositeId,
     sourceDuration: duration,
     timelineDuration: duration,
     croppedSourceDuration: duration,
@@ -46,10 +34,51 @@ export function createCompositeTimelineClip(
     transformedDuration: duration,
     transformedOffset: 0,
     transformations: [],
-    content: args.content,
-    ...(args.proxyAssetId ? { proxyAssetId: args.proxyAssetId } : {}),
-    ...(args.proxyContentHash
-      ? { proxyContentHash: args.proxyContentHash }
-      : {}),
+  };
+}
+
+export function createCompositeTimelineClip(
+  args: CreateCompositePlacementArgs & { trackId: string; start: number },
+): VideoTimelineClip {
+  return {
+    ...buildCompositeBaseClip(args),
+    trackId: args.trackId,
+    start: args.start,
+  };
+}
+
+function requireBakedAssetId(composite: CompositeAsset): string {
+  if (!composite.bakedAssetId) {
+    throw new Error(
+      `Composite '${composite.id}' has no baked asset to place yet.`,
+    );
+  }
+  return composite.bakedAssetId;
+}
+
+export function createCompositeBaseClipFromAsset(
+  composite: CompositeAsset,
+  options: { id?: string; durationTicks?: number } = {},
+): VideoBaseClip {
+  return buildCompositeBaseClip({
+    id: options.id,
+    compositeId: composite.id,
+    assetId: requireBakedAssetId(composite),
+    durationTicks: options.durationTicks ?? composite.content.durationTicks,
+    name: composite.name,
+  });
+}
+
+export function createCompositeTimelineClipFromAsset(
+  composite: CompositeAsset,
+  args: { id?: string; trackId: string; start: number; durationTicks?: number },
+): VideoTimelineClip {
+  return {
+    ...createCompositeBaseClipFromAsset(composite, {
+      id: args.id,
+      durationTicks: args.durationTicks,
+    }),
+    trackId: args.trackId,
+    start: args.start,
   };
 }

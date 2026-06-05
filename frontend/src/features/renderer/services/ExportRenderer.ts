@@ -17,7 +17,6 @@ import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
 import { TrackAudioRenderer } from "./TrackAudioRenderer";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
-import { resolveRenderableClips } from "../utils/resolveRenderableClip";
 import { getAssetInput } from "../../userAssets";
 import {
   getIncludedClipsForSelection,
@@ -90,12 +89,8 @@ function buildVisualRenderData(
   tracks: TimelineTrack[],
   rawSelectedClips: TimelineClip[],
   includeTimelineMasks: boolean,
-  assetsById: Map<string, Asset>,
 ): PreparedVisualRenderData {
-  // Flatten Composite clips to their baked proxy (a plain video clip) before
-  // any track/mask indexing, so the rest of the export path stays
-  // composite-agnostic. Composites without a usable proxy are dropped.
-  const selectedClips = resolveRenderableClips(rawSelectedClips, assetsById);
+  const selectedClips = rawSelectedClips;
 
   // When timeline masks are excluded, also strip range_mask components.
   // Spatial masks (mask_ref) and range masks both contribute timeline-driven
@@ -354,7 +349,6 @@ export class ExportRenderer {
         effectiveTracks,
         selectedClips,
         options.includeTimelineMasks !== false,
-        assetsById,
       );
 
     const relevantForAudio = effectiveTracks.filter(
@@ -647,7 +641,6 @@ export class ExportRenderer {
         tracks,
         clips,
         options.includeTimelineMasks !== false,
-        assetsById,
       );
 
     try {

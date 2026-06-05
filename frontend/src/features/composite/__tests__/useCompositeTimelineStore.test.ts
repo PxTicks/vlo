@@ -2,21 +2,34 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { playbackClock } from "../../player/services/PlaybackClock";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { TICKS_PER_SECOND } from "../../timeline/constants";
+import { useCompositeLibraryStore } from "../useCompositeLibraryStore";
 import { useCompositeTimelineStore } from "../useCompositeTimelineStore";
 import { createCompositeTimelineClip } from "../utils/createCompositeClip";
 import type {
-  CompositeTimelineClip,
+  CompositeAsset,
+  CompositeContent,
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
+import { isCompositeClip } from "../../../types/TimelineTypes";
 
-const bakeMocks = vi.hoisted(() => ({
-  scheduleCompositeProxyRender: vi.fn(),
-}));
-
-vi.mock("../services/renderCompositeProxyForClip", () => ({
-  scheduleCompositeProxyRender: bakeMocks.scheduleCompositeProxyRender,
-}));
+const compositeLibraryActions = {
+  fetchComposites: useCompositeLibraryStore.getState().fetchComposites,
+  createCompositeAsset: useCompositeLibraryStore.getState().createCompositeAsset,
+  updateCompositeAssetContent:
+    useCompositeLibraryStore.getState().updateCompositeAssetContent,
+  renameCompositeAsset: useCompositeLibraryStore.getState().renameCompositeAsset,
+  deleteCompositeAsset: useCompositeLibraryStore.getState().deleteCompositeAsset,
+  placeCompositeAssetAtTime:
+    useCompositeLibraryStore.getState().placeCompositeAssetAtTime,
+  selectComposite: useCompositeLibraryStore.getState().selectComposite,
+  setSelectedCompositeIds:
+    useCompositeLibraryStore.getState().setSelectedCompositeIds,
+  clearSelection: useCompositeLibraryStore.getState().clearSelection,
+  revealCompositeInBrowser:
+    useCompositeLibraryStore.getState().revealCompositeInBrowser,
+  clearRevealRequest: useCompositeLibraryStore.getState().clearRevealRequest,
+};
 
 const mainTrack: TimelineTrack = {
   id: "main-track",
@@ -61,33 +74,76 @@ function resetCompositeStore() {
     isBusy: false,
     lastError: null,
   });
+  useCompositeLibraryStore.setState({
+    composites: [],
+    isLoading: false,
+    selectedCompositeIds: [],
+    revealRequest: null,
+    ...compositeLibraryActions,
+  });
+}
+
+function compositeAsset(
+  overrides: Partial<CompositeAsset> = {},
+): CompositeAsset {
+  const content: CompositeContent = {
+    durationTicks: TICKS_PER_SECOND,
+    clips: [innerClip],
+    tracks: [innerTrack],
+  };
+  return {
+    id: "composite-asset-1",
+    name: "Composite",
+    content,
+    bakedAssetId: "old-proxy",
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
 }
 
 describe("useCompositeTimelineStore", () => {
   beforeEach(() => {
-    bakeMocks.scheduleCompositeProxyRender.mockReset();
     resetCompositeStore();
     seedTimeline([]);
     playbackClock.setTime(0);
   });
 
-  it("opens a composite clip as an editable subtimeline and saves edits back to the main timeline", async () => {
+  it("opens a composite asset as an editable subtimeline and saves edits back to the library", async () => {
+    const composite = compositeAsset();
+    const updateCompositeAssetContent = vi
+      .fn()
+      .mockImplementation(
+        async (
+          compositeAssetId: string,
+          input: { content: CompositeContent },
+        ) => {
+          const updated = {
+            ...composite,
+            id: compositeAssetId,
+            content: input.content,
+            updatedAt: 2,
+          };
+          useCompositeLibraryStore.setState({ composites: [updated] });
+          return updated;
+        },
+      );
+    useCompositeLibraryStore.setState({
+      composites: [composite],
+      updateCompositeAssetContent,
+    });
     const compositeClip = createCompositeTimelineClip({
-      content: {
-        durationTicks: TICKS_PER_SECOND,
-        clips: [innerClip],
-        tracks: [innerTrack],
-      },
+      compositeId: composite.id,
+      assetId: composite.bakedAssetId ?? "bake",
+      durationTicks: composite.content.durationTicks,
       trackId: mainTrack.id,
       start: 0,
-      proxyAssetId: "old-proxy",
-      proxyContentHash: "old-hash",
-      name: "Composite",
+      name: composite.name,
     });
     seedTimeline([compositeClip]);
 
     expect(
-      useCompositeTimelineStore.getState().openCompositeClip(compositeClip.id),
+      useCompositeTimelineStore.getState().openCompositeAsset(composite.id),
     ).toBe(true);
 
     expect(useTimelineStore.getState().clips.map((clip) => clip.id)).toEqual([
@@ -107,23 +163,25 @@ describe("useCompositeTimelineStore", () => {
 
     const [savedClip] = useTimelineStore.getState().clips;
     expect(savedClip.id).toBe(compositeClip.id);
-    expect(savedClip.type).toBe("composite");
-    const savedComposite = savedClip as CompositeTimelineClip;
-    expect(savedComposite.content.clips.map((clip) => clip.id)).toEqual([
-      innerClip.id,
-      addedClip.id,
-    ]);
-    expect(savedComposite.content.durationTicks).toBe(2 * TICKS_PER_SECOND);
-    expect(savedComposite.proxyAssetId).toBe("old-proxy");
-    expect(savedComposite.proxyContentHash).toBeUndefined();
-    expect(bakeMocks.scheduleCompositeProxyRender).toHaveBeenCalledWith(
-      compositeClip.id,
-      expect.objectContaining({ durationTicks: 2 * TICKS_PER_SECOND }),
+    expect(isCompositeClip(savedClip)).toBe(true);
+    expect(updateCompositeAssetContent).toHaveBeenCalledWith(
+      composite.id,
+      expect.objectContaining({
+        content: expect.objectContaining({
+          durationTicks: 2 * TICKS_PER_SECOND,
+          clips: expect.arrayContaining([
+            expect.objectContaining({ id: innerClip.id }),
+            expect.objectContaining({ id: addedClip.id }),
+          ]),
+        }),
+      }),
     );
     expect(useCompositeTimelineStore.getState().stack).toEqual([]);
   });
 
-  it("creates a blank scene subtimeline and inserts it as a composite clip", async () => {
+  it("creates a blank scene subtimeline as a browser composite asset only", async () => {
+    const createCompositeAsset = vi.fn().mockResolvedValue(compositeAsset());
+    useCompositeLibraryStore.setState({ createCompositeAsset });
     playbackClock.setTime(12_000);
     seedTimeline([]);
 
@@ -141,15 +199,12 @@ describe("useCompositeTimelineStore", () => {
       useCompositeTimelineStore.getState().exitToMainTimeline(),
     ).resolves.toBe(true);
 
-    const [sceneClip] = useTimelineStore.getState().clips;
-    expect(sceneClip.type).toBe("composite");
-    expect(sceneClip.name).toBe("Scene");
-    expect(sceneClip.start).toBe(12_000);
-    expect((sceneClip as CompositeTimelineClip).content.clips).toHaveLength(1);
-    expect((sceneClip as CompositeTimelineClip).proxyAssetId).toBeUndefined();
-    expect(bakeMocks.scheduleCompositeProxyRender).toHaveBeenCalledWith(
-      sceneClip.id,
-      expect.objectContaining({ clips: expect.any(Array) }),
+    expect(useTimelineStore.getState().clips).toEqual([]);
+    expect(createCompositeAsset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Scene",
+        content: expect.objectContaining({ clips: expect.any(Array) }),
+      }),
     );
   });
 
@@ -166,6 +221,5 @@ describe("useCompositeTimelineStore", () => {
     ).resolves.toBe(true);
 
     expect(useTimelineStore.getState().clips).toEqual([]);
-    expect(bakeMocks.scheduleCompositeProxyRender).not.toHaveBeenCalled();
   });
 });

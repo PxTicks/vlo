@@ -1,6 +1,5 @@
 import type {
   CompositeContent,
-  CompositeTimelineClip,
   TimelineClip,
   TimelineSelection,
   TimelineTrack,
@@ -12,7 +11,7 @@ import { computeFurthestPresentationEnd } from "../../timeline/utils/clipPresent
  * ticks) and a {@link CompositeContent} (the same region normalized to local
  * zero so it can live inside a portable Composite clip).
  *
- * The whole point of the Composite "prebaked proxy" strategy is that a
+ * The whole point of the Composite "prebaked" strategy is that a
  * composite's content renders through the *existing* selection/export pipeline
  * unchanged — so capture shifts the region to zero, and bake/replay shifts a
  * zero-anchored copy straight back into a TimelineSelection.
@@ -72,6 +71,54 @@ export function selectionToCompositeContent(
 }
 
 /**
+ * Re-namespaces a composite content's track ids so the captured region is
+ * self-contained and never collides with the parent timeline (or sibling
+ * composites). `selectionToCompositeContent` clones `selection.tracks`
+ * verbatim, which are the parent timeline's tracks — so without this, a
+ * composite's content carries the exact same track ids as the timeline it was
+ * cut from. Anything that indexes clips by `trackId` across the parent and a
+ * composite's content then cross-talks (e.g. the engine requesting live frames
+ * for a nested content clip because its track id matches a parent track).
+ *
+ * Only track ids are rewritten: clip ids are already globally-unique uuids, and
+ * remapping them would also have to chase mask-clip id conventions, mask_ref /
+ * mask_composition references and brush-buffer/asset linkage — none of which is
+ * needed to break the track-id collision. `clip.trackId`, `track.id` and
+ * `includedTrackIds` are all remapped through the same map so masks stay on
+ * their parent's (new) track. Returns content unchanged when it carries no
+ * tracks.
+ */
+export function renamespaceCompositeContentTracks(
+  content: CompositeContent,
+): CompositeContent {
+  if (!content.tracks || content.tracks.length === 0) {
+    return content;
+  }
+
+  const trackIdMap = new Map<string, string>();
+  for (const track of content.tracks) {
+    trackIdMap.set(track.id, `track_${crypto.randomUUID()}`);
+  }
+  const remapTrackId = (trackId: string): string =>
+    trackIdMap.get(trackId) ?? trackId;
+
+  return {
+    ...content,
+    tracks: content.tracks.map((track) => ({
+      ...track,
+      id: remapTrackId(track.id),
+    })),
+    clips: content.clips.map((clip) => ({
+      ...clip,
+      trackId: remapTrackId(clip.trackId),
+    })),
+    ...(content.includedTrackIds
+      ? { includedTrackIds: content.includedTrackIds.map(remapTrackId) }
+      : {}),
+  };
+}
+
+/**
  * Replays composite content as a zero-anchored selection suitable for the bake
  * pipeline (ExportRenderer / renderTimelineSelectionToMp4). The clips are
  * already local-zero, so this is a thin re-wrap; `end` is the natural duration.
@@ -115,10 +162,6 @@ function projectClipForHash(clip: TimelineClip): unknown {
     transformations: clip.transformations,
   };
 
-  if (clip.type === "composite") {
-    // Nested composites contribute their own content recursively.
-    return { ...common, content: projectContentForHash(clip.content) };
-  }
   if (clip.type === "mask") {
     // Mask clips carry no components; their full record is part of the matte.
     return { ...common, mask: clip as unknown as Record<string, unknown> };
@@ -128,7 +171,12 @@ function projectClipForHash(clip: TimelineClip): unknown {
     ...common,
     isMuted: clip.isMuted ?? false,
     components: clip.components ?? [],
+    // A nested composite is an asset-backed clip; its `assetId` is the nested
+    // bake, so re-baking the nested composite already changes this projection.
     ...("assetId" in clip ? { assetId: clip.assetId } : {}),
+    ...("compositeId" in clip && clip.compositeId
+      ? { compositeId: clip.compositeId }
+      : {}),
     ...("textData" in clip ? { textData: clip.textData } : {}),
   };
 }
@@ -160,18 +208,12 @@ function djb2(input: string): string {
 }
 
 /**
- * Stable hash of the content's bake-affecting structure. Stored on a baked
- * composite clip as `proxyContentHash`; a mismatch against the live content
- * means the proxy is stale and should be re-baked.
+ * Hash of the content's bake-affecting structure. Recorded on the baked asset's
+ * `creationMetadata.contentHash` as provenance — which content a given bake came
+ * from. Rendering does not gate on it: a CompositeAsset's `bakedAssetId` is
+ * swapped atomically with its `content`, so the bake is never stale relative to
+ * the asset that owns it.
  */
 export function hashCompositeContent(content: CompositeContent): string {
   return djb2(JSON.stringify(projectContentForHash(content)));
-}
-
-/** True when `clip`'s proxy is missing or was baked from different content. */
-export function isCompositeProxyStale(clip: CompositeTimelineClip): boolean {
-  if (!clip.proxyAssetId || !clip.proxyContentHash) {
-    return true;
-  }
-  return clip.proxyContentHash !== hashCompositeContent(clip.content);
 }

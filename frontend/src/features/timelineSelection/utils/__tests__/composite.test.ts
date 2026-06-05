@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compositeContentToSelection,
   hashCompositeContent,
-  isCompositeProxyStale,
+  renamespaceCompositeContentTracks,
   selectionToCompositeContent,
 } from "../composite";
 import { TICKS_PER_SECOND } from "../../../timeline";
@@ -11,7 +11,6 @@ import { TICKS_PER_SECOND } from "../../../timeline";
 const GRID_FPS = TICKS_PER_SECOND;
 import type {
   AdjustmentTimelineClip,
-  CompositeTimelineClip,
   TimelineSelection,
   VideoTimelineClip,
 } from "../../../../types/TimelineTypes";
@@ -212,45 +211,96 @@ describe("composite adapters", () => {
     );
   });
 
-  it("detects stale or unbaked proxies", () => {
+  it("re-namespaces content track ids so they never collide with the parent timeline", () => {
+    const parentTrackId = "track_parent";
     const content = selectionToCompositeContent(
       {
         start: 0,
         end: 1000,
-        clips: [videoClip("a", 0, 1000)],
+        clips: [
+          // Two clips share the parent's track id, plus a mask on the same track.
+          videoClip("a", 0, 1000),
+          {
+            ...videoClip("b", 0, 1000),
+            trackId: parentTrackId,
+          },
+          {
+            id: "clip-mask",
+            type: "mask",
+            name: "Mask 1",
+            trackId: parentTrackId,
+            parentClipId: "b",
+            start: 0,
+            sourceDuration: 1000,
+            timelineDuration: 1000,
+            croppedSourceDuration: 1000,
+            offset: 0,
+            transformedDuration: 1000,
+            transformedOffset: 0,
+            transformations: [],
+            maskType: "circle",
+            maskMode: "apply",
+            maskInverted: false,
+            maskParameters: { baseWidth: 1, baseHeight: 1 },
+          },
+        ],
+        tracks: [
+          {
+            id: "track-1",
+            type: "visual",
+            label: "Track 1",
+            isVisible: true,
+            isMuted: false,
+            isLocked: false,
+          },
+          {
+            id: parentTrackId,
+            type: "visual",
+            label: "Track 2",
+            isVisible: true,
+            isMuted: false,
+            isLocked: false,
+          },
+        ],
+        includedTrackIds: ["track-1", parentTrackId],
       },
       GRID_FPS,
     );
-    const base: CompositeTimelineClip = {
-      id: "composite-1",
-      type: "composite",
-      name: "Composite",
-      trackId: "track-1",
-      start: 0,
-      sourceDuration: 1000,
-      timelineDuration: 1000,
-      croppedSourceDuration: 1000,
-      offset: 0,
-      transformedDuration: 1000,
-      transformedOffset: 0,
-      transformations: [],
-      content,
-    };
 
-    expect(isCompositeProxyStale(base)).toBe(true);
-    expect(
-      isCompositeProxyStale({
-        ...base,
-        proxyAssetId: "proxy-1",
-        proxyContentHash: hashCompositeContent(content),
-      }),
-    ).toBe(false);
-    expect(
-      isCompositeProxyStale({
-        ...base,
-        proxyAssetId: "proxy-1",
-        proxyContentHash: "stale",
-      }),
-    ).toBe(true);
+    const renamed = renamespaceCompositeContentTracks(content);
+
+    const oldTrackIds = new Set(["track-1", parentTrackId]);
+    const newTrackIds = new Set((renamed.tracks ?? []).map((t) => t.id));
+
+    // No new track id reuses an old (parent timeline) id.
+    for (const id of newTrackIds) {
+      expect(oldTrackIds.has(id)).toBe(false);
+    }
+    expect(newTrackIds.size).toBe(2);
+
+    // Every clip now points at a real, re-namespaced track.
+    for (const clip of renamed.clips) {
+      expect(newTrackIds.has(clip.trackId)).toBe(true);
+    }
+
+    // The mask stays on the same (new) track as its parent clip "b".
+    const parentB = renamed.clips.find((c) => c.id === "b");
+    const mask = renamed.clips.find((c) => c.id === "clip-mask");
+    expect(mask?.trackId).toBe(parentB?.trackId);
+
+    // Clip ids are untouched; includedTrackIds is remapped consistently.
+    expect(renamed.clips.map((c) => c.id)).toEqual(["a", "b", "clip-mask"]);
+    expect(renamed.includedTrackIds).toEqual(
+      (renamed.tracks ?? []).map((t) => t.id),
+    );
   });
+
+  it("returns content unchanged when it carries no tracks", () => {
+    const content = selectionToCompositeContent(
+      { start: 0, end: 1000, clips: [videoClip("a", 0, 1000)] },
+      GRID_FPS,
+    );
+    expect(renamespaceCompositeContentTracks(content)).toBe(content);
+  });
+
 });

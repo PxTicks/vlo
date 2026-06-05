@@ -2,18 +2,21 @@ import { describe, expect, it } from "vitest";
 import { createCompositeTimelineClip } from "../createCompositeClip";
 
 describe("createCompositeTimelineClip", () => {
-  it("prefers the baked proxy duration when provided", () => {
+  it("builds an asset-backed video clip tagged with the composite id", () => {
     const clip = createCompositeTimelineClip({
-      content: {
-        durationTicks: 100,
-        clips: [],
-      },
+      compositeId: "composite-1",
+      assetId: "bake-1",
+      durationTicks: 120,
       trackId: "track-1",
       start: 0,
-      proxyDurationTicks: 120,
     });
 
     expect(clip).toMatchObject({
+      type: "video",
+      assetId: "bake-1",
+      compositeId: "composite-1",
+      trackId: "track-1",
+      start: 0,
       sourceDuration: 120,
       timelineDuration: 120,
       croppedSourceDuration: 120,

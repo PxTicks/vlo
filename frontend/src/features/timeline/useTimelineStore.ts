@@ -10,12 +10,12 @@ import type {
   AdjustmentRetimingMode,
   ClipMask,
   ClipTransform,
-  CompositeContent,
   MaskBooleanExpression,
   TextClipData,
   TimelineClip,
   TimelineTrack,
 } from "../../types/TimelineTypes";
+import { isCompositeClip } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
   countBrushMaskAssetConsumers,
@@ -31,7 +31,6 @@ import {
   addClipTransformToDraft,
   addTrackToDraft,
   clipReferencesAssetId,
-  collectUnusedCompositeProxyAssetIds,
   copySelectedClips,
   duplicateClipMaskInDraft,
   duplicateTimelineClip,
@@ -90,7 +89,7 @@ enablePatches();
 
 function isCompositeFullLengthTiming(clip: TimelineClip): boolean {
   return (
-    clip.type === "composite" &&
+    isCompositeClip(clip) &&
     clip.sourceDuration !== null &&
     clip.offset === 0 &&
     clip.transformedOffset === 0 &&
@@ -134,16 +133,13 @@ interface TimelineState extends TimelineModelState {
     compositeClip: TimelineClip,
   ) => boolean;
   /**
-   * Replaces a composite clip's internal content (the source of truth for
-   * re-baking). Timing is reset to the new content's natural length, so an edit
-   * that changes the region duration yields a full-length composite again.
+   * Repoints every placement of a composite at its freshly baked asset (called
+   * after create/edit). Placements are ordinary video clips whose `assetId` is
+   * the bake; this is the only composite-specific timeline operation.
    */
-  setCompositeContent: (clipId: string, content: CompositeContent) => void;
-  /** Points a composite clip at a freshly baked proxy asset. */
-  setCompositeProxy: (
-    clipId: string,
-    proxyAssetId: string,
-    proxyContentHash: string,
+  relinkCompositePlacements: (
+    compositeId: string,
+    bakedAssetId: string,
   ) => void;
 
   removeClip: (id: string) => void;
@@ -390,88 +386,37 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return didCommit;
     },
 
-    setCompositeContent: (clipId, content) => {
-      const duration = Math.max(1, Math.round(content.durationTicks));
-      mutationPipeline.commitModelMutation((draft) => {
-        draft.clips = draft.clips.map((clip) => {
-          if (clip.id !== clipId || clip.type !== "composite") {
-            return clip;
-          }
-          return {
-            ...clip,
-            content,
-            sourceDuration: duration,
-            timelineDuration: duration,
-            croppedSourceDuration: duration,
-            offset: 0,
-            transformedDuration: duration,
-            transformedOffset: 0,
-            // Proxy is now stale until re-baked; clear the hash so consumers
-            // know not to trust the existing proxy.
-            proxyContentHash: undefined,
-          };
-        });
-      });
-    },
-
-    setCompositeProxy: (clipId, proxyAssetId, proxyContentHash) => {
-      const proxyDurationTicks =
+    relinkCompositePlacements: (compositeId, bakedAssetId) => {
+      // A composite was (re)baked. Repoint every placement of it at the new
+      // baked asset so they render through the ordinary video path. Full-length
+      // placements re-align to the new bake's real (frame-snapped) duration.
+      const bakedDurationTicks =
         durationSecondsToTicks(
           useAssetStore
             .getState()
-            .assets.find((asset) => asset.id === proxyAssetId)?.duration,
+            .assets.find((asset) => asset.id === bakedAssetId)?.duration,
         ) ?? null;
-      const previousCompositeClip = get().clips.find(
-        (clip) => clip.id === clipId && clip.type === "composite",
-      );
-      const previousProxyAssetId =
-        previousCompositeClip?.type === "composite"
-          ? previousCompositeClip.proxyAssetId
-          : undefined;
-      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+      mutationPipeline.commitModelMutation((draft) => {
         draft.clips = draft.clips.map((clip) =>
-          clip.id === clipId && clip.type === "composite"
+          isCompositeClip(clip) && clip.compositeId === compositeId
             ? {
                 ...clip,
-                proxyAssetId,
-                proxyContentHash,
-                ...(
-                  proxyDurationTicks !== null &&
-                  isCompositeFullLengthTiming(clip)
-                    ? {
-                        // Composite content duration is stored in source ticks,
-                        // but a baked proxy is quantized to whole output
-                        // frames. With mismatched fps, that can make the proxy
-                        // land slightly longer than the content window, so keep
-                        // fresh full-length composites aligned to the baked
-                        // asset's real duration.
-                        sourceDuration: proxyDurationTicks,
-                        timelineDuration: proxyDurationTicks,
-                        croppedSourceDuration: proxyDurationTicks,
-                        offset: 0,
-                        transformedDuration: proxyDurationTicks,
-                        transformedOffset: 0,
-                      }
-                    : {}
-                ),
+                assetId: bakedAssetId,
+                ...(bakedDurationTicks !== null &&
+                isCompositeFullLengthTiming(clip)
+                  ? {
+                      sourceDuration: bakedDurationTicks,
+                      timelineDuration: bakedDurationTicks,
+                      croppedSourceDuration: bakedDurationTicks,
+                      offset: 0,
+                      transformedDuration: bakedDurationTicks,
+                      transformedOffset: 0,
+                    }
+                  : {}),
               }
             : clip,
         );
       });
-
-      if (
-        didCommit &&
-        previousProxyAssetId &&
-        previousProxyAssetId !== proxyAssetId
-      ) {
-        const compositeProxyAssetIdsToDelete = collectUnusedCompositeProxyAssetIds(
-          get().clips,
-          [previousProxyAssetId],
-        );
-        mutationPipeline.runPostCommitEffects({
-          compositeProxyAssetIdsToDelete,
-        });
-      }
     },
 
     duplicateClip: (clip) => duplicateTimelineClip(clip, get().clips),
@@ -497,20 +442,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
       if (!didCommit || pastedClipIds.length === 0) {
         return false;
-      }
-
-      const pastedCompositeClipIds = get()
-        .clips
-        .filter(
-          (clip) => pastedClipIds.includes(clip.id) && clip.type === "composite",
-        )
-        .map((clip) => clip.id);
-      if (pastedCompositeClipIds.length > 0) {
-        void import("../composite").then(({ scheduleCompositeProxyRender }) => {
-          pastedCompositeClipIds.forEach((clipId) => {
-            scheduleCompositeProxyRender(clipId);
-          });
-        });
       }
 
       set({ selectedClipIds: pastedClipIds });
@@ -562,7 +493,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
 
       if (didCommit) {
-        removalPlan.compositeProxyAssetIdsToDelete.delete(assetId);
         mutationPipeline.runPostCommitEffects(removalPlan);
       }
 

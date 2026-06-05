@@ -3,7 +3,6 @@ import { useDraggable } from "@dnd-kit/core";
 import {
   Alert,
   Box,
-  ButtonBase,
   ListItemIcon,
   ListItemText,
   Menu,
@@ -36,7 +35,7 @@ import type {
   StandardTimelineClip,
   TimelineClip as TimelineClipType,
 } from "../../../types/TimelineTypes";
-import { isAssetBackedClip } from "../../../types/TimelineTypes";
+import { isAssetBackedClip, isCompositeClip } from "../../../types/TimelineTypes";
 import type { MarkersComponent } from "../../../types/Components";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
@@ -44,7 +43,6 @@ import { useAsset } from "../../userAssets/publicApi";
 import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStore";
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
-import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
 import { extractTimelineClipAudioAsset } from "../utils/clipAudioExtraction";
 import { reverseTimelineClip } from "../utils/reverseClip";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
@@ -135,27 +133,17 @@ function TimelineClipComponent({
   const [isExtractionSnackbarOpen, setIsExtractionSnackbarOpen] =
     useState(false);
   const [isReversingClip, setIsReversingClip] = useState(false);
-  const openCompositeClip = useCompositeTimelineStore(
-    (state) => state.openCompositeClip,
-  );
 
   const startTime =
     presentation?.start ??
     ("start" in clip ? (clip as TimelineClipType).start : 0);
   const displayDuration = presentation?.duration ?? clip.timelineDuration;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
-  const canOpenCompositeClip =
-    timelineClip !== null && timelineClip.type === "composite" && !isOverlay;
+  const showCompositeLabel = isCompositeClip(timelineClip) && !isOverlay;
+  // Composite placements are ordinary asset-backed video clips, so the
+  // thumbnail strip renders straight from the clip's own baked `assetId`.
   const thumbnailClip: AssetBackedBaseClip | AssetBackedTimelineClip | null =
-    isAssetBackedClip(clip)
-      ? clip
-      : timelineClip?.type === "composite" && timelineClip.proxyAssetId
-        ? {
-            ...timelineClip,
-            type: "video",
-            assetId: timelineClip.proxyAssetId,
-          }
-        : null;
+    isAssetBackedClip(clip) ? clip : null;
   const isClipMuted =
     timelineClip !== null && timelineClip.type !== "mask"
       ? timelineClip.isMuted === true
@@ -299,6 +287,10 @@ function TimelineClipComponent({
   }, [isActive, operation, clip.id, isOverlay, isSelected, transform]);
 
   const getBackgroundColor = () => {
+    // Composite placements are video clips; keep their distinct colour.
+    if (isCompositeClip(clip)) {
+      return "#7c3aed";
+    }
     switch (clip.type) {
       case "video":
         return "#2563eb";
@@ -310,8 +302,6 @@ function TimelineClipComponent({
         return "#10b981";
       case "audio":
         return "#16a34a";
-      case "composite":
-        return "#7c3aed";
       case "adjustment":
         return "#5fa8ff";
       default:
@@ -338,13 +328,6 @@ function TimelineClipComponent({
   };
 
   const closeContextMenu = () => setContextMenuPos(null);
-
-  const handleOpenCompositeClip = (event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (timelineClip === null || timelineClip.type !== "composite") return;
-    openCompositeClip(timelineClip.id);
-  };
 
   const handleContextDelete = () => {
     const store = useTimelineStore.getState();
@@ -500,15 +483,9 @@ function TimelineClipComponent({
       data-selected={isSelected ? "true" : "false"}
       data-track-visible={isTrackVisible ? "true" : "false"}
     >
-      {canOpenCompositeClip ? (
-        <ButtonBase
-          component="button"
-          type="button"
-          onMouseDown={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={handleOpenCompositeClip}
-          aria-label={`Open ${clip.name} composite`}
-          data-testid="timeline-clip-composite-open"
+      {showCompositeLabel ? (
+        <Box
+          data-testid="timeline-clip-composite-label"
           sx={{
             position: "absolute",
             top: 3,
@@ -528,13 +505,11 @@ function TimelineClipComponent({
             overflow: "hidden",
             whiteSpace: "nowrap",
             textOverflow: "ellipsis",
-            "&:hover": {
-              bgcolor: "rgba(0,0,0,0.58)",
-            },
+            pointerEvents: "none",
           }}
         >
           Composite
-        </ButtonBase>
+        </Box>
       ) : null}
       {thumbnailClip ? (
         <ThumbnailCanvas
@@ -576,7 +551,7 @@ function TimelineClipComponent({
         sx={{
           fontWeight: "bold",
           pointerEvents: "none",
-          mt: canOpenCompositeClip ? 2.25 : 0,
+          mt: showCompositeLabel ? 2.25 : 0,
         }}
       >
         {clip.name}

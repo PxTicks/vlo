@@ -21,7 +21,6 @@ import {
   findActiveClipAtTicks,
   sortTrackClipsByStart,
 } from "../utils/clipLookup";
-import { resolveRenderableClips } from "../utils/resolveRenderableClip";
 
 /**
  * Build a Map<parentClipId, maskClip[]> from parent clips' mask components.
@@ -132,13 +131,9 @@ export function useTrackRenderEngine(
     [assets],
   );
 
-  // Flatten Composite clips to their baked proxy video before any indexing, so
-  // the engine and mask controller stay composite-agnostic. Recomputes when a
-  // proxy lands in the asset store, swapping the composite in for rendering.
-  const renderableTrackClips = useMemo(
-    () => resolveRenderableClips(allTrackClips, assetsById),
-    [allTrackClips, assetsById],
-  );
+  // Composite placements are ordinary asset-backed video clips, so the engine
+  // and mask controller need no special handling for them.
+  const renderableTrackClips = allTrackClips;
 
   const sortedTrackClips = useMemo(
     () =>

@@ -46,6 +46,7 @@ SAM_AUDIO_MODEL_DIR = Path(
     )
 )
 SAM_AUDIO_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+SAM_AUDIO_SEARCH_PATHS: list[Path] = [SAM_AUDIO_MODEL_DIR]
 
 BEATTHIS_DEVICE = os.environ.get("BEATTHIS_DEVICE", "auto").strip() or "auto"
 BEATTHIS_DEFAULT_MODEL = (
@@ -81,6 +82,15 @@ if EXTRA_MODEL_PATHS_FILE.exists():
                             sams_list = [sams_val] if isinstance(sams_val, str) else sams_val
                             for p in sams_list:
                                 SAM2_SEARCH_PATHS.append(base_path / p)
+                        if "sam_audio" in comfyui_conf:
+                            sam_audio_val = comfyui_conf["sam_audio"]
+                            sam_audio_list = (
+                                [sam_audio_val]
+                                if isinstance(sam_audio_val, str)
+                                else sam_audio_val
+                            )
+                            for p in sam_audio_list:
+                                SAM_AUDIO_SEARCH_PATHS.append(base_path / p)
 
                 # Custom Folders handling
                 if "custom_folders" in extra_paths and isinstance(extra_paths["custom_folders"], dict):
@@ -90,6 +100,15 @@ if EXTRA_MODEL_PATHS_FILE.exists():
                         sams_list = [sams_val] if isinstance(sams_val, str) else sams_val
                         for p in sams_list:
                             SAM2_SEARCH_PATHS.append(Path(p))
+                    if "sam_audio" in custom_conf:
+                        sam_audio_val = custom_conf["sam_audio"]
+                        sam_audio_list = (
+                            [sam_audio_val]
+                            if isinstance(sam_audio_val, str)
+                            else sam_audio_val
+                        )
+                        for p in sam_audio_list:
+                            SAM_AUDIO_SEARCH_PATHS.append(Path(p))
     except Exception as e:
         print(f"Warning: Failed to parse {EXTRA_MODEL_PATHS_FILE}: {e}")
 

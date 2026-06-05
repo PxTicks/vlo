@@ -134,7 +134,7 @@ Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/
 
 ### SAM-Audio
 
-SAM-Audio model downloads are stored under `vlo/backend/assets/models/sam_audio/<model-key>`, for example `vlo/backend/assets/models/sam_audio/sam-audio-large-tv/config.json` and `checkpoint.pt`. Transient source uploads, stems, and Hugging Face scratch files use `projects/.sam_audio_cache`.
+SAM-Audio model downloads are stored under `vlo/backend/assets/models/sam_audio/<model-key>`, for example `vlo/backend/assets/models/sam_audio/sam-audio-large-tv/config.json` and `checkpoint.pt`. This is intentionally one folder deeper than SAM2 because SAM-Audio loads a Hugging Face-style model directory, not loose checkpoint/config files. `extra_model_paths.yaml` supports a `sam_audio` root with the same `<model-key>/{config.json,checkpoint.pt}` layout. Transient source uploads, stems, and Hugging Face scratch files use `projects/.sam_audio_cache`.
 
 ### Almost-one-click Setup
 

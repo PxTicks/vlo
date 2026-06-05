@@ -18,7 +18,7 @@ from config import (
     SAM_AUDIO_CACHE_DIR,
     SAM_AUDIO_DEFAULT_MODEL,
     SAM_AUDIO_DEVICE,
-    SAM_AUDIO_MODEL_DIR,
+    SAM_AUDIO_SEARCH_PATHS,
 )
 from services.sam_audio.sam_audio_discovery import (
     discover_sam_audio_models,
@@ -871,7 +871,7 @@ def get_health() -> dict[str, Any]:
         "status": "ok",
         "runtime": _runtime.health(),
         "cacheDir": str(SAM_AUDIO_CACHE_DIR),
-        "modelDir": str(SAM_AUDIO_MODEL_DIR),
+        "modelDirs": [str(path) for path in SAM_AUDIO_SEARCH_PATHS],
         "queuedJobs": queued,
         "runningJobs": running,
     }

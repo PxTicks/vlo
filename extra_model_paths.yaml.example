@@ -7,7 +7,11 @@ comfyui:
     # If your SAM models are in a specific sub-folder,
     # you can uncomment and adjust the line below:
     # sams: models/sams
+    # SAM-Audio expects one subfolder per model key, e.g.
+    # models/sam_audio/sam-audio-large-tv/{config.json,checkpoint.pt}
+    # sam_audio: models/sam_audio
 
 custom_folders:
     # Or place your absolute paths here, for example:
     # sams: D:/my_shared_models/sams
+    # sam_audio: D:/my_shared_models/sam_audio

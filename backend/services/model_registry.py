@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from config import COMFYUI_INSTALL_DIR, SAM2_SEARCH_PATHS, SAM_AUDIO_MODEL_DIR
+from config import COMFYUI_INSTALL_DIR, SAM2_SEARCH_PATHS, SAM_AUDIO_SEARCH_PATHS
 from services.download_service import DownloadFileSpec
 from services.sam2.sam2_discovery import discover_sam2_models
 from services.sam_audio.sam_audio_discovery import discover_sam_audio_models
@@ -271,7 +271,7 @@ def get_sam_audio_download_specs(model_key: str) -> list[DownloadFileSpec]:
     if model is None:
         raise ValueError(f"Unknown SAM-Audio model key: {model_key}")
 
-    dest_dir = SAM_AUDIO_MODEL_DIR / model_key
+    dest_dir = SAM_AUDIO_SEARCH_PATHS[0] / model_key
     repo = model["repo"]
 
     return [

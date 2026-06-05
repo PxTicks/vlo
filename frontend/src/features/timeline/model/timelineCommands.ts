@@ -111,8 +111,6 @@ export function clipReferencesAssetId(
   clip: TimelineClip,
   assetId: string,
 ): boolean {
-  // Composite placements are ordinary asset-backed clips (their `assetId` is
-  // the baked video), so this single check covers them too.
   return isAssetBackedClip(clip) && clip.assetId === assetId;
 }
 

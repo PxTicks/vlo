@@ -7,14 +7,8 @@ import type {
 import { computeFurthestPresentationEnd } from "../../timeline/utils/clipPresentation";
 
 /**
- * Adapters between a {@link TimelineSelection} (anchored at absolute timeline
- * ticks) and a {@link CompositeContent} (the same region normalized to local
- * zero so it can live inside a portable Composite clip).
- *
- * The whole point of the Composite "prebaked" strategy is that a
- * composite's content renders through the *existing* selection/export pipeline
- * unchanged — so capture shifts the region to zero, and bake/replay shifts a
- * zero-anchored copy straight back into a TimelineSelection.
+ * Converters for moving timeline regions between absolute project time and
+ * composite-local time.
  */
 
 function cloneClipWithStartShift<T extends TimelineClip>(
@@ -35,10 +29,8 @@ function cloneTracks(
 }
 
 /**
- * Captures a selection as portable composite content: every clip (including
- * subordinate mask clips) is shifted so the window's start lands on tick 0.
- * Clips that began before the window keep a negative start, so only the portion
- * inside the window is visible — exactly as the selection rendered in place.
+ * Captures a selection as composite-local content. Clips that began before the
+ * selected window keep negative starts so the visible region stays unchanged.
  */
 export function selectionToCompositeContent(
   selection: TimelineSelection,
@@ -71,22 +63,9 @@ export function selectionToCompositeContent(
 }
 
 /**
- * Re-namespaces a composite content's track ids so the captured region is
- * self-contained and never collides with the parent timeline (or sibling
- * composites). `selectionToCompositeContent` clones `selection.tracks`
- * verbatim, which are the parent timeline's tracks — so without this, a
- * composite's content carries the exact same track ids as the timeline it was
- * cut from. Anything that indexes clips by `trackId` across the parent and a
- * composite's content then cross-talks (e.g. the engine requesting live frames
- * for a nested content clip because its track id matches a parent track).
- *
- * Only track ids are rewritten: clip ids are already globally-unique uuids, and
- * remapping them would also have to chase mask-clip id conventions, mask_ref /
- * mask_composition references and brush-buffer/asset linkage — none of which is
- * needed to break the track-id collision. `clip.trackId`, `track.id` and
- * `includedTrackIds` are all remapped through the same map so masks stay on
- * their parent's (new) track. Returns content unchanged when it carries no
- * tracks.
+ * Gives captured tracks fresh ids so composite-local tracks cannot collide with
+ * parent or sibling timelines in trackId-keyed render and lookup code. Only
+ * track ids are rewritten; clip ids and mask references stay intact.
  */
 export function renamespaceCompositeContentTracks(
   content: CompositeContent,
@@ -118,11 +97,6 @@ export function renamespaceCompositeContentTracks(
   };
 }
 
-/**
- * Replays composite content as a zero-anchored selection suitable for the bake
- * pipeline (ExportRenderer / renderTimelineSelectionToMp4). The clips are
- * already local-zero, so this is a thin re-wrap; `end` is the natural duration.
- */
 export function compositeContentToSelection(
   content: CompositeContent,
 ): TimelineSelection {
@@ -142,10 +116,8 @@ export function compositeContentToSelection(
 }
 
 /**
- * Deterministic projection of the bake-affecting fields of a clip. Anything
- * that changes a rendered pixel (timing, transforms, components, asset, text,
- * shape) is included; volatile/UI-only fields (name) are not, so cosmetic edits
- * don't force a re-bake.
+ * Projects content down to fields that affect baked pixels. Names and other
+ * UI-only fields stay out so cosmetic edits do not force a re-bake.
  */
 function projectClipForHash(clip: TimelineClip): unknown {
   const common = {
@@ -171,8 +143,8 @@ function projectClipForHash(clip: TimelineClip): unknown {
     ...common,
     isMuted: clip.isMuted ?? false,
     components: clip.components ?? [],
-    // A nested composite is an asset-backed clip; its `assetId` is the nested
-    // bake, so re-baking the nested composite already changes this projection.
+    // Include both bake identity and composite identity: dependent rebakes update
+    // assetId, while reference/cycle logic follows compositeId.
     ...("assetId" in clip ? { assetId: clip.assetId } : {}),
     ...("compositeId" in clip && clip.compositeId
       ? { compositeId: clip.compositeId }
@@ -197,8 +169,7 @@ function projectContentForHash(content: CompositeContent): unknown {
   };
 }
 
-/** djb2 string hash → unsigned 32-bit hex. Cheap and stable; collisions only
- *  cost a redundant re-bake, never a missed one for distinct structures. */
+/** Cheap stable string hash; collisions only cost a redundant re-bake. */
 function djb2(input: string): string {
   let hash = 5381;
   for (let i = 0; i < input.length; i += 1) {
@@ -207,13 +178,6 @@ function djb2(input: string): string {
   return (hash >>> 0).toString(16);
 }
 
-/**
- * Hash of the content's bake-affecting structure. Recorded on the baked asset's
- * `creationMetadata.contentHash` as provenance — which content a given bake came
- * from. Rendering does not gate on it: a CompositeAsset's `bakedAssetId` is
- * swapped atomically with its `content`, so the bake is never stale relative to
- * the asset that owns it.
- */
 export function hashCompositeContent(content: CompositeContent): string {
   return djb2(JSON.stringify(projectContentForHash(content)));
 }

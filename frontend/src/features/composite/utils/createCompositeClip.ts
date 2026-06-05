@@ -4,17 +4,11 @@ import type {
   VideoTimelineClip,
 } from "../../../types/TimelineTypes";
 
-/**
- * A composite placement is an ordinary asset-backed video clip pointed at the
- * composite's baked asset, tagged with `compositeId` purely so the timeline UI
- * can show the badge / reveal / open-to-edit. The renderer treats it like any
- * other video clip — there is no composite-specific render path.
- */
+
 export interface CreateCompositePlacementArgs {
   id?: string;
   compositeId: string;
   assetId: string;
-  /** Untrimmed clip length in ticks (defaults to the composite content length). */
   durationTicks: number;
   name?: string;
 }

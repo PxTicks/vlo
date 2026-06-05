@@ -69,13 +69,8 @@ function buildCompositeRenderInputs(
 }
 
 /**
- * Renders a Composite clip's content to an mp4 and registers it as a video
- * asset — the "baked composite". Composite placements then render through the
- * normal video path by resolving the owning CompositeAsset's baked asset.
- *
- * The render itself reuses {@link renderSelectionToVideoFile}: the content is
- * replayed as a zero-anchored TimelineSelection against composite-specific
- * in-memory render inputs.
+ * Renders composite content to a hidden video asset. Timeline placements point
+ * directly at that baked asset, so playback/export use the normal video path.
  */
 export async function bakeComposite(
   content: CompositeContent,

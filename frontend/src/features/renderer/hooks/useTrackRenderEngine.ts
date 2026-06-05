@@ -131,8 +131,6 @@ export function useTrackRenderEngine(
     [assets],
   );
 
-  // Composite placements are ordinary asset-backed video clips, so the engine
-  // and mask controller need no special handling for them.
   const renderableTrackClips = allTrackClips;
 
   const sortedTrackClips = useMemo(

@@ -123,8 +123,6 @@ export function useAudioTrack(
   const getInputRef = useRef(getInput);
 
   useEffect(() => {
-    // Composite placements are ordinary asset-backed video clips, so their
-    // audio schedules through the normal asset path with no special handling.
     trackClipsRef.current = sortTrackClipsByStart(trackClips);
   }, [trackClips]);
 

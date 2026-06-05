@@ -5,7 +5,6 @@ import {
   Tabs,
   Tab,
   CircularProgress,
-  Grid,
   Typography,
   IconButton,
   Menu,
@@ -28,6 +27,7 @@ import { doesAssetBelongToFamily } from "../../shared/utils/assetFamilies";
 import { getTimelineClipCountForAsset, useTimelineStore } from "../timeline";
 import { useInteractionStore } from "../timeline/hooks/useInteractionStore";
 import { useProjectStore } from "../project/useProjectStore";
+import { LibraryBrowserGrid } from "../libraryBrowser";
 import {
   useRegionFocus,
   useEditorFocusStore,
@@ -984,59 +984,40 @@ function AssetBrowserComponent() {
       </Box>
 
       {/* 2. Scrollable Grid Area */}
-      <Box
-        ref={scrollRegionRef}
-        data-testid="asset-browser-scroll-region"
-        data-scroll-locked={isAssetDragActive ? "true" : "false"}
-        onClick={handleBrowserBackgroundClick}
-        sx={{
-          flexGrow: 1,
-          overflowY: isAssetDragActive ? "hidden" : "auto",
-          overscrollBehaviorY: isAssetDragActive ? "none" : "auto",
-          scrollbarGutter: "stable",
-          touchAction: isAssetDragActive ? "none" : "auto",
-          p: 2,
-        }}
-      >
-        {sortedAssets.length === 0 ? (
-          <Typography
-            variant="body2"
-            sx={{ textAlign: "center", mt: 4, color: "#666" }}
-          >
-            {emptyStateMessage}
-          </Typography>
-        ) : (
-          <Grid container spacing={2}>
-            {sortedAssets.map((asset) => (
-              <Grid size={{ xs: 6 }} key={asset.id}>
-                <AssetCard
-                  asset={asset}
-                  disableDrag={isMultiSelectActive}
-                  isSelected={selectedAssetIds.includes(asset.id)}
-                  onDeleteAll={
-                    !isFamilyScopeActive &&
-                    asset.familyId &&
-                    getAssetsForFamilyId(assets, asset.familyId).length > 1
-                      ? handleDeleteAll
-                      : undefined
-                  }
-                  onShowFamily={
-                    assetBrowserDisplay !== "ungrouped" &&
-                    !isFamilyScopeActive &&
-                    asset.familyId &&
-                    (familyMembersByType.get(`${asset.familyId}:${asset.type}`) ?? 0) >
-                      1
-                      ? handleShowFamily
-                      : undefined
-                  }
-                  onSelect={(event) => handleAssetSelect(asset.id, event)}
-                  onRequestPreview={handleRequestPreview}
-                />
-              </Grid>
-            ))}
-          </Grid>
+      <LibraryBrowserGrid
+        items={sortedAssets}
+        getItemId={(asset) => asset.id}
+        emptyMessage={emptyStateMessage}
+        scrollRegionRef={scrollRegionRef}
+        testId="asset-browser-scroll-region"
+        isScrollLocked={isAssetDragActive}
+        onBackgroundClick={handleBrowserBackgroundClick}
+        renderItem={(asset) => (
+          <AssetCard
+            asset={asset}
+            disableDrag={isMultiSelectActive}
+            isSelected={selectedAssetIds.includes(asset.id)}
+            onDeleteAll={
+              !isFamilyScopeActive &&
+              asset.familyId &&
+              getAssetsForFamilyId(assets, asset.familyId).length > 1
+                ? handleDeleteAll
+                : undefined
+            }
+            onShowFamily={
+              assetBrowserDisplay !== "ungrouped" &&
+              !isFamilyScopeActive &&
+              asset.familyId &&
+              (familyMembersByType.get(`${asset.familyId}:${asset.type}`) ?? 0) >
+                1
+                ? handleShowFamily
+                : undefined
+            }
+            onSelect={(event) => handleAssetSelect(asset.id, event)}
+            onRequestPreview={handleRequestPreview}
+          />
         )}
-      </Box>
+      />
 
       {(isUploading || isDragOver) && (
         <Box

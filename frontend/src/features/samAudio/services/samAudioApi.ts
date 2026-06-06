@@ -30,6 +30,7 @@ export interface SamAudioJobStatus {
   jobId: string;
   status: "queued" | "running" | "done" | "error";
   progress: number;
+  message?: string | null;
   error: string | null;
   sourceId: string;
   startTicks: number;

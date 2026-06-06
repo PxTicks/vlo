@@ -134,7 +134,13 @@ Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/
 
 ### SAM-Audio
 
-SAM-Audio model downloads are stored under `vlo/backend/assets/models/sam_audio/<model-key>`, for example `vlo/backend/assets/models/sam_audio/sam-audio-large-tv/config.json` and `checkpoint.pt`. This is intentionally one folder deeper than SAM2 because SAM-Audio loads a Hugging Face-style model directory, not loose checkpoint/config files. `extra_model_paths.yaml` supports a `sam_audio` root with the same `<model-key>/{config.json,checkpoint.pt}` layout. Transient source uploads, stems, and Hugging Face scratch files use `projects/.sam_audio_cache`.
+SAM-Audio requires Meta's `sam_audio` package in the backend virtual environment. Install the package there, or set `SAM_AUDIO_PYTHONPATH` to a local checkout such as `~/sam-audio`.
+
+The default model is `facebook/sam-audio-large-tv`, which is gated on Hugging Face. Accept the license and either authenticate the backend environment with `hf auth login`, pass a token through the model download flow, or place the downloaded files manually. SAM-Audio model downloads live under `vlo/backend/assets/models/sam_audio/<model-key>`, for example `vlo/backend/assets/models/sam_audio/sam-audio-large-tv/config.json` and `checkpoint.pt`. This is intentionally one folder deeper than SAM2 because SAM-Audio loads a Hugging Face-style model directory, not loose checkpoint/config files. `extra_model_paths.yaml` supports a `sam_audio` root with the same `<model-key>/{config.json,checkpoint.pt}` layout.
+
+Transient source uploads, generated stems, and Hugging Face scratch files use `projects/.sam_audio_cache`. First runtime load can also fetch dependent T5 and PE assets, so the backend environment still needs Hugging Face access or a pre-populated cache even when the main SAM-Audio checkpoint is already present.
+
+The app currently uses the lean isolate path and does not expose SAM-Audio's optional high-quality reranking/span-prediction mode. The backend still guards that experimental API path behind `SAM_AUDIO_LOAD_OPTIONAL_MODELS=1`; only enable it after explicitly caching/installing the CLAP, ImageBind, judge, and PE span-predictor dependencies. Compatible `xformers`, `flash-attn`, and `torchcodec` installs are used when available; if those version-sensitive packages are absent or mismatched, vlo falls back to import shims for the default tensor-based path. Restart the backend after changing any of these packages.
 
 ### Almost-one-click Setup
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import threading
@@ -8,6 +9,8 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
+from importlib.machinery import ModuleSpec
+from types import ModuleType
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
@@ -18,6 +21,7 @@ from config import (
     SAM_AUDIO_CACHE_DIR,
     SAM_AUDIO_DEFAULT_MODEL,
     SAM_AUDIO_DEVICE,
+    SAM_AUDIO_LOAD_OPTIONAL_MODELS,
     SAM_AUDIO_SEARCH_PATHS,
 )
 from services.sam_audio.sam_audio_discovery import (
@@ -45,6 +49,7 @@ for _dir in (SOURCES_DIR, METADATA_DIR, STEMS_DIR, HF_CACHE_DIR):
 JobStatus = Literal["queued", "running", "done", "error"]
 StemKind = Literal["target", "residual"]
 Anchor = tuple[str, float, float]
+logger = logging.getLogger(__name__)
 
 
 class SamAudioConfigError(RuntimeError):
@@ -132,6 +137,7 @@ class SamAudioJob:
     prompt: SamAudioPrompt
     status: JobStatus = "queued"
     progress: float = 0.0
+    message: str | None = "Waiting for SAM-Audio worker"
     error: str | None = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
@@ -143,6 +149,7 @@ class SamAudioJob:
             "jobId": self.job_id,
             "status": self.status,
             "progress": self.progress,
+            "message": self.message,
             "error": self.error,
             "sourceId": self.source_id,
             "startTicks": self.start_ticks,
@@ -191,17 +198,123 @@ class _SamAudioRuntime:
 
         return [raw]
 
-    def _ensure_sam_audio_pythonpath(self) -> None:
+    def _ensure_sam_audio_pythonpath(self, *, include_default_checkout: bool) -> None:
         candidates: list[str] = []
         explicit = os.environ.get("SAM_AUDIO_PYTHONPATH", "").strip()
         if explicit:
             candidates.append(explicit)
-        candidates.append(str(Path.home() / "sam-audio"))
+        if include_default_checkout:
+            candidates.append(str(Path.home() / "sam-audio"))
 
         for candidate in candidates:
             path = Path(candidate).expanduser()
             if path.exists() and str(path) not in sys.path:
                 sys.path.insert(0, str(path))
+
+    def _ensure_xformers_ops_importable(self) -> None:
+        try:
+            from xformers.ops import AttentionBias, fmha  # type: ignore  # noqa: F401
+            return
+        except Exception:
+            pass
+
+        try:
+            import xformers  # type: ignore
+        except Exception:
+            xformers = ModuleType("xformers")
+            sys.modules["xformers"] = xformers
+
+        ops_module = ModuleType("xformers.ops")
+        fmha_module = ModuleType("xformers.ops.fmha")
+        ops_module.__spec__ = ModuleSpec("xformers.ops", loader=None)
+        fmha_module.__spec__ = ModuleSpec("xformers.ops.fmha", loader=None)
+
+        class AttentionBias:  # pragma: no cover - exercised by SAM-Audio import
+            pass
+
+        def memory_efficient_attention(
+            query: Any,
+            key: Any,
+            value: Any,
+            attn_bias: Any = None,
+            p: float = 0.0,
+            scale: float | None = None,
+            **_: Any,
+        ) -> Any:
+            import torch  # type: ignore
+            from torch.nn import functional as torch_functional  # type: ignore
+
+            if attn_bias is not None and not torch.is_tensor(attn_bias):
+                raise SamAudioConfigError(
+                    "SAM-Audio requested an xFormers attention bias that is not "
+                    "available in this environment. Reinstall compatible xformers "
+                    "and flash-attn packages for the backend Python/PyTorch build."
+                )
+
+            if query.ndim == 4:
+                query = query.transpose(1, 2)
+                key = key.transpose(1, 2)
+                value = value.transpose(1, 2)
+                kwargs = {
+                    "attn_mask": attn_bias,
+                    "dropout_p": p,
+                }
+                if scale is not None:
+                    kwargs["scale"] = scale
+                output = torch_functional.scaled_dot_product_attention(
+                    query,
+                    key,
+                    value,
+                    **kwargs,
+                )
+                return output.transpose(1, 2).contiguous()
+
+            kwargs = {
+                "attn_mask": attn_bias,
+                "dropout_p": p,
+            }
+            if scale is not None:
+                kwargs["scale"] = scale
+            return torch_functional.scaled_dot_product_attention(
+                query,
+                key,
+                value,
+                **kwargs,
+            )
+
+        fmha_module.memory_efficient_attention = memory_efficient_attention  # type: ignore[attr-defined]
+        ops_module.AttentionBias = AttentionBias  # type: ignore[attr-defined]
+        ops_module.fmha = fmha_module  # type: ignore[attr-defined]
+        setattr(xformers, "ops", ops_module)
+        sys.modules["xformers.ops"] = ops_module
+        sys.modules["xformers.ops.fmha"] = fmha_module
+
+    def _ensure_torchcodec_decoders_importable(self) -> None:
+        try:
+            from torchcodec.decoders import AudioDecoder, VideoDecoder  # type: ignore  # noqa: F401
+            return
+        except Exception:
+            pass
+
+        torchcodec_module = ModuleType("torchcodec")
+        decoders_module = ModuleType("torchcodec.decoders")
+        torchcodec_module.__spec__ = ModuleSpec("torchcodec", loader=None, is_package=True)
+        decoders_module.__spec__ = ModuleSpec("torchcodec.decoders", loader=None)
+
+        class _TorchCodecDecoderUnavailable:  # pragma: no cover - import shim
+            def __init__(self, *_: Any, **__: Any) -> None:
+                raise SamAudioConfigError(
+                    "SAM-Audio tried to decode media through torchcodec, but "
+                    "torchcodec could not load in this backend environment. "
+                    "Install a torchcodec build compatible with the backend "
+                    "Python/PyTorch/FFmpeg stack, or pass decoded tensors."
+                )
+
+        decoders_module.AudioDecoder = _TorchCodecDecoderUnavailable  # type: ignore[attr-defined]
+        decoders_module.VideoDecoder = _TorchCodecDecoderUnavailable  # type: ignore[attr-defined]
+        torchcodec_module.decoders = decoders_module  # type: ignore[attr-defined]
+        sys.modules["torchcodec"] = torchcodec_module
+        sys.modules["torchcodec.decoders"] = decoders_module
 
     def _resolve_model_ref(self) -> str:
         model_key = SAM_AUDIO_DEFAULT_MODEL
@@ -212,32 +325,83 @@ class _SamAudioRuntime:
             return model_key
         return f"facebook/{model_key}"
 
-    def _load_for_device(self, device: str) -> tuple[Any, Any, str]:
-        self._ensure_sam_audio_pythonpath()
+    def _import_sam_audio_classes(self) -> tuple[Any, Any]:
         try:
             from sam_audio import SAMAudio, SAMAudioProcessor  # type: ignore
+
+            return SAMAudio, SAMAudioProcessor
+        except ModuleNotFoundError as exc:
+            if exc.name != "sam_audio":
+                raise
+
+        self._ensure_sam_audio_pythonpath(include_default_checkout=True)
+        from sam_audio import SAMAudio, SAMAudioProcessor  # type: ignore
+
+        return SAMAudio, SAMAudioProcessor
+
+    def _load_for_device(self, device: str) -> tuple[Any, Any, str]:
+        self._ensure_sam_audio_pythonpath(include_default_checkout=False)
+        self._ensure_xformers_ops_importable()
+        self._ensure_torchcodec_decoders_importable()
+        try:
+            SAMAudio, SAMAudioProcessor = self._import_sam_audio_classes()
         except Exception as exc:  # pragma: no cover - environment dependent
             raise SamAudioConfigError(
-                "Failed to import SAM-Audio. Install the sam_audio package or set "
-                "SAM_AUDIO_PYTHONPATH to the local sam-audio checkout."
+                "Failed to import SAM-Audio. The sam_audio package may be missing, "
+                "SAM_AUDIO_PYTHONPATH may point to the wrong checkout, or one of "
+                f"SAM-Audio's transitive dependencies failed to import: {exc}"
             ) from exc
 
         model_ref = self._resolve_model_ref()
+        model_kwargs: dict[str, Any] = {}
+        if not SAM_AUDIO_LOAD_OPTIONAL_MODELS:
+            # SAM-Audio's full config eagerly constructs rankers/span predictors that
+            # are only needed for reranking and automatic span prediction. Those
+            # dependencies are large and can make normal isolate jobs look hung.
+            model_kwargs = {
+                "visual_ranker": None,
+                "text_ranker": None,
+                "span_predictor": None,
+            }
+
+        logger.info(
+            "Loading SAM-Audio model %s on %s (optional models: %s)",
+            model_ref,
+            device,
+            "enabled" if SAM_AUDIO_LOAD_OPTIONAL_MODELS else "disabled",
+        )
         try:
-            model = SAMAudio.from_pretrained(
-                model_ref,
-                cache_dir=str(HF_CACHE_DIR),
-                map_location="cpu",
-            )
+            if hasattr(SAMAudio, "_from_pretrained"):
+                model = SAMAudio._from_pretrained(
+                    model_id=model_ref,
+                    cache_dir=str(HF_CACHE_DIR),
+                    force_download=False,
+                    proxies=None,
+                    resume_download=False,
+                    local_files_only=False,
+                    token=None,
+                    map_location="cpu",
+                    revision=None,
+                    **model_kwargs,
+                )
+            else:
+                model = SAMAudio.from_pretrained(
+                    model_ref,
+                    cache_dir=str(HF_CACHE_DIR),
+                    map_location="cpu",
+                    **model_kwargs,
+                )
             processor = SAMAudioProcessor.from_pretrained(model_ref)
         except Exception as exc:  # pragma: no cover - environment/model dependent
             raise SamAudioConfigError(
-                "Failed to load SAM-Audio model. If using "
-                "'facebook/sam-audio-large-tv', accept the gated Hugging Face "
-                "license and either download it from /downloads with an access "
-                "token or authenticate the backend environment with `hf auth login`. "
-                "SAM-Audio may also fetch dependent PE-AV, T5, or judge-model "
-                "assets during first load, so those caches need the same access."
+                "Failed to load SAM-Audio model or one of its first-load "
+                "dependencies. If the underlying error mentions 401/403 or a "
+                "gated repository, accept the Hugging Face license and authenticate "
+                "the backend environment with `hf auth login` or an access token. "
+                "SAM-Audio also initializes dependent PE-AV and T5 assets during "
+                "normal startup. High-quality reranking/span dependencies are only "
+                "loaded when SAM_AUDIO_LOAD_OPTIONAL_MODELS=1. "
+                f"Underlying error: {exc}"
             ) from exc
 
         try:
@@ -646,13 +810,27 @@ def run_separation(
     start_ticks: int,
     duration_ticks: int,
 ) -> SamAudioSeparationResult:
-    model, processor, device = _runtime.get()
-
     anchors = _normalize_anchors(prompt.get("anchors"))
     description = (prompt.get("text") or "").strip().lower()
     predict_spans = bool(prompt.get("predictSpans", False))
     requested_candidates = int(prompt.get("rerankingCandidates", 1) or 1)
     reranking_candidates = max(1, min(8, requested_candidates))
+    wants_span_prediction = predict_spans and anchors is None
+    wants_reranking = reranking_candidates > 1
+    if (
+        not SAM_AUDIO_LOAD_OPTIONAL_MODELS
+        and (wants_reranking or wants_span_prediction)
+    ):
+        raise SamAudioConfigError(
+            "This SAM-Audio request asks for high-quality reranking or automatic "
+            "span prediction, but optional SAM-Audio models are disabled. Restart "
+            "the backend with SAM_AUDIO_LOAD_OPTIONAL_MODELS=1 after the CLAP, "
+            "ImageBind, judge, and PE span-predictor dependencies are cached, or "
+            "send rerankingCandidates=1 and predictSpans=false for the lean isolate path."
+        )
+
+    model, processor, device = _runtime.get()
+
     if str(device).startswith("cpu"):
         reranking_candidates = 1
 
@@ -715,6 +893,7 @@ def _set_job_state(
     *,
     status: JobStatus | None = None,
     progress: float | None = None,
+    message: str | None = None,
     error: str | None = None,
     result: SamAudioSeparationResult | None = None,
 ) -> None:
@@ -723,6 +902,8 @@ def _set_job_state(
             job.status = status
         if progress is not None:
             job.progress = max(0.0, min(1.0, float(progress)))
+        if message is not None:
+            job.message = message
         if error is not None:
             job.error = error
         if result is not None:
@@ -732,22 +913,46 @@ def _set_job_state(
 
 def _execute_job(job: SamAudioJob) -> None:
     try:
-        _set_job_state(job, status="running", progress=0.05)
+        logger.info("SAM-Audio job %s started", job.job_id)
+        _set_job_state(
+            job,
+            status="running",
+            progress=0.05,
+            message="Preparing source audio window",
+        )
         window_audio = _extract_source_window(
             job.source_id,
             job.start_ticks,
             job.duration_ticks,
         )
-        _set_job_state(job, progress=0.20)
+        _set_job_state(
+            job,
+            progress=0.20,
+            message="Loading SAM-Audio runtime and running separation",
+        )
         result = run_separation(
             window_audio=window_audio,
             prompt=job.prompt,
             start_ticks=job.start_ticks,
             duration_ticks=job.duration_ticks,
         )
-        _set_job_state(job, status="done", progress=1.0, result=result)
+        _set_job_state(
+            job,
+            status="done",
+            progress=1.0,
+            message="Separation complete",
+            result=result,
+        )
+        logger.info("SAM-Audio job %s completed", job.job_id)
     except Exception as exc:  # noqa: BLE001 - worker must surface all errors
-        _set_job_state(job, status="error", progress=1.0, error=str(exc))
+        logger.exception("SAM-Audio job %s failed", job.job_id)
+        _set_job_state(
+            job,
+            status="error",
+            progress=1.0,
+            message="Separation failed",
+            error=str(exc),
+        )
 
 
 def _evict_finished_jobs_locked() -> None:
@@ -872,6 +1077,7 @@ def get_health() -> dict[str, Any]:
         "runtime": _runtime.health(),
         "cacheDir": str(SAM_AUDIO_CACHE_DIR),
         "modelDirs": [str(path) for path in SAM_AUDIO_SEARCH_PATHS],
+        "optionalModels": SAM_AUDIO_LOAD_OPTIONAL_MODELS,
         "queuedJobs": queued,
         "runningJobs": running,
     }

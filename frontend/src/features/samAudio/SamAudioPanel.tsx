@@ -92,17 +92,6 @@ export const SamAudioPanel = memo(function SamAudioPanel() {
           }
           label="Use SAM2 mask"
         />
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={panel.highQuality}
-              onChange={(event) => panel.setHighQuality(event.target.checked)}
-              disabled={panel.isBusy}
-              size="small"
-            />
-          }
-          label="High quality"
-        />
       </Box>
 
       {panel.generatedSam2Mask ? (
@@ -118,7 +107,7 @@ export const SamAudioPanel = memo(function SamAudioPanel() {
             value={Math.round(panel.progress * 100)}
           />
           <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            {panel.jobStatus?.status ?? "queued"}
+            {panel.jobStatus?.message ?? panel.jobStatus?.status ?? "queued"}
           </Typography>
         </Box>
       ) : null}

@@ -47,6 +47,10 @@ SAM_AUDIO_MODEL_DIR = Path(
 )
 SAM_AUDIO_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 SAM_AUDIO_SEARCH_PATHS: list[Path] = [SAM_AUDIO_MODEL_DIR]
+SAM_AUDIO_LOAD_OPTIONAL_MODELS = (
+    os.environ.get("SAM_AUDIO_LOAD_OPTIONAL_MODELS", "0").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
 
 BEATTHIS_DEVICE = os.environ.get("BEATTHIS_DEVICE", "auto").strip() or "auto"
 BEATTHIS_DEFAULT_MODEL = (

@@ -77,7 +77,6 @@ export function createSamAudioPromptPayload(options: {
   useSpanPrompt: boolean;
   visualPrompt?: { sam2SourceId: string; sam2MaskId: string } | null;
   useVisualPrompt: boolean;
-  highQuality: boolean;
 }): SamAudioPromptPayload {
   const prompt: SamAudioPromptPayload = {};
   const text = options.text.trim().toLowerCase();
@@ -91,11 +90,6 @@ export function createSamAudioPromptPayload(options: {
     prompt.sam2SourceId = options.visualPrompt.sam2SourceId;
     prompt.sam2MaskId = options.visualPrompt.sam2MaskId;
   }
-  if (options.highQuality) {
-    prompt.predictSpans = true;
-    prompt.rerankingCandidates = 8;
-  } else {
-    prompt.rerankingCandidates = 1;
-  }
+  prompt.rerankingCandidates = 1;
   return prompt;
 }

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { getRuntimeStatus } from "../../../services/runtimeApi";
 import type { Asset } from "../../../types/Asset";
 import type { MaskTimelineClip, TimelineClip } from "../../../types/TimelineTypes";
 import {
@@ -14,7 +13,9 @@ import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
 import { registerSourceVideo } from "../../masks/services/sam2Api";
 import { createSplitAudioClip } from "../model/createSplitAudioClip";
 import {
+  cancelSeparationJob,
   fetchStem,
+  getSamAudioHealth,
   pollJob,
   registerSourceAudio,
   submitSeparationJob,
@@ -31,10 +32,31 @@ const POLL_INTERVAL_MS = 1000;
 const samAudioSourceRegistrationCache = new Map<string, Promise<string>>();
 const sam2SourceRegistrationCache = new Map<string, Promise<string>>();
 
+interface SamAudioOperationState {
+  message: string;
+  progress: number;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     globalThis.setTimeout(resolve, ms);
   });
+}
+
+function createAbortError(): Error {
+  const error = new Error("SAM-Audio operation cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function isAudioCapableClip(clip: TimelineClip | null): clip is TimelineClip & {
@@ -43,27 +65,36 @@ function isAudioCapableClip(clip: TimelineClip | null): clip is TimelineClip & {
   return clip?.type === "audio" || clip?.type === "video";
 }
 
-async function resolveAssetFile(asset: Asset): Promise<File> {
+async function resolveAssetFile(
+  asset: Asset,
+  options?: { signal?: AbortSignal },
+): Promise<File> {
+  throwIfAborted(options?.signal);
   if (asset.file) return asset.file;
   const hydratedFile = await ensureAssetFileLoaded(asset.id);
+  throwIfAborted(options?.signal);
   if (hydratedFile) return hydratedFile;
 
-  const response = await fetch(asset.src);
+  const response = await fetch(asset.src, { signal: options?.signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch source asset file (${response.status})`);
   }
   const blob = await response.blob();
+  throwIfAborted(options?.signal);
   return new File([blob], asset.name, {
     type: blob.type || (asset.type === "audio" ? "audio/wav" : "video/mp4"),
     lastModified: Date.now(),
   });
 }
 
-async function getOrRegisterSamAudioSource(asset: Asset): Promise<string> {
+async function getOrRegisterSamAudioSource(
+  asset: Asset,
+  options?: { signal?: AbortSignal },
+): Promise<string> {
   const cached = samAudioSourceRegistrationCache.get(asset.hash);
   if (cached) return cached;
-  const promise = resolveAssetFile(asset)
-    .then((file) => registerSourceAudio(file, asset.hash))
+  const promise = resolveAssetFile(asset, options)
+    .then((file) => registerSourceAudio(file, asset.hash, options))
     .then((registration) => registration.sourceId)
     .catch((error) => {
       samAudioSourceRegistrationCache.delete(asset.hash);
@@ -73,11 +104,14 @@ async function getOrRegisterSamAudioSource(asset: Asset): Promise<string> {
   return promise;
 }
 
-async function getOrRegisterSam2Source(asset: Asset): Promise<string> {
+async function getOrRegisterSam2Source(
+  asset: Asset,
+  options?: { signal?: AbortSignal },
+): Promise<string> {
   const cached = sam2SourceRegistrationCache.get(asset.hash);
   if (cached) return cached;
-  const promise = resolveAssetFile(asset)
-    .then((file) => registerSourceVideo(file, asset.hash))
+  const promise = resolveAssetFile(asset, options)
+    .then((file) => registerSourceVideo(file, asset.hash, options))
     .then((registration) => registration.sourceId)
     .catch((error) => {
       sam2SourceRegistrationCache.delete(asset.hash);
@@ -147,7 +181,11 @@ export function useSamAudioPanel() {
     "idle" | "checking" | "available" | "unavailable"
   >("idle");
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [operation, setOperation] = useState<SamAudioOperationState | null>(null);
+  const [cancelRequested, setCancelRequested] = useState(false);
   const runIdRef = useRef(0);
+  const operationAbortRef = useRef<AbortController | null>(null);
+  const activeJobIdRef = useRef<string | null>(null);
 
   const {
     promptText,
@@ -194,23 +232,32 @@ export function useSamAudioPanel() {
     timelinePresentationData.tracks,
   ]);
   const canUseSpanPrompt = spanAnchors !== undefined;
-  const isBusy =
+  const backendBusy =
     jobStatus?.status === "queued" ||
     jobStatus?.status === "running" ||
-    (activeJobId !== null && jobStatus?.status !== "done" && jobStatus?.status !== "error");
+    (activeJobId !== null &&
+      jobStatus?.status !== "done" &&
+      jobStatus?.status !== "error" &&
+      jobStatus?.status !== "cancelled");
+  const isBusy =
+    operation !== null || backendBusy;
+  const progress = operation?.progress ?? jobStatus?.progress ?? 0;
+  const statusMessage =
+    operation?.message ?? jobStatus?.message ?? jobStatus?.status ?? "queued";
 
-  const ensureSamAudioAvailable = useCallback(async (): Promise<boolean> => {
+  const checkSamAudioAvailability = useCallback(async (): Promise<boolean> => {
     setAvailability("checking");
     setAvailabilityError(null);
     try {
-      const status = await getRuntimeStatus();
-      if (status.sam_audio?.status === "available") {
+      const health = await getSamAudioHealth();
+      const runtime = health.runtime;
+      if (runtime?.ready) {
         setAvailability("available");
         return true;
       }
       setAvailability("unavailable");
       setAvailabilityError(
-        status.sam_audio?.error ?? "SAM-Audio is unavailable.",
+        runtime?.error ?? "No SAM-Audio model configured.",
       );
       return false;
     } catch (availabilityCheckError) {
@@ -224,10 +271,28 @@ export function useSamAudioPanel() {
     }
   }, []);
 
+  const ensureSamAudioAvailable = useCallback(async (): Promise<boolean> => {
+    if (availability === "available") {
+      return true;
+    }
+    return checkSamAudioAvailability();
+  }, [availability, checkSamAudioAvailability]);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void ensureSamAudioAvailable();
-  }, [ensureSamAudioAvailable]);
+    void checkSamAudioAvailability();
+  }, [checkSamAudioAvailability]);
+
+  useEffect(() => {
+    activeJobIdRef.current = activeJobId;
+  }, [activeJobId]);
+
+  useEffect(
+    () => () => {
+      operationAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const insertSplitClip = useCallback(
     (args: {
@@ -260,17 +325,35 @@ export function useSamAudioPanel() {
   );
 
   const startSeparation = useCallback(async () => {
+    if (isBusy) return;
+
     const runId = runIdRef.current + 1;
     runIdRef.current = runId;
+    const abortController = new AbortController();
+    operationAbortRef.current?.abort();
+    operationAbortRef.current = abortController;
+    activeJobIdRef.current = null;
+    setCancelRequested(false);
+    if (availability !== "available") {
+      setOperation({
+        message: "Checking SAM-Audio availability",
+        progress: 0.03,
+      });
+    }
     setError(null);
     resetJob();
 
     try {
       if (!(await ensureSamAudioAvailable())) return;
+      throwIfAborted(abortController.signal);
       if (!selectedClip || !isAudioCapableClip(selectedClip) || !selectedAsset) {
         throw new Error("Select an audio or video clip with audio first.");
       }
 
+      setOperation({
+        message: "Preparing prompt and source window",
+        progress: 0.08,
+      });
       const presentationContext = {
         tracks: useTimelineStore.getState().tracks,
         clips: useTimelineStore.getState().clips,
@@ -293,16 +376,31 @@ export function useSamAudioPanel() {
         throw new Error("Add a text, span, or visual prompt first.");
       }
 
-      const sourceId = await getOrRegisterSamAudioSource(selectedAsset);
+      setOperation({
+        message: "Registering source audio with SAM-Audio",
+        progress: 0.14,
+      });
+      const sourceId = await getOrRegisterSamAudioSource(selectedAsset, {
+        signal: abortController.signal,
+      });
+      throwIfAborted(abortController.signal);
+
       let visualPrompt: { sam2SourceId: string; sam2MaskId: string } | null = null;
       if (hasVisual && generatedSam2Mask) {
         if (selectedAsset.type !== "video") {
           throw new Error("Visual prompts require a video source clip.");
         }
+        setOperation({
+          message: "Registering SAM2 visual prompt",
+          progress: 0.20,
+        });
         visualPrompt = {
-          sam2SourceId: await getOrRegisterSam2Source(selectedAsset),
+          sam2SourceId: await getOrRegisterSam2Source(selectedAsset, {
+            signal: abortController.signal,
+          }),
           sam2MaskId: generatedSam2Mask.maskId,
         };
+        throwIfAborted(abortController.signal);
       }
 
       const prompt = createSamAudioPromptPayload({
@@ -316,13 +414,33 @@ export function useSamAudioPanel() {
         1,
         Math.round(selectedClip.croppedSourceDuration || selectedClip.timelineDuration),
       );
+      const startTicks = Math.max(0, Math.round(selectedClip.offset || 0));
+      setOperation({
+        message: "Submitting SAM-Audio separation job",
+        progress: 0.24,
+      });
       const { jobId } = await submitSeparationJob({
         sourceId,
-        startTicks: Math.max(0, Math.round(selectedClip.offset || 0)),
+        startTicks,
         durationTicks,
         prompt,
+      }, {
+        signal: abortController.signal,
       });
+      throwIfAborted(abortController.signal);
+      activeJobIdRef.current = jobId;
       setActiveJob(jobId);
+      setJobStatus({
+        jobId,
+        status: "queued",
+        progress: 0,
+        message: "Waiting for SAM-Audio worker",
+        error: null,
+        sourceId,
+        startTicks,
+        durationTicks,
+      });
+      setOperation(null);
 
       let status: SamAudioJobStatus;
       do {
@@ -335,13 +453,25 @@ export function useSamAudioPanel() {
       if (status.status === "error") {
         throw new Error(status.error ?? "SAM-Audio separation failed.");
       }
+      if (status.status === "cancelled") {
+        return;
+      }
 
+      setOperation({
+        message: "Downloading separated stems",
+        progress: 0.86,
+      });
       const [target, residual] = await Promise.all([
-        fetchStem(jobId, "target"),
-        fetchStem(jobId, "residual"),
+        fetchStem(jobId, "target", { signal: abortController.signal }),
+        fetchStem(jobId, "residual", { signal: abortController.signal }),
       ]);
       if (runIdRef.current !== runId) return;
+      throwIfAborted(abortController.signal);
 
+      setOperation({
+        message: "Registering separated stems as assets",
+        progress: 0.94,
+      });
       const targetAsset = await addLocalAsset(
         buildStemFile(target.blob, selectedAsset, "target"),
         {
@@ -350,7 +480,7 @@ export function useSamAudioPanel() {
           sourceAssetId: selectedAsset.id,
           sourceClipId: selectedClip.id,
           jobId,
-          startTicks: Math.max(0, Math.round(selectedClip.offset || 0)),
+          startTicks,
           durationTicks: target.durationTicks || durationTicks,
         },
         undefined,
@@ -364,7 +494,7 @@ export function useSamAudioPanel() {
           sourceAssetId: selectedAsset.id,
           sourceClipId: selectedClip.id,
           jobId,
-          startTicks: Math.max(0, Math.round(selectedClip.offset || 0)),
+          startTicks,
           durationTicks: residual.durationTicks || durationTicks,
         },
         undefined,
@@ -381,17 +511,29 @@ export function useSamAudioPanel() {
         durationTicks: target.durationTicks || durationTicks,
       });
     } catch (separationError) {
+      if (isAbortError(separationError) || runIdRef.current !== runId) {
+        return;
+      }
       setError(
         separationError instanceof Error
           ? separationError.message
           : "SAM-Audio separation failed.",
       );
+    } finally {
+      if (runIdRef.current === runId) {
+        operationAbortRef.current = null;
+        activeJobIdRef.current = null;
+        setOperation(null);
+        setCancelRequested(false);
+      }
     }
   }, [
     addLocalAsset,
+    availability,
     ensureSamAudioAvailable,
     generatedSam2Mask,
     insertSplitClip,
+    isBusy,
     projectFps,
     promptText,
     resetJob,
@@ -403,6 +545,44 @@ export function useSamAudioPanel() {
     spanSelection,
     useSpanPrompt,
     useVisualPrompt,
+  ]);
+
+  const cancelSeparation = useCallback(async () => {
+    if (!isBusy || cancelRequested) return;
+
+    setCancelRequested(true);
+    const jobId = activeJobIdRef.current ?? activeJobId;
+    if (!jobId) {
+      runIdRef.current += 1;
+      operationAbortRef.current?.abort();
+      operationAbortRef.current = null;
+      activeJobIdRef.current = null;
+      resetJob();
+      setOperation(null);
+      setCancelRequested(false);
+      return;
+    }
+
+    try {
+      setOperation(null);
+      const status = await cancelSeparationJob(jobId);
+      setJobStatus(status);
+    } catch (cancelError) {
+      setError(
+        cancelError instanceof Error
+          ? `Cancel failed: ${cancelError.message}`
+          : "Cancel failed.",
+      );
+    } finally {
+      setCancelRequested(false);
+    }
+  }, [
+    activeJobId,
+    cancelRequested,
+    isBusy,
+    resetJob,
+    setError,
+    setJobStatus,
   ]);
 
   return {
@@ -420,11 +600,18 @@ export function useSamAudioPanel() {
     jobStatus,
     error,
     isBusy,
-    progress: jobStatus?.progress ?? 0,
+    canCancel:
+      isBusy &&
+      !cancelRequested &&
+      jobStatus?.status !== "cancelled" &&
+      jobStatus?.cancelRequested !== true,
+    progress,
+    statusMessage,
     setPromptText,
     setUseSpanPrompt,
     setUseVisualPrompt,
     startSeparation,
-    refreshAvailability: ensureSamAudioAvailable,
+    cancelSeparation,
+    refreshAvailability: checkSamAudioAvailability,
   };
 }

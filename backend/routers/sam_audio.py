@@ -101,6 +101,14 @@ async def get_sam_audio_job(job_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_sam_audio_job(job_id: str) -> dict[str, Any]:
+    try:
+        return sam_audio_service.cancel_job(job_id).to_dict()
+    except SamAudioJobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/jobs/{job_id}/stems/{stem}")
 async def get_sam_audio_stem(
     job_id: str,

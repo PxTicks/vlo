@@ -147,3 +147,27 @@ def test_job_lifecycle_completes_and_fetches_stems(
 
     target_bytes_again, _ = sam_audio_service.get_job_stem(job.job_id, "target")
     assert target_bytes_again == stem_bytes
+
+
+def test_cancel_queued_job_removes_it_from_queue() -> None:
+    sam_audio_service._reset_jobs_for_tests()
+    job = sam_audio_service.SamAudioJob(
+        job_id="queued-job",
+        source_id="source",
+        start_ticks=0,
+        duration_ticks=20,
+        prompt={"text": "tone"},
+    )
+
+    with sam_audio_service._queue_condition:
+        sam_audio_service._jobs[job.job_id] = job
+        sam_audio_service._queue.append(job.job_id)
+
+    cancelled = sam_audio_service.cancel_job(job.job_id)
+
+    assert cancelled.status == "cancelled"
+    assert cancelled.cancel_requested is True
+    assert cancelled.progress == 1.0
+    assert cancelled.message == "Cancelled"
+    with sam_audio_service._queue_condition:
+        assert job.job_id not in sam_audio_service._queue

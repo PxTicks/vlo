@@ -9,7 +9,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { GraphicEq, CallSplit } from "@mui/icons-material";
+import { GraphicEq, CallSplit, Cancel } from "@mui/icons-material";
 import { SamAudioModelDownloadOverlay } from "./components/SamAudioModelDownloadOverlay";
 import { useSamAudioPanel } from "./hooks/useSamAudioPanel";
 
@@ -53,7 +53,14 @@ export const SamAudioPanel = memo(function SamAudioPanel() {
         </Alert>
       ) : null}
 
-      {panel.availability === "checking" ? <LinearProgress /> : null}
+      {panel.availability === "checking" ? (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <LinearProgress />
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            Checking local SAM-Audio model files
+          </Typography>
+        </Box>
+      ) : null}
 
       <TextField
         label="Text prompt"
@@ -107,7 +114,7 @@ export const SamAudioPanel = memo(function SamAudioPanel() {
             value={Math.round(panel.progress * 100)}
           />
           <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            {panel.jobStatus?.message ?? panel.jobStatus?.status ?? "queued"}
+            {panel.statusMessage}
           </Typography>
         </Box>
       ) : null}
@@ -117,17 +124,33 @@ export const SamAudioPanel = memo(function SamAudioPanel() {
         <Alert severity="warning">{panel.availabilityError}</Alert>
       ) : null}
 
-      <Button
-        variant="contained"
-        startIcon={<CallSplit />}
-        onClick={() => {
-          void panel.startSeparation();
-        }}
-        disabled={disabled}
-        sx={{ textTransform: "none" }}
-      >
-        Isolate Sound
-      </Button>
+      <Box sx={{ display: "flex", gap: 1 }}>
+        <Button
+          variant="contained"
+          startIcon={<CallSplit />}
+          onClick={() => {
+            void panel.startSeparation();
+          }}
+          disabled={disabled}
+          sx={{ flex: 1, textTransform: "none" }}
+        >
+          Isolate Sound
+        </Button>
+        {panel.isBusy ? (
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<Cancel />}
+            onClick={() => {
+              void panel.cancelSeparation();
+            }}
+            disabled={!panel.canCancel}
+            sx={{ textTransform: "none" }}
+          >
+            Cancel
+          </Button>
+        ) : null}
+      </Box>
     </Box>
   );
 });

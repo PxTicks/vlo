@@ -28,10 +28,11 @@ export interface SamAudioJobRequest {
 
 export interface SamAudioJobStatus {
   jobId: string;
-  status: "queued" | "running" | "done" | "error";
+  status: "queued" | "running" | "done" | "error" | "cancelled";
   progress: number;
   message?: string | null;
   error: string | null;
+  cancelRequested?: boolean;
   sourceId: string;
   startTicks: number;
   durationTicks: number;
@@ -45,6 +46,21 @@ export interface SamAudioStemResponse {
   sampleRate: number;
   durationTicks: number;
   predictedSpans: Array<Array<["+" | "-", number, number]>> | null;
+}
+
+export interface SamAudioHealthResponse {
+  status: string;
+  runtime?: {
+    ready?: boolean;
+    error?: string | null;
+    discoveredModels?: unknown[];
+    modelLoaded?: boolean;
+  };
+  cacheDir?: string;
+  modelDirs?: string[];
+  optionalModels?: boolean;
+  queuedJobs?: number;
+  runningJobs?: number;
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
@@ -84,6 +100,7 @@ function parseSpansHeader(
 export async function registerSourceAudio(
   file: File,
   sourceHash: string,
+  options?: { signal?: AbortSignal },
 ): Promise<SamAudioSourceRegistration> {
   const formData = new FormData();
   formData.append("audio", file);
@@ -92,6 +109,7 @@ export async function registerSourceAudio(
   const response = await fetch(`${SAM_AUDIO_API}/sources`, {
     method: "POST",
     body: formData,
+    signal: options?.signal,
   });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -101,11 +119,13 @@ export async function registerSourceAudio(
 
 export async function submitSeparationJob(
   request: SamAudioJobRequest,
+  options?: { signal?: AbortSignal },
 ): Promise<{ jobId: string }> {
   const response = await fetch(`${SAM_AUDIO_API}/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
+    signal: options?.signal,
   });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -121,11 +141,26 @@ export async function pollJob(jobId: string): Promise<SamAudioJobStatus> {
   return (await response.json()) as SamAudioJobStatus;
 }
 
+export async function cancelSeparationJob(
+  jobId: string,
+): Promise<SamAudioJobStatus> {
+  const response = await fetch(`${SAM_AUDIO_API}/jobs/${jobId}/cancel`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as SamAudioJobStatus;
+}
+
 export async function fetchStem(
   jobId: string,
   stem: "target" | "residual",
+  options?: { signal?: AbortSignal },
 ): Promise<SamAudioStemResponse> {
-  const response = await fetch(`${SAM_AUDIO_API}/jobs/${jobId}/stems/${stem}`);
+  const response = await fetch(`${SAM_AUDIO_API}/jobs/${jobId}/stems/${stem}`, {
+    signal: options?.signal,
+  });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
@@ -139,10 +174,10 @@ export async function fetchStem(
   };
 }
 
-export async function getSamAudioHealth(): Promise<Record<string, unknown>> {
+export async function getSamAudioHealth(): Promise<SamAudioHealthResponse> {
   const response = await fetch(`${SAM_AUDIO_API}/health`);
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
-  return (await response.json()) as Record<string, unknown>;
+  return (await response.json()) as SamAudioHealthResponse;
 }

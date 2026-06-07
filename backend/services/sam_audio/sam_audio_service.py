@@ -46,7 +46,7 @@ HF_CACHE_DIR = SAM_AUDIO_CACHE_DIR / "hf"
 for _dir in (SOURCES_DIR, METADATA_DIR, STEMS_DIR, HF_CACHE_DIR):
     _dir.mkdir(parents=True, exist_ok=True)
 
-JobStatus = Literal["queued", "running", "done", "error"]
+JobStatus = Literal["queued", "running", "done", "error", "cancelled"]
 StemKind = Literal["target", "residual"]
 Anchor = tuple[str, float, float]
 logger = logging.getLogger(__name__)
@@ -70,6 +70,10 @@ class SamAudioJobNotFoundError(KeyError):
 
 class SamAudioJobNotReadyError(RuntimeError):
     """Raised when a stem is requested before a job has completed."""
+
+
+class _SamAudioJobCancelled(RuntimeError):
+    """Internal control-flow exception for cooperative job cancellation."""
 
 
 class SamAudioPrompt(TypedDict, total=False):
@@ -143,6 +147,7 @@ class SamAudioJob:
     updated_at: float = field(default_factory=time.time)
     result: SamAudioSeparationResult | None = None
     fetched_stems: set[StemKind] = field(default_factory=set)
+    cancel_requested: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -151,6 +156,7 @@ class SamAudioJob:
             "progress": self.progress,
             "message": self.message,
             "error": self.error,
+            "cancelRequested": self.cancel_requested,
             "sourceId": self.source_id,
             "startTicks": self.start_ticks,
             "durationTicks": self.duration_ticks,
@@ -911,20 +917,30 @@ def _set_job_state(
         job.updated_at = time.time()
 
 
+def _raise_if_job_cancelled(job: SamAudioJob) -> None:
+    with _registry_lock:
+        cancelled = job.cancel_requested or job.status == "cancelled"
+    if cancelled:
+        raise _SamAudioJobCancelled("SAM-Audio job cancelled")
+
+
 def _execute_job(job: SamAudioJob) -> None:
     try:
         logger.info("SAM-Audio job %s started", job.job_id)
+        _raise_if_job_cancelled(job)
         _set_job_state(
             job,
             status="running",
             progress=0.05,
             message="Preparing source audio window",
         )
+        _raise_if_job_cancelled(job)
         window_audio = _extract_source_window(
             job.source_id,
             job.start_ticks,
             job.duration_ticks,
         )
+        _raise_if_job_cancelled(job)
         _set_job_state(
             job,
             progress=0.20,
@@ -936,6 +952,7 @@ def _execute_job(job: SamAudioJob) -> None:
             start_ticks=job.start_ticks,
             duration_ticks=job.duration_ticks,
         )
+        _raise_if_job_cancelled(job)
         _set_job_state(
             job,
             status="done",
@@ -944,6 +961,14 @@ def _execute_job(job: SamAudioJob) -> None:
             result=result,
         )
         logger.info("SAM-Audio job %s completed", job.job_id)
+    except _SamAudioJobCancelled:
+        logger.info("SAM-Audio job %s cancelled", job.job_id)
+        _set_job_state(
+            job,
+            status="cancelled",
+            progress=1.0,
+            message="Cancelled",
+        )
     except Exception as exc:  # noqa: BLE001 - worker must surface all errors
         logger.exception("SAM-Audio job %s failed", job.job_id)
         _set_job_state(
@@ -960,7 +985,7 @@ def _evict_finished_jobs_locked() -> None:
     removable = [
         job_id
         for job_id, job in _jobs.items()
-        if job.status in ("done", "error")
+        if job.status in ("done", "error", "cancelled")
         and now - job.updated_at > FINISHED_JOB_TTL_SECONDS
     ]
     for job_id in removable:
@@ -973,7 +998,7 @@ def _evict_finished_jobs_locked() -> None:
         (
             job
             for job in _jobs.values()
-            if job.status in ("done", "error")
+            if job.status in ("done", "error", "cancelled")
         ),
         key=lambda job: job.updated_at,
     )
@@ -1035,6 +1060,32 @@ def enqueue_separation_job(
         _queue.append(job.job_id)
         _queue_condition.notify()
     return job
+
+
+def cancel_job(job_id: str) -> SamAudioJob:
+    with _queue_condition:
+        _evict_finished_jobs_locked()
+        job = _jobs.get(job_id)
+        if job is None:
+            raise SamAudioJobNotFoundError(f"SAM-Audio job '{job_id}' was not found")
+
+        if job.status in ("done", "error", "cancelled"):
+            return job
+
+        job.cancel_requested = True
+        if job.status == "queued":
+            try:
+                _queue.remove(job_id)
+            except ValueError:
+                pass
+            job.status = "cancelled"
+            job.progress = 1.0
+            job.message = "Cancelled"
+        else:
+            job.message = "Cancellation requested; finishing current step"
+        job.updated_at = time.time()
+        _queue_condition.notify_all()
+        return job
 
 
 def get_job(job_id: str) -> SamAudioJob | None:

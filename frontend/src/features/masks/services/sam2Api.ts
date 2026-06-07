@@ -90,6 +90,7 @@ function parseNumericHeader(
 export async function registerSourceVideo(
   file: File,
   sourceHash: string,
+  options?: { signal?: AbortSignal },
 ): Promise<Sam2SourceRegistration> {
   const formData = new FormData();
   formData.append("video", file);
@@ -98,6 +99,7 @@ export async function registerSourceVideo(
   const response = await fetch(`${SAM2_API}/sources`, {
     method: "POST",
     body: formData,
+    signal: options?.signal,
   });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));

@@ -109,8 +109,18 @@ def test_job_lifecycle_completes_and_fetches_stems(
 
     stem_bytes = encode_wav_bytes(np.zeros(10, dtype=np.float32), SAM_AUDIO_SAMPLE_RATE)
 
-    def fake_run_separation(window_audio, prompt, start_ticks, duration_ticks):
-        del window_audio, prompt, start_ticks
+    def fake_run_separation(
+        window_audio,
+        prompt,
+        start_ticks,
+        duration_ticks,
+        *,
+        timings=None,
+        on_progress=None,
+    ):
+        del window_audio, prompt, start_ticks, on_progress
+        if timings is not None:
+            timings["modelSeparateSec"] = 0.001
         return SamAudioSeparationResult(
             target_wav_bytes=stem_bytes,
             residual_wav_bytes=stem_bytes,
@@ -137,6 +147,7 @@ def test_job_lifecycle_completes_and_fetches_stems(
     current = sam_audio_service.get_job_or_raise(job.job_id)
     assert current.status == "done"
     assert current.progress == 1.0
+    assert current.to_dict()["timings"]["modelSeparateSec"] == 0.001
 
     target_bytes, result = sam_audio_service.get_job_stem(job.job_id, "target")
     assert target_bytes == stem_bytes

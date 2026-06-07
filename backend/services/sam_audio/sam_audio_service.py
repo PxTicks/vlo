@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from importlib.machinery import ModuleSpec
 from types import ModuleType
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Callable, Literal, TypedDict
 
 import av
 import numpy as np
@@ -50,6 +50,13 @@ JobStatus = Literal["queued", "running", "done", "error", "cancelled"]
 StemKind = Literal["target", "residual"]
 Anchor = tuple[str, float, float]
 logger = logging.getLogger(__name__)
+ProgressCallback = Callable[[float, str], None]
+SKIPPABLE_SAM_AUDIO_MISSING_PREFIXES = (
+    "text_encoder",
+    "visual_ranker",
+    "text_ranker",
+    "span_predictor",
+)
 
 
 class SamAudioConfigError(RuntimeError):
@@ -148,6 +155,7 @@ class SamAudioJob:
     result: SamAudioSeparationResult | None = None
     fetched_stems: set[StemKind] = field(default_factory=set)
     cancel_requested: bool = False
+    timings: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -161,6 +169,8 @@ class SamAudioJob:
             "startTicks": self.start_ticks,
             "durationTicks": self.duration_ticks,
         }
+        if self.timings:
+            payload["timings"] = self.timings
         if self.result is not None:
             payload["sampleRate"] = self.result.sample_rate
             payload["resultDurationTicks"] = self.result.duration_ticks
@@ -178,6 +188,9 @@ class _SamAudioRuntime:
         self._resolved_device: str | None = None
         self._selected_model_ref: str | None = None
         self._lock = threading.Lock()
+
+    def is_loaded(self) -> bool:
+        return self._model is not None and self._processor is not None
 
     def _cuda_available(self) -> bool:
         try:
@@ -345,12 +358,102 @@ class _SamAudioRuntime:
 
         return SAMAudio, SAMAudioProcessor
 
-    def _load_for_device(self, device: str) -> tuple[Any, Any, str]:
+    def _load_model_from_pretrained(
+        self,
+        SAMAudio: Any,
+        model_ref: str,
+        model_kwargs: dict[str, Any],
+        timings: dict[str, float] | None,
+        on_progress: ProgressCallback | None,
+    ) -> Any:
+        try:
+            import torch  # type: ignore
+            from huggingface_hub import snapshot_download  # type: ignore
+        except Exception as exc:  # pragma: no cover - environment dependent
+            raise SamAudioConfigError(
+                "torch and huggingface_hub are required to load SAM-Audio"
+            ) from exc
+
+        if not hasattr(SAMAudio, "config_cls"):
+            load_started_at = time.perf_counter()
+            model = SAMAudio.from_pretrained(
+                model_ref,
+                cache_dir=str(HF_CACHE_DIR),
+                map_location="cpu",
+                **model_kwargs,
+            )
+            _record_timing(timings, "modelFromPretrainedSec", load_started_at)
+            return model
+
+        if on_progress is not None:
+            on_progress(0.26, "Resolving SAM-Audio checkpoint")
+        snapshot_started_at = time.perf_counter()
+        if Path(model_ref).is_dir():
+            cached_model_dir = Path(model_ref)
+        else:
+            cached_model_dir = Path(
+                snapshot_download(
+                    repo_id=model_ref,
+                    revision=getattr(SAMAudio, "revision", None),
+                    cache_dir=str(HF_CACHE_DIR),
+                    force_download=False,
+                    proxies=None,
+                    resume_download=False,
+                    token=None,
+                    local_files_only=False,
+                )
+            )
+        _record_timing(timings, "modelSnapshotResolveSec", snapshot_started_at)
+
+        if on_progress is not None:
+            on_progress(0.27, "Reading SAM-Audio config")
+        config_started_at = time.perf_counter()
+        with open(cached_model_dir / "config.json") as config_file:
+            config_payload = json.load(config_file)
+        for key, value in model_kwargs.items():
+            if key in config_payload:
+                config_payload[key] = value
+        config = SAMAudio.config_cls(**config_payload)
+        _record_timing(timings, "configReadSec", config_started_at)
+
+        if on_progress is not None:
+            on_progress(0.29, "Constructing SAM-Audio modules")
+        construct_started_at = time.perf_counter()
+        model = SAMAudio(config)
+        _record_timing(timings, "modelConstructSec", construct_started_at)
+
+        if on_progress is not None:
+            on_progress(0.32, "Loading SAM-Audio checkpoint tensors")
+        state_dict = _load_torch_checkpoint(
+            torch,
+            cached_model_dir / "checkpoint.pt",
+            timings,
+        )
+
+        if on_progress is not None:
+            on_progress(0.36, "Applying SAM-Audio checkpoint tensors")
+        _apply_sam_audio_state_dict(
+            torch,
+            model,
+            state_dict,
+            timings,
+        )
+        del state_dict
+        return model
+
+    def _load_for_device(
+        self,
+        device: str,
+        timings: dict[str, float] | None = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> tuple[Any, Any, str]:
+        dependency_started_at = time.perf_counter()
         self._ensure_sam_audio_pythonpath(include_default_checkout=False)
         self._ensure_xformers_ops_importable()
         self._ensure_torchcodec_decoders_importable()
         try:
             SAMAudio, SAMAudioProcessor = self._import_sam_audio_classes()
+            _record_timing(timings, "dependencyImportSec", dependency_started_at)
         except Exception as exc:  # pragma: no cover - environment dependent
             raise SamAudioConfigError(
                 "Failed to import SAM-Audio. The sam_audio package may be missing, "
@@ -358,7 +461,9 @@ class _SamAudioRuntime:
                 f"SAM-Audio's transitive dependencies failed to import: {exc}"
             ) from exc
 
+        model_ref_started_at = time.perf_counter()
         model_ref = self._resolve_model_ref()
+        _record_timing(timings, "modelRefResolveSec", model_ref_started_at)
         model_kwargs: dict[str, Any] = {}
         if not SAM_AUDIO_LOAD_OPTIONAL_MODELS:
             # SAM-Audio's full config eagerly constructs rankers/span predictors that
@@ -377,27 +482,18 @@ class _SamAudioRuntime:
             "enabled" if SAM_AUDIO_LOAD_OPTIONAL_MODELS else "disabled",
         )
         try:
-            if hasattr(SAMAudio, "_from_pretrained"):
-                model = SAMAudio._from_pretrained(
-                    model_id=model_ref,
-                    cache_dir=str(HF_CACHE_DIR),
-                    force_download=False,
-                    proxies=None,
-                    resume_download=False,
-                    local_files_only=False,
-                    token=None,
-                    map_location="cpu",
-                    revision=None,
-                    **model_kwargs,
-                )
-            else:
-                model = SAMAudio.from_pretrained(
-                    model_ref,
-                    cache_dir=str(HF_CACHE_DIR),
-                    map_location="cpu",
-                    **model_kwargs,
-                )
+            model = self._load_model_from_pretrained(
+                SAMAudio,
+                model_ref,
+                model_kwargs,
+                timings,
+                on_progress,
+            )
+            if on_progress is not None:
+                on_progress(0.38, "Loading SAM-Audio processor")
+            processor_started_at = time.perf_counter()
             processor = SAMAudioProcessor.from_pretrained(model_ref)
+            _record_timing(timings, "processorLoadSec", processor_started_at)
         except Exception as exc:  # pragma: no cover - environment/model dependent
             raise SamAudioConfigError(
                 "Failed to load SAM-Audio model or one of its first-load "
@@ -411,13 +507,21 @@ class _SamAudioRuntime:
             ) from exc
 
         try:
+            if on_progress is not None:
+                on_progress(0.39, f"Moving SAM-Audio model to {device}")
+            move_started_at = time.perf_counter()
             model = model.eval().to(device)
+            _record_timing(timings, "moveToDeviceSec", move_started_at)
         except Exception as exc:  # pragma: no cover - environment/device dependent
             raise SamAudioConfigError(f"Failed to move SAM-Audio model to {device}") from exc
 
         return model, processor, model_ref
 
-    def get(self) -> tuple[Any, Any, str]:
+    def get(
+        self,
+        timings: dict[str, float] | None = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> tuple[Any, Any, str]:
         if self._model is not None and self._processor is not None:
             return self._model, self._processor, self._resolved_device or "cpu"
 
@@ -430,7 +534,11 @@ class _SamAudioRuntime:
             errors: list[str] = []
             for device in candidate_devices:
                 try:
-                    model, processor, model_ref = self._load_for_device(device)
+                    model, processor, model_ref = self._load_for_device(
+                        device,
+                        timings=timings,
+                        on_progress=on_progress,
+                    )
                     self._model = model
                     self._processor = processor
                     self._resolved_device = device
@@ -810,12 +918,99 @@ def _prediction_spans_from_batch(batch: Any) -> list[list[Anchor]] | None:
         return None
 
 
+def _record_timing(timings: dict[str, float] | None, key: str, started_at: float) -> None:
+    if timings is not None:
+        timings[key] = round(time.perf_counter() - started_at, 3)
+
+
+def _sync_torch_device(torch_module: Any, device: str) -> None:
+    if str(device).startswith("cuda") and hasattr(torch_module, "cuda"):
+        try:
+            torch_module.cuda.synchronize(device)
+        except Exception:
+            pass
+
+
+def _load_torch_checkpoint(
+    torch_module: Any,
+    checkpoint_path: Path,
+    timings: dict[str, float] | None,
+) -> Any:
+    checkpoint_started_at = time.perf_counter()
+    try:
+        state_dict = torch_module.load(
+            checkpoint_path,
+            weights_only=True,
+            map_location="cpu",
+            mmap=True,
+        )
+        if timings is not None:
+            timings["checkpointMmap"] = 1.0
+    except (TypeError, ValueError, RuntimeError) as exc:
+        logger.warning(
+            "Failed to mmap SAM-Audio checkpoint %s; falling back to regular torch.load: %s",
+            checkpoint_path,
+            exc,
+        )
+        state_dict = torch_module.load(
+            checkpoint_path,
+            weights_only=True,
+            map_location="cpu",
+        )
+        if timings is not None:
+            timings["checkpointMmap"] = 0.0
+    _record_timing(timings, "checkpointLoadSec", checkpoint_started_at)
+    return state_dict
+
+
+def _apply_sam_audio_state_dict(
+    torch_module: Any,
+    model: Any,
+    state_dict: Any,
+    timings: dict[str, float] | None,
+) -> None:
+    state_dict_started_at = time.perf_counter()
+    try:
+        incompatible = torch_module.nn.Module.load_state_dict(
+            model,
+            state_dict,
+            strict=False,
+            assign=True,
+        )
+        if timings is not None:
+            timings["stateDictAssign"] = 1.0
+    except TypeError:
+        incompatible = torch_module.nn.Module.load_state_dict(
+            model,
+            state_dict,
+            strict=False,
+        )
+        if timings is not None:
+            timings["stateDictAssign"] = 0.0
+
+    missing_keys = [
+        key
+        for key in incompatible.missing_keys
+        if not key.startswith(SKIPPABLE_SAM_AUDIO_MISSING_PREFIXES)
+    ]
+    unexpected_keys = list(incompatible.unexpected_keys)
+    if missing_keys or unexpected_keys:
+        raise RuntimeError(
+            f"Missing keys: {missing_keys}, unexpected_keys: {unexpected_keys}"
+        )
+    _record_timing(timings, "stateDictApplySec", state_dict_started_at)
+
+
 def run_separation(
     window_audio: Any,
     prompt: SamAudioPrompt,
     start_ticks: int,
     duration_ticks: int,
+    *,
+    timings: dict[str, float] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> SamAudioSeparationResult:
+    total_started_at = time.perf_counter()
     anchors = _normalize_anchors(prompt.get("anchors"))
     description = (prompt.get("text") or "").strip().lower()
     predict_spans = bool(prompt.get("predictSpans", False))
@@ -835,7 +1030,20 @@ def run_separation(
             "send rerankingCandidates=1 and predictSpans=false for the lean isolate path."
         )
 
-    model, processor, device = _runtime.get()
+    runtime_loaded = _runtime.is_loaded()
+    if on_progress is not None:
+        on_progress(
+            0.25,
+            "Using loaded SAM-Audio runtime"
+            if runtime_loaded
+            else "Loading SAM-Audio model for first use",
+        )
+    runtime_started_at = time.perf_counter()
+    model, processor, device = _runtime.get(
+        timings=timings,
+        on_progress=on_progress,
+    )
+    _record_timing(timings, "runtimeLoadSec", runtime_started_at)
 
     if str(device).startswith("cpu"):
         reranking_candidates = 1
@@ -844,6 +1052,9 @@ def run_separation(
     sam2_source_id = (prompt.get("sam2SourceId") or "").strip()
     sam2_mask_id = (prompt.get("sam2MaskId") or "").strip()
     if sam2_source_id and sam2_mask_id:
+        if on_progress is not None:
+            on_progress(0.35, "Preparing visual prompt")
+        visual_started_at = time.perf_counter()
         masked_videos = _extract_visual_prompt_masked_video(
             processor=processor,
             sam2_source_id=sam2_source_id,
@@ -851,6 +1062,7 @@ def run_separation(
             start_ticks=start_ticks,
             duration_ticks=duration_ticks,
         )
+        _record_timing(timings, "visualPromptSec", visual_started_at)
 
     try:
         import torch  # type: ignore
@@ -867,24 +1079,40 @@ def run_separation(
         if masked_videos is not None:
             batch_kwargs["masked_videos"] = masked_videos
 
+        if on_progress is not None:
+            on_progress(0.40, "Preparing SAM-Audio batch")
+        batch_started_at = time.perf_counter()
         batch = processor(**batch_kwargs).to(device)
+        _sync_torch_device(torch, device)
+        _record_timing(timings, "batchPrepSec", batch_started_at)
+
+        if on_progress is not None:
+            on_progress(0.48, "Running SAM-Audio separation")
+        separate_started_at = time.perf_counter()
         with torch.inference_mode():
             result = model.separate(
                 batch,
                 predict_spans=predict_spans,
                 reranking_candidates=reranking_candidates,
             )
+        _sync_torch_device(torch, device)
+        _record_timing(timings, "modelSeparateSec", separate_started_at)
     except Exception as exc:  # pragma: no cover - model/runtime dependent
         raise SamAudioRuntimeError(f"SAM-Audio separation failed: {exc}") from exc
 
     try:
+        if on_progress is not None:
+            on_progress(0.88, "Encoding separated stems")
+        encoding_started_at = time.perf_counter()
         target_audio = _coerce_output_tensor(result.target)
         residual_audio = _coerce_output_tensor(result.residual)
         target_wav = encode_wav_bytes(target_audio, SAM_AUDIO_SAMPLE_RATE)
         residual_wav = encode_wav_bytes(residual_audio, SAM_AUDIO_SAMPLE_RATE)
+        _record_timing(timings, "encodeSec", encoding_started_at)
     except SamAudioEncodingError as exc:
         raise SamAudioRuntimeError(str(exc)) from exc
 
+    _record_timing(timings, "totalSeparationSec", total_started_at)
     return SamAudioSeparationResult(
         target_wav_bytes=target_wav,
         residual_wav_bytes=residual_wav,
@@ -944,13 +1172,19 @@ def _execute_job(job: SamAudioJob) -> None:
         _set_job_state(
             job,
             progress=0.20,
-            message="Loading SAM-Audio runtime and running separation",
+            message="Starting SAM-Audio separation",
         )
         result = run_separation(
             window_audio=window_audio,
             prompt=job.prompt,
             start_ticks=job.start_ticks,
             duration_ticks=job.duration_ticks,
+            timings=job.timings,
+            on_progress=lambda progress, message: _set_job_state(
+                job,
+                progress=progress,
+                message=message,
+            ),
         )
         _raise_if_job_cancelled(job)
         _set_job_state(
@@ -960,7 +1194,7 @@ def _execute_job(job: SamAudioJob) -> None:
             message="Separation complete",
             result=result,
         )
-        logger.info("SAM-Audio job %s completed", job.job_id)
+        logger.info("SAM-Audio job %s completed; timings=%s", job.job_id, job.timings)
     except _SamAudioJobCancelled:
         logger.info("SAM-Audio job %s cancelled", job.job_id)
         _set_job_state(

@@ -39,6 +39,7 @@ export interface SamAudioJobStatus {
   sampleRate?: number;
   resultDurationTicks?: number;
   predictedSpans?: Array<Array<["+" | "-", number, number]>>;
+  timings?: Record<string, number>;
 }
 
 export interface SamAudioStemResponse {

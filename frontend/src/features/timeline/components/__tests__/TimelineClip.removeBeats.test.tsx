@@ -15,6 +15,7 @@ const extractionState = vi.hoisted(() => ({
   mockUseAsset: vi.fn(),
   mockExtractTimelineClipAudioAsset: vi.fn(),
   mockRevealAssetInBrowser: vi.fn(),
+  mockOpenSamAudioExtractDialog: vi.fn(),
 }));
 
 vi.mock("@dnd-kit/core", () => ({
@@ -72,6 +73,17 @@ vi.mock("../../../userAssets/useAssetBrowserRevealStore", () => ({
   revealAssetInBrowser: extractionState.mockRevealAssetInBrowser,
 }));
 
+vi.mock("../../../samAudio", () => ({
+  useSamAudioExtractDialogStore: Object.assign(
+    () => extractionState.mockOpenSamAudioExtractDialog,
+    {
+      getState: () => ({
+        openForClip: extractionState.mockOpenSamAudioExtractDialog,
+      }),
+    },
+  ),
+}));
+
 const baseClip: StandardTimelineClip = {
   id: "clip_1",
   trackId: "track_1",
@@ -114,6 +126,7 @@ describe("TimelineClip Remove Beats menu", () => {
     });
     extractionState.mockExtractTimelineClipAudioAsset.mockReset();
     extractionState.mockRevealAssetInBrowser.mockReset();
+    extractionState.mockOpenSamAudioExtractDialog.mockReset();
     useInteractionStore.setState({ activeId: null, operation: null });
 
     if (!HTMLElement.prototype.setPointerCapture) {

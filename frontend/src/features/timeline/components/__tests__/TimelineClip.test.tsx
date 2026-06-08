@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TimelineClipItem } from "../TimelineClip";
 import { useTimelineStore } from "../../useTimelineStore";
@@ -33,6 +33,7 @@ const extractionState = vi.hoisted(() => ({
   mockUseAsset: vi.fn(),
   mockExtractTimelineClipAudioAsset: vi.fn(),
   mockRevealAssetInBrowser: vi.fn(),
+  mockOpenSamAudioExtractDialog: vi.fn(),
   mockThumbnailCanvas: vi.fn(),
 }));
 
@@ -110,6 +111,17 @@ vi.mock("../../../userAssets/useAssetBrowserRevealStore", () => ({
   revealAssetInBrowser: extractionState.mockRevealAssetInBrowser,
 }));
 
+vi.mock("../../../samAudio", () => ({
+  useSamAudioExtractDialogStore: Object.assign(
+    () => extractionState.mockOpenSamAudioExtractDialog,
+    {
+      getState: () => ({
+        openForClip: extractionState.mockOpenSamAudioExtractDialog,
+      }),
+    },
+  ),
+}));
+
 describe("TimelineClip Visual Geometry", () => {
   const mockClip: TimelineClipType = {
     id: "clip_1",
@@ -185,6 +197,7 @@ describe("TimelineClip Visual Geometry", () => {
     extractionState.mockExtractTimelineClipAudioAsset.mockReset();
     extractionState.mockExtractTimelineClipAudioAsset.mockResolvedValue(null);
     extractionState.mockRevealAssetInBrowser.mockReset();
+    extractionState.mockOpenSamAudioExtractDialog.mockReset();
     extractionState.mockThumbnailCanvas.mockReset();
 
     if (!HTMLElement.prototype.setPointerCapture) {
@@ -350,43 +363,15 @@ describe("TimelineClip Visual Geometry", () => {
     expect(clipElement.style.getPropertyValue("--drag-delta-w")).toBe("-50px");
   });
 
-  it("shows extract audio for clips with audio and invokes extraction for the clicked clip", async () => {
+  it("shows extract audio for clips with audio and opens the extraction dialog for the clicked clip", () => {
     render(<TimelineClipItem clip={mockClip} isOverlay={false} />);
 
     fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Extract Audio" }));
 
-    await waitFor(() => {
-      expect(
-        extractionState.mockExtractTimelineClipAudioAsset,
-      ).toHaveBeenCalledWith(
-        mockClip,
-        expect.objectContaining({ id: "track_1" }),
-      );
-    });
-  });
-
-  it("reveals the extracted audio asset in the asset browser and shows a success popup", async () => {
-    extractionState.mockExtractTimelineClipAudioAsset.mockResolvedValue({
-      id: "extracted-audio-1",
-      type: "audio",
-      name: "Test Clip-audio.m4a",
-    });
-
-    render(<TimelineClipItem clip={mockClip} isOverlay={false} />);
-
-    fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Extract Audio" }));
-
-    await waitFor(() => {
-      expect(extractionState.mockRevealAssetInBrowser).toHaveBeenCalledWith(
-        "extracted-audio-1",
-      );
-    });
-
-    expect(
-      screen.getByText("Audio Extracted to Asset Browser"),
-    ).toBeInTheDocument();
+    expect(extractionState.mockOpenSamAudioExtractDialog).toHaveBeenCalledWith(
+      mockClip.id,
+    );
   });
 
   it("does not show extract audio for audio clips", () => {

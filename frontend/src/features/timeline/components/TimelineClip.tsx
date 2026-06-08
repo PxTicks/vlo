@@ -1,7 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import {
-  Alert,
   Box,
   ButtonBase,
   ListItemIcon,
@@ -9,7 +8,6 @@ import {
   Menu,
   MenuItem,
   Paper,
-  Snackbar,
   Typography,
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -41,11 +39,10 @@ import type { MarkersComponent } from "../../../types/Components";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
 import { useAsset } from "../../userAssets/publicApi";
-import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStore";
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
-import { extractTimelineClipAudioAsset } from "../utils/clipAudioExtraction";
+import { useSamAudioExtractDialogStore } from "../../samAudio";
 import { reverseTimelineClip } from "../utils/reverseClip";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
@@ -131,9 +128,6 @@ function TimelineClipComponent({
     x: number;
     y: number;
   } | null>(null);
-  const [isExtractingAudio, setIsExtractingAudio] = useState(false);
-  const [isExtractionSnackbarOpen, setIsExtractionSnackbarOpen] =
-    useState(false);
   const [isReversingClip, setIsReversingClip] = useState(false);
   const openCompositeClip = useCompositeTimelineStore(
     (state) => state.openCompositeClip,
@@ -412,10 +406,9 @@ function TimelineClipComponent({
     }
   };
 
-  const handleExtractAudio = async () => {
+  const handleExtractAudio = () => {
     if (
       timelineClip === null ||
-      track === undefined ||
       timelineClip.type !== "video"
     ) {
       closeContextMenu();
@@ -423,28 +416,7 @@ function TimelineClipComponent({
     }
 
     closeContextMenu();
-    setIsExtractingAudio(true);
-
-    try {
-      const extractedAsset = await extractTimelineClipAudioAsset(
-        timelineClip,
-        track,
-      );
-      if (!extractedAsset) {
-        window.alert("No audio track was found for the selected clip.");
-      } else {
-        revealAssetInBrowser(extractedAsset.id);
-        setIsExtractionSnackbarOpen(true);
-      }
-    } catch (error) {
-      window.alert(
-        error instanceof Error
-          ? error.message
-          : "Failed to extract clip audio.",
-      );
-    } finally {
-      setIsExtractingAudio(false);
-    }
+    useSamAudioExtractDialogStore.getState().openForClip(timelineClip.id);
   };
 
   return (
@@ -611,16 +583,11 @@ function TimelineClipComponent({
           <ListItemText>Copy</ListItemText>
         </MenuItem>
         {canExtractAudio ? (
-          <MenuItem
-            onClick={() => void handleExtractAudio()}
-            disabled={isExtractingAudio}
-          >
+          <MenuItem onClick={handleExtractAudio}>
             <ListItemIcon>
               <GraphicEqIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>
-              {isExtractingAudio ? "Extracting Audio..." : "Extract Audio"}
-            </ListItemText>
+            <ListItemText>Extract Audio</ListItemText>
           </MenuItem>
         ) : null}
         {canReverseClip ? (
@@ -657,22 +624,6 @@ function TimelineClipComponent({
           </MenuItem>
         )}
       </Menu>
-      <Snackbar
-        open={isExtractionSnackbarOpen}
-        autoHideDuration={2500}
-        onClose={() => setIsExtractionSnackbarOpen(false)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        sx={{ zIndex: (theme) => theme.zIndex.tooltip + 1 }}
-      >
-        <Alert
-          onClose={() => setIsExtractionSnackbarOpen(false)}
-          severity="success"
-          variant="filled"
-          sx={{ width: "100%" }}
-        >
-          Audio Extracted to Asset Browser
-        </Alert>
-      </Snackbar>
     </ClipRoot>
   );
 }

@@ -88,8 +88,13 @@ describe("RightSidebarPanel", () => {
     expect(screen.getByRole("tab", { name: "Transform" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Mask" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Generate" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Audio Split" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("mock-transform-panel")).toBeInTheDocument();
-    expect(screen.queryByTestId("mock-mask-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mock-mask-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("mock-mask-panel").closest('[role="tabpanel"]'))
+      .toHaveAttribute("aria-hidden", "true");
   });
 
   it("renders Generate first so the tab order stays stable", () => {

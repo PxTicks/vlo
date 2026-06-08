@@ -5,9 +5,8 @@ import { useTimelineStore } from "../../features/timeline";
 import { TransformationPanel } from "../../features/transformations";
 import { GenerationPanel } from "../../features/generation";
 import { MaskPanel, useMaskViewStore } from "../../features/masks";
-import { SamAudioPanel } from "../../features/samAudio";
 
-type RightSidebarTab = "transform" | "mask" | "samAudio" | "generate";
+type RightSidebarTab = "transform" | "mask" | "generate";
 
 interface TabPanelProps {
   readonly active: boolean;
@@ -65,7 +64,7 @@ function RightSidebarPanelComponent() {
   // spurious setMaskTabActive(true) tick).
   const visibleTab = !hasSelection
     ? "generate"
-    : isAdjustmentSelected && (activeTab === "mask" || activeTab === "samAudio")
+    : isAdjustmentSelected && activeTab === "mask"
       ? "transform"
       : activeTab;
 
@@ -91,9 +90,6 @@ function RightSidebarPanelComponent() {
         <Tab data-testid="right-sidebar-tab-generate" label="Generate" value="generate" />
         {hasSelection && <Tab data-testid="right-sidebar-tab-transform" label="Transform" value="transform" />}
         {hasSelection && !isAdjustmentSelected && (
-          <Tab data-testid="right-sidebar-tab-sam-audio" label="Audio Split" value="samAudio" />
-        )}
-        {hasSelection && !isAdjustmentSelected && (
           <Tab data-testid="right-sidebar-tab-mask" label="Mask" value="mask" />
         )}
       </Tabs>
@@ -104,11 +100,6 @@ function RightSidebarPanelComponent() {
         {hasSelection && (
           <TabPanel active={visibleTab === "transform"}>
             <TransformationPanel />
-          </TabPanel>
-        )}
-        {hasSelection && !isAdjustmentSelected && (
-          <TabPanel active={visibleTab === "samAudio"}>
-            <SamAudioPanel />
           </TabPanel>
         )}
         {hasSelection && !isAdjustmentSelected && (

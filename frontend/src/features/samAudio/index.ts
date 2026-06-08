@@ -1,5 +1,11 @@
-export { SamAudioPanel } from "./SamAudioPanel";
-export { useSamAudioStore } from "./store/useSamAudioStore";
+export { SamAudioExtractDialog } from "./components/SamAudioExtractDialog";
+export { useSamAudioExtractDialogStore } from "./store/useSamAudioExtractDialogStore";
+export {
+  runSamAudioSeparation,
+  isSamAudioAbortError,
+  type RunSamAudioSeparationArgs,
+  type RunSamAudioSeparationResult,
+} from "./services/runSamAudioSeparation";
 export {
   createSplitAudioClips,
   createSplitAudioStemClip,

@@ -34,6 +34,7 @@ import { TimelineRuler } from "./components/TimelineRuler";
 import { TimelinePlayhead } from "./components/TimelinePlayhead";
 import { SelectionOverlay } from "./components/SelectionOverlay";
 import { FrameSelectionOverlay } from "./components/FrameSelectionOverlay";
+import { SamAudioExtractDialog } from "../samAudio";
 import { playbackClock } from "../player/services/PlaybackClock";
 import { type TimelineClip } from "../../types";
 import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
@@ -496,6 +497,7 @@ function TimelineContainerComponent({
           </Box>
         </DndContext>
       </Box>
+      <SamAudioExtractDialog />
     </Box>
   );
 }

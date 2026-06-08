@@ -11,7 +11,7 @@ import { useProjectStore } from "../../project";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
 import { registerSourceVideo } from "../../masks/services/sam2Api";
-import { createSplitAudioClip } from "../model/createSplitAudioClip";
+import { createSplitAudioStemClip } from "../model/createSplitAudioClip";
 import {
   cancelSeparationJob,
   fetchStem,
@@ -294,7 +294,7 @@ export function useSamAudioPanel() {
     [],
   );
 
-  const insertSplitClip = useCallback(
+  const insertSplitAudioClips = useCallback(
     (args: {
       sourceClip: TimelineClip;
       targetAsset: Asset;
@@ -302,26 +302,34 @@ export function useSamAudioPanel() {
       durationTicks: number;
     }) => {
       const timeline = useTimelineStore.getState();
-      const sourceTrackIndex = timeline.tracks.findIndex(
-        (track) => track.id === args.sourceClip.trackId,
-      );
-      const trackId = timeline.insertTrack(
-        sourceTrackIndex >= 0 ? sourceTrackIndex + 1 : timeline.tracks.length,
-        "audio",
-      );
-      const splitClip = createSplitAudioClip({
-        sourceClip: args.sourceClip,
-        targetAsset: args.targetAsset,
-        residualAsset: args.residualAsset,
-        durationTicks: args.durationTicks,
-        fps: projectFps,
-        trackId,
-      });
-      timeline.addClip(splitClip);
-      timeline.selectClip(splitClip.id);
-      return splitClip;
+      return timeline.addClipsOnNewTracksBelow(args.sourceClip.trackId, [
+        {
+          trackLabel: "SAM-Audio Target",
+          trackType: "audio",
+          createClip: (trackId) =>
+            createSplitAudioStemClip({
+              sourceClip: args.sourceClip,
+              asset: args.targetAsset,
+              stem: "target",
+              durationTicks: args.durationTicks,
+              trackId,
+            }),
+        },
+        {
+          trackLabel: "SAM-Audio Residual",
+          trackType: "audio",
+          createClip: (trackId) =>
+            createSplitAudioStemClip({
+              sourceClip: args.sourceClip,
+              asset: args.residualAsset,
+              stem: "residual",
+              durationTicks: args.durationTicks,
+              trackId,
+            }),
+        },
+      ]);
     },
-    [projectFps],
+    [],
   );
 
   const startSeparation = useCallback(async () => {
@@ -504,7 +512,7 @@ export function useSamAudioPanel() {
         throw new Error("Failed to register SAM-Audio stems as assets.");
       }
 
-      insertSplitClip({
+      insertSplitAudioClips({
         sourceClip: selectedClip,
         targetAsset,
         residualAsset,
@@ -532,7 +540,7 @@ export function useSamAudioPanel() {
     availability,
     ensureSamAudioAvailable,
     generatedSam2Mask,
-    insertSplitClip,
+    insertSplitAudioClips,
     isBusy,
     projectFps,
     promptText,

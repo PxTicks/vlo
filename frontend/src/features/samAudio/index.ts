@@ -1,3 +1,12 @@
 export { SamAudioPanel } from "./SamAudioPanel";
 export { useSamAudioStore } from "./store/useSamAudioStore";
-export { createSplitAudioClip } from "./model/createSplitAudioClip";
+export {
+  createSplitAudioClips,
+  createSplitAudioStemClip,
+} from "./model/createSplitAudioClip";
+export type {
+  CreateSplitAudioClipsArgs,
+  CreateSplitAudioStemClipArgs,
+  SamAudioStem,
+  SplitAudioTimelineClips,
+} from "./model/createSplitAudioClip";

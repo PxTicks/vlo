@@ -26,6 +26,7 @@ import {
 } from "./model/maskClipModel";
 import {
   addClipComponentToDraft,
+  addClipsToDraft,
   addClipMaskToDraft,
   addClipToDraft,
   addClipTransformToDraft,
@@ -123,6 +124,14 @@ interface TimelineState extends TimelineModelState {
   insertTrack: (index: number, type?: TimelineTrack["type"]) => string;
 
   addClip: (clip: TimelineClip) => void;
+  addClipsOnNewTracksBelow: (
+    sourceTrackId: string,
+    entries: {
+      trackLabel: string;
+      trackType?: TimelineTrack["type"];
+      createClip: (trackId: string) => TimelineClip;
+    }[],
+  ) => string[];
   /**
    * Atomically replaces `sourceClipIds` (and their subordinate clips) with a
    * single composite clip in one undoable step. Deliberately skips SAM2/brush
@@ -353,6 +362,41 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       mutationPipeline.commitModelMutation((draft) => {
         addClipToDraft(draft, clip);
       });
+    },
+
+    addClipsOnNewTracksBelow: (sourceTrackId, entries) => {
+      if (entries.length === 0) {
+        return [];
+      }
+
+      const newTracks = entries.map((entry) =>
+        createNewTrack(entry.trackLabel, entry.trackType),
+      );
+      let addedClipIds: string[] = [];
+
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        const sourceTrackIndex = draft.tracks.findIndex(
+          (track) => track.id === sourceTrackId,
+        );
+        const insertIndex =
+          sourceTrackIndex >= 0 ? sourceTrackIndex + 1 : draft.tracks.length;
+
+        newTracks.forEach((track, offset) => {
+          insertTrackIntoDraft(draft, insertIndex + offset, track);
+        });
+
+        addedClipIds = addClipsToDraft(
+          draft,
+          entries.map((entry, index) => entry.createClip(newTracks[index].id)),
+        );
+      });
+
+      if (didCommit && addedClipIds.length > 0) {
+        set({ selectedClipIds: addedClipIds });
+        return addedClipIds;
+      }
+
+      return [];
     },
 
     groupClipsIntoComposite: (sourceClipIds, compositeClip) => {

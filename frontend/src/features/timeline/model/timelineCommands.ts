@@ -283,10 +283,10 @@ export function copySelectedClips(
   return copiedClips;
 }
 
-export function addClipToDraft(
+function addClipToDraftWithoutTrimming(
   draft: TimelineModelState,
   clip: TimelineClip,
-): void {
+): boolean {
   const clipWithDefaults = withTimelineClipDefaults(clip);
   const targetTrack = draft.tracks.find(
     (track) => track.id === clipWithDefaults.trackId,
@@ -310,7 +310,7 @@ export function addClipToDraft(
         `${targetTrack.id} type is "${targetTrack.type}" but clip resolves to ` +
         `"${getTrackTypeFromClip(clipWithDefaults)}".`,
     );
-    return;
+    return false;
   }
 
   if (targetTrack && (!targetTrack.type || !targetTrackHasClips)) {
@@ -318,7 +318,36 @@ export function addClipToDraft(
   }
 
   draft.clips.push(clipWithDefaults);
+  return true;
+}
+
+export function addClipToDraft(
+  draft: TimelineModelState,
+  clip: TimelineClip,
+): void {
+  if (!addClipToDraftWithoutTrimming(draft, clip)) {
+    return;
+  }
   maybeTrimAndPadTracks(draft);
+}
+
+export function addClipsToDraft(
+  draft: TimelineModelState,
+  clips: TimelineClip[],
+): string[] {
+  const addedClipIds: string[] = [];
+
+  clips.forEach((clip) => {
+    if (addClipToDraftWithoutTrimming(draft, clip)) {
+      addedClipIds.push(clip.id);
+    }
+  });
+
+  if (addedClipIds.length > 0) {
+    maybeTrimAndPadTracks(draft);
+  }
+
+  return addedClipIds;
 }
 
 export function addTrackToDraft(draft: TimelineModelState): void {

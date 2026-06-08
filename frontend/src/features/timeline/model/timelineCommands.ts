@@ -105,67 +105,13 @@ export interface TimelineRemovalPlan {
   clipIdsToRemove: Set<string>;
   brushMaskClipIdsToDispose: string[];
   sam2MaskAssetIdsToDelete: Set<string>;
-  compositeProxyAssetIdsToDelete: Set<string>;
-}
-
-function collectCompositeProxyAssetIdsFromClip(
-  clip: TimelineClip,
-  proxyAssetIds: Set<string>,
-): void {
-  if (clip.type !== "composite") {
-    return;
-  }
-
-  if (clip.proxyAssetId) {
-    proxyAssetIds.add(clip.proxyAssetId);
-  }
-
-  clip.content.clips.forEach((contentClip) => {
-    collectCompositeProxyAssetIdsFromClip(contentClip, proxyAssetIds);
-  });
 }
 
 export function clipReferencesAssetId(
   clip: TimelineClip,
   assetId: string,
 ): boolean {
-  if (isAssetBackedClip(clip) && clip.assetId === assetId) {
-    return true;
-  }
-
-  if (clip.type !== "composite") {
-    return false;
-  }
-
-  return (
-    clip.proxyAssetId === assetId ||
-    clip.content.clips.some((contentClip) =>
-      clipReferencesAssetId(contentClip, assetId),
-    )
-  );
-}
-
-export function collectUnusedCompositeProxyAssetIds(
-  clips: readonly TimelineClip[],
-  candidateAssetIds: Iterable<string>,
-): Set<string> {
-  const unusedAssetIds = new Set([...candidateAssetIds].filter(Boolean));
-  if (unusedAssetIds.size === 0) {
-    return unusedAssetIds;
-  }
-
-  for (const clip of clips) {
-    for (const assetId of [...unusedAssetIds]) {
-      if (clipReferencesAssetId(clip, assetId)) {
-        unusedAssetIds.delete(assetId);
-      }
-    }
-    if (unusedAssetIds.size === 0) {
-      break;
-    }
-  }
-
-  return unusedAssetIds;
+  return isAssetBackedClip(clip) && clip.assetId === assetId;
 }
 
 function createDefaultFitModeTransform(): ClipTransform {
@@ -211,13 +157,7 @@ export function withTimelineClipDefaults(clip: TimelineClip): TimelineClip {
     };
   }
 
-  // Composites render through a project-sized proxy video, so they get the same
-  // default fit-mode layout as a video/image clip.
-  if (
-    clip.type !== "video" &&
-    clip.type !== "image" &&
-    clip.type !== "composite"
-  ) {
+  if (clip.type !== "video" && clip.type !== "image") {
     return baseClip;
   }
 
@@ -288,9 +228,25 @@ function addClipToDraftWithoutTrimming(
   clip: TimelineClip,
 ): boolean {
   const clipWithDefaults = withTimelineClipDefaults(clip);
-  const targetTrack = draft.tracks.find(
+  let targetTrack = draft.tracks.find(
     (track) => track.id === clipWithDefaults.trackId,
   );
+
+  // Never orphan a clip onto a track that doesn't exist. A clip whose trackId
+  // has no matching track is invisible (the UI only draws clips per existing
+  // track) and effectively lost — that's how an interrupted multi-step
+  // mutation (e.g. group-into-composite emptying every track, which makes
+  // maybeTrimAndPadTracks rebuild the track list with fresh ids) can silently
+  // wipe content. Materialize the referenced track so the clip always lands
+  // somewhere real; maybeTrimAndPadTracks below will normalize its label/type.
+  if (!targetTrack) {
+    console.warn(
+      `[addClipToDraft] target track ${clipWithDefaults.trackId} missing; ` +
+        `materializing it for clip ${clipWithDefaults.id} to avoid orphaning.`,
+    );
+    targetTrack = { ...createNewTrack("Track"), id: clipWithDefaults.trackId };
+    draft.tracks.push(targetTrack);
+  }
 
   // Track-type compatibility: a populated typed track only accepts clips whose
   // derived track-type matches. Empty tracks accept anything and acquire the
@@ -449,10 +405,6 @@ export function pasteCopiedClipsAboveDraft(
       const pastedClip = cloneTimelineClip(clip, crypto.randomUUID());
       pastedClip.trackId = targetTrackId;
       pastedClip.start = clip.start;
-      if (pastedClip.type === "composite") {
-        pastedClip.proxyAssetId = undefined;
-        pastedClip.proxyContentHash = undefined;
-      }
 
       const targetTrack = draft.tracks.find(
         (track) => track.id === targetTrackId,
@@ -554,23 +506,10 @@ export function planTimelineRemoval(
         clip.maskType === "brush",
     )
     .map((clip) => clip.id);
-  const compositeProxyCandidates = new Set<string>();
-  for (const clip of clips) {
-    if (clipIdsToRemove.has(clip.id)) {
-      collectCompositeProxyAssetIdsFromClip(clip, compositeProxyCandidates);
-    }
-  }
-  const remainingClips = clips.filter((clip) => !clipIdsToRemove.has(clip.id));
-  const compositeProxyAssetIdsToDelete = collectUnusedCompositeProxyAssetIds(
-    remainingClips,
-    compositeProxyCandidates,
-  );
-
   return {
     clipIdsToRemove,
     brushMaskClipIdsToDispose,
     sam2MaskAssetIdsToDelete,
-    compositeProxyAssetIdsToDelete,
   };
 }
 

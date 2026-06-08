@@ -11,7 +11,6 @@ export const getTrackTypeFromClipType = (clipType: ClipType): TrackType => {
     case "image":
     case "text":
     case "shape":
-    case "composite":
       return "visual";
     case "audio":
       return "audio";
@@ -23,11 +22,8 @@ export const getTrackTypeFromClipType = (clipType: ClipType): TrackType => {
 };
 
 export const getTrackTypeFromClip = (
-  clip: Pick<BaseClip | TimelineClip, "type"> & { contentKind?: "visual" | "audio" },
+  clip: Pick<BaseClip | TimelineClip, "type">,
 ): TrackType => {
-  if (clip.type === "composite" && clip.contentKind === "audio") {
-    return "audio";
-  }
   return getTrackTypeFromClipType(clip.type);
 };
 

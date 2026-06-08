@@ -4,14 +4,9 @@ import {
   Box,
   Button,
   CircularProgress,
-  IconButton,
-  Stack,
-  Tooltip,
   Typography,
 } from "@mui/material";
-import AddBoxIcon from "@mui/icons-material/AddBox";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import LayersIcon from "@mui/icons-material/Layers";
 import { playbackClock } from "../player/services/PlaybackClock";
 import { useExtractStore } from "../player/useExtractStore";
 import {
@@ -21,6 +16,7 @@ import {
 } from "../timelineSelection";
 import { groupSelectionIntoComposite } from "./services/groupSelectionIntoComposite";
 import { useCompositeTimelineStore } from "./useCompositeTimelineStore";
+import { CompositeBrowser } from "./CompositeBrowser";
 
 export function CompositePanel() {
   const [isCreatingFromSelection, setIsCreatingFromSelection] = useState(false);
@@ -34,8 +30,8 @@ export function CompositePanel() {
   const clearLastError = useCompositeTimelineStore(
     (state) => state.clearLastError,
   );
-  const startBlankSubtimeline = useCompositeTimelineStore(
-    (state) => state.startBlankSubtimeline,
+  const startBlankCompositeAsset = useCompositeTimelineStore(
+    (state) => state.startBlankCompositeAsset,
   );
   const exitToMainTimeline = useCompositeTimelineStore(
     (state) => state.exitToMainTimeline,
@@ -160,94 +156,13 @@ export function CompositePanel() {
           ) : null}
         </>
       ) : (
-        <>
-          <Stack direction="row" spacing={2}>
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 1,
-              }}
-            >
-              <Tooltip title="Add scene">
-                <IconButton
-                  aria-label="Add scene"
-                  data-testid="composite-add-scene"
-                  onClick={startBlankSubtimeline}
-                  sx={{
-                    width: 64,
-                    height: 64,
-                    border: "1px solid #343a40",
-                    borderRadius: 1,
-                    color: "#f5f5f5",
-                    bgcolor: "#181b20",
-                    "&:hover": { bgcolor: "#20252c" },
-                  }}
-                >
-                  <AddBoxIcon />
-                </IconButton>
-              </Tooltip>
-              <Typography
-                variant="caption"
-                sx={{ color: "#aeb4bd", textAlign: "center" }}
-              >
-                Add scene
-              </Typography>
-            </Box>
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 1,
-              }}
-            >
-              <Tooltip title="Create from selection">
-                <span>
-                  <IconButton
-                    aria-label="Create from selection"
-                    data-testid="composite-create-from-selection"
-                    disabled={selectionMode || isCreatingFromSelection}
-                    onClick={() => {
-                      handleCreateFromSelection();
-                    }}
-                    sx={{
-                      width: 64,
-                      height: 64,
-                      border: "1px solid #343a40",
-                      borderRadius: 1,
-                      color: "#f5f5f5",
-                      bgcolor: "#181b20",
-                      "&:hover": { bgcolor: "#20252c" },
-                      "&.Mui-disabled": {
-                        color: "#6b7280",
-                        bgcolor: "#121417",
-                      },
-                    }}
-                  >
-                    {isCreatingFromSelection ? (
-                      <CircularProgress size={20} color="inherit" />
-                    ) : (
-                      <LayersIcon />
-                    )}
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Typography
-                variant="caption"
-                sx={{ color: "#aeb4bd", textAlign: "center" }}
-              >
-                Create from selection
-              </Typography>
-            </Box>
-          </Stack>
-          {selectionError ? (
-            <Alert severity="error" onClose={() => setSelectionError(null)}>
-              {selectionError}
-            </Alert>
-          ) : null}
-        </>
+        <CompositeBrowser
+          isCreatingFromSelection={isCreatingFromSelection || selectionMode}
+          selectionError={selectionError}
+          onCreateBlank={startBlankCompositeAsset}
+          onCreateFromSelection={handleCreateFromSelection}
+          onClearSelectionError={() => setSelectionError(null)}
+        />
       )}
 
     </Box>

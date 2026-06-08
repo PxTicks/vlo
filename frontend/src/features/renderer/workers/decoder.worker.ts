@@ -289,7 +289,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
         rendererKinds.set(clipId, kind);
         const promise = renderer.init(url, { width, height, fit }, file);
         initPromises.set(clipId, promise);
-        
+
         await promise;
         self.postMessage({ type: "ready", clipId, kind });
         break;

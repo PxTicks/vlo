@@ -22,7 +22,6 @@ interface TimelineMutationState extends TimelineModelState {
 
 interface TimelinePostCommitEffects {
   brushMaskClipIdsToDispose?: Iterable<string>;
-  compositeProxyAssetIdsToDelete?: Iterable<string>;
   sam2MaskAssetIdsToDelete?: Iterable<string>;
 }
 
@@ -87,30 +86,6 @@ function deleteSam2MaskAssets(assetIds: Iterable<string>): void {
     });
 }
 
-function deleteCompositeProxyAssets(assetIds: Iterable<string>): void {
-  const uniqueAssetIds = [...new Set([...assetIds].filter(Boolean))];
-  if (uniqueAssetIds.length === 0) return;
-
-  void import("../../userAssets")
-    .then(async ({ deleteAsset }) => {
-      for (const assetId of uniqueAssetIds) {
-        try {
-          await deleteAsset(assetId);
-        } catch (error) {
-          console.warn(
-            `[TimelineStore] Failed to delete composite proxy asset '${assetId}'`,
-            error,
-          );
-        }
-      }
-    })
-    .catch((error) => {
-      console.warn(
-        "[TimelineStore] Failed to load asset store for composite proxy cleanup",
-        error,
-      );
-    });
-}
 
 function disposeBrushMaskBuffers(maskClipIds: Iterable<string>): void {
   const uniqueMaskClipIds = [...new Set([...maskClipIds].filter(Boolean))];
@@ -378,10 +353,6 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
 
     if (effects.sam2MaskAssetIdsToDelete) {
       deleteSam2MaskAssets(effects.sam2MaskAssetIdsToDelete);
-    }
-
-    if (effects.compositeProxyAssetIdsToDelete) {
-      deleteCompositeProxyAssets(effects.compositeProxyAssetIdsToDelete);
     }
   };
 

@@ -2,9 +2,38 @@ import { describe, expect, it } from "vitest";
 import type {
   AdjustmentTimelineClip,
   TextTimelineClip,
+  VideoTimelineClip,
 } from "../../../../types/TimelineTypes";
 import { ADJUSTMENT_RETIMING_STATIC } from "../../../../types/TimelineTypes";
-import { withTimelineClipDefaults } from "../timelineCommands";
+import { addClipToDraft, withTimelineClipDefaults } from "../timelineCommands";
+import type { TimelineModelState } from "../timelineTrackModel";
+
+describe("addClipToDraft", () => {
+  it("never orphans a clip onto a non-existent track", () => {
+    const draft: TimelineModelState = { tracks: [], clips: [] };
+    const clip = {
+      id: "clip-1",
+      type: "video",
+      name: "clip-1",
+      trackId: "ghost-track",
+      assetId: "asset-1",
+      start: 0,
+      sourceDuration: 100,
+      timelineDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      transformations: [],
+    } as VideoTimelineClip;
+
+    addClipToDraft(draft, clip);
+
+    expect(draft.clips.map((c) => c.id)).toEqual(["clip-1"]);
+    const trackIds = new Set(draft.tracks.map((t) => t.id));
+    expect(trackIds.has(draft.clips[0].trackId)).toBe(true);
+  });
+});
 
 describe("withTimelineClipDefaults", () => {
   it("normalizes text clip data without requiring text fields on the shared clip type", () => {

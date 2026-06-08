@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { MutableRefObject } from "react";
 import type { Input } from "mediabunny";
 import { useTimelineClipsForTrack } from "../../timeline";
 import { useAssetStore } from "../../userAssets";
@@ -7,17 +8,16 @@ import { audioSystem } from "../../player/services/AudioSystem";
 import { TrackAudioRenderer } from "../services/TrackAudioRenderer";
 import type { AdjustmentEffectResolver } from "../services/AdjustmentEffectResolver";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
-import { resolveRenderableAudioClipLanes } from "../utils/resolveRenderableClip";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 
 const SHARED_LOOKAHEAD_SECONDS = 2.0;
 const SHARED_SCHEDULER_INTERVAL_MS = 50;
 
 interface SharedAudioTrackEntry {
-  renderer: TrackAudioRenderer;
-  trackClips: TimelineClip[];
-  getInput: (assetId: string) => Promise<Input | null>;
-  lastStartTime: number;
+  rendererRef: MutableRefObject<TrackAudioRenderer | null>;
+  trackClipsRef: MutableRefObject<TimelineClip[]>;
+  getInputRef: MutableRefObject<(assetId: string) => Promise<Input | null>>;
+  lastStartTimeRef: MutableRefObject<number>;
 }
 
 const sharedTrackEntries = new Map<string, SharedAudioTrackEntry>();
@@ -36,9 +36,8 @@ function stopSharedSchedulerLoop() {
 }
 
 function maybeStopSharedSchedulerLoop() {
-  if (sharedTrackEntries.size > 0 && usePlayerStore.getState().isPlaying) {
+  if (sharedTrackEntries.size > 0 && usePlayerStore.getState().isPlaying)
     return;
-  }
   stopSharedSchedulerLoop();
 }
 
@@ -56,23 +55,32 @@ async function runSharedSchedulerTick() {
   if (ctx && master) {
     const currentStartTime = audioSystem.getStartTime();
     const prioritizedEntries = Array.from(sharedTrackEntries.values()).sort(
-      (left, right) =>
-        left.renderer.getNextScheduleTime() -
-        right.renderer.getNextScheduleTime(),
+      (left, right) => {
+        const leftTime =
+          left.rendererRef.current?.getNextScheduleTime() ??
+          Number.POSITIVE_INFINITY;
+        const rightTime =
+          right.rendererRef.current?.getNextScheduleTime() ??
+          Number.POSITIVE_INFINITY;
+        return leftTime - rightTime;
+      },
     );
 
     for (const entry of prioritizedEntries) {
-      if (currentStartTime !== entry.lastStartTime) {
-        entry.renderer.reset(ctx.currentTime);
-        entry.lastStartTime = currentStartTime;
+      const renderer = entry.rendererRef.current;
+      if (!renderer) continue;
+
+      if (currentStartTime !== entry.lastStartTimeRef.current) {
+        renderer.reset(ctx.currentTime);
+        entry.lastStartTimeRef.current = currentStartTime;
       }
 
       try {
-        await entry.renderer.process(
+        await renderer.process(
           ctx,
           master,
-          entry.trackClips,
-          entry.getInput,
+          entry.trackClipsRef.current,
+          entry.getInputRef.current,
           {
             baseContextTime: ctx.currentTime,
             baseTicks: audioSystem.getCurrentPlaybackTicks(),
@@ -103,97 +111,65 @@ export function useAudioTrack(
   trackId: string,
   adjustmentEffectResolver?: AdjustmentEffectResolver | null,
 ) {
-  const entriesRef = useRef<Map<string, SharedAudioTrackEntry>>(new Map());
+  // --- Refs ---
+  const rendererRef = useRef<TrackAudioRenderer | null>(null);
+  const lastStartTimeRef = useRef<number>(0);
+
+  // --- Store Selectors ---
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const trackClips = useTimelineClipsForTrack(trackId, false);
   const getInput = useAssetStore((state) => state.getInput);
-  const assets = useAssetStore((state) => state.assets);
+  const trackClipsRef = useRef<TimelineClip[]>(trackClips);
   const getInputRef = useRef(getInput);
 
   useEffect(() => {
+    trackClipsRef.current = sortTrackClipsByStart(trackClips);
+  }, [trackClips]);
+
+  useEffect(() => {
     getInputRef.current = getInput;
-    for (const entry of entriesRef.current.values()) {
-      entry.getInput = getInput;
-    }
   }, [getInput]);
 
+  // --- Initialize Renderer ---
   useEffect(() => {
-    const assetsById = new Map(assets.map((asset) => [asset.id, asset] as const));
-    const lanes = resolveRenderableAudioClipLanes(
-      trackClips,
-      assetsById,
-    ).map((lane) => sortTrackClipsByStart(lane));
+    rendererRef.current = new TrackAudioRenderer(
+      trackId,
+      adjustmentEffectResolver,
+    );
 
-    const nextKeys = new Set<string>();
-    lanes.forEach((lane, index) => {
-      const key = `${trackId}::audio-lane-${index}`;
-      nextKeys.add(key);
-      const existing = entriesRef.current.get(key);
-      if (existing) {
-        existing.trackClips = lane;
-        existing.getInput = getInputRef.current;
-        return;
-      }
-
-      const renderer = new TrackAudioRenderer(trackId, adjustmentEffectResolver);
-      const entry: SharedAudioTrackEntry = {
-        renderer,
-        trackClips: lane,
-        getInput: getInputRef.current,
-        lastStartTime: audioSystem.getStartTime(),
-      };
-      entriesRef.current.set(key, entry);
-      sharedTrackEntries.set(key, entry);
-
-      const ctx = audioSystem.getContext();
-      if (ctx && usePlayerStore.getState().isPlaying) {
-        renderer.reset(ctx.currentTime);
-      }
+    sharedTrackEntries.set(trackId, {
+      rendererRef,
+      trackClipsRef,
+      getInputRef,
+      lastStartTimeRef,
     });
 
-    for (const [key, entry] of entriesRef.current.entries()) {
-      if (nextKeys.has(key)) continue;
-      sharedTrackEntries.delete(key);
-      entry.renderer.dispose();
-      entriesRef.current.delete(key);
-    }
-
-    if (usePlayerStore.getState().isPlaying && lanes.length > 0) {
+    if (usePlayerStore.getState().isPlaying) {
       ensureSharedSchedulerLoop();
-    } else {
-      maybeStopSharedSchedulerLoop();
     }
-  }, [adjustmentEffectResolver, assets, trackClips, trackId]);
 
-  useEffect(() => {
-    const entries = entriesRef.current;
     return () => {
-      for (const [key, entry] of entries.entries()) {
-        sharedTrackEntries.delete(key);
-        entry.renderer.dispose();
-      }
-      entries.clear();
+      sharedTrackEntries.delete(trackId);
+      rendererRef.current?.dispose();
+      rendererRef.current = null;
       maybeStopSharedSchedulerLoop();
     };
-  }, []);
+  }, [adjustmentEffectResolver, trackId]);
 
+  // --- Handle Play/Pause ---
   useEffect(() => {
     if (isPlaying) {
       void audioSystem.resume();
       const ctx = audioSystem.getContext();
-      if (ctx) {
-        for (const entry of entriesRef.current.values()) {
-          entry.renderer.reset(ctx.currentTime);
-          entry.lastStartTime = audioSystem.getStartTime();
-        }
+      if (ctx && rendererRef.current) {
+        // Reset and Pre-buffer
+        rendererRef.current.reset(ctx.currentTime);
+        lastStartTimeRef.current = audioSystem.getStartTime();
       }
       ensureSharedSchedulerLoop();
-      return;
+    } else {
+      rendererRef.current?.stop();
+      maybeStopSharedSchedulerLoop();
     }
-
-    for (const entry of entriesRef.current.values()) {
-      entry.renderer.stop();
-    }
-    maybeStopSharedSchedulerLoop();
   }, [isPlaying]);
 }

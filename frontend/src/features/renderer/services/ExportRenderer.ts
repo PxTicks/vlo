@@ -17,10 +17,6 @@ import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
 import { TrackAudioRenderer } from "./TrackAudioRenderer";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
-import {
-  resolveRenderableAudioClipLanes,
-  resolveRenderableClips,
-} from "../utils/resolveRenderableClip";
 import { getAssetInput } from "../../userAssets";
 import {
   getIncludedClipsForSelection,
@@ -93,12 +89,8 @@ function buildVisualRenderData(
   tracks: TimelineTrack[],
   rawSelectedClips: TimelineClip[],
   includeTimelineMasks: boolean,
-  assetsById: Map<string, Asset>,
 ): PreparedVisualRenderData {
-  // Flatten Composite clips to their baked proxy (a plain video clip) before
-  // any track/mask indexing, so the rest of the export path stays
-  // composite-agnostic. Composites without a usable proxy are dropped.
-  const selectedClips = resolveRenderableClips(rawSelectedClips, assetsById);
+  const selectedClips = rawSelectedClips;
 
   // When timeline masks are excluded, also strip range_mask components.
   // Spatial masks (mask_ref) and range masks both contribute timeline-driven
@@ -357,7 +349,6 @@ export class ExportRenderer {
         effectiveTracks,
         selectedClips,
         options.includeTimelineMasks !== false,
-        assetsById,
       );
 
     const relevantForAudio = effectiveTracks.filter(
@@ -393,21 +384,9 @@ export class ExportRenderer {
       const rangeDurationSec = tickToMediaSeconds(rangeDurationTicks);
 
       if (shouldRenderAudio) {
-        const audioRenderEntries = relevantForAudio.flatMap((track) => {
-          const rawTrackClips = selectedClips.filter(
-            (clip) => clip.trackId === track.id,
-          );
-          return resolveRenderableAudioClipLanes(rawTrackClips, assetsById).map(
-            (laneClips, laneIndex) => ({
-              key: `${track.id}::${laneIndex}`,
-              renderer: new TrackAudioRenderer(
-                track.id,
-                adjustmentEffectResolver,
-              ),
-              trackClips: sortTrackClipsByStart(laneClips),
-            }),
-          );
-        });
+        const audioRenderers = relevantForAudio.map(
+          (t) => new TrackAudioRenderer(t.id, adjustmentEffectResolver),
+        );
 
         const CHUNK_DURATION_SEC = 10;
 
@@ -431,13 +410,16 @@ export class ExportRenderer {
             );
 
             await Promise.all(
-              audioRenderEntries.map(async (entry) => {
-                entry.renderer.prepareForChunk(0);
+              audioRenderers.map(async (renderer, index) => {
+                const trackId = relevantForAudio[index].id;
+                const trackClips = trackClipsByTrackId.get(trackId) || [];
 
-                await entry.renderer.process(
+                renderer.prepareForChunk(0);
+
+                await renderer.process(
                   offlineCtx,
                   offlineCtx.destination,
-                  entry.trackClips,
+                  trackClips,
                   getAssetInput,
                   {
                     baseTicks:
@@ -465,7 +447,7 @@ export class ExportRenderer {
             onProgress(audioProgress);
           }
         } finally {
-          audioRenderEntries.forEach((entry) => entry.renderer.dispose());
+          audioRenderers.forEach((renderer) => renderer.dispose());
         }
       }
 
@@ -659,7 +641,6 @@ export class ExportRenderer {
         tracks,
         clips,
         options.includeTimelineMasks !== false,
-        assetsById,
       );
 
     try {

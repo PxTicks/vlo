@@ -46,6 +46,7 @@ import {
   getMaskLayoutState,
   createMask,
   drawMaskBaseShape,
+  isMaskActiveAtSourceTime,
   type MaskLayoutState,
   type MaskShapeSource,
 } from "../../../masks/model/maskFactory";
@@ -1990,6 +1991,30 @@ export function useMaskInteractionController(
           renderSam2PointsToOverlay(null);
           clearSam2PreviewSprite();
         }
+        clearPathOverlay();
+        setIsMaskGizmoVisible(false);
+        return;
+      }
+
+      // A mask parked outside its active range is not composited onto the
+      // frame, so its editing affordances (shape preview + gizmo) must vanish
+      // too. Mirror the renderer's gate exactly: the active range is stored in
+      // the parent clip's source time.
+      const parentSourceTimeTicks = calculateClipTime(
+        activeClip,
+        playbackClock.time - activeClip.start,
+        true,
+      );
+      if (
+        !isMaskActiveAtSourceTime(
+          selectedMaskClip.activeRange,
+          parentSourceTimeTicks,
+        )
+      ) {
+        syncSam2EditingCursor(false);
+        renderMaskToOverlay(null);
+        renderSam2PointsToOverlay(null);
+        clearSam2PreviewSprite();
         clearPathOverlay();
         setIsMaskGizmoVisible(false);
         return;

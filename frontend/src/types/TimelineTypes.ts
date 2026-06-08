@@ -16,7 +16,6 @@ export type ClipType =
   | "text"
   | "shape"
   | "mask"
-  | "composite"
   | "adjustment";
 
 export type TextAlignment = "left" | "center" | "right";
@@ -84,6 +83,16 @@ export interface TimelineSelection extends TimelineRegionData {
 export interface CompositeContent extends TimelineRegionData {
   /** Natural length of the region in ticks (max clip end), the composite's source duration. */
   durationTicks: number;
+}
+
+export interface CompositeAsset {
+  id: string;
+  name: string;
+  content: CompositeContent;
+  /** The current baked video asset for `content`; swapped atomically on edit. */
+  bakedAssetId?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface ClipTransform {
@@ -243,12 +252,22 @@ export interface NonMaskTimelineClipCommon extends TimelineClipBaseCommon {
 export interface AssetBackedBaseClipCommon extends InsertableClipBaseCommon {
   type: AssetBackedClipType;
   assetId: string;
+  /**
+   * Marks this clip as a placement of a composite. Purely an identity tag for
+   * the timeline UI (badge / reveal / open-to-edit) — the renderer ignores it
+   * and treats the clip as an ordinary asset-backed video pointed at its baked
+   * `assetId`. Editing the composite re-bakes and updates `assetId` on every
+   * placement sharing this id.
+   */
+  compositeId?: string;
 }
 
 export interface AssetBackedTimelineClipCommon
   extends NonMaskTimelineClipCommon {
   type: AssetBackedClipType;
   assetId: string;
+  /** See {@link AssetBackedBaseClipCommon.compositeId}. */
+  compositeId?: string;
 }
 
 export interface VideoBaseClip extends AssetBackedBaseClipCommon {
@@ -270,30 +289,6 @@ export interface TextBaseClip extends InsertableClipBaseCommon {
 
 export interface ShapeBaseClip extends InsertableClipBaseCommon {
   type: "shape";
-}
-
-/**
- * A clip formed from a section of the timeline. Strategy A (prebaked proxy):
- * `content` is the editable source of truth; `proxyAssetId` points at a baked
- * video asset rendered from `content` that the renderer treats exactly like a
- * normal video clip. `proxyContentHash` records which `content` the current
- * proxy was baked from, so a live edit can detect staleness and re-bake.
- */
-export interface CompositeClipExtras {
-  content: CompositeContent;
-  /**
-   * Rendering strategy hint for composites whose content is audio-only and
-   * should be mixed from nested audio clips instead of a baked video proxy.
-   */
-  contentKind?: "visual" | "audio";
-  proxyAssetId?: string;
-  proxyContentHash?: string;
-}
-
-export interface CompositeBaseClip
-  extends InsertableClipBaseCommon,
-    CompositeClipExtras {
-  type: "composite";
 }
 
 export const ADJUSTMENT_DEPTH_ALL = "all";
@@ -358,12 +353,6 @@ export interface ShapeTimelineClip extends NonMaskTimelineClipCommon {
   type: "shape";
 }
 
-export interface CompositeTimelineClip
-  extends NonMaskTimelineClipCommon,
-    CompositeClipExtras {
-  type: "composite";
-}
-
 export interface AdjustmentTimelineClip
   extends Omit<NonMaskTimelineClipCommon, "type" | "sourceDuration">,
     AdjustmentClipExtras {
@@ -377,7 +366,6 @@ export interface BaseClipByType {
   audio: AudioBaseClip;
   text: TextBaseClip;
   shape: ShapeBaseClip;
-  composite: CompositeBaseClip;
   adjustment: AdjustmentBaseClip;
 }
 
@@ -387,7 +375,6 @@ export interface NonMaskTimelineClipByType {
   audio: AudioTimelineClip;
   text: TextTimelineClip;
   shape: ShapeTimelineClip;
-  composite: CompositeTimelineClip;
   adjustment: AdjustmentTimelineClip;
 }
 
@@ -473,8 +460,13 @@ export function isTextClip(
 
 export function isCompositeClip(
   clip: BaseClip | TimelineClip | undefined | null,
-): clip is CompositeBaseClip | CompositeTimelineClip {
-  return clip?.type === "composite";
+): clip is (AssetBackedBaseClip | AssetBackedTimelineClip) & {
+  compositeId: string;
+} {
+  return (
+    isAssetBackedClip(clip) &&
+    typeof (clip as AssetBackedTimelineClip).compositeId === "string"
+  );
 }
 
 export function isAdjustmentClip(

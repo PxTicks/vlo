@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useProjectStore } from "../../features/project";
+import { useCompositeLibraryStore } from "../../features/composite";
 import { useAssetStore } from "../../features/userAssets";
 
 export function useEditorAssetLibrary() {
@@ -8,6 +9,9 @@ export function useEditorAssetLibrary() {
     (state) => state.project?.rootAssetsFolder,
   );
   const fetchAssets = useAssetStore((state) => state.fetchAssets);
+  const fetchComposites = useCompositeLibraryStore(
+    (state) => state.fetchComposites,
+  );
 
   useEffect(() => {
     if (!projectId || !rootAssetsFolder) {
@@ -16,6 +20,7 @@ export function useEditorAssetLibrary() {
 
     void (async () => {
       try {
+        await fetchComposites();
         await fetchAssets();
       } catch (error) {
         // Skip the disk scan if we couldn't load the asset index — scanning against
@@ -28,5 +33,5 @@ export function useEditorAssetLibrary() {
       }
       void useAssetStore.getState().scanForNewAssets();
     })();
-  }, [fetchAssets, projectId, rootAssetsFolder]);
+  }, [fetchAssets, fetchComposites, projectId, rootAssetsFolder]);
 }

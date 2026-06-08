@@ -4,12 +4,15 @@ import LayersIcon from "@mui/icons-material/Layers";
 import type { TimelineClipOverlayDefinition } from "../../timeline/clipOverlayApi";
 import { createEndpointOverlayItem } from "../../timeline/clipOverlayApi";
 import type { TimelineClip } from "../../../types/TimelineTypes";
+import { isCompositeClip } from "../../../types/TimelineTypes";
 import { useIsCompositeRendering } from "../useCompositeRenderStatusStore";
 
 function useCompositeRenderStatusOverlayItems({ clip }: { clip: TimelineClip }) {
-  const isRendering = useIsCompositeRendering(clip.id);
+  const isRendering = useIsCompositeRendering(
+    isCompositeClip(clip) ? clip.compositeId : undefined,
+  );
   return useMemo(() => {
-    if (!isRendering || clip.type !== "composite") return [];
+    if (!isRendering || !isCompositeClip(clip)) return [];
     return [
       createEndpointOverlayItem({
         id: "clip-composite-render-status",

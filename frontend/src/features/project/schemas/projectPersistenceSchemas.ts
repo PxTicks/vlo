@@ -7,6 +7,7 @@ import type {
   CreationMetadata,
 } from "../../../types/Asset";
 import type {
+  CompositeAsset,
   TimelineClip,
   TimelineTrack,
   TrackType,
@@ -19,6 +20,7 @@ import {
 import {
   ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
   ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
+  COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
 } from "../constants";
@@ -27,6 +29,7 @@ import type { ProjectDocumentConfig } from "../types/ProjectDocument";
 const PROJECT_FILE_NAMES = {
   timeline: "timeline.json",
   assets: "assets.json",
+  composites: "composites.json",
   assetMetadataDir: "asset-metadata",
 } as const;
 
@@ -206,6 +209,7 @@ export const projectManifestDocumentSchema = z.object({
   files: z.object({
     timeline: z.literal(PROJECT_FILE_NAMES.timeline),
     assets: z.literal(PROJECT_FILE_NAMES.assets),
+    composites: z.literal(PROJECT_FILE_NAMES.composites).optional(),
     assetMetadataDir: z.literal(PROJECT_FILE_NAMES.assetMetadataDir),
   }),
 });
@@ -282,6 +286,35 @@ export const assetMetadataDocumentSchema = z.object({
   creationMetadata: creationMetadataSchema,
 });
 
+const compositeContentSchema = z
+  .object({
+    clips: z.array(timelineClipSchema),
+    tracks: z.array(timelineTrackSchema).optional(),
+    includedTrackIds: z.array(z.string()).optional(),
+    fps: z.number().positive().optional(),
+    frameStep: z.number().positive().optional(),
+    durationTicks: z.number(),
+  })
+  .passthrough();
+
+const compositeAssetSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    content: compositeContentSchema,
+    bakedAssetId: z.string().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .passthrough() as unknown as z.ZodType<CompositeAsset>;
+
+export const compositeLibraryDocumentSchema = z.object({
+  documentType: z.literal("vlo.composites"),
+  schemaVersion: z.literal(COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION),
+  updated_at: z.number(),
+  composites: z.record(z.string(), compositeAssetSchema),
+});
+
 export const legacyTimelineSnapshotSchema = z
   .object({
     tracks: z.array(timelineTrackSchema).optional(),
@@ -324,6 +357,9 @@ export type PersistedAssetIndexEntry = z.infer<
 >;
 export type AssetIndexDocument = z.infer<typeof assetIndexDocumentSchema>;
 export type AssetMetadataDocument = z.infer<typeof assetMetadataDocumentSchema>;
+export type CompositeLibraryDocument = z.infer<
+  typeof compositeLibraryDocumentSchema
+>;
 export type LegacyProjectDocument = z.infer<typeof legacyProjectDocumentSchema>;
 
 export const PROJECT_PERSISTENCE_FILE_NAMES = PROJECT_FILE_NAMES;

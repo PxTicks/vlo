@@ -15,17 +15,18 @@ import { useProjectStore } from "../../project/useProjectStore";
 import { getAssets, addLocalAsset } from "../../userAssets";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
 
-export interface BakeCompositeProxyOptions {
+export interface BakeCompositeOptions {
   signal?: AbortSignal;
   onProgress?: (percentage: number) => void;
+  compositeAssetId?: string;
   compositeClipId?: string;
   allowDuplicateHash?: boolean;
 }
 
-export interface BakedCompositeProxy {
-  /** The registered proxy video asset. */
+export interface BakedComposite {
+  /** The registered baked video asset. */
   asset: Asset;
-  /** Hash of the content this proxy was baked from (for staleness checks). */
+  /** Hash of the content this bake was rendered from (for staleness checks). */
   contentHash: string;
 }
 
@@ -68,18 +69,13 @@ function buildCompositeRenderInputs(
 }
 
 /**
- * Renders a Composite clip's content to an mp4 and registers it as a video
- * asset — the "prebaked proxy". The clip then renders through the normal video
- * path by pointing its `proxyAssetId` at the returned asset.
- *
- * The render itself reuses {@link renderSelectionToVideoFile}: the content is
- * replayed as a zero-anchored TimelineSelection against composite-specific
- * in-memory render inputs.
+ * Renders composite content to a hidden video asset. Timeline placements point
+ * directly at that baked asset, so playback/export use the normal video path.
  */
-export async function bakeCompositeProxy(
+export async function bakeComposite(
   content: CompositeContent,
-  options: BakeCompositeProxyOptions = {},
-): Promise<BakedCompositeProxy> {
+  options: BakeCompositeOptions = {},
+): Promise<BakedComposite> {
   const selection = compositeContentToSelection(content);
   const contentHash = hashCompositeContent(content);
 
@@ -94,6 +90,9 @@ export async function bakeCompositeProxy(
     file,
     {
       source: "composite",
+      ...(options.compositeAssetId
+        ? { compositeAssetId: options.compositeAssetId }
+        : {}),
       ...(options.compositeClipId
         ? { compositeClipId: options.compositeClipId }
         : {}),
@@ -102,13 +101,13 @@ export async function bakeCompositeProxy(
     },
     undefined,
     {
-      // Composite proxies are clip-private working assets. Identical bytes should
+      // Baked composites are clip-private working assets. Identical bytes should
       // still produce separate assets so copied composites can be edited alone.
       allowDuplicateHash: options.allowDuplicateHash ?? true,
     },
   );
   if (!asset) {
-    throw new Error("Failed to register composite proxy asset");
+    throw new Error("Failed to register baked composite asset");
   }
 
   return { asset, contentHash };

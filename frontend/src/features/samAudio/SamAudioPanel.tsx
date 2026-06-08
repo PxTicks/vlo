@@ -72,40 +72,17 @@ export const SamAudioPanel = memo(function SamAudioPanel() {
         disabled={panel.isBusy}
       />
 
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={panel.useSpanPrompt}
-              onChange={(event) => panel.setUseSpanPrompt(event.target.checked)}
-              disabled={panel.isBusy || !panel.canUseSpanPrompt}
-              size="small"
-            />
-          }
-          label="Use timeline span"
-        />
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={panel.useVisualPrompt}
-              onChange={(event) => panel.setUseVisualPrompt(event.target.checked)}
-              disabled={
-                panel.isBusy ||
-                !panel.generatedSam2Mask ||
-                panel.selectedAsset?.type !== "video"
-              }
-              size="small"
-            />
-          }
-          label="Use SAM2 mask"
-        />
-      </Box>
-
-      {panel.generatedSam2Mask ? (
-        <Typography variant="caption" sx={{ color: "text.secondary" }}>
-          SAM2 mask: {panel.generatedSam2Mask.mask.name}
-        </Typography>
-      ) : null}
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={panel.useSpanPrompt}
+            onChange={(event) => panel.setUseSpanPrompt(event.target.checked)}
+            disabled={panel.isBusy || !panel.canUseSpanPrompt}
+            size="small"
+          />
+        }
+        label="Use timeline span"
+      />
 
       {panel.isBusy ? (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>

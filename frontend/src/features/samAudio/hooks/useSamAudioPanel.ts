@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Asset } from "../../../types/Asset";
-import type { MaskTimelineClip, TimelineClip } from "../../../types/TimelineTypes";
-import {
-  parseMaskClipId,
-  selectMaskClipsForParent,
-  useTimelineStore,
-} from "../../timeline";
+import type { TimelineClip } from "../../../types/TimelineTypes";
+import { useTimelineStore } from "../../timeline";
 import { useProjectStore } from "../../project";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
-import { registerSourceVideo } from "../../masks/services/sam2Api";
 import { createSplitAudioStemClip } from "../model/createSplitAudioClip";
 import {
   cancelSeparationJob,
@@ -30,7 +25,6 @@ import {
 const POLL_INTERVAL_MS = 1000;
 
 const samAudioSourceRegistrationCache = new Map<string, Promise<string>>();
-const sam2SourceRegistrationCache = new Map<string, Promise<string>>();
 
 interface SamAudioOperationState {
   message: string;
@@ -104,37 +98,6 @@ async function getOrRegisterSamAudioSource(
   return promise;
 }
 
-async function getOrRegisterSam2Source(
-  asset: Asset,
-  options?: { signal?: AbortSignal },
-): Promise<string> {
-  const cached = sam2SourceRegistrationCache.get(asset.hash);
-  if (cached) return cached;
-  const promise = resolveAssetFile(asset, options)
-    .then((file) => registerSourceVideo(file, asset.hash, options))
-    .then((registration) => registration.sourceId)
-    .catch((error) => {
-      sam2SourceRegistrationCache.delete(asset.hash);
-      throw error;
-    });
-  sam2SourceRegistrationCache.set(asset.hash, promise);
-  return promise;
-}
-
-function pickGeneratedSam2Mask(
-  masks: MaskTimelineClip[],
-): { mask: MaskTimelineClip; maskId: string } | null {
-  for (const mask of masks) {
-    if (mask.maskType !== "sam2" || !mask.sam2MaskAssetId) continue;
-    const parsed = parseMaskClipId(mask.id);
-    const maskId = parsed?.maskId;
-    if (maskId) {
-      return { mask, maskId };
-    }
-  }
-  return null;
-}
-
 function buildStemFile(
   blob: Blob,
   sourceAsset: Asset,
@@ -151,16 +114,10 @@ function buildStemFile(
 }
 
 export function useSamAudioPanel() {
-  const selectedClipId = useTimelineStore((state) => state.selectedClipIds[0] ?? null);
   const selectedClip = useTimelineStore((state) => {
     const id = state.selectedClipIds[0];
     return id ? (state.clips.find((clip) => clip.id === id) ?? null) : null;
   });
-  const selectedMasks = useTimelineStore(
-    useShallow((state) =>
-      selectedClipId ? selectMaskClipsForParent(state, selectedClipId) : [],
-    ),
-  );
   const timelinePresentationData = useTimelineStore(
     useShallow((state) => ({
       tracks: state.tracks,
@@ -190,13 +147,11 @@ export function useSamAudioPanel() {
   const {
     promptText,
     useSpanPrompt,
-    useVisualPrompt,
     activeJobId,
     jobStatus,
     error,
     setPromptText,
     setUseSpanPrompt,
-    setUseVisualPrompt,
     setActiveJob,
     setJobStatus,
     setError,
@@ -207,11 +162,6 @@ export function useSamAudioPanel() {
     if (!selectedClip || !isAudioCapableClip(selectedClip)) return null;
     return assets.find((asset) => asset.id === selectedClip.assetId) ?? null;
   }, [assets, selectedClip]);
-
-  const generatedSam2Mask = useMemo(
-    () => pickGeneratedSam2Mask(selectedMasks),
-    [selectedMasks],
-  );
 
   const spanAnchors = useMemo(() => {
     if (!selectedClip) return undefined;
@@ -374,14 +324,13 @@ export function useSamAudioPanel() {
       );
       const hasText = promptText.trim().length > 0;
       const hasSpan = useSpanPrompt && anchors !== undefined;
-      const hasVisual = useVisualPrompt && generatedSam2Mask !== null;
       if (useSpanPrompt && anchors === undefined) {
         throw new Error(
           "Select a timeline range that overlaps the selected clip first.",
         );
       }
-      if (!hasText && !hasSpan && !hasVisual) {
-        throw new Error("Add a text, span, or visual prompt first.");
+      if (!hasText && !hasSpan) {
+        throw new Error("Add a text prompt or select a timeline span first.");
       }
 
       setOperation({
@@ -393,30 +342,12 @@ export function useSamAudioPanel() {
       });
       throwIfAborted(abortController.signal);
 
-      let visualPrompt: { sam2SourceId: string; sam2MaskId: string } | null = null;
-      if (hasVisual && generatedSam2Mask) {
-        if (selectedAsset.type !== "video") {
-          throw new Error("Visual prompts require a video source clip.");
-        }
-        setOperation({
-          message: "Registering SAM2 visual prompt",
-          progress: 0.20,
-        });
-        visualPrompt = {
-          sam2SourceId: await getOrRegisterSam2Source(selectedAsset, {
-            signal: abortController.signal,
-          }),
-          sam2MaskId: generatedSam2Mask.maskId,
-        };
-        throwIfAborted(abortController.signal);
-      }
-
       const prompt = createSamAudioPromptPayload({
         text: promptText,
         anchors,
         useSpanPrompt,
-        visualPrompt,
-        useVisualPrompt,
+        visualPrompt: null,
+        useVisualPrompt: false,
       });
       const durationTicks = Math.max(
         1,
@@ -539,7 +470,6 @@ export function useSamAudioPanel() {
     addLocalAsset,
     availability,
     ensureSamAudioAvailable,
-    generatedSam2Mask,
     insertSplitAudioClips,
     isBusy,
     projectFps,
@@ -552,7 +482,6 @@ export function useSamAudioPanel() {
     setJobStatus,
     spanSelection,
     useSpanPrompt,
-    useVisualPrompt,
   ]);
 
   const cancelSeparation = useCallback(async () => {
@@ -596,14 +525,12 @@ export function useSamAudioPanel() {
   return {
     selectedClip,
     selectedAsset,
-    generatedSam2Mask,
     canUseSpanPrompt,
     spanPromptNeedsSelection: selectedClip !== null && useSpanPrompt && !canUseSpanPrompt,
     availability,
     availabilityError,
     promptText,
     useSpanPrompt,
-    useVisualPrompt,
     activeJobId,
     jobStatus,
     error,
@@ -617,7 +544,6 @@ export function useSamAudioPanel() {
     statusMessage,
     setPromptText,
     setUseSpanPrompt,
-    setUseVisualPrompt,
     startSeparation,
     cancelSeparation,
     refreshAvailability: checkSamAudioAvailability,

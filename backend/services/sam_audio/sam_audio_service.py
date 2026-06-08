@@ -1052,6 +1052,9 @@ def run_separation(
     sam2_source_id = (prompt.get("sam2SourceId") or "").strip()
     sam2_mask_id = (prompt.get("sam2MaskId") or "").strip()
     if sam2_source_id and sam2_mask_id:
+        # TODO: Replace this legacy SAM2 editor-cache prompt path with
+        # mask-asset visual prompts so committed SAM2/generation/brush masks
+        # can drive SAM-Audio without a live SAM2 session.
         if on_progress is not None:
             on_progress(0.35, "Preparing visual prompt")
         visual_started_at = time.perf_counter()

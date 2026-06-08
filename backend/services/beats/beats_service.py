@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +13,7 @@ from config import (
     BEATTHIS_DEFAULT_MODEL,
     BEATTHIS_DEVICE,
 )
+from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 
 
 class BeatThisConfigError(RuntimeError):
@@ -58,37 +58,29 @@ METADATA_DIR = BEATTHIS_CACHE_DIR / "metadata"
 SOURCES_DIR.mkdir(parents=True, exist_ok=True)
 METADATA_DIR.mkdir(parents=True, exist_ok=True)
 
+_SOURCE_METADATA_CACHE = JsonSourceCache[BeatThisSourceMetadata](
+    metadata_dir=lambda: METADATA_DIR,
+    from_json=lambda payload: BeatThisSourceMetadata.from_json(payload),
+    to_json=lambda metadata: metadata.to_json(),
+    source_id=lambda metadata: metadata.source_id,
+    path=lambda metadata: metadata.path,
+)
+
 
 def _sanitize_source_hash(source_hash: str) -> str:
-    sanitized = "".join(ch for ch in source_hash.strip() if ch.isalnum() or ch in "-_")
-    if not sanitized:
-        raise ValueError("source_hash must contain at least one valid character")
-    return sanitized
+    return sanitize_source_hash(source_hash)
 
 
 def _metadata_path(source_id: str) -> Path:
-    return METADATA_DIR / f"{source_id}.json"
+    return _SOURCE_METADATA_CACHE.metadata_path(source_id)
 
 
 def _load_source_metadata(source_id: str) -> BeatThisSourceMetadata | None:
-    path = _metadata_path(source_id)
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        metadata = BeatThisSourceMetadata.from_json(payload)
-        if not metadata.path.exists():
-            return None
-        return metadata
-    except Exception:
-        return None
+    return _SOURCE_METADATA_CACHE.load(source_id)
 
 
 def _save_source_metadata(metadata: BeatThisSourceMetadata) -> None:
-    _metadata_path(metadata.source_id).write_text(
-        json.dumps(metadata.to_json(), indent=2),
-        encoding="utf-8",
-    )
+    _SOURCE_METADATA_CACHE.save(metadata)
 
 
 _TARGET_SAMPLE_RATE = 22_050

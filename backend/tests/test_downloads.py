@@ -86,6 +86,10 @@ def test_list_available_models_includes_workflow_models(monkeypatch):
         lambda: [{"key": "sam2.1_hiera_small", "label": "SAM2.1 Small"}],
     )
     monkeypatch.setattr(
+        "routers.downloads.get_available_sam_audio_models",
+        lambda: [],
+    )
+    monkeypatch.setattr(
         "routers.downloads.is_comfyui_model_downloads_enabled",
         lambda: True,
     )

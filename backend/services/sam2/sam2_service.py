@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import json
 import os
 import av
 import sys
@@ -20,6 +19,7 @@ from config import (
     SAM2_CACHE_DIR,
     SAM2_DEVICE,
 )
+from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 from services.sam2.sam2_encoding import Sam2EncodingError, encode_binary_masks_to_red_mp4
 from services.sam2.sam2_discovery import discover_sam2_models, Sam2ModelInfo
 
@@ -506,6 +506,14 @@ METADATA_DIR.mkdir(parents=True, exist_ok=True)
 PREPARED_SOURCES_DIR.mkdir(parents=True, exist_ok=True)
 PREPARED_FRAMES_DIR.mkdir(parents=True, exist_ok=True)
 
+_SOURCE_METADATA_CACHE = JsonSourceCache[Sam2SourceMetadata](
+    metadata_dir=lambda: METADATA_DIR,
+    from_json=lambda payload: Sam2SourceMetadata.from_json(payload),
+    to_json=lambda metadata: metadata.to_json(),
+    source_id=lambda metadata: metadata.source_id,
+    path=lambda metadata: metadata.path,
+)
+
 _PREPARE_VIDEO_LOCK = threading.Lock()
 _EDITOR_SESSIONS_LOCK = threading.Lock()
 
@@ -524,36 +532,19 @@ _EDITOR_SESSIONS: dict[str, _Sam2EditorSession] = {}
 
 
 def _sanitize_source_hash(source_hash: str) -> str:
-    sanitized = "".join(ch for ch in source_hash.strip() if ch.isalnum() or ch in "-_")
-    if not sanitized:
-        raise ValueError("source_hash must contain at least one valid character")
-    return sanitized
+    return sanitize_source_hash(source_hash)
 
 
 def _metadata_path(source_id: str) -> Path:
-    return METADATA_DIR / f"{source_id}.json"
+    return _SOURCE_METADATA_CACHE.metadata_path(source_id)
 
 
 def _load_source_metadata(source_id: str) -> Sam2SourceMetadata | None:
-    metadata_path = _metadata_path(source_id)
-    if not metadata_path.exists():
-        return None
-    try:
-        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
-        metadata = Sam2SourceMetadata.from_json(payload)
-        if not metadata.path.exists():
-            return None
-        return metadata
-    except Exception:
-        return None
+    return _SOURCE_METADATA_CACHE.load(source_id)
 
 
 def _save_source_metadata(metadata: Sam2SourceMetadata) -> None:
-    metadata_path = _metadata_path(metadata.source_id)
-    metadata_path.write_text(
-        json.dumps(metadata.to_json(), indent=2),
-        encoding="utf-8",
-    )
+    _SOURCE_METADATA_CACHE.save(metadata)
 
 
 def _inspect_video(video_path: Path) -> Sam2SourceMetadata:

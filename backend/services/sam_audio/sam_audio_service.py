@@ -24,6 +24,7 @@ from config import (
     SAM_AUDIO_LOAD_OPTIONAL_MODELS,
     SAM_AUDIO_SEARCH_PATHS,
 )
+from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
 from services.sam_audio.sam_audio_discovery import (
     discover_sam_audio_models,
     get_local_sam_audio_model_path,
@@ -128,6 +129,15 @@ class SamAudioSourceMetadata:
             duration_sec=float(payload["durationSec"]),
             duration_ticks=int(payload["durationTicks"]),
         )
+
+
+_SOURCE_METADATA_CACHE = JsonSourceCache[SamAudioSourceMetadata](
+    metadata_dir=lambda: METADATA_DIR,
+    from_json=lambda payload: SamAudioSourceMetadata.from_json(payload),
+    to_json=lambda metadata: metadata.to_json(),
+    source_id=lambda metadata: metadata.source_id,
+    path=lambda metadata: metadata.path,
+)
 
 
 @dataclass(frozen=True)
@@ -574,35 +584,19 @@ _worker_thread: threading.Thread | None = None
 
 
 def _sanitize_source_hash(source_hash: str) -> str:
-    sanitized = "".join(ch for ch in source_hash.strip() if ch.isalnum() or ch in "-_")
-    if not sanitized:
-        raise ValueError("source_hash must contain at least one valid character")
-    return sanitized
+    return sanitize_source_hash(source_hash)
 
 
 def _metadata_path(source_id: str) -> Path:
-    return METADATA_DIR / f"{source_id}.json"
+    return _SOURCE_METADATA_CACHE.metadata_path(source_id)
 
 
 def _load_source_metadata(source_id: str) -> SamAudioSourceMetadata | None:
-    metadata_path = _metadata_path(source_id)
-    if not metadata_path.exists():
-        return None
-    try:
-        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
-        metadata = SamAudioSourceMetadata.from_json(payload)
-        if not metadata.path.exists():
-            return None
-        return metadata
-    except Exception:
-        return None
+    return _SOURCE_METADATA_CACHE.load(source_id)
 
 
 def _save_source_metadata(metadata: SamAudioSourceMetadata) -> None:
-    _metadata_path(metadata.source_id).write_text(
-        json.dumps(metadata.to_json(), indent=2),
-        encoding="utf-8",
-    )
+    _SOURCE_METADATA_CACHE.save(metadata)
 
 
 def _resolve_audio_duration_sec(container: av.container.InputContainer, stream: Any) -> float:

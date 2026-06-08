@@ -30,6 +30,7 @@ from services.comfyui.comfyui_client import (
     get_comfyui_url_error,
     get_http_client,
 )
+from services.ai_models.health import AppStatusProvider
 from services.sam2 import sam2_service
 from services.sam_audio import sam_audio_service
 from services.beats import beats_service
@@ -54,6 +55,26 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECTS_DIR = BASE_DIR / "projects"
 FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
 FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
+
+AI_APP_STATUS_PROVIDERS = [
+    AppStatusProvider(
+        response_key="sam2",
+        health_fn=lambda: sam2_service.get_health(),
+        unavailable_message="No SAM2 models discovered",
+    ),
+    AppStatusProvider(
+        response_key="sam_audio",
+        health_fn=lambda: sam_audio_service.get_health(),
+        unavailable_message="No SAM-Audio model configured",
+        use_runtime_error=True,
+    ),
+    AppStatusProvider(
+        response_key="beat_this",
+        health_fn=lambda: beats_service.get_health(),
+        unavailable_message="Beat This! is not installed",
+        use_runtime_error=True,
+    ),
+]
 
 app.mount("/static", StaticFiles(directory=str(PROJECTS_DIR)), name="static")
 
@@ -149,44 +170,10 @@ async def get_app_status():
             comfyui_status = "disconnected"
             comfyui_error = str(exc)
 
-    try:
-        sam2_health = sam2_service.get_health()
-        sam2_ready = bool(
-            (sam2_health.get("runtime") or {}).get("ready")
-        )
-        sam2_status = "available" if sam2_ready else "unavailable"
-        sam2_error = None if sam2_ready else "No SAM2 models discovered"
-    except Exception as exc:  # pragma: no cover - defensive status fallback
-        sam2_status = "unavailable"
-        sam2_error = str(exc)
-
-    try:
-        beats_health = beats_service.get_health()
-        beats_runtime = beats_health.get("runtime") or {}
-        beats_ready = bool(beats_runtime.get("ready"))
-        beats_status = "available" if beats_ready else "unavailable"
-        beats_error = (
-            None
-            if beats_ready
-            else (beats_runtime.get("error") or "Beat This! is not installed")
-        )
-    except Exception as exc:  # pragma: no cover - defensive status fallback
-        beats_status = "unavailable"
-        beats_error = str(exc)
-
-    try:
-        sam_audio_health = sam_audio_service.get_health()
-        sam_audio_runtime = sam_audio_health.get("runtime") or {}
-        sam_audio_ready = bool(sam_audio_runtime.get("ready"))
-        sam_audio_status = "available" if sam_audio_ready else "unavailable"
-        sam_audio_error = (
-            None
-            if sam_audio_ready
-            else (sam_audio_runtime.get("error") or "No SAM-Audio model configured")
-        )
-    except Exception as exc:  # pragma: no cover - defensive status fallback
-        sam_audio_status = "unavailable"
-        sam_audio_error = str(exc)
+    ai_statuses = {
+        provider.response_key: provider.to_app_status()
+        for provider in AI_APP_STATUS_PROVIDERS
+    }
 
     return {
         "backend": {
@@ -200,18 +187,7 @@ async def get_app_status():
             "error": comfyui_error,
             "modelDownloadsEnabled": COMFYUI_INSTALL_DIR is not None,
         },
-        "sam2": {
-            "status": sam2_status,
-            "error": sam2_error,
-        },
-        "sam_audio": {
-            "status": sam_audio_status,
-            "error": sam_audio_error,
-        },
-        "beat_this": {
-            "status": beats_status,
-            "error": beats_error,
-        },
+        **ai_statuses,
     }
 
 

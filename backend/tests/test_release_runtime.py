@@ -67,6 +67,11 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
         "get_health",
         lambda: {"runtime": {"ready": True}},
     )
+    monkeypatch.setattr(
+        main.sam_audio_service,
+        "get_health",
+        lambda: {"runtime": {"ready": True}},
+    )
 
     status = asyncio.run(main.get_app_status())
 
@@ -83,6 +88,10 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
             "modelDownloadsEnabled": main.COMFYUI_INSTALL_DIR is not None,
         },
         "sam2": {
+            "status": "available",
+            "error": None,
+        },
+        "sam_audio": {
             "status": "available",
             "error": None,
         },

@@ -13,9 +13,12 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from pathlib import Path
-
 from services import download_service
+from services.ai_models.downloads import (
+    DownloadContext,
+    DownloadProvider,
+    DownloadProviderRegistry,
+)
 from services.model_registry import (
     get_available_sam_audio_models,
     get_available_sam2_models,
@@ -45,160 +48,112 @@ class StartBatchRequest(BaseModel):
     hfToken: str | None = None
 
 
+SAM_AUDIO_GATED_MESSAGE = (
+    "This SAM-Audio model is gated on Hugging Face. Accept "
+    "the license on the model repository and provide a "
+    "Hugging Face access token to download it."
+)
+
+WORKFLOW_GATED_MESSAGE = (
+    "This model is gated on HuggingFace. Accept the "
+    "license on the model's repository and provide a "
+    "HuggingFace access token to download it."
+)
+
+
+def _download_provider_registry() -> DownloadProviderRegistry:
+    return DownloadProviderRegistry(
+        [
+            DownloadProvider(
+                model_type="sam2",
+                response_key="sam2",
+                list_models_fn=lambda _context: get_available_sam2_models(),
+                download_specs_fn=lambda model_key, _context: get_sam2_download_specs(
+                    model_key
+                ),
+            ),
+            DownloadProvider(
+                model_type="sam-audio",
+                response_key="samAudio",
+                list_models_fn=lambda _context: get_available_sam_audio_models(),
+                download_specs_fn=lambda model_key, _context: (
+                    get_sam_audio_download_specs(model_key)
+                ),
+                is_gated_fn=lambda model_key, _context: is_sam_audio_model_gated(
+                    model_key
+                ),
+                gated_message=SAM_AUDIO_GATED_MESSAGE,
+            ),
+            DownloadProvider(
+                model_type="comfyui-workflow",
+                response_key="workflowModels",
+                list_models_fn=lambda context: (
+                    get_available_workflow_models(context.workflow_id)
+                    if context.workflow_id
+                    else []
+                ),
+                download_specs_fn=lambda model_key, context: (
+                    get_workflow_download_specs(
+                        _require_workflow_id(context.workflow_id),
+                        model_key,
+                    )
+                ),
+                is_gated_fn=lambda model_key, context: is_workflow_model_gated(
+                    _require_workflow_id(context.workflow_id),
+                    model_key,
+                ),
+                gated_message=WORKFLOW_GATED_MESSAGE,
+                is_enabled_fn=lambda _context: is_comfyui_model_downloads_enabled(),
+            ),
+        ]
+    )
+
+
+def _require_workflow_id(workflow_id: str | None) -> str:
+    if not workflow_id:
+        raise ValueError("workflowId is required for ComfyUI workflow downloads")
+    return workflow_id
+
+
 def _resolve_download_request(
     model_type: str,
     model_key: str,
     workflow_id: str | None,
     hf_token: str | None,
-) -> tuple[str, list, str | None]:
+) -> tuple[str, list[download_service.DownloadFileSpec], str | None]:
     """Return (label, specs, auth_token) or raise HTTPException."""
-    if model_type == "sam2":
-        try:
-            specs = get_sam2_download_specs(model_key)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-
-        label = model_key
-        for model in get_available_sam2_models():
-            if model["key"] == model_key:
-                label = model["label"]
-                break
-        return label, specs, None
-
-    if model_type == "sam-audio":
-        try:
-            specs = get_sam_audio_download_specs(model_key)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-
-        label = model_key
-        for model in get_available_sam_audio_models():
-            if model["key"] == model_key:
-                label = model["label"]
-                break
-
-        auth_token: str | None = None
-        if is_sam_audio_model_gated(model_key):
-            token = (hf_token or "").strip()
-            if not token:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "This SAM-Audio model is gated on Hugging Face. Accept "
-                        "the license on the model repository and provide a "
-                        "Hugging Face access token to download it."
-                    ),
-                )
-            auth_token = token
-        return label, specs, auth_token
-
-    if model_type == "comfyui-workflow":
-        if not workflow_id:
-            raise HTTPException(
-                status_code=400,
-                detail="workflowId is required for ComfyUI workflow downloads",
-            )
-
-        try:
-            specs = get_workflow_download_specs(workflow_id, model_key)
-            workflow_models = get_available_workflow_models(workflow_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-
-        label = model_key
-        for model in workflow_models:
-            if model["key"] == model_key:
-                label = model["label"]
-                break
-
-        auth_token: str | None = None
-        if is_workflow_model_gated(workflow_id, model_key):
-            token = (hf_token or "").strip()
-            if not token:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "This model is gated on HuggingFace. Accept the "
-                        "license on the model's repository and provide a "
-                        "HuggingFace access token to download it."
-                    ),
-                )
-            auth_token = token
-        return label, specs, auth_token
-
-    raise HTTPException(status_code=400, detail=f"Unknown model type: {model_type}")
+    context = DownloadContext(workflow_id=workflow_id, hf_token=hf_token)
+    try:
+        resolved = _download_provider_registry().resolve_download(
+            model_type,
+            model_key,
+            context,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return resolved.label, resolved.files, resolved.auth_token
 
 
 @router.get("/models")
 def list_available_models(workflowId: str | None = None):
-    workflow_models: list[dict] = []
-    if workflowId and is_comfyui_model_downloads_enabled():
-        try:
-            workflow_models = get_available_workflow_models(workflowId)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+    registry = _download_provider_registry()
+    context = DownloadContext(workflow_id=workflowId)
+    try:
+        sam2_models = registry.list_models_for("sam2", context)
+        sam_audio_models = registry.list_models_for("sam-audio", context)
+        workflow_models = registry.list_models_for("comfyui-workflow", context)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    sam2_models = get_available_sam2_models()
-    sam_audio_models = get_available_sam_audio_models()
-
-    # Map each model to its destination paths, then look up any active jobs.
-    sam2_paths: dict[str, list[str]] = {}
-    for model in sam2_models:
-        try:
-            specs = get_sam2_download_specs(model["key"])
-        except ValueError:
-            continue
-        sam2_paths[model["key"]] = [str(Path(s.dest_path).resolve()) for s in specs]
-
-    sam_audio_paths: dict[str, list[str]] = {}
-    for model in sam_audio_models:
-        try:
-            specs = get_sam_audio_download_specs(model["key"])
-        except ValueError:
-            continue
-        sam_audio_paths[model["key"]] = [
-            str(Path(s.dest_path).resolve()) for s in specs
-        ]
-
-    workflow_paths: dict[str, list[str]] = {}
-    if workflowId:
-        for model in workflow_models:
-            try:
-                specs = get_workflow_download_specs(workflowId, model["key"])
-            except ValueError:
-                continue
-            workflow_paths[model["key"]] = [str(Path(s.dest_path).resolve()) for s in specs]
-
-    all_paths: set[str] = set()
-    for paths in sam2_paths.values():
-        all_paths.update(paths)
-    for paths in sam_audio_paths.values():
-        all_paths.update(paths)
-    for paths in workflow_paths.values():
-        all_paths.update(paths)
-
-    active_jobs_by_path = download_service.find_active_jobs_for_paths(all_paths)
-
-    for model in sam2_models:
-        for path in sam2_paths.get(model["key"], []):
-            job_id = active_jobs_by_path.get(path)
-            if job_id is not None:
-                model["activeJobId"] = job_id
-                break
-
-    for model in sam_audio_models:
-        for path in sam_audio_paths.get(model["key"], []):
-            job_id = active_jobs_by_path.get(path)
-            if job_id is not None:
-                model["activeJobId"] = job_id
-                break
-
-    for model in workflow_models:
-        for path in workflow_paths.get(model["key"], []):
-            job_id = active_jobs_by_path.get(path)
-            if job_id is not None:
-                model["activeJobId"] = job_id
-                break
+    registry.annotate_active_jobs(
+        {
+            "sam2": sam2_models,
+            "sam-audio": sam_audio_models,
+            "comfyui-workflow": workflow_models,
+        },
+        context,
+        download_service.find_active_jobs_for_paths,
+    )
 
     return {
         "sam2": sam2_models,

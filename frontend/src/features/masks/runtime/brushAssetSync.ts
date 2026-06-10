@@ -12,10 +12,16 @@ import {
   disposeBrushBuffer,
   extractBrushPng,
   getBrushBuffer,
+  getBrushBufferRevision,
   isBrushBufferDirty,
+  isBrushBufferRevision,
   markBrushBufferClean,
   recalculateBrushPaintedBounds,
 } from "./brushBufferRegistry";
+
+interface CommitBrushMaskAssetOptions {
+  shouldCommit?: () => boolean;
+}
 
 /**
  * Persist the live brush buffer for the given mask as a PNG asset and write
@@ -34,8 +40,13 @@ export async function commitBrushMaskAsset(
   maskLocalId: string,
   previousAssetId: string | undefined,
   paintedBounds: BrushPaintedBounds | null,
+  options: CommitBrushMaskAssetOptions = {},
 ): Promise<string | null> {
+  const shouldCommit = options.shouldCommit ?? (() => true);
+  if (!shouldCommit()) return null;
+
   if (!paintedBounds || paintedBounds.width <= 0 || paintedBounds.height <= 0) {
+    if (!shouldCommit()) return null;
     // Nothing painted: clear any existing asset reference.
     useTimelineStore.getState().updateClipMask(parentClipId, maskLocalId, {
       brushMaskAssetId: undefined,
@@ -59,6 +70,7 @@ export async function commitBrushMaskAsset(
 
   const blob = await extractBrushPng(maskClipId, paintedBounds);
   if (!blob) return null;
+  if (!shouldCommit()) return null;
 
   const now = Date.now();
   const file = new File([blob], `brush_${maskLocalId}_${now}.png`, {
@@ -72,6 +84,14 @@ export async function commitBrushMaskAsset(
     maskClipId,
   });
   if (!created) return null;
+  if (!shouldCommit()) {
+    try {
+      await useAssetStore.getState().deleteAsset(created.id);
+    } catch (error) {
+      console.warn("Failed to delete stale brush asset", error);
+    }
+    return null;
+  }
 
   useTimelineStore.getState().updateClipMask(parentClipId, maskLocalId, {
     brushMaskAssetId: created.id,
@@ -115,10 +135,9 @@ const inflightFlushes = new Map<string, Promise<void>>();
  * spurious leave events (selecting a brush mask, then leaving without
  * painting) don't churn the asset store.
  *
- * Called from stroke-end commits, leave-navigation fallbacks, and broader
- * project persistence flushes. We still avoid per-move writes while the user
- * is actively dragging the brush, but once a stroke completes the PNG can be
- * materialized so reload/save flows behave like other asset-backed masks.
+ * Called from brush edit-session leave fallbacks and broader project
+ * persistence flushes. While the brush panel is focused, the live buffer stays
+ * authoritative; PNG materialization is a one-way bridge for reload/save flows.
  */
 export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
   const existing = inflightFlushes.get(maskClipId);
@@ -128,6 +147,9 @@ export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
   }
   const promise = (async () => {
     if (!isBrushBufferDirty(maskClipId)) return;
+    const startingRevision = getBrushBufferRevision(maskClipId);
+    const isStillCurrent = () =>
+      isBrushBufferRevision(maskClipId, startingRevision);
     const parsed = parseMaskClipId(maskClipId);
     if (!parsed) return;
 
@@ -141,6 +163,7 @@ export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
       (await recalculateBrushPaintedBounds(maskClipId)) ??
       getBrushBuffer(maskClipId)?.paintedBounds ??
       null;
+    if (!isStillCurrent()) return;
     const hasPaintedBounds =
       !!paintedBounds &&
       paintedBounds.width > 0 &&
@@ -153,7 +176,11 @@ export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
         parsed.maskId,
         previousAssetId,
         paintedBounds,
+        { shouldCommit: isStillCurrent },
       );
+      if (!isStillCurrent()) {
+        return;
+      }
       if (hasPaintedBounds && !committedAssetId) {
         return;
       }

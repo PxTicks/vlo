@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MaskPanel } from "../MaskPanel";
 import {
@@ -7,13 +7,23 @@ import {
 } from "../hooks/useMaskPanel";
 import type { ClipTransform, MaskTimelineClip } from "../../../types/TimelineTypes";
 
-const { mockFlushBrushMaskCommit } = vi.hoisted(() => ({
+const {
+  mockBeginBrushBufferEdit,
+  mockEndBrushBufferEdit,
+  mockFlushBrushMaskCommit,
+} = vi.hoisted(() => ({
+  mockBeginBrushBufferEdit: vi.fn(),
+  mockEndBrushBufferEdit: vi.fn(),
   mockFlushBrushMaskCommit: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../hooks/useMaskPanel");
 vi.mock("../runtime/brushAssetSync", () => ({
   flushBrushMaskCommit: mockFlushBrushMaskCommit,
+}));
+vi.mock("../runtime/brushBufferRegistry", () => ({
+  beginBrushBufferEdit: mockBeginBrushBufferEdit,
+  endBrushBufferEdit: mockEndBrushBufferEdit,
 }));
 const mockSetSharedMaskTransforms = vi.fn();
 let mockSharedMaskTransforms: ClipTransform[] = [];
@@ -766,7 +776,7 @@ describe("MaskPanel", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("restores gizmo mode when returning from a brush detail view", () => {
+  it("restores gizmo mode when returning from a brush detail view", async () => {
     const setBrushTool = vi.fn();
     const brushMask = createMaskClip("clip_1", "mask_1", "brush");
     vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
@@ -785,11 +795,17 @@ describe("MaskPanel", () => {
     );
     fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
     expect(screen.getByTestId("brush-mask-panel")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockBeginBrushBufferEdit).toHaveBeenCalledWith(brushMask.id);
+    });
     expect(setBrushTool).not.toHaveBeenCalledWith("gizmo");
 
     fireEvent.click(screen.getByRole("button", { name: "Back To Masks" }));
 
     expect(mockFlushBrushMaskCommit).toHaveBeenCalledWith(brushMask.id);
+    await waitFor(() => {
+      expect(mockEndBrushBufferEdit).toHaveBeenCalledWith(brushMask.id);
+    });
     expect(setBrushTool).toHaveBeenCalledWith("gizmo");
   });
 

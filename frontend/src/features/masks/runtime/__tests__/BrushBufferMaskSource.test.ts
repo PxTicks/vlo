@@ -8,6 +8,7 @@ const {
   mockEnsureBrushBuffer,
   mockGetBrushBuffer,
   mockHydrateBrushBufferFromUrl,
+  mockIsBrushBufferEditing,
   mockIsBrushBufferReadyForSource,
   mockSubscribeToBrushBuffer,
 } = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const {
   mockEnsureBrushBuffer: vi.fn(),
   mockGetBrushBuffer: vi.fn<() => BrushBuffer | null>(() => null),
   mockHydrateBrushBufferFromUrl: vi.fn(async () => undefined),
+  mockIsBrushBufferEditing: vi.fn(() => false),
   mockIsBrushBufferReadyForSource: vi.fn(() => false),
   mockSubscribeToBrushBuffer: vi.fn(() => () => undefined),
 }));
@@ -27,6 +29,7 @@ vi.mock("../brushBufferRegistry", () => ({
   ensureBrushBuffer: mockEnsureBrushBuffer,
   getBrushBuffer: mockGetBrushBuffer,
   hydrateBrushBufferFromUrl: mockHydrateBrushBufferFromUrl,
+  isBrushBufferEditing: mockIsBrushBufferEditing,
   isBrushBufferReadyForSource: mockIsBrushBufferReadyForSource,
   subscribeToBrushBuffer: mockSubscribeToBrushBuffer,
 }));
@@ -53,6 +56,7 @@ function createBrushBuffer(
     canvasSize: { width: 128, height: 72 },
     paintedBounds: { x: 10, y: 12, width: 30, height: 20 },
     dirty: false,
+    revision: 0,
     sourceAssetId: null,
     ...overrides,
   };
@@ -62,6 +66,7 @@ describe("BrushBufferMaskSource", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetBrushBuffer.mockReturnValue(null);
+    mockIsBrushBufferEditing.mockReturnValue(false);
     mockIsBrushBufferReadyForSource.mockReturnValue(false);
     mockEnsureAssetSourceLoaded.mockResolvedValue(null);
   });
@@ -146,6 +151,26 @@ describe("BrushBufferMaskSource", () => {
     mockIsBrushBufferReadyForSource.mockReturnValue(true);
 
     await source.setSource(createAsset());
+
+    expect(mockEnsureAssetSourceLoaded).not.toHaveBeenCalled();
+    expect(mockHydrateBrushBufferFromUrl).not.toHaveBeenCalled();
+  });
+
+  it("keeps an initialized edit-session buffer authoritative over newer asset ids", async () => {
+    const source = new BrushBufferMaskSource("clip_1::mask::mask_brush");
+    source.setHydrationContext({
+      canvasWidth: 128,
+      canvasHeight: 72,
+      paintedBounds: { x: 10, y: 12, width: 30, height: 20 },
+    });
+    mockIsBrushBufferEditing.mockReturnValue(true);
+    mockGetBrushBuffer.mockReturnValue(
+      createBrushBuffer({
+        sourceAssetId: "brush-asset-1",
+      }),
+    );
+
+    await source.setSource(createAsset({ id: "brush-asset-2" }));
 
     expect(mockEnsureAssetSourceLoaded).not.toHaveBeenCalled();
     expect(mockHydrateBrushBufferFromUrl).not.toHaveBeenCalled();

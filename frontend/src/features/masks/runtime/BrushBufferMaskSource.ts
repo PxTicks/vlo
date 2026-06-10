@@ -5,6 +5,7 @@ import {
   ensureBrushBuffer,
   getBrushBuffer,
   hydrateBrushBufferFromUrl,
+  isBrushBufferEditing,
   isBrushBufferReadyForSource,
   subscribeToBrushBuffer,
 } from "./brushBufferRegistry";
@@ -72,7 +73,13 @@ export class BrushBufferMaskSource {
     if (this.disposed) return;
     const ctx = this.hydrationContext;
     const existingBuffer = getBrushBuffer(this.maskClipId);
-    if (existingBuffer?.dirty) {
+    const liveBufferIsAuthoritative =
+      !!existingBuffer &&
+      (existingBuffer.dirty ||
+        (isBrushBufferEditing(this.maskClipId) &&
+          (existingBuffer.paintedBounds !== null ||
+            existingBuffer.sourceAssetId !== null)));
+    if (liveBufferIsAuthoritative) {
       this.bindToBuffer();
       return;
     }

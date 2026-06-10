@@ -42,6 +42,10 @@ import type {
 import { Sam2MaskPanel } from "./components/Sam2MaskPanel";
 import { BrushMaskPanel } from "./components/BrushMaskPanel";
 import { flushBrushMaskCommit } from "./runtime/brushAssetSync";
+import {
+  beginBrushBufferEdit,
+  endBrushBufferEdit,
+} from "./runtime/brushBufferRegistry";
 import { Sam2ModelDownloadOverlay } from "./components/Sam2ModelDownloadOverlay";
 import { MaskEquationBuilder } from "./components/MaskEquationBuilder";
 import { MaskActiveRangeSection } from "./components/MaskActiveRangeSection";
@@ -274,11 +278,8 @@ export const MaskPanel = memo(function MaskPanel() {
   const selectedMaskIsBrush =
     selectedMask?.type === "mask" && selectedMask.maskType === "brush";
 
-  // Flush any unsaved brush strokes when the user leaves the brush detail
-  // view (clicking "Back to Masks" → panelView "mask" → "home"). The
-  // interaction controller already handles clip / mask / tab focus changes;
-  // this covers the in-panel "back" action where selectedMask stays the same
-  // but paint/erase mode should release canvas selection back to the gizmo.
+  // The brush detail view owns the live-only edit session. PNG persistence is
+  // a one-way flush when that detail session ends.
   const focusedBrushMaskClipIdRef = useRef<string | null>(null);
   useEffect(() => {
     const isBrushDetail =
@@ -286,13 +287,30 @@ export const MaskPanel = memo(function MaskPanel() {
     const next = isBrushDetail && selectedMask ? selectedMask.id : null;
     const previous = focusedBrushMaskClipIdRef.current;
     if (previous && previous !== next) {
-      void flushBrushMaskCommit(previous);
+      void flushBrushMaskCommit(previous).finally(() => {
+        endBrushBufferEdit(previous);
+      });
       if (!next) {
         setBrushTool("gizmo");
       }
     }
+    if (next && previous !== next) {
+      beginBrushBufferEdit(next);
+    }
     focusedBrushMaskClipIdRef.current = next;
   }, [panelView, selectedMaskIsBrush, selectedMask, setBrushTool]);
+
+  useEffect(() => {
+    return () => {
+      const focused = focusedBrushMaskClipIdRef.current;
+      if (!focused) return;
+      void flushBrushMaskCommit(focused).finally(() => {
+        endBrushBufferEdit(focused);
+      });
+      focusedBrushMaskClipIdRef.current = null;
+      setBrushTool("gizmo");
+    };
+  }, [setBrushTool]);
 
   const sharedSectionOrder = useMemo(
     () =>

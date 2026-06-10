@@ -13,8 +13,8 @@ import { livePreviewParamStore } from "../../transformations";
  * GPU-resident brush mask buffer. Replaces the previous offscreen 2D canvas
  * with a Pixi RenderTexture so the painted bitmap participates directly in
  * the existing asset-mask compositing pipeline (red-channel threshold filter
- * → boolean expression evaluator → AlphaMask). The PNG persisted on disk is
- * derived from the buffer at stroke-end via `renderer.extract`.
+ * → boolean expression evaluator → AlphaMask). Persisted PNG assets are
+ * derived from this buffer as a one-way bridge when brush editing is flushed.
  */
 export interface BrushBuffer {
   renderTexture: RenderTexture;
@@ -28,6 +28,12 @@ export interface BrushBuffer {
    */
   dirty: boolean;
   /**
+   * Monotonic mutation counter. Async persistence captures a revision before
+   * extracting the PNG and only marks the buffer clean if no newer stroke has
+   * landed in the meantime.
+   */
+  revision: number;
+  /**
    * The persisted asset currently represented by this clean buffer. `null`
    * means the buffer is empty, newly painted, or otherwise not known to match
    * an asset on disk.
@@ -37,6 +43,7 @@ export interface BrushBuffer {
 
 const buffers = new Map<string, BrushBuffer>();
 const listeners = new Map<string, Set<() => void>>();
+const editSessions = new Map<string, number>();
 
 let sharedRenderer: Renderer | null = null;
 
@@ -53,6 +60,10 @@ export function getBrushBuffer(maskId: string): BrushBuffer | null {
 
 function notify(maskId: string): void {
   listeners.get(maskId)?.forEach((listener) => listener());
+}
+
+function bumpRevision(buffer: BrushBuffer): void {
+  buffer.revision += 1;
 }
 
 function clearRenderTextureToBlack(buffer: BrushBuffer): void {
@@ -99,6 +110,7 @@ export function ensureBrushBuffer(
     canvasSize: { width: w, height: h },
     paintedBounds: null,
     dirty: false,
+    revision: 0,
     sourceAssetId: null,
   };
   buffers.set(maskId, buffer);
@@ -212,6 +224,7 @@ export function paintBrushDot(
     buffer.canvasSize,
   );
   buffer.dirty = true;
+  bumpRevision(buffer);
   buffer.sourceAssetId = null;
   notify(maskId);
   // Wake the paused-time render loop so the player re-composites the mask
@@ -253,6 +266,7 @@ export function paintBrushStroke(
     buffer.canvasSize,
   );
   buffer.dirty = true;
+  bumpRevision(buffer);
   buffer.sourceAssetId = null;
   notify(maskId);
   livePreviewParamStore.requestRender();
@@ -264,6 +278,7 @@ export function clearBrushBuffer(maskId: string): void {
   clearRenderTextureToBlack(buffer);
   buffer.paintedBounds = null;
   buffer.dirty = true;
+  bumpRevision(buffer);
   buffer.sourceAssetId = null;
   notify(maskId);
   livePreviewParamStore.requestRender();
@@ -271,6 +286,18 @@ export function clearBrushBuffer(maskId: string): void {
 
 export function isBrushBufferDirty(maskId: string): boolean {
   return buffers.get(maskId)?.dirty ?? false;
+}
+
+export function getBrushBufferRevision(maskId: string): number | null {
+  return buffers.get(maskId)?.revision ?? null;
+}
+
+export function isBrushBufferRevision(
+  maskId: string,
+  revision: number | null,
+): boolean {
+  const buffer = buffers.get(maskId);
+  return !!buffer && revision !== null && buffer.revision === revision;
 }
 
 export function markBrushBufferClean(
@@ -290,6 +317,7 @@ export function disposeBrushBuffer(maskId: string): void {
   if (!buffer) return;
   buffer.renderTexture.destroy(true);
   buffers.delete(maskId);
+  editSessions.delete(maskId);
   notify(maskId);
 }
 
@@ -301,6 +329,23 @@ export function setBrushPaintedBounds(
   if (!buffer) return;
   buffer.paintedBounds = bounds;
   notify(maskId);
+}
+
+export function beginBrushBufferEdit(maskId: string): void {
+  editSessions.set(maskId, (editSessions.get(maskId) ?? 0) + 1);
+}
+
+export function endBrushBufferEdit(maskId: string): void {
+  const current = editSessions.get(maskId) ?? 0;
+  if (current <= 1) {
+    editSessions.delete(maskId);
+    return;
+  }
+  editSessions.set(maskId, current - 1);
+}
+
+export function isBrushBufferEditing(maskId: string): boolean {
+  return (editSessions.get(maskId) ?? 0) > 0;
 }
 
 function brushBoundsEqual(
@@ -515,6 +560,7 @@ export async function hydrateBrushBufferFromUrl(
   buffer.paintedBounds = bounds;
   // Hydration mirrors what's already on disk — no commit required.
   buffer.dirty = false;
+  bumpRevision(buffer);
   buffer.sourceAssetId = sourceAssetId;
   notify(maskId);
   return buffer;

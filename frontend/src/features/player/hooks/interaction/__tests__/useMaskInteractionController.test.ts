@@ -19,6 +19,7 @@ const {
   mockEnsureBrushBuffer,
   mockGetBrushBuffer,
   mockHydrateBrushBufferFromUrl,
+  mockIsBrushBufferEditing,
   mockIsBrushBufferReadyForSource,
   mockPaintBrushDot,
   mockPaintBrushStroke,
@@ -28,6 +29,7 @@ const {
   mockEnsureBrushBuffer: vi.fn(),
   mockGetBrushBuffer: vi.fn(() => null),
   mockHydrateBrushBufferFromUrl: vi.fn(),
+  mockIsBrushBufferEditing: vi.fn(() => false),
   mockIsBrushBufferReadyForSource: vi.fn(() => false),
   mockPaintBrushDot: vi.fn(),
   mockPaintBrushStroke: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock("../../../../masks/runtime/brushBufferRegistry", () => ({
   ensureBrushBuffer: mockEnsureBrushBuffer,
   getBrushBuffer: mockGetBrushBuffer,
   hydrateBrushBufferFromUrl: mockHydrateBrushBufferFromUrl,
+  isBrushBufferEditing: mockIsBrushBufferEditing,
   isBrushBufferReadyForSource: mockIsBrushBufferReadyForSource,
   paintBrushDot: mockPaintBrushDot,
   paintBrushStroke: mockPaintBrushStroke,
@@ -151,6 +154,7 @@ function createBrushBuffer(
     canvasSize: { width: 120, height: 120 },
     paintedBounds: { x: 8, y: 12, width: 40, height: 32 },
     dirty: false,
+    revision: 0,
     sourceAssetId: null,
     ...overrides,
   };
@@ -163,12 +167,15 @@ describe("useMaskInteractionController", () => {
     mockGetBrushBuffer.mockReset();
     mockGetBrushBuffer.mockReturnValue(null);
     mockHydrateBrushBufferFromUrl.mockClear();
+    mockIsBrushBufferEditing.mockClear();
+    mockIsBrushBufferEditing.mockReturnValue(false);
     mockIsBrushBufferReadyForSource.mockClear();
     mockIsBrushBufferReadyForSource.mockReturnValue(false);
     mockPaintBrushDot.mockClear();
     mockPaintBrushStroke.mockClear();
     mockSubscribeToBrushBuffer.mockClear();
     mockFlushBrushMaskCommit.mockClear();
+    mockFlushBrushMaskCommit.mockResolvedValue(undefined);
     useCanvasSelectionStore.getState().clearSelection();
     useTimelineStore.setState({
       clips: [],
@@ -864,7 +871,7 @@ describe("useMaskInteractionController", () => {
     );
   });
 
-  it("commits a brush mask when the stroke ends", () => {
+  it("paints a brush mask without flushing while the edit session remains focused", () => {
     const trackId = useTimelineStore.getState().tracks[0].id;
     const parent = createParentClip(trackId);
     const brushMask = createBrushMaskClip(parent, "mask_brush");
@@ -915,7 +922,7 @@ describe("useMaskInteractionController", () => {
       expect.any(Number),
       "paint",
     );
-    expect(mockFlushBrushMaskCommit).toHaveBeenCalledWith(brushMask.id);
+    expect(mockFlushBrushMaskCommit).not.toHaveBeenCalled();
   });
 
   it("does not hydrate a persisted brush mask over a dirty live buffer", () => {

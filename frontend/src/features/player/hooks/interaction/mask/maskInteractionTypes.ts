@@ -23,6 +23,7 @@ export interface BrushStrokeState {
   tool: "paint" | "erase";
   lastCanvasPoint: { x: number; y: number };
   canvasSize: { width: number; height: number };
+  layout: MaskLayoutState;
   radius: number;
   /** Local id of the mask (without the parent clip prefix). */
   maskLocalId: string;

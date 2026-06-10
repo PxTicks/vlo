@@ -76,6 +76,7 @@ import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import {
   ensureBrushBuffer,
   hydrateBrushBufferFromUrl,
+  isBrushBufferEditing,
   isBrushBufferReadyForSource,
   paintBrushDot,
   paintBrushStroke,
@@ -83,6 +84,7 @@ import {
 } from "../../../masks/runtime/brushBufferRegistry";
 import { flushBrushMaskCommit } from "../../../masks/runtime/brushAssetSync";
 import { resolveMaskRenderableLayout } from "../../../masks/runtime/resolveMaskRenderableLayout";
+import { clipLocalPointToBrushCanvasPoint } from "../../../masks/utils/brushCoordinates";
 import { ensureAssetSourceLoaded, useAssetStore } from "../../../userAssets";
 import { syncContainerTransformToTarget } from "../../../renderer";
 import {
@@ -374,14 +376,6 @@ export function useMaskInteractionController(
       return clipOverlayRef.current.toLocal(global);
     },
     [clipOverlayRef],
-  );
-
-  const toMaskOverlayLocal = useCallback(
-    (global: { x: number; y: number }) => {
-      if (!maskOverlayRef.current) return { x: 0, y: 0 };
-      return maskOverlayRef.current.toLocal(global);
-    },
-    [maskOverlayRef],
   );
 
   const resolveActiveClipContentSize = useCallback(() => {
@@ -1007,11 +1001,12 @@ export function useMaskInteractionController(
       if (!current.active || !current.clipId) return;
 
       if (current.mode === "brush" && current.brush && current.maskId) {
-        const local = toMaskOverlayLocal(e.global);
-        const next = {
-          x: local.x + current.brush.canvasSize.width / 2,
-          y: local.y + current.brush.canvasSize.height / 2,
-        };
+        const clipLocal = toClipLocal(e.global);
+        const next = clipLocalPointToBrushCanvasPoint(
+          clipLocal,
+          current.brush.canvasSize,
+          current.brush.layout,
+        );
         const last = current.brush.lastCanvasPoint;
         paintBrushStroke(
           current.maskId,
@@ -1186,11 +1181,6 @@ export function useMaskInteractionController(
       ) {
         const clipId = current.clipId;
         const maskLocalId = current.brush.maskLocalId;
-
-        // Commit on stroke-end so brush masks persist across reloads the same
-        // way other asset-backed masks do, while still avoiding per-move
-        // asset churn during the stroke itself.
-        void flushBrushMaskCommit(current.maskId);
 
         setInteractionContext({
           clipId,
@@ -1449,6 +1439,7 @@ export function useMaskInteractionController(
       setSelectedMask(target.clipId, target.maskLocalId);
       selectCanvasMask(target.clipId, target.maskLocalId);
       clearLiveMaskLayoutPreview();
+      if (!syncOverlayToSprite()) return false;
 
       const params = target.maskClip.maskParameters;
       // Lazy-finalize the brush canvas to the parent clip's content size on
@@ -1486,11 +1477,25 @@ export function useMaskInteractionController(
         });
       }
 
-      const local = toMaskOverlayLocal(e.global);
-      const point = {
-        x: local.x + canvasSize.width / 2,
-        y: local.y + canvasSize.height / 2,
-      };
+      const brushLayoutMaskClip =
+        placeholder &&
+        (canvasSize.width !== params?.baseWidth ||
+          canvasSize.height !== params?.baseHeight)
+          ? {
+              ...target.maskClip,
+              maskParameters: {
+                baseWidth: canvasSize.width,
+                baseHeight: canvasSize.height,
+              },
+            }
+          : target.maskClip;
+      const brushLayout = resolveMaskLayoutAtPlayhead(brushLayoutMaskClip);
+      const clipLocal = toClipLocal(e.global);
+      const point = clipLocalPointToBrushCanvasPoint(
+        clipLocal,
+        canvasSize,
+        brushLayout,
+      );
       paintBrushDot(target.maskClip.id, point.x, point.y, radius, tool);
 
       interactionRef.current = {
@@ -1499,7 +1504,7 @@ export function useMaskInteractionController(
         clipId: target.clipId,
         maskId: target.maskClip.id,
         handle: null,
-        startLocal: local,
+        startLocal: clipLocal,
         startLayout: null,
         startBaseSize: null,
         initialAngle: 0,
@@ -1509,6 +1514,7 @@ export function useMaskInteractionController(
           tool,
           lastCanvasPoint: point,
           canvasSize,
+          layout: brushLayout,
           radius,
           maskLocalId: target.maskLocalId,
         },
@@ -1759,7 +1765,7 @@ export function useMaskInteractionController(
     setPathPanelView,
     setSelectedMask,
     sam2PointMode,
-    toMaskOverlayLocal,
+    syncOverlayToSprite,
     toSam2LocalPoint,
     toSam2NormalizedPoint,
     toClipLocal,
@@ -2145,6 +2151,14 @@ export function useMaskInteractionController(
     const buffer = ensureBrushBuffer(maskClipId, width, height);
 
     if (!assetId) return;
+    if (
+      isBrushBufferEditing(maskClipId) &&
+      (buffer.dirty ||
+        buffer.sourceAssetId !== null ||
+        buffer.paintedBounds !== null)
+    ) {
+      return;
+    }
     if (
       buffer.dirty ||
       isBrushBufferReadyForSource(

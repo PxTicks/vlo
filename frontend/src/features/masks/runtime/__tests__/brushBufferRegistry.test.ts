@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { calculateBrushPaintedBoundsFromImageData } from "../brushBufferRegistry";
+import {
+  beginBrushBufferEdit,
+  calculateBrushPaintedBoundsFromImageData,
+  endBrushBufferEdit,
+  isBrushBufferEditing,
+} from "../brushBufferRegistry";
 
 function createPixels(
   width: number,
@@ -46,5 +51,20 @@ describe("calculateBrushPaintedBoundsFromImageData", () => {
       width: 1,
       height: 1,
     });
+  });
+});
+
+describe("brush buffer edit sessions", () => {
+  it("reference counts active brush edit sessions", () => {
+    beginBrushBufferEdit("mask_1");
+    beginBrushBufferEdit("mask_1");
+
+    expect(isBrushBufferEditing("mask_1")).toBe(true);
+
+    endBrushBufferEdit("mask_1");
+    expect(isBrushBufferEditing("mask_1")).toBe(true);
+
+    endBrushBufferEdit("mask_1");
+    expect(isBrushBufferEditing("mask_1")).toBe(false);
   });
 });

@@ -14,8 +14,6 @@ import type {
   MaskTimelineClip,
 } from "../../../../types/TimelineTypes";
 import {
-  ticksPerFrame,
-  tickToFrame,
   getTimelineClipById,
   useTimelineStore,
   selectMaskClipsForParent,
@@ -28,6 +26,7 @@ import {
   commitLayoutControlToTransforms,
   liveParamStore,
   livePreviewParamStore,
+  presentationToClipSourceTime,
 } from "../../../transformations";
 import { hasDragMovement } from "./transformInteraction";
 import { playbackClock } from "../../services/PlaybackClock";
@@ -86,6 +85,10 @@ import { flushBrushMaskCommit } from "../../../masks/runtime/brushAssetSync";
 import { resolveMaskRenderableLayout } from "../../../masks/runtime/resolveMaskRenderableLayout";
 import { ensureAssetSourceLoaded, useAssetStore } from "../../../userAssets";
 import { syncContainerTransformToTarget } from "../../../renderer";
+import {
+  resolveRenderedSourceFrameForClipAssets,
+  type RenderedSourceFrameReference,
+} from "../../../masks/utils/sam2SourceFrame";
 import { useProjectStore } from "../../../project/useProjectStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 import { findEditableMaskTargetAtPoint as findEditableMaskTargetAtPointFromInput } from "./mask/maskHitTesting";
@@ -104,7 +107,6 @@ const MIN_DRAW_SIZE = 3;
 const MIN_SCALE = 0.05;
 const DRAG_MOVE_EPSILON = 0.01;
 const KEYFRAME_POINT_EPSILON_TICKS = 1;
-const MIN_POINT_TIME_EPSILON_TICKS = 1;
 const SAM2_POINT_RADIUS = 8;
 const SAM2_POINT_HIT_RADIUS = 12;
 const SAM2_POINT_BORDER_WIDTH = 2;
@@ -270,6 +272,7 @@ export function useMaskInteractionController(
 ): MaskInteractionHandlers {
   const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
   const projectFps = useProjectStore((state) => state.config.fps);
+  const assets = useAssetStore((state) => state.assets);
   const addClipMask = useTimelineStore((state) => state.addClipMask);
   const updateClipMask = useTimelineStore((state) => state.updateClipMask);
   const selectClip = useTimelineStore((state) => state.selectClip);
@@ -365,16 +368,6 @@ export function useMaskInteractionController(
     sam2BorderColor: SAM2_BORDER_COLOR,
     onDispose: handleOverlaySceneDispose,
   });
-  const pointTimeEpsilonTicks = useMemo(() => {
-    const safeFps =
-      typeof projectFps === "number" &&
-      Number.isFinite(projectFps) &&
-      projectFps > 0
-        ? projectFps
-        : 30;
-    return Math.max(MIN_POINT_TIME_EPSILON_TICKS, ticksPerFrame(safeFps));
-  }, [projectFps]);
-
   const toClipLocal = useCallback(
     (global: { x: number; y: number }) => {
       if (!clipOverlayRef.current) return { x: 0, y: 0 };
@@ -430,19 +423,57 @@ export function useMaskInteractionController(
     [],
   );
 
-  const resolveMaskInputTimeAtPlayhead = useCallback(
-    (maskClip: MaskTimelineClip) => {
-      const clampedGlobal = Math.max(
-        maskClip.start,
-        Math.min(
+  const resolveSam2SourceFrameAtPlayhead = useCallback(
+    (maskClip: MaskTimelineClip): RenderedSourceFrameReference | null => {
+      const activeClip = activeClipRef.current;
+      if (!activeClip || activeClip.id !== maskClip.parentClipId) {
+        return null;
+      }
+
+      const timelineState = useTimelineStore.getState();
+      const sourceTimeTicks = Math.max(
+        0,
+        presentationToClipSourceTime(
+          {
+            tracks: timelineState.tracks,
+            clips: timelineState.clips,
+            fps: projectFps,
+          },
+          activeClip,
           playbackClock.time,
-          maskClip.start + maskClip.timelineDuration,
         ),
       );
-      const localVisualTicks = clampedGlobal - maskClip.start;
-      return calculateClipTime(maskClip, localVisualTicks, true);
+
+      return resolveRenderedSourceFrameForClipAssets(
+        activeClip,
+        sourceTimeTicks,
+        assets,
+        projectFps,
+      );
     },
-    [],
+    [activeClipRef, assets, projectFps],
+  );
+
+  const isSam2PointOnSourceFrame = useCallback(
+    (
+      point: ClipMaskPoint,
+      maskClip: MaskTimelineClip,
+      frame: RenderedSourceFrameReference,
+    ): boolean => {
+      const activeClip = activeClipRef.current;
+      if (!activeClip || activeClip.id !== maskClip.parentClipId) {
+        return false;
+      }
+      return (
+        resolveRenderedSourceFrameForClipAssets(
+          activeClip,
+          point.timeTicks,
+          assets,
+          projectFps,
+        ).frameIndex === frame.frameIndex
+      );
+    },
+    [activeClipRef, assets, projectFps],
   );
 
   const createEditableMaskTarget = useCallback(
@@ -619,10 +650,14 @@ export function useMaskInteractionController(
       }
 
       const contentSize = resolveActiveClipContentSize();
-      const currentInputTime = resolveMaskInputTimeAtPlayhead(maskClip);
+      const currentSourceFrame = resolveSam2SourceFrameAtPlayhead(maskClip);
+      if (!currentSourceFrame) {
+        pointsGraphics.visible = false;
+        pointsGraphics.clear();
+        return;
+      }
       const points = normalizeSam2Points(maskClip.maskPoints).filter(
-        (point) =>
-          Math.abs(point.timeTicks - currentInputTime) <= pointTimeEpsilonTicks,
+        (point) => isSam2PointOnSourceFrame(point, maskClip, currentSourceFrame),
       );
       const halfWidth = contentSize.width / 2;
       const halfHeight = contentSize.height / 2;
@@ -646,10 +681,10 @@ export function useMaskInteractionController(
       });
     },
     [
-      pointTimeEpsilonTicks,
       clipOverlayRef,
+      isSam2PointOnSourceFrame,
       resolveActiveClipContentSize,
-      resolveMaskInputTimeAtPlayhead,
+      resolveSam2SourceFrameAtPlayhead,
       sam2PointsGraphicsRef,
       toSam2LocalPoint,
     ],
@@ -672,19 +707,11 @@ export function useMaskInteractionController(
         return;
       }
 
-      // Frame-aware: match by source frame index (not exact ticks) so the
-      // preview remains visible across the whole frame interval.
-      const currentInputTime = resolveMaskInputTimeAtPlayhead(maskClip);
-      const sourceFps = Math.max(1, livePreview.sourceFps);
-      const currentFrameIndex = Math.max(
-        0,
-        tickToFrame(Math.max(0, currentInputTime), sourceFps, "floor"),
-      );
-      // Predictor frame responses can lag the playhead by a frame or two during
-      // scrubbing. Allow small drift so preview mode remains visibly continuous.
-      const previewMatchesFrame =
-        Math.abs(currentFrameIndex - livePreview.frameIndex) <= 2;
-      if (!previewMatchesFrame) {
+      const currentSourceFrame = resolveSam2SourceFrameAtPlayhead(maskClip);
+      if (
+        !currentSourceFrame ||
+        currentSourceFrame.frameIndex !== livePreview.frameIndex
+      ) {
         previewSprite.visible = false;
         return;
       }
@@ -714,7 +741,7 @@ export function useMaskInteractionController(
     },
     [
       resolveActiveClipContentSize,
-      resolveMaskInputTimeAtPlayhead,
+      resolveSam2SourceFrameAtPlayhead,
       sam2PreviewSpriteRef,
     ],
   );
@@ -781,7 +808,8 @@ export function useMaskInteractionController(
             !previous ||
             point.x !== previous.x ||
             point.y !== previous.y ||
-            point.label !== previous.label
+            point.label !== previous.label ||
+            point.timeTicks !== previous.timeTicks
           );
         });
       if (!didChange) return;
@@ -1518,14 +1546,17 @@ export function useMaskInteractionController(
 
       const local = toClipLocal(e.global);
       const contentSize = resolveActiveClipContentSize();
-      const currentInputTime = resolveMaskInputTimeAtPlayhead(target.maskClip);
+      const currentSourceFrame = resolveSam2SourceFrameAtPlayhead(
+        target.maskClip,
+      );
+      if (!currentSourceFrame) return false;
       const label: 0 | 1 =
         button === 2 ? 0 : sam2PointMode === "remove" ? 0 : 1;
       const nextPoint = toSam2NormalizedPoint(
         local,
         contentSize,
         label,
-        currentInputTime,
+        currentSourceFrame.timeTicks,
       );
 
       updateSam2MaskPoints(target.clipId, target.maskLocalId, (points) => {
@@ -1533,8 +1564,11 @@ export function useMaskInteractionController(
           .map((point, index) => ({ point, index }))
           .filter(
             ({ point }) =>
-              Math.abs(point.timeTicks - currentInputTime) <=
-              pointTimeEpsilonTicks,
+              isSam2PointOnSourceFrame(
+                point,
+                target.maskClip,
+                currentSourceFrame,
+              ),
           );
 
         const nearest = pointsAtCurrentTime.reduce(
@@ -1707,10 +1741,10 @@ export function useMaskInteractionController(
     getTargetBrushMaskForPainting,
     getTargetSam2MaskForPointEditing,
     findEditableMaskTargetAtPoint,
-    pointTimeEpsilonTicks,
+    isSam2PointOnSourceFrame,
     renderMaskToOverlay,
     resolveMaskRenderableShape,
-    resolveMaskInputTimeAtPlayhead,
+    resolveSam2SourceFrameAtPlayhead,
     resolveMaskLayoutAtPlayhead,
     resolveMaskLayoutBaseSize,
     resolveActiveClipContentSize,

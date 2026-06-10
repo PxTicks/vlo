@@ -11,15 +11,22 @@ import {
   TICKS_PER_SECOND,
   countSam2MaskAssetConsumers,
   useTimelineStore,
-  tickToFrame,
-  ticksPerFrame,
 } from "../../timeline";
 import { playbackClock } from "../../player/services/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
 import type { ClipPresentationContext } from "../../transformations";
+import {
+  getRenderedSourceFrameReferenceFromTicks,
+} from "../../renderer/utils/mediaTime";
 import { useMaskViewStore } from "../store/useMaskViewStore";
 import { toClipInputTimeTicks } from "../utils/clipTime";
+import {
+  areSam2PointsEqual,
+  isPointOnRenderedSourceFrame,
+  normalizeSam2PointsToRenderedSourceFrames,
+  resolveRenderedSourceFrameForAsset,
+} from "../utils/sam2SourceFrame";
 import {
   clearSam2EditorSession,
   generateMaskFrame,
@@ -46,7 +53,7 @@ function getClipPresentationContext(): ClipPresentationContext {
 function hashSam2Points(points: ClipMaskPoint[]): string {
   let hash = 2166136261;
   for (const point of points) {
-    const token = `${point.x.toFixed(6)}|${point.y.toFixed(6)}|${point.label}|${Math.round(point.timeTicks)};`;
+    const token = `${point.x.toFixed(6)}|${point.y.toFixed(6)}|${point.label}|${point.timeTicks.toFixed(6)};`;
     for (let index = 0; index < token.length; index += 1) {
       hash ^= token.charCodeAt(index);
       hash = Math.imul(hash, 16777619);
@@ -95,20 +102,6 @@ async function getOrRegisterSam2Source(
     });
   sam2SourceRegistrationCache.set(sourceHash, registrationPromise);
   return registrationPromise;
-}
-
-function toSourceFrameIndex(
-  timeTicks: number,
-  fps: number,
-  frameCount: number,
-): number {
-  return Math.max(
-    0,
-    Math.min(
-      Math.max(0, frameCount - 1),
-      tickToFrame(Math.max(0, timeTicks), Math.max(1, fps), "floor"),
-    ),
-  );
 }
 
 interface Sam2UpdateClipMask {
@@ -214,6 +207,13 @@ export function useSam2MaskPanel({
   const assets = useAssetStore((state) => state.assets);
   const addLocalAsset = useAssetStore((state) => state.addLocalAsset);
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
+  const selectedParentAsset = useMemo(
+    () =>
+      selectedClip && isAssetBackedClip(selectedClip)
+        ? assets.find((asset) => asset.id === selectedClip.assetId)
+        : undefined,
+    [assets, selectedClip],
+  );
   const sam2EditorMaskId = useMaskViewStore((state) =>
     selectedClipId
       ? (state.sam2EditorMaskByClipId[selectedClipId] ?? null)
@@ -229,49 +229,54 @@ export function useSam2MaskPanel({
     [sam2Points],
   );
   const projectFps = useProjectStore((state) => state.config.fps);
-  const pointTimeEpsilonTicks = useMemo(() => {
-    const safeFps =
-      typeof projectFps === "number" &&
-      Number.isFinite(projectFps) &&
-      projectFps > 0
-        ? projectFps
-        : 30;
-    return Math.max(1, ticksPerFrame(safeFps));
-  }, [projectFps]);
 
   const [currentInputTimeTicks, setCurrentInputTimeTicks] = useState(0);
+  const currentRenderedSourceFrame = useMemo(
+    () =>
+      resolveRenderedSourceFrameForAsset(
+        selectedClip,
+        selectedParentAsset,
+        currentInputTimeTicks,
+        projectFps,
+      ),
+    [currentInputTimeTicks, projectFps, selectedClip, selectedParentAsset],
+  );
 
   useEffect(() => {
     if (!selectedMask || selectedMask.maskType !== "sam2") return;
+    if (!selectedClip || selectedClip.type === "mask") return;
     const update = (globalTimeTicks: number) => {
-      const clampedGlobal = Math.max(
-        selectedMask.start,
-        Math.min(
-          globalTimeTicks,
-          selectedMask.start + selectedMask.timelineDuration,
-        ),
-      );
-      const localVisualTicks = clampedGlobal - selectedMask.start;
       setCurrentInputTimeTicks(
-        calculateClipInputTicks(
-          selectedMask,
-          localVisualTicks,
+        toClipInputTimeTicks(
+          selectedClip,
+          globalTimeTicks,
           getClipPresentationContext(),
         ),
       );
     };
     update(playbackClock.time);
     return playbackClock.subscribe(update);
-  }, [selectedMask]);
+  }, [selectedClip, selectedMask]);
 
   const sam2CurrentFramePointsCount = useMemo(
     () =>
       sam2Points.filter(
         (point) =>
-          Math.abs(point.timeTicks - currentInputTimeTicks) <=
-          pointTimeEpsilonTicks,
+          isPointOnRenderedSourceFrame(
+            point,
+            selectedClip,
+            selectedParentAsset,
+            currentRenderedSourceFrame,
+            projectFps,
+          ),
       ).length,
-    [currentInputTimeTicks, pointTimeEpsilonTicks, sam2Points],
+    [
+      currentRenderedSourceFrame,
+      projectFps,
+      sam2Points,
+      selectedClip,
+      selectedParentAsset,
+    ],
   );
 
   const isSam2EditorOpen =
@@ -474,16 +479,23 @@ export function useSam2MaskPanel({
     if (!selectedClipId || !selectedMaskId) return;
     const remaining = sam2Points.filter(
       (point) =>
-        Math.abs(point.timeTicks - currentInputTimeTicks) >
-        pointTimeEpsilonTicks,
+        !isPointOnRenderedSourceFrame(
+          point,
+          selectedClip,
+          selectedParentAsset,
+          currentRenderedSourceFrame,
+          projectFps,
+        ),
     );
     updateClipMask(selectedClipId, selectedMaskId, { maskPoints: remaining });
   }, [
-    currentInputTimeTicks,
-    pointTimeEpsilonTicks,
+    currentRenderedSourceFrame,
+    projectFps,
     sam2Points,
+    selectedClip,
     selectedClipId,
     selectedMaskId,
+    selectedParentAsset,
     updateClipMask,
   ]);
 
@@ -651,24 +663,30 @@ export function useSam2MaskPanel({
         options?.globalTimeTicks ?? playbackClock.time,
         presentationContext,
       );
-      const targetFrameIndex = toSourceFrameIndex(
+      const targetSourceFrame = getRenderedSourceFrameReferenceFromTicks(
         safeInputTimeTicks,
         sourceRegistration.fps,
         sourceRegistration.frameCount,
       );
+      const targetFrameIndex = targetSourceFrame.frameIndex;
 
       const shouldAddCurrentFramePoints =
         options?.includeCurrentFramePoints === true;
       let requestPoints: ClipMaskPoint[] = [];
       if (shouldAddCurrentFramePoints) {
-        requestPoints = sam2Points.filter((point) => {
-          const pointFrameIndex = toSourceFrameIndex(
-            point.timeTicks,
-            sourceRegistration.fps,
-            sourceRegistration.frameCount,
-          );
-          return pointFrameIndex === targetFrameIndex;
-        });
+        requestPoints = normalizeSam2PointsToRenderedSourceFrames(
+          sam2Points.filter((point) => {
+            const pointFrame =
+              getRenderedSourceFrameReferenceFromTicks(
+                point.timeTicks,
+                sourceRegistration.fps,
+                sourceRegistration.frameCount,
+              );
+            return pointFrame.frameIndex === targetFrameIndex;
+          }),
+          sourceRegistration.fps,
+          sourceRegistration.frameCount,
+        );
         if (requestPoints.length === 0) return null;
       }
 
@@ -677,7 +695,7 @@ export function useSam2MaskPanel({
           sourceId: sourceRegistration.sourceId,
           points: requestPoints,
           ticksPerSecond: TICKS_PER_SECOND,
-          timeTicks: safeInputTimeTicks,
+          timeTicks: targetSourceFrame.timeTicks,
           maskId: selectedMaskId,
         },
         { signal: options?.signal },
@@ -738,15 +756,14 @@ export function useSam2MaskPanel({
         livePreview.sourceFps > 0
       ) {
         const presentationContext = getClipPresentationContext();
-        const targetFrameIndex = toSourceFrameIndex(
+        const targetFrameIndex = getRenderedSourceFrameReferenceFromTicks(
           toClipInputTimeTicks(
             selectedClip,
             globalTimeTicks,
             presentationContext,
           ),
           livePreview.sourceFps,
-          Number.MAX_SAFE_INTEGER,
-        );
+        ).frameIndex;
         const lastApplied = lastAppliedSam2PreviewRef.current;
         if (
           lastApplied &&
@@ -944,14 +961,24 @@ export function useSam2MaskPanel({
         0,
         parentClip.croppedSourceDuration || 0,
       );
+      const normalizedSam2Points = normalizeSam2PointsToRenderedSourceFrames(
+        sam2Points,
+        sourceRegistration.fps,
+        sourceRegistration.frameCount,
+      );
 
       let outputFile: File;
       if (parentAsset.type === "image") {
+        const visibleSourceFrame = getRenderedSourceFrameReferenceFromTicks(
+          visibleSourceStartTicks,
+          sourceRegistration.fps,
+          sourceRegistration.frameCount,
+        );
         const generated = await generateMaskFrame({
           sourceId: sourceRegistration.sourceId,
-          points: sam2Points,
+          points: normalizedSam2Points,
           ticksPerSecond: TICKS_PER_SECOND,
-          timeTicks: visibleSourceStartTicks,
+          timeTicks: visibleSourceFrame.timeTicks,
           maskId: selectedMaskId,
         });
         outputFile = new File(
@@ -965,7 +992,7 @@ export function useSam2MaskPanel({
       } else {
         const generated = await generateMaskVideo({
           sourceId: sourceRegistration.sourceId,
-          points: sam2Points,
+          points: normalizedSam2Points,
           ticksPerSecond: TICKS_PER_SECOND,
           maskId: selectedMaskId,
           visibleSourceStartTicks,
@@ -987,7 +1014,7 @@ export function useSam2MaskPanel({
         parentAssetId: parentAsset.id,
         parentClipId: selectedClipId,
         maskClipId,
-        pointCount: sam2Points.length,
+        pointCount: normalizedSam2Points.length,
         sourceHash,
       });
 
@@ -995,12 +1022,16 @@ export function useSam2MaskPanel({
         throw new Error("Failed to create generated SAM2 mask asset.");
       }
 
-      const pointsHash = hashSam2Points(sam2Points);
-      updateClipMask(selectedClipId, selectedMaskId, {
+      const pointsHash = hashSam2Points(normalizedSam2Points);
+      const updates: Parameters<Sam2UpdateClipMask>[2] = {
         sam2MaskAssetId: createdAsset.id,
         sam2GeneratedPointsHash: pointsHash,
         sam2LastGeneratedAt: now,
-      });
+      };
+      if (!areSam2PointsEqual(sam2Points, normalizedSam2Points)) {
+        updates.maskPoints = normalizedSam2Points;
+      }
+      updateClipMask(selectedClipId, selectedMaskId, updates);
 
       useMaskViewStore.getState().clearSam2LivePreview(selectedClipId);
 
@@ -1059,16 +1090,4 @@ export function useSam2MaskPanel({
     isSam2Dirty,
     hasSam2MaskAsset: !!selectedMask?.sam2MaskAssetId,
   };
-}
-
-function calculateClipInputTicks(
-  clip: TimelineClip,
-  localVisualTimeTicks: number,
-  presentationContext?: ClipPresentationContext,
-): number {
-  return toClipInputTimeTicks(
-    clip,
-    clip.start + localVisualTimeTicks,
-    presentationContext,
-  );
 }

@@ -6,6 +6,8 @@ import {
   mediaTimestampToFirstAvailableTick,
   frameIndexToOutputTimestamp,
   snapFrameTimeSeconds,
+  getRenderedSourceFrameReferenceFromTicks,
+  getRenderedSourceFrameReferenceFromSeconds,
 } from "../mediaTime";
 import { TICKS_PER_SECOND } from "../../../timeline";
 
@@ -98,6 +100,33 @@ describe("mediaTime boundary", () => {
     it("snaps to the nearest 1/fps grid and clamps negatives", () => {
       expect(snapFrameTimeSeconds(0.04, 30)).toBe(Math.round(0.04 * 30) / 30);
       expect(snapFrameTimeSeconds(-1, 30)).toBe(0);
+    });
+  });
+
+  describe("getRenderedSourceFrameReference", () => {
+    it("returns the canonical source frame the renderer will sample", () => {
+      const frame = getRenderedSourceFrameReferenceFromTicks(2000, 30);
+
+      expect(frame.frameIndex).toBe(1);
+      expect(frame.timeSeconds).toBe(1 / 30);
+      expect(frame.timeTicks).toBe(TICKS_PER_SECOND / 30);
+    });
+
+    it("clamps to the available source frame count", () => {
+      const frame = getRenderedSourceFrameReferenceFromSeconds(10, 30, 10);
+
+      expect(frame.frameIndex).toBe(9);
+      expect(frame.timeSeconds).toBe(9 / 30);
+      expect(frame.timeTicks).toBe((9 * TICKS_PER_SECOND) / 30);
+    });
+
+    it("uses the same source frame for all times that snap to it", () => {
+      const first = getRenderedSourceFrameReferenceFromSeconds(1 / 24, 12);
+      const second = getRenderedSourceFrameReferenceFromSeconds(1.9 / 24, 12);
+
+      expect(first.frameIndex).toBe(1);
+      expect(second.frameIndex).toBe(1);
+      expect(first.timeTicks).toBe(second.timeTicks);
     });
   });
 });

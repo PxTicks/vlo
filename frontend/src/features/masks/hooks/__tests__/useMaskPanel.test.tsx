@@ -203,6 +203,9 @@ describe("useMaskPanel", () => {
     const parent = createParentClip("clip_image", "image");
     const mask = createSam2MaskClip(parent, "mask_image", "apply");
     mask.maskPoints = [
+      { x: 0.5, y: 0.5, label: 1, timeTicks: 1200 },
+    ];
+    const canonicalMaskPoints = [
       { x: 0.5, y: 0.5, label: 1, timeTicks: 0 },
     ];
 
@@ -273,7 +276,7 @@ describe("useMaskPanel", () => {
       );
       expect(generateMaskFrame).toHaveBeenCalledWith({
         sourceId: "sam2_source_image",
-        points: mask.maskPoints,
+        points: canonicalMaskPoints,
         ticksPerSecond: TICKS_PER_SECOND,
         timeTicks: 0,
         maskId: "mask_image",
@@ -299,6 +302,7 @@ describe("useMaskPanel", () => {
       .getState()
       .clips.find((clip): clip is MaskTimelineClip => clip.id === mask.id);
     expect(updatedMask?.sam2MaskAssetId).toBe("sam2_generated_asset");
+    expect(updatedMask?.maskPoints).toEqual(canonicalMaskPoints);
   });
 
   it("promotes a preview mask to apply when leaving the mask tab", async () => {

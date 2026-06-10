@@ -10,19 +10,24 @@ export function toClipInputTimeTicks(
   globalTimeTicks: number,
   presentationContext?: ClipPresentationContext,
 ): number {
+  if (presentationContext) {
+    return Math.max(
+      0,
+      presentationToClipSourceTime(
+        presentationContext,
+        parentClip,
+        globalTimeTicks,
+      ),
+    );
+  }
+
   const clampedGlobalTimeTicks = Math.max(
     parentClip.start,
     Math.min(globalTimeTicks, parentClip.start + parentClip.timelineDuration),
   );
-  const currentInputTimeTicks = presentationContext
-    ? presentationToClipSourceTime(
-        presentationContext,
-        parentClip,
-        clampedGlobalTimeTicks,
-      )
-    : clipVisualToSourceTime(
-        parentClip,
-        clampedGlobalTimeTicks - parentClip.start,
-      );
+  const currentInputTimeTicks = clipVisualToSourceTime(
+    parentClip,
+    clampedGlobalTimeTicks - parentClip.start,
+  );
   return Math.max(0, currentInputTimeTicks);
 }

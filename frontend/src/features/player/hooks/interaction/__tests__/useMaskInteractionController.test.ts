@@ -545,7 +545,9 @@ describe("useMaskInteractionController", () => {
       .getState()
       .clips.find((clip) => clip.id === sam2Mask.id) as MaskTimelineClip | undefined;
     expect(updatedMask?.maskPoints).toHaveLength(2);
-    expect(updatedMask?.maskPoints?.[1].timeTicks).toBe(4000);
+    expect(updatedMask?.maskPoints?.[1].timeTicks).toBe(
+      TICKS_PER_SECOND / 30,
+    );
 
     let consumedRemoveAtLaterTime = false;
     act(() => {

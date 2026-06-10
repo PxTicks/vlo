@@ -88,6 +88,24 @@ def test_group_points_by_frame_uses_time_ticks() -> None:
     assert sorted(grouped.keys()) == [0, 24, 48]
 
 
+def test_group_points_by_frame_treats_frame_boundary_dust_as_boundary() -> None:
+    frame_four_ticks = 4 * 96_000 / 24
+    points: list[Sam2Point] = [
+        {"x": 0.1, "y": 0.1, "label": 1, "timeTicks": frame_four_ticks - 1e-7},
+        {"x": 0.2, "y": 0.2, "label": 1, "timeTicks": frame_four_ticks - 10},
+    ]
+
+    grouped = sam2_service.group_points_by_frame(
+        points=points,
+        fps=24.0,
+        ticks_per_second=96_000,
+        frame_count=100,
+    )
+
+    assert grouped[4] == [points[0]]
+    assert grouped[3] == [points[1]]
+
+
 def test_source_ticks_range_to_frame_window_maps_to_expected_bounds() -> None:
     source = Sam2SourceMetadata(
         source_id="source_1",

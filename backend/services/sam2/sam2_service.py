@@ -529,6 +529,7 @@ class _Sam2EditorSession:
 
 
 _EDITOR_SESSIONS: dict[str, _Sam2EditorSession] = {}
+FRAME_INDEX_EPSILON = 1e-6
 
 
 def _sanitize_source_hash(source_hash: str) -> str:
@@ -1057,13 +1058,30 @@ def group_points_by_frame(
         raise ValueError(
             f"ticks_per_second must be > 0, got {ticks_per_second}"
         )
+    if frame_count <= 0:
+        raise ValueError(f"frame_count must be > 0, got {frame_count}")
     for point in points:
-        time_ticks = float(point["timeTicks"])
-        time_sec = max(0.0, time_ticks / ticks_per_second)
-        frame_index = int(np.floor(time_sec * fps))
-        frame_index = max(0, min(frame_count - 1, frame_index))
+        frame_index = _time_ticks_to_frame_index(
+            time_ticks=float(point["timeTicks"]),
+            fps=fps,
+            ticks_per_second=ticks_per_second,
+            frame_count=frame_count,
+        )
         grouped.setdefault(frame_index, []).append(point)
     return grouped
+
+
+def _frame_number_to_index(frame_number: float, frame_count: int) -> int:
+    # SAM2 consumes source-frame indices, while the renderer selects source
+    # frames by nearest-frame snapping. Frontend SAM2 requests must canonicalize
+    # raw point ticks to rendered source-frame ticks before reaching this floor-
+    # based mapper; the epsilon below only absorbs boundary float dust.
+    nearest_frame = int(round(frame_number))
+    if abs(frame_number - nearest_frame) <= FRAME_INDEX_EPSILON:
+        frame_index = nearest_frame
+    else:
+        frame_index = int(np.floor(frame_number))
+    return max(0, min(frame_count - 1, frame_index))
 
 
 def _time_ticks_to_frame_index(
@@ -1082,8 +1100,7 @@ def _time_ticks_to_frame_index(
         raise ValueError(f"frame_count must be > 0, got {frame_count}")
 
     time_sec = max(0.0, float(time_ticks) / ticks_per_second)
-    frame_index = int(np.floor(time_sec * fps))
-    return max(0, min(frame_count - 1, frame_index))
+    return _frame_number_to_index(time_sec * fps, frame_count)
 
 
 def _normalize_frame_window(

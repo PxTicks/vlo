@@ -118,3 +118,65 @@ export function snapFrameTimeSeconds(timeSeconds: number, fps: number): number {
     typeof fps === "number" && Number.isFinite(fps) && fps > 0 ? fps : 1;
   return Math.round(safeTime * safeFps) / safeFps;
 }
+
+export interface RenderedSourceFrameReference {
+  frameIndex: number;
+  timeSeconds: number;
+  timeTicks: number;
+}
+
+function safeFrameRate(fps: number): number {
+  return typeof fps === "number" && Number.isFinite(fps) && fps > 0 ? fps : 1;
+}
+
+function clampFrameIndex(frameIndex: number, frameCount?: number): number {
+  const lowerBounded = Math.max(0, frameIndex);
+  if (
+    typeof frameCount !== "number" ||
+    !Number.isFinite(frameCount) ||
+    frameCount <= 0
+  ) {
+    return lowerBounded;
+  }
+  return Math.min(frameCount - 1, lowerBounded);
+}
+
+/**
+ * Source-frame identity for the frame the renderer will visibly sample.
+ *
+ * This intentionally mirrors the player/export path:
+ * `sourceTime -> snapFrameTimeSeconds(..., sourceFps) -> frame index`.
+ * Consumers that attach source-time-owned edits (SAM2 points, cached masks)
+ * should compare this frame identity rather than comparing continuous ticks.
+ */
+export function getRenderedSourceFrameReferenceFromSeconds(
+  timeSeconds: number,
+  fps: number,
+  frameCount?: number,
+): RenderedSourceFrameReference {
+  const safeFps = safeFrameRate(fps);
+  const snappedTimeSeconds = snapFrameTimeSeconds(timeSeconds, safeFps);
+  const frameEpsilonSeconds = 1 / (safeFps * 1_000_000);
+  const frameIndex = clampFrameIndex(
+    Math.floor((snappedTimeSeconds + frameEpsilonSeconds) * safeFps),
+    frameCount,
+  );
+  const canonicalTimeSeconds = frameIndex / safeFps;
+  return {
+    frameIndex,
+    timeSeconds: canonicalTimeSeconds,
+    timeTicks: mediaSecondsToTickExact(canonicalTimeSeconds),
+  };
+}
+
+export function getRenderedSourceFrameReferenceFromTicks(
+  timeTicks: number,
+  fps: number,
+  frameCount?: number,
+): RenderedSourceFrameReference {
+  return getRenderedSourceFrameReferenceFromSeconds(
+    tickToMediaSeconds(timeTicks),
+    fps,
+    frameCount,
+  );
+}

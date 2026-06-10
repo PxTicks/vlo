@@ -449,7 +449,7 @@ describe("MaskPanel", () => {
     expect(mockRequestDraw).toHaveBeenCalledWith("sam2");
   });
 
-  it("shows SAM2 download on home and opens the SAM2 detail view separately", () => {
+  it("keeps SAM2 downloads out of home and opens the SAM2 detail view separately", () => {
     const sam2Mask = createMaskClip("clip_1", "mask_sam2", "sam2");
     vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
       ...baseHookValue,
@@ -461,7 +461,7 @@ describe("MaskPanel", () => {
 
     render(<MaskPanel />);
 
-    expect(screen.getByTestId("sam2-download-overlay")).toBeInTheDocument();
+    expect(screen.queryByTestId("sam2-download-overlay")).not.toBeInTheDocument();
     expect(screen.queryByTestId("sam2-mask-panel")).not.toBeInTheDocument();
 
     const availableChip = screen.getByTestId("mask-variable-chip-mask_sam2");

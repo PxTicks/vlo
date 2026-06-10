@@ -2,6 +2,18 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { Sam2MaskPanel } from "../Sam2MaskPanel";
 
+vi.mock("../Sam2ModelDownloadOverlay", () => ({
+  Sam2ModelDownloadOverlay: ({
+    onModelsInstalled,
+  }: {
+    onModelsInstalled: () => void;
+  }) => (
+    <button data-testid="sam2-download-overlay" onClick={onModelsInstalled}>
+      Install SAM2
+    </button>
+  ),
+}));
+
 const defaultProps = {
   maskMode: "apply" as const,
   maskInverted: false,
@@ -27,6 +39,7 @@ const defaultProps = {
   onSetMaskInverted: vi.fn(),
   onSetSam2GrowAmount: vi.fn(),
   onSetSam2PointMode: vi.fn(),
+  onModelsInstalled: vi.fn(),
 };
 
 describe("Sam2MaskPanel", () => {
@@ -167,5 +180,36 @@ describe("Sam2MaskPanel", () => {
     expect(
       screen.getByRole("button", { name: "Generate Mask Video" }),
     ).toBeDisabled();
+  });
+
+  it("shows model downloads in the SAM2 editor when unavailable", () => {
+    const onModelsInstalled = vi.fn();
+    render(
+      <Sam2MaskPanel
+        {...defaultProps}
+        isSam2Available={false}
+        isSam2Checking={false}
+        onModelsInstalled={onModelsInstalled}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("sam2-download-overlay"));
+
+    expect(onModelsInstalled).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the availability check before showing downloads", () => {
+    render(
+      <Sam2MaskPanel
+        {...defaultProps}
+        isSam2Available={false}
+        isSam2Checking={true}
+      />,
+    );
+
+    expect(screen.queryByTestId("sam2-download-overlay")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Checking SAM2 availability..."),
+    ).toBeInTheDocument();
   });
 });

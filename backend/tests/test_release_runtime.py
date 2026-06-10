@@ -116,6 +116,7 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
         "get_health",
         lambda: {"runtime": {"ready": False}},
     )
+    monkeypatch.setattr(main, "get_available_sam2_models", lambda: [])
     monkeypatch.setattr(
         main.beats_service,
         "get_health",
@@ -137,6 +138,49 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     assert status["beat_this"] == {
         "status": "unavailable",
         "error": "Beat This offline",
+    }
+
+
+def test_app_status_uses_installed_sam2_model_inventory(monkeypatch):
+    async def fake_get_http_client():
+        return DummyClient()
+
+    monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
+    monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
+    monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
+    monkeypatch.setattr(
+        main.sam2_service,
+        "get_health",
+        lambda: {"runtime": {"ready": False}},
+    )
+    monkeypatch.setattr(
+        main,
+        "get_available_sam2_models",
+        lambda: [
+            {
+                "key": "sam2.1_hiera_small",
+                "label": "SAM2.1 Small",
+                "description": "Faster",
+                "installed": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        main.beats_service,
+        "get_health",
+        lambda: {"runtime": {"ready": True}},
+    )
+    monkeypatch.setattr(
+        main.sam_audio_service,
+        "get_health",
+        lambda: {"runtime": {"ready": True}},
+    )
+
+    status = asyncio.run(main.get_app_status())
+
+    assert status["sam2"] == {
+        "status": "available",
+        "error": None,
     }
 
 

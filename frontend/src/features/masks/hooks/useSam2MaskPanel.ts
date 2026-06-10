@@ -921,36 +921,35 @@ export function useSam2MaskPanel({
   const generateSam2Mask = useCallback(async () => {
     if (!selectedClipId || !selectedMaskId) return;
     if (!selectedMask || selectedMask.maskType !== "sam2") return;
-    if (!(await ensureSam2Available())) {
-      setSam2GenerateError(
-        sam2AvailabilityError ??
-          "SAM2 is unavailable. Install or configure SAM2 models first.",
-      );
-      return;
-    }
-    if (sam2Points.length === 0) {
-      setSam2GenerateError("Add at least one SAM2 point before generating.");
-      return;
-    }
 
-    const parentClip = selectedClip;
-    if (!isAssetBackedClip(parentClip)) {
-      setSam2GenerateError("Selected clip has no source asset.");
-      return;
-    }
-
-    const parentAsset = assets.find((asset) => asset.id === parentClip.assetId);
-    if (!parentAsset) {
-      setSam2GenerateError("Parent asset was not found.");
-      return;
-    }
-
-    setIsSam2Generating(true);
     setSam2GenerateError(null);
+    setIsSam2Generating(true);
 
     const previousSam2AssetId = selectedMask.sam2MaskAssetId;
     const now = Date.now();
     try {
+      if (!(await ensureSam2Available())) {
+        throw new Error(
+          sam2AvailabilityError ??
+            "SAM2 is unavailable. Install or configure SAM2 models first.",
+        );
+      }
+      if (sam2Points.length === 0) {
+        throw new Error("Add at least one SAM2 point before generating.");
+      }
+
+      const parentClip = selectedClip;
+      if (!isAssetBackedClip(parentClip)) {
+        throw new Error("Selected clip has no source asset.");
+      }
+
+      const parentAsset = assets.find(
+        (asset) => asset.id === parentClip.assetId,
+      );
+      if (!parentAsset) {
+        throw new Error("Parent asset was not found.");
+      }
+
       const sourceHash = parentAsset.hash;
       const sourceRegistration = await getOrRegisterSam2Source(sourceHash, () =>
         resolveAssetFile(parentAsset),
@@ -1076,7 +1075,8 @@ export function useSam2MaskPanel({
     sam2CurrentFramePointsCount,
     isSam2EditorOpen,
     isSam2Available: sam2AvailabilityStatus === "available",
-    isSam2Checking: sam2AvailabilityStatus === "checking",
+    isSam2Checking:
+      sam2AvailabilityStatus === "idle" || sam2AvailabilityStatus === "checking",
     sam2AvailabilityError,
     ensureSam2Available,
     clearSam2Points,

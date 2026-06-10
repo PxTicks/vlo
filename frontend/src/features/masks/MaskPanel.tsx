@@ -46,7 +46,6 @@ import {
   beginBrushBufferEdit,
   endBrushBufferEdit,
 } from "./runtime/brushBufferRegistry";
-import { Sam2ModelDownloadOverlay } from "./components/Sam2ModelDownloadOverlay";
 import { MaskEquationBuilder } from "./components/MaskEquationBuilder";
 import { MaskActiveRangeSection } from "./components/MaskActiveRangeSection";
 import { RangeMaskSection } from "./components/RangeMaskSection";
@@ -631,10 +630,6 @@ export const MaskPanel = memo(function MaskPanel() {
   const selectedMaskMode =
     (selectedMask?.type === "mask" ? selectedMask.maskMode : undefined) ??
     "apply";
-  const hasSam2Masks = masks.some(
-    (mask) => mask.type === "mask" && mask.maskType === "sam2",
-  );
-  const showSam2DownloadOverlay = hasSam2Masks && !isSam2Available;
   const isDetailView = panelView === "mask" && !!selectedMask;
   const activeSam2EditorClipIdRef = useRef<string | null>(null);
 
@@ -836,6 +831,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 onSetMaskInverted={setMaskInverted}
                 onSetSam2GrowAmount={setSam2GrowAmount}
                 onSetSam2PointMode={setSam2PointMode}
+                onModelsInstalled={handleModelsInstalled}
               />
               <Box sx={{ px: 2, pb: 2 }}>
                 <Divider sx={{ borderColor: "#2a2d33", mb: 2 }} />
@@ -1102,14 +1098,6 @@ export const MaskPanel = memo(function MaskPanel() {
                   >
                     {addDisabledReason}
                   </Typography>
-                </Box>
-              )}
-
-              {showSam2DownloadOverlay && (
-                <Box sx={{ px: 2, pb: 2 }}>
-                  <Sam2ModelDownloadOverlay
-                    onModelsInstalled={handleModelsInstalled}
-                  />
                 </Box>
               )}
 

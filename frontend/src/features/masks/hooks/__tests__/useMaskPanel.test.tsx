@@ -305,6 +305,76 @@ describe("useMaskPanel", () => {
     expect(updatedMask?.maskPoints).toEqual(canonicalMaskPoints);
   });
 
+  it("marks SAM2 mask generation busy while availability is pending", async () => {
+    let resolveStatus: (status: RuntimeStatus) => void = () => undefined;
+    vi.mocked(getRuntimeStatus).mockReturnValue(
+      new Promise<RuntimeStatus>((resolve) => {
+        resolveStatus = resolve;
+      }),
+    );
+
+    const parent = createParentClip("clip_pending", "image");
+    const mask = createSam2MaskClip(parent, "mask_pending", "apply");
+    mask.maskPoints = [{ x: 0.5, y: 0.5, label: 1, timeTicks: 0 }];
+
+    const sourceFile = new File(["image-bytes"], "poster.png", {
+      type: "image/png",
+    });
+    const parentAsset = {
+      id: parent.assetId,
+      type: "image" as const,
+      name: "poster.png",
+      src: "poster.png",
+      hash: "sam2-pending-parent-hash",
+      file: sourceFile,
+      createdAt: 0,
+    };
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: { [parent.id]: "mask_pending" },
+      isMaskTabActive: false,
+    });
+    useAssetStore.setState({
+      assets: [parentAsset],
+    });
+
+    const { result } = renderHook(() => useMaskPanel());
+    let generatePromise: Promise<void> = Promise.resolve();
+
+    act(() => {
+      generatePromise = result.current.sam2.generateSam2Mask();
+    });
+
+    expect(result.current.sam2.isSam2Generating).toBe(true);
+
+    await act(async () => {
+      resolveStatus({
+        backend: {
+          status: "ok",
+          mode: "development",
+          frontendBuildPresent: true,
+        },
+        comfyui: {
+          status: "disconnected",
+          url: "",
+          error: null,
+        },
+        sam2: {
+          status: "unavailable",
+          error: "SAM2 disabled in tests",
+        },
+      });
+      await generatePromise;
+    });
+
+    expect(result.current.sam2.isSam2Generating).toBe(false);
+    expect(result.current.sam2.sam2GenerateError).toBeTruthy();
+  });
+
   it("promotes a preview mask to apply when leaving the mask tab", async () => {
     const parent = createParentClip("clip_preview");
     const previewMask = createSam2MaskClip(parent, "mask_preview");

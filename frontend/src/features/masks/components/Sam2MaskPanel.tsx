@@ -8,6 +8,7 @@ import {
   Slider,
 } from "@mui/material";
 import type { ClipMaskMode, ClipMaskPoint } from "../../../types/TimelineTypes";
+import { Sam2ModelDownloadOverlay } from "./Sam2ModelDownloadOverlay";
 
 const connectedButtonSx = {
   textTransform: "none",
@@ -59,6 +60,7 @@ interface Sam2MaskPanelProps {
   onSetMaskInverted: (inverted: boolean) => void;
   onSetSam2GrowAmount: (amount: number) => void;
   onSetSam2PointMode: (mode: "add" | "remove") => void;
+  onModelsInstalled: () => void;
 }
 
 export const Sam2MaskPanel = memo(function Sam2MaskPanel({
@@ -86,6 +88,7 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
   onSetMaskInverted,
   onSetSam2GrowAmount,
   onSetSam2PointMode,
+  onModelsInstalled,
 }: Sam2MaskPanelProps) {
   const positiveCount = useMemo(
     () => points.filter((p) => p.label === 1).length,
@@ -97,6 +100,7 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
   );
 
   const showRegenerate = hasMaskAsset && isDirty;
+  const showDownloadPanel = !isSam2Available && !isSam2Checking;
 
   return (
     <Box
@@ -143,10 +147,20 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
         <Divider sx={{ borderColor: "#2a2d33", mb: 1.5 }} />
         <Typography
           variant="caption"
-          sx={{ color: "text.secondary", display: "block", mb: 1, fontWeight: 600 }}
+          sx={{
+            color: "text.secondary",
+            display: "block",
+            mb: 1,
+            fontWeight: 600,
+          }}
         >
           Points Editor
         </Typography>
+        {showDownloadPanel ? (
+          <Box sx={{ mb: 1.5 }}>
+            <Sam2ModelDownloadOverlay onModelsInstalled={onModelsInstalled} />
+          </Box>
+        ) : null}
         <Typography
           variant="caption"
           sx={{ color: "text.disabled", display: "block", mb: 1 }}

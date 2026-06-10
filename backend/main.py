@@ -31,6 +31,10 @@ from services.comfyui.comfyui_client import (
     get_http_client,
 )
 from services.ai_models.health import AppStatusProvider
+from services.model_registry import (
+    get_available_sam2_models,
+    get_available_sam_audio_models,
+)
 from services.sam2 import sam2_service
 from services.sam_audio import sam_audio_service
 from services.beats import beats_service
@@ -61,12 +65,14 @@ AI_APP_STATUS_PROVIDERS = [
         response_key="sam2",
         health_fn=lambda: sam2_service.get_health(),
         unavailable_message="No SAM2 models discovered",
+        installed_models_fn=lambda: get_available_sam2_models(),
     ),
     AppStatusProvider(
         response_key="sam_audio",
         health_fn=lambda: sam_audio_service.get_health(),
         unavailable_message="No SAM-Audio model configured",
         use_runtime_error=True,
+        installed_models_fn=lambda: get_available_sam_audio_models(),
     ),
     AppStatusProvider(
         response_key="beat_this",

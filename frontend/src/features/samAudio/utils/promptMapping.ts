@@ -1,5 +1,5 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { TICKS_PER_SECOND } from "../../timeline";
+import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { presentationToClipSourceTime } from "../../transformations";
 import type { ClipPresentationContext } from "../../transformations";
@@ -64,8 +64,8 @@ export function createSpanAnchorsForClip(
     [
       [
         "+",
-        relativeStartTicks / TICKS_PER_SECOND,
-        relativeEndTicks / TICKS_PER_SECOND,
+        tickToMediaSeconds(relativeStartTicks),
+        tickToMediaSeconds(relativeEndTicks),
       ],
     ],
   ];

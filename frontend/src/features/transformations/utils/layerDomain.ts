@@ -31,8 +31,7 @@ function getDomainFallbackDuration(clip: TimelineClip): number {
  */
 export function getTransformLayerDomain(
   clip: TimelineClip | undefined,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  transformId?: string,
+  _transformId?: string,
 ): LayerDomain {
   if (!clip) return EMPTY_DOMAIN;
 

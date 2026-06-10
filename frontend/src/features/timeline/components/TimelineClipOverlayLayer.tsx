@@ -23,6 +23,7 @@ import type {
   TimelineClipOverlayDragContext,
   TimelineClipOverlayItem,
   TimelineClipOverlayRenderContext,
+  TimelineSourceTimeOverlayPlacement,
 } from "../clipOverlayApi";
 
 interface TimelineClipOverlayLayerProps {
@@ -53,6 +54,10 @@ interface TimelineClipOverlayItemCollectionProps {
   items: readonly TimelineClipOverlayItem[];
   presentation?: TimelineClipPresentation;
 }
+
+type TimelineSourceTimeOverlayItem = TimelineClipOverlayItem & {
+  placement: TimelineSourceTimeOverlayPlacement;
+};
 
 const LANE_TOP_OFFSET = "30%";
 const LANE_MIDDLE_OFFSET = "50%";
@@ -124,6 +129,12 @@ function isItemVisible(
   }
 
   return true;
+}
+
+function isSourceTimeOverlayItem(
+  item: TimelineClipOverlayItem,
+): item is TimelineSourceTimeOverlayItem {
+  return item.placement.kind === "sourceTime";
 }
 
 function createRenderContext(
@@ -514,7 +525,7 @@ function TimelineClipOverlayItemCollection({
   }, [items]);
 
   const timedItems = useMemo(
-    () => items.filter((item) => item.placement.kind !== "endpoint"),
+    () => items.filter(isSourceTimeOverlayItem),
     [items],
   );
 

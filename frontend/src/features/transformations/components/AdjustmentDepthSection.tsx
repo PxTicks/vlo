@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Box,
   FormControlLabel,
@@ -18,6 +18,54 @@ import { useTimelineStore } from "../../timeline";
 
 interface AdjustmentDepthSectionProps {
   clip: AdjustmentTimelineClip;
+}
+
+interface AdjustmentDepthInputProps {
+  committedDepth: number;
+  onCommitDepth: (nextDepth: number) => void;
+}
+
+function AdjustmentDepthInput({
+  committedDepth,
+  onCommitDepth,
+}: AdjustmentDepthInputProps) {
+  const committedDraft = String(committedDepth);
+  const [draft, setDraft] = useState<string>(committedDraft);
+
+  const resetDraft = () => {
+    setDraft(committedDraft);
+  };
+
+  const commit = (raw: string) => {
+    const next = Number.parseInt(raw, 10);
+    if (!Number.isFinite(next) || next < 1) {
+      // Invalid — revert the input to the last committed value.
+      resetDraft();
+      return;
+    }
+    if (next === committedDepth) return;
+    onCommitDepth(next);
+  };
+
+  return (
+    <TextField
+      size="small"
+      type="number"
+      value={draft}
+      inputProps={{ min: 1, step: 1 }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={(event) => commit(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          (event.target as HTMLInputElement).blur();
+        }
+      }}
+      sx={{
+        width: 80,
+        "& .MuiInputBase-input": { color: "#f5f5f5", py: 0.5 },
+      }}
+    />
+  );
 }
 
 /**
@@ -47,35 +95,8 @@ export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
   const isRippleRetiming =
     getAdjustmentRetimingMode(clip) === ADJUSTMENT_RETIMING_RIPPLE;
   const fallbackNumericDepth = Math.max(1, tracksBelowCount);
-
-  // Local draft state so the user can backspace through the value without
-  // the input fighting them on each keystroke. The committed value lives
-  // in the store; we just mirror it into local state on clip change.
-  const [draft, setDraft] = useState<string>(
-    isAllTracksBelow ? String(fallbackNumericDepth) : String(clip.depth),
-  );
-  useEffect(() => {
-    setDraft(isAllTracksBelow ? String(fallbackNumericDepth) : String(clip.depth));
-  }, [clip.depth, clip.id, fallbackNumericDepth, isAllTracksBelow]);
-
-  const resetDraft = () => {
-    setDraft(isAllTracksBelow ? String(fallbackNumericDepth) : String(clip.depth));
-  };
-
-  const commit = (raw: string) => {
-    if (isAllTracksBelow) {
-      resetDraft();
-      return;
-    }
-    const next = Number.parseInt(raw, 10);
-    if (!Number.isFinite(next) || next < 1) {
-      // Invalid — revert the input to the last committed value.
-      resetDraft();
-      return;
-    }
-    if (next === clip.depth) return;
-    setAdjustmentDepth(clip.id, next);
-  };
+  const numericDepth =
+    typeof clip.depth === "number" ? clip.depth : fallbackNumericDepth;
 
   const handleAllTracksToggle = (checked: boolean) => {
     if (checked) {
@@ -84,7 +105,6 @@ export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
       return;
     }
 
-    setDraft(String(fallbackNumericDepth));
     if (!isAllTracksBelow && clip.depth === fallbackNumericDepth) return;
     setAdjustmentDepth(clip.id, fallbackNumericDepth);
   };
@@ -172,22 +192,12 @@ export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
           <Typography variant="body2" sx={{ color: "#d6dade" }}>
             Depth
           </Typography>
-          <TextField
-            size="small"
-            type="number"
-            value={draft}
-            inputProps={{ min: 1, step: 1 }}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={(event) => commit(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                (event.target as HTMLInputElement).blur();
-              }
-            }}
-            sx={{
-              width: 80,
-              "& .MuiInputBase-input": { color: "#f5f5f5", py: 0.5 },
-            }}
+          <AdjustmentDepthInput
+            key={`${clip.id}:${numericDepth}`}
+            committedDepth={numericDepth}
+            onCommitDepth={(nextDepth) =>
+              setAdjustmentDepth(clip.id, nextDepth)
+            }
           />
         </Box>
       )}

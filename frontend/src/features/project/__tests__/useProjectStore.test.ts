@@ -17,10 +17,12 @@ const { mockScanForNewAssets, mockFlushAllBrushMaskCommits } = vi.hoisted(() => 
 
 vi.mock("../services/FileSystemService", () => ({
   fileSystemService: {
+    getHandle: vi.fn(() => null),
     setHandle: vi.fn(),
     writeFile: vi.fn(),
     readFile: vi.fn(),
     checkDirectoryExists: vi.fn(),
+    removeEntry: vi.fn(),
   },
 }));
 

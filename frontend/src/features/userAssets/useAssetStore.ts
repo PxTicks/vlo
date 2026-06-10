@@ -14,6 +14,11 @@ import {
 } from "../project";
 import { mediaProcessingService } from "./services/MediaProcessingService";
 import type { AssetIngestOptions } from "./services/AssetService";
+import { deferredAssetCleanupService } from "./services/DeferredAssetCleanupService";
+
+export interface DeleteAssetOptions {
+  cleanupMode?: "immediate" | "deferred";
+}
 
 export interface AddLocalAssetsResult {
   assets: Asset[];
@@ -59,7 +64,8 @@ interface AssetStore {
   ensureAssetSourceLoaded: (assetId: string) => Promise<Asset | null>;
   ensureAssetMetadataLoaded: (assetId: string) => Promise<Asset | null>;
   getInput: (assetId: string) => Promise<Input | null>;
-  deleteAsset: (id: string) => Promise<void>;
+  deleteAsset: (id: string, options?: DeleteAssetOptions) => Promise<void>;
+  restoreDeletedAsset: (id: string) => Promise<Asset | null>;
 }
 
 type AssetStoreSet = (
@@ -124,6 +130,68 @@ function disposeAssetCollectionRuntimeResources(
 
 const sourceHydrationPromises = new Map<string, Promise<Asset | null>>();
 const metadataHydrationPromises = new Map<string, Promise<Asset | null>>();
+const DEFERRED_CLEANUP_ASSET_SOURCES = new Set<
+  NonNullable<Asset["creationMetadata"]>["source"]
+>(["sam2_mask", "brush_mask"]);
+
+function shouldDeferAssetCleanup(
+  asset: Asset,
+  options: DeleteAssetOptions | undefined,
+): boolean {
+  if (options?.cleanupMode === "immediate") {
+    return false;
+  }
+  if (options?.cleanupMode === "deferred") {
+    return true;
+  }
+
+  const source = asset.creationMetadata?.source;
+  return source ? DEFERRED_CLEANUP_ASSET_SOURCES.has(source) : false;
+}
+
+function assetMetadataPath(metadataRef: string): string {
+  return `.vloproject/${metadataRef}`;
+}
+
+function collectPersistedAssetCleanupPaths(
+  entry: PersistedAssetIndexEntry,
+  options: { includeMetadata?: boolean } = {},
+): string[] {
+  return [
+    entry.src,
+    entry.thumbnail,
+    entry.proxySrc,
+    options.includeMetadata && entry.metadataRef
+      ? assetMetadataPath(entry.metadataRef)
+      : undefined,
+  ].filter((path): path is string => Boolean(path));
+}
+
+function createRuntimeAssetFromPersistedEntry(
+  entry: PersistedAssetIndexEntry,
+): Asset {
+  return {
+    id: entry.id,
+    hash: entry.hash,
+    familyId: entry.familyId,
+    name: entry.name,
+    type: entry.type,
+    favourite: entry.favourite,
+    src: entry.src,
+    sourcePath: entry.src,
+    thumbnail: entry.thumbnail,
+    thumbnailPath: entry.thumbnail,
+    proxySrc: entry.proxySrc,
+    proxyPath: entry.proxySrc,
+    metadataRef: entry.metadataRef,
+    metadataLoaded: !entry.metadataRef,
+    duration: entry.duration,
+    fps: entry.fps,
+    hasAudio: entry.hasAudio,
+    createdAt: entry.createdAt,
+    creationMetadata: entry.creationMetadata,
+  };
+}
 
 function toAssetFamilyRecordMap(
   families: readonly AssetFamily[],
@@ -968,7 +1036,44 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     }
   },
 
-  deleteAsset: async (id: string) => {
+  restoreDeletedAsset: async (id: string) => {
+    const existingAsset = get().assets.find((asset) => asset.id === id);
+    if (existingAsset) {
+      return existingAsset;
+    }
+
+    const restoredEntry =
+      await deferredAssetCleanupService.restoreAssetCleanup(id);
+    if (!restoredEntry) {
+      return null;
+    }
+
+    const previousAssets = get().assets;
+    const previousFamilies = get().families;
+    const restoredAsset = createRuntimeAssetFromPersistedEntry(restoredEntry);
+    const sanitizedState = sanitizeAssetFamilyState(
+      [...previousAssets, restoredAsset],
+      previousFamilies,
+    );
+
+    set(sanitizedState);
+
+    try {
+      await projectPersistenceService.updateAssetIndex((draft) => {
+        draft.assets[id] = restoredEntry;
+        syncAssetFamilyIdsToDraftAssets(draft.assets, sanitizedState.assets);
+        syncFamiliesToDraft(draft, sanitizedState.families);
+      });
+    } catch (error) {
+      console.warn(`Failed to restore deleted asset '${id}'`, error);
+      set({ assets: previousAssets, families: previousFamilies });
+      return null;
+    }
+
+    return get().assets.find((asset) => asset.id === id) ?? restoredAsset;
+  },
+
+  deleteAsset: async (id: string, options?: DeleteAssetOptions) => {
     const assetToDelete = get().assets.find((a) => a.id === id);
     const cachedInput = get().inputCache.get(id);
     if (
@@ -996,11 +1101,9 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     }
 
     // 1. Remove the live index entry first so failed physical cleanup leaves an orphan file, not a broken asset.
-    let pathsToDelete: {
-      src?: string;
-      thumbnail?: string;
-      proxySrc?: string;
-    } = {};
+    const deferCleanup = shouldDeferAssetCleanup(assetToDelete, options);
+    let persistedEntryToCleanup: PersistedAssetIndexEntry | null = null;
+    let pathsToDelete: string[] = [];
     let metadataRefToDelete: string | undefined;
     const nextAssets = get().assets.filter((asset) => asset.id !== id);
     const sanitizedState = sanitizeAssetFamilyState(nextAssets, get().families);
@@ -1010,11 +1113,10 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
         if (!draft.assets[id]) return;
 
         const storedAsset = draft.assets[id];
-        pathsToDelete = {
-          src: storedAsset.src,
-          thumbnail: storedAsset.thumbnail,
-          proxySrc: storedAsset.proxySrc,
-        };
+        persistedEntryToCleanup = structuredClone(storedAsset);
+        pathsToDelete = collectPersistedAssetCleanupPaths(storedAsset, {
+          includeMetadata: deferCleanup,
+        });
         metadataRefToDelete = storedAsset.metadataRef;
 
         delete draft.assets[id];
@@ -1041,51 +1143,29 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     disposeInput(cachedInput);
     disposeAssetRuntimeResources(assetToDelete);
 
-    if (metadataRefToDelete) {
-      try {
-        await projectPersistenceService.deleteAssetMetadata(id, metadataRefToDelete);
-      } catch (e) {
-        console.warn("Failed to delete asset metadata sidecar", e);
-      }
-    }
-
-    // 3. Delete files from disk using paths found in the index
-    if (pathsToDelete.src) {
-      // Only delete if it looks like a local path (not http/blob)
-      if (
-        !pathsToDelete.src.startsWith("http") &&
-        !pathsToDelete.src.startsWith("blob:")
-      ) {
+    if (persistedEntryToCleanup && deferCleanup) {
+      await deferredAssetCleanupService.deferAssetCleanup(
+        persistedEntryToCleanup,
+        pathsToDelete,
+      );
+    } else {
+      if (metadataRefToDelete) {
         try {
-          await fileSystemService.deleteFile(pathsToDelete.src);
+          await projectPersistenceService.deleteAssetMetadata(
+            id,
+            metadataRefToDelete,
+          );
         } catch (e) {
-          console.error("Failed to delete source file", e);
+          console.warn("Failed to delete asset metadata sidecar", e);
         }
       }
-    }
 
-    if (pathsToDelete.thumbnail) {
-      if (
-        !pathsToDelete.thumbnail.startsWith("http") &&
-        !pathsToDelete.thumbnail.startsWith("blob:")
-      ) {
+      // 3. Delete files from disk using paths found in the index
+      for (const path of pathsToDelete) {
         try {
-          await fileSystemService.deleteFile(pathsToDelete.thumbnail);
+          await fileSystemService.deleteFile(path);
         } catch (e) {
-          console.warn("Failed to delete thumbnail file", e);
-        }
-      }
-    }
-
-    if (pathsToDelete.proxySrc) {
-      if (
-        !pathsToDelete.proxySrc.startsWith("http") &&
-        !pathsToDelete.proxySrc.startsWith("blob:")
-      ) {
-        try {
-          await fileSystemService.deleteFile(pathsToDelete.proxySrc);
-        } catch (e) {
-          console.warn("Failed to delete proxy file", e);
+          console.warn(`Failed to delete asset file '${path}'`, e);
         }
       }
     }

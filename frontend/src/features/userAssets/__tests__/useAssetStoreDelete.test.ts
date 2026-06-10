@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, type Mock } from "vitest";
 import { useAssetStore } from "../useAssetStore";
 import { fileSystemService } from "../../project/services/FileSystemService";
 import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
+import { deferredAssetCleanupService } from "../services/DeferredAssetCleanupService";
 
 const { mockRemoveClipsByAssetId } = vi.hoisted(() => ({
   mockRemoveClipsByAssetId: vi.fn(),
@@ -10,9 +11,11 @@ const { mockRemoveClipsByAssetId } = vi.hoisted(() => ({
 // Mock dependencies
 vi.mock("../../project/services/FileSystemService", () => ({
   fileSystemService: {
+    getHandle: vi.fn(() => ({})),
     readFile: vi.fn(),
     writeFile: vi.fn(),
     deleteFile: vi.fn(),
+    removeEntry: vi.fn(),
   },
 }));
 
@@ -84,6 +87,7 @@ describe("useAssetStore - Deletion", () => {
     vi.clearAllMocks();
     mockRemoveClipsByAssetId.mockReset();
     projectPersistenceService.resetCaches();
+    deferredAssetCleanupService.reset();
   });
 
   it("should delete an asset from store, file system, and assets.json", async () => {
@@ -136,6 +140,135 @@ describe("useAssetStore - Deletion", () => {
     expect(fileSystemService.writeFile).toHaveBeenCalledWith(
       ".vloproject/assets.json",
       expect.not.stringContaining('"asset-1"'),
+    );
+  });
+
+  it("defers SAM2 mask file cleanup and restores the asset from trash", async () => {
+    const assetId = "sam2-mask-asset";
+    const sourcePath = ".vloproject/masks/mask.mp4";
+    const thumbnailPath = ".vloproject/thumbnails/mask_thumb.webp";
+    let persistedAssetIndex = makeAssetIndex({
+      [assetId]: {
+        id: assetId,
+        name: "mask.mp4",
+        hash: "mask-hash",
+        src: sourcePath,
+        thumbnail: thumbnailPath,
+        type: "video",
+        createdAt: 1000,
+        creationMetadata: {
+          source: "sam2_mask",
+          parentAssetId: "parent-asset",
+          parentClipId: "clip-1",
+          maskClipId: "clip-1::mask::mask-1",
+          pointCount: 1,
+          sourceHash: "source-hash",
+        },
+      },
+    });
+    const sourceFile = new File(["mask-data"], "mask.mp4", {
+      type: "video/mp4",
+    });
+    const thumbnailFile = new File(["thumb-data"], "mask_thumb.webp", {
+      type: "image/webp",
+    });
+    const trashedFiles = new Map<string, File>();
+
+    useAssetStore.setState({
+      assets: [
+        {
+          id: assetId,
+          name: "mask.mp4",
+          hash: "mask-hash",
+          src: "blob:mask",
+          sourcePath,
+          thumbnail: "blob:thumb",
+          thumbnailPath,
+          type: "video",
+          createdAt: 1000,
+          creationMetadata: {
+            source: "sam2_mask",
+            parentAssetId: "parent-asset",
+            parentClipId: "clip-1",
+            maskClipId: "clip-1::mask::mask-1",
+            pointCount: 1,
+            sourceHash: "source-hash",
+          },
+        },
+      ],
+      families: [],
+      isUploading: false,
+      inputCache: new Map(),
+    });
+
+    (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
+      if (path === ".vloproject/assets.json") {
+        return { text: async () => persistedAssetIndex };
+      }
+      if (path === sourcePath) {
+        return sourceFile;
+      }
+      if (path === thumbnailPath) {
+        return thumbnailFile;
+      }
+      if (path.startsWith(".vloproject/trash/")) {
+        const trashedFile = trashedFiles.get(path);
+        if (trashedFile) {
+          return trashedFile;
+        }
+      }
+      throw new Error(`File not found: ${path}`);
+    });
+    (fileSystemService.writeFile as Mock).mockImplementation(
+      async (path: string, content: string | File) => {
+        if (path === ".vloproject/assets.json") {
+          persistedAssetIndex = content as string;
+          return;
+        }
+        if (path.startsWith(".vloproject/trash/") && content instanceof File) {
+          trashedFiles.set(path, content);
+        }
+      },
+    );
+
+    await useAssetStore.getState().deleteAsset(assetId);
+
+    expect(useAssetStore.getState().assets).toHaveLength(0);
+    expect(JSON.parse(persistedAssetIndex).assets[assetId]).toBeUndefined();
+    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining(".vloproject/trash/"),
+      sourceFile,
+    );
+    expect(fileSystemService.deleteFile).toHaveBeenCalledWith(sourcePath);
+    expect(fileSystemService.deleteFile).toHaveBeenCalledWith(thumbnailPath);
+
+    const restoredAsset = await useAssetStore
+      .getState()
+      .restoreDeletedAsset(assetId);
+
+    expect(restoredAsset).toEqual(
+      expect.objectContaining({
+        id: assetId,
+        sourcePath,
+        thumbnailPath,
+        creationMetadata: expect.objectContaining({ source: "sam2_mask" }),
+      }),
+    );
+    expect(useAssetStore.getState().assets.map((asset) => asset.id)).toEqual([
+      assetId,
+    ]);
+    expect(JSON.parse(persistedAssetIndex).assets[assetId]).toBeDefined();
+    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
+      sourcePath,
+      sourceFile,
+    );
+    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
+      thumbnailPath,
+      thumbnailFile,
+    );
+    expect(fileSystemService.removeEntry).toHaveBeenCalledWith(
+      expect.stringMatching(/^\.vloproject\/trash\//),
+      { recursive: true },
     );
   });
 

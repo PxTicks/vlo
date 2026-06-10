@@ -8,6 +8,31 @@ export class FileSystemService {
 
   constructor() {}
 
+  private async resolveParentDirectory(
+    path: string,
+    options: { create: boolean },
+  ): Promise<{
+    directoryHandle: FileSystemDirectoryHandle;
+    entryName: string;
+  }> {
+    if (!this.projectHandle) throw new Error("No project open");
+
+    const parts = path.split("/");
+    const entryName = parts.pop()!;
+    let currentHandle = this.projectHandle;
+
+    for (const part of parts) {
+      currentHandle = await currentHandle.getDirectoryHandle(part, {
+        create: options.create,
+      });
+    }
+
+    return {
+      directoryHandle: currentHandle,
+      entryName,
+    };
+  }
+
   /**
    * Prompts the user to select a directory with read/write access so the browser
    * doesn't need to re-prompt when we later create files or folders.
@@ -109,20 +134,11 @@ export class FileSystemService {
    * Path should be relative, e.g., "project.json" or "assets/video.mp4"
    */
   async readFile(path: string): Promise<File> {
-    if (!this.projectHandle) throw new Error("No project open");
-
-    const parts = path.split("/");
-    const filename = parts.pop()!;
-    let currentHandle = this.projectHandle;
-
-    // Navigate subdirectories
-    for (const part of parts) {
-      currentHandle = await currentHandle.getDirectoryHandle(part, {
-        create: false,
-      });
-    }
-
-    const fileHandle = await currentHandle.getFileHandle(filename, {
+    const { directoryHandle, entryName } = await this.resolveParentDirectory(
+      path,
+      { create: false },
+    );
+    const fileHandle = await directoryHandle.getFileHandle(entryName, {
       create: false,
     });
     return await fileHandle.getFile(); // Returns a File object (Blob-like)
@@ -151,20 +167,11 @@ export class FileSystemService {
    * Creates parent directories if they don't exist.
    */
   async writeFile(path: string, content: string | Blob | BufferSource) {
-    if (!this.projectHandle) throw new Error("No project open");
-
-    const parts = path.split("/");
-    const filename = parts.pop()!;
-    let currentHandle = this.projectHandle;
-
-    // Navigate/Create subdirectories
-    for (const part of parts) {
-      currentHandle = await currentHandle.getDirectoryHandle(part, {
-        create: true,
-      });
-    }
-
-    const fileHandle = await currentHandle.getFileHandle(filename, {
+    const { directoryHandle, entryName } = await this.resolveParentDirectory(
+      path,
+      { create: true },
+    );
+    const fileHandle = await directoryHandle.getFileHandle(entryName, {
       create: true,
     });
     const writable = await fileHandle.createWritable();
@@ -185,10 +192,18 @@ export class FileSystemService {
    * Silently succeeds if the file doesn't exist (already deleted).
    */
   async deleteFile(path: string) {
+    await this.removeEntry(path);
+  }
+
+  /**
+   * Deletes a file or directory from the project.
+   * Silently succeeds if the entry doesn't exist (already deleted).
+   */
+  async removeEntry(path: string, options: { recursive?: boolean } = {}) {
     if (!this.projectHandle) throw new Error("No project open");
 
     const parts = path.split("/");
-    const filename = parts.pop()!;
+    const entryName = parts.pop()!;
     let currentHandle = this.projectHandle;
 
     try {
@@ -198,7 +213,9 @@ export class FileSystemService {
         });
       }
 
-      await currentHandle.removeEntry(filename);
+      await currentHandle.removeEntry(entryName, {
+        recursive: options.recursive ?? false,
+      });
     } catch (e) {
       // If the file or directory doesn't exist, that's fine - it's already gone
       if ((e as DOMException).name === "NotFoundError") {

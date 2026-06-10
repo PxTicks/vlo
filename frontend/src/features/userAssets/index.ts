@@ -18,6 +18,7 @@ export {
   getAssetInput,
   getAssets,
   inspectAssetFamilyCompatibility,
+  restoreDeletedAsset,
   scanForNewAssets,
   setFamilyRepresentative,
   upsertFamily,

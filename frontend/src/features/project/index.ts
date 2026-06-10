@@ -7,6 +7,10 @@ export {
   projectPersistenceService,
   prepareAssetForPersistence,
 } from "./services/ProjectPersistenceService";
+export {
+  projectTrashService,
+  PROJECT_TRASH_LIMIT_BYTES,
+} from "./services/ProjectTrashService";
 export { PROJECT_ASPECT_RATIOS } from "./aspectRatioOptions";
 export type {
   ProjectState,

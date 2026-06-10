@@ -104,7 +104,7 @@ export type TimelineMaskUpdate = Partial<
 export interface TimelineRemovalPlan {
   clipIdsToRemove: Set<string>;
   brushMaskClipIdsToDispose: string[];
-  sam2MaskAssetIdsToDelete: Set<string>;
+  maskBackingAssetIdsToDelete: Set<string>;
 }
 
 export function clipReferencesAssetId(
@@ -494,10 +494,8 @@ export function planTimelineRemoval(
   clips: TimelineClip[],
   clipIds: Iterable<string>,
 ): TimelineRemovalPlan {
-  const { clipIdsToRemove, sam2MaskAssetIdsToDelete } = collectClipRemovalPlan(
-    clips,
-    clipIds,
-  );
+  const { clipIdsToRemove, maskBackingAssetIdsToDelete } =
+    collectClipRemovalPlan(clips, clipIds);
   const brushMaskClipIdsToDispose = clips
     .filter(
       (clip): clip is MaskTimelineClip =>
@@ -509,7 +507,7 @@ export function planTimelineRemoval(
   return {
     clipIdsToRemove,
     brushMaskClipIdsToDispose,
-    sam2MaskAssetIdsToDelete,
+    maskBackingAssetIdsToDelete,
   };
 }
 

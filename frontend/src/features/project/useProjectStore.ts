@@ -103,6 +103,21 @@ async function flushOpenProjectPersistence(): Promise<void> {
   }
 }
 
+async function clearProjectDeferredCleanupTrash(): Promise<void> {
+  if (!fileSystemService.getHandle()) {
+    return;
+  }
+
+  try {
+    const { deferredAssetCleanupService } = await import(
+      "../userAssets/services/DeferredAssetCleanupService"
+    );
+    await deferredAssetCleanupService.clearTrash();
+  } catch (error) {
+    console.warn("Failed to clear deferred cleanup trash", error);
+  }
+}
+
 export interface ProjectState {
   project: Project | null;
   rootHandle: FileSystemDirectoryHandle | null;
@@ -134,6 +149,7 @@ export const useProjectStore = create<ProjectState>()(
       ) => {
         try {
           await flushOpenProjectPersistence();
+          await clearProjectDeferredCleanupTrash();
 
           const exists = await fileSystemService.checkDirectoryExists(
             parentHandle,
@@ -149,6 +165,7 @@ export const useProjectStore = create<ProjectState>()(
 
           fileSystemService.setHandle(projectHandle);
           projectPersistenceService.resetCaches();
+          await clearProjectDeferredCleanupTrash();
 
           const newProject: Project = {
             id: crypto.randomUUID(),
@@ -191,9 +208,11 @@ export const useProjectStore = create<ProjectState>()(
       loadProject: async (handle: FileSystemDirectoryHandle) => {
         try {
           await flushOpenProjectPersistence();
+          await clearProjectDeferredCleanupTrash();
 
           fileSystemService.setHandle(handle);
           projectPersistenceService.resetCaches();
+          await clearProjectDeferredCleanupTrash();
 
           const loaded = await projectPersistenceService.loadOrMigrateProject();
           const data = loaded.manifest;
@@ -331,6 +350,7 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       resetProject: () => {
+        void clearProjectDeferredCleanupTrash();
         projectPersistenceService.resetCaches();
         useTimelineStore.getState().replaceTimelineSnapshot(null);
         set({ project: null, rootHandle: null, config: { ...DEFAULT_PROJECT_CONFIG } });

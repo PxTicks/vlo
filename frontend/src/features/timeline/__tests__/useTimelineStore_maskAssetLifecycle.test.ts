@@ -6,13 +6,16 @@ import type {
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 
-const { mockDeleteAsset, mockDisposeBrushBuffer } = vi.hoisted(() => ({
-  mockDeleteAsset: vi.fn(async () => undefined),
-  mockDisposeBrushBuffer: vi.fn(),
-}));
+const { mockDeleteAsset, mockRestoreDeletedAsset, mockDisposeBrushBuffer } =
+  vi.hoisted(() => ({
+    mockDeleteAsset: vi.fn(async () => undefined),
+    mockRestoreDeletedAsset: vi.fn(async () => null),
+    mockDisposeBrushBuffer: vi.fn(),
+  }));
 
 vi.mock("../../userAssets", () => ({
   deleteAsset: mockDeleteAsset,
+  restoreDeletedAsset: mockRestoreDeletedAsset,
 }));
 
 vi.mock("../../masks/runtime/brushBufferRegistry", () => ({
@@ -119,6 +122,7 @@ const createBrushMaskClip = (
 describe("useTimelineStore SAM2 mask asset lifecycle", () => {
   beforeEach(() => {
     mockDeleteAsset.mockClear();
+    mockRestoreDeletedAsset.mockClear();
     mockDisposeBrushBuffer.mockClear();
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [
@@ -418,5 +422,122 @@ describe("useTimelineStore SAM2 mask asset lifecycle", () => {
       expect(mockDeleteAsset).toHaveBeenCalledWith(maskAssetId);
     });
     expect(mockDeleteAsset).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores and re-defers mask assets across undo and redo", async () => {
+    const parentClipId = "clip-undo-mask";
+    const maskLocalId = "mask-undo";
+    const maskClipId = `${parentClipId}::mask::${maskLocalId}`;
+    const maskAssetId = "sam2-mask-asset-undo";
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        createTrack("track_top_pad", "Track 1"),
+        createTrack("track_current", "Track 2"),
+        createTrack("track_bottom_pad", "Track 3"),
+      ],
+      clips: [
+        createParentClip(parentClipId, "track_current", maskClipId),
+        createSam2MaskClip(
+          parentClipId,
+          maskLocalId,
+          "track_current",
+          maskAssetId,
+        ),
+      ],
+    });
+
+    act(() => {
+      useTimelineStore.getState().removeClipMask(parentClipId, maskLocalId);
+    });
+
+    await waitFor(() => {
+      expect(mockDeleteAsset).toHaveBeenCalledWith(maskAssetId);
+    });
+
+    act(() => {
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+
+    await waitFor(() => {
+      expect(mockRestoreDeletedAsset).toHaveBeenCalledWith(maskAssetId);
+    });
+
+    const restoredClips = useTimelineStore.getState().clips;
+    expect(restoredClips.map((clip) => clip.id)).toEqual([
+      parentClipId,
+      maskClipId,
+    ]);
+
+    act(() => {
+      expect(useTimelineStore.getState().redo()).toBe(true);
+    });
+
+    await waitFor(() => {
+      expect(mockDeleteAsset).toHaveBeenCalledTimes(2);
+    });
+    expect(mockDeleteAsset).toHaveBeenLastCalledWith(maskAssetId);
+  });
+
+  it("serializes parent-clip mask deletion before undo restoration", async () => {
+    const parentClipId = "clip-parent-undo-mask";
+    const maskLocalId = "mask-parent-undo";
+    const maskClipId = `${parentClipId}::mask::${maskLocalId}`;
+    const maskAssetId = "sam2-mask-asset-parent-undo";
+    const events: string[] = [];
+    let resolveDelete!: () => void;
+    const deletePromise = new Promise<void>((resolve) => {
+      resolveDelete = resolve;
+    });
+
+    mockDeleteAsset.mockImplementationOnce(async () => {
+      events.push("delete-start");
+      await deletePromise;
+      events.push("delete-end");
+    });
+    mockRestoreDeletedAsset.mockImplementationOnce(async () => {
+      events.push("restore");
+      return null;
+    });
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        createTrack("track_top_pad", "Track 1"),
+        createTrack("track_current", "Track 2"),
+        createTrack("track_bottom_pad", "Track 3"),
+      ],
+      clips: [
+        createParentClip(parentClipId, "track_current", maskClipId),
+        createSam2MaskClip(
+          parentClipId,
+          maskLocalId,
+          "track_current",
+          maskAssetId,
+        ),
+      ],
+    });
+
+    act(() => {
+      useTimelineStore.getState().removeClip(parentClipId);
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+
+    expect(useTimelineStore.getState().clips.map((clip) => clip.id)).toEqual([
+      parentClipId,
+      maskClipId,
+    ]);
+
+    await waitFor(() => {
+      expect(events).toEqual(["delete-start"]);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockRestoreDeletedAsset).not.toHaveBeenCalled();
+
+    resolveDelete();
+
+    await waitFor(() => {
+      expect(mockRestoreDeletedAsset).toHaveBeenCalledWith(maskAssetId);
+    });
+    expect(events).toEqual(["delete-start", "delete-end", "restore"]);
   });
 });

@@ -206,6 +206,7 @@ describe("AssetBrowser Component", () => {
       _ingestAsset: vi.fn(),
       isScanning: false,
       deleteAsset: mockDeleteAsset,
+      restoreDeletedAsset: vi.fn(),
     };
     const mergedState = { ...defaultState, ...state };
     vi.mocked(useAssetStore).mockImplementation((selector) =>

@@ -3,6 +3,7 @@ import type { Input } from "mediabunny";
 import type { Asset, AssetFamily, AssetFamilyCompatibility } from "../../types/Asset";
 import { buildAssetFamilyCompatibility } from "../../shared/utils/assetFamilies";
 import { useAssetStore } from "./useAssetStore";
+import type { DeleteAssetOptions } from "./useAssetStore";
 import type { AssetIngestOptions } from "./services/AssetService";
 import { mediaProcessingService } from "./services/MediaProcessingService";
 
@@ -111,8 +112,15 @@ export async function setFamilyRepresentative(
     .setFamilyRepresentative(familyId, representativeAssetId);
 }
 
-export async function deleteAsset(assetId: string): Promise<void> {
-  await useAssetStore.getState().deleteAsset(assetId);
+export async function deleteAsset(
+  assetId: string,
+  options?: DeleteAssetOptions,
+): Promise<void> {
+  await useAssetStore.getState().deleteAsset(assetId, options);
+}
+
+export async function restoreDeletedAsset(assetId: string): Promise<Asset | null> {
+  return useAssetStore.getState().restoreDeletedAsset(assetId);
 }
 
 export async function scanForNewAssets(): Promise<void> {

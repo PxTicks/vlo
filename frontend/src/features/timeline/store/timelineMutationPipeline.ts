@@ -3,14 +3,17 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../../project/types/ProjectDocument";
 import { fileSystemService } from "../../project/services/FileSystemService";
 import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
+import { collectMaskBackingAssetIds } from "../model/maskClipModel";
 import type { TimelineModelState } from "../model/timelineTrackModel";
 
 const TIMELINE_HISTORY_LIMIT = 100;
 const TIMELINE_PERSIST_DEBOUNCE_MS = 250;
+type UserAssetsModule = typeof import("../../userAssets");
 
 interface TimelineHistoryEntry {
   forwardPatches: Patch[];
   inversePatches: Patch[];
+  trackMaskAssetCleanup: boolean;
 }
 
 interface TimelineMutationState extends TimelineModelState {
@@ -22,7 +25,7 @@ interface TimelineMutationState extends TimelineModelState {
 
 interface TimelinePostCommitEffects {
   brushMaskClipIdsToDispose?: Iterable<string>;
-  sam2MaskAssetIdsToDelete?: Iterable<string>;
+  maskBackingAssetIdsToDelete?: Iterable<string>;
 }
 
 interface TimelineMutationPipelineOptions<State extends TimelineMutationState> {
@@ -39,9 +42,11 @@ interface TimelineMutationPipelineOptions<State extends TimelineMutationState> {
 export interface TimelineMutationCommitOptions {
   persist?: boolean;
   recordHistory?: boolean;
+  trackMaskAssetCleanup?: boolean;
 }
 
 let didRegisterBeforeUnloadListener = false;
+let maskBackingAssetOperationQueue: Promise<void> = Promise.resolve();
 
 function sanitizeSelectedClipIds(
   selectedClipIds: string[],
@@ -61,31 +66,89 @@ function getCurrentModelState<State extends TimelineMutationState>(
   };
 }
 
-function deleteSam2MaskAssets(assetIds: Iterable<string>): void {
+function queueMaskBackingAssetOperation(
+  label: string,
+  operation: (assetModule: UserAssetsModule) => Promise<void>,
+): void {
+  const run = maskBackingAssetOperationQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const assetModule = await import("../../userAssets");
+      await operation(assetModule);
+    });
+
+  maskBackingAssetOperationQueue = run.catch(() => undefined);
+
+  void run.catch((error) => {
+    console.warn(`[TimelineStore] Failed to ${label}`, error);
+  });
+}
+
+function deleteMaskBackingAssets(assetIds: Iterable<string>): void {
   const uniqueAssetIds = [...new Set([...assetIds].filter(Boolean))];
   if (uniqueAssetIds.length === 0) return;
 
-  void import("../../userAssets")
-    .then(async ({ deleteAsset }) => {
+  queueMaskBackingAssetOperation(
+    "delete mask backing assets",
+    async ({ deleteAsset }) => {
       for (const assetId of uniqueAssetIds) {
         try {
           await deleteAsset(assetId);
         } catch (error) {
           console.warn(
-            `[TimelineStore] Failed to delete SAM2 mask asset '${assetId}'`,
+            `[TimelineStore] Failed to delete mask backing asset '${assetId}'`,
             error,
           );
         }
       }
-    })
-    .catch((error) => {
-      console.warn(
-        "[TimelineStore] Failed to load asset store for SAM2 mask cleanup",
-        error,
-      );
-    });
+    },
+  );
 }
 
+function reconcileDeferredMaskAssetCleanup(
+  previousClips: readonly TimelineClip[],
+  nextClips: readonly TimelineClip[],
+): void {
+  const previousAssetIds = collectMaskBackingAssetIds(previousClips);
+  const nextAssetIds = collectMaskBackingAssetIds(nextClips);
+  const assetIdsToRestore = [...nextAssetIds].filter(
+    (assetId) => !previousAssetIds.has(assetId),
+  );
+  const assetIdsToDelete = [...previousAssetIds].filter(
+    (assetId) => !nextAssetIds.has(assetId),
+  );
+
+  if (assetIdsToRestore.length === 0 && assetIdsToDelete.length === 0) {
+    return;
+  }
+
+  queueMaskBackingAssetOperation(
+    "reconcile deferred mask cleanup",
+    async ({ deleteAsset, restoreDeletedAsset }) => {
+      for (const assetId of assetIdsToRestore) {
+        try {
+          await restoreDeletedAsset(assetId);
+        } catch (error) {
+          console.warn(
+            `[TimelineStore] Failed to restore deferred mask asset '${assetId}'`,
+            error,
+          );
+        }
+      }
+
+      for (const assetId of assetIdsToDelete) {
+        try {
+          await deleteAsset(assetId);
+        } catch (error) {
+          console.warn(
+            `[TimelineStore] Failed to defer mask asset cleanup for '${assetId}'`,
+            error,
+          );
+        }
+      }
+    },
+  );
+}
 
 function disposeBrushMaskBuffers(maskClipIds: Iterable<string>): void {
   const uniqueMaskClipIds = [...new Set([...maskClipIds].filter(Boolean))];
@@ -211,7 +274,11 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     recipe: (draft: TimelineModelState) => void,
     commitOptions?: TimelineMutationCommitOptions,
   ): boolean => {
-    const { persist = true, recordHistory = true } = commitOptions ?? {};
+    const {
+      persist = true,
+      recordHistory = true,
+      trackMaskAssetCleanup = true,
+    } = commitOptions ?? {};
 
     const currentModel = getCurrentModelState(get());
     const [nextModel, forwardPatches, inversePatches] = produceWithPatches(
@@ -222,7 +289,11 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     if (forwardPatches.length === 0) return false;
 
     if (recordHistory) {
-      undoStack.push({ forwardPatches, inversePatches });
+      undoStack.push({
+        forwardPatches,
+        inversePatches,
+        trackMaskAssetCleanup,
+      });
       if (undoStack.length > TIMELINE_HISTORY_LIMIT) {
         undoStack.shift();
       }
@@ -268,6 +339,10 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
       ...applyHistoryFlags(),
     }));
 
+    if (entry.trackMaskAssetCleanup) {
+      reconcileDeferredMaskAssetCleanup(currentModel.clips, nextModel.clips);
+    }
+
     queueTimelinePatchesForPersistence(entry.inversePatches);
     return true;
   };
@@ -296,6 +371,10 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
       ),
       ...applyHistoryFlags(),
     }));
+
+    if (entry.trackMaskAssetCleanup) {
+      reconcileDeferredMaskAssetCleanup(currentModel.clips, nextModel.clips);
+    }
 
     queueTimelinePatchesForPersistence(entry.forwardPatches);
     return true;
@@ -351,8 +430,8 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
       disposeBrushMaskBuffers(effects.brushMaskClipIdsToDispose);
     }
 
-    if (effects.sam2MaskAssetIdsToDelete) {
-      deleteSam2MaskAssets(effects.sam2MaskAssetIdsToDelete);
+    if (effects.maskBackingAssetIdsToDelete) {
+      deleteMaskBackingAssets(effects.maskBackingAssetIdsToDelete);
     }
   };
 

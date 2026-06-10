@@ -209,13 +209,31 @@ function getBrushMaskAssetId(clip: TimelineClip): string | null {
   return clip.type === "mask" ? clip.brushMaskAssetId ?? null : null;
 }
 
-function getMaskBackingAssetIds(clip: TimelineClip): string[] {
+function getGenerationMaskAssetId(clip: TimelineClip): string | null {
+  return clip.type === "mask" ? clip.generationMaskAssetId ?? null : null;
+}
+
+export function getMaskBackingAssetIds(clip: TimelineClip): string[] {
   const ids: string[] = [];
   const sam2 = getSam2MaskAssetId(clip);
   if (sam2) ids.push(sam2);
   const brush = getBrushMaskAssetId(clip);
   if (brush) ids.push(brush);
+  const generation = getGenerationMaskAssetId(clip);
+  if (generation) ids.push(generation);
   return ids;
+}
+
+export function collectMaskBackingAssetIds(
+  clips: readonly TimelineClip[],
+): Set<string> {
+  const assetIds = new Set<string>();
+  for (const clip of clips) {
+    for (const assetId of getMaskBackingAssetIds(clip)) {
+      assetIds.add(assetId);
+    }
+  }
+  return assetIds;
 }
 
 export function countSam2MaskAssetConsumers(
@@ -728,10 +746,10 @@ export function collectClipRemovalPlan(
   clipIds: Iterable<string>,
 ): {
   clipIdsToRemove: Set<string>;
-  sam2MaskAssetIdsToDelete: Set<string>;
+  maskBackingAssetIdsToDelete: Set<string>;
 } {
   const clipIdsToRemove = new Set<string>();
-  const sam2MaskAssetIdsToDelete = new Set<string>();
+  const maskBackingAssetIdsToDelete = new Set<string>();
   const clipById = new Map(clips.map((clip) => [clip.id, clip]));
 
   for (const clipId of clipIds) {
@@ -744,7 +762,7 @@ export function collectClipRemovalPlan(
 
     if (clip.type === "mask") {
       for (const backingAssetId of getMaskBackingAssetIds(clip)) {
-        sam2MaskAssetIdsToDelete.add(backingAssetId);
+        maskBackingAssetIdsToDelete.add(backingAssetId);
       }
       continue;
     }
@@ -754,13 +772,13 @@ export function collectClipRemovalPlan(
       const maskClip = clipById.get(maskChildId);
       if (maskClip) {
         for (const backingAssetId of getMaskBackingAssetIds(maskClip)) {
-          sam2MaskAssetIdsToDelete.add(backingAssetId);
+          maskBackingAssetIdsToDelete.add(backingAssetId);
         }
       }
     }
   }
 
-  for (const assetId of [...sam2MaskAssetIdsToDelete]) {
+  for (const assetId of [...maskBackingAssetIdsToDelete]) {
     const hasRemainingConsumer = clips.some((clip) => {
       if (clipIdsToRemove.has(clip.id)) {
         return false;
@@ -770,13 +788,13 @@ export function collectClipRemovalPlan(
     });
 
     if (hasRemainingConsumer) {
-      sam2MaskAssetIdsToDelete.delete(assetId);
+      maskBackingAssetIdsToDelete.delete(assetId);
     }
   }
 
   return {
     clipIdsToRemove,
-    sam2MaskAssetIdsToDelete,
+    maskBackingAssetIdsToDelete,
   };
 }
 

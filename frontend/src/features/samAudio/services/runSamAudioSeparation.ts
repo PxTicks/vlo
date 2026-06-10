@@ -2,7 +2,8 @@ import type { Asset } from "../../../types/Asset";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import { useProjectStore } from "../../project";
 import { useTimelineStore } from "../../timeline";
-import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
+import { ensureAssetFileLoaded } from "../../userAssets/api";
+import { useAssetStore } from "../../userAssets/useAssetStore";
 import { createSplitAudioStemClip } from "../model/createSplitAudioClip";
 import {
   fetchStem,

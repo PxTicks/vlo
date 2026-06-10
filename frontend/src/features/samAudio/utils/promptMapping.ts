@@ -1,6 +1,6 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
-import { useTimelineSelectionStore } from "../../timelineSelection";
+import { useTimelineSelectionStore } from "../../timelineSelection/useTimelineSelectionStore";
 import { presentationToClipSourceTime } from "../../transformations";
 import type { ClipPresentationContext } from "../../transformations";
 import type { SamAudioPromptPayload } from "../services/samAudioApi";

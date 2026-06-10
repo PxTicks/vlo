@@ -7,7 +7,7 @@ import {
   type Renderer,
 } from "pixi.js";
 import type { BrushPaintedBounds } from "../../../types/TimelineTypes";
-import { livePreviewParamStore } from "../../transformations";
+import { livePreviewParamStore } from "../../transformations/services/livePreviewParamStore";
 
 /**
  * GPU-resident brush mask buffer. Replaces the previous offscreen 2D canvas

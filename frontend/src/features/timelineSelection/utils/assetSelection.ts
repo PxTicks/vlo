@@ -1,6 +1,6 @@
 import type { Asset } from "../../../types/Asset";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
-import { useTimelineStore } from "../../timeline";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { normalizeTimelineSelection } from "./timelineSelection";
 
 /**

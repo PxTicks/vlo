@@ -17,7 +17,7 @@ import { SortableTransformationItem } from "./SortableTransformationItem";
 import { DefaultTransformationSections } from "./DefaultTransformationSections";
 import { AdjustmentDepthSection } from "./AdjustmentDepthSection";
 import { useTimelineClip, parseMaskClipId } from "../../timeline";
-import { useAsset } from "../../userAssets";
+import { useAsset } from "../../userAssets/api";
 import { useActiveTransformationSection } from "../hooks/useActiveTransformationSection";
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
 import { getTransformLayerDomain } from "../utils/layerDomain";

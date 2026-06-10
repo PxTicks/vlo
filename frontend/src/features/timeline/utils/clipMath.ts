@@ -1,5 +1,5 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { getSegmentContentDuration } from "../../transformations";
+import { getSegmentContentDuration } from "../../transformations/utils/timeCalculation";
 
 /**
  * Calculates new clip properties when resizing from the LEFT edge.

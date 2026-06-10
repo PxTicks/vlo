@@ -6,8 +6,8 @@ import {
   countBrushMaskAssetConsumers,
   parseMaskClipId,
   useTimelineStore,
-} from "../../timeline";
-import { useAssetStore } from "../../userAssets";
+} from "../../timeline/useTimelineStore";
+import { useAssetStore } from "../../userAssets/useAssetStore";
 import {
   disposeBrushBuffer,
   extractBrushPng,

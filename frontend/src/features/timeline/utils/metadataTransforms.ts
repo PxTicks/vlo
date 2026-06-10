@@ -4,7 +4,7 @@ import type {
   MaskCropMetadata,
 } from "../../../types/Asset";
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
-import { solveTimelineDuration } from "../../transformations/publicApi";
+import { solveTimelineDuration } from "../../transformations/utils/timeCalculation";
 
 interface Size {
   width: number;

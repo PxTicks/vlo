@@ -39,7 +39,7 @@ import {
   MAX_ZOOM,
   TICKS_PER_SECOND,
 } from "../constants";
-import { ensureAssetSourceLoaded } from "../../userAssets/publicApi";
+import { ensureAssetSourceLoaded } from "../../userAssets/api";
 import { mediaProcessingService } from "../../userAssets/services/MediaProcessingService";
 import {
   detectBeats,

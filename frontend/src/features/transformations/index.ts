@@ -29,22 +29,26 @@ export {
   getDefaultSectionId,
   getDynamicSectionId,
   collectSectionKeyframes,
-} from "./publicApi";
+} from "./utils/sectionKeyframes";
+export {
+  getDefaultTransforms,
+  getEntryByType,
+} from "./catalogue/TransformationRegistry";
+export {
+  calculateClipTime,
+  getSegmentContentDuration,
+  mapSourceTimeToVisualTime,
+  pullTimeThroughTransforms,
+  solveTimelineDuration,
+} from "./utils/timeCalculation";
 export {
   buildClipGraphTimeAxis,
   buildLinearGraphTimeAxis,
-  calculateClipTime,
-  getDefaultTransforms,
-  getEntryByType,
   clipSourceTimeToVisual,
-  getSegmentContentDuration,
   clipSourceTimeWindow,
   clipVisualToSourceTime,
-  mapSourceTimeToVisualTime,
   presentationToClipSourceTime,
-  pullTimeThroughTransforms,
-  resolveScalar,
-  solveTimelineDuration,
   type ClipPresentationContext,
   type GraphTimeAxis,
-} from "./publicApi";
+} from "./utils/clipTimeDomains";
+export { resolveScalar } from "./utils/resolveScalar";

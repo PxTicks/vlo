@@ -17,7 +17,7 @@ const { getAssetByIdMock } = vi.hoisted(() => ({
   getAssetByIdMock: vi.fn(),
 }));
 
-vi.mock("../../../userAssets/publicApi", () => ({
+vi.mock("../../../userAssets/api", () => ({
   getAssetById: getAssetByIdMock,
 }));
 

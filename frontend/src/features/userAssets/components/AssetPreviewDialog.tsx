@@ -11,7 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import type { Asset } from "../../../types/Asset";
-import { useAssetSourceUrl } from "../publicApi";
+import { useAssetSourceUrl } from "../api";
 
 interface AssetPreviewDialogProps {
   asset: Asset;

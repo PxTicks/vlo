@@ -35,12 +35,14 @@ vi.mock("../../../timeline", () => {
   };
 });
 
-vi.mock("../../../generation/publicApi", () => ({
+vi.mock("../../../generation/useGenerationStore", () => ({
   useGenerationStore: {
     getState: () => ({
       loadWorkflowFromAssetMetadata: mocks.mockLoadWorkflowFromAssetMetadata,
     }),
   },
+}));
+vi.mock("../../../generation/utils/metadataReplay", () => ({
   canRegenerateFromAssetMetadata: (metadata: Asset["creationMetadata"]) =>
     metadata?.source === "generated" &&
     Boolean(metadata.comfyuiPrompt || metadata.comfyuiWorkflow || metadata.workflowName),

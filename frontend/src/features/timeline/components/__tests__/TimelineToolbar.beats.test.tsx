@@ -32,7 +32,7 @@ vi.mock("../../services/beatThisApi", () => ({
   detectBeats: beatApiMocks.detectBeats,
 }));
 
-vi.mock("../../../userAssets/publicApi", () => ({
+vi.mock("../../../userAssets/api", () => ({
   ensureAssetSourceLoaded: assetMocks.ensureAssetSourceLoaded,
 }));
 

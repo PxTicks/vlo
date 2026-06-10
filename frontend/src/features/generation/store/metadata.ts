@@ -4,7 +4,7 @@ import type {
   GeneratedCreationWorkflowInputSnapshot,
 } from "../../../types/Asset";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
-import { getAssetById } from "../../userAssets/publicApi";
+import { getAssetById } from "../../userAssets/api";
 import { useTimelineStore } from "../../timeline";
 import { normalizeTimelineSelection } from "../../timelineSelection";
 import type { DerivedMaskMapping } from "../pipeline/types";

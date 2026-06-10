@@ -27,4 +27,4 @@ export {
   useAsset,
   useAssetSourceUrl,
   useFamily,
-} from "./publicApi";
+} from "./api";

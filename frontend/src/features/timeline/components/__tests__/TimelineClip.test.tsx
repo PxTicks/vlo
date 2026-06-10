@@ -7,7 +7,7 @@ import { useInteractionStore } from "../../hooks/useInteractionStore";
 import { useCompositeTimelineStore } from "../../../composite/useCompositeTimelineStore";
 import { useCompositeLibraryStore } from "../../../composite/useCompositeLibraryStore";
 import { useTimelineKeyframeClipOverlay } from "../../../transformations/hooks/useTimelineKeyframeClipOverlay";
-import { getDefaultSectionId } from "../../../transformations/publicApi";
+import { getDefaultSectionId } from "../../../transformations/utils/sectionKeyframes";
 import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
 import type { Asset } from "../../../../types/Asset";
 import type {
@@ -99,7 +99,7 @@ vi.mock("../../hooks/useTimelineViewStore", () => ({
   ),
 }));
 
-vi.mock("../../../userAssets/publicApi", () => ({
+vi.mock("../../../userAssets/api", () => ({
   useAsset: extractionState.mockUseAsset,
 }));
 

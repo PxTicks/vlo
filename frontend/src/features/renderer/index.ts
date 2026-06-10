@@ -24,9 +24,9 @@ export type {
   RenderSelectionToVideoFileOptions,
 } from "./services/renderSelectionToVideoFile";
 export type { ProjectFrameCaptureOptions } from "./services/projectFrameCapture";
+export { getProjectDimensions } from "./utils/dimensions";
+export { syncContainerTransformToTarget } from "./utils/displayObjectSync";
 export {
-  getProjectDimensions,
-  syncContainerTransformToTarget,
   calculatePlayerFrameTime,
   snapFrameTimeSeconds,
   tickToMediaSeconds,
@@ -34,8 +34,10 @@ export {
   mediaSecondsToTickExact,
   mediaTimestampToFirstAvailableTick,
   frameIndexToOutputTimestamp,
+} from "./utils/mediaTime";
+export {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
-  DecoderWorker,
-} from "./publicApi";
+} from "./utils/outputTransformStack";
+export { default as DecoderWorker } from "./workers/decoder.worker?worker";

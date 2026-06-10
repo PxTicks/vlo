@@ -13,7 +13,7 @@ import AddToTimelineIcon from "@mui/icons-material/PlaylistAdd";
 import LayersIcon from "@mui/icons-material/Layers";
 import { styled } from "@mui/material/styles";
 import type { CompositeAsset } from "../../../types/TimelineTypes";
-import { useAsset } from "../../userAssets/publicApi";
+import { useAsset } from "../../userAssets/api";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { createCompositeBaseClipFromAsset } from "../utils/createCompositeClip";
 

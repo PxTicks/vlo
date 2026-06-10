@@ -6,7 +6,7 @@ import type {
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 import { useProjectStore } from "../../project/useProjectStore";
-import { ensureAssetSourceLoaded } from "../../userAssets/publicApi";
+import { ensureAssetSourceLoaded } from "../../userAssets/api";
 import { useAssetStore } from "../../userAssets/useAssetStore";
 import { mediaProcessingService } from "../../userAssets/services/MediaProcessingService";
 import {

@@ -37,7 +37,7 @@ import { isAssetBackedClip, isCompositeClip } from "../../../types/TimelineTypes
 import type { MarkersComponent } from "../../../types/Components";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
-import { useAsset } from "../../userAssets/publicApi";
+import { useAsset } from "../../userAssets/api";
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useSamAudioExtractDialogStore } from "../../samAudio";

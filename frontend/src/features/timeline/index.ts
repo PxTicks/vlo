@@ -88,4 +88,4 @@ export {
   useTimelineClipsForTrack,
   useTimelineDuration,
   useTimelineClipCountForAsset,
-} from "./publicApi";
+} from "./api";

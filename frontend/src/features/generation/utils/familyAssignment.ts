@@ -11,7 +11,7 @@ import {
   computeXxhash64Bytes,
   computeXxhash64String,
 } from "../../../shared/utils/xxhash";
-import { getAssetById } from "../../userAssets/publicApi";
+import { getAssetById } from "../../userAssets/api";
 import type { SlotValue } from "../pipeline/types";
 import type { WorkflowInput } from "../types";
 import {

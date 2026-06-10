@@ -5,7 +5,7 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { TimelineClipOverlayDragContext } from "../../timeline";
 import { TICKS_PER_SECOND, useTimelineStore } from "../../timeline";
 import { useTimelineKeyframeClipOverlay } from "../hooks/useTimelineKeyframeClipOverlay";
-import { getDefaultSectionId, getDynamicSectionId } from "../publicApi";
+import { getDefaultSectionId, getDynamicSectionId } from "../utils/sectionKeyframes";
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
 
 const baseClip: TimelineClip = {

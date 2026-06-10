@@ -61,7 +61,7 @@ vi.mock("../../hooks/useTimelineViewStore", () => ({
   ),
 }));
 
-vi.mock("../../../userAssets/publicApi", () => ({
+vi.mock("../../../userAssets/api", () => ({
   useAsset: extractionState.mockUseAsset,
 }));
 

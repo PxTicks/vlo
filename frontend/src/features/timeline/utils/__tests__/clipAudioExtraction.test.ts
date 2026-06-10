@@ -21,7 +21,7 @@ vi.mock("../../../project/useProjectStore", () => ({
   },
 }));
 
-vi.mock("../../../userAssets/publicApi", () => ({
+vi.mock("../../../userAssets/api", () => ({
   ensureAssetSourceLoaded: extractionState.ensureAssetSourceLoaded,
 }));
 

@@ -8,7 +8,7 @@ import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import {
   ensureAssetSourceLoaded,
   getAssets,
-} from "../../userAssets/publicApi";
+} from "../../userAssets/api";
 import { useAssetStore } from "../../userAssets/useAssetStore";
 import {
   reverseAssetFile,

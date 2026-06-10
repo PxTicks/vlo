@@ -28,10 +28,8 @@ import {
   insertAssetAtTime,
   useTimelineClipCountForAsset,
 } from "../../timeline";
-import {
-  canRegenerateFromAssetMetadata,
-  useGenerationStore,
-} from "../../generation/publicApi";
+import { canRegenerateFromAssetMetadata } from "../../generation/utils/metadataReplay";
+import { useGenerationStore } from "../../generation/useGenerationStore";
 import { getTimelineSelectionFromAsset } from "../../timelineSelection";
 import { useAssetStore } from "../useAssetStore";
 import { deleteAssetWithConfirmation } from "../utils/deleteAssetWithConfirmation";

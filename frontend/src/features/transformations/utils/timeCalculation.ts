@@ -1,7 +1,7 @@
 import type { TimelineClip, ClipTransform } from "../../../types/TimelineTypes";
 import type { ScalarParameter, SplinePoint, SpeedTransform } from "../types";
 import { MonotoneCubicSpline } from "./MonotoneCubicSpline";
-import { TICKS_PER_SECOND } from "../../timeline/constants";
+import { TICKS_PER_SECOND } from "../../../core/time/constants";
 
 /**
  * Low-level tick engine for clip-local visual time <-> source-media time.

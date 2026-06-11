@@ -4,7 +4,7 @@ import { MIN_ZOOM, MAX_ZOOM } from "../constants";
 import {
   ticksToPx as ticksToPxAt,
   pxToTicks as pxToTicksAt,
-} from "../utils/pixelGrid";
+} from "../../../core/time/pixelGrid";
 
 export interface TimelineViewState {
   zoomScale: number;

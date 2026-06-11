@@ -22,8 +22,6 @@ export { insertTransformRespectingDefaultOrder } from "./hooks/controller/transf
 export { useActiveTransformationSection } from "./hooks/useActiveTransformationSection";
 export { useTimelineKeyframeClipOverlay } from "./hooks/useTimelineKeyframeClipOverlay";
 export { useTransformationController } from "./hooks/useTransformationController";
-export { liveParamStore } from "./services/liveParamStore";
-export { livePreviewParamStore } from "./services/livePreviewParamStore";
 export { useTransformationViewStore } from "./store/useTransformationViewStore";
 export {
   getDefaultSectionId,

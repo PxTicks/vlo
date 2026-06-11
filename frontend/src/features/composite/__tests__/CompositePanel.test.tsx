@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { playbackClock } from "../../player/services/PlaybackClock";
-import { useExtractStore } from "../../player/useExtractStore";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
+import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { CompositePanel } from "../CompositePanel";

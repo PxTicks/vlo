@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { SelectionOverlay } from "../SelectionOverlay";
-import { useExtractStore } from "../../../player/useExtractStore";
+import { useExtractStore } from "../../../../core/extract/useExtractStore";
 import { useTimelineSelectionStore } from "../../../timelineSelection";
 import { useTimelineViewStore } from "../../hooks/useTimelineViewStore";
 import { useProjectStore } from "../../../project";
@@ -106,7 +106,7 @@ function createTimelineState(): MockTimelineState {
   };
 }
 
-vi.mock("../../../player/useExtractStore", () => {
+vi.mock("../../../../core/extract/useExtractStore", () => {
   const fn = vi.fn();
   (fn as unknown as { getState: Mock }).getState = vi.fn();
   return { useExtractStore: fn };
@@ -143,7 +143,7 @@ vi.mock("../../useTimelineStore", () => ({
   }),
 }));
 
-vi.mock("../../../player/services/PlaybackClock", () => ({
+vi.mock("../../../../core/playback/PlaybackClock", () => ({
   playbackClock: {
     time: 0,
     setTime: vi.fn(),

@@ -1,13 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { FrameSelectionOverlay } from "../FrameSelectionOverlay";
-import { useExtractStore } from "../../../player/useExtractStore";
+import { useExtractStore } from "../../../../core/extract/useExtractStore";
 
 const onConfirmSelection = vi.fn();
 const setOnConfirmSelection = vi.fn();
 const exitFrameSelectionMode = vi.fn();
 
-vi.mock("../../../player/useExtractStore", () => {
+vi.mock("../../../../core/extract/useExtractStore", () => {
   const fn = vi.fn();
   return { useExtractStore: fn };
 });

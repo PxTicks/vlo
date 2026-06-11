@@ -11,7 +11,7 @@ import type {
   AssetBackedTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
-import { ticksToPx } from "../utils/pixelGrid";
+import { ticksToPx } from "../../../core/time/pixelGrid";
 import { useInteractionStore } from "./useInteractionStore";
 import { useTimelineViewStore } from "./useTimelineViewStore";
 

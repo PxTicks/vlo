@@ -22,7 +22,7 @@ import ContentCutIcon from "@mui/icons-material/ContentCut";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { CacheProvider, type EmotionCache } from "@emotion/react";
 import createCache from "@emotion/cache";
-import type { DialogView } from "../useExtractStore";
+import type { DialogView } from "../../../core/extract/useExtractStore";
 
 declare global {
   interface Window {

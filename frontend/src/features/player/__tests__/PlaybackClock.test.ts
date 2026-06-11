@@ -3,7 +3,7 @@ import {
   alignPlaybackTickToFrame,
   playbackClock,
   playbackFrameClock,
-} from "../services/PlaybackClock";
+} from "../../../core/playback/PlaybackClock";
 import { TICKS_PER_SECOND } from "../../timeline";
 
 describe("PlaybackClock", () => {

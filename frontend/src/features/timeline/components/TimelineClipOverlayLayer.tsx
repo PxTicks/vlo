@@ -11,7 +11,7 @@ import {
   mapSourceTimeToVisualTime,
 } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { ticksToPx, pxToTicks } from "../utils/pixelGrid";
+import { ticksToPx, pxToTicks } from "../../../core/time/pixelGrid";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import type { TimelineClipPresentation } from "../utils/clipPresentation";
 import {

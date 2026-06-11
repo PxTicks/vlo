@@ -14,8 +14,8 @@ import { SliderControl as PanelSliderControl } from "../../panelUI/components/Sl
 import { Timeline } from "@mui/icons-material";
 import { SplineEditorPopover } from "./SplineEditorPopover";
 import { useSplinePopover } from "../hooks/useSplinePopover";
-import { liveParamStore } from "../services/liveParamStore";
-import { livePreviewParamStore } from "../services/livePreviewParamStore";
+import { liveParamStore } from "../../../core/liveParams/liveParamStore";
+import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import type { GraphTimeAxis } from "../utils/clipTimeDomains";
 
 // --- Shared props for controls that support splines ---

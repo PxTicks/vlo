@@ -13,7 +13,7 @@ import type {
 import { getAssetInput, useAsset } from "../../userAssets";
 import { calculateClipTime } from "../../transformations";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
-import { ticksPerPixel as ticksPerPixelAt } from "../utils/pixelGrid";
+import { ticksPerPixel as ticksPerPixelAt } from "../../../core/time/pixelGrid";
 import {
   waveformCacheService,
   WAVEFORM_BASE_SAMPLES_PER_PEAK,

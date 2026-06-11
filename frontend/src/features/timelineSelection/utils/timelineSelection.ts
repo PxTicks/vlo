@@ -3,13 +3,11 @@ import type {
   TimelineSelection,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import {
-  ticksPerFrame as frameGridTicksPerFrame,
-  snapTickToGrid,
-} from "../../timeline/utils/frameGrid";
-import type { FrameSnapMode } from "../../timeline/utils/frameGrid";
+import { snapTickToGrid } from "../../../core/time/frameGrid";
+import type { FrameSnapMode } from "../../../core/time/frameGrid";
 
 export type { FrameSnapMode };
+export { getTicksPerFrame } from "../../../core/time/ticksPerFrame";
 
 const MIN_FPS = 1;
 const MIN_FRAME_STEP = 1;
@@ -36,12 +34,6 @@ export function resolveSelectionFrameStep(
   selection: { frameStep?: number | null } | null | undefined,
 ): number {
   return clampToPositiveInteger(selection?.frameStep, MIN_FRAME_STEP);
-}
-
-export function getTicksPerFrame(fps: number): number {
-  // Selection fps is integer; preserve the integer clamp, then route the
-  // division through the canonical frameGrid so there is one source of truth.
-  return frameGridTicksPerFrame(clampToPositiveInteger(fps, MIN_FPS));
 }
 
 export function snapTickToFrame(tick: number, ticksPerFrame: number): number {

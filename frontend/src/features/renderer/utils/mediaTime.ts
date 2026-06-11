@@ -1,5 +1,5 @@
-import { TICKS_PER_SECOND } from "../../timeline/constants";
-import type { FrameSnapMode } from "../../timeline/utils/frameGrid";
+import { TICKS_PER_SECOND } from "../../../core/time/constants";
+import type { FrameSnapMode } from "../../../core/time/frameGrid";
 import { calculateClipTime } from "../../transformations/utils/timeCalculation";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 

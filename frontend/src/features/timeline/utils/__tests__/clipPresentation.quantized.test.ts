@@ -7,7 +7,7 @@ import {
   buildTimelineClipPresentationLookup,
   computeQuantizedPresentation,
 } from "../clipPresentation";
-import { ticksPerFrame } from "../frameGrid";
+import { ticksPerFrame } from "../../../../core/time/frameGrid";
 
 const FPS = 30;
 const TPF = ticksPerFrame(FPS); // 3200 ticks per frame at 30fps

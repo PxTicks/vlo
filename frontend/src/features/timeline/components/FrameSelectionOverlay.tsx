@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { Paper, Button, Typography, Box } from "@mui/material";
-import { useExtractStore } from "../../player/useExtractStore";
+import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { stopOverlayEventPropagation } from "../utils/stopOverlayEventPropagation";
 
 export function FrameSelectionOverlay() {

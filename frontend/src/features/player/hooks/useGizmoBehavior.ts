@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Application, Container, FederatedPointerEvent } from "pixi.js";
 import { SelectionGizmo, type GizmoTarget } from "../utils/SelectionGizmo";
-import { playbackClock } from "../services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 
 interface GizmoInteractionHandlers {
   onHandlePointerDown: (e: FederatedPointerEvent, key: string) => void;

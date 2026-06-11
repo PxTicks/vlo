@@ -117,7 +117,7 @@ vi.mock("../../userAssets", () => ({
   addLocalAsset: vi.fn(async () => undefined),
 }));
 
-vi.mock("../useExtractStore", async () => {
+vi.mock("../../../core/extract/useExtractStore", async () => {
   const { create } = await vi.importActual<typeof import("zustand")>("zustand");
 
   interface ExtractStoreState {
@@ -203,7 +203,7 @@ vi.mock("../services/AudioSystem", () => ({
   },
 }));
 
-vi.mock("../services/PlaybackClock", () => ({
+vi.mock("../../../core/playback/PlaybackClock", () => ({
   playbackClock: playbackClockMock,
   playbackFrameClock: playbackFrameClockMock,
   alignPlaybackTickToFrame: (time: number) => time,
@@ -245,7 +245,7 @@ import { useProjectStore } from "../../project";
 import { useTimelineStore } from "../../timeline";
 import { usePlayerStore } from "../usePlayerStore";
 import { audioSystem } from "../services/AudioSystem";
-import { playbackClock, playbackFrameClock } from "../services/PlaybackClock";
+import { playbackClock, playbackFrameClock } from "../../../core/playback/PlaybackClock";
 
 describe("Player playback loop", () => {
   beforeEach(() => {

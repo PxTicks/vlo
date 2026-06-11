@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MaskTimelineClip } from "../../../../types/TimelineTypes";
 import { createMaskLayoutTransforms } from "../maskFactory";
-import { liveParamStore } from "../../../transformations";
+import { liveParamStore } from "../../../../core/liveParams/liveParamStore";
 import {
   getMaskClipContentSize,
   resolveMaskLayoutStateAtTime,

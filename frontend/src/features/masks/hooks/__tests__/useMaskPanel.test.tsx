@@ -7,7 +7,7 @@ import type {
   MaskTimelineClip,
   TimelineClip,
 } from "../../../../types/TimelineTypes";
-import { playbackClock } from "../../../player/services/PlaybackClock";
+import { playbackClock } from "../../../../core/playback/PlaybackClock";
 import { TICKS_PER_SECOND, useTimelineStore } from "../../../timeline";
 import { useAssetStore } from "../../../userAssets";
 import { useMaskViewStore } from "../../store/useMaskViewStore";

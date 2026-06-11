@@ -21,7 +21,7 @@ import { TimelineRow } from "./components/TimelineRow";
 import { TimelineClipItem } from "./components/TimelineClip";
 import { TimelineToolbar } from "./components/TimelineToolbar";
 import { HoverGapIndicator } from "./components/HoverGapIndicator";
-import { snapTickToFrameGrid } from "./utils/frameGrid";
+import { snapTickToFrameGrid } from "../../core/time/frameGrid";
 import { mediaSecondsToTickExact } from "../renderer/utils/mediaTime";
 import {
   TRACK_HEIGHT,
@@ -35,7 +35,7 @@ import { TimelinePlayhead } from "./components/TimelinePlayhead";
 import { SelectionOverlay } from "./components/SelectionOverlay";
 import { FrameSelectionOverlay } from "./components/FrameSelectionOverlay";
 import { SamAudioExtractDialog } from "../samAudio";
-import { playbackClock } from "../player/services/PlaybackClock";
+import { playbackClock } from "../../core/playback/PlaybackClock";
 import { type TimelineClip } from "../../types";
 import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
 import { useEditorFocusStore } from "../editorFocus";

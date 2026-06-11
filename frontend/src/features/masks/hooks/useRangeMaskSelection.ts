@@ -7,8 +7,8 @@ import type {
 import type { RangeMaskComponent } from "../../../types/Components";
 import { TICKS_PER_SECOND, useTimelineStore } from "../../timeline";
 import { useTimelineSelectionStore } from "../../timelineSelection";
-import { useExtractStore } from "../../player/useExtractStore";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { useExtractStore } from "../../../core/extract/useExtractStore";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import {
   mapSourceTimeToVisualTime,
   type ClipPresentationContext,

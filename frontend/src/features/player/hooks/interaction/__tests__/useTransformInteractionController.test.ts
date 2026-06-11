@@ -12,8 +12,8 @@ import type { TimelineClip } from "../../../../../types/TimelineTypes";
 import { useTimelineStore } from "../../../../timeline";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
 import { usePlayerStore } from "../../../usePlayerStore";
-import { playbackClock } from "../../../services/PlaybackClock";
-import { liveParamStore } from "../../../../transformations";
+import { playbackClock } from "../../../../../core/playback/PlaybackClock";
+import { liveParamStore } from "../../../../../core/liveParams/liveParamStore";
 import { useTransformInteractionController } from "../useTransformInteractionController";
 import { useTransformationViewStore } from "../../../../transformations/store/useTransformationViewStore";
 

@@ -7,13 +7,14 @@ import { livePreviewTextStore } from "../../text/services/livePreviewTextStore";
 import {
   playbackClock,
   playbackFrameClock,
-} from "../../player/services/PlaybackClock";
+} from "../../../core/playback/PlaybackClock";
 import { usePlayerStore } from "../../player/usePlayerStore";
 import type {
   TimelineClip,
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
-import { applyClipTransforms, livePreviewParamStore } from "../../transformations";
+import { applyClipTransforms } from "../../transformations";
+import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import type { AdjustmentEffectResolver } from "../services/AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "../services/RenderGroupOrchestrator";
 import { TrackRenderEngine } from "../services/TrackRenderEngine";

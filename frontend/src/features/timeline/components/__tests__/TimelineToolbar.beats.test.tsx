@@ -5,7 +5,7 @@ import { TimelineToolbar } from "../TimelineToolbar";
 import { ADJUSTMENT_DEFAULT_DURATION_TICKS } from "../../constants";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useCompositeTimelineStore } from "../../../composite/useCompositeTimelineStore";
-import { playbackClock } from "../../../player/services/PlaybackClock";
+import { playbackClock } from "../../../../core/playback/PlaybackClock";
 import type {
   AdjustmentTimelineClip,
   StandardTimelineClip,

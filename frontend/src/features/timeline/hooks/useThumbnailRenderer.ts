@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { CLIP_HEIGHT } from "../constants";
 import { mediaSecondsToTickExact } from "../../renderer/utils/mediaTime";
-import { pxToTicks, ticksPerPixel } from "../utils/pixelGrid";
+import { pxToTicks, ticksPerPixel } from "../../../core/time/pixelGrid";
 import type {
   AssetBackedBaseClip,
   AssetBackedTimelineClip,

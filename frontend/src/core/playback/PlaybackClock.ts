@@ -1,4 +1,4 @@
-import { getTicksPerFrame } from "../../timelineSelection/utils/timelineSelection";
+import { getTicksPerFrame } from "../time/ticksPerFrame";
 
 type TimeListener = (time: number) => void;
 

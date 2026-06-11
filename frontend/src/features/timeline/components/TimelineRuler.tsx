@@ -7,8 +7,8 @@ import {
   TRACK_HEADER_WIDTH,
   RULER_HEIGHT,
 } from "../constants";
-import { snapTickToFrameGrid } from "../utils/frameGrid";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { snapTickToFrameGrid } from "../../../core/time/frameGrid";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 
 interface TimelineRulerProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;

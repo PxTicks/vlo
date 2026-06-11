@@ -16,10 +16,10 @@ import {
   createAddTransform,
   clipVisualToSourceTime,
   insertTransformRespectingDefaultOrder,
-  liveParamStore,
   resolveScalar,
 } from "../../../transformations";
-import { playbackClock } from "../../services/PlaybackClock";
+import { liveParamStore } from "../../../../core/liveParams/liveParamStore";
+import { playbackClock } from "../../../../core/playback/PlaybackClock";
 import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
 import {
   commitTransformControl,

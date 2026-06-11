@@ -24,8 +24,8 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import { playbackClock } from "../../player/services/PlaybackClock";
-import { useExtractStore } from "../../player/useExtractStore";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
+import { useExtractStore } from "../../../core/extract/useExtractStore";
 import {
   TICKS_PER_SECOND,
   useTimelineStore,

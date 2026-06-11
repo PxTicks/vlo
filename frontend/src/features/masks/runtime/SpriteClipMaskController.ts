@@ -10,8 +10,8 @@ import type { Asset } from "../../../types/Asset";
 import {
   applyClipTransforms,
   calculateClipTime,
-  livePreviewParamStore,
 } from "../../transformations";
+import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import { dispatchTransform } from "../../transformations/catalogue/TransformationRegistry";
 import type { TransformState } from "../../transformations/catalogue/types";
 import { drawMaskBaseShape, isMaskActiveAtSourceTime } from "../model/maskFactory";

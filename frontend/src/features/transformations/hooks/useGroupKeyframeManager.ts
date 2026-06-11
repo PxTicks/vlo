@@ -3,7 +3,7 @@ import type { LayoutGroup, ControlDefinition } from "../../panelUI/types";
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 import { useTimelineStore, useTimelineClip } from "../../timeline";
 import { useProjectStore } from "../../project/useProjectStore";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import {
   clipVisualToSourceTime,
   presentationToClipSourceTime,

@@ -13,8 +13,8 @@ import type { TimelineClip } from "../../types/TimelineTypes";
 import { getIdempotentTimeMap } from "./utils/timeCalculation";
 import { resolveScalar } from "./utils/resolveScalar";
 import type { ScalarParameter } from "./types";
-import { liveParamStore } from "./services/liveParamStore";
-import { livePreviewParamStore } from "./services/livePreviewParamStore";
+import { liveParamStore } from "../../core/liveParams/liveParamStore";
+import { livePreviewParamStore } from "../../core/liveParams/livePreviewParamStore";
 
 export type FitMode = "contain" | "cover";
 

@@ -33,14 +33,14 @@ export {
   frameIndexFromTick,
   tickFromFrameIndex,
   FRAME_INDEX_EPSILON,
-} from "./utils/frameGrid";
-export type { FrameSnapMode } from "./utils/frameGrid";
+} from "../../core/time/frameGrid";
+export type { FrameSnapMode } from "../../core/time/frameGrid";
 export {
   pixelsPerSecond,
   ticksPerPixel,
   ticksToPx,
   pxToTicks,
-} from "./utils/pixelGrid";
+} from "../../core/time/pixelGrid";
 export { AssetDragOverlay } from "./components/AssetDragOverlay";
 export {
   createEndpointOverlayItem,

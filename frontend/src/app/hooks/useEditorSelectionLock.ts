@@ -1,4 +1,4 @@
-import { useExtractStore } from "../../features/player/useExtractStore";
+import { useExtractStore } from "../../core/extract/useExtractStore";
 import { useTimelineSelectionStore } from "../../features/timelineSelection";
 
 export function useEditorSelectionLock(): boolean {

@@ -19,7 +19,7 @@ import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
 import { useTimelineStore } from "../useTimelineStore";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
 import { calculateClipTime } from "../../transformations";
 import {

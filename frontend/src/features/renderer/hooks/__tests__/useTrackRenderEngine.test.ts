@@ -170,7 +170,7 @@ vi.mock("../../../userAssets", () => ({
   }),
 }));
 
-vi.mock("../../../player/services/PlaybackClock", () => ({
+vi.mock("../../../../core/playback/PlaybackClock", () => ({
   playbackClock: {
     get time() {
       return mockPlaybackState.time;

@@ -1,7 +1,7 @@
 // src/components/timeline/utils/collision.ts
 
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { ticksPerFrame } from "./frameGrid";
+import { ticksPerFrame } from "../../../core/time/frameGrid";
 
 // --- TYPES & INTERFACES ---
 

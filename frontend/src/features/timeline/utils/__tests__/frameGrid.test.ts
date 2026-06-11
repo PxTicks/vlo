@@ -7,7 +7,7 @@ import {
   snapTickToGrid,
   frameIndexFromTick,
   FRAME_INDEX_EPSILON,
-} from "../frameGrid";
+} from "../../../../core/time/frameGrid";
 import { TICKS_PER_SECOND } from "../../constants";
 
 const PROJECT_FPS = [16, 24, 25, 30, 60];

@@ -16,7 +16,7 @@ import {
   useEditorFocusStore,
   useRegionFocus,
 } from "../editorFocus";
-import { playbackClock } from "../player/services/PlaybackClock";
+import { playbackClock } from "../../core/playback/PlaybackClock";
 import { isCompositeClip } from "../../types/TimelineTypes";
 import { useTimelineStore } from "../timeline/useTimelineStore";
 import { useCompositeLibraryStore } from "./useCompositeLibraryStore";

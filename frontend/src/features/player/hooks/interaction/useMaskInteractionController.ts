@@ -24,12 +24,12 @@ import { useShallow } from "zustand/react/shallow";
 import {
   calculateClipTime,
   commitLayoutControlToTransforms,
-  liveParamStore,
-  livePreviewParamStore,
   presentationToClipSourceTime,
 } from "../../../transformations";
+import { liveParamStore } from "../../../../core/liveParams/liveParamStore";
+import { livePreviewParamStore } from "../../../../core/liveParams/livePreviewParamStore";
 import { hasDragMovement } from "./transformInteraction";
-import { playbackClock } from "../../services/PlaybackClock";
+import { playbackClock } from "../../../../core/playback/PlaybackClock";
 import {
   bindStagePointerListeners,
   unbindStagePointerListeners,

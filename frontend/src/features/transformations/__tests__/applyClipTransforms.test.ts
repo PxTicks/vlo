@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { Sprite, Texture } from "pixi.js";
 import { applyClipTransforms } from "../applyTransformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { liveParamStore } from "../services/liveParamStore";
-import { livePreviewParamStore } from "../services/livePreviewParamStore";
+import { liveParamStore } from "../../../core/liveParams/liveParamStore";
+import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import { resolveScalar } from "../utils/resolveScalar";
 import { getIdempotentTimeMap } from "../utils/timeCalculation";
 

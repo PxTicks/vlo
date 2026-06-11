@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { TRACK_HEADER_WIDTH } from "../constants";
-import { ticksToPx } from "../utils/pixelGrid";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { ticksToPx } from "../../../core/time/pixelGrid";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 
 export const TimelinePlayhead = () => {

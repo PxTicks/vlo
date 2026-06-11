@@ -31,7 +31,7 @@ import {
   getMaskLocalId,
   resolveMaskBooleanExpression,
 } from "../../masks/model/maskBooleanExpression";
-import { ticksPerFrame } from "../utils/frameGrid";
+import { ticksPerFrame } from "../../../core/time/frameGrid";
 import { getTrackTypeFromClip } from "../utils/formatting";
 import { getResizedClipLeft, getResizedClipRight } from "../utils/clipMath";
 import { resolveCollision } from "../utils/collision";

@@ -1,6 +1,6 @@
 import type { TextClipData } from "../../../types/TimelineTypes";
 import { useProjectStore } from "../../project/useProjectStore";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { insertBaseClipAtTime, useTimelineStore } from "../../timeline";
 import { getTicksPerFrame, snapTickToFrame } from "../../timelineSelection";
 import { createTextClip } from "./createTextClip";

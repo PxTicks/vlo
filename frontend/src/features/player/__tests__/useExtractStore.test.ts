@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useExtractStore } from "../useExtractStore";
+import { useExtractStore } from "../../../core/extract/useExtractStore";
 
 describe("useExtractStore", () => {
   beforeEach(() => {

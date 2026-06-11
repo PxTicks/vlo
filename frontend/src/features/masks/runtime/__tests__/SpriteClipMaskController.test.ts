@@ -16,7 +16,7 @@ import type {
   MaskCompositionAlgebra,
 } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
-import { livePreviewParamStore } from "../../../transformations";
+import { livePreviewParamStore } from "../../../../core/liveParams/livePreviewParamStore";
 import {
   createMaskLayoutTransforms,
   getMaskLayoutState,

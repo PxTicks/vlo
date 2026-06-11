@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ticksToPx, pxToTicks, ticksPerPixel, pixelsPerSecond } from "../pixelGrid";
+import { ticksToPx, pxToTicks, ticksPerPixel, pixelsPerSecond } from "../../../../core/time/pixelGrid";
 import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../../constants";
 
 describe("pixelGrid (tick <-> px)", () => {

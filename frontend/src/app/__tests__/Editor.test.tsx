@@ -131,7 +131,7 @@ vi.mock("../layout/ProjectSettingsMenu", () => ({
   ProjectSettingsMenu: () => <div data-testid="project-settings">Settings</div>,
 }));
 
-vi.mock("../../features/player/useExtractStore", () => ({
+vi.mock("../../core/extract/useExtractStore", () => ({
   useExtractStore: (selector: (state: unknown) => unknown) =>
     selector({
       frameSelectionMode,

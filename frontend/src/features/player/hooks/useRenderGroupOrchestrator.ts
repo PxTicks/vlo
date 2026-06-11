@@ -4,7 +4,7 @@ import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { useProjectStore } from "../../project/useProjectStore";
 import { RenderGroupOrchestrator } from "../../renderer/services/RenderGroupOrchestrator";
 import { AdjustmentEffectResolver } from "../../renderer/services/AdjustmentEffectResolver";
-import { playbackClock } from "../services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 
 /**
  * Owns a single `RenderGroupOrchestrator` tied to the Player's viewport

@@ -1,11 +1,11 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 import { Box, Button, Paper, Typography } from "@mui/material";
-import { useExtractStore } from "../../player/useExtractStore";
+import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useProjectStore } from "../../project";
 import { useTimelineStore } from "../useTimelineStore";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { BufferedTextInput } from "../../panelUI/components/BufferedTextInput";
 import {
   TRACK_HEADER_WIDTH,
@@ -16,7 +16,7 @@ import {
 import {
   ticksToPx as ticksToPxAt,
   pxToTicks as pxToTicksAt,
-} from "../utils/pixelGrid";
+} from "../../../core/time/pixelGrid";
 import {
   tickToMediaSeconds,
   mediaSecondsToTickExact,

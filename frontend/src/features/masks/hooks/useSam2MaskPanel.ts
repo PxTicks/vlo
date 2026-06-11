@@ -12,7 +12,7 @@ import {
   countSam2MaskAssetConsumers,
   useTimelineStore,
 } from "../../timeline";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
 import type { ClipPresentationContext } from "../../transformations";

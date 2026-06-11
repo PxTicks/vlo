@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { SelectChangeEvent, ChipProps } from "@mui/material";
 import type { Asset } from "../../../types/Asset";
-import { useExtractStore } from "../../player/useExtractStore";
+import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { usePlayerStore } from "../../player/usePlayerStore";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { insertAssetAtTime, frameToTick } from "../../timeline";
 import {
   tickToMediaSeconds,

@@ -1,4 +1,4 @@
-import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../constants";
+import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "./constants";
 
 /**
  * Canonical tick<->pixel conversions for timeline layout.

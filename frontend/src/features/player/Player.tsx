@@ -16,14 +16,14 @@ import {
 import { useProjectStore } from "../project";
 import { audioSystem } from "./services/AudioSystem";
 import { usePlayerStore } from "./usePlayerStore";
-import { useExtractStore } from "./useExtractStore";
+import { useExtractStore } from "../../core/extract/useExtractStore";
 import { addLocalAsset } from "../userAssets";
 import { TrackLayer } from "./components/TrackLayer";
 import {
   alignPlaybackTickToFrame,
   playbackClock,
   playbackFrameClock,
-} from "./services/PlaybackClock";
+} from "../../core/playback/PlaybackClock";
 import { usePixiApp } from "./hooks/usePixiApp";
 import { useCanvasSelectionManager } from "./hooks/interaction/useCanvasSelectionManager";
 import { useCanvasSelectionKeyboard } from "./hooks/interaction/useCanvasSelectionKeyboard";

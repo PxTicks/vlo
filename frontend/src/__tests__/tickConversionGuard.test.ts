@@ -26,10 +26,10 @@ const RAW_FILES = import.meta.glob("../**/*.{ts,tsx}", {
 
 // Central modules: the canonical home for the conversions (always allowed).
 const CENTRAL = [
-  "features/timeline/utils/frameGrid.ts",
+  "core/time/frameGrid.ts",
+  "core/time/pixelGrid.ts",
+  "core/time/constants.ts",
   "features/renderer/utils/mediaTime.ts",
-  "features/timeline/utils/pixelGrid.ts",
-  "features/timeline/constants.ts",
 ];
 
 // The single legitimately-exempt non-boundary file. `timeCalculation` sits

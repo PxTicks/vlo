@@ -8,7 +8,7 @@ import type {
   TimelineClipOverlayDragContext,
   TimelineClipOverlayItemDrag,
 } from "../clipOverlayApi";
-import { ticksToPx } from "./pixelGrid";
+import { ticksToPx } from "../../../core/time/pixelGrid";
 
 /**
  * Live-drag CSS variable read by `TimelineClipOverlayLayer`'s timed-item

@@ -12,7 +12,7 @@ import { createMaskLayoutTransforms } from "../../../../masks/model/maskFactory"
 import { useMaskInteractionController } from "../useMaskInteractionController";
 import { useTransformInteractionController } from "../useTransformInteractionController";
 import { useCanvasSelectionManager } from "../useCanvasSelectionManager";
-import { playbackClock } from "../../../services/PlaybackClock";
+import { playbackClock } from "../../../../../core/playback/PlaybackClock";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
 
 const {

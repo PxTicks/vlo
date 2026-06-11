@@ -1,4 +1,4 @@
-import { TICKS_PER_SECOND } from "../constants";
+import { TICKS_PER_SECOND } from "./constants";
 
 /**
  * Canonical, integer-first tick<->frame math. This is the single internal

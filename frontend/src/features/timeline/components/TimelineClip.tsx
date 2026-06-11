@@ -24,7 +24,7 @@ import {
   TRACK_HEADER_WIDTH,
   RULER_HEIGHT,
 } from "../constants";
-import { ticksToPx } from "../utils/pixelGrid";
+import { ticksToPx } from "../../../core/time/pixelGrid";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import type {
   AssetBackedBaseClip,

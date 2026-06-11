@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import {
   selectTimelineClipById,
   useTimelineStore,

@@ -8,7 +8,7 @@ import {
   buildTrackTimeResolver,
   type TrackTimeResolver,
 } from "../../renderer/utils/resolveTrackTime";
-import { snapTickToFrameGrid, ticksPerFrame } from "./frameGrid";
+import { snapTickToFrameGrid, ticksPerFrame } from "../../../core/time/frameGrid";
 
 export interface TimelineClipPresentation {
   clipId: string;

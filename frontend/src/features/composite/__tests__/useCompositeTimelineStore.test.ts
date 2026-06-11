@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { playbackClock } from "../../player/services/PlaybackClock";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { TICKS_PER_SECOND } from "../../timeline/constants";
 import { useCompositeLibraryStore } from "../useCompositeLibraryStore";

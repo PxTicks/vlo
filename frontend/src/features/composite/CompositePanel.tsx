@@ -7,8 +7,8 @@ import {
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import { playbackClock } from "../player/services/PlaybackClock";
-import { useExtractStore } from "../player/useExtractStore";
+import { playbackClock } from "../../core/playback/PlaybackClock";
+import { useExtractStore } from "../../core/extract/useExtractStore";
 import {
   createTimelineSelection,
   getDefaultSelectionEnd,

@@ -3,7 +3,10 @@ import type {
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
 import type { ResolvedMaskCompositeState } from "./MaskBooleanTextureRenderer";
-import { getAssetBackedMaskId, getSam2MaskGrowAmount } from "./AssetMaskSourceFactory";
+import {
+  getAssetBackedMaskId,
+  getSam2MaskGrowAmount,
+} from "./AssetMaskSourceFactory";
 
 export function createMaskShapeSignature(maskClip: MaskTimelineClip): string {
   return JSON.stringify({
@@ -29,7 +32,9 @@ export function createMaskApplicationSignature(
       sam2GrowAmount: getSam2MaskGrowAmount(maskClip),
     })),
     compositeInvert: compositeState.compositeInvert,
+    growAmount: compositeState.growAmount,
     growInvert: compositeState.growInvert,
+    featherAmount: compositeState.feather?.amount ?? null,
     featherMode: compositeState.feather?.mode ?? null,
     featherInvert: compositeState.feather?.invert ?? null,
   });

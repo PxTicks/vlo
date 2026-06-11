@@ -313,6 +313,62 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
+  it("reuses a composited mask texture for an unchanged mask frame", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderSpy = vi.fn();
+    const renderer = {
+      render: renderSpy,
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = withMaskComposition(createParentClip(), {
+      compositeTransformations: [
+        {
+          id: "grow_cached",
+          type: "mask_grow",
+          isEnabled: true,
+          parameters: {
+            amount: 12,
+          },
+        },
+      ],
+    });
+    const mask = createMaskClip("mask_cached");
+
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    const firstRenderCount = renderSpy.mock.calls.length;
+    expect(firstRenderCount).toBeGreaterThan(0);
+
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    expect(renderSpy).toHaveBeenCalledTimes(firstRenderCount);
+
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      11,
+      new Map<string, Asset>(),
+    );
+    expect(renderSpy.mock.calls.length).toBeGreaterThan(firstRenderCount);
+
+    controller.dispose();
+    warnSpy.mockRestore();
+  });
+
   it("applies shared parent feathering as a post-composite pass", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSpy = vi.fn();

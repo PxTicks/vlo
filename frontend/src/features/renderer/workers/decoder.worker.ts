@@ -21,6 +21,12 @@ interface Renderer {
   dispose(): void;
 }
 
+interface PrefetchedBitmapFrame {
+  timestamp: number;
+  duration: number;
+  bitmapPromise: Promise<ImageBitmap | null>;
+}
+
 type WorkerMessage =
   | {
       type: "prepare";
@@ -53,10 +59,14 @@ interface RenderRequest {
 
 // --- Video Renderer Strategy ---
 class VideoRenderer implements Renderer {
+  private static readonly PREFETCH_MAX_FORWARD_STEP_SECONDS = 0.25;
+
   private input: Input | null = null;
   private sink: CanvasSink | null = null;
   private videoIterator?: AsyncGenerator<WrappedCanvas, void, unknown>;
   private nextVideoFrame?: WrappedCanvas | null;
+  private prefetchedBitmapFrame: PrefetchedBitmapFrame | null = null;
+  private lastRequestTime: number | null = null;
 
   async init(url: string, options: RenderOptions, file?: File): Promise<void> {
     this.dispose();
@@ -87,6 +97,13 @@ class VideoRenderer implements Renderer {
 
     let frame: WrappedCanvas | null = null;
     let bitmap: ImageBitmap | null = null;
+    const previousRequestTime = this.lastRequestTime;
+    this.lastRequestTime = time;
+    const isSmallForwardStep =
+      previousRequestTime !== null &&
+      time > previousRequestTime &&
+      time - previousRequestTime <=
+        VideoRenderer.PREFETCH_MAX_FORWARD_STEP_SECONDS;
 
     // 1. Check if we can reuse the iterator (Sequential Playback)
     const needsReset =
@@ -99,6 +116,7 @@ class VideoRenderer implements Renderer {
       if (this.videoIterator) {
         void this.videoIterator.return();
       }
+      this.clearPrefetchedBitmapFrame();
       this.videoIterator = this.sink.canvases(time);
 
       // Prime the iterator
@@ -112,10 +130,9 @@ class VideoRenderer implements Renderer {
     } else {
       // Sequential Update
       if (isFrameTimestampReady(this.nextVideoFrame!.timestamp, time)) {
-        frame = this.nextVideoFrame!;
-
-        const nextResult = await this.videoIterator!.next();
-        this.nextVideoFrame = nextResult.value ?? null;
+        const result = await this.consumeNextFrame();
+        frame = result.frame;
+        bitmap = result.bitmap;
       } else {
         frame = null;
       }
@@ -126,23 +143,28 @@ class VideoRenderer implements Renderer {
       this.nextVideoFrame &&
       isFrameTimestampReady(this.nextVideoFrame.timestamp, time)
     ) {
-      frame = this.nextVideoFrame;
-      const next = await this.videoIterator!.next();
-      this.nextVideoFrame = next.value ?? null;
+      const result = await this.consumeNextFrame();
+      if (bitmap) {
+        bitmap.close();
+        bitmap = null;
+      }
+      frame = result.frame;
+      bitmap = result.bitmap;
     }
 
     if (frame && frame.canvas) {
-      if (frame.canvas instanceof OffscreenCanvas) {
-        bitmap = frame.canvas.transferToImageBitmap();
-      } else {
-        bitmap = await createImageBitmap(frame.canvas);
-      }
+      bitmap = await this.createBitmapFromFrame(frame);
+    }
+
+    if (isSmallForwardStep && this.videoIterator && this.nextVideoFrame) {
+      this.prefetchNextBitmapFrame();
     }
 
     return bitmap;
   }
 
   dispose(): void {
+    this.clearPrefetchedBitmapFrame();
     if (this.input) {
       this.input.dispose();
       this.input = null;
@@ -153,6 +175,99 @@ class VideoRenderer implements Renderer {
     }
     this.sink = null;
     this.nextVideoFrame = null;
+    this.lastRequestTime = null;
+  }
+
+  private async consumeNextFrame(): Promise<{
+    frame: WrappedCanvas | null;
+    bitmap: ImageBitmap | null;
+  }> {
+    if (!this.videoIterator || !this.nextVideoFrame) {
+      return { frame: null, bitmap: null };
+    }
+
+    const currentFrame = this.nextVideoFrame;
+    const prefetchedBitmapFrame =
+      this.takePrefetchedBitmapFrame(currentFrame);
+    const nextResult = await this.videoIterator.next();
+    this.nextVideoFrame = nextResult.value ?? null;
+
+    if (!prefetchedBitmapFrame) {
+      return { frame: currentFrame, bitmap: null };
+    }
+
+    const bitmap = await prefetchedBitmapFrame.bitmapPromise;
+    if (!bitmap) {
+      return { frame: currentFrame, bitmap: null };
+    }
+
+    return { frame: null, bitmap };
+  }
+
+  private prefetchNextBitmapFrame(): void {
+    const frame = this.nextVideoFrame;
+    if (!frame) {
+      this.clearPrefetchedBitmapFrame();
+      return;
+    }
+
+    if (
+      this.prefetchedBitmapFrame &&
+      this.isSameWrappedCanvasFrame(this.prefetchedBitmapFrame, frame)
+    ) {
+      return;
+    }
+
+    this.clearPrefetchedBitmapFrame();
+    this.prefetchedBitmapFrame = {
+      timestamp: frame.timestamp,
+      duration: frame.duration,
+      bitmapPromise: this.createBitmapFromFrame(frame).catch(() => null),
+    };
+  }
+
+  private takePrefetchedBitmapFrame(
+    frame: WrappedCanvas,
+  ): PrefetchedBitmapFrame | null {
+    const prefetchedBitmapFrame = this.prefetchedBitmapFrame;
+    if (
+      !prefetchedBitmapFrame ||
+      !this.isSameWrappedCanvasFrame(prefetchedBitmapFrame, frame)
+    ) {
+      return null;
+    }
+
+    this.prefetchedBitmapFrame = null;
+    return prefetchedBitmapFrame;
+  }
+
+  private clearPrefetchedBitmapFrame(): void {
+    const prefetchedBitmapFrame = this.prefetchedBitmapFrame;
+    this.prefetchedBitmapFrame = null;
+    void prefetchedBitmapFrame?.bitmapPromise.then((bitmap) => {
+      bitmap?.close();
+    });
+  }
+
+  private isSameWrappedCanvasFrame(
+    left: Pick<WrappedCanvas, "timestamp" | "duration">,
+    right: Pick<WrappedCanvas, "timestamp" | "duration">,
+  ): boolean {
+    return left.timestamp === right.timestamp && left.duration === right.duration;
+  }
+
+  private async createBitmapFromFrame(
+    frame: WrappedCanvas,
+  ): Promise<ImageBitmap | null> {
+    if (!frame.canvas) {
+      return null;
+    }
+
+    if (frame.canvas instanceof OffscreenCanvas) {
+      return frame.canvas.transferToImageBitmap();
+    }
+
+    return createImageBitmap(frame.canvas);
   }
 }
 

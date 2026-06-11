@@ -43,6 +43,12 @@ export interface ResolvedMaskCompositeState {
     | null;
 }
 
+interface CachedCompositeTexture {
+  cacheKey: string;
+  effectTexture: Texture;
+  presentationTexture: Texture;
+}
+
 export class MaskBooleanTextureRenderer {
   private readonly renderer: Renderer;
   private readonly nodeRegistry: MaskSceneNodeRegistry;
@@ -61,6 +67,7 @@ export class MaskBooleanTextureRenderer {
   private maskCoverageInvertFilter: Filter | null = null;
   private maskRedToAlphaFilter: Filter | null = null;
   private blurFilter: BlurFilter | null = null;
+  private cachedCompositeTexture: CachedCompositeTexture | null = null;
 
   constructor(
     renderer: Renderer,
@@ -86,10 +93,22 @@ export class MaskBooleanTextureRenderer {
     maskClipByLocalId: Map<string, MaskTimelineClip>;
     contentSize: { width: number; height: number };
     compositeState: ResolvedMaskCompositeState;
+    cacheKey?: string;
   }): Texture | null {
     const referencedMaskIds = options.expressionAnalysis.maskIds;
     if (referencedMaskIds.length === 0) {
+      this.invalidateCache();
       return null;
+    }
+
+    if (
+      options.cacheKey &&
+      this.cachedCompositeTexture?.cacheKey === options.cacheKey &&
+      !this.cachedCompositeTexture.effectTexture.destroyed &&
+      !this.cachedCompositeTexture.presentationTexture.destroyed &&
+      this.maskSprite.texture === this.cachedCompositeTexture.presentationTexture
+    ) {
+      return this.cachedCompositeTexture.effectTexture;
     }
 
     this.pool.ensureMaskRenderTexture(options.contentSize);
@@ -117,6 +136,7 @@ export class MaskBooleanTextureRenderer {
       options.maskClipByLocalId,
     );
     if (!evaluatedTexture) {
+      this.invalidateCache();
       return null;
     }
 
@@ -125,10 +145,22 @@ export class MaskBooleanTextureRenderer {
       options.compositeState,
     );
     this.renderPresentedMaskTexture(effectTexture, options.contentSize);
+    this.cachedCompositeTexture = options.cacheKey
+      ? {
+          cacheKey: options.cacheKey,
+          effectTexture,
+          presentationTexture: this.maskSprite.texture,
+        }
+      : null;
     return effectTexture;
   }
 
+  public invalidateCache(): void {
+    this.cachedCompositeTexture = null;
+  }
+
   public dispose(): void {
+    this.invalidateCache();
     if (this.perMaskSprite) {
       this.perMaskSprite.filters = null;
       if (!this.perMaskSprite.destroyed) {

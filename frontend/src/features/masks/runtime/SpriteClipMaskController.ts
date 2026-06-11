@@ -1,6 +1,7 @@
 import { Container, Graphics, Matrix, Sprite, Texture } from "pixi.js";
 import type { Renderer } from "pixi.js";
 import type {
+  ClipTransform,
   MaskBooleanExpression,
   MaskTimelineClip,
   TimelineClip,
@@ -31,6 +32,7 @@ import {
   isAssetBackedMask,
   isBrushBufferAssetId,
 } from "./AssetMaskSourceFactory";
+import { getBrushBufferRevision } from "./brushBufferRegistry";
 import {
   MaskApplicationController,
   type MaskApplicationMode,
@@ -41,8 +43,19 @@ import {
 } from "./MaskBooleanTextureRenderer";
 import { MaskSceneNodeRegistry } from "./MaskSceneNodeRegistry";
 import type { AssetMaskNode, VectorMaskNode } from "./MaskSceneNodes";
-import { createMaskApplicationSignature, createMaskShapeSignature } from "./maskRenderSignatures";
+import {
+  createMaskApplicationSignature,
+  createMaskShapeSignature,
+} from "./maskRenderSignatures";
 import { resolveMaskRenderableLayout } from "./resolveMaskRenderableLayout";
+
+type TextureWithIdentity = Texture & {
+  uid?: number;
+  source?: {
+    uid?: number;
+    destroyed?: boolean;
+  };
+};
 
 function getMaskVideoSpriteContentSize(
   sprite: Sprite,
@@ -361,6 +374,16 @@ export class SpriteClipMaskController {
             maskClipByLocalId,
             contentSize: clipContentSize,
             compositeState: sharedMaskCompositeState,
+            cacheKey: this.createCompositeTextureCacheKey({
+              maskApplicationSignature,
+              activeMaskClips,
+              clipContentSize,
+              logicalDimensions,
+              parentClip,
+              rawTimeTicks,
+              requestedMaskTimeSeconds,
+              compositeState: sharedMaskCompositeState,
+            }),
           },
         );
 
@@ -371,13 +394,17 @@ export class SpriteClipMaskController {
             maskApplicationSignature,
           );
         } else {
+          this.maskBooleanTextureRenderer.invalidateCache();
           this.maskApplicationController.clear();
         }
       } else {
+        this.maskBooleanTextureRenderer.invalidateCache();
         this.maskApplicationController.clear();
       }
       return;
     }
+
+    this.maskBooleanTextureRenderer?.invalidateCache();
 
     if (simpleUnionMasks) {
       this.maskApplicationController.applyMaskEffect(
@@ -426,6 +453,7 @@ export class SpriteClipMaskController {
       node.root.visible = false;
     });
     this.maskApplicationController.clear();
+    this.maskBooleanTextureRenderer?.invalidateCache();
     if (this.maskSprite) {
       this.maskSprite.visible = false;
     }
@@ -630,6 +658,129 @@ export class SpriteClipMaskController {
           parameters: nextParameters,
         }
       : transform;
+  }
+
+  private createCompositeTextureCacheKey(options: {
+    maskApplicationSignature: string;
+    activeMaskClips: MaskTimelineClip[];
+    clipContentSize: { width: number; height: number };
+    logicalDimensions: { width: number; height: number };
+    parentClip: TimelineClip;
+    rawTimeTicks: number;
+    requestedMaskTimeSeconds: number;
+    compositeState: ResolvedMaskCompositeState;
+  }): string {
+    return JSON.stringify({
+      maskApplicationSignature: options.maskApplicationSignature,
+      rawTimeTicks: options.rawTimeTicks,
+      requestedMaskTimeSeconds: options.requestedMaskTimeSeconds,
+      contentSize: options.clipContentSize,
+      logicalDimensions: options.logicalDimensions,
+      compositeState: options.compositeState,
+      compositeLivePreview: this.createCompositeLivePreviewSignature(
+        options.parentClip,
+      ),
+      masks: options.activeMaskClips.map((maskClip) => ({
+        id: maskClip.id,
+        type: maskClip.maskType,
+        mode: maskClip.maskMode,
+        inverted: maskClip.maskInverted,
+        activeRange: maskClip.activeRange,
+        parameters: maskClip.maskParameters,
+        transformations: maskClip.transformations,
+        livePreview: this.createTransformLivePreviewSignature(
+          maskClip.transformations,
+        ),
+        assetId: getAssetBackedMaskId(maskClip),
+        texture: this.getAssetMaskTextureSignature(maskClip.id),
+      })),
+    });
+  }
+
+  private getAssetMaskTextureSignature(maskClipId: string): {
+    textureUid: number | null;
+    sourceUid: number | null;
+    width: number;
+    height: number;
+    visible: boolean;
+    brushRevision: number | null;
+  } | null {
+    const sprite = this.assetMaskNodes.get(maskClipId)?.player.sprite;
+    if (!sprite) {
+      return null;
+    }
+
+    const texture = sprite.texture as TextureWithIdentity;
+    return {
+      textureUid: texture.uid ?? null,
+      sourceUid: texture.source?.uid ?? null,
+      width: texture.width,
+      height: texture.height,
+      visible: sprite.visible,
+      brushRevision: getBrushBufferRevision(maskClipId),
+    };
+  }
+
+  private createCompositeLivePreviewSignature(
+    parentClip: TimelineClip,
+  ): ReturnType<SpriteClipMaskController["createTransformLivePreviewSignature"]> {
+    if (parentClip.type === "mask") {
+      return [];
+    }
+
+    const composition = (parentClip.components ?? []).find(
+      (component) => component.type === "mask_composition",
+    );
+    if (composition?.type !== "mask_composition") {
+      return [];
+    }
+
+    return this.createTransformLivePreviewSignature(
+      composition.parameters.compositeTransformations,
+    );
+  }
+
+  private createTransformLivePreviewSignature(
+    transformations: readonly ClipTransform[] | undefined,
+  ): Array<{
+    id: string;
+    type: string;
+    values: Record<string, number>;
+  }> {
+    if (!transformations || transformations.length === 0) {
+      return [];
+    }
+
+    const signature: Array<{
+      id: string;
+      type: string;
+      values: Record<string, number>;
+    }> = [];
+
+    transformations.forEach((transform) => {
+      const values: Record<string, number> = {};
+      Object.keys(transform.parameters)
+        .sort()
+        .forEach((paramName) => {
+          const previewValue = livePreviewParamStore.get(
+            transform.id,
+            paramName,
+          );
+          if (previewValue !== undefined) {
+            values[paramName] = previewValue;
+          }
+        });
+
+      if (Object.keys(values).length > 0) {
+        signature.push({
+          id: transform.id,
+          type: transform.type,
+          values,
+        });
+      }
+    });
+
+    return signature;
   }
 
   private resolveSimpleUnionMaskClips(

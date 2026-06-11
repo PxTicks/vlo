@@ -32,12 +32,20 @@ const CENTRAL = [
   "features/renderer/utils/mediaTime.ts",
 ];
 
-// The single legitimately-exempt non-boundary file. `timeCalculation` sits
-// BELOW mediaTime in the dependency graph (mediaTime imports calculateClipTime
-// from it), so it cannot route through mediaTime without an import cycle. Every
-// other tick conversion now goes through a boundary module (frameGrid /
+// Legitimately-exempt non-boundary files:
+// - `timeCalculation` sits BELOW mediaTime in the dependency graph (mediaTime
+//   imports calculateClipTime from it), so it cannot route through mediaTime
+//   without an import cycle.
+// - `timeline/constants` defines the single `ADJUSTMENT_DEFAULT_DURATION_TICKS`
+//   duration constant (3s in ticks), deliberately timeline-owned and derived
+//   from the core time base — a named compile-time constant, not scattered
+//   conversion logic, and not worth routing through a boundary module.
+// Every other tick conversion goes through a boundary module (frameGrid /
 // mediaTime / pixelGrid). Subset-checked: a NEW file doing raw conversion fails.
-const ALLOWLIST = ["features/transformations/utils/timeCalculation.ts"];
+const ALLOWLIST = [
+  "features/transformations/utils/timeCalculation.ts",
+  "features/timeline/constants.ts",
+];
 
 const RAW_CONVERSION =
   /\*\s*TICKS_PER_SECOND|\/\s*TICKS_PER_SECOND|TICKS_PER_SECOND\s*\*|TICKS_PER_SECOND\s*\//;

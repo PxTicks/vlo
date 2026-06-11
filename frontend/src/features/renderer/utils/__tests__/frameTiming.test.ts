@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isFrameTimestampReady } from "../frameTiming";
+import {
+  isFrameTimestampAheadOfRequest,
+  isFrameTimestampReady,
+} from "../frameTiming";
 
 function simulatePresentedFrames(
   frameTimestamps: number[],
@@ -47,5 +50,18 @@ describe("frameTiming", () => {
       0.25,
     ]);
   });
-});
 
+  it("does not reset the iterator for timestamp rounding dust", () => {
+    expect(isFrameTimestampAheadOfRequest(0.063, 0.0625)).toBe(false);
+  });
+
+  it("resets the iterator when scrubbing backward by a real frame", () => {
+    const frameDuration = 1 / 30;
+    const nextDecodedFrame = 31 * frameDuration;
+    const previousFrameRequest = 29 * frameDuration;
+
+    expect(
+      isFrameTimestampAheadOfRequest(nextDecodedFrame, previousFrameRequest),
+    ).toBe(true);
+  });
+});

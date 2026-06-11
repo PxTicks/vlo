@@ -10,3 +10,12 @@ export function isFrameTimestampReady(
   );
 }
 
+export function isFrameTimestampAheadOfRequest(
+  nextFrameTimestamp: number,
+  requestedTime: number,
+): boolean {
+  return (
+    nextFrameTimestamp >
+    requestedTime + FRAME_TIMESTAMP_TOLERANCE_SECONDS
+  );
+}

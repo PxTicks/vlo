@@ -23,8 +23,8 @@ vi.mock("../samAudioApi", () => ({
   submitSeparationJob: operationMocks.mockSubmitSeparationJob,
 }));
 
-vi.mock("../../../userAssets", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../userAssets")>();
+vi.mock("../../../userAssets/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../userAssets/api")>();
   return {
     ...actual,
     ensureAssetFileLoaded: operationMocks.mockEnsureAssetFileLoaded,

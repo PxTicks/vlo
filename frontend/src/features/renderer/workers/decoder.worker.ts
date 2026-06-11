@@ -6,7 +6,10 @@ import {
   BlobSource,
 } from "mediabunny";
 import type { WrappedCanvas } from "mediabunny";
-import { isFrameTimestampReady } from "../utils/frameTiming";
+import {
+  isFrameTimestampAheadOfRequest,
+  isFrameTimestampReady,
+} from "../utils/frameTiming";
 
 // --- Types ---
 interface RenderOptions {
@@ -109,7 +112,7 @@ class VideoRenderer implements Renderer {
     const needsReset =
       !this.videoIterator ||
       !this.nextVideoFrame ||
-      this.nextVideoFrame.timestamp > time + 0.1 || // Seek backwards
+      isFrameTimestampAheadOfRequest(this.nextVideoFrame.timestamp, time) ||
       this.nextVideoFrame.timestamp < time - 1.0; // Seek forwards (large gap)
 
     if (needsReset) {

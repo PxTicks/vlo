@@ -32,6 +32,7 @@ vi.mock("../../../renderer", () => ({
     readonly postMessage = vi.fn(
       (message: {
         clipId: string;
+        requestId?: string;
         strict?: boolean;
         time?: number;
         type: "prepare" | "render";
@@ -87,6 +88,7 @@ vi.mock("../../../renderer", () => ({
             data: {
               type: "frame",
               clipId: message.clipId,
+              requestId: message.requestId,
               bitmap:
                 renderBehavior === "frame" ? null : renderBehavior.bitmap,
             },
@@ -304,6 +306,32 @@ describe("MaskVideoFramePlayer", () => {
     await renderPromise;
 
     expect(Texture.from).toHaveBeenCalledWith(decodedBitmap);
+    expect(player.sprite.visible).toBe(true);
+    expect(player.sprite.texture.width).toBe(9);
+    expect(player.sprite.texture.height).toBe(7);
+
+    player.dispose();
+  });
+
+  it("ignores a stale preview frame while waiting for a strict frame", async () => {
+    mockWorkerPlans.push({
+      prepare: "ready",
+      render: [
+        { bitmap: { width: 3, height: 3 } },
+        { bitmap: { width: 9, height: 7 } },
+      ],
+    });
+
+    const player = new MaskVideoFramePlayer("clip_1");
+    const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
+    await vi.runAllTimersAsync();
+    await setSourcePromise;
+
+    void player.renderAt(0.25);
+    const strictRenderPromise = player.renderAt(0.5, { strict: true });
+    await vi.runAllTimersAsync();
+    await strictRenderPromise;
+
     expect(player.sprite.visible).toBe(true);
     expect(player.sprite.texture.width).toBe(9);
     expect(player.sprite.texture.height).toBe(7);

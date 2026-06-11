@@ -101,6 +101,7 @@ export class TrackRenderEngine {
   private static readonly MAX_LIVE_REQUEST_AGE_MS = 180;
   private static readonly LIVE_FRAME_TIMEOUT_MS = 1500;
   private static readonly SYNCHRONIZED_RECOVERY_ATTEMPTS = 1;
+  private static readonly LIVE_RENDER_RECOVERY_ATTEMPTS = 1;
 
   public readonly sprite: Sprite;
   public readonly container: Container;
@@ -130,6 +131,8 @@ export class TrackRenderEngine {
   private pendingReject: ((error: Error) => void) | null = null;
   private pendingAbortCleanup: (() => void) | null = null;
   private pendingLiveFrame: PendingLiveFrame | null = null;
+  private pendingLiveFrameRequestId: string | null = null;
+  private nextLiveFrameRequestId = 0;
 
   // Live synchronized pipeline
   private liveRenderQueue: LiveRenderRequest[] = [];
@@ -758,6 +761,11 @@ export class TrackRenderEngine {
               error,
             );
             this.resetStalledLiveDecoderWorker();
+            await this.prepareClipForStrictRender(
+              activeClip,
+              assetById,
+              performance.now(),
+            );
             continue;
           }
 
@@ -927,7 +935,8 @@ export class TrackRenderEngine {
   }
 
   private handleWorkerMessage(e: MessageEvent) {
-    const { type, bitmap, clipId, transformTime, error, message } = e.data;
+    const { type, bitmap, clipId, transformTime, error, message, requestId } =
+      e.data;
 
     if (type === "frame") {
       if (this.pendingResolve) {
@@ -935,7 +944,9 @@ export class TrackRenderEngine {
         this.pendingResolve(bitmap);
       } else if (this.pendingLiveFrame) {
         const pendingLiveFrame = this.pendingLiveFrame;
-        this.pendingLiveFrame = null;
+        if (this.isStalePendingLiveFrameResponse(requestId, bitmap)) {
+          return;
+        }
         if (error) {
           pendingLiveFrame.reject(new Error(String(error)));
           return;
@@ -1170,68 +1181,102 @@ export class TrackRenderEngine {
         const request = this.liveRenderQueue.shift();
         if (!request) continue;
 
-        try {
-          const [frame] = await Promise.all([
-            this.requestStrictLiveFrame(
-              request.localTimeSeconds,
-              request.clip.id,
-              request.rawTimeTicks,
-            ),
-            this.maskController.syncMaskClips(
-              request.maskClips,
-              request.clip,
-              request.logicalDimensions,
-              request.rawTimeTicks,
-              request.assetsById,
-              { waitForSam2: true },
-            ),
-          ]);
-
-          if (frame.bitmap) {
-            const texture = Texture.from(frame.bitmap);
-            const contentSizeChanged = this.applyTexture(
-              texture,
-              request.clip.id,
-              "asset",
-            );
-            if (contentSizeChanged) {
-              await this.resyncMasksForResolvedTexture(
-                request.maskClips,
-                request.clip,
-                request.logicalDimensions,
-                request.rawTimeTicks,
-                request.assetsById,
-              );
-            }
-          }
-
-          if (
-            this.sprite.visible &&
-            this.currentTextureClipId === request.clip.id
-          ) {
-            applyClipTransforms(
-              this.sprite,
-              request.clip,
-              request.logicalDimensions,
-              request.rawTimeTicks,
-            );
-            this.maskController.syncMaskSpriteTransform();
-          }
-
-          if (this.onFrameReady) {
-            this.onFrameReady(request.clip.id, request.rawTimeTicks);
-          }
-        } catch (error) {
-          if (error instanceof Error && error.name === "AbortError") {
-            continue;
-          }
-          console.warn("Failed to render synchronized live frame", error);
-        }
+        await this.renderLiveRenderRequestWithRecovery(request);
       }
     } finally {
       this.livePipelineBusy = false;
       if (this.liveRenderQueue.length > 0 && !this.disposed) {
         void this.runLiveRenderPipeline();
+      }
+    }
+  }
+
+  private async renderLiveRenderRequestWithRecovery(
+    request: LiveRenderRequest,
+  ): Promise<void> {
+    for (
+      let attempt = 0;
+      attempt <= TrackRenderEngine.LIVE_RENDER_RECOVERY_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        const [frame] = await Promise.all([
+          this.requestStrictLiveFrame(
+            request.localTimeSeconds,
+            request.clip.id,
+            request.rawTimeTicks,
+            { timeoutMs: TrackRenderEngine.LIVE_FRAME_TIMEOUT_MS },
+          ),
+          this.maskController.syncMaskClips(
+            request.maskClips,
+            request.clip,
+            request.logicalDimensions,
+            request.rawTimeTicks,
+            request.assetsById,
+            { waitForSam2: true },
+          ),
+        ]);
+
+        if (frame.bitmap) {
+          const texture = Texture.from(frame.bitmap);
+          const contentSizeChanged = this.applyTexture(
+            texture,
+            request.clip.id,
+            "asset",
+          );
+          if (contentSizeChanged) {
+            await this.resyncMasksForResolvedTexture(
+              request.maskClips,
+              request.clip,
+              request.logicalDimensions,
+              request.rawTimeTicks,
+              request.assetsById,
+            );
+          }
+        }
+
+        if (
+          this.sprite.visible &&
+          this.currentTextureClipId === request.clip.id
+        ) {
+          applyClipTransforms(
+            this.sprite,
+            request.clip,
+            request.logicalDimensions,
+            request.rawTimeTicks,
+          );
+          this.maskController.syncMaskSpriteTransform();
+        }
+
+        if (this.onFrameReady) {
+          this.onFrameReady(request.clip.id, request.rawTimeTicks);
+        }
+        return;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+
+        if (
+          error instanceof Error &&
+          error.name === "TimeoutError" &&
+          attempt < TrackRenderEngine.LIVE_RENDER_RECOVERY_ATTEMPTS
+        ) {
+          console.warn(
+            "Live decoder worker stalled during live playback; recreating worker",
+            error,
+          );
+          this.resetStalledLiveDecoderWorker();
+          await this.prepareClipForStrictRender(
+            request.clip,
+            request.assetsById,
+            performance.now(),
+          );
+          continue;
+        }
+
+        console.warn("Failed to render synchronized live frame", error);
+        return;
       }
     }
   }
@@ -1243,6 +1288,7 @@ export class TrackRenderEngine {
     options: { timeoutMs?: number } = {},
   ): Promise<LiveFramePayload> {
     this.rejectPendingLiveFrame(createRenderAbortError());
+    const requestId = this.createLiveFrameRequestId();
 
     return awaitStrictFrame<LiveFramePayload>({
       timeoutMs: options.timeoutMs,
@@ -1250,10 +1296,12 @@ export class TrackRenderEngine {
         createLiveFrameTimeoutError(timeoutMs, clipId),
       registerPending: (pending) => {
         this.pendingLiveFrame = pending;
+        this.pendingLiveFrameRequestId = requestId;
       },
       unregisterPending: (pending) => {
         if (this.pendingLiveFrame === pending) {
           this.pendingLiveFrame = null;
+          this.pendingLiveFrameRequestId = null;
         }
       },
       sendRequest: () => {
@@ -1263,9 +1311,72 @@ export class TrackRenderEngine {
           clipId,
           transformTime,
           strict: true,
+          requestId,
         });
       },
     });
+  }
+
+  private createLiveFrameRequestId(): string {
+    this.nextLiveFrameRequestId += 1;
+    return `live-frame-${this.nextLiveFrameRequestId}`;
+  }
+
+  private isStalePendingLiveFrameResponse(
+    requestId: unknown,
+    bitmap: ImageBitmap | null,
+  ): boolean {
+    const expectedRequestId = this.pendingLiveFrameRequestId;
+    if (
+      !expectedRequestId ||
+      typeof requestId !== "string" ||
+      requestId === expectedRequestId
+    ) {
+      return false;
+    }
+
+    if (bitmap && typeof bitmap.close === "function") {
+      bitmap.close();
+    }
+    return true;
+  }
+
+  private async prepareClipForStrictRender(
+    clip: TimelineClip,
+    assetsById: Map<string, Asset>,
+    nowMs: number,
+  ): Promise<void> {
+    if (!isAssetBackedClip(clip)) {
+      return;
+    }
+
+    const asset = assetsById.get(clip.assetId);
+    if (!asset) {
+      return;
+    }
+
+    let sourceAsset = asset;
+    if (asset.type === "video" && !hasEmbeddedAssetSource(asset)) {
+      const hydratedAsset = await ensureAssetSourceLoaded(asset.id);
+      if (!hydratedAsset) {
+        return;
+      }
+      sourceAsset = hydratedAsset;
+    }
+
+    if (this.disposed) {
+      return;
+    }
+
+    this.worker.postMessage({
+      type: "prepare",
+      url: sourceAsset.src,
+      clipId: clip.id,
+      kind: clip.type,
+      file: sourceAsset.file,
+    });
+    this.preparedClips.set(clip.id, clip.assetId);
+    this.preparedClipTouchedAtMs.set(clip.id, nowMs);
   }
 
   private invalidateLivePipeline() {
@@ -1618,6 +1729,7 @@ export class TrackRenderEngine {
     if (!this.pendingLiveFrame) return;
     const rejectPending = this.pendingLiveFrame.reject;
     this.pendingLiveFrame = null;
+    this.pendingLiveFrameRequestId = null;
     rejectPending(error);
   }
 }

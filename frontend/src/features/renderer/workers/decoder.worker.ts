@@ -1,4 +1,10 @@
-import { Input, UrlSource, CanvasSink, ALL_FORMATS, BlobSource } from "mediabunny";
+import {
+  Input,
+  UrlSource,
+  CanvasSink,
+  ALL_FORMATS,
+  BlobSource,
+} from "mediabunny";
 import type { WrappedCanvas } from "mediabunny";
 import { isFrameTimestampReady } from "../utils/frameTiming";
 
@@ -26,10 +32,24 @@ type WorkerMessage =
       height?: number;
       fit?: "contain" | "cover" | "fill";
     }
-  | { type: "render"; time: number; clipId: string; transformTime?: number; strict?: boolean }
+  | {
+      type: "render";
+      time: number;
+      clipId: string;
+      transformTime?: number;
+      strict?: boolean;
+      requestId?: string;
+    }
   | { type: "dispose"; clipId: string };
 
 type TransformTime = number;
+interface RenderRequest {
+  time: number;
+  clipId: string;
+  transformTime?: TransformTime;
+  strict?: boolean;
+  requestId?: string;
+}
 
 // --- Video Renderer Strategy ---
 class VideoRenderer implements Renderer {
@@ -38,14 +58,10 @@ class VideoRenderer implements Renderer {
   private videoIterator?: AsyncGenerator<WrappedCanvas, void, unknown>;
   private nextVideoFrame?: WrappedCanvas | null;
 
-  async init(
-    url: string,
-    options: RenderOptions,
-    file?: File
-  ): Promise<void> {
+  async init(url: string, options: RenderOptions, file?: File): Promise<void> {
     this.dispose();
 
-    const source = file 
+    const source = file
       ? new BlobSource(file)
       : new UrlSource(url, { maxCacheSize: 16 * 1024 * 1024 });
 
@@ -174,93 +190,115 @@ const renderers = new Map<string, Renderer>();
 const rendererKinds = new Map<string, "video" | "image" | "mask_video">();
 const initPromises = new Map<string, Promise<void>>();
 let isRendering = false;
-let pendingRender: { time: number; clipId: string; transformTime?: TransformTime; strict?: boolean } | null = null;
+let pendingRender: RenderRequest | null = null;
 
 // --- Helper: Message Processing ---
-const processRender = async (time: number, clipId: string, transformTime?: TransformTime, strict?: boolean) => {
+const cleanupRenderer = (clipId: string) => {
+  const renderer = renderers.get(clipId);
+  if (renderer) {
+    renderer.dispose();
+    renderers.delete(clipId);
+  }
+  rendererKinds.delete(clipId);
+  initPromises.delete(clipId);
+  if (pendingRender?.clipId === clipId) {
+    pendingRender = null;
+  }
+};
+
+const processRender = async (request: RenderRequest) => {
+  const { time, clipId, transformTime, strict, requestId } = request;
   const renderer = renderers.get(clipId);
   const ctx = self as DedicatedWorkerGlobalScope;
 
   if (!renderer) {
-      // Safety: If no renderer exists, send null so main thread doesn't hang
-      ctx.postMessage({
-        type: "frame",
-        bitmap: null,
-        time,
-        clipId,
-        transformTime
-      });
-      return;
+    // Safety: If no renderer exists, send null so main thread doesn't hang
+    ctx.postMessage({
+      type: "frame",
+      bitmap: null,
+      time,
+      clipId,
+      transformTime,
+      requestId,
+    });
+    return;
   }
 
   try {
     const bitmap = await renderer.render(time);
-    
+
     // FIX: Always reply, even if bitmap is null
     if (bitmap) {
-       ctx.postMessage(
-          {
-            type: "frame",
-            bitmap,
-            time,
-            clipId,
-            transformTime,
-          },
-          [bitmap]
-        );
+      ctx.postMessage(
+        {
+          type: "frame",
+          bitmap,
+          time,
+          clipId,
+          transformTime,
+          requestId,
+        },
+        [bitmap],
+      );
     } else if (strict) {
-        // IMPORTANT: Send null frame to unblock ExportRenderer (only if strict mode)
-        ctx.postMessage({
-            type: "frame",
-            bitmap: null,
-            time,
-            clipId,
-            transformTime,
-        });
-    }
-  } catch (err) {
-      const msg = String(err);
-      if (msg.includes("InputDisposedError") || msg.includes("Input has been disposed")) {
-          // If disposed, we should still probably unlock the thread if it was waiting
-           ctx.postMessage({
-            type: "frame",
-            bitmap: null,
-            time,
-            clipId,
-            transformTime,
-            error: "disposed"
-        });
-          return;
-      }
-      console.error(`Render Error [${clipId}]:`, err);
-      
-      // Send null on error to prevent hang
+      // IMPORTANT: Send null frame to unblock ExportRenderer (only if strict mode)
       ctx.postMessage({
         type: "frame",
         bitmap: null,
         time,
         clipId,
         transformTime,
-        error: msg
+        requestId,
+      });
+    }
+  } catch (err) {
+    const msg = String(err);
+    if (
+      msg.includes("InputDisposedError") ||
+      msg.includes("Input has been disposed")
+    ) {
+      // If disposed, we should still probably unlock the thread if it was waiting
+      ctx.postMessage({
+        type: "frame",
+        bitmap: null,
+        time,
+        clipId,
+        transformTime,
+        requestId,
+        error: "disposed",
+      });
+      return;
+    }
+    console.error(`Render Error [${clipId}]:`, err);
+
+    // Send null on error to prevent hang
+    ctx.postMessage({
+      type: "frame",
+      bitmap: null,
+      time,
+      clipId,
+      transformTime,
+      requestId,
+      error: msg,
     });
   }
 };
 
-const loop = async (initialTime: number, clipId: string, initialTransformTime?: TransformTime, initialStrict?: boolean) => {
-    isRendering = true;
-    let nextRequest: { time: number; clipId: string; transformTime?: TransformTime; strict?: boolean } | null = { time: initialTime, clipId, transformTime: initialTransformTime, strict: initialStrict };
+const loop = async (initialRequest: RenderRequest) => {
+  isRendering = true;
+  let nextRequest: RenderRequest | null = initialRequest;
 
-    while (nextRequest !== null) {
-        await processRender(nextRequest.time, nextRequest.clipId, nextRequest.transformTime, nextRequest.strict);
+  while (nextRequest !== null) {
+    await processRender(nextRequest);
 
-        if (pendingRender !== null) {
-            nextRequest = pendingRender;
-            pendingRender = null;
-        } else {
-            nextRequest = null;
-        }
+    if (pendingRender !== null) {
+      nextRequest = pendingRender;
+      pendingRender = null;
+    } else {
+      nextRequest = null;
     }
-    isRendering = false;
+  }
+  isRendering = false;
 };
 
 
@@ -271,9 +309,21 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
   try {
     switch (type) {
       case "prepare": {
-        const { url, clipId, kind, width, height, fit, file } = e.data as Extract<WorkerMessage, { type: "prepare" }>;
-        
-        if (renderers.has(clipId)) return;
+        const { url, clipId, kind, width, height, fit, file } =
+          e.data as Extract<WorkerMessage, { type: "prepare" }>;
+
+        if (renderers.has(clipId)) {
+          const initPromise = initPromises.get(clipId);
+          if (initPromise) {
+            await initPromise;
+          }
+          self.postMessage({
+            type: "ready",
+            clipId,
+            kind: rendererKinds.get(clipId) ?? kind,
+          });
+          return;
+        }
 
         let renderer: Renderer | null = null;
         if (kind === "video" || kind === "mask_video") {
@@ -281,8 +331,8 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
         } else if (kind === "image") {
           renderer = new ImageRenderer();
         } else {
-           console.warn("Unknown kind:", kind);
-           return; 
+          console.warn("Unknown kind:", kind);
+          return;
         }
 
         renderers.set(clipId, renderer);
@@ -290,52 +340,60 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
         const promise = renderer.init(url, { width, height, fit }, file);
         initPromises.set(clipId, promise);
 
-        await promise;
-        self.postMessage({ type: "ready", clipId, kind });
+        try {
+          await promise;
+          self.postMessage({ type: "ready", clipId, kind });
+        } catch (err) {
+          cleanupRenderer(clipId);
+          throw err;
+        }
         break;
       }
 
       case "render": {
-        const { clipId, time, transformTime, strict } = e.data as Extract<WorkerMessage, { type: "render" }>;
-        
+        const { clipId, time, transformTime, strict, requestId } =
+          e.data as Extract<WorkerMessage, { type: "render" }>;
+
         const initPromise = initPromises.get(clipId);
         if (initPromise) {
-            await initPromise;
+          await initPromise;
         }
 
         if (!renderers.has(clipId)) {
-            // Early exit if renderer missing (prevent ghost threads)
-            // Also notify main thread to unblock
-             (self as DedicatedWorkerGlobalScope).postMessage({
-                type: "frame",
-                bitmap: null,
-                time,
-                clipId,
-                transformTime
-            });
-            return;
+          // Early exit if renderer missing (prevent ghost threads)
+          // Also notify main thread to unblock
+          (self as DedicatedWorkerGlobalScope).postMessage({
+            type: "frame",
+            bitmap: null,
+            time,
+            clipId,
+            transformTime,
+            requestId,
+          });
+          return;
         }
 
+        const renderRequest = {
+          time,
+          clipId,
+          transformTime,
+          strict,
+          requestId,
+        };
         if (isRendering) {
-           pendingRender = { time, clipId, transformTime, strict };
+          pendingRender = renderRequest;
         } else {
-           loop(time, clipId, transformTime, strict);
+          void loop(renderRequest);
         }
         break;
       }
 
       case "dispose": {
-        const { clipId } = e.data as Extract<WorkerMessage, { type: "dispose" }>;
-        const renderer = renderers.get(clipId);
-        if (renderer) {
-          renderer.dispose();
-          renderers.delete(clipId);
-        }
-        rendererKinds.delete(clipId);
-        initPromises.delete(clipId);
-        if (pendingRender && pendingRender.clipId === clipId) {
-            pendingRender = null;
-        }
+        const { clipId } = e.data as Extract<
+          WorkerMessage,
+          { type: "dispose" }
+        >;
+        cleanupRenderer(clipId);
         break;
       }
     }

@@ -40,6 +40,7 @@ vi.mock("../../workers/decoder.worker?worker", () => ({
     readonly postMessage = vi.fn(
       (message: {
         clipId?: string;
+        requestId?: string;
         strict?: boolean;
         transformTime?: number;
         type?: string;
@@ -63,6 +64,7 @@ vi.mock("../../workers/decoder.worker?worker", () => ({
                 close: vi.fn(),
               },
               clipId: message.clipId,
+              requestId: message.requestId,
               transformTime: message.transformTime,
             },
           } as MessageEvent);
@@ -313,6 +315,57 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     expect(engine.sprite.texture.width).toBe(320);
     expect(warnSpy).toHaveBeenCalledWith(
       "Live decoder worker stalled during synchronized playback; recreating worker",
+      expect.any(Error),
+    );
+
+    warnSpy.mockRestore();
+    engine.dispose();
+  });
+
+  it("recovers the queued live render pipeline after a decoder timeout", async () => {
+    mockWorkerBehaviors.push(["hang"], ["frame"]);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const engine = new TrackRenderEngine(1);
+    const clip = createClip();
+    const assets = [createAsset()];
+    const masksByParent = new Map<string, []>();
+
+    engine.update(
+      2 * TICKS_PER_SECOND,
+      [clip],
+      masksByParent,
+      assets,
+      { width: 1920, height: 1080 },
+      { fps: 30 },
+    );
+
+    const timeoutMs = (
+      TrackRenderEngine as unknown as Record<string, number>
+    )["LIVE_FRAME_TIMEOUT_MS"];
+    await vi.advanceTimersByTimeAsync(timeoutMs + 20);
+    await vi.runAllTimersAsync();
+
+    expect(mockWorkerInstances).toHaveLength(2);
+    expect(mockWorkerInstances[0]?.terminate).toHaveBeenCalledTimes(1);
+    expect(mockWorkerInstances[1]?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "prepare",
+        clipId: clip.id,
+        file: expect.any(File),
+      }),
+    );
+    expect(mockWorkerInstances[1]?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "render",
+        clipId: clip.id,
+        strict: true,
+      }),
+    );
+    expect(engine["currentTextureClipId"]).toBe(clip.id);
+    expect(engine.sprite.texture.width).toBe(320);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Live decoder worker stalled during live playback; recreating worker",
       expect.any(Error),
     );
 

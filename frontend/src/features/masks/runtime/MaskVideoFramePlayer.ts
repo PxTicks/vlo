@@ -21,6 +21,7 @@ interface WorkerFrameMessage {
   type: "frame";
   clipId: string;
   bitmap: ImageBitmap | null;
+  requestId?: string;
   error?: string;
 }
 
@@ -77,6 +78,8 @@ export class MaskVideoFramePlayer {
   private rejectPrepare: ((error: Error) => void) | null = null;
   private prepareTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
   private pendingStrictFrame: StrictFramePending<void> | null = null;
+  private pendingStrictFrameRequestId: string | null = null;
+  private nextRenderRequestId = 0;
   private strictRenderChain: Promise<void> = Promise.resolve();
   private readonly retiredTextures = new RetiredTextureQueue(
     () => this.sprite.texture,
@@ -148,10 +151,12 @@ export class MaskVideoFramePlayer {
     }
 
     if (!strict) {
+      const requestId = this.createRenderRequestId();
       this.worker.postMessage({
         type: "render",
         clipId: this.clipId,
         time: timeSeconds,
+        requestId,
       });
       return;
     }
@@ -197,6 +202,9 @@ export class MaskVideoFramePlayer {
 
     if (message.type === "frame" && message.clipId === this.clipId) {
       const pendingStrict = this.pendingStrictFrame;
+      if (pendingStrict && this.isStaleStrictFrameResponse(message)) {
+        return;
+      }
 
       if (message.error) {
         pendingStrict?.reject(new Error(message.error));
@@ -357,6 +365,7 @@ export class MaskVideoFramePlayer {
     this.pendingStrictFrame?.reject(
       createMaskRenderAbortError(`${abortReason} during strict render`),
     );
+    this.pendingStrictFrameRequestId = null;
     this.rejectPendingPrepare(
       createMaskRenderAbortError(`${abortReason} during source prepare`),
     );
@@ -454,16 +463,19 @@ export class MaskVideoFramePlayer {
     if (!worker || !this.sourceAssetId || !this.sourcePrepared) {
       throw createMaskRenderAbortError("Mask player has no prepared source");
     }
+    const requestId = this.createRenderRequestId();
 
     await awaitStrictFrame<void>({
       timeoutMs: MaskVideoFramePlayer.STRICT_FRAME_TIMEOUT_MS,
       createTimeoutError: createMaskFrameTimeoutError,
       registerPending: (pending) => {
         this.pendingStrictFrame = pending;
+        this.pendingStrictFrameRequestId = requestId;
       },
       unregisterPending: (pending) => {
         if (this.pendingStrictFrame === pending) {
           this.pendingStrictFrame = null;
+          this.pendingStrictFrameRequestId = null;
         }
       },
       sendRequest: () => {
@@ -472,8 +484,30 @@ export class MaskVideoFramePlayer {
           clipId: this.clipId,
           time: timeSeconds,
           strict: true,
+          requestId,
         });
       },
     });
+  }
+
+  private createRenderRequestId(): string {
+    this.nextRenderRequestId += 1;
+    return `mask-frame-${this.nextRenderRequestId}`;
+  }
+
+  private isStaleStrictFrameResponse(message: WorkerFrameMessage): boolean {
+    const expectedRequestId = this.pendingStrictFrameRequestId;
+    if (
+      !expectedRequestId ||
+      typeof message.requestId !== "string" ||
+      message.requestId === expectedRequestId
+    ) {
+      return false;
+    }
+
+    if (message.bitmap && typeof message.bitmap.close === "function") {
+      message.bitmap.close();
+    }
+    return true;
   }
 }

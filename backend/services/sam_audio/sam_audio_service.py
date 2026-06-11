@@ -466,9 +466,12 @@ class _SamAudioRuntime:
             _record_timing(timings, "dependencyImportSec", dependency_started_at)
         except Exception as exc:  # pragma: no cover - environment dependent
             raise SamAudioConfigError(
-                "Failed to import SAM-Audio. The sam_audio package may be missing, "
-                "SAM_AUDIO_PYTHONPATH may point to the wrong checkout, or one of "
-                f"SAM-Audio's transitive dependencies failed to import: {exc}"
+                "Failed to import SAM-Audio. Install the optional SAM-Audio "
+                "requirements into the backend virtual environment with "
+                "`python -m pip install -r backend/requirements-sam-audio.txt`, "
+                "set SAM_AUDIO_PYTHONPATH to a checkout with its dependencies "
+                "installed, or fix the failing transitive dependency. "
+                f"Underlying error: {exc}"
             ) from exc
 
         model_ref_started_at = time.perf_counter()

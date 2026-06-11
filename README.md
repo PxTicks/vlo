@@ -137,7 +137,13 @@ Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/
 
 ### SAM-Audio
 
-SAM-Audio requires Meta's `sam_audio` package in the backend virtual environment. Install the package there, or set `SAM_AUDIO_PYTHONPATH` to a local checkout such as `~/sam-audio`.
+SAM-Audio is optional and requires Python 3.11 or newer. It is intentionally not part of `backend/requirements.txt` because Meta's package owns VCS-only dependencies such as `dacvae`, ImageBind, and perception-models. Install SAM-Audio into the backend virtual environment as one unit:
+
+```bash
+python -m pip install -r backend/requirements-sam-audio.txt
+```
+
+If you are working from a local checkout, install that checkout into the backend virtual environment, or set `SAM_AUDIO_PYTHONPATH` to a path such as `~/sam-audio` after installing its dependencies.
 
 The default model is `facebook/sam-audio-large-tv`, which is gated on Hugging Face. Accept the license and either authenticate the backend environment with `hf auth login`, pass a token through the model download flow, or place the downloaded files manually. SAM-Audio model downloads live under `vlo/backend/assets/models/sam_audio/<model-key>`, for example `vlo/backend/assets/models/sam_audio/sam-audio-large-tv/config.json` and `checkpoint.pt`. This is intentionally one folder deeper than SAM2 because SAM-Audio loads a Hugging Face-style model directory, not loose checkpoint/config files. `extra_model_paths.yaml` supports a `sam_audio` root with the same `<model-key>/{config.json,checkpoint.pt}` layout.
 

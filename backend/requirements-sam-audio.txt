@@ -1,0 +1,7 @@
+# Optional SAM-Audio install for the backend virtual environment.
+# SAM-Audio owns VCS-only dependencies such as dacvae, ImageBind, and
+# perception-models, so keep them attached to the upstream package instead of
+# listing them as bare PyPI requirements in backend/requirements.txt.
+#
+# Requires Python >=3.11.
+sam_audio @ git+https://github.com/facebookresearch/sam-audio.git

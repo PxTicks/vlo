@@ -33,7 +33,7 @@ vi.mock("pixi.js", async (importOriginal) => {
 });
 
 // Mock Worker
-vi.mock("../../workers/decoder.worker?worker", () => {
+vi.mock("@decoder-worker-loader", () => {
   return {
     default: class MockWorker {
       onmessage: ((e: MessageEvent) => void) | null = null;
@@ -54,6 +54,17 @@ vi.mock("../../workers/decoder.worker?worker", () => {
         }
       });
       terminate = vi.fn();
+
+      constructor() {
+        setTimeout(() => {
+          this.onmessage?.({
+            data: {
+              type: "worker-health",
+              event: "boot",
+            },
+          } as MessageEvent);
+        }, 0);
+      }
     },
   };
 });

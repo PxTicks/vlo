@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo, memo, useCallback, useState } from "react";
 import { Box } from "@mui/material";
 import {
   AudioTrackLayer,
+  getSharedDecoderWorkerPool,
   getProjectDimensions,
   renderProjectFrameFileAtTick,
   useExportJobController,
@@ -84,6 +85,10 @@ function PlayerImpl() {
   const { pixiApp, canvasSize } = usePixiApp(containerRef, canvasRef);
   useCanvasSelectionManager(pixiApp);
   useCanvasSelectionKeyboard();
+
+  useEffect(() => {
+    getSharedDecoderWorkerPool().warmUp();
+  }, []);
 
   // --- Viewport Container ---
   // Declared up here (rather than later in the function) so the render-group

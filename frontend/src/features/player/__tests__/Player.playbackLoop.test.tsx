@@ -4,8 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../timeline";
 
-const { mockPixiApp, mockViewport, playbackClockMock, playbackFrameClockMock } =
-  vi.hoisted(() => {
+const {
+  mockDecoderWorkerPool,
+  mockPixiApp,
+  mockViewport,
+  playbackClockMock,
+  playbackFrameClockMock,
+} = vi.hoisted(() => {
     let playbackTime = 0;
     let playbackFrameTime = 0;
     const playbackSubscribers = new Set<(time: number) => void>();
@@ -40,6 +45,9 @@ const { mockPixiApp, mockViewport, playbackClockMock, playbackFrameClockMock } =
     };
 
     return {
+      mockDecoderWorkerPool: {
+        warmUp: vi.fn(),
+      },
       mockPixiApp: {
         renderer: {},
         render: vi.fn(),
@@ -230,6 +238,7 @@ vi.mock("../hooks/usePixiApp", () => ({
 
 vi.mock("../../renderer", () => ({
   AudioTrackLayer: () => null,
+  getSharedDecoderWorkerPool: () => mockDecoderWorkerPool,
   useViewport: () => mockViewport,
   useExportJobController: () => ({
     cancel: vi.fn(),
@@ -307,6 +316,7 @@ describe("Player playback loop", () => {
   it("does not restart playback loop initialization when clip transforms update", async () => {
     render(<Player />);
 
+    expect(mockDecoderWorkerPool.warmUp).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       expect(audioSystem.notifyPlay).toHaveBeenCalledTimes(1);
     });

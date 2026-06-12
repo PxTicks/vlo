@@ -1,4 +1,5 @@
 export const DECODER_WORKER_STARTUP_GRACE_MS = 8000;
+export const DECODER_WORKER_BOOT_TIMEOUT_MS = 15000;
 export const DECODER_WORKER_RESET_COOLDOWN_MS = 3000;
 
 let lastDecoderWorkerResetAtMs = -Infinity;

@@ -22,7 +22,7 @@ const mockWorkerInstances: Array<{
   onmessage: ((e: MessageEvent) => void) | null;
 }> = [];
 
-vi.mock("../../workers/decoder.worker?worker", () => ({
+vi.mock("@decoder-worker-loader", () => ({
   default: class MockWorker {
     postMessage = vi.fn();
     terminate = vi.fn();
@@ -30,6 +30,14 @@ vi.mock("../../workers/decoder.worker?worker", () => ({
 
     constructor() {
       mockWorkerInstances.push(this);
+      setTimeout(() => {
+        this.onmessage?.({
+          data: {
+            type: "worker-health",
+            event: "boot",
+          },
+        } as MessageEvent);
+      }, 0);
     }
   },
 }));

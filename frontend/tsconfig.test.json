@@ -1,6 +1,11 @@
 {
   "extends": "./tsconfig.app.json",
   "compilerOptions": {
+    "paths": {
+      "@decoder-worker-loader": [
+        "src/features/renderer/workers/decoderWorkerLoader.ts"
+      ]
+    },
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
   "include": ["src"],

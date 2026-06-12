@@ -19,6 +19,14 @@ const vloAppVersion = rootPackageJson.version ?? "0.0.0";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
   const backendTarget = "http://127.0.0.1:6332";
+  const useInlineDecoderWorker =
+    env.VITE_DECODER_WORKER_INLINE?.trim() === "true";
+  const decoderWorkerLoaderPath = resolve(
+    frontendRoot,
+    useInlineDecoderWorker
+      ? "src/features/renderer/workers/decoderWorkerInlineLoader.ts"
+      : "src/features/renderer/workers/decoderWorkerLoader.ts",
+  );
 
   const hmrProtocol = env.VITE_HMR_PROTOCOL?.trim();
   const hmrClientPortRaw = env.VITE_HMR_CLIENT_PORT?.trim();
@@ -71,6 +79,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     base: "/",
+    resolve: {
+      alias: {
+        "@decoder-worker-loader": decoderWorkerLoaderPath,
+      },
+    },
     define: {
       "import.meta.env.VITE_APP_VERSION": JSON.stringify(vloAppVersion),
     },

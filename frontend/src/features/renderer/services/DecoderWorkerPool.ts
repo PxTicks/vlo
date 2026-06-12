@@ -1,5 +1,7 @@
-import DecoderWorker from "../workers/decoder.worker?worker";
+import DecoderWorker from "@decoder-worker-loader";
 import {
+  DECODER_WORKER_BOOT_TIMEOUT_MS,
+  DECODER_WORKER_RESET_COOLDOWN_MS,
   DECODER_WORKER_STARTUP_GRACE_MS,
   canResetDecoderWorker,
 } from "../utils/decoderWorkerRecovery";
@@ -94,18 +96,32 @@ export interface DecoderWorkerPool {
   dispose(): void;
 }
 
+interface DecoderWorkerPoolOptions {
+  label?: string;
+  size?: number;
+  bootWatchdogMs?: number | null;
+  idleRecycleMs?: number | null;
+  preparedVideoSourceCap?: number;
+  warmUpStaggerMs?: number;
+}
+
 interface LeaseRecord {
   id: string;
   label?: string;
   released: boolean;
   events: DecoderLeaseEvents;
   assignmentsByClipId: Map<string, SourceAssignment>;
+  lastRenderedKey: string | null;
 }
 
 interface SourceAssignment {
   clipId: string;
   key: string;
+  kind: DecoderSourceKind | null;
   lease: LeaseRecord;
+  preparedAtMs: number | null;
+  lastActivityAtMs: number;
+  lastRenderedAtMs: number | null;
   workerRecord: WorkerRecord;
 }
 
@@ -120,9 +136,13 @@ interface WorkerPingState {
 interface WorkerRecord {
   assignedKeys: Map<string, SourceAssignment>;
   booted: boolean;
+  bootPromise: Promise<boolean>;
+  resolveBoot: ((booted: boolean) => void) | null;
+  bootWatchdogHandle: ReturnType<typeof setTimeout> | null;
   createdAtMs: number;
   disposed: boolean;
   id: string;
+  idleRecycleHandle: ReturnType<typeof setTimeout> | null;
   lastMessageAtMs: number;
   pingState: WorkerPingState | null;
   recentlyRenderedKeys: Map<string, number>;
@@ -139,6 +159,9 @@ const DEFAULT_HARDWARE_CONCURRENCY = 4;
 const WORKER_HEALTH_PING_TIMEOUT_MS = 1000;
 const RENDERER_RESET_COOLDOWN_MS = 2000;
 const ACTIVE_RENDER_WINDOW_MS = 3000;
+const PREPARED_VIDEO_SOURCE_CAP = 16;
+const IDLE_WORKER_RECYCLE_MS = 5 * 60 * 1000;
+const WARM_UP_STAGGER_MS = 300;
 
 let sharedDecoderWorkerPool: DecoderWorkerPoolImpl | null = null;
 
@@ -198,19 +221,32 @@ function createWorkerError(message: string): Error {
 }
 
 class DecoderWorkerPoolImpl implements DecoderWorkerPool {
+  private readonly bootWatchdogMs: number | null;
+  private readonly idleRecycleMs: number | null;
   private readonly label: string;
+  private readonly preparedVideoSourceCap: number;
   private readonly targetSize: number;
+  private readonly warmUpStaggerMs: number;
   private disposed = false;
   private nextLeaseId = 0;
   private nextPingId = 0;
   private nextWorkerId = 0;
   private readonly lastRendererResetAtByKey = new Map<string, number>();
   private readonly leases = new Map<string, LeaseRecord>();
+  private readonly warmUpHandles = new Set<ReturnType<typeof setTimeout>>();
   private readonly workerRecords = new Set<WorkerRecord>();
 
-  constructor(options: { label?: string; size?: number } = {}) {
+  constructor(options: DecoderWorkerPoolOptions = {}) {
+    this.bootWatchdogMs = options.bootWatchdogMs ?? DECODER_WORKER_BOOT_TIMEOUT_MS;
+    this.idleRecycleMs = options.idleRecycleMs ?? IDLE_WORKER_RECYCLE_MS;
     this.label = options.label ?? "shared";
-    this.targetSize = Math.max(1, options.size ?? getDefaultPoolSize(options.label));
+    this.preparedVideoSourceCap =
+      options.preparedVideoSourceCap ?? PREPARED_VIDEO_SOURCE_CAP;
+    this.targetSize = Math.max(
+      1,
+      options.size ?? getDefaultPoolSize(options.label),
+    );
+    this.warmUpStaggerMs = options.warmUpStaggerMs ?? WARM_UP_STAGGER_MS;
   }
 
   public warmUp(): void {
@@ -218,8 +254,15 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       return;
     }
 
-    while (this.workerRecords.size < this.targetSize) {
+    if (this.workerRecords.size === 0 && this.warmUpHandles.size === 0) {
       this.spawnWorker();
+    }
+
+    const missingWorkers = this.targetSize - this.getProjectedWorkerCount();
+    for (let index = 0; index < missingWorkers; index += 1) {
+      this.scheduleWarmUpSpawn(
+        (this.warmUpHandles.size + 1) * this.warmUpStaggerMs,
+      );
     }
   }
 
@@ -238,6 +281,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       released: false,
       events,
       assignmentsByClipId: new Map<string, SourceAssignment>(),
+      lastRenderedKey: null,
     };
     this.leases.set(leaseRecord.id, leaseRecord);
 
@@ -248,6 +292,9 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
         }
 
         const assignment = this.ensureAssignment(leaseRecord, request.clipId);
+        assignment.kind = request.kind;
+        assignment.preparedAtMs = null;
+        assignment.lastActivityAtMs = performance.now();
         assignment.workerRecord.worker.postMessage({
           type: "prepare",
           url: request.url,
@@ -266,10 +313,9 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
         }
 
         const assignment = this.ensureAssignment(leaseRecord, request.clipId);
-        assignment.workerRecord.recentlyRenderedKeys.set(
-          assignment.key,
-          performance.now(),
-        );
+        const nowMs = performance.now();
+        assignment.lastActivityAtMs = nowMs;
+        assignment.workerRecord.recentlyRenderedKeys.set(assignment.key, nowMs);
         assignment.workerRecord.worker.postMessage({
           type: "render",
           time: request.time,
@@ -286,7 +332,10 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
         }
         this.disposeAssignment(
           leaseRecord.assignmentsByClipId.get(clipId) ?? null,
-          { sendDispose: true, notifyEvicted: false },
+          {
+            sendDispose: true,
+            notifyEvicted: false,
+          },
         );
       },
       reportStall: async (clipId, reason) => {
@@ -297,6 +346,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
           return;
         }
         leaseRecord.released = true;
+        leaseRecord.lastRenderedKey = null;
         for (const assignment of [...leaseRecord.assignmentsByClipId.values()]) {
           this.disposeAssignment(assignment, {
             sendDispose: true,
@@ -314,9 +364,15 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     }
 
     this.disposed = true;
+    for (const handle of this.warmUpHandles) {
+      clearTimeout(handle);
+    }
+    this.warmUpHandles.clear();
+
     for (const leaseRecord of this.leases.values()) {
       leaseRecord.released = true;
       leaseRecord.assignmentsByClipId.clear();
+      leaseRecord.lastRenderedKey = null;
     }
     this.leases.clear();
 
@@ -340,12 +396,17 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     const assignment: SourceAssignment = {
       clipId,
       key: this.namespaceClipId(leaseRecord.id, clipId),
+      kind: null,
       lease: leaseRecord,
+      preparedAtMs: null,
+      lastActivityAtMs: performance.now(),
+      lastRenderedAtMs: null,
       workerRecord,
     };
 
     leaseRecord.assignmentsByClipId.set(clipId, assignment);
     workerRecord.assignedKeys.set(assignment.key, assignment);
+    this.refreshWorkerIdleRecycle(workerRecord);
     this.logPoolEvent("main:pool:assign", assignment.key, {
       workerId: workerRecord.id,
       assignedCount: workerRecord.assignedKeys.size,
@@ -390,35 +451,63 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
   }
 
   private maybeSpawnBackgroundWorker(): void {
-    if (this.workerRecords.size >= this.targetSize) {
+    if (this.getProjectedWorkerCount() >= this.targetSize) {
       return;
     }
 
-    const availableWorkers = [...this.workerRecords].filter((workerRecord) =>
+    const candidates = [...this.workerRecords].filter(
+      (workerRecord) => !workerRecord.disposed,
+    );
+    if (candidates.length === 0) {
+      this.spawnWorker();
+      return;
+    }
+
+    const availableWorkers = candidates.filter((workerRecord) =>
       this.isWorkerAvailable(workerRecord),
     );
-    if (availableWorkers.length === 0) {
-      return;
-    }
-
-    const allBusy = availableWorkers.every(
-      (workerRecord) => workerRecord.assignedKeys.size >= 1,
-    );
-    if (allBusy) {
+    if (
+      availableWorkers.length === 0 ||
+      availableWorkers.every((workerRecord) => workerRecord.assignedKeys.size >= 1)
+    ) {
       this.spawnWorker();
     }
+  }
+
+  private getProjectedWorkerCount(): number {
+    return this.workerRecords.size + this.warmUpHandles.size;
+  }
+
+  private scheduleWarmUpSpawn(delayMs: number): void {
+    const handle = setTimeout(() => {
+      this.warmUpHandles.delete(handle);
+      if (this.disposed || this.workerRecords.size >= this.targetSize) {
+        return;
+      }
+      this.spawnWorker();
+    }, delayMs);
+    this.warmUpHandles.add(handle);
   }
 
   private spawnWorker(): WorkerRecord {
     this.nextWorkerId += 1;
     const workerId = `${this.label}-worker-${this.nextWorkerId}`;
     const worker = new DecoderWorker();
+    let resolveBoot: ((booted: boolean) => void) | null = null;
+    const bootPromise = new Promise<boolean>((resolve) => {
+      resolveBoot = resolve;
+    });
+
     const workerRecord: WorkerRecord = {
       assignedKeys: new Map<string, SourceAssignment>(),
       booted: false,
+      bootPromise,
+      resolveBoot,
+      bootWatchdogHandle: null,
       createdAtMs: performance.now(),
       disposed: false,
       id: workerId,
+      idleRecycleHandle: null,
       lastMessageAtMs: 0,
       pingState: null,
       recentlyRenderedKeys: new Map<string, number>(),
@@ -451,7 +540,89 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       activeCount: 0,
       targetSize: this.targetSize,
     });
+    if (this.bootWatchdogMs !== null) {
+      this.scheduleBootWatchdog(workerRecord, this.bootWatchdogMs);
+    }
+    this.refreshWorkerIdleRecycle(workerRecord);
     return workerRecord;
+  }
+
+  private scheduleBootWatchdog(
+    workerRecord: WorkerRecord,
+    delayMs: number,
+  ): void {
+    if (workerRecord.disposed || workerRecord.booted) {
+      return;
+    }
+
+    if (workerRecord.bootWatchdogHandle) {
+      clearTimeout(workerRecord.bootWatchdogHandle);
+    }
+
+    workerRecord.bootWatchdogHandle = setTimeout(() => {
+      workerRecord.bootWatchdogHandle = null;
+      void this.handleBootWatchdogTimeout(workerRecord);
+    }, delayMs);
+  }
+
+  private async handleBootWatchdogTimeout(
+    workerRecord: WorkerRecord,
+  ): Promise<void> {
+    if (this.disposed || workerRecord.disposed || workerRecord.booted) {
+      return;
+    }
+
+    this.logPoolEvent("main:pool:boot-timeout", workerRecord.id, {
+      workerId: workerRecord.id,
+      assignedCount: workerRecord.assignedKeys.size,
+      activeCount: this.getActiveAssignmentCount(workerRecord),
+      timeoutMs: this.bootWatchdogMs ?? DECODER_WORKER_BOOT_TIMEOUT_MS,
+    });
+
+    if (!canResetDecoderWorker()) {
+      this.scheduleBootWatchdog(workerRecord, DECODER_WORKER_RESET_COOLDOWN_MS);
+      return;
+    }
+
+    const replaced = await this.replaceWorker(workerRecord, "boot-timeout", {
+      keepOriginalIfItBooted: true,
+    });
+    if (
+      !replaced &&
+      !this.disposed &&
+      !workerRecord.disposed &&
+      !workerRecord.booted
+    ) {
+      this.scheduleBootWatchdog(workerRecord, DECODER_WORKER_RESET_COOLDOWN_MS);
+    }
+  }
+
+  private async waitForWorkerBoot(
+    workerRecord: WorkerRecord,
+    timeoutMs: number,
+  ): Promise<boolean> {
+    if (workerRecord.booted) {
+      return true;
+    }
+
+    if (workerRecord.disposed) {
+      return false;
+    }
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        resolve(false);
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([workerRecord.bootPromise, timeoutPromise]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
   }
 
   private handleWorkerMessage(
@@ -484,7 +655,12 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
         return;
       }
 
+      const nowMs = performance.now();
+      assignment.kind = typedMessage.kind;
+      assignment.preparedAtMs = nowMs;
+      assignment.lastActivityAtMs = nowMs;
       assignment.lease.events.onReady(assignment.clipId, typedMessage.kind);
+      this.enforcePreparedSourceCap();
       return;
     }
 
@@ -495,10 +671,11 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
         return;
       }
 
-      workerRecord.recentlyRenderedKeys.set(
-        typedMessage.clipId,
-        performance.now(),
-      );
+      const nowMs = performance.now();
+      workerRecord.recentlyRenderedKeys.set(typedMessage.clipId, nowMs);
+      assignment.lastRenderedAtMs = nowMs;
+      assignment.lastActivityAtMs = nowMs;
+      assignment.lease.lastRenderedKey = assignment.key;
       assignment.lease.events.onFrame({
         clipId: assignment.clipId,
         bitmap: typedMessage.bitmap,
@@ -516,20 +693,28 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     if (typedMessage.type === "error") {
       this.broadcastWorkerError(
         workerRecord,
-        createWorkerError(
-          typedMessage.message ?? "Decoder worker error",
-        ),
+        createWorkerError(typedMessage.message ?? "Decoder worker error"),
       );
     }
   }
 
   private handleWorkerHealthMessage(
     workerRecord: WorkerRecord,
-    message: { pingId?: string; workerElapsedMs?: number; event: "boot" | "pong"; detail?: Record<string, unknown> },
+    message: {
+      pingId?: string;
+      workerElapsedMs?: number;
+      event: "boot" | "pong";
+      detail?: Record<string, unknown>;
+    },
   ): void {
     if (message.event === "boot") {
       workerRecord.booted = true;
       workerRecord.responsive = true;
+      if (workerRecord.bootWatchdogHandle) {
+        clearTimeout(workerRecord.bootWatchdogHandle);
+        workerRecord.bootWatchdogHandle = null;
+      }
+      this.resolveWorkerBoot(workerRecord, true);
       this.logPoolWorkerPhase(
         workerRecord,
         "worker:health:boot",
@@ -562,6 +747,19 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     pingState.resolve("pong");
   }
 
+  private resolveWorkerBoot(
+    workerRecord: WorkerRecord,
+    didBoot: boolean,
+  ): void {
+    if (!workerRecord.resolveBoot) {
+      return;
+    }
+
+    const resolveBoot = workerRecord.resolveBoot;
+    workerRecord.resolveBoot = null;
+    resolveBoot(didBoot);
+  }
+
   private handleWorkerProblem(
     workerRecord: WorkerRecord,
     phase: string,
@@ -576,6 +774,16 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
           : "Decoder worker problem",
       ),
     );
+
+    if (
+      workerRecord.disposed ||
+      workerRecord.assignedKeys.size === 0 ||
+      !canResetDecoderWorker()
+    ) {
+      return;
+    }
+
+    void this.replaceWorker(workerRecord, phase);
   }
 
   private broadcastWorkerError(
@@ -606,7 +814,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       return "renderer-reset";
     }
 
-    const pingResult = await this.pingWorker(workerRecordOrThrow(assignment), {
+    const pingResult = await this.pingWorker(assignment.workerRecord, {
       clipId: assignment.key,
       reason,
       diagnosticsSource: "pool",
@@ -730,6 +938,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
   private async replaceWorker(
     workerRecord: WorkerRecord,
     reason: string,
+    options: { keepOriginalIfItBooted?: boolean } = {},
   ): Promise<boolean> {
     if (workerRecord.disposed) {
       return false;
@@ -742,6 +951,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     workerRecord.replacementPromise = this.replaceWorkerInternal(
       workerRecord,
       reason,
+      options,
     ).finally(() => {
       workerRecord.replacementPromise = null;
     });
@@ -751,17 +961,30 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
   private async replaceWorkerInternal(
     workerRecord: WorkerRecord,
     reason: string,
+    options: { keepOriginalIfItBooted?: boolean },
   ): Promise<boolean> {
     const replacement = this.spawnWorker();
-    const readyResult = await this.pingWorker(replacement, {
-      clipId: workerRecord.id,
-      reason: `replacement for ${workerRecord.id}: ${reason}`,
-      diagnosticsSource: "pool",
-    });
+    const replacementBooted = await this.waitForWorkerBoot(
+      replacement,
+      DECODER_WORKER_BOOT_TIMEOUT_MS,
+    );
 
-    if (readyResult !== "pong") {
-      this.terminateWorker(replacement, "replacement did not respond");
+    if (!replacementBooted) {
+      this.terminateWorker(replacement, "replacement did not boot");
       return false;
+    }
+
+    if (workerRecord.disposed) {
+      return true;
+    }
+
+    if (options.keepOriginalIfItBooted && workerRecord.booted) {
+      if (workerRecord.assignedKeys.size === 0) {
+        this.terminateWorker(workerRecord, "worker booted before replacement");
+      } else {
+        this.terminateWorker(replacement, "late replacement spare");
+      }
+      return true;
     }
 
     this.logPoolEvent("main:pool:replace", workerRecord.id, {
@@ -773,10 +996,19 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     });
 
     const evictedAssignments = [...workerRecord.assignedKeys.values()];
+    if (evictedAssignments.length > 0) {
+      this.logPoolEvent("main:pool:rehome", workerRecord.id, {
+        workerId: workerRecord.id,
+        replacementWorkerId: replacement.id,
+        reassignedCount: evictedAssignments.length,
+      });
+    }
+
     for (const assignment of evictedAssignments) {
       this.disposeAssignment(assignment, {
         sendDispose: false,
         notifyEvicted: true,
+        evictionReason: "worker-replaced",
       });
     }
 
@@ -789,6 +1021,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
     options: {
       sendDispose: boolean;
       notifyEvicted: boolean;
+      evictionReason?: string;
     },
   ): void {
     if (!assignment) {
@@ -797,8 +1030,13 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
 
     const { workerRecord, lease, key, clipId } = assignment;
     lease.assignmentsByClipId.delete(clipId);
+    if (lease.lastRenderedKey === key) {
+      lease.lastRenderedKey = null;
+    }
     workerRecord.assignedKeys.delete(key);
     workerRecord.recentlyRenderedKeys.delete(key);
+    this.lastRendererResetAtByKey.delete(key);
+    this.refreshWorkerIdleRecycle(workerRecord);
 
     if (options.sendDispose && !workerRecord.disposed) {
       workerRecord.worker.postMessage({ type: "dispose", clipId: key });
@@ -810,6 +1048,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
         assignedCount: workerRecord.assignedKeys.size,
         activeCount: this.getActiveAssignmentCount(workerRecord),
         leaseLabel: lease.label,
+        reason: options.evictionReason ?? "evicted",
       });
       lease.events.onSourceEvicted(clipId);
     }
@@ -822,6 +1061,17 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
 
     workerRecord.disposed = true;
     this.workerRecords.delete(workerRecord);
+    this.resolveWorkerBoot(workerRecord, false);
+
+    if (workerRecord.bootWatchdogHandle) {
+      clearTimeout(workerRecord.bootWatchdogHandle);
+      workerRecord.bootWatchdogHandle = null;
+    }
+
+    if (workerRecord.idleRecycleHandle) {
+      clearTimeout(workerRecord.idleRecycleHandle);
+      workerRecord.idleRecycleHandle = null;
+    }
 
     if (workerRecord.pingState) {
       clearTimeout(workerRecord.pingState.timeoutHandle);
@@ -840,6 +1090,127 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
       assignedCount: workerRecord.assignedKeys.size,
       activeCount: this.getActiveAssignmentCount(workerRecord),
     });
+  }
+
+  private refreshWorkerIdleRecycle(workerRecord: WorkerRecord): void {
+    if (workerRecord.disposed) {
+      return;
+    }
+
+    if (workerRecord.idleRecycleHandle) {
+      clearTimeout(workerRecord.idleRecycleHandle);
+      workerRecord.idleRecycleHandle = null;
+    }
+
+    if (workerRecord.assignedKeys.size > 0) {
+      return;
+    }
+
+    if (this.idleRecycleMs === null) {
+      return;
+    }
+
+    this.scheduleIdleRecycle(workerRecord, this.idleRecycleMs);
+  }
+
+  private scheduleIdleRecycle(
+    workerRecord: WorkerRecord,
+    delayMs: number,
+  ): void {
+    if (workerRecord.disposed) {
+      return;
+    }
+
+    workerRecord.idleRecycleHandle = setTimeout(() => {
+      workerRecord.idleRecycleHandle = null;
+      if (
+        this.disposed ||
+        workerRecord.disposed ||
+        workerRecord.assignedKeys.size > 0
+      ) {
+        return;
+      }
+
+      if (!canResetDecoderWorker()) {
+        this.scheduleIdleRecycle(
+          workerRecord,
+          DECODER_WORKER_RESET_COOLDOWN_MS,
+        );
+        return;
+      }
+
+      void this.replaceWorker(workerRecord, "idle-recycle");
+    }, delayMs);
+  }
+
+  private enforcePreparedSourceCap(): void {
+    const preparedAssignments = this.getPreparedVideoAssignments();
+    if (
+      this.preparedVideoSourceCap <= 0 ||
+      preparedAssignments.length <= this.preparedVideoSourceCap
+    ) {
+      return;
+    }
+
+    const nowMs = performance.now();
+    const evictionCandidates = preparedAssignments
+      .filter((assignment) =>
+        this.isAssignmentEvictableForPreparedCap(assignment, nowMs),
+      )
+      .sort(
+        (left, right) =>
+          this.getAssignmentRecentUseAtMs(left) -
+          this.getAssignmentRecentUseAtMs(right),
+      );
+
+    let preparedCount = preparedAssignments.length;
+    for (const assignment of evictionCandidates) {
+      if (preparedCount <= this.preparedVideoSourceCap) {
+        break;
+      }
+
+      this.disposeAssignment(assignment, {
+        sendDispose: true,
+        notifyEvicted: true,
+        evictionReason: "prepared-source-cap",
+      });
+      preparedCount -= 1;
+    }
+  }
+
+  private getPreparedVideoAssignments(): SourceAssignment[] {
+    const assignments: SourceAssignment[] = [];
+    for (const workerRecord of this.workerRecords) {
+      for (const assignment of workerRecord.assignedKeys.values()) {
+        if (
+          assignment.preparedAtMs !== null &&
+          (assignment.kind === "video" || assignment.kind === "mask_video")
+        ) {
+          assignments.push(assignment);
+        }
+      }
+    }
+    return assignments;
+  }
+
+  private isAssignmentEvictableForPreparedCap(
+    assignment: SourceAssignment,
+    nowMs: number,
+  ): boolean {
+    if (assignment.lease.lastRenderedKey === assignment.key) {
+      return false;
+    }
+
+    return nowMs - this.getAssignmentRecentUseAtMs(assignment) >
+      ACTIVE_RENDER_WINDOW_MS;
+  }
+
+  private getAssignmentRecentUseAtMs(assignment: SourceAssignment): number {
+    return Math.max(
+      assignment.lastRenderedAtMs ?? -Infinity,
+      assignment.preparedAtMs ?? -Infinity,
+      assignment.lastActivityAtMs,
+    );
   }
 
   private markWorkerResponsive(workerRecord: WorkerRecord): void {
@@ -901,10 +1272,6 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
   }
 }
 
-function workerRecordOrThrow(assignment: SourceAssignment): WorkerRecord {
-  return assignment.workerRecord;
-}
-
 export function getSharedDecoderWorkerPool(): DecoderWorkerPool {
   if (!sharedDecoderWorkerPool) {
     sharedDecoderWorkerPool = new DecoderWorkerPoolImpl();
@@ -913,7 +1280,7 @@ export function getSharedDecoderWorkerPool(): DecoderWorkerPool {
 }
 
 export function createDecoderWorkerPool(
-  options: { label?: string; size?: number } = {},
+  options: DecoderWorkerPoolOptions = {},
 ): DecoderWorkerPool {
   return new DecoderWorkerPoolImpl(options);
 }

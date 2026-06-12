@@ -31,7 +31,7 @@ const { mockWorkers, mockWorkerPlans } = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../../renderer/workers/decoder.worker?worker", () => ({
+vi.mock("@decoder-worker-loader", () => ({
   default: class MockWorker {
     onmessage: ((event: MessageEvent) => void) | null = null;
     readonly postMessage = vi.fn(
@@ -130,6 +130,14 @@ vi.mock("../../../renderer/workers/decoder.worker?worker", () => ({
         render: [...(nextPlan.render ?? [])],
       };
       mockWorkers.push(this);
+      setTimeout(() => {
+        this.onmessage?.({
+          data: {
+            type: "worker-health",
+            event: "boot",
+          },
+        } as MessageEvent);
+      }, 0);
     }
   },
 }));
@@ -184,7 +192,11 @@ function createMaskAsset(id: string): Asset {
 }
 
 function createPlayer() {
-  const decoderPool = createDecoderWorkerPool({ label: "test", size: 1 });
+  const decoderPool = createDecoderWorkerPool({
+    label: "test",
+    size: 1,
+    idleRecycleMs: null,
+  });
   const player = new MaskVideoFramePlayer("clip_1", undefined, { decoderPool });
   return { decoderPool, player };
 }

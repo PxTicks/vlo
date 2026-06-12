@@ -37,6 +37,14 @@ const {
 
     constructor() {
       instances.push(this);
+      setTimeout(() => {
+        this.onmessage?.({
+          data: {
+            type: "worker-health",
+            event: "boot",
+          },
+        } as MessageEvent);
+      }, 0);
     }
   }
 
@@ -81,7 +89,7 @@ const {
 
 vi.stubGlobal("Worker", MockWorker);
 
-vi.mock("../../workers/decoder.worker?worker", () => ({
+vi.mock("@decoder-worker-loader", () => ({
   default: MockWorker,
 }));
 

@@ -36,7 +36,7 @@ const {
   };
 });
 
-vi.mock("../../workers/decoder.worker?worker", () => ({
+vi.mock("@decoder-worker-loader", () => ({
   default: class MockWorker {
     onmessage: ((e: MessageEvent) => void) | null = null;
     readonly postMessage = vi.fn(
@@ -93,6 +93,14 @@ vi.mock("../../workers/decoder.worker?worker", () => ({
     constructor() {
       this.behavior = mockWorkerBehaviors.shift() ?? ["frame"];
       mockWorkerInstances.push(this);
+      setTimeout(() => {
+        this.onmessage?.({
+          data: {
+            type: "worker-health",
+            event: "boot",
+          },
+        } as MessageEvent);
+      }, 0);
     }
   },
 }));
@@ -199,7 +207,11 @@ function createAsset(overrides: Partial<Asset> = {}): Asset {
 }
 
 function createEngine() {
-  const decoderPool = createDecoderWorkerPool({ label: "test", size: 1 });
+  const decoderPool = createDecoderWorkerPool({
+    label: "test",
+    size: 1,
+    idleRecycleMs: null,
+  });
   const engine = new TrackRenderEngine(1, undefined, undefined, { decoderPool });
   return { decoderPool, engine };
 }

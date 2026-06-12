@@ -15,6 +15,12 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@decoder-worker-loader": [
+        "src/features/renderer/workers/decoderWorkerLoader.ts"
+      ]
+    },
 
     /* Linting */
     "strict": true,

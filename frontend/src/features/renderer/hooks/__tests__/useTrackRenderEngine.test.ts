@@ -267,6 +267,34 @@ describe("useTrackRenderEngine Integration", () => {
     unmount();
   });
 
+  it("updates zIndex without recreating the render engine", () => {
+    const setZIndexSpy = vi.spyOn(TrackRenderEngine.prototype, "setZIndex");
+    const disposeSpy = vi.spyOn(TrackRenderEngine.prototype, "dispose");
+
+    const { rerender, unmount } = renderHook(
+      ({ zIndex }) =>
+        useTrackRenderEngine("track-1", mockApp, mockContainer, zIndex, {
+          width: 800,
+          height: 600,
+        }),
+      { initialProps: { zIndex: 1 } },
+    );
+
+    expect(mockWorkerInstances).toHaveLength(1);
+    const firstWorker = mockWorkerInstances[0];
+
+    rerender({ zIndex: 7 });
+
+    expect(mockWorkerInstances).toHaveLength(1);
+    expect(firstWorker.terminate).not.toHaveBeenCalled();
+    expect(disposeSpy).not.toHaveBeenCalled();
+    expect(setZIndexSpy).toHaveBeenLastCalledWith(7);
+
+    unmount();
+    setZIndexSpy.mockRestore();
+    disposeSpy.mockRestore();
+  });
+
   it("should NOT show stale frame when returning to a clip after scrubbing", async () => {
     const trackId = "track-1";
     const clipId = "clip-A";

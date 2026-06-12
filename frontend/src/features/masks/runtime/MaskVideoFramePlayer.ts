@@ -529,7 +529,7 @@ export class MaskVideoFramePlayer {
       logDecoderWorkerPhase(
         diagnostics,
         "worker:health:boot",
-        {},
+        message.detail,
         message.workerElapsedMs,
       );
       return;
@@ -544,7 +544,7 @@ export class MaskVideoFramePlayer {
     logDecoderWorkerPhase(
       diagnostics,
       "worker:health:pong",
-      { pingId: message.pingId },
+      { pingId: message.pingId, ...(message.detail ?? {}) },
       message.workerElapsedMs,
     );
     this.clearDecoderWorkerHealthProbe();

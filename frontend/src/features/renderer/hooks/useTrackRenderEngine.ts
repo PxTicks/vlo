@@ -490,7 +490,7 @@ export function useTrackRenderEngine(
       engineRef.current = null;
       setSpriteInstance(null);
     };
-  }, [trackId, app, zIndex, container, orchestrator, adjustmentEffectResolver]);
+  }, [trackId, app, container, orchestrator, adjustmentEffectResolver]);
 
   useEffect(() => {
     if (!registerSynchronizedPlaybackRenderer) return;

@@ -11,6 +11,12 @@ import {
   isFrameTimestampReady,
 } from "../utils/frameTiming";
 import type { DecoderRequestDiagnostics } from "../utils/decoderDiagnostics";
+import {
+  clearPendingRenderRequest,
+  completeRenderRequest,
+  createRenderRequestQueueState,
+  enqueueRenderRequest,
+} from "./renderRequestQueue";
 
 // --- Types ---
 interface RenderOptions {
@@ -77,13 +83,15 @@ const workerBootedAtMs = performance.now();
 
 function postWorkerHealth(
   event: "boot" | "pong",
-  detail: { pingId?: string } = {},
+  detail: Record<string, unknown> = {},
 ): void {
+  const pingId = typeof detail.pingId === "string" ? detail.pingId : undefined;
   (self as DedicatedWorkerGlobalScope).postMessage({
     type: "worker-health",
     event,
     workerElapsedMs: performance.now() - workerBootedAtMs,
-    ...detail,
+    ...(pingId ? { pingId } : {}),
+    ...(Object.keys(detail).length > 0 ? { detail } : {}),
   });
 }
 
@@ -433,10 +441,40 @@ class ImageRenderer implements Renderer {
 const renderers = new Map<string, Renderer>();
 const rendererKinds = new Map<string, "video" | "image" | "mask_video">();
 const initPromises = new Map<string, Promise<void>>();
-let isRendering = false;
-let pendingRender: RenderRequest | null = null;
+let renderRequestQueueState = createRenderRequestQueueState<RenderRequest>();
 
 // --- Helper: Message Processing ---
+const maybeReplyToDroppedStrictRequest = (
+  request: RenderRequest | null,
+  reason: "clip-disposed" | "replaced-by-newer-request",
+) => {
+  if (!request || request.strict !== true || !request.requestId) {
+    return;
+  }
+
+  const droppedAtMs = performance.now();
+  (self as DedicatedWorkerGlobalScope).postMessage({
+    type: "frame",
+    bitmap: null,
+    time: request.time,
+    clipId: request.clipId,
+    transformTime: request.transformTime,
+    requestId: request.requestId,
+  });
+  postDecoderDiagnostic(
+    request.diagnostics,
+    "worker:render:displaced",
+    droppedAtMs,
+    { reason, requestId: request.requestId },
+  );
+  postDecoderDiagnostic(
+    request.diagnostics,
+    "worker:render:posted-frame",
+    droppedAtMs,
+    { hasBitmap: false, displaced: true, reason },
+  );
+};
+
 const cleanupRenderer = (clipId: string) => {
   const renderer = renderers.get(clipId);
   if (renderer) {
@@ -445,9 +483,12 @@ const cleanupRenderer = (clipId: string) => {
   }
   rendererKinds.delete(clipId);
   initPromises.delete(clipId);
-  if (pendingRender?.clipId === clipId) {
-    pendingRender = null;
-  }
+  const { clearedRequest, queueState } = clearPendingRenderRequest(
+    renderRequestQueueState,
+    clipId,
+  );
+  renderRequestQueueState = queueState;
+  maybeReplyToDroppedStrictRequest(clearedRequest, "clip-disposed");
 };
 
 const processRender = async (request: RenderRequest) => {
@@ -564,20 +605,17 @@ const processRender = async (request: RenderRequest) => {
 };
 
 const loop = async (initialRequest: RenderRequest) => {
-  isRendering = true;
   let nextRequest: RenderRequest | null = initialRequest;
 
   while (nextRequest !== null) {
     await processRender(nextRequest);
-
-    if (pendingRender !== null) {
-      nextRequest = pendingRender;
-      pendingRender = null;
-    } else {
-      nextRequest = null;
-    }
+    const result = completeRenderRequest(
+      renderRequestQueueState,
+      nextRequest.clipId,
+    );
+    renderRequestQueueState = result.queueState;
+    nextRequest = result.nextRequest;
   }
-  isRendering = false;
 };
 
 
@@ -589,7 +627,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     switch (type) {
       case "ping": {
         const { pingId } = e.data as Extract<WorkerMessage, { type: "ping" }>;
-        postWorkerHealth("pong", { pingId });
+        postWorkerHealth("pong", { pingId, rendererCount: renderers.size });
         break;
       }
 
@@ -733,8 +771,14 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
           requestId,
           diagnostics,
         };
-        if (isRendering) {
-          pendingRender = renderRequest;
+        const { displacedRequest, queueState, shouldStart } =
+          enqueueRenderRequest(renderRequestQueueState, renderRequest);
+        renderRequestQueueState = queueState;
+        maybeReplyToDroppedStrictRequest(
+          displacedRequest,
+          "replaced-by-newer-request",
+        );
+        if (!shouldStart) {
           postDecoderDiagnostic(
             diagnostics,
             "worker:render:queued-behind-active",

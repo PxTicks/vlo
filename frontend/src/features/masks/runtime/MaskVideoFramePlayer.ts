@@ -3,6 +3,10 @@ import type { Asset } from "../../../types/Asset";
 import { DecoderWorker } from "../../renderer";
 import { hasEmbeddedAssetSource } from "../../renderer/utils/assetSource";
 import {
+  DECODER_WORKER_STARTUP_GRACE_MS,
+  canResetDecoderWorker,
+} from "../../renderer/utils/decoderWorkerRecovery";
+import {
   RetiredTextureQueue,
   destroyTexture,
 } from "../../renderer/utils/retiredTextureQueue";
@@ -115,6 +119,8 @@ export class MaskVideoFramePlayer {
   private workerHealthTimeoutHandle: ReturnType<typeof setTimeout> | null =
     null;
   private nextWorkerHealthPingId = 0;
+  private workerCreatedAtMs = 0;
+  private workerResponsive = false;
   private readonly retiredTextures = new RetiredTextureQueue(
     () => this.sprite.texture,
   );
@@ -352,7 +358,8 @@ export class MaskVideoFramePlayer {
           const shouldResetWorker = this.recordDecoderTimeout();
           if (
             !shouldResetWorker ||
-            attempt >= MaskVideoFramePlayer.SOURCE_PREPARE_RECOVERY_ATTEMPTS
+            attempt >= MaskVideoFramePlayer.SOURCE_PREPARE_RECOVERY_ATTEMPTS ||
+            !this.canRecoverByResettingDecoder()
           ) {
             throw error;
           }
@@ -450,6 +457,8 @@ export class MaskVideoFramePlayer {
   }
 
   private createWorker(): Worker {
+    this.workerCreatedAtMs = performance.now();
+    this.workerResponsive = false;
     const worker = new DecoderWorker();
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
       this.handleWorkerMessage(worker, event);
@@ -516,6 +525,7 @@ export class MaskVideoFramePlayer {
     }
 
     if (message.event === "boot") {
+      this.workerResponsive = true;
       logDecoderWorkerPhase(
         diagnostics,
         "worker:health:boot",
@@ -530,6 +540,7 @@ export class MaskVideoFramePlayer {
     }
 
     this.clearDecoderWorkerHealthTimeout();
+    this.workerResponsive = true;
     logDecoderWorkerPhase(
       diagnostics,
       "worker:health:pong",
@@ -674,7 +685,8 @@ export class MaskVideoFramePlayer {
           const shouldResetWorker = this.recordDecoderTimeout();
           if (
             !shouldResetWorker ||
-            attempt >= MaskVideoFramePlayer.STRICT_FRAME_RECOVERY_ATTEMPTS
+            attempt >= MaskVideoFramePlayer.STRICT_FRAME_RECOVERY_ATTEMPTS ||
+            !this.canRecoverByResettingDecoder()
           ) {
             throw error;
           }
@@ -794,6 +806,19 @@ export class MaskVideoFramePlayer {
 
   private markDecoderResponsive(): void {
     this.decoderTimeoutCount = 0;
+    this.workerResponsive = true;
+  }
+
+  private canRecoverByResettingDecoder(): boolean {
+    const workerAgeMs = performance.now() - this.workerCreatedAtMs;
+    if (
+      !this.workerResponsive &&
+      workerAgeMs < DECODER_WORKER_STARTUP_GRACE_MS
+    ) {
+      return false;
+    }
+
+    return canResetDecoderWorker();
   }
 
   private rejectPendingStrictFrame(error: Error): void {

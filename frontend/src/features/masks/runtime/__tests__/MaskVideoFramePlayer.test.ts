@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
+import { resetDecoderWorkerRecoveryForTests } from "../../../renderer/utils/decoderWorkerRecovery";
 
 type MockRenderStep =
   | "error"
@@ -32,12 +33,26 @@ vi.mock("../../../renderer", () => ({
     readonly postMessage = vi.fn(
       (message: {
         clipId: string;
+        pingId?: string;
         requestId?: string;
         strict?: boolean;
         time?: number;
-        type: "prepare" | "render";
+        type: "ping" | "prepare" | "render";
       }) => {
         if (!this.onmessage) {
+          return;
+        }
+
+        if (message.type === "ping") {
+          setTimeout(() => {
+            this.onmessage?.({
+              data: {
+                type: "worker-health",
+                event: "pong",
+                pingId: message.pingId,
+              },
+            } as MessageEvent);
+          }, 0);
           return;
         }
 
@@ -167,6 +182,7 @@ describe("MaskVideoFramePlayer", () => {
     vi.useFakeTimers();
     mockWorkers.length = 0;
     mockWorkerPlans.length = 0;
+    resetDecoderWorkerRecoveryForTests();
   });
 
   afterEach(() => {

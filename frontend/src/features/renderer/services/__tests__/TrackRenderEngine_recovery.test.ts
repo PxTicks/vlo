@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import type { Asset } from "../../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../../timeline";
+import { resetDecoderWorkerRecoveryForTests } from "../../utils/decoderWorkerRecovery";
 
 const {
   mockWorkerInstances,
@@ -40,11 +41,25 @@ vi.mock("../../workers/decoder.worker?worker", () => ({
     readonly postMessage = vi.fn(
       (message: {
         clipId?: string;
+        pingId?: string;
         requestId?: string;
         strict?: boolean;
         transformTime?: number;
         type?: string;
       }) => {
+        if (message.type === "ping") {
+          setTimeout(() => {
+            this.onmessage?.({
+              data: {
+                type: "worker-health",
+                event: "pong",
+                pingId: message.pingId,
+              },
+            } as MessageEvent);
+          }, 0);
+          return;
+        }
+
         if (message.type !== "render" || !message.strict || !this.onmessage) {
           return;
         }
@@ -189,6 +204,7 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     mockWorkerBehaviors.length = 0;
     textureFromSpy.mockClear();
     syncMaskClipsSpy.mockClear();
+    resetDecoderWorkerRecoveryForTests();
   });
 
   it("reuses an identical in-flight synchronized render request", async () => {
@@ -311,13 +327,24 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
   });
 
   it("recreates the synchronized worker after consecutive timeouts", async () => {
-    mockWorkerBehaviors.push(["hang", "hang"], ["frame"]);
+    mockWorkerBehaviors.push(["frame", "hang", "hang"], ["frame"]);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const engine = new TrackRenderEngine(1);
     const clip = createClip();
     const assets = [createAsset()];
     const masksByParent = new Map<string, []>();
+
+    const warmRender = engine.renderSynchronizedPlaybackFrame(
+      TICKS_PER_SECOND,
+      [clip],
+      masksByParent,
+      assets,
+      { width: 1920, height: 1080 },
+      { fps: 30 },
+    );
+    await vi.runAllTimersAsync();
+    await warmRender;
 
     const firstRender = engine.renderSynchronizedPlaybackFrame(
       2 * TICKS_PER_SECOND,

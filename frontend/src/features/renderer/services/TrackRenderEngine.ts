@@ -28,6 +28,10 @@ import {
   type StrictFramePending,
 } from "../utils/strictFrameRequest";
 import {
+  DECODER_WORKER_STARTUP_GRACE_MS,
+  canResetDecoderWorker,
+} from "../utils/decoderWorkerRecovery";
+import {
   createDecoderRequestDiagnostics,
   type DecoderRequestDiagnostics,
   type DecoderWorkerHealthMessage,
@@ -172,6 +176,8 @@ export class TrackRenderEngine {
   private workerHealthTimeoutHandle: ReturnType<typeof setTimeout> | null =
     null;
   private nextWorkerHealthPingId = 0;
+  private workerCreatedAtMs = 0;
+  private workerResponsive = false;
 
   // Live synchronized pipeline
   private liveRenderQueue: LiveRenderRequest[] = [];
@@ -817,7 +823,8 @@ export class TrackRenderEngine {
             const shouldResetWorker = this.recordLiveDecoderTimeout();
             if (
               !shouldResetWorker ||
-              attempt >= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS
+              attempt >= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS ||
+              !this.canRecoverByResettingLiveDecoder()
             ) {
               return;
             }
@@ -1061,6 +1068,8 @@ export class TrackRenderEngine {
   }
 
   private createWorker(): Worker {
+    this.workerCreatedAtMs = performance.now();
+    this.workerResponsive = false;
     const worker = new DecoderWorker();
     worker.onmessage = this.handleWorkerMessage.bind(this);
     worker.onerror = (event) => {
@@ -1125,6 +1134,7 @@ export class TrackRenderEngine {
     }
 
     if (message.event === "boot") {
+      this.workerResponsive = true;
       logDecoderWorkerPhase(
         diagnostics,
         "worker:health:boot",
@@ -1139,6 +1149,7 @@ export class TrackRenderEngine {
     }
 
     this.clearDecoderWorkerHealthTimeout();
+    this.workerResponsive = true;
     logDecoderWorkerPhase(
       diagnostics,
       "worker:health:pong",
@@ -1450,7 +1461,8 @@ export class TrackRenderEngine {
           const shouldResetWorker = this.recordLiveDecoderTimeout();
           if (
             !shouldResetWorker ||
-            attempt >= TrackRenderEngine.LIVE_RENDER_RECOVERY_ATTEMPTS
+            attempt >= TrackRenderEngine.LIVE_RENDER_RECOVERY_ATTEMPTS ||
+            !this.canRecoverByResettingLiveDecoder()
           ) {
             return;
           }
@@ -1572,6 +1584,19 @@ export class TrackRenderEngine {
 
   private markLiveDecoderResponsive(): void {
     this.liveDecoderTimeoutCount = 0;
+    this.workerResponsive = true;
+  }
+
+  private canRecoverByResettingLiveDecoder(): boolean {
+    const workerAgeMs = performance.now() - this.workerCreatedAtMs;
+    if (
+      !this.workerResponsive &&
+      workerAgeMs < DECODER_WORKER_STARTUP_GRACE_MS
+    ) {
+      return false;
+    }
+
+    return canResetDecoderWorker();
   }
 
   private isStalePendingLiveFrameResponse(

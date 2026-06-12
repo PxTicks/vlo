@@ -103,7 +103,7 @@ vi.mock("../../workers/decoder.worker?worker", () => {
         // Use setTimeout to simulate async behavior and let the promise creation happen
         if (msg.type === "render" && this.onmessage) {
           setTimeout(() => {
-            this.onmessage!({
+            this.onmessage?.({
               data: {
                 type: "frame",
                 bitmap: {}, // Mock bitmap

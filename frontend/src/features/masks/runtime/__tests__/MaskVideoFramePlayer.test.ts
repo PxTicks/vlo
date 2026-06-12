@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
+import {
+  createDecoderWorkerPool,
+  resetSharedDecoderWorkerPoolForTests,
+} from "../../../renderer/services/DecoderWorkerPool";
 import { resetDecoderWorkerRecoveryForTests } from "../../../renderer/utils/decoderWorkerRecovery";
 
 type MockRenderStep =
@@ -17,7 +21,7 @@ const { mockWorkers, mockWorkerPlans } = vi.hoisted(() => {
     terminate: ReturnType<typeof vi.fn>;
   }> = [];
   const plans: Array<{
-    prepare?: "error" | "hang" | "ready";
+    prepare?: "error" | "hang" | "ready" | Array<"error" | "hang" | "ready">;
     render?: MockRenderStep[];
   }> = [];
 
@@ -27,8 +31,8 @@ const { mockWorkers, mockWorkerPlans } = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../../renderer", () => ({
-  DecoderWorker: class MockWorker {
+vi.mock("../../../renderer/workers/decoder.worker?worker", () => ({
+  default: class MockWorker {
     onmessage: ((event: MessageEvent) => void) | null = null;
     readonly postMessage = vi.fn(
       (message: {
@@ -57,7 +61,9 @@ vi.mock("../../../renderer", () => ({
         }
 
         if (message.type === "prepare") {
-          const prepareBehavior = this.plan.prepare ?? "ready";
+          const prepareBehavior = Array.isArray(this.plan.prepare)
+            ? (this.plan.prepare.shift() ?? "ready")
+            : (this.plan.prepare ?? "ready");
           if (prepareBehavior === "hang") {
             return;
           }
@@ -113,7 +119,7 @@ vi.mock("../../../renderer", () => ({
     );
     readonly terminate = vi.fn();
     private readonly plan: {
-      prepare?: "error" | "hang" | "ready";
+      prepare?: "error" | "hang" | "ready" | Array<"error" | "hang" | "ready">;
       render: MockRenderStep[];
     };
 
@@ -177,11 +183,18 @@ function createMaskAsset(id: string): Asset {
   };
 }
 
+function createPlayer() {
+  const decoderPool = createDecoderWorkerPool({ label: "test", size: 1 });
+  const player = new MaskVideoFramePlayer("clip_1", undefined, { decoderPool });
+  return { decoderPool, player };
+}
+
 describe("MaskVideoFramePlayer", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockWorkers.length = 0;
     mockWorkerPlans.length = 0;
+    resetSharedDecoderWorkerPoolForTests();
     resetDecoderWorkerRecoveryForTests();
   });
 
@@ -195,7 +208,7 @@ describe("MaskVideoFramePlayer", () => {
       render: ["frame", "frame"],
     });
 
-    const player = new MaskVideoFramePlayer("clip_1");
+    const { decoderPool, player } = createPlayer();
     const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
     await vi.runAllTimersAsync();
     await setSourcePromise;
@@ -215,13 +228,14 @@ describe("MaskVideoFramePlayer", () => {
     expect(renderMessagesAfterResolve).toHaveLength(1);
 
     player.dispose();
+    decoderPool.dispose();
   });
 
   it("does not recreate the worker after a first source preparation timeout", async () => {
     mockWorkerPlans.push({ prepare: "hang" });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const player = new MaskVideoFramePlayer("clip_1");
+    const { decoderPool, player } = createPlayer();
     const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
 
     const timeoutMs = (
@@ -239,13 +253,14 @@ describe("MaskVideoFramePlayer", () => {
 
     warnSpy.mockRestore();
     player.dispose();
+    decoderPool.dispose();
   });
 
-  it("recreates the worker after consecutive source preparation timeouts", async () => {
-    mockWorkerPlans.push({ prepare: "hang" }, { prepare: "ready" });
+  it("re-prepares the source after consecutive source preparation timeouts", async () => {
+    mockWorkerPlans.push({ prepare: ["hang", "hang", "ready"] });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const player = new MaskVideoFramePlayer("clip_1");
+    const { decoderPool, player } = createPlayer();
     const asset = createMaskAsset("mask_asset");
     const firstSetSource = player.setSource(asset);
 
@@ -263,21 +278,28 @@ describe("MaskVideoFramePlayer", () => {
     await vi.runAllTimersAsync();
     await secondSetSource;
 
-    expect(mockWorkers).toHaveLength(2);
-    expect(mockWorkers[0]?.terminate).toHaveBeenCalledTimes(1);
-    expect(mockWorkers[1]?.postMessage).toHaveBeenCalledWith(
+    expect(mockWorkers).toHaveLength(1);
+    expect(mockWorkers[0]?.terminate).not.toHaveBeenCalled();
+    expect(mockWorkers[0]?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "dispose",
+        clipId: expect.stringMatching(/\/mask_video_clip_1$/),
+      }),
+    );
+    expect(mockWorkers[0]?.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "prepare",
-        clipId: "mask_video_clip_1",
+        clipId: expect.stringMatching(/\/mask_video_clip_1$/),
       }),
     );
     expect(warnSpy).toHaveBeenCalledWith(
-      "Mask decoder worker stalled while preparing source; recreating worker",
+      "Mask decoder worker stalled while preparing source; recovering decoder source",
       expect.any(Error),
     );
 
     warnSpy.mockRestore();
     player.dispose();
+    decoderPool.dispose();
   });
 
   it("does not recreate the worker after a first strict frame timeout", async () => {
@@ -286,7 +308,7 @@ describe("MaskVideoFramePlayer", () => {
     );
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const player = new MaskVideoFramePlayer("clip_1");
+    const { decoderPool, player } = createPlayer();
     const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
     await vi.runAllTimersAsync();
     await setSourcePromise;
@@ -307,7 +329,7 @@ describe("MaskVideoFramePlayer", () => {
     expect(mockWorkers[0]?.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "render",
-        clipId: "mask_video_clip_1",
+        clipId: expect.stringMatching(/\/mask_video_clip_1$/),
         strict: true,
         time: 1,
       }),
@@ -316,16 +338,16 @@ describe("MaskVideoFramePlayer", () => {
 
     warnSpy.mockRestore();
     player.dispose();
+    decoderPool.dispose();
   });
 
-  it("recreates the worker after consecutive strict frame timeouts", async () => {
+  it("re-prepares the source after consecutive strict frame timeouts", async () => {
     mockWorkerPlans.push(
-      { prepare: "ready", render: ["hang", "hang"] },
-      { prepare: "ready", render: ["frame"] },
+      { prepare: "ready", render: ["hang", "hang", "frame"] },
     );
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const player = new MaskVideoFramePlayer("clip_1");
+    const { decoderPool, player } = createPlayer();
     const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
     await vi.runAllTimersAsync();
     await setSourcePromise;
@@ -345,29 +367,36 @@ describe("MaskVideoFramePlayer", () => {
     await vi.runAllTimersAsync();
     await secondRender;
 
-    expect(mockWorkers).toHaveLength(2);
-    expect(mockWorkers[0]?.terminate).toHaveBeenCalledTimes(1);
-    expect(mockWorkers[1]?.postMessage).toHaveBeenCalledWith(
+    expect(mockWorkers).toHaveLength(1);
+    expect(mockWorkers[0]?.terminate).not.toHaveBeenCalled();
+    expect(mockWorkers[0]?.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: "prepare",
-        clipId: "mask_video_clip_1",
+        type: "dispose",
+        clipId: expect.stringMatching(/\/mask_video_clip_1$/),
       }),
     );
-    expect(mockWorkers[1]?.postMessage).toHaveBeenCalledWith(
+    expect(mockWorkers[0]?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "prepare",
+        clipId: expect.stringMatching(/\/mask_video_clip_1$/),
+      }),
+    );
+    expect(mockWorkers[0]?.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "render",
-        clipId: "mask_video_clip_1",
+        clipId: expect.stringMatching(/\/mask_video_clip_1$/),
         strict: true,
         time: 2,
       }),
     );
     expect(warnSpy).toHaveBeenCalledWith(
-      "Mask decoder worker stalled while rendering strict frame; recreating worker",
+      "Mask decoder worker stalled while rendering strict frame; recovering decoder source",
       expect.any(Error),
     );
 
     warnSpy.mockRestore();
     player.dispose();
+    decoderPool.dispose();
   });
 
   it("swaps the worker bitmap directly into a Pixi texture", async () => {
@@ -379,7 +408,7 @@ describe("MaskVideoFramePlayer", () => {
       render: [{ bitmap: decodedBitmap }],
     });
 
-    const player = new MaskVideoFramePlayer("clip_1");
+    const { decoderPool, player } = createPlayer();
     const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
     await vi.runAllTimersAsync();
     await setSourcePromise;
@@ -394,6 +423,7 @@ describe("MaskVideoFramePlayer", () => {
     expect(player.sprite.texture.height).toBe(7);
 
     player.dispose();
+    decoderPool.dispose();
   });
 
   it("ignores a stale preview frame while waiting for a strict frame", async () => {
@@ -405,7 +435,7 @@ describe("MaskVideoFramePlayer", () => {
       ],
     });
 
-    const player = new MaskVideoFramePlayer("clip_1");
+    const { decoderPool, player } = createPlayer();
     const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
     await vi.runAllTimersAsync();
     await setSourcePromise;
@@ -420,5 +450,6 @@ describe("MaskVideoFramePlayer", () => {
     expect(player.sprite.texture.height).toBe(7);
 
     player.dispose();
+    decoderPool.dispose();
   });
 });

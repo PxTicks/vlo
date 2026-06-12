@@ -40,4 +40,11 @@ export {
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
 } from "./utils/outputTransformStack";
-export { default as DecoderWorker } from "./workers/decoder.worker?worker";
+export {
+  createDecoderWorkerPool,
+  getSharedDecoderWorkerPool,
+  type DecoderLease,
+  type DecoderLeaseEvents,
+  type DecoderStallResolution,
+  type DecoderWorkerPool,
+} from "./services/DecoderWorkerPool";

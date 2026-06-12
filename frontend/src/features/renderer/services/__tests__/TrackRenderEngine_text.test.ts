@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Renderer, Sprite } from "pixi.js";
 import type { TextTimelineClip } from "../../../../types/TimelineTypes";
 import { livePreviewTextStore } from "../../../text/services/livePreviewTextStore";
+import { resetSharedDecoderWorkerPoolForTests } from "../DecoderWorkerPool";
 
 const mockGenerateTexture = vi.fn(() => ({
   width: 320,
@@ -115,6 +116,7 @@ describe("TrackRenderEngine text rendering", () => {
     mockGenerateTexture.mockClear();
     mockHtmlGetTexturePromise.mockClear();
     livePreviewTextStore.clearAll();
+    resetSharedDecoderWorkerPoolForTests();
     vi.clearAllMocks();
   });
 
@@ -146,8 +148,7 @@ describe("TrackRenderEngine text rendering", () => {
     );
 
     expect(mockGenerateTexture).toHaveBeenCalledTimes(2);
-    expect(mockWorkerInstances).toHaveLength(1);
-    expect(mockWorkerInstances[0].postMessage).not.toHaveBeenCalled();
+    expect(mockWorkerInstances).toHaveLength(0);
     expect((engine.sprite as Sprite).visible).toBe(true);
     expect((engine.sprite as Sprite).texture).toMatchObject({
       width: 320,

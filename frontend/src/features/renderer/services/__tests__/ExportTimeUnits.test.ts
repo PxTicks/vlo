@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import type { Asset } from "../../../../types/Asset";
 import { applyClipTransforms } from "../../../transformations";
+import { resetSharedDecoderWorkerPoolForTests } from "../DecoderWorkerPool";
 
 // Mock PixiJS
 vi.mock("pixi.js", async (importOriginal) => {
@@ -71,6 +72,7 @@ describe("TrackRenderEngine Time Units", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetSharedDecoderWorkerPoolForTests();
     engine = new TrackRenderEngine(0);
   });
 

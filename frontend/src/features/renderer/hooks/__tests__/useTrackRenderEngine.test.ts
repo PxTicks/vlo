@@ -6,6 +6,7 @@ import { useTrackRenderEngine } from "../useTrackRenderEngine";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../timeline";
 import type { Asset } from "../../../../types/Asset";
+import { resetSharedDecoderWorkerPoolForTests } from "../../services/DecoderWorkerPool";
 import { TrackRenderEngine } from "../../services/TrackRenderEngine";
 import type { GenericFilterTransform } from "../../../transformations";
 import { livePreviewTextStore } from "../../../text/services/livePreviewTextStore";
@@ -220,6 +221,22 @@ const mockApp = {
 describe("useTrackRenderEngine Integration", () => {
   const mockViewportHandlers = new Map<string, () => void>();
 
+  function getLastPostedMessage(
+    worker: { postMessage: ReturnType<typeof vi.fn> },
+    type: string,
+  ): Record<string, unknown> {
+    const message = [...worker.postMessage.mock.calls]
+      .map(([entry]) => entry as Record<string, unknown>)
+      .reverse()
+      .find((entry) => entry.type === type);
+
+    if (!message) {
+      throw new Error(`Missing '${type}' worker message`);
+    }
+
+    return message;
+  }
+
   beforeEach(() => {
     mockWorkerInstances.length = 0;
     mockTimelineState.clips = [];
@@ -237,6 +254,7 @@ describe("useTrackRenderEngine Integration", () => {
     mockSprite.rotation = 0;
     mockViewportHandlers.clear();
     livePreviewTextStore.clearAll();
+    resetSharedDecoderWorkerPoolForTests();
     vi.clearAllMocks();
   });
 
@@ -280,13 +298,9 @@ describe("useTrackRenderEngine Integration", () => {
       { initialProps: { zIndex: 1 } },
     );
 
-    expect(mockWorkerInstances).toHaveLength(1);
-    const firstWorker = mockWorkerInstances[0];
-
     rerender({ zIndex: 7 });
 
-    expect(mockWorkerInstances).toHaveLength(1);
-    expect(firstWorker.terminate).not.toHaveBeenCalled();
+    expect(mockWorkerInstances).toHaveLength(0);
     expect(disposeSpy).not.toHaveBeenCalled();
     expect(setZIndexSpy).toHaveBeenLastCalledWith(7);
 
@@ -348,9 +362,11 @@ describe("useTrackRenderEngine Integration", () => {
     expect(worker.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "render",
-        clipId: clipId,
+        clipId: expect.stringMatching(/\/clip-A$/),
       }),
     );
+    const renderMessage = getLastPostedMessage(worker, "render");
+    const workerClipId = String(renderMessage.clipId);
 
     // 2. Simulate Worker responding with a frame
     const mockBitmap = { width: 100, height: 100, close: vi.fn() };
@@ -360,7 +376,7 @@ describe("useTrackRenderEngine Integration", () => {
         worker.onmessage({
           data: {
             type: "frame",
-            clipId: clipId,
+            clipId: workerClipId,
             bitmap: mockBitmap,
           },
         } as MessageEvent);
@@ -395,7 +411,7 @@ describe("useTrackRenderEngine Integration", () => {
       worker.onmessage?.({
         data: {
           type: "frame",
-          clipId,
+          clipId: workerClipId,
           bitmap: { width: 100, height: 100, close: vi.fn() },
         },
       } as MessageEvent);
@@ -461,11 +477,11 @@ describe("useTrackRenderEngine Integration", () => {
 
     const playbackRenderer = registeredRenderers.get(trackId);
     expect(playbackRenderer).toBeTypeOf("function");
-
-    const worker = mockWorkerInstances[0];
-    const initialRenderCount = worker.postMessage.mock.calls.filter(
-      ([message]) => message.type === "render",
-    ).length;
+    const initialWorkerCount = mockWorkerInstances.length;
+    const initialRenderCount =
+      mockWorkerInstances[0]?.postMessage.mock.calls.filter(
+        ([message]) => message.type === "render",
+      ).length ?? 0;
 
     let renderPromise: Promise<void> | undefined;
     await act(async () => {
@@ -473,16 +489,19 @@ describe("useTrackRenderEngine Integration", () => {
       await Promise.resolve();
     });
 
+    const worker = mockWorkerInstances[0];
+    const renderMessage = getLastPostedMessage(worker, "render");
     const renderCountAfterPlaybackRender = worker.postMessage.mock.calls.filter(
       ([message]) => message.type === "render",
     ).length;
+    expect(mockWorkerInstances.length).toBeGreaterThanOrEqual(initialWorkerCount);
     expect(renderCountAfterPlaybackRender).toBeGreaterThan(initialRenderCount);
 
     await act(async () => {
       worker.onmessage?.({
         data: {
           type: "frame",
-          clipId,
+          clipId: renderMessage.clipId,
           bitmap: { width: 100, height: 100, close: vi.fn() },
         },
       } as MessageEvent);
@@ -802,28 +821,29 @@ describe("useTrackRenderEngine Integration", () => {
     await waitFor(() => {
       expect(worker.postMessage).toHaveBeenCalledWith({
         type: "dispose",
-        clipId,
+        clipId: expect.stringMatching(/\/clip-A$/),
       });
       expect(worker.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "prepare",
-          clipId,
+          clipId: expect.stringMatching(/\/clip-A$/),
           url: "blob:asset-B",
         }),
       );
       expect(worker.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "render",
-          clipId,
+          clipId: expect.stringMatching(/\/clip-A$/),
         }),
       );
     });
+    const latestRenderMessage = getLastPostedMessage(worker, "render");
 
     await act(async () => {
       worker.onmessage?.({
         data: {
           type: "frame",
-          clipId,
+          clipId: latestRenderMessage.clipId,
           bitmap: { width: 100, height: 100, close: vi.fn() },
           transformTime: mockPlaybackState.time,
         },
@@ -995,16 +1015,12 @@ describe("useTrackRenderEngine Integration", () => {
       ),
     );
 
-    const worker = mockWorkerInstances[0];
     expect(mockPlaybackState.subscriber).toBeNull();
     expect(mockPlaybackFrameState.subscriber).toBeNull();
 
     const playbackRenderer = registeredRenderers.get(trackId);
     expect(playbackRenderer).toBeTypeOf("function");
-
-    const initialRenderCount = worker.postMessage.mock.calls.filter(
-      ([message]) => message.type === "render",
-    ).length;
+    expect(mockWorkerInstances).toHaveLength(0);
 
     let renderPromise: Promise<void> | undefined;
     await act(async () => {
@@ -1012,16 +1028,18 @@ describe("useTrackRenderEngine Integration", () => {
       await Promise.resolve();
     });
 
+    const worker = mockWorkerInstances[0];
+    const renderMessage = getLastPostedMessage(worker, "render");
     const renderCountAfterPlaybackRender = worker.postMessage.mock.calls.filter(
       ([message]) => message.type === "render",
     ).length;
-    expect(renderCountAfterPlaybackRender).toBeGreaterThan(initialRenderCount);
+    expect(renderCountAfterPlaybackRender).toBeGreaterThan(0);
 
     await act(async () => {
       worker.onmessage?.({
         data: {
           type: "frame",
-          clipId,
+          clipId: renderMessage.clipId,
           bitmap: { width: 100, height: 100, close: vi.fn() },
         },
       } as MessageEvent);

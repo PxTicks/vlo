@@ -7,7 +7,6 @@ import type {
 } from "../../../types/TimelineTypes";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
-import DecoderWorker from "../workers/decoder.worker?worker";
 import {
   calculatePlayerFrameTime,
   snapFrameTimeSeconds,
@@ -28,21 +27,17 @@ import {
   type StrictFramePending,
 } from "../utils/strictFrameRequest";
 import {
-  DECODER_WORKER_STARTUP_GRACE_MS,
-  canResetDecoderWorker,
-} from "../utils/decoderWorkerRecovery";
-import {
   createDecoderRequestDiagnostics,
-  type DecoderRequestDiagnostics,
-  type DecoderWorkerHealthMessage,
-  isDecoderDiagnosticMessage,
-  isDecoderWorkerHealthMessage,
-  logDecoderDiagnostic,
   logDecoderRequestAborted,
   logDecoderRequestSent,
   logDecoderRequestTimeout,
-  logDecoderWorkerPhase,
 } from "../utils/decoderDiagnostics";
+import {
+  getSharedDecoderWorkerPool,
+  type DecoderLease,
+  type DecoderStallResolution,
+  type DecoderWorkerPool,
+} from "./DecoderWorkerPool";
 import {
   createTextTexture,
   getTextTextureSignature,
@@ -121,6 +116,23 @@ interface LatestMaskSyncContext {
 interface TrackRenderEngineOptions {
   trackId?: string;
   adjustmentEffectResolver?: AdjustmentEffectResolver | null;
+  decoderPool?: DecoderWorkerPool;
+}
+
+function isDecoderRenderableClip(
+  clip: TimelineClip | undefined | null,
+): clip is Extract<TimelineClip, { type: "video" | "image" }> {
+  return clip?.type === "video" || clip?.type === "image";
+}
+
+function getDecoderSourceKind(
+  clip: TimelineClip,
+): "video" | "image" | null {
+  if (clip.type === "video" || clip.type === "image") {
+    return clip.type;
+  }
+
+  return null;
 }
 
 /**
@@ -138,11 +150,10 @@ export class TrackRenderEngine {
   private static readonly SYNCHRONIZED_RECOVERY_ATTEMPTS = 1;
   private static readonly LIVE_RENDER_RECOVERY_ATTEMPTS = 1;
   private static readonly LIVE_DECODER_RESET_TIMEOUTS = 2;
-  private static readonly WORKER_HEALTH_PING_TIMEOUT_MS = 1000;
 
   public readonly sprite: Sprite;
   public readonly container: Container;
-  private worker: Worker;
+  private readonly lease: DecoderLease;
   private readonly renderer: Renderer | null;
   private readonly trackId: string | null;
   private readonly adjustmentEffectResolver: AdjustmentEffectResolver | null;
@@ -171,13 +182,6 @@ export class TrackRenderEngine {
   private pendingLiveFrameRequestId: string | null = null;
   private nextLiveFrameRequestId = 0;
   private liveDecoderTimeoutCount = 0;
-  private workerHealthDiagnostics: DecoderRequestDiagnostics | undefined;
-  private workerHealthPingId: string | null = null;
-  private workerHealthTimeoutHandle: ReturnType<typeof setTimeout> | null =
-    null;
-  private nextWorkerHealthPingId = 0;
-  private workerCreatedAtMs = 0;
-  private workerResponsive = false;
 
   // Live synchronized pipeline
   private liveRenderQueue: LiveRenderRequest[] = [];
@@ -213,8 +217,22 @@ export class TrackRenderEngine {
     this.renderer = renderer ?? null;
     this.trackId = options.trackId ?? null;
     this.adjustmentEffectResolver = options.adjustmentEffectResolver ?? null;
-    this.worker = this.createWorker();
     this.onFrameReady = onFrameReady;
+    this.lease = (options.decoderPool ?? getSharedDecoderWorkerPool()).acquireLease(
+      { label: this.trackId ?? undefined },
+      {
+        onReady: () => {},
+        onFrame: (message) => {
+          this.handleLeaseFrame(message);
+        },
+        onWorkerError: (error) => {
+          this.handleLeaseWorkerError(error);
+        },
+        onSourceEvicted: (clipId) => {
+          this.handleDecoderSourceEvicted(clipId);
+        },
+      },
+    );
 
     this.sprite = new Sprite();
     this.sprite.anchor.set(0.5);
@@ -394,7 +412,7 @@ export class TrackRenderEngine {
       });
     }
 
-    if (!isAssetBackedClip(activeClip)) {
+    if (!isDecoderRenderableClip(activeClip)) {
       this.invalidateLivePipeline();
       this.sprite.visible = false;
       this.currentTextureClipId = null;
@@ -707,7 +725,7 @@ export class TrackRenderEngine {
       return;
     }
 
-    if (!isAssetBackedClip(activeClip)) {
+    if (!isDecoderRenderableClip(activeClip)) {
       this.invalidateLivePipeline();
       this.sprite.visible = false;
       this.currentTextureClipId = null;
@@ -820,20 +838,29 @@ export class TrackRenderEngine {
             }
 
             this.lastRenderRequest = null;
-            const shouldResetWorker = this.recordLiveDecoderTimeout();
+            const shouldRecover = this.recordLiveDecoderTimeout();
             if (
-              !shouldResetWorker ||
-              attempt >= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS ||
-              !this.canRecoverByResettingLiveDecoder()
+              !shouldRecover ||
+              attempt >= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS
+            ) {
+              return;
+            }
+
+            const resolution = await this.recoverStalledDecoder(
+              activeClip.id,
+              "synchronized playback timeout",
+            );
+            if (
+              resolution !== "renderer-reset" &&
+              resolution !== "worker-replaced"
             ) {
               return;
             }
 
             console.warn(
-              "Live decoder worker stalled during synchronized playback; recreating worker",
+              "Live decoder worker stalled during synchronized playback; recovering decoder source",
               error,
             );
-            this.resetStalledLiveDecoderWorker();
             await this.prepareClipForStrictRender(
               activeClip,
               assetById,
@@ -903,7 +930,7 @@ export class TrackRenderEngine {
       return;
     }
 
-    if (!isAssetBackedClip(activeClip)) {
+    if (!isDecoderRenderableClip(activeClip)) {
       this.sprite.visible = false;
       this.currentTextureClipId = null;
       this.maskController.clear();
@@ -993,8 +1020,7 @@ export class TrackRenderEngine {
           ? snapFrameTimeSeconds(localTime, clipFps)
           : localTime;
 
-      this.worker.postMessage({
-        type: "render",
+      this.lease.render({
         time: renderTime,
         clipId: activeClip.id,
         transformTime: rawTime,
@@ -1007,58 +1033,52 @@ export class TrackRenderEngine {
     this.rejectPendingFrame(error);
   }
 
-  private handleWorkerMessage(e: MessageEvent) {
-    if (isDecoderDiagnosticMessage(e.data)) {
-      logDecoderDiagnostic(e.data);
+  private handleLeaseFrame(message: {
+    bitmap: ImageBitmap | null;
+    clipId: string;
+    transformTime?: number;
+    error?: string;
+    requestId?: string;
+  }) {
+    const { bitmap, clipId, transformTime, error, requestId } = message;
+    this.markLiveDecoderResponsive();
+
+    if (this.pendingResolve) {
+      this.pendingResolve(bitmap);
       return;
     }
 
-    if (isDecoderWorkerHealthMessage(e.data)) {
-      this.handleDecoderWorkerHealthMessage(e.data);
-      return;
-    }
-
-    const { type, bitmap, clipId, transformTime, error, message, requestId } =
-      e.data;
-
-    if (type === "frame") {
-      this.markLiveDecoderResponsive();
-
-      if (this.pendingResolve) {
-        // Export Mode: Resolves the promise
-        this.pendingResolve(bitmap);
-      } else if (this.pendingLiveFrame) {
-        const pendingLiveFrame = this.pendingLiveFrame;
-        if (this.isStalePendingLiveFrameResponse(requestId, bitmap)) {
-          return;
-        }
-        if (error) {
-          pendingLiveFrame.reject(new Error(String(error)));
-          return;
-        }
-        pendingLiveFrame.resolve({
-          bitmap,
-          clipId,
-          transformTime:
-            typeof transformTime === "number" ? transformTime : undefined,
-        });
-      } else {
-        // Ignore orphaned frames that no longer belong to an active request.
-        if (bitmap && typeof bitmap.close === "function") {
-          bitmap.close();
-        }
+    if (this.pendingLiveFrame) {
+      const pendingLiveFrame = this.pendingLiveFrame;
+      if (this.isStalePendingLiveFrameResponse(requestId, bitmap)) {
+        return;
       }
+      if (error) {
+        pendingLiveFrame.reject(new Error(String(error)));
+        return;
+      }
+      pendingLiveFrame.resolve({
+        bitmap,
+        clipId,
+        transformTime:
+          typeof transformTime === "number" ? transformTime : undefined,
+      });
       return;
     }
 
-    if (type === "error") {
-      const workerError = new Error(
-        typeof message === "string" ? message : "Decoder worker error",
-      );
-      this.rejectPendingFrame(workerError);
-      this.rejectPendingLiveFrame(workerError);
-      return;
+    if (bitmap && typeof bitmap.close === "function") {
+      bitmap.close();
     }
+  }
+
+  private handleLeaseWorkerError(error: Error): void {
+    this.rejectPendingFrame(error);
+    this.rejectPendingLiveFrame(error);
+  }
+
+  private handleDecoderSourceEvicted(clipId: string): void {
+    this.preparedClips.delete(clipId);
+    this.preparedClipTouchedAtMs.delete(clipId);
   }
 
   private enqueueLiveRenderRequest(request: LiveRenderRequest) {
@@ -1067,99 +1087,12 @@ export class TrackRenderEngine {
     void this.runLiveRenderPipeline();
   }
 
-  private createWorker(): Worker {
-    this.workerCreatedAtMs = performance.now();
-    this.workerResponsive = false;
-    const worker = new DecoderWorker();
-    worker.onmessage = this.handleWorkerMessage.bind(this);
-    worker.onerror = (event) => {
-      this.logDecoderWorkerProblem("main:worker:error", {
-        message: event.message,
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno,
-      });
-    };
-    worker.onmessageerror = (event) => {
-      this.logDecoderWorkerProblem("main:worker:messageerror", {
-        dataType: typeof event.data,
-      });
-    };
-    this.startDecoderWorkerHealthProbe(worker, "created");
-    return worker;
-  }
-
-  private startDecoderWorkerHealthProbe(worker: Worker, reason: string): void {
-    if (this.workerHealthPingId !== null) {
-      return;
-    }
-
-    const nextPingIndex = this.nextWorkerHealthPingId + 1;
-    const diagnostics = createDecoderRequestDiagnostics({
-      source: "track",
-      requestType: "worker",
-      clipId: `worker:${nextPingIndex}`,
-      label: this.trackId ?? undefined,
-    });
-    if (!diagnostics) {
-      return;
-    }
-
-    this.nextWorkerHealthPingId = nextPingIndex;
-    const pingId = `track-worker-${nextPingIndex}`;
-    this.workerHealthDiagnostics = diagnostics;
-    this.workerHealthPingId = pingId;
-    logDecoderWorkerPhase(diagnostics, "main:worker:ping:send", {
-      reason,
-      pingId,
-      timeoutMs: TrackRenderEngine.WORKER_HEALTH_PING_TIMEOUT_MS,
-    });
-    this.workerHealthTimeoutHandle = setTimeout(() => {
-      logDecoderWorkerPhase(diagnostics, "main:worker:ping:timeout", {
-        reason,
-        pingId,
-        timeoutMs: TrackRenderEngine.WORKER_HEALTH_PING_TIMEOUT_MS,
-      });
-      this.clearDecoderWorkerHealthProbe();
-    }, TrackRenderEngine.WORKER_HEALTH_PING_TIMEOUT_MS);
-    worker.postMessage({ type: "ping", pingId });
-  }
-
-  private handleDecoderWorkerHealthMessage(
-    message: DecoderWorkerHealthMessage,
-  ): void {
-    const diagnostics = this.workerHealthDiagnostics;
-    if (!diagnostics) {
-      return;
-    }
-
-    if (message.event === "boot") {
-      this.workerResponsive = true;
-      logDecoderWorkerPhase(
-        diagnostics,
-        "worker:health:boot",
-        message.detail,
-        message.workerElapsedMs,
-      );
-      return;
-    }
-
-    if (message.pingId !== this.workerHealthPingId) {
-      return;
-    }
-
-    this.clearDecoderWorkerHealthTimeout();
-    this.workerResponsive = true;
-    logDecoderWorkerPhase(
-      diagnostics,
-      "worker:health:pong",
-      { pingId: message.pingId, ...(message.detail ?? {}) },
-      message.workerElapsedMs,
-    );
-    this.clearDecoderWorkerHealthProbe();
-  }
-
   private postPrepareMessage(clip: TimelineClip, asset: Asset): void {
+    const kind = getDecoderSourceKind(clip);
+    if (!kind) {
+      return;
+    }
+
     const diagnostics = createDecoderRequestDiagnostics({
       source: "track",
       requestType: "prepare",
@@ -1167,7 +1100,7 @@ export class TrackRenderEngine {
       label: this.trackId ?? undefined,
     });
     logDecoderRequestSent(diagnostics, {
-      kind: clip.type,
+      kind,
       hasFile: !!asset.file,
       fileSizeMB: asset.file
         ? Number((asset.file.size / (1024 * 1024)).toFixed(2))
@@ -1175,11 +1108,10 @@ export class TrackRenderEngine {
       sourceScheme: getSourceScheme(asset),
     });
 
-    this.worker.postMessage({
-      type: "prepare",
+    this.lease.prepare({
       url: asset.src,
       clipId: clip.id,
-      kind: clip.type,
+      kind,
       file: asset.file,
       ...(diagnostics ? { diagnostics } : {}),
     });
@@ -1221,12 +1153,12 @@ export class TrackRenderEngine {
       }
 
       if (storedAssetId !== undefined) {
-        this.worker.postMessage({ type: "dispose", clipId: clip.id });
+        this.lease.disposeSource(clip.id);
         this.preparedClips.delete(clip.id);
         this.preparedClipTouchedAtMs.delete(clip.id);
       }
 
-      if (!isAssetBackedClip(clip)) {
+      if (!isDecoderRenderableClip(clip)) {
         return;
       }
 
@@ -1290,7 +1222,7 @@ export class TrackRenderEngine {
         continue;
       }
 
-      this.worker.postMessage({ type: "dispose", clipId });
+      this.lease.disposeSource(clipId);
       this.preparedClips.delete(clipId);
       this.preparedClipTouchedAtMs.delete(clipId);
     }
@@ -1458,20 +1390,29 @@ export class TrackRenderEngine {
           }
 
           this.lastRenderRequest = null;
-          const shouldResetWorker = this.recordLiveDecoderTimeout();
+          const shouldRecover = this.recordLiveDecoderTimeout();
           if (
-            !shouldResetWorker ||
-            attempt >= TrackRenderEngine.LIVE_RENDER_RECOVERY_ATTEMPTS ||
-            !this.canRecoverByResettingLiveDecoder()
+            !shouldRecover ||
+            attempt >= TrackRenderEngine.LIVE_RENDER_RECOVERY_ATTEMPTS
+          ) {
+            return;
+          }
+
+          const resolution = await this.recoverStalledDecoder(
+            request.clip.id,
+            "live playback timeout",
+          );
+          if (
+            resolution !== "renderer-reset" &&
+            resolution !== "worker-replaced"
           ) {
             return;
           }
 
           console.warn(
-            "Live decoder worker stalled during live playback; recreating worker",
+            "Live decoder worker stalled during live playback; recovering decoder source",
             error,
           );
-          this.resetStalledLiveDecoderWorker();
           await this.prepareClipForStrictRender(
             request.clip,
             request.assetsById,
@@ -1509,7 +1450,6 @@ export class TrackRenderEngine {
           time: localTimeSeconds,
           requestId,
         });
-        this.startDecoderWorkerHealthProbe(this.worker, "live frame timeout");
         return createLiveFrameTimeoutError(timeoutMs, clipId);
       },
       registerPending: (pending) => {
@@ -1538,8 +1478,7 @@ export class TrackRenderEngine {
           requestId,
           timeoutMs: options.timeoutMs,
         });
-        this.worker.postMessage({
-          type: "render",
+        this.lease.render({
           time: localTimeSeconds,
           clipId,
           transformTime,
@@ -1584,19 +1523,6 @@ export class TrackRenderEngine {
 
   private markLiveDecoderResponsive(): void {
     this.liveDecoderTimeoutCount = 0;
-    this.workerResponsive = true;
-  }
-
-  private canRecoverByResettingLiveDecoder(): boolean {
-    const workerAgeMs = performance.now() - this.workerCreatedAtMs;
-    if (
-      !this.workerResponsive &&
-      workerAgeMs < DECODER_WORKER_STARTUP_GRACE_MS
-    ) {
-      return false;
-    }
-
-    return canResetDecoderWorker();
   }
 
   private isStalePendingLiveFrameResponse(
@@ -1623,7 +1549,7 @@ export class TrackRenderEngine {
     assetsById: Map<string, Asset>,
     nowMs: number,
   ): Promise<void> {
-    if (!isAssetBackedClip(clip)) {
+    if (!isDecoderRenderableClip(clip)) {
       return;
     }
 
@@ -1656,65 +1582,23 @@ export class TrackRenderEngine {
     this.rejectPendingLiveFrame(createRenderAbortError());
   }
 
-  private resetStalledLiveDecoderWorker() {
+  private async recoverStalledDecoder(
+    clipId: string,
+    reason: string,
+  ): Promise<DecoderStallResolution> {
     this.rejectPendingLiveFrame(createRenderAbortError());
     this.liveRenderQueue.length = 0;
     this.lastRenderRequest = null;
-    this.preparedClips.clear();
-    this.preparedClipTouchedAtMs.clear();
-    this.liveDecoderTimeoutCount = 0;
-
-    this.finishDecoderWorkerHealthProbe("live decoder worker reset");
-    this.worker.onerror = null;
-    this.worker.onmessageerror = null;
-    this.worker.terminate();
-    this.worker = this.createWorker();
-  }
-
-  private finishDecoderWorkerHealthProbe(reason: string): void {
-    const diagnostics = this.workerHealthDiagnostics;
-    const pingId = this.workerHealthPingId;
-    this.clearDecoderWorkerHealthTimeout();
-    if (diagnostics && pingId !== null) {
-      logDecoderWorkerPhase(diagnostics, "main:worker:terminated", {
-        reason,
-        pingId,
-      });
+    const resolution = await this.lease.reportStall(clipId, reason);
+    if (
+      resolution === "renderer-reset" ||
+      resolution === "worker-replaced"
+    ) {
+      this.preparedClips.delete(clipId);
+      this.preparedClipTouchedAtMs.delete(clipId);
+      this.liveDecoderTimeoutCount = 0;
     }
-    this.clearDecoderWorkerHealthProbe();
-  }
-
-  private logDecoderWorkerProblem(
-    phase: string,
-    detail: Record<string, unknown>,
-  ): void {
-    const diagnostics =
-      this.workerHealthDiagnostics ??
-      createDecoderRequestDiagnostics({
-        source: "track",
-        requestType: "worker",
-        clipId: `worker:${this.nextWorkerHealthPingId || "unknown"}`,
-        label: this.trackId ?? undefined,
-      });
-    logDecoderWorkerPhase(diagnostics, phase, detail);
-    if (diagnostics === this.workerHealthDiagnostics) {
-      this.clearDecoderWorkerHealthProbe();
-    }
-  }
-
-  private clearDecoderWorkerHealthProbe(): void {
-    this.clearDecoderWorkerHealthTimeout();
-    this.workerHealthDiagnostics = undefined;
-    this.workerHealthPingId = null;
-  }
-
-  private clearDecoderWorkerHealthTimeout(): void {
-    if (this.workerHealthTimeoutHandle === null) {
-      return;
-    }
-
-    clearTimeout(this.workerHealthTimeoutHandle);
-    this.workerHealthTimeoutHandle = null;
+    return resolution;
   }
 
   private pruneLiveRenderQueue(nowMs: number) {
@@ -1975,10 +1859,7 @@ export class TrackRenderEngine {
     this.retiredTextures.flush();
 
     this.maskController.dispose();
-    this.finishDecoderWorkerHealthProbe("track render engine disposed");
-    this.worker.onerror = null;
-    this.worker.onmessageerror = null;
-    this.worker.terminate();
+    this.lease.release();
     if (this.container) {
       if (this.container.parent) {
         this.container.removeFromParent();

@@ -1,58 +1,27 @@
 import { Sprite, Texture } from "pixi.js";
 import type { Asset } from "../../../types/Asset";
-import { DecoderWorker } from "../../renderer";
 import { hasEmbeddedAssetSource } from "../../renderer/utils/assetSource";
-import {
-  DECODER_WORKER_STARTUP_GRACE_MS,
-  canResetDecoderWorker,
-} from "../../renderer/utils/decoderWorkerRecovery";
 import {
   RetiredTextureQueue,
   destroyTexture,
 } from "../../renderer/utils/retiredTextureQueue";
 import {
   createDecoderRequestDiagnostics,
-  type DecoderDiagnosticMessage,
-  type DecoderRequestDiagnostics,
-  type DecoderWorkerHealthMessage,
-  isDecoderDiagnosticMessage,
-  isDecoderWorkerHealthMessage,
-  logDecoderDiagnostic,
   logDecoderRequestAborted,
   logDecoderRequestSent,
   logDecoderRequestTimeout,
-  logDecoderWorkerPhase,
 } from "../../renderer/utils/decoderDiagnostics";
+import {
+  getSharedDecoderWorkerPool,
+  type DecoderLease,
+  type DecoderStallResolution,
+  type DecoderWorkerPool,
+} from "../../renderer/services/DecoderWorkerPool";
 import {
   awaitStrictFrame,
   type StrictFramePending,
 } from "../../renderer/utils/strictFrameRequest";
 import { ensureAssetSourceLoaded } from "../../userAssets";
-
-interface WorkerReadyMessage {
-  type: "ready";
-  clipId: string;
-}
-
-interface WorkerFrameMessage {
-  type: "frame";
-  clipId: string;
-  bitmap: ImageBitmap | null;
-  requestId?: string;
-  error?: string;
-}
-
-interface WorkerErrorMessage {
-  type: "error";
-  message?: string;
-}
-
-type WorkerMessage =
-  | WorkerReadyMessage
-  | WorkerFrameMessage
-  | DecoderDiagnosticMessage
-  | DecoderWorkerHealthMessage
-  | WorkerErrorMessage;
 
 function createMaskRenderAbortError(
   message: string = "Mask render cancelled",
@@ -93,13 +62,12 @@ export class MaskVideoFramePlayer {
   private static readonly STRICT_FRAME_TIMEOUT_MS = 5000;
   private static readonly STRICT_FRAME_RECOVERY_ATTEMPTS = 1;
   private static readonly DECODER_RESET_TIMEOUTS = 2;
-  private static readonly WORKER_HEALTH_PING_TIMEOUT_MS = 1000;
 
   public readonly sprite: Sprite;
 
   private readonly clipId: string;
+  private readonly lease: DecoderLease;
   private readonly onFrameReady: (() => void) | undefined;
-  private worker: Worker | null = null;
   private sourceAsset: Asset | null = null;
   private sourceAssetId: string | null = null;
   private sourcePrepared = false;
@@ -114,22 +82,36 @@ export class MaskVideoFramePlayer {
   private strictRenderGeneration = 0;
   private decoderTimeoutCount = 0;
   private strictRenderChain: Promise<void> = Promise.resolve();
-  private workerHealthDiagnostics: DecoderRequestDiagnostics | undefined;
-  private workerHealthPingId: string | null = null;
-  private workerHealthTimeoutHandle: ReturnType<typeof setTimeout> | null =
-    null;
-  private nextWorkerHealthPingId = 0;
-  private workerCreatedAtMs = 0;
-  private workerResponsive = false;
   private readonly retiredTextures = new RetiredTextureQueue(
     () => this.sprite.texture,
   );
   private hasDecodedFrame = false;
   private disposed = false;
 
-  constructor(maskClipId: string, onFrameReady?: () => void) {
+  constructor(
+    maskClipId: string,
+    onFrameReady?: () => void,
+    options: { decoderPool?: DecoderWorkerPool } = {},
+  ) {
     this.clipId = `mask_video_${maskClipId}`;
     this.onFrameReady = onFrameReady;
+    this.lease = (options.decoderPool ?? getSharedDecoderWorkerPool()).acquireLease(
+      { label: this.clipId },
+      {
+        onReady: (clipId) => {
+          this.handleLeaseReady(clipId);
+        },
+        onFrame: (message) => {
+          this.handleLeaseFrame(message);
+        },
+        onWorkerError: (error) => {
+          this.handleLeaseWorkerError(error);
+        },
+        onSourceEvicted: (clipId) => {
+          this.handleSourceEvicted(clipId);
+        },
+      },
+    );
     this.sprite = new Sprite();
     this.sprite.anchor.set(0.5);
     this.sprite.visible = false;
@@ -139,13 +121,22 @@ export class MaskVideoFramePlayer {
     if (this.disposed) return;
 
     if (this.sourceAssetId !== asset.id) {
-      this.disposeWorker({ abortReason: "Mask source switched" });
+      this.rejectPendingStrictFrame(
+        createMaskRenderAbortError("Mask source switched during strict render"),
+      );
+      this.rejectPendingPrepare(
+        createMaskRenderAbortError("Mask source switched during source prepare"),
+      );
+      this.lease.disposeSource(this.clipId);
+      this.sourcePrepared = false;
+      this.latestRenderRequestId = null;
+      this.decoderTimeoutCount = 0;
       this.resetSpriteFrameState();
       this.sourceAssetId = asset.id;
       this.sourceAsset = null;
     }
 
-    if (this.sourcePrepared && this.worker) {
+    if (this.sourcePrepared) {
       return;
     }
 
@@ -172,7 +163,7 @@ export class MaskVideoFramePlayer {
       return;
     }
 
-    if (!this.worker || !this.sourceAssetId) {
+    if (!this.sourceAssetId) {
       if (strict) {
         throw createMaskRenderAbortError("Mask player has no source");
       }
@@ -204,8 +195,7 @@ export class MaskVideoFramePlayer {
         strict: false,
         requestId,
       });
-      this.worker.postMessage({
-        type: "render",
+      this.lease.render({
         clipId: this.clipId,
         time: timeSeconds,
         requestId,
@@ -237,7 +227,14 @@ export class MaskVideoFramePlayer {
     if (this.disposed) return;
     this.disposed = true;
 
-    this.disposeWorker();
+    this.rejectPendingStrictFrame(createMaskRenderAbortError());
+    this.rejectPendingPrepare(
+      createMaskRenderAbortError("Mask player disposed during source prepare"),
+    );
+    this.lease.release();
+    this.sourcePrepared = false;
+    this.sourceAsset = null;
+    this.sourceAssetId = null;
     this.retiredTextures.cancel();
     this.resetSpriteFrameState();
     this.retiredTextures.flush();
@@ -247,70 +244,78 @@ export class MaskVideoFramePlayer {
     }
   }
 
-  private handleWorkerMessage(
-    sourceWorker: Worker,
-    event: MessageEvent<WorkerMessage>,
-  ): void {
-    if (this.disposed || sourceWorker !== this.worker) return;
-
-    const message = event.data;
-    if (isDecoderDiagnosticMessage(message)) {
-      logDecoderDiagnostic(message);
+  private handleLeaseReady(clipId: string): void {
+    if (this.disposed || clipId !== this.clipId) {
       return;
     }
 
-    if (isDecoderWorkerHealthMessage(message)) {
-      this.handleDecoderWorkerHealthMessage(message);
+    this.markDecoderResponsive();
+    this.resolvePendingPrepare();
+  }
+
+  private handleLeaseFrame(message: {
+    clipId: string;
+    bitmap: ImageBitmap | null;
+    requestId?: string;
+    error?: string;
+  }): void {
+    if (this.disposed || message.clipId !== this.clipId) {
+      if (message.bitmap) {
+        message.bitmap.close();
+      }
       return;
     }
 
-    if (message.type === "ready" && message.clipId === this.clipId) {
-      this.markDecoderResponsive();
-      this.resolvePendingPrepare();
+    this.markDecoderResponsive();
+    if (this.isStaleFrameResponse(message)) {
       return;
     }
 
-    if (message.type === "frame" && message.clipId === this.clipId) {
-      this.markDecoderResponsive();
-      if (this.isStaleFrameResponse(message)) {
-        return;
-      }
-
-      const pendingStrict = this.pendingStrictFrame;
-      if (pendingStrict && this.isStaleStrictFrameResponse(message)) {
-        return;
-      }
-
-      if (message.error) {
-        pendingStrict?.reject(new Error(message.error));
-        return;
-      }
-
-      const bitmap = message.bitmap;
-      if (bitmap) {
-        const nextTexture = Texture.from(bitmap);
-        this.swapSpriteTexture(nextTexture);
-        this.hasDecodedFrame = true;
-        this.sprite.visible = true;
-        if (!pendingStrict) {
-          this.onFrameReady?.();
-        }
-      } else if (!this.hasDecodedFrame) {
-        // Before the first decoded frame, keep mask hidden.
-        this.sprite.visible = false;
-      }
-
-      pendingStrict?.resolve();
+    const pendingStrict = this.pendingStrictFrame;
+    if (pendingStrict && this.isStaleStrictFrameResponse(message)) {
       return;
     }
 
-    if (message.type === "error") {
-      const error = new Error(
-        message.message || "Mask video decode worker error",
-      );
-      this.rejectPendingPrepare(error);
-      this.pendingStrictFrame?.reject(error);
+    if (message.error) {
+      pendingStrict?.reject(new Error(message.error));
+      return;
     }
+
+    const bitmap = message.bitmap;
+    if (bitmap) {
+      const nextTexture = Texture.from(bitmap);
+      this.swapSpriteTexture(nextTexture);
+      this.hasDecodedFrame = true;
+      this.sprite.visible = true;
+      if (!pendingStrict) {
+        this.onFrameReady?.();
+      }
+    } else if (!this.hasDecodedFrame) {
+      this.sprite.visible = false;
+    }
+
+    pendingStrict?.resolve();
+  }
+
+  private handleLeaseWorkerError(error: Error): void {
+    this.rejectPendingPrepare(error);
+    this.rejectPendingStrictFrame(error);
+  }
+
+  private handleSourceEvicted(clipId: string): void {
+    if (clipId !== this.clipId) {
+      return;
+    }
+
+    this.rejectPendingPrepare(
+      createMaskRenderAbortError("Mask source evicted during source prepare"),
+    );
+    this.rejectPendingStrictFrame(
+      createMaskRenderAbortError("Mask source evicted during strict render"),
+    );
+    this.sourcePrepared = false;
+    this.latestRenderRequestId = null;
+    this.decoderTimeoutCount = 0;
   }
 
   private async hydrateSourceAsset(asset: Asset): Promise<Asset> {
@@ -355,20 +360,28 @@ export class MaskVideoFramePlayer {
           error instanceof Error &&
           error.name === "TimeoutError"
         ) {
-          const shouldResetWorker = this.recordDecoderTimeout();
+          const shouldRecover = this.recordDecoderTimeout();
           if (
-            !shouldResetWorker ||
-            attempt >= MaskVideoFramePlayer.SOURCE_PREPARE_RECOVERY_ATTEMPTS ||
-            !this.canRecoverByResettingDecoder()
+            !shouldRecover ||
+            attempt >= MaskVideoFramePlayer.SOURCE_PREPARE_RECOVERY_ATTEMPTS
+          ) {
+            throw error;
+          }
+
+          const resolution = await this.recoverStalledDecoder(
+            "mask source prepare timeout",
+          );
+          if (
+            resolution !== "renderer-reset" &&
+            resolution !== "worker-replaced"
           ) {
             throw error;
           }
 
           console.warn(
-            "Mask decoder worker stalled while preparing source; recreating worker",
+            "Mask decoder worker stalled while preparing source; recovering decoder source",
             error,
           );
-          this.resetStalledDecoderWorker();
           continue;
         }
 
@@ -378,10 +391,6 @@ export class MaskVideoFramePlayer {
   }
 
   private beginPreparingSource(asset: Asset): void {
-    if (!this.worker) {
-      this.worker = this.createWorker();
-    }
-
     this.sourcePrepared = false;
     this.preparePromise = new Promise<void>((resolve, reject) => {
       this.resolvePrepare = resolve;
@@ -399,12 +408,6 @@ export class MaskVideoFramePlayer {
       logDecoderRequestTimeout(diagnostics, {
         timeoutMs: MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS,
       });
-      if (this.worker) {
-        this.startDecoderWorkerHealthProbe(
-          this.worker,
-          "mask source prepare timeout",
-        );
-      }
       this.rejectPendingPrepare(
         createMaskSourcePrepareTimeoutError(
           MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS,
@@ -422,8 +425,7 @@ export class MaskVideoFramePlayer {
       timeoutMs: MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS,
     });
 
-    this.worker.postMessage({
-      type: "prepare",
+    this.lease.prepare({
       url: asset.src,
       clipId: this.clipId,
       kind: "mask_video",
@@ -454,187 +456,6 @@ export class MaskVideoFramePlayer {
     this.preparePromise = null;
     this.resolvePrepare = null;
     this.rejectPrepare = null;
-  }
-
-  private createWorker(): Worker {
-    this.workerCreatedAtMs = performance.now();
-    this.workerResponsive = false;
-    const worker = new DecoderWorker();
-    worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
-      this.handleWorkerMessage(worker, event);
-    };
-    worker.onerror = (event) => {
-      this.logDecoderWorkerProblem("main:worker:error", {
-        message: event.message,
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno,
-      });
-    };
-    worker.onmessageerror = (event) => {
-      this.logDecoderWorkerProblem("main:worker:messageerror", {
-        dataType: typeof event.data,
-      });
-    };
-    this.startDecoderWorkerHealthProbe(worker, "created");
-    return worker;
-  }
-
-  private startDecoderWorkerHealthProbe(worker: Worker, reason: string): void {
-    if (this.workerHealthPingId !== null) {
-      return;
-    }
-
-    const nextPingIndex = this.nextWorkerHealthPingId + 1;
-    const diagnostics = createDecoderRequestDiagnostics({
-      source: "mask",
-      requestType: "worker",
-      clipId: `${this.clipId}:worker:${nextPingIndex}`,
-      label: this.sourceAssetId ?? undefined,
-    });
-    if (!diagnostics) {
-      return;
-    }
-
-    this.nextWorkerHealthPingId = nextPingIndex;
-    const pingId = `mask-worker-${nextPingIndex}`;
-    this.workerHealthDiagnostics = diagnostics;
-    this.workerHealthPingId = pingId;
-    logDecoderWorkerPhase(diagnostics, "main:worker:ping:send", {
-      reason,
-      pingId,
-      timeoutMs: MaskVideoFramePlayer.WORKER_HEALTH_PING_TIMEOUT_MS,
-    });
-    this.workerHealthTimeoutHandle = setTimeout(() => {
-      logDecoderWorkerPhase(diagnostics, "main:worker:ping:timeout", {
-        reason,
-        pingId,
-        timeoutMs: MaskVideoFramePlayer.WORKER_HEALTH_PING_TIMEOUT_MS,
-      });
-      this.clearDecoderWorkerHealthProbe();
-    }, MaskVideoFramePlayer.WORKER_HEALTH_PING_TIMEOUT_MS);
-    worker.postMessage({ type: "ping", pingId });
-  }
-
-  private handleDecoderWorkerHealthMessage(
-    message: DecoderWorkerHealthMessage,
-  ): void {
-    const diagnostics = this.workerHealthDiagnostics;
-    if (!diagnostics) {
-      return;
-    }
-
-    if (message.event === "boot") {
-      this.workerResponsive = true;
-      logDecoderWorkerPhase(
-        diagnostics,
-        "worker:health:boot",
-        message.detail,
-        message.workerElapsedMs,
-      );
-      return;
-    }
-
-    if (message.pingId !== this.workerHealthPingId) {
-      return;
-    }
-
-    this.clearDecoderWorkerHealthTimeout();
-    this.workerResponsive = true;
-    logDecoderWorkerPhase(
-      diagnostics,
-      "worker:health:pong",
-      { pingId: message.pingId, ...(message.detail ?? {}) },
-      message.workerElapsedMs,
-    );
-    this.clearDecoderWorkerHealthProbe();
-  }
-
-  private disposeWorker(
-    options: {
-      abortReason?: string;
-      preserveSource?: boolean;
-    } = {},
-  ): void {
-    const { abortReason = "Mask player disposed", preserveSource = false } =
-      options;
-    this.rejectPendingStrictFrame(
-      createMaskRenderAbortError(`${abortReason} during strict render`),
-    );
-    this.rejectPendingPrepare(
-      createMaskRenderAbortError(`${abortReason} during source prepare`),
-    );
-
-    if (this.worker) {
-      this.worker.onmessage = null;
-      this.worker.onerror = null;
-      this.worker.onmessageerror = null;
-      this.finishDecoderWorkerHealthProbe(abortReason);
-      this.worker.terminate();
-      this.worker = null;
-    }
-    this.sourcePrepared = false;
-    this.latestRenderRequestId = null;
-    this.decoderTimeoutCount = 0;
-
-    if (!preserveSource) {
-      this.sourceAsset = null;
-      this.sourceAssetId = null;
-    }
-  }
-
-  private resetStalledDecoderWorker(): void {
-    this.disposeWorker({
-      abortReason: "Mask decoder worker reset",
-      preserveSource: true,
-    });
-    this.worker = this.createWorker();
-  }
-
-  private finishDecoderWorkerHealthProbe(reason: string): void {
-    const diagnostics = this.workerHealthDiagnostics;
-    const pingId = this.workerHealthPingId;
-    this.clearDecoderWorkerHealthTimeout();
-    if (diagnostics && pingId !== null) {
-      logDecoderWorkerPhase(diagnostics, "main:worker:terminated", {
-        reason,
-        pingId,
-      });
-    }
-    this.clearDecoderWorkerHealthProbe();
-  }
-
-  private logDecoderWorkerProblem(
-    phase: string,
-    detail: Record<string, unknown>,
-  ): void {
-    const diagnostics =
-      this.workerHealthDiagnostics ??
-      createDecoderRequestDiagnostics({
-        source: "mask",
-        requestType: "worker",
-        clipId: `${this.clipId}:worker:${this.nextWorkerHealthPingId || "unknown"}`,
-        label: this.sourceAssetId ?? undefined,
-      });
-    logDecoderWorkerPhase(diagnostics, phase, detail);
-    if (diagnostics === this.workerHealthDiagnostics) {
-      this.clearDecoderWorkerHealthProbe();
-    }
-  }
-
-  private clearDecoderWorkerHealthProbe(): void {
-    this.clearDecoderWorkerHealthTimeout();
-    this.workerHealthDiagnostics = undefined;
-    this.workerHealthPingId = null;
-  }
-
-  private clearDecoderWorkerHealthTimeout(): void {
-    if (this.workerHealthTimeoutHandle === null) {
-      return;
-    }
-
-    clearTimeout(this.workerHealthTimeoutHandle);
-    this.workerHealthTimeoutHandle = null;
   }
 
   private resetSpriteFrameState(): void {
@@ -682,20 +503,28 @@ export class MaskVideoFramePlayer {
             return;
           }
 
-          const shouldResetWorker = this.recordDecoderTimeout();
+          const shouldRecover = this.recordDecoderTimeout();
           if (
-            !shouldResetWorker ||
-            attempt >= MaskVideoFramePlayer.STRICT_FRAME_RECOVERY_ATTEMPTS ||
-            !this.canRecoverByResettingDecoder()
+            !shouldRecover ||
+            attempt >= MaskVideoFramePlayer.STRICT_FRAME_RECOVERY_ATTEMPTS
+          ) {
+            throw error;
+          }
+
+          const resolution = await this.recoverStalledDecoder(
+            "strict mask frame timeout",
+          );
+          if (
+            resolution !== "renderer-reset" &&
+            resolution !== "worker-replaced"
           ) {
             throw error;
           }
 
           console.warn(
-            "Mask decoder worker stalled while rendering strict frame; recreating worker",
+            "Mask decoder worker stalled while rendering strict frame; recovering decoder source",
             error,
           );
-          this.resetStalledDecoderWorker();
           await this.ensureSourcePrepared();
           continue;
         }
@@ -710,7 +539,7 @@ export class MaskVideoFramePlayer {
       throw createMaskRenderAbortError("Mask player has been disposed");
     }
 
-    if (!this.worker || !this.sourceAssetId) {
+    if (!this.sourceAssetId) {
       throw createMaskRenderAbortError("Mask player has no source");
     }
 
@@ -722,8 +551,7 @@ export class MaskVideoFramePlayer {
       throw createMaskRenderAbortError("Mask player has been disposed");
     }
 
-    const worker = this.worker;
-    if (!worker || !this.sourceAssetId || !this.sourcePrepared) {
+    if (!this.sourceAssetId || !this.sourcePrepared) {
       throw createMaskRenderAbortError("Mask player has no prepared source");
     }
     const requestId = this.createRenderRequestId();
@@ -743,7 +571,6 @@ export class MaskVideoFramePlayer {
           time: timeSeconds,
           requestId,
         });
-        this.startDecoderWorkerHealthProbe(worker, "strict mask frame timeout");
         return createMaskFrameTimeoutError(timeoutMs);
       },
       registerPending: (pending) => {
@@ -771,8 +598,7 @@ export class MaskVideoFramePlayer {
           requestId,
           timeoutMs: MaskVideoFramePlayer.STRICT_FRAME_TIMEOUT_MS,
         });
-        worker.postMessage({
-          type: "render",
+        this.lease.render({
           clipId: this.clipId,
           time: timeSeconds,
           strict: true,
@@ -806,19 +632,24 @@ export class MaskVideoFramePlayer {
 
   private markDecoderResponsive(): void {
     this.decoderTimeoutCount = 0;
-    this.workerResponsive = true;
   }
 
-  private canRecoverByResettingDecoder(): boolean {
-    const workerAgeMs = performance.now() - this.workerCreatedAtMs;
+  private async recoverStalledDecoder(
+    reason: string,
+  ): Promise<DecoderStallResolution> {
+    this.rejectPendingStrictFrame(
+      createMaskRenderAbortError("Mask decoder recovery superseded strict render"),
+    );
+    this.latestRenderRequestId = null;
+    const resolution = await this.lease.reportStall(this.clipId, reason);
     if (
-      !this.workerResponsive &&
-      workerAgeMs < DECODER_WORKER_STARTUP_GRACE_MS
+      resolution === "renderer-reset" ||
+      resolution === "worker-replaced"
     ) {
-      return false;
+      this.sourcePrepared = false;
+      this.decoderTimeoutCount = 0;
     }
-
-    return canResetDecoderWorker();
+    return resolution;
   }
 
   private rejectPendingStrictFrame(error: Error): void {
@@ -826,7 +657,10 @@ export class MaskVideoFramePlayer {
     this.pendingStrictFrameRequestId = null;
   }
 
-  private isStaleFrameResponse(message: WorkerFrameMessage): boolean {
+  private isStaleFrameResponse(message: {
+    bitmap: ImageBitmap | null;
+    requestId?: string;
+  }): boolean {
     if (
       !this.latestRenderRequestId ||
       typeof message.requestId !== "string" ||
@@ -841,7 +675,10 @@ export class MaskVideoFramePlayer {
     return true;
   }
 
-  private isStaleStrictFrameResponse(message: WorkerFrameMessage): boolean {
+  private isStaleStrictFrameResponse(message: {
+    bitmap: ImageBitmap | null;
+    requestId?: string;
+  }): boolean {
     const expectedRequestId = this.pendingStrictFrameRequestId;
     if (
       !expectedRequestId ||

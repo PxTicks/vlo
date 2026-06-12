@@ -13,6 +13,7 @@ import {
 import type { DecoderRequestDiagnostics } from "../utils/decoderDiagnostics";
 import {
   clearPendingRenderRequest,
+  type CompleteRenderRequestResult,
   completeRenderRequest,
   createRenderRequestQueueState,
   enqueueRenderRequest,
@@ -609,10 +610,11 @@ const loop = async (initialRequest: RenderRequest) => {
 
   while (nextRequest !== null) {
     await processRender(nextRequest);
-    const result = completeRenderRequest(
+    const result: CompleteRenderRequestResult<RenderRequest> =
+      completeRenderRequest(
       renderRequestQueueState,
       nextRequest.clipId,
-    );
+      );
     renderRequestQueueState = result.queueState;
     nextRequest = result.nextRequest;
   }

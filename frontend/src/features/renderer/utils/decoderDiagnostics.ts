@@ -1,6 +1,6 @@
 import { useDebugStore } from "../../../shared/debug/useDebugStore";
 
-export type DecoderDiagnosticSource = "track" | "mask";
+export type DecoderDiagnosticSource = "track" | "mask" | "pool";
 export type DecoderDiagnosticRequestType = "prepare" | "render" | "worker";
 
 export interface DecoderWorkerHealthMessage {
@@ -295,6 +295,12 @@ function isTerminalDiagnosticPhase(phase: string): boolean {
     "worker:render:disposed",
     "worker:render:error",
     "worker:health:pong",
+    "main:pool:spawn",
+    "main:pool:assign",
+    "main:pool:replace",
+    "main:pool:evict",
+    "main:pool:boot-timeout",
+    "main:pool:rehome",
     "main:worker:error",
     "main:worker:messageerror",
     "main:worker:ping:timeout",

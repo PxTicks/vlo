@@ -5,6 +5,7 @@ import type {
 } from "../../../../types/TimelineTypes";
 import type { Asset } from "../../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../../timeline";
+import { resetSharedDecoderWorkerPoolForTests } from "../DecoderWorkerPool";
 
 const drawMaskShapeSpy = vi.fn();
 const sam2SetSourceSpy = vi.fn(async () => undefined);
@@ -207,6 +208,7 @@ function createSam2MaskClip(localId: string, assetId: string): MaskTimelineClip 
 
 describe("TrackRenderEngine masks", () => {
   beforeEach(() => {
+    resetSharedDecoderWorkerPoolForTests();
     drawMaskShapeSpy.mockReset();
     sam2SetSourceSpy.mockReset();
     sam2RenderAtSpy.mockReset();

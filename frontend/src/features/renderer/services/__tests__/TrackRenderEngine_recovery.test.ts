@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import type { Asset } from "../../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../../timeline";
+import { createDecoderWorkerPool, resetSharedDecoderWorkerPoolForTests } from "../DecoderWorkerPool";
 import { resetDecoderWorkerRecoveryForTests } from "../../utils/decoderWorkerRecovery";
 
 const {
@@ -197,6 +198,12 @@ function createAsset(overrides: Partial<Asset> = {}): Asset {
   };
 }
 
+function createEngine() {
+  const decoderPool = createDecoderWorkerPool({ label: "test", size: 1 });
+  const engine = new TrackRenderEngine(1, undefined, undefined, { decoderPool });
+  return { decoderPool, engine };
+}
+
 describe("TrackRenderEngine synchronized playback recovery", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -204,13 +211,14 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     mockWorkerBehaviors.length = 0;
     textureFromSpy.mockClear();
     syncMaskClipsSpy.mockClear();
+    resetSharedDecoderWorkerPoolForTests();
     resetDecoderWorkerRecoveryForTests();
   });
 
   it("reuses an identical in-flight synchronized render request", async () => {
     mockWorkerBehaviors.push(["frame"]);
 
-    const engine = new TrackRenderEngine(1);
+    const { engine, decoderPool } = createEngine();
     const clip = createClip();
     const assets = [createAsset()];
     const masksByParent = new Map<string, []>();
@@ -246,12 +254,13 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     expect(engine.sprite.texture.width).toBe(320);
 
     engine.dispose();
+    decoderPool.dispose();
   });
 
   it("retries the same synchronized frame when no texture has been applied yet", async () => {
     mockWorkerBehaviors.push(["frame"]);
 
-    const engine = new TrackRenderEngine(1);
+    const { engine, decoderPool } = createEngine();
     const clip = createClip();
     const assets = [createAsset()];
     const masksByParent = new Map<string, []>();
@@ -284,13 +293,14 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     expect(engine["currentTextureClipId"]).toBe(clip.id);
 
     engine.dispose();
+    decoderPool.dispose();
   });
 
   it("drops a first synchronized timeout without recreating the worker", async () => {
     mockWorkerBehaviors.push(["hang"]);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const engine = new TrackRenderEngine(1);
+    const { engine, decoderPool } = createEngine();
     const clip = createClip();
     const assets = [createAsset()];
     const masksByParent = new Map<string, []>();
@@ -315,7 +325,7 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     expect(mockWorkerInstances[0]?.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "render",
-        clipId: clip.id,
+        clipId: expect.stringMatching(/\/clip-1$/),
         strict: true,
       }),
     );
@@ -324,13 +334,14 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
 
     warnSpy.mockRestore();
     engine.dispose();
+    decoderPool.dispose();
   });
 
-  it("recreates the synchronized worker after consecutive timeouts", async () => {
-    mockWorkerBehaviors.push(["frame", "hang", "hang"], ["frame"]);
+  it("disposes and re-prepares the synchronized source after consecutive timeouts", async () => {
+    mockWorkerBehaviors.push(["frame", "hang", "hang", "frame"]);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const engine = new TrackRenderEngine(1);
+    const { engine, decoderPool } = createEngine();
     const clip = createClip();
     const assets = [createAsset()];
     const masksByParent = new Map<string, []>();
@@ -374,38 +385,55 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     await vi.runAllTimersAsync();
     await secondRender;
 
-    expect(mockWorkerInstances).toHaveLength(2);
-    expect(mockWorkerInstances[0]?.terminate).toHaveBeenCalledTimes(1);
-    expect(mockWorkerInstances[1]?.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "prepare",
-        clipId: clip.id,
-        file: expect.any(File),
-      }),
-    );
-    expect(mockWorkerInstances[1]?.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "render",
-        clipId: clip.id,
-        strict: true,
-      }),
-    );
+    expect(
+      mockWorkerInstances.some((worker) => worker.terminate.mock.calls.length > 0),
+    ).toBe(false);
+    expect(
+      mockWorkerInstances.some((worker) =>
+        worker.postMessage.mock.calls.some(
+          ([message]) =>
+            message.type === "dispose" &&
+            /\/clip-1$/.test(String(message.clipId)),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      mockWorkerInstances.some((worker) =>
+        worker.postMessage.mock.calls.some(
+          ([message]) =>
+            message.type === "prepare" &&
+            /\/clip-1$/.test(String(message.clipId)) &&
+            message.file instanceof File,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      mockWorkerInstances.some((worker) =>
+        worker.postMessage.mock.calls.some(
+          ([message]) =>
+            message.type === "render" &&
+            /\/clip-1$/.test(String(message.clipId)) &&
+            message.strict === true,
+        ),
+      ),
+    ).toBe(true);
     expect(engine["currentTextureClipId"]).toBe(clip.id);
     expect(engine.sprite.texture.width).toBe(320);
     expect(warnSpy).toHaveBeenCalledWith(
-      "Live decoder worker stalled during synchronized playback; recreating worker",
+      "Live decoder worker stalled during synchronized playback; recovering decoder source",
       expect.any(Error),
     );
 
     warnSpy.mockRestore();
     engine.dispose();
+    decoderPool.dispose();
   });
 
   it("renders the newest queued live request after an older timeout", async () => {
     mockWorkerBehaviors.push(["hang", "frame"]);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const engine = new TrackRenderEngine(1);
+    const { engine, decoderPool } = createEngine();
     const clip = createClip();
     const assets = [createAsset()];
     const masksByParent = new Map<string, []>();
@@ -447,6 +475,7 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
 
     warnSpy.mockRestore();
     engine.dispose();
+    decoderPool.dispose();
   });
 
   it("does not reset the content worker when mask synchronization times out", async () => {
@@ -459,7 +488,7 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const engine = new TrackRenderEngine(1);
+    const { engine, decoderPool } = createEngine();
     const clip = createClip();
     const assets = [createAsset()];
     const masksByParent = new Map<string, []>();
@@ -485,5 +514,6 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
 
     warnSpy.mockRestore();
     engine.dispose();
+    decoderPool.dispose();
   });
 });

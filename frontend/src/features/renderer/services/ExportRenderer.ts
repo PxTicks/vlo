@@ -16,6 +16,7 @@ import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
 import { TrackRenderEngine } from "./TrackRenderEngine";
 import { TrackAudioRenderer } from "./TrackAudioRenderer";
+import { createDecoderWorkerPool } from "./DecoderWorkerPool";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
 import { getAssetInput } from "../../userAssets";
 import {
@@ -280,6 +281,7 @@ export class ExportRenderer {
   ): Promise<RenderResult> {
     this.isCancelled = false;
     this.cancelController = new AbortController();
+    const decoderPool = createDecoderWorkerPool({ label: "export" });
     if (options.signal?.aborted) {
       this.cancel();
       throw createRenderAbortError();
@@ -469,6 +471,7 @@ export class ExportRenderer {
           {
             trackId: track.id,
             adjustmentEffectResolver,
+            decoderPool,
           },
         );
         this.orchestrator!.registerTrack(track.id, engine.container);
@@ -600,6 +603,7 @@ export class ExportRenderer {
       outputEncoder.dispose();
       frameTexture.destroy(true);
       this.dispose();
+      decoderPool.dispose();
     }
   }
 
@@ -611,6 +615,7 @@ export class ExportRenderer {
   ): Promise<Blob> {
     this.isCancelled = false;
     this.cancelController = new AbortController();
+    const decoderPool = createDecoderWorkerPool({ label: "export" });
     if (options.signal?.aborted) {
       this.cancel();
       throw createRenderAbortError();
@@ -665,6 +670,7 @@ export class ExportRenderer {
           {
             trackId: track.id,
             adjustmentEffectResolver,
+            decoderPool,
           },
         );
         this.orchestrator!.registerTrack(track.id, engine.container);
@@ -745,6 +751,7 @@ export class ExportRenderer {
       options.signal?.removeEventListener("abort", onAbort);
       this.cancelController = null;
       this.dispose();
+      decoderPool.dispose();
     }
   }
 

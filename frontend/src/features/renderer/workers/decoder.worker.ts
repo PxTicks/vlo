@@ -38,6 +38,10 @@ interface PrefetchedBitmapFrame {
 
 type WorkerMessage =
   | {
+      type: "ping";
+      pingId: string;
+    }
+  | {
       type: "prepare";
       url: string;
       clipId: string;
@@ -68,6 +72,24 @@ interface RenderRequest {
   requestId?: string;
   diagnostics?: DecoderRequestDiagnostics;
 }
+
+const workerBootedAtMs = performance.now();
+
+function postWorkerHealth(
+  event: "boot" | "pong",
+  detail: { pingId?: string } = {},
+): void {
+  (self as DedicatedWorkerGlobalScope).postMessage({
+    type: "worker-health",
+    event,
+    workerElapsedMs: performance.now() - workerBootedAtMs,
+    ...detail,
+  });
+}
+
+setTimeout(() => {
+  postWorkerHealth("boot");
+}, 0);
 
 function postDecoderDiagnostic(
   diagnostics: DecoderRequestDiagnostics | undefined,
@@ -565,6 +587,12 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
 
   try {
     switch (type) {
+      case "ping": {
+        const { pingId } = e.data as Extract<WorkerMessage, { type: "ping" }>;
+        postWorkerHealth("pong", { pingId });
+        break;
+      }
+
       case "prepare": {
         const { url, clipId, kind, width, height, fit, file, diagnostics } =
           e.data as Extract<WorkerMessage, { type: "prepare" }>;

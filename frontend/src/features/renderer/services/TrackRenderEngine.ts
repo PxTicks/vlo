@@ -29,11 +29,15 @@ import {
 } from "../utils/strictFrameRequest";
 import {
   createDecoderRequestDiagnostics,
+  type DecoderRequestDiagnostics,
+  type DecoderWorkerHealthMessage,
   isDecoderDiagnosticMessage,
+  isDecoderWorkerHealthMessage,
   logDecoderDiagnostic,
   logDecoderRequestAborted,
   logDecoderRequestSent,
   logDecoderRequestTimeout,
+  logDecoderWorkerPhase,
 } from "../utils/decoderDiagnostics";
 import {
   createTextTexture,
@@ -130,6 +134,7 @@ export class TrackRenderEngine {
   private static readonly SYNCHRONIZED_RECOVERY_ATTEMPTS = 1;
   private static readonly LIVE_RENDER_RECOVERY_ATTEMPTS = 1;
   private static readonly LIVE_DECODER_RESET_TIMEOUTS = 2;
+  private static readonly WORKER_HEALTH_PING_TIMEOUT_MS = 1000;
 
   public readonly sprite: Sprite;
   public readonly container: Container;
@@ -162,6 +167,11 @@ export class TrackRenderEngine {
   private pendingLiveFrameRequestId: string | null = null;
   private nextLiveFrameRequestId = 0;
   private liveDecoderTimeoutCount = 0;
+  private workerHealthDiagnostics: DecoderRequestDiagnostics | undefined;
+  private workerHealthPingId: string | null = null;
+  private workerHealthTimeoutHandle: ReturnType<typeof setTimeout> | null =
+    null;
+  private nextWorkerHealthPingId = 0;
 
   // Live synchronized pipeline
   private liveRenderQueue: LiveRenderRequest[] = [];
@@ -996,6 +1006,11 @@ export class TrackRenderEngine {
       return;
     }
 
+    if (isDecoderWorkerHealthMessage(e.data)) {
+      this.handleDecoderWorkerHealthMessage(e.data);
+      return;
+    }
+
     const { type, bitmap, clipId, transformTime, error, message, requestId } =
       e.data;
 
@@ -1048,7 +1063,76 @@ export class TrackRenderEngine {
   private createWorker(): Worker {
     const worker = new DecoderWorker();
     worker.onmessage = this.handleWorkerMessage.bind(this);
+    this.startDecoderWorkerHealthProbe(worker, "created");
     return worker;
+  }
+
+  private startDecoderWorkerHealthProbe(worker: Worker, reason: string): void {
+    if (this.workerHealthPingId !== null) {
+      return;
+    }
+
+    const nextPingIndex = this.nextWorkerHealthPingId + 1;
+    const diagnostics = createDecoderRequestDiagnostics({
+      source: "track",
+      requestType: "worker",
+      clipId: `worker:${nextPingIndex}`,
+      label: this.trackId ?? undefined,
+    });
+    if (!diagnostics) {
+      return;
+    }
+
+    this.nextWorkerHealthPingId = nextPingIndex;
+    const pingId = `track-worker-${nextPingIndex}`;
+    this.workerHealthDiagnostics = diagnostics;
+    this.workerHealthPingId = pingId;
+    logDecoderWorkerPhase(diagnostics, "main:worker:ping:send", {
+      reason,
+      pingId,
+      timeoutMs: TrackRenderEngine.WORKER_HEALTH_PING_TIMEOUT_MS,
+    });
+    this.workerHealthTimeoutHandle = setTimeout(() => {
+      logDecoderWorkerPhase(diagnostics, "main:worker:ping:timeout", {
+        reason,
+        pingId,
+        timeoutMs: TrackRenderEngine.WORKER_HEALTH_PING_TIMEOUT_MS,
+      });
+      this.clearDecoderWorkerHealthProbe();
+    }, TrackRenderEngine.WORKER_HEALTH_PING_TIMEOUT_MS);
+    worker.postMessage({ type: "ping", pingId });
+  }
+
+  private handleDecoderWorkerHealthMessage(
+    message: DecoderWorkerHealthMessage,
+  ): void {
+    const diagnostics = this.workerHealthDiagnostics;
+    if (!diagnostics) {
+      return;
+    }
+
+    if (message.event === "boot") {
+      logDecoderWorkerPhase(
+        diagnostics,
+        "worker:health:boot",
+        {},
+        message.workerElapsedMs,
+      );
+      return;
+    }
+
+    if (message.pingId !== this.workerHealthPingId) {
+      return;
+    }
+
+    this.clearDecoderWorkerHealthTimeout();
+    logDecoderWorkerPhase(
+      diagnostics,
+      "worker:health:pong",
+      { pingId: message.pingId },
+      message.workerElapsedMs,
+    );
+    this.clearDecoderWorkerHealthProbe();
   }
 
   private postPrepareMessage(clip: TimelineClip, asset: Asset): void {
@@ -1400,6 +1484,7 @@ export class TrackRenderEngine {
           time: localTimeSeconds,
           requestId,
         });
+        this.startDecoderWorkerHealthProbe(this.worker, "live frame timeout");
         return createLiveFrameTimeoutError(timeoutMs, clipId);
       },
       registerPending: (pending) => {
@@ -1541,8 +1626,37 @@ export class TrackRenderEngine {
     this.preparedClipTouchedAtMs.clear();
     this.liveDecoderTimeoutCount = 0;
 
+    this.finishDecoderWorkerHealthProbe("live decoder worker reset");
     this.worker.terminate();
     this.worker = this.createWorker();
+  }
+
+  private finishDecoderWorkerHealthProbe(reason: string): void {
+    const diagnostics = this.workerHealthDiagnostics;
+    const pingId = this.workerHealthPingId;
+    this.clearDecoderWorkerHealthTimeout();
+    if (diagnostics && pingId !== null) {
+      logDecoderWorkerPhase(diagnostics, "main:worker:terminated", {
+        reason,
+        pingId,
+      });
+    }
+    this.clearDecoderWorkerHealthProbe();
+  }
+
+  private clearDecoderWorkerHealthProbe(): void {
+    this.clearDecoderWorkerHealthTimeout();
+    this.workerHealthDiagnostics = undefined;
+    this.workerHealthPingId = null;
+  }
+
+  private clearDecoderWorkerHealthTimeout(): void {
+    if (this.workerHealthTimeoutHandle === null) {
+      return;
+    }
+
+    clearTimeout(this.workerHealthTimeoutHandle);
+    this.workerHealthTimeoutHandle = null;
   }
 
   private pruneLiveRenderQueue(nowMs: number) {
@@ -1803,6 +1917,7 @@ export class TrackRenderEngine {
     this.retiredTextures.flush();
 
     this.maskController.dispose();
+    this.finishDecoderWorkerHealthProbe("track render engine disposed");
     this.worker.terminate();
     if (this.container) {
       if (this.container.parent) {

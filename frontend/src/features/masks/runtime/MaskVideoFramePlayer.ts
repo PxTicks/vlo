@@ -9,11 +9,15 @@ import {
 import {
   createDecoderRequestDiagnostics,
   type DecoderDiagnosticMessage,
+  type DecoderRequestDiagnostics,
+  type DecoderWorkerHealthMessage,
   isDecoderDiagnosticMessage,
+  isDecoderWorkerHealthMessage,
   logDecoderDiagnostic,
   logDecoderRequestAborted,
   logDecoderRequestSent,
   logDecoderRequestTimeout,
+  logDecoderWorkerPhase,
 } from "../../renderer/utils/decoderDiagnostics";
 import {
   awaitStrictFrame,
@@ -43,6 +47,7 @@ type WorkerMessage =
   | WorkerReadyMessage
   | WorkerFrameMessage
   | DecoderDiagnosticMessage
+  | DecoderWorkerHealthMessage
   | WorkerErrorMessage;
 
 function createMaskRenderAbortError(
@@ -84,6 +89,7 @@ export class MaskVideoFramePlayer {
   private static readonly STRICT_FRAME_TIMEOUT_MS = 5000;
   private static readonly STRICT_FRAME_RECOVERY_ATTEMPTS = 1;
   private static readonly DECODER_RESET_TIMEOUTS = 2;
+  private static readonly WORKER_HEALTH_PING_TIMEOUT_MS = 1000;
 
   public readonly sprite: Sprite;
 
@@ -104,6 +110,11 @@ export class MaskVideoFramePlayer {
   private strictRenderGeneration = 0;
   private decoderTimeoutCount = 0;
   private strictRenderChain: Promise<void> = Promise.resolve();
+  private workerHealthDiagnostics: DecoderRequestDiagnostics | undefined;
+  private workerHealthPingId: string | null = null;
+  private workerHealthTimeoutHandle: ReturnType<typeof setTimeout> | null =
+    null;
+  private nextWorkerHealthPingId = 0;
   private readonly retiredTextures = new RetiredTextureQueue(
     () => this.sprite.texture,
   );
@@ -242,6 +253,11 @@ export class MaskVideoFramePlayer {
       return;
     }
 
+    if (isDecoderWorkerHealthMessage(message)) {
+      this.handleDecoderWorkerHealthMessage(message);
+      return;
+    }
+
     if (message.type === "ready" && message.clipId === this.clipId) {
       this.markDecoderResponsive();
       this.resolvePendingPrepare();
@@ -376,6 +392,12 @@ export class MaskVideoFramePlayer {
       logDecoderRequestTimeout(diagnostics, {
         timeoutMs: MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS,
       });
+      if (this.worker) {
+        this.startDecoderWorkerHealthProbe(
+          this.worker,
+          "mask source prepare timeout",
+        );
+      }
       this.rejectPendingPrepare(
         createMaskSourcePrepareTimeoutError(
           MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS,
@@ -432,7 +454,76 @@ export class MaskVideoFramePlayer {
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
       this.handleWorkerMessage(worker, event);
     };
+    this.startDecoderWorkerHealthProbe(worker, "created");
     return worker;
+  }
+
+  private startDecoderWorkerHealthProbe(worker: Worker, reason: string): void {
+    if (this.workerHealthPingId !== null) {
+      return;
+    }
+
+    const nextPingIndex = this.nextWorkerHealthPingId + 1;
+    const diagnostics = createDecoderRequestDiagnostics({
+      source: "mask",
+      requestType: "worker",
+      clipId: `${this.clipId}:worker:${nextPingIndex}`,
+      label: this.sourceAssetId ?? undefined,
+    });
+    if (!diagnostics) {
+      return;
+    }
+
+    this.nextWorkerHealthPingId = nextPingIndex;
+    const pingId = `mask-worker-${nextPingIndex}`;
+    this.workerHealthDiagnostics = diagnostics;
+    this.workerHealthPingId = pingId;
+    logDecoderWorkerPhase(diagnostics, "main:worker:ping:send", {
+      reason,
+      pingId,
+      timeoutMs: MaskVideoFramePlayer.WORKER_HEALTH_PING_TIMEOUT_MS,
+    });
+    this.workerHealthTimeoutHandle = setTimeout(() => {
+      logDecoderWorkerPhase(diagnostics, "main:worker:ping:timeout", {
+        reason,
+        pingId,
+        timeoutMs: MaskVideoFramePlayer.WORKER_HEALTH_PING_TIMEOUT_MS,
+      });
+      this.clearDecoderWorkerHealthProbe();
+    }, MaskVideoFramePlayer.WORKER_HEALTH_PING_TIMEOUT_MS);
+    worker.postMessage({ type: "ping", pingId });
+  }
+
+  private handleDecoderWorkerHealthMessage(
+    message: DecoderWorkerHealthMessage,
+  ): void {
+    const diagnostics = this.workerHealthDiagnostics;
+    if (!diagnostics) {
+      return;
+    }
+
+    if (message.event === "boot") {
+      logDecoderWorkerPhase(
+        diagnostics,
+        "worker:health:boot",
+        {},
+        message.workerElapsedMs,
+      );
+      return;
+    }
+
+    if (message.pingId !== this.workerHealthPingId) {
+      return;
+    }
+
+    this.clearDecoderWorkerHealthTimeout();
+    logDecoderWorkerPhase(
+      diagnostics,
+      "worker:health:pong",
+      { pingId: message.pingId },
+      message.workerElapsedMs,
+    );
+    this.clearDecoderWorkerHealthProbe();
   }
 
   private disposeWorker(
@@ -452,6 +543,7 @@ export class MaskVideoFramePlayer {
 
     if (this.worker) {
       this.worker.onmessage = null;
+      this.finishDecoderWorkerHealthProbe(abortReason);
       this.worker.terminate();
       this.worker = null;
     }
@@ -471,6 +563,34 @@ export class MaskVideoFramePlayer {
       preserveSource: true,
     });
     this.worker = this.createWorker();
+  }
+
+  private finishDecoderWorkerHealthProbe(reason: string): void {
+    const diagnostics = this.workerHealthDiagnostics;
+    const pingId = this.workerHealthPingId;
+    this.clearDecoderWorkerHealthTimeout();
+    if (diagnostics && pingId !== null) {
+      logDecoderWorkerPhase(diagnostics, "main:worker:terminated", {
+        reason,
+        pingId,
+      });
+    }
+    this.clearDecoderWorkerHealthProbe();
+  }
+
+  private clearDecoderWorkerHealthProbe(): void {
+    this.clearDecoderWorkerHealthTimeout();
+    this.workerHealthDiagnostics = undefined;
+    this.workerHealthPingId = null;
+  }
+
+  private clearDecoderWorkerHealthTimeout(): void {
+    if (this.workerHealthTimeoutHandle === null) {
+      return;
+    }
+
+    clearTimeout(this.workerHealthTimeoutHandle);
+    this.workerHealthTimeoutHandle = null;
   }
 
   private resetSpriteFrameState(): void {
@@ -578,6 +698,7 @@ export class MaskVideoFramePlayer {
           time: timeSeconds,
           requestId,
         });
+        this.startDecoderWorkerHealthProbe(worker, "strict mask frame timeout");
         return createMaskFrameTimeoutError(timeoutMs);
       },
       registerPending: (pending) => {

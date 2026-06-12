@@ -1,7 +1,15 @@
 import { useDebugStore } from "../../../shared/debug/useDebugStore";
 
 export type DecoderDiagnosticSource = "track" | "mask";
-export type DecoderDiagnosticRequestType = "prepare" | "render";
+export type DecoderDiagnosticRequestType = "prepare" | "render" | "worker";
+
+export interface DecoderWorkerHealthMessage {
+  type: "worker-health";
+  event: "boot" | "pong";
+  pingId?: string;
+  workerElapsedMs?: number;
+  detail?: Record<string, unknown>;
+}
 
 export interface DecoderRequestDiagnostics {
   traceId: string;
@@ -92,6 +100,19 @@ export function isDecoderDiagnosticMessage(
   );
 }
 
+export function isDecoderWorkerHealthMessage(
+  value: unknown,
+): value is DecoderWorkerHealthMessage {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return (
+    (value as { type?: unknown }).type === "worker-health" &&
+    ["boot", "pong"].includes(String((value as { event?: unknown }).event))
+  );
+}
+
 export function logDecoderDiagnostic(
   message: DecoderDiagnosticMessage,
 ): void {
@@ -158,6 +179,22 @@ export function logDecoderRequestAborted(
   logDecoderDiagnostic(
     createDecoderDiagnosticMessage(diagnostics, "main:abort", detail),
   );
+}
+
+export function logDecoderWorkerPhase(
+  diagnostics: DecoderRequestDiagnostics | undefined,
+  phase: string,
+  detail?: Record<string, unknown>,
+  workerElapsedMs?: number,
+): void {
+  if (!diagnostics) {
+    return;
+  }
+
+  logDecoderDiagnostic({
+    ...createDecoderDiagnosticMessage(diagnostics, phase, detail),
+    workerElapsedMs,
+  });
 }
 
 function scheduleDecoderDiagnosticSummary(): void {
@@ -257,6 +294,9 @@ function isTerminalDiagnosticPhase(phase: string): boolean {
     "worker:render:missing-renderer",
     "worker:render:disposed",
     "worker:render:error",
+    "worker:health:pong",
+    "main:worker:ping:timeout",
+    "main:worker:terminated",
   ].includes(phase);
 }
 
@@ -279,6 +319,7 @@ function createSummaryRow(trace: DecoderDiagnosticTrace): Record<string, unknown
         "worker:prepare:posted-ready",
         "worker:prepare:posted-ready-existing",
         "worker:render:posted-frame",
+        "worker:health:pong",
       ].includes(phase.phase),
     );
   const maxWorkerElapsedMs = Math.max(

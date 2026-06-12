@@ -31,6 +31,7 @@ interface DecoderDiagnosticTrace extends DecoderRequestDiagnostics {
 }
 
 const DECODER_DIAGNOSTICS_FLUSH_DELAY_MS = 1200;
+const DECODER_DIAGNOSTICS_STALE_TRACE_MS = 8000;
 let nextTraceId = 0;
 let flushHandle: ReturnType<typeof setTimeout> | null = null;
 const pendingTraces = new Map<string, DecoderDiagnosticTrace>();
@@ -162,8 +163,23 @@ function flushDecoderDiagnosticSummary(): void {
     return;
   }
 
-  const traces = [...pendingTraces.values()];
-  pendingTraces.clear();
+  if (!isDecoderDiagnosticsEnabled()) {
+    pendingTraces.clear();
+    return;
+  }
+
+  const nowMs = performance.now();
+  const traces = [...pendingTraces.values()].filter((trace) =>
+    shouldFlushTrace(trace, nowMs),
+  );
+  for (const trace of traces) {
+    pendingTraces.delete(trace.traceId);
+  }
+
+  if (traces.length === 0) {
+    scheduleDecoderDiagnosticSummary();
+    return;
+  }
 
   const startedAtMs = Math.min(...traces.map((trace) => trace.requestedAtMs));
   const endedAtMs = Math.max(
@@ -197,6 +213,33 @@ function flushDecoderDiagnosticSummary(): void {
     })),
   );
   console.groupEnd();
+
+  if (pendingTraces.size > 0) {
+    scheduleDecoderDiagnosticSummary();
+  }
+}
+
+function shouldFlushTrace(
+  trace: DecoderDiagnosticTrace,
+  nowMs: number,
+): boolean {
+  return (
+    trace.phases.some((phase) => isTerminalDiagnosticPhase(phase.phase)) ||
+    nowMs - trace.requestedAtMs >= DECODER_DIAGNOSTICS_STALE_TRACE_MS
+  );
+}
+
+function isTerminalDiagnosticPhase(phase: string): boolean {
+  return [
+    "main:timeout",
+    "worker:prepare:posted-ready",
+    "worker:prepare:posted-ready-existing",
+    "worker:prepare:error",
+    "worker:render:posted-frame",
+    "worker:render:missing-renderer",
+    "worker:render:disposed",
+    "worker:render:error",
+  ].includes(phase);
 }
 
 function createSummaryRow(trace: DecoderDiagnosticTrace): Record<string, unknown> {

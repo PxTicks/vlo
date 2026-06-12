@@ -147,6 +147,19 @@ export function logDecoderRequestTimeout(
   );
 }
 
+export function logDecoderRequestAborted(
+  diagnostics: DecoderRequestDiagnostics | undefined,
+  detail?: Record<string, unknown>,
+): void {
+  if (!diagnostics) {
+    return;
+  }
+
+  logDecoderDiagnostic(
+    createDecoderDiagnosticMessage(diagnostics, "main:abort", detail),
+  );
+}
+
 function scheduleDecoderDiagnosticSummary(): void {
   if (flushHandle !== null) {
     clearTimeout(flushHandle);
@@ -169,9 +182,22 @@ function flushDecoderDiagnosticSummary(): void {
   }
 
   const nowMs = performance.now();
-  const traces = [...pendingTraces.values()].filter((trace) =>
-    shouldFlushTrace(trace, nowMs),
-  );
+  const traces = [...pendingTraces.values()].filter((trace) => {
+    if (trace.phases.some((phase) => isTerminalDiagnosticPhase(phase.phase))) {
+      return true;
+    }
+
+    if (nowMs - trace.requestedAtMs < DECODER_DIAGNOSTICS_STALE_TRACE_MS) {
+      return false;
+    }
+
+    trace.phases.push({
+      phase: "main:stale",
+      mainElapsedMs: nowMs - trace.requestedAtMs,
+      detail: { staleTraceMs: DECODER_DIAGNOSTICS_STALE_TRACE_MS },
+    });
+    return true;
+  });
   for (const trace of traces) {
     pendingTraces.delete(trace.traceId);
   }
@@ -219,18 +245,10 @@ function flushDecoderDiagnosticSummary(): void {
   }
 }
 
-function shouldFlushTrace(
-  trace: DecoderDiagnosticTrace,
-  nowMs: number,
-): boolean {
-  return (
-    trace.phases.some((phase) => isTerminalDiagnosticPhase(phase.phase)) ||
-    nowMs - trace.requestedAtMs >= DECODER_DIAGNOSTICS_STALE_TRACE_MS
-  );
-}
-
 function isTerminalDiagnosticPhase(phase: string): boolean {
   return [
+    "main:abort",
+    "main:stale",
     "main:timeout",
     "worker:prepare:posted-ready",
     "worker:prepare:posted-ready-existing",
@@ -249,6 +267,8 @@ function createSummaryRow(trace: DecoderDiagnosticTrace): Record<string, unknown
   const timeoutPhase = trace.phases.find(
     (phase) => phase.phase === "main:timeout",
   );
+  const abortPhase = trace.phases.find((phase) => phase.phase === "main:abort");
+  const stalePhase = trace.phases.find((phase) => phase.phase === "main:stale");
   const workerReceivedPhase = trace.phases.find((phase) =>
     phase.phase.endsWith(":received"),
   );
@@ -292,5 +312,7 @@ function createSummaryRow(trace: DecoderDiagnosticTrace): Record<string, unknown
     mediaTime: sendDetail.time ?? "",
     strict: sendDetail.strict ?? "",
     timeoutMs: sendDetail.timeoutMs ?? timeoutPhase?.detail?.timeoutMs ?? "",
+    abortReason: abortPhase?.detail?.reason ?? "",
+    staleTraceMs: stalePhase?.detail?.staleTraceMs ?? "",
   };
 }

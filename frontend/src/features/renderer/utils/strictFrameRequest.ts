@@ -10,6 +10,8 @@ export interface StrictFrameRequestOptions<T> {
   registerPending: (pending: StrictFramePending<T>) => void;
   /** Clear the slot — only if it still holds `pending` (avoids clobbering a replacement). */
   unregisterPending: (pending: StrictFramePending<T>) => void;
+  /** Called only when external code rejects the pending request before it resolves or times out. */
+  onExternalReject?: (error: Error) => void;
   /** Post the underlying render message. Called after the pending slot is installed. */
   sendRequest: () => void;
 }
@@ -42,7 +44,11 @@ export function awaitStrictFrame<T>(
 
     const pending: StrictFramePending<T> = {
       resolve: (payload) => settle(() => resolve(payload)),
-      reject: (error) => settle(() => reject(error)),
+      reject: (error) =>
+        settle(() => {
+          options.onExternalReject?.(error);
+          reject(error);
+        }),
     };
 
     options.registerPending(pending);
@@ -50,7 +56,8 @@ export function awaitStrictFrame<T>(
     const { timeoutMs, createTimeoutError } = options;
     if (typeof timeoutMs === "number" && timeoutMs > 0) {
       timeoutHandle = setTimeout(() => {
-        pending.reject(createTimeoutError(timeoutMs));
+        const timeoutError = createTimeoutError(timeoutMs);
+        settle(() => reject(timeoutError));
       }, timeoutMs);
     }
 

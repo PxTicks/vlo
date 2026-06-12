@@ -31,6 +31,7 @@ import {
   createDecoderRequestDiagnostics,
   isDecoderDiagnosticMessage,
   logDecoderDiagnostic,
+  logDecoderRequestAborted,
   logDecoderRequestSent,
   logDecoderRequestTimeout,
 } from "../utils/decoderDiagnostics";
@@ -1410,6 +1411,14 @@ export class TrackRenderEngine {
           this.pendingLiveFrame = null;
           this.pendingLiveFrameRequestId = null;
         }
+      },
+      onExternalReject: (error) => {
+        logDecoderRequestAborted(diagnostics, {
+          reason: error.name,
+          message: error.message,
+          time: localTimeSeconds,
+          requestId,
+        });
       },
       sendRequest: () => {
         logDecoderRequestSent(diagnostics, {

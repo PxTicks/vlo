@@ -11,6 +11,7 @@ import {
   type DecoderDiagnosticMessage,
   isDecoderDiagnosticMessage,
   logDecoderDiagnostic,
+  logDecoderRequestAborted,
   logDecoderRequestSent,
   logDecoderRequestTimeout,
 } from "../../renderer/utils/decoderDiagnostics";
@@ -588,6 +589,14 @@ export class MaskVideoFramePlayer {
           this.pendingStrictFrame = null;
           this.pendingStrictFrameRequestId = null;
         }
+      },
+      onExternalReject: (error) => {
+        logDecoderRequestAborted(diagnostics, {
+          reason: error.name,
+          message: error.message,
+          time: timeSeconds,
+          requestId,
+        });
       },
       sendRequest: () => {
         logDecoderRequestSent(diagnostics, {

@@ -12,6 +12,7 @@ import {
   isDecoderDiagnosticMessage,
   logDecoderDiagnostic,
   logDecoderRequestSent,
+  logDecoderRequestTimeout,
 } from "../../renderer/utils/decoderDiagnostics";
 import {
   awaitStrictFrame,
@@ -363,7 +364,17 @@ export class MaskVideoFramePlayer {
       this.rejectPrepare = reject;
     });
 
+    const diagnostics = createDecoderRequestDiagnostics({
+      source: "mask",
+      requestType: "prepare",
+      clipId: this.clipId,
+      label: this.sourceAssetId ?? undefined,
+    });
+
     this.prepareTimeoutHandle = setTimeout(() => {
+      logDecoderRequestTimeout(diagnostics, {
+        timeoutMs: MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS,
+      });
       this.rejectPendingPrepare(
         createMaskSourcePrepareTimeoutError(
           MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS,
@@ -371,12 +382,6 @@ export class MaskVideoFramePlayer {
       );
     }, MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS);
 
-    const diagnostics = createDecoderRequestDiagnostics({
-      source: "mask",
-      requestType: "prepare",
-      clipId: this.clipId,
-      label: this.sourceAssetId ?? undefined,
-    });
     logDecoderRequestSent(diagnostics, {
       kind: "mask_video",
       hasFile: !!asset.file,
@@ -566,7 +571,14 @@ export class MaskVideoFramePlayer {
 
     await awaitStrictFrame<void>({
       timeoutMs: MaskVideoFramePlayer.STRICT_FRAME_TIMEOUT_MS,
-      createTimeoutError: createMaskFrameTimeoutError,
+      createTimeoutError: (timeoutMs) => {
+        logDecoderRequestTimeout(diagnostics, {
+          timeoutMs,
+          time: timeSeconds,
+          requestId,
+        });
+        return createMaskFrameTimeoutError(timeoutMs);
+      },
       registerPending: (pending) => {
         this.pendingStrictFrame = pending;
         this.pendingStrictFrameRequestId = requestId;

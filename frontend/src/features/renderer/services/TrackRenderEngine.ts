@@ -32,6 +32,7 @@ import {
   isDecoderDiagnosticMessage,
   logDecoderDiagnostic,
   logDecoderRequestSent,
+  logDecoderRequestTimeout,
 } from "../utils/decoderDiagnostics";
 import {
   createTextTexture,
@@ -1392,8 +1393,14 @@ export class TrackRenderEngine {
 
     return awaitStrictFrame<LiveFramePayload>({
       timeoutMs: options.timeoutMs,
-      createTimeoutError: (timeoutMs) =>
-        createLiveFrameTimeoutError(timeoutMs, clipId),
+      createTimeoutError: (timeoutMs) => {
+        logDecoderRequestTimeout(diagnostics, {
+          timeoutMs,
+          time: localTimeSeconds,
+          requestId,
+        });
+        return createLiveFrameTimeoutError(timeoutMs, clipId);
+      },
       registerPending: (pending) => {
         this.pendingLiveFrame = pending;
         this.pendingLiveFrameRequestId = requestId;

@@ -454,6 +454,19 @@ export class MaskVideoFramePlayer {
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
       this.handleWorkerMessage(worker, event);
     };
+    worker.onerror = (event) => {
+      this.logDecoderWorkerProblem("main:worker:error", {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+      });
+    };
+    worker.onmessageerror = (event) => {
+      this.logDecoderWorkerProblem("main:worker:messageerror", {
+        dataType: typeof event.data,
+      });
+    };
     this.startDecoderWorkerHealthProbe(worker, "created");
     return worker;
   }
@@ -543,6 +556,8 @@ export class MaskVideoFramePlayer {
 
     if (this.worker) {
       this.worker.onmessage = null;
+      this.worker.onerror = null;
+      this.worker.onmessageerror = null;
       this.finishDecoderWorkerHealthProbe(abortReason);
       this.worker.terminate();
       this.worker = null;
@@ -576,6 +591,24 @@ export class MaskVideoFramePlayer {
       });
     }
     this.clearDecoderWorkerHealthProbe();
+  }
+
+  private logDecoderWorkerProblem(
+    phase: string,
+    detail: Record<string, unknown>,
+  ): void {
+    const diagnostics =
+      this.workerHealthDiagnostics ??
+      createDecoderRequestDiagnostics({
+        source: "mask",
+        requestType: "worker",
+        clipId: `${this.clipId}:worker:${this.nextWorkerHealthPingId || "unknown"}`,
+        label: this.sourceAssetId ?? undefined,
+      });
+    logDecoderWorkerPhase(diagnostics, phase, detail);
+    if (diagnostics === this.workerHealthDiagnostics) {
+      this.clearDecoderWorkerHealthProbe();
+    }
   }
 
   private clearDecoderWorkerHealthProbe(): void {

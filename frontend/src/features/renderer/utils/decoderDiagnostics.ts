@@ -256,25 +256,25 @@ function flushDecoderDiagnosticSummary(): void {
   const queuedCount = traces.filter((trace) =>
     trace.phases.some((phase) => phase.phase === "worker:render:queued-behind-active"),
   ).length;
+  const summaryRows = traces.map(createSummaryRow);
+  const phaseRows = traces.map((trace) => ({
+    traceId: trace.traceId,
+    phases: trace.phases.map((phase) => ({
+      phase: phase.phase,
+      mainElapsedMs: roundMs(phase.mainElapsedMs),
+      workerElapsedMs: roundMs(phase.workerElapsedMs),
+      detail: phase.detail,
+    })),
+  }));
 
   console.groupCollapsed(
     `[vlo decoder] ${traces.length} request summary (${roundMs(
       endedAtMs - startedAtMs,
     )}ms, ${timedOutCount} timed out, ${queuedCount} queued)`,
   );
-  console.table(traces.map(createSummaryRow));
-  console.log(
-    "Phases by trace",
-    traces.map((trace) => ({
-      traceId: trace.traceId,
-      phases: trace.phases.map((phase) => ({
-        phase: phase.phase,
-        mainElapsedMs: roundMs(phase.mainElapsedMs),
-        workerElapsedMs: roundMs(phase.workerElapsedMs),
-        detail: phase.detail,
-      })),
-    })),
-  );
+  console.log("Summary rows", summaryRows);
+  console.table(summaryRows);
+  console.log("Phases by trace", phaseRows);
   console.groupEnd();
 
   if (pendingTraces.size > 0) {
@@ -295,6 +295,8 @@ function isTerminalDiagnosticPhase(phase: string): boolean {
     "worker:render:disposed",
     "worker:render:error",
     "worker:health:pong",
+    "main:worker:error",
+    "main:worker:messageerror",
     "main:worker:ping:timeout",
     "main:worker:terminated",
   ].includes(phase);

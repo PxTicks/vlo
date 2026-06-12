@@ -1063,6 +1063,19 @@ export class TrackRenderEngine {
   private createWorker(): Worker {
     const worker = new DecoderWorker();
     worker.onmessage = this.handleWorkerMessage.bind(this);
+    worker.onerror = (event) => {
+      this.logDecoderWorkerProblem("main:worker:error", {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+      });
+    };
+    worker.onmessageerror = (event) => {
+      this.logDecoderWorkerProblem("main:worker:messageerror", {
+        dataType: typeof event.data,
+      });
+    };
     this.startDecoderWorkerHealthProbe(worker, "created");
     return worker;
   }
@@ -1627,6 +1640,8 @@ export class TrackRenderEngine {
     this.liveDecoderTimeoutCount = 0;
 
     this.finishDecoderWorkerHealthProbe("live decoder worker reset");
+    this.worker.onerror = null;
+    this.worker.onmessageerror = null;
     this.worker.terminate();
     this.worker = this.createWorker();
   }
@@ -1642,6 +1657,24 @@ export class TrackRenderEngine {
       });
     }
     this.clearDecoderWorkerHealthProbe();
+  }
+
+  private logDecoderWorkerProblem(
+    phase: string,
+    detail: Record<string, unknown>,
+  ): void {
+    const diagnostics =
+      this.workerHealthDiagnostics ??
+      createDecoderRequestDiagnostics({
+        source: "track",
+        requestType: "worker",
+        clipId: `worker:${this.nextWorkerHealthPingId || "unknown"}`,
+        label: this.trackId ?? undefined,
+      });
+    logDecoderWorkerPhase(diagnostics, phase, detail);
+    if (diagnostics === this.workerHealthDiagnostics) {
+      this.clearDecoderWorkerHealthProbe();
+    }
   }
 
   private clearDecoderWorkerHealthProbe(): void {
@@ -1918,6 +1951,8 @@ export class TrackRenderEngine {
 
     this.maskController.dispose();
     this.finishDecoderWorkerHealthProbe("track render engine disposed");
+    this.worker.onerror = null;
+    this.worker.onmessageerror = null;
     this.worker.terminate();
     if (this.container) {
       if (this.container.parent) {

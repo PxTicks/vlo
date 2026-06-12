@@ -7,6 +7,13 @@ import {
   destroyTexture,
 } from "../../renderer/utils/retiredTextureQueue";
 import {
+  createDecoderRequestDiagnostics,
+  type DecoderDiagnosticMessage,
+  isDecoderDiagnosticMessage,
+  logDecoderDiagnostic,
+  logDecoderRequestSent,
+} from "../../renderer/utils/decoderDiagnostics";
+import {
   awaitStrictFrame,
   type StrictFramePending,
 } from "../../renderer/utils/strictFrameRequest";
@@ -33,6 +40,7 @@ interface WorkerErrorMessage {
 type WorkerMessage =
   | WorkerReadyMessage
   | WorkerFrameMessage
+  | DecoderDiagnosticMessage
   | WorkerErrorMessage;
 
 function createMaskRenderAbortError(
@@ -57,6 +65,15 @@ function createMaskFrameTimeoutError(timeoutMs: number): Error {
   );
   error.name = "TimeoutError";
   return error;
+}
+
+function getSourceScheme(asset: Asset): string {
+  if (asset.file) {
+    return "blob-file";
+  }
+
+  const separatorIndex = asset.src.indexOf(":");
+  return separatorIndex > 0 ? asset.src.slice(0, separatorIndex) : "relative";
 }
 
 export class MaskVideoFramePlayer {
@@ -157,11 +174,23 @@ export class MaskVideoFramePlayer {
     if (!strict) {
       const requestId = this.createRenderRequestId();
       this.latestRenderRequestId = requestId;
+      const diagnostics = createDecoderRequestDiagnostics({
+        source: "mask",
+        requestType: "render",
+        clipId: this.clipId,
+        label: this.sourceAssetId ?? undefined,
+      });
+      logDecoderRequestSent(diagnostics, {
+        time: timeSeconds,
+        strict: false,
+        requestId,
+      });
       this.worker.postMessage({
         type: "render",
         clipId: this.clipId,
         time: timeSeconds,
         requestId,
+        ...(diagnostics ? { diagnostics } : {}),
       });
       return;
     }
@@ -206,6 +235,10 @@ export class MaskVideoFramePlayer {
     if (this.disposed || sourceWorker !== this.worker) return;
 
     const message = event.data;
+    if (isDecoderDiagnosticMessage(message)) {
+      logDecoderDiagnostic(message);
+      return;
+    }
 
     if (message.type === "ready" && message.clipId === this.clipId) {
       this.markDecoderResponsive();
@@ -338,12 +371,29 @@ export class MaskVideoFramePlayer {
       );
     }, MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS);
 
+    const diagnostics = createDecoderRequestDiagnostics({
+      source: "mask",
+      requestType: "prepare",
+      clipId: this.clipId,
+      label: this.sourceAssetId ?? undefined,
+    });
+    logDecoderRequestSent(diagnostics, {
+      kind: "mask_video",
+      hasFile: !!asset.file,
+      fileSizeMB: asset.file
+        ? Number((asset.file.size / (1024 * 1024)).toFixed(2))
+        : null,
+      sourceScheme: getSourceScheme(asset),
+      timeoutMs: MaskVideoFramePlayer.SOURCE_PREPARE_TIMEOUT_MS,
+    });
+
     this.worker.postMessage({
       type: "prepare",
       url: asset.src,
       clipId: this.clipId,
       kind: "mask_video",
       file: asset.file,
+      ...(diagnostics ? { diagnostics } : {}),
     });
   }
 
@@ -507,6 +557,12 @@ export class MaskVideoFramePlayer {
     }
     const requestId = this.createRenderRequestId();
     this.latestRenderRequestId = requestId;
+    const diagnostics = createDecoderRequestDiagnostics({
+      source: "mask",
+      requestType: "render",
+      clipId: this.clipId,
+      label: this.sourceAssetId ?? undefined,
+    });
 
     await awaitStrictFrame<void>({
       timeoutMs: MaskVideoFramePlayer.STRICT_FRAME_TIMEOUT_MS,
@@ -522,12 +578,19 @@ export class MaskVideoFramePlayer {
         }
       },
       sendRequest: () => {
+        logDecoderRequestSent(diagnostics, {
+          time: timeSeconds,
+          strict: true,
+          requestId,
+          timeoutMs: MaskVideoFramePlayer.STRICT_FRAME_TIMEOUT_MS,
+        });
         worker.postMessage({
           type: "render",
           clipId: this.clipId,
           time: timeSeconds,
           strict: true,
           requestId,
+          ...(diagnostics ? { diagnostics } : {}),
         });
       },
     });

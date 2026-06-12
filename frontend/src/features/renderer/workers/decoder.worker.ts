@@ -10,6 +10,7 @@ import {
   isFrameTimestampAheadOfRequest,
   isFrameTimestampReady,
 } from "../utils/frameTiming";
+import type { DecoderRequestDiagnostics } from "../utils/decoderDiagnostics";
 
 // --- Types ---
 interface RenderOptions {
@@ -19,7 +20,12 @@ interface RenderOptions {
 }
 
 interface Renderer {
-  init(url: string, options: RenderOptions, file?: File): Promise<void>;
+  init(
+    url: string,
+    options: RenderOptions,
+    file?: File,
+    diagnostics?: DecoderRequestDiagnostics,
+  ): Promise<void>;
   render(time: number): Promise<ImageBitmap | null>;
   dispose(): void;
 }
@@ -40,6 +46,7 @@ type WorkerMessage =
       width?: number;
       height?: number;
       fit?: "contain" | "cover" | "fill";
+      diagnostics?: DecoderRequestDiagnostics;
     }
   | {
       type: "render";
@@ -48,6 +55,7 @@ type WorkerMessage =
       transformTime?: number;
       strict?: boolean;
       requestId?: string;
+      diagnostics?: DecoderRequestDiagnostics;
     }
   | { type: "dispose"; clipId: string };
 
@@ -58,6 +66,32 @@ interface RenderRequest {
   transformTime?: TransformTime;
   strict?: boolean;
   requestId?: string;
+  diagnostics?: DecoderRequestDiagnostics;
+}
+
+function postDecoderDiagnostic(
+  diagnostics: DecoderRequestDiagnostics | undefined,
+  phase: string,
+  startedAtMs: number,
+  detail?: Record<string, unknown>,
+): void {
+  if (!diagnostics) {
+    return;
+  }
+
+  const nowMs = performance.now();
+  (self as DedicatedWorkerGlobalScope).postMessage({
+    ...diagnostics,
+    type: "diagnostic",
+    phase,
+    workerElapsedMs: nowMs - startedAtMs,
+    detail,
+  });
+}
+
+function getUrlScheme(url: string): string {
+  const separatorIndex = url.indexOf(":");
+  return separatorIndex > 0 ? url.slice(0, separatorIndex) : "relative";
 }
 
 // --- Video Renderer Strategy ---
@@ -71,28 +105,72 @@ class VideoRenderer implements Renderer {
   private prefetchedBitmapFrame: PrefetchedBitmapFrame | null = null;
   private lastRequestTime: number | null = null;
 
-  async init(url: string, options: RenderOptions, file?: File): Promise<void> {
+  async init(
+    url: string,
+    options: RenderOptions,
+    file?: File,
+    diagnostics?: DecoderRequestDiagnostics,
+  ): Promise<void> {
+    const initStartedAtMs = performance.now();
     this.dispose();
+
+    postDecoderDiagnostic(diagnostics, "worker:video:init:start", initStartedAtMs, {
+      hasFile: !!file,
+      fileSizeMB: file ? Number((file.size / (1024 * 1024)).toFixed(2)) : null,
+      sourceScheme: file ? "blob-file" : getUrlScheme(url),
+    });
 
     const source = file
       ? new BlobSource(file)
       : new UrlSource(url, { maxCacheSize: 16 * 1024 * 1024 });
+    postDecoderDiagnostic(
+      diagnostics,
+      "worker:video:source-created",
+      initStartedAtMs,
+    );
 
     this.input = new Input({
       source,
       formats: ALL_FORMATS,
     });
+    postDecoderDiagnostic(
+      diagnostics,
+      "worker:video:input-created",
+      initStartedAtMs,
+    );
 
+    const trackStartedAtMs = performance.now();
     const videoTrack = await this.input.getPrimaryVideoTrack();
+    postDecoderDiagnostic(
+      diagnostics,
+      "worker:video:primary-track",
+      initStartedAtMs,
+      { phaseMs: Number((performance.now() - trackStartedAtMs).toFixed(1)) },
+    );
     if (!videoTrack) {
       throw new Error("No video track found");
     }
 
+    const alphaStartedAtMs = performance.now();
+    const alpha = await videoTrack.canBeTransparent();
+    postDecoderDiagnostic(
+      diagnostics,
+      "worker:video:alpha-capability",
+      initStartedAtMs,
+      { phaseMs: Number((performance.now() - alphaStartedAtMs).toFixed(1)) },
+    );
+
     this.sink = new CanvasSink(videoTrack, {
       poolSize: 5,
-      alpha: await videoTrack.canBeTransparent(),
+      alpha,
       ...options,
     });
+    postDecoderDiagnostic(
+      diagnostics,
+      "worker:video:sink-created",
+      initStartedAtMs,
+      { width: options.width, height: options.height, fit: options.fit },
+    );
   }
 
   async render(time: number): Promise<ImageBitmap | null> {
@@ -278,11 +356,37 @@ class VideoRenderer implements Renderer {
 class ImageRenderer implements Renderer {
   private sourceBitmap: ImageBitmap | null = null;
 
-  async init(url: string, _options?: RenderOptions, file?: File): Promise<void> {
+  async init(
+    url: string,
+    _options?: RenderOptions,
+    file?: File,
+    diagnostics?: DecoderRequestDiagnostics,
+  ): Promise<void> {
+    const initStartedAtMs = performance.now();
     this.dispose();
+    postDecoderDiagnostic(diagnostics, "worker:image:init:start", initStartedAtMs, {
+      hasFile: !!file,
+      fileSizeMB: file ? Number((file.size / (1024 * 1024)).toFixed(2)) : null,
+      sourceScheme: file ? "blob-file" : getUrlScheme(url),
+    });
     try {
       const blob = file ?? await (await fetch(url)).blob();
+      postDecoderDiagnostic(
+        diagnostics,
+        "worker:image:blob-ready",
+        initStartedAtMs,
+        { blobSizeMB: Number((blob.size / (1024 * 1024)).toFixed(2)) },
+      );
       this.sourceBitmap = await createImageBitmap(blob);
+      postDecoderDiagnostic(
+        diagnostics,
+        "worker:image:bitmap-created",
+        initStartedAtMs,
+        {
+          width: this.sourceBitmap.width,
+          height: this.sourceBitmap.height,
+        },
+      );
     } catch (e) {
       console.error("ImageRenderer Init Error:", e);
       throw e;
@@ -325,7 +429,14 @@ const cleanupRenderer = (clipId: string) => {
 };
 
 const processRender = async (request: RenderRequest) => {
-  const { time, clipId, transformTime, strict, requestId } = request;
+  const { time, clipId, transformTime, strict, requestId, diagnostics } =
+    request;
+  const renderStartedAtMs = performance.now();
+  postDecoderDiagnostic(diagnostics, "worker:render:start", renderStartedAtMs, {
+    time,
+    strict: strict === true,
+    requestId,
+  });
   const renderer = renderers.get(clipId);
   const ctx = self as DedicatedWorkerGlobalScope;
 
@@ -339,11 +450,19 @@ const processRender = async (request: RenderRequest) => {
       transformTime,
       requestId,
     });
+    postDecoderDiagnostic(
+      diagnostics,
+      "worker:render:missing-renderer",
+      renderStartedAtMs,
+    );
     return;
   }
 
   try {
     const bitmap = await renderer.render(time);
+    postDecoderDiagnostic(diagnostics, "worker:render:done", renderStartedAtMs, {
+      hasBitmap: !!bitmap,
+    });
 
     // FIX: Always reply, even if bitmap is null
     if (bitmap) {
@@ -358,6 +477,12 @@ const processRender = async (request: RenderRequest) => {
         },
         [bitmap],
       );
+      postDecoderDiagnostic(
+        diagnostics,
+        "worker:render:posted-frame",
+        renderStartedAtMs,
+        { hasBitmap: true },
+      );
     } else if (strict) {
       // IMPORTANT: Send null frame to unblock ExportRenderer (only if strict mode)
       ctx.postMessage({
@@ -368,6 +493,12 @@ const processRender = async (request: RenderRequest) => {
         transformTime,
         requestId,
       });
+      postDecoderDiagnostic(
+        diagnostics,
+        "worker:render:posted-frame",
+        renderStartedAtMs,
+        { hasBitmap: false },
+      );
     }
   } catch (err) {
     const msg = String(err);
@@ -385,6 +516,11 @@ const processRender = async (request: RenderRequest) => {
         requestId,
         error: "disposed",
       });
+      postDecoderDiagnostic(
+        diagnostics,
+        "worker:render:disposed",
+        renderStartedAtMs,
+      );
       return;
     }
     console.error(`Render Error [${clipId}]:`, err);
@@ -397,6 +533,9 @@ const processRender = async (request: RenderRequest) => {
       clipId,
       transformTime,
       requestId,
+      error: msg,
+    });
+    postDecoderDiagnostic(diagnostics, "worker:render:error", renderStartedAtMs, {
       error: msg,
     });
   }
@@ -427,19 +566,48 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
   try {
     switch (type) {
       case "prepare": {
-        const { url, clipId, kind, width, height, fit, file } =
+        const { url, clipId, kind, width, height, fit, file, diagnostics } =
           e.data as Extract<WorkerMessage, { type: "prepare" }>;
+        const prepareReceivedAtMs = performance.now();
+        postDecoderDiagnostic(
+          diagnostics,
+          "worker:prepare:received",
+          prepareReceivedAtMs,
+          {
+            kind,
+            hasFile: !!file,
+            fileSizeMB: file
+              ? Number((file.size / (1024 * 1024)).toFixed(2))
+              : null,
+            sourceScheme: file ? "blob-file" : getUrlScheme(url),
+          },
+        );
 
         if (renderers.has(clipId)) {
           const initPromise = initPromises.get(clipId);
           if (initPromise) {
+            postDecoderDiagnostic(
+              diagnostics,
+              "worker:prepare:await-existing:start",
+              prepareReceivedAtMs,
+            );
             await initPromise;
+            postDecoderDiagnostic(
+              diagnostics,
+              "worker:prepare:await-existing:done",
+              prepareReceivedAtMs,
+            );
           }
           self.postMessage({
             type: "ready",
             clipId,
             kind: rendererKinds.get(clipId) ?? kind,
           });
+          postDecoderDiagnostic(
+            diagnostics,
+            "worker:prepare:posted-ready-existing",
+            prepareReceivedAtMs,
+          );
           return;
         }
 
@@ -455,13 +623,29 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
 
         renderers.set(clipId, renderer);
         rendererKinds.set(clipId, kind);
-        const promise = renderer.init(url, { width, height, fit }, file);
+        const promise = renderer.init(
+          url,
+          { width, height, fit },
+          file,
+          diagnostics,
+        );
         initPromises.set(clipId, promise);
 
         try {
           await promise;
           self.postMessage({ type: "ready", clipId, kind });
+          postDecoderDiagnostic(
+            diagnostics,
+            "worker:prepare:posted-ready",
+            prepareReceivedAtMs,
+          );
         } catch (err) {
+          postDecoderDiagnostic(
+            diagnostics,
+            "worker:prepare:error",
+            prepareReceivedAtMs,
+            { error: String(err) },
+          );
           cleanupRenderer(clipId);
           throw err;
         }
@@ -469,12 +653,29 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       }
 
       case "render": {
-        const { clipId, time, transformTime, strict, requestId } =
+        const { clipId, time, transformTime, strict, requestId, diagnostics } =
           e.data as Extract<WorkerMessage, { type: "render" }>;
+        const renderReceivedAtMs = performance.now();
+        postDecoderDiagnostic(
+          diagnostics,
+          "worker:render:received",
+          renderReceivedAtMs,
+          { time, strict: strict === true, requestId },
+        );
 
         const initPromise = initPromises.get(clipId);
         if (initPromise) {
+          postDecoderDiagnostic(
+            diagnostics,
+            "worker:render:await-prepare:start",
+            renderReceivedAtMs,
+          );
           await initPromise;
+          postDecoderDiagnostic(
+            diagnostics,
+            "worker:render:await-prepare:done",
+            renderReceivedAtMs,
+          );
         }
 
         if (!renderers.has(clipId)) {
@@ -488,6 +689,11 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
             transformTime,
             requestId,
           });
+          postDecoderDiagnostic(
+            diagnostics,
+            "worker:render:missing-renderer",
+            renderReceivedAtMs,
+          );
           return;
         }
 
@@ -497,9 +703,15 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
           transformTime,
           strict,
           requestId,
+          diagnostics,
         };
         if (isRendering) {
           pendingRender = renderRequest;
+          postDecoderDiagnostic(
+            diagnostics,
+            "worker:render:queued-behind-active",
+            renderReceivedAtMs,
+          );
         } else {
           void loop(renderRequest);
         }

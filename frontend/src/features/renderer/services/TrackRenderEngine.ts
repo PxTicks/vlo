@@ -28,6 +28,12 @@ import {
   type StrictFramePending,
 } from "../utils/strictFrameRequest";
 import {
+  createDecoderRequestDiagnostics,
+  isDecoderDiagnosticMessage,
+  logDecoderDiagnostic,
+  logDecoderRequestSent,
+} from "../utils/decoderDiagnostics";
+import {
   createTextTexture,
   getTextTextureSignature,
 } from "./textTextureRenderer";
@@ -54,6 +60,15 @@ function isLiveFrameTimeoutError(error: unknown): error is Error {
     error.name === "TimeoutError" &&
     (error as { source?: string }).source === "track-live-frame"
   );
+}
+
+function getSourceScheme(asset: Asset): string {
+  if (asset.file) {
+    return "blob-file";
+  }
+
+  const separatorIndex = asset.src.indexOf(":");
+  return separatorIndex > 0 ? asset.src.slice(0, separatorIndex) : "relative";
 }
 
 interface LiveRenderRequest {
@@ -974,6 +989,11 @@ export class TrackRenderEngine {
   }
 
   private handleWorkerMessage(e: MessageEvent) {
+    if (isDecoderDiagnosticMessage(e.data)) {
+      logDecoderDiagnostic(e.data);
+      return;
+    }
+
     const { type, bitmap, clipId, transformTime, error, message, requestId } =
       e.data;
 
@@ -1027,6 +1047,32 @@ export class TrackRenderEngine {
     const worker = new DecoderWorker();
     worker.onmessage = this.handleWorkerMessage.bind(this);
     return worker;
+  }
+
+  private postPrepareMessage(clip: TimelineClip, asset: Asset): void {
+    const diagnostics = createDecoderRequestDiagnostics({
+      source: "track",
+      requestType: "prepare",
+      clipId: clip.id,
+      label: this.trackId ?? undefined,
+    });
+    logDecoderRequestSent(diagnostics, {
+      kind: clip.type,
+      hasFile: !!asset.file,
+      fileSizeMB: asset.file
+        ? Number((asset.file.size / (1024 * 1024)).toFixed(2))
+        : null,
+      sourceScheme: getSourceScheme(asset),
+    });
+
+    this.worker.postMessage({
+      type: "prepare",
+      url: asset.src,
+      clipId: clip.id,
+      kind: clip.type,
+      file: asset.file,
+      ...(diagnostics ? { diagnostics } : {}),
+    });
   }
 
   private syncPreparedClips(
@@ -1086,7 +1132,6 @@ export class TrackRenderEngine {
           this.pendingAssetHydrations.add(asset.id);
           const expectedClipId = clip.id;
           const expectedAssetId = clip.assetId;
-          const clipKind = clip.type;
           void ensureAssetSourceLoaded(asset.id)
             .then((hydratedAsset) => {
               if (
@@ -1098,13 +1143,7 @@ export class TrackRenderEngine {
                 return;
               }
 
-              this.worker.postMessage({
-                type: "prepare",
-                url: hydratedAsset.src,
-                clipId: expectedClipId,
-                kind: clipKind,
-                file: hydratedAsset.file,
-              });
+              this.postPrepareMessage(clip, hydratedAsset);
               this.preparedClips.set(expectedClipId, expectedAssetId);
               this.preparedClipTouchedAtMs.set(
                 expectedClipId,
@@ -1118,13 +1157,7 @@ export class TrackRenderEngine {
         return;
       }
 
-      this.worker.postMessage({
-        type: "prepare",
-        url: asset.src,
-        clipId: clip.id,
-        kind: clip.type,
-        file: asset.file,
-      });
+      this.postPrepareMessage(clip, asset);
       this.preparedClips.set(clip.id, clip.assetId);
       this.preparedClipTouchedAtMs.set(clip.id, nowMs);
     });
@@ -1350,6 +1383,12 @@ export class TrackRenderEngine {
   ): Promise<LiveFramePayload> {
     this.rejectPendingLiveFrame(createRenderAbortError());
     const requestId = this.createLiveFrameRequestId();
+    const diagnostics = createDecoderRequestDiagnostics({
+      source: "track",
+      requestType: "render",
+      clipId,
+      label: this.trackId ?? undefined,
+    });
 
     return awaitStrictFrame<LiveFramePayload>({
       timeoutMs: options.timeoutMs,
@@ -1366,6 +1405,13 @@ export class TrackRenderEngine {
         }
       },
       sendRequest: () => {
+        logDecoderRequestSent(diagnostics, {
+          time: localTimeSeconds,
+          transformTime,
+          strict: true,
+          requestId,
+          timeoutMs: options.timeoutMs,
+        });
         this.worker.postMessage({
           type: "render",
           time: localTimeSeconds,
@@ -1373,6 +1419,7 @@ export class TrackRenderEngine {
           transformTime,
           strict: true,
           requestId,
+          ...(diagnostics ? { diagnostics } : {}),
         });
       },
     });
@@ -1459,13 +1506,7 @@ export class TrackRenderEngine {
       return;
     }
 
-    this.worker.postMessage({
-      type: "prepare",
-      url: sourceAsset.src,
-      clipId: clip.id,
-      kind: clip.type,
-      file: sourceAsset.file,
-    });
+    this.postPrepareMessage(clip, sourceAsset);
     this.preparedClips.set(clip.id, clip.assetId);
     this.preparedClipTouchedAtMs.set(clip.id, nowMs);
   }

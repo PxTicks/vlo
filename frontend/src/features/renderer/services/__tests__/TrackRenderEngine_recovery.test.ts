@@ -270,8 +270,8 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     engine.dispose();
   });
 
-  it("recreates the stalled worker and re-prepares the active clip after a timeout", async () => {
-    mockWorkerBehaviors.push(["hang"], ["frame"]);
+  it("drops a first synchronized timeout without recreating the worker", async () => {
+    mockWorkerBehaviors.push(["hang"]);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const engine = new TrackRenderEngine(1);
@@ -292,8 +292,60 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
       TrackRenderEngine as unknown as Record<string, number>
     )["LIVE_FRAME_TIMEOUT_MS"];
     await vi.advanceTimersByTimeAsync(timeoutMs + 20);
-    await vi.runAllTimersAsync();
     await renderPromise;
+
+    expect(mockWorkerInstances).toHaveLength(1);
+    expect(mockWorkerInstances[0]?.terminate).not.toHaveBeenCalled();
+    expect(mockWorkerInstances[0]?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "render",
+        clipId: clip.id,
+        strict: true,
+      }),
+    );
+    expect(engine["currentTextureClipId"]).toBeNull();
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    engine.dispose();
+  });
+
+  it("recreates the synchronized worker after consecutive timeouts", async () => {
+    mockWorkerBehaviors.push(["hang", "hang"], ["frame"]);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const engine = new TrackRenderEngine(1);
+    const clip = createClip();
+    const assets = [createAsset()];
+    const masksByParent = new Map<string, []>();
+
+    const firstRender = engine.renderSynchronizedPlaybackFrame(
+      2 * TICKS_PER_SECOND,
+      [clip],
+      masksByParent,
+      assets,
+      { width: 1920, height: 1080 },
+      { fps: 30 },
+    );
+
+    const timeoutMs = (
+      TrackRenderEngine as unknown as Record<string, number>
+    )["LIVE_FRAME_TIMEOUT_MS"];
+    await vi.advanceTimersByTimeAsync(timeoutMs + 20);
+    await firstRender;
+
+    const secondRender = engine.renderSynchronizedPlaybackFrame(
+      3 * TICKS_PER_SECOND,
+      [clip],
+      masksByParent,
+      assets,
+      { width: 1920, height: 1080 },
+      { fps: 30 },
+    );
+
+    await vi.advanceTimersByTimeAsync(timeoutMs + 20);
+    await vi.runAllTimersAsync();
+    await secondRender;
 
     expect(mockWorkerInstances).toHaveLength(2);
     expect(mockWorkerInstances[0]?.terminate).toHaveBeenCalledTimes(1);
@@ -322,8 +374,8 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     engine.dispose();
   });
 
-  it("recovers the queued live render pipeline after a decoder timeout", async () => {
-    mockWorkerBehaviors.push(["hang"], ["frame"]);
+  it("renders the newest queued live request after an older timeout", async () => {
+    mockWorkerBehaviors.push(["hang", "frame"]);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const engine = new TrackRenderEngine(1);
@@ -339,6 +391,14 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
       { width: 1920, height: 1080 },
       { fps: 30 },
     );
+    engine.update(
+      3 * TICKS_PER_SECOND,
+      [clip],
+      masksByParent,
+      assets,
+      { width: 1920, height: 1080 },
+      { fps: 30 },
+    );
 
     const timeoutMs = (
       TrackRenderEngine as unknown as Record<string, number>
@@ -346,27 +406,54 @@ describe("TrackRenderEngine synchronized playback recovery", () => {
     await vi.advanceTimersByTimeAsync(timeoutMs + 20);
     await vi.runAllTimersAsync();
 
-    expect(mockWorkerInstances).toHaveLength(2);
-    expect(mockWorkerInstances[0]?.terminate).toHaveBeenCalledTimes(1);
-    expect(mockWorkerInstances[1]?.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "prepare",
-        clipId: clip.id,
-        file: expect.any(File),
-      }),
-    );
-    expect(mockWorkerInstances[1]?.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "render",
-        clipId: clip.id,
-        strict: true,
-      }),
-    );
+    const worker = mockWorkerInstances[0];
+    expect(mockWorkerInstances).toHaveLength(1);
+    expect(worker?.terminate).not.toHaveBeenCalled();
+    expect(
+      worker?.postMessage.mock.calls.filter(
+        ([message]) => message.type === "render",
+      ),
+    ).toHaveLength(2);
     expect(engine["currentTextureClipId"]).toBe(clip.id);
     expect(engine.sprite.texture.width).toBe(320);
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    engine.dispose();
+  });
+
+  it("does not reset the content worker when mask synchronization times out", async () => {
+    mockWorkerBehaviors.push(["frame"]);
+    const maskTimeout = new Error("Mask sync timed out");
+    maskTimeout.name = "TimeoutError";
+    syncMaskClipsSpy.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      throw maskTimeout;
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const engine = new TrackRenderEngine(1);
+    const clip = createClip();
+    const assets = [createAsset()];
+    const masksByParent = new Map<string, []>();
+
+    const renderPromise = engine.renderSynchronizedPlaybackFrame(
+      2 * TICKS_PER_SECOND,
+      [clip],
+      masksByParent,
+      assets,
+      { width: 1920, height: 1080 },
+      { fps: 30 },
+    );
+
+    await vi.runAllTimersAsync();
+    await renderPromise;
+
+    expect(mockWorkerInstances).toHaveLength(1);
+    expect(mockWorkerInstances[0]?.terminate).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
-      "Live decoder worker stalled during live playback; recreating worker",
-      expect.any(Error),
+      "Failed to prepare synchronized playback frame",
+      maskTimeout,
     );
 
     warnSpy.mockRestore();

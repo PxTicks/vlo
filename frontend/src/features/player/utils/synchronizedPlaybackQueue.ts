@@ -21,7 +21,10 @@ export function pruneSynchronizedPlaybackQueue(
   const maxQueueSize =
     options.maxQueueSize ?? MAX_SYNCHRONIZED_PLAYBACK_QUEUE;
 
-  while (queue.length > 0 && nowMs - queue[0].enqueuedAtMs > maxAgeMs) {
+  while (
+    queue.length > 1 &&
+    nowMs - queue[0].enqueuedAtMs > maxAgeMs
+  ) {
     queue.shift();
   }
 

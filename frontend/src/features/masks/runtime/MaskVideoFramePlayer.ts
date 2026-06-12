@@ -64,6 +64,7 @@ export class MaskVideoFramePlayer {
   private static readonly SOURCE_PREPARE_RECOVERY_ATTEMPTS = 1;
   private static readonly STRICT_FRAME_TIMEOUT_MS = 5000;
   private static readonly STRICT_FRAME_RECOVERY_ATTEMPTS = 1;
+  private static readonly DECODER_RESET_TIMEOUTS = 2;
 
   public readonly sprite: Sprite;
 
@@ -80,6 +81,9 @@ export class MaskVideoFramePlayer {
   private pendingStrictFrame: StrictFramePending<void> | null = null;
   private pendingStrictFrameRequestId: string | null = null;
   private nextRenderRequestId = 0;
+  private latestRenderRequestId: string | null = null;
+  private strictRenderGeneration = 0;
+  private decoderTimeoutCount = 0;
   private strictRenderChain: Promise<void> = Promise.resolve();
   private readonly retiredTextures = new RetiredTextureQueue(
     () => this.sprite.texture,
@@ -152,6 +156,7 @@ export class MaskVideoFramePlayer {
 
     if (!strict) {
       const requestId = this.createRenderRequestId();
+      this.latestRenderRequestId = requestId;
       this.worker.postMessage({
         type: "render",
         clipId: this.clipId,
@@ -161,10 +166,17 @@ export class MaskVideoFramePlayer {
       return;
     }
 
-    const previousStrictRender = this.strictRenderChain.catch(() => undefined);
-    const nextStrictRender = previousStrictRender.then(() =>
-      this.renderStrictFrameWithRecovery(timeSeconds),
+    const generation = this.createStrictRenderGeneration();
+    this.rejectPendingStrictFrame(
+      createMaskRenderAbortError("Mask strict frame superseded"),
     );
+    const previousStrictRender = this.strictRenderChain.catch(() => undefined);
+    const nextStrictRender = previousStrictRender.then(() => {
+      if (!this.isStrictRenderCurrent(generation)) {
+        return;
+      }
+      return this.renderStrictFrameWithRecovery(timeSeconds, generation);
+    });
     this.strictRenderChain = nextStrictRender.catch(() => undefined);
     await nextStrictRender;
   }
@@ -196,11 +208,17 @@ export class MaskVideoFramePlayer {
     const message = event.data;
 
     if (message.type === "ready" && message.clipId === this.clipId) {
+      this.markDecoderResponsive();
       this.resolvePendingPrepare();
       return;
     }
 
     if (message.type === "frame" && message.clipId === this.clipId) {
+      this.markDecoderResponsive();
+      if (this.isStaleFrameResponse(message)) {
+        return;
+      }
+
       const pendingStrict = this.pendingStrictFrame;
       if (pendingStrict && this.isStaleStrictFrameResponse(message)) {
         return;
@@ -278,9 +296,16 @@ export class MaskVideoFramePlayer {
 
         if (
           error instanceof Error &&
-          error.name === "TimeoutError" &&
-          attempt < MaskVideoFramePlayer.SOURCE_PREPARE_RECOVERY_ATTEMPTS
+          error.name === "TimeoutError"
         ) {
+          const shouldResetWorker = this.recordDecoderTimeout();
+          if (
+            !shouldResetWorker ||
+            attempt >= MaskVideoFramePlayer.SOURCE_PREPARE_RECOVERY_ATTEMPTS
+          ) {
+            throw error;
+          }
+
           console.warn(
             "Mask decoder worker stalled while preparing source; recreating worker",
             error,
@@ -362,10 +387,9 @@ export class MaskVideoFramePlayer {
   ): void {
     const { abortReason = "Mask player disposed", preserveSource = false } =
       options;
-    this.pendingStrictFrame?.reject(
+    this.rejectPendingStrictFrame(
       createMaskRenderAbortError(`${abortReason} during strict render`),
     );
-    this.pendingStrictFrameRequestId = null;
     this.rejectPendingPrepare(
       createMaskRenderAbortError(`${abortReason} during source prepare`),
     );
@@ -376,6 +400,8 @@ export class MaskVideoFramePlayer {
       this.worker = null;
     }
     this.sourcePrepared = false;
+    this.latestRenderRequestId = null;
+    this.decoderTimeoutCount = 0;
 
     if (!preserveSource) {
       this.sourceAsset = null;
@@ -409,12 +435,17 @@ export class MaskVideoFramePlayer {
 
   private async renderStrictFrameWithRecovery(
     timeSeconds: number,
+    generation: number,
   ): Promise<void> {
     for (
       let attempt = 0;
       attempt <= MaskVideoFramePlayer.STRICT_FRAME_RECOVERY_ATTEMPTS;
       attempt += 1
     ) {
+      if (!this.isStrictRenderCurrent(generation)) {
+        return;
+      }
+
       try {
         await this.requestStrictFrame(timeSeconds);
         return;
@@ -425,9 +456,20 @@ export class MaskVideoFramePlayer {
 
         if (
           error instanceof Error &&
-          error.name === "TimeoutError" &&
-          attempt < MaskVideoFramePlayer.STRICT_FRAME_RECOVERY_ATTEMPTS
+          error.name === "TimeoutError"
         ) {
+          if (!this.isStrictRenderCurrent(generation)) {
+            return;
+          }
+
+          const shouldResetWorker = this.recordDecoderTimeout();
+          if (
+            !shouldResetWorker ||
+            attempt >= MaskVideoFramePlayer.STRICT_FRAME_RECOVERY_ATTEMPTS
+          ) {
+            throw error;
+          }
+
           console.warn(
             "Mask decoder worker stalled while rendering strict frame; recreating worker",
             error,
@@ -464,6 +506,7 @@ export class MaskVideoFramePlayer {
       throw createMaskRenderAbortError("Mask player has no prepared source");
     }
     const requestId = this.createRenderRequestId();
+    this.latestRenderRequestId = requestId;
 
     await awaitStrictFrame<void>({
       timeoutMs: MaskVideoFramePlayer.STRICT_FRAME_TIMEOUT_MS,
@@ -493,6 +536,46 @@ export class MaskVideoFramePlayer {
   private createRenderRequestId(): string {
     this.nextRenderRequestId += 1;
     return `mask-frame-${this.nextRenderRequestId}`;
+  }
+
+  private createStrictRenderGeneration(): number {
+    this.strictRenderGeneration += 1;
+    return this.strictRenderGeneration;
+  }
+
+  private isStrictRenderCurrent(generation: number): boolean {
+    return generation === this.strictRenderGeneration;
+  }
+
+  private recordDecoderTimeout(): boolean {
+    this.decoderTimeoutCount += 1;
+    return (
+      this.decoderTimeoutCount >= MaskVideoFramePlayer.DECODER_RESET_TIMEOUTS
+    );
+  }
+
+  private markDecoderResponsive(): void {
+    this.decoderTimeoutCount = 0;
+  }
+
+  private rejectPendingStrictFrame(error: Error): void {
+    this.pendingStrictFrame?.reject(error);
+    this.pendingStrictFrameRequestId = null;
+  }
+
+  private isStaleFrameResponse(message: WorkerFrameMessage): boolean {
+    if (
+      !this.latestRenderRequestId ||
+      typeof message.requestId !== "string" ||
+      message.requestId === this.latestRenderRequestId
+    ) {
+      return false;
+    }
+
+    if (message.bitmap && typeof message.bitmap.close === "function") {
+      message.bitmap.close();
+    }
+    return true;
   }
 
   private isStaleStrictFrameResponse(message: WorkerFrameMessage): boolean {

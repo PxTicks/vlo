@@ -48,4 +48,16 @@ describe("synchronizedPlaybackQueue", () => {
 
     expect(queue.map((entry) => entry.time)).toEqual([30]);
   });
+
+  it("preserves the newest batch when every queued batch is stale", () => {
+    const queue = [
+      { time: 10, enqueuedAtMs: 10 },
+      { time: 20, enqueuedAtMs: 40 },
+      { time: 30, enqueuedAtMs: 120 },
+    ];
+
+    pruneSynchronizedPlaybackQueue(queue, 1_000);
+
+    expect(queue.map((entry) => entry.time)).toEqual([30]);
+  });
 });

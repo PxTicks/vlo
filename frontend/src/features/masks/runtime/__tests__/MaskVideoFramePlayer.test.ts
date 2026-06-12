@@ -173,7 +173,7 @@ describe("MaskVideoFramePlayer", () => {
     vi.useRealTimers();
   });
 
-  it("serializes overlapping strict frame requests", async () => {
+  it("supersedes overlapping strict frame requests", async () => {
     mockWorkerPlans.push({
       prepare: "ready",
       render: ["frame", "frame"],
@@ -189,14 +189,6 @@ describe("MaskVideoFramePlayer", () => {
 
     const firstRender = player.renderAt(0, { strict: true });
     const secondRender = player.renderAt(1, { strict: true });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    const renderMessagesBeforeResolve = worker.postMessage.mock.calls
-      .map((call) => call[0])
-      .filter((message) => message.type === "render");
-    expect(renderMessagesBeforeResolve).toHaveLength(1);
-    expect(renderMessagesBeforeResolve[0]?.time).toBe(0);
 
     await vi.runAllTimersAsync();
     await Promise.all([firstRender, secondRender]);
@@ -204,14 +196,13 @@ describe("MaskVideoFramePlayer", () => {
     const renderMessagesAfterResolve = worker.postMessage.mock.calls
       .map((call) => call[0])
       .filter((message) => message.type === "render");
-    expect(renderMessagesAfterResolve).toHaveLength(2);
-    expect(renderMessagesAfterResolve[1]?.time).toBe(1);
+    expect(renderMessagesAfterResolve).toHaveLength(1);
 
     player.dispose();
   });
 
-  it("recreates the stalled worker and retries source preparation after a timeout", async () => {
-    mockWorkerPlans.push({ prepare: "hang" }, { prepare: "ready" });
+  it("does not recreate the worker after a first source preparation timeout", async () => {
+    mockWorkerPlans.push({ prepare: "hang" });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const player = new MaskVideoFramePlayer("clip_1");
@@ -220,9 +211,41 @@ describe("MaskVideoFramePlayer", () => {
     const timeoutMs = (
       MaskVideoFramePlayer as unknown as Record<string, number>
     )["SOURCE_PREPARE_TIMEOUT_MS"];
+    const rejection = expect(setSourcePromise).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    await vi.advanceTimersByTimeAsync(timeoutMs + 20);
+    await rejection;
+
+    expect(mockWorkers).toHaveLength(1);
+    expect(mockWorkers[0]?.terminate).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    player.dispose();
+  });
+
+  it("recreates the worker after consecutive source preparation timeouts", async () => {
+    mockWorkerPlans.push({ prepare: "hang" }, { prepare: "ready" });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const player = new MaskVideoFramePlayer("clip_1");
+    const asset = createMaskAsset("mask_asset");
+    const firstSetSource = player.setSource(asset);
+
+    const timeoutMs = (
+      MaskVideoFramePlayer as unknown as Record<string, number>
+    )["SOURCE_PREPARE_TIMEOUT_MS"];
+    const firstRejection = expect(firstSetSource).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    await vi.advanceTimersByTimeAsync(timeoutMs + 20);
+    await firstRejection;
+
+    const secondSetSource = player.setSource(asset);
     await vi.advanceTimersByTimeAsync(timeoutMs + 20);
     await vi.runAllTimersAsync();
-    await setSourcePromise;
+    await secondSetSource;
 
     expect(mockWorkers).toHaveLength(2);
     expect(mockWorkers[0]?.terminate).toHaveBeenCalledTimes(1);
@@ -241,10 +264,9 @@ describe("MaskVideoFramePlayer", () => {
     player.dispose();
   });
 
-  it("recreates the stalled worker and retries a strict frame after a timeout", async () => {
+  it("does not recreate the worker after a first strict frame timeout", async () => {
     mockWorkerPlans.push(
       { prepare: "ready", render: ["hang"] },
-      { prepare: "ready", render: ["frame"] },
     );
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -258,9 +280,54 @@ describe("MaskVideoFramePlayer", () => {
     const timeoutMs = (
       MaskVideoFramePlayer as unknown as Record<string, number>
     )["STRICT_FRAME_TIMEOUT_MS"];
+    const rejection = expect(renderPromise).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    await vi.advanceTimersByTimeAsync(timeoutMs + 20);
+    await rejection;
+
+    expect(mockWorkers).toHaveLength(1);
+    expect(mockWorkers[0]?.terminate).not.toHaveBeenCalled();
+    expect(mockWorkers[0]?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "render",
+        clipId: "mask_video_clip_1",
+        strict: true,
+        time: 1,
+      }),
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    player.dispose();
+  });
+
+  it("recreates the worker after consecutive strict frame timeouts", async () => {
+    mockWorkerPlans.push(
+      { prepare: "ready", render: ["hang", "hang"] },
+      { prepare: "ready", render: ["frame"] },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const player = new MaskVideoFramePlayer("clip_1");
+    const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
+    await vi.runAllTimersAsync();
+    await setSourcePromise;
+
+    const timeoutMs = (
+      MaskVideoFramePlayer as unknown as Record<string, number>
+    )["STRICT_FRAME_TIMEOUT_MS"];
+    const firstRender = player.renderAt(1, { strict: true });
+    const firstRejection = expect(firstRender).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    await vi.advanceTimersByTimeAsync(timeoutMs + 20);
+    await firstRejection;
+
+    const secondRender = player.renderAt(2, { strict: true });
     await vi.advanceTimersByTimeAsync(timeoutMs + 20);
     await vi.runAllTimersAsync();
-    await renderPromise;
+    await secondRender;
 
     expect(mockWorkers).toHaveLength(2);
     expect(mockWorkers[0]?.terminate).toHaveBeenCalledTimes(1);
@@ -275,7 +342,7 @@ describe("MaskVideoFramePlayer", () => {
         type: "render",
         clipId: "mask_video_clip_1",
         strict: true,
-        time: 1,
+        time: 2,
       }),
     );
     expect(warnSpy).toHaveBeenCalledWith(

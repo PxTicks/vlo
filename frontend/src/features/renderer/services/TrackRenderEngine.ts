@@ -44,7 +44,16 @@ function createLiveFrameTimeoutError(timeoutMs: number, clipId: string): Error {
     `Timed out waiting ${timeoutMs}ms for live frame ${clipId}`,
   );
   error.name = "TimeoutError";
+  (error as { source?: string }).source = "track-live-frame";
   return error;
+}
+
+function isLiveFrameTimeoutError(error: unknown): error is Error {
+  return (
+    error instanceof Error &&
+    error.name === "TimeoutError" &&
+    (error as { source?: string }).source === "track-live-frame"
+  );
 }
 
 interface LiveRenderRequest {
@@ -55,6 +64,7 @@ interface LiveRenderRequest {
   localTimeSeconds: number;
   rawTimeTicks: number;
   enqueuedAtMs: number;
+  generation: number;
 }
 
 interface LiveFramePayload {
@@ -102,6 +112,7 @@ export class TrackRenderEngine {
   private static readonly LIVE_FRAME_TIMEOUT_MS = 1500;
   private static readonly SYNCHRONIZED_RECOVERY_ATTEMPTS = 1;
   private static readonly LIVE_RENDER_RECOVERY_ATTEMPTS = 1;
+  private static readonly LIVE_DECODER_RESET_TIMEOUTS = 2;
 
   public readonly sprite: Sprite;
   public readonly container: Container;
@@ -133,12 +144,15 @@ export class TrackRenderEngine {
   private pendingLiveFrame: PendingLiveFrame | null = null;
   private pendingLiveFrameRequestId: string | null = null;
   private nextLiveFrameRequestId = 0;
+  private liveDecoderTimeoutCount = 0;
 
   // Live synchronized pipeline
   private liveRenderQueue: LiveRenderRequest[] = [];
   private pendingAssetHydrations = new Set<string>();
   private livePipelineBusy = false;
   private inFlightSynchronizedRender: InFlightSynchronizedRender | null = null;
+  private liveRenderGeneration = 0;
+  private synchronizedRenderGeneration = 0;
 
   // Deferred texture cleanup to avoid null-source races during hot swaps
   private readonly retiredTextures = new RetiredTextureQueue(
@@ -398,6 +412,7 @@ export class TrackRenderEngine {
         localTimeSeconds: renderTimeSeconds,
         rawTimeTicks: rawTimeSeconds,
         enqueuedAtMs: nowMs,
+        generation: this.createLiveRenderGeneration(),
       });
     } else if (!shouldSend || !shouldRender) {
       // Keep transforms/filters responsive without requesting a new SAM2 frame.
@@ -506,6 +521,7 @@ export class TrackRenderEngine {
       return inFlightSynchronizedRender.promise;
     }
 
+    const generation = this.createSynchronizedRenderGeneration();
     const renderPromise = this.renderSynchronizedPlaybackFrameInternal(
       trackClips,
       assets,
@@ -514,6 +530,7 @@ export class TrackRenderEngine {
         activeClip,
         effectiveTick,
         fps,
+        generation,
         localTimeSeconds,
         maskClips,
         rawTimeSeconds,
@@ -619,6 +636,7 @@ export class TrackRenderEngine {
       activeClip: TimelineClip;
       effectiveTick: number;
       fps: number;
+      generation: number;
       localTimeSeconds: number;
       maskClips: MaskTimelineClip[];
       rawTimeSeconds: number;
@@ -628,6 +646,7 @@ export class TrackRenderEngine {
       activeClip,
       effectiveTick,
       fps,
+      generation,
       localTimeSeconds,
       maskClips,
       rawTimeSeconds,
@@ -668,6 +687,10 @@ export class TrackRenderEngine {
       attempt <= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS;
       attempt += 1
     ) {
+      if (!this.isSynchronizedRenderCurrent(generation)) {
+        return;
+      }
+
       const nowMs = performance.now();
       const assetById = this.syncPreparedClips(
         effectiveTick,
@@ -725,6 +748,13 @@ export class TrackRenderEngine {
             ),
           ]);
 
+          if (!this.isSynchronizedRenderCurrent(generation)) {
+            if (frame.bitmap && typeof frame.bitmap.close === "function") {
+              frame.bitmap.close();
+            }
+            return;
+          }
+
           if (frame.bitmap) {
             const texture = Texture.from(frame.bitmap);
             const contentSizeChanged = this.applyTexture(
@@ -751,11 +781,20 @@ export class TrackRenderEngine {
             return;
           }
 
-          if (
-            error instanceof Error &&
-            error.name === "TimeoutError" &&
-            attempt < TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS
-          ) {
+          if (isLiveFrameTimeoutError(error)) {
+            if (!this.isSynchronizedRenderCurrent(generation)) {
+              return;
+            }
+
+            this.lastRenderRequest = null;
+            const shouldResetWorker = this.recordLiveDecoderTimeout();
+            if (
+              !shouldResetWorker ||
+              attempt >= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS
+            ) {
+              return;
+            }
+
             console.warn(
               "Live decoder worker stalled during synchronized playback; recreating worker",
               error,
@@ -939,6 +978,8 @@ export class TrackRenderEngine {
       e.data;
 
     if (type === "frame") {
+      this.markLiveDecoderResponsive();
+
       if (this.pendingResolve) {
         // Export Mode: Resolves the promise
         this.pendingResolve(bitmap);
@@ -1199,6 +1240,10 @@ export class TrackRenderEngine {
       attempt <= TrackRenderEngine.LIVE_RENDER_RECOVERY_ATTEMPTS;
       attempt += 1
     ) {
+      if (!this.isLiveRenderRequestCurrent(request)) {
+        return;
+      }
+
       try {
         const [frame] = await Promise.all([
           this.requestStrictLiveFrame(
@@ -1216,6 +1261,13 @@ export class TrackRenderEngine {
             { waitForSam2: true },
           ),
         ]);
+
+        if (!this.isLiveRenderRequestCurrent(request)) {
+          if (frame.bitmap && typeof frame.bitmap.close === "function") {
+            frame.bitmap.close();
+          }
+          return;
+        }
 
         if (frame.bitmap) {
           const texture = Texture.from(frame.bitmap);
@@ -1257,11 +1309,20 @@ export class TrackRenderEngine {
           return;
         }
 
-        if (
-          error instanceof Error &&
-          error.name === "TimeoutError" &&
-          attempt < TrackRenderEngine.LIVE_RENDER_RECOVERY_ATTEMPTS
-        ) {
+        if (isLiveFrameTimeoutError(error)) {
+          if (!this.isLiveRenderRequestCurrent(request)) {
+            return;
+          }
+
+          this.lastRenderRequest = null;
+          const shouldResetWorker = this.recordLiveDecoderTimeout();
+          if (
+            !shouldResetWorker ||
+            attempt >= TrackRenderEngine.LIVE_RENDER_RECOVERY_ATTEMPTS
+          ) {
+            return;
+          }
+
           console.warn(
             "Live decoder worker stalled during live playback; recreating worker",
             error,
@@ -1322,6 +1383,36 @@ export class TrackRenderEngine {
     return `live-frame-${this.nextLiveFrameRequestId}`;
   }
 
+  private createLiveRenderGeneration(): number {
+    this.liveRenderGeneration += 1;
+    return this.liveRenderGeneration;
+  }
+
+  private createSynchronizedRenderGeneration(): number {
+    this.synchronizedRenderGeneration += 1;
+    return this.synchronizedRenderGeneration;
+  }
+
+  private isLiveRenderRequestCurrent(request: LiveRenderRequest): boolean {
+    return request.generation === this.liveRenderGeneration;
+  }
+
+  private isSynchronizedRenderCurrent(generation: number): boolean {
+    return generation === this.synchronizedRenderGeneration;
+  }
+
+  private recordLiveDecoderTimeout(): boolean {
+    this.liveDecoderTimeoutCount += 1;
+    return (
+      this.liveDecoderTimeoutCount >=
+      TrackRenderEngine.LIVE_DECODER_RESET_TIMEOUTS
+    );
+  }
+
+  private markLiveDecoderResponsive(): void {
+    this.liveDecoderTimeoutCount = 0;
+  }
+
   private isStalePendingLiveFrameResponse(
     requestId: unknown,
     bitmap: ImageBitmap | null,
@@ -1380,6 +1471,7 @@ export class TrackRenderEngine {
   }
 
   private invalidateLivePipeline() {
+    this.liveRenderGeneration += 1;
     this.liveRenderQueue.length = 0;
     this.rejectPendingLiveFrame(createRenderAbortError());
   }
@@ -1390,6 +1482,7 @@ export class TrackRenderEngine {
     this.lastRenderRequest = null;
     this.preparedClips.clear();
     this.preparedClipTouchedAtMs.clear();
+    this.liveDecoderTimeoutCount = 0;
 
     this.worker.terminate();
     this.worker = this.createWorker();
@@ -1397,7 +1490,7 @@ export class TrackRenderEngine {
 
   private pruneLiveRenderQueue(nowMs: number) {
     while (
-      this.liveRenderQueue.length > 0 &&
+      this.liveRenderQueue.length > 1 &&
       nowMs - this.liveRenderQueue[0].enqueuedAtMs >
         TrackRenderEngine.MAX_LIVE_REQUEST_AGE_MS
     ) {

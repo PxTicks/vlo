@@ -151,6 +151,7 @@ describe("useCompositeLibraryStore", () => {
     useTimelineStore.getState().addClip(placement);
     mocks.bakeComposite.mockResolvedValueOnce({
       asset: bakedAsset("proxy-new"),
+      bakedDurationTicks: TICKS_PER_SECOND,
       contentHash: "new-hash",
     });
 
@@ -214,6 +215,7 @@ describe("useCompositeLibraryStore", () => {
   it("creates browser-only composites without placing timeline clips", async () => {
     mocks.bakeComposite.mockResolvedValueOnce({
       asset: bakedAsset("proxy-created"),
+      bakedDurationTicks: TICKS_PER_SECOND,
       contentHash: "created-hash",
     });
 

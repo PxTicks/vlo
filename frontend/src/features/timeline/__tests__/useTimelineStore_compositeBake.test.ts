@@ -1,8 +1,6 @@
 import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { TimelineTrack, VideoTimelineClip } from "../../../types/TimelineTypes";
-import { TICKS_PER_SECOND } from "../constants";
-import { useAssetStore } from "../../userAssets/useAssetStore";
 import { useTimelineStore } from "../useTimelineStore";
 
 const createTrack = (id: string): TimelineTrack => ({
@@ -40,19 +38,6 @@ function compositePlacement(
 
 describe("useTimelineStore.relinkCompositePlacements", () => {
   beforeEach(() => {
-    useAssetStore.setState({
-      assets: [
-        {
-          id: "bake-new",
-          name: "bake-new.mp4",
-          src: "bake-new.mp4",
-          type: "video",
-          hash: "hash-bake-new",
-          duration: 120 / TICKS_PER_SECOND,
-          createdAt: 1,
-        },
-      ],
-    });
     act(() => {
       useTimelineStore.getState().replaceTimelineSnapshot({
         tracks: [createTrack("track-1")],
@@ -75,7 +60,7 @@ describe("useTimelineStore.relinkCompositePlacements", () => {
         .addClip(compositePlacement("other", "composite-2", "bake-other"));
       useTimelineStore
         .getState()
-        .relinkCompositePlacements("composite-1", "bake-new");
+        .relinkCompositePlacements("composite-1", "bake-new", 120);
     });
 
     const clips = useTimelineStore.getState().clips;

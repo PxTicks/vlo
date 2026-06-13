@@ -201,7 +201,7 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
       }
 
       beginCompositeRender(compositeAssetId);
-      const { asset } = await bakeComposite(content, {
+      const { asset, bakedDurationTicks } = await bakeComposite(content, {
         signal: input.signal,
         onProgress: input.onProgress,
         compositeAssetId,
@@ -231,7 +231,11 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
       // then drop the now-unreferenced previous bake.
       useTimelineStore
         .getState()
-        .relinkCompositePlacements(compositeAssetId, asset.id);
+        .relinkCompositePlacements(
+          compositeAssetId,
+          asset.id,
+          bakedDurationTicks,
+        );
       if (existing.bakedAssetId && existing.bakedAssetId !== asset.id) {
         await deleteBakedAsset(existing.bakedAssetId);
       }

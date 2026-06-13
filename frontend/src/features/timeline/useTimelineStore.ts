@@ -83,8 +83,6 @@ import {
   selectResolvedMaskBooleanExpressionForParent,
 } from "./selectors/timelineSelectors";
 import { createTimelineMutationPipeline } from "./store/timelineMutationPipeline";
-import { useAssetStore } from "../userAssets/useAssetStore";
-import { durationSecondsToTicks } from "./utils/assetDuration";
 
 enablePatches();
 
@@ -149,6 +147,7 @@ interface TimelineState extends TimelineModelState {
   relinkCompositePlacements: (
     compositeId: string,
     bakedAssetId: string,
+    bakedDurationTicks: number | null,
   ) => void;
 
   removeClip: (id: string) => void;
@@ -433,16 +432,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return didCommit;
     },
 
-    relinkCompositePlacements: (compositeId, bakedAssetId) => {
+    relinkCompositePlacements: (
+      compositeId,
+      bakedAssetId,
+      bakedDurationTicks,
+    ) => {
       // A composite was (re)baked. Repoint every placement of it at the new
       // baked asset so they render through the ordinary video path. Full-length
       // placements re-align to the new bake's real (frame-snapped) duration.
-      const bakedDurationTicks =
-        durationSecondsToTicks(
-          useAssetStore
-            .getState()
-            .assets.find((asset) => asset.id === bakedAssetId)?.duration,
-        ) ?? null;
       mutationPipeline.commitModelMutation((draft) => {
         draft.clips = draft.clips.map((clip) =>
           isCompositeClip(clip) && clip.compositeId === compositeId

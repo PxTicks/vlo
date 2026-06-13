@@ -7,6 +7,7 @@ import {
   type ProjectData,
   type SelectionRenderInputs,
 } from "../../renderer";
+import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
 import {
   compositeContentToSelection,
   hashCompositeContent,
@@ -26,12 +27,28 @@ export interface BakeCompositeOptions {
 export interface BakedComposite {
   /** The registered baked video asset. */
   asset: Asset;
+  /** Duration of the registered bake in timeline ticks when available. */
+  bakedDurationTicks: number | null;
   /** Hash of the content this bake was rendered from (for staleness checks). */
   contentHash: string;
 }
 
 function toEven(value: number): number {
   return Math.max(2, Math.round(value / 2) * 2);
+}
+
+function durationSecondsToTicks(
+  durationSeconds: number | null | undefined,
+): number | null {
+  if (
+    typeof durationSeconds !== "number" ||
+    !Number.isFinite(durationSeconds) ||
+    durationSeconds <= 0
+  ) {
+    return null;
+  }
+
+  return Math.max(0, mediaSecondsToTick(durationSeconds, "floor"));
 }
 
 /**
@@ -110,5 +127,9 @@ export async function bakeComposite(
     throw new Error("Failed to register baked composite asset");
   }
 
-  return { asset, contentHash };
+  return {
+    asset,
+    bakedDurationTicks: durationSecondsToTicks(asset.duration),
+    contentHash,
+  };
 }

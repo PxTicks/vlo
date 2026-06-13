@@ -212,11 +212,15 @@ export const collectVideoInputs: Processor<FrontendPreprocessContext> = {
                 `Derived mask render '${getDerivedMaskRenderKey(mask)}' was requested but not produced`,
               );
             }
-            if (
-              mask.optional &&
-              result.maskContentByKey[getDerivedMaskRenderKey(mask)] === false
-            ) {
-              continue;
+            const maskKnownEmpty =
+              result.maskContentByKey[getDerivedMaskRenderKey(mask)] === false;
+            if (maskKnownEmpty) {
+              if (mask.optional) {
+                continue;
+              }
+              console.warn(
+                `[Generation] Required derived mask '${getDerivedMaskRenderKey(mask)}' rendered with no visible content; uploading an empty matte. The workflow will likely produce unmasked or blank output.`,
+              );
             }
             ctx.videoInputs[maskRequestKey] = renderedMask;
           }

@@ -5,14 +5,16 @@ export { useAudioTrack } from "./hooks/useAudioTrack";
 export { useExportJobController } from "./hooks/useExportJobController";
 export { AudioTrackLayer } from "./components/AudioTrackLayer";
 export { TrackRenderEngine } from "./services/TrackRenderEngine";
-export { ExportRenderer } from "./services/ExportRenderer";
+export { ExportRenderer, isBlankStrictRenderHealth } from "./services/ExportRenderer";
 export type {
   ExportConfig,
+  ExportRenderHealth,
   ProjectData,
   RenderOptions,
   RenderStillOptions,
   RenderResult,
 } from "./services/ExportRenderer";
+export type { StrictRenderHealth } from "./services/TrackRenderEngine";
 export { TrackAudioRenderer } from "./services/TrackAudioRenderer";
 export {
   buildProjectRenderInputs,

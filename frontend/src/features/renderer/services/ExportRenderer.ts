@@ -14,7 +14,12 @@ import {
 } from "../utils/mediaTime";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
-import { TrackRenderEngine } from "./TrackRenderEngine";
+import {
+  TrackRenderEngine,
+  createEmptyStrictRenderHealth,
+  isBlankStrictRenderHealth,
+  type StrictRenderHealth,
+} from "./TrackRenderEngine";
 import { TrackAudioRenderer } from "./TrackAudioRenderer";
 import { createDecoderWorkerPool } from "./DecoderWorkerPool";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
@@ -218,7 +223,15 @@ export interface RenderResult {
   mask?: Blob;
   outputs: Record<string, Blob>;
   outputAnalyses?: Record<string, OutputVideoAnalysis>;
+  renderHealth?: ExportRenderHealth;
 }
+
+export interface ExportRenderHealth {
+  totals: StrictRenderHealth;
+  byTrack: Record<string, StrictRenderHealth>;
+}
+
+export { isBlankStrictRenderHealth } from "./TrackRenderEngine";
 
 export class ExportRenderer {
   private app: Application;
@@ -582,6 +595,9 @@ export class ExportRenderer {
 
       this.throwIfCancelled();
 
+      const renderHealth = this.collectRenderHealth(visualTracks);
+      this.warnOnDegradedRenderHealth(renderHealth, "selection render");
+
       const { blobs: outputs, analyses: outputAnalyses } =
         await outputEncoder.finalize();
       const primaryOutputId = outputs.video
@@ -596,6 +612,7 @@ export class ExportRenderer {
         mask: outputs.mask,
         outputs,
         outputAnalyses,
+        renderHealth,
       };
     } finally {
       options.signal?.removeEventListener("abort", onAbort);
@@ -733,6 +750,11 @@ export class ExportRenderer {
       await Promise.all(promises);
       this.throwIfCancelled();
 
+      this.warnOnDegradedRenderHealth(
+        this.collectRenderHealth(visualTracks),
+        "still capture",
+      );
+
       // Rewrite parenting and apply group transforms before the GPU submit.
       this.orchestrator.sync(tick, visualTrackOrder);
 
@@ -753,6 +775,46 @@ export class ExportRenderer {
       this.dispose();
       decoderPool.dispose();
     }
+  }
+
+  private collectRenderHealth(
+    visualTracks: readonly { id: string }[],
+  ): ExportRenderHealth {
+    const totals = createEmptyStrictRenderHealth();
+    const byTrack: Record<string, StrictRenderHealth> = {};
+    this.engines.forEach((engine, index) => {
+      const health = engine.consumeStrictRenderHealth();
+      byTrack[visualTracks[index]?.id ?? `track-${index}`] = health;
+      totals.replies += health.replies;
+      totals.nullFrames += health.nullFrames;
+      totals.missingRendererFrames += health.missingRendererFrames;
+      totals.errorFrames += health.errorFrames;
+    });
+    return { totals, byTrack };
+  }
+
+  private warnOnDegradedRenderHealth(
+    renderHealth: ExportRenderHealth,
+    context: string,
+  ): void {
+    const { totals, byTrack } = renderHealth;
+    if (totals.nullFrames === 0 && totals.errorFrames === 0) {
+      return;
+    }
+
+    const degradedTracks = Object.entries(byTrack)
+      .filter(
+        ([, health]) => health.nullFrames > 0 || health.errorFrames > 0,
+      )
+      .map(([trackId, health]) => {
+        const blankSuffix = isBlankStrictRenderHealth(health)
+          ? " (ALL frames blank)"
+          : "";
+        return `${trackId}: ${health.nullFrames}/${health.replies} frameless${blankSuffix}, missingRenderer=${health.missingRendererFrames}, errors=${health.errorFrames}`;
+      });
+    console.warn(
+      `[ExportRenderer] ${context} produced degraded frames — ${degradedTracks.join("; ")}`,
+    );
   }
 
   public cancel() {

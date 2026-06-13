@@ -136,6 +136,35 @@ function getDecoderSourceKind(
 }
 
 /**
+ * Health tally for strict (export-style) frame replies. Null replies are
+ * encoded as black/frozen frames downstream with no error raised, so callers
+ * that produce deliverable output (export, generation inputs) need this to
+ * detect silently-degraded renders.
+ */
+export interface StrictRenderHealth {
+  replies: number;
+  nullFrames: number;
+  missingRendererFrames: number;
+  errorFrames: number;
+}
+
+export function createEmptyStrictRenderHealth(): StrictRenderHealth {
+  return {
+    replies: 0,
+    nullFrames: 0,
+    missingRendererFrames: 0,
+    errorFrames: 0,
+  };
+}
+
+/** True when every strict reply was frameless — the rendered output is blank. */
+export function isBlankStrictRenderHealth(
+  health: StrictRenderHealth,
+): boolean {
+  return health.replies > 0 && health.nullFrames === health.replies;
+}
+
+/**
  * Encapsulates the rendering logic for a single track.
  * Manages the WebWorker, PIXI.Sprite, and frame synchronization.
  *
@@ -182,6 +211,8 @@ export class TrackRenderEngine {
   private pendingLiveFrameRequestId: string | null = null;
   private nextLiveFrameRequestId = 0;
   private liveDecoderTimeoutCount = 0;
+  private strictRenderHealth = createEmptyStrictRenderHealth();
+  private readonly reportedStrictFrameIssueClipIds = new Set<string>();
 
   // Live synchronized pipeline
   private liveRenderQueue: LiveRenderRequest[] = [];
@@ -1039,11 +1070,13 @@ export class TrackRenderEngine {
     transformTime?: number;
     error?: string;
     requestId?: string;
+    reason?: string;
   }) {
     const { bitmap, clipId, transformTime, error, requestId } = message;
     this.markLiveDecoderResponsive();
 
     if (this.pendingResolve) {
+      this.recordStrictFrameReply(message);
       this.pendingResolve(bitmap);
       return;
     }
@@ -1069,6 +1102,49 @@ export class TrackRenderEngine {
     if (bitmap && typeof bitmap.close === "function") {
       bitmap.close();
     }
+  }
+
+  private recordStrictFrameReply(message: {
+    bitmap: ImageBitmap | null;
+    clipId: string;
+    error?: string;
+    reason?: string;
+  }): void {
+    this.strictRenderHealth.replies += 1;
+    if (!message.bitmap) {
+      this.strictRenderHealth.nullFrames += 1;
+    }
+    if (message.reason === "missing-renderer") {
+      this.strictRenderHealth.missingRendererFrames += 1;
+    }
+    if (message.error) {
+      this.strictRenderHealth.errorFrames += 1;
+    }
+
+    const issue =
+      message.reason === "missing-renderer"
+        ? "no prepared decoder source (frame rendered blank)"
+        : message.error
+          ? `decode error: ${message.error}`
+          : null;
+    if (issue && !this.reportedStrictFrameIssueClipIds.has(message.clipId)) {
+      this.reportedStrictFrameIssueClipIds.add(message.clipId);
+      console.error(
+        `[TrackRenderEngine] Strict render for clip ${message.clipId} returned ${issue}; further occurrences for this clip are counted silently`,
+      );
+    }
+  }
+
+  /**
+   * Returns the strict-frame health tally accumulated since the last call and
+   * resets it. Export pipelines call this once per run to detect renders that
+   * silently produced blank frames.
+   */
+  public consumeStrictRenderHealth(): StrictRenderHealth {
+    const health = this.strictRenderHealth;
+    this.strictRenderHealth = createEmptyStrictRenderHealth();
+    this.reportedStrictFrameIssueClipIds.clear();
+    return health;
   }
 
   private handleLeaseWorkerError(error: Error): void {

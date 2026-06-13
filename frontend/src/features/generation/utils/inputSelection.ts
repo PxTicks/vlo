@@ -9,9 +9,11 @@ import {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
+  isBlankStrictRenderHealth,
   renderProjectFrameFileAtTick,
   renderSelectionToVideoFile,
   type ExportConfig,
+  type ExportRenderHealth,
   type ProjectData,
 } from "../../renderer";
 import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
@@ -34,6 +36,38 @@ import {
   createGenerationAbortError,
   throwIfAborted,
 } from "../pipeline/utils/abort";
+
+/**
+ * Generation inputs must never silently ship blank media to ComfyUI: a render
+ * whose every strict frame came back frameless (decoder never prepared, decode
+ * errors) produces a structurally valid but black MP4, and the workflow then
+ * "succeeds" with garbage output. Throwing here turns that rare silent failure
+ * into a retryable error; partial degradation is only logged.
+ */
+function assertSelectionRenderUsable(
+  renderHealth: ExportRenderHealth | undefined,
+  label: string,
+): void {
+  if (!renderHealth) {
+    return;
+  }
+
+  const { totals } = renderHealth;
+  if (isBlankStrictRenderHealth(totals)) {
+    throw new Error(
+      `Rendered ${label} contained no decoded frames (${totals.replies} frames requested, ` +
+        `${totals.missingRendererFrames} missing decoder source, ${totals.errorFrames} decode errors). ` +
+        `The output would be blank — please retry the generation.`,
+    );
+  }
+
+  if (totals.nullFrames > 0 || totals.errorFrames > 0) {
+    console.warn(
+      `[Generation] ${label} render reported degraded frames`,
+      renderHealth,
+    );
+  }
+}
 
 export async function captureFramePngAtTick(
   tick: number,
@@ -72,6 +106,9 @@ export async function renderTimelineSelectionToMp4(
       includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,
       filenamePrefix: "generation-selection",
+      onRenderHealth: (renderHealth) => {
+        assertSelectionRenderUsable(renderHealth, "generation source video");
+      },
     });
     throwIfAborted(options.signal);
     return file;
@@ -321,6 +358,10 @@ async function renderTimelineSelectionToOutputs(
     includeTimelineMasks: options.includeTimelineMasks,
     signal: options.signal,
   });
+  assertSelectionRenderUsable(
+    result.renderHealth,
+    `generation selection output (${outputs.map((output) => output.id).join("+")})`,
+  );
   return result;
 }
 
@@ -536,6 +577,10 @@ export async function renderAssetToMaskMp4(
       signal: options.signal,
     });
     throwIfAborted(options.signal);
+    assertSelectionRenderUsable(
+      result.renderHealth,
+      `asset transparency mask (${assetId})`,
+    );
 
     const maskBlob = result.outputs.mask;
     if (!maskBlob) {
@@ -746,6 +791,10 @@ export async function renderTimelineSelectionToMp4WithMask(
       );
       maskBlob = maskResult.outputs.mask ?? maskResult.mask ?? maskResult.video;
       maskHasVisibleContent = getRenderedMaskHasVisibleContent(maskResult);
+      assertSelectionRenderUsable(
+        maskResult.renderHealth,
+        "generation mask render",
+      );
       throwIfAborted(options.signal);
 
       const videoRenderer = await ExportRenderer.create(exportConfig);
@@ -761,6 +810,10 @@ export async function renderTimelineSelectionToMp4WithMask(
         },
       );
       videoBlob = videoResult.outputs.video ?? videoResult.video;
+      assertSelectionRenderUsable(
+        videoResult.renderHealth,
+        "generation source video",
+      );
     } else {
       const renderer = await ExportRenderer.create(exportConfig);
       const result = await renderer.render(
@@ -776,6 +829,10 @@ export async function renderTimelineSelectionToMp4WithMask(
       videoBlob = result.outputs.video ?? result.video;
       maskBlob = result.outputs.mask ?? result.mask;
       maskHasVisibleContent = getRenderedMaskHasVisibleContent(result);
+      assertSelectionRenderUsable(
+        result.renderHealth,
+        "generation source video + mask render",
+      );
     }
 
     throwIfAborted(options.signal);

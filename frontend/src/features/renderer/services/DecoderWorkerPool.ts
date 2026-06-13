@@ -31,6 +31,7 @@ type WorkerFrameMessage = {
   transformTime?: number;
   requestId?: string;
   error?: string;
+  reason?: string;
 };
 
 type WorkerErrorMessage = {
@@ -58,6 +59,7 @@ export interface DecoderLeaseEvents {
     transformTime?: number;
     requestId?: string;
     error?: string;
+    reason?: string;
   }): void;
   onWorkerError(error: Error): void;
   onSourceEvicted(clipId: string): void;
@@ -686,6 +688,7 @@ class DecoderWorkerPoolImpl implements DecoderWorkerPool {
             : undefined,
         requestId: typedMessage.requestId,
         error: typedMessage.error,
+        reason: typedMessage.reason,
       });
       return;
     }

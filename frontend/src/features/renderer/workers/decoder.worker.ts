@@ -505,7 +505,9 @@ const processRender = async (request: RenderRequest) => {
   const ctx = self as DedicatedWorkerGlobalScope;
 
   if (!renderer) {
-    // Safety: If no renderer exists, send null so main thread doesn't hang
+    // Safety: If no renderer exists, send null so main thread doesn't hang.
+    // The reason tag lets consumers distinguish "no frame available" from
+    // "the source was never prepared" — the latter silently blanks exports.
     ctx.postMessage({
       type: "frame",
       bitmap: null,
@@ -513,6 +515,7 @@ const processRender = async (request: RenderRequest) => {
       clipId,
       transformTime,
       requestId,
+      reason: "missing-renderer",
     });
     postDecoderDiagnostic(
       diagnostics,
@@ -609,12 +612,17 @@ const loop = async (initialRequest: RenderRequest) => {
   let nextRequest: RenderRequest | null = initialRequest;
 
   while (nextRequest !== null) {
-    await processRender(nextRequest);
+    try {
+      await processRender(nextRequest);
+    } catch (err) {
+      // processRender replies on its own error paths; this guard only keeps an
+      // unexpected throw from leaving the clip marked active forever, which
+      // would silently block every future render for it (ping-based recovery
+      // cannot detect it because the worker loop stays responsive).
+      console.error(`Render loop error [${nextRequest.clipId}]:`, err);
+    }
     const result: CompleteRenderRequestResult<RenderRequest> =
-      completeRenderRequest(
-      renderRequestQueueState,
-      nextRequest.clipId,
-      );
+      completeRenderRequest(renderRequestQueueState, nextRequest.clipId);
     renderRequestQueueState = result.queueState;
     nextRequest = result.nextRequest;
   }
@@ -756,6 +764,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
             clipId,
             transformTime,
             requestId,
+            reason: "missing-renderer",
           });
           postDecoderDiagnostic(
             diagnostics,

@@ -3,6 +3,7 @@ import { normalizeTimelineSelection } from "../../timelineSelection";
 import {
   ExportRenderer,
   type ExportConfig,
+  type ExportRenderHealth,
   type ProjectData,
 } from "./ExportRenderer";
 import { buildProjectRenderInputs } from "./projectFrameCapture";
@@ -31,6 +32,12 @@ export interface RenderSelectionToVideoFileOptions {
   onRendererCreated?: (renderer: ExportRenderer) => void;
   /** Skip selection normalization (caller passes an already-built selection). */
   skipNormalize?: boolean;
+  /**
+   * Receives the render's strict-frame health tally before the File is
+   * returned. Callers that must not ship blank output (e.g. generation input
+   * prep) can inspect it and throw.
+   */
+  onRenderHealth?: (renderHealth: ExportRenderHealth | undefined) => void;
 }
 
 /**
@@ -68,6 +75,8 @@ export async function renderSelectionToVideoFile(
       signal: options.signal,
     },
   );
+
+  options.onRenderHealth?.(result.renderHealth);
 
   const prefix = options.filenamePrefix ?? "selection";
   return new File([result.video], `${prefix}-${Date.now()}.mp4`, {

@@ -490,6 +490,9 @@ export function useTrackRenderEngine(
       engineRef.current = null;
       setSpriteInstance(null);
     };
+    // zIndex is read only for the engine's initial value; effect #2 below
+    // applies zIndex changes in place so reorders don't tear down the engine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackId, app, container, orchestrator, adjustmentEffectResolver]);
 
   useEffect(() => {

@@ -1,9 +1,10 @@
 import { useProjectStore } from "../../project";
+import { TICKS_PER_SECOND } from "../../../core/time/constants";
 import {
-  TICKS_PER_SECOND,
+  getTimelineClips,
   getTimelineDuration,
-  useTimelineStore,
-} from "../../timeline";
+  getTimelineTracks,
+} from "../../timeline/api";
 import type {
   NonMaskTimelineClip,
   TimelineClip,
@@ -34,8 +35,8 @@ export function createTimelineSelection(
   startTick: number,
   endTick: number,
 ): TimelineSelection {
-  const clips = useTimelineStore.getState().clips;
-  const tracks = useTimelineStore.getState().tracks;
+  const clips = getTimelineClips();
+  const tracks = getTimelineTracks();
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
   const {
     selectionFpsOverride,
@@ -71,8 +72,8 @@ export function createTimelineSelection(
 export function createPointTimelineSelection(
   tick: number,
 ): TimelineSelection {
-  const clips = useTimelineStore.getState().clips;
-  const tracks = useTimelineStore.getState().tracks;
+  const clips = getTimelineClips();
+  const tracks = getTimelineTracks();
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
 
   return {
@@ -95,8 +96,8 @@ export function createTimelineSelectionFromClipIds({
   message,
   includedTrackIds,
 }: CreateTimelineSelectionFromClipIdsOptions): TimelineSelection | null {
-  const sourceClips = clips ?? useTimelineStore.getState().clips;
-  const sourceTracks = tracks ?? useTimelineStore.getState().tracks;
+  const sourceClips = clips ?? getTimelineClips();
+  const sourceTracks = tracks ?? getTimelineTracks();
   const selectedClipIds = new Set(clipIds);
   const primaryClips = sourceClips.filter(
     (clip): clip is NonMaskTimelineClip =>

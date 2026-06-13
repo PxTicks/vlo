@@ -1,6 +1,6 @@
 import type { Asset } from "../../../types/Asset";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
-import { useTimelineStore } from "../../timeline/useTimelineStore";
+import { getTimelineClips } from "../../timeline/api";
 import { normalizeTimelineSelection } from "./timelineSelection";
 
 /**
@@ -13,7 +13,7 @@ export function getTimelineSelectionFromAsset(
 ): TimelineSelection | null {
   const meta = asset.creationMetadata;
   if (!meta) return null;
-  const timelineClips = useTimelineStore.getState().clips;
+  const timelineClips = getTimelineClips();
 
   if (meta.source === "extracted" && meta.timelineSelection) {
     return normalizeTimelineSelection(meta.timelineSelection, timelineClips);

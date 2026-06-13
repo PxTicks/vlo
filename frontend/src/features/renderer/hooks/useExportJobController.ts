@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
-import { getTimelineDuration, useTimelineStore } from "../../timeline";
+import {
+  getTimelineClips,
+  getTimelineDuration,
+  getTimelineTracks,
+} from "../../timeline/api";
 import { addLocalAsset, getAssets } from "../../userAssets";
 import {
   getClipsInSelection,
@@ -94,13 +98,12 @@ export function useExportJobController({
   }, []);
 
   const buildProjectData = useCallback((): ProjectData => {
-    const store = useTimelineStore.getState();
     const assets = getAssets();
     const duration = getTimelineDuration();
 
     return {
-      tracks: store.tracks,
-      clips: store.clips,
+      tracks: getTimelineTracks(),
+      clips: getTimelineClips(),
       assets,
       duration,
       fps: projectFps,

@@ -14,7 +14,7 @@ import {
 } from "../../timelineSelection";
 import { useProjectStore } from "../../project/useProjectStore";
 import { getAssets, addLocalAsset } from "../../userAssets";
-import { useTimelineStore } from "../../timeline/useTimelineStore";
+import { getTimelineTracks } from "../../timeline/api";
 
 export interface BakeCompositeOptions {
   signal?: AbortSignal;
@@ -75,7 +75,7 @@ function buildCompositeRenderInputs(
       : Math.max(1, project.config.fps);
 
   const projectData: ProjectData = {
-    tracks: content.tracks ?? useTimelineStore.getState().tracks,
+    tracks: content.tracks ?? getTimelineTracks(),
     clips: content.clips,
     assets: getAssets(),
     duration: content.durationTicks,

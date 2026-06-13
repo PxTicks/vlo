@@ -1,7 +1,10 @@
 import { useState, memo, useEffect } from "react";
 import type { ReactNode } from "react";
 import { Box, Tabs, Tab } from "@mui/material";
-import { useTimelineStore } from "../../features/timeline";
+import {
+  useSelectedTimelineClipIds,
+  useTimelineClip,
+} from "../../features/timeline/api";
 import { TransformationPanel } from "../../features/transformations";
 import { GenerationPanel } from "../../features/generation";
 import { MaskPanel, useMaskViewStore } from "../../features/masks";
@@ -33,18 +36,13 @@ function TabPanel({ active, children }: TabPanelProps) {
 }
 
 function RightSidebarPanelComponent() {
-  const hasSelection = useTimelineStore(
-    (state) => state.selectedClipIds.length > 0,
-  );
+  const selectedClipIds = useSelectedTimelineClipIds();
+  const hasSelection = selectedClipIds.length > 0;
   // Hide the Mask tab when an adjustment clip is the primary selection:
   // adjustment clips bypass `applyClipTransforms`, so neither ClipMask
   // attachments nor range-mask components have any render-time effect.
-  const isAdjustmentSelected = useTimelineStore((state) => {
-    const id = state.selectedClipIds[0];
-    if (!id) return false;
-    const clip = state.clips.find((c) => c.id === id);
-    return clip?.type === "adjustment";
-  });
+  const primarySelectedClip = useTimelineClip(selectedClipIds[0]);
+  const isAdjustmentSelected = primarySelectedClip?.type === "adjustment";
   const [activeTab, setActiveTab] = useState<RightSidebarTab>("generate");
 
   // On the selection edge, snap to a sensible default tab: Transform when a

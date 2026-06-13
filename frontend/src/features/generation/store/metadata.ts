@@ -5,7 +5,7 @@ import type {
 } from "../../../types/Asset";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { getAssetById } from "../../userAssets/api";
-import { useTimelineStore } from "../../timeline";
+import { getTimelineClips } from "../../timeline/api";
 import { normalizeTimelineSelection } from "../../timelineSelection";
 import type { DerivedMaskMapping } from "../pipeline/types";
 import {
@@ -193,7 +193,7 @@ export async function restoreMediaInputsFromMetadata(
     | "setMediaInputTimelineSelection"
   >,
 ): Promise<void> {
-  const timelineClips = useTimelineStore.getState().clips;
+  const timelineClips = getTimelineClips();
   const workflowInputByNodeId = new Map<string, WorkflowInput>();
   for (const workflowInput of workflowInputs) {
     if (!workflowInputByNodeId.has(workflowInput.nodeId)) {

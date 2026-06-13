@@ -1,5 +1,9 @@
 import { useProjectStore } from "../../project";
-import { getTimelineDuration, useTimelineStore } from "../../timeline";
+import {
+  getTimelineClips,
+  getTimelineDuration,
+  getTimelineTracks,
+} from "../../timeline/api";
 import { getAssets } from "../../userAssets";
 import { getProjectDimensions } from "../utils/dimensions";
 import {
@@ -30,7 +34,6 @@ function resolveExtension(mimeType: "image/png" | "image/webp"): string {
 
 export function buildProjectRenderInputs(): ProjectRenderInputs {
   const projectStore = useProjectStore.getState();
-  const timelineStore = useTimelineStore.getState();
   const assets = getAssets();
 
   const logicalDimensions = getProjectDimensions(projectStore.config.aspectRatio);
@@ -49,8 +52,8 @@ export function buildProjectRenderInputs(): ProjectRenderInputs {
   };
 
   const projectData: ProjectData = {
-    tracks: timelineStore.tracks,
-    clips: timelineStore.clips,
+    tracks: getTimelineTracks(),
+    clips: getTimelineClips(),
     assets,
     duration: getTimelineDuration(),
     fps: projectStore.config.fps,

@@ -3,10 +3,17 @@ import { useState } from "react";
 import { TextField } from "@mui/material";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { RightSidebarPanel } from "../RightSidebarPanel";
-import { useTimelineStore } from "../../../features/timeline";
+import {
+  useSelectedTimelineClipIds,
+  useTimelineClip,
+} from "../../../features/timeline/api";
 import { useMaskViewStore } from "../../../features/masks";
+import type { TimelineClip } from "../../../types/TimelineTypes";
 
-vi.mock("../../../features/timeline");
+vi.mock("../../../features/timeline/api", () => ({
+  useSelectedTimelineClipIds: vi.fn(),
+  useTimelineClip: vi.fn(),
+}));
 
 vi.mock("../../../features/transformations", () => ({
   TransformationPanel: () => (
@@ -43,7 +50,7 @@ vi.mock("../../../features/generation", () => ({
 
 describe("RightSidebarPanel", () => {
   let selectedClipIds: string[] = [];
-  let clips: Array<{ id: string; type: string }> = [];
+  let clips: Array<Pick<TimelineClip, "id" | "type">> = [];
   const setMaskTabActive = vi.fn();
 
   beforeEach(() => {
@@ -51,15 +58,11 @@ describe("RightSidebarPanel", () => {
     clips = [];
     vi.clearAllMocks();
 
-    (
-      useTimelineStore as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation(
-      (
-        selector: (state: {
-          selectedClipIds: string[];
-          clips: Array<{ id: string; type: string }>;
-        }) => unknown,
-      ) => selector({ selectedClipIds, clips }),
+    vi.mocked(useSelectedTimelineClipIds).mockImplementation(
+      () => selectedClipIds,
+    );
+    vi.mocked(useTimelineClip).mockImplementation((clipId) =>
+      clips.find((clip) => clip.id === clipId) as TimelineClip | undefined,
     );
     (
       useMaskViewStore as unknown as {

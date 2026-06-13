@@ -1,5 +1,5 @@
 import { useShallow } from "zustand/react/shallow";
-import type { TimelineClip } from "../../types/TimelineTypes";
+import type { TimelineClip, TimelineTrack } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
   selectPrimaryActiveClip,
@@ -31,6 +31,18 @@ export function usePrimaryActiveClip(): TimelineClip | undefined {
   return useTimelineStore(selectPrimaryActiveClip);
 }
 
+export function useTimelineClips(): TimelineClip[] {
+  return useTimelineStore(useShallow((state) => state.clips));
+}
+
+export function useTimelineTracks(): TimelineTrack[] {
+  return useTimelineStore(useShallow((state) => state.tracks));
+}
+
+export function useSelectedTimelineClipIds(): string[] {
+  return useTimelineStore(useShallow((state) => state.selectedClipIds));
+}
+
 export function useTimelineClipsForTrack(
   trackId: string,
   includeMasks: boolean = true,
@@ -57,6 +69,10 @@ export function useTimelineClipCountForAsset(
 
 export function getTimelineClips(): TimelineClip[] {
   return useTimelineStore.getState().clips;
+}
+
+export function getTimelineTracks(): TimelineTrack[] {
+  return useTimelineStore.getState().tracks;
 }
 
 export function getTimelineClipById(

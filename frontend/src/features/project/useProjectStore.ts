@@ -1,14 +1,16 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Project } from "../../types/ProjectState";
-import { useTimelineStore } from "../timeline";
+import { runPreSaveHooks } from "../../core/persistence/preSaveHooks";
 import { fileSystemService } from "./services/FileSystemService";
 import { projectPersistenceService } from "./services/ProjectPersistenceService";
 import { recentProjectsService } from "./services/RecentProjectsService";
 import { VLO_APP_VERSION } from "./constants";
 import { PROJECT_ASPECT_RATIOS } from "./aspectRatioOptions";
-import type { ProjectDocumentConfig } from "./types/ProjectDocument";
-import { flushAllBrushMaskCommits } from "../masks/runtime/brushAssetSync";
+import type {
+  ProjectDocumentConfig,
+  TimelineSnapshot,
+} from "./types/ProjectDocument";
 
 export type AspectRatio = "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
 export type AssetBrowserDisplay = "grouped" | "ungrouped";
@@ -90,9 +92,38 @@ const hasProjectConfigChanged = (
   current.layoutMode !== next.layoutMode ||
   current.assetBrowserDisplay !== next.assetBrowserDisplay;
 
-async function flushOpenProjectPersistence(): Promise<void> {
-  await flushAllBrushMaskCommits();
-  await useTimelineStore.getState().flushPendingPersistence();
+let nextTimelineSnapshotRequestId = 0;
+
+function createTimelineSnapshotRequest(
+  snapshot: TimelineSnapshot | null,
+): ProjectTimelineSnapshotRequest {
+  nextTimelineSnapshotRequestId += 1;
+  return {
+    id: nextTimelineSnapshotRequestId,
+    snapshot: snapshot ? structuredClone(snapshot) : null,
+  };
+}
+
+interface FlushOpenProjectPersistenceOptions {
+  warnIfNoPreSaveHooks?: boolean;
+}
+
+async function flushOpenProjectPersistence(
+  options: FlushOpenProjectPersistenceOptions = {},
+): Promise<void> {
+  const preSaveHookCount = await runPreSaveHooks();
+  if (
+    options.warnIfNoPreSaveHooks &&
+    preSaveHookCount === 0 &&
+    import.meta.env.DEV
+  ) {
+    console.warn(
+      "[Project] Saving without registered pre-save hooks. Timeline and mask " +
+        "flushes are registered by editor orchestration, so saves outside the " +
+        "mounted editor must register equivalent hooks first.",
+    );
+  }
+
   await projectPersistenceService.flushAll();
 
   try {
@@ -122,6 +153,7 @@ export interface ProjectState {
   project: Project | null;
   rootHandle: FileSystemDirectoryHandle | null;
   config: ProjectConfig;
+  timelineSnapshotRequest: ProjectTimelineSnapshotRequest | null;
   createProject: (
     title: string,
     parentHandle: FileSystemDirectoryHandle,
@@ -131,8 +163,14 @@ export interface ProjectState {
   updateTitle: (newTitle: string) => Promise<void>;
   updateConfig: (updates: Partial<ProjectConfig>) => Promise<void>;
   assignAssetFolder: (folderPath: string) => void;
+  acknowledgeTimelineSnapshotRequest: (requestId: number) => void;
   saveProject: () => Promise<string | null>;
   resetProject: () => void;
+}
+
+export interface ProjectTimelineSnapshotRequest {
+  id: number;
+  snapshot: TimelineSnapshot | null;
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -141,6 +179,7 @@ export const useProjectStore = create<ProjectState>()(
       project: null,
       rootHandle: null,
       config: { ...DEFAULT_PROJECT_CONFIG },
+      timelineSnapshotRequest: null,
 
       createProject: async (
         title: string,
@@ -179,19 +218,14 @@ export const useProjectStore = create<ProjectState>()(
             project: newProject,
             rootHandle: projectHandle,
             config: { ...DEFAULT_PROJECT_CONFIG, ...configOverrides },
+            timelineSnapshotRequest: createTimelineSnapshotRequest(null),
           });
 
-          useTimelineStore.getState().replaceTimelineSnapshot(null);
-          const timelineState = useTimelineStore.getState();
           await projectPersistenceService.initializeProjectDocuments({
             id: newProject.id,
             title: newProject.title,
             createdAt: newProject.createdAt,
             config: get().config,
-            timeline: {
-              tracks: structuredClone(timelineState.tracks),
-              clips: structuredClone(timelineState.clips),
-            },
           });
 
           await recentProjectsService.addRecent(
@@ -239,19 +273,14 @@ export const useProjectStore = create<ProjectState>()(
               project: newProject,
               rootHandle: handle,
               config: projectConfig,
+              timelineSnapshotRequest: createTimelineSnapshotRequest(null),
             });
 
-            useTimelineStore.getState().replaceTimelineSnapshot(null);
-            const timelineState = useTimelineStore.getState();
             await projectPersistenceService.initializeProjectDocuments({
               id: newProject.id,
               title: newProject.title,
               createdAt: newProject.createdAt,
               config: projectConfig,
-              timeline: {
-                tracks: structuredClone(timelineState.tracks),
-                clips: structuredClone(timelineState.clips),
-              },
             });
 
             const { scanForNewAssets } = await import("../userAssets");
@@ -265,6 +294,13 @@ export const useProjectStore = create<ProjectState>()(
             return;
           }
 
+          const timeline = loaded.timeline
+            ? {
+                tracks: loaded.timeline.tracks,
+                clips: loaded.timeline.clips,
+              }
+            : null;
+
           set({
             project: {
               id: projectId,
@@ -275,15 +311,8 @@ export const useProjectStore = create<ProjectState>()(
             },
             rootHandle: handle,
             config: projectConfig,
+            timelineSnapshotRequest: createTimelineSnapshotRequest(timeline),
           });
-
-          const timeline = loaded.timeline
-            ? {
-                tracks: loaded.timeline.tracks,
-                clips: loaded.timeline.clips,
-              }
-            : null;
-          useTimelineStore.getState().replaceTimelineSnapshot(timeline);
 
           await recentProjectsService.addRecent(projectId, projectTitle, handle);
         } catch (e) {
@@ -327,12 +356,21 @@ export const useProjectStore = create<ProjectState>()(
             : null,
         })),
 
+      acknowledgeTimelineSnapshotRequest: (requestId) =>
+        set((state) =>
+          state.timelineSnapshotRequest?.id === requestId
+            ? { timelineSnapshotRequest: null }
+            : {},
+        ),
+
       saveProject: async () => {
         const { project, config } = get();
         if (!project) return null;
 
         try {
-          await flushOpenProjectPersistence();
+          await flushOpenProjectPersistence({
+            warnIfNoPreSaveHooks: true,
+          });
 
           await projectPersistenceService.updateManifest((draft) => {
             draft.id = project.id;
@@ -352,8 +390,12 @@ export const useProjectStore = create<ProjectState>()(
       resetProject: () => {
         void clearProjectDeferredCleanupTrash();
         projectPersistenceService.resetCaches();
-        useTimelineStore.getState().replaceTimelineSnapshot(null);
-        set({ project: null, rootHandle: null, config: { ...DEFAULT_PROJECT_CONFIG } });
+        set({
+          project: null,
+          rootHandle: null,
+          config: { ...DEFAULT_PROJECT_CONFIG },
+          timelineSnapshotRequest: createTimelineSnapshotRequest(null),
+        });
       },
     }),
     {

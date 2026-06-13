@@ -21,10 +21,8 @@ function isBoundaryLogFor(call: unknown[], boundaryName: string): boolean {
   );
 }
 
-vi.mock("../../features/project", () => ({
-  ProjectTitle: () => <div data-testid="project-title">Project</div>,
-  useProjectStore: (selector: (state: unknown) => unknown) =>
-    selector({
+vi.mock("../../features/project", () => {
+  const projectState = {
       project: {
         id: "project-1",
         rootAssetsFolder: "/tmp/assets",
@@ -33,8 +31,23 @@ vi.mock("../../features/project", () => ({
         layoutMode: "compact",
         fps: 24,
       },
-    }),
-}));
+      timelineSnapshotRequest: null,
+    };
+
+  return {
+    ProjectTitle: () => <div data-testid="project-title">Project</div>,
+    useProjectStore: Object.assign(
+      (selector: (state: unknown) => unknown) => selector(projectState),
+      {
+        getState: () => ({
+          ...projectState,
+          acknowledgeTimelineSnapshotRequest: vi.fn(),
+        }),
+        subscribe: vi.fn(() => vi.fn()),
+      },
+    ),
+  };
+});
 
 vi.mock("../../features/userAssets", () => ({
   AssetBrowser: () => <div data-testid="asset-browser">Assets</div>,

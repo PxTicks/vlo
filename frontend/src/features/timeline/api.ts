@@ -1,5 +1,6 @@
 import { useShallow } from "zustand/react/shallow";
 import type { TimelineClip } from "../../types/TimelineTypes";
+import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
   selectPrimaryActiveClip,
   selectTimelineClipById,
@@ -90,6 +91,16 @@ export function getTimelineClipCountForAsset(
   assetId: string | null | undefined,
 ): number {
   return selectTimelineClipCountForAsset(useTimelineStore.getState(), assetId);
+}
+
+export function replaceTimelineSnapshot(
+  snapshot: TimelineSnapshot | null,
+): void {
+  useTimelineStore.getState().replaceTimelineSnapshot(snapshot);
+}
+
+export async function flushPendingTimelinePersistence(): Promise<void> {
+  await useTimelineStore.getState().flushPendingPersistence();
 }
 
 export type { TimelineStoreState };

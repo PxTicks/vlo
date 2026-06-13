@@ -1,18 +1,26 @@
-import { describe, it, expect, beforeEach, vi, type Mock } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest";
 import { useProjectStore } from "../useProjectStore";
 import { fileSystemService } from "../services/FileSystemService";
 import { projectPersistenceService } from "../services/ProjectPersistenceService";
 import { recentProjectsService } from "../services/RecentProjectsService";
+import { registerPreSaveHook } from "../../../core/persistence/preSaveHooks";
 import {
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
   VLO_APP_VERSION,
 } from "../constants";
-import { useTimelineStore } from "../../timeline";
 
-const { mockScanForNewAssets, mockFlushAllBrushMaskCommits } = vi.hoisted(() => ({
+const { mockScanForNewAssets, mockPreSaveHook } = vi.hoisted(() => ({
   mockScanForNewAssets: vi.fn(),
-  mockFlushAllBrushMaskCommits: vi.fn(),
+  mockPreSaveHook: vi.fn(),
 }));
 
 vi.mock("../services/FileSystemService", () => ({
@@ -37,10 +45,6 @@ vi.mock("../../userAssets", () => ({
   scanForNewAssets: mockScanForNewAssets,
 }));
 
-vi.mock("../../masks/runtime/brushAssetSync", () => ({
-  flushAllBrushMaskCommits: mockFlushAllBrushMaskCommits,
-}));
-
 describe("useProjectStore", () => {
   const defaultConfig = {
     aspectRatio: "16:9" as const,
@@ -55,17 +59,27 @@ describe("useProjectStore", () => {
     getDirectoryHandle: vi.fn().mockResolvedValue({ name: "Title" }), // Mock handle
   } as unknown as FileSystemDirectoryHandle;
 
+  let unregisterPreSaveHook: (() => void) | null = null;
+
   beforeEach(() => {
+    unregisterPreSaveHook?.();
+    unregisterPreSaveHook = registerPreSaveHook(mockPreSaveHook);
+
     useProjectStore.setState({
       project: null,
       rootHandle: null,
       config: { ...defaultConfig },
+      timelineSnapshotRequest: null,
     });
-    useTimelineStore.getState().replaceTimelineSnapshot(null);
     vi.clearAllMocks();
-    mockFlushAllBrushMaskCommits.mockResolvedValue(undefined);
+    mockPreSaveHook.mockResolvedValue(undefined);
     (fileSystemService.checkDirectoryExists as Mock).mockResolvedValue(false);
     projectPersistenceService.resetCaches();
+  });
+
+  afterEach(() => {
+    unregisterPreSaveHook?.();
+    unregisterPreSaveHook = null;
   });
 
   function getLastWrittenJson(path: string): Record<string, unknown> {
@@ -182,7 +196,7 @@ describe("useProjectStore", () => {
       ([path]) => path === ".vloproject/project.json",
     );
     expect(projectWrites).toHaveLength(2); // Create + title update
-    expect(mockFlushAllBrushMaskCommits).toHaveBeenCalled();
+    expect(mockPreSaveHook).toHaveBeenCalled();
   });
 
   it("should not update title if no project exists", async () => {
@@ -298,15 +312,9 @@ describe("useProjectStore", () => {
 
     await useProjectStore.getState().loadProject(mockHandle);
 
-    expect(useTimelineStore.getState().tracks).toEqual(timeline.tracks);
-    expect(useTimelineStore.getState().clips).toEqual([
-      expect.objectContaining({
-        ...timeline.clips[0],
-        transformations: [
-          expect.objectContaining({ type: "fitMode", isEnabled: true }),
-        ],
-      }),
-    ]);
+    expect(
+      useProjectStore.getState().timelineSnapshotRequest?.snapshot,
+    ).toEqual(timeline);
   });
 
   it("should hydrate config from project manifest when present", async () => {
@@ -379,35 +387,6 @@ describe("useProjectStore", () => {
   });
 
   it("should migrate legacy projects and default timeline snapshot when legacy project.json has no timeline", async () => {
-    useTimelineStore.getState().replaceTimelineSnapshot({
-      tracks: [
-        {
-          id: "legacy-track",
-          label: "Legacy",
-          isVisible: true,
-          isLocked: false,
-          isMuted: false,
-        },
-      ],
-      clips: [
-        {
-          id: "legacy-clip",
-          trackId: "legacy-track",
-          type: "video",
-          name: "legacy-clip",
-          assetId: "asset_legacy",
-          start: 0,
-          timelineDuration: 10,
-          offset: 0,
-          croppedSourceDuration: 10,
-          transformedOffset: 0,
-          sourceDuration: 10,
-          transformedDuration: 10,
-          transformations: [],
-        },
-      ],
-    });
-
     (fileSystemService.readFile as Mock).mockImplementation(async (path: string) => {
       if (path === ".vloproject/project.json") {
         return {
@@ -424,7 +403,8 @@ describe("useProjectStore", () => {
 
     await useProjectStore.getState().loadProject(mockHandle);
 
-    expect(useTimelineStore.getState().clips).toHaveLength(0);
-    expect(useTimelineStore.getState().tracks).toHaveLength(1);
+    const snapshot = useProjectStore.getState().timelineSnapshotRequest?.snapshot;
+    expect(snapshot?.clips).toHaveLength(0);
+    expect(snapshot?.tracks).toHaveLength(1);
   });
 });

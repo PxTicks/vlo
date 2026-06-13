@@ -6,7 +6,6 @@ export { revealAssetInBrowser, useAssetBrowserRevealStore } from "./useAssetBrow
 export { useAssetBrowserSelectionStore } from "./useAssetBrowserSelectionStore";
 export {
   canRegenerateAsset,
-  getAssetRegenerator,
   regenerateAsset,
   registerAssetRegenerator,
 } from "./assetRegenerator";

@@ -19,10 +19,6 @@ export function registerAssetRegenerator(
   };
 }
 
-export function getAssetRegenerator(): AssetRegenerator | null {
-  return registeredAssetRegenerator;
-}
-
 export function canRegenerateAsset(asset: Asset): boolean {
   return registeredAssetRegenerator?.canRegenerate(asset) ?? false;
 }

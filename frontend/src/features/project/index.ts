@@ -18,6 +18,7 @@ export type {
   AspectRatio,
   AssetBrowserDisplay,
   ProjectFitMode,
+  ProjectTimelineSnapshotRequest,
 } from "./useProjectStore";
 export type {
   AssetIndexDocument,

@@ -101,7 +101,7 @@ export interface InitializeProjectDocumentsInput {
   title: string;
   createdAt: number;
   config: ProjectDocumentConfig;
-  timeline: TimelineSnapshot;
+  timeline?: TimelineSnapshot;
   assetIndex?: AssetIndexDocument;
   compositeLibrary?: CompositeLibraryDocument;
 }
@@ -820,7 +820,9 @@ export class ProjectPersistenceService {
     const assetIndex = input.assetIndex ?? createAssetIndexDocument();
     const compositeLibrary =
       input.compositeLibrary ?? createCompositeLibraryDocument();
-    const timeline = createTimelineDocument(input.timeline);
+    const timeline = createTimelineDocument(
+      input.timeline ?? createDefaultTimelineSnapshot(),
+    );
     const manifest = createManifestDocument(input);
 
     await this.persistAssetIndex(assetIndex);

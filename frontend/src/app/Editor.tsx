@@ -22,6 +22,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useEditorAssetLibrary } from "./hooks/useEditorAssetLibrary";
 import { useEditorClipOverlays } from "./hooks/useEditorClipOverlays";
 import { useEditorSelectionLock } from "./hooks/useEditorSelectionLock";
+import { useEditorOrchestration } from "./orchestration/useEditorOrchestration";
 
 const ASSET_DRAG_ACTIVATION_DISTANCE_PX = 1;
 
@@ -39,6 +40,7 @@ export function Editor() {
   const clipOverlays = useEditorClipOverlays();
 
   useEditorFocusReconciler();
+  useEditorOrchestration();
   useEditorAssetLibrary();
 
   const {

@@ -38,6 +38,7 @@ vi.mock("../../features/project", () => ({
 
 vi.mock("../../features/userAssets", () => ({
   AssetBrowser: () => <div data-testid="asset-browser">Assets</div>,
+  registerAssetRegenerator: vi.fn(() => vi.fn()),
   useTimelineAssetRevealClipOverlay: () => ({
     id: "asset-reveal-overlay",
     useItems: () => [],
@@ -53,6 +54,15 @@ vi.mock("../../features/userAssets", () => ({
       }),
     },
   ),
+}));
+
+vi.mock("../../features/generation", () => ({
+  canRegenerateFromAssetMetadata: vi.fn(() => false),
+  useGenerationStore: {
+    getState: () => ({
+      loadWorkflowFromAssetMetadata: vi.fn(),
+    }),
+  },
 }));
 
 vi.mock("../../features/text", () => ({

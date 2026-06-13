@@ -5,6 +5,13 @@ export { useAssetStore } from "./useAssetStore";
 export { revealAssetInBrowser, useAssetBrowserRevealStore } from "./useAssetBrowserRevealStore";
 export { useAssetBrowserSelectionStore } from "./useAssetBrowserSelectionStore";
 export {
+  canRegenerateAsset,
+  getAssetRegenerator,
+  regenerateAsset,
+  registerAssetRegenerator,
+} from "./assetRegenerator";
+export type { AssetRegenerator } from "./assetRegenerator";
+export {
   addLocalAsset,
   addLocalAssetWithFamily,
   deleteAsset,

@@ -28,11 +28,10 @@ import {
   insertAssetAtTime,
   useTimelineClipCountForAsset,
 } from "../../timeline";
-import { canRegenerateFromAssetMetadata } from "../../generation/utils/metadataReplay";
-import { useGenerationStore } from "../../generation/useGenerationStore";
 import { getTimelineSelectionFromAsset } from "../../timelineSelection";
 import { useAssetStore } from "../useAssetStore";
 import { deleteAssetWithConfirmation } from "../utils/deleteAssetWithConfirmation";
+import { canRegenerateAsset, regenerateAsset } from "../assetRegenerator";
 
 interface AssetCardProps {
   asset: Asset;
@@ -197,10 +196,6 @@ const formatDuration = (seconds?: number) => {
   return `${m}:${s.toString().padStart(2, "0")}`;
 };
 
-function canRegenerateFromMetadata(asset: Asset): boolean {
-  return canRegenerateFromAssetMetadata(asset.creationMetadata);
-}
-
 function AssetCardContent({
   asset,
   onDeleteAll,
@@ -218,7 +213,7 @@ function AssetCardContent({
   const updateAsset = useAssetStore((state) => state.updateAsset);
   const timelineClipCount = useTimelineClipCountForAsset(asset.id);
   const timelineSelection = getTimelineSelectionFromAsset(asset);
-  const canRegenerate = canRegenerateFromMetadata(asset);
+  const canRegenerate = canRegenerateAsset(asset);
   const canDeleteAll = Boolean(asset.familyId && onDeleteAll);
   const canShowFamily = Boolean(asset.familyId && onShowFamily);
   const isMenuOpen = Boolean(menuAnchorEl);
@@ -262,7 +257,7 @@ function AssetCardContent({
     handleCloseMenu();
 
     try {
-      await useGenerationStore.getState().loadWorkflowFromAssetMetadata(asset);
+      await regenerateAsset(asset);
     } catch (error) {
       const message =
         error instanceof Error

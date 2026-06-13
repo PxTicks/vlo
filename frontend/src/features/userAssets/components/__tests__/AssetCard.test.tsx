@@ -1,8 +1,9 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import { AssetCard } from "../AssetCard";
 import { useAssetStore } from "../../useAssetStore";
+import { registerAssetRegenerator } from "../../assetRegenerator";
 
 const mocks = vi.hoisted(() => ({
   mockDeleteAsset: vi.fn(),
@@ -34,19 +35,6 @@ vi.mock("../../../timeline", () => {
     },
   };
 });
-
-vi.mock("../../../generation/useGenerationStore", () => ({
-  useGenerationStore: {
-    getState: () => ({
-      loadWorkflowFromAssetMetadata: mocks.mockLoadWorkflowFromAssetMetadata,
-    }),
-  },
-}));
-vi.mock("../../../generation/utils/metadataReplay", () => ({
-  canRegenerateFromAssetMetadata: (metadata: Asset["creationMetadata"]) =>
-    metadata?.source === "generated" &&
-    Boolean(metadata.comfyuiPrompt || metadata.comfyuiWorkflow || metadata.workflowName),
-}));
 
 vi.mock("../../useAssetStore");
 
@@ -149,6 +137,20 @@ const generatedFamilyAsset: Asset = {
 
 type AssetStoreState = ReturnType<typeof useAssetStore.getState>;
 
+let unregisterAssetRegenerator: (() => void) | null = null;
+
+function canRegenerateMockAsset(asset: Asset): boolean {
+  const metadata = asset.creationMetadata;
+  return (
+    metadata?.source === "generated" &&
+    Boolean(
+      metadata.comfyuiPrompt ||
+        metadata.comfyuiWorkflow ||
+        metadata.workflowName,
+    )
+  );
+}
+
 function mockStores(timelineClipCount: number) {
   mocks.timelineClipCount = timelineClipCount;
   vi.mocked(useAssetStore).mockImplementation((selector: (state: AssetStoreState) => unknown) =>
@@ -162,6 +164,12 @@ function mockStores(timelineClipCount: number) {
 
 describe("AssetCard actions", () => {
   beforeEach(() => {
+    unregisterAssetRegenerator?.();
+    unregisterAssetRegenerator = registerAssetRegenerator({
+      canRegenerate: canRegenerateMockAsset,
+      regenerate: mocks.mockLoadWorkflowFromAssetMetadata,
+    });
+
     vi.clearAllMocks();
     mocks.mockDeleteAsset.mockReset();
     mocks.mockUpdateAsset.mockReset();
@@ -177,6 +185,11 @@ describe("AssetCard actions", () => {
     mocks.mockOpenFamily.mockReset();
     mocks.mockUseDraggable.mockClear();
     mocks.timelineClipCount = 0;
+  });
+
+  afterEach(() => {
+    unregisterAssetRegenerator?.();
+    unregisterAssetRegenerator = null;
   });
 
   it("warns when timeline clips derived from the asset will be deleted", () => {

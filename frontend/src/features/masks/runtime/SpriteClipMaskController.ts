@@ -161,6 +161,11 @@ export class SpriteClipMaskController {
   ): Promise<void> {
     this.ensureMaskSceneNodesAttached();
     this.syncMaskSpriteTransform();
+    // The composited-alpha path renders `maskContainer` into a content-sized
+    // texture with its own centering transform, so the container itself must
+    // stay at identity there. The regular path (below) uses `maskContainer`
+    // directly as a Pixi mask and re-applies the content sprite's transform.
+    this.resetMaskContainerTransform();
 
     const {
       fps,
@@ -543,6 +548,81 @@ export class SpriteClipMaskController {
 
     this.maskSprite.rotation = this.sprite.rotation;
     this.maskSprite.alpha = this.sprite.alpha;
+
+    // The regular (non-composited) path applies `maskContainer` directly as the
+    // target's mask, so it must carry the same screen transform as the content
+    // sprite. This runs here — after content transforms have been applied by
+    // the render paths — rather than mid-`syncMaskClips`, where `this.sprite`'s
+    // transform is still stale (the synchronized path applies it afterwards).
+    this.syncMaskContainerTransform();
+  }
+
+  /**
+   * Match `maskContainer` to the content sprite's screen transform. Its child
+   * mask nodes are laid out in centre-relative content space (the sprite uses
+   * `anchor 0.5`, so a node at local origin maps to the sprite's position), so
+   * copying position/scale/rotation/pivot places the regular-path mask exactly
+   * over the content. Mirrors `syncMaskSpriteTransform` for the composited path.
+   */
+  private syncMaskContainerTransform(): void {
+    if (!this.maskRootContainer) {
+      // No group container: `maskContainer` is parented under the content
+      // sprite, so its centre-relative child space already aligns with the
+      // content. Leave it at identity.
+      this.resetMaskContainerTransform();
+      return;
+    }
+    const position = this.sprite.position as { x: number; y: number } | undefined;
+    const scale = this.sprite.scale as { x: number; y: number } | undefined;
+    const pivot = this.sprite.pivot as { x: number; y: number } | undefined;
+    this.setContainerTransform(
+      { x: position?.x ?? 0, y: position?.y ?? 0 },
+      { x: scale?.x ?? 1, y: scale?.y ?? 1 },
+      this.sprite.rotation ?? 0,
+      { x: pivot?.x ?? 0, y: pivot?.y ?? 0 },
+    );
+  }
+
+  /**
+   * Reset `maskContainer` to identity. Required before the composited-alpha
+   * path renders it into a content-sized texture with its own centre transform.
+   */
+  private resetMaskContainerTransform(): void {
+    this.setContainerTransform({ x: 0, y: 0 }, { x: 1, y: 1 }, 0, { x: 0, y: 0 });
+  }
+
+  private setContainerTransform(
+    position: { x: number; y: number },
+    scale: { x: number; y: number },
+    rotation: number,
+    pivot: { x: number; y: number },
+  ): void {
+    const setPoint = (
+      target:
+        | {
+            x: number;
+            y: number;
+            set?: (x: number, y?: number) => void;
+          }
+        | undefined,
+      x: number,
+      y: number,
+    ) => {
+      if (!target) {
+        return;
+      }
+      if (typeof target.set === "function") {
+        target.set(x, y);
+      } else {
+        target.x = x;
+        target.y = y;
+      }
+    };
+
+    setPoint(this.maskContainer.position, position.x, position.y);
+    setPoint(this.maskContainer.scale, scale.x, scale.y);
+    setPoint(this.maskContainer.pivot, pivot.x, pivot.y);
+    this.maskContainer.rotation = rotation;
   }
 
   private get vectorMaskNodes(): Map<string, VectorMaskNode> {

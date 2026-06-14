@@ -15,6 +15,8 @@ import type {
 } from "../../../types/TimelineTypes";
 import { applyClipTransforms } from "../../transformations";
 import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
+import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
+import { getMaskCompositionComponent } from "../../masks/model/maskBooleanExpression";
 import type { AdjustmentEffectResolver } from "../services/AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "../services/RenderGroupOrchestrator";
 import { TrackRenderEngine } from "../services/TrackRenderEngine";
@@ -156,6 +158,31 @@ export function useTrackRenderEngine(
     () => buildMaskSetSignature(maskClipsByParent),
     [maskClipsByParent],
   );
+  // Parent-clip mask orchestration (equation expression, on/off, inverse
+  // algebra, composite edge transforms) lives on the `mask_composition`
+  // component — not in `maskSetSignature` — so changes to it must drive the
+  // paused re-composite too. Otherwise toggling the equation or inversion only
+  // takes effect on the next scrub.
+  const maskCompositionSignature = useMemo(
+    () =>
+      sortedTrackClips
+        .map((clip) => {
+          if (clip.type === "mask") {
+            return "";
+          }
+          const composition = getMaskCompositionComponent(clip);
+          return composition
+            ? `${clip.id}:${JSON.stringify(composition.parameters)}`
+            : "";
+        })
+        .filter(Boolean)
+        .join("|"),
+    [sortedTrackClips],
+  );
+  // Transient single-mask preview: changes here must recomposite the paused
+  // frame, but only via the mask-only refresh path below (never the heavier
+  // content re-render, which would needlessly re-request the decoder).
+  const maskPreviewTarget = useMaskViewStore((state) => state.maskPreviewTarget);
   const fps = useProjectStore((state) => state.config.fps);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const [currentClipId, setCurrentClipId] = useState<string | null>(null);
@@ -371,7 +398,13 @@ export function useTrackRenderEngine(
       cancelled = true;
       cancelAnimationFrame(rafId);
     };
-  }, [isPlaying, maskSetSignature, spriteInstance]);
+  }, [
+    isPlaying,
+    maskSetSignature,
+    maskCompositionSignature,
+    maskPreviewTarget,
+    spriteInstance,
+  ]);
 
   useEffect(() => {
     const engine = engineRef.current;

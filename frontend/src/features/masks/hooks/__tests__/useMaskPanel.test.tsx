@@ -160,6 +160,7 @@ describe("useMaskPanel", () => {
       interactionContext: null,
       sam2LivePreviewByClipId: {},
       brushTool: "gizmo",
+      maskPreviewTarget: null,
     });
     useAssetStore.setState({
       assets: [],
@@ -375,7 +376,7 @@ describe("useMaskPanel", () => {
     expect(result.current.sam2.sam2GenerateError).toBeTruthy();
   });
 
-  it("promotes a preview mask to apply when leaving the mask tab", async () => {
+  it("drops the mask preview target when leaving the mask tab", async () => {
     const parent = createParentClip("clip_preview");
     const previewMask = createSam2MaskClip(parent, "mask_preview");
 
@@ -386,6 +387,7 @@ describe("useMaskPanel", () => {
     useMaskViewStore.setState({
       selectedMaskByClipId: { [parent.id]: "mask_preview" },
       isMaskTabActive: true,
+      maskPreviewTarget: { clipId: parent.id, maskId: "mask_preview" },
     });
 
     renderHook(() => useMaskPanel());
@@ -395,14 +397,11 @@ describe("useMaskPanel", () => {
     });
 
     await waitFor(() => {
-      const updatedMask = useTimelineStore
-        .getState()
-        .clips.find((clip): clip is MaskTimelineClip => clip.id === previewMask.id);
-      expect(updatedMask?.maskMode).toBe("apply");
+      expect(useMaskViewStore.getState().maskPreviewTarget).toBeNull();
     });
   });
 
-  it("promotes a preview mask to apply when another clip is selected", async () => {
+  it("drops the mask preview target when another clip is selected", async () => {
     const previewParent = createParentClip("clip_preview");
     const previewMask = createSam2MaskClip(previewParent, "mask_preview");
     const otherParent = createParentClip("clip_other");
@@ -414,6 +413,7 @@ describe("useMaskPanel", () => {
     useMaskViewStore.setState({
       selectedMaskByClipId: { [previewParent.id]: "mask_preview" },
       isMaskTabActive: true,
+      maskPreviewTarget: { clipId: previewParent.id, maskId: "mask_preview" },
     });
 
     renderHook(() => useMaskPanel());
@@ -425,10 +425,7 @@ describe("useMaskPanel", () => {
     });
 
     await waitFor(() => {
-      const updatedMask = useTimelineStore
-        .getState()
-        .clips.find((clip): clip is MaskTimelineClip => clip.id === previewMask.id);
-      expect(updatedMask?.maskMode).toBe("apply");
+      expect(useMaskViewStore.getState().maskPreviewTarget).toBeNull();
     });
   });
 

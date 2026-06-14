@@ -8,7 +8,6 @@ import {
   Typography,
 } from "@mui/material";
 import { Brush, Crop75, Edit } from "@mui/icons-material";
-import type { ClipMaskMode } from "../../../types/TimelineTypes";
 import {
   MAX_BRUSH_RADIUS,
   MIN_BRUSH_RADIUS,
@@ -36,7 +35,7 @@ const selectedConnectedButtonSx = {
 };
 
 interface BrushMaskPanelProps {
-  maskMode: ClipMaskMode;
+  isPreviewing: boolean;
   maskInverted: boolean;
   maskLabel: string;
   brushTool: BrushTool;
@@ -45,12 +44,12 @@ interface BrushMaskPanelProps {
   onSetBrushTool: (tool: BrushTool) => void;
   onSetBrushRadius: (radius: number) => void;
   onClearBrush: () => void | Promise<void>;
-  onSetMaskMode: (mode: ClipMaskMode) => void;
+  onSetPreview: (on: boolean) => void;
   onSetMaskInverted: (inverted: boolean) => void;
 }
 
 export const BrushMaskPanel = memo(function BrushMaskPanel({
-  maskMode,
+  isPreviewing,
   maskInverted,
   maskLabel,
   brushTool,
@@ -59,7 +58,7 @@ export const BrushMaskPanel = memo(function BrushMaskPanel({
   onSetBrushTool,
   onSetBrushRadius,
   onClearBrush,
-  onSetMaskMode,
+  onSetPreview,
   onSetMaskInverted,
 }: BrushMaskPanelProps) {
   return (
@@ -216,21 +215,17 @@ export const BrushMaskPanel = memo(function BrushMaskPanel({
           sx={{ mb: 1 }}
         >
           <Button
-            onClick={() => onSetMaskMode("apply")}
+            onClick={() => onSetPreview(false)}
             sx={
-              maskMode === "apply"
-                ? selectedConnectedButtonSx
-                : connectedButtonSx
+              !isPreviewing ? selectedConnectedButtonSx : connectedButtonSx
             }
           >
             Apply
           </Button>
           <Button
-            onClick={() => onSetMaskMode("preview")}
+            onClick={() => onSetPreview(true)}
             sx={
-              maskMode === "preview"
-                ? selectedConnectedButtonSx
-                : connectedButtonSx
+              isPreviewing ? selectedConnectedButtonSx : connectedButtonSx
             }
           >
             Preview

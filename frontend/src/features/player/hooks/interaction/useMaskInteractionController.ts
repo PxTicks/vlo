@@ -610,11 +610,13 @@ export function useMaskInteractionController(
         mask.parameters ?? { baseWidth: 1, baseHeight: 1 };
       const shapeType = mask.maskType ?? mask.type ?? "rectangle";
       const isDraft = mask.id === "draft_mask";
-      const maskMode = (
-        mask as MaskShapeSource & {
-          maskMode?: MaskTimelineClip["maskMode"];
-        }
-      ).maskMode;
+      const previewTarget = useMaskViewStore.getState().maskPreviewTarget;
+      const maskLocalId = mask.id ? (parseMaskClipId(mask.id)?.maskId ?? null) : null;
+      const isPreviewTarget =
+        !!previewTarget &&
+        !!selectedClipId &&
+        previewTarget.clipId === selectedClipId &&
+        previewTarget.maskId === maskLocalId;
 
       const shapeSignature = `${mask.id ?? ""}:${shapeType}:${params.baseWidth}:${params.baseHeight}`;
       if (overlayShapeSignatureRef.current !== shapeSignature) {
@@ -626,9 +628,9 @@ export function useMaskInteractionController(
         overlayShapeSignatureRef.current = shapeSignature;
       }
       graphics.visible = true;
-      graphics.alpha = maskMode === "preview" || isDraft ? 0.35 : 0;
+      graphics.alpha = isPreviewTarget || isDraft ? 0.35 : 0;
     },
-    [applyLayoutToOverlay, clipOverlayRef, maskGraphicsRef],
+    [applyLayoutToOverlay, clipOverlayRef, maskGraphicsRef, selectedClipId],
   );
 
   const renderSam2PointsToOverlay = useCallback(
@@ -689,7 +691,13 @@ export function useMaskInteractionController(
       const previewSprite = sam2PreviewSpriteRef.current;
       if (!previewSprite) return;
 
-      if (maskClip.maskMode !== "preview") {
+      const previewTarget = useMaskViewStore.getState().maskPreviewTarget;
+      const maskLocalId = parseMaskClipId(maskClip.id)?.maskId ?? null;
+      const isPreviewTarget =
+        !!previewTarget &&
+        previewTarget.clipId === clipId &&
+        previewTarget.maskId === maskLocalId;
+      if (!isPreviewTarget) {
         previewSprite.visible = false;
         return;
       }

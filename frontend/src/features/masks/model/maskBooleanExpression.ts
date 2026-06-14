@@ -274,6 +274,12 @@ export function resolveMaskBooleanExpression(
   maskClips: readonly MaskTimelineClip[],
 ): MaskBooleanExpression | null {
   const composition = getMaskCompositionComponent(parentClip);
+
+  // Manual equation toggle: when explicitly disabled, render fully unmasked.
+  if (composition?.parameters.expressionEnabled === false) {
+    return null;
+  }
+
   const expression = composition?.parameters.expression;
 
   if (expression === null) {

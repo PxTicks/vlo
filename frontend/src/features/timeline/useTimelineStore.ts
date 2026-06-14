@@ -45,6 +45,7 @@ import {
   removeClipTransformFromDraft,
   replaceClipAssetInDraft,
   setClipMaskBooleanExpressionInDraft,
+  setClipMaskExpressionEnabledInDraft,
   setClipMaskCompositionAlgebraInDraft,
   setClipMaskCompositeTransformsInDraft,
   setClipTransformsAndShapeInDraft,
@@ -206,6 +207,7 @@ interface TimelineState extends TimelineModelState {
     clipId: string,
     expression: MaskBooleanExpression | null,
   ) => void;
+  setClipMaskExpressionEnabled: (clipId: string, enabled: boolean) => void;
 
   removeClipTransform: (clipId: string, effectId: string) => void;
 
@@ -638,6 +640,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     setClipMaskBooleanExpression: (clipId, expression) => {
       mutationPipeline.commitModelMutation((draft) => {
         setClipMaskBooleanExpressionInDraft(draft, clipId, expression);
+      });
+    },
+
+    setClipMaskExpressionEnabled: (clipId, enabled) => {
+      mutationPipeline.commitModelMutation((draft) => {
+        setClipMaskExpressionEnabledInDraft(draft, clipId, enabled);
       });
     },
 

@@ -204,11 +204,7 @@ export class MaskBooleanTextureRenderer {
       }
 
       const maskClip = maskClipByLocalId.get(maskId);
-      if (
-        !maskClip ||
-        maskClip.maskMode !== "apply" ||
-        !this.isMaskClipRenderable(maskClip)
-      ) {
+      if (!maskClip || !this.isMaskClipRenderable(maskClip)) {
         return;
       }
 
@@ -339,11 +335,7 @@ export class MaskBooleanTextureRenderer {
     maskClipByLocalId: Map<string, MaskTimelineClip>,
   ): Texture | null {
     const maskClip = maskClipByLocalId.get(maskId);
-    if (
-      !maskClip ||
-      maskClip.maskMode !== "apply" ||
-      !this.isMaskClipRenderable(maskClip)
-    ) {
+    if (!maskClip || !this.isMaskClipRenderable(maskClip)) {
       return null;
     }
 

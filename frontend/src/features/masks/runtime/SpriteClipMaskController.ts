@@ -22,6 +22,7 @@ import {
   getMaskLocalId,
   resolveRenderableMaskBooleanExpression,
 } from "../model/maskBooleanExpression";
+import { useMaskViewStore } from "../store/useMaskViewStore";
 import {
   calculatePlayerFrameTime,
   snapFrameTimeSeconds,
@@ -166,8 +167,19 @@ export class SpriteClipMaskController {
       waitForSam2 = false,
       skipSam2FrameRender = false,
     } = options;
+    // Transient single-mask preview: while a mask on this clip is being
+    // previewed, the equation is temporarily off and NO masking is applied to
+    // the content, so the full content shows below. The previewed mask's bounds
+    // are drawn separately as an overlay by the interaction layer.
+    const previewTarget = useMaskViewStore.getState().maskPreviewTarget;
+    const isPreviewingThisClip =
+      parentClip.type !== "mask" &&
+      !!previewTarget &&
+      previewTarget.clipId === parentClip.id &&
+      maskClips.some((clip) => getMaskLocalId(clip) === previewTarget.maskId);
+
     const resolvedMaskExpression =
-      parentClip.type === "mask"
+      parentClip.type === "mask" || isPreviewingThisClip
         ? null
         : resolveRenderableMaskBooleanExpression(parentClip, maskClips);
     const resolvedMaskExpressionAnalysis = analyzeMaskBooleanExpression(
@@ -191,9 +203,8 @@ export class SpriteClipMaskController {
         ? rawTimeTicks
         : calculateClipTime(parentClip, rawTimeTicks, true);
     const activeMaskClips = referencedMaskClips.filter((clip) => {
-      if (clip.maskMode !== "apply") {
-        return false;
-      }
+      // Membership in the resolved expression decides what composites; per-mask
+      // apply/preview is no longer a render gate.
       if (!isMaskActiveAtSourceTime(clip.activeRange, parentSourceTimeTicks)) {
         return false;
       }
@@ -797,7 +808,6 @@ export class SpriteClipMaskController {
       const maskClip = maskClipByLocalId.get(maskId);
       if (
         !maskClip ||
-        maskClip.maskMode !== "apply" ||
         maskClip.maskInverted ||
         isAssetBackedMask(maskClip) ||
         !this.isMaskClipRenderable(maskClip)

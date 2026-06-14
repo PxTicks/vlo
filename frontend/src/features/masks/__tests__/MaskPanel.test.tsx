@@ -164,7 +164,7 @@ describe("MaskPanel", () => {
   const mockSetAddMenuAnchorEl = vi.fn();
   const mockRequestDraw = vi.fn();
   const mockSelectMask = vi.fn();
-  const mockSetMaskMode = vi.fn();
+  const mockSetMaskPreview = vi.fn();
   const mockSetMaskBooleanExpression = vi.fn();
   const mockSetMaskName = vi.fn();
   const mockSetMaskInverted = vi.fn();
@@ -178,6 +178,7 @@ describe("MaskPanel", () => {
   const mockDeleteMask = vi.fn();
   const mockDeleteSelectedMask = vi.fn();
   const mockSetMaskCompositionAlgebra = vi.fn();
+  const mockSetMaskExpressionEnabled = vi.fn();
   const mockEnsureSam2Available = vi.fn(async () => true);
   let baseHookValue: UseMaskPanelResult;
 
@@ -201,12 +202,15 @@ describe("MaskPanel", () => {
   const maskOverrideKeys = [
     "maskBooleanExpression",
     "setMaskBooleanExpression",
-    "setMaskMode",
+    "isPreviewing",
+    "setMaskPreview",
     "setMaskName",
     "maskInverted",
     "setMaskInverted",
     "maskCompositionAlgebra",
     "setMaskCompositionAlgebra",
+    "maskExpressionEnabled",
+    "setMaskExpressionEnabled",
   ] as const;
   const sam2OverrideKeys = [
     "sam2GrowAmount",
@@ -308,13 +312,16 @@ describe("MaskPanel", () => {
       },
       mask: {
         maskBooleanExpression: null,
-        setMaskMode: mockSetMaskMode,
+        isPreviewing: false,
+        setMaskPreview: mockSetMaskPreview,
         setMaskBooleanExpression: mockSetMaskBooleanExpression,
         setMaskName: mockSetMaskName,
         maskInverted: false,
         setMaskInverted: mockSetMaskInverted,
         maskCompositionAlgebra: "inverse",
         setMaskCompositionAlgebra: mockSetMaskCompositionAlgebra,
+        maskExpressionEnabled: true,
+        setMaskExpressionEnabled: mockSetMaskExpressionEnabled,
       },
       sam2: {
         sam2GrowAmount: 0,
@@ -532,7 +539,7 @@ describe("MaskPanel", () => {
     expect(mockSelectMask).toHaveBeenCalledWith("mask_1");
 
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    expect(mockSetMaskMode).toHaveBeenCalledWith("preview");
+    expect(mockSetMaskPreview).toHaveBeenCalledWith(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Inverted" }));
     expect(mockSetMaskInverted).toHaveBeenCalledWith(true);

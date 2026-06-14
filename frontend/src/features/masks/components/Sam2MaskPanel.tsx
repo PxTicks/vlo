@@ -7,7 +7,7 @@ import {
   ButtonGroup,
   Slider,
 } from "@mui/material";
-import type { ClipMaskMode, ClipMaskPoint } from "../../../types/TimelineTypes";
+import type { ClipMaskPoint } from "../../../types/TimelineTypes";
 import { Sam2ModelDownloadOverlay } from "./Sam2ModelDownloadOverlay";
 
 const connectedButtonSx = {
@@ -36,7 +36,7 @@ const selectedConnectedButtonSx = {
 };
 
 interface Sam2MaskPanelProps {
-  maskMode: ClipMaskMode;
+  isPreviewing: boolean;
   maskInverted: boolean;
   maskLabel: string;
   sam2PointMode: "add" | "remove";
@@ -56,7 +56,7 @@ interface Sam2MaskPanelProps {
   isDirty: boolean;
   hasMaskAsset: boolean;
   sam2GrowAmount: number;
-  onSetMaskMode: (mode: ClipMaskMode) => void;
+  onSetPreview: (on: boolean) => void;
   onSetMaskInverted: (inverted: boolean) => void;
   onSetSam2GrowAmount: (amount: number) => void;
   onSetSam2PointMode: (mode: "add" | "remove") => void;
@@ -64,7 +64,7 @@ interface Sam2MaskPanelProps {
 }
 
 export const Sam2MaskPanel = memo(function Sam2MaskPanel({
-  maskMode,
+  isPreviewing,
   maskInverted,
   maskLabel,
   sam2PointMode,
@@ -84,7 +84,7 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
   isDirty,
   hasMaskAsset,
   sam2GrowAmount,
-  onSetMaskMode,
+  onSetPreview,
   onSetMaskInverted,
   onSetSam2GrowAmount,
   onSetSam2PointMode,
@@ -264,8 +264,8 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
           variant="outlined"
           size="small"
           onClick={() => {
-            if (maskMode !== "preview") {
-              onSetMaskMode("preview");
+            if (!isPreviewing) {
+              onSetPreview(true);
             }
             void onGenerateFramePreview();
           }}
@@ -378,21 +378,17 @@ export const Sam2MaskPanel = memo(function Sam2MaskPanel({
           sx={{ mb: 1 }}
         >
           <Button
-            onClick={() => onSetMaskMode("apply")}
+            onClick={() => onSetPreview(false)}
             sx={
-              maskMode === "apply"
-                ? selectedConnectedButtonSx
-                : connectedButtonSx
+              !isPreviewing ? selectedConnectedButtonSx : connectedButtonSx
             }
           >
             Apply
           </Button>
           <Button
-            onClick={() => onSetMaskMode("preview")}
+            onClick={() => onSetPreview(true)}
             sx={
-              maskMode === "preview"
-                ? selectedConnectedButtonSx
-                : connectedButtonSx
+              isPreviewing ? selectedConnectedButtonSx : connectedButtonSx
             }
           >
             Preview

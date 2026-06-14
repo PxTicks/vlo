@@ -199,10 +199,14 @@ export function useSam2MaskPanel({
     pointsHash: string;
     maskId: string;
   } | null>(null);
-  const activePreviewMaskRef = useRef<{
-    clipId: string;
-    maskId: string;
-  } | null>(null);
+  const maskPreviewTarget = useMaskViewStore(
+    (state) => state.maskPreviewTarget,
+  );
+  const isPreviewingSelectedMask =
+    !!selectedClipId &&
+    !!selectedMaskId &&
+    maskPreviewTarget?.clipId === selectedClipId &&
+    maskPreviewTarget?.maskId === selectedMaskId;
 
   const assets = useAssetStore((state) => state.assets);
   const addLocalAsset = useAssetStore((state) => state.addLocalAsset);
@@ -415,44 +419,22 @@ export function useSam2MaskPanel({
     selectedMaskId,
   ]);
 
+  // Guard (req #5): the transient mask preview is only valid while its own mask
+  // panel stays focused. The moment the mask tab closes or the selection moves
+  // off the previewed mask, drop back to apply (equation) mode.
   useEffect(() => {
-    const previousPreviewMask = activePreviewMaskRef.current;
-    if (
-      previousPreviewMask &&
-      (!isMaskTabActive ||
-        selectedClipId !== previousPreviewMask.clipId ||
-        selectedMaskId !== previousPreviewMask.maskId)
-    ) {
-      updateClipMask(previousPreviewMask.clipId, previousPreviewMask.maskId, {
-        maskMode: "apply",
-      });
-      useMaskViewStore
-        .getState()
-        .clearSam2LivePreview(previousPreviewMask.clipId);
-    }
+    const target = useMaskViewStore.getState().maskPreviewTarget;
+    if (!target) return;
 
-    if (
+    const stillFocused =
       isMaskTabActive &&
-      selectedClipId &&
-      selectedMaskId &&
-      selectedMask?.maskType === "sam2" &&
-      selectedMask.maskMode === "preview"
-    ) {
-      activePreviewMaskRef.current = {
-        clipId: selectedClipId,
-        maskId: selectedMaskId,
-      };
-      return;
-    }
+      selectedClipId === target.clipId &&
+      selectedMaskId === target.maskId;
+    if (stillFocused) return;
 
-    activePreviewMaskRef.current = null;
-  }, [
-    isMaskTabActive,
-    selectedClipId,
-    selectedMaskId,
-    selectedMask,
-    updateClipMask,
-  ]);
+    useMaskViewStore.getState().clearMaskPreviewTarget();
+    useMaskViewStore.getState().clearSam2LivePreview(target.clipId);
+  }, [isMaskTabActive, selectedClipId, selectedMaskId]);
 
   const sam2GrowAmount =
     selectedMask?.maskType === "sam2" ? (selectedMask.sam2GrowAmount ?? 0) : 0;
@@ -732,7 +714,7 @@ export function useSam2MaskPanel({
     }
     if (!selectedMask || selectedMask.maskType !== "sam2") return;
 
-    if (selectedMask.maskMode !== "preview") {
+    if (!isPreviewingSelectedMask) {
       cancelSam2PreviewRequest();
       return;
     }
@@ -854,6 +836,7 @@ export function useSam2MaskPanel({
     applySam2FramePreview,
     cancelSam2PreviewRequest,
     fetchSam2FramePreview,
+    isPreviewingSelectedMask,
     isSam2EditorOpen,
     sam2PointsHash,
     selectedClip,

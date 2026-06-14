@@ -2,6 +2,7 @@ import {
   resolveMaskCompositionAlgebra,
   type Component,
   type MaskCompositionAlgebra,
+  type MaskCompositionComponentParameters,
 } from "../../../types/Components";
 import type { Asset } from "../../../types/Asset";
 import type {
@@ -929,6 +930,29 @@ export function setClipMaskBooleanExpressionInDraft(
     ...current,
     expression: expression ? structuredClone(expression) : null,
   }));
+}
+
+export function setClipMaskExpressionEnabledInDraft(
+  draft: TimelineModelState,
+  clipId: string,
+  enabled: boolean,
+): void {
+  const clip = draft.clips.find(
+    (candidate): candidate is StandardTimelineClip =>
+      candidate.id === clipId && isNonMaskTimelineClip(candidate),
+  );
+  if (!clip) return;
+
+  updateMaskCompositionOnDraft(clip, (current) => {
+    const nextParams: MaskCompositionComponentParameters = { ...current };
+    if (enabled) {
+      // Enabled is the default; drop the explicit flag to avoid persisting it.
+      delete nextParams.expressionEnabled;
+    } else {
+      nextParams.expressionEnabled = false;
+    }
+    return isMaskCompositionComponentMeaningful(nextParams) ? nextParams : null;
+  });
 }
 
 export function removeClipTransformFromDraft(

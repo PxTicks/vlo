@@ -185,6 +185,7 @@ export function isMaskCompositionComponentMeaningful(
 ): boolean {
   return (
     params.expression !== undefined ||
+    params.expressionEnabled === false ||
     params.algebra !== undefined ||
     params.compositeTransformations.length > 0
   );

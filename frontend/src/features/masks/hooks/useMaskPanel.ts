@@ -9,7 +9,6 @@ import type {
   ClipMaskPoint,
   MaskActiveRange,
   MaskBooleanExpression,
-  ClipMaskMode,
   ClipMaskType,
   MaskTimelineClip,
   StandardTimelineClip,
@@ -60,12 +59,18 @@ export interface UseMaskPanelResult {
     setMaskBooleanExpression: (
       expression: MaskBooleanExpression | null,
     ) => void;
-    setMaskMode: (mode: ClipMaskMode) => void;
+    /** Whether the selected mask is currently being previewed in isolation. */
+    isPreviewing: boolean;
+    /** Toggle the transient single-mask preview for the selected mask. */
+    setMaskPreview: (on: boolean) => void;
     setMaskName: (name: string) => void;
     maskInverted: boolean;
     setMaskInverted: (inverted: boolean) => void;
     maskCompositionAlgebra: MaskCompositionAlgebra;
     setMaskCompositionAlgebra: (algebra: MaskCompositionAlgebra) => void;
+    /** Manual mask-equation on/off switch (persisted on the clip). */
+    maskExpressionEnabled: boolean;
+    setMaskExpressionEnabled: (enabled: boolean) => void;
   };
   sam2: {
     sam2GrowAmount: number;
@@ -130,6 +135,9 @@ export function useMaskPanel(): UseMaskPanelResult {
   const setClipMaskCompositionAlgebra = useTimelineStore(
     (state) => state.setClipMaskCompositionAlgebra,
   );
+  const setClipMaskExpressionEnabled = useTimelineStore(
+    (state) => state.setClipMaskExpressionEnabled,
+  );
 
   const selectedMaskId = useMaskViewStore((state) =>
     selectedClipId
@@ -140,6 +148,13 @@ export function useMaskPanel(): UseMaskPanelResult {
   const setSelectedMask = useMaskViewStore((state) => state.setSelectedMask);
   const sam2PointMode = useMaskViewStore((state) => state.sam2PointMode);
   const setSam2PointMode = useMaskViewStore((state) => state.setSam2PointMode);
+  const maskPreviewTarget = useMaskViewStore((state) => state.maskPreviewTarget);
+  const setMaskPreviewTarget = useMaskViewStore(
+    (state) => state.setMaskPreviewTarget,
+  );
+  const clearMaskPreviewTarget = useMaskViewStore(
+    (state) => state.clearMaskPreviewTarget,
+  );
 
   // Read mask clips from the store via parent's mask clip components
   const masks = useTimelineStore(
@@ -163,6 +178,15 @@ export function useMaskPanel(): UseMaskPanelResult {
 
     return resolveMaskCompositionAlgebra(
       getMaskCompositionComponent(selectedClip)?.parameters,
+    );
+  }, [selectedClip]);
+  const maskExpressionEnabled = useMemo(() => {
+    if (!selectedClip || selectedClip.type === "mask") {
+      return true;
+    }
+    return (
+      getMaskCompositionComponent(selectedClip)?.parameters.expressionEnabled !==
+      false
     );
   }, [selectedClip]);
 
@@ -296,12 +320,38 @@ export function useMaskPanel(): UseMaskPanelResult {
     [selectedClipId, setSelectedMask],
   );
 
-  const setMaskMode = useCallback(
-    (mode: ClipMaskMode) => {
-      if (!selectedClipId || !selectedMaskId) return;
-      updateClipMask(selectedClipId, selectedMaskId, { maskMode: mode });
+  const isPreviewing =
+    !!selectedClipId &&
+    !!selectedMaskId &&
+    maskPreviewTarget?.clipId === selectedClipId &&
+    maskPreviewTarget?.maskId === selectedMaskId;
+
+  const setMaskPreview = useCallback(
+    (on: boolean) => {
+      if (on) {
+        // Guard (req #5): preview is only ever active for an individual mask
+        // panel that is selected while the mask tab is open.
+        if (!isMaskTabActive || !selectedClipId || !selectedMaskId) return;
+        setMaskPreviewTarget(selectedClipId, selectedMaskId);
+        return;
+      }
+      clearMaskPreviewTarget();
     },
-    [selectedClipId, selectedMaskId, updateClipMask],
+    [
+      isMaskTabActive,
+      selectedClipId,
+      selectedMaskId,
+      setMaskPreviewTarget,
+      clearMaskPreviewTarget,
+    ],
+  );
+
+  const setMaskExpressionEnabled = useCallback(
+    (enabled: boolean) => {
+      if (!selectedClipId) return;
+      setClipMaskExpressionEnabled(selectedClipId, enabled);
+    },
+    [selectedClipId, setClipMaskExpressionEnabled],
   );
 
   const setMaskName = useCallback(
@@ -407,7 +457,8 @@ export function useMaskPanel(): UseMaskPanelResult {
     },
     mask: {
       maskBooleanExpression,
-      setMaskMode,
+      isPreviewing,
+      setMaskPreview,
       setMaskBooleanExpression: (expression) => {
         if (!selectedClipId) return;
         setClipMaskBooleanExpression(selectedClipId, expression);
@@ -420,6 +471,8 @@ export function useMaskPanel(): UseMaskPanelResult {
         if (!selectedClipId) return;
         setClipMaskCompositionAlgebra(selectedClipId, algebra);
       },
+      maskExpressionEnabled,
+      setMaskExpressionEnabled,
     },
     sam2: {
       sam2GrowAmount,

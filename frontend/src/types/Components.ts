@@ -65,6 +65,13 @@ export interface MaskCompositionComponentParameters {
    */
   expression?: MaskBooleanExpression | null;
   /**
+   * Manual on/off switch for the mask equation. When `false`, the stored
+   * `expression` is ignored and the clip renders fully unmasked (no masking),
+   * while the equation itself is preserved for when the switch is turned back
+   * on. Absent/`true` evaluates the equation normally.
+   */
+  expressionEnabled?: boolean;
+  /**
    * Controls whether boolean operations are evaluated in ordinary coverage
    * space or in inverse/"hole" coverage space.
    */

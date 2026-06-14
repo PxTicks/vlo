@@ -165,13 +165,16 @@ export const MaskPanel = memo(function MaskPanel() {
   } = panel;
   const {
     maskBooleanExpression,
-    setMaskMode,
+    isPreviewing,
+    setMaskPreview,
     setMaskBooleanExpression,
     setMaskName,
     maskInverted,
     setMaskInverted,
     maskCompositionAlgebra,
     setMaskCompositionAlgebra,
+    maskExpressionEnabled,
+    setMaskExpressionEnabled,
   } = mask;
   const {
     sam2GrowAmount,
@@ -627,9 +630,6 @@ export const MaskPanel = memo(function MaskPanel() {
   );
   const selectedMaskNameValue =
     selectedMask?.type === "mask" ? selectedMask.name : selectedMaskLabel;
-  const selectedMaskMode =
-    (selectedMask?.type === "mask" ? selectedMask.maskMode : undefined) ??
-    "apply";
   const isDetailView = panelView === "mask" && !!selectedMask;
   const activeSam2EditorClipIdRef = useRef<string | null>(null);
 
@@ -746,7 +746,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 />
               </Box>
               <BrushMaskPanel
-                maskMode={selectedMaskMode}
+                isPreviewing={isPreviewing}
                 maskInverted={maskInverted}
                 maskLabel={selectedMaskLabel}
                 brushTool={brushTool}
@@ -755,7 +755,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 onSetBrushTool={setBrushTool}
                 onSetBrushRadius={setBrushRadius}
                 onClearBrush={clearBrush}
-                onSetMaskMode={setMaskMode}
+                onSetPreview={setMaskPreview}
                 onSetMaskInverted={setMaskInverted}
               />
               {brushTool === "gizmo" && (
@@ -807,7 +807,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 />
               </Box>
               <Sam2MaskPanel
-                maskMode={selectedMaskMode}
+                isPreviewing={isPreviewing}
                 maskInverted={maskInverted}
                 maskLabel={selectedMaskLabel}
                 sam2PointMode={sam2PointMode}
@@ -827,7 +827,7 @@ export const MaskPanel = memo(function MaskPanel() {
                 isDirty={isSam2Dirty}
                 hasMaskAsset={hasSam2MaskAsset}
                 sam2GrowAmount={sam2GrowAmount}
-                onSetMaskMode={setMaskMode}
+                onSetPreview={setMaskPreview}
                 onSetMaskInverted={setMaskInverted}
                 onSetSam2GrowAmount={setSam2GrowAmount}
                 onSetSam2PointMode={setSam2PointMode}
@@ -912,9 +912,9 @@ export const MaskPanel = memo(function MaskPanel() {
                 >
                   <Button
                     data-testid="mask-mode-apply"
-                    onClick={() => setMaskMode("apply")}
+                    onClick={() => setMaskPreview(false)}
                     sx={
-                      selectedMaskMode === "apply"
+                      !isPreviewing
                         ? selectedConnectedButtonSx
                         : connectedButtonSx
                     }
@@ -923,9 +923,9 @@ export const MaskPanel = memo(function MaskPanel() {
                   </Button>
                   <Button
                     data-testid="mask-mode-preview"
-                    onClick={() => setMaskMode("preview")}
+                    onClick={() => setMaskPreview(true)}
                     sx={
-                      selectedMaskMode === "preview"
+                      isPreviewing
                         ? selectedConnectedButtonSx
                         : connectedButtonSx
                     }
@@ -1072,6 +1072,8 @@ export const MaskPanel = memo(function MaskPanel() {
                 onOpenMaskDetail={handleOpenMaskDetail}
                 onDuplicateMask={duplicateMask}
                 onDeleteMask={deleteMask}
+                expressionEnabled={maskExpressionEnabled}
+                onExpressionEnabledChange={setMaskExpressionEnabled}
                 addAction={
                   <Chip
                     size="small"

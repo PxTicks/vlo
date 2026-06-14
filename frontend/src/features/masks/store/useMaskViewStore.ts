@@ -12,6 +12,11 @@ export interface MaskInteractionContext {
   maskId: string | null;
 }
 
+export interface MaskPreviewTarget {
+  clipId: string;
+  maskId: string;
+}
+
 export interface Sam2LivePreview {
   maskId: string;
   bitmap: ImageBitmap;
@@ -37,6 +42,13 @@ interface MaskViewState {
   sam2PointMode: Sam2PointMode;
   brushTool: BrushTool;
   brushRadius: number;
+  /**
+   * Transient, single-target mask preview. Identifies the one mask whose bounds
+   * are being inspected in isolation (equation bypassed). Never persisted — it
+   * is only ever set while an individual mask panel is active and intentionally
+   * toggled on, and is cleared the moment that focus is lost.
+   */
+  maskPreviewTarget: MaskPreviewTarget | null;
   setSelectedMask: (clipId: string, maskId: string | null) => void;
   setSam2EditorMask: (clipId: string, maskId: string | null) => void;
   setMaskTabActive: (isActive: boolean) => void;
@@ -56,6 +68,8 @@ interface MaskViewState {
     sourceFps: number,
   ) => void;
   clearSam2LivePreview: (clipId: string) => void;
+  setMaskPreviewTarget: (clipId: string, maskId: string) => void;
+  clearMaskPreviewTarget: () => void;
   clearClipState: (clipId: string) => void;
 }
 
@@ -69,6 +83,7 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
   sam2PointMode: "add",
   brushTool: "gizmo",
   brushRadius: DEFAULT_BRUSH_RADIUS,
+  maskPreviewTarget: null,
 
   setSelectedMask: (clipId, maskId) =>
     set((state) => {
@@ -165,6 +180,20 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
       return { sam2LivePreviewByClipId: next };
     }),
 
+  setMaskPreviewTarget: (clipId, maskId) =>
+    set((state) => {
+      const current = state.maskPreviewTarget;
+      if (current && current.clipId === clipId && current.maskId === maskId) {
+        return state;
+      }
+      return { maskPreviewTarget: { clipId, maskId } };
+    }),
+
+  clearMaskPreviewTarget: () =>
+    set((state) =>
+      state.maskPreviewTarget === null ? state : { maskPreviewTarget: null },
+    ),
+
   clearClipState: (clipId) =>
     set((state) => {
       const nextSelected = { ...state.selectedMaskByClipId };
@@ -181,6 +210,8 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
 
       const shouldClearDraw = state.pendingDrawRequest?.clipId === clipId;
       const shouldClearInteraction = state.interactionContext?.clipId === clipId;
+      const shouldClearPreviewTarget =
+        state.maskPreviewTarget?.clipId === clipId;
 
       return {
         selectedMaskByClipId: nextSelected,
@@ -190,6 +221,9 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
         interactionContext: shouldClearInteraction
           ? null
           : state.interactionContext,
+        maskPreviewTarget: shouldClearPreviewTarget
+          ? null
+          : state.maskPreviewTarget,
       };
     }),
 }));

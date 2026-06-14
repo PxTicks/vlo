@@ -45,6 +45,9 @@ interface MaskEquationBuilderProps {
   onOpenMaskDetail: (maskId: string) => void;
   onDuplicateMask: (maskId: string) => void;
   onDeleteMask: (maskId: string) => void;
+  /** Manual on/off switch for evaluating the equation (persisted on the clip). */
+  expressionEnabled: boolean;
+  onExpressionEnabledChange: (enabled: boolean) => void;
   addAction?: ReactNode;
 }
 
@@ -102,6 +105,8 @@ export function MaskEquationBuilder({
   onOpenMaskDetail,
   onDuplicateMask,
   onDeleteMask,
+  expressionEnabled,
+  onExpressionEnabledChange,
   addAction,
 }: MaskEquationBuilderProps) {
   const [rawSelectedPath, setSelectedPath] =
@@ -588,12 +593,28 @@ export function MaskEquationBuilder({
       </Menu>
 
       <Box>
-        <Typography
-          variant="caption"
-          sx={{ color: "text.secondary", display: "block", mb: 1 }}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            mb: 1,
+          }}
         >
-          Equation
-        </Typography>
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            Equation
+          </Typography>
+          <Chip
+            label={expressionEnabled ? "On" : "Off"}
+            size="small"
+            data-testid="mask-equation-enabled"
+            aria-pressed={expressionEnabled}
+            color={expressionEnabled ? "primary" : "default"}
+            variant={expressionEnabled ? "filled" : "outlined"}
+            onClick={() => onExpressionEnabledChange(!expressionEnabled)}
+            sx={{ height: 20 }}
+          />
+        </Box>
         <Box
           data-testid="mask-equation"
           data-mask-equation-editor="true"

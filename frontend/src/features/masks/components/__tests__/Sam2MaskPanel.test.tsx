@@ -15,7 +15,7 @@ vi.mock("../Sam2ModelDownloadOverlay", () => ({
 }));
 
 const defaultProps = {
-  maskMode: "apply" as const,
+  isPreviewing: false,
   maskInverted: false,
   maskLabel: "Mask 1",
   sam2PointMode: "add" as const,
@@ -35,7 +35,7 @@ const defaultProps = {
   isDirty: true,
   hasMaskAsset: false,
   sam2GrowAmount: 0,
-  onSetMaskMode: vi.fn(),
+  onSetPreview: vi.fn(),
   onSetMaskInverted: vi.fn(),
   onSetSam2GrowAmount: vi.fn(),
   onSetSam2PointMode: vi.fn(),
@@ -51,7 +51,7 @@ describe("Sam2MaskPanel", () => {
 
   it("shows positive/negative counts and calls actions", () => {
     const onClearPoints = vi.fn();
-    const onSetMaskMode = vi.fn();
+    const onSetPreview = vi.fn();
     const onGenerateFramePreview = vi.fn();
     const onGenerateMask = vi.fn();
     const onSetMaskInverted = vi.fn();
@@ -64,7 +64,7 @@ describe("Sam2MaskPanel", () => {
         ]}
         currentFramePointsCount={2}
         onClearPoints={onClearPoints}
-        onSetMaskMode={onSetMaskMode}
+        onSetPreview={onSetPreview}
         onGenerateFramePreview={onGenerateFramePreview}
         onGenerateMask={onGenerateMask}
         onSetMaskInverted={onSetMaskInverted}
@@ -81,7 +81,7 @@ describe("Sam2MaskPanel", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Generate Current Frame Preview" }),
     );
-    expect(onSetMaskMode).toHaveBeenCalledWith("preview");
+    expect(onSetPreview).toHaveBeenCalledWith(true);
     expect(onGenerateFramePreview).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate Mask Video" }));
@@ -111,15 +111,15 @@ describe("Sam2MaskPanel", () => {
   });
 
   it("does not re-set preview mode when already previewing", () => {
-    const onSetMaskMode = vi.fn();
+    const onSetPreview = vi.fn();
     const onGenerateFramePreview = vi.fn();
 
     render(
       <Sam2MaskPanel
         {...defaultProps}
-        maskMode="preview"
+        isPreviewing
         points={[{ x: 0.2, y: 0.3, label: 1, timeTicks: 0 }]}
-        onSetMaskMode={onSetMaskMode}
+        onSetPreview={onSetPreview}
         onGenerateFramePreview={onGenerateFramePreview}
       />,
     );
@@ -128,7 +128,7 @@ describe("Sam2MaskPanel", () => {
       screen.getByRole("button", { name: "Generate Current Frame Preview" }),
     );
 
-    expect(onSetMaskMode).not.toHaveBeenCalled();
+    expect(onSetPreview).not.toHaveBeenCalled();
     expect(onGenerateFramePreview).toHaveBeenCalledTimes(1);
   });
 

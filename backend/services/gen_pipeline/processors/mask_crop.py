@@ -160,10 +160,13 @@ class _MaskCropProcessor:
                 continue
 
             try:
+                # Masks are read by ComfyUI's raw red channel, so favour fidelity
+                # with a low crf -- but stay 4:2:0/High (not lossless 4:4:4, which
+                # encodes as profile 244 and won't play in consumer media players).
                 ctx.buffered_media[mask_buffered_key]["bytes"] = self._crop_video(
                     mask_data,
                     crop_region,
-                    lossless=True,
+                    crf=18,
                 )
             except Exception as exc:
                 log.warning(
@@ -181,7 +184,6 @@ class _MaskCropProcessor:
                     ctx.buffered_media[source_buffered_key]["bytes"] = self._crop_video(
                         ctx.buffered_media[source_buffered_key]["bytes"],
                         crop_region,
-                        lossless=False,
                     )
                     cropped_sources.add(source_node_id)
                 except Exception as exc:

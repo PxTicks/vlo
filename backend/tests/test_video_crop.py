@@ -173,26 +173,29 @@ class TestCropVideo:
     def test_crop_dimensions(self):
         mp4 = _make_mp4(320, 180, 2)
         crop = (50, 20, 250, 160)
-        cropped = crop_video(mp4, crop, lossless=False)
+        cropped = crop_video(mp4, crop)
         width, height, _, _ = _decode_stream_summary(cropped)
         assert width == 200
         assert height == 140
 
     def test_crop_preserves_audio_streams(self):
         mp4 = _make_mp4(320, 180, 2, with_audio=True)
-        cropped = crop_video(mp4, (0, 0, 160, 90), lossless=False)
+        cropped = crop_video(mp4, (0, 0, 160, 90))
         _, _, audio_stream_count, _ = _decode_stream_summary(cropped)
         assert audio_stream_count == 1
 
-    def test_crop_uses_lossless_profile_only_when_requested(self):
+    def test_crop_uses_compatible_420_regardless_of_crf(self):
+        # Never emit the lossless 4:4:4 (profile 244) stream that consumer
+        # players reject -- both quality tiers must stay 4:2:0.
         mp4 = _make_mp4(320, 180, 1)
-        lossless = crop_video(mp4, (0, 0, 160, 90), lossless=True)
-        lossy = crop_video(mp4, (0, 0, 160, 90), lossless=False)
-        _, _, _, lossless_pix_fmt = _decode_stream_summary(lossless)
-        _, _, _, lossy_pix_fmt = _decode_stream_summary(lossy)
+        high_quality = crop_video(mp4, (0, 0, 160, 90), crf=18)
+        default_quality = crop_video(mp4, (0, 0, 160, 90))
+        _, _, _, hq_pix_fmt = _decode_stream_summary(high_quality)
+        _, _, _, dq_pix_fmt = _decode_stream_summary(default_quality)
 
-        assert "444" in lossless_pix_fmt
-        assert "420" in lossy_pix_fmt
+        assert "420" in hq_pix_fmt
+        assert "420" in dq_pix_fmt
+        assert "444" not in hq_pix_fmt
 
     def test_crop_preserves_content(self):
         def colored_frame(i, w, h):
@@ -202,7 +205,7 @@ class TestCropVideo:
             return arr
 
         mp4 = _make_mp4(320, 180, 1, frame_fn=colored_frame)
-        cropped = crop_video(mp4, (60, 20, 140, 80), lossless=False)
+        cropped = crop_video(mp4, (60, 20, 140, 80))
         width, height, _, _ = _decode_stream_summary(cropped)
         assert width == 80
         assert height == 60
@@ -210,4 +213,4 @@ class TestCropVideo:
     def test_invalid_crop_raises(self):
         mp4 = _make_mp4(320, 180, 1)
         with pytest.raises(Exception):
-            crop_video(mp4, (100, 100, 50, 50), lossless=False)
+            crop_video(mp4, (100, 100, 50, 50))

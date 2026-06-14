@@ -103,10 +103,15 @@ def crop_video(
     video_bytes: bytes,
     crop: tuple[int, int, int, int],
     *,
-    lossless: bool,
+    crf: int = 23,
 ) -> bytes:
     """Crop every frame of *video_bytes* to *crop* ``(x1, y1, x2, y2)`` and
     re-encode as MP4 H.264, preserving audio streams by packet copy.
+
+    Always encodes 4:2:0 High profile for broad player compatibility. Avoid
+    ``crf=0``: x264 lossless forces the High 4:4:4 Predictive profile
+    (profile_idc 244), which consumer players reject. Pass a lower *crf* for
+    higher-fidelity outputs (e.g. masks) while staying on the compatible path.
     """
     x1, y1, x2, y2 = crop
     crop_w = x2 - x1
@@ -128,12 +133,8 @@ def crop_video(
             out_stream = cast(VideoStream, out_container.add_stream("libx264", rate=src_rate))
             out_stream.width = crop_w
             out_stream.height = crop_h
-            out_stream.pix_fmt = "yuv444p" if lossless else "yuv420p"
-            out_stream.options = (
-                {"crf": "0", "preset": "ultrafast"}
-                if lossless
-                else {"crf": "23", "preset": "ultrafast"}
-            )
+            out_stream.pix_fmt = "yuv420p"
+            out_stream.options = {"crf": str(crf), "preset": "ultrafast"}
             out_stream.time_base = in_stream.time_base
 
             audio_stream_map: dict[int, AudioStream] = {}

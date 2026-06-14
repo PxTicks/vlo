@@ -57,9 +57,16 @@ def encode_binary_masks_to_red_mp4(mask_frames: np.ndarray, fps: float) -> bytes
         stream.width = width
         stream.height = height
         stream.pix_fmt = "yuv420p"
+        # Avoid crf=0: x264 lossless forces the High 4:4:4 Predictive profile
+        # (profile_idc 244), which consumer players (Windows Media Player,
+        # hardware/browser decoders) reject even though the pix_fmt is 4:2:0.
+        # A low crf keeps us on a broadly-compatible 4:2:0 profile (ultrafast
+        # lands on Baseline) and the binary red-channel mask survives the >127
+        # threshold on decode. The profile cap guards against richer presets.
         stream.options = {
-            "crf": "0",
+            "crf": "18",
             "preset": "ultrafast",
+            "profile": "high",
         }
 
         for i in range(frame_count):

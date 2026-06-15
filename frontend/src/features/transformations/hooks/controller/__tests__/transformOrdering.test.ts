@@ -17,8 +17,8 @@ function createTransform(id: string, type: string): ClipTransform {
 describe("transformOrdering", () => {
   it("inserts default transforms before the first dynamic transform", () => {
     const transforms = [
-      createTransform("speed-1", "speed"),
       createTransform("filter-1", "filter"),
+      createTransform("filter-2", "filter"),
     ];
 
     const inserted = createTransform("position-1", "position");
@@ -26,8 +26,8 @@ describe("transformOrdering", () => {
 
     expect(result.map((transform) => transform.id)).toEqual([
       "position-1",
-      "speed-1",
       "filter-1",
+      "filter-2",
     ]);
   });
 
@@ -51,19 +51,19 @@ describe("transformOrdering", () => {
     const transforms = [
       createTransform("position-1", "position"),
       createTransform("rotation-1", "rotation"),
-      createTransform("speed-1", "speed"),
       createTransform("filter-1", "filter"),
-      createTransform("speed-2", "speed"),
+      createTransform("filter-2", "filter"),
+      createTransform("filter-3", "filter"),
     ];
 
-    const result = reorderDynamicTransforms(transforms, "speed-2", "speed-1");
+    const result = reorderDynamicTransforms(transforms, "filter-3", "filter-1");
 
     expect(result?.map((transform) => transform.id)).toEqual([
       "position-1",
       "rotation-1",
-      "speed-2",
-      "speed-1",
+      "filter-3",
       "filter-1",
+      "filter-2",
     ]);
   });
 });

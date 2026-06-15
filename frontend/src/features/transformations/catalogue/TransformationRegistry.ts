@@ -71,9 +71,13 @@ export const TransformationRegistry: TransformationDefinition[] = [
   // Volume definition — always visible for audio clips
   { ...volumeDefinition, isDefault: true },
 
+  // Speed — default (always present, not in the add menu) for every clip type
+  // it's compatible with. adjustmentCompatible so it's also a default section
+  // on adjustment clips.
+  { ...speedDefinition, isDefault: true, adjustmentCompatible: true },
+
   // Dynamic groups (addable). Filters all opt into adjustmentCompatible via
   // a spread below so the menu offers them on adjustment clips too.
-  { ...speedDefinition, isDefault: false, adjustmentCompatible: true },
 
   // Filters (all spatial / pixel-based; safe on textureless containers
   // now that filterApplicator accepts an explicit contentSize).
@@ -266,9 +270,11 @@ export function isTransformCompatible(
   // If no compatibility specified, assume compatible with all
   if (!compatibleClips) return true;
 
-  // Audio-only clips: only audio transformations
+  // Audio-only clips: audio transformations, plus universal transforms.
+  // An undefined `compatibleClips` means "all clip types" (e.g. speed, which
+  // time-warps the audio just as it does for a video's audio track).
   if (clipType === "audio") {
-    return compatibleClips === "audio";
+    return compatibleClips === "audio" || !compatibleClips;
   }
 
   // Video clips: visual + audio (if hasAudio is true)

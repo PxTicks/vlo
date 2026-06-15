@@ -78,8 +78,9 @@ describe("isTransformCompatible — non-adjustment paths unchanged after the fit
     expect(isTransformCompatible(defByType("fitMode"), "video")).toBe(true);
   });
 
-  it("audio clips still see volume and reject visual definitions", () => {
+  it("audio clips see volume and speed but reject visual definitions", () => {
     expect(isTransformCompatible(defByType("volume"), "audio")).toBe(true);
+    expect(isTransformCompatible(defByType("speed"), "audio")).toBe(true);
     expect(isTransformCompatible(defByType("layout"), "audio")).toBe(false);
     expect(isTransformCompatible(defByType("fitMode"), "audio")).toBe(false);
   });
@@ -91,18 +92,19 @@ describe("isTransformCompatible — non-adjustment paths unchanged after the fit
 });
 
 describe("default + addable menus for adjustment clips", () => {
-  it("layout is in the default set; fitMode is not", () => {
+  it("layout and speed are in the default set; fitMode is not", () => {
     const defaults = getDefaultTransforms().filter((def) =>
       isTransformCompatible(def, "adjustment"),
     );
     expect(defaults.map((d) => d.type)).toContain("layout");
+    expect(defaults.map((d) => d.type)).toContain("speed");
     expect(defaults.map((d) => d.type)).not.toContain("fitMode");
     expect(defaults.map((d) => d.type)).not.toContain("volume");
   });
 
-  it("the addable menu contains filters and speed", () => {
+  it("the addable menu contains filters but not speed", () => {
     const addable = getAddableTransforms({ clipType: "adjustment" });
-    expect(addable.find((d) => d.type === "speed")).toBeDefined();
+    expect(addable.find((d) => d.type === "speed")).toBeUndefined();
     // At least one filter is present.
     expect(addable.find((d) => d.type === "filter")).toBeDefined();
   });

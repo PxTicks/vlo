@@ -57,3 +57,53 @@ export function createMaskBinaryThresholdFilter(): Filter {
     },
   });
 }
+
+function colorComponent(tint: number, shift: number): number {
+  return ((tint >> shift) & 0xff) / 255;
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * Presents a generated mask as a visible editor overlay. Unlike the production
+ * compositor filter above, this intentionally tolerates grayscale/decoded-BGR
+ * preview frames and applies the overlay tint after coverage is measured.
+ */
+export function createMaskPreviewOverlayFilter(
+  tint: number,
+  alpha: number,
+): Filter {
+  const r = colorComponent(tint, 16);
+  const g = colorComponent(tint, 8);
+  const b = colorComponent(tint, 0);
+  const a = clamp01(alpha);
+  const fragment = `
+in vec2 vTextureCoord;
+out vec4 finalColor;
+uniform sampler2D uTexture;
+
+void main(void)
+{
+    vec4 color = texture(uTexture, vTextureCoord);
+    float coverage = max(color.r, max(color.g, color.b));
+    float value = coverage >= 0.2 ? 1.0 : 0.0;
+    float overlayAlpha = value * ${a.toFixed(6)};
+    finalColor = vec4(
+        ${r.toFixed(6)} * overlayAlpha,
+        ${g.toFixed(6)} * overlayAlpha,
+        ${b.toFixed(6)} * overlayAlpha,
+        overlayAlpha
+    );
+}
+`;
+
+  return Filter.from({
+    gl: {
+      vertex: defaultVertex,
+      fragment,
+    },
+  });
+}

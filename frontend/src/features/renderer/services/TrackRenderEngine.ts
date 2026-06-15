@@ -83,6 +83,7 @@ interface LiveRenderRequest {
   logicalDimensions: { width: number; height: number };
   localTimeSeconds: number;
   rawTimeTicks: number;
+  fps: number;
   enqueuedAtMs: number;
   generation: number;
 }
@@ -493,6 +494,7 @@ export class TrackRenderEngine {
         logicalDimensions,
         localTimeSeconds: renderTimeSeconds,
         rawTimeTicks: rawTimeSeconds,
+        fps: clipFps,
         enqueuedAtMs: nowMs,
         generation: this.createLiveRenderGeneration(),
       });
@@ -1409,7 +1411,7 @@ export class TrackRenderEngine {
             request.logicalDimensions,
             request.rawTimeTicks,
             request.assetsById,
-            { waitForSam2: true },
+            { fps: request.fps, waitForSam2: true },
           ),
         ]);
 

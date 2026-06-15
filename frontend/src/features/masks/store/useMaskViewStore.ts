@@ -24,6 +24,12 @@ export interface Sam2LivePreview {
   height: number;
   frameIndex: number;
   sourceFps: number;
+  /**
+   * Point-set hash this single-frame preview was generated from. The overlay
+   * only shows the preview while this matches the mask's current points; any
+   * point edit invalidates it and the base (generated-mask) layer takes over.
+   */
+  pointsHash: string;
 }
 
 export type Sam2PointMode = "add" | "remove";
@@ -66,6 +72,7 @@ interface MaskViewState {
     height: number,
     frameIndex: number,
     sourceFps: number,
+    pointsHash: string,
   ) => void;
   clearSam2LivePreview: (clipId: string) => void;
   setMaskPreviewTarget: (clipId: string, maskId: string) => void;
@@ -156,6 +163,7 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
     height,
     frameIndex,
     sourceFps,
+    pointsHash,
   ) =>
     set((state) => {
       const previous = state.sam2LivePreviewByClipId[clipId];
@@ -165,7 +173,15 @@ export const useMaskViewStore = create<MaskViewState>((set) => ({
       return {
         sam2LivePreviewByClipId: {
           ...state.sam2LivePreviewByClipId,
-          [clipId]: { maskId, bitmap, width, height, frameIndex, sourceFps },
+          [clipId]: {
+            maskId,
+            bitmap,
+            width,
+            height,
+            frameIndex,
+            sourceFps,
+            pointsHash,
+          },
         },
       };
     }),

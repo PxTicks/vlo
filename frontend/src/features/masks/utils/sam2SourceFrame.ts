@@ -111,6 +111,24 @@ export function normalizeSam2PointsToRenderedSourceFrames(
   }));
 }
 
+/**
+ * Stable FNV-1a hash of a SAM2 point set. Used to decide whether a transient
+ * single-frame preview still reflects the current points (any edit invalidates
+ * it) and shared between the panel that generates previews and the overlay that
+ * gates their display.
+ */
+export function hashSam2Points(points: readonly ClipMaskPoint[]): string {
+  let hash = 2166136261;
+  for (const point of points) {
+    const token = `${point.x.toFixed(6)}|${point.y.toFixed(6)}|${point.label}|${point.timeTicks.toFixed(6)};`;
+    for (let index = 0; index < token.length; index += 1) {
+      hash ^= token.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 export function areSam2PointsEqual(
   left: readonly ClipMaskPoint[],
   right: readonly ClipMaskPoint[],

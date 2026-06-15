@@ -91,11 +91,14 @@ export class SpriteClipMaskController {
   private readonly maskTarget: Container;
   private readonly renderer: Renderer | null;
   private maskSprite: Sprite | null = null;
+  private readonly previewContainer: Container;
+  private readonly previewSprite: Sprite;
   private readonly onAssetMaskFrameReady?: () => void;
 
   private readonly assetMaskSourceFactory: AssetMaskSourceFactory;
   private readonly nodeRegistry: MaskSceneNodeRegistry;
   private readonly maskApplicationController: MaskApplicationController;
+  private readonly previewMaskApplicationController: MaskApplicationController;
   private readonly maskBooleanTextureRenderer: MaskBooleanTextureRenderer | null;
 
   constructor(
@@ -118,6 +121,14 @@ export class SpriteClipMaskController {
       this.maskSprite.visible = false;
       this.maskSprite.renderable = false;
     }
+    this.previewContainer = new Container();
+    this.previewContainer.visible = false;
+    this.previewContainer.renderable = false;
+    this.previewSprite = new Sprite(Texture.WHITE);
+    this.previewSprite.anchor.set(0.5);
+    this.previewSprite.tint = 0x60a5fa;
+    this.previewSprite.alpha = 0.45;
+    this.previewContainer.addChild(this.previewSprite);
 
     this.assetMaskSourceFactory = new AssetMaskSourceFactory(
       this.onAssetMaskFrameReady,
@@ -131,6 +142,12 @@ export class SpriteClipMaskController {
       this.maskTarget,
       this.maskContainer,
       this.maskSprite,
+      (candidate) => this.hasUsableTexture(candidate),
+    );
+    this.previewMaskApplicationController = new MaskApplicationController(
+      this.previewContainer,
+      this.maskContainer,
+      null,
       (candidate) => this.hasUsableTexture(candidate),
     );
     this.maskBooleanTextureRenderer =
@@ -174,14 +191,20 @@ export class SpriteClipMaskController {
     } = options;
     // Transient single-mask preview: while a mask on this clip is being
     // previewed, the equation is temporarily off and NO masking is applied to
-    // the content, so the full content shows below. The previewed mask's bounds
-    // are drawn separately as an overlay by the interaction layer.
+    // the content, so the full content shows below. Asset-backed previews still
+    // sync their mask node here, then render mask coverage through the normal
+    // mask texture path before applying it to a blue overlay sprite.
     const previewTarget = useMaskViewStore.getState().maskPreviewTarget;
-    const isPreviewingThisClip =
+    const previewMaskClip =
       parentClip.type !== "mask" &&
-      !!previewTarget &&
-      previewTarget.clipId === parentClip.id &&
-      maskClips.some((clip) => getMaskLocalId(clip) === previewTarget.maskId);
+      previewTarget?.clipId === parentClip.id
+        ? (maskClips.find(
+            (clip) => getMaskLocalId(clip) === previewTarget.maskId,
+          ) ?? null)
+        : null;
+    const isPreviewingThisClip = !!previewMaskClip;
+    const usesMaskNodePreview =
+      !!previewMaskClip && isAssetBackedMask(previewMaskClip);
 
     const resolvedMaskExpression =
       parentClip.type === "mask" || isPreviewingThisClip
@@ -190,11 +213,15 @@ export class SpriteClipMaskController {
     const resolvedMaskExpressionAnalysis = analyzeMaskBooleanExpression(
       resolvedMaskExpression,
     );
-    const referencedMaskIds = new Set(resolvedMaskExpressionAnalysis.maskIds);
-    const referencedMaskClips = maskClips.filter((clip) => {
-      const maskId = getMaskLocalId(clip);
-      return !!maskId && referencedMaskIds.has(maskId);
-    });
+    const referencedMaskIds = usesMaskNodePreview
+      ? new Set([previewTarget?.maskId ?? ""])
+      : new Set(resolvedMaskExpressionAnalysis.maskIds);
+    const referencedMaskClips = usesMaskNodePreview && previewMaskClip
+      ? [previewMaskClip]
+      : maskClips.filter((clip) => {
+          const maskId = getMaskLocalId(clip);
+          return !!maskId && referencedMaskIds.has(maskId);
+        });
     const maskClipByLocalId = new Map<string, MaskTimelineClip>();
     referencedMaskClips.forEach((clip) => {
       const maskId = getMaskLocalId(clip);
@@ -240,16 +267,6 @@ export class SpriteClipMaskController {
         )
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
     );
-
-    if (!resolvedMaskExpression || referencedMaskIds.size === 0) {
-      this.clear();
-      return;
-    }
-
-    if (activeMaskClips.length === 0) {
-      this.clear();
-      return;
-    }
 
     activeVectorMasks.forEach((maskClip) => {
       const node = this.nodeRegistry.getVectorNode(maskClip.id);
@@ -334,6 +351,45 @@ export class SpriteClipMaskController {
         resolvedLayout.contentSize,
         { baseLayoutMode: "origin", notifyLiveParams: false },
       );
+    }
+
+    if (usesMaskNodePreview) {
+      this.nodeRegistry.sanitizeAssetMaskSpriteVisibility();
+      const hasReadyPreviewMask = activeMaskClips.some((maskClip) =>
+        this.isMaskClipRenderable(maskClip),
+      );
+      const previewMaskId = previewTarget?.maskId ?? null;
+      const previewMaskSprite =
+        hasReadyPreviewMask && previewMaskId
+          ? this.renderMaskNodePreviewMaskSprite({
+              previewMaskId,
+              maskClipByLocalId,
+              activeMaskClips,
+              clipContentSize,
+              logicalDimensions,
+              parentClip,
+              rawTimeTicks,
+              requestedMaskTimeSeconds,
+            })
+          : null;
+      if (previewMaskSprite) {
+        this.showMaskNodePreviewOverlay(clipContentSize, previewMaskSprite);
+      } else {
+        this.clear();
+      }
+      return;
+    }
+
+    this.hideMaskNodePreviewOverlay();
+
+    if (!resolvedMaskExpression || referencedMaskIds.size === 0) {
+      this.clear();
+      return;
+    }
+
+    if (activeMaskClips.length === 0) {
+      this.clear();
+      return;
     }
 
     const singleMask = activeMaskClips.length === 1 ? activeMaskClips[0] : null;
@@ -473,11 +529,13 @@ export class SpriteClipMaskController {
     if (this.maskSprite) {
       this.maskSprite.visible = false;
     }
+    this.hideMaskNodePreviewOverlay();
   }
 
   public dispose(): void {
     this.clear();
     this.maskApplicationController.dispose();
+    this.previewMaskApplicationController.dispose();
     this.maskBooleanTextureRenderer?.dispose();
     this.nodeRegistry.dispose();
 
@@ -490,6 +548,12 @@ export class SpriteClipMaskController {
       }
       this.maskSprite = null;
     }
+    if (this.previewContainer.parent) {
+      this.previewContainer.removeFromParent();
+    }
+    if (!this.previewContainer.destroyed) {
+      this.previewContainer.destroy({ children: true, texture: false });
+    }
 
     if (this.maskContainer.parent) {
       this.maskContainer.removeFromParent();
@@ -500,9 +564,21 @@ export class SpriteClipMaskController {
   }
 
   public syncMaskSpriteTransform(): void {
-    if (!this.maskSprite) {
-      return;
+    if (this.maskSprite) {
+      this.syncSpriteTransformToContent(this.maskSprite);
+      this.maskSprite.alpha = this.sprite.alpha;
     }
+    this.syncContainerTransformToContent(this.previewContainer);
+
+    // The regular (non-composited) path applies `maskContainer` directly as the
+    // target's mask, so it must carry the same screen transform as the content
+    // sprite. This runs here — after content transforms have been applied by
+    // the render paths — rather than mid-`syncMaskClips`, where `this.sprite`'s
+    // transform is still stale (the synchronized path applies it afterwards).
+    this.syncMaskContainerTransform();
+  }
+
+  private syncSpriteTransformToContent(targetSprite: Sprite): void {
     const copyPoint = (
       target:
         | { x: number; y: number; copyFrom?: (src: { x: number; y: number }) => void }
@@ -519,10 +595,10 @@ export class SpriteClipMaskController {
         target.y = src.y;
       }
     };
-    copyPoint(this.maskSprite.anchor, this.sprite.anchor);
-    copyPoint(this.maskSprite.pivot, this.sprite.pivot);
+    copyPoint(targetSprite.anchor, this.sprite.anchor);
+    copyPoint(targetSprite.pivot, this.sprite.pivot);
 
-    const maskPosition = this.maskSprite.position as {
+    const maskPosition = targetSprite.position as {
       x: number;
       y: number;
       set?: (x: number, y: number) => void;
@@ -534,7 +610,7 @@ export class SpriteClipMaskController {
       maskPosition.y = this.sprite.position.y;
     }
 
-    const maskScale = this.maskSprite.scale as {
+    const maskScale = targetSprite.scale as {
       x: number;
       y: number;
       set?: (x: number, y?: number) => void;
@@ -546,15 +622,40 @@ export class SpriteClipMaskController {
       maskScale.y = this.sprite.scale.y;
     }
 
-    this.maskSprite.rotation = this.sprite.rotation;
-    this.maskSprite.alpha = this.sprite.alpha;
+    targetSprite.rotation = this.sprite.rotation;
+  }
 
-    // The regular (non-composited) path applies `maskContainer` directly as the
-    // target's mask, so it must carry the same screen transform as the content
-    // sprite. This runs here — after content transforms have been applied by
-    // the render paths — rather than mid-`syncMaskClips`, where `this.sprite`'s
-    // transform is still stale (the synchronized path applies it afterwards).
-    this.syncMaskContainerTransform();
+  private syncContainerTransformToContent(targetContainer: Container): void {
+    const setPoint = (
+      target:
+        | {
+            x: number;
+            y: number;
+            set?: (x: number, y?: number) => void;
+          }
+        | undefined,
+      x: number,
+      y: number,
+    ) => {
+      if (!target) {
+        return;
+      }
+      if (typeof target.set === "function") {
+        target.set(x, y);
+      } else {
+        target.x = x;
+        target.y = y;
+      }
+    };
+
+    setPoint(
+      targetContainer.position,
+      this.sprite.position.x,
+      this.sprite.position.y,
+    );
+    setPoint(targetContainer.scale, this.sprite.scale.x, this.sprite.scale.y);
+    setPoint(targetContainer.pivot, this.sprite.pivot.x, this.sprite.pivot.y);
+    targetContainer.rotation = this.sprite.rotation;
   }
 
   /**
@@ -993,6 +1094,122 @@ export class SpriteClipMaskController {
     }
     node.sprite.visible = true;
     node.spriteHost.visible = true;
+  }
+
+  private renderMaskNodePreviewMaskSprite(options: {
+    previewMaskId: string;
+    maskClipByLocalId: Map<string, MaskTimelineClip>;
+    activeMaskClips: MaskTimelineClip[];
+    clipContentSize: { width: number; height: number };
+    logicalDimensions: { width: number; height: number };
+    parentClip: TimelineClip;
+    rawTimeTicks: number;
+    requestedMaskTimeSeconds: number;
+  }): Sprite | null {
+    if (!this.maskSprite || !this.maskBooleanTextureRenderer) {
+      return null;
+    }
+
+    const expression: MaskBooleanExpression = {
+      kind: "mask_ref",
+      maskId: options.previewMaskId,
+    };
+    const expressionAnalysis = analyzeMaskBooleanExpression(expression);
+    const compositeState: ResolvedMaskCompositeState = {
+      compositeInvert: false,
+      growAmount: 0,
+      growInvert: false,
+      feather: null,
+    };
+    const maskApplicationSignature = createMaskApplicationSignature(
+      expression,
+      options.activeMaskClips,
+      compositeState,
+    );
+    const renderedTexture =
+      this.maskBooleanTextureRenderer.renderExpressionToTexture({
+        expression,
+        expressionAnalysis,
+        maskClipByLocalId: options.maskClipByLocalId,
+        contentSize: options.clipContentSize,
+        compositeState,
+        cacheKey: this.createCompositeTextureCacheKey({
+          maskApplicationSignature: `preview:${maskApplicationSignature}`,
+          activeMaskClips: options.activeMaskClips,
+          clipContentSize: options.clipContentSize,
+          logicalDimensions: options.logicalDimensions,
+          parentClip: options.parentClip,
+          rawTimeTicks: options.rawTimeTicks,
+          requestedMaskTimeSeconds: options.requestedMaskTimeSeconds,
+          compositeState,
+        }),
+      });
+
+    if (!renderedTexture || !this.hasUsableTexture(this.maskSprite)) {
+      this.maskBooleanTextureRenderer.invalidateCache();
+      return null;
+    }
+
+    this.syncSpriteTransformToContent(this.maskSprite);
+    this.maskSprite.alpha = this.sprite.alpha;
+    this.maskSprite.visible = true;
+    this.maskSprite.renderable = false;
+    return this.maskSprite;
+  }
+
+  private showMaskNodePreviewOverlay(
+    contentSize: { width: number; height: number },
+    maskSprite: Sprite,
+  ): void {
+    const host = this.resolveMaskHostContainer();
+    if (!host) {
+      return;
+    }
+
+    this.maskApplicationController.clear();
+    // Match the applied AlphaMask path: keep the mask graph available to the
+    // effect without drawing the raw mask sprites into the scene.
+    this.maskContainer.visible = false;
+    maskSprite.visible = true;
+    maskSprite.renderable = false;
+
+    const previewContainer = this.previewContainer;
+    if (previewContainer.parent !== host) {
+      if (previewContainer.parent) {
+        previewContainer.removeFromParent();
+      }
+      host.addChild(previewContainer);
+    } else {
+      // Keep the visual preview above the content sprite without changing the
+      // maskContainer's established position below it.
+      host.addChild(previewContainer);
+    }
+
+    const previewSprite = this.previewSprite;
+    previewSprite.texture = Texture.WHITE;
+    const textureWidth = Math.max(1, previewSprite.texture.width);
+    const textureHeight = Math.max(1, previewSprite.texture.height);
+    previewSprite.scale.set(
+      contentSize.width / textureWidth,
+      contentSize.height / textureHeight,
+    );
+    previewSprite.tint = 0x60a5fa;
+    previewSprite.alpha = 0.45;
+    previewContainer.visible = true;
+    previewContainer.renderable = true;
+    this.previewMaskApplicationController.applyAlphaMask(
+      maskSprite,
+      false,
+      "sam2-preview",
+    );
+    this.syncContainerTransformToContent(previewContainer);
+    this.syncMaskContainerTransform();
+  }
+
+  private hideMaskNodePreviewOverlay(): void {
+    this.previewMaskApplicationController.clear();
+    this.previewContainer.visible = false;
+    this.previewContainer.renderable = false;
   }
 
   private getActiveClipContentSize(logicalDimensions: {

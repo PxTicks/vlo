@@ -88,9 +88,11 @@ import { clipLocalPointToBrushCanvasPoint } from "../../../masks/utils/brushCoor
 import { ensureAssetSourceLoaded, useAssetStore } from "../../../userAssets";
 import { syncContainerTransformToTarget } from "../../../renderer";
 import {
+  hashSam2Points,
   resolveRenderedSourceFrameForClipAssets,
   type RenderedSourceFrameReference,
 } from "../../../masks/utils/sam2SourceFrame";
+import { useDebugStore } from "../../../../shared/debug/useDebugStore";
 import { useProjectStore } from "../../../project/useProjectStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 import { findEditableMaskTargetAtPoint as findEditableMaskTargetAtPointFromInput } from "./mask/maskHitTesting";
@@ -185,6 +187,20 @@ function clamp01(value: number): number {
 function normalizeSam2PointCoordinate(value: number): number {
   if (!Number.isFinite(value)) return 0.5;
   return clamp01(value);
+}
+
+// SAM2 preview tracing: gated on the built-in debug mode (Debug section of the
+// project settings menu). Throttled per-stage to ~2/sec so each decision point
+// reports independently.
+const sam2PreviewDebugLastLog = new Map<string, number>();
+function sam2PreviewDebug(stage: string, detail: Record<string, unknown>): void {
+  if (!useDebugStore.getState().debugMode) {
+    return;
+  }
+  const now = performance.now();
+  if (now - (sam2PreviewDebugLastLog.get(stage) ?? 0) < 500) return;
+  sam2PreviewDebugLastLog.set(stage, now);
+  console.warn(`[sam2-preview] ${stage}`, detail);
 }
 
 function normalizeSam2Points(
@@ -344,18 +360,35 @@ export function useMaskInteractionController(
   const draftMaskShapeRef = useRef<MaskShapeSource | null>(null);
   const liveMaskLayoutPreviewRef = useRef<LiveMaskLayoutPreview | null>(null);
 
-  const sam2PreviewTextureUrlRef = useRef<string>("");
-  const sam2PreviewBitmapRef = useRef<ImageBitmap | null>(null);
+  // The override texture this controller created from a single-frame ImageBitmap,
+  // cached by the bitmap it wraps. Kept alive until the store supersedes that
+  // bitmap (or on teardown), so we never free a source whose bitmap the store
+  // still holds.
+  const sam2OverridePreviewRef = useRef<{
+    bitmap: ImageBitmap;
+    texture: Texture;
+  } | null>(null);
   const overlayShapeSignatureRef = useRef<string>("");
+
+  const destroySam2OverrideTexture = useCallback(() => {
+    const cached = sam2OverridePreviewRef.current;
+    sam2OverridePreviewRef.current = null;
+    if (
+      cached &&
+      cached.texture !== Texture.EMPTY &&
+      !cached.texture.destroyed
+    ) {
+      cached.texture.destroy(true);
+    }
+  }, []);
 
   const [isMaskGizmoVisible, setIsMaskGizmoVisible] = useState(false);
   const handleOverlaySceneDispose = useCallback(() => {
-    sam2PreviewTextureUrlRef.current = "";
-    sam2PreviewBitmapRef.current = null;
+    destroySam2OverrideTexture();
     overlayShapeSignatureRef.current = "";
     liveMaskLayoutPreviewRef.current = null;
     setIsMaskGizmoVisible(false);
-  }, []);
+  }, [destroySam2OverrideTexture]);
   const {
     clipOverlayRef,
     maskOverlayRef,
@@ -686,6 +719,21 @@ export function useMaskInteractionController(
     ],
   );
 
+  const clearSam2PreviewSprite = useCallback(() => {
+    const previewSprite = sam2PreviewSpriteRef.current;
+    if (previewSprite) {
+      previewSprite.visible = false;
+      // Drop the texture reference before destroying the texture this controller
+      // created for the explicit single-frame override.
+      if (previewSprite.texture !== Texture.EMPTY) {
+        previewSprite.texture = Texture.EMPTY;
+      }
+    }
+    destroySam2OverrideTexture();
+  }, [destroySam2OverrideTexture, sam2PreviewSpriteRef]);
+
+  // Drives the transient single-frame override. The committed generated-mask
+  // preview is rendered by SpriteClipMaskController using the normal mask nodes.
   const updateSam2PreviewSprite = useCallback(
     (clipId: string, maskClip: MaskTimelineClip) => {
       const previewSprite = sam2PreviewSpriteRef.current;
@@ -698,62 +746,71 @@ export function useMaskInteractionController(
         previewTarget.clipId === clipId &&
         previewTarget.maskId === maskLocalId;
       if (!isPreviewTarget) {
-        previewSprite.visible = false;
-        return;
-      }
-
-      const livePreview =
-        useMaskViewStore.getState().sam2LivePreviewByClipId[clipId];
-      if (!livePreview) {
-        previewSprite.visible = false;
+        sam2PreviewDebug("not-preview-target", { previewTarget, maskLocalId });
+        clearSam2PreviewSprite();
         return;
       }
 
       const currentSourceFrame = resolveSam2SourceFrameAtPlayhead(maskClip);
-      if (
-        !currentSourceFrame ||
-        currentSourceFrame.frameIndex !== livePreview.frameIndex
-      ) {
-        previewSprite.visible = false;
+      if (!currentSourceFrame) {
+        sam2PreviewDebug("no-source-frame", { maskLocalId });
+        clearSam2PreviewSprite();
         return;
       }
 
       const contentSize = resolveActiveClipContentSize();
-      const bitmapKey = `${livePreview.maskId}:${livePreview.frameIndex}:${livePreview.width}x${livePreview.height}`;
-      const shouldRefreshTexture =
-        sam2PreviewTextureUrlRef.current !== bitmapKey ||
-        sam2PreviewBitmapRef.current !== livePreview.bitmap;
+      const currentPointsHash = hashSam2Points(maskClip.maskPoints ?? []);
 
-      if (shouldRefreshTexture) {
-        const oldTex = previewSprite.texture;
-        if (oldTex && oldTex !== Texture.EMPTY && !oldTex.destroyed) {
-          oldTex.destroy(true);
+      // 1. Fresh single-frame override — only on the frame it was generated for
+      // and only while it still matches the current points.
+      const livePreview =
+        useMaskViewStore.getState().sam2LivePreviewByClipId[clipId];
+      const overrideUsable =
+        !!livePreview &&
+        livePreview.maskId === maskLocalId &&
+        livePreview.frameIndex === currentSourceFrame.frameIndex &&
+        livePreview.pointsHash === currentPointsHash;
+
+      if (overrideUsable) {
+        // Reuse the cached override texture while it wraps the same bitmap; the
+        // store closes a superseded bitmap, so only then is the old texture safe
+        // to destroy.
+        let cached = sam2OverridePreviewRef.current;
+        if (!cached || cached.bitmap !== livePreview.bitmap) {
+          destroySam2OverrideTexture();
+          cached = {
+            bitmap: livePreview.bitmap,
+            texture: Texture.from({
+              resource: livePreview.bitmap,
+              alphaMode: "premultiply-alpha-on-upload",
+            }),
+          };
+          sam2OverridePreviewRef.current = cached;
         }
-        previewSprite.texture = Texture.from({
-          resource: livePreview.bitmap,
-          alphaMode: "premultiply-alpha-on-upload",
+        if (previewSprite.texture !== cached.texture) {
+          previewSprite.texture = cached.texture;
+        }
+        previewSprite.width = contentSize.width;
+        previewSprite.height = contentSize.height;
+        previewSprite.visible = true;
+        sam2PreviewDebug("override-shown", {
+          frameIndex: currentSourceFrame.frameIndex,
         });
-        sam2PreviewTextureUrlRef.current = bitmapKey;
-        sam2PreviewBitmapRef.current = livePreview.bitmap;
+        return;
       }
 
-      previewSprite.width = contentSize.width;
-      previewSprite.height = contentSize.height;
-      previewSprite.visible = true;
+      // No override on this frame: drop the interaction-layer sprite. The
+      // committed generated mask, if any, is shown by the renderer mask preview.
+      previewSprite.visible = false;
     },
     [
+      clearSam2PreviewSprite,
+      destroySam2OverrideTexture,
       resolveActiveClipContentSize,
       resolveSam2SourceFrameAtPlayhead,
       sam2PreviewSpriteRef,
     ],
   );
-
-  const clearSam2PreviewSprite = useCallback(() => {
-    const previewSprite = sam2PreviewSpriteRef.current;
-    if (previewSprite) {
-      previewSprite.visible = false;
-    }
-  }, [sam2PreviewSpriteRef]);
 
   const findEditableMaskTargetAtPoint = useCallback(
     (global: { x: number; y: number }): MaskInteractionTarget | null => {
@@ -2030,6 +2087,12 @@ export function useMaskInteractionController(
       if (selectedMaskClip.maskType === "sam2") {
         const isSam2EditorActive =
           isMaskTabActive && sam2EditorMaskId === selectedMaskId;
+        sam2PreviewDebug("sam2-branch", {
+          isSam2EditorActive,
+          isMaskTabActive,
+          sam2EditorMaskId,
+          selectedMaskId,
+        });
         syncSam2EditingCursor(isSam2EditorActive);
         renderMaskToOverlay(null);
         if (isSam2EditorActive) {

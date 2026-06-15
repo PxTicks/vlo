@@ -22,6 +22,7 @@ import {
   getMaskLayoutState,
 } from "../../model/maskFactory";
 import { createMaskRenderableShapeSource } from "../../model/maskRenderableLayout";
+import { useMaskViewStore } from "../../store/useMaskViewStore";
 import { resolveMaskRenderableLayout } from "../resolveMaskRenderableLayout";
 
 const { mockBrushSetHydrationContext, mockBrushSetSource } = vi.hoisted(() => ({
@@ -273,7 +274,7 @@ describe("SpriteClipMaskController mask composition", () => {
     const renderer = {
       render: renderSpy,
     } as unknown as Renderer;
-    const sprite = new Sprite(Texture.WHITE);
+    const sprite = new Sprite();
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
 
@@ -1372,6 +1373,78 @@ describe("SpriteClipMaskController mask composition", () => {
 
     controller.dispose();
     warnSpy.mockRestore();
+  });
+
+  it("renders a SAM2 mask preview through the mask controller without masking the content sprite", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.EMPTY);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const parent = createParentClip();
+    const sam2Mask = createMaskClip("mask_sam2_preview", {
+      maskType: "sam2",
+      sam2MaskAssetId: "sam2-preview-mask-asset",
+    });
+    const sam2Asset = createMaskAsset("sam2-preview-mask-asset");
+    useMaskViewStore
+      .getState()
+      .setMaskPreviewTarget(parent.id, "mask_sam2_preview");
+
+    try {
+      await controller.syncMaskClips(
+        [sam2Mask],
+        parent,
+        { width: 1920, height: 1080 },
+        10,
+        new Map([[sam2Asset.id, sam2Asset]]),
+        { waitForSam2: true },
+      );
+
+      const internals = controller as unknown as {
+        assetMaskNodes: Map<
+          string,
+          {
+            player: {
+              renderAt: ReturnType<typeof vi.fn>;
+              sprite: Sprite;
+            };
+          }
+        >;
+        maskContainer: Container;
+        maskSprite: Sprite | null;
+        previewContainer: Container;
+        previewSprite: Sprite;
+      };
+      const node = internals.assetMaskNodes.get(sam2Mask.id);
+
+      expect(node?.player.renderAt).toHaveBeenCalledWith(expect.any(Number), {
+        strict: true,
+      });
+      expect(sprite.mask ?? null).toBeNull();
+      expect(internals.maskContainer.visible).toBe(false);
+      expect(internals.previewContainer.visible).toBe(true);
+      expect(internals.previewContainer.renderable).toBe(true);
+      expect(internals.previewContainer.mask ?? null).toBeNull();
+      const previewAlphaMaskEffect = (internals.previewContainer.effects?.find(
+        (effect) => effect instanceof AlphaMask,
+      ) ?? null) as AlphaMask | null;
+      expect(previewAlphaMaskEffect).not.toBeNull();
+      expect(previewAlphaMaskEffect?.mask).toBe(internals.maskSprite);
+      expect(internals.maskSprite?.visible).toBe(true);
+      expect(internals.maskSprite?.renderable).toBe(false);
+      expect(internals.previewSprite.tint).toBe(0x60a5fa);
+      expect(internals.previewSprite.alpha).toBe(0.45);
+      expect(internals.previewSprite.scale.x).toBe(1920);
+      expect(internals.previewSprite.scale.y).toBe(1080);
+    } finally {
+      useMaskViewStore.getState().clearMaskPreviewTarget();
+      controller.dispose();
+      warnSpy.mockRestore();
+    }
   });
 
   it("keeps a gizmo-moved generation mask aligned with the rendered asset rectangle", async () => {

@@ -23,6 +23,7 @@ import { useMaskViewStore } from "../store/useMaskViewStore";
 import { toClipInputTimeTicks } from "../utils/clipTime";
 import {
   areSam2PointsEqual,
+  hashSam2Points,
   isPointOnRenderedSourceFrame,
   normalizeSam2PointsToRenderedSourceFrames,
   resolveRenderedSourceFrameForAsset,
@@ -48,18 +49,6 @@ function getClipPresentationContext(): ClipPresentationContext {
     clips: timelineState.clips,
     fps: useProjectStore.getState().config.fps,
   };
-}
-
-function hashSam2Points(points: ClipMaskPoint[]): string {
-  let hash = 2166136261;
-  for (const point of points) {
-    const token = `${point.x.toFixed(6)}|${point.y.toFixed(6)}|${point.label}|${point.timeTicks.toFixed(6)};`;
-    for (let index = 0; index < token.length; index += 1) {
-      hash ^= token.charCodeAt(index);
-      hash = Math.imul(hash, 16777619);
-    }
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 async function resolveAssetFile(asset: {
@@ -194,20 +183,6 @@ export function useSam2MaskPanel({
     pointsHash: null,
     maskId: null,
   });
-  const lastAppliedSam2PreviewRef = useRef<{
-    frameIndex: number;
-    pointsHash: string;
-    maskId: string;
-  } | null>(null);
-  const maskPreviewTarget = useMaskViewStore(
-    (state) => state.maskPreviewTarget,
-  );
-  const isPreviewingSelectedMask =
-    !!selectedClipId &&
-    !!selectedMaskId &&
-    maskPreviewTarget?.clipId === selectedClipId &&
-    maskPreviewTarget?.maskId === selectedMaskId;
-
   const assets = useAssetStore((state) => state.assets);
   const addLocalAsset = useAssetStore((state) => state.addLocalAsset);
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
@@ -365,7 +340,6 @@ export function useSam2MaskPanel({
   useEffect(() => {
     cancelSam2PreviewRequest();
     activeSam2SessionInitRef.current = null;
-    lastAppliedSam2PreviewRef.current = null;
     if (selectedClipId) {
       useMaskViewStore.getState().clearSam2LivePreview(selectedClipId);
     }
@@ -404,7 +378,6 @@ export function useSam2MaskPanel({
     ) {
       cancelSam2PreviewRequest();
       activeSam2SessionInitRef.current = null;
-      lastAppliedSam2PreviewRef.current = null;
       activeSam2SessionRef.current = null;
       void clearSam2EditorSession(existing).catch(() => {
         // Best effort cleanup only.
@@ -580,6 +553,7 @@ export function useSam2MaskPanel({
     async (
       clipId: string,
       maskId: string,
+      pointsHash: string,
       result: {
         blob: Blob;
         width: number;
@@ -607,6 +581,7 @@ export function useSam2MaskPanel({
           result.height,
           result.frameIndex,
           result.sourceFps,
+          pointsHash,
         );
     },
     [],
@@ -703,148 +678,10 @@ export function useSam2MaskPanel({
     ],
   );
 
-  useEffect(() => {
-    if (!isSam2EditorOpen || !selectedClipId || !selectedMaskId) return;
-    if (
-      !selectedClip ||
-      selectedClip.type === "mask" ||
-      selectedClip.type === "audio"
-    ) {
-      return;
-    }
-    if (!selectedMask || selectedMask.maskType !== "sam2") return;
-
-    if (!isPreviewingSelectedMask) {
-      cancelSam2PreviewRequest();
-      return;
-    }
-
-    let isDisposed = false;
-    let isRunning = false;
-    let queuedGlobalTimeTicks: number | null = null;
-
-    const queuePreview = (
-      globalTimeTicks: number,
-      options?: { force?: boolean },
-    ) => {
-      if (isDisposed) return;
-
-      const livePreview =
-        useMaskViewStore.getState().sam2LivePreviewByClipId[selectedClipId];
-      if (
-        !options?.force &&
-        livePreview &&
-        livePreview.maskId === selectedMaskId &&
-        livePreview.sourceFps > 0
-      ) {
-        const presentationContext = getClipPresentationContext();
-        const targetFrameIndex = getRenderedSourceFrameReferenceFromTicks(
-          toClipInputTimeTicks(
-            selectedClip,
-            globalTimeTicks,
-            presentationContext,
-          ),
-          livePreview.sourceFps,
-        ).frameIndex;
-        const lastApplied = lastAppliedSam2PreviewRef.current;
-        if (
-          lastApplied &&
-          lastApplied.maskId === selectedMaskId &&
-          lastApplied.pointsHash === sam2PointsHash &&
-          lastApplied.frameIndex === targetFrameIndex
-        ) {
-          return;
-        }
-      }
-
-      queuedGlobalTimeTicks = globalTimeTicks;
-      if (isRunning) return;
-      isRunning = true;
-
-      const processQueue = async () => {
-        while (!isDisposed && queuedGlobalTimeTicks !== null) {
-          const requestTimeTicks = queuedGlobalTimeTicks;
-          queuedGlobalTimeTicks = null;
-
-          const controller = new AbortController();
-          cancelSam2PreviewRequest();
-          sam2PreviewRequestRef.current = {
-            controller,
-            frameIndex: null,
-            pointsHash: sam2PointsHash,
-            maskId: selectedMaskId,
-          };
-
-          try {
-            const result = await fetchSam2FramePreview({
-              signal: controller.signal,
-              globalTimeTicks: requestTimeTicks,
-              includeCurrentFramePoints: false,
-            });
-            if (!result || controller.signal.aborted) {
-              continue;
-            }
-            if (
-              selectedClipIdRef.current !== selectedClipId ||
-              selectedMaskIdRef.current !== selectedMaskId
-            ) {
-              continue;
-            }
-
-            await applySam2FramePreview(selectedClipId, selectedMaskId, result);
-            setSam2FramePreviewError(null);
-            lastAppliedSam2PreviewRef.current = {
-              frameIndex: result.frameIndex,
-              pointsHash: sam2PointsHash,
-              maskId: selectedMaskId,
-            };
-          } catch (error) {
-            if (controller.signal.aborted || isDisposed) {
-              continue;
-            }
-            void error;
-          } finally {
-            const current = sam2PreviewRequestRef.current;
-            if (current.controller === controller) {
-              sam2PreviewRequestRef.current = {
-                controller: null,
-                frameIndex: null,
-                pointsHash: null,
-                maskId: null,
-              };
-            }
-          }
-        }
-
-        isRunning = false;
-      };
-
-      void processQueue();
-    };
-
-    const unsubscribe = playbackClock.subscribe((timeTicks) => {
-      queuePreview(timeTicks);
-    });
-    queuePreview(playbackClock.time, { force: true });
-
-    return () => {
-      isDisposed = true;
-      unsubscribe();
-      cancelSam2PreviewRequest();
-    };
-  }, [
-    applySam2FramePreview,
-    cancelSam2PreviewRequest,
-    fetchSam2FramePreview,
-    isPreviewingSelectedMask,
-    isSam2EditorOpen,
-    sam2PointsHash,
-    selectedClip,
-    selectedClipId,
-    selectedMask,
-    selectedMaskId,
-  ]);
-
+  // The previewed mask's committed result is now shown by the player's overlay,
+  // which decodes the generated mask asset as you scrub. This panel only drives
+  // the transient single-frame override below (explicit "Generate Current Frame
+  // Preview"); there is no longer a continuous per-frame runtime round-trip.
   const generateSam2FramePreview = useCallback(async () => {
     if (!selectedClipId || !selectedMaskId) return;
     if (!(await ensureSam2Available())) {
@@ -875,12 +712,12 @@ export function useSam2MaskPanel({
         return;
       }
 
-      await applySam2FramePreview(selectedClipId, selectedMaskId, result);
-      lastAppliedSam2PreviewRef.current = {
-        frameIndex: result.frameIndex,
-        pointsHash: sam2PointsHash,
-        maskId: selectedMaskId,
-      };
+      await applySam2FramePreview(
+        selectedClipId,
+        selectedMaskId,
+        sam2PointsHash,
+        result,
+      );
     } catch (error) {
       const message =
         error instanceof Error

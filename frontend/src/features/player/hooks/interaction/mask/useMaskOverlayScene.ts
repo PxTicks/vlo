@@ -7,6 +7,7 @@ import {
   Sprite as PixiSprite,
   Texture,
 } from "pixi.js";
+import { createMaskPreviewOverlayFilter } from "../../../../transformations/catalogue/mask/maskBinaryThresholdFilter";
 
 export interface MaskOverlayScene {
   clipOverlayRef: MutableRefObject<Container | null>;
@@ -50,10 +51,18 @@ export function useMaskOverlayScene({
     const pathOverlay = new PixiGraphics();
 
     sam2PreviewSprite.anchor.set(0.5);
-    sam2PreviewSprite.alpha = 0.45;
-    sam2PreviewSprite.tint = sam2BorderColor;
+    sam2PreviewSprite.alpha = 1;
+    sam2PreviewSprite.tint = 0xffffff;
     sam2PreviewSprite.visible = false;
     sam2PreviewSprite.eventMode = "none";
+    // The explicit single-frame override feeds this sprite. The preview filter
+    // measures coverage before tinting so decoded mask channels stay visible
+    // and the background stays fully transparent.
+    const sam2PreviewThresholdFilter = createMaskPreviewOverlayFilter(
+      sam2BorderColor,
+      0.45,
+    );
+    sam2PreviewSprite.filters = [sam2PreviewThresholdFilter];
 
     pathOverlay.eventMode = "none";
     pathOverlay.visible = false;
@@ -84,6 +93,7 @@ export function useMaskOverlayScene({
       if (previewTex && previewTex !== Texture.EMPTY && !previewTex.destroyed) {
         previewTex.destroy(true);
       }
+      sam2PreviewThresholdFilter.destroy();
 
       if (viewport && !viewport.destroyed) {
         viewport.removeChild(clipOverlay);

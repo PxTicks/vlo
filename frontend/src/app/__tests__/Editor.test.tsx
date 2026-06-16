@@ -126,9 +126,27 @@ vi.mock("../../features/timeline", () => ({
 }));
 
 vi.mock("../../features/transformations", () => ({
+  TransformationLibraryPanel: () => (
+    <div data-testid="transformation-library-panel">Effects</div>
+  ),
   useTimelineKeyframeClipOverlay: () => ({
     id: "keyframe-overlay",
     useItems: () => [],
+  }),
+}));
+
+vi.mock("../../features/transformations/components/TransformationDragOverlay", () => ({
+  TransformationDragOverlay: () => (
+    <div data-testid="transformation-drag-overlay" />
+  ),
+}));
+
+vi.mock("../../features/transformations/hooks/useTransformDrag", () => ({
+  useTransformDrag: () => ({
+    handleTransformDragStart: vi.fn(),
+    handleTransformDragMove: vi.fn(),
+    handleTransformDragEnd: vi.fn(),
+    handleTransformDragCancel: vi.fn(),
   }),
 }));
 

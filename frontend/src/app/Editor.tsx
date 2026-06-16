@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { CssBaseline } from "@mui/material";
 import {
   DndContext,
@@ -5,6 +6,10 @@ import {
   pointerWithin,
   useSensor,
   useSensors,
+  type DragCancelEvent,
+  type DragEndEvent,
+  type DragMoveEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import { useProjectStore } from "../features/project";
 import {
@@ -12,6 +17,8 @@ import {
   Timeline,
   useAssetDrag,
 } from "../features/timeline";
+import { TransformationDragOverlay } from "../features/transformations/components/TransformationDragOverlay";
+import { useTransformDrag } from "../features/transformations/hooks/useTransformDrag";
 import { useEditorFocusReconciler } from "../features/editorFocus";
 import { Player } from "../features/player/Player";
 import { EditorLayout } from "./layout/EditorLayout";
@@ -49,6 +56,54 @@ export function Editor() {
     handleAssetDragEnd,
     scrollContainerRef,
   } = useAssetDrag();
+  const {
+    handleTransformDragStart,
+    handleTransformDragMove,
+    handleTransformDragEnd,
+    handleTransformDragCancel,
+  } = useTransformDrag(scrollContainerRef);
+
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      if (event.active.data.current?.type === "transform") {
+        handleTransformDragStart(event);
+        return;
+      }
+      handleAssetDragStart(event);
+    },
+    [handleAssetDragStart, handleTransformDragStart],
+  );
+
+  const handleDragMove = useCallback(
+    (event: DragMoveEvent) => {
+      if (event.active.data.current?.type === "transform") {
+        handleTransformDragMove(event);
+        return;
+      }
+      handleAssetDragMove(event);
+    },
+    [handleAssetDragMove, handleTransformDragMove],
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (event.active.data.current?.type === "transform") {
+        handleTransformDragEnd(event);
+        return;
+      }
+      handleAssetDragEnd(event);
+    },
+    [handleAssetDragEnd, handleTransformDragEnd],
+  );
+
+  const handleDragCancel = useCallback(
+    (event: DragCancelEvent) => {
+      if (event.active.data.current?.type === "transform") {
+        handleTransformDragCancel(event);
+      }
+    },
+    [handleTransformDragCancel],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -62,9 +117,10 @@ export function Editor() {
     <DndContext
       sensors={sensors}
       collisionDetection={pointerWithin}
-      onDragStart={handleAssetDragStart}
-      onDragMove={handleAssetDragMove}
-      onDragEnd={handleAssetDragEnd}
+      onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
       autoScroll={ASSET_AUTO_SCROLL}
     >
       <CssBaseline />
@@ -102,6 +158,7 @@ export function Editor() {
       />
 
       <AssetDragOverlay />
+      <TransformationDragOverlay />
     </DndContext>
   );
 }

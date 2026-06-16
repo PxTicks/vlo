@@ -154,6 +154,12 @@ function TimelineClipComponent({
   );
 
   const operation = useInteractionStore((state) => state.operation);
+  const transformDropPreview = useInteractionStore((state) =>
+    state.transformDropPreview?.kind === "clip" &&
+    state.transformDropPreview.clipId === clip.id
+      ? state.transformDropPreview
+      : null,
+  );
 
   // 1. Get Track Index
   const trackId = "trackId" in clip ? (clip as TimelineClipType).trackId : "";
@@ -304,6 +310,12 @@ function TimelineClipComponent({
   };
 
   const ghostOpacity = 1; // Always visible now.
+  const transformDropOutline =
+    transformDropPreview === null
+      ? null
+      : transformDropPreview.compatible
+        ? "#4dabf5"
+        : "#f44336";
 
   const setRefs = (node: HTMLElement | null) => {
     setNodeRef(node);
@@ -421,7 +433,11 @@ function TimelineClipComponent({
           backgroundColor: getBackgroundColor(),
           cursor: "default",
           border: "1px solid rgba(255,255,255,0.2)",
-          outline: isSelected ? "2px solid #fff" : "2px solid transparent",
+          outline: transformDropOutline
+            ? `2px solid ${transformDropOutline}`
+            : isSelected
+              ? "2px solid #fff"
+              : "2px solid transparent",
           outlineOffset: "-1px",
           opacity: isOverlay
             ? 1
@@ -429,7 +445,11 @@ function TimelineClipComponent({
               ? ghostOpacity
               : ghostOpacity * 0.3,
           zIndex: isDragging ? 38 : isOverlay ? 999 : isSelected ? 10 : 1,
-          boxShadow: isDragging ? "0 4px 8px rgba(0,0,0,0.5)" : "none",
+          boxShadow: transformDropOutline
+            ? `0 0 0 2px ${transformDropOutline}55`
+            : isDragging
+              ? "0 4px 8px rgba(0,0,0,0.5)"
+              : "none",
           transition: isActive ? "none" : "box-shadow 0.2s, outline-color 0.1s",
 
           // --- Metrics & Positioning ---
@@ -453,6 +473,13 @@ function TimelineClipComponent({
       }
       data-testid="timeline-clip"
       data-selected={isSelected ? "true" : "false"}
+      data-transform-drop-target={
+        transformDropPreview
+          ? transformDropPreview.compatible
+            ? "compatible"
+            : "incompatible"
+          : undefined
+      }
       data-track-visible={isTrackVisible ? "true" : "false"}
     >
       {showCompositeLabel ? (

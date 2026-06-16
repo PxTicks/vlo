@@ -73,11 +73,16 @@ export {
 } from "./utils/collision";
 export {
   getTimelineClips,
+  getTimelineModelState,
   getTimelineClipById,
+  getTimelineTracks,
   getPrimaryActiveClip,
   getTimelineClipsForTrack,
   getTimelineDuration,
   getTimelineClipCountForAsset,
+  addTimelineClipTransform,
+  addTimelineAdjustmentClip,
+  selectTimelineClip,
   selectTimelineClipById,
   selectPrimaryActiveClip,
   selectTimelineClipsForTrack,

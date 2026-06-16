@@ -18,8 +18,12 @@ export const generateAdjustmentClipId = (): string =>
 
 export interface CreateAdjustmentClipInput {
   /** Optional. When omitted, the helper inserts a fresh adjustment track
-   *  at the top of the stack. */
+   *  at the top of the stack (or reuses one — see `insertTrackIndex`). */
   trackId?: string;
+  /** Optional. When set (and `trackId` is omitted), inserts a NEW adjustment
+   *  track at this index and places the clip on it, instead of reusing the
+   *  top-most adjustment track. Used for interstitial drops. */
+  insertTrackIndex?: number;
   start: number;
   timelineDuration: number;
   /** Optional. Defaults to the `"all"` sentinel. */
@@ -76,11 +80,17 @@ export function createAdjustmentClipInDraft(
   // track inserted at the top.
   let trackId = input.trackId;
   if (trackId === undefined) {
-    // Reuse an existing adjustment track if there is one — avoids piling
-    // up empty adjustment lanes for repeated additions. Picks the
-    // top-most adjustment track (lowest index in the stack).
-    const existing = draft.tracks.find((t) => t.type === "adjustment");
-    trackId = existing?.id ?? insertAdjustmentTrackInDraft(draft, 0);
+    if (input.insertTrackIndex !== undefined) {
+      // Interstitial drop: always insert a fresh adjustment lane at the
+      // requested index rather than reusing an existing one.
+      trackId = insertAdjustmentTrackInDraft(draft, input.insertTrackIndex);
+    } else {
+      // Reuse an existing adjustment track if there is one — avoids piling
+      // up empty adjustment lanes for repeated additions. Picks the
+      // top-most adjustment track (lowest index in the stack).
+      const existing = draft.tracks.find((t) => t.type === "adjustment");
+      trackId = existing?.id ?? insertAdjustmentTrackInDraft(draft, 0);
+    }
   }
 
   const depth = input.depth ?? ADJUSTMENT_DEPTH_ALL;

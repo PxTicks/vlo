@@ -6,12 +6,13 @@ import type {
 import type { Asset } from "../../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../../timeline";
 import { resetSharedDecoderWorkerPoolForTests } from "../DecoderWorkerPool";
+import type { SourceFrameSyncRef } from "../../utils/sourceFrameSync";
 
 const drawMaskShapeSpy = vi.fn();
 const sam2SetSourceSpy = vi.fn(async () => undefined);
 const sam2RenderAtSpy = vi.fn(
-  async (timeSeconds: number, options?: { strict?: boolean }) => {
-    void timeSeconds;
+  async (sourceFrame: SourceFrameSyncRef, options?: { strict?: boolean }) => {
+    void sourceFrame;
     void options;
     return undefined;
   },
@@ -56,6 +57,7 @@ vi.mock("../../../masks/runtime/MaskVideoFramePlayer", () => ({
       texture: { width: 100, height: 100 },
       position: { x: 0, y: 0, set: vi.fn() },
       scale: { x: 1, y: 1, set: vi.fn() },
+      pivot: { x: 0, y: 0, set: vi.fn() },
       rotation: 0,
       anchor: { set: vi.fn() },
     };
@@ -93,6 +95,7 @@ vi.mock("pixi.js", async () => {
       visible = false;
       position = { x: 0, y: 0, set: vi.fn() };
       scale = { x: 1, y: 1, set: vi.fn() };
+      pivot = { x: 0, y: 0, set: vi.fn() };
       rotation = 0;
       clear = vi.fn(() => this);
       poly = vi.fn(() => this);
@@ -104,6 +107,7 @@ vi.mock("pixi.js", async () => {
       visible = true;
       position = { x: 0, y: 0, set: vi.fn() };
       scale = { x: 1, y: 1, set: vi.fn() };
+      pivot = { x: 0, y: 0, set: vi.fn() };
       rotation = 0;
       effects: unknown[] = [];
       mask: unknown = null;
@@ -135,6 +139,7 @@ vi.mock("pixi.js", async () => {
       mask: unknown = null;
       position = { x: 0, y: 0, set: vi.fn() };
       scale = { x: 1, y: 1, set: vi.fn() };
+      pivot = { x: 0, y: 0, set: vi.fn() };
       rotation = 0;
       addChild = vi.fn();
       addChildAt = vi.fn();
@@ -386,7 +391,10 @@ describe("TrackRenderEngine masks", () => {
     );
 
     expect(sam2RenderAtSpy).toHaveBeenCalledTimes(1);
-    expect(sam2RenderAtSpy.mock.calls[0]?.[0]).toBeCloseTo(1 / 30, 6);
+    expect(sam2RenderAtSpy.mock.calls[0]?.[0]?.snappedTimeSeconds).toBeCloseTo(
+      1 / 30,
+      6,
+    );
 
     engine.dispose();
   });
@@ -625,7 +633,10 @@ describe("TrackRenderEngine masks", () => {
     );
 
     expect(sam2RenderAtSpy).toHaveBeenCalledTimes(1);
-    expect(sam2RenderAtSpy.mock.calls[0]?.[0]).toBeCloseTo(1 / 30, 6);
+    expect(sam2RenderAtSpy.mock.calls[0]?.[0]?.snappedTimeSeconds).toBeCloseTo(
+      1 / 30,
+      6,
+    );
     expect(internals.latestMaskSyncContext?.maskClips).toEqual([sam2Mask]);
 
     engine.dispose();

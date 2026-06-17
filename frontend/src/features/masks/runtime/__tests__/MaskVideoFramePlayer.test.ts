@@ -5,6 +5,10 @@ import {
   resetSharedDecoderWorkerPoolForTests,
 } from "../../../renderer/services/DecoderWorkerPool";
 import { resetDecoderWorkerRecoveryForTests } from "../../../renderer/utils/decoderWorkerRecovery";
+import {
+  createSourceFrameSyncKey,
+  type SourceFrameSyncRef,
+} from "../../../renderer/utils/sourceFrameSync";
 
 type MockRenderStep =
   | "error"
@@ -180,6 +184,37 @@ vi.mock("pixi.js", () => {
 
 import { MaskVideoFramePlayer } from "../MaskVideoFramePlayer";
 
+// The player only consumes a SourceFrameSyncRef's snappedTimeSeconds (-> worker
+// `time`), key, and generation, so build a canonical ref at a given source-frame
+// time. Distinct times yield distinct keys; the same time with a different
+// `generation` models scrubbing away and returning to the SAME source frame in a
+// newer render generation, exercising the intent gating.
+function sourceFrameAt(
+  snappedTimeSeconds: number,
+  generation = 0,
+  fps = 30,
+): SourceFrameSyncRef {
+  const frameIndex = Math.round(snappedTimeSeconds * fps);
+  return {
+    clipId: "clip_1",
+    assetId: "mask_asset",
+    effectiveTrackTick: 0,
+    rawClipTick: 0,
+    sourceTimeSeconds: snappedTimeSeconds,
+    snappedTimeSeconds,
+    frameIndex,
+    fps,
+    key: createSourceFrameSyncKey({
+      clipId: "clip_1",
+      assetId: "mask_asset",
+      frameIndex,
+      fps,
+      snappedTimeSeconds,
+    }),
+    generation,
+  };
+}
+
 function createMaskAsset(id: string): Asset {
   return {
     id,
@@ -228,8 +263,8 @@ describe("MaskVideoFramePlayer", () => {
     const worker = mockWorkers[0];
     expect(worker).toBeDefined();
 
-    const firstRender = player.renderAt(0, { strict: true });
-    const secondRender = player.renderAt(1, { strict: true });
+    const firstRender = player.renderAt(sourceFrameAt(0), { strict: true });
+    const secondRender = player.renderAt(sourceFrameAt(1), { strict: true });
 
     await vi.runAllTimersAsync();
     await Promise.all([firstRender, secondRender]);
@@ -325,7 +360,7 @@ describe("MaskVideoFramePlayer", () => {
     await vi.runAllTimersAsync();
     await setSourcePromise;
 
-    const renderPromise = player.renderAt(1, { strict: true });
+    const renderPromise = player.renderAt(sourceFrameAt(1), { strict: true });
 
     const timeoutMs = (
       MaskVideoFramePlayer as unknown as Record<string, number>
@@ -367,14 +402,14 @@ describe("MaskVideoFramePlayer", () => {
     const timeoutMs = (
       MaskVideoFramePlayer as unknown as Record<string, number>
     )["STRICT_FRAME_TIMEOUT_MS"];
-    const firstRender = player.renderAt(1, { strict: true });
+    const firstRender = player.renderAt(sourceFrameAt(1), { strict: true });
     const firstRejection = expect(firstRender).rejects.toMatchObject({
       name: "TimeoutError",
     });
     await vi.advanceTimersByTimeAsync(timeoutMs + 20);
     await firstRejection;
 
-    const secondRender = player.renderAt(2, { strict: true });
+    const secondRender = player.renderAt(sourceFrameAt(2), { strict: true });
     await vi.advanceTimersByTimeAsync(timeoutMs + 20);
     await vi.runAllTimersAsync();
     await secondRender;
@@ -425,7 +460,9 @@ describe("MaskVideoFramePlayer", () => {
     await vi.runAllTimersAsync();
     await setSourcePromise;
 
-    const renderPromise = player.renderAt(0.25, { strict: true });
+    const renderPromise = player.renderAt(sourceFrameAt(0.25), {
+      strict: true,
+    });
     await vi.runAllTimersAsync();
     await renderPromise;
 
@@ -452,14 +489,47 @@ describe("MaskVideoFramePlayer", () => {
     await vi.runAllTimersAsync();
     await setSourcePromise;
 
-    void player.renderAt(0.25);
-    const strictRenderPromise = player.renderAt(0.5, { strict: true });
+    void player.renderAt(sourceFrameAt(0.25));
+    const strictRenderPromise = player.renderAt(sourceFrameAt(0.5), {
+      strict: true,
+    });
     await vi.runAllTimersAsync();
     await strictRenderPromise;
 
     expect(player.sprite.visible).toBe(true);
     expect(player.sprite.texture.width).toBe(9);
     expect(player.sprite.texture.height).toBe(7);
+
+    player.dispose();
+    decoderPool.dispose();
+  });
+
+  it("does not show a stale live frame for a superseded generation of the same source frame", async () => {
+    // Request A renders a frame; the request that supersedes it (B) hangs, so
+    // ONLY A's stale completion arrives. If gating regressed, A would be shown.
+    mockWorkerPlans.push({
+      prepare: "ready",
+      render: [{ bitmap: { width: 3, height: 3 } }, "hang"],
+    });
+
+    const { decoderPool, player } = createPlayer();
+    const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
+    await vi.runAllTimersAsync();
+    await setSourcePromise;
+
+    // Live request A at source frame F, render generation 1.
+    void player.renderAt(sourceFrameAt(0.5, 1));
+    // Scrub away and return to the SAME source frame F, now generation 2. This
+    // supersedes A: same key, newer generation. Its decode hangs, so the only
+    // frame the worker delivers is A's — which must be rejected as stale.
+    void player.renderAt(sourceFrameAt(0.5, 2));
+
+    await vi.runAllTimersAsync();
+
+    // "Newer frame wins" would show A (same source frame); "same intent wins"
+    // must not, because A is an older generation. No current frame ever decoded.
+    expect(player.sprite.visible).toBe(false);
+    expect(player.hasFrame()).toBe(false);
 
     player.dispose();
     decoderPool.dispose();

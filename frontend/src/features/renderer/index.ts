@@ -38,6 +38,16 @@ export {
   frameIndexToOutputTimestamp,
 } from "./utils/mediaTime";
 export {
+  createSourceFrameSyncRef,
+  createSourceFrameSyncRefFromSourceTicks,
+  createSourceFrameSyncKey,
+  isSourceFrameIntentCurrent,
+} from "./utils/sourceFrameSync";
+export type {
+  SourceFrameSyncIntent,
+  SourceFrameSyncRef,
+} from "./utils/sourceFrameSync";
+export {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,

@@ -1,9 +1,5 @@
 import { useShallow } from "zustand/react/shallow";
-import type {
-  ClipTransform,
-  TimelineClip,
-  TimelineTrack,
-} from "../../types/TimelineTypes";
+import type { TimelineClip, TimelineTrack } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
   selectPrimaryActiveClip,
@@ -79,14 +75,6 @@ export function getTimelineTracks(): TimelineTrack[] {
   return useTimelineStore.getState().tracks;
 }
 
-export function getTimelineModelState(): Pick<
-  TimelineStoreState,
-  "clips" | "tracks"
-> {
-  const { clips, tracks } = useTimelineStore.getState();
-  return { clips, tracks };
-}
-
 export function getTimelineClipById(
   clipId: string | null | undefined,
 ): TimelineClip | undefined {
@@ -125,26 +113,6 @@ export function replaceTimelineSnapshot(
   snapshot: TimelineSnapshot | null,
 ): void {
   useTimelineStore.getState().replaceTimelineSnapshot(snapshot);
-}
-
-export function addTimelineClipTransform(
-  clipId: string,
-  transform: ClipTransform,
-): void {
-  useTimelineStore.getState().addClipTransform(clipId, transform);
-}
-
-export function addTimelineAdjustmentClip(
-  input: Parameters<TimelineStoreState["addAdjustmentClip"]>[0],
-): string | null {
-  return useTimelineStore.getState().addAdjustmentClip(input);
-}
-
-export function selectTimelineClip(
-  clipId: string | null,
-  isMulti?: boolean,
-): void {
-  useTimelineStore.getState().selectClip(clipId, isMulti);
 }
 
 export async function flushPendingTimelinePersistence(): Promise<void> {

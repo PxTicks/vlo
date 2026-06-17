@@ -1,5 +1,10 @@
 import { Sprite, Texture } from "pixi.js";
 import type { Asset } from "../../../types/Asset";
+import {
+  isSourceFrameIntentCurrent,
+  type SourceFrameSyncIntent,
+  type SourceFrameSyncRef,
+} from "../../renderer/utils/sourceFrameSync";
 import { hasEmbeddedAssetSource } from "../../renderer/utils/assetSource";
 import {
   RetiredTextureQueue,
@@ -77,8 +82,14 @@ export class MaskVideoFramePlayer {
   private prepareTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
   private pendingStrictFrame: StrictFramePending<void> | null = null;
   private pendingStrictFrameRequestId: string | null = null;
+  private pendingStrictFrameIntent: SourceFrameSyncIntent | null = null;
   private nextRenderRequestId = 0;
   private latestRenderRequestId: string | null = null;
+  private latestRenderIntent: SourceFrameSyncIntent | null = null;
+  private readonly renderIntentByRequestId = new Map<
+    string,
+    SourceFrameSyncIntent
+  >();
   private strictRenderGeneration = 0;
   private decoderTimeoutCount = 0;
   private strictRenderChain: Promise<void> = Promise.resolve();
@@ -130,6 +141,8 @@ export class MaskVideoFramePlayer {
       this.lease.disposeSource(this.clipId);
       this.sourcePrepared = false;
       this.latestRenderRequestId = null;
+      this.latestRenderIntent = null;
+      this.renderIntentByRequestId.clear();
       this.decoderTimeoutCount = 0;
       this.resetSpriteFrameState();
       this.sourceAssetId = asset.id;
@@ -152,7 +165,7 @@ export class MaskVideoFramePlayer {
   }
 
   public async renderAt(
-    timeSeconds: number,
+    sourceFrame: SourceFrameSyncRef,
     options: { strict?: boolean } = {},
   ): Promise<void> {
     const strict = options.strict === true;
@@ -183,7 +196,10 @@ export class MaskVideoFramePlayer {
 
     if (!strict) {
       const requestId = this.createRenderRequestId();
+      const intent = this.toSourceFrameIntent(sourceFrame);
       this.latestRenderRequestId = requestId;
+      this.latestRenderIntent = intent;
+      this.renderIntentByRequestId.set(requestId, intent);
       const diagnostics = createDecoderRequestDiagnostics({
         source: "mask",
         requestType: "render",
@@ -191,13 +207,15 @@ export class MaskVideoFramePlayer {
         label: this.sourceAssetId ?? undefined,
       });
       logDecoderRequestSent(diagnostics, {
-        time: timeSeconds,
+        time: sourceFrame.snappedTimeSeconds,
+        sourceFrameKey: sourceFrame.key,
+        generation: sourceFrame.generation,
         strict: false,
         requestId,
       });
       this.lease.render({
         clipId: this.clipId,
-        time: timeSeconds,
+        time: sourceFrame.snappedTimeSeconds,
         requestId,
         ...(diagnostics ? { diagnostics } : {}),
       });
@@ -213,7 +231,7 @@ export class MaskVideoFramePlayer {
       if (!this.isStrictRenderCurrent(generation)) {
         return;
       }
-      return this.renderStrictFrameWithRecovery(timeSeconds, generation);
+      return this.renderStrictFrameWithRecovery(sourceFrame, generation);
     });
     this.strictRenderChain = nextStrictRender.catch(() => undefined);
     await nextStrictRender;
@@ -315,6 +333,8 @@ export class MaskVideoFramePlayer {
     );
     this.sourcePrepared = false;
     this.latestRenderRequestId = null;
+    this.latestRenderIntent = null;
+    this.renderIntentByRequestId.clear();
     this.decoderTimeoutCount = 0;
   }
 
@@ -475,7 +495,7 @@ export class MaskVideoFramePlayer {
   }
 
   private async renderStrictFrameWithRecovery(
-    timeSeconds: number,
+    sourceFrame: SourceFrameSyncRef,
     generation: number,
   ): Promise<void> {
     for (
@@ -488,7 +508,7 @@ export class MaskVideoFramePlayer {
       }
 
       try {
-        await this.requestStrictFrame(timeSeconds);
+        await this.requestStrictFrame(sourceFrame);
         return;
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -534,7 +554,7 @@ export class MaskVideoFramePlayer {
     }
   }
 
-  private async requestStrictFrame(timeSeconds: number): Promise<void> {
+  private async requestStrictFrame(sourceFrame: SourceFrameSyncRef): Promise<void> {
     if (this.disposed) {
       throw createMaskRenderAbortError("Mask player has been disposed");
     }
@@ -555,7 +575,10 @@ export class MaskVideoFramePlayer {
       throw createMaskRenderAbortError("Mask player has no prepared source");
     }
     const requestId = this.createRenderRequestId();
+    const intent = this.toSourceFrameIntent(sourceFrame);
     this.latestRenderRequestId = requestId;
+    this.latestRenderIntent = intent;
+    this.renderIntentByRequestId.set(requestId, intent);
     const diagnostics = createDecoderRequestDiagnostics({
       source: "mask",
       requestType: "render",
@@ -568,7 +591,9 @@ export class MaskVideoFramePlayer {
       createTimeoutError: (timeoutMs) => {
         logDecoderRequestTimeout(diagnostics, {
           timeoutMs,
-          time: timeSeconds,
+          time: sourceFrame.snappedTimeSeconds,
+          sourceFrameKey: sourceFrame.key,
+          generation: sourceFrame.generation,
           requestId,
         });
         return createMaskFrameTimeoutError(timeoutMs);
@@ -576,31 +601,37 @@ export class MaskVideoFramePlayer {
       registerPending: (pending) => {
         this.pendingStrictFrame = pending;
         this.pendingStrictFrameRequestId = requestId;
+        this.pendingStrictFrameIntent = intent;
       },
       unregisterPending: (pending) => {
         if (this.pendingStrictFrame === pending) {
           this.pendingStrictFrame = null;
           this.pendingStrictFrameRequestId = null;
+          this.pendingStrictFrameIntent = null;
         }
       },
       onExternalReject: (error) => {
         logDecoderRequestAborted(diagnostics, {
           reason: error.name,
           message: error.message,
-          time: timeSeconds,
+          time: sourceFrame.snappedTimeSeconds,
+          sourceFrameKey: sourceFrame.key,
+          generation: sourceFrame.generation,
           requestId,
         });
       },
       sendRequest: () => {
         logDecoderRequestSent(diagnostics, {
-          time: timeSeconds,
+          time: sourceFrame.snappedTimeSeconds,
+          sourceFrameKey: sourceFrame.key,
+          generation: sourceFrame.generation,
           strict: true,
           requestId,
           timeoutMs: MaskVideoFramePlayer.STRICT_FRAME_TIMEOUT_MS,
         });
         this.lease.render({
           clipId: this.clipId,
-          time: timeSeconds,
+          time: sourceFrame.snappedTimeSeconds,
           strict: true,
           requestId,
           ...(diagnostics ? { diagnostics } : {}),
@@ -612,6 +643,15 @@ export class MaskVideoFramePlayer {
   private createRenderRequestId(): string {
     this.nextRenderRequestId += 1;
     return `mask-frame-${this.nextRenderRequestId}`;
+  }
+
+  private toSourceFrameIntent(
+    sourceFrame: SourceFrameSyncRef,
+  ): SourceFrameSyncIntent {
+    return {
+      generation: sourceFrame.generation,
+      key: sourceFrame.key,
+    };
   }
 
   private createStrictRenderGeneration(): number {
@@ -641,6 +681,8 @@ export class MaskVideoFramePlayer {
       createMaskRenderAbortError("Mask decoder recovery superseded strict render"),
     );
     this.latestRenderRequestId = null;
+    this.latestRenderIntent = null;
+    this.renderIntentByRequestId.clear();
     const resolution = await this.lease.reportStall(this.clipId, reason);
     if (
       resolution === "renderer-reset" ||
@@ -655,12 +697,30 @@ export class MaskVideoFramePlayer {
   private rejectPendingStrictFrame(error: Error): void {
     this.pendingStrictFrame?.reject(error);
     this.pendingStrictFrameRequestId = null;
+    this.pendingStrictFrameIntent = null;
   }
 
   private isStaleFrameResponse(message: {
     bitmap: ImageBitmap | null;
     requestId?: string;
   }): boolean {
+    const responseIntent =
+      typeof message.requestId === "string"
+        ? (this.renderIntentByRequestId.get(message.requestId) ?? null)
+        : null;
+    if (typeof message.requestId === "string") {
+      this.renderIntentByRequestId.delete(message.requestId);
+    }
+    if (
+      responseIntent &&
+      !isSourceFrameIntentCurrent(this.latestRenderIntent, responseIntent)
+    ) {
+      if (message.bitmap && typeof message.bitmap.close === "function") {
+        message.bitmap.close();
+      }
+      return true;
+    }
+
     if (
       !this.latestRenderRequestId ||
       typeof message.requestId !== "string" ||
@@ -680,11 +740,21 @@ export class MaskVideoFramePlayer {
     requestId?: string;
   }): boolean {
     const expectedRequestId = this.pendingStrictFrameRequestId;
+    const expectedIntent = this.pendingStrictFrameIntent;
     if (
       !expectedRequestId ||
       typeof message.requestId !== "string" ||
       message.requestId === expectedRequestId
     ) {
+      if (
+        expectedIntent &&
+        !isSourceFrameIntentCurrent(this.latestRenderIntent, expectedIntent)
+      ) {
+        if (message.bitmap && typeof message.bitmap.close === "function") {
+          message.bitmap.close();
+        }
+        return true;
+      }
       return false;
     }
 

@@ -66,6 +66,7 @@ vi.mock("pixi.js", async () => {
       anchor = { set: vi.fn() };
       position = { set: vi.fn() };
       scale = { set: vi.fn() };
+      pivot = { set: vi.fn() };
       rotation = 0;
       alpha = 1;
       tint = 0xffffff;

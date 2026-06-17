@@ -9,9 +9,14 @@ import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
 import {
   calculatePlayerFrameTime,
-  snapFrameTimeSeconds,
   mediaSecondsToTickExact,
 } from "../utils/mediaTime";
+import {
+  createSourceFrameSyncRef,
+  isSourceFrameIntentCurrent,
+  type SourceFrameSyncIntent,
+  type SourceFrameSyncRef,
+} from "../utils/sourceFrameSync";
 import { findActiveClipAtTicks } from "../utils/clipLookup";
 import { applyClipTransforms } from "../../transformations";
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
@@ -81,11 +86,8 @@ interface LiveRenderRequest {
   maskClips: MaskTimelineClip[];
   assetsById: Map<string, Asset>;
   logicalDimensions: { width: number; height: number };
-  localTimeSeconds: number;
-  rawTimeTicks: number;
-  fps: number;
+  sourceFrame: SourceFrameSyncRef;
   enqueuedAtMs: number;
-  generation: number;
 }
 
 interface LiveFramePayload {
@@ -111,6 +113,7 @@ interface LatestMaskSyncContext {
   logicalDimensions: { width: number; height: number };
   rawTimeTicks: number;
   assetsById: Map<string, Asset>;
+  sourceFrame: SourceFrameSyncRef;
   fps?: number;
 }
 
@@ -222,6 +225,9 @@ export class TrackRenderEngine {
   private inFlightSynchronizedRender: InFlightSynchronizedRender | null = null;
   private liveRenderGeneration = 0;
   private synchronizedRenderGeneration = 0;
+  private currentLiveSourceFrameIntent: SourceFrameSyncIntent | null = null;
+  private currentSynchronizedSourceFrameIntent: SourceFrameSyncIntent | null =
+    null;
 
   // Deferred texture cleanup to avoid null-source races during hot swaps
   private readonly retiredTextures = new RetiredTextureQueue(
@@ -408,15 +414,19 @@ export class TrackRenderEngine {
     const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
 
     if (activeClip.type === "text") {
+      this.invalidateLivePipeline();
+      const sourceFrame = this.advanceLiveSourceFrameIntent(
+        this.createLiveSourceFrameRef(activeClip, null, effectiveTick, fps),
+      );
       this.latestMaskSyncContext = {
         maskClips,
         clip: activeClip,
         logicalDimensions,
         rawTimeTicks: rawTimeSeconds,
         assetsById: assetById,
+        sourceFrame,
         fps,
       };
-      this.invalidateLivePipeline();
 
       if (!shouldRender) {
         if (
@@ -438,6 +448,7 @@ export class TrackRenderEngine {
         rawTimeSeconds,
         maskClips,
         assetById,
+        sourceFrame,
         fps,
       ).catch((error) => {
         console.warn("Failed to render text clip", error);
@@ -454,6 +465,12 @@ export class TrackRenderEngine {
 
     const asset = assetById.get(activeClip.assetId);
     const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
+    const sourceFrame = this.createLiveSourceFrameRef(
+      activeClip,
+      activeClip.assetId,
+      effectiveTick,
+      clipFps,
+    );
 
     this.latestMaskSyncContext = {
       maskClips,
@@ -461,28 +478,31 @@ export class TrackRenderEngine {
       logicalDimensions,
       rawTimeTicks: rawTimeSeconds,
       assetsById: assetById,
+      sourceFrame,
       fps: clipFps,
     };
 
     // 6. Send Render Request
     // Optimization: Don't request same frame twice (Live Mode only)
     // For Export, we usually force request or trust the caller loop
-    const renderTimeSeconds = snapFrameTimeSeconds(localTimeSeconds, clipFps);
-    const currentFrameIndex = this.getFrameIndex(renderTimeSeconds, clipFps);
-
     const shouldSend =
       this.shouldRequestFrame(
         activeClip,
-        currentFrameIndex,
-        renderTimeSeconds,
+        sourceFrame.frameIndex,
+        sourceFrame.snappedTimeSeconds,
       ) || this.pendingResolve !== null; // Always send if strictly awaiting (Export)
 
     if (shouldSend && shouldRender) {
+      const requestSourceFrame = this.advanceLiveSourceFrameIntent(sourceFrame);
       this.lastRenderRequest = {
-        time: renderTimeSeconds,
+        time: requestSourceFrame.snappedTimeSeconds,
         clipId: activeClip.id,
         assetId: activeClip.assetId,
-        frameIndex: currentFrameIndex,
+        frameIndex: requestSourceFrame.frameIndex,
+      };
+      this.latestMaskSyncContext = {
+        ...this.latestMaskSyncContext,
+        sourceFrame: requestSourceFrame,
       };
 
       // Join content frame + asset-backed masks at the same timeline time.
@@ -492,14 +512,16 @@ export class TrackRenderEngine {
         maskClips,
         assetsById: assetById,
         logicalDimensions,
-        localTimeSeconds: renderTimeSeconds,
-        rawTimeTicks: rawTimeSeconds,
-        fps: clipFps,
+        sourceFrame: requestSourceFrame,
         enqueuedAtMs: nowMs,
-        generation: this.createLiveRenderGeneration(),
       });
     } else if (!shouldSend || !shouldRender) {
       // Keep transforms/filters responsive without requesting a new SAM2 frame.
+      const currentSourceFrame = this.advanceLiveSourceFrameIntent(sourceFrame);
+      this.latestMaskSyncContext = {
+        ...this.latestMaskSyncContext,
+        sourceFrame: currentSourceFrame,
+      };
       void this.maskController
         .syncMaskClips(
           maskClips,
@@ -507,7 +529,11 @@ export class TrackRenderEngine {
           logicalDimensions,
           rawTimeSeconds,
           assetById,
-          { fps: clipFps, skipSam2FrameRender: true },
+          {
+            fps: clipFps,
+            sourceFrame: currentSourceFrame,
+            skipSam2FrameRender: true,
+          },
         )
         .catch((error) => {
           console.warn("Failed to sync live masks", error);
@@ -571,12 +597,22 @@ export class TrackRenderEngine {
       const assetById = new Map<string, Asset>(
         assets.map((asset) => [asset.id, asset] as const),
       );
+      const sourceFrame = this.setSynchronizedSourceFrameIntent(
+        this.createSynchronizedSourceFrameRef(
+          activeClip,
+          null,
+          effectiveTick,
+          fps,
+          this.synchronizedRenderGeneration,
+        ),
+      );
       this.latestMaskSyncContext = {
         maskClips,
         clip: activeClip,
         logicalDimensions,
         rawTimeTicks: rawTimeSeconds,
         assetsById: assetById,
+        sourceFrame,
         fps,
       };
       await this.renderTextClip(
@@ -585,6 +621,7 @@ export class TrackRenderEngine {
         rawTimeSeconds,
         maskClips,
         assetById,
+        sourceFrame,
         fps,
       );
       return;
@@ -615,7 +652,6 @@ export class TrackRenderEngine {
         effectiveTick,
         fps,
         generation,
-        localTimeSeconds,
         maskClips,
         rawTimeSeconds,
       },
@@ -685,12 +721,22 @@ export class TrackRenderEngine {
       ? assetById.get(activeClip.assetId)
       : undefined;
     const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
+    const sourceFrame = this.advanceLiveSourceFrameIntent(
+      createSourceFrameSyncRef({
+        clip: activeClip,
+        assetId: isAssetBackedClip(activeClip) ? activeClip.assetId : null,
+        effectiveTrackTick: effectiveTick,
+        fps: clipFps,
+        generation: this.liveRenderGeneration,
+      }),
+    );
     this.latestMaskSyncContext = {
       maskClips,
       clip: activeClip,
       logicalDimensions,
       rawTimeTicks: rawTimeSeconds,
       assetsById: assetById,
+      sourceFrame,
       fps: clipFps,
     };
 
@@ -701,7 +747,7 @@ export class TrackRenderEngine {
         logicalDimensions,
         rawTimeSeconds,
         assetById,
-        { fps: clipFps, skipSam2FrameRender: false },
+        { fps: clipFps, sourceFrame, skipSam2FrameRender: false },
       );
     } catch (error) {
       console.warn("Failed to refresh paused masks", error);
@@ -721,7 +767,6 @@ export class TrackRenderEngine {
       effectiveTick: number;
       fps: number;
       generation: number;
-      localTimeSeconds: number;
       maskClips: MaskTimelineClip[];
       rawTimeSeconds: number;
     },
@@ -731,7 +776,6 @@ export class TrackRenderEngine {
       effectiveTick,
       fps,
       generation,
-      localTimeSeconds,
       maskClips,
       rawTimeSeconds,
     } = request;
@@ -739,12 +783,22 @@ export class TrackRenderEngine {
       const assetById = new Map<string, Asset>(
         assets.map((asset) => [asset.id, asset] as const),
       );
+      const sourceFrame = this.setSynchronizedSourceFrameIntent(
+        this.createSynchronizedSourceFrameRef(
+          activeClip,
+          null,
+          effectiveTick,
+          fps,
+          generation,
+        ),
+      );
       this.latestMaskSyncContext = {
         maskClips,
         clip: activeClip,
         logicalDimensions,
         rawTimeTicks: rawTimeSeconds,
         assetsById: assetById,
+        sourceFrame,
         fps,
       };
       await this.renderTextClip(
@@ -753,6 +807,7 @@ export class TrackRenderEngine {
         rawTimeSeconds,
         maskClips,
         assetById,
+        sourceFrame,
         fps,
       );
       return;
@@ -771,7 +826,7 @@ export class TrackRenderEngine {
       attempt <= TrackRenderEngine.SYNCHRONIZED_RECOVERY_ATTEMPTS;
       attempt += 1
     ) {
-      if (!this.isSynchronizedRenderCurrent(generation)) {
+      if (generation !== this.synchronizedRenderGeneration) {
         return;
       }
 
@@ -786,38 +841,45 @@ export class TrackRenderEngine {
 
       const asset = assetById.get(activeClip.assetId);
       const clipFps = asset?.fps && asset.fps > 0 ? asset.fps : fps;
+      const sourceFrame = this.setSynchronizedSourceFrameIntent(
+        createSourceFrameSyncRef({
+          clip: activeClip,
+          assetId: activeClip.assetId,
+          effectiveTrackTick: effectiveTick,
+          fps: clipFps,
+          generation,
+        }),
+      );
       this.latestMaskSyncContext = {
         maskClips,
         clip: activeClip,
         logicalDimensions,
         rawTimeTicks: rawTimeSeconds,
         assetsById: assetById,
+        sourceFrame,
         fps: clipFps,
       };
-
-      const renderTimeSeconds = snapFrameTimeSeconds(localTimeSeconds, clipFps);
-      const currentFrameIndex = this.getFrameIndex(renderTimeSeconds, clipFps);
 
       this.invalidateLivePipeline();
 
       const shouldSend = this.shouldRequestFrame(
         activeClip,
-        currentFrameIndex,
-        renderTimeSeconds,
+        sourceFrame.frameIndex,
+        sourceFrame.snappedTimeSeconds,
       );
 
       if (shouldSend) {
         this.lastRenderRequest = {
-          time: renderTimeSeconds,
+          time: sourceFrame.snappedTimeSeconds,
           clipId: activeClip.id,
           assetId: activeClip.assetId,
-          frameIndex: currentFrameIndex,
+          frameIndex: sourceFrame.frameIndex,
         };
 
         try {
           const [frame] = await Promise.all([
             this.requestStrictLiveFrame(
-              renderTimeSeconds,
+              sourceFrame.snappedTimeSeconds,
               activeClip.id,
               rawTimeSeconds,
               { timeoutMs: TrackRenderEngine.LIVE_FRAME_TIMEOUT_MS },
@@ -828,11 +890,11 @@ export class TrackRenderEngine {
               logicalDimensions,
               rawTimeSeconds,
               assetById,
-              { fps: clipFps, waitForSam2: true },
+              { fps: clipFps, sourceFrame, waitForSam2: true },
             ),
           ]);
 
-          if (!this.isSynchronizedRenderCurrent(generation)) {
+          if (!this.isSynchronizedRenderCurrent(sourceFrame)) {
             if (frame.bitmap && typeof frame.bitmap.close === "function") {
               frame.bitmap.close();
             }
@@ -853,6 +915,7 @@ export class TrackRenderEngine {
                 logicalDimensions,
                 rawTimeSeconds,
                 assetById,
+                sourceFrame,
                 clipFps,
               );
             }
@@ -866,7 +929,7 @@ export class TrackRenderEngine {
           }
 
           if (isLiveFrameTimeoutError(error)) {
-            if (!this.isSynchronizedRenderCurrent(generation)) {
+            if (!this.isSynchronizedRenderCurrent(sourceFrame)) {
               return;
             }
 
@@ -913,7 +976,7 @@ export class TrackRenderEngine {
             logicalDimensions,
             rawTimeSeconds,
             assetById,
-            { fps: clipFps, skipSam2FrameRender: true },
+            { fps: clipFps, sourceFrame, skipSam2FrameRender: true },
           );
         } catch (error) {
           console.warn("Failed to sync synchronized playback masks", error);
@@ -952,12 +1015,22 @@ export class TrackRenderEngine {
     );
 
     if (activeClip.type === "text") {
+      const sourceFrame = this.advanceLiveSourceFrameIntent(
+        createSourceFrameSyncRef({
+          clip: activeClip,
+          assetId: null,
+          effectiveTrackTick: effectiveTick,
+          fps: options.fps ?? 30,
+          generation: this.liveRenderGeneration,
+        }),
+      );
       await this.renderTextClip(
         activeClip,
         logicalDimensions,
         effectiveTick - activeClip.start,
         maskClips,
         assetsById,
+        sourceFrame,
         options.fps,
       );
       return;
@@ -975,13 +1048,22 @@ export class TrackRenderEngine {
       asset?.fps && asset.fps > 0 ? asset.fps : (options.fps ?? 30);
 
     const rawTime = effectiveTick - activeClip.start;
+    const sourceFrame = this.advanceLiveSourceFrameIntent(
+      createSourceFrameSyncRef({
+        clip: activeClip,
+        assetId: activeClip.assetId,
+        effectiveTrackTick: effectiveTick,
+        fps: clipFps,
+        generation: this.liveRenderGeneration,
+      }),
+    );
     await this.maskController.syncMaskClips(
       maskClips,
       activeClip,
       logicalDimensions,
       rawTime,
       assetsById,
-      { fps: clipFps, waitForSam2: true },
+      { fps: clipFps, sourceFrame, waitForSam2: true },
     );
 
     return new Promise((resolve, reject) => {
@@ -1018,6 +1100,7 @@ export class TrackRenderEngine {
                 maskClips,
                 assetsById,
                 fps: clipFps,
+                sourceFrame,
               },
             );
             resolve();
@@ -1047,14 +1130,8 @@ export class TrackRenderEngine {
       };
       this.pendingReject = (error) => rejectFrame(error);
 
-      const localTime = calculatePlayerFrameTime(activeClip, effectiveTick);
-      const renderTime =
-        typeof clipFps === "number" && clipFps > 0
-          ? snapFrameTimeSeconds(localTime, clipFps)
-          : localTime;
-
       this.lease.render({
-        time: renderTime,
+        time: sourceFrame.snappedTimeSeconds,
         clipId: activeClip.id,
         transformTime: rawTime,
         strict: true, // Export needs a response even if null
@@ -1308,12 +1385,6 @@ export class TrackRenderEngine {
     return assetById;
   }
 
-  private getFrameIndex(localTimeSeconds: number, fps: number): number {
-    const safeFps = Math.max(1, fps);
-    const frameEpsilonSeconds = 1 / (safeFps * 1_000_000);
-    return Math.floor((localTimeSeconds + frameEpsilonSeconds) * safeFps);
-  }
-
   private hasRenderableTextureForClip(clipId: string): boolean {
     const texture = this.sprite.texture;
     return (
@@ -1400,18 +1471,22 @@ export class TrackRenderEngine {
       try {
         const [frame] = await Promise.all([
           this.requestStrictLiveFrame(
-            request.localTimeSeconds,
+            request.sourceFrame.snappedTimeSeconds,
             request.clip.id,
-            request.rawTimeTicks,
+            request.sourceFrame.rawClipTick,
             { timeoutMs: TrackRenderEngine.LIVE_FRAME_TIMEOUT_MS },
           ),
           this.maskController.syncMaskClips(
             request.maskClips,
             request.clip,
             request.logicalDimensions,
-            request.rawTimeTicks,
+            request.sourceFrame.rawClipTick,
             request.assetsById,
-            { fps: request.fps, waitForSam2: true },
+            {
+              fps: request.sourceFrame.fps,
+              sourceFrame: request.sourceFrame,
+              waitForSam2: true,
+            },
           ),
         ]);
 
@@ -1434,8 +1509,9 @@ export class TrackRenderEngine {
               request.maskClips,
               request.clip,
               request.logicalDimensions,
-              request.rawTimeTicks,
+              request.sourceFrame.rawClipTick,
               request.assetsById,
+              request.sourceFrame,
             );
           }
         }
@@ -1448,13 +1524,13 @@ export class TrackRenderEngine {
             this.sprite,
             request.clip,
             request.logicalDimensions,
-            request.rawTimeTicks,
+            request.sourceFrame.rawClipTick,
           );
           this.maskController.syncMaskSpriteTransform();
         }
 
         if (this.onFrameReady) {
-          this.onFrameReady(request.clip.id, request.rawTimeTicks);
+          this.onFrameReady(request.clip.id, request.sourceFrame.rawClipTick);
         }
         return;
       } catch (error) {
@@ -1583,12 +1659,77 @@ export class TrackRenderEngine {
     return this.synchronizedRenderGeneration;
   }
 
-  private isLiveRenderRequestCurrent(request: LiveRenderRequest): boolean {
-    return request.generation === this.liveRenderGeneration;
+  private createLiveSourceFrameRef(
+    clip: TimelineClip,
+    assetId: string | null,
+    effectiveTrackTick: number,
+    fps: number,
+  ): SourceFrameSyncRef {
+    return createSourceFrameSyncRef({
+      clip,
+      assetId,
+      effectiveTrackTick,
+      fps,
+      generation: this.liveRenderGeneration,
+    });
   }
 
-  private isSynchronizedRenderCurrent(generation: number): boolean {
-    return generation === this.synchronizedRenderGeneration;
+  private advanceLiveSourceFrameIntent(
+    sourceFrame: SourceFrameSyncRef,
+  ): SourceFrameSyncRef {
+    if (this.currentLiveSourceFrameIntent?.key !== sourceFrame.key) {
+      sourceFrame = {
+        ...sourceFrame,
+        generation: this.createLiveRenderGeneration(),
+      };
+    }
+    this.currentLiveSourceFrameIntent = {
+      generation: sourceFrame.generation,
+      key: sourceFrame.key,
+    };
+    return sourceFrame;
+  }
+
+  private createSynchronizedSourceFrameRef(
+    clip: TimelineClip,
+    assetId: string | null,
+    effectiveTrackTick: number,
+    fps: number,
+    generation: number,
+  ): SourceFrameSyncRef {
+    return createSourceFrameSyncRef({
+      clip,
+      assetId,
+      effectiveTrackTick,
+      fps,
+      generation,
+    });
+  }
+
+  private setSynchronizedSourceFrameIntent(
+    sourceFrame: SourceFrameSyncRef,
+  ): SourceFrameSyncRef {
+    this.currentSynchronizedSourceFrameIntent = {
+      generation: sourceFrame.generation,
+      key: sourceFrame.key,
+    };
+    return sourceFrame;
+  }
+
+  private isLiveRenderRequestCurrent(request: LiveRenderRequest): boolean {
+    return isSourceFrameIntentCurrent(this.currentLiveSourceFrameIntent, {
+      generation: request.sourceFrame.generation,
+      key: request.sourceFrame.key,
+    });
+  }
+
+  private isSynchronizedRenderCurrent(
+    sourceFrame: SourceFrameSyncRef,
+  ): boolean {
+    return isSourceFrameIntentCurrent(this.currentSynchronizedSourceFrameIntent, {
+      generation: sourceFrame.generation,
+      key: sourceFrame.key,
+    });
   }
 
   private recordLiveDecoderTimeout(): boolean {
@@ -1656,6 +1797,7 @@ export class TrackRenderEngine {
 
   private invalidateLivePipeline() {
     this.liveRenderGeneration += 1;
+    this.currentLiveSourceFrameIntent = null;
     this.liveRenderQueue.length = 0;
     this.rejectPendingLiveFrame(createRenderAbortError());
   }
@@ -1707,6 +1849,7 @@ export class TrackRenderEngine {
     options: {
       maskClips?: MaskTimelineClip[];
       assetsById?: Map<string, Asset>;
+      sourceFrame?: SourceFrameSyncRef;
       fps?: number;
     } = {},
   ) {
@@ -1721,6 +1864,7 @@ export class TrackRenderEngine {
           dimensions,
           rawTime,
           options.assetsById ?? new Map<string, Asset>(),
+          options.sourceFrame,
           options.fps,
         );
       }
@@ -1779,6 +1923,7 @@ export class TrackRenderEngine {
     rawTime: number,
     maskClips: MaskTimelineClip[],
     assetsById: Map<string, Asset>,
+    sourceFrame: SourceFrameSyncRef,
     fps?: number,
   ): Promise<void> {
     const nextSignature = getTextTextureSignature(
@@ -1819,7 +1964,7 @@ export class TrackRenderEngine {
         logicalDimensions,
         rawTime,
         assetsById,
-        { fps, skipSam2FrameRender: true },
+        { fps, sourceFrame, skipSam2FrameRender: true },
       );
     } catch (error) {
       console.warn("Failed to sync text clip masks", error);
@@ -1832,6 +1977,7 @@ export class TrackRenderEngine {
     logicalDimensions: { width: number; height: number },
     rawTime: number,
     assetsById: Map<string, Asset>,
+    sourceFrame?: SourceFrameSyncRef,
     fps?: number,
   ): Promise<void> {
     if (maskClips.length === 0) {
@@ -1845,7 +1991,7 @@ export class TrackRenderEngine {
         logicalDimensions,
         rawTime,
         assetsById,
-        { fps, skipSam2FrameRender: true },
+        { fps, sourceFrame, skipSam2FrameRender: true },
       );
     } catch (error) {
       console.warn("Failed to resync masks after texture update", error);
@@ -1869,7 +2015,11 @@ export class TrackRenderEngine {
         context.logicalDimensions,
         context.rawTimeTicks,
         context.assetsById,
-        { fps: context.fps, skipSam2FrameRender: true },
+        {
+          fps: context.fps,
+          sourceFrame: context.sourceFrame,
+          skipSam2FrameRender: true,
+        },
       )
       .catch((error) => {
         console.warn("Failed to resync masks after mask frame update", error);
@@ -1898,6 +2048,16 @@ export class TrackRenderEngine {
       currentTime,
     );
     const rawTimeSeconds = effectiveTick - activeClip.start;
+    const fallbackFps = this.latestMaskSyncContext?.fps ?? 30;
+    const sourceFrame = this.advanceLiveSourceFrameIntent(
+      createSourceFrameSyncRef({
+        clip: activeClip,
+        assetId: isAssetBackedClip(activeClip) ? activeClip.assetId : null,
+        effectiveTrackTick: effectiveTick,
+        fps: fallbackFps,
+        generation: this.liveRenderGeneration,
+      }),
+    );
     this.applyClipTransformsForClip(
       activeClip,
       logicalDimensions,
@@ -1910,7 +2070,7 @@ export class TrackRenderEngine {
         logicalDimensions,
         rawTimeSeconds,
         assetsById,
-        { skipSam2FrameRender: true },
+        { sourceFrame, skipSam2FrameRender: true },
       )
       .catch((error) => {
         console.warn("Failed to force-update mask clips", error);

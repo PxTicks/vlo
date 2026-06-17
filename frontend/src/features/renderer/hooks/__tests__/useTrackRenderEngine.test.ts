@@ -79,6 +79,7 @@ const {
       scale: { x: 1, y: 1 },
       rotation: 0,
       position: { x: 0, y: 0 },
+      pivot: { x: 0, y: 0 },
       getGlobalPosition: vi.fn(() => ({ x: 0, y: 0 })),
       setMask: vi.fn(),
       addChild: vi.fn(),

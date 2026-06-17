@@ -6,7 +6,6 @@ import {
   type AdjustmentDepth,
   type AdjustmentRetimingMode,
   type AdjustmentTimelineClip,
-  type ClipTransform,
 } from "../../../types/TimelineTypes";
 import { addClipToDraft, insertTrackIntoDraft } from "./timelineCommands";
 import {
@@ -19,12 +18,8 @@ export const generateAdjustmentClipId = (): string =>
 
 export interface CreateAdjustmentClipInput {
   /** Optional. When omitted, the helper inserts a fresh adjustment track
-   *  at the top of the stack (or reuses one — see `insertTrackIndex`). */
+   *  at the top of the stack. */
   trackId?: string;
-  /** Optional. When set (and `trackId` is omitted), inserts a NEW adjustment
-   *  track at this index and places the clip on it, instead of reusing the
-   *  top-most adjustment track. Used for interstitial drops. */
-  insertTrackIndex?: number;
   start: number;
   timelineDuration: number;
   /** Optional. Defaults to the `"all"` sentinel. */
@@ -32,9 +27,6 @@ export interface CreateAdjustmentClipInput {
   /** Optional. Defaults to static/pinned retiming. */
   retimingMode?: AdjustmentRetimingMode;
   name?: string;
-  /** Optional initial transform stack, so clip creation + first transform
-   *  commit as a single, atomic history entry (one undo). */
-  transformations?: ClipTransform[];
 }
 
 function isInvalidNumericAdjustmentDepth(depth: AdjustmentDepth): boolean {
@@ -84,17 +76,11 @@ export function createAdjustmentClipInDraft(
   // track inserted at the top.
   let trackId = input.trackId;
   if (trackId === undefined) {
-    if (input.insertTrackIndex !== undefined) {
-      // Interstitial drop: always insert a fresh adjustment lane at the
-      // requested index rather than reusing an existing one.
-      trackId = insertAdjustmentTrackInDraft(draft, input.insertTrackIndex);
-    } else {
-      // Reuse an existing adjustment track if there is one — avoids piling
-      // up empty adjustment lanes for repeated additions. Picks the
-      // top-most adjustment track (lowest index in the stack).
-      const existing = draft.tracks.find((t) => t.type === "adjustment");
-      trackId = existing?.id ?? insertAdjustmentTrackInDraft(draft, 0);
-    }
+    // Reuse an existing adjustment track if there is one — avoids piling
+    // up empty adjustment lanes for repeated additions. Picks the
+    // top-most adjustment track (lowest index in the stack).
+    const existing = draft.tracks.find((t) => t.type === "adjustment");
+    trackId = existing?.id ?? insertAdjustmentTrackInDraft(draft, 0);
   }
 
   const depth = input.depth ?? ADJUSTMENT_DEPTH_ALL;
@@ -118,7 +104,7 @@ export function createAdjustmentClipInDraft(
     transformedOffset: 0,
     croppedSourceDuration: input.timelineDuration,
     offset: 0,
-    transformations: input.transformations ?? [],
+    transformations: [],
     depth,
     retimingMode: input.retimingMode ?? ADJUSTMENT_RETIMING_STATIC,
   };

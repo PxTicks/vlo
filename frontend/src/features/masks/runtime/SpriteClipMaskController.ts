@@ -6,6 +6,7 @@ import type {
   MaskTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
+import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import { usesInverseMaskCompositionAlgebra } from "../../../types/Components";
 import type { Asset } from "../../../types/Asset";
 import {
@@ -24,9 +25,9 @@ import {
 } from "../model/maskBooleanExpression";
 import { useMaskViewStore } from "../store/useMaskViewStore";
 import {
-  calculatePlayerFrameTime,
-  snapFrameTimeSeconds,
-} from "../../renderer";
+  createSourceFrameSyncRefFromSourceTicks,
+  type SourceFrameSyncRef,
+} from "../../renderer/utils/sourceFrameSync";
 import {
   AssetMaskSourceFactory,
   getAssetBackedMaskId,
@@ -172,6 +173,7 @@ export class SpriteClipMaskController {
     assetsById: Map<string, Asset>,
     options: {
       fps?: number;
+      sourceFrame?: SourceFrameSyncRef;
       waitForSam2?: boolean;
       skipSam2FrameRender?: boolean;
     } = {},
@@ -186,6 +188,7 @@ export class SpriteClipMaskController {
 
     const {
       fps,
+      sourceFrame,
       waitForSam2 = false,
       skipSam2FrameRender = false,
     } = options;
@@ -310,15 +313,18 @@ export class SpriteClipMaskController {
       }
     });
 
-    const globalTimeTicks = parentClip.start + rawTimeTicks;
-    const maskInputTimeSeconds = calculatePlayerFrameTime(
-      parentClip,
-      globalTimeTicks,
-    );
-    const requestedMaskTimeSeconds =
-      typeof fps === "number" && Number.isFinite(fps) && fps > 0
-        ? snapFrameTimeSeconds(maskInputTimeSeconds, fps)
-        : maskInputTimeSeconds;
+    const resolvedSourceFrame =
+      sourceFrame ??
+      createSourceFrameSyncRefFromSourceTicks({
+        clip: parentClip,
+        assetId: isAssetBackedClip(parentClip) ? parentClip.assetId : null,
+        effectiveTrackTick: parentClip.start + rawTimeTicks,
+        rawClipTick: rawTimeTicks,
+        sourceTimeTicks: parentSourceTimeTicks,
+        fps: fps ?? 30,
+        generation: 0,
+      });
+    const requestedMaskTimeSeconds = resolvedSourceFrame.snappedTimeSeconds;
 
     for (const maskClip of activeAssetMasks) {
       const node = this.nodeRegistry.getAssetNode(maskClip.id);
@@ -327,12 +333,12 @@ export class SpriteClipMaskController {
       }
       node.root.visible = true;
       await this.assetMaskSourceFactory.syncMaskNode(node, maskClip, {
-        requestedTimeSeconds: requestedMaskTimeSeconds,
         waitForAssetFrame: waitForSam2,
         skipFrameRender: skipSam2FrameRender,
         parentClipContentSize: clipContentSize,
         assetsById,
         hasUsableTexture: (candidate) => this.hasUsableTexture(candidate),
+        sourceFrame: resolvedSourceFrame,
       });
 
       const resolvedLayout = resolveMaskRenderableLayout(maskClip, {

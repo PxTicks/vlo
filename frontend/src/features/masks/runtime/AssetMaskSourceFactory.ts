@@ -5,6 +5,7 @@ import type {
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
 import { createMaskBinaryThresholdFilter } from "../../transformations/catalogue/mask/maskBinaryThresholdFilter";
+import type { SourceFrameSyncRef } from "../../renderer/utils/sourceFrameSync";
 import { getBrushBuffer } from "./brushBufferRegistry";
 import { BrushBufferMaskSource } from "./BrushBufferMaskSource";
 import { MaskVideoFramePlayer } from "./MaskVideoFramePlayer";
@@ -138,9 +139,9 @@ export class AssetMaskSourceFactory {
     },
     maskClip: MaskTimelineClip,
     options: {
-      requestedTimeSeconds: number;
       waitForAssetFrame: boolean;
       skipFrameRender: boolean;
+      sourceFrame: SourceFrameSyncRef;
       parentClipContentSize: { width: number; height: number };
       assetsById: Map<string, Asset>;
       hasUsableTexture: (sprite: Sprite) => boolean;
@@ -173,18 +174,18 @@ export class AssetMaskSourceFactory {
     if (!isBrushBuffer) {
       if (!options.skipFrameRender) {
         if (options.waitForAssetFrame) {
-          await node.player.renderAt(options.requestedTimeSeconds, {
+          await node.player.renderAt(options.sourceFrame, {
             strict: true,
           });
         } else {
           void node.player
-            .renderAt(options.requestedTimeSeconds)
+            .renderAt(options.sourceFrame)
             .catch((error) => {
               console.warn("Mask video frame update failed", error);
             });
         }
       } else if (!node.player.hasFrame()) {
-        void node.player.renderAt(options.requestedTimeSeconds).catch((error) => {
+        void node.player.renderAt(options.sourceFrame).catch((error) => {
           console.warn("Mask video frame update failed", error);
         });
       }

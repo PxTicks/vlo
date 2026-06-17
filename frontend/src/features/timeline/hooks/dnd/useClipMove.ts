@@ -1,10 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { DragMoveEvent, DragEndEvent } from "@dnd-kit/core";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../useInteractionStore";
 import { useTimelineViewStore } from "../useTimelineViewStore";
 import { resolveCollision } from "../../utils/collision";
-import { TRACK_HEIGHT, SNAP_THRESHOLD_PX } from "../../constants";
+import {
+  TRACK_HEADER_WIDTH,
+  TRACK_HEIGHT,
+  RULER_HEIGHT, // [!code ++]
+  SNAP_THRESHOLD_PX,
+} from "../../constants";
 import type {
   BaseClip,
   StandardTimelineClip,
@@ -19,13 +24,6 @@ import { getTrackTypeFromClip } from "../../utils/formatting";
 import { createNewTrack } from "../../model/timelineTrackModel";
 import { planMultiClipMove } from "../../utils/multiClipMove";
 import { getMoveSnapCandidate } from "./snapUtils";
-import { usePointerTracker } from "./usePointerTracker";
-import {
-  getInterstitialGapIndex,
-  getSynthesizedTrackTop,
-  getTickFromDragLeft,
-  getTrackIndexAtY,
-} from "./dropGeometry";
 import { attachGenerationMask } from "../../utils/insertAssetToTimeline";
 import {
   buildTimelineClipPresentationCollisionView,
@@ -70,7 +68,20 @@ export const useClipMove = (
     useTimelineStore.getState();
 
   // Track exact mouse position to bypass dnd-kit's delta logic for new assets
-  const cursorRef = usePointerTracker();
+  const cursorRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
+      cursorRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener("pointermove", handlePointerMove, {
+      capture: true,
+    });
+    return () =>
+      window.removeEventListener("pointermove", handlePointerMove, {
+        capture: true,
+      });
+  }, []);
 
   /**
    * Helper: Calculates the Viewport Rect (BoundingClientRect) of the currently dragged item.
@@ -238,22 +249,32 @@ export const useClipMove = (
       const rect = container.getBoundingClientRect();
       const { y: cursorY } = cursorRef.current;
 
-      const resolvedIndex = getTrackIndexAtY(
-        cursorY,
-        rect.top,
-        rect.bottom,
-        container.scrollTop,
-        useTimelineStore.getState().tracks.length,
-      );
-      if (resolvedIndex !== -1) {
-        trackIndex = resolvedIndex;
-        // Synthesize a rect for the interstitial logic below.
-        const top = getSynthesizedTrackTop(
-          rect.top,
-          container.scrollTop,
-          trackIndex,
-        );
-        trackRectVal = new DOMRect(rect.left, top, rect.width, TRACK_HEIGHT);
+      // Check if inside container vertically
+      if (cursorY >= rect.top && cursorY <= rect.bottom) {
+        // [FIX] Subtract RULER_HEIGHT to account for the ruler occupying the top space
+        const relativeY =
+          cursorY - rect.top + container.scrollTop - RULER_HEIGHT; // [!code ++]
+
+        if (relativeY >= 0) {
+          const calculatedIndex = Math.floor(relativeY / TRACK_HEIGHT);
+          const tracks = useTimelineStore.getState().tracks;
+          if (calculatedIndex < tracks.length) {
+            trackIndex = calculatedIndex;
+            // Synthesize a rect for the logic below
+            // [FIX] Add RULER_HEIGHT back when calculating absolute screen coordinates
+            const top =
+              rect.top -
+              container.scrollTop +
+              RULER_HEIGHT +
+              trackIndex * TRACK_HEIGHT; // [!code ++]
+            trackRectVal = new DOMRect(
+              rect.left,
+              top,
+              rect.width,
+              TRACK_HEIGHT,
+            );
+          }
+        }
       }
     }
 
@@ -278,18 +299,27 @@ export const useClipMove = (
     }
 
     // Geometric Logic:
-    // Insert a track if the dragged item's vertical centre is close to a track
-    // boundary (top 35% -> above, bottom 35% -> below, middle -> drop on track).
+    // We want to insert a track if the dragged item is "hovering between" rows.
+    // We define this as: The Vertical Center of the dragged item is close to a Track Boundary.
     const dragCenterY = dragRect.top + dragRect.height / 2;
-    setInsertGapIndex(
-      getInterstitialGapIndex(
-        dragCenterY,
-        trackRect.top,
-        trackRect.bottom,
-        trackRect.height,
-        trackIndex,
-      ),
-    );
+    const distToTop = Math.abs(dragCenterY - trackRect.top);
+    const distToBottom = Math.abs(dragCenterY - trackRect.bottom);
+
+    // Threshold: How close to the edge (in px) to trigger insertion?
+    // Using 35% of the track height creates a comfortable "middle third" logic
+    // where the top 35% triggers "Above", bottom 35% triggers "Below", and middle 30% is "On Gap".
+    const INSERT_THRESHOLD = trackRect.height * 0.35;
+
+    if (distToTop < INSERT_THRESHOLD) {
+      // Hovering Top Edge -> Insert at current index
+      setInsertGapIndex(trackIndex);
+    } else if (distToBottom < INSERT_THRESHOLD) {
+      // Hovering Bottom Edge -> Insert at next index
+      setInsertGapIndex(trackIndex + 1);
+    } else {
+      // Hovering Middle -> Drop ON the track
+      setInsertGapIndex(null);
+    }
 
     // --- NEW: Calculate Projected End Time for Timeline Expansion ---
     // This allows the TimelineContainer to expand the scrollable area
@@ -299,11 +329,13 @@ export const useClipMove = (
       const containerRect = scrollContainerRef.current.getBoundingClientRect();
       const scrollLeft = scrollContainerRef.current.scrollLeft;
 
-      const projectedStartTicks = getTickFromDragLeft(
-        dragRect.left,
-        containerRect.left,
-        scrollLeft,
-        useTimelineViewStore.getState().pxToTicks,
+      // X = (ViewportX - ContainerLeft) + ScrollLeft - HeaderOffset
+      const relativeX =
+        dragRect.left - containerRect.left + scrollLeft - TRACK_HEADER_WIDTH;
+
+      const projectedStartTicks = Math.max(
+        0,
+        useTimelineViewStore.getState().pxToTicks(relativeX),
       );
 
       // Get timelineDuration from the active clip
@@ -351,11 +383,12 @@ export const useClipMove = (
     const containerRect = scrollContainerRef.current.getBoundingClientRect();
     const scrollLeft = scrollContainerRef.current.scrollLeft;
 
-    const unsnappedStartTicks = getTickFromDragLeft(
-      dragRect.left,
-      containerRect.left,
-      scrollLeft,
-      useTimelineViewStore.getState().pxToTicks,
+    // X = (ViewportX - ContainerLeft) + ScrollLeft - HeaderOffset
+    const relativeX =
+      dragRect.left - containerRect.left + scrollLeft - TRACK_HEADER_WIDTH;
+    const unsnappedStartTicks = Math.max(
+      0,
+      useTimelineViewStore.getState().pxToTicks(relativeX),
     );
     const ticksPerFrame = getTicksPerFrame(
       useProjectStore.getState().config.fps,
@@ -388,17 +421,19 @@ export const useClipMove = (
         const container = scrollContainerRef.current;
         const rect = container.getBoundingClientRect();
         const { y: cursorY } = cursorRef.current;
-        const tracks = useTimelineStore.getState().tracks;
 
-        const resolvedIndex = getTrackIndexAtY(
-          cursorY,
-          rect.top,
-          rect.bottom,
-          container.scrollTop,
-          tracks.length,
-        );
-        if (resolvedIndex !== -1) {
-          dropTargetTrackId = tracks[resolvedIndex].id;
+        if (cursorY >= rect.top && cursorY <= rect.bottom) {
+          // [FIX] Subtract RULER_HEIGHT here as well
+          const relativeY =
+            cursorY - rect.top + container.scrollTop - RULER_HEIGHT; // [!code ++]
+
+          if (relativeY >= 0) {
+            const trackIndex = Math.floor(relativeY / TRACK_HEIGHT);
+            const tracks = useTimelineStore.getState().tracks;
+            if (trackIndex >= 0 && trackIndex < tracks.length) {
+              dropTargetTrackId = tracks[trackIndex].id;
+            }
+          }
         }
       }
     }

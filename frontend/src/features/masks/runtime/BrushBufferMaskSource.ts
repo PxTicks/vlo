@@ -1,5 +1,6 @@
 import { Sprite } from "pixi.js";
 import type { Asset } from "../../../types/Asset";
+import type { SourceFrameSyncRef } from "../../renderer";
 import { ensureAssetSourceLoaded } from "../../userAssets";
 import {
   ensureBrushBuffer,
@@ -156,10 +157,10 @@ export class BrushBufferMaskSource {
   // Brush masks are not time-varying — present for symmetry with the video
   // player so the mask controller can call uniformly.
   public async renderAt(
-    timeSeconds: number,
+    sourceFrame: SourceFrameSyncRef,
     options: { strict?: boolean } = {},
   ): Promise<void> {
-    void timeSeconds;
+    void sourceFrame;
     void options;
     return;
   }

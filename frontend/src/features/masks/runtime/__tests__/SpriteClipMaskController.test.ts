@@ -1280,7 +1280,13 @@ describe("SpriteClipMaskController mask composition", () => {
     ).toHaveBeenCalledWith(generationAsset);
     expect(
       node.assetMaskNodes.get(generationMask.id)?.player.renderAt,
-    ).toHaveBeenCalledWith(expect.any(Number), { strict: true });
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        snappedTimeSeconds: expect.any(Number),
+        key: expect.any(String),
+      }),
+      { strict: true },
+    );
     expect(renderSpy).toHaveBeenCalledTimes(2);
 
     controller.dispose();
@@ -1369,7 +1375,12 @@ describe("SpriteClipMaskController mask composition", () => {
       }
     ).assetMaskNodes.get(sam2Mask.id);
 
-    expect(node?.player.renderAt).toHaveBeenCalledWith(expect.any(Number));
+    expect(node?.player.renderAt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        snappedTimeSeconds: expect.any(Number),
+        key: expect.any(String),
+      }),
+    );
 
     controller.dispose();
     warnSpy.mockRestore();
@@ -1421,9 +1432,13 @@ describe("SpriteClipMaskController mask composition", () => {
       };
       const node = internals.assetMaskNodes.get(sam2Mask.id);
 
-      expect(node?.player.renderAt).toHaveBeenCalledWith(expect.any(Number), {
-        strict: true,
-      });
+      expect(node?.player.renderAt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          snappedTimeSeconds: expect.any(Number),
+          key: expect.any(String),
+        }),
+        { strict: true },
+      );
       expect(sprite.mask ?? null).toBeNull();
       expect(internals.maskContainer.visible).toBe(false);
       expect(internals.previewContainer.visible).toBe(true);

@@ -5,7 +5,6 @@ import { TransformationCardSurface } from "./library/TransformationCard";
 import type { TransformDragData } from "./library/TransformationCard";
 
 const CARD_WIDTH = 220;
-const CURSOR_OFFSET_PX = 14;
 
 function isTransformDragData(data: unknown): data is TransformDragData {
   return (
@@ -17,10 +16,14 @@ function isTransformDragData(data: unknown): data is TransformDragData {
 }
 
 /**
- * Pin the overlay's top-left to the cursor (with a small offset) instead of
- * relying on dnd-kit's default source-node positioning. The card lives in a
- * scrollable sidebar, so the measured source rect can place the default overlay
- * far off — even offscreen. This mirrors the timeline's `snapToCursorOffset`.
+ * Pin the overlay to the cursor instead of relying on dnd-kit's default
+ * source-node positioning (the card lives in a scrollable sidebar, so the
+ * measured source rect can place the overlay far off — even offscreen).
+ *
+ * The card's vertical centre is locked to the cursor so it coincides with the
+ * point the drop logic uses to decide interstitial vs on-lane — matching how a
+ * clip ghost's middle determines its drop. Its left edge sits flush with the
+ * cursor horizontally.
  */
 const followCursor: Modifier = ({
   activatorEvent,
@@ -45,8 +48,8 @@ const followCursor: Modifier = ({
 
   return {
     ...transform,
-    x: pointerX + CURSOR_OFFSET_PX - draggingNodeRect.left,
-    y: pointerY + CURSOR_OFFSET_PX - draggingNodeRect.top,
+    x: pointerX - draggingNodeRect.left,
+    y: pointerY - draggingNodeRect.height / 2 - draggingNodeRect.top,
   };
 };
 

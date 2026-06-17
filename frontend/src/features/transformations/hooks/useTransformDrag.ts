@@ -13,12 +13,12 @@ import {
   resolveCollision,
   selectTimelineClip,
 } from "../../timeline";
+import { RULER_HEIGHT, TRACK_HEADER_WIDTH } from "../../timeline/constants";
 import {
-  RULER_HEIGHT,
-  TRACK_HEADER_WIDTH,
-  TRACK_HEIGHT,
-} from "../../timeline/constants";
-import { useInteractionStore } from "../../timeline/hooks/useInteractionStore";
+  buildTimelineSnapPoints,
+  useInteractionStore,
+} from "../../timeline/hooks/useInteractionStore";
+import { resolveTimelineDropTarget } from "../../timeline/hooks/dnd/dropGeometry";
 import { useTimelineViewStore } from "../../timeline/hooks/useTimelineViewStore";
 import { getAssetById } from "../../userAssets";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
@@ -37,23 +37,28 @@ import { createAddTransform } from "./controller/transformFactory";
 import { findClipAtPoint } from "../utils/findClipAtPoint";
 import type { TransformDragData } from "../components/library/TransformationCard";
 
-/**
- * Fraction of a track's height (top & bottom) that triggers an interstitial
- * "insert a new track" drop, mirroring the asset-drag gap logic in
- * `useClipMove`. The middle band drops onto the lane itself.
- */
-const INTERSTITIAL_ZONE_RATIO = 0.35;
-
 /** Sentinel id for collision-resolving a not-yet-created adjustment clip. */
 const NEW_ADJUSTMENT_CLIP_ID = "__transform_new_adjustment__";
 
-interface TimelineDropPoint {
-  /** Track id under the cursor, or null when past the end of the stack. */
-  trackId: string | null;
+/**
+ * Geometry of a transform drop, resolved from the shared timeline drop kernel
+ * (`resolveTimelineDropTarget`). The transform card anchors its footprint at
+ * the cursor (ghostOffsetX = 0), so `hitTestTick` (the unsnapped cursor tick)
+ * and `startTick` (the snapped footprint start) coincide unless clip-edge
+ * snapping kicks in.
+ */
+interface DropGeometry {
+  /** Track row under the cursor, or -1 when below the stack (append). */
   trackIndex: number;
-  /** Vertical offset within the hovered track row, in px. */
-  withinTrackY: number;
-  tick: number;
+  trackId: string | null;
+  /** Insert gap from the shared kernel when near a boundary, else null. */
+  interstitialGapIndex: number | null;
+  /** Unsnapped cursor tick — used to hit-test the clip under the cursor. */
+  hitTestTick: number;
+  /** Frame- or clip-edge-snapped start tick for a placed footprint. */
+  startTick: number;
+  /** Matched snap point for the snap-line indicator, else null. */
+  snapTick: number | null;
 }
 
 /**
@@ -114,49 +119,34 @@ function getFiveSecondsTicks(fps: number): number {
   return getTicksPerFrame(framesPerSecond) * framesPerSecond * 5;
 }
 
-function getZone(withinTrackY: number): "top" | "middle" | "bottom" {
-  if (withinTrackY < TRACK_HEIGHT * INTERSTITIAL_ZONE_RATIO) {
-    return "top";
-  }
-  if (withinTrackY > TRACK_HEIGHT * (1 - INTERSTITIAL_ZONE_RATIO)) {
-    return "bottom";
-  }
-  return "middle";
-}
-
 /**
- * Decide what a drop at `point` resolves to. Single source of truth for both
- * the live preview and the commit:
+ * Decide what a drop resolves to, given the shared geometry. Single source of
+ * truth for both the live preview and the commit:
  *
  * - Directly over a clip → add to that clip (compatibility checked).
- * - Empty area near a track boundary → interstitial: insert a NEW adjustment
- *   track at the gap and place a 5s clip.
- * - Empty middle of an adjustment lane → place a 5s clip on THAT lane, with
- *   collision resolution against its existing clips.
- * - Empty middle of a non-adjustment lane → insert a new adjustment track
- *   above it.
+ * - Below the stack → append a new adjustment track.
+ * - Near a track boundary → interstitial: insert a NEW adjustment track.
+ * - Middle of an adjustment lane → place a 5s clip on it, snapping around any
+ *   clips already on the lane.
+ * - Middle of a non-adjustment lane → create a new adjustment track at the row.
  */
 function resolveDropPlacement(
-  point: TimelineDropPoint,
+  geom: DropGeometry,
   definition: TransformationDefinition,
   model: { clips: TimelineClip[]; tracks: TimelineTrack[] },
   fps: number,
+  durationTicks: number,
 ): DropPlacement {
   const { clips, tracks } = model;
-  const durationTicks = getFiveSecondsTicks(fps);
-  const snappedTick = Math.max(
-    0,
-    snapTickToFrame(point.tick, getTicksPerFrame(fps)),
-  );
 
   // 1. Directly over a clip → add to the clip's stack.
-  if (point.trackId !== null) {
+  if (geom.trackId !== null) {
     const clip = findClipAtPoint({
       tracks,
       clips,
       fps,
-      trackId: point.trackId,
-      tick: point.tick,
+      trackId: geom.trackId,
+      tick: geom.hitTestTick,
     });
     if (clip) {
       return {
@@ -174,60 +164,49 @@ function resolveDropPlacement(
   // Empty-area placements only make sense for adjustment-capable transforms.
   const adjustmentCompatible = definition.adjustmentCompatible === true;
 
-  // 2. Past the bottom of the stack → append a new adjustment track and draw
-  //    the footprint on the row just below the current stack.
-  if (point.trackIndex >= tracks.length) {
+  // 2. Below the stack → append a new adjustment track, footprint on the row
+  //    just below the current stack.
+  if (geom.trackIndex === -1) {
     return {
       kind: "lane",
       trackIndex: tracks.length,
       trackId: null,
       insertTrackIndex: tracks.length,
-      startTick: snappedTick,
+      startTick: geom.startTick,
       durationTicks,
       compatible: adjustmentCompatible,
     };
   }
 
-  const zone = getZone(point.withinTrackY);
-
-  // 3. Boundary zones → genuine interstitial: insert a new adjustment track at
+  // 3. Boundary zone → genuine interstitial: insert a new adjustment track at
   //    the boundary. Shown as a gap line only (no footprint rectangle).
-  if (zone === "top") {
+  if (geom.interstitialGapIndex !== null) {
     return {
       kind: "interstitial",
-      gapIndex: point.trackIndex,
-      startTick: snappedTick,
-      durationTicks,
-      compatible: adjustmentCompatible,
-    };
-  }
-  if (zone === "bottom") {
-    return {
-      kind: "interstitial",
-      gapIndex: point.trackIndex + 1,
-      startTick: snappedTick,
+      gapIndex: geom.interstitialGapIndex,
+      startTick: geom.startTick,
       durationTicks,
       compatible: adjustmentCompatible,
     };
   }
 
-  // 4. Middle of an existing adjustment lane → place on it, snapping around
-  //    any clips already on the lane. Shown as a footprint rectangle.
-  const track = tracks[point.trackIndex];
+  // 4. Middle of an existing adjustment lane → place on it, snapping around any
+  //    clips already on the lane. Shown as a footprint rectangle.
+  const track = tracks[geom.trackIndex];
   if (track?.type === "adjustment") {
     const resolvedStart = resolveCollision(
       NEW_ADJUSTMENT_CLIP_ID,
-      snappedTick,
+      geom.startTick,
       durationTicks,
       track.id,
       clips,
     );
     return {
       kind: "lane",
-      trackIndex: point.trackIndex,
+      trackIndex: geom.trackIndex,
       trackId: track.id,
       insertTrackIndex: null,
-      startTick: resolvedStart ?? snappedTick,
+      startTick: resolvedStart ?? geom.startTick,
       durationTicks,
       // A null resolution means the clip can't fit anywhere near the drop —
       // surface it as incompatible so the ghost reads red and the drop no-ops.
@@ -239,10 +218,10 @@ function resolveDropPlacement(
   //    row. Shown as a footprint rectangle at the cursor row (no gap line).
   return {
     kind: "lane",
-    trackIndex: point.trackIndex,
+    trackIndex: geom.trackIndex,
     trackId: null,
-    insertTrackIndex: point.trackIndex,
-    startTick: snappedTick,
+    insertTrackIndex: geom.trackIndex,
+    startTick: geom.startTick,
     durationTicks,
     compatible: adjustmentCompatible,
   };
@@ -252,6 +231,9 @@ export function useTransformDrag(
   scrollContainerRef: React.RefObject<HTMLDivElement | null>,
 ) {
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
+  // Snap points are clip edges / markers; they don't change mid-drag, so we
+  // build them once at drag start (matching the asset-move flow).
+  const snapPointsRef = useRef<number[]>([]);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -267,60 +249,96 @@ export function useTransformDrag(
       });
   }, []);
 
-  const resolveTimelineDropPoint = useCallback((): TimelineDropPoint | null => {
-    const container = scrollContainerRef.current;
-    const cursor = cursorRef.current;
-    if (!container || !cursor) {
-      return null;
-    }
+  const computeDrop = useCallback(
+    (
+      data: TransformDragData,
+    ): { placement: DropPlacement; geom: DropGeometry } | null => {
+      const container = scrollContainerRef.current;
+      const cursor = cursorRef.current;
+      if (!container || !cursor) {
+        return null;
+      }
 
-    const rect = container.getBoundingClientRect();
-    if (
-      cursor.x < rect.left ||
-      cursor.x > rect.right ||
-      cursor.y < rect.top ||
-      cursor.y > rect.bottom
-    ) {
-      return null;
-    }
+      const rect = container.getBoundingClientRect();
+      if (
+        cursor.x < rect.left ||
+        cursor.x > rect.right ||
+        cursor.y < rect.top ||
+        cursor.y > rect.bottom
+      ) {
+        return null;
+      }
 
-    const relativeX =
-      cursor.x - rect.left + container.scrollLeft - TRACK_HEADER_WIDTH;
-    if (relativeX < 0) {
-      return null;
-    }
+      const scrollLeft = container.scrollLeft;
+      const scrollTop = container.scrollTop;
+      // Over the track headers or the ruler is not a valid timeline drop.
+      if (cursor.x - rect.left + scrollLeft - TRACK_HEADER_WIDTH < 0) {
+        return null;
+      }
+      if (cursor.y - rect.top + scrollTop - RULER_HEIGHT < 0) {
+        return null;
+      }
 
-    const relativeY = cursor.y - rect.top + container.scrollTop - RULER_HEIGHT;
-    if (relativeY < 0) {
-      return null;
-    }
-
-    const { tracks } = getTimelineModelState();
-    const trackIndex = Math.floor(relativeY / TRACK_HEIGHT);
-    const trackId =
-      trackIndex >= 0 && trackIndex < tracks.length
-        ? tracks[trackIndex].id
-        : null;
-
-    return {
-      trackId,
-      trackIndex,
-      withinTrackY: relativeY - trackIndex * TRACK_HEIGHT,
-      tick: Math.max(0, useTimelineViewStore.getState().pxToTicks(relativeX)),
-    };
-  }, [scrollContainerRef]);
-
-  const computePlacement = useCallback(
-    (data: TransformDragData, point: TimelineDropPoint): DropPlacement | null => {
       const definition = resolveDefinition(data);
       if (!definition) {
         return null;
       }
+
       const { clips, tracks } = getTimelineModelState();
       const fps = useProjectStore.getState().config.fps;
-      return resolveDropPlacement(point, definition, { clips, tracks }, fps);
+      const view = useTimelineViewStore.getState();
+      const interaction = useInteractionStore.getState();
+      const durationTicks = getFiveSecondsTicks(fps);
+
+      const target = resolveTimelineDropTarget({
+        cursorX: cursor.x,
+        cursorY: cursor.y,
+        containerLeftPx: rect.left,
+        containerTopPx: rect.top,
+        containerBottomPx: rect.bottom,
+        scrollLeft,
+        scrollTop,
+        trackCount: tracks.length,
+        ghostDurationTicks: durationTicks,
+        // Anchor the footprint's left edge at the cursor (no asset grab offset).
+        ghostOffsetX: 0,
+        ticksToPx: view.ticksToPx,
+        pxToTicks: view.pxToTicks,
+        snap: {
+          points: snapPointsRef.current,
+          enabled: interaction.snappingEnabled,
+        },
+      });
+
+      const ticksPerFrame = getTicksPerFrame(fps);
+      const startTick =
+        target.snappedStartTicks != null
+          ? target.snappedStartTicks
+          : Math.max(0, snapTickToFrame(target.rawStartTicks, ticksPerFrame));
+      const trackId =
+        target.trackIndex >= 0 && target.trackIndex < tracks.length
+          ? tracks[target.trackIndex].id
+          : null;
+
+      const geom: DropGeometry = {
+        trackIndex: target.trackIndex,
+        trackId,
+        interstitialGapIndex: target.interstitialGapIndex,
+        hitTestTick: target.rawStartTicks,
+        startTick,
+        snapTick: target.snapTick,
+      };
+
+      const placement = resolveDropPlacement(
+        geom,
+        definition,
+        { clips, tracks },
+        fps,
+        durationTicks,
+      );
+      return { placement, geom };
     },
-    [],
+    [scrollContainerRef],
   );
 
   const handleTransformDragStart = useCallback((event: DragStartEvent) => {
@@ -328,7 +346,11 @@ export function useTransformDrag(
       return;
     }
 
-    useInteractionStore.getState().clearTransformDropPreview();
+    snapPointsRef.current = buildTimelineSnapPoints({});
+    const interaction = useInteractionStore.getState();
+    interaction.clearTransformDropPreview();
+    interaction.clearSnapPreview();
+    interaction.updateProjectedEndTime(null);
   }, []);
 
   const handleTransformDragMove = useCallback(
@@ -338,20 +360,18 @@ export function useTransformDrag(
         return;
       }
 
-      const point = resolveTimelineDropPoint();
+      const result = computeDrop(data);
       const interaction = useInteractionStore.getState();
-      interaction.setIsOverTimeline(point !== null);
+      interaction.setIsOverTimeline(result !== null);
 
-      if (!point) {
+      if (!result) {
         interaction.clearTransformDropPreview();
+        interaction.clearSnapPreview();
+        interaction.updateProjectedEndTime(null);
         return;
       }
 
-      const placement = computePlacement(data, point);
-      if (!placement) {
-        interaction.clearTransformDropPreview();
-        return;
-      }
+      const { placement, geom } = result;
 
       if (placement.kind === "clip") {
         interaction.setTransformDropPreview({
@@ -359,6 +379,9 @@ export function useTransformDrag(
           clipId: placement.clip.id,
           compatible: placement.compatible,
         });
+        // Adding to an existing clip — snapping / expansion don't apply.
+        interaction.clearSnapPreview();
+        interaction.updateProjectedEndTime(null);
         return;
       }
 
@@ -368,37 +391,51 @@ export function useTransformDrag(
           gapIndex: placement.gapIndex,
           compatible: placement.compatible,
         });
-        return;
+      } else {
+        interaction.setTransformDropPreview({
+          kind: "rect",
+          trackIndex: placement.trackIndex,
+          startTick: placement.startTick,
+          durationTicks: placement.durationTicks,
+          compatible: placement.compatible,
+        });
       }
 
-      interaction.setTransformDropPreview({
-        kind: "rect",
-        trackIndex: placement.trackIndex,
-        startTick: placement.startTick,
-        durationTicks: placement.durationTicks,
-        compatible: placement.compatible,
-      });
+      // Drive the shared snap-line indicator when a clip edge was matched.
+      if (geom.snapTick !== null) {
+        interaction.setSnapPreview({
+          tick: geom.snapTick,
+          snappedStartTicks: placement.startTick,
+        });
+      } else {
+        interaction.clearSnapPreview();
+      }
+
+      // Let the timeline expand if the footprint runs past current content.
+      interaction.updateProjectedEndTime(
+        placement.startTick + placement.durationTicks,
+      );
     },
-    [computePlacement, resolveTimelineDropPoint],
+    [computeDrop],
   );
 
   const handleTransformDragEnd = useCallback(
     (event: DragEndEvent) => {
       const data = event.active.data.current;
-      const point = resolveTimelineDropPoint();
+      const result = isTransformDragData(data) ? computeDrop(data) : null;
+
       const interaction = useInteractionStore.getState();
       interaction.clearTransformDropPreview();
+      interaction.clearSnapPreview();
+      interaction.updateProjectedEndTime(null);
       interaction.setIsOverTimeline(false);
+      snapPointsRef.current = [];
 
-      if (!isTransformDragData(data) || !point) {
+      if (!isTransformDragData(data) || !result || !result.placement.compatible) {
         return;
       }
 
-      const placement = computePlacement(data, point);
-      if (!placement || !placement.compatible) {
-        return;
-      }
-
+      const { placement } = result;
       const transform = createAddTransform(data.transformType, data.isFilter);
       if (!transform) {
         return;
@@ -436,13 +473,16 @@ export function useTransformDrag(
       addTimelineClipTransform(adjustmentClipId, transform);
       selectTimelineClip(adjustmentClipId);
     },
-    [computePlacement, resolveTimelineDropPoint],
+    [computeDrop],
   );
 
   const handleTransformDragCancel = useCallback((_event: DragCancelEvent) => {
     const interaction = useInteractionStore.getState();
     interaction.clearTransformDropPreview();
+    interaction.clearSnapPreview();
+    interaction.updateProjectedEndTime(null);
     interaction.setIsOverTimeline(false);
+    snapPointsRef.current = [];
   }, []);
 
   return {

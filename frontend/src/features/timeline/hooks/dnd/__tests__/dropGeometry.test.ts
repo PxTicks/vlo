@@ -152,6 +152,17 @@ describe("resolveTimelineDropTarget", () => {
     expect(farPoint.snappedStartTicks).toBeNull();
   });
 
+  it("anchors the footprint at the cursor when ghostOffsetX is 0", () => {
+    // ghost.x = cursorX (no grab offset); rawStart = 200 - 80 = 120
+    const result = resolveTimelineDropTarget({
+      ...base,
+      cursorX: 200,
+      cursorY: 54,
+      ghostOffsetX: 0,
+    });
+    expect(result.rawStartTicks).toBe(120);
+  });
+
   it("returns trackIndex -1 below the stack", () => {
     const result = resolveTimelineDropTarget({
       ...base,

@@ -118,6 +118,12 @@ export interface TimelineDropTargetInput {
     thresholdPx?: number;
   };
   insertThresholdRatio?: number;
+  /**
+   * Horizontal distance (px) the ghost's left edge sits left of the cursor.
+   * Defaults to the asset grab offset; pass 0 to anchor the footprint's left
+   * edge at the cursor (used for transform-card drops).
+   */
+  ghostOffsetX?: number;
 }
 
 export interface TimelineDropTarget {
@@ -143,7 +149,12 @@ export function resolveTimelineDropTarget(
   input: TimelineDropTargetInput,
 ): TimelineDropTarget {
   const height = input.ghostHeightPx ?? GHOST_CLIP_HEIGHT;
-  const ghost = getGhostClipPosition(input.cursorX, input.cursorY, height);
+  const ghost = getGhostClipPosition(
+    input.cursorX,
+    input.cursorY,
+    height,
+    input.ghostOffsetX,
+  );
   const ghostCenterY = ghost.y + height / 2;
 
   const rawStartTicks = getTickFromDragLeft(

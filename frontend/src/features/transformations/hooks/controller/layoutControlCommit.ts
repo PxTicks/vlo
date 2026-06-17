@@ -14,6 +14,13 @@ export interface CommitLayoutControlInput {
   playheadTicks: number;
   pointEpsilonTicks: number;
   transformId?: string;
+  /**
+   * Adjustment-aware source-media time (project ticks) for the committed
+   * keyframe. Forwarded to `computeCommitMutation`; when omitted the keyframe
+   * time is derived from `playheadTicks`, correct only with no adjustment
+   * retiming over the clip.
+   */
+  keyframeSourceTimeTicks?: number;
 }
 
 export interface CommitLayoutControlResult {
@@ -38,6 +45,7 @@ export function commitLayoutControlToTransforms({
   playheadTicks,
   pointEpsilonTicks,
   transformId,
+  keyframeSourceTimeTicks,
 }: CommitLayoutControlInput): CommitLayoutControlResult | null {
   const commit = computeCommitMutation({
     groupId,
@@ -48,6 +56,7 @@ export function commitLayoutControlToTransforms({
     activeClip: clip,
     playheadTicks,
     pointEpsilonTicks,
+    keyframeSourceTimeTicks,
   });
 
   if (commit.mode === "update") {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Graphics } from "pixi.js";
 import type { Application, Container, FederatedPointerEvent, Sprite } from "pixi.js";
 import { getTimelineClipById, useTimelineStore } from "../../../timeline";
+import { useProjectStore } from "../../../project/useProjectStore";
 import { usePlayerStore } from "../../usePlayerStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 import type { ClipTransform, TimelineClip } from "../../../../types/TimelineTypes";
@@ -16,6 +17,7 @@ import {
   createAddTransform,
   clipVisualToSourceTime,
   insertTransformRespectingDefaultOrder,
+  presentationToClipSourceTime,
   resolveScalar,
 } from "../../../transformations";
 import { liveParamStore } from "../../../../core/liveParams/liveParamStore";
@@ -186,6 +188,35 @@ export function useTransformInteractionController(
       return clampedGlobal - clip.start;
     };
 
+    /**
+     * Source-media time (project ticks) of the keyframe at the current
+     * playhead, resolved through any adjustment-layer retiming so canvas drags
+     * read and write keyframes at the same source frame the renderer samples.
+     * Mirrors `useTransformationController.handleCommit`. Falls back to the
+     * clip's own speed stack when timeline/fps context is unavailable, which is
+     * correct whenever no adjustment retimes the clip.
+     */
+    const resolveSourceKeyframeTime = (clip: TimelineClip): number => {
+      const presentationTick = Math.max(
+        clip.start,
+        Math.min(playbackClock.time, clip.start + clip.timelineDuration),
+      );
+      const timelineState = useTimelineStore.getState();
+      const fps = useProjectStore.getState()?.config?.fps;
+      if (timelineState?.tracks && timelineState?.clips && fps != null) {
+        return presentationToClipSourceTime(
+          {
+            tracks: timelineState.tracks,
+            clips: timelineState.clips,
+            fps,
+          },
+          clip,
+          presentationTick,
+        );
+      }
+      return clipVisualToSourceTime(clip, presentationTick - clip.start);
+    };
+
     const resolvePositionAtVisualTime = (
       clip: TimelineClip,
       transform: PositionTransform | undefined,
@@ -206,7 +237,7 @@ export function useTransformInteractionController(
       }
 
       const transformInputTime = transform
-        ? clipVisualToSourceTime(clip, localVisualTime)
+        ? resolveSourceKeyframeTime(clip)
         : localVisualTime;
 
       return {
@@ -276,6 +307,7 @@ export function useTransformInteractionController(
         value,
         transformId,
         playheadTicks: playbackClock.time,
+        keyframeSourceTimeTicks: resolveSourceKeyframeTime(clip),
         pointEpsilonTicks: POINT_EPSILON_TICKS,
         actions: { addClipTransform, setClipTransforms, updateClipTransform },
       });
@@ -299,6 +331,7 @@ export function useTransformInteractionController(
         transforms: clip.transformations || [],
         activeClip: clip,
         playheadTicks: playbackClock.time,
+        keyframeSourceTimeTicks: resolveSourceKeyframeTime(clip),
         pointEpsilonTicks: POINT_EPSILON_TICKS,
       });
       if (commit.mode !== "create") {
@@ -829,10 +862,10 @@ export function useTransformInteractionController(
       );
       const localVisualTime = clampedGlobal - activeClip.start;
       const scaleInputTime = scaleTransform
-        ? clipVisualToSourceTime(activeClip, localVisualTime)
+        ? resolveSourceKeyframeTime(activeClip)
         : localVisualTime;
       const rotationInputTime = rotationTransform
-        ? clipVisualToSourceTime(activeClip, localVisualTime)
+        ? resolveSourceKeyframeTime(activeClip)
         : localVisualTime;
 
       const paramX = scaleTransform

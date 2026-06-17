@@ -8,8 +8,12 @@ import {
   Graphics,
   Sprite,
 } from "pixi.js";
-import type { TimelineClip } from "../../../../../types/TimelineTypes";
-import { useTimelineStore } from "../../../../timeline";
+import type {
+  TimelineClip,
+  TimelineTrack,
+} from "../../../../../types/TimelineTypes";
+import { TICKS_PER_SECOND, useTimelineStore } from "../../../../timeline";
+import { useProjectStore } from "../../../../project/useProjectStore";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
 import { usePlayerStore } from "../../../usePlayerStore";
 import { playbackClock } from "../../../../../core/playback/PlaybackClock";
@@ -322,6 +326,164 @@ describe("useTransformInteractionController", () => {
     expect(xParam.points.find((point) => point.time === 50)?.value).toBe(60);
 
     notifySpy.mockRestore();
+  });
+
+  it("anchors the committed keyframe at the adjustment-resolved source time", () => {
+    // A 2x adjustment clip covers presentation [0, 50] on the track above the
+    // video, so presentation tick 25 displays source-media tick 50. A canvas
+    // drag must read/write the keyframe at source tick 50 (the frame the
+    // renderer samples), not the raw presentation tick 25 — otherwise the
+    // committed value lands on the wrong frame and the sprite snaps back.
+    const previousConfig = useProjectStore.getState().config;
+    useProjectStore.setState({
+      config: { ...previousConfig, fps: TICKS_PER_SECOND },
+    });
+    playbackClock.setTime(25);
+    const notifySpy = vi.spyOn(liveParamStore, "notify");
+
+    const adjustmentClip = {
+      id: "adj-1",
+      type: "adjustment",
+      name: "Adjustment",
+      trackId: "adj",
+      start: 0,
+      timelineDuration: 50,
+      sourceDuration: 100,
+      transformedDuration: 50,
+      transformedOffset: 0,
+      croppedSourceDuration: 100,
+      offset: 0,
+      depth: 1,
+      transformations: [
+        {
+          id: "adj_speed",
+          type: "speed",
+          isEnabled: true,
+          parameters: { factor: 2 },
+        },
+      ],
+    } as unknown as TimelineClip;
+
+    const videoClip = {
+      id: "clip_under_adjustment",
+      trackId: "v1",
+      type: "video",
+      assetId: "asset_1",
+      start: 0,
+      timelineDuration: 100,
+      offset: 0,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      croppedSourceDuration: 200,
+      sourceDuration: 200,
+      name: "Under Adjustment",
+      transformations: [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: {
+            x: {
+              type: "spline",
+              points: [
+                { time: 0, value: 0 },
+                { time: 100, value: 100 },
+              ],
+            },
+            y: {
+              type: "spline",
+              points: [
+                { time: 0, value: 0 },
+                { time: 100, value: 0 },
+              ],
+            },
+          },
+          keyframeTimes: [0, 100],
+        },
+      ],
+    } as TimelineClip;
+
+    const tracks: TimelineTrack[] = [
+      {
+        id: "adj",
+        type: "adjustment",
+        label: "adj",
+        isVisible: true,
+        isMuted: false,
+        isLocked: false,
+      } as unknown as TimelineTrack,
+      {
+        id: "v1",
+        type: "visual",
+        label: "v1",
+        isVisible: true,
+        isMuted: false,
+        isLocked: false,
+      } as unknown as TimelineTrack,
+    ];
+
+    useTimelineStore.setState({
+      tracks,
+      clips: [adjustmentClip, videoClip],
+    });
+    activeClipRef = { current: videoClip };
+
+    const { result } = renderHook(() =>
+      useTransformInteractionController(
+        mockSprite,
+        activeClipRef,
+        mockApp,
+        mockViewport,
+      ),
+    );
+
+    act(() => {
+      result.current.onSpritePointerDown({
+        button: 0,
+        stopPropagation: vi.fn(),
+        global: { x: 10, y: 10 },
+        originalEvent: { shiftKey: false, ctrlKey: false, metaKey: false },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const onPointerMove = getStageHandler("pointermove");
+    expect(onPointerMove).toBeDefined();
+
+    act(() => {
+      onPointerMove!({
+        global: { x: 20, y: 10 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    // Baseline x is read at source tick 50 (spline value 50); +10 drag => 60.
+    expect(notifySpy).toHaveBeenCalledWith("position_1", "x", 60);
+
+    const onPointerUp = getStageHandler("pointerup");
+    expect(onPointerUp).toBeDefined();
+
+    act(() => {
+      onPointerUp!({
+        global: { x: 20, y: 10 },
+      } as unknown as FederatedPointerEvent);
+    });
+
+    const updated = useTimelineStore
+      .getState()
+      .clips.find((currentClip) => currentClip.id === videoClip.id);
+    const position = updated?.transformations.find(
+      (transform) => transform.type === "position",
+    );
+    // Keyframe anchored at source tick 50 (displayed frame), not presentation 25.
+    expect(position?.keyframeTimes).toEqual([0, 50, 100]);
+    const xParam = position?.parameters.x as {
+      type: "spline";
+      points: Array<{ time: number; value: number }>;
+    };
+    expect(xParam.points.map((point) => point.time)).toEqual([0, 50, 100]);
+    expect(xParam.points.find((point) => point.time === 50)?.value).toBe(60);
+
+    notifySpy.mockRestore();
+    useProjectStore.setState({ config: previousConfig });
   });
 
   it("records a position path when recording is armed", () => {

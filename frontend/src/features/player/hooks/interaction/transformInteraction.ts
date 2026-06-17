@@ -21,6 +21,15 @@ export interface CommitTransformControlInput {
   pointEpsilonTicks: number;
   actions: TransformCommitActions;
   transformId?: string;
+  /**
+   * Adjustment-aware source-media time (project ticks) for the keyframe being
+   * committed. Mirrors the transformation panel: callers resolve it via
+   * `presentationToClipSourceTime` so the keyframe lands on the source frame
+   * the viewer is showing. When omitted, `commitLayoutControlToTransforms`
+   * derives it from `playheadTicks`, which is correct only when no adjustment
+   * layer retimes the clip.
+   */
+  keyframeSourceTimeTicks?: number;
 }
 
 export interface CommitTransformControlResult {
@@ -38,6 +47,7 @@ export function commitTransformControl({
   pointEpsilonTicks,
   actions,
   transformId,
+  keyframeSourceTimeTicks,
 }: CommitTransformControlInput): CommitTransformControlResult | null {
   const result = commitLayoutControlToTransforms({
     clip,
@@ -48,6 +58,7 @@ export function commitTransformControl({
     playheadTicks,
     pointEpsilonTicks,
     transformId,
+    keyframeSourceTimeTicks,
   });
   if (!result) return null;
 

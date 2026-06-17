@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import type { DragMoveEvent, DragEndEvent } from "@dnd-kit/core";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../useInteractionStore";
@@ -19,6 +19,7 @@ import { getTrackTypeFromClip } from "../../utils/formatting";
 import { createNewTrack } from "../../model/timelineTrackModel";
 import { planMultiClipMove } from "../../utils/multiClipMove";
 import { getMoveSnapCandidate } from "./snapUtils";
+import { usePointerTracker } from "./usePointerTracker";
 import {
   getInterstitialGapIndex,
   getSynthesizedTrackTop,
@@ -69,20 +70,7 @@ export const useClipMove = (
     useTimelineStore.getState();
 
   // Track exact mouse position to bypass dnd-kit's delta logic for new assets
-  const cursorRef = useRef<{ x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    const handlePointerMove = (e: PointerEvent) => {
-      cursorRef.current = { x: e.clientX, y: e.clientY };
-    };
-    window.addEventListener("pointermove", handlePointerMove, {
-      capture: true,
-    });
-    return () =>
-      window.removeEventListener("pointermove", handlePointerMove, {
-        capture: true,
-      });
-  }, []);
+  const cursorRef = usePointerTracker();
 
   /**
    * Helper: Calculates the Viewport Rect (BoundingClientRect) of the currently dragged item.

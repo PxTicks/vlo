@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import type {
   DragCancelEvent,
   DragEndEvent,
@@ -19,6 +19,7 @@ import {
   useInteractionStore,
 } from "../../timeline/hooks/useInteractionStore";
 import { resolveTimelineDropTarget } from "../../timeline/hooks/dnd/dropGeometry";
+import { usePointerTracker } from "../../timeline/hooks/dnd/usePointerTracker";
 import { useTimelineViewStore } from "../../timeline/hooks/useTimelineViewStore";
 import { getAssetById } from "../../userAssets";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
@@ -230,24 +231,10 @@ function resolveDropPlacement(
 export function useTransformDrag(
   scrollContainerRef: React.RefObject<HTMLDivElement | null>,
 ) {
-  const cursorRef = useRef<{ x: number; y: number } | null>(null);
+  const cursorRef = usePointerTracker();
   // Snap points are clip edges / markers; they don't change mid-drag, so we
   // build them once at drag start (matching the asset-move flow).
   const snapPointsRef = useRef<number[]>([]);
-
-  useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      cursorRef.current = { x: event.clientX, y: event.clientY };
-    };
-
-    window.addEventListener("pointermove", handlePointerMove, {
-      capture: true,
-    });
-    return () =>
-      window.removeEventListener("pointermove", handlePointerMove, {
-        capture: true,
-      });
-  }, []);
 
   const computeDrop = useCallback(
     (
@@ -338,7 +325,7 @@ export function useTransformDrag(
       );
       return { placement, geom };
     },
-    [scrollContainerRef],
+    [scrollContainerRef, cursorRef],
   );
 
   const handleTransformDragStart = useCallback((event: DragStartEvent) => {

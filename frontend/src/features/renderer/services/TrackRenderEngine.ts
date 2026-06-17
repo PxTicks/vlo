@@ -17,7 +17,10 @@ import {
   type SourceFrameSyncIntent,
   type SourceFrameSyncRef,
 } from "../utils/sourceFrameSync";
-import { findActiveClipAtTicks } from "../utils/clipLookup";
+import {
+  findActiveClipAtTicks,
+  resolveLiveActiveClip,
+} from "../utils/clipLookup";
 import { applyClipTransforms } from "../../transformations";
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
 import { ticksPerFrame } from "../../timeline";
@@ -321,20 +324,19 @@ export class TrackRenderEngine {
         ? { activeClip, effectiveTick: presentationTick }
         : null;
     }
-    const lookup = this.adjustmentEffectResolver.getPresentationLookup();
-    const found = lookup.findActiveClipAt(this.trackId, presentationTick);
-    if (!found) return null;
-    // The presentation lookup caches clip references captured when it was last
-    // built; it is invalidated only via `setAdjustmentSource`, which runs in a
-    // React effect. Renders that fire between a store edit and that effect would
-    // otherwise read a stale clip snapshot here (e.g. an old transform value),
-    // making live edits revert on commit. Re-bind to the live `trackClips` by id
-    // so transform/property data is always current — mirroring ExportRenderer.
-    // The lookup still owns the active-clip identity and effective-tick math.
-    const liveClip =
-      trackClips.find((candidate) => candidate.id === found.clip.id) ??
-      found.clip;
-    return { activeClip: liveClip, effectiveTick: found.effectiveTick };
+    // The lookup owns identity + timing only; `resolveLiveActiveClip` re-binds
+    // its result to the live `trackClips` so transform/property data is current
+    // (the cache is invalidated on a React effect and would otherwise serve a
+    // stale clip — making committed edits revert). See clipLookup.
+    const resolved = resolveLiveActiveClip(
+      this.adjustmentEffectResolver,
+      this.trackId,
+      trackClips,
+      presentationTick,
+    );
+    return resolved
+      ? { activeClip: resolved.clip, effectiveTick: resolved.effectiveTick }
+      : null;
   }
 
   /**

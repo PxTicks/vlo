@@ -7,6 +7,7 @@ import {
   mediaSecondsToTickExact,
   tickToMediaSeconds,
 } from "../utils/mediaTime";
+import { resolveLiveActiveClip } from "../utils/clipLookup";
 import type { ScalarParameter } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
@@ -135,34 +136,23 @@ export class TrackAudioRenderer {
     trackClips: TimelineClip[],
     presentationTick: number,
   ): { clip: TimelineClip; effectiveTick: number } | null {
-    if (!this.adjustmentEffectResolver) {
-      // Fallback to stored-range lookup when running without a resolver.
-      for (const candidate of trackClips) {
-        const clipEnd = candidate.start + candidate.timelineDuration;
-        if (candidate.start <= presentationTick && presentationTick < clipEnd) {
-          return { clip: candidate, effectiveTick: presentationTick };
-        }
-      }
-      return null;
-    }
-    const resolved = this.adjustmentEffectResolver
-      .getPresentationLookup()
-      .findActiveClipAt(this.trackId, presentationTick);
-    if (resolved) {
-      // Re-bind to the live clip by id: the lookup caches clip refs from its
-      // last build, so `resolved.clip` can carry stale volume/timing data after
-      // an edit. See TrackRenderEngine.resolveActiveClipAtPresentation.
-      const liveClip = trackClips.find(
-        (candidate) => candidate.id === resolved.clip.id,
+    if (this.adjustmentEffectResolver && this.trackId) {
+      // Lookup owns identity + timing; re-bind to the live clip by id so volume
+      // /timing edits aren't served from the stale cache. See clipLookup.
+      const resolved = resolveLiveActiveClip(
+        this.adjustmentEffectResolver,
+        this.trackId,
+        trackClips,
+        presentationTick,
       );
-      if (liveClip) {
-        return { clip: liveClip, effectiveTick: resolved.effectiveTick };
+      if (resolved) {
+        return { clip: resolved.clip, effectiveTick: resolved.effectiveTick };
       }
     }
 
-    // Audio-only composites expand into synthetic lane clips that do not exist
-    // in the adjustment lookup. They already carry parent timing, so scan the
-    // supplied lane directly when the lookup returns the parent composite.
+    // No resolver, or an audio-only composite that expanded into synthetic lane
+    // clips not present in the adjustment lookup. They already carry parent
+    // timing, so scan the supplied lane directly as a fallback.
     for (const candidate of trackClips) {
       const clipEnd = candidate.start + candidate.timelineDuration;
       if (candidate.start <= presentationTick && presentationTick < clipEnd) {

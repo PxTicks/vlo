@@ -65,18 +65,25 @@ export interface ProposedClipTimingChange {
  * resolver that hides static rebases and ripple placement.
  */
 export interface TimelineClipPresentationLookup {
-  readonly byClipId: Map<string, TimelineClipPresentation>;
   /**
-   * Return the clip whose presentation footprint contains `presentationTick`
-   * on `trackId`, plus the corresponding `effectiveTrackTick` (the value the
-   * presentation model emits for that clip — feed it straight into
-   * `calculatePlayerFrameTime` / `calculateClipTime`).
+   * Return the **id** of the clip whose presentation footprint contains
+   * `presentationTick` on `trackId`, plus the corresponding `effectiveTrackTick`
+   * (the value the presentation model emits for that clip — feed it straight
+   * into `calculatePlayerFrameTime` / `calculateClipTime`).
+   *
+   * Clip-resolution principle: this lookup owns **identity + timing** ("which
+   * clip, and when"), never **data** ("what's in the clip"). Its entries are a
+   * snapshot taken when the lookup was built (invalidated on a React effect via
+   * `setAdjustmentSource`), so it returns an id rather than a clip object — read
+   * the clip's current data from the live store/`trackClips` by id (see
+   * `resolveLiveActiveClip`). Returning a cached clip object here is exactly how
+   * committed edits used to visibly revert.
    */
   findActiveClipAt(
     trackId: string,
     presentationTick: number,
   ): {
-    clip: TimelineClip;
+    clipId: string;
     effectiveTick: number;
     /** The tick visual adjustment grouping should use for activation. */
     presentationInputTick: number;
@@ -99,7 +106,6 @@ export interface TimelineClipPresentationLookup {
 interface InternalClipPresentation extends TimelineClipPresentation {
   resolveEffectiveTrackTick: (presentationTick: number) => number;
   resolvePresentationInputTick: (presentationTick: number) => number;
-  clipRef: TimelineClip;
 }
 
 export function resolveClipOffsetForPresentationOffset(
@@ -268,7 +274,6 @@ function buildPresentation(
     },
     resolveEffectiveTrackTick,
     resolvePresentationInputTick,
-    clipRef: clip,
   };
 }
 
@@ -388,13 +393,7 @@ export function buildTimelineClipPresentationLookup(
   );
   const byTrack = indexClipsByTrack(internalMap);
 
-  const byClipId = new Map<string, TimelineClipPresentation>();
-  for (const [clipId, presentation] of internalMap) {
-    byClipId.set(clipId, presentation);
-  }
-
   return {
-    byClipId,
     findActiveClipAt(trackId, presentationTick) {
       const list = byTrack.get(trackId);
       if (!list || list.length === 0) return null;
@@ -413,7 +412,7 @@ export function buildTimelineClipPresentationLookup(
           low = mid + 1;
         } else {
           return {
-            clip: entry.clipRef,
+            clipId: entry.clipId,
             effectiveTick: entry.resolveEffectiveTrackTick(presentationTick),
             presentationInputTick:
               entry.resolvePresentationInputTick(presentationTick),

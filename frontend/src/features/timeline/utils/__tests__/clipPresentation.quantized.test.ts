@@ -102,14 +102,14 @@ describe("findActiveClipAt — half-open [startTick, endTick) on the frame grid"
   const lookup = buildTimelineClipPresentationLookup(tracks, clips, FPS);
 
   it("assigns a shared boundary to the LATER clip (the one starting there)", () => {
-    expect(lookup.findActiveClipAt("v1", TPF)?.clip.id).toBe("B");
+    expect(lookup.findActiveClipAt("v1", TPF)?.clipId).toBe("B");
   });
 
   it("renders the first frame of a clip that starts exactly on a boundary (gotcha)", () => {
     // B starts exactly at tick TPF — that frame must be B's, and frame 0 is A's.
-    expect(lookup.findActiveClipAt("v1", 0)?.clip.id).toBe("A");
-    expect(lookup.findActiveClipAt("v1", TPF - 1)?.clip.id).toBe("A");
-    expect(lookup.findActiveClipAt("v1", TPF)?.clip.id).toBe("B");
+    expect(lookup.findActiveClipAt("v1", 0)?.clipId).toBe("A");
+    expect(lookup.findActiveClipAt("v1", TPF - 1)?.clipId).toBe("A");
+    expect(lookup.findActiveClipAt("v1", TPF)?.clipId).toBe("B");
   });
 
   it("returns null past the last clip's end", () => {

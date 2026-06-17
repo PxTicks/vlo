@@ -22,6 +22,7 @@ import { RenderGroupOrchestrator } from "../services/RenderGroupOrchestrator";
 import { TrackRenderEngine } from "../services/TrackRenderEngine";
 import {
   findActiveClipAtTicks,
+  resolveLiveActiveClip,
   sortTrackClipsByStart,
 } from "../utils/clipLookup";
 
@@ -206,16 +207,15 @@ export function useTrackRenderEngine(
       presentationTick: number,
     ): TimelineClip | undefined => {
       if (adjustmentEffectResolver) {
-        const found = adjustmentEffectResolver
-          .getPresentationLookup()
-          .findActiveClipAt(trackId, presentationTick)?.clip;
-        if (!found) return undefined;
-        // The lookup caches clip refs from its last build (invalidated only via
-        // a React effect), so reading `.clip` directly serves stale transform
-        // data after an edit, making live edits revert. Re-bind to the live
-        // clips by id. See TrackRenderEngine.resolveActiveClipAtPresentation.
+        // Lookup owns identity + timing; re-bind to the live clips by id so
+        // edits aren't served from the stale cache. See clipLookup.
         return (
-          trackClips.find((candidate) => candidate.id === found.id) ?? found
+          resolveLiveActiveClip(
+            adjustmentEffectResolver,
+            trackId,
+            trackClips,
+            presentationTick,
+          )?.clip ?? undefined
         );
       }
       return findActiveClipAtTicks(trackClips, presentationTick);

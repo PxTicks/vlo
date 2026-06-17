@@ -418,7 +418,7 @@ describe("findActiveClipAt lookup", () => {
 
     // Presentation tick 25 is halfway through video-1's compressed footprint.
     const resolved = lookup.findActiveClipAt("v1", 25);
-    expect(resolved?.clip.id).toBe("video-1");
+    expect(resolved?.clipId).toBe("video-1");
     // Halfway through a 50-presentation-tick footprint maps to source
     // tick 50 (halfway through 100 stored ticks).
     expect(resolved?.effectiveTick).toBe(50);

@@ -206,10 +206,16 @@ export function useTrackRenderEngine(
       presentationTick: number,
     ): TimelineClip | undefined => {
       if (adjustmentEffectResolver) {
+        const found = adjustmentEffectResolver
+          .getPresentationLookup()
+          .findActiveClipAt(trackId, presentationTick)?.clip;
+        if (!found) return undefined;
+        // The lookup caches clip refs from its last build (invalidated only via
+        // a React effect), so reading `.clip` directly serves stale transform
+        // data after an edit, making live edits revert. Re-bind to the live
+        // clips by id. See TrackRenderEngine.resolveActiveClipAtPresentation.
         return (
-          adjustmentEffectResolver
-            .getPresentationLookup()
-            .findActiveClipAt(trackId, presentationTick)?.clip ?? undefined
+          trackClips.find((candidate) => candidate.id === found.id) ?? found
         );
       }
       return findActiveClipAtTicks(trackClips, presentationTick);

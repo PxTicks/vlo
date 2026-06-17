@@ -323,9 +323,18 @@ export class TrackRenderEngine {
     }
     const lookup = this.adjustmentEffectResolver.getPresentationLookup();
     const found = lookup.findActiveClipAt(this.trackId, presentationTick);
-    return found
-      ? { activeClip: found.clip, effectiveTick: found.effectiveTick }
-      : null;
+    if (!found) return null;
+    // The presentation lookup caches clip references captured when it was last
+    // built; it is invalidated only via `setAdjustmentSource`, which runs in a
+    // React effect. Renders that fire between a store edit and that effect would
+    // otherwise read a stale clip snapshot here (e.g. an old transform value),
+    // making live edits revert on commit. Re-bind to the live `trackClips` by id
+    // so transform/property data is always current — mirroring ExportRenderer.
+    // The lookup still owns the active-clip identity and effective-tick math.
+    const liveClip =
+      trackClips.find((candidate) => candidate.id === found.clip.id) ??
+      found.clip;
+    return { activeClip: liveClip, effectiveTick: found.effectiveTick };
   }
 
   /**

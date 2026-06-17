@@ -148,11 +148,16 @@ export class TrackAudioRenderer {
     const resolved = this.adjustmentEffectResolver
       .getPresentationLookup()
       .findActiveClipAt(this.trackId, presentationTick);
-    if (
-      resolved &&
-      trackClips.some((candidate) => candidate.id === resolved.clip.id)
-    ) {
-      return resolved;
+    if (resolved) {
+      // Re-bind to the live clip by id: the lookup caches clip refs from its
+      // last build, so `resolved.clip` can carry stale volume/timing data after
+      // an edit. See TrackRenderEngine.resolveActiveClipAtPresentation.
+      const liveClip = trackClips.find(
+        (candidate) => candidate.id === resolved.clip.id,
+      );
+      if (liveClip) {
+        return { clip: liveClip, effectiveTick: resolved.effectiveTick };
+      }
     }
 
     // Audio-only composites expand into synthetic lane clips that do not exist

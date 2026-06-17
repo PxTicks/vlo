@@ -148,6 +148,9 @@ function TimelineContainerComponent({
     })),
   );
   const interactionSnapTick = useInteractionStore((state) => state.snapTick);
+  const transformDropPreview = useInteractionStore(
+    (state) => state.transformDropPreview,
+  );
   const resolvedExternalInsertGapIndex =
     externalInsertGapIndexProp !== undefined
       ? externalInsertGapIndexProp
@@ -276,6 +279,14 @@ function TimelineContainerComponent({
             (activePresentation?.start ?? activeClip.start) + projectedDuration;
           maxClipEnd = Math.max(maxClipEnd, projectedEnd);
         }
+      }
+    } else if (transformDropPreview !== null) {
+      // A transform-card drag doesn't go through startDrag/activeClip, so honor
+      // its projected footprint end here to expand the timeline as it nears the
+      // current right edge.
+      const projectedEndTime = useInteractionStore.getState().projectedEndTime;
+      if (projectedEndTime !== null) {
+        maxClipEnd = Math.max(maxClipEnd, projectedEndTime);
       }
     }
 
@@ -485,6 +496,51 @@ function TimelineContainerComponent({
                 pointerEvents: "none",
               }}
             >
+              {/* Interstitial: a new adjustment track will be inserted at a
+                  boundary — show ONLY the gap line (no footprint, since the
+                  track doesn't exist yet). */}
+              {transformDropPreview?.kind === "gap" ? (
+                <HoverGapIndicator
+                  gapIndex={transformDropPreview.gapIndex}
+                  trackHeight={TRACK_HEIGHT}
+                />
+              ) : null}
+              {/* Footprint of the 5s adjustment clip at the row/tick it lands
+                  on (an existing adjustment lane, or a freshly created one). */}
+              {transformDropPreview?.kind === "rect" ? (
+                <Box
+                  data-testid="transform-adjustment-drop-preview"
+                  data-compatible={
+                    transformDropPreview.compatible ? "true" : "false"
+                  }
+                  sx={{
+                    position: "absolute",
+                    top:
+                      RULER_HEIGHT +
+                      transformDropPreview.trackIndex * TRACK_HEIGHT +
+                      5,
+                    left:
+                      TRACK_HEADER_WIDTH +
+                      ticksToPx(transformDropPreview.startTick),
+                    width: Math.max(
+                      24,
+                      ticksToPx(transformDropPreview.durationTicks),
+                    ),
+                    height: TRACK_HEIGHT - 10,
+                    borderRadius: "4px",
+                    border: transformDropPreview.compatible
+                      ? "2px dashed rgba(77, 171, 245, 0.9)"
+                      : "2px dashed rgba(244, 67, 54, 0.85)",
+                    bgcolor: transformDropPreview.compatible
+                      ? "rgba(77, 171, 245, 0.14)"
+                      : "rgba(244, 67, 54, 0.1)",
+                    boxShadow: transformDropPreview.compatible
+                      ? "0 0 0 1px rgba(77, 171, 245, 0.2)"
+                      : "0 0 0 1px rgba(244, 67, 54, 0.18)",
+                    zIndex: 12,
+                  }}
+                />
+              ) : null}
               {timelineClips.map((clip) => (
                 <TimelineClipItem
                   key={clip.id}

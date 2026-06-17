@@ -3,6 +3,7 @@ import { Box } from "@mui/material";
 import { AssetBrowser } from "../../features/userAssets";
 import { TextPanel } from "../../features/text";
 import { CompositePanel } from "../../features/composite";
+import { TransformationLibraryPanel } from "../../features/transformations";
 import { LeftSidebarPanel } from "./LeftSidebarPanel";
 import type { LeftSidebarTab } from "./LeftSidebarPanel";
 
@@ -34,6 +35,9 @@ export function EditorLeftSidebar() {
         {activeLeftSidebarTab === "assets" ? <AssetBrowser /> : null}
         {activeLeftSidebarTab === "text" ? <TextPanel /> : null}
         {activeLeftSidebarTab === "composite" ? <CompositePanel /> : null}
+        {activeLeftSidebarTab === "effects" ? (
+          <TransformationLibraryPanel />
+        ) : null}
       </Box>
     </Box>
   );

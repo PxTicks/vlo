@@ -12,9 +12,10 @@ export const getGhostClipPosition = (
   cursorX: number,
   cursorY: number,
   height: number = GHOST_CLIP_HEIGHT,
+  offsetX: number = ASSET_DRAG_OFFSET_X,
 ) => {
   return {
-    x: cursorX - ASSET_DRAG_OFFSET_X,
+    x: cursorX - offsetX,
     y: cursorY - height / 2,
   };
 };

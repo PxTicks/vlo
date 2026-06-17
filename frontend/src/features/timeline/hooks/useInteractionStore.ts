@@ -21,6 +21,28 @@ type SnapPreview = {
   snappedStartTicks?: number | null;
 } | null;
 
+export type TransformDropPreview =
+  // Hovering an existing clip — the clip itself is outlined.
+  | {
+      kind: "clip";
+      clipId: string;
+      compatible: boolean;
+    }
+  // A 5s adjustment clip will be placed at this row/tick — show its footprint.
+  | {
+      kind: "rect";
+      trackIndex: number;
+      startTick: number;
+      durationTicks: number;
+      compatible: boolean;
+    }
+  // A new adjustment track will be inserted between tracks — show a gap line.
+  | {
+      kind: "gap";
+      gapIndex: number;
+      compatible: boolean;
+    };
+
 interface InteractionState {
   activeClip: BaseClip | null;
   activeId: string | null;
@@ -43,6 +65,7 @@ interface InteractionState {
   snapPoints: number[];
   snapTick: number | null;
   snappedStartTicks: number | null;
+  transformDropPreview: TransformDropPreview | null;
 
   startDrag: (
     id: string,
@@ -58,6 +81,8 @@ interface InteractionState {
   toggleSnappingEnabled: () => void;
   setSnapPreview: (preview: SnapPreview) => void;
   clearSnapPreview: () => void;
+  setTransformDropPreview: (preview: TransformDropPreview | null) => void;
+  clearTransformDropPreview: () => void;
   stopDrag: () => void;
 }
 
@@ -156,6 +181,7 @@ export const useInteractionStore = create<InteractionState>((set) => ({
   snapPoints: [],
   snapTick: null,
   snappedStartTicks: null,
+  transformDropPreview: null,
 
   startDrag: (id, clip, operation, constraints = null) =>
     set({
@@ -171,6 +197,7 @@ export const useInteractionStore = create<InteractionState>((set) => ({
       snapPoints: buildSnapPoints(clip, operation),
       snapTick: null,
       snappedStartTicks: null,
+      transformDropPreview: null,
     }),
 
   updateDelta: (deltaX, deltaY = 0) =>
@@ -222,6 +249,14 @@ export const useInteractionStore = create<InteractionState>((set) => ({
         snappedStartTicks: null,
       };
     }),
+  setTransformDropPreview: (preview) => set({ transformDropPreview: preview }),
+  clearTransformDropPreview: () =>
+    set((state) => {
+      if (state.transformDropPreview === null) {
+        return state;
+      }
+      return { transformDropPreview: null };
+    }),
 
   stopDrag: () =>
     set({
@@ -237,5 +272,6 @@ export const useInteractionStore = create<InteractionState>((set) => ({
       snapPoints: [],
       snapTick: null,
       snappedStartTicks: null,
+      transformDropPreview: null,
     }),
 }));

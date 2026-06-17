@@ -3,8 +3,9 @@ import { Box, Tab, Tabs } from "@mui/material";
 import VideoLibraryIcon from "@mui/icons-material/VideoLibrary";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
 import LayersIcon from "@mui/icons-material/Layers";
+import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 
-export type LeftSidebarTab = "assets" | "text" | "composite";
+export type LeftSidebarTab = "assets" | "text" | "composite" | "effects";
 
 interface LeftSidebarPanelProps {
   activeTab: LeftSidebarTab;
@@ -84,6 +85,25 @@ function LeftSidebarPanelComponent({
           icon={<LayersIcon fontSize="small" />}
           aria-label="Composite"
           data-testid="left-sidebar-tab-composite"
+          sx={{
+            minWidth: 40,
+            minHeight: 40,
+            width: 40,
+            borderRadius: 2,
+            color: "#9aa0a6",
+            mx: 1,
+            my: 0.5,
+            "&.Mui-selected": {
+              color: "#4dabf5",
+              bgcolor: "rgba(77, 171, 245, 0.12)",
+            },
+          }}
+        />
+        <Tab
+          value="effects"
+          icon={<AutoFixHighIcon fontSize="small" />}
+          aria-label="Effects"
+          data-testid="left-sidebar-tab-effects"
           sx={{
             minWidth: 40,
             minHeight: 40,

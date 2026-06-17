@@ -25,6 +25,11 @@ export interface TransformState {
     type: string;
     params: Record<string, unknown>;
   }>;
+  /** PixiJS blend mode applied to the rendered target. Defaults to "normal"
+   *  when no blend-mode transform is present. Advanced modes (overlay,
+   *  color-burn, ...) require the advanced-blend-modes extension + back buffer
+   *  (see core/pixi/advancedBlendModes). */
+  blendMode?: string;
   /** Feather compositing state */
   feather?: {
     mode: "hard_outer" | "soft_inner" | "two_way";
@@ -57,6 +62,8 @@ export interface ClipTransformTarget {
     set: (x: number, y?: number) => void;
   };
   readonly filters?: readonly Filter[] | null;
+  /** PixiJS blend mode. Present on Sprite / Container targets. */
+  blendMode?: string;
 }
 
 export interface TransformContext {

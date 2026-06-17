@@ -23,6 +23,7 @@ import type { GenericFilterTransform } from "../types";
 // Import self-contained transformation definitions
 import { layoutDefinition, layoutApplicator } from "./layout/layoutDefinition";
 import { fitModeDefinition } from "./layout/fitMode";
+import { blendModeDefinition, blendModeApplicator } from "./blendMode";
 import { speedDefinition } from "./time/speed";
 import { volumeDefinition } from "./audio/volume";
 import { hslFilterDefinition } from "./filters/hslAdjustment";
@@ -67,6 +68,11 @@ export const TransformationRegistry: TransformationDefinition[] = [
   // FitMode — split out of layout so it can be hidden for adjustment
   // clips. Still default for visual clips (matches prior UX).
   { ...fitModeDefinition, isDefault: true },
+
+  // Blend Mode — always-visible default for visual clips. Composites the clip
+  // against the accumulated render beneath it. Advanced modes need the
+  // advanced-blend-modes extension + back buffer (core/pixi/advancedBlendModes).
+  { ...blendModeDefinition, isDefault: true },
 
   // Volume definition — always visible for audio clips
   { ...volumeDefinition, isDefault: true },
@@ -306,6 +312,7 @@ export const TransformationSystem = {
   // If a new transformation requires a global state pass (e.g. physics), add its applicator here.
   applicators: [
     layoutApplicator,
+    blendModeApplicator,
     filterApplicator,
   ] as StateApplicator[],
 

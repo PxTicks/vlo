@@ -1,4 +1,5 @@
 import { Application, Container, RenderTexture } from "pixi.js";
+import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes";
 import type {
   TimelineTrack,
   TimelineClip,
@@ -258,6 +259,8 @@ export class ExportRenderer {
     } = config;
 
     // 1. Initialize Headless App (Physical Resolution)
+    // Register advanced blend modes so exported clip blend modes match preview.
+    enableAdvancedBlendModes();
     const app = new Application();
 
     await app.init({
@@ -268,6 +271,8 @@ export class ExportRenderer {
       antialias: true,
       resolution: 1,
       autoDensity: false,
+      // Advanced blend modes read from the back buffer on WebGL.
+      useBackBuffer: true,
     });
 
     // 2. Setup the "Logical Stage"

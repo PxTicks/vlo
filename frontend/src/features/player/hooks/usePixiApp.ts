@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Application } from "pixi.js";
 import { usePlayerStore } from "../usePlayerStore";
+import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes";
 
 
 export function usePixiApp(
@@ -20,16 +21,22 @@ export function usePixiApp(
     const initApp = async () => {
       // Get initial dimensions from container
       const { clientWidth, clientHeight } = containerRef.current!;
-      
+
+      // Register advanced (filter-based) blend modes before the renderer is
+      // created so clip-level blend modes resolve instead of falling back.
+      enableAdvancedBlendModes();
+
       const pixiApp = new Application();
-      
+
       await pixiApp.init({
         canvas: canvasRef.current!,
         width: clientWidth,
         height: clientHeight,
         backgroundColor: 0x000000,
-        backgroundAlpha: 0, 
+        backgroundAlpha: 0,
         antialias: true,
+        // Advanced blend modes read from the back buffer on WebGL.
+        useBackBuffer: true,
         // autoDensity handles devicePixelRatio scaling for the backing buffer
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,

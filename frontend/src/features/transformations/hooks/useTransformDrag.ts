@@ -258,11 +258,13 @@ export function useTransformDrag(
 
       const scrollLeft = container.scrollLeft;
       const scrollTop = container.scrollTop;
-      // Over the track headers or the ruler is not a valid timeline drop.
-      if (cursor.x - rect.left + scrollLeft - TRACK_HEADER_WIDTH < 0) {
+      // The track-header column and the ruler are sticky, so they must be
+      // excluded in VIEWPORT space — content-space math (adding scroll) would
+      // let drops fall through onto the visible header/ruler after scrolling.
+      if (cursor.x - rect.left < TRACK_HEADER_WIDTH) {
         return null;
       }
-      if (cursor.y - rect.top + scrollTop - RULER_HEIGHT < 0) {
+      if (cursor.y - rect.top < RULER_HEIGHT) {
         return null;
       }
 
@@ -434,30 +436,35 @@ export function useTransformDrag(
         return;
       }
 
+      // Create the clip with its initial transform in a SINGLE store mutation
+      // so the whole drag-drop is one atomic, undoable action (no orphaned
+      // empty adjustment clip left behind by a partial undo).
       const adjustmentClipId =
         placement.kind === "interstitial"
           ? addTimelineAdjustmentClip({
               insertTrackIndex: placement.gapIndex,
               start: placement.startTick,
               timelineDuration: placement.durationTicks,
+              transformations: [transform],
             })
           : placement.trackId !== null
             ? addTimelineAdjustmentClip({
                 trackId: placement.trackId,
                 start: placement.startTick,
                 timelineDuration: placement.durationTicks,
+                transformations: [transform],
               })
             : addTimelineAdjustmentClip({
                 insertTrackIndex: placement.insertTrackIndex ?? undefined,
                 start: placement.startTick,
                 timelineDuration: placement.durationTicks,
+                transformations: [transform],
               });
 
       if (!adjustmentClipId) {
         return;
       }
 
-      addTimelineClipTransform(adjustmentClipId, transform);
       selectTimelineClip(adjustmentClipId);
     },
     [computeDrop],

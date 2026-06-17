@@ -208,6 +208,44 @@ describe("useTransformDrag", () => {
     });
   });
 
+  it("rejects drops over the sticky header column even after horizontal scroll", () => {
+    useTimelineStore.setState({
+      tracks: [makeTrack("track-video", "visual")],
+      clips: [videoClip("clip-video", "track-video")],
+      selectedClipIds: [],
+    });
+
+    render(<TestTransformDragApp />);
+
+    const container = screen.getByTestId("timeline-container");
+    mockRect(container, { left: 0, top: 0, width: 800, height: 600 });
+    // The header is sticky: content-space math would let this fall through.
+    Object.defineProperty(container, "scrollLeft", {
+      value: 500,
+      configurable: true,
+    });
+
+    act(() => {
+      // Cursor sits over the sticky track-header column (x < TRACK_HEADER_WIDTH).
+      fireEvent.pointerMove(window, {
+        clientX: 40,
+        clientY: RULER_HEIGHT + 30,
+        buttons: 1,
+      });
+      latestTransformDragHandlersRef.current?.handleTransformDragStart(
+        makeTransformDragStartEvent(),
+      );
+      latestTransformDragHandlersRef.current?.handleTransformDragEnd(
+        makeTransformDragEndEvent(),
+      );
+    });
+
+    const state = useTimelineStore.getState();
+    expect(state.clips[0].transformations).toEqual([]);
+    expect(state.clips.some((c) => c.type === "adjustment")).toBe(false);
+    expect(state.selectedClipIds).toEqual([]);
+  });
+
   it("drops a compatible transformation onto a clip and appends it to the stack", () => {
     useTimelineStore.setState({
       tracks: [makeTrack("track-video", "visual")],

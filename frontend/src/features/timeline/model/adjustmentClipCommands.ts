@@ -6,6 +6,7 @@ import {
   type AdjustmentDepth,
   type AdjustmentRetimingMode,
   type AdjustmentTimelineClip,
+  type ClipTransform,
 } from "../../../types/TimelineTypes";
 import { addClipToDraft, insertTrackIntoDraft } from "./timelineCommands";
 import {
@@ -31,6 +32,9 @@ export interface CreateAdjustmentClipInput {
   /** Optional. Defaults to static/pinned retiming. */
   retimingMode?: AdjustmentRetimingMode;
   name?: string;
+  /** Optional initial transform stack, so clip creation + first transform
+   *  commit as a single, atomic history entry (one undo). */
+  transformations?: ClipTransform[];
 }
 
 function isInvalidNumericAdjustmentDepth(depth: AdjustmentDepth): boolean {
@@ -114,7 +118,7 @@ export function createAdjustmentClipInDraft(
     transformedOffset: 0,
     croppedSourceDuration: input.timelineDuration,
     offset: 0,
-    transformations: [],
+    transformations: input.transformations ?? [],
     depth,
     retimingMode: input.retimingMode ?? ADJUSTMENT_RETIMING_STATIC,
   };

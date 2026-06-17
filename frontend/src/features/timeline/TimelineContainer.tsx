@@ -280,6 +280,14 @@ function TimelineContainerComponent({
           maxClipEnd = Math.max(maxClipEnd, projectedEnd);
         }
       }
+    } else if (transformDropPreview !== null) {
+      // A transform-card drag doesn't go through startDrag/activeClip, so honor
+      // its projected footprint end here to expand the timeline as it nears the
+      // current right edge.
+      const projectedEndTime = useInteractionStore.getState().projectedEndTime;
+      if (projectedEndTime !== null) {
+        maxClipEnd = Math.max(maxClipEnd, projectedEndTime);
+      }
     }
 
     const minDurationTicks = mediaSecondsToTickExact(15);

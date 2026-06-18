@@ -382,6 +382,13 @@ describe("ExportRenderer", () => {
       fps: 30,
     };
 
+    // Export drives decoder-source prepares through the dedicated
+    // prepare-only entry point, not the live update() pipeline, so it can't
+    // fire a fire-and-forget non-strict mask render that races renderFrame()'s
+    // strict mask sync.
+    const prepareSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "prepareClipsForExportFrame")
+      .mockImplementation(() => undefined);
     const updateSpy = vi
       .spyOn(TrackRenderEngine.prototype, "update")
       .mockImplementation(() => undefined);
@@ -394,12 +401,14 @@ describe("ExportRenderer", () => {
       includeTimelineMasks: false,
     });
 
-    expect(updateSpy).toHaveBeenCalled();
+    expect(prepareSpy).toHaveBeenCalled();
+    expect(updateSpy).not.toHaveBeenCalled();
     expect(renderFrameSpy).toHaveBeenCalled();
     expect(renderFrameSpy.mock.calls.every(([, , , maskClips]) => {
       return Array.isArray(maskClips) && maskClips.length === 0;
     })).toBe(true);
 
+    prepareSpy.mockRestore();
     updateSpy.mockRestore();
     renderFrameSpy.mockRestore();
     renderer.dispose();
@@ -459,8 +468,8 @@ describe("ExportRenderer", () => {
       fps: 30,
     };
 
-    const updateSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "update")
+    const prepareSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "prepareClipsForExportFrame")
       .mockImplementation(() => undefined);
     const renderFrameSpy = vi
       .spyOn(TrackRenderEngine.prototype, "renderFrame")
@@ -480,7 +489,7 @@ describe("ExportRenderer", () => {
       expect(components.some((c) => c.type === "range_mask")).toBe(false);
     }
 
-    updateSpy.mockRestore();
+    prepareSpy.mockRestore();
     renderFrameSpy.mockRestore();
     renderer.dispose();
   });
@@ -524,8 +533,8 @@ describe("ExportRenderer", () => {
       fps: 30,
     };
 
-    const updateSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "update")
+    const prepareSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "prepareClipsForExportFrame")
       .mockImplementation(() => undefined);
     const renderFrameSpy = vi
       .spyOn(TrackRenderEngine.prototype, "renderFrame")
@@ -543,7 +552,7 @@ describe("ExportRenderer", () => {
       expect(components.some((c) => c.type === "range_mask")).toBe(true);
     }
 
-    updateSpy.mockRestore();
+    prepareSpy.mockRestore();
     renderFrameSpy.mockRestore();
     renderer.dispose();
   });

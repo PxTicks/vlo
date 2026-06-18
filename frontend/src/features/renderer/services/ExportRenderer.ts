@@ -526,14 +526,7 @@ export class ExportRenderer {
           const engine = this.engines[index];
           const trackClips = trackClipsByTrackId.get(track.id) || [];
 
-          engine.update(
-            currentTime,
-            trackClips,
-            maskClipsByParent,
-            assets,
-            { width: logicalWidth, height: logicalHeight },
-            { shouldRender: false, fps: renderFps },
-          );
+          engine.prepareClipsForExportFrame(currentTime, trackClips, assets);
 
           // The presentation lookup is keyed off the resolver's full clip
           // source (with range_mask intact); re-bind the result against the
@@ -714,14 +707,7 @@ export class ExportRenderer {
         const engine = this.engines[index];
         const trackClips = trackClipsByTrackId.get(track.id) || [];
 
-        engine.update(
-          tick,
-          trackClips,
-          maskClipsByParent,
-          assets,
-          { width: logicalWidth, height: logicalHeight },
-          { shouldRender: false, fps },
-        );
+        engine.prepareClipsForExportFrame(tick, trackClips, assets);
 
         // See note above re: re-binding to the stripped `trackClips`.
         const resolvedClipId = engine.resolveActiveClipAtPresentation(

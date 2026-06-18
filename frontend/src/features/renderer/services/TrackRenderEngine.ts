@@ -1009,6 +1009,45 @@ export class TrackRenderEngine {
   }
 
   /**
+   * Export-only: prepare the decoder sources for clips near `currentTime`
+   * without running the live preview pipeline.
+   *
+   * The export loop produces every frame deterministically through
+   * renderFrame(), which owns the strict mask + content renders. Driving the
+   * live update() path here additionally fired a fire-and-forget *non-strict*
+   * mask render that raced renderFrame()'s strict mask sync over shared
+   * per-engine source-frame intent state — the strict reply was then judged
+   * stale and dropped, hanging the export on the 5s strict-frame timeout (see
+   * MaskVideoFramePlayer.handleLeaseFrame). The only thing export needs from
+   * update() is the decoder-source prepare, so expose just that.
+   */
+  public prepareClipsForExportFrame(
+    currentTime: number,
+    trackClips: TimelineClip[],
+    assets: Asset[],
+  ): void {
+    // Mirror update(): the prepare relevance/cleanup windows in
+    // syncPreparedClips are measured against each clip's stored start/end, so
+    // they must be keyed off the resolved effective tick — not raw
+    // presentation time. Under ripple/static retiming a clip can be active at
+    // presentation while its stored range sits outside the lookahead/cleanup
+    // window, which would make export skip the prepare (or evict the source)
+    // before renderFrame() requests the strict frame.
+    const resolved = this.resolveActiveClipAtPresentation(
+      trackClips,
+      currentTime,
+    );
+    const effectiveTick = resolved?.effectiveTick ?? currentTime;
+    this.syncPreparedClips(
+      effectiveTick,
+      trackClips,
+      assets,
+      performance.now(),
+      false,
+    );
+  }
+
+  /**
    * Explicitly wait for the next frame. Used by ExportRenderer.
    */
   public async renderFrame(

@@ -6,6 +6,7 @@ import {
 } from "../../../renderer/services/DecoderWorkerPool";
 import { resetDecoderWorkerRecoveryForTests } from "../../../renderer/utils/decoderWorkerRecovery";
 import {
+  createDecodeKey,
   createSourceFrameSyncKey,
   type SourceFrameSyncRef,
 } from "../../../renderer/utils/sourceFrameSync";
@@ -206,6 +207,12 @@ function sourceFrameAt(
     fps,
     key: createSourceFrameSyncKey({
       clipId: "clip_1",
+      assetId: "mask_asset",
+      frameIndex,
+      fps,
+      snappedTimeSeconds,
+    }),
+    decodeKey: createDecodeKey({
       assetId: "mask_asset",
       frameIndex,
       fps,

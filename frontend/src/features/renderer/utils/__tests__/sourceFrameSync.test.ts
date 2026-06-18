@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  createDecodeKey,
+  createSourceFrameSyncKey,
   createSourceFrameSyncRef,
   createSourceFrameSyncRefFromSourceTicks,
   isSourceFrameIntentCurrent,
@@ -218,5 +220,82 @@ describe("SourceFrameSyncRef regression", () => {
 
     expect(isSourceFrameIntentCurrent(current, requested)).toBe(true);
     expect(isSourceFrameIntentCurrent(null, requested)).toBe(false);
+  });
+});
+
+describe("decodeKey", () => {
+  it("collapses duplicate clips at the same source frame to one decode key while keeping clip keys distinct", () => {
+    const clipA = buildClip({ id: "clip-a" });
+    const clipB = buildClip({ id: "clip-b" });
+    const tick = 2 * TICKS_PER_FRAME;
+
+    const refA = refAt(clipA, tick);
+    const refB = refAt(clipB, tick);
+
+    // Same asset/frame/fps/time -> one shared decode...
+    expect(refA.decodeKey).not.toBeNull();
+    expect(refA.decodeKey).toBe(refB.decodeKey);
+    // ...but the clip-scoped keys still differ, so stale-completion routing
+    // stays per clip.
+    expect(refA.key).not.toBe(refB.key);
+    // The decode key is strictly the clip key without the clip id.
+    expect(refA.key).toBe(`${clipA.id}:${refA.decodeKey}`);
+  });
+
+  it("changes the decode key when asset, fps, frame index, or snapped time differ", () => {
+    const base = {
+      assetId: ASSET_ID,
+      frameIndex: 2,
+      fps: FPS,
+      snappedTimeSeconds: 2 / FPS,
+    };
+    const baseKey = createDecodeKey(base);
+
+    expect(createDecodeKey({ ...base, assetId: "asset-2" })).not.toBe(baseKey);
+    expect(createDecodeKey({ ...base, fps: 60 })).not.toBe(baseKey);
+    expect(createDecodeKey({ ...base, frameIndex: 3 })).not.toBe(baseKey);
+    expect(
+      createDecodeKey({ ...base, snappedTimeSeconds: 3 / FPS }),
+    ).not.toBe(baseKey);
+  });
+
+  it("is null for non-asset (text/brush) frames so they never dedupe", () => {
+    // Text/brush clips resolve a null assetId into the ref factory; the clip
+    // shape itself is irrelevant — the null asset is what suppresses dedup.
+    const clip = buildClip({ id: "text-1" });
+    const ref = createSourceFrameSyncRef({
+      clip,
+      assetId: null,
+      effectiveTrackTick: clip.start + 2 * TICKS_PER_FRAME,
+      fps: FPS,
+      generation: 0,
+    });
+
+    expect(ref.decodeKey).toBeNull();
+    expect(createDecodeKey({ assetId: null, frameIndex: 0, fps: FPS, snappedTimeSeconds: 0 })).toBeNull();
+    expect(createDecodeKey({ assetId: "", frameIndex: 0, fps: FPS, snappedTimeSeconds: 0 })).toBeNull();
+  });
+
+  it("stays in lockstep with the clip key's frame snapping", () => {
+    const clip = buildClip();
+    // Two ticks inside the same source frame snap to one decode key, mirroring
+    // the clip-key snapping behaviour above.
+    const insideFrameZeroA = refAt(clip, 0);
+    const insideFrameZeroB = refAt(clip, TICKS_PER_FRAME / 2 - 1);
+    const insideFrameOne = refAt(clip, TICKS_PER_FRAME);
+
+    expect(insideFrameZeroA.decodeKey).toBe(insideFrameZeroB.decodeKey);
+    expect(insideFrameOne.decodeKey).not.toBe(insideFrameZeroA.decodeKey);
+
+    // And the helper composes identically to the ref's embedded key.
+    expect(
+      createSourceFrameSyncKey({
+        clipId: clip.id,
+        assetId: ASSET_ID,
+        frameIndex: insideFrameOne.frameIndex,
+        fps: FPS,
+        snappedTimeSeconds: insideFrameOne.snappedTimeSeconds,
+      }),
+    ).toBe(insideFrameOne.key);
   });
 });

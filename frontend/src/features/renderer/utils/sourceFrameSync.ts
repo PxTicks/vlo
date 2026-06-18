@@ -15,7 +15,19 @@ export interface SourceFrameSyncRef {
   snappedTimeSeconds: number;
   frameIndex: number;
   fps: number;
+  /**
+   * Clip-scoped identity. Includes `clipId`, so two duplicate clips at the same
+   * source frame produce *different* keys — this is what keeps stale async
+   * completions on the right clip (see `isSourceFrameIntentCurrent`).
+   */
   key: string;
+  /**
+   * Decode identity: the same frame parts as `key` *minus* `clipId`. Two
+   * duplicate clips at the same asset/frame/fps share one `decodeKey`, so a
+   * decode scheduler can coalesce their decode requests. `null` for frames that
+   * are not a shared asset decode (text, brush) — those must never be deduped.
+   */
+  decodeKey: string | null;
   generation: number;
 }
 
@@ -53,6 +65,26 @@ function keyNumber(value: number): string {
   return Number(value.toFixed(9)).toString();
 }
 
+/**
+ * The asset-frame identity parts shared by the clip key and the decode key:
+ * everything that identifies *which decoded source frame* this is, independent
+ * of which clip instance asked for it. Keeping both keys built from one parts
+ * function guarantees they stay in lockstep (same snapping, same fps coercion).
+ */
+function frameIdentityKeyParts(options: {
+  assetId?: string | null;
+  frameIndex: number;
+  fps: number;
+  snappedTimeSeconds: number;
+}): string[] {
+  return [
+    options.assetId ?? "",
+    String(Math.max(0, Math.trunc(options.frameIndex))),
+    keyNumber(safeFrameRate(options.fps)),
+    keyNumber(Math.max(0, options.snappedTimeSeconds)),
+  ];
+}
+
 export function createSourceFrameSyncKey(options: {
   clipId: string;
   assetId?: string | null;
@@ -60,13 +92,29 @@ export function createSourceFrameSyncKey(options: {
   fps: number;
   snappedTimeSeconds: number;
 }): string {
-  return [
-    options.clipId,
-    options.assetId ?? "",
-    Math.max(0, Math.trunc(options.frameIndex)),
-    keyNumber(safeFrameRate(options.fps)),
-    keyNumber(Math.max(0, options.snappedTimeSeconds)),
-  ].join(":");
+  return [options.clipId, ...frameIdentityKeyParts(options)].join(":");
+}
+
+/**
+ * Decode-dedup identity: the frame parts of {@link createSourceFrameSyncKey}
+ * without `clipId`. Two duplicate clips at the same asset/frame/fps/time map to
+ * the same `decodeKey` and can share a single decode.
+ *
+ * Returns `null` when there is no backing asset (text- or brush-derived
+ * frames): those textures are generated per clip, not decoded from a shared
+ * source, so they must never participate in decode dedup.
+ */
+export function createDecodeKey(options: {
+  assetId?: string | null;
+  frameIndex: number;
+  fps: number;
+  snappedTimeSeconds: number;
+}): string | null {
+  const assetId = options.assetId ?? null;
+  if (!assetId) {
+    return null;
+  }
+  return frameIdentityKeyParts({ ...options, assetId }).join(":");
 }
 
 export function createSourceFrameSyncRefFromSourceTicks(
@@ -94,6 +142,12 @@ export function createSourceFrameSyncRefFromSourceTicks(
     fps,
     key: createSourceFrameSyncKey({
       clipId: options.clip.id,
+      assetId: options.assetId ?? null,
+      frameIndex: renderedSourceFrame.frameIndex,
+      fps,
+      snappedTimeSeconds: canonicalSnappedTimeSeconds,
+    }),
+    decodeKey: createDecodeKey({
       assetId: options.assetId ?? null,
       frameIndex: renderedSourceFrame.frameIndex,
       fps,

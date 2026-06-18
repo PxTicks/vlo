@@ -122,13 +122,13 @@ const PATH_RECORDING_SIMPLIFY_EPSILON = 4;
 const INHERITED_TRANSFORM_TYPES = new Set(["speed"]);
 
 /** Get mask-local transforms (exclude inherited speed transforms). */
-function getMaskLocalTransforms(maskClip: MaskTimelineClip): ClipTransform[] {
+export function getMaskLocalTransforms(maskClip: MaskTimelineClip): ClipTransform[] {
   return (maskClip.transformations || []).filter(
     (t) => !INHERITED_TRANSFORM_TYPES.has(t.type),
   );
 }
 
-function resolveMaskLayoutTransformIds(
+export function resolveMaskLayoutTransformIds(
   maskClip: MaskTimelineClip,
 ): MaskLayoutTransformIds {
   const transforms = getMaskLocalTransforms(maskClip);
@@ -203,7 +203,7 @@ function sam2PreviewDebug(stage: string, detail: Record<string, unknown>): void 
   console.warn(`[sam2-preview] ${stage}`, detail);
 }
 
-function normalizeSam2Points(
+export function normalizeSam2Points(
   points: ClipMaskPoint[] | undefined,
 ): ClipMaskPoint[] {
   if (!points || points.length === 0) return [];
@@ -218,7 +218,7 @@ function normalizeSam2Points(
   }));
 }
 
-function getMaskPositionTransform(
+export function getMaskPositionTransform(
   maskClip: MaskTimelineClip,
 ): PositionTransform | null {
   const transform = (maskClip.transformations || []).find(
@@ -227,7 +227,7 @@ function getMaskPositionTransform(
   return (transform as PositionTransform | undefined) ?? null;
 }
 
-function getMaskPositionPath(
+export function getMaskPositionPath(
   maskClip: MaskTimelineClip,
 ): PositionPathParameter | null {
   return getMaskPositionTransform(maskClip)?.parameters.path ?? null;

@@ -11,7 +11,8 @@ import {
 } from "@mui/material";
 import AddBoxIcon from "@mui/icons-material/AddBox";
 import LayersIcon from "@mui/icons-material/Layers";
-import { LibraryBrowserGrid } from "../libraryBrowser";
+import { LibraryBrowserGrid, type LibraryBrowserGridApi } from "../libraryBrowser";
+import { useInteractionStore } from "../timeline/hooks/useInteractionStore";
 import {
   useEditorFocusStore,
   useRegionFocus,
@@ -60,7 +61,17 @@ export function CompositeBrowser({
 }: CompositeBrowserProps) {
   const compositeBrowserFocusProps = useRegionFocus("assetBrowser");
   const scrollRegionRef = useRef<HTMLDivElement>(null);
+  const gridApiRef = useRef<LibraryBrowserGridApi>(null);
   const pendingScrollCompositeId = useRef<string | null>(null);
+  // The composite list is not scroll-locked during a drag, so keep the dragged
+  // card mounted to stop dnd-kit losing its source if auto-scroll moves it out
+  // of the virtual window. Draggable id is `composite-asset-<compositeId>`.
+  const pinnedCompositeId = useInteractionStore((state) =>
+    state.operation === "move" &&
+    state.activeId?.startsWith("composite-asset-")
+      ? state.activeId.slice("composite-asset-".length)
+      : null,
+  );
   const composites = useCompositeLibraryStore((state) => state.composites);
   const selectedCompositeIds = useCompositeLibraryStore(
     (state) => state.selectedCompositeIds,
@@ -157,17 +168,7 @@ export function CompositeBrowser({
     }
 
     const frameId = requestAnimationFrame(() => {
-      const scrollRegion = scrollRegionRef.current;
-      if (!scrollRegion) {
-        return;
-      }
-      const card = [...scrollRegion.querySelectorAll("[data-library-item-id]")]
-        .find(
-          (element): element is HTMLElement =>
-            element instanceof HTMLElement &&
-            element.dataset.libraryItemId === compositeId,
-        );
-      card?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      gridApiRef.current?.scrollToItemId(compositeId);
       pendingScrollCompositeId.current = null;
     });
 
@@ -336,6 +337,8 @@ export function CompositeBrowser({
         getItemId={(composite) => composite.id}
         emptyMessage="No composite clips yet."
         scrollRegionRef={scrollRegionRef}
+        apiRef={gridApiRef}
+        pinnedItemId={pinnedCompositeId}
         testId="composite-browser-scroll-region"
         onBackgroundClick={handleBrowserBackgroundClick}
         renderItem={(composite) => (

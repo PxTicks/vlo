@@ -27,7 +27,7 @@ import { doesAssetBelongToFamily } from "../../shared/utils/assetFamilies";
 import { getTimelineClipCountForAsset, useTimelineStore } from "../timeline";
 import { useInteractionStore } from "../timeline/hooks/useInteractionStore";
 import { useProjectStore } from "../project/useProjectStore";
-import { LibraryBrowserGrid } from "../libraryBrowser";
+import { LibraryBrowserGrid, type LibraryBrowserGridApi } from "../libraryBrowser";
 import {
   useRegionFocus,
   useEditorFocusStore,
@@ -171,11 +171,19 @@ function AssetBrowserComponent() {
   );
   const dragDepthRef = useRef(0);
   const scrollRegionRef = useRef<HTMLDivElement>(null);
+  const gridApiRef = useRef<LibraryBrowserGridApi>(null);
   const isAssetDragActive = useInteractionStore(
     (state) =>
       state.operation === "move" &&
       state.activeClip !== null &&
       !("trackId" in state.activeClip),
+  );
+  // Keep the dragged card mounted while the list could scroll, so dnd-kit never
+  // loses its drag source. The asset draggable id is `asset_<assetId>`.
+  const pinnedAssetId = useInteractionStore((state) =>
+    state.operation === "move" && state.activeId?.startsWith("asset_")
+      ? state.activeId.slice("asset_".length)
+      : null,
   );
 
   React.useLayoutEffect(() => {
@@ -658,26 +666,7 @@ function AssetBrowserComponent() {
     }
 
     const frameId = requestAnimationFrame(() => {
-      const scrollRegion = scrollRegionRef.current;
-      if (!scrollRegion) {
-        return;
-      }
-
-      const assetCard = [...scrollRegion.querySelectorAll("[data-asset-id]")]
-        .find(
-          (element): element is HTMLElement =>
-            element instanceof HTMLElement &&
-            element.dataset.assetId === pendingScrollAssetId,
-        );
-
-      if (!assetCard) {
-        return;
-      }
-
-      assetCard.scrollIntoView?.({
-        block: "nearest",
-        inline: "nearest",
-      });
+      gridApiRef.current?.scrollToItemId(pendingScrollAssetId);
       setPendingScrollAssetId(null);
     });
 
@@ -989,6 +978,8 @@ function AssetBrowserComponent() {
         getItemId={(asset) => asset.id}
         emptyMessage={emptyStateMessage}
         scrollRegionRef={scrollRegionRef}
+        apiRef={gridApiRef}
+        pinnedItemId={pinnedAssetId}
         testId="asset-browser-scroll-region"
         isScrollLocked={isAssetDragActive}
         onBackgroundClick={handleBrowserBackgroundClick}

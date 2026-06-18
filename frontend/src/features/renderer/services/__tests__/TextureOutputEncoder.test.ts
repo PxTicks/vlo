@@ -153,40 +153,45 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     expect(fin.isDone()).toBe(true);
   });
 
-  it("does not leak an unhandled rejection when a non-oldest encode fails", async () => {
-    const unhandled: unknown[] = [];
-    const onUnhandled = (event: PromiseRejectionEvent) => {
-      event.preventDefault();
-      unhandled.push(event.reason);
-    };
-    const onNodeUnhandled = (reason: unknown) => unhandled.push(reason);
-    window.addEventListener("unhandledrejection", onUnhandled);
-    process.on("unhandledRejection", onNodeUnhandled);
+  it("finalize observes every encode before re-throwing the first failure", async () => {
+    const encoder = new TextureOutputEncoder(app, 30, [definition], {
+      encodeQueueSize: 4,
+    });
+    await encoder.start();
 
-    try {
-      const encoder = new TextureOutputEncoder(app, 30, [definition], {
-        encodeQueueSize: 4,
-      });
-      await encoder.start();
+    // Three in flight (within the window, so no backpressure await).
+    void encoder.addTextureFrame(texture, 0, 1 / 30);
+    void encoder.addTextureFrame(texture, 1, 1 / 30);
+    void encoder.addTextureFrame(texture, 2, 1 / 30);
+    await flushMicrotasks();
 
-      void encoder.addTextureFrame(texture, 0, 1 / 30);
-      void encoder.addTextureFrame(texture, 1, 1 / 30);
-      await flushMicrotasks();
+    // The OLDEST encode fails first. A sequential `for await` drain would throw
+    // here and abandon the still-pending later encodes; the all-settled drain
+    // must instead keep waiting until every encode has settled.
+    addCalls[0].reject(new Error("encode-0 boom"));
 
-      // The newer (non-oldest) encode fails first while still queued.
-      addCalls[1].reject(new Error("encode-1 boom"));
-      await flushMicrotasks();
+    let state: "pending" | "fulfilled" | "rejected" = "pending";
+    let caught: unknown;
+    const fin = encoder.finalize().then(
+      () => {
+        state = "fulfilled";
+      },
+      (error: unknown) => {
+        state = "rejected";
+        caught = error;
+      },
+    );
+    await flushMicrotasks();
+    // Encodes 1 & 2 are still in flight, so the drain must not have settled.
+    expect(state).toBe("pending");
 
-      expect(unhandled).toHaveLength(0);
-
-      // Resolve the rest so finalize can drain and re-surface the captured
-      // failure after the whole queue settles.
-      addCalls[0].resolve();
-      await expect(encoder.finalize()).rejects.toThrow("encode-1 boom");
-    } finally {
-      window.removeEventListener("unhandledrejection", onUnhandled);
-      process.off("unhandledRejection", onNodeUnhandled);
-    }
+    // Settling the later encodes lets the drain complete and re-surface the
+    // oldest failure — proving none were abandoned when the oldest rejected.
+    addCalls[1].resolve();
+    addCalls[2].resolve();
+    await fin;
+    expect(state).toBe("rejected");
+    expect((caught as Error).message).toBe("encode-0 boom");
   });
 
   it("backpressure re-surfaces the failure of the oldest encode", async () => {

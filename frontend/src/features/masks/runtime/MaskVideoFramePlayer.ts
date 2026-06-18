@@ -285,13 +285,33 @@ export class MaskVideoFramePlayer {
     }
 
     this.markDecoderResponsive();
-    if (this.isStaleFrameResponse(message)) {
-      return;
-    }
 
     const pendingStrict = this.pendingStrictFrame;
-    if (pendingStrict && this.isStaleStrictFrameResponse(message)) {
-      return;
+    const isPendingStrictReply =
+      pendingStrict !== null &&
+      typeof message.requestId === "string" &&
+      message.requestId === this.pendingStrictFrameRequestId;
+
+    if (isPendingStrictReply) {
+      // The reply we are strictly awaiting is identified by its own requestId,
+      // and a matching requestId means it is still the current strict request
+      // (a superseding strict render replaces pendingStrictFrameRequestId). It
+      // must settle the pending promise regardless of latestRenderIntent: that
+      // intent is shared with non-strict renders, and a concurrent
+      // fire-and-forget non-strict render of a different source-frame
+      // generation can overwrite it after the strict request was sent (e.g.
+      // selection export drives update(shouldRender:false) and renderFrame()
+      // against the same player). Gating the strict reply on that clobbered
+      // intent would drop the strict frame's own reply and hang renderAt()
+      // until the strict timeout. Consume the intent-map entry so it can't leak.
+      this.renderIntentByRequestId.delete(message.requestId as string);
+    } else {
+      if (this.isStaleFrameResponse(message)) {
+        return;
+      }
+      if (pendingStrict && this.isStaleStrictFrameResponse(message)) {
+        return;
+      }
     }
 
     if (message.error) {

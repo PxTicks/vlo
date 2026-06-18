@@ -504,6 +504,52 @@ describe("MaskVideoFramePlayer", () => {
     decoderPool.dispose();
   });
 
+  it("settles a strict frame even when a later non-strict render of another generation clobbers the latest intent", async () => {
+    // Reproduces the selection-export hang: per frame, ExportRenderer drives
+    // both engine.update(shouldRender:false) (a fire-and-forget NON-strict mask
+    // render) and engine.renderFrame() (a STRICT mask render) against the same
+    // player. The non-strict render can land after the strict one registers its
+    // pending frame, overwriting the shared latest-intent with a different
+    // source-frame generation. The strict reply must still settle its own
+    // promise (matched by requestId) instead of being dropped as "stale".
+    mockWorkerPlans.push({
+      prepare: "ready",
+      render: [
+        { bitmap: { width: 9, height: 7 } }, // strict reply (sent first)
+        { bitmap: { width: 3, height: 3 } }, // non-strict reply (sent second)
+      ],
+    });
+
+    const { decoderPool, player } = createPlayer();
+    const setSourcePromise = player.setSource(createMaskAsset("mask_asset"));
+    await vi.runAllTimersAsync();
+    await setSourcePromise;
+
+    // Strict render at source frame F, generation 2 — registers the pending
+    // frame and posts the render (its reply is still queued behind fake timers).
+    const strictRender = player.renderAt(sourceFrameAt(0.5, 2), {
+      strict: true,
+    });
+    // Let the strict request reach the worker and register its pending slot.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Concurrent fire-and-forget non-strict render of the SAME source frame in
+    // an OLDER generation overwrites latestRenderIntent to { generation: 1 }.
+    void player.renderAt(sourceFrameAt(0.5, 1));
+
+    await vi.runAllTimersAsync();
+
+    // Before the fix the strict reply was judged stale against the clobbered
+    // intent, never resolving the pending promise — renderAt() hung until the
+    // 5s strict timeout and rejected with a TimeoutError.
+    await expect(strictRender).resolves.toBeUndefined();
+    expect(player.sprite.visible).toBe(true);
+
+    player.dispose();
+    decoderPool.dispose();
+  });
+
   it("does not show a stale live frame for a superseded generation of the same source frame", async () => {
     // Request A renders a frame; the request that supersedes it (B) hangs, so
     // ONLY A's stale completion arrives. If gating regressed, A would be shown.

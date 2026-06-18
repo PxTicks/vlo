@@ -72,6 +72,31 @@ function pixelsContainNonBlackContent(pixels: ArrayLike<number>): boolean {
   return false;
 }
 
+/**
+ * How many encoded frames may be in flight (submitted but not yet drained) per
+ * output before the producer is throttled. A window > 1 lets the next export
+ * frame decode/composite while previous frames finish encoding, overlapping the
+ * two dominant async stages; the bound keeps in-flight VideoFrames from growing
+ * memory without limit when the encoder is the slower stage.
+ */
+const DEFAULT_ENCODE_QUEUE_FRAMES = 4;
+
+export interface TextureOutputEncoderOptions {
+  /** Frames in flight per output before the producer is throttled. Min 1. */
+  encodeQueueSize?: number;
+}
+
+/** Captured outcome of a deferred encode; never rejects so it can sit unawaited. */
+type SettledEncode =
+  | { status: "fulfilled" }
+  | { status: "rejected"; reason: unknown };
+
+function throwIfRejected(result: SettledEncode): void {
+  if (result.status === "rejected") {
+    throw result.reason;
+  }
+}
+
 export class TextureOutputEncoder {
   private app: Application;
   private outputStage: Container;
@@ -81,11 +106,23 @@ export class TextureOutputEncoder {
   private frameRate: number;
   private started = false;
   private audioClosed = false;
+  /**
+   * Backpressure promises from `videoSource.add()` we have not awaited yet, in
+   * submission order. Drained oldest-first once the window fills, and fully on
+   * finalize(). Each entry is wrapped so it settles (never rejects) — a later
+   * encode can fail before it becomes the oldest, so we capture the rejection at
+   * queue time to avoid a transient unhandled rejection, then re-surface the
+   * first failure when the entry is drained.
+   */
+  private pendingEncodes: Promise<SettledEncode>[] = [];
+  private readonly encodeQueueFrames: number;
+  private maxPendingEncodes = 0;
 
   constructor(
     app: Application,
     frameRate: number,
     definitions: OutputVideoDefinition[],
+    options?: TextureOutputEncoderOptions,
   ) {
     this.app = app;
     if (definitions.length === 0) {
@@ -99,6 +136,10 @@ export class TextureOutputEncoder {
 
     this.frameRate = frameRate;
     this.definitions = definitions;
+    this.encodeQueueFrames = Math.max(
+      1,
+      Math.floor(options?.encodeQueueSize ?? DEFAULT_ENCODE_QUEUE_FRAMES),
+    );
   }
 
   public async start(): Promise<void> {
@@ -165,6 +206,7 @@ export class TextureOutputEncoder {
     for (const output of this.outputs) {
       await output.output.start();
     }
+    this.maxPendingEncodes = this.encodeQueueFrames * this.outputs.length;
     this.started = true;
   }
 
@@ -214,7 +256,51 @@ export class TextureOutputEncoder {
           output.canMeasureContent = false;
         }
       }
-      await output.videoSource.add(timestamp, frameDuration);
+      // CanvasSource.add() snapshots the canvas into a VideoSample synchronously
+      // and returns a promise that only signals encoder backpressure. Defer that
+      // await so the caller's next frame can decode/composite while this frame
+      // encodes; the synchronous snapshot means the shared canvas/frameTexture
+      // is free to be overwritten as soon as add() returns. (Promise.resolve
+      // normalises the return so the queue is always thenable.)
+      this.pendingEncodes.push(
+        Promise.resolve(output.videoSource.add(timestamp, frameDuration)).then(
+          (): SettledEncode => ({ status: "fulfilled" }),
+          (reason: unknown): SettledEncode => ({ status: "rejected", reason }),
+        ),
+      );
+    }
+
+    await this.applyEncodeBackpressure();
+  }
+
+  /**
+   * Throttle the producer once more than `maxPendingEncodes` frames are in
+   * flight by awaiting the oldest submissions until the window has room again.
+   */
+  private async applyEncodeBackpressure(): Promise<void> {
+    while (this.pendingEncodes.length > this.maxPendingEncodes) {
+      const oldest = this.pendingEncodes.shift();
+      if (oldest) {
+        throwIfRejected(await oldest);
+      }
+    }
+  }
+
+  /**
+   * Await every outstanding encode before returning. All are observed (so none
+   * can leak as an unhandled rejection) and the first failure is re-thrown only
+   * after the whole queue has settled.
+   */
+  public async flushPendingEncodes(): Promise<void> {
+    const pending = this.pendingEncodes;
+    this.pendingEncodes = [];
+    const results = await Promise.all(pending);
+    const firstFailure = results.find(
+      (result): result is Extract<SettledEncode, { status: "rejected" }> =>
+        result.status === "rejected",
+    );
+    if (firstFailure) {
+      throw firstFailure.reason;
     }
   }
 
@@ -269,6 +355,8 @@ export class TextureOutputEncoder {
   }
 
   public async finalize(): Promise<FinalizedOutputBundle> {
+    // Drain any frames still encoding before closing the sources.
+    await this.flushPendingEncodes();
     for (const output of this.outputs) {
       await output.videoSource.close();
       await output.output.finalize();
@@ -305,6 +393,10 @@ export class TextureOutputEncoder {
   }
 
   public dispose(): void {
+    // Queued entries already capture their own rejection (see pendingEncodes),
+    // so dropping them on an aborted/failed teardown can't leak an unhandled
+    // rejection — just release the references.
+    this.pendingEncodes = [];
     this.outputStage.destroy({ children: true });
   }
 }

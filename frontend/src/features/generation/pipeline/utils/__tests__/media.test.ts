@@ -145,10 +145,12 @@ describe("canvas helpers", () => {
 
   it("createOutputCanvas uses an OffscreenCanvas when available", () => {
     class FakeOffscreen {
-      constructor(
-        public width: number,
-        public height: number,
-      ) {}
+      width: number;
+      height: number;
+      constructor(width: number, height: number) {
+        this.width = width;
+        this.height = height;
+      }
     }
     vi.stubGlobal("OffscreenCanvas", FakeOffscreen);
     const canvas = createOutputCanvas(10, 20);

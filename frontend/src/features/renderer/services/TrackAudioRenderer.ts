@@ -23,7 +23,7 @@ function isRealtimeAudioContext(ctx: BaseAudioContext): boolean {
   );
 }
 
-function getConstantVolumeGain(clip: TimelineClip): number | null {
+export function getConstantVolumeGain(clip: TimelineClip): number | null {
   const volumeTransform = (clip.transformations || []).find(
     (t) => t.isEnabled && t.type === "volume",
   );
@@ -39,7 +39,9 @@ interface ClipCurveEvaluators {
   evaluateVolume: (localTimeTicks: number) => number;
 }
 
-function createClipCurveEvaluators(clip: TimelineClip): ClipCurveEvaluators {
+export function createClipCurveEvaluators(
+  clip: TimelineClip,
+): ClipCurveEvaluators {
   const transforms = clip.transformations || [];
   const constantVolumeGain = getConstantVolumeGain(clip);
   const volumeTransform = transforms.find(

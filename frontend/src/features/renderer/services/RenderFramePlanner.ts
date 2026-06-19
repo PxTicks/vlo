@@ -2,7 +2,16 @@ import type {
   MaskTimelineClip,
   TimelineClip,
 } from "../../../types/TimelineTypes";
-import type { SourceFrameSyncRef } from "../utils/sourceFrameSync";
+import type {
+  SourceFrameSyncIntent,
+  SourceFrameSyncRef,
+} from "../utils/sourceFrameSync";
+import type { SourceFrameDecodeScheduler } from "./SourceFrameDecodeScheduler";
+import type {
+  SharedTextureHandle,
+  SharedTextureResource,
+  SharedTextureStore,
+} from "./SharedTextureStore";
 
 /**
  * One visual clip instance that will render at a given output tick, already
@@ -93,4 +102,190 @@ export function countDedupedDecodes(plan: FramePlan): number {
     saved += group.jobs.length - 1;
   }
   return saved;
+}
+
+/**
+ * Caller-supplied hooks binding the abstract plan to the real decode/GPU world.
+ * Generic over the decoded frame type (`TFrame`, e.g. an `ImageBitmap`) so the
+ * planner never assumes a frame representation.
+ */
+export interface FrameTextureOps<TFrame> {
+  /** Decode the one source frame a group needs. Called at most once per group. */
+  decode: (group: DecodeGroup) => Promise<TFrame>;
+  /**
+   * Wrap a decoded frame into a shared texture resource. Called once per group
+   * (the store dedupes); its `dispose` must free both the texture and the
+   * frame (e.g. destroy the texture and close the bitmap).
+   */
+  createResource: (decodeKey: string, frame: TFrame) => SharedTextureResource;
+  /** The job's clip's latest intent, for per-job stale rejection. */
+  getCurrentIntent: (job: PlannedClipJob) => SourceFrameSyncIntent | null;
+  /**
+   * Free a frame that was decoded but claimed by no current job (the whole
+   * group went stale), so its bitmap does not leak.
+   */
+  disposeUnclaimedFrame: (frame: TFrame) => void;
+}
+
+/**
+ * Composes the plan with the decode scheduler and the shared texture store to
+ * realise "decode once, share across duplicate clips" for a single tick.
+ *
+ * `planFrameDecodes` is the pure grouping; this class turns each group into one
+ * decode and one reference-counted texture shared by every current job in the
+ * group. The scheduler coalesces the per-job decode requests of a group into a
+ * single in-flight decode (and also across overlapping ticks); the store wraps
+ * the result once and hands a release-only handle to each current job.
+ *
+ * Active-clip resolution is the caller's; per the integration contract the
+ * engine seam must apply these planned handles directly and must NOT re-resolve
+ * the active/effective frame, so one resolution feeds both planning and render.
+ */
+export class RenderFramePlanner<TFrame> {
+  private readonly scheduler: SourceFrameDecodeScheduler<TFrame>;
+  private readonly store: SharedTextureStore;
+  private acquiring = false;
+
+  constructor(
+    scheduler: SourceFrameDecodeScheduler<TFrame>,
+    store: SharedTextureStore,
+  ) {
+    this.scheduler = scheduler;
+    this.store = store;
+  }
+
+  plan(jobs: PlannedClipJob[]): FramePlan {
+    return planFrameDecodes(jobs);
+  }
+
+  /**
+   * Resolve one shared texture handle per current job. Jobs whose intent has
+   * gone stale are omitted (no handle); a group with no current job has its
+   * decoded frame disposed via `ops.disposeUnclaimedFrame`.
+   *
+   * No-overlap boundary: this is intentionally NOT re-entrant on one planner
+   * (it throws if called while a prior call is in flight). The scheduler hands
+   * the same shared frame to every joined waiter, so two overlapping calls on
+   * the same decodeKey could race — one disposing an "unclaimed" frame that the
+   * other is about to wrap/use. Export drives one tick at a time, so this holds
+   * there. The live path (which overlaps decodes across ticks) must replace
+   * this boundary with a per-decodeKey claim/disposal arbiter before using it.
+   *
+   * On failure the whole acquisition is rolled back: every handle already
+   * created is released and any decoded-but-unwrapped frame is disposed, so a
+   * partial failure never leaks a texture or a bitmap.
+   */
+  async acquireFrameTextures(
+    plan: FramePlan,
+    ops: FrameTextureOps<TFrame>,
+  ): Promise<Map<PlannedClipJob, SharedTextureHandle>> {
+    if (this.acquiring) {
+      throw new Error(
+        "RenderFramePlanner.acquireFrameTextures is not re-entrant; live " +
+          "overlap needs a per-decodeKey claim arbiter first",
+      );
+    }
+    this.acquiring = true;
+
+    const handles = new Map<PlannedClipJob, SharedTextureHandle>();
+    try {
+      const groupResults = await Promise.allSettled(
+        plan.decodeGroups.map((group) => this.acquireGroup(group, ops)),
+      );
+
+      let failure: unknown;
+      let hasFailure = false;
+      for (const result of groupResults) {
+        if (result.status === "fulfilled") {
+          for (const [job, handle] of result.value) {
+            handles.set(job, handle);
+          }
+        } else if (!hasFailure) {
+          hasFailure = true;
+          failure = result.reason;
+        }
+      }
+
+      if (hasFailure) {
+        // A group that itself rejected has already released its own handles and
+        // disposed its frame; release the ones successful groups produced.
+        for (const handle of handles.values()) {
+          handle.release();
+        }
+        throw failure;
+      }
+
+      return handles;
+    } finally {
+      this.acquiring = false;
+    }
+  }
+
+  /**
+   * Acquire handles for a single decode group. On any failure it cleans up
+   * after itself — releases handles it created and disposes the frame if no
+   * store ownership was established — then rethrows for the caller to roll back
+   * the rest of the plan.
+   */
+  private async acquireGroup(
+    group: DecodeGroup,
+    ops: FrameTextureOps<TFrame>,
+  ): Promise<Map<PlannedClipJob, SharedTextureHandle>> {
+    // Fire every job's request concurrently so the scheduler coalesces them
+    // into one in-flight decode; awaiting each in turn would let the slot clear
+    // between jobs and re-decode.
+    const results = await Promise.all(
+      group.jobs.map((job) =>
+        this.scheduler
+          .acquire({
+            decodeKey: group.decodeKey,
+            waiter: {
+              intent: {
+                key: job.sourceFrame.key,
+                generation: job.sourceFrame.generation,
+              },
+              getCurrentIntent: () => ops.getCurrentIntent(job),
+            },
+            decode: () => ops.decode(group),
+          })
+          .then((res) => ({ job, res })),
+      ),
+    );
+
+    const groupHandles = new Map<PlannedClipJob, SharedTextureHandle>();
+    let claimed = false;
+    let decodedFrame: TFrame | undefined;
+    try {
+      for (const { job, res } of results) {
+        decodedFrame = res.frame;
+        if (res.status !== "fulfilled") {
+          continue;
+        }
+        // The store wraps the frame once (first acquire) and shares it; every
+        // current job in the group gets its own release handle on one texture.
+        // Only that first acquire runs `createResource` and can throw before
+        // store ownership is established.
+        const handle = this.store.acquire(group.decodeKey, () =>
+          ops.createResource(group.decodeKey, res.frame),
+        );
+        claimed = true;
+        groupHandles.set(job, handle);
+      }
+    } catch (error) {
+      for (const handle of groupHandles.values()) {
+        handle.release();
+      }
+      // Wrapping failed before the store took ownership, so the frame is still
+      // unowned — dispose it here (a later acquire in this group never ran).
+      if (!claimed && decodedFrame !== undefined) {
+        ops.disposeUnclaimedFrame(decodedFrame);
+      }
+      throw error;
+    }
+
+    if (!claimed && decodedFrame !== undefined) {
+      ops.disposeUnclaimedFrame(decodedFrame);
+    }
+    return groupHandles;
+  }
 }

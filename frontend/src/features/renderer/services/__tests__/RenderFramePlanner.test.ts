@@ -1,10 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { Texture } from "pixi.js";
 import {
+  RenderFramePlanner,
   countDedupedDecodes,
   planFrameDecodes,
+  type FrameTextureOps,
   type PlannedClipJob,
 } from "../RenderFramePlanner";
-import type { SourceFrameSyncRef } from "../../utils/sourceFrameSync";
+import { SourceFrameDecodeScheduler } from "../SourceFrameDecodeScheduler";
+import { SharedTextureStore } from "../SharedTextureStore";
+import type {
+  SourceFrameSyncIntent,
+  SourceFrameSyncRef,
+} from "../../utils/sourceFrameSync";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 
 /**
@@ -17,7 +25,11 @@ function job(trackId: string, decodeKey: string | null): PlannedClipJob {
   return {
     trackId,
     activeClip: { id: `clip-${trackId}` } as TimelineClip,
-    sourceFrame: { decodeKey } as SourceFrameSyncRef,
+    sourceFrame: {
+      decodeKey,
+      key: `${trackId}:${decodeKey}`,
+      generation: 0,
+    } as SourceFrameSyncRef,
     maskClips: [],
   };
 }
@@ -105,3 +117,250 @@ describe("planFrameDecodes", () => {
     expect(countDedupedDecodes(plan)).toBe(0);
   });
 });
+
+// --- composition: plan + scheduler + store ---------------------------------
+
+function fakeTexture(): Texture {
+  return {
+    destroyed: false,
+    destroy(this: { destroyed: boolean }) {
+      this.destroyed = true;
+    },
+  } as unknown as Texture;
+}
+
+interface HarnessOptions {
+  /** Job keys whose getCurrentIntent should report stale (advanced generation). */
+  staleKeys?: Set<string>;
+}
+
+function buildOps(options: HarnessOptions = {}): {
+  ops: FrameTextureOps<{ id: string }>;
+  decode: ReturnType<typeof vi.fn>;
+  disposeUnclaimedFrame: ReturnType<typeof vi.fn>;
+} {
+  const staleKeys = options.staleKeys ?? new Set<string>();
+  const decode = vi.fn(async (group: { decodeKey: string }) => ({
+    id: `frame:${group.decodeKey}`,
+  }));
+  const disposeUnclaimedFrame = vi.fn();
+
+  const ops: FrameTextureOps<{ id: string }> = {
+    decode,
+    createResource: (_decodeKey, frame) => {
+      const texture = fakeTexture();
+      return {
+        texture,
+        dispose: () => {
+          (texture as unknown as { destroy: (v: boolean) => void }).destroy(
+            true,
+          );
+          (frame as { closed?: boolean }).closed = true;
+        },
+      };
+    },
+    getCurrentIntent: (job): SourceFrameSyncIntent | null =>
+      staleKeys.has(job.sourceFrame.key)
+        ? { key: job.sourceFrame.key, generation: 99 }
+        : { key: job.sourceFrame.key, generation: job.sourceFrame.generation },
+    disposeUnclaimedFrame,
+  };
+
+  return { ops, decode, disposeUnclaimedFrame };
+}
+
+describe("RenderFramePlanner.acquireFrameTextures", () => {
+  it("decodes once and shares one texture across duplicate-clip jobs", async () => {
+    const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
+    const store = new SharedTextureStore();
+    const planner = new RenderFramePlanner(scheduler, store);
+
+    const a = job("t1", "k");
+    const b = job("t2", "k");
+    const plan = planner.plan([a, b]);
+    const { ops, decode } = buildOps();
+
+    const handles = await planner.acquireFrameTextures(plan, ops);
+
+    expect(decode).toHaveBeenCalledTimes(1);
+    expect(handles.size).toBe(2);
+    expect(handles.get(a)!.texture).toBe(handles.get(b)!.texture);
+    expect(store.refCount("k")).toBe(2);
+    expect(store.size).toBe(1);
+  });
+
+  it("decodes per distinct group", async () => {
+    const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
+    const store = new SharedTextureStore();
+    const planner = new RenderFramePlanner(scheduler, store);
+
+    const a = job("t1", "k1");
+    const b = job("t2", "k2");
+    const plan = planner.plan([a, b]);
+    const { ops, decode } = buildOps();
+
+    const handles = await planner.acquireFrameTextures(plan, ops);
+
+    expect(decode).toHaveBeenCalledTimes(2);
+    expect(handles.get(a)!.texture).not.toBe(handles.get(b)!.texture);
+    expect(store.size).toBe(2);
+  });
+
+  it("omits stale jobs but still shares the decode with current jobs in the group", async () => {
+    const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
+    const store = new SharedTextureStore();
+    const planner = new RenderFramePlanner(scheduler, store);
+
+    const current = job("t1", "k");
+    const stale = job("t2", "k");
+    const plan = planner.plan([current, stale]);
+    const { ops, decode, disposeUnclaimedFrame } = buildOps({
+      staleKeys: new Set([stale.sourceFrame.key]),
+    });
+
+    const handles = await planner.acquireFrameTextures(plan, ops);
+
+    expect(decode).toHaveBeenCalledTimes(1);
+    expect(handles.has(current)).toBe(true);
+    expect(handles.has(stale)).toBe(false);
+    // A current job claimed the frame, so it is owned by the store — not freed.
+    expect(disposeUnclaimedFrame).not.toHaveBeenCalled();
+    expect(store.refCount("k")).toBe(1);
+  });
+
+  it("disposes the decoded frame when an entire group goes stale", async () => {
+    const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
+    const store = new SharedTextureStore();
+    const planner = new RenderFramePlanner(scheduler, store);
+
+    const a = job("t1", "k");
+    const b = job("t2", "k");
+    const plan = planner.plan([a, b]);
+    const { ops, decode, disposeUnclaimedFrame } = buildOps({
+      staleKeys: new Set([a.sourceFrame.key, b.sourceFrame.key]),
+    });
+
+    const handles = await planner.acquireFrameTextures(plan, ops);
+
+    expect(decode).toHaveBeenCalledTimes(1);
+    expect(handles.size).toBe(0);
+    // Nobody wrapped the frame -> it is freed exactly once, store stays empty.
+    expect(disposeUnclaimedFrame).toHaveBeenCalledTimes(1);
+    expect(disposeUnclaimedFrame).toHaveBeenCalledWith({ id: "frame:k" });
+    expect(store.size).toBe(0);
+  });
+
+  it("releasing every handle for a key frees the shared texture once", async () => {
+    const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
+    const store = new SharedTextureStore();
+    const planner = new RenderFramePlanner(scheduler, store);
+
+    const a = job("t1", "k");
+    const b = job("t2", "k");
+    const plan = planner.plan([a, b]);
+    const { ops } = buildOps();
+
+    const handles = await planner.acquireFrameTextures(plan, ops);
+    const texture = handles.get(a)!.texture;
+
+    handles.get(a)!.release();
+    expect((texture as unknown as { destroyed: boolean }).destroyed).toBe(false);
+    handles.get(b)!.release();
+    expect((texture as unknown as { destroyed: boolean }).destroyed).toBe(true);
+    expect(store.size).toBe(0);
+  });
+
+  it("rolls back handles from successful groups when another group fails", async () => {
+    const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
+    const store = new SharedTextureStore();
+    const planner = new RenderFramePlanner(scheduler, store);
+
+    const ok = job("t1", "k1");
+    const bad = job("t2", "k2");
+    const plan = planner.plan([ok, bad]);
+
+    const { ops: baseOps } = buildOps();
+    const createdTextures: Texture[] = [];
+    const ops: FrameTextureOps<{ id: string }> = {
+      ...baseOps,
+      createResource: (decodeKey, frame) => {
+        if (decodeKey === "k2") {
+          throw new Error("wrap boom");
+        }
+        const resource = baseOps.createResource(decodeKey, frame);
+        createdTextures.push(resource.texture);
+        return resource;
+      },
+    };
+
+    await expect(planner.acquireFrameTextures(plan, ops)).rejects.toThrow(
+      "wrap boom",
+    );
+
+    // The successful group's texture was released, and the failing group's
+    // frame was disposed — nothing leaks, store ends empty.
+    expect(createdTextures).toHaveLength(1);
+    expect(
+      (createdTextures[0] as unknown as { destroyed: boolean }).destroyed,
+    ).toBe(true);
+    expect(store.size).toBe(0);
+  });
+
+  it("disposes the frame when wrapping fails before store ownership", async () => {
+    const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
+    const store = new SharedTextureStore();
+    const planner = new RenderFramePlanner(scheduler, store);
+
+    const a = job("t1", "k");
+    const plan = planner.plan([a]);
+    const { ops: baseOps, disposeUnclaimedFrame } = buildOps();
+    const ops: FrameTextureOps<{ id: string }> = {
+      ...baseOps,
+      createResource: () => {
+        throw new Error("wrap boom");
+      },
+    };
+
+    await expect(planner.acquireFrameTextures(plan, ops)).rejects.toThrow(
+      "wrap boom",
+    );
+    expect(disposeUnclaimedFrame).toHaveBeenCalledTimes(1);
+    expect(store.size).toBe(0);
+  });
+
+  it("rejects overlapping acquisitions on one planner (no-overlap boundary)", async () => {
+    const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
+    const store = new SharedTextureStore();
+    const planner = new RenderFramePlanner(scheduler, store);
+
+    const control = deferred<{ id: string }>();
+    const plan = planner.plan([job("t1", "k")]);
+    const ops: FrameTextureOps<{ id: string }> = {
+      ...buildOps().ops,
+      decode: () => control.promise,
+    };
+
+    const first = planner.acquireFrameTextures(plan, ops);
+    // Second call while the first is still in flight must be rejected.
+    await expect(
+      planner.acquireFrameTextures(plan, ops),
+    ).rejects.toThrow("not re-entrant");
+
+    control.resolve({ id: "frame:k" });
+    await first;
+    // Boundary clears after completion — a subsequent call is allowed.
+    await expect(
+      planner.acquireFrameTextures(planner.plan([job("t9", "k9")]), {
+        ...buildOps().ops,
+      }),
+    ).resolves.toBeInstanceOf(Map);
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}

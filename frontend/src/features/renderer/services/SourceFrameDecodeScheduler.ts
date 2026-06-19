@@ -23,7 +23,7 @@ export interface DecodeWaiter {
 
 export type DecodeResult<TFrame> =
   | { status: "fulfilled"; frame: TFrame }
-  | { status: "stale" };
+  | { status: "stale"; frame: TFrame };
 
 interface InFlightDecode<TFrame> {
   promise: Promise<TFrame>;
@@ -43,16 +43,21 @@ interface InFlightDecode<TFrame> {
  * texture store's responsibility (Phase 2).
  *
  * Ownership: the scheduler never closes, destroys, or otherwise mutates a
- * decoded frame. It hands the *same* `frame` value to every fulfilled waiter
- * and lets the caller own its lifetime. A waiter that resolves `stale` simply
- * does not receive the frame; it must not assume the frame was freed.
+ * decoded frame. It hands the *same* `frame` value to every waiter — fulfilled
+ * or stale — and lets the caller own its lifetime. A stale waiter must not
+ * *use* the frame, but it still receives it so the caller can dispose it when a
+ * decode group ends up with no current consumer (otherwise that frame's bitmap
+ * would leak). The frame is shared, so exactly one owner should free it.
  *
- * Because fan-out is by shared reference, `TFrame` MUST be a multi-consumer,
- * reference-counted handle (the Phase 2 shared texture handle), NOT a raw
- * `ImageBitmap`. Today's render paths create per-engine textures and close
- * stale bitmaps; fanning a single `ImageBitmap` out to N engines would invite a
- * double-close / use-after-free. The scheduler is therefore deliberately left
- * unwired until that shared-handle store exists.
+ * Fan-out is by shared reference: every joined waiter receives the *same*
+ * `frame`. `TFrame` may therefore be a raw decoded frame (e.g. an `ImageBitmap`)
+ * — it need not be a ref-counted handle itself — but the caller MUST guarantee
+ * that exactly one owner ever takes/frees that shared frame, and MUST NOT run
+ * overlapping consumers that could race to free it. `RenderFramePlanner`
+ * `.acquireFrameTextures` is that coordinator: it wraps the frame into the
+ * shared texture store once, or disposes it once when no job claims it, under a
+ * no-overlap boundary. Without such coordination, fanning one bitmap out to N
+ * consumers would invite a double-close / use-after-free.
  */
 export class SourceFrameDecodeScheduler<TFrame> {
   private readonly inFlight = new Map<string, InFlightDecode<TFrame>>();
@@ -100,7 +105,11 @@ export class SourceFrameDecodeScheduler<TFrame> {
     const frame = await entry.promise;
 
     if (!isSourceFrameIntentCurrent(waiter.getCurrentIntent(), waiter.intent)) {
-      return { status: "stale" };
+      // Still hand back the frame: the scheduler never owns frame lifetime, so
+      // the caller needs it to clean up (e.g. close the bitmap) when a decode
+      // group ends up with no current consumer. The caller must not *use* a
+      // stale frame, only dispose it if nothing else claimed it.
+      return { status: "stale", frame };
     }
     return { status: "fulfilled", frame };
   }

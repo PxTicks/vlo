@@ -111,8 +111,45 @@ describe("SourceFrameDecodeScheduler", () => {
     control.resolve("frame");
     const [staleResult, freshResult] = await Promise.all([stale, fresh]);
 
-    expect(staleResult).toEqual({ status: "stale" });
+    // Stale waiters still receive the shared frame so the caller can dispose it
+    // when no current consumer claims it.
+    expect(staleResult).toEqual({ status: "stale", frame: "frame" });
     expect(freshResult).toEqual({ status: "fulfilled", frame: "frame" });
+  });
+
+  it("returns the shared frame to every waiter when an entire group goes stale", async () => {
+    // The all-stale case: nothing claims the decode, so each waiter still gets
+    // the frame and the caller is responsible for disposing it exactly once.
+    const scheduler = new SourceFrameDecodeScheduler<string>();
+    const control = deferred<string>();
+    const decode = vi.fn(() => control.promise);
+
+    const staleWaiter = (key: string): DecodeWaiter => ({
+      intent: intent(key, 1),
+      getCurrentIntent: () => intent(key, 2),
+    });
+
+    const a = scheduler.acquire({
+      decodeKey: "asset-1:2:30:0.066",
+      waiter: staleWaiter("clip-a"),
+      decode,
+    });
+    const b = scheduler.acquire({
+      decodeKey: "asset-1:2:30:0.066",
+      waiter: staleWaiter("clip-b"),
+      decode,
+    });
+
+    control.resolve("frame");
+    const [resA, resB] = await Promise.all([a, b]);
+
+    expect(decode).toHaveBeenCalledTimes(1);
+    expect(resA).toEqual({ status: "stale", frame: "frame" });
+    expect(resB).toEqual({ status: "stale", frame: "frame" });
+    // Same shared frame instance handed to both — the caller frees it once.
+    expect((resA as { frame: string }).frame).toBe(
+      (resB as { frame: string }).frame,
+    );
   });
 
   it("treats a waiter whose clip is gone (null current intent) as stale", async () => {
@@ -129,7 +166,7 @@ describe("SourceFrameDecodeScheduler", () => {
       decode: async () => "frame",
     });
 
-    expect(result).toEqual({ status: "stale" });
+    expect(result).toEqual({ status: "stale", frame: "frame" });
   });
 
   it("clears the in-flight slot after settling so a later request decodes fresh", async () => {

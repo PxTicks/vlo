@@ -2,13 +2,9 @@ import { Sprite, type Renderer, type RenderTexture, type Texture } from "pixi.js
 import { filterApplicator } from "../../transformations/catalogue/filterFactory";
 import { TransformationSystem } from "../../transformations/catalogue/TransformationRegistry";
 import type { TransformState } from "../../transformations/catalogue/types";
+import type { ResolvedFilterOp } from "../../transformations/effectMaskFilterOps";
 
-/** A resolved filter operation — the `state.filters` shape the transform stack
- *  already produces (filter name + time-sampled params). */
-export interface ResolvedFilterOp {
-  type: string;
-  params: Record<string, unknown>;
-}
+export type { ResolvedFilterOp } from "../../transformations/effectMaskFilterOps";
 
 /**
  * Applies a single resolved filter op to a texture offscreen, rendering the

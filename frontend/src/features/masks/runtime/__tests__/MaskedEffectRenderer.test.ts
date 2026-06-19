@@ -128,6 +128,20 @@ describe("MaskedEffectRenderer", () => {
     maskedRenderer.dispose();
   });
 
+  it("passes through an unmasked step whose filter op is unresolved (no op)", () => {
+    const { maskedRenderer, render, resolveCoverage } = setup();
+    const out = maskedRenderer.render({
+      input: Texture.WHITE,
+      steps: [step("unknown", { kind: "unmasked" })],
+      contentSize: CONTENT,
+      resolveFilterOp: () => undefined, // unresolved filter
+      resolveCoverage,
+    });
+    expect(render).not.toHaveBeenCalled();
+    expect(out).toBe(Texture.WHITE);
+    maskedRenderer.dispose();
+  });
+
   it("threads a mixed chain without ever writing into a texture it reads", () => {
     const { maskedRenderer, passes, render, resolveFilterOp, resolveCoverage } =
       setup();

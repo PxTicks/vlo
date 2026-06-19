@@ -29,11 +29,12 @@ export interface MaskedEffectRenderOptions {
   steps: readonly FilterRenderStep[];
   contentSize: { width: number; height: number };
   /**
-   * Resolve a filter transform to its time-sampled filter op. Injected so the
-   * renderer stays free of transform-stack time sampling — the render path
-   * supplies the same resolved op the live `sprite.filters` path would use.
+   * Resolve a filter transform to its time-sampled filter op, or `undefined`
+   * when it doesn't resolve (unknown/stale filter — see
+   * `buildResolvedFilterOpLookup`). Injected so the renderer stays free of
+   * transform-stack time sampling. An `undefined` op makes the step a no-op.
    */
-  resolveFilterOp: (transform: ClipTransform) => ResolvedFilterOp;
+  resolveFilterOp: (transform: ClipTransform) => ResolvedFilterOp | undefined;
   /**
    * Resolve a masked step's expression to a coverage texture, or `null` when
    * none is renderable this frame (e.g. `SpriteClipMaskController
@@ -75,12 +76,18 @@ export class MaskedEffectRenderer {
 
     const ops: MaskedEffectGpuOps = {
       applyFilter: (input, transform) => {
+        const filterOp = options.resolveFilterOp(transform);
+        // An unresolved (unknown/stale) filter contributes nothing: pass the
+        // input through untouched rather than crash on a missing op.
+        if (!filterOp) {
+          return input;
+        }
         // Exclude only the input being read; the output becomes the new
         // `current` (unmasked) or the `effectOutput` (masked).
         const target = this.pool.acquireExcluding(input);
         this.filterApplicator.applyFilterToTexture(
           input,
-          options.resolveFilterOp(transform),
+          filterOp,
           target,
           options.contentSize,
         );

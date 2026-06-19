@@ -557,6 +557,150 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
+  it("syncs effect-mask nodes outside the spatial expression and resolves their coverage", async () => {
+    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const sprite = new Sprite();
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    // Spatial mask uses mask_spatial; the effect mask references a DIFFERENT
+    // mask (mask_fx) that the clip's own mask never mentions.
+    const base = withMaskComposition(createParentClip(), {
+      expression: { kind: "mask_ref", maskId: "mask_spatial" },
+    });
+    const effectFilter: ClipTransform = {
+      id: "blur_1",
+      type: "filter",
+      isEnabled: true,
+      parameters: {},
+      effectMask: {
+        enabled: true,
+        expression: { kind: "mask_ref", maskId: "mask_fx" },
+        mode: "composite",
+      },
+    };
+    const parent: TimelineClip = { ...base, transformations: [effectFilter] };
+
+    const spatialMask = createMaskClip("mask_spatial", { maskType: "circle" });
+    const fxMask = createMaskClip("mask_fx", { maskType: "circle" });
+
+    await controller.syncMaskClips(
+      [spatialMask, fxMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    // mask_fx has a synced node (via the effect-mask path), so its coverage
+    // resolves even though it is absent from the spatial expression.
+    expect(
+      controller.resolveEffectMaskCoverage({
+        kind: "mask_ref",
+        maskId: "mask_fx",
+      }),
+    ).not.toBeNull();
+
+    // A mask that was never synced contributes nothing (no whole-clip fallback).
+    expect(
+      controller.resolveEffectMaskCoverage({
+        kind: "mask_ref",
+        maskId: "mask_never_synced",
+      }),
+    ).toBeNull();
+
+    controller.dispose();
+  });
+
+  it("preserves effect-mask nodes for an effect-only clip with no spatial mask", async () => {
+    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const sprite = new Sprite();
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    // expression: null => the clip has NO spatial mask at all, only an effect
+    // mask. The bail-out cleanup must keep the effect-mask node, not full-clear.
+    const base = withMaskComposition(createParentClip(), { expression: null });
+    const effectFilter: ClipTransform = {
+      id: "blur_1",
+      type: "filter",
+      isEnabled: true,
+      parameters: {},
+      effectMask: {
+        enabled: true,
+        expression: { kind: "mask_ref", maskId: "mask_fx" },
+        mode: "composite",
+      },
+    };
+    const parent: TimelineClip = { ...base, transformations: [effectFilter] };
+    const fxMask = createMaskClip("mask_fx", { maskType: "circle" });
+
+    await controller.syncMaskClips(
+      [fxMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    expect(
+      controller.resolveEffectMaskCoverage({
+        kind: "mask_ref",
+        maskId: "mask_fx",
+      }),
+    ).not.toBeNull();
+
+    controller.dispose();
+  });
+
+  it("drops effect-coverage context on clear()", async () => {
+    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const sprite = new Sprite();
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+
+    const base = withMaskComposition(createParentClip(), { expression: null });
+    const effectFilter: ClipTransform = {
+      id: "blur_1",
+      type: "filter",
+      isEnabled: true,
+      parameters: {},
+      effectMask: {
+        enabled: true,
+        expression: { kind: "mask_ref", maskId: "mask_fx" },
+        mode: "composite",
+      },
+    };
+    const parent: TimelineClip = { ...base, transformations: [effectFilter] };
+    const fxMask = createMaskClip("mask_fx", { maskType: "circle" });
+
+    await controller.syncMaskClips(
+      [fxMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    expect(
+      controller.resolveEffectMaskCoverage({
+        kind: "mask_ref",
+        maskId: "mask_fx",
+      }),
+    ).not.toBeNull();
+
+    // A full clear (blank space / clip removal) must drop the coverage context,
+    // so stale coverage can't be requested afterwards.
+    controller.clear();
+    expect(
+      controller.resolveEffectMaskCoverage({
+        kind: "mask_ref",
+        maskId: "mask_fx",
+      }),
+    ).toBeNull();
+
+    controller.dispose();
+  });
+
   it("composites inverted masks per mask and keeps AlphaMask.inverse false", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSnapshots: Array<{

@@ -43,6 +43,7 @@ import {
   MaskBooleanTextureRenderer,
   type ResolvedMaskCompositeState,
 } from "./MaskBooleanTextureRenderer";
+import { MaskTextureResolver } from "./MaskTextureResolver";
 import { MaskSceneNodeRegistry } from "./MaskSceneNodeRegistry";
 import type { AssetMaskNode, VectorMaskNode } from "./MaskSceneNodes";
 import {
@@ -101,6 +102,14 @@ export class SpriteClipMaskController {
   private readonly maskApplicationController: MaskApplicationController;
   private readonly previewMaskApplicationController: MaskApplicationController;
   private readonly maskBooleanTextureRenderer: MaskBooleanTextureRenderer | null;
+  // Effect-level masking resolves an independent expression to a coverage
+  // texture. It shares the synced mask nodes (one registry) but uses its own
+  // resolver/pool so it never contends with the spatial mask's presentation.
+  private readonly effectMaskCoverageResolver: MaskTextureResolver | null;
+  private lastNodeSyncMaskClipByLocalId: Map<string, MaskTimelineClip> =
+    new Map();
+  private lastNodeSyncContentSize: { width: number; height: number } | null =
+    null;
 
   constructor(
     sprite: Sprite,
@@ -160,6 +169,13 @@ export class SpriteClipMaskController {
             (candidate) => this.hasUsableTexture(candidate),
           )
         : null;
+    this.effectMaskCoverageResolver = this.renderer
+      ? new MaskTextureResolver(
+          this.renderer,
+          this.nodeRegistry,
+          (candidate) => this.hasUsableTexture(candidate),
+        )
+      : null;
 
     this.ensureMaskSceneNodesAttached();
     this.maskApplicationController.syncOutputModeVisibility();
@@ -219,14 +235,33 @@ export class SpriteClipMaskController {
     const referencedMaskIds = usesMaskNodePreview
       ? new Set([previewTarget?.maskId ?? ""])
       : new Set(resolvedMaskExpressionAnalysis.maskIds);
-    const referencedMaskClips = usesMaskNodePreview && previewMaskClip
-      ? [previewMaskClip]
-      : maskClips.filter((clip) => {
-          const maskId = getMaskLocalId(clip);
-          return !!maskId && referencedMaskIds.has(maskId);
-        });
+
+    // Effect-level masks reference the clip's masks through an independent
+    // expression, so their masks need synced nodes too — but they must NOT join
+    // the spatial mask's application set (that would composite them into the
+    // clip's own mask). So we sync nodes for (spatial ∪ effect) masks while the
+    // spatial application below stays on `referencedMaskIds`. Empty for mask
+    // clips / preview, so the node-sync set then equals the spatial set exactly.
+    const effectMaskIds =
+      usesMaskNodePreview || parentClip.type === "mask"
+        ? new Set<string>()
+        : this.collectEffectMaskIds(parentClip);
+    const nodeSyncMaskIds =
+      effectMaskIds.size === 0
+        ? referencedMaskIds
+        : new Set<string>([...referencedMaskIds, ...effectMaskIds]);
+
+    const nodeSyncMaskClips =
+      usesMaskNodePreview && previewMaskClip
+        ? [previewMaskClip]
+        : maskClips.filter((clip) => {
+            const maskId = getMaskLocalId(clip);
+            return !!maskId && nodeSyncMaskIds.has(maskId);
+          });
+    // The lookup spans the node-sync set so effect-mask coverage can resolve its
+    // masks; extra entries are unused by the spatial application below.
     const maskClipByLocalId = new Map<string, MaskTimelineClip>();
-    referencedMaskClips.forEach((clip) => {
+    nodeSyncMaskClips.forEach((clip) => {
       const maskId = getMaskLocalId(clip);
       if (maskId) {
         maskClipByLocalId.set(maskId, clip);
@@ -237,9 +272,9 @@ export class SpriteClipMaskController {
       parentClip.type === "mask"
         ? rawTimeTicks
         : calculateClipTime(parentClip, rawTimeTicks, true);
-    const activeMaskClips = referencedMaskClips.filter((clip) => {
-      // Membership in the resolved expression decides what composites; per-mask
-      // apply/preview is no longer a render gate.
+    // Membership in the resolved expression decides what composites; per-mask
+    // apply/preview is no longer a render gate.
+    const isActiveForRender = (clip: MaskTimelineClip): boolean => {
       if (!isMaskActiveAtSourceTime(clip.activeRange, parentSourceTimeTicks)) {
         return false;
       }
@@ -249,29 +284,51 @@ export class SpriteClipMaskController {
         isBrushBufferAssetId(assetMaskId) ||
         assetsById.has(assetMaskId)
       );
-    });
-    const activeVectorMasks = activeMaskClips.filter(
-      (clip) =>
-        !isAssetBackedMask(clip) &&
-        clip.maskType !== "sam2" &&
-        clip.maskType !== "generation" &&
-        clip.maskType !== "brush",
-    );
+    };
+    const isPlainVectorMask = (clip: MaskTimelineClip): boolean =>
+      !isAssetBackedMask(clip) &&
+      clip.maskType !== "sam2" &&
+      clip.maskType !== "generation" &&
+      clip.maskType !== "brush";
+
+    // Spatial application set (what the clip's own mask composites).
+    const referencedMaskClips = usesMaskNodePreview && previewMaskClip
+      ? [previewMaskClip]
+      : maskClips.filter((clip) => {
+          const maskId = getMaskLocalId(clip);
+          return !!maskId && referencedMaskIds.has(maskId);
+        });
+    const activeMaskClips = referencedMaskClips.filter(isActiveForRender);
+    const activeVectorMasks = activeMaskClips.filter(isPlainVectorMask);
     const activeAssetMasks = activeMaskClips.filter((clip) =>
       isAssetBackedMask(clip),
     );
-    const clipContentSize = this.getActiveClipContentSize(logicalDimensions);
 
-    this.nodeRegistry.reconcileVectorNodes(activeVectorMasks.map((clip) => clip.id));
+    // Node-sync set (superset of the spatial set; nodes only). Equals the
+    // spatial sets when no effect masks, keeping reconcile/sync byte-identical.
+    const activeNodeSyncMaskClips = nodeSyncMaskClips.filter(isActiveForRender);
+    const nodeSyncVectorMasks =
+      activeNodeSyncMaskClips.filter(isPlainVectorMask);
+    const nodeSyncAssetMasks = activeNodeSyncMaskClips.filter((clip) =>
+      isAssetBackedMask(clip),
+    );
+
+    const clipContentSize = this.getActiveClipContentSize(logicalDimensions);
+    this.lastNodeSyncMaskClipByLocalId = maskClipByLocalId;
+    this.lastNodeSyncContentSize = clipContentSize;
+
+    this.nodeRegistry.reconcileVectorNodes(
+      nodeSyncVectorMasks.map((clip) => clip.id),
+    );
     this.nodeRegistry.reconcileAssetMaskNodes(
-      activeAssetMasks
+      nodeSyncAssetMasks
         .map((clip) =>
           this.assetMaskSourceFactory.resolveMaskEntry(clip, assetsById),
         )
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
     );
 
-    activeVectorMasks.forEach((maskClip) => {
+    nodeSyncVectorMasks.forEach((maskClip) => {
       const node = this.nodeRegistry.getVectorNode(maskClip.id);
       if (!node) {
         return;
@@ -326,7 +383,7 @@ export class SpriteClipMaskController {
       });
     const requestedMaskTimeSeconds = resolvedSourceFrame.snappedTimeSeconds;
 
-    for (const maskClip of activeAssetMasks) {
+    for (const maskClip of nodeSyncAssetMasks) {
       const node = this.nodeRegistry.getAssetNode(maskClip.id);
       if (!node) {
         continue;
@@ -389,12 +446,12 @@ export class SpriteClipMaskController {
     this.hideMaskNodePreviewOverlay();
 
     if (!resolvedMaskExpression || referencedMaskIds.size === 0) {
-      this.clear();
+      this.clearForNoSpatialMask(effectMaskIds.size > 0);
       return;
     }
 
     if (activeMaskClips.length === 0) {
-      this.clear();
+      this.clearForNoSpatialMask(effectMaskIds.size > 0);
       return;
     }
 
@@ -517,7 +574,85 @@ export class SpriteClipMaskController {
     );
   }
 
+  /**
+   * Mask ids referenced by any enabled effect mask on the clip's filter
+   * transforms. These masks need synced nodes (so their coverage can render)
+   * even when they're absent from the clip's own spatial mask expression.
+   */
+  private collectEffectMaskIds(parentClip: TimelineClip): Set<string> {
+    const ids = new Set<string>();
+    if (parentClip.type === "mask") {
+      return ids;
+    }
+    for (const transform of parentClip.transformations ?? []) {
+      if (transform.type !== "filter" || !transform.isEnabled) {
+        continue;
+      }
+      const effectMask = transform.effectMask;
+      if (!effectMask?.enabled || !effectMask.expression) {
+        continue;
+      }
+      for (const maskId of analyzeMaskBooleanExpression(effectMask.expression)
+        .maskIds) {
+        ids.add(maskId);
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * Resolve an effect mask's expression to a coverage texture (red channel),
+   * using the nodes synced by the most recent {@link syncMaskClips}. Returns
+   * `null` when there is nothing renderable this frame (no masks, no synced
+   * size, or no renderer) — the caller must then contribute nothing, never
+   * apply the effect to the whole clip.
+   *
+   * v1 effect masks carry no edge ops, so coverage is resolved with a neutral
+   * composite state. Uses a dedicated resolver/pool, so it never disturbs the
+   * spatial mask's cached presentation.
+   */
+  public resolveEffectMaskCoverage(
+    expression: MaskBooleanExpression,
+    contentSize?: { width: number; height: number },
+  ): Texture | null {
+    if (!this.effectMaskCoverageResolver) {
+      return null;
+    }
+    const expressionAnalysis = analyzeMaskBooleanExpression(expression);
+    if (expressionAnalysis.maskIds.length === 0) {
+      return null;
+    }
+    const size = contentSize ?? this.lastNodeSyncContentSize;
+    if (!size) {
+      return null;
+    }
+    return this.effectMaskCoverageResolver.resolveCoverageTexture({
+      expression,
+      expressionAnalysis,
+      maskClipByLocalId: this.lastNodeSyncMaskClipByLocalId,
+      contentSize: size,
+      compositeState: {
+        compositeInvert: false,
+        growAmount: 0,
+        growInvert: false,
+        feather: null,
+      },
+    });
+  }
+
   public clear(): void {
+    this.clearMaskNodes();
+    this.clearSpatialPresentation();
+  }
+
+  /**
+   * Hide/clear every mask scene node and drop the effect-coverage context.
+   * After this, {@link resolveEffectMaskCoverage} has nothing to render — node
+   * renderability only checks node existence, so the stale context must be
+   * dropped here too, or coverage could still resolve over blank space / after
+   * clip removal.
+   */
+  private clearMaskNodes(): void {
     this.vectorMaskNodes.forEach((node) => {
       node.graphics.clear();
       node.shapeSignature = "";
@@ -530,6 +665,16 @@ export class SpriteClipMaskController {
       node.player.sprite.visible = false;
       node.root.visible = false;
     });
+    this.lastNodeSyncMaskClipByLocalId = new Map();
+    this.lastNodeSyncContentSize = null;
+  }
+
+  /**
+   * Remove the clip's spatial mask application (alpha mask, presentation
+   * texture, cache, preview overlay) WITHOUT touching synced nodes — so an
+   * effect-only clip keeps its mask geometry/visibility for coverage.
+   */
+  private clearSpatialPresentation(): void {
     this.maskApplicationController.clear();
     this.maskBooleanTextureRenderer?.invalidateCache();
     if (this.maskSprite) {
@@ -538,11 +683,24 @@ export class SpriteClipMaskController {
     this.hideMaskNodePreviewOverlay();
   }
 
+  /**
+   * Bail-out cleanup when the clip has no spatial mask to apply: always drop the
+   * spatial presentation, but keep synced nodes (and the coverage context) when
+   * effect masks still need them.
+   */
+  private clearForNoSpatialMask(hasEffectMasks: boolean): void {
+    this.clearSpatialPresentation();
+    if (!hasEffectMasks) {
+      this.clearMaskNodes();
+    }
+  }
+
   public dispose(): void {
     this.clear();
     this.maskApplicationController.dispose();
     this.previewMaskApplicationController.dispose();
     this.maskBooleanTextureRenderer?.dispose();
+    this.effectMaskCoverageResolver?.dispose();
     this.nodeRegistry.dispose();
 
     if (this.maskSprite) {

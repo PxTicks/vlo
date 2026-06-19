@@ -8,6 +8,7 @@ import type { MaskBooleanBlendFilter } from "../../transformations/catalogue/mas
 import { MaskSceneNodeRegistry } from "./MaskSceneNodeRegistry";
 import {
   MaskTextureResolver,
+  type ResolveMaskCoverageOptions,
   type ResolvedMaskCompositeState,
 } from "./MaskTextureResolver";
 
@@ -53,6 +54,19 @@ export class MaskBooleanTextureRenderer {
     Record<"union" | "intersect" | "subtract", MaskBooleanBlendFilter>
   > {
     return this.resolver.getMaskBooleanBlendFilters();
+  }
+
+  /**
+   * Resolve an arbitrary expression to a coverage texture, bypassing the
+   * alpha-mask presentation and cache. Used by effect-level masking, whose
+   * expression is independent of this clip's spatial mask. Requires the
+   * expression's mask nodes to already be synced (see the controller's
+   * effect-mask node syncing).
+   */
+  public resolveCoverageTexture(
+    options: ResolveMaskCoverageOptions,
+  ): Texture | null {
+    return this.resolver.resolveCoverageTexture(options);
   }
 
   public renderExpressionToTexture(options: {

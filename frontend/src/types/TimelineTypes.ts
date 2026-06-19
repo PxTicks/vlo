@@ -95,6 +95,25 @@ export interface CompositeAsset {
   updatedAt: number;
 }
 
+/**
+ * Effect-level mask on a single filter transform (v1: composite mask only).
+ *
+ * Reveals a filter's full-texture output through mask alpha, matching
+ * duplicate-layer semantics without a second decoded clip. Resolution rules:
+ *   - field absent .................... legacy: filter applies to the whole clip
+ *   - enabled === false ............... legacy: filter applies to the whole clip
+ *   - enabled, expression empty/null .. masked but no mask -> contributes nothing
+ *                                       (never silently applies to the whole clip)
+ *   - enabled, expression present ..... full-texture effect composited via mask
+ * `expression` references the parent clip's existing mask ids (mask_ref /
+ * mask_composition), same as spatial clip masks.
+ */
+export interface EffectMask {
+  enabled: boolean;
+  expression: MaskBooleanExpression | null;
+  mode: "composite";
+}
+
 export interface ClipTransform {
   id: string;
   type: string;
@@ -106,6 +125,9 @@ export interface ClipTransform {
    *  existence — independent of whether any parameter is stored as a scalar
    *  (constant shortcut) or SplineParameter. */
   keyframeTimes?: number[];
+  /** Optional effect-level mask. Absent = legacy unmasked behaviour. Applies
+   *  only to filter transforms in v1 (see {@link EffectMask}). */
+  effectMask?: EffectMask;
 }
 
 export type ClipMaskType =

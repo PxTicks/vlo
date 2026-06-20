@@ -21,6 +21,13 @@ export type FitMode = "contain" | "cover";
 export interface ApplyClipTransformsOptions {
   baseLayoutMode?: FitMode | "origin";
   notifyLiveParams?: boolean;
+  /**
+   * When `false`, the transform stack's filter ops are NOT applied to the
+   * target's `sprite.filters` — used in effect-masking's offscreen mode, where
+   * those filters are baked into the target texture by the masked-effect chain
+   * instead. Layout and the range-mask AlphaFilter still apply. Defaults true.
+   */
+  applyFilterTransforms?: boolean;
 }
 
 function isSizeLike(value: unknown): value is { width: number; height: number } {
@@ -290,6 +297,13 @@ export function applyClipTransforms(
       notifyLiveParams: options?.notifyLiveParams,
     },
   );
+
+  if (options?.applyFilterTransforms === false) {
+    // Offscreen effect masking owns the filter chain; drop the transform
+    // filters here so they don't double-apply on top of the baked texture.
+    // Cleared before the range-mask op below, which must still apply.
+    state.filters = [];
+  }
 
   // Range-mask components: evaluate at clip source time (post-speed).
   // If any active range covers the current source-media time, push a single

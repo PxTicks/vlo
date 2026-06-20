@@ -386,4 +386,33 @@ describe("applyClipTransforms", () => {
       (mockClip.transformations[0].parameters as { x: number }).x,
     ).toBe(100);
   });
+
+  it("applyFilterTransforms:false drops transform filters but keeps layout", () => {
+    mockClip.transformations = [
+      {
+        id: "blur-1",
+        type: "filter",
+        isEnabled: true,
+        parameters: { alpha: 0.5 },
+        ...({ filterName: "AlphaFilter" } as object),
+      },
+      {
+        id: "position-1",
+        type: "position",
+        isEnabled: true,
+        parameters: { x: 100, y: 0 },
+      },
+    ];
+
+    // Default: the filter transform is applied to sprite.filters.
+    applyClipTransforms(mockSprite, mockClip, containerSize);
+    expect(mockSprite.filters?.length ?? 0).toBe(1);
+
+    // Suppressed: no transform filter on the sprite, but layout still applies.
+    applyClipTransforms(mockSprite, mockClip, containerSize, undefined, undefined, {
+      applyFilterTransforms: false,
+    });
+    expect(mockSprite.filters?.length ?? 0).toBe(0);
+    expect(mockSprite.position.x).toBe(960 + 100);
+  });
 });

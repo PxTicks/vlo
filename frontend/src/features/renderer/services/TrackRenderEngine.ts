@@ -22,7 +22,11 @@ import {
   resolveLiveActiveClip,
 } from "../utils/clipLookup";
 import { applyClipTransforms } from "../../transformations";
+import { planTransformRender } from "../../transformations/effectMaskRenderPlan";
+import { buildResolvedFilterOpLookup } from "../../transformations/effectMaskFilterOps";
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
+import { MaskedEffectRenderer } from "../../masks/runtime/MaskedEffectRenderer";
+import { useDebugStore } from "../../../shared/debug/useDebugStore";
 import { ticksPerFrame } from "../../timeline";
 import { ensureAssetSourceLoaded } from "../../userAssets";
 import { hasEmbeddedAssetSource } from "../utils/assetSource";
@@ -236,6 +240,13 @@ export class TrackRenderEngine {
   private readonly retiredTextures = new RetiredTextureQueue(
     () => this.sprite.texture,
   );
+  // Effect-level masking renders the filter chain offscreen. `maskedEffectRenderer`
+  // owns the chain's render-texture pool; `effectSourceTexture` retains the
+  // unfiltered source so a paused recomposite re-renders from source (not from
+  // the displayed effect output) and so texture retiring always targets the
+  // source, never a pool-owned effect output.
+  private readonly maskedEffectRenderer: MaskedEffectRenderer | null;
+  private effectSourceTexture: Texture | null = null;
   private disposed = false;
 
   // Live Mode Callback (to sync transforms immediately)
@@ -281,6 +292,9 @@ export class TrackRenderEngine {
 
     // encapsulated container
     this.container = new Container();
+    this.maskedEffectRenderer = renderer
+      ? new MaskedEffectRenderer(renderer)
+      : null;
     this.maskController = new SpriteClipMaskController(
       this.sprite,
       renderer,
@@ -554,13 +568,11 @@ export class TrackRenderEngine {
     // 7. Apply Immediate Transforms (even if texture hasn't updated yet)
     // This ensures moving/scaling feels responsive even if the frame decoding lags
     if (this.sprite.visible && this.currentTextureClipId === activeClip.id) {
-      applyClipTransforms(
-        this.sprite,
+      this.applyClipTransformsForClip(
         activeClip,
         logicalDimensions,
         rawTimeSeconds,
       );
-      this.maskController.syncMaskSpriteTransform();
     }
 
     // 8. Return Promise for Export Sync
@@ -995,13 +1007,11 @@ export class TrackRenderEngine {
       }
 
       if (this.sprite.visible && this.currentTextureClipId === activeClip.id) {
-        applyClipTransforms(
-          this.sprite,
+        this.applyClipTransformsForClip(
           activeClip,
           logicalDimensions,
           rawTimeSeconds,
         );
-        this.maskController.syncMaskSpriteTransform();
       }
 
       return;
@@ -1570,13 +1580,11 @@ export class TrackRenderEngine {
           this.sprite.visible &&
           this.currentTextureClipId === request.clip.id
         ) {
-          applyClipTransforms(
-            this.sprite,
+          this.applyClipTransformsForClip(
             request.clip,
             request.logicalDimensions,
             request.sourceFrame.rawClipTick,
           );
-          this.maskController.syncMaskSpriteTransform();
         }
 
         if (this.onFrameReady) {
@@ -1926,6 +1934,9 @@ export class TrackRenderEngine {
     clipId: string,
     sourceKind: "asset" | "text",
   ): boolean {
+    // Size comparison uses the displayed texture (in offscreen effect mode that
+    // is a pool effect output, which is content-sized like the source, so the
+    // result is equivalent to comparing sources).
     const previousTexture = this.sprite.texture;
     const previousWidth =
       previousTexture &&
@@ -1944,8 +1955,15 @@ export class TrackRenderEngine {
     const contentSizeChanged =
       previousWidth !== nextWidth || previousHeight !== nextHeight;
 
+    // Retire the previously applied SOURCE, not `sprite.texture`: a displayed
+    // effect output is pool-owned and must never be retired here (it is simply
+    // dereferenced when the source is reassigned below).
+    const previousSource = this.effectSourceTexture;
     this.sprite.texture = texture;
-    this.retiredTextures.retire(previousTexture);
+    this.effectSourceTexture = texture;
+    if (previousSource && previousSource !== texture) {
+      this.retiredTextures.retire(previousSource);
+    }
     this.sprite.visible = true;
     this.currentTextureClipId = clipId;
     this.currentTextureSourceKind = sourceKind;
@@ -1957,14 +1975,113 @@ export class TrackRenderEngine {
     logicalDimensions: { width: number; height: number },
     rawTime: number,
   ) {
+    if (!this.tryApplyOffscreenEffectMask(clip, logicalDimensions, rawTime)) {
+      applyClipTransforms(
+        this.sprite,
+        clip,
+        logicalDimensions,
+        rawTime,
+        clip.type === "text" ? logicalDimensions : undefined,
+      );
+    }
+    this.maskController.syncMaskSpriteTransform();
+  }
+
+  /**
+   * Effect-level masking: when any enabled filter carries an active effect
+   * mask, render the filter chain offscreen from the unfiltered source and show
+   * the result, instead of applying the filters to `sprite.filters`. Returns
+   * false (caller falls back to the normal path) when there's no renderer, no
+   * source, or no effect mask is active.
+   *
+   * Requires this frame's masks to be synced first (for coverage); where they
+   * aren't, `resolveEffectMaskCoverage` returns null and the masked step simply
+   * contributes nothing — never a whole-clip effect or corruption.
+   */
+  private tryApplyOffscreenEffectMask(
+    clip: TimelineClip,
+    logicalDimensions: { width: number; height: number },
+    rawTime: number,
+  ): boolean {
+    const renderer = this.maskedEffectRenderer;
+    const source = this.effectSourceTexture;
+    if (
+      !renderer ||
+      !source ||
+      source === Texture.EMPTY ||
+      !(source.width > 0 && source.height > 0)
+    ) {
+      return false;
+    }
+
+    const plan = planTransformRender(clip.transformations);
+    if (plan.mode !== "offscreen") {
+      // An enabled effect mask that produced no offscreen plan means the filter
+      // wasn't recognized — surface it under debug mode rather than silently
+      // falling back to no effect.
+      if (
+        useDebugStore.getState().debugMode &&
+        clip.transformations?.some((t) => t.effectMask?.enabled)
+      ) {
+        console.warn(
+          "[effect-mask] enabled effect mask did not yield an offscreen plan",
+          { clip: clip.id, types: clip.transformations?.map((t) => t.type) },
+        );
+      }
+      return false;
+    }
+
+    const contentSize =
+      clip.type === "text"
+        ? logicalDimensions
+        : { width: source.width, height: source.height };
+    const stackTime = rawTime + (clip.transformedOffset || 0);
+    const filterOpLookup = buildResolvedFilterOpLookup(
+      clip.transformations,
+      {
+        container: logicalDimensions,
+        content: contentSize,
+        visualTime: rawTime,
+        visualDuration: clip.timelineDuration,
+      },
+      stackTime,
+    );
+
+    const output = renderer.render({
+      input: source,
+      steps: plan.steps,
+      contentSize,
+      resolveFilterOp: (transform) => filterOpLookup.get(transform),
+      resolveCoverage: (expression) => {
+        const coverage = this.maskController.resolveEffectMaskCoverage(
+          expression,
+          contentSize,
+        );
+        // A masked filter with no coverage contributes nothing (no whole-clip
+        // effect); surface that under debug mode so a missing/inactive mask is
+        // diagnosable rather than silent.
+        if (!coverage && useDebugStore.getState().debugMode) {
+          console.warn("[effect-mask] no coverage for masked filter", {
+            clip: clip.id,
+            expression,
+          });
+        }
+        return coverage;
+      },
+    });
+
+    this.sprite.texture = output;
+    // Layout + range-mask still apply to the sprite; the filter chain is baked
+    // into `output`, so suppress the transform filters here.
     applyClipTransforms(
       this.sprite,
       clip,
       logicalDimensions,
       rawTime,
       clip.type === "text" ? logicalDimensions : undefined,
+      { applyFilterTransforms: false },
     );
-    this.maskController.syncMaskSpriteTransform();
+    return true;
   }
 
   private async renderTextClip(
@@ -2142,10 +2259,19 @@ export class TrackRenderEngine {
 
     this.retiredTextures.cancel();
     const currentTexture = this.sprite.texture;
+    const sourceTexture = this.effectSourceTexture;
+    this.effectSourceTexture = null;
     this.sprite.texture = Texture.EMPTY;
     destroyTexture(currentTexture);
+    // The displayed texture may be a pool-owned effect output; destroying it
+    // first is harmless (destroyTexture is idempotent) and the pool dispose
+    // below frees the rest. The retained source is engine-owned — free it too.
+    if (sourceTexture && sourceTexture !== currentTexture) {
+      destroyTexture(sourceTexture);
+    }
     this.retiredTextures.flush();
 
+    this.maskedEffectRenderer?.dispose();
     this.maskController.dispose();
     this.lease.release();
     if (this.container) {

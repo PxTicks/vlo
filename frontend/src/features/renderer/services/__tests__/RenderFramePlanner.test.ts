@@ -328,32 +328,76 @@ describe("RenderFramePlanner.acquireFrameTextures", () => {
     expect(store.size).toBe(0);
   });
 
-  it("rejects overlapping acquisitions on one planner (no-overlap boundary)", async () => {
+  it("coalesces overlapping acquisitions and wraps the shared frame once", async () => {
     const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
     const store = new SharedTextureStore();
     const planner = new RenderFramePlanner(scheduler, store);
 
     const control = deferred<{ id: string }>();
-    const plan = planner.plan([job("t1", "k")]);
+    const firstJob = job("t1", "k");
+    const secondJob = job("t2", "k");
+    const createResource = vi.fn(buildOps().ops.createResource);
     const ops: FrameTextureOps<{ id: string }> = {
       ...buildOps().ops,
       decode: () => control.promise,
+      createResource,
     };
 
-    const first = planner.acquireFrameTextures(plan, ops);
-    // Second call while the first is still in flight must be rejected.
-    await expect(
-      planner.acquireFrameTextures(plan, ops),
-    ).rejects.toThrow("not re-entrant");
+    const first = planner.acquireFrameTextures(
+      planner.plan([firstJob]),
+      ops,
+    );
+    const second = planner.acquireFrameTextures(
+      planner.plan([secondJob]),
+      ops,
+    );
 
     control.resolve({ id: "frame:k" });
-    await first;
-    // Boundary clears after completion — a subsequent call is allowed.
-    await expect(
-      planner.acquireFrameTextures(planner.plan([job("t9", "k9")]), {
-        ...buildOps().ops,
-      }),
-    ).resolves.toBeInstanceOf(Map);
+    const [firstHandles, secondHandles] = await Promise.all([first, second]);
+
+    expect(createResource).toHaveBeenCalledTimes(1);
+    expect(firstHandles.get(firstJob)?.texture).toBe(
+      secondHandles.get(secondJob)?.texture,
+    );
+    expect(store.refCount("k")).toBe(2);
+    firstHandles.get(firstJob)?.release();
+    secondHandles.get(secondJob)?.release();
+    expect(store.size).toBe(0);
+  });
+
+  it("disposes an all-stale frame once across overlapping generations", async () => {
+    const scheduler = new SourceFrameDecodeScheduler<{ id: string }>();
+    const store = new SharedTextureStore();
+    const planner = new RenderFramePlanner(scheduler, store);
+    const control = deferred<{ id: string }>();
+    const firstJob = job("t1", "k");
+    const secondJob = job("t2", "k");
+    const { ops: baseOps, disposeUnclaimedFrame } = buildOps({
+      staleKeys: new Set([
+        firstJob.sourceFrame.key,
+        secondJob.sourceFrame.key,
+      ]),
+    });
+    const ops: FrameTextureOps<{ id: string }> = {
+      ...baseOps,
+      decode: () => control.promise,
+    };
+
+    const first = planner.acquireFrameTextures(
+      planner.plan([firstJob]),
+      ops,
+    );
+    const second = planner.acquireFrameTextures(
+      planner.plan([secondJob]),
+      ops,
+    );
+    control.resolve({ id: "frame:k" });
+
+    const [firstHandles, secondHandles] = await Promise.all([first, second]);
+    expect(firstHandles.size).toBe(0);
+    expect(secondHandles.size).toBe(0);
+    expect(disposeUnclaimedFrame).toHaveBeenCalledTimes(1);
+    expect(store.size).toBe(0);
   });
 });
 

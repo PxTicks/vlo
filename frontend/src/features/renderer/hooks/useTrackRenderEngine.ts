@@ -25,6 +25,7 @@ import {
   resolveLiveActiveClip,
   sortTrackClipsByStart,
 } from "../utils/clipLookup";
+import type { LiveFrameGraphCoordinator } from "../services/framePlanning";
 
 /**
  * Build a Map<parentClipId, maskClip[]> from parent clips' mask components.
@@ -116,6 +117,7 @@ export function useTrackRenderEngine(
    */
   orchestrator?: RenderGroupOrchestrator | null,
   adjustmentEffectResolver?: AdjustmentEffectResolver | null,
+  liveFrameGraphCoordinator?: LiveFrameGraphCoordinator | null,
 ): TrackRenderEngineResult {
   const engineRef = useRef<TrackRenderEngine | null>(null);
   const [spriteInstance, setSpriteInstance] = useState<Sprite | null>(null);
@@ -299,6 +301,11 @@ export function useTrackRenderEngine(
   }, []);
 
   useEffect(() => {
+    if (liveFrameGraphCoordinator) {
+      liveFrameGraphCoordinator.requestFrame(playbackClock.time);
+      return;
+    }
+
     if (
       !registerSynchronizedPlaybackRenderer ||
       !engineRef.current ||
@@ -318,6 +325,7 @@ export function useTrackRenderEngine(
     renderSynchronizedPlaybackFrame,
     sortedTrackClips,
     spriteInstance,
+    liveFrameGraphCoordinator,
   ]);
 
   useEffect(() => {
@@ -328,6 +336,11 @@ export function useTrackRenderEngine(
     const rerenderPausedFrame = () => {
       const engine = engineRef.current;
       if (!engine) {
+        return;
+      }
+
+      if (liveFrameGraphCoordinator) {
+        liveFrameGraphCoordinator.requestFrame(playbackClock.time);
         return;
       }
 
@@ -372,6 +385,7 @@ export function useTrackRenderEngine(
     sortedTrackClips,
     spriteInstance,
     syncActiveClipState,
+    liveFrameGraphCoordinator,
   ]);
 
   // Make mask-set changes (add/remove, mode toggle, SAM2/generation/brush
@@ -380,6 +394,11 @@ export function useTrackRenderEngine(
   // nodes before we re-composite; the paused ticker then flushes the result.
   useEffect(() => {
     if (isPlaying || !engineRef.current || !spriteInstance) {
+      return;
+    }
+
+    if (liveFrameGraphCoordinator) {
+      liveFrameGraphCoordinator.requestFrame(playbackClock.time);
       return;
     }
 
@@ -410,6 +429,7 @@ export function useTrackRenderEngine(
     maskCompositionSignature,
     maskPreviewTarget,
     spriteInstance,
+    liveFrameGraphCoordinator,
   ]);
 
   useEffect(() => {
@@ -514,8 +534,27 @@ export function useTrackRenderEngine(
     }
     engineRef.current = engine;
     setSpriteInstance(engine.sprite);
+    const unregisterFrameGraph = liveFrameGraphCoordinator?.register({
+      trackId,
+      engine,
+      getTrackClips: () =>
+        livePlaybackStateRef.current.sortedTrackClips,
+      getMaskClipsByParent: () =>
+        livePlaybackStateRef.current.maskClipsByParent,
+      getAssets: () => livePlaybackStateRef.current.assets,
+      onResolvedJob: (job) => {
+        const activeClip = job?.activeClip ?? null;
+        activeClipRef.current = activeClip;
+        const nextClipId = activeClip?.id ?? null;
+        if (nextClipId !== currentClipIdRef.current) {
+          currentClipIdRef.current = nextClipId;
+          setCurrentClipId(nextClipId);
+        }
+      },
+    });
 
     return () => {
+      unregisterFrameGraph?.();
       engine.dispose();
       if (orchestrator) {
         orchestrator.unregisterTrack(trackId, engine.container);
@@ -532,10 +571,22 @@ export function useTrackRenderEngine(
     // zIndex is read only for the engine's initial value; effect #2 below
     // applies zIndex changes in place so reorders don't tear down the engine.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackId, app, container, orchestrator, adjustmentEffectResolver]);
+  }, [
+    trackId,
+    app,
+    container,
+    orchestrator,
+    adjustmentEffectResolver,
+    liveFrameGraphCoordinator,
+  ]);
 
   useEffect(() => {
-    if (!registerSynchronizedPlaybackRenderer) return;
+    if (
+      !registerSynchronizedPlaybackRenderer ||
+      liveFrameGraphCoordinator
+    ) {
+      return;
+    }
 
     registerSynchronizedPlaybackRenderer(trackId, renderSynchronizedPlaybackFrame);
 
@@ -546,6 +597,7 @@ export function useTrackRenderEngine(
     registerSynchronizedPlaybackRenderer,
     renderSynchronizedPlaybackFrame,
     trackId,
+    liveFrameGraphCoordinator,
   ]);
 
   // 2. Z-Index Updates

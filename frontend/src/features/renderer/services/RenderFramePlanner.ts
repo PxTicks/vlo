@@ -12,6 +12,7 @@ import type {
   SharedTextureResource,
   SharedTextureStore,
 } from "./SharedTextureStore";
+import { DecodedFrameClaimArbiter } from "./DecodedFrameClaimArbiter";
 
 /**
  * One visual clip instance that will render at a given output tick, already
@@ -144,7 +145,7 @@ export interface FrameTextureOps<TFrame> {
 export class RenderFramePlanner<TFrame> {
   private readonly scheduler: SourceFrameDecodeScheduler<TFrame>;
   private readonly store: SharedTextureStore;
-  private acquiring = false;
+  private readonly claimArbiter = new DecodedFrameClaimArbiter<TFrame>();
 
   constructor(
     scheduler: SourceFrameDecodeScheduler<TFrame>,
@@ -179,14 +180,6 @@ export class RenderFramePlanner<TFrame> {
     plan: FramePlan,
     ops: FrameTextureOps<TFrame>,
   ): Promise<Map<PlannedClipJob, SharedTextureHandle>> {
-    if (this.acquiring) {
-      throw new Error(
-        "RenderFramePlanner.acquireFrameTextures is not re-entrant; live " +
-          "overlap needs a per-decodeKey claim arbiter first",
-      );
-    }
-    this.acquiring = true;
-
     const handles = new Map<PlannedClipJob, SharedTextureHandle>();
     try {
       const groupResults = await Promise.allSettled(
@@ -216,8 +209,11 @@ export class RenderFramePlanner<TFrame> {
       }
 
       return handles;
-    } finally {
-      this.acquiring = false;
+    } catch (error) {
+      for (const handle of handles.values()) {
+        handle.release();
+      }
+      throw error;
     }
   }
 
@@ -231,6 +227,28 @@ export class RenderFramePlanner<TFrame> {
     group: DecodeGroup,
     ops: FrameTextureOps<TFrame>,
   ): Promise<Map<PlannedClipJob, SharedTextureHandle>> {
+    const cachedHandles = new Map<PlannedClipJob, SharedTextureHandle>();
+    if (this.store.has(group.decodeKey)) {
+      for (const job of group.jobs) {
+        const expected = {
+          key: job.sourceFrame.key,
+          generation: job.sourceFrame.generation,
+        };
+        const current = ops.getCurrentIntent(job);
+        if (
+          current?.key !== expected.key ||
+          current.generation !== expected.generation
+        ) {
+          continue;
+        }
+        const handle = this.store.acquireExisting(group.decodeKey);
+        if (handle) {
+          cachedHandles.set(job, handle);
+        }
+      }
+      return cachedHandles;
+    }
+
     // Fire every job's request concurrently so the scheduler coalesces them
     // into one in-flight decode; awaiting each in turn would let the slot clear
     // between jobs and re-decode.
@@ -253,11 +271,17 @@ export class RenderFramePlanner<TFrame> {
     );
 
     const groupHandles = new Map<PlannedClipJob, SharedTextureHandle>();
-    let claimed = false;
     let decodedFrame: TFrame | undefined;
+    let claimEntry:
+      | ReturnType<DecodedFrameClaimArbiter<TFrame>["register"]>
+      | undefined;
     try {
       for (const { job, res } of results) {
         decodedFrame = res.frame;
+        claimEntry ??= this.claimArbiter.register(
+          group.decodeKey,
+          res.frame,
+        );
         if (res.status !== "fulfilled") {
           continue;
         }
@@ -265,26 +289,35 @@ export class RenderFramePlanner<TFrame> {
         // current job in the group gets its own release handle on one texture.
         // Only that first acquire runs `createResource` and can throw before
         // store ownership is established.
-        const handle = this.store.acquire(group.decodeKey, () =>
-          ops.createResource(group.decodeKey, res.frame),
+        const acquisition = this.store.acquireWithStatus(
+          group.decodeKey,
+          () => ops.createResource(group.decodeKey, res.frame),
         );
-        claimed = true;
-        groupHandles.set(job, handle);
+        if (acquisition.created) {
+          this.claimArbiter.claim(claimEntry);
+        }
+        groupHandles.set(job, acquisition.handle);
       }
     } catch (error) {
       for (const handle of groupHandles.values()) {
         handle.release();
       }
-      // Wrapping failed before the store took ownership, so the frame is still
-      // unowned — dispose it here (a later acquire in this group never ran).
-      if (!claimed && decodedFrame !== undefined) {
-        ops.disposeUnclaimedFrame(decodedFrame);
+      if (claimEntry && decodedFrame !== undefined) {
+        this.claimArbiter.disposeIfUnclaimed(
+          group.decodeKey,
+          claimEntry,
+          ops.disposeUnclaimedFrame,
+        );
       }
       throw error;
     }
 
-    if (!claimed && decodedFrame !== undefined) {
-      ops.disposeUnclaimedFrame(decodedFrame);
+    if (claimEntry && decodedFrame !== undefined) {
+      this.claimArbiter.disposeIfUnclaimed(
+        group.decodeKey,
+        claimEntry,
+        ops.disposeUnclaimedFrame,
+      );
     }
     return groupHandles;
   }

@@ -3,6 +3,7 @@ import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { applyGroupTransforms } from "../../transformations/applyGroupTransforms";
 import { type DerivedRenderGroup } from "../utils/deriveAdjustmentGroups";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
+import type { ScenePresentationPlan } from "./framePlanning";
 
 export interface RenderGroupOrchestratorOptions {
   /** Project resolution used by applyGroupTransforms. Defaults to 1920x1080
@@ -169,7 +170,38 @@ export class RenderGroupOrchestrator {
    */
   sync(currentTick: number, visualTrackOrder: readonly string[]): void {
     if (this.disposed) return;
+    this.syncResolvedForest(
+      currentTick,
+      visualTrackOrder,
+      this.adjustmentEffectResolver.deriveGroups(currentTick),
+    );
+  }
 
+  /**
+   * Presentation-plan seam: graph/live/export callers hand in the adjustment
+   * forest and track directives already derived from the same resolved jobs.
+   * Pixi ownership stays here; no group or active-clip derivation is repeated.
+   */
+  syncPresentationPlan(
+    currentTick: number,
+    plan: ScenePresentationPlan,
+  ): void {
+    if (this.disposed) return;
+    const visualTrackOrder = [...plan.tracks]
+      .sort((left, right) => right.zIndex - left.zIndex)
+      .map((command) => command.trackId);
+    this.syncResolvedForest(
+      currentTick,
+      visualTrackOrder,
+      plan.adjustmentForest,
+    );
+  }
+
+  private syncResolvedForest(
+    currentTick: number,
+    visualTrackOrder: readonly string[],
+    forest: readonly DerivedRenderGroup[],
+  ): void {
     const visualIndexByTrackId = new Map<string, number>();
     visualTrackOrder.forEach((id, index) => {
       visualIndexByTrackId.set(id, index);
@@ -177,10 +209,7 @@ export class RenderGroupOrchestrator {
     const zIndexForVisualIndex = (index: number): number =>
       visualTrackOrder.length - 1 - index;
 
-    // 1. Derive the forest for this tick.
-    const forest = this.adjustmentEffectResolver.deriveGroups(currentTick);
-
-    // 2. Walk the forest depth-first to enumerate every group node, its
+    // 1. Walk the forest depth-first to enumerate every group node, its
     //    desired parent container, and its top-most member visual index.
     const entries: ForestEntry[] = [];
     const innermostGroupByTrack = new Map<string, DerivedRenderGroup>();
@@ -223,7 +252,7 @@ export class RenderGroupOrchestrator {
     const activeGroupIds = new Set(entries.map((entry) => entry.group.id));
     const sortDirtyParents = new Set<Container>();
 
-    // 3. Pre-prune: destroy any cached container whose id no longer appears
+    // 2. Pre-prune: destroy any cached container whose id no longer appears
     //    in the forest (topology change — the source clip is gone or its
     //    reach now starts on a different first-track). Detach (but keep)
     //    containers that exist in the cache but aren't active this tick.
@@ -241,7 +270,7 @@ export class RenderGroupOrchestrator {
     // Phase-3 keeps the cache permissive — the cache eviction policy can
     // tighten in a follow-up if memory pressure becomes a concern.)
 
-    // 4. Reparent group containers to match the forest. Top-down so each
+    // 3. Reparent group containers to match the forest. Top-down so each
     //    child sees its desired parent already attached at the right level.
     for (const entry of entries) {
       const container = this.groupContainers.get(entry.group.id);
@@ -263,7 +292,7 @@ export class RenderGroupOrchestrator {
       }
     }
 
-    // 5. Reparent track engine containers to their innermost wrapping group
+    // 4. Reparent track engine containers to their innermost wrapping group
     //    (or root if none) and assign zIndex from visualTrackOrder.
     for (const [trackId, engineContainer] of this.tracks) {
       if (engineContainer.destroyed) continue;
@@ -288,7 +317,7 @@ export class RenderGroupOrchestrator {
       }
     }
 
-    // 6. Apply group transforms to each active group container.
+    // 5. Apply group transforms to each active group container.
     for (const entry of entries) {
       const container = this.groupContainers.get(entry.group.id);
       if (!container) continue;
@@ -302,7 +331,7 @@ export class RenderGroupOrchestrator {
       );
     }
 
-    // 7. Re-sort dirty parents.
+    // 6. Re-sort dirty parents.
     for (const parent of sortDirtyParents) {
       if (parent.destroyed) continue;
       parent.sortChildren();

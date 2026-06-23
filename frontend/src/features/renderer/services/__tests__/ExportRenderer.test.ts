@@ -289,6 +289,65 @@ describe("ExportRenderer", () => {
     renderer.dispose();
   });
 
+  it("decodes duplicate asset clips once per source frame", async () => {
+    const config = {
+      logicalWidth: 1920,
+      logicalHeight: 1080,
+      outputWidth: 1920,
+      outputHeight: 1080,
+    };
+    const projectData = {
+      tracks: [
+        { id: "t1", type: "visual", isVisible: true },
+        { id: "t2", type: "visual", isVisible: true },
+      ] as TimelineTrack[],
+      clips: [
+        {
+          id: "c1",
+          trackId: "t1",
+          assetId: "a1",
+          start: 0,
+          timelineDuration: 96000,
+          offset: 0,
+          type: "video",
+        },
+        {
+          id: "c2",
+          trackId: "t2",
+          assetId: "a1",
+          start: 0,
+          timelineDuration: 96000,
+          offset: 0,
+          type: "video",
+        },
+      ] as TimelineClip[],
+      assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
+      duration: 96000 / 30,
+      fps: 30,
+    };
+    const renderCallsBefore = mockWorkers.reduce(
+      (count, worker) =>
+        count +
+        worker.postMessage.mock.calls.filter(([message]) => {
+          return message.type === "render";
+        }).length,
+      0,
+    );
+
+    const renderer = await ExportRenderer.create(config);
+    await renderer.render(projectData as ProjectData, config, () => {});
+
+    const renderCallsAfter = mockWorkers.reduce(
+      (count, worker) =>
+        count +
+        worker.postMessage.mock.calls.filter(([message]) => {
+          return message.type === "render";
+        }).length,
+      0,
+    );
+    expect(renderCallsAfter - renderCallsBefore).toBe(1);
+  });
+
   it("should render multiple configured outputs", async () => {
     const config = {
       logicalWidth: 1920,
@@ -387,14 +446,14 @@ describe("ExportRenderer", () => {
     // fire a fire-and-forget non-strict mask render that races renderFrame()'s
     // strict mask sync.
     const prepareSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "prepareClipsForExportFrame")
+      .spyOn(TrackRenderEngine.prototype, "prepareResolvedFrameJob")
       .mockImplementation(() => undefined);
     const updateSpy = vi
       .spyOn(TrackRenderEngine.prototype, "update")
       .mockImplementation(() => undefined);
-    const renderFrameSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "renderFrame")
-      .mockResolvedValue(undefined);
+    const presentFrameSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "presentResolvedFrameJob")
+      .mockResolvedValue(true);
 
     const renderer = await ExportRenderer.create(config);
     await renderer.render(projectData as ProjectData, config, () => {}, {
@@ -403,14 +462,14 @@ describe("ExportRenderer", () => {
 
     expect(prepareSpy).toHaveBeenCalled();
     expect(updateSpy).not.toHaveBeenCalled();
-    expect(renderFrameSpy).toHaveBeenCalled();
-    expect(renderFrameSpy.mock.calls.every(([, , , maskClips]) => {
-      return Array.isArray(maskClips) && maskClips.length === 0;
+    expect(presentFrameSpy).toHaveBeenCalled();
+    expect(presentFrameSpy.mock.calls.every(([job]) => {
+      return job.maskClips.length === 0;
     })).toBe(true);
 
     prepareSpy.mockRestore();
     updateSpy.mockRestore();
-    renderFrameSpy.mockRestore();
+    presentFrameSpy.mockRestore();
     renderer.dispose();
   });
 
@@ -469,19 +528,21 @@ describe("ExportRenderer", () => {
     };
 
     const prepareSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "prepareClipsForExportFrame")
+      .spyOn(TrackRenderEngine.prototype, "prepareResolvedFrameJob")
       .mockImplementation(() => undefined);
-    const renderFrameSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "renderFrame")
-      .mockResolvedValue(undefined);
+    const presentFrameSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "presentResolvedFrameJob")
+      .mockResolvedValue(true);
 
     const renderer = await ExportRenderer.create(config);
     await renderer.render(projectData as ProjectData, config, () => {}, {
       includeTimelineMasks: false,
     });
 
-    expect(renderFrameSpy).toHaveBeenCalled();
-    const activeClips = renderFrameSpy.mock.calls.map(([, clip]) => clip);
+    expect(presentFrameSpy).toHaveBeenCalled();
+    const activeClips = presentFrameSpy.mock.calls.map(
+      ([job]) => job.activeClip,
+    );
     expect(activeClips.length).toBeGreaterThan(0);
     for (const clip of activeClips) {
       const components: Component[] =
@@ -490,7 +551,7 @@ describe("ExportRenderer", () => {
     }
 
     prepareSpy.mockRestore();
-    renderFrameSpy.mockRestore();
+    presentFrameSpy.mockRestore();
     renderer.dispose();
   });
 
@@ -534,17 +595,19 @@ describe("ExportRenderer", () => {
     };
 
     const prepareSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "prepareClipsForExportFrame")
+      .spyOn(TrackRenderEngine.prototype, "prepareResolvedFrameJob")
       .mockImplementation(() => undefined);
-    const renderFrameSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "renderFrame")
-      .mockResolvedValue(undefined);
+    const presentFrameSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "presentResolvedFrameJob")
+      .mockResolvedValue(true);
 
     const renderer = await ExportRenderer.create(config);
     await renderer.render(projectData as ProjectData, config, () => {});
 
-    expect(renderFrameSpy).toHaveBeenCalled();
-    const activeClips = renderFrameSpy.mock.calls.map(([, clip]) => clip);
+    expect(presentFrameSpy).toHaveBeenCalled();
+    const activeClips = presentFrameSpy.mock.calls.map(
+      ([job]) => job.activeClip,
+    );
     expect(activeClips.length).toBeGreaterThan(0);
     for (const clip of activeClips) {
       const components: Component[] =
@@ -553,7 +616,7 @@ describe("ExportRenderer", () => {
     }
 
     prepareSpy.mockRestore();
-    renderFrameSpy.mockRestore();
+    presentFrameSpy.mockRestore();
     renderer.dispose();
   });
 
@@ -596,9 +659,9 @@ describe("ExportRenderer", () => {
       configurable: true,
     });
 
-    const renderFrameSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "renderFrame")
-      .mockResolvedValue(undefined);
+    const presentFrameSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "presentResolvedFrameJob")
+      .mockResolvedValue(true);
 
     const result = await testRenderer.renderStill(projectData, config, 0, {
       mimeType: "image/png",
@@ -606,7 +669,7 @@ describe("ExportRenderer", () => {
 
     expect(result).toBeInstanceOf(Blob);
     expect(result.type).toBe("image/png");
-    expect(renderFrameSpy).toHaveBeenCalled();
+    expect(presentFrameSpy).toHaveBeenCalled();
     expect(testRenderer.app.renderer.render).toHaveBeenCalledWith(
       expect.objectContaining({
         container: testRenderer.logicalStage,
@@ -619,7 +682,7 @@ describe("ExportRenderer", () => {
       undefined,
     );
 
-    renderFrameSpy.mockRestore();
+    presentFrameSpy.mockRestore();
     renderer.dispose();
   });
 
@@ -661,7 +724,7 @@ describe("ExportRenderer", () => {
       .spyOn(RenderGroupOrchestrator.prototype, "registerTrack")
       .mockImplementation(() => {});
     const syncSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "sync")
+      .spyOn(RenderGroupOrchestrator.prototype, "syncPresentationPlan")
       .mockImplementation(() => {});
     const disposeSpy = vi
       .spyOn(RenderGroupOrchestrator.prototype, "dispose")
@@ -678,8 +741,8 @@ describe("ExportRenderer", () => {
 
       const syncCalls = syncSpy.mock.calls;
       expect(syncCalls.length).toBeGreaterThanOrEqual(3);
-      for (const [, visualTrackOrder] of syncCalls) {
-        expect(visualTrackOrder).toEqual(["t1"]);
+      for (const [, plan] of syncCalls) {
+        expect(plan.tracks.map((track) => track.trackId)).toEqual(["t1"]);
       }
 
       renderer.dispose();
@@ -723,15 +786,11 @@ describe("ExportRenderer", () => {
       .spyOn(RenderGroupOrchestrator.prototype, "registerTrack")
       .mockImplementation(() => {});
     const syncSpy = vi
-      .spyOn(RenderGroupOrchestrator.prototype, "sync")
+      .spyOn(RenderGroupOrchestrator.prototype, "syncPresentationPlan")
       .mockImplementation(() => {});
     const disposeSpy = vi
       .spyOn(RenderGroupOrchestrator.prototype, "dispose")
       .mockImplementation(() => {});
-
-    const renderFrameSpy = vi
-      .spyOn(TrackRenderEngine.prototype, "renderFrame")
-      .mockResolvedValue(undefined);
 
     try {
       const renderer = await ExportRenderer.create(config);
@@ -751,15 +810,14 @@ describe("ExportRenderer", () => {
 
       expect(registerTrackSpy).toHaveBeenCalledWith("t1", expect.anything());
       expect(syncSpy).toHaveBeenCalledTimes(1);
-      const [tick, visualTrackOrder] = syncSpy.mock.calls[0];
+      const [tick, plan] = syncSpy.mock.calls[0];
       expect(tick).toBe(0);
-      expect(visualTrackOrder).toEqual(["t1"]);
+      expect(plan.tracks.map((track) => track.trackId)).toEqual(["t1"]);
       expect(disposeSpy).toHaveBeenCalled();
     } finally {
       registerTrackSpy.mockRestore();
       syncSpy.mockRestore();
       disposeSpy.mockRestore();
-      renderFrameSpy.mockRestore();
     }
   });
 

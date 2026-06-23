@@ -38,6 +38,13 @@ import {
   type OutputVideoAnalysis,
   type OutputVideoDefinition,
 } from "./TextureOutputEncoder";
+import {
+  BatchFrameGraphExecutor,
+  FrameJobResolver,
+  buildFrameResolutionGraph,
+  buildScenePresentationPlan,
+  type FrameJobResolutionTrack,
+} from "./framePlanning";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -300,6 +307,8 @@ export class ExportRenderer {
     this.isCancelled = false;
     this.cancelController = new AbortController();
     const decoderPool = createDecoderWorkerPool({ label: "export" });
+    const frameJobResolver = new FrameJobResolver();
+    const frameGraphExecutor = new BatchFrameGraphExecutor();
     if (options.signal?.aborted) {
       this.cancel();
       throw createRenderAbortError();
@@ -361,9 +370,6 @@ export class ExportRenderer {
       (output) => output.includeAudio,
     );
 
-    const assetsById = new Map(
-      assets.map((asset) => [asset.id, asset] as const),
-    );
     const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
       buildVisualRenderData(
         effectiveTracks,
@@ -511,6 +517,14 @@ export class ExportRenderer {
         fps,
       );
       const visualTrackOrder = visualTracks.map((track) => track.id);
+      const resolutionTracks: FrameJobResolutionTrack[] = visualTracks.map(
+        (track, index) => ({
+          trackId: track.id,
+          engine: this.engines[index],
+          trackClips: trackClipsByTrackId.get(track.id) ?? [],
+          maskClipsByParent,
+        }),
+      );
 
       for (let i = 0; i < totalFrames; i += 1) {
         this.throwIfCancelled();
@@ -520,53 +534,39 @@ export class ExportRenderer {
         // single media-time boundary — never accumulated from ticks/seconds.
         const timestamp = frameIndexToOutputTimestamp(i, renderFps);
 
-        const promises: Promise<void>[] = [];
-
-        visualTracks.forEach((track, index) => {
-          const engine = this.engines[index];
-          const trackClips = trackClipsByTrackId.get(track.id) || [];
-
-          engine.prepareClipsForExportFrame(currentTime, trackClips, assets);
-
-          // The presentation lookup is keyed off the resolver's full clip
-          // source (with range_mask intact); re-bind the result against the
-          // stripped `trackClips` so downstream `renderFrame` sees the
-          // export-effective version of the clip.
-          const resolvedClipId = engine.resolveActiveClipAtPresentation(
-            trackClips,
-            currentTime,
-          )?.activeClip.id;
-          const activeClip = resolvedClipId
-            ? trackClips.find((candidate) => candidate.id === resolvedClipId)
-            : undefined;
-
-          if (activeClip) {
-            const activeMaskClips = maskClipsByParent.get(activeClip.id) ?? [];
-            promises.push(
-              engine.renderFrame(
-                currentTime,
-                activeClip,
-                {
-                  width: logicalWidth,
-                  height: logicalHeight,
-                },
-                activeMaskClips,
-                assetsById,
-                {
-                  fps: renderFps,
-                  signal: this.cancelController?.signal,
-                },
-              ),
-            );
-          }
+        const resolution = frameJobResolver.resolve({
+          epoch: i + 1,
+          presentationTick: currentTime,
+          tracks: resolutionTracks,
+          assets,
+          logicalDimensions: {
+            width: logicalWidth,
+            height: logicalHeight,
+          },
+          fps: renderFps,
         });
-
-        await Promise.all(promises);
+        const graph = buildFrameResolutionGraph(i + 1, resolution.jobs);
+        const adjustmentForest =
+          adjustmentEffectResolver.deriveGroups(currentTime);
+        const presentationPlan = buildScenePresentationPlan({
+          epoch: i + 1,
+          visualTrackOrder,
+          jobs: resolution.jobs,
+          adjustmentForest,
+          outputIds: outputDefinitions.map((output) => output.id),
+        });
+        await frameGraphExecutor.execute(graph, resolution, {
+          mode: "export",
+          signal: this.cancelController?.signal,
+        });
         this.throwIfCancelled();
 
         // Rewrite parenting (track engines into / out of group containers) and
         // apply group transforms before the GPU frame submit.
-        this.orchestrator.sync(currentTime, visualTrackOrder);
+        this.orchestrator.syncPresentationPlan(
+          currentTime,
+          presentationPlan,
+        );
 
         // Render timeline frame once to an offscreen texture.
         this.app.renderer.render({
@@ -618,6 +618,7 @@ export class ExportRenderer {
       outputEncoder.dispose();
       frameTexture.destroy(true);
       this.dispose();
+      frameGraphExecutor.dispose();
       decoderPool.dispose();
     }
   }
@@ -631,6 +632,8 @@ export class ExportRenderer {
     this.isCancelled = false;
     this.cancelController = new AbortController();
     const decoderPool = createDecoderWorkerPool({ label: "export" });
+    const frameJobResolver = new FrameJobResolver();
+    const frameGraphExecutor = new BatchFrameGraphExecutor();
     if (options.signal?.aborted) {
       this.cancel();
       throw createRenderAbortError();
@@ -653,9 +656,6 @@ export class ExportRenderer {
       ? getIncludedClipsForSelection(options.timelineSelection, availableClips)
       : availableClips;
     const { logicalWidth, logicalHeight } = config;
-    const assetsById = new Map(
-      assets.map((asset) => [asset.id, asset] as const),
-    );
     const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
       buildVisualRenderData(
         tracks,
@@ -700,45 +700,36 @@ export class ExportRenderer {
         fps,
       );
       const visualTrackOrder = visualTracks.map((track) => track.id);
-
-      const promises: Promise<void>[] = [];
-
-      visualTracks.forEach((track, index) => {
-        const engine = this.engines[index];
-        const trackClips = trackClipsByTrackId.get(track.id) || [];
-
-        engine.prepareClipsForExportFrame(tick, trackClips, assets);
-
-        // See note above re: re-binding to the stripped `trackClips`.
-        const resolvedClipId = engine.resolveActiveClipAtPresentation(
-          trackClips,
-          tick,
-        )?.activeClip.id;
-        const activeClip = resolvedClipId
-          ? trackClips.find((candidate) => candidate.id === resolvedClipId)
-          : undefined;
-        if (!activeClip) return;
-
-        const activeMaskClips = maskClipsByParent.get(activeClip.id) ?? [];
-        promises.push(
-          engine.renderFrame(
-            tick,
-            activeClip,
-            {
-              width: logicalWidth,
-              height: logicalHeight,
-            },
-            activeMaskClips,
-            assetsById,
-            {
-              fps,
-              signal: this.cancelController?.signal,
-            },
-          ),
-        );
+      const resolutionTracks: FrameJobResolutionTrack[] = visualTracks.map(
+        (track, index) => ({
+          trackId: track.id,
+          engine: this.engines[index],
+          trackClips: trackClipsByTrackId.get(track.id) ?? [],
+          maskClipsByParent,
+        }),
+      );
+      const resolution = frameJobResolver.resolve({
+        epoch: 1,
+        presentationTick: tick,
+        tracks: resolutionTracks,
+        assets,
+        logicalDimensions: {
+          width: logicalWidth,
+          height: logicalHeight,
+        },
+        fps,
       });
-
-      await Promise.all(promises);
+      const graph = buildFrameResolutionGraph(1, resolution.jobs);
+      const presentationPlan = buildScenePresentationPlan({
+        epoch: 1,
+        visualTrackOrder,
+        jobs: resolution.jobs,
+        adjustmentForest: adjustmentEffectResolver.deriveGroups(tick),
+      });
+      await frameGraphExecutor.execute(graph, resolution, {
+        mode: "export",
+        signal: this.cancelController?.signal,
+      });
       this.throwIfCancelled();
 
       this.warnOnDegradedRenderHealth(
@@ -747,7 +738,7 @@ export class ExportRenderer {
       );
 
       // Rewrite parenting and apply group transforms before the GPU submit.
-      this.orchestrator.sync(tick, visualTrackOrder);
+      this.orchestrator.syncPresentationPlan(tick, presentationPlan);
 
       this.app.renderer.render({
         container: this.logicalStage,
@@ -764,6 +755,7 @@ export class ExportRenderer {
       options.signal?.removeEventListener("abort", onAbort);
       this.cancelController = null;
       this.dispose();
+      frameGraphExecutor.dispose();
       decoderPool.dispose();
     }
   }

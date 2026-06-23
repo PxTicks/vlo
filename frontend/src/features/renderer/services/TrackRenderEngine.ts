@@ -62,6 +62,11 @@ import {
   getTextTextureSignature,
 } from "./textTextureRenderer";
 import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
+import type { SharedTextureHandle } from "./SharedTextureStore";
+import type {
+  FrameExecutionPolicy,
+  ResolvedClipFrameJob,
+} from "./framePlanning";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -242,6 +247,8 @@ export class TrackRenderEngine {
   private currentLiveSourceFrameIntent: SourceFrameSyncIntent | null = null;
   private currentSynchronizedSourceFrameIntent: SourceFrameSyncIntent | null =
     null;
+  private plannedRenderGeneration = 0;
+  private currentPlannedSourceFrameIntent: SourceFrameSyncIntent | null = null;
 
   // Deferred texture cleanup to avoid null-source races during hot swaps
   private readonly retiredTextures = new RetiredTextureQueue(
@@ -254,6 +261,7 @@ export class TrackRenderEngine {
   // source, never a pool-owned effect output.
   private readonly maskedEffectRenderer: MaskedEffectRenderer | null;
   private effectSourceTexture: Texture | null = null;
+  private currentSharedTextureHandle: SharedTextureHandle | null = null;
   private disposed = false;
 
   // Live Mode Callback (to sync transforms immediately)
@@ -374,6 +382,245 @@ export class TrackRenderEngine {
     return this.adjustmentEffectResolver
       .getPresentationLookup()
       .resolveEffectiveTrackTickWithinClip(clip, presentationTick);
+  }
+
+  public resolveFrameJob(options: {
+    epoch: number;
+    presentationTick: number;
+    trackClips: TimelineClip[];
+    maskClipsByParent: ReadonlyMap<string, MaskTimelineClip[]>;
+    assetsById: ReadonlyMap<string, Asset>;
+    logicalDimensions: { width: number; height: number };
+    fps: number;
+  }): ResolvedClipFrameJob | null {
+    const resolved = this.resolveActiveClipAtPresentation(
+      options.trackClips,
+      options.presentationTick,
+    );
+    if (!resolved || !this.trackId) {
+      this.currentPlannedSourceFrameIntent = null;
+      return null;
+    }
+
+    const { activeClip, effectiveTick } = resolved;
+    const asset = isAssetBackedClip(activeClip)
+      ? options.assetsById.get(activeClip.assetId)
+      : undefined;
+    const fps =
+      asset?.fps && asset.fps > 0 ? asset.fps : Math.max(1, options.fps);
+    this.plannedRenderGeneration += 1;
+    const sourceFrame = createSourceFrameSyncRef({
+      clip: activeClip,
+      assetId: isAssetBackedClip(activeClip) ? activeClip.assetId : null,
+      effectiveTrackTick: effectiveTick,
+      fps,
+      generation: this.plannedRenderGeneration,
+    });
+    this.currentPlannedSourceFrameIntent = {
+      key: sourceFrame.key,
+      generation: sourceFrame.generation,
+    };
+
+    const source = this.effectSourceTexture;
+    const contentSize =
+      source && source !== Texture.EMPTY && source.width > 0 && source.height > 0
+        ? { width: source.width, height: source.height }
+        : options.logicalDimensions;
+
+    return {
+      id: `${options.epoch}:${this.trackId}:${activeClip.id}`,
+      trackId: this.trackId,
+      activeClip,
+      effectiveTrackTick: effectiveTick,
+      rawClipTick: effectiveTick - activeClip.start,
+      sourceFrame,
+      maskClips: options.maskClipsByParent.get(activeClip.id) ?? [],
+      logicalDimensions: options.logicalDimensions,
+      contentSize,
+      fps,
+    };
+  }
+
+  public getCurrentPlannedSourceFrameIntent(): SourceFrameSyncIntent | null {
+    return this.currentPlannedSourceFrameIntent;
+  }
+
+  public isFrameJobCurrent(job: ResolvedClipFrameJob): boolean {
+    return isSourceFrameIntentCurrent(this.currentPlannedSourceFrameIntent, {
+      key: job.sourceFrame.key,
+      generation: job.sourceFrame.generation,
+    });
+  }
+
+  public prepareResolvedFrameJob(
+    job: ResolvedClipFrameJob,
+    trackClips: TimelineClip[],
+    assets: Asset[],
+  ): void {
+    this.syncPreparedClips(
+      job.effectiveTrackTick,
+      trackClips,
+      assets,
+      performance.now(),
+      false,
+    );
+  }
+
+  public async decodeResolvedSourceFrame(
+    job: ResolvedClipFrameJob,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<ImageBitmap | null> {
+    if (!isDecoderRenderableClip(job.activeClip)) {
+      return null;
+    }
+    if (options.signal?.aborted) {
+      throw createRenderAbortError();
+    }
+    if (this.pendingReject) {
+      this.rejectPendingFrame(
+        new Error("Concurrent strict frame decode is not supported per track"),
+      );
+    }
+
+    return new Promise<ImageBitmap | null>((resolve, reject) => {
+      let isSettled = false;
+      const settle = <T extends unknown[]>(handler: (...args: T) => void) => {
+        return (...args: T) => {
+          if (isSettled) return;
+          isSettled = true;
+          this.clearPendingFrameState();
+          handler(...args);
+        };
+      };
+      const resolveFrame = settle(resolve);
+      const rejectFrame = settle(reject);
+
+      if (options.signal) {
+        const onAbort = () => rejectFrame(createRenderAbortError());
+        options.signal.addEventListener("abort", onAbort, { once: true });
+        this.pendingAbortCleanup = () => {
+          options.signal?.removeEventListener("abort", onAbort);
+        };
+      }
+
+      this.pendingResolve = resolveFrame;
+      this.pendingReject = rejectFrame;
+      this.lease.render({
+        time: job.sourceFrame.snappedTimeSeconds,
+        clipId: job.activeClip.id,
+        transformTime: job.rawClipTick,
+        strict: true,
+      });
+    });
+  }
+
+  public async presentResolvedFrameJob(
+    job: ResolvedClipFrameJob,
+    sourceHandle: SharedTextureHandle | null,
+    assetsById: Map<string, Asset>,
+    policy: FrameExecutionPolicy,
+  ): Promise<boolean> {
+    if (policy.mode === "export" && policy.signal?.aborted) {
+      sourceHandle?.release();
+      throw createRenderAbortError();
+    }
+    if (policy.mode === "live" && !this.isFrameJobCurrent(job)) {
+      sourceHandle?.release();
+      return false;
+    }
+
+    this.latestMaskSyncContext = {
+      maskClips: [...job.maskClips],
+      clip: job.activeClip,
+      logicalDimensions: job.logicalDimensions,
+      rawTimeTicks: job.rawClipTick,
+      assetsById,
+      sourceFrame: job.sourceFrame,
+      fps: job.fps,
+    };
+
+    if (job.activeClip.type === "text") {
+      sourceHandle?.release();
+      await this.renderTextClip(
+        job.activeClip,
+        job.logicalDimensions,
+        job.rawClipTick,
+        [...job.maskClips],
+        assetsById,
+        job.sourceFrame,
+        job.fps,
+      );
+      return true;
+    }
+
+    if (!isDecoderRenderableClip(job.activeClip)) {
+      sourceHandle?.release();
+      this.sprite.visible = false;
+      this.currentTextureClipId = null;
+      this.maskController.clear();
+      return true;
+    }
+
+    if (!sourceHandle || sourceHandle.texture === Texture.EMPTY) {
+      sourceHandle?.release();
+      if (this.currentTextureClipId !== job.activeClip.id) {
+        this.sprite.visible = false;
+        this.currentTextureClipId = null;
+      }
+      return true;
+    }
+
+    await this.maskController.syncMaskClips(
+      [...job.maskClips],
+      job.activeClip,
+      job.logicalDimensions,
+      job.rawClipTick,
+      assetsById,
+      {
+        fps: job.fps,
+        sourceFrame: job.sourceFrame,
+        waitForSam2: true,
+      },
+    );
+    if (policy.mode === "export" && policy.signal?.aborted) {
+      sourceHandle.release();
+      throw createRenderAbortError();
+    }
+    if (policy.mode === "live" && !this.isFrameJobCurrent(job)) {
+      sourceHandle.release();
+      return false;
+    }
+
+    const contentSizeChanged = this.applyTexture(
+      sourceHandle.texture,
+      job.activeClip.id,
+      "asset",
+      sourceHandle,
+    );
+    if (contentSizeChanged) {
+      await this.resyncMasksForResolvedTexture(
+        [...job.maskClips],
+        job.activeClip,
+        job.logicalDimensions,
+        job.rawClipTick,
+        assetsById,
+        job.sourceFrame,
+        job.fps,
+      );
+    }
+    this.applyClipTransformsForClip(
+      job.activeClip,
+      job.logicalDimensions,
+      job.rawClipTick,
+    );
+    return true;
+  }
+
+  public presentBlankFrame(): void {
+    this.currentPlannedSourceFrameIntent = null;
+    this.sprite.visible = false;
+    this.currentTextureClipId = null;
+    this.maskController.clear();
   }
 
   /**
@@ -1960,6 +2207,7 @@ export class TrackRenderEngine {
     texture: Texture,
     clipId: string,
     sourceKind: "asset" | "text",
+    sharedHandle: SharedTextureHandle | null = null,
   ): boolean {
     // Size comparison uses the displayed texture (in offscreen effect mode that
     // is a pool effect output, which is content-sized like the source, so the
@@ -1986,10 +2234,24 @@ export class TrackRenderEngine {
     // effect output is pool-owned and must never be retired here (it is simply
     // dereferenced when the source is reassigned below).
     const previousSource = this.effectSourceTexture;
+    const previousSharedHandle = this.currentSharedTextureHandle;
     this.sprite.texture = texture;
     this.effectSourceTexture = texture;
+    this.currentSharedTextureHandle = sharedHandle;
     if (previousSource && previousSource !== texture) {
-      this.retiredTextures.retire(previousSource);
+      if (
+        previousSharedHandle &&
+        previousSharedHandle.texture === previousSource
+      ) {
+        previousSharedHandle.release();
+      } else {
+        this.retiredTextures.retire(previousSource);
+      }
+    } else if (
+      previousSharedHandle &&
+      previousSharedHandle !== sharedHandle
+    ) {
+      previousSharedHandle.release();
     }
     this.sprite.visible = true;
     this.currentTextureClipId = clipId;
@@ -2331,15 +2593,24 @@ export class TrackRenderEngine {
     this.retiredTextures.cancel();
     const currentTexture = this.sprite.texture;
     const sourceTexture = this.effectSourceTexture;
+    const sharedTextureHandle = this.currentSharedTextureHandle;
+    this.currentSharedTextureHandle = null;
     this.effectSourceTexture = null;
     this.sprite.texture = Texture.EMPTY;
-    destroyTexture(currentTexture);
+    if (!sharedTextureHandle || currentTexture !== sharedTextureHandle.texture) {
+      destroyTexture(currentTexture);
+    }
     // The displayed texture may be a pool-owned effect output; destroying it
     // first is harmless (destroyTexture is idempotent) and the pool dispose
     // below frees the rest. The retained source is engine-owned — free it too.
-    if (sourceTexture && sourceTexture !== currentTexture) {
+    if (
+      sourceTexture &&
+      sourceTexture !== currentTexture &&
+      (!sharedTextureHandle || sourceTexture !== sharedTextureHandle.texture)
+    ) {
       destroyTexture(sourceTexture);
     }
+    sharedTextureHandle?.release();
     this.retiredTextures.flush();
 
     this.maskedEffectRenderer?.dispose();

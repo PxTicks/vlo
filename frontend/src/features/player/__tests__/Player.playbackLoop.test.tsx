@@ -238,6 +238,13 @@ vi.mock("../hooks/usePixiApp", () => ({
 
 vi.mock("../../renderer", () => ({
   AudioTrackLayer: () => null,
+  LiveFrameGraphCoordinator: class {
+    participantCount = 0;
+    dispose = vi.fn();
+    renderFrame = vi.fn(async () => null);
+    requestFrame = vi.fn();
+    subscribeFrameRequests = vi.fn(() => () => {});
+  },
   getSharedDecoderWorkerPool: () => mockDecoderWorkerPool,
   useViewport: () => mockViewport,
   useExportJobController: () => ({

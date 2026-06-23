@@ -46,6 +46,19 @@ export interface MaskedEffectRenderOptions {
    * coverage texture that aliased a chain target could be overwritten first.
    */
   resolveCoverage: (expression: MaskBooleanExpression) => Texture | null;
+  /**
+   * Optional identity of everything this render depends on (source frame, filter
+   * params, content size, mask coverage). When the previous render carried the
+   * same key, its pooled output is returned without re-running any GPU pass —
+   * the stable/paused case. Omit (or vary) the key to force a fresh render.
+   *
+   * Soundness rests on the renderer being single-consumer (one per engine) and
+   * the pool being touched only by `render`: between two same-key calls nothing
+   * overwrites the cached pool output, so it still holds the cached content. A
+   * differing key always re-renders, and the cache is dropped when the cached
+   * texture is destroyed.
+   */
+  cacheKey?: string;
 }
 
 /**
@@ -62,6 +75,7 @@ export class MaskedEffectRenderer {
   private readonly filterApplicator: OffscreenFilterApplicator;
   private readonly compositor: MaskedEffectCompositor;
   private readonly pool = new EffectChainTexturePool();
+  private cached: { key: string; output: Texture } | null = null;
 
   constructor(renderer: Renderer) {
     this.filterApplicator = new OffscreenFilterApplicator(renderer);
@@ -69,7 +83,21 @@ export class MaskedEffectRenderer {
   }
 
   render(options: MaskedEffectRenderOptions): Texture {
+    const { cacheKey } = options;
+    if (
+      cacheKey !== undefined &&
+      this.cached?.key === cacheKey &&
+      !this.cached.output.destroyed
+    ) {
+      return this.cached.output;
+    }
+
     if (options.steps.length === 0) {
+      // No GPU work; the input passes through. Still cache it so a same-key
+      // follow-up short-circuits identically (and so a later differing key
+      // correctly drops this entry).
+      this.cached =
+        cacheKey !== undefined ? { key: cacheKey, output: options.input } : null;
       return options.input;
     }
     this.pool.ensure(options.contentSize);
@@ -102,10 +130,13 @@ export class MaskedEffectRenderer {
       },
     };
 
-    return runMaskedEffectChain(options.input, options.steps, ops);
+    const output = runMaskedEffectChain(options.input, options.steps, ops);
+    this.cached = cacheKey !== undefined ? { key: cacheKey, output } : null;
+    return output;
   }
 
   dispose(): void {
+    this.cached = null;
     this.filterApplicator.dispose();
     this.compositor.dispose();
     this.pool.dispose();

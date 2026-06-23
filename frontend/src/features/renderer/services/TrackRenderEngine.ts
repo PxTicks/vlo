@@ -4,6 +4,7 @@ import type {
   TimelineClip,
   MaskTimelineClip,
   TextTimelineClip,
+  ClipTransform,
 } from "../../../types/TimelineTypes";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
@@ -22,8 +23,14 @@ import {
   resolveLiveActiveClip,
 } from "../utils/clipLookup";
 import { applyClipTransforms } from "../../transformations";
-import { planTransformRender } from "../../transformations/effectMaskRenderPlan";
-import { buildResolvedFilterOpLookup } from "../../transformations/effectMaskFilterOps";
+import {
+  planTransformRender,
+  type FilterRenderStep,
+} from "../../transformations/effectMaskRenderPlan";
+import {
+  buildResolvedFilterOpLookup,
+  type ResolvedFilterOp,
+} from "../../transformations/effectMaskFilterOps";
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
 import { MaskedEffectRenderer } from "../../masks/runtime/MaskedEffectRenderer";
 import { useDebugStore } from "../../../shared/debug/useDebugStore";
@@ -777,7 +784,21 @@ export class TrackRenderEngine {
     }
 
     if (this.sprite.visible && this.currentTextureClipId === activeClip.id) {
-      this.maskController.syncMaskSpriteTransform();
+      // Re-run the clip transforms now that masks are re-synced so a paused edit
+      // to a filter (e.g. blur strength) or to the mask itself recomposites the
+      // offscreen effect-mask chain immediately, instead of waiting for the next
+      // scrub. Crucially this runs AFTER syncMaskClips above: the effect chain's
+      // coverage resolves against the freshly synced mask set — the same
+      // mask-then-effect ordering the live render paths rely on. The displayed
+      // effect output is recomputed from `effectSourceTexture` (the unfiltered
+      // source, untouched by the previous render), and for clips with no active
+      // effect mask this falls through to the legacy `applyClipTransforms`
+      // (idempotent) and still ends with `syncMaskSpriteTransform`.
+      this.applyClipTransformsForClip(
+        activeClip,
+        logicalDimensions,
+        rawTimeSeconds,
+      );
     }
   }
 
@@ -1914,7 +1935,12 @@ export class TrackRenderEngine {
     if (bitmap) {
       const texture = Texture.from(bitmap);
       const contentSizeChanged = this.applyTexture(texture, clip.id, "asset");
-      this.applyClipTransformsForClip(clip, dimensions, rawTime);
+      // When the resolved content size changed, re-sync masks at the new size
+      // BEFORE applying transforms, so the offscreen effect-mask chain
+      // composites against correctly-sized, current coverage rather than the
+      // pre-decode sync's (wrong-sized) coverage with no later recomposite.
+      // Mirrors the live render paths (renderLiveRenderRequestWithRecovery /
+      // renderSynchronizedPlaybackFrameInternal): sync/resync → then transform.
       if (contentSizeChanged) {
         await this.resyncMasksForResolvedTexture(
           options.maskClips ?? [],
@@ -1926,6 +1952,7 @@ export class TrackRenderEngine {
           options.fps,
         );
       }
+      this.applyClipTransformsForClip(clip, dimensions, rawTime);
     }
   }
 
@@ -2051,6 +2078,12 @@ export class TrackRenderEngine {
       input: source,
       steps: plan.steps,
       contentSize,
+      cacheKey: this.buildEffectMaskCacheKey(
+        source,
+        contentSize,
+        plan.steps,
+        filterOpLookup,
+      ),
       resolveFilterOp: (transform) => filterOpLookup.get(transform),
       resolveCoverage: (expression) => {
         const coverage = this.maskController.resolveEffectMaskCoverage(
@@ -2082,6 +2115,41 @@ export class TrackRenderEngine {
       { applyFilterTransforms: false },
     );
     return true;
+  }
+
+  /**
+   * Identity of everything the offscreen effect-mask render depends on, so an
+   * unchanged paused frame reuses the previous output instead of re-running the
+   * filter + composite GPU passes (mirrors `MaskBooleanTextureRenderer`'s
+   * cache-key approach). Captures:
+   *  - the source frame (`Texture.uid`) and content size,
+   *  - the mask scene state (`getMaskSyncEpoch` — bumps on any mask change so
+   *    edited/arriving coverage invalidates even with stable filter params),
+   *  - per step: the transform id, its resolution (incl. masked expression),
+   *    and the resolved, time-sampled filter op (so a blur-strength edit, which
+   *    changes the op params, invalidates).
+   */
+  private buildEffectMaskCacheKey(
+    source: Texture,
+    contentSize: { width: number; height: number },
+    steps: readonly FilterRenderStep[],
+    filterOpLookup: Map<ClipTransform, ResolvedFilterOp>,
+  ): string {
+    const parts: string[] = [
+      `src:${source.uid}`,
+      `size:${contentSize.width}x${contentSize.height}`,
+      `mask:${this.maskController.getMaskSyncEpoch()}`,
+    ];
+    for (const step of steps) {
+      const op = filterOpLookup.get(step.transform);
+      const opKey = op ? `${op.type}:${JSON.stringify(op.params)}` : "none";
+      const resKey =
+        step.resolution.kind === "masked"
+          ? `masked:${JSON.stringify(step.resolution.expression)}`
+          : step.resolution.kind;
+      parts.push(`${step.transform.id}|${resKey}|${opKey}`);
+    }
+    return parts.join("::");
   }
 
   private async renderTextClip(
@@ -2122,8 +2190,9 @@ export class TrackRenderEngine {
       this.currentTextTextureSignature = nextSignature;
     }
 
-    this.applyClipTransformsForClip(clip, logicalDimensions, rawTime);
-
+    // Sync masks BEFORE applying transforms so the offscreen effect-mask chain
+    // resolves coverage from this frame's mask set (not the previous frame's,
+    // or null on the first render) — the same ordering the asset/live paths use.
     try {
       await this.maskController.syncMaskClips(
         maskClips,
@@ -2136,6 +2205,8 @@ export class TrackRenderEngine {
     } catch (error) {
       console.warn("Failed to sync text clip masks", error);
     }
+
+    this.applyClipTransformsForClip(clip, logicalDimensions, rawTime);
   }
 
   private async resyncMasksForResolvedTexture(

@@ -48,6 +48,30 @@ describe("EffectChainTexturePool", () => {
     pool.dispose();
   });
 
+  it("recreates the targets when a pooled texture has been destroyed", () => {
+    const pool = new EffectChainTexturePool();
+    pool.ensure(SIZE);
+    const t0 = pool.acquireExcluding();
+
+    // Simulate the cache-invalidation case: a pooled output gets destroyed.
+    t0.destroy(true);
+    pool.ensure(SIZE); // same size, but a target is dead -> must recreate
+
+    expect(pool.count).toBe(3);
+    const targets = [
+      pool.acquireExcluding(),
+      pool.acquireExcluding(pool.acquireExcluding()),
+    ];
+    for (const target of targets) {
+      expect(target).not.toBe(t0);
+      expect((target as unknown as { destroyed: boolean }).destroyed).toBe(
+        false,
+      );
+    }
+
+    pool.dispose();
+  });
+
   it("destroys all targets on dispose", () => {
     const pool = new EffectChainTexturePool();
     pool.ensure(SIZE);

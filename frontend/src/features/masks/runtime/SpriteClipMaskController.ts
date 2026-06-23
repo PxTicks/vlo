@@ -110,6 +110,14 @@ export class SpriteClipMaskController {
     new Map();
   private lastNodeSyncContentSize: { width: number; height: number } | null =
     null;
+  // Monotonic counter bumped whenever the mask scene this controller resolves
+  // coverage from changes (every `syncMaskClips`, and `clear`). Effect-mask
+  // output caching keys on this so a coverage change (new mask, edited mask,
+  // arriving SAM2/asset frame, vector geometry at a new time) invalidates a
+  // cached effect render even though the filter params and source frame are
+  // unchanged. Conservative by design: any sync bumps it, so a cache hit is
+  // only possible when nothing was re-synced (the stable/paused case).
+  private maskSyncEpoch = 0;
 
   constructor(
     sprite: Sprite,
@@ -194,6 +202,9 @@ export class SpriteClipMaskController {
       skipSam2FrameRender?: boolean;
     } = {},
   ): Promise<void> {
+    // Bump first: any sync may change the coverage the effect-mask path reads,
+    // so the epoch must advance even on the early-return branches below.
+    this.maskSyncEpoch += 1;
     this.ensureMaskSceneNodesAttached();
     this.syncMaskSpriteTransform();
     // The composited-alpha path renders `maskContainer` into a content-sized
@@ -641,8 +652,20 @@ export class SpriteClipMaskController {
   }
 
   public clear(): void {
+    // Clearing drops the coverage source, so it must invalidate effect-mask
+    // caches keyed on the sync epoch (same reasoning as `syncMaskClips`).
+    this.maskSyncEpoch += 1;
     this.clearMaskNodes();
     this.clearSpatialPresentation();
+  }
+
+  /**
+   * Monotonic token for the current mask-scene state (see {@link maskSyncEpoch}).
+   * Effect-mask output caching folds this into its cache key so any mask change
+   * invalidates a stable filter+source render.
+   */
+  public getMaskSyncEpoch(): number {
+    return this.maskSyncEpoch;
   }
 
   /**

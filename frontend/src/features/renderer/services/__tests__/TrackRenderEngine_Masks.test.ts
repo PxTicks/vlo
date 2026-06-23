@@ -586,6 +586,65 @@ describe("TrackRenderEngine masks", () => {
     engine.dispose();
   });
 
+  it("re-applies clip transforms after a paused mask refresh so effect masks recomposite", async () => {
+    const engine = new TrackRenderEngine(1);
+    const internals = engine as unknown as {
+      sprite: { visible: boolean };
+      currentTextureClipId: string | null;
+      maskController: { syncMaskClips: (...args: unknown[]) => Promise<void> };
+      applyClipTransformsForClip: (...args: unknown[]) => void;
+    };
+    // Isolate the wiring assertion: stub the (effect-running) transform apply so
+    // we only verify it is invoked after the mask re-sync.
+    const applySpy = vi
+      .spyOn(
+        internals as unknown as {
+          applyClipTransformsForClip: (...args: unknown[]) => void;
+        },
+        "applyClipTransformsForClip",
+      )
+      .mockImplementation(() => {});
+    const syncMaskClipsSpy = vi.spyOn(internals.maskController, "syncMaskClips");
+
+    const clip = createParentClip();
+    const maskApply = createMaskClip("mask_apply", "apply");
+    const assets: Asset[] = [
+      {
+        id: "asset_1",
+        src: "file://asset.mp4",
+        name: "asset",
+        hash: "hash",
+        type: "video",
+        createdAt: 0,
+      },
+    ];
+    const masksByParent = new Map<string, MaskTimelineClip[]>([
+      [clip.id, [maskApply]],
+    ]);
+
+    internals.currentTextureClipId = clip.id;
+    internals.sprite.visible = true;
+
+    await engine.refreshMasksAtPausedFrame(
+      10,
+      [clip],
+      masksByParent,
+      assets,
+      { width: 1920, height: 1080 },
+      { fps: 30 },
+    );
+
+    expect(syncMaskClipsSpy).toHaveBeenCalledTimes(1);
+    // The effect/transform re-apply runs after the mask sync (coverage ordering).
+    expect(applySpy).toHaveBeenCalledTimes(1);
+    expect(applySpy.mock.invocationCallOrder[0]).toBeGreaterThan(
+      syncMaskClipsSpy.mock.invocationCallOrder[0],
+    );
+    expect(applySpy.mock.calls[0]?.[0]).toBe(clip);
+
+    engine.dispose();
+  });
+
   it("snaps synchronized playback mask sampling to the presentation frame grid", async () => {
     const engine = new TrackRenderEngine(1);
     const internals = engine as unknown as {

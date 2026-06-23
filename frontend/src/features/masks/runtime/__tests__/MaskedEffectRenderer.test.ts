@@ -142,6 +142,74 @@ describe("MaskedEffectRenderer", () => {
     maskedRenderer.dispose();
   });
 
+  it("reuses the cached output for an identical cacheKey (no new GPU passes)", () => {
+    const { maskedRenderer, render, resolveFilterOp, resolveCoverage } = setup();
+    const opts = {
+      input: Texture.WHITE,
+      steps: [step("blur", { kind: "unmasked" as const })],
+      contentSize: CONTENT,
+      resolveFilterOp,
+      resolveCoverage,
+      cacheKey: "k1",
+    };
+    const first = maskedRenderer.render(opts);
+    expect(render).toHaveBeenCalledTimes(1);
+
+    const second = maskedRenderer.render(opts);
+    // Cache hit: same output, and no additional render pass ran.
+    expect(second).toBe(first);
+    expect(render).toHaveBeenCalledTimes(1);
+    maskedRenderer.dispose();
+  });
+
+  it("re-renders when the cacheKey changes", () => {
+    const { maskedRenderer, render, resolveFilterOp, resolveCoverage } = setup();
+    const base = {
+      input: Texture.WHITE,
+      steps: [step("blur", { kind: "unmasked" as const })],
+      contentSize: CONTENT,
+      resolveFilterOp,
+      resolveCoverage,
+    };
+    maskedRenderer.render({ ...base, cacheKey: "k1" });
+    maskedRenderer.render({ ...base, cacheKey: "k2" });
+    expect(render).toHaveBeenCalledTimes(2);
+    maskedRenderer.dispose();
+  });
+
+  it("never caches when no cacheKey is supplied", () => {
+    const { maskedRenderer, render, resolveFilterOp, resolveCoverage } = setup();
+    const base = {
+      input: Texture.WHITE,
+      steps: [step("blur", { kind: "unmasked" as const })],
+      contentSize: CONTENT,
+      resolveFilterOp,
+      resolveCoverage,
+    };
+    maskedRenderer.render(base);
+    maskedRenderer.render(base);
+    expect(render).toHaveBeenCalledTimes(2);
+    maskedRenderer.dispose();
+  });
+
+  it("drops the cache when the cached output texture is destroyed", () => {
+    const { maskedRenderer, render, resolveFilterOp, resolveCoverage } = setup();
+    const opts = {
+      input: Texture.WHITE,
+      steps: [step("blur", { kind: "unmasked" as const })],
+      contentSize: CONTENT,
+      resolveFilterOp,
+      resolveCoverage,
+      cacheKey: "k1",
+    };
+    const first = maskedRenderer.render(opts);
+    first.destroy();
+    maskedRenderer.render(opts);
+    // The cached texture was destroyed, so the second call must re-render.
+    expect(render).toHaveBeenCalledTimes(2);
+    maskedRenderer.dispose();
+  });
+
   it("threads a mixed chain without ever writing into a texture it reads", () => {
     const { maskedRenderer, passes, render, resolveFilterOp, resolveCoverage } =
       setup();

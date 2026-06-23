@@ -23,14 +23,21 @@ export class EffectChainTexturePool {
     return this.textures.length;
   }
 
-  /** Ensure three targets sized to `size` exist, recreating on a size change. */
+  /**
+   * Ensure three targets sized to `size` exist, recreating on a size change or
+   * if any pooled texture has been destroyed. The destroyed check guards the
+   * effect-output cache's invalidation path: when a cached output (a pool
+   * texture) is destroyed, the renderer misses the cache and re-renders — this
+   * must hand back a live target, never the destroyed one.
+   */
   ensure(size: { width: number; height: number }): void {
     const width = Math.max(1, Math.round(size.width));
     const height = Math.max(1, Math.round(size.height));
     if (
       this.textures.length === 3 &&
       this.width === width &&
-      this.height === height
+      this.height === height &&
+      this.textures.every((texture) => !texture.destroyed)
     ) {
       return;
     }

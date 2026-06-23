@@ -1,11 +1,28 @@
 import { Box } from "@mui/material";
 import { SortableSection } from "../../panelUI/components/SortableSection";
 import { TransformationGroup } from "./TransformationGroup";
+import { EffectMaskControl } from "./EffectMaskControl";
 import type {
   ClipTransform,
   TimelineClip,
 } from "../../../types/TimelineTypes";
 import type { LayoutGroup } from "../../panelUI/types";
+
+/**
+ * Effect masking applies to clip-local filter transforms only (v1): speed,
+ * layout, blend, volume are excluded, as are adjustment clips and mask targets.
+ */
+function supportsEffectMask(
+  transform: ClipTransform,
+  timelineClip: TimelineClip | undefined,
+): boolean {
+  return (
+    transform.type === "filter" &&
+    !!timelineClip &&
+    timelineClip.type !== "adjustment" &&
+    timelineClip.type !== "mask"
+  );
+}
 
 interface SortableTransformationItemProps {
   id: string;
@@ -86,6 +103,14 @@ export function SortableTransformationItem({
       }}
     >
       <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {supportsEffectMask(transform, timelineClip) && (
+          <EffectMaskControl
+            transform={transform}
+            clipId={clipId}
+            transformTitle={title}
+            onUpdateTransform={onUpdateTransform}
+          />
+        )}
         {groups.map((group) => (
           <TransformationGroup
             key={group.id}

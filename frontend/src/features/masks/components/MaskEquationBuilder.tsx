@@ -42,9 +42,15 @@ interface MaskEquationBuilderProps {
   masks: MaskTimelineClip[];
   expression: MaskBooleanExpression | null;
   onExpressionChange: (expression: MaskBooleanExpression | null) => void;
-  onOpenMaskDetail: (maskId: string) => void;
-  onDuplicateMask: (maskId: string) => void;
-  onDeleteMask: (maskId: string) => void;
+  /**
+   * Per-mask management actions (edit / duplicate / delete the clip's masks).
+   * Optional: when none are provided the per-chip actions menu is hidden, so the
+   * builder can be reused purely to author an expression over existing masks
+   * (e.g. effect-mask authoring) without offering to mutate the masks here.
+   */
+  onOpenMaskDetail?: (maskId: string) => void;
+  onDuplicateMask?: (maskId: string) => void;
+  onDeleteMask?: (maskId: string) => void;
   /** Manual on/off switch for evaluating the equation (persisted on the clip). */
   expressionEnabled: boolean;
   onExpressionEnabledChange: (enabled: boolean) => void;
@@ -279,21 +285,27 @@ export function MaskEquationBuilder({
     setMenuState(null);
   };
 
+  const hasMaskActions = !!(
+    onOpenMaskDetail ||
+    onDuplicateMask ||
+    onDeleteMask
+  );
+
   const handleMenuEdit = () => {
     if (!menuState) return;
-    onOpenMaskDetail(menuState.localId);
+    onOpenMaskDetail?.(menuState.localId);
     closeMaskMenu();
   };
 
   const handleMenuDuplicate = () => {
     if (!menuState) return;
-    onDuplicateMask(menuState.localId);
+    onDuplicateMask?.(menuState.localId);
     closeMaskMenu();
   };
 
   const handleMenuDelete = () => {
     if (!menuState) return;
-    onDeleteMask(menuState.localId);
+    onDeleteMask?.(menuState.localId);
     closeMaskMenu();
   };
 
@@ -516,21 +528,26 @@ export function MaskEquationBuilder({
                 color={isSelectedEntry || isReferenced ? "primary" : "default"}
                 variant={isSelectedEntry ? "filled" : "outlined"}
                 onClick={() => setSelectedLocalId(entry.localId)}
-                onDelete={(event) =>
-                  openMaskMenu(
-                    event.currentTarget as HTMLElement,
-                    entry.localId,
-                    entry.label,
-                  )
+                onDelete={
+                  hasMaskActions
+                    ? (event) =>
+                        openMaskMenu(
+                          event.currentTarget as HTMLElement,
+                          entry.localId,
+                          entry.label,
+                        )
+                    : undefined
                 }
                 deleteIcon={
-                  <ArrowDropDown
-                    role="button"
-                    aria-hidden={false}
-                    aria-label={`Actions for ${entry.label}`}
-                    data-testid={`mask-actions-button-${entry.localId}`}
-                    sx={{ fontSize: 18 }}
-                  />
+                  hasMaskActions ? (
+                    <ArrowDropDown
+                      role="button"
+                      aria-hidden={false}
+                      aria-label={`Actions for ${entry.label}`}
+                      data-testid={`mask-actions-button-${entry.localId}`}
+                      sx={{ fontSize: 18 }}
+                    />
+                  ) : undefined
                 }
                 draggable
                 onDragStart={(event) => {
@@ -557,40 +574,48 @@ export function MaskEquationBuilder({
         </Box>
       </Box>
 
-      <Menu
-        data-testid="mask-actions-menu"
-        anchorEl={menuState?.anchor ?? null}
-        open={!!menuState}
-        onClose={closeMaskMenu}
-      >
-        <MenuItem
-          data-testid="mask-actions-menu-edit"
-          onClick={handleMenuEdit}
+      {hasMaskActions && (
+        <Menu
+          data-testid="mask-actions-menu"
+          anchorEl={menuState?.anchor ?? null}
+          open={!!menuState}
+          onClose={closeMaskMenu}
         >
-          <ListItemIcon>
-            <EditOutlined fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Edit</ListItemText>
-        </MenuItem>
-        <MenuItem
-          data-testid="mask-actions-menu-duplicate"
-          onClick={handleMenuDuplicate}
-        >
-          <ListItemIcon>
-            <ContentCopy fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Duplicate</ListItemText>
-        </MenuItem>
-        <MenuItem
-          data-testid="mask-actions-menu-delete"
-          onClick={handleMenuDelete}
-        >
-          <ListItemIcon>
-            <DeleteOutline fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
-      </Menu>
+          {onOpenMaskDetail && (
+            <MenuItem
+              data-testid="mask-actions-menu-edit"
+              onClick={handleMenuEdit}
+            >
+              <ListItemIcon>
+                <EditOutlined fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Edit</ListItemText>
+            </MenuItem>
+          )}
+          {onDuplicateMask && (
+            <MenuItem
+              data-testid="mask-actions-menu-duplicate"
+              onClick={handleMenuDuplicate}
+            >
+              <ListItemIcon>
+                <ContentCopy fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Duplicate</ListItemText>
+            </MenuItem>
+          )}
+          {onDeleteMask && (
+            <MenuItem
+              data-testid="mask-actions-menu-delete"
+              onClick={handleMenuDelete}
+            >
+              <ListItemIcon>
+                <DeleteOutline fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Delete</ListItemText>
+            </MenuItem>
+          )}
+        </Menu>
+      )}
 
       <Box>
         <Box

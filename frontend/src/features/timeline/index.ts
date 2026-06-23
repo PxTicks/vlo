@@ -91,6 +91,7 @@ export {
   useTimelineClip,
   usePrimaryActiveClip,
   useTimelineClipsForTrack,
+  useMaskClipsForParent,
   useTimelineDuration,
   useTimelineClipCountForAsset,
 } from "./api";

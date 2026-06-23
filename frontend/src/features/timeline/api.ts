@@ -1,11 +1,13 @@
 import { useShallow } from "zustand/react/shallow";
 import type {
   ClipTransform,
+  MaskTimelineClip,
   TimelineClip,
   TimelineTrack,
 } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
+  selectMaskClipsForParent,
   selectPrimaryActiveClip,
   selectTimelineClipById,
   selectTimelineClipCountForAsset,
@@ -18,6 +20,7 @@ import { useProjectStore } from "../project/useProjectStore";
 type TimelineStoreState = ReturnType<typeof useTimelineStore.getState>;
 
 export {
+  selectMaskClipsForParent,
   selectPrimaryActiveClip,
   selectTimelineClipById,
   selectTimelineClipCountForAsset,
@@ -54,6 +57,16 @@ export function useTimelineClipsForTrack(
   return useTimelineStore(
     useShallow((state) =>
       selectTimelineClipsForTrack(state, trackId, includeMasks),
+    ),
+  );
+}
+
+export function useMaskClipsForParent(
+  parentClipId: string | null | undefined,
+): MaskTimelineClip[] {
+  return useTimelineStore(
+    useShallow((state) =>
+      parentClipId ? selectMaskClipsForParent(state, parentClipId) : [],
     ),
   );
 }

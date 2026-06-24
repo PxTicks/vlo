@@ -3,7 +3,6 @@ import { Application, Container } from "pixi.js";
 import { useTrackRenderer } from "../hooks/useTrackRenderer";
 import type { RenderGroupOrchestrator } from "../../renderer/services/RenderGroupOrchestrator";
 import type { AdjustmentEffectResolver } from "../../renderer/services/AdjustmentEffectResolver";
-import type { LiveFrameGraphCoordinator } from "../../renderer/services/framePlanning";
 
 interface TrackLayerProps {
   trackId: string;
@@ -17,7 +16,6 @@ interface TrackLayerProps {
   ) => void;
   orchestrator?: RenderGroupOrchestrator | null;
   adjustmentEffectResolver?: AdjustmentEffectResolver | null;
-  liveFrameGraphCoordinator?: LiveFrameGraphCoordinator | null;
 }
 
 function TrackLayerComponent({
@@ -29,7 +27,6 @@ function TrackLayerComponent({
   registerSynchronizedPlaybackRenderer,
   orchestrator,
   adjustmentEffectResolver,
-  liveFrameGraphCoordinator,
 }: TrackLayerProps) {
   useTrackRenderer(
     trackId,
@@ -40,7 +37,6 @@ function TrackLayerComponent({
     registerSynchronizedPlaybackRenderer,
     orchestrator,
     adjustmentEffectResolver,
-    liveFrameGraphCoordinator,
   );
   return null;
 }

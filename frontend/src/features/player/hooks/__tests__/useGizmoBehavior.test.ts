@@ -4,7 +4,6 @@ import { renderHook } from "@testing-library/react";
 import { useGizmoBehavior } from "../useGizmoBehavior";
 import { Container, Sprite, Texture, Application } from "pixi.js";
 import type { TransformInteractionHandlers } from "../interaction/useTransformInteractionController";
-import { requestLiveSceneTransformSync } from "../../services/liveSceneTransformSync";
 
 // Mock SelectionGizmo class
 vi.mock("../../utils/SelectionGizmo", () => {
@@ -114,21 +113,6 @@ describe("useGizmoBehavior", () => {
     tickerCallback();
 
     expect(gizmoMock.update).toHaveBeenCalledWith(mockSprite, 2);
-  });
-
-  it("updates immediately when an attached object moves outside the ticker", () => {
-    renderHook(() =>
-      useGizmoBehavior(mockSprite, true, mockApp, mockViewport, interactions),
-    );
-
-    const gizmoMock = vi.mocked(SelectionGizmo).mock.instances[0] as unknown as {
-      update: Mock;
-    };
-    gizmoMock.update.mockClear();
-
-    requestLiveSceneTransformSync();
-
-    expect(gizmoMock.update).toHaveBeenCalledWith(mockSprite, 1);
   });
 
   it("hides the gizmo without updating it when the target is not renderable", () => {

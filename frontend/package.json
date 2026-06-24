@@ -10,6 +10,9 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "COVERAGE_STAGE=wave3 vitest run --coverage && node scripts/verify-coverage.mjs",
+    "test:coverage:report": "COVERAGE_STAGE=report vitest run --coverage",
+    "test:coverage:baseline": "COVERAGE_STAGE=baseline vitest run --coverage && node scripts/verify-coverage.mjs --skip-feature-floors",
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"

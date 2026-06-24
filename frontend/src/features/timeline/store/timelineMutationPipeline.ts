@@ -1,13 +1,9 @@
 import { applyPatches, produceWithPatches, type Patch } from "../../../lib/immerLite";
-import type {
-  TimelineClip,
-  Transition,
-} from "../../../types/TimelineTypes";
+import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../../project/types/ProjectDocument";
 import { fileSystemService } from "../../project/services/FileSystemService";
 import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
 import { collectMaskBackingAssetIds } from "../model/maskClipModel";
-import { pruneInvalidTransitions } from "../model/timelineCommands";
 import type { TimelineModelState } from "../model/timelineTrackModel";
 
 const TIMELINE_HISTORY_LIMIT = 100;
@@ -22,7 +18,6 @@ interface TimelineHistoryEntry {
 
 interface TimelineMutationState extends TimelineModelState {
   selectedClipIds: string[];
-  selectedTransitionId: string | null;
   copiedClips: TimelineClip[];
   canUndo: boolean;
   canRedo: boolean;
@@ -68,21 +63,7 @@ function getCurrentModelState<State extends TimelineMutationState>(
   return {
     tracks: state.tracks,
     clips: state.clips,
-    transitions: state.transitions,
   };
-}
-
-function sanitizeSelectedTransitionId(
-  selectedTransitionId: string | null,
-  transitions: readonly Transition[],
-): string | null {
-  if (
-    selectedTransitionId &&
-    transitions.some((transition) => transition.id === selectedTransitionId)
-  ) {
-    return selectedTransitionId;
-  }
-  return null;
 }
 
 function queueMaskBackingAssetOperation(
@@ -262,7 +243,6 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     const fallbackSnapshot: TimelineSnapshot = {
       tracks: structuredClone(get().tracks),
       clips: structuredClone(get().clips),
-      transitions: structuredClone(get().transitions),
     };
 
     flushInFlight = projectPersistenceService
@@ -277,9 +257,6 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
         await projectPersistenceService.updateTimeline((draft) => {
           draft.tracks = structuredClone(fallbackSnapshot.tracks);
           draft.clips = structuredClone(fallbackSnapshot.clips);
-          draft.transitions = structuredClone(
-            fallbackSnapshot.transitions ?? [],
-          );
         });
       })
       .finally(() => {
@@ -306,10 +283,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     const currentModel = getCurrentModelState(get());
     const [nextModel, forwardPatches, inversePatches] = produceWithPatches(
       currentModel,
-      (draft) => {
-        recipe(draft);
-        pruneInvalidTransitions(draft);
-      },
+      recipe,
     );
 
     if (forwardPatches.length === 0) return false;
@@ -329,14 +303,9 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set((state) => ({
       tracks: nextModel.tracks,
       clips: nextModel.clips,
-      transitions: nextModel.transitions,
       selectedClipIds: sanitizeSelectedClipIds(
         state.selectedClipIds,
         nextModel.clips,
-      ),
-      selectedTransitionId: sanitizeSelectedTransitionId(
-        state.selectedTransitionId,
-        nextModel.transitions,
       ),
       ...applyHistoryFlags(),
     }));
@@ -363,14 +332,9 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set((state) => ({
       tracks: nextModel.tracks,
       clips: nextModel.clips,
-      transitions: nextModel.transitions,
       selectedClipIds: sanitizeSelectedClipIds(
         state.selectedClipIds,
         nextModel.clips,
-      ),
-      selectedTransitionId: sanitizeSelectedTransitionId(
-        state.selectedTransitionId,
-        nextModel.transitions,
       ),
       ...applyHistoryFlags(),
     }));
@@ -401,14 +365,9 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     set((state) => ({
       tracks: nextModel.tracks,
       clips: nextModel.clips,
-      transitions: nextModel.transitions,
       selectedClipIds: sanitizeSelectedClipIds(
         state.selectedClipIds,
         nextModel.clips,
-      ),
-      selectedTransitionId: sanitizeSelectedTransitionId(
-        state.selectedTransitionId,
-        nextModel.transitions,
       ),
       ...applyHistoryFlags(),
     }));
@@ -430,22 +389,14 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     undoStack = [];
     redoStack = [];
 
-    const migrated = snapshot
+    const next = snapshot
       ? migrateTimelineSnapshot(snapshot)
       : createDefaultTimelineSnapshot();
-    const next: TimelineModelState = {
-      tracks: migrated.tracks,
-      clips: migrated.clips,
-      transitions: migrated.transitions ?? [],
-    };
-    pruneInvalidTransitions(next);
 
     set({
       tracks: next.tracks,
       clips: next.clips,
-      transitions: next.transitions,
       selectedClipIds: [],
-      selectedTransitionId: null,
       copiedClips: [],
       canUndo: false,
       canRedo: false,

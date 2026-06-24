@@ -52,9 +52,6 @@ export function selectionToCompositeContent(
     durationTicks,
     clips: selection.clips.map((clip) => cloneClipWithStartShift(clip, -start)),
     ...(selection.tracks ? { tracks: cloneTracks(selection.tracks) } : {}),
-    ...(selection.transitions
-      ? { transitions: structuredClone(selection.transitions) }
-      : {}),
     ...(selection.includedTrackIds
       ? { includedTrackIds: selection.includedTrackIds.slice() }
       : {}),
@@ -108,9 +105,6 @@ export function compositeContentToSelection(
     end: content.durationTicks,
     clips: structuredClone(content.clips),
     ...(content.tracks ? { tracks: cloneTracks(content.tracks) } : {}),
-    ...(content.transitions
-      ? { transitions: structuredClone(content.transitions) }
-      : {}),
     ...(content.includedTrackIds
       ? { includedTrackIds: content.includedTrackIds.slice() }
       : {}),
@@ -172,7 +166,6 @@ function projectContentForHash(content: CompositeContent): unknown {
       isMuted: track.isMuted,
     })),
     clips: content.clips.map(projectClipForHash),
-    transitions: content.transitions ?? [],
   };
 }
 

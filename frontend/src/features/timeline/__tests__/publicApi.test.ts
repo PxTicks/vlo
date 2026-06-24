@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AdjustmentTimelineClip,
   ClipTransform,
@@ -8,19 +9,37 @@ import type {
 import {
   createEndpointOverlayItem,
   createSourceTimeOverlayItem,
+  addTimelineClipTransform,
+  getTimelineClips,
   getPrimaryActiveClip,
   getTimelineClipById,
   getTimelineClipCountForAsset,
   getTimelineClipsForTrack,
   getTimelineDuration,
+  getTimelineModelState,
+  getTimelineTracks,
+  selectTimelineClip,
   selectPrimaryActiveClip,
   selectTimelineClipById,
   selectTimelineClipCountForAsset,
   selectTimelineClipsForTrack,
   selectTimelineDuration,
+  useMaskClipsForParent,
+  usePrimaryActiveClip,
+  useTimelineClip,
+  useTimelineClipCountForAsset,
+  useTimelineClipsForTrack,
+  useTimelineDuration,
   useTimelineStore,
   TICKS_PER_SECOND,
 } from "..";
+import {
+  flushPendingTimelinePersistence,
+  replaceTimelineSnapshot,
+  useSelectedTimelineClipIds,
+  useTimelineClips,
+  useTimelineTracks,
+} from "../api";
 import { useProjectStore } from "../../project/useProjectStore";
 
 const TRACKS: TimelineTrack[] = [
@@ -57,9 +76,16 @@ const CLIPS: TimelineClip[] = [
     transformedDuration: 100,
     transformedOffset: 0,
     transformations: [],
+    components: [
+      {
+        id: "mask-ref",
+        type: "mask_ref",
+        parameters: { maskClipId: "clip-video::mask::fixture" },
+      },
+    ],
   },
   {
-    id: "clip-mask",
+    id: "clip-video::mask::fixture",
     trackId: "track-video",
     type: "mask",
     name: "Mask Clip",
@@ -73,6 +99,7 @@ const CLIPS: TimelineClip[] = [
     maskType: "rectangle",
     maskMode: "apply",
     maskInverted: false,
+    parentClipId: "clip-video",
     maskParameters: { baseWidth: 100, baseHeight: 100 },
     transformations: [],
   },
@@ -134,10 +161,77 @@ describe("timeline public API", () => {
   it("exposes clip lookups through selectors and getters", () => {
     const state = useTimelineStore.getState();
 
+    expect(getTimelineClips()).toEqual(CLIPS);
+    expect(getTimelineTracks()).toEqual(TRACKS);
+    expect(getTimelineModelState()).toEqual({
+      clips: CLIPS,
+      tracks: TRACKS,
+    });
     expect(selectTimelineClipById(state, "clip-video")?.id).toBe("clip-video");
     expect(selectPrimaryActiveClip(state)?.id).toBe("clip-video");
     expect(getTimelineClipById("clip-audio")?.id).toBe("clip-audio");
     expect(getPrimaryActiveClip()?.id).toBe("clip-video");
+  });
+
+  it("exposes reactive timeline selectors through public hooks", () => {
+    expect(renderHook(() => useTimelineClips()).result.current).toEqual(CLIPS);
+    expect(renderHook(() => useTimelineTracks()).result.current).toEqual(TRACKS);
+    expect(
+      renderHook(() => useSelectedTimelineClipIds()).result.current,
+    ).toEqual(["clip-video"]);
+    expect(renderHook(() => useTimelineClip("clip-video")).result.current?.id).toBe(
+      "clip-video",
+    );
+    expect(renderHook(() => usePrimaryActiveClip()).result.current?.id).toBe(
+      "clip-video",
+    );
+    expect(
+      renderHook(() => useTimelineClipsForTrack("track-video", false)).result
+        .current,
+    ).toHaveLength(2);
+    expect(
+      renderHook(() => useMaskClipsForParent("clip-video")).result.current,
+    ).toHaveLength(1);
+    expect(renderHook(() => useMaskClipsForParent(null)).result.current).toEqual(
+      [],
+    );
+    expect(renderHook(() => useTimelineDuration()).result.current).toBe(200);
+    expect(
+      renderHook(() => useTimelineClipCountForAsset("asset-video")).result
+        .current,
+    ).toBe(1);
+  });
+
+  it("routes public mutations to the timeline store", () => {
+    const transform = speedTransform(2);
+
+    addTimelineClipTransform("clip-video", transform);
+    expect(getTimelineClipById("clip-video")?.transformations).toContain(
+      transform,
+    );
+
+    selectTimelineClip("clip-audio");
+    expect(useTimelineStore.getState().selectedClipIds).toEqual(["clip-audio"]);
+    selectTimelineClip(null);
+    expect(useTimelineStore.getState().selectedClipIds).toEqual([]);
+  });
+
+  it("routes snapshot replacement and persistence flushing to the store", async () => {
+    const state = useTimelineStore.getState();
+    const replaceSpy = vi
+      .spyOn(state, "replaceTimelineSnapshot")
+      .mockImplementation(() => undefined);
+    const flushSpy = vi
+      .spyOn(state, "flushPendingPersistence")
+      .mockResolvedValue(undefined);
+
+    replaceTimelineSnapshot(null);
+    await flushPendingTimelinePersistence();
+
+    expect(replaceSpy).toHaveBeenCalledWith(null);
+    expect(flushSpy).toHaveBeenCalledOnce();
+    replaceSpy.mockRestore();
+    flushSpy.mockRestore();
   });
 
   it("exposes track clips, duration, and asset usage through public helpers", () => {

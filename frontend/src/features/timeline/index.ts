@@ -41,8 +41,6 @@ export {
   ticksToPx,
   pxToTicks,
 } from "../../core/time/pixelGrid";
-export { timelineSpanStyleX } from "./utils/timelineGeometry";
-export type { TimelineSpanStyleOptions } from "./utils/timelineGeometry";
 export { AssetDragOverlay } from "./components/AssetDragOverlay";
 export {
   createEndpointOverlayItem,
@@ -78,7 +76,6 @@ export {
   getTimelineModelState,
   getTimelineClipById,
   getTimelineTracks,
-  getTimelineTransitions,
   getPrimaryActiveClip,
   getTimelineClipsForTrack,
   getTimelineDuration,
@@ -86,9 +83,6 @@ export {
   addTimelineClipTransform,
   addTimelineAdjustmentClip,
   selectTimelineClip,
-  selectTimelineTransition,
-  addTimelineTransition,
-  updateTimelineTransitionParameters,
   selectTimelineClipById,
   selectPrimaryActiveClip,
   selectTimelineClipsForTrack,
@@ -100,6 +94,4 @@ export {
   useMaskClipsForParent,
   useTimelineDuration,
   useTimelineClipCountForAsset,
-  useTimelineTransitions,
-  useSelectedTimelineTransitionId,
 } from "./api";

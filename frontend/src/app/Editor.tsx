@@ -19,10 +19,6 @@ import {
 } from "../features/timeline";
 import { TransformationDragOverlay } from "../features/transformations/components/TransformationDragOverlay";
 import { useTransformDrag } from "../features/transformations/hooks/useTransformDrag";
-import {
-  TransitionDragOverlay,
-  useTransitionDrag,
-} from "../features/transitions";
 import { useEditorFocusReconciler } from "../features/editorFocus";
 import { Player } from "../features/player/Player";
 import { EditorLayout } from "./layout/EditorLayout";
@@ -66,12 +62,6 @@ export function Editor() {
     handleTransformDragEnd,
     handleTransformDragCancel,
   } = useTransformDrag(scrollContainerRef);
-  const {
-    handleTransitionDragStart,
-    handleTransitionDragMove,
-    handleTransitionDragEnd,
-    handleTransitionDragCancel,
-  } = useTransitionDrag(scrollContainerRef);
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -79,17 +69,9 @@ export function Editor() {
         handleTransformDragStart(event);
         return;
       }
-      if (event.active.data.current?.type === "transition") {
-        handleTransitionDragStart(event);
-        return;
-      }
       handleAssetDragStart(event);
     },
-    [
-      handleAssetDragStart,
-      handleTransformDragStart,
-      handleTransitionDragStart,
-    ],
+    [handleAssetDragStart, handleTransformDragStart],
   );
 
   const handleDragMove = useCallback(
@@ -98,17 +80,9 @@ export function Editor() {
         handleTransformDragMove(event);
         return;
       }
-      if (event.active.data.current?.type === "transition") {
-        handleTransitionDragMove(event);
-        return;
-      }
       handleAssetDragMove(event);
     },
-    [
-      handleAssetDragMove,
-      handleTransformDragMove,
-      handleTransitionDragMove,
-    ],
+    [handleAssetDragMove, handleTransformDragMove],
   );
 
   const handleDragEnd = useCallback(
@@ -117,26 +91,18 @@ export function Editor() {
         handleTransformDragEnd(event);
         return;
       }
-      if (event.active.data.current?.type === "transition") {
-        handleTransitionDragEnd(event);
-        return;
-      }
       handleAssetDragEnd(event);
     },
-    [handleAssetDragEnd, handleTransformDragEnd, handleTransitionDragEnd],
+    [handleAssetDragEnd, handleTransformDragEnd],
   );
 
   const handleDragCancel = useCallback(
     (event: DragCancelEvent) => {
       if (event.active.data.current?.type === "transform") {
         handleTransformDragCancel(event);
-        return;
-      }
-      if (event.active.data.current?.type === "transition") {
-        handleTransitionDragCancel(event);
       }
     },
-    [handleTransformDragCancel, handleTransitionDragCancel],
+    [handleTransformDragCancel],
   );
 
   const sensors = useSensors(
@@ -193,7 +159,6 @@ export function Editor() {
 
       <AssetDragOverlay />
       <TransformationDragOverlay />
-      <TransitionDragOverlay />
     </DndContext>
   );
 }

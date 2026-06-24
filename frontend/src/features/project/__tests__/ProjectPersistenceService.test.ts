@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
+  prepareAssetForPersistence,
   projectPersistenceService,
   ProjectSchemaVersionError,
 } from "../services/ProjectPersistenceService";
@@ -730,5 +731,269 @@ describe("ProjectPersistenceService", () => {
     await expect(
       projectPersistenceService.loadOrMigrateProject(),
     ).rejects.toThrow(/depth/i);
+  });
+
+  it("prepares inline, sidecar, and existing metadata references", () => {
+    expect(() =>
+      prepareAssetForPersistence({
+        id: "missing",
+        hash: "hash",
+        name: "Missing",
+        type: "image",
+        src: "blob:runtime",
+        createdAt: 1,
+      }),
+    ).toThrow(/missing a persisted source path/);
+
+    const inline = prepareAssetForPersistence({
+      id: "inline",
+      hash: "hash",
+      name: "Inline",
+      type: "image",
+      src: "runtime",
+      thumbnail: "http://remote/thumbnail.png",
+      thumbnailPath: "thumb.png",
+      proxySrc: "blob:proxy",
+      proxyPath: "proxy.mp4",
+      createdAt: 1,
+      creationMetadata: { source: "uploaded" },
+      metadataRef: "asset-metadata/existing.json",
+    });
+    expect(inline.entry).toMatchObject({
+      src: "runtime",
+      thumbnail: "thumb.png",
+      proxySrc: "proxy.mp4",
+      creationMetadata: { source: "uploaded" },
+      metadataRef: "asset-metadata/existing.json",
+    });
+    expect(inline.sidecarMetadata).toBeUndefined();
+
+    const generated = prepareAssetForPersistence({
+      id: "generated",
+      hash: "hash",
+      name: "Generated",
+      type: "video",
+      src: "https://runtime/video.mp4",
+      sourcePath: "video.mp4",
+      createdAt: 1,
+      creationMetadata: {
+        source: "generated",
+        workflowName: "Workflow",
+        inputs: [],
+        replayState: { version: 2 },
+      },
+    });
+    expect(generated.entry.creationMetadata?.source).toBe("generated");
+    expect(
+      (generated.entry.creationMetadata as { replayState?: unknown })
+        .replayState,
+    ).toBeUndefined();
+    expect(generated.sidecarMetadata).toBeDefined();
+
+    const lightweightComposite = prepareAssetForPersistence({
+      id: "composite",
+      hash: "hash",
+      name: "Composite",
+      type: "video",
+      src: "composite.mp4",
+      createdAt: 1,
+      creationMetadata: { source: "composite" },
+    });
+    expect(lightweightComposite.sidecarMetadata).toBeUndefined();
+  });
+
+  it("updates cached manifest and timeline documents", async () => {
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(".vloproject/timeline.json", JSON.stringify(timeline));
+
+    const updatedManifest = await projectPersistenceService.updateManifest(
+      (draft) => {
+        draft.title = "Updated";
+      },
+    );
+    expect(updatedManifest.title).toBe("Updated");
+    expect(updatedManifest.lastSavedWithVloVersion).toBeDefined();
+
+    const updatedTimeline = await projectPersistenceService.updateTimeline(
+      (draft) => {
+        draft.tracks[0]!.label = "Updated Track";
+      },
+    );
+    expect(updatedTimeline.tracks[0]?.label).toBe("Updated Track");
+
+    const patched = await projectPersistenceService.applyTimelinePatches(
+      [{ op: "replace", path: ["tracks", 0, "label"], value: "Patched" }],
+      { tracks: timeline.tracks, clips: [] },
+    );
+    expect(patched.tracks[0]?.label).toBe("Patched");
+  });
+
+  it("falls back to a full timeline snapshot when patches fail", async () => {
+    files.set(".vloproject/timeline.json", JSON.stringify(timeline));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fallback = {
+      tracks: [{ ...timeline.tracks[0], label: "Fallback" }],
+      clips: [],
+    };
+    const result = await projectPersistenceService.applyTimelinePatches(
+      [{ op: "replace", path: ["missing", 0], value: "bad" }],
+      fallback,
+    );
+    expect(result.tracks[0]?.label).toBe("Fallback");
+    expect(warning).toHaveBeenCalled();
+  });
+
+  it("creates missing asset/composite documents and updates them", async () => {
+    const assets = await projectPersistenceService.updateAssetIndex((draft) => {
+      draft.assetFamilies.family = {
+        id: "family",
+        compatibility: {
+          assetType: "image",
+          durationMs: null,
+          fpsMilli: null,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      };
+    });
+    expect(assets.assetFamilies.family).toBeDefined();
+
+    const emptyComposites =
+      await projectPersistenceService.readCompositeLibrary();
+    expect(emptyComposites.composites).toEqual({});
+    const updatedComposites =
+      await projectPersistenceService.updateCompositeLibrary((draft) => {
+        draft.composites.example = {
+          id: "example",
+          name: "Example",
+          createdAt: 1,
+          updatedAt: 1,
+          content: {
+            durationTicks: 1,
+            clips: [],
+            tracks: [],
+          },
+        };
+      });
+    expect(updatedComposites.composites.example).toBeDefined();
+  });
+
+  it("propagates non-missing asset/composite read failures", async () => {
+    (fileSystemService.readFile as Mock).mockRejectedValueOnce(
+      new Error("Permission denied"),
+    );
+    await expect(
+      projectPersistenceService.updateAssetIndex(() => undefined),
+    ).rejects.toThrow(/Permission denied/);
+
+    projectPersistenceService.resetCaches();
+    (fileSystemService.readFile as Mock).mockRejectedValueOnce(
+      new Error("Permission denied"),
+    );
+    await expect(
+      projectPersistenceService.readCompositeLibrary(),
+    ).rejects.toThrow(/Permission denied/);
+  });
+
+  it("writes, caches, validates, and deletes asset metadata", async () => {
+    const metadata = {
+      source: "generated" as const,
+      workflowName: "Workflow",
+      inputs: [],
+    };
+    const ref = await projectPersistenceService.writeAssetMetadata(
+      "asset-1",
+      metadata,
+    );
+    expect(ref).toBe("asset-metadata/asset-1.json");
+    expect(
+      await projectPersistenceService.readAssetMetadata("asset-1", ref),
+    ).toMatchObject({ assetId: "asset-1" });
+
+    projectPersistenceService.resetCaches();
+    files.set(
+      ".vloproject/asset-metadata/wrong.json",
+      JSON.stringify({
+        documentType: "vlo.assetMetadata",
+        schemaVersion: 1,
+        assetId: "other",
+        updated_at: 1,
+        creationMetadata: metadata,
+      }),
+    );
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(
+      projectPersistenceService.readAssetMetadata(
+        "wrong",
+        "asset-metadata/wrong.json",
+      ),
+    ).resolves.toBeNull();
+    expect(warning).toHaveBeenCalled();
+
+    await projectPersistenceService.deleteAssetMetadata("asset-1", ref);
+    expect(files.has(".vloproject/asset-metadata/asset-1.json")).toBe(false);
+    await expect(
+      projectPersistenceService.deleteAssetMetadata("missing"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("persists multiple assets and initializes a complete project", async () => {
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+    await projectPersistenceService.persistAssetEntries([
+      {
+        id: "one",
+        hash: "one",
+        name: "One",
+        type: "image",
+        src: "one.png",
+        createdAt: 1,
+      },
+      {
+        id: "two",
+        hash: "two",
+        name: "Two",
+        type: "image",
+        src: "two.png",
+        createdAt: 2,
+      },
+    ]);
+    const persisted = JSON.parse(files.get(".vloproject/assets.json")!);
+    expect(Object.keys(persisted.assets)).toEqual(["one", "two"]);
+
+    projectPersistenceService.resetCaches();
+    const initialized = await projectPersistenceService.initializeProjectDocuments({
+      id: "new-project",
+      title: "New Project",
+      createdAt: 1,
+      config: {},
+    });
+    expect(initialized.id).toBe("new-project");
+    expect(files.has(".vloproject/composites.json")).toBe(true);
+    expect(
+      JSON.parse(files.get(".vloproject/timeline.json")!).tracks,
+    ).toHaveLength(1);
+    await projectPersistenceService.flushAll();
+  });
+
+  it("returns an empty load result for missing and incomplete legacy projects", async () => {
+    await expect(projectPersistenceService.loadOrMigrateProject()).resolves.toEqual({
+      manifest: null,
+      timeline: null,
+      assetIndex: null,
+      compositeLibrary: null,
+      migrated: false,
+    });
+
+    files.set(
+      ".vloproject/project.json",
+      JSON.stringify({ schemaVersion: 2, config: {} }),
+    );
+    await expect(projectPersistenceService.loadOrMigrateProject()).resolves.toEqual({
+      manifest: null,
+      timeline: null,
+      assetIndex: null,
+      compositeLibrary: null,
+      migrated: false,
+    });
   });
 });

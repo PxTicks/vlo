@@ -195,4 +195,96 @@ describe("TextPanel", () => {
       ],
     });
   });
+
+  it("creates a draft text clip after content is edited", () => {
+    render(<TextPanel />);
+    const addButton = screen.getByRole("button", { name: "Add Text Clip" });
+    expect(addButton).toBeEnabled();
+
+    const contentInput = screen.getByLabelText("Content");
+    contentInput.innerHTML = "A new title";
+    fireEvent.input(contentInput);
+    fireEvent.blur(contentInput);
+    fireEvent.click(addButton);
+
+    expect(mocks.insertTextClipAtPlayhead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "A new title",
+      }),
+    );
+  });
+
+  it("commits selected font size, stroke width, and alignment controls", () => {
+    mocks.clips = [createTextClip()];
+    mocks.selectedClipIds = ["clip_text_1"];
+    render(<TextPanel />);
+
+    const size = screen.getByLabelText("Size");
+    fireEvent.change(size, { target: { value: "120" } });
+    fireEvent.blur(size);
+    expect(mocks.updateTextClipData).toHaveBeenCalledWith("clip_text_1", {
+      fontSize: 120,
+    });
+
+    const width = screen.getByLabelText("Width");
+    fireEvent.change(width, { target: { value: "4" } });
+    fireEvent.keyDown(width, { key: "Enter" });
+    fireEvent.blur(width);
+    expect(mocks.updateTextClipData).toHaveBeenCalledWith("clip_text_1", {
+      strokeWidth: 4,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Align right" }));
+    expect(mocks.updateTextClipData).toHaveBeenCalledWith("clip_text_1", {
+      align: "right",
+    });
+  });
+
+  it("previews and commits stroke color independently", () => {
+    mocks.clips = [createTextClip()];
+    mocks.selectedClipIds = ["clip_text_1"];
+    render(<TextPanel />);
+
+    const stroke = screen.getByLabelText("Stroke");
+    fireEvent.change(stroke, { target: { value: "#00ff00" } });
+    expect(mocks.livePreviewTextStore.set).toHaveBeenCalledWith("clip_text_1", {
+      strokeColor: "#00ff00",
+    });
+    fireEvent.blur(stroke);
+    expect(mocks.updateTextClipData).toHaveBeenCalledWith("clip_text_1", {
+      strokeColor: "#00ff00",
+    });
+    expect(mocks.livePreviewTextStore.clear).toHaveBeenCalledWith(
+      "clip_text_1",
+      ["strokeColor"],
+    );
+  });
+
+  it("shows selection guidance for multi-selection", () => {
+    mocks.clips = [createTextClip(), createTextClip({ id: "clip_text_2" })];
+    mocks.selectedClipIds = ["clip_text_1", "clip_text_2"];
+    render(<TextPanel />);
+    expect(screen.getByText(/Select a text clip to edit it/i)).toBeInTheDocument();
+  });
+
+  it("cancels pending previews and clears live state on unmount", () => {
+    const callback = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", vi.fn((next: FrameRequestCallback) => {
+      callback.mockImplementation(() => next(16));
+      return 42;
+    }));
+    const cancel = vi.fn();
+    vi.stubGlobal("cancelAnimationFrame", cancel);
+    mocks.clips = [createTextClip()];
+    mocks.selectedClipIds = ["clip_text_1"];
+    const { unmount } = render(<TextPanel />);
+
+    fireEvent.change(screen.getByLabelText("Color"), {
+      target: { value: "#123456" },
+    });
+    unmount();
+
+    expect(cancel).toHaveBeenCalledWith(42);
+    expect(mocks.livePreviewTextStore.clear).toHaveBeenCalledWith("clip_text_1");
+  });
 });

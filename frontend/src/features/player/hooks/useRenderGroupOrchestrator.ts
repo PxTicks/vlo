@@ -23,7 +23,6 @@ export function useRenderGroupOrchestrator(
   viewport: Container | null,
   logicalDimensions: { width: number; height: number },
   visualTrackIds: readonly string[],
-  deferSyncToFramePlan = false,
 ): {
   orchestrator: RenderGroupOrchestrator | null;
   adjustmentEffectResolver: AdjustmentEffectResolver | null;
@@ -67,15 +66,9 @@ export function useRenderGroupOrchestrator(
   // Imperative sync whenever the source or visual-track order changes,
   // so paused edits to either reflect without waiting for the next tick.
   useEffect(() => {
-    if (!orchestrator || deferSyncToFramePlan) return;
+    if (!orchestrator) return;
     orchestrator.sync(playbackClock.time, visualTrackIds);
-  }, [
-    orchestrator,
-    tracks,
-    clips,
-    visualTrackIds,
-    deferSyncToFramePlan,
-  ]);
+  }, [orchestrator, tracks, clips, visualTrackIds]);
 
   const visualTrackIdsRef = useRef<readonly string[]>(visualTrackIds);
   useEffect(() => {

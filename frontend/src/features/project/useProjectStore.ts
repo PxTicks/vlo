@@ -298,9 +298,6 @@ export const useProjectStore = create<ProjectState>()(
             ? {
                 tracks: loaded.timeline.tracks,
                 clips: loaded.timeline.clips,
-                ...(loaded.timeline.transitions.length > 0
-                  ? { transitions: loaded.timeline.transitions }
-                  : {}),
               }
             : null;
 

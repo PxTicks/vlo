@@ -102,4 +102,53 @@ describe("aspectRatioResize", () => {
     });
     expect(ctx.preparedMaskFile).toBe(resizedMaskFile);
   });
+
+  it("is inactive and performs no work without a resize target", async () => {
+    const ctx = {
+      ...makeContext(null),
+      aspectRatioProcessing: null,
+    };
+
+    expect(aspectRatioResize.isActive(ctx)).toBe(false);
+    await aspectRatioResize.execute(ctx);
+    expect(mockMaybeResizeVisualFile).not.toHaveBeenCalled();
+  });
+
+  it("resizes fetched and packaged visuals then rebuilds media buckets", async () => {
+    const image = new File(["image"], "frame.png", { type: "image/png" });
+    const audio = new File(["audio"], "sound.wav", { type: "audio/wav" });
+    const video = new File(["video"], "movie.mp4", { type: "video/mp4" });
+    const packaged = new File(["packaged"], "packaged.mp4", {
+      type: "video/mp4",
+    });
+    const resizedImage = new File(["resized"], "frame.png", {
+      type: "image/png",
+    });
+    const resizedVideo = new File(["resized"], "movie.mp4", {
+      type: "video/mp4",
+    });
+    const resizedPackaged = new File(["resized"], "packaged.mp4", {
+      type: "video/mp4",
+    });
+    const ctx = makeContext(null);
+    ctx.fetchedFiles = [
+      { file: image, output: { filename: "frame.png", subfolder: "", type: "output", viewUrl: "/frame.png" } },
+      { file: audio, output: { filename: "sound.wav", subfolder: "", type: "output", viewUrl: "/sound.wav" } },
+      { file: video, output: { filename: "movie.mp4", subfolder: "", type: "output", viewUrl: "/movie.mp4" } },
+    ];
+    ctx.packagedVideo = packaged;
+    mockMaybeResizeVisualFile
+      .mockResolvedValueOnce(resizedImage)
+      .mockResolvedValueOnce(audio)
+      .mockResolvedValueOnce(resizedVideo)
+      .mockResolvedValueOnce(resizedPackaged);
+
+    await aspectRatioResize.execute(ctx);
+
+    expect(ctx.frameFiles).toEqual([resizedImage]);
+    expect(ctx.audioFiles).toEqual([audio]);
+    expect(ctx.videoFiles).toEqual([resizedVideo]);
+    expect(ctx.packagedVideo).toBe(resizedPackaged);
+    expect(mockMaybeResizeVisualFile).toHaveBeenCalledTimes(4);
+  });
 });

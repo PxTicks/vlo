@@ -37,16 +37,16 @@ async function parseJsonResponse<T>(
 
   if (!response.ok) {
     if (isJson && rawText) {
+      let payload: unknown;
       try {
-        const payload = JSON.parse(rawText) as unknown;
-        const message = extractErrorMessage(payload);
-        if (message) {
-          throw new Error(message);
-        }
-      } catch (error) {
-        if (error instanceof Error && error.message) {
-          throw error;
-        }
+        payload = JSON.parse(rawText) as unknown;
+      } catch {
+        throw new Error(`${fallbackMessage} (${response.status})`);
+      }
+
+      const message = extractErrorMessage(payload);
+      if (message) {
+        throw new Error(message);
       }
     }
     throw new Error(`${fallbackMessage} (${response.status})`);

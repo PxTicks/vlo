@@ -182,6 +182,7 @@ export function MiniEditorModal() {
 
             <Stack direction="row" alignItems="center" spacing={1.5}>
               <IconButton
+                aria-label={isPlaying ? "Pause preview" : "Play preview"}
                 size="small"
                 onClick={() => setPlaying(!isPlaying)}
                 sx={{ color: "#fff" }}
@@ -268,6 +269,11 @@ export function MiniEditorModal() {
                     </Typography>
                     <Tooltip title={range.isActive ? "Disable" : "Enable"}>
                       <IconButton
+                        aria-label={
+                          range.isActive
+                            ? `Disable mask ${index + 1}`
+                            : `Enable mask ${index + 1}`
+                        }
                         size="small"
                         onClick={(event) => {
                           event.stopPropagation();
@@ -283,6 +289,7 @@ export function MiniEditorModal() {
                       </IconButton>
                     </Tooltip>
                     <IconButton
+                      aria-label={`Delete mask ${index + 1}`}
                       size="small"
                       onClick={(event) => {
                         event.stopPropagation();

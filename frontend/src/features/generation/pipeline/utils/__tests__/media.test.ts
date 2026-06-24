@@ -2,20 +2,67 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOutputCanvas,
   cropImageToAspectRatio,
+  cropVideoToAspectRatio,
+  convertCanvasToBlob,
   isCanvas2DContext,
   maybeCropVisualFileToAspectRatio,
   maybeResizeVisualFile,
   normalizeToSupportedProjectAspectRatio,
   probeVisualFileAspectRatio,
   resizeImageToExactDimensions,
+  resizeVideoToExactDimensions,
   resolveImageOutputMimeType,
   resolveResizeTarget,
   resolveVideoOutputContainer,
 } from "../media";
 import type { AspectRatioProcessingMetadata } from "../../../types";
 
+const mediaMocks = vi.hoisted(() => ({
+  primaryVideoTrack: null as null | {
+    displayWidth: number;
+    displayHeight: number;
+  },
+  outputBuffer: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer | null,
+  getPrimaryVideoTrack: vi.fn(),
+  dispose: vi.fn(),
+  execute: vi.fn(),
+  conversionInit: vi.fn(),
+}));
+
+vi.mock("mediabunny", () => {
+  class Input {
+    getPrimaryVideoTrack = mediaMocks.getPrimaryVideoTrack;
+    dispose = mediaMocks.dispose;
+  }
+  class BufferTarget {
+    buffer = mediaMocks.outputBuffer;
+  }
+  class Output {}
+  class BlobSource {}
+  class Mp4OutputFormat {}
+  return {
+    ALL_FORMATS: [],
+    Input,
+    BufferTarget,
+    Output,
+    BlobSource,
+    Mp4OutputFormat,
+    Conversion: {
+      init: mediaMocks.conversionInit,
+    },
+  };
+});
+
 function imageFile(name = "frame.png", type = "image/png"): File {
   return new File([new Uint8Array([1, 2, 3])], name, { type });
+}
+
+function probeableVideoFile(name = "source.webm"): File {
+  const file = new File(["video"], name, { type: "video/mp4" });
+  vi.spyOn(file, "slice").mockReturnValue({
+    arrayBuffer: async () => new ArrayBuffer(1),
+  } as Blob);
+  return file;
 }
 
 function stubBitmap(width: number, height: number) {
@@ -29,6 +76,18 @@ function stubBitmap(width: number, height: number) {
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
+  mediaMocks.primaryVideoTrack = null;
+  mediaMocks.outputBuffer = new Uint8Array([1, 2, 3]).buffer;
+  mediaMocks.getPrimaryVideoTrack.mockReset();
+  mediaMocks.getPrimaryVideoTrack.mockImplementation(
+    async () => mediaMocks.primaryVideoTrack,
+  );
+  mediaMocks.dispose.mockReset();
+  mediaMocks.execute.mockReset();
+  mediaMocks.conversionInit.mockReset();
+  mediaMocks.conversionInit.mockImplementation(async () => ({
+    execute: mediaMocks.execute,
+  }));
 });
 
 afterEach(() => {
@@ -165,6 +224,53 @@ describe("canvas helpers", () => {
     expect(canvas.width).toBe(30);
     expect(canvas.height).toBe(40);
   });
+
+  it.each(["image/jpeg", "image/webp", "image/png"])(
+    "converts offscreen canvases to %s",
+    async (mimeType) => {
+      const convertToBlob = vi.fn(async (options: ImageEncodeOptions) => {
+        return new Blob(["converted"], { type: options.type });
+      });
+      class FakeOffscreen {
+        convertToBlob = convertToBlob;
+      }
+      vi.stubGlobal("OffscreenCanvas", FakeOffscreen);
+      const canvas = new FakeOffscreen() as unknown as OffscreenCanvas;
+
+      await expect(convertCanvasToBlob(canvas, mimeType)).resolves.toMatchObject({
+        type: mimeType,
+      });
+      expect(convertToBlob).toHaveBeenCalledWith(
+        mimeType === "image/png"
+          ? { type: mimeType }
+          : { type: mimeType, quality: 0.95 },
+      );
+    },
+  );
+
+  it("converts DOM canvases and rejects empty blobs", async () => {
+    vi.stubGlobal("OffscreenCanvas", class FakeOffscreen {});
+    const success = {
+      toBlob: vi.fn((callback: BlobCallback, type?: string) =>
+        callback(new Blob(["ok"], { type })),
+      ),
+    } as unknown as HTMLCanvasElement;
+    await expect(convertCanvasToBlob(success, "image/jpeg")).resolves.toBeInstanceOf(
+      Blob,
+    );
+    expect(success.toBlob).toHaveBeenCalledWith(
+      expect.any(Function),
+      "image/jpeg",
+      0.95,
+    );
+
+    const empty = {
+      toBlob: vi.fn((callback: BlobCallback) => callback(null)),
+    } as unknown as HTMLCanvasElement;
+    await expect(convertCanvasToBlob(empty, "image/png")).rejects.toThrow(
+      /empty blob/,
+    );
+  });
 });
 
 describe("probeVisualFileAspectRatio", () => {
@@ -177,6 +283,25 @@ describe("probeVisualFileAspectRatio", () => {
     const audio = new File([new Uint8Array([0])], "a.mp3", { type: "audio/mpeg" });
     expect(await probeVisualFileAspectRatio(audio)).toBeNull();
   });
+
+  it("probes video dimensions and always disposes the input", async () => {
+    mediaMocks.primaryVideoTrack = { displayWidth: 1080, displayHeight: 1920 };
+    const video = probeableVideoFile("v.mp4");
+    expect(await probeVisualFileAspectRatio(video)).toBe("9:16");
+    expect(mediaMocks.dispose).toHaveBeenCalledOnce();
+
+    mediaMocks.primaryVideoTrack = null;
+    expect(await probeVisualFileAspectRatio(video)).toBeNull();
+    expect(mediaMocks.dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns null when the video blob cannot be probed", async () => {
+    const video = new File(["video"], "v.mp4", { type: "video/mp4" });
+    vi.spyOn(video, "slice").mockReturnValue(
+      {} as Blob,
+    );
+    expect(await probeVisualFileAspectRatio(video)).toBeNull();
+  });
 });
 
 describe("resizeImageToExactDimensions", () => {
@@ -188,6 +313,50 @@ describe("resizeImageToExactDimensions", () => {
       height: 480,
     });
     expect(result).toBe(file);
+  });
+
+  it("draws and converts a resized image", async () => {
+    const { close } = stubBitmap(800, 600);
+    const clearRect = vi.fn();
+    const drawImage = vi.fn();
+    const convertToBlob = vi.fn(async () => new Blob(["image"], { type: "image/png" }));
+    class FakeOffscreen {
+      readonly width: number;
+      readonly height: number;
+      constructor(width: number, height: number) {
+        this.width = width;
+        this.height = height;
+      }
+      getContext() {
+        return { clearRect, drawImage };
+      }
+      convertToBlob = convertToBlob;
+    }
+    vi.stubGlobal("OffscreenCanvas", FakeOffscreen);
+
+    const result = await resizeImageToExactDimensions(imageFile(), {
+      width: 320,
+      height: 240,
+    });
+
+    expect(result.name).toBe("frame.png");
+    expect(clearRect).toHaveBeenCalledWith(0, 0, 320, 240);
+    expect(drawImage).toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects when no 2D resize context is available and closes the bitmap", async () => {
+    const { close } = stubBitmap(800, 600);
+    class FakeOffscreen {
+      getContext() {
+        return null;
+      }
+    }
+    vi.stubGlobal("OffscreenCanvas", FakeOffscreen);
+    await expect(
+      resizeImageToExactDimensions(imageFile(), { width: 10, height: 10 }),
+    ).rejects.toThrow(/2D context/);
+    expect(close).toHaveBeenCalledOnce();
   });
 });
 
@@ -210,6 +379,116 @@ describe("cropImageToAspectRatio", () => {
     stubBitmap(1920, 1080);
     await expect(cropImageToAspectRatio(imageFile(), "1:1")).rejects.toThrow();
   });
+
+  it("crops tall images and emits a converted file", async () => {
+    const { close } = stubBitmap(600, 1200);
+    const clearRect = vi.fn();
+    const drawImage = vi.fn();
+    class FakeOffscreen {
+      readonly width: number;
+      readonly height: number;
+      constructor(width: number, height: number) {
+        this.width = width;
+        this.height = height;
+      }
+      getContext() {
+        return { clearRect, drawImage };
+      }
+      async convertToBlob() {
+        return new Blob(["crop"], { type: "image/png" });
+      }
+    }
+    vi.stubGlobal("OffscreenCanvas", FakeOffscreen);
+
+    const result = await cropImageToAspectRatio(imageFile(), "16:9");
+    expect(result).not.toBeNull();
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.anything(),
+      0,
+      expect.any(Number),
+      600,
+      expect.any(Number),
+      0,
+      0,
+      600,
+      expect.any(Number),
+    );
+    expect(close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("video resize and crop", () => {
+  const video = () => probeableVideoFile();
+
+  it("returns an already-sized video and disposes input", async () => {
+    mediaMocks.primaryVideoTrack = { displayWidth: 640, displayHeight: 480 };
+    const file = video();
+    await expect(
+      resizeVideoToExactDimensions(file, { width: 640, height: 480 }),
+    ).resolves.toBe(file);
+    expect(mediaMocks.conversionInit).not.toHaveBeenCalled();
+    expect(mediaMocks.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("converts video resize output and rejects empty output", async () => {
+    mediaMocks.primaryVideoTrack = { displayWidth: 1920, displayHeight: 1080 };
+    const result = await resizeVideoToExactDimensions(video(), {
+      width: 640,
+      height: 480,
+    });
+    expect(result.name).toBe("source.mp4");
+    expect(result.type).toBe("video/mp4");
+    expect(mediaMocks.conversionInit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video: expect.objectContaining({
+          width: 640,
+          height: 480,
+          fit: "fill",
+        }),
+      }),
+    );
+
+    mediaMocks.outputBuffer = null;
+    await expect(
+      resizeVideoToExactDimensions(video(), { width: 320, height: 240 }),
+    ).rejects.toThrow(/output buffer is empty/);
+  });
+
+  it("returns videos that cannot or do not need to be cropped", async () => {
+    const noProbe = video();
+    vi.spyOn(noProbe, "slice").mockReturnValue({} as Blob);
+    await expect(cropVideoToAspectRatio(noProbe, "1:1")).resolves.toBe(noProbe);
+
+    mediaMocks.primaryVideoTrack = null;
+    const noTrack = video();
+    await expect(cropVideoToAspectRatio(noTrack, "1:1")).resolves.toBe(noTrack);
+
+    mediaMocks.primaryVideoTrack = { displayWidth: 640, displayHeight: 360 };
+    const alreadyWide = video();
+    await expect(
+      cropVideoToAspectRatio(alreadyWide, "16:9"),
+    ).resolves.toBe(alreadyWide);
+  });
+
+  it("crops videos to even dimensions and rejects empty output", async () => {
+    mediaMocks.primaryVideoTrack = { displayWidth: 641, displayHeight: 481 };
+    const result = await cropVideoToAspectRatio(video(), "1:1");
+    expect(result.name).toBe("source.mp4");
+    expect(mediaMocks.conversionInit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video: expect.objectContaining({
+          width: 480,
+          height: 480,
+          fit: "cover",
+        }),
+      }),
+    );
+
+    mediaMocks.outputBuffer = null;
+    await expect(cropVideoToAspectRatio(video(), "1:1")).rejects.toThrow(
+      /output buffer is empty/,
+    );
+  });
 });
 
 describe("maybeResizeVisualFile / maybeCropVisualFileToAspectRatio", () => {
@@ -231,6 +510,28 @@ describe("maybeResizeVisualFile / maybeCropVisualFileToAspectRatio", () => {
       audio,
     );
     expect(await maybeCropVisualFileToAspectRatio(audio, "1:1")).toBe(audio);
+  });
+
+  it("resizes and crops videos through their guarded wrappers", async () => {
+    mediaMocks.primaryVideoTrack = { displayWidth: 1920, displayHeight: 1080 };
+    const video = probeableVideoFile("v.mp4");
+    await expect(
+      maybeResizeVisualFile(video, { width: 640, height: 480 }),
+    ).resolves.toBeInstanceOf(File);
+    await expect(
+      maybeCropVisualFileToAspectRatio(video, "1:1"),
+    ).resolves.toBeInstanceOf(File);
+  });
+
+  it("swallows video resize and crop failures", async () => {
+    mediaMocks.getPrimaryVideoTrack.mockRejectedValue(new Error("decode"));
+    const video = probeableVideoFile("v.mp4");
+    await expect(
+      maybeResizeVisualFile(video, { width: 640, height: 480 }),
+    ).resolves.toBe(video);
+    await expect(
+      maybeCropVisualFileToAspectRatio(video, "1:1"),
+    ).resolves.toBe(video);
   });
 
   it("swallows crop errors and returns the original image file", async () => {

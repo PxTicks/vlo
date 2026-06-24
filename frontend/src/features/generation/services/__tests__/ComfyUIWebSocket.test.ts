@@ -1,5 +1,35 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ComfyUIWebSocket } from "../ComfyUIWebSocket";
+
+class MockWebSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 3;
+  static instances: MockWebSocket[] = [];
+
+  readonly url: string;
+  readyState = MockWebSocket.CONNECTING;
+  binaryType = "";
+  onopen: (() => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  send = vi.fn();
+  close = vi.fn(() => {
+    this.readyState = MockWebSocket.CLOSED;
+    this.onclose?.();
+  });
+
+  constructor(url: string) {
+    this.url = url;
+    MockWebSocket.instances.push(this);
+  }
+
+  open(): void {
+    this.readyState = MockWebSocket.OPEN;
+    this.onopen?.();
+  }
+}
 
 function encodeUint32(value: number): Uint8Array {
   const bytes = new Uint8Array(4);
@@ -28,6 +58,16 @@ function concatBytes(...parts: Uint8Array[]): ArrayBuffer {
 }
 
 describe("ComfyUIWebSocket preview parsing", () => {
+  beforeEach(() => {
+    MockWebSocket.instances = [];
+    vi.stubGlobal("WebSocket", MockWebSocket);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
   it("parses preview packets with metadata payloads", async () => {
     const client = new ComfyUIWebSocket("/api");
     const previews: Array<{
@@ -143,5 +183,156 @@ describe("ComfyUIWebSocket preview parsing", () => {
     expect(previews[0]?.totalFrames).toBe(24);
     expect(previews[0]?.blob.type).toBe("image/jpeg");
     expect(previews[0]?.blob.size).toBe(jpegBytes.length);
+  });
+
+  it("connects once, sends preview capabilities, and dispatches text events", () => {
+    const client = new ComfyUIWebSocket("/api");
+    const events = vi.fn();
+    const connections = vi.fn();
+    const removeEvent = client.onEvent(events);
+    const removeConnection = client.onConnectionChange(connections);
+
+    client.connect();
+    client.connect();
+    expect(MockWebSocket.instances).toHaveLength(1);
+    const socket = MockWebSocket.instances[0];
+    expect(socket.url).toContain("/api/comfy/ws?clientId=");
+    expect(socket.binaryType).toBe("arraybuffer");
+    expect(client.isConnected).toBe(false);
+    expect(client.currentClientId).toBeTruthy();
+
+    socket.open();
+    expect(client.isConnected).toBe(true);
+    expect(socket.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: "feature_flags",
+        data: { supports_preview_metadata: true },
+      }),
+    );
+    expect(connections).toHaveBeenCalledWith("connected");
+
+    socket.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({
+          type: "progress",
+          data: { value: 1, max: 2, prompt_id: "p", node: "n" },
+        }),
+      }),
+    );
+    socket.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "feature_flags", data: {} }),
+      }),
+    );
+    socket.onmessage?.(
+      new MessageEvent("message", { data: JSON.stringify({ type: "unknown" }) }),
+    );
+    socket.onmessage?.(new MessageEvent("message", { data: "not json" }));
+    expect(events).toHaveBeenCalledTimes(1);
+
+    removeEvent();
+    removeConnection();
+    socket.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "error", data: { message: "ignored" } }),
+      }),
+    );
+    expect(events).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes binary socket messages and ignores invalid packets", () => {
+    const client = new ComfyUIWebSocket("/api");
+    const previews = vi.fn();
+    const removePreview = client.onPreview(previews);
+    client.connect();
+    const socket = MockWebSocket.instances[0];
+    const bmpBytes = new Uint8Array([0x42, 0x4d, 0, 0, 0, 0]);
+
+    socket.onmessage?.(
+      new MessageEvent("message", {
+        data: concatBytes(encodeUint32(1), bmpBytes),
+      }),
+    );
+    socket.onmessage?.(
+      new MessageEvent("message", { data: new Uint8Array([1]).buffer }),
+    );
+    expect(previews).toHaveBeenCalledTimes(1);
+
+    removePreview();
+    socket.onmessage?.(
+      new MessageEvent("message", {
+        data: concatBytes(encodeUint32(1), bmpBytes),
+      }),
+    );
+    expect(previews).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconnects after unexpected closure and disconnects explicitly", () => {
+    vi.useFakeTimers();
+    const client = new ComfyUIWebSocket("/api");
+    const connections = vi.fn();
+    client.onConnectionChange(connections);
+    client.connect();
+    const first = MockWebSocket.instances[0];
+
+    first.readyState = MockWebSocket.CLOSED;
+    first.onclose?.();
+    expect(connections).not.toHaveBeenCalledWith("disconnected");
+    vi.advanceTimersByTime(3000);
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    const second = MockWebSocket.instances[1];
+    second.open();
+    client.disconnect();
+    expect(second.close).toHaveBeenCalled();
+    expect(connections).toHaveBeenLastCalledWith("disconnected");
+    expect(client.isConnected).toBe(false);
+    vi.advanceTimersByTime(3000);
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it("clears an existing reconnect timer when a replacement socket opens", () => {
+    vi.useFakeTimers();
+    const client = new ComfyUIWebSocket("/api");
+    client.connect();
+    const first = MockWebSocket.instances[0];
+    first.readyState = MockWebSocket.CLOSED;
+    first.onclose?.();
+    vi.advanceTimersByTime(3000);
+    const second = MockWebSocket.instances[1];
+    second.readyState = MockWebSocket.CLOSED;
+    second.onclose?.();
+    second.open();
+    vi.advanceTimersByTime(3000);
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it("matches preview sequence metadata across composite node identifiers", () => {
+    const client = new ComfyUIWebSocket("/api");
+    const internal = client as unknown as {
+      handleTextMessage(data: string): void;
+      findPreviewSequenceMetadata(nodeId: string): {
+        frameRate: number;
+        nodeId: string;
+        totalFrames: number;
+      } | null;
+    };
+    internal.handleTextMessage(
+      JSON.stringify({
+        type: "VHS_latentpreview",
+        data: { id: "node.12", length: 8, rate: 4 },
+      }),
+    );
+
+    expect(internal.findPreviewSequenceMetadata("node.12")).toMatchObject({
+      totalFrames: 8,
+    });
+    expect(internal.findPreviewSequenceMetadata("node")).toMatchObject({
+      nodeId: "node.12",
+    });
+    expect(internal.findPreviewSequenceMetadata("node.12.preview")).toMatchObject({
+      frameRate: 4,
+    });
+    expect(internal.findPreviewSequenceMetadata("missing")).toBeNull();
   });
 });

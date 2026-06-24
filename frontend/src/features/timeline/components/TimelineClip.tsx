@@ -18,8 +18,13 @@ import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import FastRewindIcon from "@mui/icons-material/FastRewind";
 
 import { styled } from "@mui/material/styles";
-import { CLIP_HEIGHT, TRACK_HEIGHT, RULER_HEIGHT } from "../constants";
-import { timelineSpanStyleX } from "../utils/timelineGeometry";
+import {
+  CLIP_HEIGHT,
+  TRACK_HEIGHT,
+  TRACK_HEADER_WIDTH,
+  RULER_HEIGHT,
+} from "../constants";
+import { ticksToPx } from "../../../core/time/pixelGrid";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import type {
   AssetBackedBaseClip,
@@ -192,13 +197,9 @@ function TimelineClipComponent({
   // 2. Vertical Position
   const topPos = isOverlay ? 0 : trackIndex * TRACK_HEIGHT + RULER_HEIGHT + 5;
 
-  // 3. Base Geometry Calculations — scaled via `--timeline-zoom` in CSS, with
-  // live resize/move deltas folded into the same calc.
-  const spanStyle = timelineSpanStyleX(startTime, displayDuration, {
-    headerOffset: true,
-    extraLeft: "var(--drag-delta-x, 0px)",
-    extraWidth: "var(--drag-delta-w, 0px)",
-  });
+  // 3. Base Geometry Calculations
+  const baseWidth = ticksToPx(displayDuration, 1);
+  const baseLeft = ticksToPx(startTime, 1);
 
   const { attributes, listeners, setNodeRef, isDragging, transform } =
     useDraggable({
@@ -452,8 +453,17 @@ function TimelineClipComponent({
           transition: isActive ? "none" : "box-shadow 0.2s, outline-color 0.1s",
 
           // --- Metrics & Positioning ---
-          left: isOverlay ? "0px" : spanStyle.left,
-          width: spanStyle.width,
+          left: isOverlay
+            ? "0px"
+            : `calc(
+              ${TRACK_HEADER_WIDTH}px + 
+              (${baseLeft}px * var(--timeline-zoom, 1)) + 
+              var(--drag-delta-x, 0px)
+            )`,
+          width: `calc(
+          (${baseWidth}px * var(--timeline-zoom, 1)) + 
+          var(--drag-delta-w, 0px)
+        )`,
           top: topPos,
           // Apply transform directly from hook if available (priority) or handled by effect
           transform: transform

@@ -60,26 +60,6 @@ type TextureWithIdentity = Texture & {
   };
 };
 
-interface CompositedSpatialMaskContext {
-  expression: MaskBooleanExpression;
-  expressionAnalysis: ReturnType<typeof analyzeMaskBooleanExpression>;
-  maskClipByLocalId: Map<string, MaskTimelineClip>;
-  activeMaskClips: MaskTimelineClip[];
-  clipContentSize: { width: number; height: number };
-  logicalDimensions: { width: number; height: number };
-  parentClip: TimelineClip;
-  rawTimeTicks: number;
-  requestedMaskTimeSeconds: number;
-  compositeState: ResolvedMaskCompositeState;
-  maskApplicationSignature: string;
-}
-
-export interface LiveMaskTransformSyncResult {
-  didUpdate: boolean;
-  needsSpatialPresentationRefresh: boolean;
-  needsEffectPresentationRefresh: boolean;
-}
-
 function getMaskVideoSpriteContentSize(
   sprite: Sprite,
   fallback: { width: number; height: number },
@@ -97,11 +77,7 @@ function getMaskVideoSpriteContentSize(
 }
 
 /**
- * Manages mask application for a frame Sprite.
- *
- * By default the Sprite itself is masked. Callers that render companion
- * sprites can provide a separate mask target (normally the final presentation
- * Container) so one spatial mask clips the complete rendered subtree.
+ * Manages mask application on a frame Sprite.
  *
  * When a PixiJS `Renderer` is provided, masks are composited into a
  * `RenderTexture` at the content's native resolution and applied via
@@ -130,8 +106,6 @@ export class SpriteClipMaskController {
   // texture. It shares the synced mask nodes (one registry) but uses its own
   // resolver/pool so it never contends with the spatial mask's presentation.
   private readonly effectMaskCoverageResolver: MaskTextureResolver | null;
-  private compositedSpatialMaskContext: CompositedSpatialMaskContext | null =
-    null;
   private lastNodeSyncMaskClipByLocalId: Map<string, MaskTimelineClip> =
     new Map();
   private lastNodeSyncContentSize: { width: number; height: number } | null =
@@ -150,13 +124,12 @@ export class SpriteClipMaskController {
     renderer?: Renderer | null,
     maskRootContainer?: Container | null,
     onAssetMaskFrameReady?: () => void,
-    maskTarget?: Container | null,
   ) {
     this.sprite = sprite;
     this.renderer = renderer ?? null;
     this.maskRootContainer = maskRootContainer ?? null;
     this.onAssetMaskFrameReady = onAssetMaskFrameReady;
-    this.maskTarget = maskTarget ?? (sprite as unknown as Container);
+    this.maskTarget = sprite as unknown as Container;
     this.maskContainer = new Container();
     this.maskContainer.visible = false;
 
@@ -189,19 +162,9 @@ export class SpriteClipMaskController {
       this.maskSprite,
       (candidate) => this.hasUsableTexture(candidate),
     );
-    // The preview controller must NOT share the real mask-scene container:
-    // `MaskApplicationController.syncOutputModeVisibility` writes
-    // `maskContainer.visible = (mode === "regular")`, and the preview
-    // controller's mode is never "regular". Sharing it meant every
-    // `hideMaskNodePreviewOverlay()` (run on the non-preview path each frame)
-    // clobbered the applied regular mask's container to invisible, while the
-    // main controller's apply dedup skipped re-asserting it — silently
-    // disabling normal-mode masks. Give the preview controller a throwaway
-    // container it can toggle harmlessly; the real container's visibility is
-    // owned solely by the main controller.
     this.previewMaskApplicationController = new MaskApplicationController(
       this.previewContainer,
-      new Container(),
+      this.maskContainer,
       null,
       (candidate) => this.hasUsableTexture(candidate),
     );
@@ -280,7 +243,7 @@ export class SpriteClipMaskController {
     const resolvedMaskExpressionAnalysis = analyzeMaskBooleanExpression(
       resolvedMaskExpression,
     );
-    const referencedMaskIds = isPreviewingThisClip
+    const referencedMaskIds = usesMaskNodePreview
       ? new Set([previewTarget?.maskId ?? ""])
       : new Set(resolvedMaskExpressionAnalysis.maskIds);
 
@@ -291,7 +254,7 @@ export class SpriteClipMaskController {
     // spatial application below stays on `referencedMaskIds`. Empty for mask
     // clips / preview, so the node-sync set then equals the spatial set exactly.
     const effectMaskIds =
-      isPreviewingThisClip || parentClip.type === "mask"
+      usesMaskNodePreview || parentClip.type === "mask"
         ? new Set<string>()
         : this.collectEffectMaskIds(parentClip);
     const nodeSyncMaskIds =
@@ -300,7 +263,7 @@ export class SpriteClipMaskController {
         : new Set<string>([...referencedMaskIds, ...effectMaskIds]);
 
     const nodeSyncMaskClips =
-      isPreviewingThisClip && previewMaskClip
+      usesMaskNodePreview && previewMaskClip
         ? [previewMaskClip]
         : maskClips.filter((clip) => {
             const maskId = getMaskLocalId(clip);
@@ -340,7 +303,7 @@ export class SpriteClipMaskController {
       clip.maskType !== "brush";
 
     // Spatial application set (what the clip's own mask composites).
-    const referencedMaskClips = isPreviewingThisClip && previewMaskClip
+    const referencedMaskClips = usesMaskNodePreview && previewMaskClip
       ? [previewMaskClip]
       : maskClips.filter((clip) => {
           const maskId = getMaskLocalId(clip);
@@ -464,49 +427,29 @@ export class SpriteClipMaskController {
       );
     }
 
-    // The registry also contains effect-only masks so their coverage can be
-    // rendered later. Keep those nodes out of the persistent scene: the direct
-    // spatial-mask fast path attaches this whole container as a Pixi stencil,
-    // and any visible effect-only node would otherwise be unioned into the
-    // clip's own mask. MaskTextureResolver temporarily selects the nodes needed
-    // for each effect expression and restores this spatial-only baseline.
-    this.syncSpatialMaskNodeVisibility(
-      new Set(activeMaskClips.map((maskClip) => maskClip.id)),
-    );
-
-    this.compositedSpatialMaskContext = null;
-    if (isPreviewingThisClip) {
+    if (usesMaskNodePreview) {
       this.nodeRegistry.sanitizeAssetMaskSpriteVisibility();
-      if (usesMaskNodePreview) {
-        const hasReadyPreviewMask = activeMaskClips.some((maskClip) =>
-          this.isMaskClipRenderable(maskClip),
-        );
-        const previewMaskId = previewTarget?.maskId ?? null;
-        const previewMaskSprite =
-          hasReadyPreviewMask && previewMaskId
-            ? this.renderMaskNodePreviewMaskSprite({
-                previewMaskId,
-                maskClipByLocalId,
-                activeMaskClips,
-                clipContentSize,
-                logicalDimensions,
-                parentClip,
-                rawTimeTicks,
-                requestedMaskTimeSeconds,
-              })
-            : null;
-        if (previewMaskSprite) {
-          this.showMaskNodePreviewOverlay(clipContentSize, previewMaskSprite);
-        } else {
-          // Keep the synced node alive while its asset frame is pending. A
-          // preview-mode miss must not tear down the applied-mask scene and
-          // leave the following mode transition with nothing to restore.
-          this.clearSpatialPresentation();
-        }
+      const hasReadyPreviewMask = activeMaskClips.some((maskClip) =>
+        this.isMaskClipRenderable(maskClip),
+      );
+      const previewMaskId = previewTarget?.maskId ?? null;
+      const previewMaskSprite =
+        hasReadyPreviewMask && previewMaskId
+          ? this.renderMaskNodePreviewMaskSprite({
+              previewMaskId,
+              maskClipByLocalId,
+              activeMaskClips,
+              clipContentSize,
+              logicalDimensions,
+              parentClip,
+              rawTimeTicks,
+              requestedMaskTimeSeconds,
+            })
+          : null;
+      if (previewMaskSprite) {
+        this.showMaskNodePreviewOverlay(clipContentSize, previewMaskSprite);
       } else {
-        // Vector previews are drawn by the interaction overlay. Preserve their
-        // runtime node so returning to apply mode only changes presentation.
-        this.clearSpatialPresentation();
+        this.clear();
       }
       return;
     }
@@ -570,20 +513,36 @@ export class SpriteClipMaskController {
         (activeVectorMasks.length > 0 || hasReadyAssetMask) &&
         this.hasRenderableContentTexture()
       ) {
-        this.compositedSpatialMaskContext = {
-          expression: resolvedMaskExpression,
-          expressionAnalysis: resolvedMaskExpressionAnalysis,
-          maskClipByLocalId,
-          activeMaskClips,
-          clipContentSize,
-          logicalDimensions,
-          parentClip,
-          rawTimeTicks,
-          requestedMaskTimeSeconds,
-          compositeState: sharedMaskCompositeState,
-          maskApplicationSignature,
-        };
-        this.renderCompositedSpatialMask();
+        const renderedTexture = this.maskBooleanTextureRenderer.renderExpressionToTexture(
+          {
+            expression: resolvedMaskExpression,
+            expressionAnalysis: resolvedMaskExpressionAnalysis,
+            maskClipByLocalId,
+            contentSize: clipContentSize,
+            compositeState: sharedMaskCompositeState,
+            cacheKey: this.createCompositeTextureCacheKey({
+              maskApplicationSignature,
+              activeMaskClips,
+              clipContentSize,
+              logicalDimensions,
+              parentClip,
+              rawTimeTicks,
+              requestedMaskTimeSeconds,
+              compositeState: sharedMaskCompositeState,
+            }),
+          },
+        );
+
+        if (renderedTexture) {
+          this.maskApplicationController.applyAlphaMask(
+            this.maskSprite,
+            false,
+            maskApplicationSignature,
+          );
+        } else {
+          this.maskBooleanTextureRenderer.invalidateCache();
+          this.maskApplicationController.clear();
+        }
       } else {
         this.maskBooleanTextureRenderer.invalidateCache();
         this.maskApplicationController.clear();
@@ -624,132 +583,6 @@ export class SpriteClipMaskController {
       false,
       maskApplicationSignature,
     );
-  }
-
-  /**
-   * Apply transient layout overrides directly to the existing mask scene.
-   *
-   * Both the blue preview overlay and the applied content mask resolve from
-   * these same nodes. Moving them synchronously keeps either presentation
-   * attached to the pointer; composited coverage is refreshed separately at
-   * Pixi's pre-render boundary.
-   */
-  public syncLiveMaskTransforms(
-    maskClips: readonly MaskTimelineClip[],
-    parentClip: TimelineClip,
-    logicalDimensions: { width: number; height: number },
-    rawTimeTicks: number,
-    maskClipIds?: ReadonlySet<string>,
-  ): LiveMaskTransformSyncResult {
-    const clipContentSize = this.getActiveClipContentSize(logicalDimensions);
-    const effectMaskIds = this.collectEffectMaskIds(parentClip);
-    let didUpdate = false;
-    let needsEffectPresentationRefresh = false;
-
-    for (const maskClip of maskClips) {
-      if (maskClipIds && !maskClipIds.has(maskClip.id)) {
-        continue;
-      }
-      const vectorNode = this.nodeRegistry.getVectorNode(maskClip.id);
-      if (vectorNode) {
-        const resolvedLayout = resolveMaskRenderableLayout(maskClip, {
-          rawTimeTicks,
-          parentClipContentSize: clipContentSize,
-        });
-        if (vectorNode.presentation === "sprite") {
-          this.syncVectorMaskSprite(vectorNode, resolvedLayout.contentSize);
-          applyClipTransforms(
-            vectorNode.sprite,
-            maskClip,
-            logicalDimensions,
-            rawTimeTicks,
-            resolvedLayout.contentSize,
-            { baseLayoutMode: "origin", notifyLiveParams: false },
-          );
-        } else {
-          applyClipTransforms(
-            vectorNode.graphics,
-            maskClip,
-            logicalDimensions,
-            rawTimeTicks,
-            resolvedLayout.contentSize,
-            { baseLayoutMode: "origin", notifyLiveParams: false },
-          );
-        }
-        didUpdate = true;
-        const localId = getMaskLocalId(maskClip);
-        needsEffectPresentationRefresh ||=
-          localId !== null && effectMaskIds.has(localId);
-        continue;
-      }
-
-      const assetNode = this.nodeRegistry.getAssetNode(maskClip.id);
-      if (!assetNode) {
-        continue;
-      }
-      const resolvedLayout = resolveMaskRenderableLayout(maskClip, {
-        rawTimeTicks,
-        parentClipContentSize: clipContentSize,
-        assetTextureSize: getMaskVideoSpriteContentSize(
-          assetNode.player.sprite,
-          clipContentSize,
-        ),
-      });
-      applyClipTransforms(
-        assetNode.player.sprite,
-        maskClip,
-        logicalDimensions,
-        rawTimeTicks,
-        resolvedLayout.contentSize,
-        { baseLayoutMode: "origin", notifyLiveParams: false },
-      );
-      didUpdate = true;
-      const localId = getMaskLocalId(maskClip);
-      needsEffectPresentationRefresh ||=
-        localId !== null && effectMaskIds.has(localId);
-    }
-
-    // Parent movement is independent of mask-local movement, but both previews
-    // and applied masks share this attachment transform.
-    this.syncMaskSpriteTransform();
-    if (this.compositedSpatialMaskContext) {
-      // Coverage textures render maskContainer in content-local coordinates.
-      // syncMaskSpriteTransform aligns direct masks to the content sprite, so
-      // restore identity before the compositor consumes the same nodes.
-      this.resetMaskContainerTransform();
-      this.refreshCompositedContextModel(
-        maskClips,
-        parentClip,
-        logicalDimensions,
-        rawTimeTicks,
-      );
-    }
-
-    if (didUpdate) {
-      // Effect-mask output keys include this epoch. Live node movement must
-      // invalidate that output even though no structural mask sync occurred.
-      this.maskSyncEpoch += 1;
-    }
-
-    return {
-      didUpdate,
-      needsSpatialPresentationRefresh:
-        didUpdate && this.compositedSpatialMaskContext !== null,
-      needsEffectPresentationRefresh:
-        didUpdate && needsEffectPresentationRefresh,
-    };
-  }
-
-  /**
-   * Rebuild only the GPU coverage texture for the already-synced mask scene.
-   * No nodes, sources, decoder frames, or application mode are reconciled.
-   */
-  public refreshLiveMaskPresentation(): void {
-    // Both the spatial compositor and effect-mask resolver consume nodes in
-    // content-local space. Direct presentation alignment is restored by the
-    // track transform pass after effect output has been resolved.
-    this.resetMaskContainerTransform();
-    this.renderCompositedSpatialMask();
   }
 
   /**
@@ -859,24 +692,12 @@ export class SpriteClipMaskController {
     this.lastNodeSyncContentSize = null;
   }
 
-  private syncSpatialMaskNodeVisibility(
-    activeSpatialMaskClipIds: ReadonlySet<string>,
-  ): void {
-    this.vectorMaskNodes.forEach((node, maskClipId) => {
-      node.root.visible = activeSpatialMaskClipIds.has(maskClipId);
-    });
-    this.assetMaskNodes.forEach((node, maskClipId) => {
-      node.root.visible = activeSpatialMaskClipIds.has(maskClipId);
-    });
-  }
-
   /**
    * Remove the clip's spatial mask application (alpha mask, presentation
    * texture, cache, preview overlay) WITHOUT touching synced nodes — so an
    * effect-only clip keeps its mask geometry/visibility for coverage.
    */
   private clearSpatialPresentation(): void {
-    this.compositedSpatialMaskContext = null;
     this.maskApplicationController.clear();
     this.maskBooleanTextureRenderer?.invalidateCache();
     if (this.maskSprite) {
@@ -1253,77 +1074,6 @@ export class SpriteClipMaskController {
         texture: this.getAssetMaskTextureSignature(maskClip.id),
       })),
     });
-  }
-
-  private renderCompositedSpatialMask(): void {
-    const context = this.compositedSpatialMaskContext;
-    if (
-      !context ||
-      !this.maskSprite ||
-      !this.maskBooleanTextureRenderer
-    ) {
-      return;
-    }
-
-    this.resetMaskContainerTransform();
-    const renderedTexture =
-      this.maskBooleanTextureRenderer.renderExpressionToTexture({
-        expression: context.expression,
-        expressionAnalysis: context.expressionAnalysis,
-        maskClipByLocalId: context.maskClipByLocalId,
-        contentSize: context.clipContentSize,
-        compositeState: context.compositeState,
-        cacheKey: this.createCompositeTextureCacheKey({
-          maskApplicationSignature: context.maskApplicationSignature,
-          activeMaskClips: context.activeMaskClips,
-          clipContentSize: context.clipContentSize,
-          logicalDimensions: context.logicalDimensions,
-          parentClip: context.parentClip,
-          rawTimeTicks: context.rawTimeTicks,
-          requestedMaskTimeSeconds: context.requestedMaskTimeSeconds,
-          compositeState: context.compositeState,
-        }),
-      });
-
-    if (renderedTexture) {
-      this.maskApplicationController.applyAlphaMask(
-        this.maskSprite,
-        false,
-        context.maskApplicationSignature,
-      );
-      return;
-    }
-
-    this.maskBooleanTextureRenderer.invalidateCache();
-    this.maskApplicationController.clear();
-  }
-
-  private refreshCompositedContextModel(
-    maskClips: readonly MaskTimelineClip[],
-    parentClip: TimelineClip,
-    logicalDimensions: { width: number; height: number },
-    rawTimeTicks: number,
-  ): void {
-    const context = this.compositedSpatialMaskContext;
-    if (!context) {
-      return;
-    }
-
-    const maskClipById = new Map(
-      maskClips.map((maskClip) => [maskClip.id, maskClip] as const),
-    );
-    context.activeMaskClips = context.activeMaskClips.map(
-      (maskClip) => maskClipById.get(maskClip.id) ?? maskClip,
-    );
-    context.maskClipByLocalId = new Map(
-      [...context.maskClipByLocalId].map(([localId, maskClip]) => [
-        localId,
-        maskClipById.get(maskClip.id) ?? maskClip,
-      ]),
-    );
-    context.parentClip = parentClip;
-    context.logicalDimensions = logicalDimensions;
-    context.rawTimeTicks = rawTimeTicks;
   }
 
   private getAssetMaskTextureSignature(maskClipId: string): {

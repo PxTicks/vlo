@@ -46,16 +46,6 @@ export class SharedTextureHandle {
     this.onRelease = onRelease;
   }
 
-  /** FrameResourceLease compatibility. */
-  get key(): string {
-    return this.decodeKey;
-  }
-
-  /** FrameResourceLease compatibility. */
-  get value(): Texture {
-    return this.texture;
-  }
-
   /** Return this reference to its store. Idempotent. */
   release(): void {
     if (this.released) {
@@ -92,14 +82,6 @@ export class SharedTextureStore {
     return this.byKey.size;
   }
 
-  get totalRefCount(): number {
-    let count = 0;
-    for (const entry of this.byKey.values()) {
-      count += entry.refCount;
-    }
-    return count;
-  }
-
   /**
    * Acquire a reference to the shared texture for `decodeKey`, creating it via
    * `create` on first acquisition only. Returns a handle the caller must
@@ -109,15 +91,7 @@ export class SharedTextureStore {
     decodeKey: string,
     create: () => SharedTextureResource,
   ): SharedTextureHandle {
-    return this.acquireWithStatus(decodeKey, create).handle;
-  }
-
-  acquireWithStatus(
-    decodeKey: string,
-    create: () => SharedTextureResource,
-  ): { handle: SharedTextureHandle; created: boolean } {
     let entry = this.byKey.get(decodeKey);
-    let created = false;
     if (!entry) {
       const resource = create();
       const texture = resource.texture;
@@ -125,31 +99,12 @@ export class SharedTextureStore {
       entry = { decodeKey, texture, dispose, refCount: 0, disposed: false };
       this.byKey.set(decodeKey, entry);
       this.byTexture.set(texture, entry);
-      created = true;
     }
     entry.refCount += 1;
     const owned = entry;
-    return {
-      handle: new SharedTextureHandle(decodeKey, owned.texture, () =>
-        this.releaseEntry(owned),
-      ),
-      created,
-    };
-  }
-
-  acquireExisting(decodeKey: string): SharedTextureHandle | null {
-    const entry = this.byKey.get(decodeKey);
-    if (!entry || entry.disposed) {
-      return null;
-    }
-    entry.refCount += 1;
-    return new SharedTextureHandle(decodeKey, entry.texture, () =>
-      this.releaseEntry(entry),
+    return new SharedTextureHandle(decodeKey, owned.texture, () =>
+      this.releaseEntry(owned),
     );
-  }
-
-  has(decodeKey: string): boolean {
-    return this.byKey.has(decodeKey);
   }
 
   /**

@@ -3,7 +3,7 @@ import { dragAssetToTimeline } from './helpers/drag';
 
 test.describe('Timeline Interactions', () => {
 
-    test('Smoke Test: Timeline components are visible', async ({ editor }) => {
+    test('@smoke Timeline components are visible', async ({ editor }) => {
         await expect(editor.timeline.toolbar).toBeVisible();
         await expect(editor.timeline.ruler).toBeVisible();
         await expect(editor.timeline.rows.first()).toBeVisible();

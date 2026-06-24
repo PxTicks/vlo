@@ -33,6 +33,10 @@ export class TimelineComponent {
         return this.toolbar.getByRole('button', { name: 'Split Clip (Cut)' });
     }
 
+    get addAdjustmentButton() {
+        return this.toolbar.getByTestId('timeline-toolbar-add-adjustment');
+    }
+
     get snapIndicator() {
         return this.page.getByTestId('timeline-snap-indicator');
     }
@@ -60,6 +64,10 @@ export class TimelineComponent {
 
     async splitAtPlayhead() {
         await this.splitButton.click();
+    }
+
+    async addAdjustmentClip() {
+        await this.addAdjustmentButton.click();
     }
 
     async toggleSnapping() {

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Application, Container, FederatedPointerEvent } from "pixi.js";
 import { SelectionGizmo, type GizmoTarget } from "../utils/SelectionGizmo";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
+import { subscribeLiveSceneTransformSync } from "../services/liveSceneTransformSync";
 
 interface GizmoInteractionHandlers {
   onHandlePointerDown: (e: FederatedPointerEvent, key: string) => void;
@@ -81,11 +82,13 @@ export function useGizmoBehavior(
 
     ticker.add(update);
     const unsubscribeClock = playbackClock.subscribe(() => update());
+    const unsubscribeLiveSync = subscribeLiveSceneTransformSync(update);
     update();
 
     return () => {
       ticker.remove(update);
       unsubscribeClock();
+      unsubscribeLiveSync();
     };
   }, [app, target, viewport, isSelected]);
 }

@@ -2532,6 +2532,99 @@ export class TrackRenderEngine {
   }
 
   /**
+   * Apply transient transform values directly to the resident Pixi scene.
+   *
+   * This path deliberately does not resolve a source frame or reconcile mask
+   * structure. Callers can queue {@link refreshLiveMaskPresentation} when the
+   * returned mask state says the resting presentation uses a coverage texture.
+   */
+  public applyLiveTransformUpdates(
+    activeClip: TimelineClip,
+    logicalDimensions: { width: number; height: number },
+    currentTime: number,
+    maskClips: MaskTimelineClip[] = [],
+    options: {
+      updateClipTransforms?: boolean;
+      maskClipIds?: ReadonlySet<string>;
+    } = {},
+  ): {
+    didUpdateMaskTransforms: boolean;
+    needsMaskPresentationRefresh: boolean;
+    needsEffectPresentationRefresh: boolean;
+  } {
+    if (!this.sprite.visible) {
+      return {
+        didUpdateMaskTransforms: false,
+        needsMaskPresentationRefresh: false,
+        needsEffectPresentationRefresh: false,
+      };
+    }
+    const effectiveTick = this.resolveEffectiveTrackTickForClip(
+      activeClip,
+      currentTime,
+    );
+    const rawTimeSeconds = effectiveTick - activeClip.start;
+
+    if (options.updateClipTransforms) {
+      this.applyClipTransformsForClip(
+        activeClip,
+        logicalDimensions,
+        rawTimeSeconds,
+      );
+    }
+
+    const maskUpdate =
+      options.maskClipIds && options.maskClipIds.size > 0
+        ? this.maskController.syncLiveMaskTransforms(
+            maskClips,
+            activeClip,
+            logicalDimensions,
+            rawTimeSeconds,
+            options.maskClipIds,
+          )
+        : null;
+
+    return {
+      didUpdateMaskTransforms: maskUpdate?.didUpdate ?? false,
+      needsMaskPresentationRefresh:
+        maskUpdate?.needsSpatialPresentationRefresh ?? false,
+      needsEffectPresentationRefresh:
+        maskUpdate?.needsEffectPresentationRefresh ?? false,
+    };
+  }
+
+  /**
+   * Refresh mask-dependent GPU output after live node transforms have moved.
+   * Called from the high-priority Pixi live-update scheduler, immediately
+   * before the Application's own stage render.
+   */
+  public refreshLiveMaskPresentation(
+    activeClip: TimelineClip,
+    logicalDimensions: { width: number; height: number },
+    currentTime: number,
+    refreshEffectPresentation: boolean,
+  ): void {
+    if (!this.sprite.visible) {
+      return;
+    }
+
+    this.maskController.refreshLiveMaskPresentation();
+    if (!refreshEffectPresentation) {
+      return;
+    }
+
+    const effectiveTick = this.resolveEffectiveTrackTickForClip(
+      activeClip,
+      currentTime,
+    );
+    this.applyClipTransformsForClip(
+      activeClip,
+      logicalDimensions,
+      effectiveTick - activeClip.start,
+    );
+  }
+
+  /**
    * Force an immediate transform update.
    * Useful for responsiveness when the viewport resizes while paused.
    */
@@ -2541,7 +2634,7 @@ export class TrackRenderEngine {
     currentTime: number,
     maskClips: MaskTimelineClip[] = [],
     assetsById: Map<string, Asset> = new Map<string, Asset>(),
-  ) {
+  ): void {
     if (!this.sprite.visible) return;
     const effectiveTick = this.resolveEffectiveTrackTickForClip(
       activeClip,
@@ -2572,6 +2665,13 @@ export class TrackRenderEngine {
         assetsById,
         { sourceFrame, skipSam2FrameRender: true },
       )
+      .then(() => {
+        this.applyClipTransformsForClip(
+          activeClip,
+          logicalDimensions,
+          rawTimeSeconds,
+        );
+      })
       .catch((error) => {
         console.warn("Failed to force-update mask clips", error);
       });

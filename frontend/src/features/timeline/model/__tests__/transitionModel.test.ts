@@ -7,7 +7,10 @@ import type {
 import {
   resolveTransition,
   resolveTransitionProgress,
+  resolveTransitions,
 } from "../transitionModel";
+import { pruneInvalidTransitions } from "../timelineCommands";
+import type { TimelineModelState } from "../timelineTrackModel";
 import { TICKS_PER_SECOND } from "../../constants";
 
 function track(id: string): TimelineTrack {
@@ -105,5 +108,73 @@ describe("transitionModel", () => {
     expect(resolveTransitionProgress(window, 0)).toBe(0);
     expect(resolveTransitionProgress(window, 20)).toBe(0.5);
     expect(resolveTransitionProgress(window, 40)).toBe(1);
+  });
+
+  it("resolves several transitions against one shared timeline context", () => {
+    const tracks = [
+      track("upper-a"),
+      track("lower-a"),
+      track("upper-b"),
+      track("lower-b"),
+    ];
+    const clips = [
+      clip("outgoing-a", "upper-a", 0, 100),
+      clip("incoming-a", "lower-a", 50, 100),
+      clip("outgoing-b", "upper-b", 0, 100),
+      clip("incoming-b", "lower-b", 25, 100),
+    ];
+
+    expect(
+      resolveTransitions(
+        [
+          {
+            ...transition,
+            id: "transition-a",
+            outgoingClipId: "outgoing-a",
+            incomingClipId: "incoming-a",
+          },
+          {
+            ...transition,
+            id: "transition-b",
+            outgoingClipId: "outgoing-b",
+            incomingClipId: "incoming-b",
+          },
+        ],
+        tracks,
+        clips,
+        TICKS_PER_SECOND,
+      ).map((resolved) => resolved.transition.id),
+    ).toEqual(["transition-a", "transition-b"]);
+  });
+
+  it("keeps the first valid transition when imported entries share a clip", () => {
+    const draft: TimelineModelState = {
+      tracks: [track("upper"), track("middle"), track("lower")],
+      clips: [
+        clip("upper-clip", "upper", 0, 100),
+        clip("shared-clip", "middle", 25, 100),
+        clip("lower-clip", "lower", 50, 100),
+      ],
+      transitions: [
+        {
+          ...transition,
+          id: "first",
+          outgoingClipId: "upper-clip",
+          incomingClipId: "shared-clip",
+        },
+        {
+          ...transition,
+          id: "second",
+          outgoingClipId: "shared-clip",
+          incomingClipId: "lower-clip",
+        },
+      ],
+    };
+
+    pruneInvalidTransitions(draft, TICKS_PER_SECOND);
+
+    expect(draft.transitions.map((candidate) => candidate.id)).toEqual([
+      "first",
+    ]);
   });
 });

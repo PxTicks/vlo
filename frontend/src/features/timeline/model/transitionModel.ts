@@ -3,7 +3,10 @@ import type {
   TimelineTrack,
   Transition,
 } from "../../../types/TimelineTypes";
-import { buildTimelineClipPresentationIndex } from "../utils/clipPresentation";
+import {
+  buildTimelineClipPresentationIndex,
+  type TimelineClipPresentation,
+} from "../utils/clipPresentation";
 
 export interface TransitionWindow {
   start: number;
@@ -19,49 +22,69 @@ export interface ResolvedTransition extends TransitionWindow {
   incomingClip: TimelineClip;
 }
 
+export interface TransitionResolutionContext {
+  tracks: readonly TimelineTrack[];
+  clipsById: ReadonlyMap<string, TimelineClip>;
+  trackIndexById: ReadonlyMap<string, number>;
+  presentationByClipId: ReadonlyMap<string, TimelineClipPresentation>;
+}
+
 function isVisualTrack(track: TimelineTrack | undefined): boolean {
   return track?.type === "visual";
 }
 
-export function resolveTransition(
-  transition: Transition,
+export function buildTransitionResolutionContext(
   tracks: readonly TimelineTrack[],
   clips: readonly TimelineClip[],
   fps: number,
+): TransitionResolutionContext {
+  return {
+    tracks,
+    clipsById: new Map(clips.map((clip) => [clip.id, clip] as const)),
+    trackIndexById: new Map(
+      tracks.map((track, index) => [track.id, index] as const),
+    ),
+    presentationByClipId: buildTimelineClipPresentationIndex(
+      tracks,
+      clips,
+      fps,
+    ),
+  };
+}
+
+export function resolveTransitionFromContext(
+  transition: Transition,
+  context: TransitionResolutionContext,
 ): ResolvedTransition | null {
-  const outgoingClip = clips.find(
-    (clip) => clip.id === transition.outgoingClipId && clip.type !== "mask",
-  );
-  const incomingClip = clips.find(
-    (clip) => clip.id === transition.incomingClipId && clip.type !== "mask",
-  );
+  const outgoingClip = context.clipsById.get(transition.outgoingClipId);
+  const incomingClip = context.clipsById.get(transition.incomingClipId);
   if (!outgoingClip || !incomingClip || outgoingClip.id === incomingClip.id) {
     return null;
   }
+  if (outgoingClip.type === "mask" || incomingClip.type === "mask") {
+    return null;
+  }
 
-  const outgoingTrackIndex = tracks.findIndex(
-    (track) => track.id === outgoingClip.trackId,
-  );
-  const incomingTrackIndex = tracks.findIndex(
-    (track) => track.id === incomingClip.trackId,
-  );
+  const outgoingTrackIndex =
+    context.trackIndexById.get(outgoingClip.trackId) ?? -1;
+  const incomingTrackIndex =
+    context.trackIndexById.get(incomingClip.trackId) ?? -1;
   if (
     outgoingTrackIndex < 0 ||
     incomingTrackIndex < 0 ||
     Math.abs(outgoingTrackIndex - incomingTrackIndex) !== 1 ||
-    !isVisualTrack(tracks[outgoingTrackIndex]) ||
-    !isVisualTrack(tracks[incomingTrackIndex])
+    !isVisualTrack(context.tracks[outgoingTrackIndex]) ||
+    !isVisualTrack(context.tracks[incomingTrackIndex])
   ) {
     return null;
   }
 
-  const presentationById = buildTimelineClipPresentationIndex(
-    [...tracks],
-    [...clips],
-    fps,
+  const outgoingPresentation = context.presentationByClipId.get(
+    outgoingClip.id,
   );
-  const outgoingPresentation = presentationById.get(outgoingClip.id);
-  const incomingPresentation = presentationById.get(incomingClip.id);
+  const incomingPresentation = context.presentationByClipId.get(
+    incomingClip.id,
+  );
   if (!outgoingPresentation || !incomingPresentation) {
     return null;
   }
@@ -87,6 +110,18 @@ export function resolveTransition(
   };
 }
 
+export function resolveTransition(
+  transition: Transition,
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  fps: number,
+): ResolvedTransition | null {
+  return resolveTransitionFromContext(
+    transition,
+    buildTransitionResolutionContext(tracks, clips, fps),
+  );
+}
+
 export function isTransitionValid(
   transition: Transition,
   tracks: readonly TimelineTrack[],
@@ -94,6 +129,23 @@ export function isTransitionValid(
   fps: number,
 ): boolean {
   return resolveTransition(transition, tracks, clips, fps) !== null;
+}
+
+export function resolveTransitions(
+  transitions: readonly Transition[],
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  fps: number,
+): ResolvedTransition[] {
+  const context = buildTransitionResolutionContext(tracks, clips, fps);
+  const resolvedTransitions: ResolvedTransition[] = [];
+  for (const transition of transitions) {
+    const resolved = resolveTransitionFromContext(transition, context);
+    if (resolved) {
+      resolvedTransitions.push(resolved);
+    }
+  }
+  return resolvedTransitions;
 }
 
 export function resolveTransitionProgress(
@@ -114,15 +166,17 @@ export function resolveActiveTransitions(
   fps: number,
   presentationTick: number,
 ): ResolvedTransition[] {
-  return transitions.flatMap((transition) => {
-    const resolved = resolveTransition(transition, tracks, clips, fps);
+  const context = buildTransitionResolutionContext(tracks, clips, fps);
+  const activeTransitions: ResolvedTransition[] = [];
+  for (const transition of transitions) {
+    const resolved = resolveTransitionFromContext(transition, context);
     if (
-      !resolved ||
-      presentationTick < resolved.start ||
-      presentationTick >= resolved.end
+      resolved &&
+      presentationTick >= resolved.start &&
+      presentationTick < resolved.end
     ) {
-      return [];
+      activeTransitions.push(resolved);
     }
-    return [resolved];
-  });
+  }
+  return activeTransitions;
 }

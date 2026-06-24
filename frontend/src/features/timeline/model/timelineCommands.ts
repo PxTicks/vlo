@@ -64,7 +64,11 @@ import {
   maybeTrimAndPadTracks,
   type TimelineModelState,
 } from "./timelineTrackModel";
-import { isTransitionValid } from "./transitionModel";
+import {
+  buildTransitionResolutionContext,
+  isTransitionValid,
+  resolveTransitionFromContext,
+} from "./transitionModel";
 
 export type TimelineClipShape = Partial<
   Pick<
@@ -114,12 +118,26 @@ export function pruneInvalidTransitions(
   draft: TimelineModelState,
   fps: number = useProjectStore.getState().config.fps,
 ): void {
+  if (draft.transitions.length === 0) {
+    return;
+  }
+
+  const resolutionContext = buildTransitionResolutionContext(
+    draft.tracks,
+    draft.clips,
+    fps,
+  );
   const linkedClipIds = new Set<string>();
+
+  // A clip may participate in at most one transition. Preserve the first valid
+  // transition in model order and prune later conflicts. This makes the
+  // first-wins behavior explicit: reordering `transitions` can intentionally
+  // change which conflicting legacy/imported entry survives normalization.
   draft.transitions = draft.transitions.filter((transition) => {
     if (
       linkedClipIds.has(transition.outgoingClipId) ||
       linkedClipIds.has(transition.incomingClipId) ||
-      !isTransitionValid(transition, draft.tracks, draft.clips, fps)
+      !resolveTransitionFromContext(transition, resolutionContext)
     ) {
       return false;
     }

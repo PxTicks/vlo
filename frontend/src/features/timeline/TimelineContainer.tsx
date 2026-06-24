@@ -43,7 +43,7 @@ import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
 import { buildTimelineClipPresentationIndex } from "./utils/clipPresentation";
-import { resolveTransition } from "./model/transitionModel";
+import { resolveTransitions } from "./model/transitionModel";
 import { TransitionOverlay } from "../transitions/components/TransitionOverlay";
 
 const containerStyles = {
@@ -120,16 +120,7 @@ function TimelineContainerComponent({
   );
   const projectFps = useProjectStore((state) => state.config.fps);
   const resolvedTransitions = React.useMemo(
-    () =>
-      transitions.flatMap((transition) => {
-        const resolved = resolveTransition(
-          transition,
-          tracks,
-          clips,
-          projectFps,
-        );
-        return resolved ? [resolved] : [];
-      }),
+    () => resolveTransitions(transitions, tracks, clips, projectFps),
     [clips, projectFps, tracks, transitions],
   );
   const clipPresentationById = React.useMemo(

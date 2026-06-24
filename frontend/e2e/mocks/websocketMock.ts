@@ -33,7 +33,6 @@ export async function installWebSocketMock(page: Page) {
             close: () => void;
             addEventListener: (type: string, handler: EventListenerOrEventListenerObject) => void;
             removeEventListener: (type: string, handler: EventListenerOrEventListenerObject) => void;
-            sentMessages: unknown[];
         }
 
         function createMockWs(url: string): MockWsInstance {
@@ -52,10 +51,9 @@ export async function installWebSocketMock(page: Page) {
                 onerror: null,
                 readyState: 0, // CONNECTING
                 binaryType: 'blob',
-                sentMessages: [],
 
-                send(data: unknown) {
-                    instance.sentMessages.push(data);
+                send() {
+                    // No-op: mock swallows outbound messages
                 },
 
                 close() {
@@ -102,28 +100,6 @@ export async function installWebSocketMock(page: Page) {
                         if (typeof h === 'function') h(statusEvent);
                         else h.handleEvent(statusEvent);
                     });
-                } else if (url.includes('/app/generation-delivery/ws')) {
-                    const projectId =
-                        new URL(url).searchParams.get('projectId') ?? 'unknown-project';
-                    for (const payload of [
-                        {
-                            type: 'lease_state',
-                            data: { project_id: projectId, active: true },
-                        },
-                        {
-                            type: 'snapshot',
-                            data: { project_id: projectId, deliveries: [] },
-                        },
-                    ]) {
-                        const messageEvent = new MessageEvent('message', {
-                            data: JSON.stringify(payload),
-                        });
-                        if (instance.onmessage) instance.onmessage(messageEvent);
-                        listeners.message.forEach((h) => {
-                            if (typeof h === 'function') h(messageEvent);
-                            else h.handleEvent(messageEvent);
-                        });
-                    }
                 }
             }, 0);
 
@@ -153,23 +129,10 @@ export async function installWebSocketMock(page: Page) {
             /**
              * Push a JSON event to all connected mock ComfyUI WebSocket instances.
              */
-            simulateEvent(
-                type: string,
-                data: Record<string, unknown>,
-                target: 'comfy' | 'delivery' | 'all' = 'all',
-            ) {
+            simulateEvent(type: string, data: Record<string, unknown>) {
                 const payload = JSON.stringify({ type, data });
                 for (const instance of mockInstances) {
                     if (instance.readyState !== 1) continue; // only OPEN
-                    if (target === 'comfy' && !instance.url.includes('/comfy/ws')) {
-                        continue;
-                    }
-                    if (
-                        target === 'delivery' &&
-                        !instance.url.includes('/app/generation-delivery/ws')
-                    ) {
-                        continue;
-                    }
                     const ev = new MessageEvent('message', { data: payload });
                     if (instance.onmessage) instance.onmessage(ev);
                 }
@@ -178,15 +141,6 @@ export async function installWebSocketMock(page: Page) {
             /** Get the number of active mock WS instances. */
             get instanceCount() {
                 return mockInstances.filter((i) => i.readyState === 1).length;
-            },
-            getSentMessages(target: 'comfy' | 'delivery') {
-                return mockInstances
-                    .filter((instance) =>
-                        target === 'comfy'
-                            ? instance.url.includes('/comfy/ws')
-                            : instance.url.includes('/app/generation-delivery/ws'),
-                    )
-                    .flatMap((instance) => instance.sentMessages);
             },
         };
     });
@@ -200,48 +154,13 @@ export async function simulateWsEvent(page: Page, type: string, data: Record<str
     await page.evaluate(
         ({ type, data }) => {
             const mock = (window as unknown as Record<string, unknown>).__mockWs as {
-                simulateEvent: (
-                    type: string,
-                    data: Record<string, unknown>,
-                    target?: 'comfy' | 'delivery' | 'all',
-                ) => void;
+                simulateEvent: (type: string, data: Record<string, unknown>) => void;
             } | undefined;
             if (!mock) throw new Error('WebSocket mock not installed');
-            mock.simulateEvent(type, data, 'comfy');
+            mock.simulateEvent(type, data);
         },
         { type, data },
     );
-}
-
-export async function simulateDeliveryMessage(
-    page: Page,
-    type: string,
-    data: Record<string, unknown>,
-) {
-    await page.evaluate(
-        ({ type, data }) => {
-            const mock = (window as unknown as Record<string, unknown>).__mockWs as {
-                simulateEvent: (
-                    type: string,
-                    data: Record<string, unknown>,
-                    target: 'delivery',
-                ) => void;
-            } | undefined;
-            if (!mock) throw new Error('WebSocket mock not installed');
-            mock.simulateEvent(type, data, 'delivery');
-        },
-        { type, data },
-    );
-}
-
-export async function getDeliveryClientMessages(page: Page): Promise<unknown[]> {
-    return page.evaluate(() => {
-        const mock = (window as unknown as Record<string, unknown>).__mockWs as {
-            getSentMessages: (target: 'delivery') => unknown[];
-        } | undefined;
-        if (!mock) throw new Error('WebSocket mock not installed');
-        return mock.getSentMessages('delivery');
-    });
 }
 
 /**

@@ -208,10 +208,6 @@ export interface ApiMockOptions {
     promptResponse?: Record<string, unknown>;
     /** Override history response per prompt ID. Default: empty results */
     historyResponse?: Record<string, unknown>;
-    /** Deliveries returned when the editor reconnects to an existing project. */
-    pendingDeliveries?: Array<Record<string, unknown>>;
-    /** Download bodies keyed by the final URL path segment. */
-    deliveryFiles?: Record<string, Buffer | string>;
 }
 
 /**
@@ -221,14 +217,6 @@ export interface ApiMockOptions {
  * Call before navigating to the app.
  */
 export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
-    // Registered first so the explicit routes below take precedence. Any new
-    // backend dependency must be deliberately represented in this harness.
-    await page.route('**/api/**', async (route) => {
-        throw new Error(
-            `Unexpected API request in Playwright test: ${route.request().method()} ${route.request().url()}`,
-        );
-    });
-
     const workflowList = options.workflowList
         ?? JSON.parse(readFixture('workflow-list.json'));
     const workflowContent = JSON.parse(readFixture('workflow-content.json'));
@@ -240,13 +228,10 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
 
     const promptResponse = options.promptResponse ?? {
         prompt_id: 'mock-prompt-001',
-        delivery_id: 'mock-delivery-001',
         number: 1,
         node_errors: {},
     };
     const historyResponse = options.historyResponse ?? {};
-    const pendingDeliveries = options.pendingDeliveries ?? [];
-    const deliveryFiles = options.deliveryFiles ?? {};
 
     // ── App status endpoint ──
 
@@ -273,42 +258,6 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
             body: JSON.stringify(defaultRuntimeStatus),
         });
     });
-
-    await page.route(
-        '**/app/generation-delivery/projects/*/pending',
-        async (route) => {
-            await route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({ deliveries: pendingDeliveries }),
-            });
-        },
-    );
-
-    await page.route(
-        '**/app/generation-delivery/projects/*/deliveries/*/files/**',
-        async (route) => {
-            const url = new URL(route.request().url());
-            const filename = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
-            const body = deliveryFiles[filename];
-            if (body === undefined) {
-                await route.fulfill({
-                    status: 404,
-                    body: `Unknown mocked delivery file: ${filename}`,
-                });
-                return;
-            }
-            await route.fulfill({
-                status: 200,
-                contentType: filename.endsWith('.png')
-                    ? 'image/png'
-                    : filename.endsWith('.webp')
-                        ? 'image/webp'
-                        : 'video/mp4',
-                body,
-            });
-        },
-    );
 
     // ── ComfyUI iframe shell ──
 
@@ -374,22 +323,6 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
         });
     });
 
-    await page.route('**/comfy/workflow/rules/resolve', async (route) => {
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify(workflowRules),
-        });
-    });
-
-    await page.route('**/comfy/workflow/upload', async (route) => {
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({ ok: true }),
-        });
-    });
-
     await page.route('**/comfy/prompt', async (route) => {
         await route.fulfill({
             status: 200,
@@ -411,14 +344,6 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify(historyResponse),
-        });
-    });
-
-    await page.route('**/comfy/api/queue', async (route) => {
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({ queue_running: [], queue_pending: [] }),
         });
     });
 

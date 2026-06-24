@@ -3,7 +3,7 @@ import { dragAssetToTimeline } from './helpers/drag';
 
 test.describe('Player Interactions', () => {
 
-    test('@smoke Player components are visible', async ({ editor }) => {
+    test('Smoke Test: Player components are visible', async ({ editor }) => {
         await expect(editor.player.canvasContainer).toBeVisible();
         await expect(editor.player.controls).toBeVisible();
     });

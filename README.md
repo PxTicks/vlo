@@ -174,32 +174,6 @@ After installation, continue to [Using Scripts](#using-scripts-almost-one-click-
 
 ## Run
 
-### End-to-end tests
-
-The Playwright suite uses an isolated writable in-memory project filesystem and
-mocked backend services. Install the pinned Chromium build once, then run either
-the pull-request smoke suite or the full suite:
-
-```bash
-cd frontend
-npx playwright install --with-deps chromium
-npm run test:e2e:smoke
-npm run test:e2e
-```
-
-Run one file or test while iterating:
-
-```bash
-npx playwright test e2e/timeline.spec.ts
-npx playwright test --grep "adjustment clip"
-npm run test:e2e:ui
-```
-
-Set `PLAYWRIGHT_BASE_URL` to test an already-running server. Local runs use the
-Vite development server; CI builds first and uses `vite preview`. Pull requests
-run `@smoke` tests, while the complete Chromium suite runs nightly and through
-manual workflow dispatch.
-
 ### 1. Start ComfyUI
 
 Run ComfyUI separately on the machine that will host vlo. By default vlo expects

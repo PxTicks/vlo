@@ -14,6 +14,7 @@ import type {
   TextClipData,
   TimelineClip,
   TimelineTrack,
+  Transition,
 } from "../../types/TimelineTypes";
 import { isCompositeClip } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
@@ -30,6 +31,7 @@ import {
   addClipsToDraft,
   addClipToDraft,
   addClipTransformToDraft,
+  addTransitionToDraft,
   addTrackToDraft,
   clipReferencesAssetId,
   copySelectedClips,
@@ -43,6 +45,7 @@ import {
   removeClipComponentFromDraft,
   removeClipIdsFromDraft,
   removeClipTransformFromDraft,
+  removeTransitionFromDraft,
   replaceClipAssetInDraft,
   setClipMaskBooleanExpressionInDraft,
   setClipMaskExpressionEnabledInDraft,
@@ -61,6 +64,7 @@ import {
   updateClipPositionInDraft,
   updateClipShapeInDraft,
   updateTextClipDataInDraft,
+  updateTransitionParametersInDraft,
   updateClipTransformInDraft,
   withTimelineClipDefaults,
   type TimelineClipMove,
@@ -109,6 +113,7 @@ export {
 
 interface TimelineState extends TimelineModelState {
   selectedClipIds: string[];
+  selectedTransitionId: string | null;
   copiedClips: TimelineClip[];
   canUndo: boolean;
   canRedo: boolean;
@@ -163,6 +168,16 @@ interface TimelineState extends TimelineModelState {
   replaceClipAsset: (clipId: string, asset: Asset) => void;
 
   selectClip: (id: string | null, isMulti?: boolean) => void;
+  selectTransition: (id: string | null) => void;
+  addTransition: (
+    transition: Transition,
+    options?: { incomingStart?: number },
+  ) => boolean;
+  removeTransition: (id: string) => boolean;
+  updateTransitionParameters: (
+    id: string,
+    updates: Record<string, unknown>,
+  ) => boolean;
 
   updateClipPosition: (
     id: string,
@@ -271,6 +286,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         structuredClone(snapshot.clips),
         withTimelineClipDefaults,
       ),
+      transitions: structuredClone(snapshot.transitions ?? []),
     }),
   });
 
@@ -336,7 +352,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   return {
     tracks: initial.tracks,
     clips: initial.clips,
+    transitions: initial.transitions ?? [],
     selectedClipIds: [],
+    selectedTransitionId: null,
     copiedClips: [],
     canUndo: false,
     canRedo: false,
@@ -389,7 +407,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
 
       if (didCommit && addedClipIds.length > 0) {
-        set({ selectedClipIds: addedClipIds });
+        set({ selectedClipIds: addedClipIds, selectedTransitionId: null });
         return addedClipIds;
       }
 
@@ -429,7 +447,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       // clips' SAM2/brush mask assets are still referenced by the composite's
       // content and must survive for editing/re-baking.
       if (didCommit) {
-        set({ selectedClipIds: [compositeClip.id] });
+        set({
+          selectedClipIds: [compositeClip.id],
+          selectedTransitionId: null,
+        });
       }
       return didCommit;
     },
@@ -490,7 +511,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         return false;
       }
 
-      set({ selectedClipIds: pastedClipIds });
+      set({ selectedClipIds: pastedClipIds, selectedTransitionId: null });
       return true;
     },
 
@@ -554,7 +575,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     selectClip: (id, isMulti = false) => {
       set((state) => {
         if (id === null) {
-          return { selectedClipIds: [] };
+          return { selectedClipIds: [], selectedTransitionId: null };
         }
 
         if (isMulti) {
@@ -563,17 +584,91 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
             ? state.selectedClipIds.filter((clipId) => clipId !== id)
             : [...state.selectedClipIds, id];
 
-          return { selectedClipIds };
+          return { selectedClipIds, selectedTransitionId: null };
         }
 
         if (
           state.selectedClipIds.length === 1 &&
-          state.selectedClipIds[0] === id
+          state.selectedClipIds[0] === id &&
+          state.selectedTransitionId === null
         ) {
           return state;
         }
 
-        return { selectedClipIds: [id] };
+        return { selectedClipIds: [id], selectedTransitionId: null };
+      });
+    },
+
+    selectTransition: (id) => {
+      set((state) => {
+        if (
+          state.selectedTransitionId === id &&
+          state.selectedClipIds.length === 0
+        ) {
+          return state;
+        }
+        return {
+          selectedTransitionId: id,
+          selectedClipIds: id ? [] : state.selectedClipIds,
+        };
+      });
+    },
+
+    addTransition: (transition, options) => {
+      const incomingStart =
+        options?.incomingStart !== undefined
+          ? Math.round(Math.max(0, options.incomingStart))
+          : undefined;
+      const current = get();
+      const previewModel: TimelineModelState = {
+        tracks: current.tracks,
+        clips:
+          incomingStart === undefined
+            ? current.clips
+            : current.clips.map((clip) =>
+                clip.id === transition.incomingClipId
+                  ? { ...clip, start: incomingStart }
+                  : clip,
+              ),
+        transitions: [...current.transitions],
+      };
+      if (!addTransitionToDraft(previewModel, transition)) {
+        return false;
+      }
+
+      let added = false;
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        if (incomingStart !== undefined) {
+          moveClipsInDraft(draft, [
+            {
+              clipId: transition.incomingClipId,
+              start: incomingStart,
+            },
+          ]);
+        }
+        added = addTransitionToDraft(draft, transition);
+      });
+      return didCommit && added;
+    },
+
+    removeTransition: (id) => {
+      const exists = get().transitions.some((transition) => transition.id === id);
+      if (!exists) return false;
+      const didCommit = mutationPipeline.commitModelMutation((draft) => {
+        removeTransitionFromDraft(draft, id);
+      });
+      if (didCommit && get().selectedTransitionId === id) {
+        set({ selectedTransitionId: null });
+      }
+      return didCommit;
+    },
+
+    updateTransitionParameters: (id, updates) => {
+      if (!get().transitions.some((transition) => transition.id === id)) {
+        return false;
+      }
+      return mutationPipeline.commitModelMutation((draft) => {
+        updateTransitionParametersInDraft(draft, id, updates);
       });
     },
 

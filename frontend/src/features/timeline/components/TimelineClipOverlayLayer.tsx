@@ -12,6 +12,7 @@ import {
 } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import { ticksToPx, pxToTicks } from "../../../core/time/pixelGrid";
+import { timelineSpanStyleX } from "../utils/timelineGeometry";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import type { TimelineClipPresentation } from "../utils/clipPresentation";
 import {
@@ -555,7 +556,6 @@ function TimelineClipOverlayItemCollection({
           presentation,
           visualTicks,
         );
-        const baseLeftPx = toBasePixels(presentationTicks);
 
         return (
           <TimelineClipOverlayItemNode
@@ -574,7 +574,9 @@ function TimelineClipOverlayItemCollection({
               // the clip and snap back only on commit.
               // Same trick used by ThumbnailCanvas to keep thumbnails
               // screen-stable during a crop.
-              left: `calc((${baseLeftPx}px * var(--timeline-zoom, 1)) + ${offsetPx}px - var(--drag-delta-x, 0px))`,
+              left: timelineSpanStyleX(presentationTicks, 0, {
+                extraLeft: `${offsetPx}px - var(--drag-delta-x, 0px)`,
+              }).left,
               top: `calc(${top} + ${verticalOffsetPx}px)`,
               transform: `translate(calc(-50% + var(--overlay-drag-dx, 0px)), ${translateY})`,
             }}

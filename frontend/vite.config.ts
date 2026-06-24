@@ -9,6 +9,51 @@ interface PackageManifest {
   version?: string;
 }
 
+const COVERAGE_THRESHOLDS = {
+  baseline: {
+    statements: 72,
+    lines: 73,
+    functions: 77,
+    branches: 62,
+  },
+  wave1: {
+    statements: 77,
+    lines: 78,
+    functions: 80,
+    branches: 66,
+  },
+  wave2: {
+    statements: 80,
+    lines: 81,
+    functions: 82,
+    branches: 69,
+  },
+  wave3: {
+    statements: 83,
+    lines: 84,
+    functions: 84,
+    branches: 72,
+  },
+  final: {
+    statements: 85,
+    lines: 85,
+    functions: 85,
+    branches: 75,
+  },
+} as const;
+
+type CoverageStage = keyof typeof COVERAGE_THRESHOLDS | "report";
+
+function resolveCoverageThresholds() {
+  const requestedStage = process.env.COVERAGE_STAGE as
+    | CoverageStage
+    | undefined;
+  if (requestedStage === "report") {
+    return undefined;
+  }
+  return COVERAGE_THRESHOLDS[requestedStage ?? "final"];
+}
+
 const frontendRoot = dirname(fileURLToPath(import.meta.url));
 const rootPackageJsonPath = resolve(frontendRoot, "../package.json");
 const rootPackageJson = JSON.parse(
@@ -125,6 +170,21 @@ export default defineConfig(({ mode }) => {
       environment: "jsdom",
       setupFiles: "./src/setupTests.ts",
       exclude: ["node_modules", "dist", "e2e/**/*"],
+      coverage: {
+        provider: "v8",
+        include: ["src/**/*.{ts,tsx}"],
+        exclude: [
+          "src/**/*.d.ts",
+          "src/**/__tests__/**",
+          "src/**/*.test.{ts,tsx}",
+          "src/testUtils/**",
+          "src/**/generated.ts",
+        ],
+        reportsDirectory: "coverage",
+        reporter: ["text", "html", "json", "json-summary", "lcov"],
+        reportOnFailure: true,
+        thresholds: resolveCoverageThresholds(),
+      },
     },
   };
 });

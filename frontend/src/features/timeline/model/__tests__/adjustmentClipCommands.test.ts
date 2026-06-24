@@ -48,7 +48,7 @@ function adjustmentTrack(id: string): TimelineTrack {
 }
 
 function makeDraft(tracks: TimelineTrack[]): TimelineModelState {
-  return { tracks, clips: [] };
+  return { tracks, clips: [], transitions: [] };
 }
 
 function videoClip(id: string, trackId: string): TimelineClip {
@@ -146,6 +146,7 @@ describe("track-type compatibility (general)", () => {
       const draft: TimelineModelState = {
         tracks: [{ ...visualTrack("untyped"), type: undefined }],
         clips: [],
+        transitions: [],
       };
       addClipToDraft(draft, adjustmentClip({ id: "a", trackId: "untyped" }));
       expect(draft.clips).toHaveLength(1);
@@ -209,6 +210,7 @@ describe("track-type compatibility (general)", () => {
           { ...visualTrack("untyped"), type: undefined },
         ],
         clips: [],
+        transitions: [],
       };
       addClipToDraft(draft, adjustmentClip({ id: "a", trackId: "adj" }));
       moveClipsInDraft(draft, [
@@ -480,6 +482,7 @@ describe("adjustment-clip commands", () => {
           videoClip("v1", "v"),
           adjustmentClip({ id: "a", trackId: "adj" }),
         ],
+        transitions: [],
       };
 
       removeClipIdsFromDraft(draft, new Set(["a"]));
@@ -509,6 +512,7 @@ describe("adjustment-clip commands", () => {
           adjustmentClip({ id: "a", trackId: "source" }),
           videoClip("v1", "v"),
         ],
+        transitions: [],
       };
 
       moveClipsInDraft(draft, [

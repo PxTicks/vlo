@@ -7,7 +7,7 @@ import { test, expect } from './fixtures';
 
 test.describe('Asset Browser', () => {
 
-    test('@smoke Tab switching filters assets by type', async ({ editor }) => {
+    test('Tab switching filters assets by type', async ({ editor }) => {
         const { assetBrowser } = editor;
 
         // Default tab is video — 3 video assets

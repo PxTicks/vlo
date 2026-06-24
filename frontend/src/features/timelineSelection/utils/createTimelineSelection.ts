@@ -4,12 +4,14 @@ import {
   getTimelineClips,
   getTimelineDuration,
   getTimelineTracks,
+  getTimelineTransitions,
 } from "../../timeline/api";
 import type {
   NonMaskTimelineClip,
   TimelineClip,
   TimelineSelection,
   TimelineTrack,
+  Transition,
 } from "../../../types/TimelineTypes";
 import { useTimelineSelectionStore } from "../useTimelineSelectionStore";
 import {
@@ -25,6 +27,7 @@ export interface CreateTimelineSelectionFromClipIdsOptions {
   clipIds: readonly string[];
   clips?: readonly TimelineClip[];
   tracks?: readonly TimelineTrack[];
+  transitions?: readonly Transition[];
   fps?: number;
   frameStep?: number;
   message?: string;
@@ -37,6 +40,7 @@ export function createTimelineSelection(
 ): TimelineSelection {
   const clips = getTimelineClips();
   const tracks = getTimelineTracks();
+  const transitions = getTimelineTransitions();
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
   const {
     selectionFpsOverride,
@@ -51,15 +55,26 @@ export function createTimelineSelection(
     projectFps,
   );
 
+  const selectedClips = getClipsInSelection(clips, {
+    start: startTick,
+    end: endTick,
+    clips: [],
+  });
+  const selectedClipIds = new Set(selectedClips.map((clip) => clip.id));
+  const selectedTransitions = transitions.filter(
+    (transition) =>
+      selectedClipIds.has(transition.outgoingClipId) &&
+      selectedClipIds.has(transition.incomingClipId),
+  );
+
   return {
     start: startTick,
     end: endTick,
-    clips: getClipsInSelection(clips, {
-      start: startTick,
-      end: endTick,
-      clips: [],
-    }),
+    clips: selectedClips,
     tracks,
+    ...(selectedTransitions.length > 0
+      ? { transitions: selectedTransitions }
+      : {}),
     ...(selectionMessage ? { message: selectionMessage } : {}),
     ...(selectionIncludeModeEnabled && selectionIncludedTrackIds.length > 0
       ? { includedTrackIds: selectionIncludedTrackIds.slice() }
@@ -74,15 +89,26 @@ export function createPointTimelineSelection(
 ): TimelineSelection {
   const clips = getTimelineClips();
   const tracks = getTimelineTracks();
+  const transitions = getTimelineTransitions();
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
 
+  const selectedClips = getClipsInSelection(clips, {
+    start: tick,
+    clips: [],
+  });
+  const selectedClipIds = new Set(selectedClips.map((clip) => clip.id));
+  const selectedTransitions = transitions.filter(
+    (transition) =>
+      selectedClipIds.has(transition.outgoingClipId) &&
+      selectedClipIds.has(transition.incomingClipId),
+  );
   return {
     start: tick,
-    clips: getClipsInSelection(clips, {
-      start: tick,
-      clips: [],
-    }),
+    clips: selectedClips,
     tracks,
+    ...(selectedTransitions.length > 0
+      ? { transitions: selectedTransitions }
+      : {}),
     fps: projectFps,
   };
 }
@@ -91,6 +117,7 @@ export function createTimelineSelectionFromClipIds({
   clipIds,
   clips,
   tracks,
+  transitions,
   fps,
   frameStep,
   message,
@@ -98,6 +125,7 @@ export function createTimelineSelectionFromClipIds({
 }: CreateTimelineSelectionFromClipIdsOptions): TimelineSelection | null {
   const sourceClips = clips ?? getTimelineClips();
   const sourceTracks = tracks ?? getTimelineTracks();
+  const sourceTransitions = transitions ?? getTimelineTransitions();
   const selectedClipIds = new Set(clipIds);
   const primaryClips = sourceClips.filter(
     (clip): clip is NonMaskTimelineClip =>
@@ -118,12 +146,24 @@ export function createTimelineSelectionFromClipIds({
   const selectionClips = sourceClips.filter(
     (clip) => selectedClipIds.has(clip.id) || subordinateClipIds.has(clip.id),
   );
+  const selectionTransitions = sourceTransitions.filter(
+    (transition) =>
+      selectedClipIds.has(transition.outgoingClipId) &&
+      selectedClipIds.has(transition.incomingClipId),
+  );
 
   return {
     start,
     end,
     clips: structuredClone(selectionClips),
     tracks: sourceTracks.map((track) => structuredClone(track)),
+    ...(selectionTransitions.length > 0
+      ? {
+          transitions: selectionTransitions.map((transition) =>
+            structuredClone(transition),
+          ),
+        }
+      : {}),
     ...(message ? { message } : {}),
     ...(includedTrackIds && includedTrackIds.length > 0
       ? { includedTrackIds: [...includedTrackIds] }

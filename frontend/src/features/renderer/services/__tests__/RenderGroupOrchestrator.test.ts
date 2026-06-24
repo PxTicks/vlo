@@ -1,4 +1,4 @@
-import { Container } from "pixi.js";
+import { Container, Sprite } from "pixi.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import type {
   AdjustmentTimelineClip,
@@ -434,6 +434,47 @@ describe("RenderGroupOrchestrator", () => {
       // Further calls are inert.
       expect(() => fx.orchestrator.sync(50, ["track-1"])).not.toThrow();
     });
+  });
+
+  it("creates and removes transient transition color layers from presentation plans", () => {
+    const tracks = ["track-1", "track-2", "track-3"].map(
+      (trackId, index) => ({
+        trackId,
+        jobId: null,
+        visible: true,
+        parentGroupId: null,
+        zIndex: 2 - index,
+      }),
+    );
+    fx.orchestrator.syncPresentationPlan(50, {
+      epoch: 1,
+      tracks,
+      adjustmentForest: [],
+      transitionColorLayers: [
+        {
+          id: "transition-1",
+          color: "#ff0000",
+          parentGroupId: null,
+          zIndex: 0.5,
+        },
+      ],
+      encoderSinks: [],
+    });
+
+    const colorLayer = fx.root.children.find(
+      (child): child is Sprite => child instanceof Sprite,
+    );
+    expect(colorLayer).toBeDefined();
+    expect(colorLayer?.zIndex).toBe(0.5);
+
+    fx.orchestrator.syncPresentationPlan(51, {
+      epoch: 2,
+      tracks,
+      adjustmentForest: [],
+      transitionColorLayers: [],
+      encoderSinks: [],
+    });
+    expect(colorLayer?.destroyed).toBe(true);
   });
 
   it("an unused TimelineClip type import keeps tree-shake honest", () => {

@@ -1,9 +1,53 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getAvailableModels, startModelDownload } from "../downloadApi";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  cancelDownload,
+  getAvailableModels,
+  startModelDownload,
+  startModelDownloadBatch,
+  subscribeToProgress,
+  type DownloadProgressEvent,
+} from "../downloadApi";
+
+class MockEventSource {
+  static readonly CLOSED = 2;
+  static instances: MockEventSource[] = [];
+
+  readonly url: string;
+  readyState = 0;
+  onerror: (() => void) | null = null;
+  close = vi.fn();
+  private readonly listeners = new Map<string, (event: MessageEvent) => void>();
+
+  constructor(url: string) {
+    this.url = url;
+    MockEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: (event: MessageEvent) => void): void {
+    this.listeners.set(type, listener);
+  }
+
+  emit(type: string, data: string): void {
+    this.listeners.get(type)?.(new MessageEvent(type, { data }));
+  }
+}
+
+function jsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 describe("downloadApi", () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn();
+    MockEventSource.instances = [];
+    vi.stubGlobal("EventSource", MockEventSource);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("returns a friendly error when the model list endpoint responds with HTML", async () => {
@@ -69,26 +113,63 @@ describe("downloadApi", () => {
     );
   });
 
-  it("sends the workflow id when starting a workflow download", async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          jobId: "job-1",
-          label: "model.safetensors",
-          status: "pending",
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json",
-          },
-        },
-      ),
-    );
+  it("returns model listings and omits the query when no workflow is selected", async () => {
+    const payload = { sam2: [{ key: "tiny", installed: true }] };
+    vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse(payload));
 
-    await startModelDownload("comfyui-workflow", "checkpoints:model.safetensors", {
-      workflowId: "wf.json",
-    });
+    await expect(getAvailableModels()).resolves.toEqual(payload);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/downloads\/models$/),
+    );
+  });
+
+  it.each([
+    [jsonResponse({ message: "backend message" }, 500), "backend message"],
+    [jsonResponse(" plain failure ", 500), "plain failure"],
+    [jsonResponse({ detail: "   ", message: "fallback detail" }, 400), "fallback detail"],
+    [jsonResponse([], 500), "Unable to load SAM2 model list (500)"],
+    [
+      new Response("{bad json", {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }),
+      "Unable to load SAM2 model list (500)",
+    ],
+  ])("normalizes model-list error responses", async (response, message) => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(response);
+    await expect(getAvailableModels()).rejects.toThrow(message);
+  });
+
+  it.each([
+    new Response("", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    new Response("{bad json", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  ])("rejects empty or malformed successful JSON", async (response) => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(response);
+    await expect(getAvailableModels()).rejects.toThrow(
+      "Unable to load SAM2 model list",
+    );
+  });
+
+  it("sends the workflow id when starting a workflow download", async () => {
+    const payload = {
+      jobId: "job-1",
+      label: "model.safetensors",
+      status: "pending",
+    };
+    vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse(payload));
+
+    await expect(
+      startModelDownload("comfyui-workflow", "checkpoints:model.safetensors", {
+        workflowId: "wf.json",
+        hfToken: "secret",
+      }),
+    ).resolves.toEqual(payload);
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining("/downloads/start"),
@@ -98,8 +179,125 @@ describe("downloadApi", () => {
           modelType: "comfyui-workflow",
           modelKey: "checkpoints:model.safetensors",
           workflowId: "wf.json",
+          hfToken: "secret",
         }),
       }),
     );
+  });
+
+  it("starts a batch with optional credentials and preserves partial errors", async () => {
+    const payload = {
+      jobs: [{ modelKey: "a", jobId: "job-a", label: "A", status: "queued" }],
+      errors: [{ modelKey: "b", message: "not available" }],
+    };
+    vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse(payload));
+
+    await expect(
+      startModelDownloadBatch("sam2", ["a", "b"], {
+        workflowId: "workflow.json",
+        hfToken: "token",
+      }),
+    ).resolves.toEqual(payload);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/downloads\/start-batch$/),
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modelType: "sam2",
+          modelKeys: ["a", "b"],
+          workflowId: "workflow.json",
+          hfToken: "token",
+        }),
+      }),
+    );
+  });
+
+  it("omits an empty token from single and batch requests", async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ jobId: "one", label: "One", status: "queued" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ jobs: [], errors: [] }));
+
+    await startModelDownload("sam2", "one", { hfToken: "" });
+    await startModelDownloadBatch("sam2", [], { hfToken: "" });
+
+    const firstBody = JSON.parse(
+      String(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body),
+    ) as Record<string, unknown>;
+    const secondBody = JSON.parse(
+      String(vi.mocked(globalThis.fetch).mock.calls[1]?.[1]?.body),
+    ) as Record<string, unknown>;
+    expect(firstBody).not.toHaveProperty("hfToken");
+    expect(secondBody).not.toHaveProperty("hfToken");
+  });
+
+  it("cancels downloads and reports HTTP failures", async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }));
+
+    await expect(cancelDownload("job/with spaces")).resolves.toBeUndefined();
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("/downloads/job/with spaces/cancel"),
+      { method: "POST" },
+    );
+    await expect(cancelDownload("failed")).rejects.toThrow(
+      "Failed to cancel download (503)",
+    );
+  });
+
+  it("subscribes to every progress event and closes on cleanup", () => {
+    const onEvent = vi.fn();
+    const unsubscribe = subscribeToProgress("job-1", onEvent);
+    const source = MockEventSource.instances[0];
+    const event: DownloadProgressEvent = {
+      jobId: "job-1",
+      label: "Model",
+      status: "downloading",
+      progress: {
+        currentFileIndex: 0,
+        totalFiles: 1,
+        currentFileBytes: 5,
+        currentFileTotal: 10,
+        overallBytes: 5,
+        overallBytesTotal: 10,
+      },
+      error: null,
+    };
+
+    for (const type of [
+      "queued",
+      "downloading",
+      "complete",
+      "failed",
+      "cancelled",
+    ]) {
+      source.emit(type, JSON.stringify({ ...event, status: type }));
+    }
+    source.emit("downloading", "{bad json");
+
+    expect(source.url).toMatch(/\/downloads\/job-1\/progress$/);
+    expect(onEvent).toHaveBeenCalledTimes(5);
+    unsubscribe();
+    expect(source.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports open connection errors but ignores errors after closure", () => {
+    const onError = vi.fn();
+    subscribeToProgress("job-2", vi.fn(), onError);
+    const source = MockEventSource.instances[0];
+
+    source.onerror?.();
+    expect(onError).toHaveBeenCalledWith(
+      new Error("Download progress connection lost"),
+    );
+    expect(source.close).toHaveBeenCalledTimes(1);
+
+    source.readyState = MockEventSource.CLOSED;
+    source.onerror?.();
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });

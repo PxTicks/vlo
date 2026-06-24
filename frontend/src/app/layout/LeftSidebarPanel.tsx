@@ -4,8 +4,14 @@ import VideoLibraryIcon from "@mui/icons-material/VideoLibrary";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
 import LayersIcon from "@mui/icons-material/Layers";
 import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 
-export type LeftSidebarTab = "assets" | "text" | "composite" | "effects";
+export type LeftSidebarTab =
+  | "assets"
+  | "text"
+  | "composite"
+  | "effects"
+  | "transitions";
 
 interface LeftSidebarPanelProps {
   activeTab: LeftSidebarTab;
@@ -104,6 +110,25 @@ function LeftSidebarPanelComponent({
           icon={<AutoFixHighIcon fontSize="small" />}
           aria-label="Effects"
           data-testid="left-sidebar-tab-effects"
+          sx={{
+            minWidth: 40,
+            minHeight: 40,
+            width: 40,
+            borderRadius: 2,
+            color: "#9aa0a6",
+            mx: 1,
+            my: 0.5,
+            "&.Mui-selected": {
+              color: "#4dabf5",
+              bgcolor: "rgba(77, 171, 245, 0.12)",
+            },
+          }}
+        />
+        <Tab
+          value="transitions"
+          icon={<CompareArrowsIcon fontSize="small" />}
+          aria-label="Transitions"
+          data-testid="left-sidebar-tab-transitions"
           sx={{
             minWidth: 40,
             minHeight: 40,

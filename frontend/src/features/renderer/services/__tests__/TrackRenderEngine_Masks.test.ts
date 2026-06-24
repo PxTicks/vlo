@@ -233,8 +233,19 @@ describe("TrackRenderEngine masks", () => {
 
   it("applies only masks in apply mode", () => {
     const engine = new TrackRenderEngine(1);
-    const sprite = (engine as unknown as { sprite: { setMask: () => void } }).sprite;
-    const setMaskSpy = vi.spyOn(sprite, "setMask");
+    const internals = engine as unknown as {
+      sprite: { setMask: () => void };
+      container: { addChild: (child: unknown) => void };
+      presentationContainer: {
+        addChild: (child: unknown) => void;
+        setMask: () => void;
+      };
+    };
+    const spriteSetMaskSpy = vi.spyOn(internals.sprite, "setMask");
+    const presentationSetMaskSpy = vi.spyOn(
+      internals.presentationContainer,
+      "setMask",
+    );
 
     const clip = createParentClip();
     const maskApply = createMaskClip("mask_apply", "apply");
@@ -268,11 +279,20 @@ describe("TrackRenderEngine masks", () => {
     expect(drawMaskShapeSpy.mock.calls[0][1]).toEqual(
       expect.objectContaining({ id: maskApply.id }),
     );
-    expect(setMaskSpy).toHaveBeenCalledWith(
+    expect(internals.presentationContainer.addChild).toHaveBeenCalledWith(
+      internals.sprite,
+    );
+    expect(internals.container.addChild).toHaveBeenCalledWith(
+      internals.presentationContainer,
+    );
+    expect(presentationSetMaskSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         mask: expect.anything(),
         inverse: false,
       }),
+    );
+    expect(spriteSetMaskSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ mask: expect.anything() }),
     );
 
     engine.dispose();
@@ -280,13 +300,21 @@ describe("TrackRenderEngine masks", () => {
 
   it("composites multiple SAM2 mask assets and requests strict frames in export mode", async () => {
     const engine = new TrackRenderEngine(1);
-    const sprite = (
+    const internals = (
       engine as unknown as {
         sprite: { setMask: () => void; addEffect: () => void };
+        presentationContainer: {
+          setMask: () => void;
+          addEffect: () => void;
+        };
       }
-    ).sprite;
-    const setMaskSpy = vi.spyOn(sprite, "setMask");
-    const addEffectSpy = vi.spyOn(sprite, "addEffect");
+    );
+    const spriteSetMaskSpy = vi.spyOn(internals.sprite, "setMask");
+    const spriteAddEffectSpy = vi.spyOn(internals.sprite, "addEffect");
+    const presentationAddEffectSpy = vi.spyOn(
+      internals.presentationContainer,
+      "addEffect",
+    );
 
     const clip = createParentClip();
     const sam2MaskA = createSam2MaskClip("mask_sam2_a", "sam2_asset_a");
@@ -335,13 +363,16 @@ describe("TrackRenderEngine masks", () => {
         (call) => call[1] && (call[1] as { strict?: boolean }).strict === true,
       ),
     ).toBe(true);
-    expect(addEffectSpy).toHaveBeenCalledWith(
+    expect(presentationAddEffectSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         mask: expect.anything(),
         inverse: false,
       }),
     );
-    expect(setMaskSpy).not.toHaveBeenCalledWith(
+    expect(spriteAddEffectSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ mask: expect.anything() }),
+    );
+    expect(spriteSetMaskSpy).not.toHaveBeenCalledWith(
       expect.objectContaining({
         mask: expect.anything(),
         inverse: false,

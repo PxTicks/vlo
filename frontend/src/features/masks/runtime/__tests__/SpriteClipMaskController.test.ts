@@ -558,7 +558,22 @@ describe("SpriteClipMaskController mask composition", () => {
   });
 
   it("syncs effect-mask nodes outside the spatial expression and resolves their coverage", async () => {
-    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const visibilitySnapshots: Array<{
+      spatial: boolean;
+      effect: boolean;
+    }> = [];
+    let spatialRoot: Container | null = null;
+    let effectRoot: Container | null = null;
+    const renderer = {
+      render: vi.fn(() => {
+        if (spatialRoot && effectRoot) {
+          visibilitySnapshots.push({
+            spatial: spatialRoot.visible,
+            effect: effectRoot.visible,
+          });
+        }
+      }),
+    } as unknown as Renderer;
     const sprite = new Sprite();
     const root = new Container();
     const controller = new SpriteClipMaskController(sprite, renderer, root);
@@ -592,6 +607,22 @@ describe("SpriteClipMaskController mask composition", () => {
       new Map<string, Asset>(),
     );
 
+    const internals = controller as unknown as {
+      nodeRegistry: {
+        getVectorNode: (
+          maskClipId: string,
+        ) => { root: Container } | null;
+      };
+    };
+    spatialRoot =
+      internals.nodeRegistry.getVectorNode(spatialMask.id)?.root ?? null;
+    effectRoot = internals.nodeRegistry.getVectorNode(fxMask.id)?.root ?? null;
+
+    // Only the spatial expression remains visible in the container attached as
+    // the sprite's regular Pixi mask.
+    expect(spatialRoot?.visible).toBe(true);
+    expect(effectRoot?.visible).toBe(false);
+
     // mask_fx has a synced node (via the effect-mask path), so its coverage
     // resolves even though it is absent from the spatial expression.
     expect(
@@ -600,6 +631,13 @@ describe("SpriteClipMaskController mask composition", () => {
         maskId: "mask_fx",
       }),
     ).not.toBeNull();
+    expect(visibilitySnapshots).toContainEqual({
+      spatial: false,
+      effect: true,
+    });
+    // Coverage rendering restores the spatial-only baseline.
+    expect(spatialRoot?.visible).toBe(true);
+    expect(effectRoot?.visible).toBe(false);
 
     // A mask that was never synced contributes nothing (no whole-clip fallback).
     expect(
@@ -1606,6 +1644,70 @@ describe("SpriteClipMaskController mask composition", () => {
     }
   });
 
+  it("preserves a vector mask node across preview and apply presentation changes", async () => {
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+    const parent = createParentClip();
+    const mask = createMaskClip("mask_vector_preview_transition", {
+      inverted: true,
+    });
+    const internals = controller as unknown as {
+      nodeRegistry: {
+        getVectorNode: (maskClipId: string) => unknown;
+      };
+      maskSprite: Sprite | null;
+    };
+
+    try {
+      await controller.syncMaskClips(
+        [mask],
+        parent,
+        { width: 1920, height: 1080 },
+        10,
+        new Map<string, Asset>(),
+      );
+      const appliedNode = internals.nodeRegistry.getVectorNode(mask.id);
+      expect(appliedNode).not.toBeNull();
+
+      useMaskViewStore
+        .getState()
+        .setMaskPreviewTarget(parent.id, "mask_vector_preview_transition");
+      await controller.syncMaskClips(
+        [mask],
+        parent,
+        { width: 1920, height: 1080 },
+        10,
+        new Map<string, Asset>(),
+      );
+
+      expect(internals.nodeRegistry.getVectorNode(mask.id)).toBe(appliedNode);
+      expect(controller.currentMaskMode).toBe("none");
+
+      useMaskViewStore.getState().clearMaskPreviewTarget();
+      await controller.syncMaskClips(
+        [mask],
+        parent,
+        { width: 1920, height: 1080 },
+        10,
+        new Map<string, Asset>(),
+      );
+
+      const appliedEffect = sprite.effects?.find(
+        (effect) => effect instanceof AlphaMask,
+      ) as AlphaMask | undefined;
+      expect(internals.nodeRegistry.getVectorNode(mask.id)).toBe(appliedNode);
+      expect(controller.currentMaskMode).toBe("alpha");
+      expect(appliedEffect?.mask).toBe(internals.maskSprite);
+    } finally {
+      useMaskViewStore.getState().clearMaskPreviewTarget();
+      controller.dispose();
+    }
+  });
+
   it("keeps a gizmo-moved generation mask aligned with the rendered asset rectangle", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderer = {
@@ -1724,6 +1826,188 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
+  it("applies a regular spatial mask to an explicit presentation container", async () => {
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const presentation = new Container();
+    presentation.addChild(sprite);
+    const companion = new Sprite(Texture.WHITE);
+    presentation.addChild(companion);
+    const controller = new SpriteClipMaskController(
+      sprite,
+      null,
+      root,
+      undefined,
+      presentation,
+    );
+    const internals = controller as unknown as { maskContainer: Container };
+
+    await controller.syncMaskClips(
+      [createMaskClip("mask_group_regular")],
+      createParentClip(),
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    expect(presentation.mask).toBe(internals.maskContainer);
+    expect(sprite.mask ?? null).toBeNull();
+    expect(companion.parent).toBe(presentation);
+
+    controller.dispose();
+  });
+
+  it("applies a composited spatial mask to an explicit presentation container", async () => {
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const presentation = new Container();
+    presentation.addChild(sprite);
+    presentation.addChild(new Sprite(Texture.WHITE));
+    const controller = new SpriteClipMaskController(
+      sprite,
+      renderer,
+      root,
+      undefined,
+      presentation,
+    );
+    const internals = controller as unknown as { maskSprite: Sprite | null };
+
+    await controller.syncMaskClips(
+      [createMaskClip("mask_group_alpha", { inverted: true })],
+      createParentClip(),
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    const presentationMask = presentation.effects?.find(
+      (effect) => effect instanceof AlphaMask,
+    ) as AlphaMask | undefined;
+    expect(presentationMask?.mask).toBe(internals.maskSprite);
+    expect(
+      sprite.effects?.some((effect) => effect instanceof AlphaMask) ?? false,
+    ).toBe(false);
+
+    controller.dispose();
+  });
+
+  it("keeps the regular mask container visible across repeated syncs", async () => {
+    // Regression: the preview application controller used to share the real
+    // mask-scene container, so the per-frame hideMaskNodePreviewOverlay() →
+    // preview clear() → syncOutputModeVisibility() clobbered the applied
+    // regular mask's container to invisible. The main controller's apply
+    // dedup then skipped re-asserting it, silently disabling normal masks.
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, null, root);
+    const internals = controller as unknown as { maskContainer: Container };
+
+    const parent = createParentClip();
+    const mask = createMaskClip("mask_regular_steady");
+
+    // First sync establishes the regular mask (mode none -> regular).
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    expect(controller.currentMaskMode).toBe("regular");
+    expect(internals.maskContainer.visible).toBe(true);
+
+    // Steady-state re-sync hits the apply dedup. The container must stay
+    // visible — otherwise the Pixi stencil renders nothing and the mask
+    // silently stops clipping.
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    expect(controller.currentMaskMode).toBe("regular");
+    expect(internals.maskContainer.visible).toBe(true);
+    expect(sprite.mask).not.toBeNull();
+
+    // Cached controller state is not enough: another presentation owner may
+    // have detached the actual Pixi mask between syncs.
+    sprite.mask = null;
+    internals.maskContainer.visible = false;
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    expect(sprite.mask).toBe(internals.maskContainer);
+    expect(internals.maskContainer.visible).toBe(true);
+
+    controller.dispose();
+  });
+
+  it("fully detaches the stencil mask across normal and inverse transitions", async () => {
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+    const parent = createParentClip();
+    const normalMask = createMaskClip("mask_mode_transition");
+    const invertedMask = {
+      ...normalMask,
+      maskInverted: true,
+    };
+    const internals = controller as unknown as {
+      maskContainer: Container;
+      maskSprite: Sprite | null;
+    };
+
+    await controller.syncMaskClips(
+      [normalMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    expect(sprite.mask).toBe(internals.maskContainer);
+    expect(controller.currentMaskMode).toBe("regular");
+
+    await controller.syncMaskClips(
+      [invertedMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    const inverseEffect = sprite.effects?.find(
+      (effect) => effect instanceof AlphaMask,
+    ) as AlphaMask | undefined;
+    expect(sprite.mask ?? null).toBeNull();
+    expect(controller.currentMaskMode).toBe("alpha");
+    expect(inverseEffect?.mask).toBe(internals.maskSprite);
+
+    await controller.syncMaskClips(
+      [normalMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    expect(sprite.mask).toBe(internals.maskContainer);
+    expect(controller.currentMaskMode).toBe("regular");
+    expect(
+      sprite.effects?.some((effect) => effect instanceof AlphaMask) ?? false,
+    ).toBe(false);
+
+    controller.dispose();
+  });
+
   it("uses live preview values for shared mask edge operations", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderSpy = vi.fn();
@@ -1762,6 +2046,214 @@ describe("SpriteClipMaskController mask composition", () => {
     livePreviewParamStore.clear("grow_preview", "amount");
     controller.dispose();
     warnSpy.mockRestore();
+  });
+
+  it("moves the existing applied mask node synchronously during live layout", async () => {
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, null, root);
+    const parent = createParentClip();
+    const maskId = "clip_1::mask::mask_live_layout";
+    const mask = createMaskClip("mask_live_layout", {
+      transformations: createMaskLayoutTransforms(maskId, {
+        x: 0,
+        y: 0,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+      }),
+    });
+
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    const internals = controller as unknown as {
+      nodeRegistry: {
+        getVectorNode: (
+          clipId: string,
+        ) => { graphics: Graphics } | null;
+      };
+    };
+    const node = internals.nodeRegistry.getVectorNode(mask.id);
+    expect(node).not.toBeNull();
+
+    const positionTransform = mask.transformations.find(
+      (transform) => transform.type === "position",
+    );
+    expect(positionTransform).toBeDefined();
+    livePreviewParamStore.setMany([
+      {
+        transformId: positionTransform?.id ?? "",
+        paramName: "x",
+        value: 120,
+      },
+      {
+        transformId: positionTransform?.id ?? "",
+        paramName: "y",
+        value: 80,
+      },
+    ]);
+
+    const liveUpdate = controller.syncLiveMaskTransforms(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+    );
+
+    expect(node?.graphics.position.x).toBe(120);
+    expect(node?.graphics.position.y).toBe(80);
+    expect(liveUpdate).toEqual({
+      didUpdate: true,
+      needsEffectPresentationRefresh: false,
+      needsSpatialPresentationRefresh: false,
+    });
+
+    livePreviewParamStore.clearAll();
+    controller.dispose();
+  });
+
+  it("keeps an inverted vector mask on its compositor target during live layout", async () => {
+    const renderSpy = vi.fn();
+    const renderer = {
+      render: renderSpy,
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+    const parent = createParentClip();
+    const mask = createMaskClip("mask_live_inverted", {
+      inverted: true,
+      transformations: createMaskLayoutTransforms(
+        "clip_1::mask::mask_live_inverted",
+        {
+          x: 0,
+          y: 0,
+          scaleX: 1,
+          scaleY: 1,
+          rotation: 0,
+        },
+      ),
+    });
+
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    const internals = controller as unknown as {
+      maskSprite: Sprite;
+    };
+    const compositedEffect = sprite.effects?.find(
+      (effect) => effect instanceof AlphaMask,
+    ) as AlphaMask | undefined;
+    expect(compositedEffect?.mask).toBe(internals.maskSprite);
+
+    const positionTransform = mask.transformations.find(
+      (transform) => transform.type === "position",
+    );
+    livePreviewParamStore.set(positionTransform?.id ?? "", "x", 90);
+    const renderCountBeforeLiveRefresh = renderSpy.mock.calls.length;
+    const liveUpdate = controller.syncLiveMaskTransforms(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Set([mask.id]),
+    );
+
+    const liveEffect = sprite.effects?.find(
+      (effect) => effect instanceof AlphaMask,
+    ) as AlphaMask | undefined;
+    expect(liveEffect?.mask).toBe(internals.maskSprite);
+    expect(liveUpdate.needsSpatialPresentationRefresh).toBe(true);
+
+    controller.refreshLiveMaskPresentation();
+
+    expect(renderSpy.mock.calls.length).toBeGreaterThan(
+      renderCountBeforeLiveRefresh,
+    );
+    expect(liveEffect?.mask).toBe(internals.maskSprite);
+
+    livePreviewParamStore.clearAll();
+    controller.dispose();
+  });
+
+  it("refreshes committed composited layout when preview values clear before the Pixi tick", async () => {
+    const renderSpy = vi.fn();
+    const renderer = {
+      render: renderSpy,
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const controller = new SpriteClipMaskController(sprite, renderer, root);
+    const parent = createParentClip();
+    const maskClipId = "clip_1::mask::mask_live_commit";
+    const mask = createMaskClip("mask_live_commit", {
+      inverted: true,
+      transformations: createMaskLayoutTransforms(maskClipId, {
+        x: 0,
+        y: 0,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+      }),
+    });
+
+    await controller.syncMaskClips(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+    const rendersAfterInitialSync = renderSpy.mock.calls.length;
+    const positionTransform = mask.transformations.find(
+      (transform) => transform.type === "position",
+    );
+
+    livePreviewParamStore.set(positionTransform?.id ?? "", "x", 90);
+    controller.syncLiveMaskTransforms(
+      [mask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Set([mask.id]),
+    );
+
+    const committedMask: MaskTimelineClip = {
+      ...mask,
+      transformations: createMaskLayoutTransforms(maskClipId, {
+        x: 90,
+        y: 0,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+      }),
+    };
+    livePreviewParamStore.clear(positionTransform?.id ?? "", "x");
+    controller.syncLiveMaskTransforms(
+      [committedMask],
+      parent,
+      { width: 1920, height: 1080 },
+      10,
+      new Set([committedMask.id]),
+    );
+    controller.refreshLiveMaskPresentation();
+
+    expect(renderSpy.mock.calls.length).toBeGreaterThan(
+      rendersAfterInitialSync,
+    );
+
+    controller.dispose();
   });
 
   it("treats a vector mask outside its activeRange as a no-op", async () => {

@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { RightSidebarPanel } from "../RightSidebarPanel";
 import {
   useSelectedTimelineClipIds,
+  useSelectedTimelineTransitionId,
   useTimelineClip,
 } from "../../../features/timeline/api";
 import { useMaskViewStore } from "../../../features/masks";
@@ -12,12 +13,19 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
 
 vi.mock("../../../features/timeline/api", () => ({
   useSelectedTimelineClipIds: vi.fn(),
+  useSelectedTimelineTransitionId: vi.fn(),
   useTimelineClip: vi.fn(),
 }));
 
 vi.mock("../../../features/transformations", () => ({
   TransformationPanel: () => (
     <div data-testid="mock-transform-panel">Transform Panel</div>
+  ),
+}));
+
+vi.mock("../../../features/transitions", () => ({
+  TransitionPanel: () => (
+    <div data-testid="mock-transition-panel">Transition Panel</div>
   ),
 }));
 
@@ -61,6 +69,7 @@ describe("RightSidebarPanel", () => {
     vi.mocked(useSelectedTimelineClipIds).mockImplementation(
       () => selectedClipIds,
     );
+    vi.mocked(useSelectedTimelineTransitionId).mockReturnValue(null);
     vi.mocked(useTimelineClip).mockImplementation((clipId) =>
       clips.find((clip) => clip.id === clipId) as TimelineClip | undefined,
     );
@@ -165,6 +174,18 @@ describe("RightSidebarPanel", () => {
     expect(screen.getByRole("tab", { name: "Transform" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Mask" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("mock-mask-panel")).not.toBeInTheDocument();
+  });
+
+  it("shows the transition panel for a selected transition", () => {
+    vi.mocked(useSelectedTimelineTransitionId).mockReturnValue("transition-1");
+
+    render(<RightSidebarPanel />);
+
+    expect(screen.getByRole("tab", { name: "Transition" })).toBeInTheDocument();
+    expect(screen.getByTestId("mock-transition-panel")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Transform" }),
+    ).not.toBeInTheDocument();
   });
 
 });

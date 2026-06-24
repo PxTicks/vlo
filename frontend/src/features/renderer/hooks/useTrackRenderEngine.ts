@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Application, Container, Sprite } from "pixi.js";
-import { useTimelineClipsForTrack } from "../../timeline";
+import {
+  getTimelineClipsForTrack,
+  useTimelineClipsForTrack,
+} from "../../timeline";
 import { useAssetStore } from "../../userAssets";
 import { useProjectStore } from "../../project/useProjectStore";
 import { livePreviewTextStore } from "../../text/services/livePreviewTextStore";
@@ -14,7 +17,10 @@ import type {
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
 import { applyClipTransforms } from "../../transformations";
-import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
+import {
+  livePreviewParamStore,
+  type LivePreviewParamChange,
+} from "../../../core/liveParams/livePreviewParamStore";
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { getMaskCompositionComponent } from "../../masks/model/maskBooleanExpression";
 import type { AdjustmentEffectResolver } from "../services/AdjustmentEffectResolver";
@@ -25,6 +31,9 @@ import {
   resolveLiveActiveClip,
   sortTrackClipsByStart,
 } from "../utils/clipLookup";
+import type { LiveFrameGraphCoordinator } from "../services/framePlanning";
+import { PixiLiveUpdateScheduler } from "../services/PixiLiveUpdateScheduler";
+import { createLivePreviewRefreshPlan } from "../utils/livePreviewRefreshPlan";
 
 /**
  * Build a Map<parentClipId, maskClip[]> from parent clips' mask components.
@@ -116,6 +125,7 @@ export function useTrackRenderEngine(
    */
   orchestrator?: RenderGroupOrchestrator | null,
   adjustmentEffectResolver?: AdjustmentEffectResolver | null,
+  liveFrameGraphCoordinator?: LiveFrameGraphCoordinator | null,
 ): TrackRenderEngineResult {
   const engineRef = useRef<TrackRenderEngine | null>(null);
   const [spriteInstance, setSpriteInstance] = useState<Sprite | null>(null);
@@ -299,6 +309,11 @@ export function useTrackRenderEngine(
   }, []);
 
   useEffect(() => {
+    if (liveFrameGraphCoordinator) {
+      liveFrameGraphCoordinator.requestFrame(playbackClock.time);
+      return;
+    }
+
     if (
       !registerSynchronizedPlaybackRenderer ||
       !engineRef.current ||
@@ -318,16 +333,27 @@ export function useTrackRenderEngine(
     renderSynchronizedPlaybackFrame,
     sortedTrackClips,
     spriteInstance,
+    liveFrameGraphCoordinator,
   ]);
 
   useEffect(() => {
     if (!engineRef.current || isPlaying) {
       return;
     }
+    const liveUpdateScheduler = app
+      ? new PixiLiveUpdateScheduler(app.ticker)
+      : null;
+    let pendingMaskPresentationClip: TimelineClip | null = null;
+    let pendingEffectPresentationRefresh = false;
 
     const rerenderPausedFrame = () => {
       const engine = engineRef.current;
       if (!engine) {
+        return;
+      }
+
+      if (liveFrameGraphCoordinator) {
+        liveFrameGraphCoordinator.requestFrame(playbackClock.time);
         return;
       }
 
@@ -351,19 +377,115 @@ export function useTrackRenderEngine(
       syncActiveClipState(playbackClock.time, sortedTrackClips);
     };
 
+    const previewLiveParams = (change: LivePreviewParamChange) => {
+      const currentState = livePlaybackStateRef.current;
+      let currentSortedTrackClips = currentState.sortedTrackClips;
+      let currentMaskClipsByParent = currentState.maskClipsByParent;
+      // Zustand commits synchronously, while the hook snapshot updates on the
+      // following React render. Read through the boundary only when transient
+      // values are being cleared, so pointer-up cannot briefly restore the
+      // pre-commit layout. The hot pointer-move path stays allocation-free.
+      if (change.kind === "clear" || change.kind === "clear-all") {
+        const currentTrackClips = getTimelineClipsForTrack(trackId);
+        currentSortedTrackClips = sortTrackClipsByStart(
+          currentTrackClips.filter((clip) => clip.type !== "mask"),
+        );
+        currentMaskClipsByParent = buildMaskClipIndex(currentTrackClips);
+      }
+      const activeClip = findActiveClip(
+        currentSortedTrackClips,
+        playbackClock.time,
+      );
+      const activeMaskClips = activeClip
+        ? (currentMaskClipsByParent.get(activeClip.id) ?? [])
+        : [];
+      const refreshPlan = createLivePreviewRefreshPlan(
+        change,
+        activeClip,
+        activeMaskClips,
+      );
+      if (refreshPlan === null) {
+        return;
+      }
+
+      const engine = engineRef.current;
+      if (!engine || !activeClip) {
+        if (refreshPlan.needsFrameGraphRefresh) {
+          rerenderPausedFrame();
+        }
+        return;
+      }
+
+      activeClipRef.current = activeClip;
+      const updateResult = engine.applyLiveTransformUpdates(
+        activeClip,
+        logicalDimensionsRef.current,
+        playbackClock.time,
+        activeMaskClips,
+        {
+          updateClipTransforms: refreshPlan.updateClipTransforms,
+          maskClipIds: refreshPlan.maskClipIds,
+        },
+      );
+      if (
+        updateResult.needsMaskPresentationRefresh ||
+        updateResult.needsEffectPresentationRefresh
+      ) {
+        pendingMaskPresentationClip = activeClip;
+        pendingEffectPresentationRefresh ||=
+          updateResult.needsEffectPresentationRefresh;
+        const refreshPresentation = () => {
+          if (engineRef.current !== engine) {
+            return;
+          }
+          const clip = pendingMaskPresentationClip;
+          const refreshEffects = pendingEffectPresentationRefresh;
+          pendingMaskPresentationClip = null;
+          pendingEffectPresentationRefresh = false;
+          if (!clip) {
+            return;
+          }
+          engine.refreshLiveMaskPresentation(
+            clip,
+            logicalDimensionsRef.current,
+            playbackClock.time,
+            refreshEffects,
+          );
+        };
+        if (liveUpdateScheduler) {
+          liveUpdateScheduler.schedule(
+            "mask-presentation",
+            refreshPresentation,
+          );
+        } else {
+          refreshPresentation();
+        }
+      }
+
+      const missingRequestedMaskNode =
+        refreshPlan.maskClipIds.size > 0 &&
+        !updateResult.didUpdateMaskTransforms;
+      if (refreshPlan.needsFrameGraphRefresh || missingRequestedMaskNode) {
+        rerenderPausedFrame();
+      }
+    };
+
     const unsubscribeLiveParams = livePreviewParamStore.subscribe(
-      rerenderPausedFrame,
+      previewLiveParams,
     );
     const unsubscribeLiveText = livePreviewTextStore.subscribe(
       rerenderPausedFrame,
     );
 
     return () => {
+      liveUpdateScheduler?.dispose();
       unsubscribeLiveParams();
       unsubscribeLiveText();
     };
   }, [
+    app,
     assets,
+    findActiveClip,
     fps,
     isPlaying,
     maskClipsByParent,
@@ -372,6 +494,8 @@ export function useTrackRenderEngine(
     sortedTrackClips,
     spriteInstance,
     syncActiveClipState,
+    trackId,
+    liveFrameGraphCoordinator,
   ]);
 
   // Make mask-set changes (add/remove, mode toggle, SAM2/generation/brush
@@ -380,6 +504,11 @@ export function useTrackRenderEngine(
   // nodes before we re-composite; the paused ticker then flushes the result.
   useEffect(() => {
     if (isPlaying || !engineRef.current || !spriteInstance) {
+      return;
+    }
+
+    if (liveFrameGraphCoordinator) {
+      liveFrameGraphCoordinator.requestFrame(playbackClock.time);
       return;
     }
 
@@ -410,6 +539,7 @@ export function useTrackRenderEngine(
     maskCompositionSignature,
     maskPreviewTarget,
     spriteInstance,
+    liveFrameGraphCoordinator,
   ]);
 
   useEffect(() => {
@@ -514,8 +644,27 @@ export function useTrackRenderEngine(
     }
     engineRef.current = engine;
     setSpriteInstance(engine.sprite);
+    const unregisterFrameGraph = liveFrameGraphCoordinator?.register({
+      trackId,
+      engine,
+      getTrackClips: () =>
+        livePlaybackStateRef.current.sortedTrackClips,
+      getMaskClipsByParent: () =>
+        livePlaybackStateRef.current.maskClipsByParent,
+      getAssets: () => livePlaybackStateRef.current.assets,
+      onResolvedJob: (job) => {
+        const activeClip = job?.activeClip ?? null;
+        activeClipRef.current = activeClip;
+        const nextClipId = activeClip?.id ?? null;
+        if (nextClipId !== currentClipIdRef.current) {
+          currentClipIdRef.current = nextClipId;
+          setCurrentClipId(nextClipId);
+        }
+      },
+    });
 
     return () => {
+      unregisterFrameGraph?.();
       engine.dispose();
       if (orchestrator) {
         orchestrator.unregisterTrack(trackId, engine.container);
@@ -532,10 +681,22 @@ export function useTrackRenderEngine(
     // zIndex is read only for the engine's initial value; effect #2 below
     // applies zIndex changes in place so reorders don't tear down the engine.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackId, app, container, orchestrator, adjustmentEffectResolver]);
+  }, [
+    trackId,
+    app,
+    container,
+    orchestrator,
+    adjustmentEffectResolver,
+    liveFrameGraphCoordinator,
+  ]);
 
   useEffect(() => {
-    if (!registerSynchronizedPlaybackRenderer) return;
+    if (
+      !registerSynchronizedPlaybackRenderer ||
+      liveFrameGraphCoordinator
+    ) {
+      return;
+    }
 
     registerSynchronizedPlaybackRenderer(trackId, renderSynchronizedPlaybackFrame);
 
@@ -546,6 +707,7 @@ export function useTrackRenderEngine(
     registerSynchronizedPlaybackRenderer,
     renderSynchronizedPlaybackFrame,
     trackId,
+    liveFrameGraphCoordinator,
   ]);
 
   // 2. Z-Index Updates

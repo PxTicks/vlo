@@ -42,6 +42,12 @@ export function enqueueSynchronizedPlaybackQueueEntry(
   entry: SynchronizedPlaybackQueueEntry,
   options: SynchronizedPlaybackQueueOptions = {},
 ): SynchronizedPlaybackQueueEntry[] {
+  const existingIndex = queue.findIndex(
+    (candidate) => candidate.time === entry.time,
+  );
+  if (existingIndex >= 0) {
+    queue.splice(existingIndex, 1);
+  }
   queue.push(entry);
   return pruneSynchronizedPlaybackQueue(queue, entry.enqueuedAtMs, options);
 }

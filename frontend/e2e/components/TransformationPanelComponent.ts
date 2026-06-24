@@ -21,20 +21,8 @@ export class TransformationPanelComponent {
         return this.page.getByTestId('transformation-add-menu');
     }
 
-    get adjustmentDepthSection() {
-        return this.page.getByTestId('adjustment-depth-section');
-    }
-
-    get effectMaskButtons() {
-        return this.page.getByTestId(/^effect-mask-button-/);
-    }
-
-    get effectMaskDialog() {
-        return this.page.getByTestId('effect-mask-dialog');
-    }
-
     async addTransform(type: string) {
         await this.addButton.click();
-        await this.page.getByRole('menuitem', { name: type, exact: true }).click();
+        await this.page.getByRole('menuitem', { name: type }).click();
     }
 }

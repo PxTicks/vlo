@@ -15,6 +15,7 @@ import type {
   TextClipData,
   TimelineClip,
   TimelineTrack,
+  Transition,
 } from "../../../types/TimelineTypes";
 import {
   getAdjustmentRetimingMode,
@@ -63,6 +64,11 @@ import {
   maybeTrimAndPadTracks,
   type TimelineModelState,
 } from "./timelineTrackModel";
+import {
+  buildTransitionResolutionContext,
+  isTransitionValid,
+  resolveTransitionFromContext,
+} from "./transitionModel";
 
 export type TimelineClipShape = Partial<
   Pick<
@@ -106,6 +112,97 @@ export interface TimelineRemovalPlan {
   clipIdsToRemove: Set<string>;
   brushMaskClipIdsToDispose: string[];
   maskBackingAssetIdsToDelete: Set<string>;
+}
+
+export function pruneInvalidTransitions(
+  draft: TimelineModelState,
+  fps: number = useProjectStore.getState().config.fps,
+): void {
+  if (draft.transitions.length === 0) {
+    return;
+  }
+
+  const resolutionContext = buildTransitionResolutionContext(
+    draft.tracks,
+    draft.clips,
+    fps,
+  );
+  const linkedClipIds = new Set<string>();
+
+  // A clip may participate in at most one transition. Preserve the first valid
+  // transition in model order and prune later conflicts. This makes the
+  // first-wins behavior explicit: reordering `transitions` can intentionally
+  // change which conflicting legacy/imported entry survives normalization.
+  draft.transitions = draft.transitions.filter((transition) => {
+    if (
+      linkedClipIds.has(transition.outgoingClipId) ||
+      linkedClipIds.has(transition.incomingClipId) ||
+      !resolveTransitionFromContext(transition, resolutionContext)
+    ) {
+      return false;
+    }
+    linkedClipIds.add(transition.outgoingClipId);
+    linkedClipIds.add(transition.incomingClipId);
+    return true;
+  });
+}
+
+export function finalizeModelDraft(
+  draft: TimelineModelState,
+  fps: number = useProjectStore.getState().config.fps,
+): void {
+  maybeTrimAndPadTracks(draft);
+  pruneInvalidTransitions(draft, fps);
+}
+
+export function addTransitionToDraft(
+  draft: TimelineModelState,
+  transition: Transition,
+  fps: number = useProjectStore.getState().config.fps,
+): boolean {
+  if (
+    draft.transitions.some(
+      (candidate) =>
+        candidate.id === transition.id ||
+        candidate.outgoingClipId === transition.outgoingClipId ||
+        candidate.incomingClipId === transition.outgoingClipId ||
+        candidate.outgoingClipId === transition.incomingClipId ||
+        candidate.incomingClipId === transition.incomingClipId,
+    ) ||
+    !isTransitionValid(transition, draft.tracks, draft.clips, fps)
+  ) {
+    return false;
+  }
+
+  draft.transitions.push(structuredClone(transition));
+  return true;
+}
+
+export function removeTransitionFromDraft(
+  draft: TimelineModelState,
+  transitionId: string,
+): void {
+  draft.transitions = draft.transitions.filter(
+    (transition) => transition.id !== transitionId,
+  );
+}
+
+export function updateTransitionParametersInDraft(
+  draft: TimelineModelState,
+  transitionId: string,
+  updates: Record<string, unknown>,
+): void {
+  draft.transitions = draft.transitions.map((transition) =>
+    transition.id === transitionId
+      ? {
+          ...transition,
+          parameters: {
+            ...transition.parameters,
+            ...structuredClone(updates),
+          },
+        }
+      : transition,
+  );
 }
 
 export function clipReferencesAssetId(
@@ -285,7 +382,7 @@ export function addClipToDraft(
   if (!addClipToDraftWithoutTrimming(draft, clip)) {
     return;
   }
-  maybeTrimAndPadTracks(draft);
+  finalizeModelDraft(draft);
 }
 
 export function addClipsToDraft(
@@ -301,7 +398,7 @@ export function addClipsToDraft(
   });
 
   if (addedClipIds.length > 0) {
-    maybeTrimAndPadTracks(draft);
+    finalizeModelDraft(draft);
   }
 
   return addedClipIds;
@@ -443,7 +540,7 @@ export function pasteCopiedClipsAboveDraft(
     });
   });
 
-  maybeTrimAndPadTracks(draft);
+  finalizeModelDraft(draft);
   return pastedClipIds;
 }
 
@@ -487,7 +584,7 @@ export function splitClipInDraft(
   updatedClips = propagateParentToMasks(updatedClips, rightClip);
   draft.clips = updatedClips;
 
-  maybeTrimAndPadTracks(draft);
+  finalizeModelDraft(draft);
   return rightClip.id;
 }
 
@@ -516,7 +613,7 @@ export function removeClipIdsFromDraft(
   draft: TimelineModelState,
   clipIdsToRemove: Set<string>,
 ): void {
-  removeClipsFromDraft(draft, clipIdsToRemove, maybeTrimAndPadTracks);
+  removeClipsFromDraft(draft, clipIdsToRemove, finalizeModelDraft);
 }
 
 function syncTrackTypesFromClips(draft: TimelineModelState): void {
@@ -636,7 +733,7 @@ export function moveClipsInDraft(
   });
 
   syncTrackTypesFromClips(draft);
-  maybeTrimAndPadTracks(draft);
+  finalizeModelDraft(draft);
 }
 
 export function replaceClipAssetInDraft(
@@ -732,6 +829,7 @@ export function updateClipShapeInDraft(
 
   if (updatedParent) {
     draft.clips = propagateParentToMasks(draft.clips, updatedParent);
+    pruneInvalidTransitions(draft);
   }
 }
 
@@ -781,6 +879,7 @@ export function updateClipDurationInDraft(
 
   if (updatedParent) {
     draft.clips = propagateParentToMasks(draft.clips, updatedParent);
+    pruneInvalidTransitions(draft);
   }
 }
 
@@ -1244,7 +1343,7 @@ export function toggleClipMuteInDraft(
 }
 
 export function trimAndPadTracksInDraft(draft: TimelineModelState): void {
-  maybeTrimAndPadTracks(draft);
+  finalizeModelDraft(draft);
 }
 
 export function getTimelineClipsAtTime(

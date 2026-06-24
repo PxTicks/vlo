@@ -150,6 +150,22 @@ describe("SharedTextureStore", () => {
     const store = new SharedTextureStore();
     const handle = store.acquire(KEY, () => ({ texture: fakeTexture() }));
     expect(handle.decodeKey).toBe(KEY);
+    expect(handle.key).toBe(KEY);
+    expect(handle.value).toBe(handle.texture);
+  });
+
+  it("reports the total number of outstanding presentation leases", () => {
+    const store = new SharedTextureStore();
+    const a = store.acquire("k1", () => ({ texture: fakeTexture() }));
+    const b = store.acquire("k1", () => ({ texture: fakeTexture() }));
+    const c = store.acquire("k2", () => ({ texture: fakeTexture() }));
+
+    expect(store.totalRefCount).toBe(3);
+    a.release();
+    expect(store.totalRefCount).toBe(2);
+    b.release();
+    c.release();
+    expect(store.totalRefCount).toBe(0);
   });
 
   it("owns() is false for null and Texture.EMPTY", () => {

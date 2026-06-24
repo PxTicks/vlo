@@ -4,7 +4,7 @@ import { installWebSocketMock, simulateWsEvent, simulateGenerationComplete } fro
 
 test.describe('Generation Panel', () => {
 
-    test('@smoke Connection chip shows connected status', async ({ page }) => {
+    test('Connection chip shows connected status', async ({ page }) => {
         // Install mocks before navigation
         await installWebSocketMock(page);
         await installApiMock(page, {

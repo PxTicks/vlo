@@ -43,6 +43,8 @@ import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
 import { buildTimelineClipPresentationIndex } from "./utils/clipPresentation";
+import { resolveTransitions } from "./model/transitionModel";
+import { TransitionOverlay } from "../transitions/components/TransitionOverlay";
 
 const containerStyles = {
   width: "100%",
@@ -89,6 +91,10 @@ function TimelineContainerComponent({
     toggleTrackVisibility,
     toggleTrackMute,
     selectedClipIds,
+    transitions,
+    selectedTransitionId,
+    selectTransition,
+    removeTransition,
   } = useTimelineStore(
     useShallow((state) => ({
       tracks: state.tracks,
@@ -102,6 +108,10 @@ function TimelineContainerComponent({
       toggleTrackVisibility: state.toggleTrackVisibility,
       toggleTrackMute: state.toggleTrackMute,
       selectedClipIds: state.selectedClipIds,
+      transitions: state.transitions,
+      selectedTransitionId: state.selectedTransitionId,
+      selectTransition: state.selectTransition,
+      removeTransition: state.removeTransition,
     })),
   );
   const timelineClips = React.useMemo(
@@ -109,6 +119,10 @@ function TimelineContainerComponent({
     [clips],
   );
   const projectFps = useProjectStore((state) => state.config.fps);
+  const resolvedTransitions = React.useMemo(
+    () => resolveTransitions(transitions, tracks, clips, projectFps),
+    [clips, projectFps, tracks, transitions],
+  );
   const clipPresentationById = React.useMemo(
     () => buildTimelineClipPresentationIndex(tracks, clips, projectFps),
     [tracks, clips, projectFps],
@@ -150,6 +164,9 @@ function TimelineContainerComponent({
   const interactionSnapTick = useInteractionStore((state) => state.snapTick);
   const transformDropPreview = useInteractionStore(
     (state) => state.transformDropPreview,
+  );
+  const transitionDropPreview = useInteractionStore(
+    (state) => state.transitionDropPreview,
   );
   const resolvedExternalInsertGapIndex =
     externalInsertGapIndexProp !== undefined
@@ -350,9 +367,14 @@ function TimelineContainerComponent({
         return;
       }
 
-      if (selectedClipIds.length === 0) return;
-
       if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedTransitionId) {
+          e.preventDefault();
+          removeTransition(selectedTransitionId);
+          selectTransition(null);
+          return;
+        }
+        if (selectedClipIds.length === 0) return;
         e.preventDefault();
         removeClips(selectedClipIds);
         selectClip(null);
@@ -363,6 +385,9 @@ function TimelineContainerComponent({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     selectedClipIds,
+    selectedTransitionId,
+    removeTransition,
+    selectTransition,
     removeClips,
     selectClip,
     copySelectedClip,
@@ -541,12 +566,47 @@ function TimelineContainerComponent({
                   }}
                 />
               ) : null}
+              {transitionDropPreview ? (
+                <Box
+                  data-testid="transition-drop-preview"
+                  sx={{
+                    position: "absolute",
+                    top:
+                      RULER_HEIGHT +
+                      transitionDropPreview.topTrackIndex * TRACK_HEIGHT +
+                      5,
+                    left:
+                      TRACK_HEADER_WIDTH +
+                      ticksToPx(transitionDropPreview.startTick),
+                    width: Math.max(
+                      20,
+                      ticksToPx(
+                        transitionDropPreview.endTick -
+                          transitionDropPreview.startTick,
+                      ),
+                    ),
+                    height: TRACK_HEIGHT * 2 - 10,
+                    borderRadius: 1,
+                    border: "2px dashed rgba(77,171,245,0.95)",
+                    bgcolor: "rgba(77,171,245,0.14)",
+                    zIndex: 19,
+                  }}
+                />
+              ) : null}
               {timelineClips.map((clip) => (
                 <TimelineClipItem
                   key={clip.id}
                   clip={clip}
                   presentation={clipPresentationById.get(clip.id)}
                   clipOverlays={clipOverlays}
+                />
+              ))}
+              {resolvedTransitions.map((resolved) => (
+                <TransitionOverlay
+                  key={resolved.transition.id}
+                  resolved={resolved}
+                  selected={selectedTransitionId === resolved.transition.id}
+                  onSelect={selectTransition}
                 />
               ))}
             </Box>

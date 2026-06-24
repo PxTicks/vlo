@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { Application, Container } from "pixi.js";
+import { Application, Container, UPDATE_PRIORITY } from "pixi.js";
 import { useTrackRenderEngine } from "../useTrackRenderEngine";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../timeline";
@@ -10,6 +10,11 @@ import { resetSharedDecoderWorkerPoolForTests } from "../../services/DecoderWork
 import { TrackRenderEngine } from "../../services/TrackRenderEngine";
 import type { GenericFilterTransform } from "../../../transformations";
 import { livePreviewTextStore } from "../../../text/services/livePreviewTextStore";
+import { livePreviewParamStore } from "../../../../core/liveParams/livePreviewParamStore";
+import type {
+  LiveFrameGraphCoordinator,
+  LiveFrameGraphParticipant,
+} from "../../services/framePlanning";
 
 // --- Mocks Setup ---
 
@@ -149,12 +154,17 @@ vi.mock("../../../transformations", async (importOriginal) => {
 
 // 4. Mock Stores
 vi.mock("../../../timeline/useTimelineStore", () => ({
-  useTimelineStore: (
-    selector: (state: {
-      clips: TimelineClip[];
-      selectedClipIds: string[];
-    }) => unknown,
-  ) => selector(mockTimelineState),
+  useTimelineStore: Object.assign(
+    (
+      selector: (state: {
+        clips: TimelineClip[];
+        selectedClipIds: string[];
+      }) => unknown,
+    ) => selector(mockTimelineState),
+    {
+      getState: () => mockTimelineState,
+    },
+  ),
 }));
 
 vi.mock("../../../userAssets", () => ({
@@ -225,6 +235,7 @@ const mockApp = {
     add: vi.fn(),
     remove: vi.fn(),
   },
+  render: vi.fn(),
 } as unknown as Application;
 
 describe("useTrackRenderEngine Integration", () => {
@@ -262,6 +273,7 @@ describe("useTrackRenderEngine Integration", () => {
     mockSprite.scale.y = 1;
     mockSprite.rotation = 0;
     mockViewportHandlers.clear();
+    livePreviewParamStore.clearAll();
     livePreviewTextStore.clearAll();
     resetSharedDecoderWorkerPoolForTests();
     vi.clearAllMocks();
@@ -573,6 +585,175 @@ describe("useTrackRenderEngine Integration", () => {
 
     unmount();
     updateSpy.mockRestore();
+  });
+
+  it("refreshes mask layout previews immediately without requesting a source frame", async () => {
+    const trackId = "track-1";
+    const clipId = "clip-A";
+    const maskClipId = `${clipId}::mask::mask-A`;
+    const positionTransformId = "position-A";
+    let participant: LiveFrameGraphParticipant | null = null;
+    const requestFrame = vi.fn();
+    const coordinator = {
+      register: vi.fn((nextParticipant: LiveFrameGraphParticipant) => {
+        participant = nextParticipant;
+        return vi.fn();
+      }),
+      requestFrame,
+    } as unknown as LiveFrameGraphCoordinator;
+    const applyLiveUpdateSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "applyLiveTransformUpdates")
+      .mockReturnValue({
+        didUpdateMaskTransforms: true,
+        needsMaskPresentationRefresh: true,
+        needsEffectPresentationRefresh: false,
+      });
+    const refreshMaskPresentationSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "refreshLiveMaskPresentation")
+      .mockImplementation(() => {});
+
+    mockPlaybackState.time = 2 * TICKS_PER_SECOND;
+    mockTimelineState.clips = [
+      {
+        id: clipId,
+        trackId,
+        assetId: "asset-A",
+        name: "Test Clip",
+        start: 0,
+        timelineDuration: 10 * TICKS_PER_SECOND,
+        sourceDuration: 10 * TICKS_PER_SECOND,
+        transformedDuration: 10 * TICKS_PER_SECOND,
+        transformedOffset: 0,
+        croppedSourceDuration: 10 * TICKS_PER_SECOND,
+        offset: 0,
+        type: "video",
+        transformations: [],
+        components: [
+          {
+            id: "mask-ref-A",
+            type: "mask_ref",
+            isEnabled: true,
+            parameters: { maskClipId },
+          },
+        ],
+      },
+      {
+        id: maskClipId,
+        trackId,
+        name: "Mask A",
+        start: 0,
+        timelineDuration: 10 * TICKS_PER_SECOND,
+        sourceDuration: null,
+        transformedDuration: 10 * TICKS_PER_SECOND,
+        transformedOffset: 0,
+        croppedSourceDuration: 10 * TICKS_PER_SECOND,
+        offset: 0,
+        type: "mask",
+        parentClipId: clipId,
+        maskType: "rectangle",
+        maskMode: "apply",
+        maskInverted: false,
+        maskParameters: { baseWidth: 100, baseHeight: 100 },
+        transformations: [
+          {
+            id: positionTransformId,
+            type: "position",
+            isEnabled: true,
+            parameters: { x: 0, y: 0 },
+          },
+        ],
+      },
+    ];
+    mockAssetState.assets = [
+      {
+        id: "asset-A",
+        src: "test.mp4",
+        name: "Test Asset",
+        hash: "abc123hash",
+        type: "video",
+        createdAt: 0,
+      },
+    ];
+
+    const { unmount } = renderHook(() =>
+      useTrackRenderEngine(
+        trackId,
+        mockApp,
+        mockContainer,
+        1,
+        { width: 800, height: 600 },
+        undefined,
+        undefined,
+        undefined,
+        coordinator,
+      ),
+    );
+
+    expect(participant).not.toBeNull();
+    act(() => {
+      participant?.onResolvedJob({
+        activeClip: mockTimelineState.clips[0],
+      } as Parameters<LiveFrameGraphParticipant["onResolvedJob"]>[0]);
+    });
+    applyLiveUpdateSpy.mockClear();
+    requestFrame.mockClear();
+    vi.mocked(mockApp.render).mockClear();
+
+    act(() => {
+      livePreviewParamStore.setMany([
+        { transformId: positionTransformId, paramName: "x", value: 120 },
+        { transformId: positionTransformId, paramName: "y", value: 80 },
+      ]);
+    });
+
+    expect(applyLiveUpdateSpy).toHaveBeenCalledTimes(1);
+    expect(mockApp.render).not.toHaveBeenCalled();
+    expect(refreshMaskPresentationSpy).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(applyLiveUpdateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ id: clipId }),
+        { width: 800, height: 600 },
+        mockPlaybackState.time,
+        [expect.objectContaining({ id: maskClipId })],
+        {
+          maskClipIds: new Set([maskClipId]),
+          updateClipTransforms: false,
+        },
+      );
+    });
+    expect(requestFrame).not.toHaveBeenCalled();
+
+    const schedulerTick = vi
+      .mocked(mockApp.ticker.add)
+      .mock.calls.find((call) => call[2] === UPDATE_PRIORITY.HIGH)?.[0] as
+      | (() => void)
+      | undefined;
+    expect(schedulerTick).toBeDefined();
+    act(() => {
+      schedulerTick?.();
+    });
+    expect(refreshMaskPresentationSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: clipId }),
+      { width: 800, height: 600 },
+      mockPlaybackState.time,
+      false,
+    );
+    expect(mockApp.render).not.toHaveBeenCalled();
+
+    applyLiveUpdateSpy.mockReturnValue({
+      didUpdateMaskTransforms: false,
+      needsMaskPresentationRefresh: false,
+      needsEffectPresentationRefresh: false,
+    });
+    requestFrame.mockClear();
+    act(() => {
+      livePreviewParamStore.set(positionTransformId, "x", 130);
+    });
+    expect(requestFrame).toHaveBeenCalledWith(mockPlaybackState.time);
+
+    unmount();
+    applyLiveUpdateSpy.mockRestore();
+    refreshMaskPresentationSpy.mockRestore();
   });
 
   it("refreshes the paused synchronized frame when clip transforms change", async () => {

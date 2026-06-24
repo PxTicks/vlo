@@ -24,6 +24,23 @@ describe("synchronizedPlaybackQueue", () => {
     expect(queue.map((entry) => entry.time)).toEqual([10, 20, 30]);
   });
 
+  it("replaces an older queued request for the same paused tick", () => {
+    const queue = [
+      { time: 10, enqueuedAtMs: 10 },
+      { time: 20, enqueuedAtMs: 20 },
+    ];
+
+    enqueueSynchronizedPlaybackQueueEntry(queue, {
+      time: 10,
+      enqueuedAtMs: 30,
+    });
+
+    expect(queue).toEqual([
+      { time: 20, enqueuedAtMs: 20 },
+      { time: 10, enqueuedAtMs: 30 },
+    ]);
+  });
+
   it("drops the oldest queued batches when capacity is exceeded", () => {
     const queue: Array<{ time: number; enqueuedAtMs: number }> = [];
 

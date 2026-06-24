@@ -5,6 +5,11 @@ export { useAudioTrack } from "./hooks/useAudioTrack";
 export { useExportJobController } from "./hooks/useExportJobController";
 export { AudioTrackLayer } from "./components/AudioTrackLayer";
 export { TrackRenderEngine } from "./services/TrackRenderEngine";
+export {
+  LiveFrameGraphCoordinator,
+  isLiveFrameGraphEnabled,
+  startFramePlanningDiagnosticsConsole,
+} from "./services/framePlanning";
 export { ExportRenderer, isBlankStrictRenderHealth } from "./services/ExportRenderer";
 export type {
   ExportConfig,

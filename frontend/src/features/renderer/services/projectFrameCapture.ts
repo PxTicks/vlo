@@ -3,6 +3,7 @@ import {
   getTimelineClips,
   getTimelineDuration,
   getTimelineTracks,
+  getTimelineTransitions,
 } from "../../timeline/api";
 import { getAssets } from "../../userAssets";
 import { getProjectDimensions } from "../utils/dimensions";
@@ -54,6 +55,7 @@ export function buildProjectRenderInputs(): ProjectRenderInputs {
   const projectData: ProjectData = {
     tracks: getTimelineTracks(),
     clips: getTimelineClips(),
+    transitions: getTimelineTransitions(),
     assets,
     duration: getTimelineDuration(),
     fps: projectStore.config.fps,

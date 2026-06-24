@@ -4,6 +4,7 @@ import { AssetBrowser } from "../../features/userAssets";
 import { TextPanel } from "../../features/text";
 import { CompositePanel } from "../../features/composite";
 import { TransformationLibraryPanel } from "../../features/transformations";
+import { TransitionLibraryPanel } from "../../features/transitions";
 import { LeftSidebarPanel } from "./LeftSidebarPanel";
 import type { LeftSidebarTab } from "./LeftSidebarPanel";
 
@@ -37,6 +38,9 @@ export function EditorLeftSidebar() {
         {activeLeftSidebarTab === "composite" ? <CompositePanel /> : null}
         {activeLeftSidebarTab === "effects" ? (
           <TransformationLibraryPanel />
+        ) : null}
+        {activeLeftSidebarTab === "transitions" ? (
+          <TransitionLibraryPanel />
         ) : null}
       </Box>
     </Box>

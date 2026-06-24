@@ -11,6 +11,7 @@ import type {
   TimelineClip,
   TimelineTrack,
   TrackType,
+  Transition,
 } from "../../../types/TimelineTypes";
 import {
   ADJUSTMENT_DEPTH_ALL,
@@ -103,6 +104,16 @@ const timelineTrackSchema = z
     isLocked: z.boolean(),
   })
   .passthrough() as unknown as z.ZodType<TimelineTrack>;
+
+const transitionSchema = z
+  .object({
+    id: z.string(),
+    type: z.enum(["dissolve", "slideAway", "slideOutIn", "dipToColor"]),
+    outgoingClipId: z.string(),
+    incomingClipId: z.string(),
+    parameters: z.record(z.string(), z.unknown()),
+  })
+  .passthrough() as unknown as z.ZodType<Transition>;
 
 const clipTransformSchema = z
   .object({
@@ -220,6 +231,7 @@ export const timelineDocumentSchema = z.object({
   updated_at: z.number(),
   tracks: z.array(timelineTrackSchema),
   clips: z.array(timelineClipSchema),
+  transitions: z.array(transitionSchema).default([]),
 });
 
 export const timelineDocumentSchemaV2 = z.object({
@@ -228,6 +240,7 @@ export const timelineDocumentSchemaV2 = z.object({
   updated_at: z.number(),
   tracks: z.array(timelineTrackSchema),
   clips: z.array(timelineClipSchema),
+  transitions: z.array(transitionSchema).optional(),
 });
 
 /**
@@ -248,6 +261,7 @@ export const timelineDocumentSchemaV1 = z.object({
   updated_at: z.number(),
   tracks: z.array(timelineTrackSchema),
   clips: z.array(timelineClipSchema),
+  transitions: z.array(transitionSchema).optional(),
 });
 
 export const persistedAssetIndexEntrySchema = z
@@ -290,6 +304,7 @@ const compositeContentSchema = z
   .object({
     clips: z.array(timelineClipSchema),
     tracks: z.array(timelineTrackSchema).optional(),
+    transitions: z.array(transitionSchema).optional(),
     includedTrackIds: z.array(z.string()).optional(),
     fps: z.number().positive().optional(),
     frameStep: z.number().positive().optional(),
@@ -319,6 +334,7 @@ export const legacyTimelineSnapshotSchema = z
   .object({
     tracks: z.array(timelineTrackSchema).optional(),
     clips: z.array(timelineClipSchema).optional(),
+    transitions: z.array(transitionSchema).optional(),
   })
   .passthrough();
 

@@ -10,6 +10,8 @@ const {
   extractDialogProps,
   fileSystemServiceMock,
   mockDecoderWorkerPool,
+  mockLiveFrameGraphConstructor,
+  mockLiveFrameGraphState,
   mockPixiApp,
   playerControlsProps,
   mockViewport,
@@ -63,6 +65,10 @@ const {
       },
       mockDecoderWorkerPool: {
         warmUp: vi.fn(),
+      },
+      mockLiveFrameGraphConstructor: vi.fn(),
+      mockLiveFrameGraphState: {
+        enabled: true,
       },
       mockPixiApp: {
         renderer: {},
@@ -278,6 +284,19 @@ vi.mock("../hooks/usePixiApp", () => ({
 
 vi.mock("../../renderer", () => ({
   AudioTrackLayer: () => null,
+  LiveFrameGraphCoordinator: class {
+    constructor() {
+      mockLiveFrameGraphConstructor();
+    }
+
+    participantCount = 0;
+    dispose = vi.fn();
+    renderFrame = vi.fn(async () => null);
+    requestFrame = vi.fn();
+    subscribeFrameRequests = vi.fn(() => () => {});
+  },
+  isLiveFrameGraphEnabled: () => mockLiveFrameGraphState.enabled,
+  startFramePlanningDiagnosticsConsole: () => () => {},
   getSharedDecoderWorkerPool: () => mockDecoderWorkerPool,
   useViewport: () => mockViewport,
   useExportJobController: () => ({
@@ -304,6 +323,7 @@ import { addLocalAsset } from "../../userAssets";
 describe("Player playback loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockLiveFrameGraphState.enabled = true;
     playerControlsProps.current = null;
     extractDialogProps.current = null;
     globalThis.requestAnimationFrame = vi.fn(() => 1);
@@ -421,6 +441,14 @@ describe("Player playback loop", () => {
 
     expect(audioSystem.notifyPlay).toHaveBeenCalledTimes(1);
     expect(audioSystem.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not create the live frame graph coordinator when rollback is enabled", () => {
+    mockLiveFrameGraphState.enabled = false;
+
+    render(<Player />);
+
+    expect(mockLiveFrameGraphConstructor).not.toHaveBeenCalled();
   });
 
   it("toggles play from paused and snaps the frame clock before resuming audio", () => {

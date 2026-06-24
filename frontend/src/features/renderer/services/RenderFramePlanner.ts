@@ -164,13 +164,9 @@ export class RenderFramePlanner<TFrame> {
    * gone stale are omitted (no handle); a group with no current job has its
    * decoded frame disposed via `ops.disposeUnclaimedFrame`.
    *
-   * No-overlap boundary: this is intentionally NOT re-entrant on one planner
-   * (it throws if called while a prior call is in flight). The scheduler hands
-   * the same shared frame to every joined waiter, so two overlapping calls on
-   * the same decodeKey could race — one disposing an "unclaimed" frame that the
-   * other is about to wrap/use. Export drives one tick at a time, so this holds
-   * there. The live path (which overlaps decodes across ticks) must replace
-   * this boundary with a per-decodeKey claim/disposal arbiter before using it.
+   * Overlapping calls are safe: the per-decodeKey claim arbiter coordinates a
+   * scheduler result shared by multiple acquisitions so one caller cannot
+   * dispose a frame while another is wrapping or using it.
    *
    * On failure the whole acquisition is rolled back: every handle already
    * created is released and any decoded-but-unwrapped frame is disposed, so a

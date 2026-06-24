@@ -9,6 +9,8 @@ import {
   useViewport,
   mediaSecondsToTickExact,
   LiveFrameGraphCoordinator,
+  isLiveFrameGraphEnabled,
+  startFramePlanningDiagnosticsConsole,
 } from "../renderer";
 import {
   useTimelineStore,
@@ -159,6 +161,11 @@ function PlayerImpl() {
   // and never recreated, so every track's register() would no-op and nothing
   // would render. The instance lives in state so the fresh one propagates to
   // the child TrackLayers (which capture it as a prop).
+  // Rollout flag (read once at mount). When off, the coordinator is never
+  // created, so the gate below falls to the legacy per-engine path and tracks
+  // register as synchronized renderers again — a clean rollback to pre-graph
+  // live rendering without a rebuild.
+  const liveFrameGraphEnabled = isLiveFrameGraphEnabled();
   const [liveFrameGraphCoordinator, setLiveFrameGraphCoordinator] =
     useState<LiveFrameGraphCoordinator | null>(null);
   const {
@@ -169,9 +176,10 @@ function PlayerImpl() {
     viewport,
     logicalDimensions,
     visualTrackIds,
-    true,
+    liveFrameGraphEnabled,
   );
   useEffect(() => {
+    if (!liveFrameGraphEnabled) return;
     const coordinator = new LiveFrameGraphCoordinator();
     // Own an external resource's lifecycle, not derived state — the setState
     // publishes the freshly created instance to children. One-time mount cost.
@@ -183,7 +191,8 @@ function PlayerImpl() {
         current === coordinator ? null : current,
       );
     };
-  }, []);
+  }, [liveFrameGraphEnabled]);
+  useEffect(() => startFramePlanningDiagnosticsConsole(), []);
   useEffect(() => {
     liveFrameGraphCoordinator?.requestFrame(playbackClock.time);
   }, [

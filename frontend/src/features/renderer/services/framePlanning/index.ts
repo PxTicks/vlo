@@ -18,8 +18,13 @@ export {
   clearFramePlanningDiagnostics,
   getLatestFramePlanningDiagnostics,
   publishFramePlanningDiagnostics,
+  startFramePlanningDiagnosticsConsole,
   subscribeFramePlanningDiagnostics,
 } from "./framePlanningDiagnostics";
+export {
+  isLiveFrameGraphEnabled,
+  setLiveFrameGraphEnabled,
+} from "./framePlanningFlags";
 export {
   createClipOutputWorkKey,
   createEffectChainWorkKey,

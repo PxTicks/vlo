@@ -41,6 +41,8 @@ export {
   ticksToPx,
   pxToTicks,
 } from "../../core/time/pixelGrid";
+export { timelineSpanStyleX } from "./utils/timelineGeometry";
+export type { TimelineSpanStyleOptions } from "./utils/timelineGeometry";
 export { AssetDragOverlay } from "./components/AssetDragOverlay";
 export {
   createEndpointOverlayItem,

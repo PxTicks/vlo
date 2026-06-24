@@ -2,12 +2,8 @@ import { memo } from "react";
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import type { ResolvedTransition } from "../../timeline/model/transitionModel";
-import {
-  RULER_HEIGHT,
-  TRACK_HEADER_WIDTH,
-  TRACK_HEIGHT,
-} from "../../timeline/constants";
-import { ticksToPx } from "../../../core/time/pixelGrid";
+import { RULER_HEIGHT, TRACK_HEIGHT } from "../../timeline/constants";
+import { timelineSpanStyleX } from "../../timeline/utils/timelineGeometry";
 import { getTransitionDefinition } from "../catalogue/TransitionRegistry";
 
 const OverlayRoot = styled("button")(({ theme }) => ({
@@ -44,12 +40,12 @@ function TransitionOverlayComponent({
     resolved.incomingTrackIndex,
   );
 
-  // Position is computed at zoom = 1 and scaled via the `--timeline-zoom` CSS
-  // variable (set on the timeline container), mirroring TimelineClip so the
-  // overlay re-positions on zoom purely in CSS without needing a React
-  // re-render — which the memoized component would otherwise skip.
-  const baseLeft = ticksToPx(resolved.start, 1);
-  const baseWidth = ticksToPx(resolved.duration, 1);
+  // Scaled via `--timeline-zoom` so the memoized overlay re-positions on zoom
+  // in CSS without needing a React re-render.
+  const spanStyle = timelineSpanStyleX(resolved.start, resolved.duration, {
+    headerOffset: true,
+    minWidthPx: 20,
+  });
 
   return (
     <OverlayRoot
@@ -61,9 +57,8 @@ function TransitionOverlayComponent({
         onSelect(resolved.transition.id);
       }}
       style={{
+        ...spanStyle,
         top: RULER_HEIGHT + topTrackIndex * TRACK_HEIGHT + 5,
-        left: `calc(${TRACK_HEADER_WIDTH}px + (${baseLeft}px * var(--timeline-zoom, 1)))`,
-        width: `max(20px, ${baseWidth}px * var(--timeline-zoom, 1))`,
         height: TRACK_HEIGHT * 2 - 10,
         boxShadow: selected
           ? "0 0 0 2px #4dabf5, 0 0 16px rgba(77,171,245,0.5)"

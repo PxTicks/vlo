@@ -40,8 +40,6 @@ export class MonotoneCubicSpline {
     if (n > 1) {
       this.calculateTangents(n);
       this.calculateAreas();
-    } else if (n === 1) {
-      this.cumulativeAreas = [0];
     }
   }
 

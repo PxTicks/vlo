@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 
 test.describe('Mask Panel (Shape Masks)', () => {
 
-    test('Empty mask state shows "Add a mask"', async ({ editorWithClips }) => {
+    test('@smoke Empty mask state shows "Add a mask"', async ({ editorWithClips }) => {
         const { rightSidebar, timeline, maskPanel } = editorWithClips;
 
         await timeline.clickClip(0);

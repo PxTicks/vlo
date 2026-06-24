@@ -1,10 +1,8 @@
-import { Container, Sprite, Texture } from "pixi.js";
+import { Container } from "pixi.js";
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { applyGroupTransforms } from "../../transformations/applyGroupTransforms";
 import { type DerivedRenderGroup } from "../utils/deriveAdjustmentGroups";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
-import type { ScenePresentationPlan } from "./framePlanning";
-import type { TransitionColorLayerCommand } from "./framePlanning";
 
 export interface RenderGroupOrchestratorOptions {
   /** Project resolution used by applyGroupTransforms. Defaults to 1920x1080
@@ -59,7 +57,6 @@ export class RenderGroupOrchestrator {
   private readonly adjustmentEffectResolver: AdjustmentEffectResolver;
   private readonly tracks = new Map<string, Container>();
   private readonly groupContainers = new Map<string, Container>();
-  private readonly transitionColorLayers = new Map<string, Sprite>();
   private logicalDimensions: { width: number; height: number };
   private disposed = false;
 
@@ -172,41 +169,7 @@ export class RenderGroupOrchestrator {
    */
   sync(currentTick: number, visualTrackOrder: readonly string[]): void {
     if (this.disposed) return;
-    this.syncResolvedForest(
-      currentTick,
-      visualTrackOrder,
-      this.adjustmentEffectResolver.deriveGroups(currentTick),
-      [],
-    );
-  }
 
-  /**
-   * Presentation-plan seam: graph/live/export callers hand in the adjustment
-   * forest and track directives already derived from the same resolved jobs.
-   * Pixi ownership stays here; no group or active-clip derivation is repeated.
-   */
-  syncPresentationPlan(
-    currentTick: number,
-    plan: ScenePresentationPlan,
-  ): void {
-    if (this.disposed) return;
-    const visualTrackOrder = [...plan.tracks]
-      .sort((left, right) => right.zIndex - left.zIndex)
-      .map((command) => command.trackId);
-    this.syncResolvedForest(
-      currentTick,
-      visualTrackOrder,
-      plan.adjustmentForest,
-      plan.transitionColorLayers ?? [],
-    );
-  }
-
-  private syncResolvedForest(
-    currentTick: number,
-    visualTrackOrder: readonly string[],
-    forest: readonly DerivedRenderGroup[],
-    transitionColorLayers: readonly TransitionColorLayerCommand[],
-  ): void {
     const visualIndexByTrackId = new Map<string, number>();
     visualTrackOrder.forEach((id, index) => {
       visualIndexByTrackId.set(id, index);
@@ -214,7 +177,10 @@ export class RenderGroupOrchestrator {
     const zIndexForVisualIndex = (index: number): number =>
       visualTrackOrder.length - 1 - index;
 
-    // 1. Walk the forest depth-first to enumerate every group node, its
+    // 1. Derive the forest for this tick.
+    const forest = this.adjustmentEffectResolver.deriveGroups(currentTick);
+
+    // 2. Walk the forest depth-first to enumerate every group node, its
     //    desired parent container, and its top-most member visual index.
     const entries: ForestEntry[] = [];
     const innermostGroupByTrack = new Map<string, DerivedRenderGroup>();
@@ -257,7 +223,7 @@ export class RenderGroupOrchestrator {
     const activeGroupIds = new Set(entries.map((entry) => entry.group.id));
     const sortDirtyParents = new Set<Container>();
 
-    // 2. Pre-prune: destroy any cached container whose id no longer appears
+    // 3. Pre-prune: destroy any cached container whose id no longer appears
     //    in the forest (topology change — the source clip is gone or its
     //    reach now starts on a different first-track). Detach (but keep)
     //    containers that exist in the cache but aren't active this tick.
@@ -275,7 +241,7 @@ export class RenderGroupOrchestrator {
     // Phase-3 keeps the cache permissive — the cache eviction policy can
     // tighten in a follow-up if memory pressure becomes a concern.)
 
-    // 3. Reparent group containers to match the forest. Top-down so each
+    // 4. Reparent group containers to match the forest. Top-down so each
     //    child sees its desired parent already attached at the right level.
     for (const entry of entries) {
       const container = this.groupContainers.get(entry.group.id);
@@ -297,7 +263,7 @@ export class RenderGroupOrchestrator {
       }
     }
 
-    // 4. Reparent track engine containers to their innermost wrapping group
+    // 5. Reparent track engine containers to their innermost wrapping group
     //    (or root if none) and assign zIndex from visualTrackOrder.
     for (const [trackId, engineContainer] of this.tracks) {
       if (engineContainer.destroyed) continue;
@@ -319,46 +285,6 @@ export class RenderGroupOrchestrator {
           engineContainer.zIndex = z;
           sortDirtyParents.add(desiredParent);
         }
-      }
-    }
-
-    // 5. Sync transient dip-to-color layers beneath the linked clips.
-    const activeTransitionLayerIds = new Set(
-      transitionColorLayers.map((layer) => layer.id),
-    );
-    for (const [layerId, sprite] of this.transitionColorLayers) {
-      if (activeTransitionLayerIds.has(layerId)) continue;
-      if (sprite.parent && !sprite.parent.destroyed) {
-        sprite.parent.removeChild(sprite);
-      }
-      sprite.destroy();
-      this.transitionColorLayers.delete(layerId);
-    }
-    for (const layer of transitionColorLayers) {
-      let sprite = this.transitionColorLayers.get(layer.id);
-      if (!sprite || sprite.destroyed) {
-        sprite = new Sprite(Texture.WHITE);
-        this.transitionColorLayers.set(layer.id, sprite);
-      }
-      const desiredParent = layer.parentGroupId
-        ? (this.groupContainers.get(layer.parentGroupId) ?? this.root)
-        : this.root;
-      if (sprite.parent !== desiredParent) {
-        if (sprite.parent && !sprite.parent.destroyed) {
-          sortDirtyParents.add(sprite.parent);
-        }
-        desiredParent.addChild(sprite);
-        sortDirtyParents.add(desiredParent);
-      }
-      sprite.position.set(0, 0);
-      sprite.width = this.logicalDimensions.width;
-      sprite.height = this.logicalDimensions.height;
-      sprite.tint = layer.color;
-      sprite.alpha = 1;
-      sprite.visible = true;
-      if (sprite.zIndex !== layer.zIndex) {
-        sprite.zIndex = layer.zIndex;
-        sortDirtyParents.add(desiredParent);
       }
     }
 
@@ -391,13 +317,6 @@ export class RenderGroupOrchestrator {
     for (const container of this.groupContainers.values()) {
       this.destroyGroupContainer(container);
     }
-    for (const sprite of this.transitionColorLayers.values()) {
-      if (sprite.parent && !sprite.parent.destroyed) {
-        sprite.parent.removeChild(sprite);
-      }
-      sprite.destroy();
-    }
-    this.transitionColorLayers.clear();
     this.groupContainers.clear();
     this.tracks.clear();
   }

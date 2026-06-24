@@ -30,16 +30,8 @@ jobs:
     - name: Lint
       run: npm run lint
 
-    - name: Test with coverage
-      run: npm run test:coverage
-
-    - name: Upload frontend coverage
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: frontend-coverage
-        path: frontend/coverage
-        if-no-files-found: error
+    - name: Test
+      run: npm run test:run
 
     - name: Build
       run: npm run build

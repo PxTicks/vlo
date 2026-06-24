@@ -169,25 +169,6 @@ describe("featherApplicator", () => {
     expect(bottomLayer!.filters).toHaveLength(3); // Cleanup, Blur, and Boost
   });
 
-  it("keeps a presentation-level spatial mask around effect companions", () => {
-    const spatialMask = {};
-    const spatialAlphaEffect = {};
-    const presentation = mockContainer as unknown as {
-      mask: unknown;
-      effects: unknown[];
-    };
-    presentation.mask = spatialMask;
-    presentation.effects = [spatialAlphaEffect];
-    const state = createBaseState();
-    state.feather = createFeather("hard_outer", 15);
-
-    featherApplicator(mockSprite as unknown as ClipTransformTarget, state);
-
-    expect(mockContainer.children).toHaveLength(2);
-    expect(presentation.mask).toBe(spatialMask);
-    expect(presentation.effects).toEqual([spatialAlphaEffect]);
-  });
-
   it("should apply grow-only mask operation correctly", () => {
     const state = createBaseState();
     state.maskGrow = createGrow(15);

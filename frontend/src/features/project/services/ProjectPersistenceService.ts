@@ -231,7 +231,6 @@ function createDefaultTimelineSnapshot(): TimelineSnapshot {
   return {
     tracks: [createDefaultTrack()],
     clips: [],
-    transitions: [],
   };
 }
 
@@ -242,7 +241,6 @@ function createTimelineDocument(snapshot: TimelineSnapshot): TimelineDocument {
     updated_at: Date.now(),
     tracks: clone(snapshot.tracks),
     clips: clone(snapshot.clips),
-    transitions: clone(snapshot.transitions ?? []),
   };
 }
 
@@ -570,7 +568,6 @@ export class ProjectPersistenceService {
         updated_at: v2Parsed.data.updated_at,
         tracks: v2Parsed.data.tracks,
         clips: v2Parsed.data.clips,
-        transitions: v2Parsed.data.transitions ?? [],
       };
 
       return this.persistTimeline(migrated);
@@ -590,7 +587,6 @@ export class ProjectPersistenceService {
       updated_at: v1Parsed.data.updated_at,
       tracks: v1Parsed.data.tracks,
       clips: v1Parsed.data.clips,
-      transitions: v1Parsed.data.transitions ?? [],
     };
 
     return this.persistTimeline(migrated);
@@ -932,7 +928,6 @@ export class ProjectPersistenceService {
           ? clone(legacy.timeline.tracks)
           : createDefaultTimelineSnapshot().tracks,
       clips: clone(legacy.timeline?.clips ?? []),
-      transitions: clone(legacy.timeline?.transitions ?? []),
     });
 
     const manifest = createManifestDocument({
@@ -943,7 +938,6 @@ export class ProjectPersistenceService {
       timeline: {
         tracks: timeline.tracks,
         clips: timeline.clips,
-        transitions: timeline.transitions,
       },
       migratedFromSchemaVersion: legacy.schemaVersion,
       createdWithVloVersion: legacy.createdWithVloVersion,

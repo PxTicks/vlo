@@ -4,13 +4,11 @@ import type {
   CompositeAsset,
   TimelineClip,
   TimelineTrack,
-  Transition,
 } from "../../../types/TimelineTypes";
 
 export interface TimelineSnapshot {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
-  transitions?: Transition[];
 }
 
 export interface ProjectDocumentConfig {

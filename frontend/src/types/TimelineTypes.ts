@@ -47,7 +47,6 @@ export interface TextClipData {
 export interface TimelineRegionData {
   clips: TimelineClip[];
   tracks?: TimelineTrack[];
-  transitions?: Transition[];
   /**
    * Optional overlay filter that limits renders/extractions to an explicit set
    * of track ids while preserving the original `tracks` metadata.
@@ -129,20 +128,6 @@ export interface ClipTransform {
   /** Optional effect-level mask. Absent = legacy unmasked behaviour. Applies
    *  only to filter transforms in v1 (see {@link EffectMask}). */
   effectMask?: EffectMask;
-}
-
-export type TransitionType =
-  | "dissolve"
-  | "slideAway"
-  | "slideOutIn"
-  | "dipToColor";
-
-export interface Transition {
-  id: string;
-  type: TransitionType;
-  outgoingClipId: string;
-  incomingClipId: string;
-  parameters: Record<string, unknown>;
 }
 
 export type ClipMaskType =

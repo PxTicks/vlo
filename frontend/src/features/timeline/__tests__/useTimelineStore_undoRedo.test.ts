@@ -6,7 +6,6 @@ import type {
   ClipTransform,
   TimelineClip,
   TimelineTrack,
-  Transition,
 } from "../../../types/TimelineTypes";
 
 const createTrack = (id: string, label: string): TimelineTrack => ({
@@ -236,89 +235,6 @@ describe("useTimelineStore undo/redo", () => {
     expect(useTimelineStore.getState().tracks.map((track) => track.id)).toEqual(
       tracks.map((track) => track.id),
     );
-  });
-
-  it("restores a pruned transition atomically with its clip move", () => {
-    const tracks = [
-      { ...createTrack("upper", "Upper"), type: "visual" as const },
-      { ...createTrack("lower", "Lower"), type: "visual" as const },
-    ];
-    const outgoing = createClip("outgoing", "upper", 0, 9600);
-    const incoming = createClip("incoming", "lower", 4800, 9600);
-    const transition: Transition = {
-      id: "transition-1",
-      type: "dissolve",
-      outgoingClipId: outgoing.id,
-      incomingClipId: incoming.id,
-      parameters: {},
-    };
-
-    useTimelineStore.getState().replaceTimelineSnapshot({
-      tracks,
-      clips: [outgoing, incoming],
-      transitions: [transition],
-    });
-
-    act(() => {
-      useTimelineStore.getState().updateClipPosition(incoming.id, 20000);
-    });
-    expect(useTimelineStore.getState().transitions).toEqual([]);
-
-    act(() => {
-      expect(useTimelineStore.getState().undo()).toBe(true);
-    });
-    expect(
-      useTimelineStore.getState().clips.find((clip) => clip.id === incoming.id)
-        ?.start,
-    ).toBe(4800);
-    expect(useTimelineStore.getState().transitions).toEqual([transition]);
-
-    act(() => {
-      expect(useTimelineStore.getState().redo()).toBe(true);
-    });
-    expect(useTimelineStore.getState().transitions).toEqual([]);
-  });
-
-  it("creates an abutting transition and overlap in one undoable step", () => {
-    const tracks = [
-      { ...createTrack("upper", "Upper"), type: "visual" as const },
-      { ...createTrack("lower", "Lower"), type: "visual" as const },
-    ];
-    const outgoing = createClip("outgoing", "upper", 0, 9600);
-    const incoming = createClip("incoming", "lower", 9600, 9600);
-    const transition: Transition = {
-      id: "transition-abutting",
-      type: "slideOutIn",
-      outgoingClipId: outgoing.id,
-      incomingClipId: incoming.id,
-      parameters: { direction: "left", distance: 1 },
-    };
-    useTimelineStore.getState().replaceTimelineSnapshot({
-      tracks,
-      clips: [outgoing, incoming],
-    });
-
-    act(() => {
-      expect(
-        useTimelineStore.getState().addTransition(transition, {
-          incomingStart: 4800,
-        }),
-      ).toBe(true);
-    });
-    expect(useTimelineStore.getState().transitions).toEqual([transition]);
-    expect(
-      useTimelineStore.getState().clips.find((clip) => clip.id === incoming.id)
-        ?.start,
-    ).toBe(4800);
-
-    act(() => {
-      expect(useTimelineStore.getState().undo()).toBe(true);
-    });
-    expect(useTimelineStore.getState().transitions).toEqual([]);
-    expect(
-      useTimelineStore.getState().clips.find((clip) => clip.id === incoming.id)
-        ?.start,
-    ).toBe(9600);
   });
 
   it("preserves parent speed inheritance to masks through undo/redo", () => {

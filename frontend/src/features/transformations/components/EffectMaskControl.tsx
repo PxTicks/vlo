@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Box, Button } from "@mui/material";
+import { useShallow } from "zustand/react/shallow";
 import type {
   ClipTransform,
   EffectMask,
 } from "../../../types/TimelineTypes";
-import { useMaskClipsForParent } from "../../timeline";
+import { useTimelineStore, selectMaskClipsForParent } from "../../timeline";
 import { EffectMaskDialog } from "./EffectMaskDialog";
 
 interface EffectMaskControlProps {
@@ -43,7 +44,12 @@ export function EffectMaskControl({
   onUpdateTransform,
 }: EffectMaskControlProps) {
   const [open, setOpen] = useState(false);
-  const masks = useMaskClipsForParent(clipId) ?? [];
+  const masks =
+    useTimelineStore(
+      useShallow((state) =>
+        clipId ? selectMaskClipsForParent(state, clipId) : [],
+      ),
+    ) ?? [];
 
   const effectMask = transform.effectMask;
   const active = !!effectMask?.enabled && !!effectMask.expression;

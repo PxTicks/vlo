@@ -62,11 +62,6 @@ import {
   getTextTextureSignature,
 } from "./textTextureRenderer";
 import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
-import type { SharedTextureHandle } from "./SharedTextureStore";
-import type {
-  FrameExecutionPolicy,
-  ResolvedClipFrameJob,
-} from "./framePlanning";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -205,7 +200,6 @@ export class TrackRenderEngine {
 
   public readonly sprite: Sprite;
   public readonly container: Container;
-  private readonly presentationContainer: Container;
   private readonly lease: DecoderLease;
   private readonly renderer: Renderer | null;
   private readonly trackId: string | null;
@@ -248,8 +242,6 @@ export class TrackRenderEngine {
   private currentLiveSourceFrameIntent: SourceFrameSyncIntent | null = null;
   private currentSynchronizedSourceFrameIntent: SourceFrameSyncIntent | null =
     null;
-  private plannedRenderGeneration = 0;
-  private currentPlannedSourceFrameIntent: SourceFrameSyncIntent | null = null;
 
   // Deferred texture cleanup to avoid null-source races during hot swaps
   private readonly retiredTextures = new RetiredTextureQueue(
@@ -262,7 +254,6 @@ export class TrackRenderEngine {
   // source, never a pool-owned effect output.
   private readonly maskedEffectRenderer: MaskedEffectRenderer | null;
   private effectSourceTexture: Texture | null = null;
-  private currentSharedTextureHandle: SharedTextureHandle | null = null;
   private disposed = false;
 
   // Live Mode Callback (to sync transforms immediately)
@@ -306,17 +297,8 @@ export class TrackRenderEngine {
     this.sprite.anchor.set(0.5);
     this.sprite.visible = false;
 
-    // The outer container is the track node registered with the scene
-    // presentation DAG. The inner container is the final per-track
-    // presentation boundary: the primary sprite and effect-created companion
-    // sprites live inside it, while mask sources remain external siblings.
-    // Spatial masks target the inner container so they clip the complete
-    // rendered result without feeding presentation state back into DAG source
-    // or effect-texture identities.
+    // encapsulated container
     this.container = new Container();
-    this.presentationContainer = new Container();
-    this.presentationContainer.addChild(this.sprite);
-    this.container.addChild(this.presentationContainer);
     this.maskedEffectRenderer = renderer
       ? new MaskedEffectRenderer(renderer)
       : null;
@@ -327,7 +309,6 @@ export class TrackRenderEngine {
       () => {
         void this.resyncMasksForLatestAssetMaskFrame();
       },
-      this.presentationContainer,
     );
     if (renderer) {
       // Brush masks render their painted bitmap into a Pixi RenderTexture via
@@ -337,6 +318,7 @@ export class TrackRenderEngine {
         ({ setBrushRenderer }) => setBrushRenderer(renderer),
       );
     }
+    this.container.addChild(this.sprite);
     this.container.zIndex = zIndex;
   }
 
@@ -392,256 +374,6 @@ export class TrackRenderEngine {
     return this.adjustmentEffectResolver
       .getPresentationLookup()
       .resolveEffectiveTrackTickWithinClip(clip, presentationTick);
-  }
-
-  public resolveFrameJob(options: {
-    epoch: number;
-    presentationTick: number;
-    trackClips: TimelineClip[];
-    maskClipsByParent: ReadonlyMap<string, MaskTimelineClip[]>;
-    assetsById: ReadonlyMap<string, Asset>;
-    logicalDimensions: { width: number; height: number };
-    fps: number;
-  }): ResolvedClipFrameJob | null {
-    const resolved = this.resolveActiveClipAtPresentation(
-      options.trackClips,
-      options.presentationTick,
-    );
-    if (!resolved || !this.trackId) {
-      this.currentPlannedSourceFrameIntent = null;
-      return null;
-    }
-
-    const { activeClip, effectiveTick } = resolved;
-    const asset = isAssetBackedClip(activeClip)
-      ? options.assetsById.get(activeClip.assetId)
-      : undefined;
-    const fps =
-      asset?.fps && asset.fps > 0 ? asset.fps : Math.max(1, options.fps);
-    this.plannedRenderGeneration += 1;
-    const sourceFrame = createSourceFrameSyncRef({
-      clip: activeClip,
-      assetId: isAssetBackedClip(activeClip) ? activeClip.assetId : null,
-      effectiveTrackTick: effectiveTick,
-      fps,
-      generation: this.plannedRenderGeneration,
-    });
-    this.currentPlannedSourceFrameIntent = {
-      key: sourceFrame.key,
-      generation: sourceFrame.generation,
-    };
-
-    const source = this.effectSourceTexture;
-    const contentSize =
-      source && source !== Texture.EMPTY && source.width > 0 && source.height > 0
-        ? { width: source.width, height: source.height }
-        : options.logicalDimensions;
-
-    return {
-      id: `${options.epoch}:${this.trackId}:${activeClip.id}`,
-      trackId: this.trackId,
-      activeClip,
-      effectiveTrackTick: effectiveTick,
-      rawClipTick: effectiveTick - activeClip.start,
-      sourceFrame,
-      maskClips: options.maskClipsByParent.get(activeClip.id) ?? [],
-      logicalDimensions: options.logicalDimensions,
-      contentSize,
-      fps,
-    };
-  }
-
-  public getCurrentPlannedSourceFrameIntent(): SourceFrameSyncIntent | null {
-    return this.currentPlannedSourceFrameIntent;
-  }
-
-  public isFrameJobCurrent(job: ResolvedClipFrameJob): boolean {
-    return isSourceFrameIntentCurrent(this.currentPlannedSourceFrameIntent, {
-      key: job.sourceFrame.key,
-      generation: job.sourceFrame.generation,
-    });
-  }
-
-  public prepareResolvedFrameJob(
-    job: ResolvedClipFrameJob,
-    trackClips: TimelineClip[],
-    assets: Asset[],
-  ): void {
-    this.syncPreparedClips(
-      job.effectiveTrackTick,
-      trackClips,
-      assets,
-      performance.now(),
-      false,
-    );
-  }
-
-  public async decodeResolvedSourceFrame(
-    job: ResolvedClipFrameJob,
-    options: { signal?: AbortSignal } = {},
-  ): Promise<ImageBitmap | null> {
-    if (!isDecoderRenderableClip(job.activeClip)) {
-      return null;
-    }
-    if (options.signal?.aborted) {
-      throw createRenderAbortError();
-    }
-    if (this.pendingReject) {
-      this.rejectPendingFrame(
-        new Error("Concurrent strict frame decode is not supported per track"),
-      );
-    }
-
-    return new Promise<ImageBitmap | null>((resolve, reject) => {
-      let isSettled = false;
-      const settle = <T extends unknown[]>(handler: (...args: T) => void) => {
-        return (...args: T) => {
-          if (isSettled) return;
-          isSettled = true;
-          this.clearPendingFrameState();
-          handler(...args);
-        };
-      };
-      const resolveFrame = settle(resolve);
-      const rejectFrame = settle(reject);
-
-      if (options.signal) {
-        const onAbort = () => rejectFrame(createRenderAbortError());
-        options.signal.addEventListener("abort", onAbort, { once: true });
-        this.pendingAbortCleanup = () => {
-          options.signal?.removeEventListener("abort", onAbort);
-        };
-      }
-
-      this.pendingResolve = resolveFrame;
-      this.pendingReject = rejectFrame;
-      this.lease.render({
-        time: job.sourceFrame.snappedTimeSeconds,
-        clipId: job.activeClip.id,
-        transformTime: job.rawClipTick,
-        strict: true,
-      });
-    });
-  }
-
-  public async presentResolvedFrameJob(
-    job: ResolvedClipFrameJob,
-    sourceHandle: SharedTextureHandle | null,
-    assetsById: Map<string, Asset>,
-    policy: FrameExecutionPolicy,
-  ): Promise<boolean> {
-    if (policy.mode === "export" && policy.signal?.aborted) {
-      sourceHandle?.release();
-      throw createRenderAbortError();
-    }
-    if (policy.mode === "live" && !this.isFrameJobCurrent(job)) {
-      sourceHandle?.release();
-      return false;
-    }
-
-    const presentationClip: TimelineClip =
-      job.transitionTransforms && job.transitionTransforms.length > 0
-        ? {
-            ...job.activeClip,
-            transformations: [
-              ...(job.activeClip.transformations ?? []),
-              ...job.transitionTransforms,
-            ],
-          }
-        : job.activeClip;
-
-    this.latestMaskSyncContext = {
-      maskClips: [...job.maskClips],
-      clip: presentationClip,
-      logicalDimensions: job.logicalDimensions,
-      rawTimeTicks: job.rawClipTick,
-      assetsById,
-      sourceFrame: job.sourceFrame,
-      fps: job.fps,
-    };
-
-    if (presentationClip.type === "text") {
-      sourceHandle?.release();
-      await this.renderTextClip(
-        presentationClip,
-        job.logicalDimensions,
-        job.rawClipTick,
-        [...job.maskClips],
-        assetsById,
-        job.sourceFrame,
-        job.fps,
-      );
-      return true;
-    }
-
-    if (!isDecoderRenderableClip(presentationClip)) {
-      sourceHandle?.release();
-      this.sprite.visible = false;
-      this.currentTextureClipId = null;
-      this.maskController.clear();
-      return true;
-    }
-
-    if (!sourceHandle || sourceHandle.texture === Texture.EMPTY) {
-      sourceHandle?.release();
-      if (this.currentTextureClipId !== job.activeClip.id) {
-        this.sprite.visible = false;
-        this.currentTextureClipId = null;
-      }
-      return true;
-    }
-
-    await this.maskController.syncMaskClips(
-      [...job.maskClips],
-      presentationClip,
-      job.logicalDimensions,
-      job.rawClipTick,
-      assetsById,
-      {
-        fps: job.fps,
-        sourceFrame: job.sourceFrame,
-        waitForSam2: true,
-      },
-    );
-    if (policy.mode === "export" && policy.signal?.aborted) {
-      sourceHandle.release();
-      throw createRenderAbortError();
-    }
-    if (policy.mode === "live" && !this.isFrameJobCurrent(job)) {
-      sourceHandle.release();
-      return false;
-    }
-
-    const contentSizeChanged = this.applyTexture(
-      sourceHandle.texture,
-      job.activeClip.id,
-      "asset",
-      sourceHandle,
-    );
-    if (contentSizeChanged) {
-      await this.resyncMasksForResolvedTexture(
-        [...job.maskClips],
-        presentationClip,
-        job.logicalDimensions,
-        job.rawClipTick,
-        assetsById,
-        job.sourceFrame,
-        job.fps,
-      );
-    }
-    this.applyClipTransformsForClip(
-      presentationClip,
-      job.logicalDimensions,
-      job.rawClipTick,
-    );
-    return true;
-  }
-
-  public presentBlankFrame(): void {
-    this.currentPlannedSourceFrameIntent = null;
-    this.sprite.visible = false;
-    this.currentTextureClipId = null;
-    this.maskController.clear();
   }
 
   /**
@@ -2228,7 +1960,6 @@ export class TrackRenderEngine {
     texture: Texture,
     clipId: string,
     sourceKind: "asset" | "text",
-    sharedHandle: SharedTextureHandle | null = null,
   ): boolean {
     // Size comparison uses the displayed texture (in offscreen effect mode that
     // is a pool effect output, which is content-sized like the source, so the
@@ -2255,24 +1986,10 @@ export class TrackRenderEngine {
     // effect output is pool-owned and must never be retired here (it is simply
     // dereferenced when the source is reassigned below).
     const previousSource = this.effectSourceTexture;
-    const previousSharedHandle = this.currentSharedTextureHandle;
     this.sprite.texture = texture;
     this.effectSourceTexture = texture;
-    this.currentSharedTextureHandle = sharedHandle;
     if (previousSource && previousSource !== texture) {
-      if (
-        previousSharedHandle &&
-        previousSharedHandle.texture === previousSource
-      ) {
-        previousSharedHandle.release();
-      } else {
-        this.retiredTextures.retire(previousSource);
-      }
-    } else if (
-      previousSharedHandle &&
-      previousSharedHandle !== sharedHandle
-    ) {
-      previousSharedHandle.release();
+      this.retiredTextures.retire(previousSource);
     }
     this.sprite.visible = true;
     this.currentTextureClipId = clipId;
@@ -2553,99 +2270,6 @@ export class TrackRenderEngine {
   }
 
   /**
-   * Apply transient transform values directly to the resident Pixi scene.
-   *
-   * This path deliberately does not resolve a source frame or reconcile mask
-   * structure. Callers can queue {@link refreshLiveMaskPresentation} when the
-   * returned mask state says the resting presentation uses a coverage texture.
-   */
-  public applyLiveTransformUpdates(
-    activeClip: TimelineClip,
-    logicalDimensions: { width: number; height: number },
-    currentTime: number,
-    maskClips: MaskTimelineClip[] = [],
-    options: {
-      updateClipTransforms?: boolean;
-      maskClipIds?: ReadonlySet<string>;
-    } = {},
-  ): {
-    didUpdateMaskTransforms: boolean;
-    needsMaskPresentationRefresh: boolean;
-    needsEffectPresentationRefresh: boolean;
-  } {
-    if (!this.sprite.visible) {
-      return {
-        didUpdateMaskTransforms: false,
-        needsMaskPresentationRefresh: false,
-        needsEffectPresentationRefresh: false,
-      };
-    }
-    const effectiveTick = this.resolveEffectiveTrackTickForClip(
-      activeClip,
-      currentTime,
-    );
-    const rawTimeSeconds = effectiveTick - activeClip.start;
-
-    if (options.updateClipTransforms) {
-      this.applyClipTransformsForClip(
-        activeClip,
-        logicalDimensions,
-        rawTimeSeconds,
-      );
-    }
-
-    const maskUpdate =
-      options.maskClipIds && options.maskClipIds.size > 0
-        ? this.maskController.syncLiveMaskTransforms(
-            maskClips,
-            activeClip,
-            logicalDimensions,
-            rawTimeSeconds,
-            options.maskClipIds,
-          )
-        : null;
-
-    return {
-      didUpdateMaskTransforms: maskUpdate?.didUpdate ?? false,
-      needsMaskPresentationRefresh:
-        maskUpdate?.needsSpatialPresentationRefresh ?? false,
-      needsEffectPresentationRefresh:
-        maskUpdate?.needsEffectPresentationRefresh ?? false,
-    };
-  }
-
-  /**
-   * Refresh mask-dependent GPU output after live node transforms have moved.
-   * Called from the high-priority Pixi live-update scheduler, immediately
-   * before the Application's own stage render.
-   */
-  public refreshLiveMaskPresentation(
-    activeClip: TimelineClip,
-    logicalDimensions: { width: number; height: number },
-    currentTime: number,
-    refreshEffectPresentation: boolean,
-  ): void {
-    if (!this.sprite.visible) {
-      return;
-    }
-
-    this.maskController.refreshLiveMaskPresentation();
-    if (!refreshEffectPresentation) {
-      return;
-    }
-
-    const effectiveTick = this.resolveEffectiveTrackTickForClip(
-      activeClip,
-      currentTime,
-    );
-    this.applyClipTransformsForClip(
-      activeClip,
-      logicalDimensions,
-      effectiveTick - activeClip.start,
-    );
-  }
-
-  /**
    * Force an immediate transform update.
    * Useful for responsiveness when the viewport resizes while paused.
    */
@@ -2655,7 +2279,7 @@ export class TrackRenderEngine {
     currentTime: number,
     maskClips: MaskTimelineClip[] = [],
     assetsById: Map<string, Asset> = new Map<string, Asset>(),
-  ): void {
+  ) {
     if (!this.sprite.visible) return;
     const effectiveTick = this.resolveEffectiveTrackTickForClip(
       activeClip,
@@ -2686,13 +2310,6 @@ export class TrackRenderEngine {
         assetsById,
         { sourceFrame, skipSam2FrameRender: true },
       )
-      .then(() => {
-        this.applyClipTransformsForClip(
-          activeClip,
-          logicalDimensions,
-          rawTimeSeconds,
-        );
-      })
       .catch((error) => {
         console.warn("Failed to force-update mask clips", error);
       });
@@ -2714,24 +2331,15 @@ export class TrackRenderEngine {
     this.retiredTextures.cancel();
     const currentTexture = this.sprite.texture;
     const sourceTexture = this.effectSourceTexture;
-    const sharedTextureHandle = this.currentSharedTextureHandle;
-    this.currentSharedTextureHandle = null;
     this.effectSourceTexture = null;
     this.sprite.texture = Texture.EMPTY;
-    if (!sharedTextureHandle || currentTexture !== sharedTextureHandle.texture) {
-      destroyTexture(currentTexture);
-    }
+    destroyTexture(currentTexture);
     // The displayed texture may be a pool-owned effect output; destroying it
     // first is harmless (destroyTexture is idempotent) and the pool dispose
     // below frees the rest. The retained source is engine-owned — free it too.
-    if (
-      sourceTexture &&
-      sourceTexture !== currentTexture &&
-      (!sharedTextureHandle || sourceTexture !== sharedTextureHandle.texture)
-    ) {
+    if (sourceTexture && sourceTexture !== currentTexture) {
       destroyTexture(sourceTexture);
     }
-    sharedTextureHandle?.release();
     this.retiredTextures.flush();
 
     this.maskedEffectRenderer?.dispose();

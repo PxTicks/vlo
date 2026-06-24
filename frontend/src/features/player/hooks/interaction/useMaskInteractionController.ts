@@ -28,7 +28,6 @@ import {
 } from "../../../transformations";
 import { liveParamStore } from "../../../../core/liveParams/liveParamStore";
 import { livePreviewParamStore } from "../../../../core/liveParams/livePreviewParamStore";
-import { requestLiveSceneTransformSync } from "../../services/liveSceneTransformSync";
 import { hasDragMovement } from "./transformInteraction";
 import { playbackClock } from "../../../../core/playback/PlaybackClock";
 import {
@@ -147,72 +146,38 @@ function notifyLiveMaskLayout(
   transformIds: MaskLayoutTransformIds,
   layout: MaskLayoutState,
 ) {
-  const previewUpdates: Array<{
-    transformId: string;
-    paramName: string;
-    value: number;
-  }> = [];
   if (transformIds.position) {
     liveParamStore.notify(transformIds.position, "x", layout.x);
     liveParamStore.notify(transformIds.position, "y", layout.y);
-    previewUpdates.push(
-      { transformId: transformIds.position, paramName: "x", value: layout.x },
-      { transformId: transformIds.position, paramName: "y", value: layout.y },
-    );
+    livePreviewParamStore.set(transformIds.position, "x", layout.x);
+    livePreviewParamStore.set(transformIds.position, "y", layout.y);
   }
   if (transformIds.scale) {
     liveParamStore.notify(transformIds.scale, "x", layout.scaleX);
     liveParamStore.notify(transformIds.scale, "y", layout.scaleY);
-    previewUpdates.push(
-      {
-        transformId: transformIds.scale,
-        paramName: "x",
-        value: layout.scaleX,
-      },
-      {
-        transformId: transformIds.scale,
-        paramName: "y",
-        value: layout.scaleY,
-      },
-    );
+    livePreviewParamStore.set(transformIds.scale, "x", layout.scaleX);
+    livePreviewParamStore.set(transformIds.scale, "y", layout.scaleY);
   }
   if (transformIds.rotation) {
     liveParamStore.notify(transformIds.rotation, "angle", layout.rotation);
-    previewUpdates.push({
-      transformId: transformIds.rotation,
-      paramName: "angle",
-      value: layout.rotation,
-    });
+    livePreviewParamStore.set(transformIds.rotation, "angle", layout.rotation);
   }
-  livePreviewParamStore.setMany(previewUpdates);
 }
 
 function clearLiveMaskLayoutPreviewParams(
   transformIds: MaskLayoutTransformIds,
 ) {
-  const previewParameters: Array<{
-    transformId: string;
-    paramName: string;
-  }> = [];
   if (transformIds.position) {
-    previewParameters.push(
-      { transformId: transformIds.position, paramName: "x" },
-      { transformId: transformIds.position, paramName: "y" },
-    );
+    livePreviewParamStore.clear(transformIds.position, "x");
+    livePreviewParamStore.clear(transformIds.position, "y");
   }
   if (transformIds.scale) {
-    previewParameters.push(
-      { transformId: transformIds.scale, paramName: "x" },
-      { transformId: transformIds.scale, paramName: "y" },
-    );
+    livePreviewParamStore.clear(transformIds.scale, "x");
+    livePreviewParamStore.clear(transformIds.scale, "y");
   }
   if (transformIds.rotation) {
-    previewParameters.push({
-      transformId: transformIds.rotation,
-      paramName: "angle",
-    });
+    livePreviewParamStore.clear(transformIds.rotation, "angle");
   }
-  livePreviewParamStore.clearMany(previewParameters);
 }
 
 function clamp01(value: number): number {
@@ -620,7 +585,6 @@ export function useMaskInteractionController(
     (clipId: string, maskId: string, layout: MaskLayoutState) => {
       liveMaskLayoutPreviewRef.current = { clipId, maskId, layout };
       applyLayoutToOverlay(layout);
-      requestLiveSceneTransformSync();
     },
     [applyLayoutToOverlay],
   );

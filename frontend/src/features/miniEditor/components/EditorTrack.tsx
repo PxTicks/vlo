@@ -201,12 +201,10 @@ export function EditorTrack({
         }}
       />
       <Box
-        aria-label="Crop start"
         sx={{ ...handleSx, left: `calc(${pct(cropStartTicks)} - ${HANDLE_WIDTH / 2}px)`, bgcolor: "rgba(144,202,249,0.9)" }}
         onPointerDown={(event) => beginDrag(event, { kind: "crop-start" })}
       />
       <Box
-        aria-label="Crop end"
         sx={{ ...handleSx, left: `calc(${pct(cropEndTicks)} - ${HANDLE_WIDTH / 2}px)`, bgcolor: "rgba(144,202,249,0.9)" }}
         onPointerDown={(event) => beginDrag(event, { kind: "crop-end" })}
       />
@@ -220,7 +218,6 @@ export function EditorTrack({
         return (
           <Box
             key={range.id}
-            aria-label={`Range ${range.id}`}
             sx={{
               position: "absolute",
               top: 6,
@@ -248,14 +245,12 @@ export function EditorTrack({
             }}
           >
             <Box
-              aria-label={`Range ${range.id} start`}
               sx={{ ...handleSx, left: -HANDLE_WIDTH / 2 }}
               onPointerDown={(event) =>
                 beginDrag(event, { kind: "range-start", id: range.id })
               }
             />
             <Box
-              aria-label={`Range ${range.id} end`}
               sx={{ ...handleSx, right: -HANDLE_WIDTH / 2 }}
               onPointerDown={(event) =>
                 beginDrag(event, { kind: "range-end", id: range.id })

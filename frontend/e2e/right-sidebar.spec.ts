@@ -11,7 +11,7 @@ test.describe('Right Sidebar & Transformation Panel', () => {
         await expect(rightSidebar.getTab('Mask')).toHaveCount(0);
     });
 
-    test('Selecting clip reveals Transform and Mask tabs', async ({ editorWithClips }) => {
+    test('@smoke Selecting clip reveals Transform and Mask tabs', async ({ editorWithClips }) => {
         const { rightSidebar, timeline } = editorWithClips;
 
         // Initially no clip selected — only Generate tab

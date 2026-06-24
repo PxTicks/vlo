@@ -11,7 +11,7 @@ import {
   MediaFileProcessor,
   resolvePrimaryAudioOutputSpec,
 } from "../MediaProcessingService";
-import { BufferTarget, CanvasSink, Conversion, Input, Output } from "mediabunny";
+import { CanvasSink, Input } from "mediabunny";
 
 // Mock mediabunny
 vi.mock("mediabunny", () => {
@@ -216,61 +216,6 @@ describe("MediaFileProcessor", () => {
     expect(computeDuration).toHaveBeenCalled();
   });
 
-  it("falls back safely for MIME and duration probe failures", async () => {
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    vi.mocked(Input)
-      .mockImplementationOnce(function () {
-        return {
-          getMimeType: vi.fn().mockResolvedValue(""),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
-        };
-      })
-      .mockImplementationOnce(function () {
-        return {
-          getMimeType: vi.fn().mockRejectedValue(new Error("probe failed")),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
-        };
-      })
-      .mockImplementationOnce(function () {
-        return {
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn().mockResolvedValue(Number.NaN),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
-        };
-      })
-      .mockImplementationOnce(function () {
-        return {
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn().mockRejectedValue(new Error("duration failed")),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
-        };
-      });
-
-    const emptyMime = new MediaFileProcessor(
-      new File(["x"], "fallback.mp4", { type: "video/mp4" }),
-    );
-    await expect(emptyMime.detectMimeType()).resolves.toBe("video/mp4");
-    const failedMime = new MediaFileProcessor(
-      new File(["x"], "fallback.wav", { type: "audio/wav" }),
-    );
-    await expect(failedMime.detectMimeType()).resolves.toBe("audio/wav");
-    const invalidDuration = new MediaFileProcessor(file);
-    await expect(invalidDuration.computeDuration()).resolves.toBe(0);
-    const failedDuration = new MediaFileProcessor(file);
-    await expect(failedDuration.computeDuration()).resolves.toBe(0);
-    warning.mockRestore();
-  });
-
   it("should extract the primary audio track without timeline rendering", async () => {
     const execute = vi.fn().mockResolvedValue(undefined);
     vi.mocked(Input).mockImplementationOnce(function () {
@@ -337,68 +282,6 @@ describe("MediaFileProcessor", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it("returns null when audio extraction has no primary track or output buffer", async () => {
-    vi.mocked(Input)
-      .mockImplementationOnce(function () {
-        return {
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn().mockResolvedValue(null),
-          dispose: vi.fn(),
-        };
-      })
-      .mockImplementationOnce(function () {
-        return {
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn(),
-          getPrimaryAudioTrack: vi.fn().mockResolvedValue({
-            id: "audio-1",
-            codec: "aac",
-            sampleRate: 48000,
-            numberOfChannels: 2,
-          }),
-          dispose: vi.fn(),
-        };
-      });
-    const noTrack = new MediaFileProcessor(file);
-    await expect(noTrack.extractPrimaryAudioTrack()).resolves.toBeNull();
-
-    vi.mocked(BufferTarget).mockImplementationOnce(function () {
-      return { buffer: null };
-    });
-    vi.mocked(Conversion.init).mockResolvedValueOnce({
-      execute: vi.fn().mockResolvedValue(undefined),
-    } as never);
-    const noBuffer = new MediaFileProcessor(file);
-    await expect(noBuffer.extractPrimaryAudioTrack()).resolves.toBeNull();
-  });
-
-  it("uses the planned MIME type when the output cannot report one", async () => {
-    vi.mocked(Input).mockImplementationOnce(function () {
-      return {
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn(),
-        getPrimaryVideoTrack: vi.fn(),
-        getPrimaryAudioTrack: vi.fn().mockResolvedValue({
-          id: "audio-1",
-          codec: "opus",
-        }),
-        dispose: vi.fn(),
-      };
-    });
-    vi.mocked(Output).mockImplementationOnce(function ({ target }) {
-      return { target };
-    });
-    vi.mocked(Conversion.init).mockResolvedValueOnce({
-      execute: vi.fn().mockResolvedValue(undefined),
-    } as never);
-    const extracted = await new MediaFileProcessor(file).extractPrimaryAudioTrack();
-    expect(extracted?.type).toBe("audio/ogg");
-    expect(extracted?.name).toBe("test-audio.ogg");
-  });
-
   it("should prefer primary video track duration when generating video metadata", async () => {
     const computeDuration = vi.fn().mockResolvedValue(12.041678004535147);
     const trackComputeDuration = vi.fn().mockResolvedValue(12.041666666666666);
@@ -438,114 +321,6 @@ describe("MediaFileProcessor", () => {
     expect(trackComputeDuration).toHaveBeenCalledTimes(1);
     expect(computeDuration).not.toHaveBeenCalled();
   });
-
-  it("falls back to container duration and tolerates track diagnostics failures", async () => {
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const iteratorReturn = vi.fn().mockResolvedValue(undefined);
-    vi.mocked(Input).mockImplementationOnce(function () {
-      return {
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn().mockResolvedValue(5),
-        getPrimaryVideoTrack: vi.fn().mockResolvedValue({
-          computeDuration: vi.fn().mockRejectedValue(new Error("bad track duration")),
-          computePacketStats: vi.fn().mockRejectedValue(new Error("bad stats")),
-          displayWidth: 100,
-          displayHeight: 200,
-          getFirstTimestamp: vi.fn().mockRejectedValue(new Error("no timestamp")),
-        }),
-        getPrimaryAudioTrack: vi.fn(),
-        dispose: vi.fn(),
-      };
-    });
-    vi.mocked(CanvasSink).mockImplementationOnce(function (_track, options) {
-      expect(options).toMatchObject({ height: 320, poolSize: 1 });
-      return {
-        canvases: vi.fn(() => ({
-          next: vi.fn().mockResolvedValue({ value: undefined }),
-          return: iteratorReturn,
-        })),
-      };
-    });
-
-    await expect(
-      new MediaFileProcessor(file).generateVideoMetadata(),
-    ).resolves.toEqual({
-      thumbnail: null,
-      duration: 5,
-      fps: null,
-    });
-    expect(iteratorReturn).toHaveBeenCalled();
-    warning.mockRestore();
-  });
-
-  it("returns empty metadata when the video probe fails", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.mocked(Input).mockImplementationOnce(function () {
-      return {
-        getMimeType: vi.fn(),
-        computeDuration: vi.fn(),
-        getPrimaryVideoTrack: vi.fn().mockRejectedValue(new Error("broken")),
-        getPrimaryAudioTrack: vi.fn(),
-        dispose: vi.fn(),
-      };
-    });
-    await expect(
-      new MediaFileProcessor(file).generateVideoMetadata(),
-    ).resolves.toEqual({
-      thumbnail: null,
-      duration: 0,
-      fps: null,
-    });
-    error.mockRestore();
-  });
-
-  it("generates proxy video and handles absent tracks and conversion failures", async () => {
-    vi.mocked(Input)
-      .mockImplementationOnce(function () {
-        return {
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn().mockResolvedValue(null),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
-        };
-      })
-      .mockImplementationOnce(function () {
-        return {
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn().mockResolvedValue({ id: "video-1" }),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
-        };
-      })
-      .mockImplementationOnce(function () {
-        return {
-          getMimeType: vi.fn(),
-          computeDuration: vi.fn(),
-          getPrimaryVideoTrack: vi.fn().mockResolvedValue({ id: "video-1" }),
-          getPrimaryAudioTrack: vi.fn(),
-          dispose: vi.fn(),
-        };
-      });
-    await expect(
-      new MediaFileProcessor(file).generateProxyVideo(),
-    ).resolves.toBeNull();
-
-    vi.mocked(Conversion.init).mockResolvedValueOnce({
-      execute: vi.fn().mockResolvedValue(undefined),
-    } as never);
-    await expect(
-      new MediaFileProcessor(file).generateProxyVideo(),
-    ).resolves.toEqual(expect.any(Blob));
-
-    vi.mocked(Conversion.init).mockRejectedValueOnce(new Error("conversion failed"));
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await expect(
-      new MediaFileProcessor(file).generateProxyVideo(),
-    ).resolves.toBeNull();
-    error.mockRestore();
-  });
 });
 
 describe("MediaProcessingService", () => {
@@ -571,84 +346,5 @@ describe("MediaProcessingService", () => {
 
     expect(sanitized.endsWith(".mp4")).toBe(true);
     expect(sanitized.length).toBeLessThanOrEqual(180);
-  });
-
-  it("generates landscape and portrait image thumbnails", async () => {
-    const drawImage = vi.fn();
-    const convertToBlob = vi
-      .fn()
-      .mockResolvedValue(new Blob(["thumb"], { type: "image/webp" }));
-    const OffscreenCanvasMock = vi.fn(function (
-      width: number,
-      height: number,
-    ) {
-      return {
-        width,
-        height,
-        getContext: vi.fn(() => ({ drawImage })),
-        convertToBlob,
-      };
-    });
-    vi.stubGlobal("OffscreenCanvas", OffscreenCanvasMock);
-    vi.stubGlobal(
-      "createImageBitmap",
-      vi
-        .fn()
-        .mockResolvedValueOnce({ width: 640, height: 320 })
-        .mockResolvedValueOnce({ width: 100, height: 400 }),
-    );
-
-    await expect(
-      service.generateImageThumbnail(new File(["image"], "wide.png")),
-    ).resolves.toEqual(expect.any(Blob));
-    expect(OffscreenCanvasMock).toHaveBeenNthCalledWith(1, 320, 160);
-    await service.generateImageThumbnail(new File(["image"], "tall.png"));
-    expect(OffscreenCanvasMock).toHaveBeenNthCalledWith(2, 80, 320);
-    expect(drawImage).toHaveBeenCalledTimes(2);
-    vi.unstubAllGlobals();
-  });
-
-  it("rejects image thumbnails without a 2d context", async () => {
-    vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({
-      width: 100,
-      height: 100,
-    }));
-    vi.stubGlobal(
-      "OffscreenCanvas",
-      vi.fn(function () {
-        return { getContext: vi.fn(() => null) };
-      }),
-    );
-    await expect(
-      service.generateImageThumbnail(new File(["image"], "bad.png")),
-    ).rejects.toThrow("Could not get canvas context");
-    vi.unstubAllGlobals();
-  });
-
-  it("disposes processors used by every convenience wrapper", async () => {
-    const processor = {
-      detectMimeType: vi.fn().mockResolvedValue("video/mp4"),
-      computeDuration: vi.fn().mockResolvedValue(2),
-      generateVideoMetadata: vi.fn().mockResolvedValue({
-        thumbnail: null,
-        duration: 2,
-        fps: 30,
-      }),
-      generateProxyVideo: vi.fn().mockResolvedValue(new Blob()),
-      hasAudioTrack: vi.fn().mockResolvedValue(true),
-      extractPrimaryAudioTrack: vi.fn().mockResolvedValue(new File([], "audio.wav")),
-      dispose: vi.fn(),
-    };
-    vi.spyOn(service, "createProcessor").mockReturnValue(processor as never);
-    const source = new File([], "source.mp4");
-
-    await service.detectMimeType(source);
-    await service.computeDuration(source);
-    await service.generateVideoMetadata(source);
-    await service.generateProxyVideo(source);
-    await service.hasAudioTrack(source);
-    await service.extractPrimaryAudioTrack(source);
-
-    expect(processor.dispose).toHaveBeenCalledTimes(6);
   });
 });

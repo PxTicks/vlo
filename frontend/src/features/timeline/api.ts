@@ -1,14 +1,11 @@
 import { useShallow } from "zustand/react/shallow";
 import type {
   ClipTransform,
-  MaskTimelineClip,
   TimelineClip,
   TimelineTrack,
-  Transition,
 } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
-  selectMaskClipsForParent,
   selectPrimaryActiveClip,
   selectTimelineClipById,
   selectTimelineClipCountForAsset,
@@ -21,7 +18,6 @@ import { useProjectStore } from "../project/useProjectStore";
 type TimelineStoreState = ReturnType<typeof useTimelineStore.getState>;
 
 export {
-  selectMaskClipsForParent,
   selectPrimaryActiveClip,
   selectTimelineClipById,
   selectTimelineClipCountForAsset,
@@ -51,14 +47,6 @@ export function useSelectedTimelineClipIds(): string[] {
   return useTimelineStore(useShallow((state) => state.selectedClipIds));
 }
 
-export function useTimelineTransitions(): Transition[] {
-  return useTimelineStore(useShallow((state) => state.transitions));
-}
-
-export function useSelectedTimelineTransitionId(): string | null {
-  return useTimelineStore((state) => state.selectedTransitionId);
-}
-
 export function useTimelineClipsForTrack(
   trackId: string,
   includeMasks: boolean = true,
@@ -66,16 +54,6 @@ export function useTimelineClipsForTrack(
   return useTimelineStore(
     useShallow((state) =>
       selectTimelineClipsForTrack(state, trackId, includeMasks),
-    ),
-  );
-}
-
-export function useMaskClipsForParent(
-  parentClipId: string | null | undefined,
-): MaskTimelineClip[] {
-  return useTimelineStore(
-    useShallow((state) =>
-      parentClipId ? selectMaskClipsForParent(state, parentClipId) : [],
     ),
   );
 }
@@ -101,16 +79,12 @@ export function getTimelineTracks(): TimelineTrack[] {
   return useTimelineStore.getState().tracks;
 }
 
-export function getTimelineTransitions(): Transition[] {
-  return useTimelineStore.getState().transitions;
-}
-
 export function getTimelineModelState(): Pick<
   TimelineStoreState,
-  "clips" | "tracks" | "transitions"
+  "clips" | "tracks"
 > {
-  const { clips, tracks, transitions } = useTimelineStore.getState();
-  return { clips, tracks, transitions };
+  const { clips, tracks } = useTimelineStore.getState();
+  return { clips, tracks };
 }
 
 export function getTimelineClipById(
@@ -171,26 +145,6 @@ export function selectTimelineClip(
   isMulti?: boolean,
 ): void {
   useTimelineStore.getState().selectClip(clipId, isMulti);
-}
-
-export function selectTimelineTransition(transitionId: string | null): void {
-  useTimelineStore.getState().selectTransition(transitionId);
-}
-
-export function addTimelineTransition(
-  transition: Transition,
-  options?: { incomingStart?: number },
-): boolean {
-  return useTimelineStore.getState().addTransition(transition, options);
-}
-
-export function updateTimelineTransitionParameters(
-  transitionId: string,
-  updates: Record<string, unknown>,
-): boolean {
-  return useTimelineStore
-    .getState()
-    .updateTransitionParameters(transitionId, updates);
 }
 
 export async function flushPendingTimelinePersistence(): Promise<void> {

@@ -8,9 +8,6 @@ import {
   useExportJobController,
   useViewport,
   mediaSecondsToTickExact,
-  LiveFrameGraphCoordinator,
-  isLiveFrameGraphEnabled,
-  startFramePlanningDiagnosticsConsole,
 } from "../renderer";
 import {
   useTimelineStore,
@@ -70,8 +67,6 @@ function PlayerImpl() {
 
   // --- Store Data ---
   const tracks = useTimelineStore((state) => state.tracks);
-  const clips = useTimelineStore((state) => state.clips);
-  const transitions = useTimelineStore((state) => state.transitions);
   const timelineDuration = useTimelineDuration();
   const config = useProjectStore((state) => state.config);
 
@@ -155,56 +150,11 @@ function PlayerImpl() {
   // renderers and pixiApp.render(). The hook also imperatively syncs on
   // `visualTrackIds` changes so paused edits to track order reflect
   // without waiting for the next clock tick.
-  // Own the coordinator's lifecycle in an effect (not useMemo) so it is
-  // StrictMode-safe: StrictMode mounts → cleanup (dispose) → remounts, and the
-  // create-in-setup / dispose-in-cleanup shape yields a fresh live instance on
-  // the second setup. A useMemo(…, []) would be disposed by the first cleanup
-  // and never recreated, so every track's register() would no-op and nothing
-  // would render. The instance lives in state so the fresh one propagates to
-  // the child TrackLayers (which capture it as a prop).
-  // Rollout flag (read once at mount). When off, the coordinator is never
-  // created, so the gate below falls to the legacy per-engine path and tracks
-  // register as synchronized renderers again — a clean rollback to pre-graph
-  // live rendering without a rebuild.
-  const liveFrameGraphEnabled = isLiveFrameGraphEnabled();
-  const [liveFrameGraphCoordinator, setLiveFrameGraphCoordinator] =
-    useState<LiveFrameGraphCoordinator | null>(null);
   const {
     orchestrator: renderGroupOrchestrator,
     adjustmentEffectResolver,
     syncRef: renderGroupSyncRef,
-  } = useRenderGroupOrchestrator(
-    viewport,
-    logicalDimensions,
-    visualTrackIds,
-    liveFrameGraphEnabled,
-  );
-  useEffect(() => {
-    if (!liveFrameGraphEnabled) return;
-    const coordinator = new LiveFrameGraphCoordinator();
-    // Own an external resource's lifecycle, not derived state — the setState
-    // publishes the freshly created instance to children. One-time mount cost.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLiveFrameGraphCoordinator(coordinator);
-    return () => {
-      coordinator.dispose();
-      setLiveFrameGraphCoordinator((current) =>
-        current === coordinator ? null : current,
-      );
-    };
-  }, [liveFrameGraphEnabled]);
-  useEffect(() => startFramePlanningDiagnosticsConsole(), []);
-  useEffect(() => {
-    liveFrameGraphCoordinator?.requestFrame(playbackClock.time);
-  }, [
-    config.fps,
-    clips,
-    liveFrameGraphCoordinator,
-    logicalDimensions,
-    tracks,
-    transitions,
-    visualTrackIds,
-  ]);
+  } = useRenderGroupOrchestrator(viewport, logicalDimensions, visualTrackIds);
 
   const registerSynchronizedPlaybackRenderer = useCallback(
     (trackId: string, renderer: SynchronizedPlaybackRenderer | null) => {
@@ -332,46 +282,18 @@ function PlayerImpl() {
             break;
           }
 
-          let usedFrameGraph = false;
-          if (
-            adjustmentEffectResolver &&
-            liveFrameGraphCoordinator &&
-            liveFrameGraphCoordinator.participantCount > 0
-          ) {
-            const timelineState = useTimelineStore.getState();
-            const result = await liveFrameGraphCoordinator.renderFrame(
-              nextFrame.time,
-              {
-                tracks: timelineState.tracks,
-                clips: timelineState.clips,
-                transitions: timelineState.transitions,
-                fps: config.fps,
-                logicalDimensions,
-                visualTrackOrder: visualTrackIdsRef.current,
-                adjustmentEffectResolver,
-              },
+          const frameRenderers = visualTrackIdsRef.current
+            .map((trackId) =>
+              synchronizedPlaybackRenderersRef.current.get(trackId),
+            )
+            .filter(
+              (renderer): renderer is SynchronizedPlaybackRenderer =>
+                typeof renderer === "function",
             );
-            if (result) {
-              renderGroupOrchestrator?.syncPresentationPlan(
-                nextFrame.time,
-                result.presentationPlan,
-              );
-              usedFrameGraph = true;
-            }
-          } else {
-            const frameRenderers = visualTrackIdsRef.current
-              .map((trackId) =>
-                synchronizedPlaybackRenderersRef.current.get(trackId),
-              )
-              .filter(
-                (renderer): renderer is SynchronizedPlaybackRenderer =>
-                  typeof renderer === "function",
-              );
 
-            await Promise.allSettled(
-              frameRenderers.map((renderer) => renderer(nextFrame.time)),
-            );
-          }
+          await Promise.allSettled(
+            frameRenderers.map((renderer) => renderer(nextFrame.time)),
+          );
 
           if (isDisposed) {
             continue;
@@ -381,9 +303,7 @@ function PlayerImpl() {
           // parenting (track engines into / out of group containers based on
           // which group is active at this tick) and apply group transforms
           // before submitting the frame to the GPU.
-          if (!usedFrameGraph) {
-            renderGroupSyncRef.current(nextFrame.time);
-          }
+          renderGroupSyncRef.current(nextFrame.time);
 
           if (pixiApp && pixiApp.renderer) {
             pixiApp.render();
@@ -421,37 +341,16 @@ function PlayerImpl() {
       );
       void processPendingPlaybackFrames();
     });
-    const unsubscribeFrameRequests =
-      liveFrameGraphCoordinator?.subscribeFrameRequests((time) => {
-        enqueueSynchronizedPlaybackQueueEntry(
-          pendingPlaybackFrameQueueRef.current,
-          {
-            time,
-            enqueuedAtMs: performance.now(),
-          },
-        );
-        void processPendingPlaybackFrames();
-      });
 
     return () => {
       isDisposed = true;
       pendingPlaybackFrameQueueRef.current = [];
       unsubscribe();
-      unsubscribeFrameRequests?.();
       if (!isPlaying && pixiApp) {
         pixiApp.ticker.start();
       }
     };
-  }, [
-    adjustmentEffectResolver,
-    config.fps,
-    isPlaying,
-    liveFrameGraphCoordinator,
-    logicalDimensions,
-    pixiApp,
-    renderGroupOrchestrator,
-    renderGroupSyncRef,
-  ]);
+  }, [isPlaying, pixiApp]);
 
   // --- Extract / Export Logic ---
   const extractDialogOpen = useExtractStore((s) => s.dialogOpen);
@@ -725,7 +624,6 @@ function PlayerImpl() {
               }
               orchestrator={renderGroupOrchestrator}
               adjustmentEffectResolver={adjustmentEffectResolver}
-              liveFrameGraphCoordinator={liveFrameGraphCoordinator}
             />
           ))}
         {/* Render Audio Layers (Invisible) */}

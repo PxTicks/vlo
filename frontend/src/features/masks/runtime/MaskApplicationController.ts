@@ -40,21 +40,17 @@ export class MaskApplicationController {
   public applyAlphaMask(target: Sprite, inverse: boolean, signature = ""): void {
     const previousMode = this.currentMaskMode;
 
-    if (previousMode === "regular" || this.maskTarget.mask) {
+    if (previousMode === "regular") {
       this.setMaskOnTarget(null, false);
     }
 
     const targetChanged =
       this.alphaMaskEffect && this.alphaMaskEffect.mask !== target;
-    const alphaMaskDetached =
-      !this.alphaMaskEffect ||
-      !(this.maskTarget.effects ?? []).includes(this.alphaMaskEffect);
 
     if (
       this.currentMaskMode !== "alpha" ||
       this.currentInverse !== inverse ||
       targetChanged ||
-      alphaMaskDetached ||
       this.currentMaskSignature !== signature
     ) {
       if (previousMode === "alpha") {
@@ -89,8 +85,7 @@ export class MaskApplicationController {
     if (
       this.currentMaskMode === nextMode &&
       this.currentInverse === inverse &&
-      this.currentMaskSignature === signature &&
-      this.isApplicationIntact(mask, nextMode)
+      this.currentMaskSignature === signature
     ) {
       return;
     }
@@ -115,7 +110,7 @@ export class MaskApplicationController {
     }
 
     if (nextMode === "alpha") {
-      if (previousMode === "regular" || this.maskTarget.mask) {
+      if (previousMode === "regular") {
         this.setMaskOnTarget(null, false);
       }
 
@@ -186,40 +181,10 @@ export class MaskApplicationController {
   }
 
   private setMaskOnTarget(mask: Container | null, inverse: boolean): void {
-    if (!mask) {
-      // Pixi 8's setMask({ mask: null }) updates mask options but deliberately
-      // does not clear the existing MaskEffect. The property setter is the
-      // supported removal path.
-      this.maskTarget.mask = null;
-      return;
-    }
     if (typeof this.maskTarget.setMask === "function") {
       this.maskTarget.setMask({ mask, inverse });
-    } else {
-      this.maskTarget.mask = mask;
+      return;
     }
-  }
-
-  private isApplicationIntact(
-    mask: Container | null,
-    mode: MaskApplicationMode,
-  ): boolean {
-    if (mode === "regular") {
-      return this.maskTarget.mask === mask && this.maskContainer.visible;
-    }
-
-    if (mode === "alpha") {
-      return (
-        this.maskTarget.mask == null &&
-        this.alphaMaskEffect?.mask === mask &&
-        (this.maskTarget.effects ?? []).includes(this.alphaMaskEffect)
-      );
-    }
-
-    return (
-      this.maskTarget.mask == null &&
-      (!this.alphaMaskEffect ||
-        !(this.maskTarget.effects ?? []).includes(this.alphaMaskEffect))
-    );
+    this.maskTarget.mask = mask;
   }
 }

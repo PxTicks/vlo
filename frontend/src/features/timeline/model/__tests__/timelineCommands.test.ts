@@ -10,7 +10,7 @@ import type { TimelineModelState } from "../timelineTrackModel";
 
 describe("addClipToDraft", () => {
   it("never orphans a clip onto a non-existent track", () => {
-    const draft: TimelineModelState = { tracks: [], clips: [], transitions: [] };
+    const draft: TimelineModelState = { tracks: [], clips: [] };
     const clip = {
       id: "clip-1",
       type: "video",

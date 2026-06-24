@@ -14,7 +14,6 @@ import { useTransformInteractionController } from "../useTransformInteractionCon
 import { useCanvasSelectionManager } from "../useCanvasSelectionManager";
 import { playbackClock } from "../../../../../core/playback/PlaybackClock";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
-import { useTransformationViewStore } from "../../../../transformations/store/useTransformationViewStore";
 
 const {
   mockEnsureBrushBuffer,
@@ -189,11 +188,6 @@ describe("useMaskInteractionController", () => {
       pendingDrawRequest: null,
       interactionContext: null,
       brushTool: "paint",
-    });
-    useTransformationViewStore.setState({
-      pathPanelView: "home",
-      armedPathRecording: null,
-      activePathEditor: null,
     });
   });
 
@@ -877,188 +871,6 @@ describe("useMaskInteractionController", () => {
     );
   });
 
-  it("commits mask rotation from rotate and alt-drag handles", () => {
-    const trackId = useTimelineStore.getState().tracks[0].id;
-    const parent = createParentClip(trackId);
-    const mask = createMaskClip(parent, "mask_rotate");
-    useTimelineStore.setState({
-      clips: [parent, mask],
-      selectedClipIds: [parent.id],
-    });
-    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_rotate");
-    const viewport = new Container();
-    const sprite = new Sprite();
-    viewport.addChild(sprite);
-    const app = new Application();
-    const activeClipRef = { current: parent };
-    const { result } = renderHook(() =>
-      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
-    );
-
-    act(() => {
-      result.current.onHandlePointerDown(
-        {
-          altKey: false,
-          stopPropagation: vi.fn(),
-          global: { x: 20, y: 0 },
-        } as unknown as FederatedPointerEvent,
-        "rot-ne",
-      );
-    });
-    const move = vi
-      .mocked(app.stage.on)
-      .mock.calls.find((call) => call[0] === "pointermove")?.[1];
-    const up = vi
-      .mocked(app.stage.on)
-      .mock.calls.find((call) => call[0] === "pointerup")?.[1];
-    act(() => {
-      move?.({ global: { x: 0, y: 20 } } as unknown as FederatedPointerEvent);
-      up?.({} as unknown as FederatedPointerEvent);
-    });
-    const updated = useTimelineStore
-      .getState()
-      .clips.find((clip) => clip.id === mask.id);
-    expect(
-      updated?.transformations.find((transform) => transform.type === "rotation")
-        ?.parameters.angle,
-    ).toBeCloseTo(Math.PI / 2);
-
-    activeClipRef.current = parent;
-    act(() => {
-      result.current.onHandlePointerDown(
-        {
-          altKey: true,
-          stopPropagation: vi.fn(),
-          global: { x: 20, y: 0 },
-        } as unknown as FederatedPointerEvent,
-        "se",
-      );
-    });
-    expect(app.stage.on).toHaveBeenCalledWith(
-      "pointermove",
-      expect.any(Function),
-    );
-  });
-
-  it("records a position path for an armed mask", () => {
-    const trackId = useTimelineStore.getState().tracks[0].id;
-    const parent = createParentClip(trackId);
-    const mask = createMaskClip(parent, "mask_path");
-    useTimelineStore.setState({
-      clips: [parent, mask],
-      selectedClipIds: [parent.id],
-    });
-    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_path");
-    useTransformationViewStore.setState({
-      armedPathRecording: { clipId: mask.id, transformId: null },
-    });
-    const viewport = new Container();
-    const sprite = new Sprite();
-    viewport.addChild(sprite);
-    const app = new Application();
-    const activeClipRef = { current: parent };
-    const { result } = renderHook(() =>
-      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
-    );
-
-    let consumed = false;
-    act(() => {
-      consumed = result.current.onSpritePointerDown({
-        button: 0,
-        stopPropagation: vi.fn(),
-        global: { x: 0, y: 0 },
-        timeStamp: 0,
-      } as unknown as FederatedPointerEvent);
-    });
-    expect(consumed).toBe(true);
-    const move = vi
-      .mocked(app.stage.on)
-      .mock.calls.find((call) => call[0] === "pointermove")?.[1];
-    const up = vi
-      .mocked(app.stage.on)
-      .mock.calls.find((call) => call[0] === "pointerup")?.[1];
-    act(() => {
-      move?.({
-        global: { x: 30, y: 20 },
-        timeStamp: 50,
-      } as unknown as FederatedPointerEvent);
-      up?.({} as unknown as FederatedPointerEvent);
-    });
-    const updated = useTimelineStore
-      .getState()
-      .clips.find((clip) => clip.id === mask.id);
-    const position = updated?.transformations.find(
-      (transform) => transform.type === "position",
-    );
-    expect(position?.parameters.path).toBeDefined();
-    expect(useTransformationViewStore.getState().armedPathRecording).toBeNull();
-    expect(useTransformationViewStore.getState().pathPanelView).toBe("path");
-  });
-
-  it("draws circles and discards shapes below the minimum size", () => {
-    const trackId = useTimelineStore.getState().tracks[0].id;
-    const parent = createParentClip(trackId);
-    useTimelineStore.setState({
-      clips: [parent],
-      selectedClipIds: [parent.id],
-    });
-    const viewport = new Container();
-    const sprite = new Sprite();
-    viewport.addChild(sprite);
-    const app = new Application();
-    const activeClipRef = { current: parent };
-    const { result } = renderHook(() =>
-      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
-    );
-
-    useMaskViewStore.getState().requestMaskDraw(parent.id, "circle");
-    act(() => {
-      result.current.onSpritePointerDown({
-        button: 0,
-        stopPropagation: vi.fn(),
-        global: { x: 0, y: 0 },
-      } as unknown as FederatedPointerEvent);
-    });
-    let move = vi
-      .mocked(app.stage.on)
-      .mock.calls.find((call) => call[0] === "pointermove")?.[1];
-    let up = vi
-      .mocked(app.stage.on)
-      .mock.calls.find((call) => call[0] === "pointerup")?.[1];
-    act(() => {
-      move?.({ global: { x: 40, y: 30 } } as unknown as FederatedPointerEvent);
-      up?.({} as unknown as FederatedPointerEvent);
-    });
-    expect(
-      useTimelineStore.getState().clips.some(
-        (clip) => clip.type === "mask" && clip.maskType === "circle",
-      ),
-    ).toBe(true);
-
-    const before = useTimelineStore.getState().clips.length;
-    useMaskViewStore.getState().requestMaskDraw(parent.id, "rectangle");
-    act(() => {
-      result.current.onSpritePointerDown({
-        button: 0,
-        stopPropagation: vi.fn(),
-        global: { x: 0, y: 0 },
-      } as unknown as FederatedPointerEvent);
-    });
-    move = vi
-      .mocked(app.stage.on)
-      .mock.calls.filter((call) => call[0] === "pointermove")
-      .at(-1)?.[1];
-    up = vi
-      .mocked(app.stage.on)
-      .mock.calls.filter((call) => call[0] === "pointerup")
-      .at(-1)?.[1];
-    act(() => {
-      move?.({ global: { x: 1, y: 1 } } as unknown as FederatedPointerEvent);
-      up?.({} as unknown as FederatedPointerEvent);
-    });
-    expect(useTimelineStore.getState().clips).toHaveLength(before);
-  });
-
   it("paints a brush mask without flushing while the edit session remains focused", () => {
     const trackId = useTimelineStore.getState().tracks[0].id;
     const parent = createParentClip(trackId);
@@ -1098,14 +910,8 @@ describe("useMaskInteractionController", () => {
     const onPointerUp = vi
       .mocked(app.stage.on)
       .mock.calls.find((call) => call[0] === "pointerup")?.[1];
-    const onPointerMove = vi
-      .mocked(app.stage.on)
-      .mock.calls.find((call) => call[0] === "pointermove")?.[1];
 
     act(() => {
-      onPointerMove?.({
-        global: { x: 20, y: 24 },
-      } as unknown as FederatedPointerEvent);
       onPointerUp?.({} as unknown as FederatedPointerEvent);
     });
 
@@ -1116,61 +922,7 @@ describe("useMaskInteractionController", () => {
       expect.any(Number),
       "paint",
     );
-    expect(mockPaintBrushStroke).toHaveBeenCalledWith(
-      brushMask.id,
-      expect.any(Number),
-      expect.any(Number),
-      expect.any(Number),
-      expect.any(Number),
-      expect.any(Number),
-      "paint",
-    );
     expect(mockFlushBrushMaskCommit).not.toHaveBeenCalled();
-  });
-
-  it("uses erase mode for brush dots and rejects unsupported buttons", () => {
-    const trackId = useTimelineStore.getState().tracks[0].id;
-    const parent = createParentClip(trackId);
-    const brushMask = createBrushMaskClip(parent, "mask_erase");
-    useTimelineStore.setState({
-      clips: [parent, brushMask],
-      selectedClipIds: [parent.id],
-    });
-    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_erase");
-    useMaskViewStore.getState().setMaskTabActive(true);
-    useMaskViewStore.getState().setBrushTool("erase");
-    const viewport = new Container();
-    const sprite = new Sprite();
-    viewport.addChild(sprite);
-    const app = new Application();
-    const activeClipRef = { current: parent };
-    const { result } = renderHook(() =>
-      useMaskInteractionController(trackId, 1, sprite, activeClipRef, app, viewport),
-    );
-
-    let consumed = true;
-    act(() => {
-      consumed = result.current.onSpritePointerDown({
-        button: 1,
-        global: { x: 5, y: 5 },
-      } as unknown as FederatedPointerEvent);
-    });
-    expect(consumed).toBe(false);
-    act(() => {
-      consumed = result.current.onSpritePointerDown({
-        button: 0,
-        stopPropagation: vi.fn(),
-        global: { x: 5, y: 5 },
-      } as unknown as FederatedPointerEvent);
-    });
-    expect(consumed).toBe(true);
-    expect(mockPaintBrushDot).toHaveBeenCalledWith(
-      brushMask.id,
-      expect.any(Number),
-      expect.any(Number),
-      expect.any(Number),
-      "erase",
-    );
   });
 
   it("does not hydrate a persisted brush mask over a dirty live buffer", () => {

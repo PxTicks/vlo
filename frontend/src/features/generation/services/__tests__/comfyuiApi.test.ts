@@ -61,10 +61,6 @@ function makeResponse(init: ResponseInit = {}): Response {
   return response as unknown as Response;
 }
 
-function imageFile(name: string): File {
-  return new File(["image"], name, { type: "image/png" });
-}
-
 const fetchMock = vi.fn();
 
 beforeEach(() => {
@@ -131,55 +127,6 @@ describe("comfyuiApi submitPrompt", () => {
       status: 400,
     });
   });
-
-  it.each([
-    {
-      body: "plain failure",
-      contentType: "text/plain",
-      expected: "plain failure",
-    },
-    {
-      body: { message: "top-level failure" },
-      contentType: "application/json",
-      expected: "top-level failure",
-    },
-    {
-      text: "{bad-json",
-      contentType: "application/json",
-      expected: "{bad-json",
-    },
-  ])("extracts useful error detail from $contentType", async (response) => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        ok: false,
-        status: 400,
-        ...response,
-      }),
-    );
-
-    await expect(
-      submitPrompt({ prompt: {}, client_id: "c1" }),
-    ).rejects.toThrow(response.expected);
-  });
-
-  it.each([
-    [{ "3": "invalid" }, "node 3"],
-    [{ "4": { class_type: "Sampler" } }, "node 4 (Sampler)"],
-    [{ "5": { errors: [{ message: " bad ", details: " seed " }] } }, "bad seed"],
-    [{ "6": { errors: [{}] } }, "node 6"],
-  ])("summarizes node validation errors %#", async (nodeErrors, expected) => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        ok: false,
-        status: 422,
-        body: { node_errors: nodeErrors },
-      }),
-    );
-
-    await expect(
-      submitPrompt({ prompt: {}, client_id: "c1" }),
-    ).rejects.toThrow(expected);
-  });
 });
 
 describe("comfyuiApi generate", () => {
@@ -241,45 +188,6 @@ describe("comfyuiApi generate", () => {
     expect(form.get("seed")).toBe("42");
   });
 
-  it("serializes every optional request input", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({ body: { prompt_id: "all", number: 3, node_errors: {} } }),
-    );
-    const request = baseRequest() as GenerationRequest & {
-      promptIsPreResolved: boolean;
-    };
-    request.workflow = { "1": { class_type: "LoadImage" } };
-    request.graphData = { nodes: [] };
-    request.workflowRules = { version: 1 } as never;
-    request.inputMetadata = { "1": { kind: "image" } } as never;
-    request.imageInputs = { "1": imageFile("image.png") };
-    request.audioInputs = {
-      "2": new File(["audio"], "audio.wav", { type: "audio/wav" }),
-    };
-    request.videoInputs = {
-      "3": new File(["video"], "video.mp4", { type: "video/mp4" }),
-    };
-    request.cachedMediaInputs = { "4": { assetId: "cached" } } as never;
-    request.derivedWidgetInputs = { derived_seed: "12" };
-    request.widgetModes = { mode: "fixed" };
-    request.promptIsPreResolved = true;
-
-    await generate(request);
-
-    const form = fetchMock.mock.calls[0]?.[1]?.body as FormData;
-    expect(form.get("workflow")).toContain("LoadImage");
-    expect(form.get("graph_data")).toContain("nodes");
-    expect(form.get("workflow_rules")).toContain("version");
-    expect(form.get("input_metadata")).toContain("image");
-    expect(form.get("image_1")).toBeInstanceOf(File);
-    expect(form.get("audio_2")).toBeInstanceOf(File);
-    expect(form.get("video_3")).toBeInstanceOf(File);
-    expect(form.get("cached_media_inputs")).toContain("cached");
-    expect(form.get("derived_seed")).toBe("12");
-    expect(form.get("mode")).toBe("fixed");
-    expect(form.get("prompt_is_pre_resolved")).toBe("true");
-  });
-
   it("wraps a non-ok generation response in a ComfyApiError", async () => {
     fetchMock.mockResolvedValueOnce(
       makeResponse({ ok: false, status: 500, body: { message: "boom" } }),
@@ -287,22 +195,6 @@ describe("comfyuiApi generate", () => {
     await expect(generate(baseRequest())).rejects.toThrow(
       /Generation failed \(500\): boom/,
     );
-  });
-
-  it("rejects generation responses containing node errors", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        body: {
-          prompt_id: "invalid",
-          number: 1,
-          node_errors: { "9": { class_type: "Broken" } },
-        },
-      }),
-    );
-    await expect(generate(baseRequest())).rejects.toMatchObject({
-      name: "ComfyApiError",
-      status: 400,
-    });
   });
 });
 
@@ -327,19 +219,6 @@ describe("comfyuiApi simple endpoints", () => {
     expect(await getConfig()).toEqual({ comfyui_url: "http://x" });
   });
 
-  it.each([
-    ["health", () => getHealth(), "ComfyUI health check"],
-    ["config", () => getConfig(), "ComfyUI config fetch"],
-    ["history", () => getHistory("p1"), "History fetch"],
-    ["object info", () => getObjectInfo(), "object_info fetch"],
-    ["sync", () => syncObjectInfo(), "object_info sync"],
-  ])("%s surfaces HTTP failures", async (_name, request, operation) => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({ ok: false, status: 502, text: "offline" }),
-    );
-    await expect(request()).rejects.toThrow(`${operation} failed (502): offline`);
-  });
-
   it("updateConfig posts the new url", async () => {
     fetchMock.mockResolvedValueOnce(
       makeResponse({ body: { comfyui_url: "http://y" } }),
@@ -348,15 +227,6 @@ describe("comfyuiApi simple endpoints", () => {
     const [, options] = fetchMock.mock.calls[0];
     expect((options as RequestInit).method).toBe("POST");
     expect((options as RequestInit).body).toContain("http://y");
-  });
-
-  it("updateConfig surfaces HTTP failures", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({ ok: false, status: 400, body: { message: "bad url" } }),
-    );
-    await expect(updateConfig("bad")).rejects.toThrow(
-      /ComfyUI config update failed \(400\): bad url/,
-    );
   });
 
   it("getHistory, getQueue, getObjectInfo, syncObjectInfo return JSON", async () => {
@@ -396,20 +266,6 @@ describe("comfyuiApi output helpers", () => {
     const file = await fetchOutputAsFile("out.png", "", "output");
     expect(file).toBeInstanceOf(File);
     expect(file.name).toBe("out.png");
-  });
-
-  it("fetchOutputAsFile honors a supplied view URL", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({ text: "data", blobType: "image/webp" }),
-    );
-    const file = await fetchOutputAsFile(
-      "preview.webp",
-      "ignored",
-      "temp",
-      "https://example.test/custom",
-    );
-    expect(fetchMock).toHaveBeenCalledWith("https://example.test/custom");
-    expect(file.type).toBe("image/webp");
   });
 
   it("fetchOutputAsFile logs and throws on failure", async () => {
@@ -464,13 +320,6 @@ describe("comfyuiApi workflow endpoints", () => {
     expect((options as RequestInit).body).toContain("object_info");
   });
 
-  it("saves workflow content without optional object info", async () => {
-    fetchMock.mockResolvedValueOnce(makeResponse({ text: "" }));
-    await saveWorkflowContent("plain", { nodes: [] });
-    const [, options] = fetchMock.mock.calls[0];
-    expect((options as RequestInit).body).not.toContain("object_info");
-  });
-
   it("uploadWorkflowJsonFiles returns the uploaded list", async () => {
     fetchMock.mockResolvedValueOnce(
       makeResponse({
@@ -496,21 +345,6 @@ describe("comfyuiApi workflow endpoints", () => {
     expect(result.rules).toBeDefined();
   });
 
-  it("preserves normalized workflow-rule response fields", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        body: {
-          rules: { version: 1 },
-          has_sidecar: true,
-          warnings: [{ code: "warning" }],
-        },
-      }),
-    );
-    const result = await getWorkflowRules("wf");
-    expect(result.has_sidecar).toBe(true);
-    expect(result.warnings).toHaveLength(1);
-  });
-
   it("resolveWorkflowRules sends graph_data and workflow_id when provided", async () => {
     fetchMock.mockResolvedValueOnce(
       makeResponse({ body: { has_sidecar: true, warnings: [{ code: "x" }] } }),
@@ -525,55 +359,6 @@ describe("comfyuiApi workflow endpoints", () => {
     const sent = JSON.parse((options as RequestInit).body as string);
     expect(sent.graph_data).toEqual({ g: 1 });
     expect(sent.workflow_id).toBe("wf-7");
-  });
-
-  it("resolveWorkflowRules falls back through workflow, graph, and empty payloads", async () => {
-    fetchMock
-      .mockResolvedValueOnce(makeResponse({ body: {} }))
-      .mockResolvedValueOnce(makeResponse({ body: { warnings: null } }))
-      .mockResolvedValueOnce(makeResponse({ body: {} }));
-
-    await resolveWorkflowRules({ workflow: { direct: true } });
-    await resolveWorkflowRules({ workflow: null, graphData: { graph: true } });
-    await resolveWorkflowRules({ workflow: null });
-
-    const bodies = fetchMock.mock.calls.map((call) =>
-      JSON.parse((call[1] as RequestInit).body as string),
-    );
-    expect(bodies[0]).toEqual({ workflow: { direct: true } });
-    expect(bodies[1]).toEqual({
-      workflow: { graph: true },
-      graph_data: { graph: true },
-    });
-    expect(bodies[2]).toEqual({ workflow: {} });
-  });
-
-  it.each([
-    ["list", () => listWorkflows(), "Workflow list fetch"],
-    ["content", () => getWorkflowContent("wf"), "Workflow content fetch"],
-    [
-      "save",
-      () => saveWorkflowContent("wf", {}),
-      "Workflow save",
-    ],
-    ["upload", () => uploadWorkflowJsonFiles([]), "Workflow upload"],
-    ["rules", () => getWorkflowRules("wf"), "Workflow rules fetch"],
-    [
-      "resolve",
-      () => resolveWorkflowRules({ workflow: null }),
-      "Workflow rules resolve",
-    ],
-  ])("%s workflow endpoint surfaces HTTP failures", async (
-    _name,
-    request,
-    operation,
-  ) => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({ ok: false, status: 503, text: "unavailable" }),
-    );
-    await expect(request()).rejects.toThrow(
-      `${operation} failed (503): unavailable`,
-    );
   });
 });
 

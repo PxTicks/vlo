@@ -43,13 +43,6 @@ export type TransformDropPreview =
       compatible: boolean;
     };
 
-export interface TransitionDropPreview {
-  startTick: number;
-  endTick: number;
-  topTrackIndex: number;
-  compatible: boolean;
-}
-
 interface InteractionState {
   activeClip: BaseClip | null;
   activeId: string | null;
@@ -73,7 +66,6 @@ interface InteractionState {
   snapTick: number | null;
   snappedStartTicks: number | null;
   transformDropPreview: TransformDropPreview | null;
-  transitionDropPreview: TransitionDropPreview | null;
 
   startDrag: (
     id: string,
@@ -91,8 +83,6 @@ interface InteractionState {
   clearSnapPreview: () => void;
   setTransformDropPreview: (preview: TransformDropPreview | null) => void;
   clearTransformDropPreview: () => void;
-  setTransitionDropPreview: (preview: TransitionDropPreview | null) => void;
-  clearTransitionDropPreview: () => void;
   stopDrag: () => void;
 }
 
@@ -192,7 +182,6 @@ export const useInteractionStore = create<InteractionState>((set) => ({
   snapTick: null,
   snappedStartTicks: null,
   transformDropPreview: null,
-  transitionDropPreview: null,
 
   startDrag: (id, clip, operation, constraints = null) =>
     set({
@@ -209,7 +198,6 @@ export const useInteractionStore = create<InteractionState>((set) => ({
       snapTick: null,
       snappedStartTicks: null,
       transformDropPreview: null,
-      transitionDropPreview: null,
     }),
 
   updateDelta: (deltaX, deltaY = 0) =>
@@ -269,14 +257,6 @@ export const useInteractionStore = create<InteractionState>((set) => ({
       }
       return { transformDropPreview: null };
     }),
-  setTransitionDropPreview: (preview) => set({ transitionDropPreview: preview }),
-  clearTransitionDropPreview: () =>
-    set((state) => {
-      if (state.transitionDropPreview === null) {
-        return state;
-      }
-      return { transitionDropPreview: null };
-    }),
 
   stopDrag: () =>
     set({
@@ -293,6 +273,5 @@ export const useInteractionStore = create<InteractionState>((set) => ({
       snapTick: null,
       snappedStartTicks: null,
       transformDropPreview: null,
-      transitionDropPreview: null,
     }),
 }));

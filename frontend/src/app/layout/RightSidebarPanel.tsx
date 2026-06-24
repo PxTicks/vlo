@@ -3,15 +3,13 @@ import type { ReactNode } from "react";
 import { Box, Tabs, Tab } from "@mui/material";
 import {
   useSelectedTimelineClipIds,
-  useSelectedTimelineTransitionId,
   useTimelineClip,
 } from "../../features/timeline/api";
 import { TransformationPanel } from "../../features/transformations";
 import { GenerationPanel } from "../../features/generation";
 import { MaskPanel, useMaskViewStore } from "../../features/masks";
-import { TransitionPanel } from "../../features/transitions";
 
-type RightSidebarTab = "transform" | "mask" | "generate" | "transition";
+type RightSidebarTab = "transform" | "mask" | "generate";
 
 interface TabPanelProps {
   readonly active: boolean;
@@ -39,10 +37,7 @@ function TabPanel({ active, children }: TabPanelProps) {
 
 function RightSidebarPanelComponent() {
   const selectedClipIds = useSelectedTimelineClipIds();
-  const selectedTransitionId = useSelectedTimelineTransitionId();
-  const hasTransitionSelection = selectedTransitionId !== null;
-  const hasClipSelection = selectedClipIds.length > 0;
-  const hasSelection = hasClipSelection || hasTransitionSelection;
+  const hasSelection = selectedClipIds.length > 0;
   // Hide the Mask tab when an adjustment clip is the primary selection:
   // adjustment clips bypass `applyClipTransforms`, so neither ClipMask
   // attachments nor range-mask components have any render-time effect.
@@ -50,18 +45,14 @@ function RightSidebarPanelComponent() {
   const isAdjustmentSelected = primarySelectedClip?.type === "adjustment";
   const [activeTab, setActiveTab] = useState<RightSidebarTab>("generate");
 
-  // On selection-kind changes, snap to the matching editor: Transition for a
-  // transition, Transform for a clip, and Generate when selection is cleared.
+  // On the selection edge, snap to a sensible default tab: Transform when a
+  // clip becomes selected, Generate when selection is cleared. Keyed solely on
+  // `hasSelection` so it fires only on the transition, leaving the user free to
+  // switch tabs afterwards (and to keep their tab when changing selection).
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setActiveTab(
-      hasTransitionSelection
-        ? "transition"
-        : hasSelection
-          ? "transform"
-          : "generate",
-    );
-  }, [hasSelection, hasTransitionSelection]);
+    setActiveTab(hasSelection ? "transform" : "generate");
+  }, [hasSelection]);
 
   // Derive visibleTab synchronously so the Tabs `value` never points at a
   // tab that isn't currently rendered: if the user had Mask open and then
@@ -69,13 +60,11 @@ function RightSidebarPanelComponent() {
   // render rather than via a follow-up effect (which would briefly leave
   // value="mask" without a Mask child, triggering MUI warnings and a
   // spurious setMaskTabActive(true) tick).
-  const visibleTab = hasTransitionSelection
-    ? "transition"
-    : !hasClipSelection
-      ? "generate"
-      : isAdjustmentSelected && activeTab === "mask"
-        ? "transform"
-        : activeTab;
+  const visibleTab = !hasSelection
+    ? "generate"
+    : isAdjustmentSelected && activeTab === "mask"
+      ? "transform"
+      : activeTab;
 
   useEffect(() => {
     const { setMaskTabActive } = useMaskViewStore.getState();
@@ -96,26 +85,9 @@ function RightSidebarPanelComponent() {
           "& .MuiTab-root": { minHeight: 40, textTransform: "none" },
         }}
       >
-        <Tab
-          data-testid="right-sidebar-tab-generate"
-          label="Generate"
-          value="generate"
-        />
-        {hasTransitionSelection ? (
-          <Tab
-            data-testid="right-sidebar-tab-transition"
-            label="Transition"
-            value="transition"
-          />
-        ) : null}
-        {hasClipSelection ? (
-          <Tab
-            data-testid="right-sidebar-tab-transform"
-            label="Transform"
-            value="transform"
-          />
-        ) : null}
-        {hasClipSelection && !isAdjustmentSelected && (
+        <Tab data-testid="right-sidebar-tab-generate" label="Generate" value="generate" />
+        {hasSelection && <Tab data-testid="right-sidebar-tab-transform" label="Transform" value="transform" />}
+        {hasSelection && !isAdjustmentSelected && (
           <Tab data-testid="right-sidebar-tab-mask" label="Mask" value="mask" />
         )}
       </Tabs>
@@ -123,17 +95,12 @@ function RightSidebarPanelComponent() {
         <TabPanel active={visibleTab === "generate"}>
           <GenerationPanel />
         </TabPanel>
-        {hasTransitionSelection && (
-          <TabPanel active={visibleTab === "transition"}>
-            <TransitionPanel />
-          </TabPanel>
-        )}
-        {hasClipSelection && (
+        {hasSelection && (
           <TabPanel active={visibleTab === "transform"}>
             <TransformationPanel />
           </TabPanel>
         )}
-        {hasClipSelection && !isAdjustmentSelected && (
+        {hasSelection && !isAdjustmentSelected && (
           <TabPanel active={visibleTab === "mask"}>
             <MaskPanel />
           </TabPanel>

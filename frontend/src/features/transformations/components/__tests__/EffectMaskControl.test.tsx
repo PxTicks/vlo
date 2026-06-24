@@ -2,17 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Mock } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { EffectMaskControl } from "../EffectMaskControl";
-import { useMaskClipsForParent } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline";
 import type {
   ClipTransform,
   MaskTimelineClip,
 } from "../../../../types/TimelineTypes";
 
 vi.mock("../../../timeline", () => ({
-  useMaskClipsForParent: vi.fn(() => []),
+  useTimelineStore: vi.fn(),
+  selectMaskClipsForParent: vi.fn(() => []),
 }));
 
-const mockedUseMaskClipsForParent = useMaskClipsForParent as unknown as Mock;
+const mockedUseTimelineStore = useTimelineStore as unknown as Mock;
 
 function maskClip(localId: string): MaskTimelineClip {
   return {
@@ -37,7 +38,9 @@ function filterTransform(effectMask?: ClipTransform["effectMask"]): ClipTransfor
 }
 
 function setStoreMasks(masks: MaskTimelineClip[]) {
-  mockedUseMaskClipsForParent.mockImplementation(() => masks);
+  // Components call useTimelineStore(useShallow(selector)); echo the masks
+  // regardless of the selector for these UI-focused tests.
+  mockedUseTimelineStore.mockImplementation(() => masks);
 }
 
 describe("EffectMaskControl", () => {

@@ -1826,6 +1826,74 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
+  it("applies a regular spatial mask to an explicit presentation container", async () => {
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const presentation = new Container();
+    presentation.addChild(sprite);
+    const companion = new Sprite(Texture.WHITE);
+    presentation.addChild(companion);
+    const controller = new SpriteClipMaskController(
+      sprite,
+      null,
+      root,
+      undefined,
+      presentation,
+    );
+    const internals = controller as unknown as { maskContainer: Container };
+
+    await controller.syncMaskClips(
+      [createMaskClip("mask_group_regular")],
+      createParentClip(),
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    expect(presentation.mask).toBe(internals.maskContainer);
+    expect(sprite.mask ?? null).toBeNull();
+    expect(companion.parent).toBe(presentation);
+
+    controller.dispose();
+  });
+
+  it("applies a composited spatial mask to an explicit presentation container", async () => {
+    const renderer = {
+      render: vi.fn(),
+    } as unknown as Renderer;
+    const sprite = new Sprite(Texture.WHITE);
+    const root = new Container();
+    const presentation = new Container();
+    presentation.addChild(sprite);
+    presentation.addChild(new Sprite(Texture.WHITE));
+    const controller = new SpriteClipMaskController(
+      sprite,
+      renderer,
+      root,
+      undefined,
+      presentation,
+    );
+    const internals = controller as unknown as { maskSprite: Sprite | null };
+
+    await controller.syncMaskClips(
+      [createMaskClip("mask_group_alpha", { inverted: true })],
+      createParentClip(),
+      { width: 1920, height: 1080 },
+      10,
+      new Map<string, Asset>(),
+    );
+
+    const presentationMask = presentation.effects?.find(
+      (effect) => effect instanceof AlphaMask,
+    ) as AlphaMask | undefined;
+    expect(presentationMask?.mask).toBe(internals.maskSprite);
+    expect(
+      sprite.effects?.some((effect) => effect instanceof AlphaMask) ?? false,
+    ).toBe(false);
+
+    controller.dispose();
+  });
+
   it("keeps the regular mask container visible across repeated syncs", async () => {
     // Regression: the preview application controller used to share the real
     // mask-scene container, so the per-frame hideMaskNodePreviewOverlay() →

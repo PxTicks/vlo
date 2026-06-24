@@ -97,7 +97,11 @@ function getMaskVideoSpriteContentSize(
 }
 
 /**
- * Manages mask application on a frame Sprite.
+ * Manages mask application for a frame Sprite.
+ *
+ * By default the Sprite itself is masked. Callers that render companion
+ * sprites can provide a separate mask target (normally the final presentation
+ * Container) so one spatial mask clips the complete rendered subtree.
  *
  * When a PixiJS `Renderer` is provided, masks are composited into a
  * `RenderTexture` at the content's native resolution and applied via
@@ -146,12 +150,13 @@ export class SpriteClipMaskController {
     renderer?: Renderer | null,
     maskRootContainer?: Container | null,
     onAssetMaskFrameReady?: () => void,
+    maskTarget?: Container | null,
   ) {
     this.sprite = sprite;
     this.renderer = renderer ?? null;
     this.maskRootContainer = maskRootContainer ?? null;
     this.onAssetMaskFrameReady = onAssetMaskFrameReady;
-    this.maskTarget = sprite as unknown as Container;
+    this.maskTarget = maskTarget ?? (sprite as unknown as Container);
     this.maskContainer = new Container();
     this.maskContainer.visible = false;
 

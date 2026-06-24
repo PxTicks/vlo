@@ -205,6 +205,7 @@ export class TrackRenderEngine {
 
   public readonly sprite: Sprite;
   public readonly container: Container;
+  private readonly presentationContainer: Container;
   private readonly lease: DecoderLease;
   private readonly renderer: Renderer | null;
   private readonly trackId: string | null;
@@ -305,8 +306,17 @@ export class TrackRenderEngine {
     this.sprite.anchor.set(0.5);
     this.sprite.visible = false;
 
-    // encapsulated container
+    // The outer container is the track node registered with the scene
+    // presentation DAG. The inner container is the final per-track
+    // presentation boundary: the primary sprite and effect-created companion
+    // sprites live inside it, while mask sources remain external siblings.
+    // Spatial masks target the inner container so they clip the complete
+    // rendered result without feeding presentation state back into DAG source
+    // or effect-texture identities.
     this.container = new Container();
+    this.presentationContainer = new Container();
+    this.presentationContainer.addChild(this.sprite);
+    this.container.addChild(this.presentationContainer);
     this.maskedEffectRenderer = renderer
       ? new MaskedEffectRenderer(renderer)
       : null;
@@ -317,6 +327,7 @@ export class TrackRenderEngine {
       () => {
         void this.resyncMasksForLatestAssetMaskFrame();
       },
+      this.presentationContainer,
     );
     if (renderer) {
       // Brush masks render their painted bitmap into a Pixi RenderTexture via
@@ -326,7 +337,6 @@ export class TrackRenderEngine {
         ({ setBrushRenderer }) => setBrushRenderer(renderer),
       );
     }
-    this.container.addChild(this.sprite);
     this.container.zIndex = zIndex;
   }
 

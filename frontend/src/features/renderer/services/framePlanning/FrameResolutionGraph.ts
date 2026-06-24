@@ -169,7 +169,11 @@ export function buildFrameResolutionGraph(
       { deduplicate: false },
     );
 
-    const transformPlan = planTransformRender(job.activeClip.transformations);
+    const resolvedTransforms = [
+      ...(job.activeClip.transformations ?? []),
+      ...(job.transitionTransforms ?? []),
+    ];
+    const transformPlan = planTransformRender(resolvedTransforms);
     const requests =
       transformPlan.mode === "offscreen"
         ? transformPlan.steps.flatMap((step) =>
@@ -201,7 +205,7 @@ export function buildFrameResolutionGraph(
         workKey: createEffectChainWorkKey(epoch, job),
         inputs: [sourceId, coverageId],
         jobId: job.id,
-        transforms: job.activeClip.transformations ?? [],
+        transforms: resolvedTransforms,
       },
       { deduplicate: false },
     );

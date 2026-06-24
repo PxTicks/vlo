@@ -5,7 +5,11 @@ import { projectPersistenceService } from "../../project/services/ProjectPersist
 import { fileSystemService } from "../../project/services/FileSystemService";
 import { TIMELINE_DOCUMENT_SCHEMA_VERSION } from "../../project/constants";
 import type { Patch } from "../../../lib/immerLite";
-import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
+import type {
+  TimelineClip,
+  TimelineTrack,
+  Transition,
+} from "../../../types/TimelineTypes";
 
 const createTrack = (id: string, label: string): TimelineTrack => ({
   id,
@@ -52,6 +56,7 @@ describe("useTimelineStore persistence", () => {
         updated_at: Date.now(),
         tracks: [],
         clips: [],
+        transitions: [],
       });
 
     useTimelineStore.getState().replaceTimelineSnapshot({
@@ -102,5 +107,48 @@ describe("useTimelineStore persistence", () => {
     });
     await vi.advanceTimersByTimeAsync(250);
     expect(applyPatchesSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("persists transition patches and includes them in the fallback snapshot", async () => {
+    const upper = { ...createTrack("upper", "Upper"), type: "visual" as const };
+    const lower = { ...createTrack("lower", "Lower"), type: "visual" as const };
+    const outgoing = {
+      ...createClip("outgoing", upper.id),
+      timelineDuration: 9600,
+      sourceDuration: 9600,
+      croppedSourceDuration: 9600,
+      transformedDuration: 9600,
+    } as TimelineClip;
+    const incoming = {
+      ...createClip("incoming", lower.id),
+      start: 4800,
+      timelineDuration: 9600,
+      sourceDuration: 9600,
+      croppedSourceDuration: 9600,
+      transformedDuration: 9600,
+    } as TimelineClip;
+    const transition: Transition = {
+      id: "transition-1",
+      type: "dissolve",
+      outgoingClipId: outgoing.id,
+      incomingClipId: incoming.id,
+      parameters: {},
+    };
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [upper, lower],
+      clips: [outgoing, incoming],
+    });
+
+    act(() => {
+      expect(useTimelineStore.getState().addTransition(transition)).toBe(true);
+    });
+    await vi.advanceTimersByTimeAsync(250);
+
+    const [patches, fallback] = applyPatchesSpy.mock.calls[0] as [
+      Patch[],
+      { transitions?: Transition[] },
+    ];
+    expect(patches.some((patch) => patch.path[0] === "transitions")).toBe(true);
+    expect(fallback.transitions).toEqual([transition]);
   });
 });

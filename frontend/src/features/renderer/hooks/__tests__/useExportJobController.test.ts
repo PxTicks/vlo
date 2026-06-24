@@ -6,6 +6,7 @@ vi.mock("../../../timeline/api", () => ({
   getTimelineClips: vi.fn(() => []),
   getTimelineDuration: vi.fn(() => 5000),
   getTimelineTracks: vi.fn(() => [{ id: "t1" }]),
+  getTimelineTransitions: vi.fn(() => []),
 }));
 vi.mock("../../../userAssets", () => ({
   addLocalAsset: vi.fn(),

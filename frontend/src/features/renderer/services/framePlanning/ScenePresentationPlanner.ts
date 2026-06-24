@@ -29,6 +29,8 @@ export function buildScenePresentationPlan(options: {
   visualTrackOrder: readonly string[];
   jobs: readonly ResolvedClipFrameJob[];
   adjustmentForest: readonly DerivedRenderGroup[];
+  zIndexOverrides?: ReadonlyMap<string, number>;
+  transitionColorLayers?: ScenePresentationPlan["transitionColorLayers"];
   outputIds?: readonly string[];
 }): ScenePresentationPlan {
   const jobByTrackId = new Map(
@@ -43,7 +45,9 @@ export function buildScenePresentationPlan(options: {
         jobId: job?.id ?? null,
         visible: !!job,
         parentGroupId: parentGroupByTrack.get(trackId) ?? null,
-        zIndex: options.visualTrackOrder.length - 1 - index,
+        zIndex:
+          options.zIndexOverrides?.get(trackId) ??
+          options.visualTrackOrder.length - 1 - index,
       };
     },
   );
@@ -55,6 +59,7 @@ export function buildScenePresentationPlan(options: {
     epoch: options.epoch,
     tracks,
     adjustmentForest: options.adjustmentForest,
+    transitionColorLayers: options.transitionColorLayers ?? [],
     encoderSinks,
   };
 }

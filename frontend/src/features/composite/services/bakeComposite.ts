@@ -77,6 +77,7 @@ function buildCompositeRenderInputs(
   const projectData: ProjectData = {
     tracks: content.tracks ?? getTimelineTracks(),
     clips: content.clips,
+    transitions: content.transitions,
     assets: getAssets(),
     duration: content.durationTicks,
     fps,

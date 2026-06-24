@@ -27,6 +27,7 @@ export interface ResolvedClipFrameJob {
   logicalDimensions: FrameDimensions;
   contentSize: FrameDimensions;
   fps: number;
+  transitionTransforms?: readonly ClipTransform[];
 }
 
 export interface FrameNodeBase {
@@ -96,10 +97,18 @@ export interface OutputSinkCommand {
   source: "project-composite";
 }
 
+export interface TransitionColorLayerCommand {
+  id: string;
+  color: string;
+  parentGroupId: string | null;
+  zIndex: number;
+}
+
 export interface ScenePresentationPlan {
   epoch: number;
   tracks: readonly TrackPresentationCommand[];
   adjustmentForest: readonly DerivedRenderGroup[];
+  transitionColorLayers?: readonly TransitionColorLayerCommand[];
   encoderSinks: readonly OutputSinkCommand[];
 }
 

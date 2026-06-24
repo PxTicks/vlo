@@ -71,6 +71,7 @@ function PlayerImpl() {
   // --- Store Data ---
   const tracks = useTimelineStore((state) => state.tracks);
   const clips = useTimelineStore((state) => state.clips);
+  const transitions = useTimelineStore((state) => state.transitions);
   const timelineDuration = useTimelineDuration();
   const config = useProjectStore((state) => state.config);
 
@@ -201,6 +202,7 @@ function PlayerImpl() {
     liveFrameGraphCoordinator,
     logicalDimensions,
     tracks,
+    transitions,
     visualTrackIds,
   ]);
 
@@ -336,9 +338,13 @@ function PlayerImpl() {
             liveFrameGraphCoordinator &&
             liveFrameGraphCoordinator.participantCount > 0
           ) {
+            const timelineState = useTimelineStore.getState();
             const result = await liveFrameGraphCoordinator.renderFrame(
               nextFrame.time,
               {
+                tracks: timelineState.tracks,
+                clips: timelineState.clips,
+                transitions: timelineState.transitions,
                 fps: config.fps,
                 logicalDimensions,
                 visualTrackOrder: visualTrackIdsRef.current,

@@ -106,7 +106,10 @@ export function createEffectChainWorkKey(
     dimensionsKey(job.logicalDimensions),
     dimensionsKey(job.contentSize),
     keyNumber(job.rawClipTick),
-    (job.activeClip.transformations ?? []).map(transformIdentity),
+    [
+      ...(job.activeClip.transformations ?? []),
+      ...(job.transitionTransforms ?? []),
+    ].map(transformIdentity),
   ]);
 }
 

@@ -5,6 +5,7 @@ import type {
   TimelineClip,
   MaskTimelineClip,
   TimelineSelection,
+  Transition,
 } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
 import { computeFurthestPresentationEnd } from "../../timeline/utils/clipPresentation";
@@ -45,6 +46,7 @@ import {
   buildScenePresentationPlan,
   type FrameJobResolutionTrack,
 } from "./framePlanning";
+import { resolveTransitionFrame } from "../../transitions/rendering/TransitionResolver";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -205,6 +207,7 @@ export interface ExportConfig {
 export interface ProjectData {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
+  transitions?: Transition[];
   assets: Asset[];
   duration: number;
   fps: number;
@@ -534,6 +537,21 @@ export class ExportRenderer {
         // single media-time boundary — never accumulated from ticks/seconds.
         const timestamp = frameIndexToOutputTimestamp(i, renderFps);
 
+        const adjustmentForest =
+          adjustmentEffectResolver.deriveGroups(currentTime);
+        const transitionFrame = resolveTransitionFrame({
+          tracks: projectData.tracks,
+          clips: projectData.clips,
+          transitions: projectData.transitions ?? [],
+          fps,
+          presentationTick: currentTime,
+          logicalDimensions: {
+            width: logicalWidth,
+            height: logicalHeight,
+          },
+          visualTrackOrder,
+          adjustmentForest,
+        });
         const resolution = frameJobResolver.resolve({
           epoch: i + 1,
           presentationTick: currentTime,
@@ -544,15 +562,16 @@ export class ExportRenderer {
             height: logicalHeight,
           },
           fps: renderFps,
+          transitionTransformsByClipId: transitionFrame.transformsByClipId,
         });
         const graph = buildFrameResolutionGraph(i + 1, resolution.jobs);
-        const adjustmentForest =
-          adjustmentEffectResolver.deriveGroups(currentTime);
         const presentationPlan = buildScenePresentationPlan({
           epoch: i + 1,
           visualTrackOrder,
           jobs: resolution.jobs,
           adjustmentForest,
+          zIndexOverrides: transitionFrame.zIndexOverrides,
+          transitionColorLayers: transitionFrame.colorLayers,
           outputIds: outputDefinitions.map((output) => output.id),
         });
         await frameGraphExecutor.execute(graph, resolution, {
@@ -708,6 +727,20 @@ export class ExportRenderer {
           maskClipsByParent,
         }),
       );
+      const adjustmentForest = adjustmentEffectResolver.deriveGroups(tick);
+      const transitionFrame = resolveTransitionFrame({
+        tracks: projectData.tracks,
+        clips: projectData.clips,
+        transitions: projectData.transitions ?? [],
+        fps,
+        presentationTick: tick,
+        logicalDimensions: {
+          width: logicalWidth,
+          height: logicalHeight,
+        },
+        visualTrackOrder,
+        adjustmentForest,
+      });
       const resolution = frameJobResolver.resolve({
         epoch: 1,
         presentationTick: tick,
@@ -718,13 +751,16 @@ export class ExportRenderer {
           height: logicalHeight,
         },
         fps,
+        transitionTransformsByClipId: transitionFrame.transformsByClipId,
       });
       const graph = buildFrameResolutionGraph(1, resolution.jobs);
       const presentationPlan = buildScenePresentationPlan({
         epoch: 1,
         visualTrackOrder,
         jobs: resolution.jobs,
-        adjustmentForest: adjustmentEffectResolver.deriveGroups(tick),
+        adjustmentForest,
+        zIndexOverrides: transitionFrame.zIndexOverrides,
+        transitionColorLayers: transitionFrame.colorLayers,
       });
       await frameGraphExecutor.execute(graph, resolution, {
         mode: "export",

@@ -2,6 +2,8 @@ import type { Asset } from "../../../../types/Asset";
 import type {
   MaskTimelineClip,
   TimelineClip,
+  TimelineTrack,
+  Transition,
 } from "../../../../types/TimelineTypes";
 import type { AdjustmentEffectResolver } from "../AdjustmentEffectResolver";
 import type { TrackRenderEngine } from "../TrackRenderEngine";
@@ -16,6 +18,7 @@ import type {
   ResolvedClipFrameJob,
   ScenePresentationPlan,
 } from "./framePlanningTypes";
+import { resolveTransitionFrame } from "../../../transitions/rendering/TransitionResolver";
 
 export interface LiveFrameGraphParticipant {
   trackId: string;
@@ -31,6 +34,9 @@ export interface LiveFrameGraphRenderOptions {
   logicalDimensions: { width: number; height: number };
   visualTrackOrder: readonly string[];
   adjustmentEffectResolver: AdjustmentEffectResolver;
+  tracks?: readonly TimelineTrack[];
+  clips?: readonly TimelineClip[];
+  transitions?: readonly Transition[];
 }
 
 export interface LiveFrameGraphRenderResult {
@@ -107,6 +113,18 @@ export class LiveFrameGraphCoordinator {
           !!participant,
       );
     const assets = orderedParticipants[0]?.getAssets() ?? [];
+    const adjustmentForest =
+      options.adjustmentEffectResolver.deriveGroups(presentationTick);
+    const transitionFrame = resolveTransitionFrame({
+      tracks: options.tracks ?? [],
+      clips: options.clips ?? [],
+      transitions: options.transitions ?? [],
+      fps: options.fps,
+      presentationTick,
+      logicalDimensions: options.logicalDimensions,
+      visualTrackOrder: options.visualTrackOrder,
+      adjustmentForest,
+    });
     const resolution = this.resolver.resolve({
       epoch,
       presentationTick,
@@ -119,6 +137,7 @@ export class LiveFrameGraphCoordinator {
       assets,
       logicalDimensions: options.logicalDimensions,
       fps: options.fps,
+      transitionTransformsByClipId: transitionFrame.transformsByClipId,
     });
     const jobByTrackId = new Map(
       resolution.jobs.map((job) => [job.trackId, job] as const),
@@ -132,8 +151,9 @@ export class LiveFrameGraphCoordinator {
       epoch,
       visualTrackOrder: options.visualTrackOrder,
       jobs: resolution.jobs,
-      adjustmentForest:
-        options.adjustmentEffectResolver.deriveGroups(presentationTick),
+      adjustmentForest,
+      zIndexOverrides: transitionFrame.zIndexOverrides,
+      transitionColorLayers: transitionFrame.colorLayers,
     });
 
     try {

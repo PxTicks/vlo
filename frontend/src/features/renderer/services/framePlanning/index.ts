@@ -52,6 +52,7 @@ export type {
   ScenePresentationPlan,
   SourceFrameNode,
   TrackPresentationCommand,
+  TransitionColorLayerCommand,
 } from "./framePlanningTypes";
 export type {
   FrameJobResolutionInput,

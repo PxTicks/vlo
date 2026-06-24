@@ -1,5 +1,6 @@
 import type { Asset } from "../../../../types/Asset";
 import type {
+  ClipTransform,
   MaskTimelineClip,
   TimelineClip,
 } from "../../../../types/TimelineTypes";
@@ -20,6 +21,10 @@ export interface FrameJobResolutionInput {
   assets: readonly Asset[];
   logicalDimensions: { width: number; height: number };
   fps: number;
+  transitionTransformsByClipId?: ReadonlyMap<
+    string,
+    readonly ClipTransform[]
+  >;
 }
 
 export interface FrameJobResolutionResult {
@@ -56,6 +61,11 @@ export class FrameJobResolver {
       if (!job) {
         track.engine.presentBlankFrame();
         continue;
+      }
+      const transitionTransforms =
+        input.transitionTransformsByClipId?.get(job.activeClip.id);
+      if (transitionTransforms?.length) {
+        job.transitionTransforms = transitionTransforms;
       }
       jobs.push(job);
       engineByJobId.set(job.id, track.engine);

@@ -539,9 +539,20 @@ export class TrackRenderEngine {
       return false;
     }
 
+    const presentationClip: TimelineClip =
+      job.transitionTransforms && job.transitionTransforms.length > 0
+        ? {
+            ...job.activeClip,
+            transformations: [
+              ...(job.activeClip.transformations ?? []),
+              ...job.transitionTransforms,
+            ],
+          }
+        : job.activeClip;
+
     this.latestMaskSyncContext = {
       maskClips: [...job.maskClips],
-      clip: job.activeClip,
+      clip: presentationClip,
       logicalDimensions: job.logicalDimensions,
       rawTimeTicks: job.rawClipTick,
       assetsById,
@@ -549,10 +560,10 @@ export class TrackRenderEngine {
       fps: job.fps,
     };
 
-    if (job.activeClip.type === "text") {
+    if (presentationClip.type === "text") {
       sourceHandle?.release();
       await this.renderTextClip(
-        job.activeClip,
+        presentationClip,
         job.logicalDimensions,
         job.rawClipTick,
         [...job.maskClips],
@@ -563,7 +574,7 @@ export class TrackRenderEngine {
       return true;
     }
 
-    if (!isDecoderRenderableClip(job.activeClip)) {
+    if (!isDecoderRenderableClip(presentationClip)) {
       sourceHandle?.release();
       this.sprite.visible = false;
       this.currentTextureClipId = null;
@@ -582,7 +593,7 @@ export class TrackRenderEngine {
 
     await this.maskController.syncMaskClips(
       [...job.maskClips],
-      job.activeClip,
+      presentationClip,
       job.logicalDimensions,
       job.rawClipTick,
       assetsById,
@@ -610,7 +621,7 @@ export class TrackRenderEngine {
     if (contentSizeChanged) {
       await this.resyncMasksForResolvedTexture(
         [...job.maskClips],
-        job.activeClip,
+        presentationClip,
         job.logicalDimensions,
         job.rawClipTick,
         assetsById,
@@ -619,7 +630,7 @@ export class TrackRenderEngine {
       );
     }
     this.applyClipTransformsForClip(
-      job.activeClip,
+      presentationClip,
       job.logicalDimensions,
       job.rawClipTick,
     );

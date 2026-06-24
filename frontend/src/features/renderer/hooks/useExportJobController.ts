@@ -3,6 +3,7 @@ import {
   getTimelineClips,
   getTimelineDuration,
   getTimelineTracks,
+  getTimelineTransitions,
 } from "../../timeline/api";
 import { addLocalAsset, getAssets } from "../../userAssets";
 import {
@@ -104,6 +105,7 @@ export function useExportJobController({
     return {
       tracks: getTimelineTracks(),
       clips: getTimelineClips(),
+      transitions: getTimelineTransitions(),
       assets,
       duration,
       fps: projectFps,

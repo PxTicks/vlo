@@ -1,9 +1,10 @@
-import { Container } from "pixi.js";
+import { Container, Sprite, Texture } from "pixi.js";
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { applyGroupTransforms } from "../../transformations/applyGroupTransforms";
 import { type DerivedRenderGroup } from "../utils/deriveAdjustmentGroups";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import type { ScenePresentationPlan } from "./framePlanning";
+import type { TransitionColorLayerCommand } from "./framePlanning";
 
 export interface RenderGroupOrchestratorOptions {
   /** Project resolution used by applyGroupTransforms. Defaults to 1920x1080
@@ -58,6 +59,7 @@ export class RenderGroupOrchestrator {
   private readonly adjustmentEffectResolver: AdjustmentEffectResolver;
   private readonly tracks = new Map<string, Container>();
   private readonly groupContainers = new Map<string, Container>();
+  private readonly transitionColorLayers = new Map<string, Sprite>();
   private logicalDimensions: { width: number; height: number };
   private disposed = false;
 
@@ -174,6 +176,7 @@ export class RenderGroupOrchestrator {
       currentTick,
       visualTrackOrder,
       this.adjustmentEffectResolver.deriveGroups(currentTick),
+      [],
     );
   }
 
@@ -194,6 +197,7 @@ export class RenderGroupOrchestrator {
       currentTick,
       visualTrackOrder,
       plan.adjustmentForest,
+      plan.transitionColorLayers ?? [],
     );
   }
 
@@ -201,6 +205,7 @@ export class RenderGroupOrchestrator {
     currentTick: number,
     visualTrackOrder: readonly string[],
     forest: readonly DerivedRenderGroup[],
+    transitionColorLayers: readonly TransitionColorLayerCommand[],
   ): void {
     const visualIndexByTrackId = new Map<string, number>();
     visualTrackOrder.forEach((id, index) => {
@@ -317,7 +322,47 @@ export class RenderGroupOrchestrator {
       }
     }
 
-    // 5. Apply group transforms to each active group container.
+    // 5. Sync transient dip-to-color layers beneath the linked clips.
+    const activeTransitionLayerIds = new Set(
+      transitionColorLayers.map((layer) => layer.id),
+    );
+    for (const [layerId, sprite] of this.transitionColorLayers) {
+      if (activeTransitionLayerIds.has(layerId)) continue;
+      if (sprite.parent && !sprite.parent.destroyed) {
+        sprite.parent.removeChild(sprite);
+      }
+      sprite.destroy();
+      this.transitionColorLayers.delete(layerId);
+    }
+    for (const layer of transitionColorLayers) {
+      let sprite = this.transitionColorLayers.get(layer.id);
+      if (!sprite || sprite.destroyed) {
+        sprite = new Sprite(Texture.WHITE);
+        this.transitionColorLayers.set(layer.id, sprite);
+      }
+      const desiredParent = layer.parentGroupId
+        ? (this.groupContainers.get(layer.parentGroupId) ?? this.root)
+        : this.root;
+      if (sprite.parent !== desiredParent) {
+        if (sprite.parent && !sprite.parent.destroyed) {
+          sortDirtyParents.add(sprite.parent);
+        }
+        desiredParent.addChild(sprite);
+        sortDirtyParents.add(desiredParent);
+      }
+      sprite.position.set(0, 0);
+      sprite.width = this.logicalDimensions.width;
+      sprite.height = this.logicalDimensions.height;
+      sprite.tint = layer.color;
+      sprite.alpha = 1;
+      sprite.visible = true;
+      if (sprite.zIndex !== layer.zIndex) {
+        sprite.zIndex = layer.zIndex;
+        sortDirtyParents.add(desiredParent);
+      }
+    }
+
+    // 6. Apply group transforms to each active group container.
     for (const entry of entries) {
       const container = this.groupContainers.get(entry.group.id);
       if (!container) continue;
@@ -331,7 +376,7 @@ export class RenderGroupOrchestrator {
       );
     }
 
-    // 6. Re-sort dirty parents.
+    // 7. Re-sort dirty parents.
     for (const parent of sortDirtyParents) {
       if (parent.destroyed) continue;
       parent.sortChildren();
@@ -346,6 +391,13 @@ export class RenderGroupOrchestrator {
     for (const container of this.groupContainers.values()) {
       this.destroyGroupContainer(container);
     }
+    for (const sprite of this.transitionColorLayers.values()) {
+      if (sprite.parent && !sprite.parent.destroyed) {
+        sprite.parent.removeChild(sprite);
+      }
+      sprite.destroy();
+    }
+    this.transitionColorLayers.clear();
     this.groupContainers.clear();
     this.tracks.clear();
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import DeleteIcon from "@mui/icons-material/Delete";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
@@ -27,6 +27,7 @@ import { alpha, styled } from "@mui/material/styles";
 import vloLogo from "../../../assets/vlo.svg";
 import { VLO_APP_VERSION } from "../constants";
 import { fileSystemService } from "../services/FileSystemService";
+import { newProjectDirectoryService } from "../services/NewProjectDirectoryService";
 import { ProjectSchemaVersionError } from "../services/ProjectPersistenceService";
 import {
   recentProjectsService,
@@ -129,6 +130,7 @@ export function ProjectManager() {
   const [selectedAspectRatio, setSelectedAspectRatio] =
     useState<AspectRatio>("16:9");
   const [selectedFps, setSelectedFps] = useState<number>(16);
+  const directorySelectedThisSession = useRef(false);
   // UA capability check is stable for the component lifetime; compute it
   // lazily once instead of via a post-mount effect.
   const [isNonChromium] = useState<boolean>(() => isNonChromiumBrowser());
@@ -138,6 +140,22 @@ export function ProjectManager() {
 
   useEffect(() => {
     void loadRecents();
+
+    let isCurrent = true;
+    void newProjectDirectoryService
+      .getDirectory()
+      .then((handle) => {
+        if (isCurrent && !directorySelectedThisSession.current) {
+          setParentHandle(handle);
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn("Failed to restore the new-project directory", error);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
   }, []);
 
   async function loadRecents() {
@@ -192,18 +210,49 @@ export function ProjectManager() {
     await loadRecents();
   }
 
-  async function handleCreateClick() {
+  async function handleSelectProjectDirectory() {
     try {
       const handle = await fileSystemService.pickDirectory({
         id: "vlo-workspace",
         startIn: "videos",
       });
+      directorySelectedThisSession.current = true;
       setParentHandle(handle);
-      setCreateOpen(true);
+
+      try {
+        await newProjectDirectoryService.setDirectory(handle);
+      } catch (error: unknown) {
+        console.warn("Failed to persist the new-project directory", error);
+      }
     } catch (e: unknown) {
       if ((e as Error).name !== "AbortError") {
         console.error(e);
       }
+    }
+  }
+
+  async function handleCreateClick() {
+    if (!parentHandle) {
+      await handleSelectProjectDirectory();
+      return;
+    }
+
+    try {
+      const hasPermission = await fileSystemService.verifyPermission(
+        parentHandle,
+        true,
+      );
+
+      if (!hasPermission) {
+        alert("Write access to the selected project directory is required.");
+        return;
+      }
+
+      setCreateOpen(true);
+    } catch (e: unknown) {
+      const err = e as Error;
+      console.error(err);
+      alert("Failed to access project directory: " + err.message);
     }
   }
 
@@ -395,8 +444,62 @@ export function ProjectManager() {
                 },
               }}
             >
-              New project
+              {parentHandle ? "New project" : "Select project directory"}
             </ActionButton>
+
+            {parentHandle && (
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 2,
+                  px: 2,
+                  py: 1.25,
+                  borderRadius: 3,
+                  border: `1px solid ${alpha("#FFFFFF", 0.1)}`,
+                  backgroundColor: alpha("#FFFFFF", 0.03),
+                }}
+              >
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: "block",
+                      color: alpha("#FFFFFF", 0.5),
+                      letterSpacing: "0.12em",
+                    }}
+                  >
+                    PROJECT DIRECTORY
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      mt: 0.25,
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {parentHandle.name}
+                  </Typography>
+                </Box>
+                <Button
+                  size="small"
+                  onClick={() => void handleSelectProjectDirectory()}
+                  disabled={loading}
+                  aria-label="Change project directory"
+                  sx={{
+                    flexShrink: 0,
+                    color: BRAND_PRIMARY,
+                    textTransform: "none",
+                  }}
+                >
+                  Change
+                </Button>
+              </Box>
+            )}
 
             <ActionButton
               variant="outlined"

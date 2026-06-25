@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => {
     ProjectSchemaVersionError,
     pickDirectory: vi.fn(),
     verifyPermission: vi.fn(),
+    getProjectDirectory: vi.fn(),
+    setProjectDirectory: vi.fn(),
     getRecents: vi.fn(),
     removeRecent: vi.fn(),
     loadProject: vi.fn(),
@@ -33,6 +35,13 @@ vi.mock("../../services/RecentProjectsService", () => ({
   recentProjectsService: {
     getRecents: mocks.getRecents,
     removeRecent: mocks.removeRecent,
+  },
+}));
+
+vi.mock("../../services/NewProjectDirectoryService", () => ({
+  newProjectDirectoryService: {
+    getDirectory: mocks.getProjectDirectory,
+    setDirectory: mocks.setProjectDirectory,
   },
 }));
 
@@ -74,6 +83,8 @@ describe("ProjectManager", () => {
     mocks.loadProject.mockResolvedValue(undefined);
     mocks.createProject.mockResolvedValue(undefined);
     mocks.verifyPermission.mockResolvedValue(true);
+    mocks.getProjectDirectory.mockResolvedValue(null);
+    mocks.setProjectDirectory.mockResolvedValue(undefined);
     mocks.isNonChromiumBrowser.mockReturnValue(false);
     vi.stubGlobal("alert", vi.fn());
     vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -207,8 +218,18 @@ describe("ProjectManager", () => {
     mocks.pickDirectory.mockResolvedValue(parent);
     render(<ProjectManager />);
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select project directory" }),
+    );
+    await waitFor(() => {
+      expect(mocks.setProjectDirectory).toHaveBeenCalledWith(parent);
+    });
+    expect(screen.queryByText("New Project")).not.toBeInTheDocument();
+    expect(screen.getByText("Workspace")).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     expect(await screen.findByText("New Project")).toBeInTheDocument();
+    expect(mocks.verifyPermission).toHaveBeenCalledWith(parent, true);
     fireEvent.change(screen.getByLabelText("Project Name"), {
       target: { value: "My project" },
     });
@@ -233,10 +254,13 @@ describe("ProjectManager", () => {
 
   it("validates creation and reports create failures", async () => {
     const parent = createMockDirectoryHandle("Workspace");
-    mocks.pickDirectory.mockResolvedValue(parent);
+    mocks.getProjectDirectory.mockResolvedValue(parent);
     mocks.createProject.mockRejectedValue(new Error("cannot create"));
     render(<ProjectManager />);
-    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New project" }),
+    );
     await screen.findByText("New Project");
 
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
@@ -253,6 +277,42 @@ describe("ProjectManager", () => {
     });
   });
 
+  it("restores and changes the selected project directory", async () => {
+    const restored = createMockDirectoryHandle("Restored workspace");
+    const replacement = createMockDirectoryHandle("Replacement workspace");
+    mocks.getProjectDirectory.mockResolvedValue(restored);
+    mocks.pickDirectory.mockResolvedValue(replacement);
+    render(<ProjectManager />);
+
+    expect(await screen.findByText("Restored workspace")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change project directory" }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.setProjectDirectory).toHaveBeenCalledWith(replacement);
+    });
+    expect(screen.getByText("Replacement workspace")).toBeInTheDocument();
+  });
+
+  it("requires access to a restored directory before opening the dialog", async () => {
+    const parent = createMockDirectoryHandle("Workspace");
+    mocks.getProjectDirectory.mockResolvedValue(parent);
+    mocks.verifyPermission.mockResolvedValue(false);
+    render(<ProjectManager />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New project" }),
+    );
+
+    await waitFor(() => {
+      expect(globalThis.alert).toHaveBeenCalledWith(
+        "Write access to the selected project directory is required.",
+      );
+    });
+    expect(screen.queryByText("New Project")).not.toBeInTheDocument();
+  });
+
   it("handles cancelled and failed workspace selection", async () => {
     mocks.pickDirectory
       .mockRejectedValueOnce(new DOMException("cancelled", "AbortError"))
@@ -260,11 +320,15 @@ describe("ProjectManager", () => {
     const errorSpy = vi.mocked(console.error);
     render(<ProjectManager />);
 
-    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select project directory" }),
+    );
     await waitFor(() => expect(mocks.pickDirectory).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("New Project")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select project directory" }),
+    );
     await waitFor(() => expect(errorSpy).toHaveBeenCalled());
   });
 });

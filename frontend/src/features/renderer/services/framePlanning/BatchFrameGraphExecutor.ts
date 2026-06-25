@@ -35,24 +35,53 @@ export interface BatchFrameGraphExecutorOptions {
   onDiagnostics?: (diagnostics: FramePlanningDiagnostics) => void;
 }
 
+function createAbortError(message: string): Error {
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
+
 function throwIfCancelled(
   policy: FrameExecutionPolicy,
   isLiveEpochCurrent?: (epoch: number) => boolean,
 ): void {
   if (policy.mode === "export" && policy.signal?.aborted) {
-    const error = new Error("Render cancelled");
-    error.name = "AbortError";
-    throw error;
+    throw createAbortError("Render cancelled");
   }
   if (
     policy.mode === "live" &&
     isLiveEpochCurrent &&
     !isLiveEpochCurrent(policy.epoch)
   ) {
-    const error = new Error("Stale live frame generation");
-    error.name = "AbortError";
-    throw error;
+    throw createAbortError("Stale live frame generation");
   }
+}
+
+function awaitAllUntilAborted(
+  promises: Promise<unknown>[],
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const all = Promise.all(promises);
+  if (!signal) {
+    return all;
+  }
+  if (signal.aborted) {
+    return Promise.reject(createAbortError("Render cancelled"));
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(createAbortError("Render cancelled"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    all.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 function toPlannedJob(job: ResolvedClipFrameJob): PlannedClipJob {
@@ -96,6 +125,9 @@ export class BatchFrameGraphExecutor {
     const orderedNodes = validateFrameResolutionGraph(graph);
     const plannedByResolved = new Map<ResolvedClipFrameJob, PlannedClipJob>();
     const resolvedByPlanned = new Map<PlannedClipJob, ResolvedClipFrameJob>();
+    const liveReadyJobs: PlannedClipJob[] = [];
+    const exportPreparations: Promise<void>[] = [];
+    const assetList = [...resolution.assetsById.values()];
 
     for (const job of graph.jobs) {
       const planned = toPlannedJob(job);
@@ -104,16 +136,38 @@ export class BatchFrameGraphExecutor {
       const trackInput = resolution.trackInputByJobId.get(job.id);
       const engine = resolution.engineByJobId.get(job.id);
       if (trackInput && engine) {
-        engine.prepareResolvedFrameJob(
+        const isPrepared = engine.prepareResolvedFrameJob(
           job,
           trackInput.trackClips,
-          [...resolution.assetsById.values()],
+          assetList,
         );
+        if (policy.mode === "live") {
+          // Lazy filesystem hydration must not block the whole live frame. The
+          // asset-store update requests another frame once hydration settles.
+          // Until then, omit only this source from strict decoding so healthy
+          // tracks can still commit without a spurious missing-renderer error.
+          if (isPrepared !== false) {
+            liveReadyJobs.push(planned);
+          }
+        } else if (isPrepared === false) {
+          exportPreparations.push(
+            engine.awaitResolvedFrameJobPreparation(
+              job,
+              resolution.assetsById,
+            ),
+          );
+        }
       }
+    }
+    if (policy.mode === "export" && exportPreparations.length > 0) {
+      await awaitAllUntilAborted(exportPreparations, policy.signal);
+      throwIfCancelled(policy, this.options.isLiveEpochCurrent);
     }
 
     const decodePlan = this.planner.plan(
-      graph.jobs.map((job) => plannedByResolved.get(job)!),
+      policy.mode === "live"
+        ? liveReadyJobs
+        : graph.jobs.map((job) => plannedByResolved.get(job)!),
     );
     diagnostics.withinFrameDedupHits = countDedupedDecodes(decodePlan);
     const cachedBefore = decodePlan.decodeGroups.filter((group) =>

@@ -29,7 +29,11 @@ vi.mock("pixi.js", async () => {
   };
 });
 
-function createEngineHarness(trackId: string, clipId: string) {
+function createEngineHarness(
+  trackId: string,
+  clipId: string,
+  assetId = "asset-1",
+) {
   let generation = 0;
   let currentIntent: SourceFrameSyncIntent | null = null;
   let retainedHandle: SharedTextureHandle | null = null;
@@ -41,7 +45,7 @@ function createEngineHarness(trackId: string, clipId: string) {
     id: clipId,
     trackId,
     type: "video",
-    assetId: "asset-1",
+    assetId,
     start: 0,
     timelineDuration: 96000,
     transformations: [],
@@ -63,7 +67,7 @@ function createEngineHarness(trackId: string, clipId: string) {
         rawClipTick: 0,
         sourceFrame: {
           clipId,
-          assetId: "asset-1",
+          assetId,
           effectiveTrackTick: 0,
           rawClipTick: 0,
           sourceTimeSeconds: 0,
@@ -71,7 +75,7 @@ function createEngineHarness(trackId: string, clipId: string) {
           frameIndex: 0,
           fps: options.fps,
           key: currentIntent.key,
-          decodeKey: "asset-1:0:30:0",
+          decodeKey: `${assetId}:0:30:0`,
           generation,
         },
         maskClips: [],
@@ -81,7 +85,8 @@ function createEngineHarness(trackId: string, clipId: string) {
       };
     },
     presentBlankFrame: vi.fn(),
-    prepareResolvedFrameJob: vi.fn(),
+    prepareResolvedFrameJob: vi.fn(() => true),
+    awaitResolvedFrameJobPreparation: vi.fn(async () => undefined),
     decodeResolvedSourceFrame: decode,
     getCurrentPlannedSourceFrameIntent: () => currentIntent,
     presentResolvedFrameJob: vi.fn(
@@ -189,6 +194,63 @@ describe("LiveFrameGraphCoordinator", () => {
 
     expect(result).not.toBeNull();
     expect(harness.presentedTextures.length).toBe(1);
+    coordinator.dispose();
+  });
+
+  it("defers an unprepared source without blocking ready tracks", async () => {
+    const coordinator = new LiveFrameGraphCoordinator();
+    const ready = createEngineHarness("t1", "c1", "asset-ready");
+    const hydrating = createEngineHarness(
+      "t2",
+      "c2",
+      "asset-hydrating",
+    );
+    const hydratingPrepare =
+      hydrating.engine.prepareResolvedFrameJob as ReturnType<typeof vi.fn>;
+    hydratingPrepare.mockReturnValue(false);
+    const assets = [
+      {
+        id: "asset-ready",
+        src: "ready.mp4",
+        type: "video",
+        fps: 30,
+      },
+      {
+        id: "asset-hydrating",
+        src: "hydrating.mp4",
+        type: "video",
+        fps: 30,
+      },
+    ] as Asset[];
+    for (const harness of [ready, hydrating]) {
+      coordinator.register({
+        trackId: harness.clip.trackId,
+        engine: harness.engine,
+        getTrackClips: () => [harness.clip],
+        getMaskClipsByParent: () => new Map(),
+        getAssets: () => assets,
+        onResolvedJob: vi.fn(),
+      });
+    }
+    const options = {
+      fps: 30,
+      logicalDimensions: { width: 1920, height: 1080 },
+      visualTrackOrder: ["t1", "t2"],
+      adjustmentEffectResolver: {
+        deriveGroups: () => [],
+      } as unknown as AdjustmentEffectResolver,
+    };
+
+    const first = await coordinator.renderFrame(0, options);
+    expect(first).not.toBeNull();
+    expect(ready.decode).toHaveBeenCalledTimes(1);
+    expect(hydrating.decode).not.toHaveBeenCalled();
+
+    hydratingPrepare.mockReturnValue(true);
+    const hydrated = await coordinator.renderFrame(0, options);
+    expect(hydrated).not.toBeNull();
+    expect(hydrating.decode).toHaveBeenCalledTimes(1);
+
     coordinator.dispose();
   });
 });

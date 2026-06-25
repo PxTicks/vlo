@@ -447,7 +447,7 @@ describe("ExportRenderer", () => {
     // strict mask sync.
     const prepareSpy = vi
       .spyOn(TrackRenderEngine.prototype, "prepareResolvedFrameJob")
-      .mockImplementation(() => undefined);
+      .mockImplementation(() => true);
     const updateSpy = vi
       .spyOn(TrackRenderEngine.prototype, "update")
       .mockImplementation(() => undefined);
@@ -529,7 +529,7 @@ describe("ExportRenderer", () => {
 
     const prepareSpy = vi
       .spyOn(TrackRenderEngine.prototype, "prepareResolvedFrameJob")
-      .mockImplementation(() => undefined);
+      .mockImplementation(() => true);
     const presentFrameSpy = vi
       .spyOn(TrackRenderEngine.prototype, "presentResolvedFrameJob")
       .mockResolvedValue(true);
@@ -596,7 +596,7 @@ describe("ExportRenderer", () => {
 
     const prepareSpy = vi
       .spyOn(TrackRenderEngine.prototype, "prepareResolvedFrameJob")
-      .mockImplementation(() => undefined);
+      .mockImplementation(() => true);
     const presentFrameSpy = vi
       .spyOn(TrackRenderEngine.prototype, "presentResolvedFrameJob")
       .mockResolvedValue(true);

@@ -466,13 +466,34 @@ export class TrackRenderEngine {
     job: ResolvedClipFrameJob,
     trackClips: TimelineClip[],
     assets: Asset[],
-  ): void {
+  ): boolean {
     this.syncPreparedClips(
       job.effectiveTrackTick,
       trackClips,
       assets,
       performance.now(),
       false,
+    );
+    return (
+      !isDecoderRenderableClip(job.activeClip) ||
+      this.preparedClips.get(job.activeClip.id) === job.activeClip.assetId
+    );
+  }
+
+  public async awaitResolvedFrameJobPreparation(
+    job: ResolvedClipFrameJob,
+    assetsById: Map<string, Asset>,
+  ): Promise<void> {
+    if (
+      !isDecoderRenderableClip(job.activeClip) ||
+      this.preparedClips.get(job.activeClip.id) === job.activeClip.assetId
+    ) {
+      return;
+    }
+    await this.prepareClipForStrictRender(
+      job.activeClip,
+      assetsById,
+      performance.now(),
     );
   }
 
@@ -2123,6 +2144,9 @@ export class TrackRenderEngine {
     if (!asset) {
       return;
     }
+    if (this.preparedClips.get(clip.id) === clip.assetId) {
+      return;
+    }
 
     let sourceAsset = asset;
     if (asset.type === "video" && !hasEmbeddedAssetSource(asset)) {
@@ -2134,6 +2158,9 @@ export class TrackRenderEngine {
     }
 
     if (this.disposed) {
+      return;
+    }
+    if (this.preparedClips.get(clip.id) === clip.assetId) {
       return;
     }
 

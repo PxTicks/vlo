@@ -4,6 +4,7 @@ import type {
   StandardTimelineClip,
 } from "../../../../types/TimelineTypes";
 import {
+  resolveEditableMaskBooleanExpression,
   resolveMaskBooleanExpression,
   resolveRenderableMaskBooleanExpression,
 } from "../maskBooleanExpression";
@@ -80,6 +81,33 @@ describe("maskBooleanExpression helpers", () => {
 
     expect(resolveMaskBooleanExpression(parent, [maskA, maskB])).toEqual(expected);
     expect(resolveRenderableMaskBooleanExpression(parent, [maskA, maskB])).toEqual(
+      expected,
+    );
+  });
+
+  it("keeps the editable equation available when evaluation is disabled", () => {
+    const parent: Pick<StandardTimelineClip, "components"> = {
+      components: [
+        {
+          id: "mask_composition_1",
+          type: "mask_composition",
+          parameters: {
+            expressionEnabled: false,
+            compositeTransformations: [],
+          },
+        },
+      ],
+    };
+    const maskA = createMaskClip("clip_1", "mask_a", "apply");
+
+    const expected = {
+      kind: "mask_ref",
+      maskId: "mask_a",
+    };
+
+    expect(resolveMaskBooleanExpression(parent, [maskA])).toBeNull();
+    expect(resolveRenderableMaskBooleanExpression(parent, [maskA])).toBeNull();
+    expect(resolveEditableMaskBooleanExpression(parent, [maskA])).toEqual(
       expected,
     );
   });

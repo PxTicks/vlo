@@ -34,6 +34,41 @@ describe("EffectMaskDialog", () => {
     expect(screen.getByTestId("effect-mask-no-masks")).toBeInTheDocument();
   });
 
+  it("shows the equation drop hint when masks exist but no equation is set", () => {
+    render(
+      <EffectMaskDialog
+        open
+        onClose={() => {}}
+        title="Color"
+        masks={[maskClip("m1")]}
+        effectMask={undefined}
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Drag mask here")).toBeInTheDocument();
+  });
+
+  it("keeps a disabled equation visible and greyed out", () => {
+    const expression: MaskBooleanExpression = { kind: "mask_ref", maskId: "m1" };
+    render(
+      <EffectMaskDialog
+        open
+        onClose={() => {}}
+        title="Color"
+        masks={[maskClip("m1")]}
+        effectMask={{ mode: "composite", enabled: false, expression }}
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("mask-equation-mask-root")).toBeInTheDocument();
+    expect(screen.getByTestId("mask-equation-content")).toHaveStyle({
+      filter: "grayscale(1)",
+      opacity: "0.55",
+    });
+  });
+
   it("toggling on emits a composite effect mask without dropping the expression", () => {
     const onChange = vi.fn();
     const expression: MaskBooleanExpression = { kind: "mask_ref", maskId: "m1" };

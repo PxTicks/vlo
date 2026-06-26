@@ -373,6 +373,7 @@ describe("MaskPanel", () => {
     expect(
       screen.getByRole("button", { name: "Add mask" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Drag mask here")).toBeInTheDocument();
     expect(
       screen.queryByTestId("default-sections-order-mask-composite-context"),
     ).not.toBeInTheDocument();

@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeStatus } from "../../../../types/RuntimeStatus";
+import type { MaskCompositionComponent } from "../../../../types/Components";
 import type {
   AssetBackedClipType,
   AssetBackedTimelineClip,
@@ -181,6 +182,33 @@ describe("useMaskPanel", () => {
         error: "SAM2 disabled in tests",
       },
     } satisfies RuntimeStatus);
+  });
+
+  it("keeps the editor equation visible when mask evaluation is off", () => {
+    const parent = createParentClip("clip_disabled", "video");
+    const mask = createBrushMaskClip(parent, "mask_1", "apply");
+    const composition: MaskCompositionComponent = {
+      id: "mask_composition_disabled",
+      type: "mask_composition",
+      parameters: {
+        expressionEnabled: false,
+        compositeTransformations: [],
+      },
+    };
+    parent.components = [...(parent.components ?? []), composition];
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+
+    const { result } = renderHook(() => useMaskPanel());
+
+    expect(result.current.mask.maskExpressionEnabled).toBe(false);
+    expect(result.current.mask.maskBooleanExpression).toEqual({
+      kind: "mask_ref",
+      maskId: "mask_1",
+    });
   });
 
   it("generates a PNG SAM2 mask asset for image clips", async () => {

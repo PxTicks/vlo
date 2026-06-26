@@ -296,6 +296,27 @@ export function resolveMaskBooleanExpression(
   return resolveLegacyMaskBooleanExpression(maskClips);
 }
 
+export function resolveEditableMaskBooleanExpression(
+  parentClip: Pick<StandardTimelineClip, "components">,
+  maskClips: readonly MaskTimelineClip[],
+): MaskBooleanExpression | null {
+  const composition = getMaskCompositionComponent(parentClip);
+  const expression = composition?.parameters.expression;
+
+  if (expression === null) {
+    return null;
+  }
+
+  if (expression !== undefined) {
+    const availableMaskIds = maskClips
+      .map((maskClip) => getMaskLocalId(maskClip))
+      .filter((maskId): maskId is string => !!maskId);
+    return sanitizeMaskBooleanExpression(expression, availableMaskIds);
+  }
+
+  return resolveLegacyMaskBooleanExpression(maskClips);
+}
+
 export function resolveRenderableMaskBooleanExpression(
   parentClip: Pick<StandardTimelineClip, "components">,
   maskClips: readonly MaskTimelineClip[],

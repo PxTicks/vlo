@@ -30,7 +30,7 @@ import {
 import { createMask } from "../model/maskFactory";
 import {
   getMaskCompositionComponent,
-  resolveMaskBooleanExpression,
+  resolveEditableMaskBooleanExpression,
 } from "../model/maskBooleanExpression";
 import { useSam2MaskPanel } from "./useSam2MaskPanel";
 import { useRangeMaskSelection } from "./useRangeMaskSelection";
@@ -169,7 +169,7 @@ export function useMaskPanel(): UseMaskPanelResult {
       return null;
     }
 
-    return resolveMaskBooleanExpression(selectedClip, masks);
+    return resolveEditableMaskBooleanExpression(selectedClip, masks);
   }, [masks, selectedClip]);
   const maskCompositionAlgebra = useMemo(() => {
     if (!selectedClip || selectedClip.type === "mask") {

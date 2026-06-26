@@ -510,6 +510,20 @@ export function MaskEquationBuilder({
 
   const isEquationDropTarget = !!draggedMaskId;
   const isEquationAreaHovered = hoverDropKey === "__area__";
+  const equationBorderColor = isEquationAreaHovered
+    ? "primary.main"
+    : isEquationDropTarget
+      ? "rgba(25, 118, 210, 0.4)"
+      : expressionEnabled
+        ? "rgba(148, 163, 184, 0.36)"
+        : "rgba(148, 163, 184, 0.28)";
+  const equationBackgroundColor = isEquationAreaHovered
+    ? "rgba(25, 118, 210, 0.12)"
+    : isEquationDropTarget
+      ? "rgba(25, 118, 210, 0.04)"
+      : expressionEnabled
+        ? "rgba(255, 255, 255, 0.02)"
+        : "rgba(148, 163, 184, 0.08)";
 
   return (
     <Box sx={{ px: 2, pb: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
@@ -657,19 +671,38 @@ export function MaskEquationBuilder({
             p: 0.5,
             borderRadius: "8px",
             border: "1px dashed",
-            borderColor: isEquationAreaHovered
-              ? "primary.main"
-              : isEquationDropTarget
-                ? "rgba(25, 118, 210, 0.4)"
-                : "transparent",
-            bgcolor: isEquationAreaHovered
-              ? "rgba(25, 118, 210, 0.12)"
-              : isEquationDropTarget
-                ? "rgba(25, 118, 210, 0.04)"
-                : "transparent",
+            borderColor: equationBorderColor,
+            bgcolor: equationBackgroundColor,
           }}
         >
-          {expression && renderNode(expression, [])}
+          <Box
+            data-testid="mask-equation-content"
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 1,
+              width: "100%",
+              minWidth: 0,
+              opacity: expressionEnabled ? 1 : 0.55,
+              filter: expressionEnabled ? "none" : "grayscale(1)",
+            }}
+          >
+            {expression ? (
+              renderNode(expression, [])
+            ) : (
+              <Typography
+                variant="caption"
+                data-testid="mask-equation-placeholder"
+                sx={{
+                  color: expressionEnabled ? "text.secondary" : "text.disabled",
+                  px: 0.5,
+                }}
+              >
+                Drag mask here
+              </Typography>
+            )}
+          </Box>
         </Box>
       </Box>
     </Box>

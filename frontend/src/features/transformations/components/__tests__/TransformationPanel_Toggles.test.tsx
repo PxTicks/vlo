@@ -130,19 +130,22 @@ describe("TransformationPanel toggles", () => {
     expect(typed.every((transform) => transform.isEnabled === false)).toBe(true);
   });
 
-  it("materializes and disables a missing default fitMode transform", () => {
+  it("materializes and disables missing default display transforms", () => {
     mockTimeline([]);
 
     render(<TransformationPanel />);
 
-    fireEvent.click(screen.getByLabelText("Fit Mode enabled"));
+    fireEvent.click(screen.getByLabelText("Display enabled"));
 
     expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
     const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
-    expect(typed.map((transform) => transform.type)).toEqual(["fitMode"]);
-    expect(typed[0].isEnabled).toBe(false);
+    expect(typed.map((transform) => transform.type)).toEqual([
+      "fitMode",
+      "blendMode",
+    ]);
+    expect(typed.every((transform) => transform.isEnabled === false)).toBe(true);
   });
 
   it("inserts disabled default layout transforms before dynamic transforms", () => {

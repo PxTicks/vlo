@@ -22,10 +22,10 @@ import { useActiveTransformationSection } from "../hooks/useActiveTransformation
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
 import { getTransformLayerDomain } from "../utils/layerDomain";
 import {
-  getDefaultSectionId,
   getDynamicSectionId,
   getSectionGroupKeyframeColor,
 } from "../utils/sectionKeyframes";
+import { getDefaultTransformationSectionModels } from "../utils/defaultSectionModels";
 import type { PositionTransform, SplineParameter } from "../types";
 import { PositionPathDetailView } from "./PositionPathDetailView";
 
@@ -158,9 +158,9 @@ export function TransformationPanel() {
     if (!activeContextId) return [];
 
     return [
-      ...compatibleDefaultTransforms.map((definition) =>
-        getDefaultSectionId(definition.type),
-      ),
+      ...getDefaultTransformationSectionModels(
+        compatibleDefaultTransforms,
+      ).map((section) => section.sectionId),
       ...dynamicTransforms.map((transform) => getDynamicSectionId(transform.id)),
     ];
   }, [activeContextId, compatibleDefaultTransforms, dynamicTransforms]);

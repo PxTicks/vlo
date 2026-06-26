@@ -85,6 +85,15 @@ export function SortableTransformationItem({
   captureSnapshot,
   restoreSnapshot,
 }: SortableTransformationItemProps) {
+  const effectMaskAction = supportsEffectMask(transform, timelineClip) ? (
+    <EffectMaskControl
+      transform={transform}
+      clipId={clipId}
+      transformTitle={title}
+      onUpdateTransform={onUpdateTransform}
+    />
+  ) : null;
+
   return (
     <SortableSection
       id={id}
@@ -96,6 +105,8 @@ export function SortableTransformationItem({
       onToggle={onToggle}
       isActive={isActiveSection}
       onSectionClick={onSectionClick}
+      headerActions={effectMaskAction}
+      showDragHandle={false}
       sectionToggle={{
         checked: isEnabled,
         onChange: onToggleEnabled,
@@ -103,14 +114,6 @@ export function SortableTransformationItem({
       }}
     >
       <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {supportsEffectMask(transform, timelineClip) && (
-          <EffectMaskControl
-            transform={transform}
-            clipId={clipId}
-            transformTitle={title}
-            onUpdateTransform={onUpdateTransform}
-          />
-        )}
         {groups.map((group) => (
           <TransformationGroup
             key={group.id}

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Box, Button } from "@mui/material";
+import { Box, IconButton, Tooltip } from "@mui/material";
+import { FilterAltOutlined, RemoveCircleOutline } from "@mui/icons-material";
 import type {
   ClipTransform,
   EffectMask,
@@ -19,22 +20,18 @@ interface EffectMaskControlProps {
   ) => void;
 }
 
-const buttonSx = {
+const iconButtonSx = {
   minWidth: 0,
-  px: 0.75,
-  py: 0.25,
-  textTransform: "none",
-  fontSize: "0.7rem",
-  lineHeight: 1.2,
+  p: 0.5,
+  color: "text.secondary",
+  "&:hover": { bgcolor: "action.hover" },
 } as const;
 
 /**
- * Per-filter effect-mask affordance, styled like the layout "Record Path"
- * action: a small text button that opens {@link EffectMaskDialog} to author the
- * filter's mask equation. Rendered only for filter transforms (the only
- * effect-maskable transforms in v1 — speed/layout/etc. are excluded by the
- * caller). When a mask is active it also offers an inline Remove, mirroring the
- * Record Path → Edit/Remove progression.
+ * Per-filter effect-mask affordance. Rendered only for filter transforms (the
+ * only effect-maskable transforms in v1 — speed/layout/etc. are excluded by
+ * the caller). The compact icon treatment keeps the transformation controls
+ * visually dominant while still surfacing mask state in the section header.
  */
 export function EffectMaskControl({
   transform,
@@ -60,25 +57,36 @@ export function EffectMaskControl({
   };
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
-      <Button
-        size="small"
-        onClick={() => setOpen(true)}
-        sx={buttonSx}
-        data-testid={`effect-mask-button-${transform.id}`}
-      >
-        {active ? "Edit mask" : "Add mask"}
-      </Button>
-      {active && (
-        <Button
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+      <Tooltip title={active ? "Edit effect mask" : "Add effect mask"}>
+        <IconButton
           size="small"
-          color="error"
-          onClick={handleRemove}
-          sx={buttonSx}
-          data-testid={`effect-mask-remove-${transform.id}`}
+          aria-label={active ? "Edit effect mask" : "Add effect mask"}
+          onClick={() => setOpen(true)}
+          sx={{
+            ...iconButtonSx,
+            color: active ? "primary.main" : "text.secondary",
+          }}
+          data-testid={`effect-mask-button-${transform.id}`}
         >
-          Remove mask
-        </Button>
+          <FilterAltOutlined sx={{ fontSize: 17 }} />
+        </IconButton>
+      </Tooltip>
+      {active && (
+        <Tooltip title="Remove effect mask">
+          <IconButton
+            size="small"
+            aria-label="Remove effect mask"
+            onClick={handleRemove}
+            sx={{
+              ...iconButtonSx,
+              "&:hover": { color: "error.main", bgcolor: "error.soft" },
+            }}
+            data-testid={`effect-mask-remove-${transform.id}`}
+          >
+            <RemoveCircleOutline sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
       )}
       {open && (
         <EffectMaskDialog

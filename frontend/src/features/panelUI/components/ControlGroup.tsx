@@ -9,6 +9,7 @@ interface ControlGroupProps {
   renderControl: (props: ControlRenderProps) => React.ReactNode;
   headerActions?: React.ReactNode;
   disabled?: boolean;
+  hideTitle?: boolean;
   keyframe?: {
     enabled: boolean;
     active: boolean;
@@ -25,6 +26,7 @@ export const ControlGroup = memo(function ControlGroup({
   renderControl,
   headerActions,
   disabled = false,
+  hideTitle = false,
   keyframe,
 }: ControlGroupProps) {
   // Resolve display values by applying valueTransform.toView
@@ -63,46 +65,67 @@ export const ControlGroup = memo(function ControlGroup({
     return result;
   }, [group, values]);
 
+  const showHeader = !hideTitle || headerActions || keyframe?.enabled;
+
   return (
     <Box>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1, gap: 1 }}>
-        <Typography
-          variant="caption"
-          sx={{ color: disabled ? "text.disabled" : "text.secondary", display: "block" }}
+      {showHeader ? (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            mb: 1,
+            gap: 1,
+          }}
         >
-          {group.title}
-        </Typography>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          {headerActions}
-          {keyframe?.enabled ? (
-            <IconButton
-              size="small"
-              onClick={keyframe.onToggle}
-              disabled={keyframe.disabled}
-              title={
-                keyframe.active
-                  ? "Keyframe exists at playhead"
-                  : "Add keyframe at playhead"
-              }
-              sx={{ p: 0.25 }}
+          {hideTitle ? (
+            <Box />
+          ) : (
+            <Typography
+              variant="caption"
+              sx={{
+                color: disabled ? "text.disabled" : "text.secondary",
+                display: "block",
+              }}
             >
-              <Box
-                sx={(theme) => ({
-                  width: 8,
-                  height: 8,
-                  transform: "rotate(45deg)",
-                  backgroundColor: keyframe.active
-                    ? keyframe.color ?? theme.palette.secondary.main
-                    : "transparent",
-                  border: `1px solid ${keyframe.color ?? theme.palette.text.secondary}`,
-                  boxShadow: keyframe.active ? "0 0 4px rgba(0,0,0,0.5)" : "none",
-                  opacity: keyframe.disabled ? 0.45 : 1,
-                })}
-              />
-            </IconButton>
-          ) : null}
+              {group.title}
+            </Typography>
+          )}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            {headerActions}
+            {keyframe?.enabled ? (
+              <IconButton
+                size="small"
+                onClick={keyframe.onToggle}
+                disabled={keyframe.disabled}
+                title={
+                  keyframe.active
+                    ? "Keyframe exists at playhead"
+                    : "Add keyframe at playhead"
+                }
+                sx={{ p: 0.25 }}
+              >
+                <Box
+                  sx={(theme) => ({
+                    width: 8,
+                    height: 8,
+                    transform: "rotate(45deg)",
+                    backgroundColor: keyframe.active
+                      ? keyframe.color ?? theme.palette.secondary.main
+                      : "transparent",
+                    border: `1px solid ${keyframe.color ?? theme.palette.text.secondary}`,
+                    boxShadow: keyframe.active
+                      ? "0 0 4px rgba(0,0,0,0.5)"
+                      : "none",
+                    opacity: keyframe.disabled ? 0.45 : 1,
+                  })}
+                />
+              </IconButton>
+            ) : null}
+          </Box>
         </Box>
-      </Box>
+      ) : null}
       <Box
         sx={{
           display: "grid",

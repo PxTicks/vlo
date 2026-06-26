@@ -111,7 +111,7 @@ export const blendModeDefinition: TransformationDefinition = {
         controls: [
           {
             type: "select",
-            label: "Mode",
+            label: "Blend",
             name: "blendMode",
             defaultValue: DEFAULT_BLEND_MODE,
             options: BLEND_MODE_OPTIONS.map(({ label, value }) => ({

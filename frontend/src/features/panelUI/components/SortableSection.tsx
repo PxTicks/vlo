@@ -6,6 +6,7 @@ interface SortableSectionToggleProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   ariaLabel?: string;
+  disabled?: boolean;
 }
 
 interface SortableSectionProps {
@@ -20,6 +21,8 @@ interface SortableSectionProps {
   sectionToggle?: SortableSectionToggleProps;
   isActive?: boolean;
   onSectionClick?: () => void;
+  headerActions?: React.ReactNode;
+  showDragHandle?: boolean;
 }
 
 export function SortableSection({
@@ -34,6 +37,8 @@ export function SortableSection({
   sectionToggle,
   isActive,
   onSectionClick,
+  headerActions,
+  showDragHandle = true,
 }: SortableSectionProps) {
   const {
     attributes,
@@ -57,7 +62,9 @@ export function SortableSection({
         title={title}
         bgColor={bgColor}
         onRemove={onRemove}
-        dragHandleProps={{ ...attributes, ...listeners }}
+        dragHandleProps={
+          showDragHandle ? { ...attributes, ...listeners } : undefined
+        }
         isDragging={isDragging}
         dimmed={isPanelDragging && !isDragging}
         isOpen={isOpen}
@@ -65,6 +72,7 @@ export function SortableSection({
         sectionToggle={sectionToggle}
         isActive={isActive}
         onSectionClick={onSectionClick}
+        headerActions={headerActions}
       >
         {children}
       </PanelSection>

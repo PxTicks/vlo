@@ -6,10 +6,8 @@ import type {
 } from "../../../types/TimelineTypes";
 import type { TransformationDefinition } from "../catalogue/types";
 import { getTransformLayerDomain } from "../utils/layerDomain";
-import {
-  getDefaultSectionId,
-  getSectionGroupKeyframeColor,
-} from "../utils/sectionKeyframes";
+import { getSectionGroupKeyframeColor } from "../utils/sectionKeyframes";
+import { getDefaultTransformationSectionModels } from "../utils/defaultSectionModels";
 import { TransformationGroup } from "./TransformationGroup";
 import { TransformationSection } from "./TransformationSection";
 
@@ -61,9 +59,11 @@ export function DefaultTransformationSections({
   captureSnapshot,
   restoreSnapshot,
 }: DefaultTransformationSectionsProps) {
-  return definitions.map((definition) => {
-    const sectionId = getDefaultSectionId(definition.type);
-    const groupIds = definition.uiConfig.groups.map((group) => group.id);
+  return getDefaultTransformationSectionModels(definitions).map((section) => {
+    const groupItems = section.definitions.flatMap((definition) =>
+      definition.uiConfig.groups.map((group) => ({ definition, group })),
+    );
+    const groupIds = groupItems.map((item) => item.group.id);
     const isSectionEnabled = groupIds.every((groupId) => {
       const transform = activeTransforms.find((item) => item.type === groupId);
       return transform?.isEnabled ?? true;
@@ -71,21 +71,27 @@ export function DefaultTransformationSections({
 
     return (
       <TransformationSection
-        key={definition.type}
-        title={definition.label}
+        key={section.sectionId}
+        title={section.title}
         defaultOpen={true}
         bgColor="#18181b"
         dimmed={dimmed}
-        isActive={activeSectionId === sectionId}
-        onSectionClick={() => onActivateSection(sectionId)}
+        isActive={activeSectionId === section.sectionId}
+        onSectionClick={() => onActivateSection(section.sectionId)}
         sectionToggle={{
           checked: isSectionEnabled,
           onChange: (enabled) => onSetDefaultGroupsEnabled(groupIds, enabled),
-          ariaLabel: `${definition.label} enabled`,
+          ariaLabel: `${section.title} enabled`,
         }}
       >
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {definition.uiConfig.groups.map((group, groupIndex) => {
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: section.hideGroupTitles ? 1 : 2,
+          }}
+        >
+          {groupItems.map(({ definition, group }, groupIndex) => {
             const transform = activeTransforms.find(
               (item) => item.type === group.id,
             );
@@ -94,12 +100,13 @@ export function DefaultTransformationSections({
 
             return (
               <TransformationGroup
-                key={group.id}
+                key={`${definition.type}:${group.id}`}
                 group={group}
                 transform={transform}
                 disabled={groupProps.disabled}
                 disableKeyframe={groupProps.disableKeyframe}
                 headerActions={groupProps.headerActions}
+                hideTitle={section.hideGroupTitles}
                 onCommit={onCommit}
                 minTime={domain.minTime}
                 duration={domain.duration}
@@ -109,7 +116,7 @@ export function DefaultTransformationSections({
                 onUpdateTransform={onUpdateTransform}
                 onSetTransforms={onSetTransforms}
                 keyframeColor={getSectionGroupKeyframeColor(groupIndex)}
-                onGroupEdited={() => onActivateSection(sectionId)}
+                onGroupEdited={() => onActivateSection(section.sectionId)}
                 captureSnapshot={captureSnapshot}
                 restoreSnapshot={restoreSnapshot}
               />

@@ -16,6 +16,7 @@ interface TransformationGroupProps {
   disabled?: boolean;
   headerActions?: ReactNode;
   disableKeyframe?: boolean;
+  hideTitle?: boolean;
   onCommit: (
     groupId: string,
     controlName: string,
@@ -44,6 +45,7 @@ export const TransformationGroup = memo(function TransformationGroup({
   disabled = false,
   headerActions,
   disableKeyframe = false,
+  hideTitle = false,
   onCommit,
   minTime,
   duration,
@@ -133,6 +135,7 @@ export const TransformationGroup = memo(function TransformationGroup({
       renderControl={renderControl}
       headerActions={headerActions}
       disabled={disabled}
+      hideTitle={hideTitle}
       keyframe={{
         enabled: keyframeManager.enabled,
         active: keyframeManager.active,

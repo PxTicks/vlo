@@ -1,5 +1,5 @@
 import { useState, memo } from "react";
-import { Box, Typography, IconButton, Checkbox } from "@mui/material";
+import { Box, Typography, IconButton, Switch } from "@mui/material";
 import {
   ExpandMore,
   ExpandLess,
@@ -32,6 +32,7 @@ interface PanelSectionProps {
   sectionToggle?: SectionToggleProps;
   isActive?: boolean;
   onSectionClick?: () => void;
+  headerActions?: React.ReactNode;
 }
 
 export const PanelSection = memo(function PanelSection({
@@ -48,6 +49,7 @@ export const PanelSection = memo(function PanelSection({
   sectionToggle,
   isActive,
   onSectionClick,
+  headerActions,
 }: PanelSectionProps) {
   const [localIsOpen, setLocalIsOpen] = useState(defaultOpen);
 
@@ -60,10 +62,14 @@ export const PanelSection = memo(function PanelSection({
       sx={{
         bgcolor: bgColor,
         py: 1,
-        px: 2,
+        px: 1.5,
         opacity: dimmed ? 0.5 : 1,
-        border: isDragging || isActive ? "1px solid" : "none",
-        borderColor: isDragging ? "primary.main" : "secondary.main",
+        border: "1px solid",
+        borderColor: isDragging
+          ? "primary.main"
+          : isActive
+            ? "secondary.main"
+            : "divider",
         borderRadius: 1,
         mb: 1,
       }}
@@ -116,13 +122,24 @@ export const PanelSection = memo(function PanelSection({
         </Box>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          {headerActions && (
+            <Box
+              onClick={(e) => e.stopPropagation()}
+              sx={{ display: "flex", alignItems: "center", gap: 0.25 }}
+            >
+              {headerActions}
+            </Box>
+          )}
+
           {sectionToggle && (
-            <Checkbox
+            <Switch
               size="small"
               checked={sectionToggle.checked}
               disabled={sectionToggle.disabled}
-              inputProps={{
-                "aria-label": sectionToggle.ariaLabel ?? `${title} enabled`,
+              slotProps={{
+                input: {
+                  "aria-label": sectionToggle.ariaLabel ?? `${title} enabled`,
+                },
               }}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => {
@@ -130,8 +147,34 @@ export const PanelSection = memo(function PanelSection({
                 sectionToggle.onChange(e.target.checked);
               }}
               sx={{
-                p: 0.25,
-                color: "text.secondary",
+                width: 34,
+                height: 20,
+                p: 0,
+                mx: 0.25,
+                "& .MuiSwitch-switchBase": {
+                  p: 0.25,
+                  "&.Mui-checked": {
+                    transform: "translateX(14px)",
+                    color: "common.white",
+                    "& + .MuiSwitch-track": {
+                      bgcolor: "primary.main",
+                      opacity: 1,
+                    },
+                  },
+                  "&.Mui-disabled + .MuiSwitch-track": {
+                    opacity: 0.35,
+                  },
+                },
+                "& .MuiSwitch-thumb": {
+                  width: 16,
+                  height: 16,
+                  boxShadow: "none",
+                },
+                "& .MuiSwitch-track": {
+                  borderRadius: 10,
+                  bgcolor: "action.disabledBackground",
+                  opacity: 1,
+                },
               }}
             />
           )}
@@ -156,7 +199,7 @@ export const PanelSection = memo(function PanelSection({
         </Box>
       </Box>
 
-      {isOpen && <Box sx={{ pl: dragHandleProps ? 4 : 1 }}>{children}</Box>}
+      {isOpen && <Box sx={{ pl: dragHandleProps ? 4 : 0.5 }}>{children}</Box>}
     </Box>
   );
 });

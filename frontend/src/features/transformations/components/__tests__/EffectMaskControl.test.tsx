@@ -46,7 +46,7 @@ describe("EffectMaskControl", () => {
     setStoreMasks([]);
   });
 
-  it("shows 'Add mask' and no remove action when no effect mask is set", () => {
+  it("shows an add-mask icon and no remove action when no effect mask is set", () => {
     render(
       <EffectMaskControl
         transform={filterTransform()}
@@ -54,13 +54,11 @@ describe("EffectMaskControl", () => {
         transformTitle="Color"
       />,
     );
-    expect(screen.getByTestId("effect-mask-button-color_1")).toHaveTextContent(
-      "Add mask",
-    );
+    expect(screen.getByLabelText("Add effect mask")).toBeInTheDocument();
     expect(screen.queryByTestId("effect-mask-remove-color_1")).toBeNull();
   });
 
-  it("shows 'Edit mask' + 'Remove mask' when an effect mask is active", () => {
+  it("shows edit-mask and remove-mask icons when an effect mask is active", () => {
     render(
       <EffectMaskControl
         transform={filterTransform({
@@ -72,12 +70,8 @@ describe("EffectMaskControl", () => {
         transformTitle="Color"
       />,
     );
-    expect(screen.getByTestId("effect-mask-button-color_1")).toHaveTextContent(
-      "Edit mask",
-    );
-    expect(
-      screen.getByTestId("effect-mask-remove-color_1"),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Edit effect mask")).toBeInTheDocument();
+    expect(screen.getByLabelText("Remove effect mask")).toBeInTheDocument();
   });
 
   it("Remove disables the effect mask via onUpdateTransform (back to legacy)", () => {

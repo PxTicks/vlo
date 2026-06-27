@@ -14,6 +14,7 @@ import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
 import ViewStreamIcon from "@mui/icons-material/ViewStream";
 import CheckIcon from "@mui/icons-material/Check";
 import BugReportIcon from "@mui/icons-material/BugReport";
+import ExtensionIcon from "@mui/icons-material/Extension";
 import type {
   AspectRatio,
   AssetBrowserDisplay,
@@ -21,6 +22,7 @@ import type {
 } from "../../features/project";
 import { useProjectStore } from "../../features/project/useProjectStore";
 import { useDebugStore } from "../../shared/debug/useDebugStore";
+import { ExtensionManagerDialog } from "../../features/extensions";
 
 const FPS_OPTIONS = [16, 24, 25, 30, 60];
 
@@ -39,6 +41,7 @@ const ASPECT_RATIO_OPTIONS: Array<{ value: AspectRatio; label: string }> = [
 
 export function ProjectSettingsMenu() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [extensionManagerOpen, setExtensionManagerOpen] = useState(false);
   const open = Boolean(anchorEl);
 
   const config = useProjectStore((state) => state.config);
@@ -76,6 +79,11 @@ export function ProjectSettingsMenu() {
   const handleAssetBrowserDisplayChange = (display: AssetBrowserDisplay) => {
     void updateConfig({ assetBrowserDisplay: display });
     handleClose();
+  };
+
+  const handleOpenExtensionManager = () => {
+    handleClose();
+    setExtensionManagerOpen(true);
   };
   const currentFitMode = config.fitMode || "contain";
   const currentLayout = config.layoutMode || "compact";
@@ -214,6 +222,22 @@ export function ProjectSettingsMenu() {
           )}
         </MenuItem>
 
+        <Divider sx={{ borderColor: "#333" }} />
+        <Box sx={{ px: 2, py: 1 }}>
+          <Typography variant="caption" color="gray">
+            EXTENSIONS
+          </Typography>
+        </Box>
+        <MenuItem
+          onClick={handleOpenExtensionManager}
+          data-testid="project-settings-extensions"
+        >
+          <ListItemIcon>
+            <ExtensionIcon fontSize="small" sx={{ color: "white" }} />
+          </ListItemIcon>
+          <ListItemText>Manage extensions</ListItemText>
+        </MenuItem>
+
         {import.meta.env.DEV && (
           <Divider sx={{ borderColor: "#333" }} />
         )}
@@ -244,6 +268,10 @@ export function ProjectSettingsMenu() {
           </MenuItem>
         )}
       </Menu>
+      <ExtensionManagerDialog
+        open={extensionManagerOpen}
+        onClose={() => setExtensionManagerOpen(false)}
+      />
     </>
   );
 }

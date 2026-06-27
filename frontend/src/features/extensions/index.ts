@@ -3,6 +3,7 @@ export {
   ExtensionContributionRegistry,
   InvalidExtensionContributionIdError,
 } from "./registry/ExtensionContributionRegistry";
+export { ExtensionManagerDialog } from "./components/ExtensionManagerDialog";
 export type {
   BoundExtensionContributionRegistry,
   ExtensionContributionDefinition,
@@ -21,6 +22,10 @@ export {
   InvalidExtensionResourceError,
 } from "./ExtensionHost";
 export type { ExtensionHostOptions } from "./ExtensionHost";
+export type {
+  ExtensionInventoryItem,
+  ExtensionInventoryStatus,
+} from "./services/extensionManagementApi";
 export type {
   ExtensionActivationState,
   ExtensionActivationStatus,

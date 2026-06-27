@@ -16,13 +16,13 @@ EXTENSIONS_ROOT = Path(
         "VLO_EXTENSIONS_ROOT",
         str(Path(__file__).parent.parent / "extensions"),
     )
-).expanduser()
+).expanduser().resolve()
 EXTENSION_STATE_DIR = Path(
     os.environ.get(
         "VLO_EXTENSION_STATE_DIR",
         str(RUNTIME_ROOT / "extensions"),
     )
-).expanduser()
+).expanduser().resolve()
 
 # Ensure the root projects directory exists
 PROJECTS_ROOT.mkdir(exist_ok=True)

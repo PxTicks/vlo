@@ -50,7 +50,10 @@ class FrontendExtensionEntry(_ManifestModel):
     @classmethod
     def validate_entry(cls, value: str) -> str:
         normalized = validate_package_relative_path(value, "frontend entry")
-        if PurePosixPath(normalized).suffix not in {".js", ".mjs"}:
+        path = PurePosixPath(normalized)
+        if path.parts[:2] != ("frontend", "dist"):
+            raise ValueError("frontend entry must be inside frontend/dist")
+        if path.suffix not in {".js", ".mjs"}:
             raise ValueError("frontend entry must be a prebuilt .js or .mjs module")
         return normalized
 

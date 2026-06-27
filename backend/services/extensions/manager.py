@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -27,6 +28,8 @@ ExtensionInventoryStatus = Literal[
     "changed",
     "disabled",
 ]
+
+_EXTENSION_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$")
 
 
 class ExtensionInventoryError(ValueError):
@@ -112,11 +115,7 @@ class ExtensionManager:
         return items
 
     def approve(self, extension_id: str, expected_digest: str) -> ExtensionApproval:
-        item = self._find_valid_item(extension_id, force_digest=True)
-        if item.digest != expected_digest:
-            raise ExtensionInventoryError(
-                f"extension '{extension_id}' changed before approval"
-            )
+        item = self.prepare_approval(extension_id, expected_digest)
         assert item.manifest is not None
         return self._approval_store.approve(
             extension_id,
@@ -124,29 +123,69 @@ class ExtensionManager:
             item.manifest.version,
         )
 
-    def disable(self, extension_id: str) -> bool:
-        return self._approval_store.disable(extension_id)
+    def prepare_approval(
+        self,
+        extension_id: str,
+        expected_digest: str,
+    ) -> ExtensionInventoryItem:
+        """Force-hash and return a package only if it matches user intent."""
 
-    def revoke(self, extension_id: str) -> bool:
-        return self._approval_store.revoke(extension_id)
+        item = self.get_item(extension_id, force_digest=True)
+        if item.digest != expected_digest:
+            raise ExtensionInventoryError(
+                f"extension '{extension_id}' changed before approval"
+            )
+        return item
 
-    def _find_valid_item(
+    def get_item(
         self,
         extension_id: str,
         *,
         force_digest: bool = False,
     ) -> ExtensionInventoryItem:
-        matching_items = [
-            item
-            for item in self.scan(force_digest=force_digest)
-            if item.extension_id == extension_id
-        ]
-        if not matching_items:
+        if (
+            len(extension_id) > 128
+            or not _EXTENSION_ID_PATTERN.fullmatch(extension_id)
+        ):
             raise ExtensionInventoryError(f"extension '{extension_id}' was not found")
-        item = matching_items[0]
+
+        approvals = self._approval_store.list()
+        if not self._extensions_root.exists():
+            raise ExtensionInventoryError(f"extension '{extension_id}' was not found")
+        if self._extensions_root.is_symlink() or not self._extensions_root.is_dir():
+            raise ExtensionInventoryError("extensions root must be a regular directory")
+
+        package_dir = self._extensions_root / extension_id
+        if not (package_dir.is_dir() or package_dir.is_symlink()):
+            self._digest_cache.pop(package_dir, None)
+            raise ExtensionInventoryError(f"extension '{extension_id}' was not found")
+
+        item = self._inspect_package(
+            package_dir,
+            approvals,
+            force_digest=force_digest,
+        )
         if item.status == "invalid" or item.manifest is None or item.digest is None:
             raise ExtensionInventoryError(f"extension '{extension_id}' is invalid")
         return item
+
+    def require_approved_digest(
+        self,
+        extension_id: str,
+        digest: str,
+    ) -> ExtensionInventoryItem:
+        item = self.get_item(extension_id)
+        if item.status != "approved" or item.digest != digest:
+            raise ExtensionInventoryError(
+                f"extension '{extension_id}' is not approved for digest '{digest}'"
+            )
+        return item
+
+    def disable(self, extension_id: str) -> bool:
+        return self._approval_store.disable(extension_id)
+
+    def revoke(self, extension_id: str) -> bool:
+        return self._approval_store.revoke(extension_id)
 
     def _inspect_package(
         self,

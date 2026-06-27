@@ -192,6 +192,32 @@ def test_scan_invalidates_digest_cache_when_package_metadata_changes(
     assert digest_calls == 2
 
 
+def test_get_item_inspects_only_the_requested_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    manager, extensions_root, _state_path = _create_manager(tmp_path)
+    _create_frontend_package(extensions_root, "example.requested")
+    _create_frontend_package(extensions_root, "example.unrelated")
+    real_load_manifest = extension_manager_module.load_extension_manifest
+    inspected_packages: list[str] = []
+
+    def track_manifest_load(manifest_path: Path):
+        inspected_packages.append(manifest_path.parent.name)
+        return real_load_manifest(manifest_path)
+
+    monkeypatch.setattr(
+        extension_manager_module,
+        "load_extension_manifest",
+        track_manifest_load,
+    )
+
+    item = manager.get_item("example.requested")
+
+    assert item.extension_id == "example.requested"
+    assert inspected_packages == ["example.requested"]
+
+
 def test_disable_and_revoke_update_inventory_fail_closed(tmp_path: Path):
     manager, extensions_root, _state_path = _create_manager(tmp_path)
     _create_frontend_package(extensions_root, "example.toggle")

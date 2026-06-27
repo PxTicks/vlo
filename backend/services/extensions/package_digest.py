@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -150,6 +151,10 @@ def _hash_file(
 ) -> None:
     expected = package_file.snapshot
     encoded_path = expected.relative_path.encode("utf-8")
+    # O_NOFOLLOW closes the final-component swap race on platforms that expose
+    # it. Windows falls back to the explicit lstat plus before/after fstat
+    # identity checks below; that path should be re-audited before Windows is a
+    # supported extension-host platform.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
 
     try:
@@ -175,6 +180,69 @@ def _hash_file(
     finally:
         if descriptor >= 0:
             os.close(descriptor)
+
+
+def _read_package_file(package_file: _PackageFile) -> bytes:
+    expected = package_file.snapshot
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(package_file.path, flags)
+    except OSError as exc:
+        raise UnsafeExtensionPackageError(
+            f"cannot safely open package file '{expected.relative_path}': {exc}"
+        ) from exc
+
+    try:
+        _assert_same_file(expected, os.fstat(descriptor))
+        with os.fdopen(descriptor, "rb") as opened_file:
+            descriptor = -1
+            content = opened_file.read()
+            _assert_same_file(expected, os.fstat(opened_file.fileno()))
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+    return content
+
+
+def read_package_files_bytes(
+    package_dir: Path,
+    relative_paths: Iterable[str],
+) -> dict[str, bytes]:
+    """Read selected package files from one verified filesystem snapshot."""
+
+    requested_paths = tuple(relative_paths)
+    if len(requested_paths) != len(set(requested_paths)):
+        raise UnsafeExtensionPackageError("package file paths must be unique")
+
+    package_files = _iter_package_files(package_dir)
+    initial_snapshot = tuple(item.snapshot for item in package_files)
+    indexed_files = {
+        package_file.snapshot.relative_path: package_file
+        for package_file in package_files
+    }
+    missing_paths = [path for path in requested_paths if path not in indexed_files]
+    if missing_paths:
+        raise UnsafeExtensionPackageError(
+            f"package file does not exist: {missing_paths[0]}"
+        )
+
+    contents = {
+        path: _read_package_file(indexed_files[path])
+        for path in requested_paths
+    }
+
+    if inspect_package_snapshot(package_dir) != initial_snapshot:
+        raise ExtensionPackageChangedError(
+            "package changed while reading selected files"
+        )
+    return contents
+
+
+def read_package_file_bytes(package_dir: Path, relative_path: str) -> bytes:
+    """Read one regular package file while detecting path/content races."""
+
+    return read_package_files_bytes(package_dir, (relative_path,))[relative_path]
 
 
 def compute_package_digest(package_dir: Path) -> str:

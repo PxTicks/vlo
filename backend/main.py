@@ -22,6 +22,7 @@ from routers.sam_audio import router as sam_audio_router
 from routers.beats import router as beats_router
 from routers.downloads import router as downloads_router
 from routers.generation_delivery import router as generation_delivery_router
+from routers.extensions import router as extensions_router
 from pathlib import Path
 from typing import List
 
@@ -48,6 +49,7 @@ app.include_router(sam_audio_router)
 app.include_router(beats_router)
 app.include_router(downloads_router)
 app.include_router(generation_delivery_router)
+app.include_router(extensions_router)
 
 
 @app.on_event("shutdown")

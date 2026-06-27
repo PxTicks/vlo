@@ -11,6 +11,11 @@ from services.extensions.manager import (
     ExtensionInventoryStatus,
     ExtensionManager,
 )
+from services.extensions.frontend_artifacts import (
+    FrontendArtifactError,
+    FrontendArtifactStore,
+    StagedFrontendArtifacts,
+)
 from services.extensions.manifest import (
     BackendExtensionEntry,
     ExtensionManifest,
@@ -23,6 +28,8 @@ from services.extensions.package_digest import (
     UnsafeExtensionPackageError,
     compute_package_digest,
     is_package_digest,
+    read_package_file_bytes,
+    read_package_files_bytes,
 )
 
 __all__ = [
@@ -30,6 +37,8 @@ __all__ = [
     "ExtensionApproval",
     "ExtensionApprovalStateError",
     "ExtensionApprovalStore",
+    "FrontendArtifactError",
+    "FrontendArtifactStore",
     "ExtensionInventoryError",
     "ExtensionInventoryItem",
     "ExtensionInventoryStatus",
@@ -38,8 +47,11 @@ __all__ = [
     "ExtensionManifestError",
     "ExtensionPackageChangedError",
     "FrontendExtensionEntry",
+    "StagedFrontendArtifacts",
     "UnsafeExtensionPackageError",
     "compute_package_digest",
     "is_package_digest",
     "load_extension_manifest",
+    "read_package_file_bytes",
+    "read_package_files_bytes",
 ]

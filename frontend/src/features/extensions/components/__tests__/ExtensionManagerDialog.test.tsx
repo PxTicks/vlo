@@ -94,6 +94,9 @@ describe("ExtensionManagerDialog", () => {
     expect(
       screen.getByText(/backend activation requires an application restart/i),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/frontend code activates at the next page load/i),
+    ).toBeInTheDocument();
     expect(screen.getAllByText(digest)).toHaveLength(2);
 
     await user.click(
@@ -173,5 +176,22 @@ describe("ExtensionManagerDialog", () => {
     });
     expect(useExtensionManagementStore.getState().mutation).toBeNull();
     expect(useExtensionManagementStore.getState().error).toBeNull();
+  });
+
+  it("blocks approval when the declared SDK range is incompatible", async () => {
+    const incompatible = extensionItem("pending_approval");
+    incompatible.manifest.sdk = ">=2.0.0";
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      response({ extensions: [incompatible] }),
+    );
+
+    render(<ExtensionManagerDialog open onClose={vi.fn()} />);
+
+    expect(
+      await screen.findByText(/cannot activate with extension SDK 1\.0\.0/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Approve current digest" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -16,11 +16,13 @@ import {
   Typography,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import { VLO_EXTENSION_SDK_VERSION } from "../constants";
 import type {
   ExtensionInventoryItem,
   ExtensionInventoryStatus,
 } from "../services/extensionManagementApi";
 import { useExtensionManagementStore } from "../store/useExtensionManagementStore";
+import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
 
 interface ExtensionManagerDialogProps {
   open: boolean;
@@ -98,9 +100,13 @@ function ExtensionCard({
   onRevoke,
 }: ExtensionCardProps) {
   const manifest = item.manifest;
+  const sdkCompatibility = manifest
+    ? evaluateExtensionSdkCompatibility(manifest.sdk)
+    : null;
   const canApprove =
     manifest !== null &&
     item.digest !== null &&
+    sdkCompatibility?.compatible === true &&
     ["pending_approval", "changed", "disabled"].includes(item.status);
   const canRevoke = item.approval !== null && item.status !== "invalid";
 
@@ -133,6 +139,13 @@ function ExtensionCard({
 
         {statusMessage(item)}
 
+        {sdkCompatibility && !sdkCompatibility.compatible ? (
+          <Alert severity="error">
+            This package cannot activate with extension SDK {VLO_EXTENSION_SDK_VERSION}.{" "}
+            {sdkCompatibility.reason}
+          </Alert>
+        ) : null}
+
         <Box>
           <Typography variant="caption" color="text.secondary">
             Package
@@ -159,7 +172,8 @@ function ExtensionCard({
         {manifest ? (
           <Stack spacing={1}>
             <Typography variant="body2">
-              Declared SDK range: <strong>{manifest.sdk}</strong>
+              Declared SDK range: <strong>{manifest.sdk}</strong> · Host SDK:{" "}
+              <strong>{VLO_EXTENSION_SDK_VERSION}</strong>
             </Typography>
             <Typography variant="body2">
               Entry points: {[manifest.frontend?.entry, manifest.backend?.entry]
@@ -195,7 +209,7 @@ function ExtensionCard({
           ) : null}
           {item.status === "approved" ? (
             <Button disabled={busy} onClick={() => onDisable(item.id)}>
-              Disable
+              Disable on reload
             </Button>
           ) : null}
           {canApprove ? (
@@ -256,6 +270,12 @@ function ExtensionApprovalDialog({
               Backend activation requires an application restart. Dependency
               installation is a separate operation and is not performed by this
               approval.
+            </Alert>
+          ) : null}
+          {manifest?.frontend ? (
+            <Alert severity="info">
+              Approved frontend code activates at the next page load. Disabling
+              or revoking an active extension also takes full effect after reload.
             </Alert>
           ) : null}
           {manifest ? (
@@ -351,6 +371,10 @@ export function ExtensionManagerDialog({
               bound to the displayed package digest; any byte change requires
               approval again. Declared capabilities are informational rather
               than permission boundaries.
+            </Alert>
+            <Alert severity="info">
+              Frontend activation state is established at page startup. Approval,
+              disable, and revoke changes take full effect after reload.
             </Alert>
 
             {error ? <Alert severity="error">{error}</Alert> : null}

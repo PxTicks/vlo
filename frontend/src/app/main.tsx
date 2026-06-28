@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { FrontendExtensionBootstrap } from "../features/extensions";
 import { App } from "./App";
 import "./index.css";
 
@@ -10,6 +11,8 @@ Symbol.dispose ??= Symbol("Symbol.dispose");
 Symbol.asyncDispose ??= Symbol("Symbol.asyncDispose");
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <FrontendExtensionBootstrap>
+      <App />
+    </FrontendExtensionBootstrap>
   </React.StrictMode>,
 );

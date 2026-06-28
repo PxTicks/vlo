@@ -18,9 +18,11 @@ from services.extensions.frontend_artifacts import (
 )
 from services.extensions.manifest import (
     BackendExtensionEntry,
+    EXTENSION_SDK_VERSION,
     ExtensionManifest,
     ExtensionManifestError,
     FrontendExtensionEntry,
+    is_extension_sdk_compatible,
     load_extension_manifest,
 )
 from services.extensions.package_digest import (
@@ -34,6 +36,7 @@ from services.extensions.package_digest import (
 
 __all__ = [
     "BackendExtensionEntry",
+    "EXTENSION_SDK_VERSION",
     "ExtensionApproval",
     "ExtensionApprovalStateError",
     "ExtensionApprovalStore",
@@ -51,6 +54,7 @@ __all__ = [
     "UnsafeExtensionPackageError",
     "compute_package_digest",
     "is_package_digest",
+    "is_extension_sdk_compatible",
     "load_extension_manifest",
     "read_package_file_bytes",
     "read_package_files_bytes",

@@ -32,11 +32,81 @@ _SEMVER_PATTERN = (
     r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
+_STABLE_SEMVER_PATTERN = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$"
+)
+_SDK_COMPARATOR_PATTERN = re.compile(
+    r"(?P<operator><=|>=|<|>|=)?(?P<version>"
+    r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))"
+)
 _MAX_MANIFEST_BYTES = 1024 * 1024
+EXTENSION_SDK_VERSION = "1.0.0"
 
 
 class ExtensionManifestError(ValueError):
     """Raised when an extension manifest cannot be parsed safely."""
+
+
+def _parse_stable_semver(value: str) -> tuple[int, int, int] | None:
+    match = _STABLE_SEMVER_PATTERN.fullmatch(value)
+    if match is None:
+        return None
+    return (
+        int(match.group(1)),
+        int(match.group(2)),
+        int(match.group(3)),
+    )
+
+
+def _parse_sdk_range(
+    declared_range: str,
+) -> list[tuple[str, tuple[int, int, int]]]:
+    normalized = re.sub(
+        r"(<=|>=|<|>|=)\s+(?=\d)",
+        r"\1",
+        declared_range.strip(),
+    )
+    if not normalized:
+        raise ValueError("extension SDK range cannot be empty")
+
+    comparators: list[tuple[str, tuple[int, int, int]]] = []
+    for token in normalized.split():
+        match = _SDK_COMPARATOR_PATTERN.fullmatch(token)
+        if match is None:
+            raise ValueError(
+                "extension SDK range must use exact stable versions or "
+                "whitespace-separated comparators"
+            )
+        version = _parse_stable_semver(match.group("version"))
+        assert version is not None
+        comparators.append((match.group("operator") or "=", version))
+    return comparators
+
+
+def is_extension_sdk_compatible(
+    declared_range: str,
+    sdk_version: str = EXTENSION_SDK_VERSION,
+) -> bool:
+    """Evaluate the manifest v1 comparator grammar against one stable SDK."""
+
+    version = _parse_stable_semver(sdk_version)
+    if version is None:
+        raise ValueError(
+            "host extension SDK version must be a stable semantic version"
+        )
+
+    for operator, target in _parse_sdk_range(declared_range):
+        if operator == "<" and not version < target:
+            return False
+        if operator == "<=" and not version <= target:
+            return False
+        if operator == ">" and not version > target:
+            return False
+        if operator == ">=" and not version >= target:
+            return False
+        if operator == "=" and version != target:
+            return False
+    return True
 
 
 class _ManifestModel(BaseModel):
@@ -76,8 +146,6 @@ class ExtensionManifest(_ManifestModel):
     id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=200)
     version: str = Field(pattern=_SEMVER_PATTERN)
-    # Range parsing belongs to the compatibility/activation slice. Phase 2A
-    # preserves and bounds the declaration but does not interpret its syntax.
     sdk: str = Field(min_length=1, max_length=200)
     frontend: FrontendExtensionEntry | None = None
     backend: BackendExtensionEntry | None = None
@@ -92,12 +160,24 @@ class ExtensionManifest(_ManifestModel):
             )
         return value
 
-    @field_validator("name", "sdk")
+    @field_validator("name")
     @classmethod
     def strip_non_empty_string(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
             raise ValueError("value cannot be blank")
+        return normalized
+
+    @field_validator("sdk")
+    @classmethod
+    def validate_sdk(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("extension SDK range cannot be blank")
+        if not is_extension_sdk_compatible(normalized):
+            raise ValueError(
+                f"extension SDK range does not include host SDK {EXTENSION_SDK_VERSION}"
+            )
         return normalized
 
     @field_validator("capabilities")

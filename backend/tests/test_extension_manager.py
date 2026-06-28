@@ -19,6 +19,7 @@ from services.extensions import (
     ExtensionManager,
     UnsafeExtensionPackageError,
     compute_package_digest,
+    is_extension_sdk_compatible,
     load_extension_manifest,
 )
 
@@ -349,6 +350,54 @@ def test_manifest_rejects_duplicate_json_keys(tmp_path: Path):
 
     with pytest.raises(ValueError, match="duplicate key 'id'"):
         load_extension_manifest(manifest_path)
+
+
+def test_manifest_accepts_the_shared_sdk_comparator_grammar(tmp_path: Path):
+    package_dir = tmp_path / "example.compatible"
+    manifest = _frontend_manifest("example.compatible")
+    manifest["sdk"] = ">= 1.0.0 < 2.0.0"
+    _write_manifest(package_dir, manifest)
+
+    loaded = load_extension_manifest(package_dir / "manifest.json")
+
+    assert loaded.sdk == ">= 1.0.0 < 2.0.0"
+    assert is_extension_sdk_compatible(loaded.sdk) is True
+
+
+@pytest.mark.parametrize(
+    "sdk_range",
+    ["^1.0.0", "~1.0.0", ">=1", "1.0.0 || 2.0.0", ">=2.0.0"],
+)
+def test_manifest_rejects_unsupported_or_incompatible_sdk_ranges(
+    tmp_path: Path,
+    sdk_range: str,
+):
+    package_dir = tmp_path / "example.incompatible"
+    manifest = _frontend_manifest("example.incompatible")
+    manifest["sdk"] = sdk_range
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(ValueError, match="manifest validation failed"):
+        load_extension_manifest(package_dir / "manifest.json")
+
+
+def test_incompatible_sdk_package_is_invalid_before_approval(tmp_path: Path):
+    manager, extensions_root, _state_path = _create_manager(tmp_path)
+    package_dir = _create_frontend_package(
+        extensions_root,
+        "example.incompatible",
+    )
+    manifest = _frontend_manifest("example.incompatible")
+    manifest["sdk"] = ">=2.0.0"
+    _write_manifest(package_dir, manifest)
+
+    item = manager.scan()[0]
+
+    assert item.status == "invalid"
+    assert item.digest is None
+    assert any("does not include host SDK" in error for error in item.errors)
+    with pytest.raises(ExtensionInventoryError, match="is invalid"):
+        manager.get_item("example.incompatible", force_digest=True)
 
 
 def test_approval_store_is_atomic_private_and_persistent(tmp_path: Path):

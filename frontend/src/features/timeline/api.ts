@@ -1,11 +1,17 @@
 import { useShallow } from "zustand/react/shallow";
 import type {
+  ExtensionTimelineClip,
   ClipTransform,
   MaskTimelineClip,
   TimelineClip,
   TimelineTrack,
   Transition,
 } from "../../types/TimelineTypes";
+import { isExtensionTimelineClip } from "../../types/TimelineTypes";
+import type {
+  ExtensionTimelineEntitySnapshot,
+  ExtensionTimelineTransactionResult,
+} from "@vlo/extension-sdk";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
   selectMaskClipsForParent,
@@ -17,6 +23,7 @@ import {
 } from "./selectors/timelineSelectors";
 import { useTimelineStore } from "./useTimelineStore";
 import { useProjectStore } from "../project/useProjectStore";
+import type { ExtensionTimelineCommand } from "./model/extensionTimelineCommands";
 
 type TimelineStoreState = ReturnType<typeof useTimelineStore.getState>;
 
@@ -147,6 +154,39 @@ export function getTimelineClipCountForAsset(
   return selectTimelineClipCountForAsset(useTimelineStore.getState(), assetId);
 }
 
+export function getExtensionTimelineEntities(
+  ownerId: string,
+): readonly ExtensionTimelineEntitySnapshot[] {
+  return Object.freeze(
+    useTimelineStore
+      .getState()
+      .clips.filter(
+        (clip): clip is ExtensionTimelineClip =>
+          isExtensionTimelineClip(clip) &&
+          clip.extensionPayload.extensionId === ownerId,
+      )
+      .map((clip) =>
+        Object.freeze({
+          id: clip.id,
+          trackId: clip.trackId,
+          startTicks: clip.start,
+          durationTicks: clip.timelineDuration,
+          payload: structuredClone(clip.extensionPayload),
+        }),
+      ),
+  );
+}
+
+export function commitExtensionTimelineTransaction(
+  label: string,
+  ownerId: string,
+  commands: readonly ExtensionTimelineCommand[],
+): ExtensionTimelineTransactionResult {
+  return useTimelineStore
+    .getState()
+    .commitExtensionTransaction(label, ownerId, commands);
+}
+
 export function replaceTimelineSnapshot(
   snapshot: TimelineSnapshot | null,
 ): void {
@@ -197,4 +237,4 @@ export async function flushPendingTimelinePersistence(): Promise<void> {
   await useTimelineStore.getState().flushPendingPersistence();
 }
 
-export type { TimelineStoreState };
+export type { ExtensionTimelineCommand, TimelineStoreState };

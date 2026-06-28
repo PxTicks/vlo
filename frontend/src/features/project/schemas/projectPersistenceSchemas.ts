@@ -26,6 +26,7 @@ import {
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
 } from "../constants";
 import type { ProjectDocumentConfig } from "../types/ProjectDocument";
+import { extensionPayloadSchema } from "../../extensions/persistence/publicApi";
 
 const PROJECT_FILE_NAMES = {
   timeline: "timeline.json",
@@ -133,6 +134,7 @@ const timelineClipSchema = z
       "audio",
       "text",
       "shape",
+      "extension",
       "mask",
       "composite",
       "adjustment",
@@ -147,6 +149,7 @@ const timelineClipSchema = z
     offset: z.number(),
     start: z.number(),
     transformations: z.array(clipTransformSchema),
+    extensionPayload: extensionPayloadSchema.optional(),
     // Adjustment-clip extras (sit on the same passthrough; required when
     // type === "adjustment", enforced by the superRefine below).
     depth: z
@@ -161,6 +164,13 @@ const timelineClipSchema = z
   })
   .passthrough()
   .superRefine((clip, ctx) => {
+    if (clip.type === "extension" && clip.extensionPayload === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Extension clips require a versioned extensionPayload.",
+        path: ["extensionPayload"],
+      });
+    }
     if (clip.type === "adjustment") {
       if (
         typeof clip.depth !== "number" &&

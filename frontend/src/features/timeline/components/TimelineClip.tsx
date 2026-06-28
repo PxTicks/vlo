@@ -40,6 +40,7 @@ import { reverseTimelineClip } from "../utils/reverseClip";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
 import type { TimelineClipPresentation } from "../utils/clipPresentation";
+import { extensionPayloadProviderRegistry } from "../../extensions/persistence/publicApi";
 
 // --- Sub-component for Handles ---
 interface HandleProps {
@@ -129,6 +130,22 @@ function TimelineClipComponent({
   const displayDuration = presentation?.duration ?? clip.timelineDuration;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
   const showCompositeLabel = isCompositeClip(timelineClip) && !isOverlay;
+  const extensionProviderId =
+    clip.type === "extension"
+      ? `${clip.extensionPayload.extensionId}/${clip.extensionPayload.typeId}`
+      : null;
+  const extensionProviderAvailability =
+    clip.type === "extension"
+      ? extensionPayloadProviderRegistry.getAvailability(clip.extensionPayload)
+      : null;
+  const extensionPlaceholderLabel =
+    extensionProviderAvailability === "missing"
+      ? "Missing"
+      : extensionProviderAvailability === "incompatible"
+        ? "Incompatible"
+        : extensionProviderAvailability === "available"
+          ? "No renderer"
+          : null;
   // Composite placements are ordinary asset-backed video clips, so the
   // thumbnail strip renders straight from the clip's own baked `assetId`.
   const thumbnailClip: AssetBackedBaseClip | AssetBackedTimelineClip | null =
@@ -137,7 +154,9 @@ function TimelineClipComponent({
     timelineClip !== null && timelineClip.type !== "mask"
       ? timelineClip.isMuted === true
       : false;
-  const canMute = timelineClip !== null && timelineClip.type !== "mask";
+  const canMute =
+    timelineClip !== null &&
+    timelineClip.type !== "mask";
 
   // --- SELECTORS ---
   const isSelected = useTimelineStore((state) =>
@@ -299,6 +318,12 @@ function TimelineClipComponent({
         return "#f59e0b";
       case "shape":
         return "#10b981";
+      case "extension":
+        return extensionProviderAvailability === "available"
+          ? "#1e3a8a"
+          : extensionProviderAvailability === "incompatible"
+            ? "#991b1b"
+            : "#7c2d12";
       case "audio":
         return "#16a34a";
       case "adjustment":
@@ -471,10 +496,20 @@ function TimelineClipComponent({
           : undefined
       }
       data-track-visible={isTrackVisible ? "true" : "false"}
+      data-extension-provider={
+        extensionProviderAvailability ?? undefined
+      }
+      data-extension-renderer={extensionProviderId ? "unavailable" : undefined}
     >
-      {showCompositeLabel ? (
+      {showCompositeLabel || extensionProviderId ? (
         <Box
-          data-testid="timeline-clip-composite-label"
+          data-testid={
+            extensionProviderAvailability === "missing"
+              ? "timeline-clip-missing-extension-label"
+              : extensionProviderId
+                ? "timeline-clip-extension-label"
+                : "timeline-clip-composite-label"
+          }
           sx={{
             position: "absolute",
             top: 3,
@@ -497,7 +532,9 @@ function TimelineClipComponent({
             pointerEvents: "none",
           }}
         >
-          Composite
+          {extensionProviderId
+            ? `${extensionPlaceholderLabel} · ${extensionProviderId}`
+            : "Composite"}
         </Box>
       ) : null}
       {thumbnailClip ? (
@@ -540,7 +577,7 @@ function TimelineClipComponent({
         sx={{
           fontWeight: "bold",
           pointerEvents: "none",
-          mt: showCompositeLabel ? 2.25 : 0,
+          mt: showCompositeLabel || extensionProviderId ? 2.25 : 0,
         }}
       >
         {clip.name}

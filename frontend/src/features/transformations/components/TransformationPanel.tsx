@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Box, Button, Menu, MenuItem } from "@mui/material";
+import { Alert, Box, Button, Menu, MenuItem } from "@mui/material";
 import { Add } from "@mui/icons-material";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import { useTransformationController } from "../hooks/useTransformationController";
@@ -28,6 +28,7 @@ import {
 import { getDefaultTransformationSectionModels } from "../utils/defaultSectionModels";
 import type { PositionTransform, SplineParameter } from "../types";
 import { PositionPathDetailView } from "./PositionPathDetailView";
+import { extensionPayloadProviderRegistry } from "../../extensions/persistence/publicApi";
 
 // DnD Kit Imports
 import {
@@ -89,6 +90,12 @@ export function TransformationPanel() {
 
   const selectedClip = useTimelineClip(selectedClipId);
   const domainClip = activeTimelineClip ?? selectedClip;
+  const extensionAvailability =
+    selectedClip?.type === "extension"
+      ? extensionPayloadProviderRegistry.getAvailability(
+          selectedClip.extensionPayload,
+        )
+      : null;
   const positionTransform = useMemo(
     () =>
       activeTransforms.find(
@@ -461,6 +468,31 @@ export function TransformationPanel() {
       }}
     >
       <Box sx={{ display: "flex", flexDirection: "column" }}>
+        {selectedClip?.type === "extension" ? (
+          <Alert
+            data-testid="extension-inspector-placeholder"
+            severity={
+              extensionAvailability === "available" ? "info" : "warning"
+            }
+            sx={{ m: 1 }}
+          >
+            {extensionAvailability === "available" ? (
+              <>
+                Extension provider {selectedClip.extensionPayload.extensionId}/
+                {selectedClip.extensionPayload.typeId} is active, but its custom
+                renderer and property UI are not available yet.
+              </>
+            ) : (
+              <>
+                {extensionAvailability === "incompatible"
+                  ? "Incompatible"
+                  : "Missing"}{" "}
+                extension provider {selectedClip.extensionPayload.extensionId}/
+                {selectedClip.extensionPayload.typeId}. Its data is preserved.
+              </>
+            )}
+          </Alert>
+        ) : null}
         {selectedClip?.type === "adjustment" ? (
           <AdjustmentDepthSection clip={selectedClip} />
         ) : null}

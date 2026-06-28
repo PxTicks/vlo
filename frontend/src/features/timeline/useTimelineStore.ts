@@ -16,6 +16,9 @@ import type {
   TimelineTrack,
   Transition,
 } from "../../types/TimelineTypes";
+import type {
+  ExtensionTimelineTransactionResult,
+} from "@vlo/extension-sdk";
 import { isCompositeClip } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
 import {
@@ -88,8 +91,28 @@ import {
   selectResolvedMaskBooleanExpressionForParent,
 } from "./selectors/timelineSelectors";
 import { createTimelineMutationPipeline } from "./store/timelineMutationPipeline";
+import {
+  applyExtensionTimelineCommands,
+  ExtensionTimelineCommandError,
+  type ExtensionTimelineCommand,
+} from "./model/extensionTimelineCommands";
 
 enablePatches();
+
+function transactionFailure(
+  label: string,
+  error: unknown,
+): ExtensionTimelineTransactionResult {
+  if (error instanceof ExtensionTimelineCommandError) {
+    return { ok: false, code: error.code, message: error.message, label };
+  }
+  return {
+    ok: false,
+    code: "invalid_command",
+    message: error instanceof Error ? error.message : String(error),
+    label,
+  };
+}
 
 function isCompositeFullLengthTiming(clip: TimelineClip): boolean {
   return (
@@ -117,6 +140,14 @@ interface TimelineState extends TimelineModelState {
   copiedClips: TimelineClip[];
   canUndo: boolean;
   canRedo: boolean;
+  undoLabel: string | null;
+  redoLabel: string | null;
+
+  commitExtensionTransaction: (
+    label: string,
+    ownerId: string,
+    commands: readonly ExtensionTimelineCommand[],
+  ) => ExtensionTimelineTransactionResult;
 
   duplicateClip: (clip: TimelineClip) => TimelineClip;
   copySelectedClip: () => boolean;
@@ -358,6 +389,33 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     copiedClips: [],
     canUndo: false,
     canRedo: false,
+    undoLabel: null,
+    redoLabel: null,
+
+    commitExtensionTransaction: (label, ownerId, commands) => {
+      const removalPlan = planTimelineRemoval(
+        get().clips,
+        commands
+          .filter((command) => command.kind === "remove_entity")
+          .map((command) => command.entityId),
+      );
+
+      try {
+        const didCommit = mutationPipeline.commitModelMutation(
+          (draft) =>
+            applyExtensionTimelineCommands(draft, ownerId, commands),
+          { label },
+        );
+
+        if (didCommit && removalPlan.clipIdsToRemove.size > 0) {
+          mutationPipeline.runPostCommitEffects(removalPlan);
+        }
+
+        return { ok: true, changed: didCommit, label };
+      } catch (error) {
+        return transactionFailure(label, error);
+      }
+    },
 
     addTrack: () => {
       mutationPipeline.commitModelMutation((draft) => {

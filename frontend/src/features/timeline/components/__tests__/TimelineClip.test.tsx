@@ -24,6 +24,7 @@ import {
   TICKS_PER_SECOND,
   TRACK_HEADER_WIDTH,
 } from "../../constants";
+import { extensionPayloadProviderRegistry } from "../../../extensions/persistence/publicApi";
 
 // --- MOCKS ---
 
@@ -338,6 +339,96 @@ describe("TimelineClip Visual Geometry", () => {
         }),
       }),
     );
+  });
+
+  it("renders an unknown extension entity as a missing-provider placeholder", () => {
+    const extensionClip: TimelineClipType = {
+      id: "extension_1",
+      trackId: "track_1",
+      start: 100,
+      timelineDuration: 200,
+      type: "extension",
+      name: "Procedural star",
+      transformations: [],
+      offset: 0,
+      sourceDuration: null,
+      transformedDuration: 200,
+      transformedOffset: 0,
+      croppedSourceDuration: 200,
+      extensionPayload: {
+        extensionId: "example.shapes",
+        typeId: "star",
+        schemaVersion: 1,
+        data: { points: 5 },
+      },
+    };
+    useTimelineStore.setState({ clips: [extensionClip] });
+
+    render(<TimelineClipItem clip={extensionClip} isOverlay={false} />);
+
+    expect(
+      screen.getByTestId("timeline-clip-missing-extension-label"),
+    ).toHaveTextContent("Missing · example.shapes/star");
+    expect(screen.getByTestId("timeline-clip")).toHaveAttribute(
+      "data-extension-provider",
+      "missing",
+    );
+    expect(screen.getByText("Procedural star")).toBeInTheDocument();
+    expect(screen.queryByTestId("thumbnail-canvas")).not.toBeInTheDocument();
+  });
+
+  it("distinguishes an active payload provider from a missing extension", () => {
+    const registration = extensionPayloadProviderRegistry
+      .bind({
+        extension: { id: "example.shapes", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: (resource) => resource,
+        report: () => undefined,
+      })
+      .register({
+        id: "star",
+        apiVersion: 1,
+        schemaVersion: 1,
+        validate: () => undefined,
+      });
+    const extensionClip: TimelineClipType = {
+      id: "extension_registered",
+      trackId: "track_1",
+      start: 0,
+      timelineDuration: 100,
+      type: "extension",
+      name: "Registered star",
+      transformations: [],
+      offset: 0,
+      sourceDuration: null,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      croppedSourceDuration: 100,
+      extensionPayload: {
+        extensionId: "example.shapes",
+        typeId: "star",
+        schemaVersion: 1,
+        data: { points: 5 },
+      },
+    };
+
+    try {
+      render(<TimelineClipItem clip={extensionClip} isOverlay={false} />);
+
+      expect(
+        screen.getByTestId("timeline-clip-extension-label"),
+      ).toHaveTextContent("No renderer · example.shapes/star");
+      expect(screen.getByTestId("timeline-clip")).toHaveAttribute(
+        "data-extension-provider",
+        "available",
+      );
+      expect(screen.getByTestId("timeline-clip")).toHaveAttribute(
+        "data-extension-renderer",
+        "unavailable",
+      );
+    } finally {
+      registration.dispose();
+    }
   });
 
   it("applies resize deltas via CSS variables", () => {

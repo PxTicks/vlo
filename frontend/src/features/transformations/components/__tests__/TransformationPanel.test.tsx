@@ -89,6 +89,43 @@ describe("TransformationPanel", () => {
     expect(inputsX[0]).toHaveValue(10);
   });
 
+  it("shows a payload-preserving placeholder for a missing extension provider", () => {
+    const state = {
+      selectedClipIds: ["extension_1"],
+      clips: [
+        {
+          ...baseClip,
+          id: "extension_1",
+          type: "extension",
+          transformations: [],
+          extensionPayload: {
+            extensionId: "example.shapes",
+            typeId: "star",
+            schemaVersion: 1,
+            data: { points: 5 },
+          },
+        },
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+    };
+    (
+      useTimelineStore as unknown as ReturnType<typeof vi.fn>
+    ).mockImplementation((selector: (store: typeof state) => unknown) =>
+      selector(state),
+    );
+
+    render(<TransformationPanel />);
+
+    expect(
+      screen.getByTestId("extension-inspector-placeholder"),
+    ).toHaveTextContent(
+      "Missing extension provider example.shapes/star. Its data is preserved.",
+    );
+  });
+
   it("calls updateClipTransform when input changes and is committed (blurred)", () => {
     render(<TransformationPanel />);
     const inputsX = screen.getAllByLabelText("X");

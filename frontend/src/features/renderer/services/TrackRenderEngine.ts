@@ -4,6 +4,7 @@ import type {
   TimelineClip,
   MaskTimelineClip,
   TextTimelineClip,
+  ExtensionTimelineClip,
   ClipTransform,
 } from "../../../types/TimelineTypes";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
@@ -67,6 +68,7 @@ import type {
   FrameExecutionPolicy,
   ResolvedClipFrameJob,
 } from "./framePlanning";
+import { extensionPayloadProviderRegistry } from "../../extensions/persistence/publicApi";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -155,6 +157,56 @@ function getDecoderSourceKind(
     return clip.type;
   }
 
+  return null;
+}
+
+export function createExtensionPlaceholderClip(
+  clip: ExtensionTimelineClip,
+): TextTimelineClip {
+  const providerId = `${clip.extensionPayload.extensionId}/${clip.extensionPayload.typeId}`;
+  const availability = extensionPayloadProviderRegistry.getAvailability(
+    clip.extensionPayload,
+  );
+  const presentation =
+    availability === "missing"
+      ? {
+          title: "Missing extension",
+          fill: "#ffedd5",
+          strokeColor: "#7c2d12",
+        }
+      : availability === "incompatible"
+        ? {
+            title: "Incompatible extension",
+            fill: "#fee2e2",
+            strokeColor: "#991b1b",
+          }
+        : {
+            title: "Extension renderer unavailable",
+            fill: "#dbeafe",
+            strokeColor: "#1e3a8a",
+          };
+  return {
+    ...clip,
+    type: "text",
+    textData: {
+      content: `${presentation.title}\n${providerId}`,
+      fontFamily: "Arial",
+      fontSize: 64,
+      fill: presentation.fill,
+      align: "center",
+      strokeColor: presentation.strokeColor,
+      strokeWidth: 4,
+    },
+  };
+}
+
+function getTextRenderableClip(
+  clip: TimelineClip,
+): TextTimelineClip | null {
+  if (clip.type === "text") return clip;
+  if (clip.type === "extension") {
+    return createExtensionPlaceholderClip(clip);
+  }
   return null;
 }
 
@@ -570,10 +622,11 @@ export class TrackRenderEngine {
             ],
           }
         : job.activeClip;
+    const textRenderableClip = getTextRenderableClip(presentationClip);
 
     this.latestMaskSyncContext = {
       maskClips: [...job.maskClips],
-      clip: presentationClip,
+      clip: textRenderableClip ?? presentationClip,
       logicalDimensions: job.logicalDimensions,
       rawTimeTicks: job.rawClipTick,
       assetsById,
@@ -581,10 +634,10 @@ export class TrackRenderEngine {
       fps: job.fps,
     };
 
-    if (presentationClip.type === "text") {
+    if (textRenderableClip) {
       sourceHandle?.release();
       await this.renderTextClip(
-        presentationClip,
+        textRenderableClip,
         job.logicalDimensions,
         job.rawClipTick,
         [...job.maskClips],
@@ -734,14 +787,15 @@ export class TrackRenderEngine {
     // Sync masks from first-class mask clips
     const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
 
-    if (activeClip.type === "text") {
+    const textRenderableClip = getTextRenderableClip(activeClip);
+    if (textRenderableClip) {
       this.invalidateLivePipeline();
       const sourceFrame = this.advanceLiveSourceFrameIntent(
         this.createLiveSourceFrameRef(activeClip, null, effectiveTick, fps),
       );
       this.latestMaskSyncContext = {
         maskClips,
-        clip: activeClip,
+        clip: textRenderableClip,
         logicalDimensions,
         rawTimeTicks: rawTimeSeconds,
         assetsById: assetById,
@@ -755,7 +809,7 @@ export class TrackRenderEngine {
           this.currentTextureClipId === activeClip.id
         ) {
           this.applyClipTransformsForClip(
-            activeClip,
+            textRenderableClip,
             logicalDimensions,
             rawTimeSeconds,
           );
@@ -764,7 +818,7 @@ export class TrackRenderEngine {
       }
 
       return this.renderTextClip(
-        activeClip,
+        textRenderableClip,
         logicalDimensions,
         rawTimeSeconds,
         maskClips,
@@ -912,7 +966,8 @@ export class TrackRenderEngine {
     }
 
     const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
-    if (activeClip.type === "text") {
+    const textRenderableClip = getTextRenderableClip(activeClip);
+    if (textRenderableClip) {
       const assetById = new Map<string, Asset>(
         assets.map((asset) => [asset.id, asset] as const),
       );
@@ -927,7 +982,7 @@ export class TrackRenderEngine {
       );
       this.latestMaskSyncContext = {
         maskClips,
-        clip: activeClip,
+        clip: textRenderableClip,
         logicalDimensions,
         rawTimeTicks: rawTimeSeconds,
         assetsById: assetById,
@@ -935,7 +990,7 @@ export class TrackRenderEngine {
         fps,
       };
       await this.renderTextClip(
-        activeClip,
+        textRenderableClip,
         logicalDimensions,
         rawTimeSeconds,
         maskClips,
@@ -1112,7 +1167,8 @@ export class TrackRenderEngine {
       maskClips,
       rawTimeSeconds,
     } = request;
-    if (activeClip.type === "text") {
+    const textRenderableClip = getTextRenderableClip(activeClip);
+    if (textRenderableClip) {
       const assetById = new Map<string, Asset>(
         assets.map((asset) => [asset.id, asset] as const),
       );
@@ -1127,7 +1183,7 @@ export class TrackRenderEngine {
       );
       this.latestMaskSyncContext = {
         maskClips,
-        clip: activeClip,
+        clip: textRenderableClip,
         logicalDimensions,
         rawTimeTicks: rawTimeSeconds,
         assetsById: assetById,
@@ -1135,7 +1191,7 @@ export class TrackRenderEngine {
         fps,
       };
       await this.renderTextClip(
-        activeClip,
+        textRenderableClip,
         logicalDimensions,
         rawTimeSeconds,
         maskClips,
@@ -1384,7 +1440,8 @@ export class TrackRenderEngine {
       currentTime,
     );
 
-    if (activeClip.type === "text") {
+    const textRenderableClip = getTextRenderableClip(activeClip);
+    if (textRenderableClip) {
       const sourceFrame = this.advanceLiveSourceFrameIntent(
         createSourceFrameSyncRef({
           clip: activeClip,
@@ -1395,7 +1452,7 @@ export class TrackRenderEngine {
         }),
       );
       await this.renderTextClip(
-        activeClip,
+        textRenderableClip,
         logicalDimensions,
         effectiveTick - activeClip.start,
         maskClips,

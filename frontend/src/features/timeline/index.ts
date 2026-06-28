@@ -83,6 +83,8 @@ export {
   getTimelineClipsForTrack,
   getTimelineDuration,
   getTimelineClipCountForAsset,
+  getExtensionTimelineEntities,
+  commitExtensionTimelineTransaction,
   addTimelineClipTransform,
   addTimelineAdjustmentClip,
   selectTimelineClip,
@@ -103,3 +105,4 @@ export {
   useTimelineTransitions,
   useSelectedTimelineTransitionId,
 } from "./api";
+export type { ExtensionTimelineCommand } from "./api";

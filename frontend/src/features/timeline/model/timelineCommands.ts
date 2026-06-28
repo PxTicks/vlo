@@ -24,6 +24,7 @@ import {
   isTextClip,
 } from "../../../types/TimelineTypes";
 import { useProjectStore } from "../../project/useProjectStore";
+import { extensionPayloadProviderRegistry } from "../../extensions/persistence/publicApi";
 import {
   deriveTextClipName,
   resolveTextClipData,
@@ -209,7 +210,14 @@ export function clipReferencesAssetId(
   clip: TimelineClip,
   assetId: string,
 ): boolean {
-  return isAssetBackedClip(clip) && clip.assetId === assetId;
+  if (isAssetBackedClip(clip)) return clip.assetId === assetId;
+  if (clip.type !== "extension") return false;
+  if (clip.extensionPayload.assetReferences?.includes(assetId)) return true;
+
+  const resolution = extensionPayloadProviderRegistry.resolveAssetReferences(
+    clip.extensionPayload,
+  );
+  return resolution.ok && resolution.references.includes(assetId);
 }
 
 function createDefaultFitModeTransform(): ClipTransform {

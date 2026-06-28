@@ -1,5 +1,6 @@
 import type { ClipComponentBase } from "./ClipComponents";
 import type { Component } from "./Components";
+import type { ExtensionPayload } from "@vlo/extension-sdk";
 
 export type TrackType =
   | "visual"
@@ -15,6 +16,7 @@ export type ClipType =
   | "audio"
   | "text"
   | "shape"
+  | "extension"
   | "mask"
   | "adjustment";
 
@@ -328,6 +330,16 @@ export interface ShapeBaseClip extends InsertableClipBaseCommon {
   type: "shape";
 }
 
+/**
+ * Core-owned persistence envelope for a renderable entity whose implementation
+ * is supplied by an extension. Core may move, copy, and preserve this clip while
+ * treating extensionPayload.data as opaque JSON.
+ */
+export interface ExtensionBaseClip extends InsertableClipBaseCommon {
+  type: "extension";
+  extensionPayload: ExtensionPayload;
+}
+
 export const ADJUSTMENT_DEPTH_ALL = "all";
 export type AdjustmentDepth = number | typeof ADJUSTMENT_DEPTH_ALL;
 export const ADJUSTMENT_RETIMING_STATIC = "static";
@@ -390,6 +402,11 @@ export interface ShapeTimelineClip extends NonMaskTimelineClipCommon {
   type: "shape";
 }
 
+export interface ExtensionTimelineClip extends NonMaskTimelineClipCommon {
+  type: "extension";
+  extensionPayload: ExtensionPayload;
+}
+
 export interface AdjustmentTimelineClip
   extends Omit<NonMaskTimelineClipCommon, "type" | "sourceDuration">,
     AdjustmentClipExtras {
@@ -403,6 +420,7 @@ export interface BaseClipByType {
   audio: AudioBaseClip;
   text: TextBaseClip;
   shape: ShapeBaseClip;
+  extension: ExtensionBaseClip;
   adjustment: AdjustmentBaseClip;
 }
 
@@ -412,6 +430,7 @@ export interface NonMaskTimelineClipByType {
   audio: AudioTimelineClip;
   text: TextTimelineClip;
   shape: ShapeTimelineClip;
+  extension: ExtensionTimelineClip;
   adjustment: AdjustmentTimelineClip;
 }
 
@@ -477,6 +496,12 @@ export function isNonMaskTimelineClip(
   clip: TimelineClip | undefined | null,
 ): clip is NonMaskTimelineClip {
   return !!clip && clip.type !== "mask";
+}
+
+export function isExtensionTimelineClip(
+  clip: TimelineClip | undefined | null,
+): clip is ExtensionTimelineClip {
+  return clip?.type === "extension";
 }
 
 export function isAssetBackedClip(

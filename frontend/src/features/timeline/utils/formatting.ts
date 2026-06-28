@@ -11,6 +11,7 @@ export const getTrackTypeFromClipType = (clipType: ClipType): TrackType => {
     case "image":
     case "text":
     case "shape":
+    case "extension":
       return "visual";
     case "audio":
       return "audio";

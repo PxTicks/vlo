@@ -1,8 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Renderer, Sprite } from "pixi.js";
-import type { TextTimelineClip } from "../../../../types/TimelineTypes";
+import type {
+  ExtensionTimelineClip,
+  TextTimelineClip,
+} from "../../../../types/TimelineTypes";
 import { livePreviewTextStore } from "../../../text/services/livePreviewTextStore";
 import { resetSharedDecoderWorkerPoolForTests } from "../DecoderWorkerPool";
+import { extensionPayloadProviderRegistry } from "../../../extensions/persistence/publicApi";
 
 const mockGenerateTexture = vi.fn(() => ({
   width: 320,
@@ -67,6 +71,7 @@ vi.mock("pixi.js", async () => {
       visible = false;
       position = { x: 0, y: 0, set: vi.fn() };
       scale = { x: 1, y: 1, set: vi.fn() };
+      pivot = { x: 0, y: 0, set: vi.fn() };
       rotation = 0;
       addChild = vi.fn();
       setMask = vi.fn();
@@ -78,6 +83,10 @@ vi.mock("pixi.js", async () => {
       parent: { removeChild: () => void } | null = null;
       destroyed = false;
       zIndex = 0;
+      position = { x: 0, y: 0, set: vi.fn() };
+      scale = { x: 1, y: 1, set: vi.fn() };
+      pivot = { x: 0, y: 0, set: vi.fn() };
+      rotation = 0;
       addChild = vi.fn();
       removeFromParent = vi.fn();
       destroy = vi.fn(() => {
@@ -87,7 +96,12 @@ vi.mock("pixi.js", async () => {
   };
 });
 
-import { TrackRenderEngine } from "../TrackRenderEngine";
+import {
+  createExtensionPlaceholderClip,
+  TrackRenderEngine,
+} from "../TrackRenderEngine";
+
+let disposePayloadProvider: (() => void) | null = null;
 
 function createTextClip(
   overrides: Partial<TextTimelineClip> = {},
@@ -118,6 +132,29 @@ function createTextClip(
   };
 }
 
+function createExtensionClip(): ExtensionTimelineClip {
+  return {
+    id: "clip_extension_1",
+    trackId: "track_1",
+    type: "extension",
+    name: "Star shape",
+    sourceDuration: null,
+    start: 0,
+    timelineDuration: 200,
+    offset: 0,
+    transformedDuration: 200,
+    transformedOffset: 0,
+    croppedSourceDuration: 200,
+    transformations: [],
+    extensionPayload: {
+      extensionId: "example.shapes",
+      typeId: "star",
+      schemaVersion: 1,
+      data: { points: 5 },
+    },
+  };
+}
+
 describe("TrackRenderEngine text rendering", () => {
   beforeEach(() => {
     mockWorkerInstances.length = 0;
@@ -126,6 +163,11 @@ describe("TrackRenderEngine text rendering", () => {
     livePreviewTextStore.clearAll();
     resetSharedDecoderWorkerPoolForTests();
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    disposePayloadProvider?.();
+    disposePayloadProvider = null;
   });
 
   it("renders text clips without using the decoder worker and reuses the texture until text changes", async () => {
@@ -195,6 +237,62 @@ describe("TrackRenderEngine text rendering", () => {
     });
 
     engine.dispose();
+  });
+
+  it("renders a missing-extension placeholder in live playback and export", async () => {
+    const renderer = {
+      width: 3840,
+      height: 2160,
+      generateTexture: mockGenerateTexture,
+    } as unknown as Renderer;
+    const dimensions = { width: 1920, height: 1080 };
+    const clip = createExtensionClip();
+    const liveEngine = new TrackRenderEngine(1, undefined, renderer);
+    const exportEngine = new TrackRenderEngine(1, undefined, renderer);
+
+    await liveEngine.update(10, [clip], new Map(), [], dimensions);
+    await exportEngine.renderFrame(10, clip, dimensions);
+
+    expect(mockGenerateTexture).toHaveBeenCalledTimes(2);
+    for (const call of mockGenerateTexture.mock.calls) {
+      const [options] = call as unknown as [{ target: { options: unknown } }];
+      expect(options.target.options).toMatchObject({
+        text: "Missing extension\nexample.shapes/star",
+        style: expect.objectContaining({
+          fill: "#ffedd5",
+        }),
+      });
+    }
+    expect(mockWorkerInstances).toHaveLength(0);
+    expect((liveEngine.sprite as Sprite).visible).toBe(true);
+    expect((exportEngine.sprite as Sprite).visible).toBe(true);
+
+    liveEngine.dispose();
+    exportEngine.dispose();
+  });
+
+  it("does not call an extension missing when its payload provider is active", () => {
+    const registration = extensionPayloadProviderRegistry
+      .bind({
+        extension: { id: "example.shapes", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: (resource) => resource,
+        report: () => undefined,
+      })
+      .register({
+        id: "star",
+        apiVersion: 1,
+        schemaVersion: 1,
+        validate: () => undefined,
+      });
+    disposePayloadProvider = () => registration.dispose();
+
+    const placeholder = createExtensionPlaceholderClip(createExtensionClip());
+
+    expect(placeholder.textData).toMatchObject({
+      content: "Extension renderer unavailable\nexample.shapes/star",
+      fill: "#dbeafe",
+    });
   });
 
   it("renders rich-text runs via the HTMLText system with bold and italic spans", async () => {

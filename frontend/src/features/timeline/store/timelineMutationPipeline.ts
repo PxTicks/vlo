@@ -15,6 +15,7 @@ const TIMELINE_PERSIST_DEBOUNCE_MS = 250;
 type UserAssetsModule = typeof import("../../userAssets");
 
 interface TimelineHistoryEntry {
+  label: string;
   forwardPatches: Patch[];
   inversePatches: Patch[];
   trackMaskAssetCleanup: boolean;
@@ -26,6 +27,8 @@ interface TimelineMutationState extends TimelineModelState {
   copiedClips: TimelineClip[];
   canUndo: boolean;
   canRedo: boolean;
+  undoLabel: string | null;
+  redoLabel: string | null;
 }
 
 interface TimelinePostCommitEffects {
@@ -45,6 +48,7 @@ interface TimelineMutationPipelineOptions<State extends TimelineMutationState> {
 }
 
 export interface TimelineMutationCommitOptions {
+  label?: string;
   persist?: boolean;
   recordHistory?: boolean;
   trackMaskAssetCleanup?: boolean;
@@ -214,6 +218,8 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
   const applyHistoryFlags = () => ({
     canUndo: undoStack.length > 0,
     canRedo: redoStack.length > 0,
+    undoLabel: undoStack.at(-1)?.label ?? null,
+    redoLabel: redoStack.at(-1)?.label ?? null,
   });
 
   const queueTimelinePatchesForPersistence = (timelinePatches: Patch[]): void => {
@@ -298,6 +304,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     commitOptions?: TimelineMutationCommitOptions,
   ): boolean => {
     const {
+      label = "Timeline change",
       persist = true,
       recordHistory = true,
       trackMaskAssetCleanup = true,
@@ -316,6 +323,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
 
     if (recordHistory) {
       undoStack.push({
+        label,
         forwardPatches,
         inversePatches,
         trackMaskAssetCleanup,
@@ -449,6 +457,8 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
       copiedClips: [],
       canUndo: false,
       canRedo: false,
+      undoLabel: null,
+      redoLabel: null,
     });
   };
 

@@ -4,7 +4,10 @@ import type {
   ExtensionApiFactory,
   ExtensionDiagnostic,
   ExtensionModule,
+  VloExtensionApi,
 } from "../types";
+import { extensionPayloadProviderRegistry } from "../persistence/ExtensionPayloadProviderRegistry";
+import { createExtensionTimelineApi } from "../timeline/createExtensionTimelineApi";
 import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
 import {
   fetchExtensionInventory,
@@ -298,8 +301,6 @@ export class FrontendExtensionRuntime<TApi extends object> {
   }
 }
 
-type VloExtensionApi = Record<string, never>;
-
 function reportHostDiagnostic(diagnostic: ExtensionDiagnostic): void {
   if (diagnostic.level !== "warning" && diagnostic.level !== "error") return;
   const output = diagnostic.level === "error" ? console.error : console.warn;
@@ -309,15 +310,15 @@ function reportHostDiagnostic(diagnostic: ExtensionDiagnostic): void {
   );
 }
 
-const createEmptyExtensionApi: ExtensionApiFactory<VloExtensionApi> = () =>
-  Object.freeze({});
+const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> = (scope) =>
+  Object.freeze({
+    payloadProviders: extensionPayloadProviderRegistry.bind(scope),
+    timeline: createExtensionTimelineApi(scope),
+  });
 
-// Phase 2 proves the trusted loading/lifecycle path. Domain-owned, scope-bound
-// facades are introduced by their implementation phases rather than exposing a
-// generic registration escape hatch here.
 const frontendExtensionHost = new ExtensionHost<VloExtensionApi>({
   sdkVersion: VLO_EXTENSION_SDK_VERSION,
-  createApi: createEmptyExtensionApi,
+  createApi: createVloExtensionApi,
   onDiagnostic: reportHostDiagnostic,
 });
 

@@ -176,6 +176,68 @@ describe("ProjectPersistenceService", () => {
     expect(fileSystemService.writeFile).not.toHaveBeenCalled();
   });
 
+  it("round-trips an unknown extension entity without interpreting its payload", async () => {
+    const extensionPayload = {
+      extensionId: "example.unavailable",
+      typeId: "procedural-shape",
+      schemaVersion: 4,
+      data: {
+        path: [
+          { x: 0, y: 0 },
+          { x: 0.5, y: 1 },
+        ],
+        fill: null,
+        flags: [true, false],
+      },
+      assetReferences: ["asset-extension-texture"],
+      futureMetadata: { preserve: "verbatim" },
+    };
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(
+      ".vloproject/timeline.json",
+      JSON.stringify({
+        ...timeline,
+        clips: [
+          {
+            id: "extension-clip-1",
+            trackId: "track-1",
+            type: "extension",
+            name: "Unavailable procedural shape",
+            sourceDuration: null,
+            transformedDuration: 120,
+            transformedOffset: 0,
+            timelineDuration: 120,
+            croppedSourceDuration: 120,
+            offset: 0,
+            start: 15,
+            transformations: [],
+            extensionPayload,
+          },
+        ],
+      }),
+    );
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loaded = await projectPersistenceService.loadOrMigrateProject();
+
+    expect(loaded.timeline?.clips[0]).toMatchObject({
+      id: "extension-clip-1",
+      type: "extension",
+      extensionPayload,
+    });
+
+    await projectPersistenceService.updateTimeline((draft) => {
+      const clip = draft.clips[0];
+      if (clip) clip.start = 30;
+    });
+    const persisted = JSON.parse(
+      files.get(".vloproject/timeline.json") ?? "{}",
+    );
+
+    expect(persisted.clips[0].start).toBe(30);
+    expect(persisted.clips[0].extensionPayload).toEqual(extensionPayload);
+  });
+
   it("loads composite clips from a split timeline document", async () => {
     files.set(".vloproject/project.json", JSON.stringify(manifest));
     files.set(

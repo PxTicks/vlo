@@ -42,6 +42,40 @@ class FailingClient:
         )
 
 
+def test_backend_extension_runtime_follows_application_lifespan(monkeypatch):
+    events: list[str] = []
+
+    class Runtime:
+        async def start(self, app):
+            assert app is main.app
+            events.append("extensions-start")
+
+        async def stop(self):
+            events.append("extensions-stop")
+
+    class Services:
+        backend_runtime = Runtime()
+
+    async def fake_close_http_client():
+        events.append("http-close")
+
+    monkeypatch.setattr(main, "get_extension_services", lambda: Services())
+    monkeypatch.setattr(main, "close_http_client", fake_close_http_client)
+
+    async def run_lifespan():
+        async with main.application_lifespan(main.app):
+            events.append("application-running")
+
+    asyncio.run(run_lifespan())
+
+    assert events == [
+        "extensions-start",
+        "application-running",
+        "extensions-stop",
+        "http-close",
+    ]
+
+
 def test_app_status_reports_connected_comfyui_and_available_sam2(
     monkeypatch,
     tmp_path: Path,

@@ -35,6 +35,11 @@ function inventoryItem(status = "pending_approval") {
             enabled: true,
           }
         : null,
+    backendRuntime: {
+      status: "not_declared",
+      message: "No backend entry point is declared.",
+      digest: null,
+    },
     frontendEntryUrl:
       status === "approved"
         ? `/app/extensions/example.test/frontend/${digest}/index.js`

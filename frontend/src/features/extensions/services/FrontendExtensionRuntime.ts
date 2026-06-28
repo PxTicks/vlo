@@ -231,13 +231,20 @@ export class FrontendExtensionRuntime<TApi extends object> {
       };
     }
 
-    if (item.manifest.backend !== undefined) {
+    if (
+      item.manifest.backend !== undefined &&
+      (item.backendRuntime.status !== "active" ||
+        item.backendRuntime.digest !== item.digest)
+    ) {
+      const readinessMessage =
+        item.backendRuntime.status === "active"
+          ? "The active backend digest does not match the approved frontend digest."
+          : item.backendRuntime.message;
       return {
         extensionId: item.id,
         status: "waiting_backend",
         stage: "backend",
-        message:
-          "Frontend activation is waiting for confirmed backend extension readiness.",
+        message: `Frontend activation is waiting for backend readiness: ${readinessMessage}`,
         digest: item.digest,
       };
     }

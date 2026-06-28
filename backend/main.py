@@ -1,4 +1,5 @@
 import httpx
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +23,10 @@ from routers.sam_audio import router as sam_audio_router
 from routers.beats import router as beats_router
 from routers.downloads import router as downloads_router
 from routers.generation_delivery import router as generation_delivery_router
-from routers.extensions import router as extensions_router
+from routers.extensions import (
+    get_extension_services,
+    router as extensions_router,
+)
 from pathlib import Path
 from typing import List
 
@@ -40,7 +44,21 @@ from services.sam2 import sam2_service
 from services.sam_audio import sam_audio_service
 from services.beats import beats_service
 
-app = FastAPI()
+
+@asynccontextmanager
+async def application_lifespan(application: FastAPI):
+    runtime = get_extension_services().backend_runtime
+    try:
+        await runtime.start(application)
+        yield
+    finally:
+        try:
+            await runtime.stop()
+        finally:
+            await close_http_client()
+
+
+app = FastAPI(lifespan=application_lifespan)
 
 app.include_router(comfyui_router)
 app.include_router(comfyui_compat_router)
@@ -50,11 +68,6 @@ app.include_router(beats_router)
 app.include_router(downloads_router)
 app.include_router(generation_delivery_router)
 app.include_router(extensions_router)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    await close_http_client()
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent

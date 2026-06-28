@@ -30,6 +30,18 @@ const extensionApprovalSchema = z.object({
   enabled: z.boolean(),
 });
 
+const backendRuntimeSchema = z.object({
+  status: z.enum([
+    "not_declared",
+    "inactive",
+    "restart_required",
+    "active",
+    "failed",
+  ]),
+  message: z.string(),
+  digest: z.string().nullable(),
+});
+
 export function prefixExtensionFrontendEntryUrl(
   frontendEntryUrl: string | null,
   apiBaseUrl = API_BASE_URL,
@@ -53,6 +65,7 @@ const extensionInventoryItemSchema = z.object({
   errors: z.array(z.string()),
   manifest: extensionManifestSchema.nullable(),
   approval: extensionApprovalSchema.nullable(),
+  backendRuntime: backendRuntimeSchema,
   frontendEntryUrl: z
     .string()
     .startsWith("/app/extensions/")

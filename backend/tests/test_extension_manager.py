@@ -352,6 +352,28 @@ def test_manifest_rejects_duplicate_json_keys(tmp_path: Path):
         load_extension_manifest(manifest_path)
 
 
+def test_manifest_rejects_backend_module_outside_backend_directory(
+    tmp_path: Path,
+):
+    package_dir = tmp_path / "example.invalid-backend"
+    manifest = {
+        "manifestVersion": 1,
+        "id": "example.invalid-backend",
+        "name": "Invalid Backend",
+        "version": "1.0.0",
+        "sdk": ">=1.0.0 <2.0.0",
+        "backend": {
+            "mode": "in_process",
+            "entry": "host_module:create_extension",
+        },
+        "capabilities": [],
+    }
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(ValueError, match="inside backend"):
+        load_extension_manifest(package_dir / "manifest.json")
+
+
 def test_manifest_accepts_the_shared_sdk_comparator_grammar(tmp_path: Path):
     package_dir = tmp_path / "example.compatible"
     manifest = _frontend_manifest("example.compatible")

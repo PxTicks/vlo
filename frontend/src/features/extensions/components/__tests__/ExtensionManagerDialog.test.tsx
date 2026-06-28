@@ -36,6 +36,14 @@ function extensionItem(status: "pending_approval" | "approved") {
             enabled: true,
           }
         : null,
+    backendRuntime: {
+      status: status === "approved" ? "restart_required" : "inactive",
+      message:
+        status === "approved"
+          ? "Approved backend code will activate after restart."
+          : "Backend extension is not approved for activation.",
+      digest: status === "approved" ? digest : null,
+    },
     frontendEntryUrl:
       status === "approved"
         ? `/app/extensions/example.dialog/frontend/${digest}/index.js`
@@ -111,6 +119,9 @@ describe("ExtensionManagerDialog", () => {
       ).not.toBeInTheDocument();
     });
     expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(
+      screen.getByText(/backend runtime: approved backend code will activate/i),
+    ).toBeInTheDocument();
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
@@ -23,6 +25,8 @@ from routers.extensions import (
     router,
 )
 from services.extensions import (
+    BackendArtifactStore,
+    BackendExtensionRuntime,
     ExtensionApprovalStore,
     FrontendArtifactError,
     ExtensionManager,
@@ -58,21 +62,55 @@ def _create_package(extensions_root: Path, extension_id: str) -> Path:
     return package_dir
 
 
+def _create_backend_package(extensions_root: Path, extension_id: str) -> Path:
+    package_dir = extensions_root / extension_id
+    entry = package_dir / "backend" / "extension" / "__init__.py"
+    entry.parent.mkdir(parents=True)
+    entry.write_text(
+        "def create_extension(_context):\n    return None\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "manifestVersion": 1,
+        "id": extension_id,
+        "name": "Backend Router Test Extension",
+        "version": "1.0.0",
+        "sdk": ">=1.0.0 <2.0.0",
+        "backend": {
+            "mode": "in_process",
+            "entry": "backend.extension:create_extension",
+        },
+        "capabilities": ["backend.jobs"],
+    }
+    (package_dir / "manifest.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+    return package_dir
+
+
 def _create_services(
     tmp_path: Path,
 ) -> tuple[ExtensionServices, Path, Path]:
     extensions_root = tmp_path / "extensions"
     extensions_root.mkdir()
     state_root = tmp_path / "state"
+    manager = ExtensionManager(
+        extensions_root,
+        ExtensionApprovalStore(state_root / "approvals.json", now=lambda: 10.0),
+    )
+    backend_artifacts = BackendArtifactStore(
+        state_root / "backend-artifacts",
+        extensions_root,
+    )
     services = ExtensionServices(
-        manager=ExtensionManager(
-            extensions_root,
-            ExtensionApprovalStore(state_root / "approvals.json", now=lambda: 10.0),
-        ),
+        manager=manager,
         artifacts=FrontendArtifactStore(
             state_root / "frontend-artifacts",
             extensions_root,
         ),
+        backend_artifacts=backend_artifacts,
+        backend_runtime=BackendExtensionRuntime(manager, backend_artifacts),
     )
     return services, extensions_root, state_root
 
@@ -117,6 +155,7 @@ def test_inventory_approval_and_immutable_artifact_delivery(tmp_path: Path):
     assert pending["status"] == "pending_approval"
     assert pending["frontendEntryUrl"] is None
     assert pending["sourcePath"] == str(package_dir.resolve())
+    assert pending["backendRuntime"]["status"] == "not_declared"
 
     approved = _approve(services, "example.router", pending["digest"])
     assert approved["status"] == "approved"
@@ -188,6 +227,111 @@ def test_changed_package_loses_entry_url_and_artifact_access(tmp_path: Path):
     assert _json_response(denied)["error"]["code"] == (
         "extension_artifact_not_found"
     )
+
+
+def test_backend_approval_stages_code_and_reports_restart_readiness(tmp_path: Path):
+    services, extensions_root, state_root = _create_services(tmp_path)
+    _create_backend_package(extensions_root, "example.backend")
+    inventory = list_extensions(services)
+    assert isinstance(inventory, dict)
+    pending = inventory["extensions"][0]
+
+    assert pending["backendRuntime"]["status"] == "inactive"
+    approved = _approve(services, "example.backend", pending["digest"])
+
+    assert approved["backendRuntime"] == {
+        "status": "restart_required",
+        "message": "Approved backend code will activate after restart.",
+        "digest": pending["digest"],
+    }
+    staged = (
+        state_root
+        / "backend-artifacts"
+        / "example.backend"
+        / pending["digest"].removeprefix("sha256:")
+    )
+    assert (staged / "backend" / "extension" / "__init__.py").is_file()
+    assert not (staged / "manifest.json").exists()
+
+    summary = asyncio.run(services.backend_runtime.start(FastAPI()))
+    assert summary.records[0].status == "active"
+    active_inventory = list_extensions(services)
+    assert isinstance(active_inventory, dict)
+    assert active_inventory["extensions"][0]["backendRuntime"] == {
+        "status": "active",
+        "message": "Backend extension is active.",
+        "digest": pending["digest"],
+    }
+
+    revoked = revoke_extension_approval("example.backend", services)
+
+    assert isinstance(revoked, dict)
+    assert revoked["extension"]["backendRuntime"]["status"] == (
+        "restart_required"
+    )
+    assert staged.parent.exists()
+    assert asyncio.run(services.backend_runtime.stop()) == ()
+    assert not staged.parent.exists()
+
+
+def test_backend_reapproval_retains_active_digest_until_shutdown(tmp_path: Path):
+    services, extensions_root, state_root = _create_services(tmp_path)
+    package_dir = _create_backend_package(extensions_root, "example.running-update")
+    inventory = list_extensions(services)
+    assert isinstance(inventory, dict)
+    first_digest = inventory["extensions"][0]["digest"]
+    _approve(services, "example.running-update", first_digest)
+    asyncio.run(services.backend_runtime.start(FastAPI()))
+
+    entry = package_dir / "backend" / "extension" / "__init__.py"
+    entry.write_text(
+        "def create_extension(_context):\n    return None  # updated\n",
+        encoding="utf-8",
+    )
+    changed = list_extensions(services)
+    assert isinstance(changed, dict)
+    second_digest = changed["extensions"][0]["digest"]
+    _approve(services, "example.running-update", second_digest)
+    artifact_root = (
+        state_root / "backend-artifacts" / "example.running-update"
+    )
+
+    assert {path.name for path in artifact_root.iterdir()} == {
+        first_digest.removeprefix("sha256:"),
+        second_digest.removeprefix("sha256:"),
+    }
+    assert asyncio.run(services.backend_runtime.stop()) == ()
+    assert {path.name for path in artifact_root.iterdir()} == {
+        second_digest.removeprefix("sha256:")
+    }
+
+
+def test_backend_reapproval_prunes_superseded_staged_digest(tmp_path: Path):
+    services, extensions_root, state_root = _create_services(tmp_path)
+    package_dir = _create_backend_package(extensions_root, "example.backend-update")
+    inventory = list_extensions(services)
+    assert isinstance(inventory, dict)
+    first_digest = inventory["extensions"][0]["digest"]
+    _approve(services, "example.backend-update", first_digest)
+
+    entry = package_dir / "backend" / "extension" / "__init__.py"
+    entry.write_text(
+        "def create_extension(_context):\n    return {'updated': True}\n",
+        encoding="utf-8",
+    )
+    changed = list_extensions(services)
+    assert isinstance(changed, dict)
+    second_digest = changed["extensions"][0]["digest"]
+    assert second_digest != first_digest
+
+    _approve(services, "example.backend-update", second_digest)
+
+    extension_artifacts = (
+        state_root / "backend-artifacts" / "example.backend-update"
+    )
+    assert {path.name for path in extension_artifacts.iterdir()} == {
+        second_digest.removeprefix("sha256:")
+    }
 
 
 def test_disable_and_revoke_remove_artifact_access(tmp_path: Path):

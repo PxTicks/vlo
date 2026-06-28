@@ -138,6 +138,9 @@ class BackendExtensionEntry(_ManifestModel):
         normalized = value.strip()
         if not _BACKEND_ENTRY_PATTERN.fullmatch(normalized):
             raise ValueError("backend entry must use 'module.path:factory_name'")
+        module_name, _factory_name = normalized.split(":", 1)
+        if module_name != "backend" and not module_name.startswith("backend."):
+            raise ValueError("backend entry module must be inside backend/")
         return normalized
 
 

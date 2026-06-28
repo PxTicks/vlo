@@ -23,6 +23,7 @@ function inventoryItem(
     sdk?: string;
     frontend?: boolean;
     backend?: boolean;
+    backendStatus?: ExtensionInventoryItem["backendRuntime"]["status"];
   } = {},
 ): ExtensionInventoryItem {
   const status = options.status ?? "approved";
@@ -60,6 +61,15 @@ function inventoryItem(
             enabled: true,
           }
         : null,
+    backendRuntime: {
+      status: options.backend
+        ? (options.backendStatus ?? "restart_required")
+        : "not_declared",
+      message: options.backend
+        ? "Backend readiness test state."
+        : "No backend entry point is declared.",
+      digest: options.backend ? digest : null,
+    },
     frontendEntryUrl: frontend
       ? `/app/extensions/${id}/frontend/${digest}/index.js`
       : null,
@@ -154,7 +164,45 @@ describe("FrontendExtensionRuntime", () => {
       extensionId: "example.combined",
       status: "waiting_backend",
       stage: "backend",
-      message: expect.stringContaining("backend extension readiness"),
+      message: expect.stringContaining("Backend readiness test state"),
+    });
+  });
+
+  it("activates a combined package after backend readiness is confirmed", async () => {
+    const activate = vi.fn();
+    const importModule = vi.fn(async () => ({ activate }));
+    const { runtime } = createHarness(
+      [
+        inventoryItem("example.combined-ready", {
+          backend: true,
+          backendStatus: "active",
+        }),
+      ],
+      importModule,
+    );
+
+    const summary = await runtime.start();
+
+    expect(importModule).toHaveBeenCalledOnce();
+    expect(activate).toHaveBeenCalledOnce();
+    expect(summary.results[0]?.status).toBe("active");
+  });
+
+  it("waits when backend readiness refers to a different digest", async () => {
+    const item = inventoryItem("example.combined-stale", {
+      backend: true,
+      backendStatus: "active",
+    });
+    item.backendRuntime.digest = `sha256:${"f".repeat(64)}`;
+    const importModule = vi.fn(async () => ({ activate: vi.fn() }));
+    const { runtime } = createHarness([item], importModule);
+
+    const summary = await runtime.start();
+
+    expect(importModule).not.toHaveBeenCalled();
+    expect(summary.results[0]).toMatchObject({
+      status: "waiting_backend",
+      stage: "backend",
     });
   });
 

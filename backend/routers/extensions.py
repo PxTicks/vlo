@@ -15,6 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from api_errors import error_response
 from config import EXTENSIONS_ROOT, EXTENSION_STATE_DIR
 from services.extensions import (
+    BackendArtifactError,
+    BackendArtifactStore,
+    BackendExtensionRuntime,
     ExtensionApprovalStateError,
     ExtensionApprovalStore,
     ExtensionInventoryError,
@@ -37,16 +40,28 @@ class ExtensionApprovalRequest(BaseModel):
 class ExtensionServices:
     manager: ExtensionManager
     artifacts: FrontendArtifactStore
+    backend_artifacts: BackendArtifactStore
+    backend_runtime: BackendExtensionRuntime
 
 
+_extension_manager = ExtensionManager(
+    EXTENSIONS_ROOT,
+    ExtensionApprovalStore(EXTENSION_STATE_DIR / "approvals.json"),
+)
+_backend_artifacts = BackendArtifactStore(
+    EXTENSION_STATE_DIR / "backend-artifacts",
+    EXTENSIONS_ROOT,
+)
 _extension_services = ExtensionServices(
-    manager=ExtensionManager(
-        EXTENSIONS_ROOT,
-        ExtensionApprovalStore(EXTENSION_STATE_DIR / "approvals.json"),
-    ),
+    manager=_extension_manager,
     artifacts=FrontendArtifactStore(
         EXTENSION_STATE_DIR / "frontend-artifacts",
         EXTENSIONS_ROOT,
+    ),
+    backend_artifacts=_backend_artifacts,
+    backend_runtime=BackendExtensionRuntime(
+        _extension_manager,
+        _backend_artifacts,
     ),
 )
 
@@ -87,6 +102,7 @@ def _frontend_entry_url(
 def _serialize_inventory_item(
     item: ExtensionInventoryItem,
     artifacts: FrontendArtifactStore,
+    backend_runtime: BackendExtensionRuntime,
 ) -> dict[str, object]:
     manifest = (
         item.manifest.model_dump(by_alias=True, mode="json", exclude_none=True)
@@ -103,6 +119,7 @@ def _serialize_inventory_item(
         if item.approval is not None
         else None
     )
+    backend_runtime_view = backend_runtime.describe(item)
     return {
         "id": item.extension_id,
         "sourcePath": str(item.package_dir.resolve()),
@@ -112,6 +129,11 @@ def _serialize_inventory_item(
         "manifest": manifest,
         "approval": approval,
         "frontendEntryUrl": _frontend_entry_url(item, artifacts),
+        "backendRuntime": {
+            "status": backend_runtime_view.status,
+            "message": backend_runtime_view.message,
+            "digest": backend_runtime_view.digest,
+        },
     }
 
 
@@ -150,7 +172,12 @@ def list_extensions(services: ExtensionServicesDependency):
         return _inventory_error_response(exc)
     return {
         "extensions": [
-            _serialize_inventory_item(item, services.artifacts) for item in items
+            _serialize_inventory_item(
+                item,
+                services.artifacts,
+                services.backend_runtime,
+            )
+            for item in items
         ]
     }
 
@@ -164,12 +191,26 @@ def approve_extension(
     try:
         prepared = services.manager.prepare_approval(extension_id, request.digest)
         services.artifacts.stage(prepared, request.digest)
+        services.backend_artifacts.stage(prepared, request.digest)
         services.manager.approve(extension_id, request.digest)
         services.artifacts.prune_other_digests(extension_id, request.digest)
+        retained_backend_digests = {request.digest}
+        active_backend_digest = services.backend_runtime.active_digest(extension_id)
+        if active_backend_digest is not None:
+            retained_backend_digests.add(active_backend_digest)
+        services.backend_artifacts.prune_digests(
+            extension_id,
+            retained_backend_digests,
+        )
         item = services.manager.get_item(extension_id)
     except ExtensionInventoryError as exc:
         return _mutation_error_response(exc)
-    except (ExtensionApprovalStateError, FrontendArtifactError, OSError) as exc:
+    except (
+        BackendArtifactError,
+        ExtensionApprovalStateError,
+        FrontendArtifactError,
+        OSError,
+    ) as exc:
         return error_response(
             500,
             "extension_approval_failed",
@@ -177,7 +218,13 @@ def approve_extension(
             retryable=True,
             details={"reason": str(exc)},
         )
-    return {"extension": _serialize_inventory_item(item, services.artifacts)}
+    return {
+        "extension": _serialize_inventory_item(
+            item,
+            services.artifacts,
+            services.backend_runtime,
+        )
+    }
 
 
 @router.post("/{extension_id}/disable")
@@ -198,7 +245,13 @@ def disable_extension(
         return _mutation_error_response(exc)
     except (ExtensionApprovalStateError, OSError) as exc:
         return _inventory_error_response(exc)
-    return {"extension": _serialize_inventory_item(item, services.artifacts)}
+    return {
+        "extension": _serialize_inventory_item(
+            item,
+            services.artifacts,
+            services.backend_runtime,
+        )
+    }
 
 
 @router.delete("/{extension_id}/approval")
@@ -209,6 +262,8 @@ def revoke_extension_approval(
     try:
         revoked = services.manager.revoke(extension_id)
         services.artifacts.remove_extension(extension_id)
+        if services.backend_runtime.active_digest(extension_id) is None:
+            services.backend_artifacts.remove_extension(extension_id)
         if not revoked:
             return error_response(
                 404,
@@ -219,9 +274,20 @@ def revoke_extension_approval(
         item = services.manager.get_item(extension_id)
     except ExtensionInventoryError as exc:
         return _mutation_error_response(exc)
-    except (ExtensionApprovalStateError, FrontendArtifactError, OSError) as exc:
+    except (
+        BackendArtifactError,
+        ExtensionApprovalStateError,
+        FrontendArtifactError,
+        OSError,
+    ) as exc:
         return _inventory_error_response(exc)
-    return {"extension": _serialize_inventory_item(item, services.artifacts)}
+    return {
+        "extension": _serialize_inventory_item(
+            item,
+            services.artifacts,
+            services.backend_runtime,
+        )
+    }
 
 
 @router.get("/{extension_id}/frontend/{digest}/{artifact_path:path}")

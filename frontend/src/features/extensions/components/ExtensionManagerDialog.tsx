@@ -92,6 +92,24 @@ function statusMessage(item: ExtensionInventoryItem) {
   return null;
 }
 
+function backendRuntimeMessage(item: ExtensionInventoryItem) {
+  if (item.manifest?.backend === undefined) return null;
+
+  const severity =
+    item.backendRuntime.status === "active"
+      ? "success"
+      : item.backendRuntime.status === "failed"
+        ? "error"
+        : item.backendRuntime.status === "restart_required"
+          ? "warning"
+          : "info";
+  return (
+    <Alert severity={severity}>
+      Backend runtime: {item.backendRuntime.message}
+    </Alert>
+  );
+}
+
 function ExtensionCard({
   item,
   busy,
@@ -138,6 +156,7 @@ function ExtensionCard({
         </Box>
 
         {statusMessage(item)}
+        {backendRuntimeMessage(item)}
 
         {sdkCompatibility && !sdkCompatibility.compatible ? (
           <Alert severity="error">

@@ -5,6 +5,23 @@ from services.extensions.approval_store import (
     ExtensionApprovalStateError,
     ExtensionApprovalStore,
 )
+from services.extensions.backend_artifacts import (
+    BackendArtifactError,
+    BackendArtifactStore,
+    StagedBackendArtifacts,
+)
+from services.extensions.backend_runtime import (
+    DEFAULT_BACKEND_EXTENSION_ACTIVATION_TIMEOUT_SECONDS,
+    BackendExtensionActivationError,
+    BackendExtensionActivationRecord,
+    BackendExtensionActivationTimeoutError,
+    BackendExtensionContext,
+    BackendExtensionDefinition,
+    BackendExtensionIdentity,
+    BackendExtensionRuntime,
+    BackendExtensionRuntimeView,
+    BackendExtensionStartSummary,
+)
 from services.extensions.manager import (
     ExtensionInventoryError,
     ExtensionInventoryItem,
@@ -35,7 +52,19 @@ from services.extensions.package_digest import (
 )
 
 __all__ = [
+    "BackendArtifactError",
+    "BackendArtifactStore",
     "BackendExtensionEntry",
+    "BackendExtensionActivationError",
+    "BackendExtensionActivationRecord",
+    "BackendExtensionActivationTimeoutError",
+    "BackendExtensionContext",
+    "BackendExtensionDefinition",
+    "BackendExtensionIdentity",
+    "BackendExtensionRuntime",
+    "BackendExtensionRuntimeView",
+    "BackendExtensionStartSummary",
+    "DEFAULT_BACKEND_EXTENSION_ACTIVATION_TIMEOUT_SECONDS",
     "EXTENSION_SDK_VERSION",
     "ExtensionApproval",
     "ExtensionApprovalStateError",
@@ -51,6 +80,7 @@ __all__ = [
     "ExtensionPackageChangedError",
     "FrontendExtensionEntry",
     "StagedFrontendArtifacts",
+    "StagedBackendArtifacts",
     "UnsafeExtensionPackageError",
     "compute_package_digest",
     "is_package_digest",

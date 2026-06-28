@@ -22,6 +22,11 @@ function inventoryItem(id: string): ExtensionInventoryItem {
       capabilities: [],
     },
     approval: null,
+    backendRuntime: {
+      status: "not_declared",
+      message: "No backend entry point is declared.",
+      digest: null,
+    },
     frontendEntryUrl: null,
   };
 }

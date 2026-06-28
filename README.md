@@ -46,6 +46,15 @@ Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, 
 - Mask algebera (unions, intersections etc)
 - Draggable motion paths
 
+## Extensions (experimental)
+
+Vlo now has an early trusted extension runtime. Approved frontend code runs in the
+editor page, and approved backend code runs with the backend process's authority;
+this is a consent gate, not a sandbox. Start with the
+[`extension-template`](extension-template/README.md), and read the
+[`extension-system-plan`](docs/extension-system-plan.md) for the current contracts
+and phased roadmap.
+
 ## Changelog (v0.2.0)
 
 - Updated ComfyUI bridge for more responsiveness

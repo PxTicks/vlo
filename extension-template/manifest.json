@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "example.minimal",
+  "name": "Minimal vlo Extension",
+  "version": "1.0.0",
+  "sdk": ">=1.0.0 <2.0.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "backend": {
+    "mode": "in_process",
+    "entry": "backend.extension:create_extension"
+  },
+  "capabilities": []
+}

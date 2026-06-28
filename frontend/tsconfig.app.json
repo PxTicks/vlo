@@ -19,7 +19,8 @@
     "paths": {
       "@decoder-worker-loader": [
         "src/features/renderer/workers/decoderWorkerLoader.ts"
-      ]
+      ],
+      "@vlo/extension-sdk": ["../packages/extension-sdk/src/index.ts"]
     },
 
     /* Linting */

@@ -153,8 +153,9 @@ describe("buildAudioEffectChain", () => {
 
   it("schedules constant params with setValueAtTime", () => {
     const ctx = createFakeContext();
-    const chain = buildAudioEffectChain(ctx, [fx("pan", { pan: 0.5 })])!;
-    chain.scheduleAutomation(window);
+    const transforms = [fx("pan", { pan: 0.5 })];
+    const chain = buildAudioEffectChain(ctx, transforms)!;
+    chain.scheduleAutomation(window, transforms);
     const pan = chain.inputNode as unknown as FakeNode;
     const param = pan.pan as ReturnType<typeof makeParam>;
     expect(param.setValueAtTime).toHaveBeenCalledWith(0.5, 0);
@@ -163,15 +164,16 @@ describe("buildAudioEffectChain", () => {
 
   it("schedules splined params with a value curve", () => {
     const ctx = createFakeContext();
-    const chain = buildAudioEffectChain(ctx, [
+    const transforms = [
       fx("pan", {
         pan: spline([
           { time: 0, value: -1 },
           { time: 1000, value: 1 },
         ]),
       }),
-    ])!;
-    chain.scheduleAutomation(window);
+    ];
+    const chain = buildAudioEffectChain(ctx, transforms)!;
+    chain.scheduleAutomation(window, transforms);
     const pan = chain.inputNode as unknown as FakeNode;
     const param = pan.pan as ReturnType<typeof makeParam>;
     expect(param.setValueCurveAtTime).toHaveBeenCalledTimes(1);
@@ -184,19 +186,23 @@ describe("buildAudioEffectChain", () => {
 
   it("samples splined params through the supplied source-time mapper", () => {
     const ctx = createFakeContext();
-    const chain = buildAudioEffectChain(ctx, [
+    const transforms = [
       fx("pan", {
         pan: spline([
           { time: 0, value: 0 },
           { time: 1000, value: 1 },
         ]),
       }),
-    ])!;
+    ];
+    const chain = buildAudioEffectChain(ctx, transforms)!;
 
-    chain.scheduleAutomation({
-      ...window,
-      sourceTimeTicksAt: (presentationTick) => presentationTick * 2,
-    });
+    chain.scheduleAutomation(
+      {
+        ...window,
+        sourceTimeTicksAt: (presentationTick) => presentationTick * 2,
+      },
+      transforms,
+    );
 
     const pan = chain.inputNode as unknown as FakeNode;
     const param = pan.pan as ReturnType<typeof makeParam>;
@@ -204,6 +210,19 @@ describe("buildAudioEffectChain", () => {
     const values = curve as Float32Array;
 
     expect(values[Math.floor(values.length / 2)]).toBeGreaterThan(0.9);
+  });
+
+  it("uses current transform parameters when a retained chain is rescheduled", () => {
+    const ctx = createFakeContext();
+    const initialTransforms = [fx("pan", { pan: 0.1 })];
+    const chain = buildAudioEffectChain(ctx, initialTransforms)!;
+    const updatedTransforms = [fx("pan", { pan: 0.7 })];
+
+    chain.scheduleAutomation(window, updatedTransforms);
+
+    const pan = chain.inputNode as unknown as FakeNode;
+    const param = pan.pan as ReturnType<typeof makeParam>;
+    expect(param.setValueAtTime).toHaveBeenCalledWith(0.7, 0);
   });
 
   it("disposes by disconnecting all nodes", () => {

@@ -1,6 +1,6 @@
 import { ExportRenderer } from "../ExportRenderer";
 import type { ProjectData } from "../ExportRenderer";
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import type { Mock } from "vitest";
 import { Application, Container } from "pixi.js";
 import { RenderGroupOrchestrator } from "../RenderGroupOrchestrator";
@@ -12,6 +12,25 @@ import type {
 } from "../../../../types/TimelineTypes";
 import type { Component } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
+
+const audioRendererMocks = vi.hoisted(() => ({
+  instances: [] as Array<{
+    trackId: string;
+    process: Mock;
+    dispose: Mock;
+  }>,
+}));
+
+const offlineAudioContextMocks = vi.hoisted(() => ({
+  instances: [] as Array<{
+    numberOfChannels: number;
+    length: number;
+    sampleRate: number;
+    createBuffer: Mock;
+    startRendering: Mock;
+    destination: Record<string, never>;
+  }>,
+}));
 
 // Type definitions for mocks
 interface MockWorker {
@@ -162,8 +181,11 @@ vi.mock("mediabunny", () => {
 // Mock TrackAudioRenderer
 vi.mock("../TrackAudioRenderer", () => ({
   TrackAudioRenderer: class {
-    constructor() {}
-    prepareForChunk = vi.fn();
+    trackId: string;
+    constructor(trackId: string) {
+      this.trackId = trackId;
+      audioRendererMocks.instances.push(this);
+    }
     process = vi.fn();
     dispose = vi.fn();
   },
@@ -178,9 +200,40 @@ vi.mock("../../../userAssets", () => ({
 vi.stubGlobal(
   "OfflineAudioContext",
   class {
-    constructor() {}
-    startRendering = vi.fn().mockResolvedValue({});
+    numberOfChannels: number;
+    length: number;
+    sampleRate: number;
     destination = {};
+
+    constructor(numberOfChannels: number, length: number, sampleRate: number) {
+      this.numberOfChannels = numberOfChannels;
+      this.length = length;
+      this.sampleRate = sampleRate;
+      offlineAudioContextMocks.instances.push(this);
+    }
+
+    createBuffer = vi.fn(
+      (numberOfChannels: number, length: number, sampleRate: number) => {
+        const data = Array.from(
+          { length: numberOfChannels },
+          () => new Float32Array(length),
+        );
+        return {
+          numberOfChannels,
+          length,
+          sampleRate,
+          duration: length / sampleRate,
+          getChannelData: vi.fn((channel: number) => data[channel]),
+          copyToChannel: vi.fn((source: Float32Array, channel: number) => {
+            data[channel].set(source);
+          }),
+        };
+      },
+    );
+
+    startRendering = vi.fn(async () =>
+      this.createBuffer(this.numberOfChannels, this.length, this.sampleRate),
+    );
   },
 );
 
@@ -196,6 +249,11 @@ interface TestExportRenderer {
 }
 
 describe("ExportRenderer", () => {
+  beforeEach(() => {
+    audioRendererMocks.instances = [];
+    offlineAudioContextMocks.instances = [];
+  });
+
   it("should correctly scale the stage for 4K export from 1080p logic", async () => {
     const config = {
       logicalWidth: 1920,
@@ -392,6 +450,67 @@ describe("ExportRenderer", () => {
     expect(result.video).toBeInstanceOf(Blob);
     expect(result.outputs.video).toBeInstanceOf(Blob);
     expect(result.outputs.aux).toBeInstanceOf(Blob);
+
+    renderer.dispose();
+  });
+
+  it("renders audio export chunks with effect preroll and trims before encoding", async () => {
+    const config = {
+      logicalWidth: 1920,
+      logicalHeight: 1080,
+      outputWidth: 1920,
+      outputHeight: 1080,
+    };
+
+    const projectData = {
+      tracks: [
+        { id: "t1", type: "visual", isVisible: true },
+      ] as TimelineTrack[],
+      clips: [
+        {
+          id: "c1",
+          name: "Clip 1",
+          trackId: "t1",
+          assetId: "a1",
+          start: 0,
+          timelineDuration: 96000 * 12,
+          sourceDuration: 96000 * 12,
+          transformedDuration: 96000 * 12,
+          transformedOffset: 0,
+          croppedSourceDuration: 96000 * 12,
+          offset: 0,
+          type: "video",
+          transformations: [
+            {
+              id: "delay-1",
+              type: "delay" as const,
+              isEnabled: true,
+              parameters: {
+                time: 0.5,
+                feedback: 0.5,
+                mix: 0.5,
+              },
+            },
+          ],
+        },
+      ] as TimelineClip[],
+      assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
+      duration: 96000 * 12,
+      fps: 30,
+    };
+
+    const renderer = await ExportRenderer.create(config);
+    await renderer.render(projectData as ProjectData, config, () => {});
+
+    expect(offlineAudioContextMocks.instances).toHaveLength(2);
+    const secondContext = offlineAudioContextMocks.instances[1];
+    expect(secondContext.length).toBeGreaterThan(2 * 48000);
+
+    const secondProcess = audioRendererMocks.instances[1].process.mock.calls[0];
+    expect(secondProcess[4].baseTicks).toBeLessThan(96000 * 10);
+    expect(secondProcess[5].lookahead).toBeGreaterThan(2);
+
+    expect(secondContext.createBuffer).toHaveBeenCalledWith(2, 2 * 48000, 48000);
 
     renderer.dispose();
   });

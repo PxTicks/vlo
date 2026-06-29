@@ -80,6 +80,31 @@ function wrappedBuffer(
 }
 
 function createContext(currentTime = 0) {
+  const effectNodes: Array<{
+    __type: string;
+    connect: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+    [key: string]: unknown;
+  }> = [];
+  const makeParam = () => ({
+    value: 0,
+    setValueAtTime: vi.fn(),
+    linearRampToValueAtTime: vi.fn(),
+    setValueCurveAtTime: vi.fn(),
+  });
+  const makeEffectNode = (
+    type: string,
+    extra: Record<string, unknown> = {},
+  ) => {
+    const node = {
+      __type: type,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      ...extra,
+    };
+    effectNodes.push(node);
+    return node;
+  };
   const sources: Array<{
     buffer: AudioBuffer | null;
     playbackRate: {
@@ -138,6 +163,30 @@ function createContext(currentTime = 0) {
       gains.push(gain);
       return gain;
     }),
+    createStereoPanner: vi.fn(() =>
+      makeEffectNode("stereoPanner", { pan: makeParam() }),
+    ),
+    createBiquadFilter: vi.fn(() =>
+      makeEffectNode("biquad", {
+        type: "",
+        frequency: makeParam(),
+        Q: { value: 1 },
+        gain: makeParam(),
+      }),
+    ),
+    createDynamicsCompressor: vi.fn(() =>
+      makeEffectNode("compressor", {
+        threshold: makeParam(),
+        ratio: makeParam(),
+        attack: makeParam(),
+        release: makeParam(),
+        knee: makeParam(),
+      }),
+    ),
+    createConvolver: vi.fn(() => makeEffectNode("convolver", { buffer: null })),
+    createDelay: vi.fn(() =>
+      makeEffectNode("delay", { delayTime: makeParam() }),
+    ),
     createBuffer: vi.fn(
       (numberOfChannels: number, length: number, sampleRate: number) => {
         const merged = {
@@ -158,6 +207,7 @@ function createContext(currentTime = 0) {
     context: context as unknown as BaseAudioContext,
     sources,
     gains,
+    effectNodes,
     mergedBuffers,
   };
 }
@@ -180,18 +230,15 @@ describe("TrackAudioRenderer process lifecycle", () => {
     vi.stubGlobal("OfflineAudioContext", class OfflineAudioContextMock {});
   });
 
-  it("initializes, rebases chunks, and cleans scheduled nodes", () => {
+  it("initializes, resets, and cleans scheduled nodes", () => {
     const renderer = new TrackAudioRenderer("track-1");
     const { context, sources } = createContext();
     expect(renderer.trackId).toBe("track-1");
     expect(renderer.getNextScheduleTime()).toBe(0);
 
-    renderer.prepareForChunk(2);
-    expect(renderer.getNextScheduleTime()).toBe(2);
     renderer.reset(3);
     expect(renderer.getNextScheduleTime()).toBe(3.15);
 
-    renderer.prepareForChunk(0);
     expect(sources).toHaveLength(0);
     renderer.stop();
     renderer.dispose();
@@ -214,8 +261,8 @@ describe("TrackAudioRenderer process lifecycle", () => {
     expect(renderer.getNextScheduleTime()).toBeCloseTo(0.3);
     expect(getInput).not.toHaveBeenCalled();
 
-    renderer.prepareForChunk(0);
-    await renderer.process(
+    const mutedRenderer = new TrackAudioRenderer("track-1");
+    await mutedRenderer.process(
       context,
       destination,
       [
@@ -325,7 +372,7 @@ describe("TrackAudioRenderer process lifecycle", () => {
       [],
     ];
     const renderer = new TrackAudioRenderer("track-1");
-    renderer.prepareForChunk(1);
+    renderer.reset(0.85);
     const { context, mergedBuffers, sources } = createContext(0);
 
     await renderer.process(
@@ -472,6 +519,59 @@ describe("TrackAudioRenderer process lifecycle", () => {
     expect(midpoint).toBeLessThan(0.12);
   });
 
+  it("keeps a previous clip's effect chain connected when scheduling the next clip", async () => {
+    mocks.bufferBatches = [
+      [wrappedBuffer(0.05)],
+      [wrappedBuffer(0.05)],
+      [],
+    ];
+    const renderer = new TrackAudioRenderer("track-1");
+    const { context, effectNodes } = createContext();
+    const first = clip({
+      id: "clip-1",
+      timelineDuration: TICKS_PER_SECOND * 0.05,
+      transformations: [
+        {
+          id: "pan-1",
+          type: "pan",
+          isEnabled: true,
+          parameters: { pan: -0.5 },
+        },
+      ],
+    });
+    const second = clip({
+      id: "clip-2",
+      start: TICKS_PER_SECOND * 0.05,
+      timelineDuration: TICKS_PER_SECOND * 0.05,
+      transformations: [
+        {
+          id: "pan-2",
+          type: "pan",
+          isEnabled: true,
+          parameters: { pan: 0.5 },
+        },
+      ],
+    });
+
+    await renderer.process(
+      context,
+      destination,
+      [first, second],
+      vi.fn(async () => inputWithTrack()),
+      mapping,
+      { lookahead: 0.12, forceFlush: true },
+    );
+
+    const panners = effectNodes.filter((node) => node.__type === "stereoPanner");
+    expect(panners).toHaveLength(2);
+    expect(panners[0].disconnect).not.toHaveBeenCalled();
+    expect(panners[1].disconnect).not.toHaveBeenCalled();
+
+    renderer.dispose();
+    expect(panners[0].disconnect).toHaveBeenCalled();
+    expect(panners[1].disconnect).toHaveBeenCalled();
+  });
+
   it("late-schedules remaining audio with a playback-rate-adjusted offset", async () => {
     mocks.bufferBatches = [[wrappedBuffer(0.5)], []];
     const renderer = new TrackAudioRenderer("track-1");
@@ -510,7 +610,7 @@ describe("TrackAudioRenderer process lifecycle", () => {
       mapping,
       { lookahead: 0.01 },
     );
-    renderer.prepareForChunk(1);
+    renderer.reset(0.85);
     await renderer.process(
       context,
       destination,

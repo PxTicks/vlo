@@ -23,6 +23,10 @@ import {
   type StrictRenderHealth,
 } from "./TrackRenderEngine";
 import { TrackAudioRenderer } from "./TrackAudioRenderer";
+import {
+  estimateAudioEffectTailSeconds,
+  getAudioEffectTransforms,
+} from "./audioEffectChain";
 import { createDecoderWorkerPool } from "./DecoderWorkerPool";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
 import { getAssetInput } from "../../userAssets";
@@ -52,6 +56,47 @@ function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
   error.name = "AbortError";
   return error;
+}
+
+const AUDIO_EXPORT_CHUNK_DURATION_SEC = 10;
+const MAX_AUDIO_EXPORT_PREROLL_SEC = 30;
+const AUDIO_EXPORT_SAMPLE_RATE = 48_000;
+
+function estimateAudioExportPrerollSeconds(
+  clips: readonly TimelineClip[],
+): number {
+  const tailSeconds = clips.reduce((maxTail, clip) => {
+    const transforms = getAudioEffectTransforms(clip);
+    if (transforms.length === 0) return maxTail;
+    return Math.max(maxTail, estimateAudioEffectTailSeconds(transforms));
+  }, 0);
+  return Math.min(MAX_AUDIO_EXPORT_PREROLL_SEC, tailSeconds);
+}
+
+function createAudioBufferSlice(
+  ctx: BaseAudioContext,
+  source: AudioBuffer,
+  startSeconds: number,
+  durationSeconds: number,
+): AudioBuffer {
+  const sampleRate = source.sampleRate;
+  const startFrame = Math.max(
+    0,
+    Math.min(source.length, Math.round(startSeconds * sampleRate)),
+  );
+  const frameCount = Math.max(0, Math.ceil(durationSeconds * sampleRate));
+  const channelCount = Math.max(1, source.numberOfChannels);
+  const sliced = ctx.createBuffer(channelCount, frameCount, sampleRate);
+
+  for (let channel = 0; channel < channelCount; channel += 1) {
+    const sourceChannel = source.getChannelData(
+      Math.min(channel, source.numberOfChannels - 1),
+    );
+    const endFrame = Math.min(source.length, startFrame + frameCount);
+    sliced.copyToChannel(sourceChannel.subarray(startFrame, endFrame), channel);
+  }
+
+  return sliced;
 }
 
 function resolveOutputDefinitions(
@@ -413,37 +458,43 @@ export class ExportRenderer {
       const rangeDurationSec = tickToMediaSeconds(rangeDurationTicks);
 
       if (shouldRenderAudio) {
-        const audioRenderers = relevantForAudio.map(
-          (t) => new TrackAudioRenderer(t.id, adjustmentEffectResolver),
+        const audioPrerollSeconds = estimateAudioExportPrerollSeconds(
+          relevantForAudio.flatMap(
+            (track) => trackClipsByTrackId.get(track.id) ?? [],
+          ),
         );
 
-        const CHUNK_DURATION_SEC = 10;
+        for (
+          let chunkStartSec = 0;
+          chunkStartSec < rangeDurationSec;
+          chunkStartSec += AUDIO_EXPORT_CHUNK_DURATION_SEC
+        ) {
+          this.throwIfCancelled();
 
-        try {
-          for (
-            let chunkStartSec = 0;
-            chunkStartSec < rangeDurationSec;
-            chunkStartSec += CHUNK_DURATION_SEC
-          ) {
-            this.throwIfCancelled();
+          const chunkDuration = Math.min(
+            AUDIO_EXPORT_CHUNK_DURATION_SEC,
+            rangeDurationSec - chunkStartSec,
+          );
+          const prerollSeconds = Math.min(chunkStartSec, audioPrerollSeconds);
+          const renderStartSec = chunkStartSec - prerollSeconds;
+          const renderDuration = prerollSeconds + chunkDuration;
 
-            const chunkDuration = Math.min(
-              CHUNK_DURATION_SEC,
-              rangeDurationSec - chunkStartSec,
-            );
+          const offlineCtx = new OfflineAudioContext(
+            2,
+            Math.ceil(renderDuration * AUDIO_EXPORT_SAMPLE_RATE),
+            AUDIO_EXPORT_SAMPLE_RATE,
+          );
 
-            const offlineCtx = new OfflineAudioContext(
-              2,
-              Math.ceil(chunkDuration * 48000),
-              48000,
-            );
+          const audioRenderers = relevantForAudio.map(
+            (track) => new TrackAudioRenderer(track.id, adjustmentEffectResolver),
+          );
+          let renderedBuffer: AudioBuffer | null = null;
 
+          try {
             await Promise.all(
               audioRenderers.map(async (renderer, index) => {
                 const trackId = relevantForAudio[index].id;
                 const trackClips = trackClipsByTrackId.get(trackId) || [];
-
-                renderer.prepareForChunk(0);
 
                 await renderer.process(
                   offlineCtx,
@@ -452,11 +503,11 @@ export class ExportRenderer {
                   getAssetInput,
                   {
                     baseTicks:
-                      startTick + mediaSecondsToTickExact(chunkStartSec),
+                      startTick + mediaSecondsToTickExact(renderStartSec),
                     baseContextTime: 0,
                   },
                   {
-                    lookahead: chunkDuration + 0.1,
+                    lookahead: renderDuration + 0.1,
                     forceFlush: true,
                   },
                 );
@@ -465,18 +516,32 @@ export class ExportRenderer {
 
             this.throwIfCancelled();
 
-            const renderedBuffer = await offlineCtx.startRendering();
-            this.throwIfCancelled();
-
-            await outputEncoder.addAudioChunk(renderedBuffer);
-            this.throwIfCancelled();
-
-            const audioProgress =
-              ((chunkStartSec + chunkDuration) / rangeDurationSec) * 10;
-            onProgress(audioProgress);
+            renderedBuffer = await offlineCtx.startRendering();
+          } finally {
+            audioRenderers.forEach((renderer) => renderer.dispose());
           }
-        } finally {
-          audioRenderers.forEach((renderer) => renderer.dispose());
+
+          this.throwIfCancelled();
+          if (!renderedBuffer) {
+            throw new Error("Audio export chunk did not produce a buffer");
+          }
+
+          const outputBuffer =
+            prerollSeconds > 0
+              ? createAudioBufferSlice(
+                  offlineCtx,
+                  renderedBuffer,
+                  prerollSeconds,
+                  chunkDuration,
+                )
+              : renderedBuffer;
+
+          await outputEncoder.addAudioChunk(outputBuffer);
+          this.throwIfCancelled();
+
+          const audioProgress =
+            ((chunkStartSec + chunkDuration) / rangeDurationSec) * 10;
+          onProgress(audioProgress);
         }
       }
 

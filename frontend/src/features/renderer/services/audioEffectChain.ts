@@ -47,15 +47,22 @@ export interface AudioEffectChain {
   readonly outputNode: AudioNode;
   /** Topology hash; the renderer rebuilds the chain when this changes. */
   readonly signature: string;
-  scheduleAutomation(window: AudioEffectAutomationWindow): void;
+  scheduleAutomation(
+    window: AudioEffectAutomationWindow,
+    transforms: AudioEffectTransform[],
+  ): void;
   dispose(): void;
 }
 
 interface EffectSegment {
+  type: AudioEffectTransform["type"];
   input: AudioNode;
   output: AudioNode;
   nodes: AudioNode[];
-  schedule(window: AudioEffectAutomationWindow): void;
+  schedule(
+    window: AudioEffectAutomationWindow,
+    transform: AudioEffectTransform,
+  ): void;
 }
 
 // -----------------------------------------------------------------------------
@@ -166,19 +173,21 @@ export function getReverbImpulseResponse(
 // Per-effect node builders
 // -----------------------------------------------------------------------------
 
-function buildPan(ctx: BaseAudioContext, t: PanTransform): EffectSegment {
+function buildPan(ctx: BaseAudioContext): EffectSegment {
   const node = ctx.createStereoPanner();
-  const p = t.parameters;
   return {
+    type: "pan",
     input: node,
     output: node,
     nodes: [node],
-    schedule: (w) => scheduleScalar(node.pan, p.pan, 0, w),
+    schedule: (w, transform) => {
+      const p = (transform as PanTransform).parameters;
+      scheduleScalar(node.pan, p.pan, 0, w);
+    },
   };
 }
 
-function buildEq(ctx: BaseAudioContext, t: EqTransform): EffectSegment {
-  const p = t.parameters;
+function buildEq(ctx: BaseAudioContext): EffectSegment {
   const low = ctx.createBiquadFilter();
   low.type = "lowshelf";
   const mid = ctx.createBiquadFilter();
@@ -189,10 +198,12 @@ function buildEq(ctx: BaseAudioContext, t: EqTransform): EffectSegment {
   low.connect(mid);
   mid.connect(high);
   return {
+    type: "audioEq",
     input: low,
     output: high,
     nodes: [low, mid, high],
-    schedule: (w) => {
+    schedule: (w, transform) => {
+      const p = (transform as EqTransform).parameters;
       low.frequency.setValueAtTime(
         scalarAtStart(p.lowFreq, 200, w),
         w.startContextTime,
@@ -212,19 +223,17 @@ function buildEq(ctx: BaseAudioContext, t: EqTransform): EffectSegment {
   };
 }
 
-function buildCompressor(
-  ctx: BaseAudioContext,
-  t: CompressorTransform,
-): EffectSegment {
-  const p = t.parameters;
+function buildCompressor(ctx: BaseAudioContext): EffectSegment {
   const comp = ctx.createDynamicsCompressor();
   const makeup = ctx.createGain();
   comp.connect(makeup);
   return {
+    type: "compressor",
     input: comp,
     output: makeup,
     nodes: [comp, makeup],
-    schedule: (w) => {
+    schedule: (w, transform) => {
+      const p = (transform as CompressorTransform).parameters;
       comp.threshold.setValueAtTime(
         scalarAtStart(p.threshold, -24, w),
         w.startContextTime,
@@ -244,8 +253,7 @@ function buildCompressor(
   };
 }
 
-function buildReverb(ctx: BaseAudioContext, t: ReverbTransform): EffectSegment {
-  const p = t.parameters;
+function buildReverb(ctx: BaseAudioContext): EffectSegment {
   const input = ctx.createGain();
   const dry = ctx.createGain();
   const wet = ctx.createGain();
@@ -259,10 +267,12 @@ function buildReverb(ctx: BaseAudioContext, t: ReverbTransform): EffectSegment {
 
   let lastIrKey = "";
   return {
+    type: "reverb",
     input,
     output,
     nodes: [input, dry, wet, conv, output],
-    schedule: (w) => {
+    schedule: (w, transform) => {
+      const p = (transform as ReverbTransform).parameters;
       const decay = Math.max(0.05, scalarAtStart(p.decay, 2, w));
       const key = `${ctx.sampleRate}:${decay.toFixed(2)}`;
       if (key !== lastIrKey) {
@@ -275,8 +285,7 @@ function buildReverb(ctx: BaseAudioContext, t: ReverbTransform): EffectSegment {
   };
 }
 
-function buildDelay(ctx: BaseAudioContext, t: DelayTransform): EffectSegment {
-  const p = t.parameters;
+function buildDelay(ctx: BaseAudioContext): EffectSegment {
   const input = ctx.createGain();
   const dry = ctx.createGain();
   const wet = ctx.createGain();
@@ -291,10 +300,12 @@ function buildDelay(ctx: BaseAudioContext, t: DelayTransform): EffectSegment {
   delay.connect(feedback);
   feedback.connect(delay);
   return {
+    type: "delay",
     input,
     output,
     nodes: [input, dry, wet, output, delay, feedback],
-    schedule: (w) => {
+    schedule: (w, transform) => {
+      const p = (transform as DelayTransform).parameters;
       scheduleScalar(delay.delayTime, p.time, 0.3, w);
       scheduleScalar(feedback.gain, p.feedback, 0.4, w);
       scheduleScalar(wet.gain, p.mix, 0.3, w);
@@ -309,15 +320,15 @@ function buildSegment(
 ): EffectSegment | null {
   switch (transform.type) {
     case "pan":
-      return buildPan(ctx, transform);
+      return buildPan(ctx);
     case "audioEq":
-      return buildEq(ctx, transform);
+      return buildEq(ctx);
     case "compressor":
-      return buildCompressor(ctx, transform);
+      return buildCompressor(ctx);
     case "reverb":
-      return buildReverb(ctx, transform);
+      return buildReverb(ctx);
     case "delay":
-      return buildDelay(ctx, transform);
+      return buildDelay(ctx);
     default:
       return null;
   }
@@ -341,6 +352,76 @@ export function computeAudioEffectSignature(
   transforms: AudioEffectTransform[],
 ): string {
   return transforms.map((t) => t.type).join(">");
+}
+
+function scalarParameterMax(
+  value: ScalarParameter | undefined,
+  defaultValue: number,
+): number {
+  if (typeof value === "number") return value;
+  if (value?.type === "spline") {
+    return value.points.reduce(
+      (max, point) =>
+        typeof point.value === "number" && Number.isFinite(point.value)
+          ? Math.max(max, point.value)
+          : max,
+      defaultValue,
+    );
+  }
+  return defaultValue;
+}
+
+/**
+ * Conservative tail-time estimate for deciding when a scheduled chain is safe
+ * to disconnect. This is lifecycle policy, not DSP: it deliberately errs on
+ * retaining a chain a little longer so realtime preview does not chop tails.
+ */
+export function estimateAudioEffectTailSeconds(
+  transforms: AudioEffectTransform[],
+): number {
+  let tailSeconds = 0;
+
+  for (const transform of transforms) {
+    if (transform.type === "reverb") {
+      const p = (transform as ReverbTransform).parameters;
+      tailSeconds = Math.max(
+        tailSeconds,
+        Math.max(0.05, scalarParameterMax(p.decay, 2)),
+      );
+      continue;
+    }
+
+    if (transform.type === "delay") {
+      const p = (transform as DelayTransform).parameters;
+      const delayTime = Math.min(
+        1,
+        Math.max(0, scalarParameterMax(p.time, 0.3)),
+      );
+      const feedback = Math.min(
+        0.95,
+        Math.max(0, scalarParameterMax(p.feedback, 0.4)),
+      );
+      const repeats =
+        feedback <= 0.001
+          ? 1
+          : Math.ceil(Math.log(0.001) / Math.log(feedback));
+      tailSeconds = Math.max(
+        tailSeconds,
+        Math.min(10, delayTime * Math.max(1, repeats)),
+      );
+      continue;
+    }
+
+    if (transform.type === "compressor") {
+      const p = (transform as CompressorTransform).parameters;
+      tailSeconds = Math.max(
+        tailSeconds,
+        Math.max(0, scalarParameterMax(p.release, 0.25)),
+      );
+    }
+  }
+
+  return tailSeconds;
 }
 
 /**
@@ -370,9 +451,14 @@ export function buildAudioEffectChain(
     inputNode: segments[0].input,
     outputNode: segments[segments.length - 1].output,
     signature: computeAudioEffectSignature(transforms),
-    scheduleAutomation: (window) => {
+    scheduleAutomation: (window, currentTransforms) => {
       if (disposed) return;
-      for (const segment of segments) segment.schedule(window);
+      for (let i = 0; i < segments.length; i += 1) {
+        const segment = segments[i];
+        const transform = currentTransforms[i];
+        if (!transform || transform.type !== segment.type) continue;
+        segment.schedule(window, transform);
+      }
     },
     dispose: () => {
       if (disposed) return;

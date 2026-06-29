@@ -11,12 +11,13 @@ import {
   resolveClipRenderTimeFromEffectiveTick,
 } from "../utils/clipRenderTime";
 import { resolveLiveActiveClip } from "../utils/clipLookup";
-import type { ScalarParameter } from "../../transformations";
+import type { AudioEffectTransform, ScalarParameter } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import {
   buildAudioEffectChain,
   computeAudioEffectSignature,
+  estimateAudioEffectTailSeconds,
   getAudioEffectTransforms,
   type AudioEffectChain,
 } from "./audioEffectChain";
@@ -86,6 +87,22 @@ export interface TrackAudioRendererState {
   };
 }
 
+interface ManagedAudioEffectChain {
+  clipId: string;
+  signature: string;
+  ctx: BaseAudioContext;
+  destination: AudioNode;
+  chain: AudioEffectChain;
+  tailSeconds: number;
+  activeSources: number;
+  lastScheduledEndTime: number;
+}
+
+interface ScheduledAudioEffectChain {
+  managed: ManagedAudioEffectChain;
+  transforms: AudioEffectTransform[];
+}
+
 export class TrackAudioRenderer {
   private state: TrackAudioRendererState = {
     input: null,
@@ -107,16 +124,12 @@ export class TrackAudioRenderer {
   private scheduledNodes: AudioBufferSourceNode[] = [];
   private nextScheduleTime: number = 0; // Context Time
 
-  // Persistent per-clip audio effect chain (pan/EQ/compressor/reverb/delay).
-  // Kept across scheduling chunks so stateful effects (reverb/delay tails,
-  // compressor envelopes) stay continuous; rebuilt when the clip, the effect
-  // topology, or the audio context changes (the latter on each export chunk).
-  private clipEffectChain: {
-    clipId: string;
-    signature: string;
-    ctx: BaseAudioContext;
-    chain: AudioEffectChain;
-  } | null = null;
+  // Persistent audio effect chains (pan/EQ/compressor/reverb/delay), retained
+  // per clip occurrence until scheduled source audio and estimated tails finish.
+  // This prevents scheduling clip B from disconnecting already-scheduled clip A
+  // audio, while still letting topology edits create a fresh chain for future
+  // chunks without cutting old chunks.
+  private effectChains: ManagedAudioEffectChain[] = [];
 
   // Cache for asset inputs to avoid recreating them constantly if passed externally
   // But typically the caller (hook) manages the asset store interaction.
@@ -260,15 +273,6 @@ export class TrackAudioRenderer {
     return high;
   }
 
-  /**
-   * Resets the internal scheduling timer without clearing the decoding state.
-   * Useful for chunked offline rendering where we create new AudioContexts.
-   */
-  public prepareForChunk(startTime: number) {
-    this.nextScheduleTime = startTime;
-    this.cleanupNodes();
-  }
-
   public reset(contextTime: number) {
     this.cleanupNodes();
     this.nextScheduleTime = contextTime + 0.15; // Pre-buffer
@@ -316,41 +320,84 @@ export class TrackAudioRenderer {
     ctx: BaseAudioContext,
     clip: TimelineClip,
     destination: AudioNode,
-  ): AudioEffectChain | null {
+  ): ScheduledAudioEffectChain | null {
     const transforms = getAudioEffectTransforms(clip);
     const signature = computeAudioEffectSignature(transforms);
 
-    const existing = this.clipEffectChain;
-    if (existing) {
-      if (
-        existing.clipId === clip.id &&
-        existing.signature === signature &&
-        existing.ctx === ctx
-      ) {
-        return transforms.length > 0 ? existing.chain : null;
-      }
-      existing.chain.dispose();
-      this.clipEffectChain = null;
-    }
-
     if (transforms.length === 0) return null;
+
+    this.cleanupInactiveEffectChains(ctx.currentTime);
+
+    const existing = this.effectChains.find(
+      (entry) =>
+        entry.clipId === clip.id &&
+        entry.signature === signature &&
+        entry.ctx === ctx &&
+        entry.destination === destination,
+    );
+    if (existing) {
+      existing.tailSeconds = Math.max(
+        existing.tailSeconds,
+        estimateAudioEffectTailSeconds(transforms),
+      );
+      return { managed: existing, transforms };
+    }
 
     const chain = buildAudioEffectChain(ctx, transforms);
     if (!chain) return null;
     chain.outputNode.connect(destination);
-    this.clipEffectChain = { clipId: clip.id, signature, ctx, chain };
-    return chain;
+    const managed: ManagedAudioEffectChain = {
+      clipId: clip.id,
+      signature,
+      ctx,
+      destination,
+      chain,
+      tailSeconds: estimateAudioEffectTailSeconds(transforms),
+      activeSources: 0,
+      lastScheduledEndTime: 0,
+    };
+    this.effectChains.push(managed);
+    return { managed, transforms };
   }
 
-  private disposeEffectChain() {
-    if (this.clipEffectChain) {
-      this.clipEffectChain.chain.dispose();
-      this.clipEffectChain = null;
+  private disposeEffectChains() {
+    for (const entry of this.effectChains) {
+      entry.chain.dispose();
     }
+    this.effectChains = [];
+  }
+
+  private cleanupInactiveEffectChains(currentTime: number) {
+    const retained: ManagedAudioEffectChain[] = [];
+    for (const entry of this.effectChains) {
+      const tailEndTime = entry.lastScheduledEndTime + entry.tailSeconds;
+      if (entry.activeSources === 0 && currentTime >= tailEndTime) {
+        entry.chain.dispose();
+      } else {
+        retained.push(entry);
+      }
+    }
+    this.effectChains = retained;
+  }
+
+  private markEffectChainScheduled(
+    entry: ManagedAudioEffectChain,
+    startContextTime: number,
+    wallDuration: number,
+  ) {
+    entry.activeSources += 1;
+    entry.lastScheduledEndTime = Math.max(
+      entry.lastScheduledEndTime,
+      startContextTime + wallDuration,
+    );
+  }
+
+  private releaseEffectChainSource(entry: ManagedAudioEffectChain) {
+    entry.activeSources = Math.max(0, entry.activeSources - 1);
   }
 
   private cleanupNodes() {
-    this.disposeEffectChain();
+    this.disposeEffectChains();
     this.scheduledNodes.forEach((node) => {
       try {
         node.stop();
@@ -495,7 +542,9 @@ export class TrackAudioRenderer {
       // chain when present; otherwise straight to the destination (volume-only
       // clips are unchanged).
       const effectChain = this.ensureEffectChain(ctx, activeClip, destination);
-      gainNode.connect(effectChain ? effectChain.inputNode : destination);
+      gainNode.connect(
+        effectChain ? effectChain.managed.chain.inputNode : destination,
+      );
 
       const clipCurves = getClipCurveEvaluators(activeClip);
       const contentTicks = mediaSecondsToTickExact(totalSourceDuration);
@@ -611,15 +660,23 @@ export class TrackAudioRenderer {
       // Schedule audio effect parameter automation for this chunk window.
       // Splined effect params evaluate exactly like volume (same tick mapping).
       if (effectChain) {
-        effectChain.scheduleAutomation({
+        effectChain.managed.chain.scheduleAutomation(
+          {
+            startContextTime,
+            wallDurationSeconds: wallDuration,
+            startTargetTicks,
+            windowTicks: mediaSecondsToTickExact(wallDuration),
+            sampleCount,
+            sourceTimeTicksAt: (t) =>
+              this.getSourceTicksAtPresentationTick(activeClip, t),
+          },
+          effectChain.transforms,
+        );
+        this.markEffectChainScheduled(
+          effectChain.managed,
           startContextTime,
-          wallDurationSeconds: wallDuration,
-          startTargetTicks,
-          windowTicks: mediaSecondsToTickExact(wallDuration),
-          sampleCount,
-          sourceTimeTicksAt: (t) =>
-            this.getSourceTicksAtPresentationTick(activeClip, t),
-        });
+          wallDuration,
+        );
       }
 
       // Scheduling
@@ -632,16 +689,27 @@ export class TrackAudioRenderer {
           source.start(ctx.currentTime, offset * startPlaybackRate);
           this.scheduledNodes.push(source);
           source.onended = () => {
+            if (effectChain) {
+              this.releaseEffectChainSource(effectChain.managed);
+            }
             const idx = this.scheduledNodes.indexOf(source);
             if (idx > -1) this.scheduledNodes.splice(idx, 1);
+            this.cleanupInactiveEffectChains(ctx.currentTime);
           };
+        } else if (effectChain) {
+          this.releaseEffectChainSource(effectChain.managed);
+          this.cleanupInactiveEffectChains(ctx.currentTime);
         }
       } else {
         source.start(startContextTime);
         this.scheduledNodes.push(source);
         source.onended = () => {
+          if (effectChain) {
+            this.releaseEffectChainSource(effectChain.managed);
+          }
           const idx = this.scheduledNodes.indexOf(source);
           if (idx > -1) this.scheduledNodes.splice(idx, 1);
+          this.cleanupInactiveEffectChains(ctx.currentTime);
         };
       }
 

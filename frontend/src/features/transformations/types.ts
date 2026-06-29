@@ -91,10 +91,99 @@ export interface GenericFilterTransform extends ClipTransform {
   parameters: Record<string, unknown>;
 }
 
+// --- Audio effect transforms ---
+// Like `volume`, these have a no-op visual handler; their behavior lives in the
+// audio renderer (see renderer/services/audioEffectChain.ts), which maps them
+// to a chain of Web Audio nodes inserted after the per-clip gain node.
+export const AUDIO_EFFECT_TYPES = [
+  "pan",
+  "audioEq",
+  "compressor",
+  "reverb",
+  "delay",
+] as const;
+
+export type AudioEffectType = (typeof AUDIO_EFFECT_TYPES)[number];
+
+export function isAudioEffectType(type: string): type is AudioEffectType {
+  return (AUDIO_EFFECT_TYPES as readonly string[]).includes(type);
+}
+
+export interface PanParams {
+  pan: ScalarParameter; // -1 (full left) .. 1 (full right)
+  [key: string]: unknown;
+}
+
+export interface PanTransform extends ClipTransform {
+  type: "pan";
+  parameters: PanParams;
+}
+
+export interface EqParams {
+  lowGain: ScalarParameter; // dB
+  lowFreq: ScalarParameter; // Hz, low shelf
+  midGain: ScalarParameter; // dB
+  midFreq: ScalarParameter; // Hz, peaking center
+  highGain: ScalarParameter; // dB
+  highFreq: ScalarParameter; // Hz, high shelf
+  [key: string]: unknown;
+}
+
+export interface EqTransform extends ClipTransform {
+  type: "audioEq";
+  parameters: EqParams;
+}
+
+export interface CompressorParams {
+  threshold: ScalarParameter; // dB
+  ratio: ScalarParameter;
+  attack: ScalarParameter; // seconds
+  release: ScalarParameter; // seconds
+  knee: ScalarParameter; // dB
+  makeup: ScalarParameter; // linear gain multiplier
+  [key: string]: unknown;
+}
+
+export interface CompressorTransform extends ClipTransform {
+  type: "compressor";
+  parameters: CompressorParams;
+}
+
+export interface ReverbParams {
+  mix: ScalarParameter; // 0 (dry) .. 1 (wet)
+  decay: ScalarParameter; // seconds (impulse-response tail length)
+  [key: string]: unknown;
+}
+
+export interface ReverbTransform extends ClipTransform {
+  type: "reverb";
+  parameters: ReverbParams;
+}
+
+export interface DelayParams {
+  time: ScalarParameter; // seconds
+  feedback: ScalarParameter; // 0 .. <1
+  mix: ScalarParameter; // 0 (dry) .. 1 (wet)
+  [key: string]: unknown;
+}
+
+export interface DelayTransform extends ClipTransform {
+  type: "delay";
+  parameters: DelayParams;
+}
+
+export type AudioEffectTransform =
+  | PanTransform
+  | EqTransform
+  | CompressorTransform
+  | ReverbTransform
+  | DelayTransform;
+
 export type AnyTransform =
   | PositionTransform
   | ScaleTransform
   | RotationTransform
   | SpeedTransform
   | VolumeTransform
+  | AudioEffectTransform
   | GenericFilterTransform;

@@ -26,6 +26,11 @@ import { fitModeDefinition } from "./layout/fitMode";
 import { blendModeDefinition, blendModeApplicator } from "./blendMode";
 import { speedDefinition } from "./time/speed";
 import { volumeDefinition } from "./audio/volume";
+import { panDefinition } from "./audio/pan";
+import { eqDefinition } from "./audio/eq";
+import { compressorDefinition } from "./audio/compressor";
+import { reverbDefinition } from "./audio/reverb";
+import { delayDefinition } from "./audio/delay";
 import { hslFilterDefinition } from "./filters/hslAdjustment";
 import { colorAdjustmentDefinition } from "./filters/colorAdjustment";
 import { alphaFilterDefinition } from "./filters/alpha";
@@ -77,6 +82,15 @@ const BUILTIN_TRANSFORMATION_DEFINITIONS: TransformationDefinition[] = [
 
   // Volume definition — always visible for audio clips
   { ...volumeDefinition, isDefault: true },
+
+  // Audio effects — addable (not default) for audio clips and for video clips
+  // that carry an audio track. Realized in the audio renderer via
+  // renderer/services/audioEffectChain.ts.
+  { ...panDefinition, isDefault: false },
+  { ...eqDefinition, isDefault: false },
+  { ...compressorDefinition, isDefault: false },
+  { ...reverbDefinition, isDefault: false },
+  { ...delayDefinition, isDefault: false },
 
   // Speed — default (always present, not in the add menu) for every clip type
   // it's compatible with. adjustmentCompatible so it's also a default section

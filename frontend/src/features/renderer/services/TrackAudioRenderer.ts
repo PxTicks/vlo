@@ -11,6 +11,12 @@ import { resolveLiveActiveClip } from "../utils/clipLookup";
 import type { ScalarParameter } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import type { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
+import {
+  buildAudioEffectChain,
+  computeAudioEffectSignature,
+  getAudioEffectTransforms,
+  type AudioEffectChain,
+} from "./audioEffectChain";
 
 const REALTIME_CURVE_SAMPLE_COUNT = 64;
 const OFFLINE_CURVE_SAMPLE_COUNT = 256;
@@ -97,6 +103,17 @@ export class TrackAudioRenderer {
 
   private scheduledNodes: AudioBufferSourceNode[] = [];
   private nextScheduleTime: number = 0; // Context Time
+
+  // Persistent per-clip audio effect chain (pan/EQ/compressor/reverb/delay).
+  // Kept across scheduling chunks so stateful effects (reverb/delay tails,
+  // compressor envelopes) stay continuous; rebuilt when the clip, the effect
+  // topology, or the audio context changes (the latter on each export chunk).
+  private clipEffectChain: {
+    clipId: string;
+    signature: string;
+    ctx: BaseAudioContext;
+    chain: AudioEffectChain;
+  } | null = null;
 
   // Cache for asset inputs to avoid recreating them constantly if passed externally
   // But typically the caller (hook) manages the asset store interaction.
@@ -288,7 +305,50 @@ export class TrackAudioRenderer {
     this.state.iterator = null;
   }
 
+  /**
+   * Ensure the persistent effect chain matches the clip's current effect
+   * topology and the active context. Returns the chain to route into, or null
+   * when the clip has no audio effects (caller routes straight to destination).
+   */
+  private ensureEffectChain(
+    ctx: BaseAudioContext,
+    clip: TimelineClip,
+    destination: AudioNode,
+  ): AudioEffectChain | null {
+    const transforms = getAudioEffectTransforms(clip);
+    const signature = computeAudioEffectSignature(transforms);
+
+    const existing = this.clipEffectChain;
+    if (existing) {
+      if (
+        existing.clipId === clip.id &&
+        existing.signature === signature &&
+        existing.ctx === ctx
+      ) {
+        return transforms.length > 0 ? existing.chain : null;
+      }
+      existing.chain.dispose();
+      this.clipEffectChain = null;
+    }
+
+    if (transforms.length === 0) return null;
+
+    const chain = buildAudioEffectChain(ctx, transforms);
+    if (!chain) return null;
+    chain.outputNode.connect(destination);
+    this.clipEffectChain = { clipId: clip.id, signature, ctx, chain };
+    return chain;
+  }
+
+  private disposeEffectChain() {
+    if (this.clipEffectChain) {
+      this.clipEffectChain.chain.dispose();
+      this.clipEffectChain = null;
+    }
+  }
+
   private cleanupNodes() {
+    this.disposeEffectChain();
     this.scheduledNodes.forEach((node) => {
       try {
         node.stop();
@@ -428,7 +488,12 @@ export class TrackAudioRenderer {
       // Gain mechanism
       const gainNode = ctx.createGain();
       source.connect(gainNode);
-      gainNode.connect(destination);
+
+      // Route the per-chunk gain node into the clip's persistent audio effect
+      // chain when present; otherwise straight to the destination (volume-only
+      // clips are unchanged).
+      const effectChain = this.ensureEffectChain(ctx, activeClip, destination);
+      gainNode.connect(effectChain ? effectChain.inputNode : destination);
 
       const clipCurves = getClipCurveEvaluators(activeClip);
       const contentTicks = mediaSecondsToTickExact(totalSourceDuration);
@@ -543,6 +608,21 @@ export class TrackAudioRenderer {
         } catch {
           gainNode.gain.value = volumeCurve[0];
         }
+      }
+
+      // Schedule audio effect parameter automation for this chunk window.
+      // Splined effect params evaluate exactly like volume (same tick mapping).
+      if (effectChain) {
+        effectChain.scheduleAutomation({
+          startContextTime,
+          wallDurationSeconds: wallDuration,
+          startTargetTicks,
+          windowTicks: mediaSecondsToTickExact(wallDuration),
+          sampleCount,
+          localTickAt: (t) =>
+            this.resolveEffectiveTrackTickForClip(activeClip, t) -
+            activeClip.start,
+        });
       }
 
       // Scheduling

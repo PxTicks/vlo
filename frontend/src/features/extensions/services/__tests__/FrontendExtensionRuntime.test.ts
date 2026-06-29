@@ -11,6 +11,8 @@ import {
 import type { VloExtensionApi } from "../../types";
 import { extensionTransformationRegistry } from "../../../transformations/extensionApi";
 import { extensionUiSlotRegistry } from "../../ui/ExtensionUiSlotRegistry";
+import { Filter } from "pixi.js";
+import { createElement } from "react";
 
 interface TestContribution extends ExtensionContributionDefinition {
   value: string;
@@ -117,6 +119,8 @@ describe("FrontendExtensionRuntime", () => {
       loadInventory: async () => [inventoryItem("example.color-grade")],
       importModule: async () => ({
         activate: (context: { api: VloExtensionApi }) => {
+          expect(context.api.runtime.pixi.Filter).toBe(Filter);
+          expect(context.api.runtime.react.createElement).toBe(createElement);
           context.api.transformations.register({
             id: "film-grade",
             apiVersion: 1,

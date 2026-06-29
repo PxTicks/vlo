@@ -107,6 +107,22 @@ import type { TransformationLayoutConfig } from "./ui/UITypes";
 // Type for PixiJS filter class constructor
 type FilterConstructor = new () => Filter;
 
+export interface TransformationFilterFactory {
+  readonly contributionId: string;
+  create(): Filter;
+  owns(filter: Filter): boolean;
+  update(
+    filter: Filter,
+    parameters: Readonly<Record<string, unknown>>,
+    context: {
+      readonly target: ClipTransformTarget;
+      readonly contentSize?: Readonly<{ width: number; height: number }>;
+    },
+  ): void;
+  release(filter: Filter): void;
+  dispose(): void;
+}
+
 /**
  * A complete, self-contained transformation definition.
  * Each transformation module exports one of these containing all its metadata,
@@ -157,6 +173,9 @@ export interface TransformationDefinition {
   /** UI configuration defining the controls to render */
   uiConfig: TransformationLayoutConfig;
 
+  /** Defaults beyond or overriding those declared by native controls. */
+  defaultParameters?: Readonly<Record<string, unknown>>;
+
   // --- Filter-specific properties (optional) ---
 
   /** For filter types: the unique filter identifier */
@@ -164,6 +183,9 @@ export interface TransformationDefinition {
 
   /** For filter types: the PixiJS Filter class constructor */
   FilterClass?: FilterConstructor;
+
+  /** Trusted extension factory for arbitrary host-Pixi filter instances. */
+  filterFactory?: TransformationFilterFactory;
 
   /**
    * Optional per-parameter scale metadata for spatial filters whose authored

@@ -22,13 +22,16 @@ directory by hand; rebuild it before approval.
 
 - `@vlo/extension-sdk` is type-only. Import it with `import type`; runtime access is
   supplied through the host-owned activation context.
-- The host context currently exposes opaque payload providers, labelled timeline
-  transactions, declarative host-filter transformations, and native notice slots.
-  Rendering new entity types, arbitrary React/Pixi contributions, animation/path
-  strategies, and backend jobs arrive in later SDK phases.
-- React, React DOM, MUI/emotion, Zustand, and Pixi are host singletons. SDK 1 has no
-  portable runtime mapping for them, so the template build rejects those imports
-  instead of bundling duplicate copies or emitting unresolved bare imports.
+- Trusted frontend extensions receive the host's exact Pixi and React singletons as
+  `context.api.runtime.pixi` and `context.api.runtime.react`. Transformation
+  factories may create arbitrary Pixi filters, including custom GLSL/WGSL shaders;
+  trusted React component slots may use the supplied React runtime. Declarative
+  host filters and native notices remain available as simpler, restricted-ready
+  alternatives.
+- React, React DOM, MUI/emotion, Zustand, and Pixi remain host singletons. The
+  template rejects runtime package imports instead of bundling duplicate copies;
+  use the injected runtime namespaces. Type-only package imports are erased and are
+  permitted for richer editor typings when the package is a development dependency.
 - That bundle guard belongs to this template, not the host approval boundary. A
   hand-written build can bypass it, but may then fail at activation or silently load
   incompatible singleton copies. Host-side bundle validation is future work.

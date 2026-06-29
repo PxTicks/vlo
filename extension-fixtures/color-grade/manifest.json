@@ -7,5 +7,5 @@
   "frontend": {
     "entry": "frontend/dist/index.js"
   },
-  "capabilities": ["timeline.write"]
+  "capabilities": ["render.custom-shader", "ui.custom"]
 }

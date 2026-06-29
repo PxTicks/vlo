@@ -15,6 +15,9 @@ function extractDefaultParams(typeOrFilterName: string, isFilter: boolean) {
       params[control.name] = control.defaultValue;
     });
   });
+  if (entry?.defaultParameters) {
+    Object.assign(params, structuredClone(entry.defaultParameters));
+  }
 
   return params;
 }

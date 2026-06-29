@@ -15,21 +15,13 @@ import type { GenericFilterTransform } from "../types";
 import { resolveScalar } from "../utils/resolveScalar";
 import { isSplineParameter } from "../utils/typeGuards";
 
-/**
- * Handler for generic filter transformations.
- * Resolves parameter values (including splines) and pushes to the filters stack.
- */
-export const filterHandler: TransformHandler<GenericFilterTransform> = (
-  state: TransformState,
-  transform: GenericFilterTransform,
-  context: TransformContext,
-) => {
-  // Resolve parameters (handle splines)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const resolvedParams: any = {};
-  const t = context.time ?? 0;
+export function resolveTransformationParameters(
+  parameters: Readonly<Record<string, unknown>>,
+  time: number,
+): Record<string, unknown> {
+  const resolvedParams: Record<string, unknown> = {};
 
-  for (const [key, value] of Object.entries(transform.parameters)) {
+  for (const [key, value] of Object.entries(parameters)) {
     if (typeof value === "number") {
       resolvedParams[key] = value;
       continue;
@@ -40,8 +32,13 @@ export const filterHandler: TransformHandler<GenericFilterTransform> = (
       continue;
     }
 
+    if (typeof value === "string" || value === null) {
+      resolvedParams[key] = value;
+      continue;
+    }
+
     if (isSplineParameter(value)) {
-      resolvedParams[key] = resolveScalar(value, t, 0);
+      resolvedParams[key] = resolveScalar(value, time, 0);
       continue;
     }
 
@@ -55,8 +52,25 @@ export const filterHandler: TransformHandler<GenericFilterTransform> = (
       continue;
     }
 
-    resolvedParams[key] = resolveScalar(undefined, t, 0);
+    resolvedParams[key] = resolveScalar(undefined, time, 0);
   }
+
+  return resolvedParams;
+}
+
+/**
+ * Handler for generic filter transformations.
+ * Resolves parameter values (including splines) and pushes to the filters stack.
+ */
+export const filterHandler: TransformHandler<GenericFilterTransform> = (
+  state: TransformState,
+  transform: GenericFilterTransform,
+  context: TransformContext,
+) => {
+  const resolvedParams = resolveTransformationParameters(
+    transform.parameters,
+    context.time ?? 0,
+  );
 
   // Push the generic op to the stack
   state.filters.push({

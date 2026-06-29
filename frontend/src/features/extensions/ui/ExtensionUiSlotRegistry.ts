@@ -4,6 +4,7 @@ import type {
   ExtensionUiNoticeDefinition,
   ExtensionUiRegistration,
   ExtensionUiSlotId,
+  ExtensionTrustedUiComponentDefinition,
 } from "../types";
 import {
   ExtensionContributionRegistry,
@@ -19,6 +20,18 @@ interface RuntimeUiNoticeDefinition extends ExtensionContributionDefinition {
   tone: "info" | "success" | "warning";
   report: ExtensionApiScope["report"];
 }
+
+interface RuntimeTrustedUiComponentDefinition
+  extends ExtensionContributionDefinition {
+  slot: ExtensionUiSlotId;
+  kind: "trusted-react";
+  component: () => unknown;
+  report: ExtensionApiScope["report"];
+}
+
+type RuntimeUiContributionDefinition =
+  | RuntimeUiNoticeDefinition
+  | RuntimeTrustedUiComponentDefinition;
 
 function assertText(value: string, label: string, maxLength: number): string {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -72,13 +85,45 @@ function compileNotice(
   });
 }
 
-export type RegisteredExtensionUiNotice = RegisteredExtensionContribution<
-  RuntimeUiNoticeDefinition
->;
+function compileComponent(
+  definition: ExtensionTrustedUiComponentDefinition,
+  report: ExtensionApiScope["report"],
+): RuntimeTrustedUiComponentDefinition {
+  if (definition.apiVersion !== 1) {
+    throw new Error(`UI component '${definition.id}' must use apiVersion 1.`);
+  }
+  if (definition.kind !== "trusted-react") {
+    throw new Error(
+      `UI contribution '${definition.id}' has an unsupported kind.`,
+    );
+  }
+  if (definition.slot !== "transformation-panel.before") {
+    throw new Error(`UI component '${definition.id}' targets an unknown slot.`);
+  }
+  if (typeof definition.component !== "function") {
+    throw new Error(
+      `UI component '${definition.id}' must provide a component function.`,
+    );
+  }
+  return Object.freeze({
+    id: definition.id,
+    apiVersion: definition.apiVersion,
+    slot: definition.slot,
+    kind: definition.kind,
+    component: definition.component,
+    execution: "trusted",
+    report,
+  });
+}
+
+export type RegisteredExtensionUiContribution =
+  RegisteredExtensionContribution<RuntimeUiContributionDefinition>;
 
 export class ExtensionUiSlotRegistry {
   private readonly registry =
-    new ExtensionContributionRegistry<RuntimeUiNoticeDefinition>("ui-slot");
+    new ExtensionContributionRegistry<RuntimeUiContributionDefinition>(
+      "ui-slot",
+    );
 
   bind(scope: ExtensionApiScope): ExtensionUiApi {
     const bound = this.registry.bind(scope);
@@ -87,10 +132,14 @@ export class ExtensionUiSlotRegistry {
         definition: ExtensionUiNoticeDefinition,
       ): ExtensionUiRegistration =>
         bound.register(compileNotice(definition, scope.report)),
+      registerComponent: (
+        definition: ExtensionTrustedUiComponentDefinition,
+      ): ExtensionUiRegistration =>
+        bound.register(compileComponent(definition, scope.report)),
     });
   }
 
-  list(slot: ExtensionUiSlotId): readonly RegisteredExtensionUiNotice[] {
+  list(slot: ExtensionUiSlotId): readonly RegisteredExtensionUiContribution[] {
     return this.registry
       .list()
       .filter((entry) => entry.definition.slot === slot);

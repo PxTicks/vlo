@@ -115,13 +115,8 @@ export interface ExtensionTimelineApi {
   ): ExtensionTimelineTransactionResult;
 }
 
-/**
- * Host-owned filters an SDK 1 transformation may parameterize. Each is a
- * built-in vlo filter executed by the host; extensions supply only declarative
- * numeric controls, never filter code. New entries widen this allow-list and
- * never expose arbitrary shaders.
- */
-export type ExtensionHostFilter =
+/** Restricted-ready convenience filters executed entirely by the host. */
+export type ExtensionDeclarativeHostFilter =
   | "color-adjustment"
   | "hsl-adjustment"
   | "bloom"
@@ -131,6 +126,9 @@ export type ExtensionHostFilter =
   | "dot"
   | "ascii"
   | "bulge-pinch";
+
+/** @deprecated Prefer the explicit `ExtensionDeclarativeHostFilter` name. */
+export type ExtensionHostFilter = ExtensionDeclarativeHostFilter;
 
 export interface ExtensionTransformationNumberControl {
   readonly type: "slider" | "number";
@@ -143,23 +141,140 @@ export interface ExtensionTransformationNumberControl {
   readonly supportsSpline?: boolean;
 }
 
+export interface ExtensionTransformationCheckboxControl {
+  readonly type: "checkbox";
+  readonly name: string;
+  readonly label: string;
+  readonly defaultValue: boolean;
+}
+
+export interface ExtensionTransformationTextControl {
+  readonly type: "text" | "color";
+  readonly name: string;
+  readonly label: string;
+  readonly defaultValue: string;
+}
+
+export interface ExtensionTransformationSelectOption {
+  readonly label: string;
+  readonly value: string | number;
+}
+
+export interface ExtensionTransformationSelectControl {
+  readonly type: "select";
+  readonly name: string;
+  readonly label: string;
+  readonly defaultValue: string | number;
+  readonly options: readonly ExtensionTransformationSelectOption[];
+}
+
+export type ExtensionTransformationControl =
+  | ExtensionTransformationNumberControl
+  | ExtensionTransformationCheckboxControl
+  | ExtensionTransformationTextControl
+  | ExtensionTransformationSelectControl;
+
 export interface ExtensionTransformationControlGroup {
   readonly id: string;
   readonly title: string;
   readonly columns?: number;
-  readonly controls: readonly ExtensionTransformationNumberControl[];
+  readonly controls: readonly ExtensionTransformationControl[];
 }
 
-/** Declarative SDK 1 transformation backed by a host-owned filter runtime. */
-export interface ExtensionTransformationDefinition {
+interface ExtensionTransformationBaseDefinition {
   readonly id: string;
   readonly apiVersion: 1;
-  readonly kind: "host-filter";
-  readonly hostFilter: ExtensionHostFilter;
   readonly label: string;
   readonly adjustmentCompatible?: boolean;
   readonly groups: readonly ExtensionTransformationControlGroup[];
 }
+
+/**
+ * Declarative, restricted-ready transformation backed by a host-owned filter.
+ * This is a convenience lane, not the authority ceiling for trusted extensions.
+ */
+export interface ExtensionHostFilterTransformationDefinition
+  extends ExtensionTransformationBaseDefinition {
+  readonly kind: "host-filter";
+  readonly hostFilter: ExtensionDeclarativeHostFilter;
+}
+
+export interface ExtensionTrustedFilterApplyContext {
+  /** The actual host Pixi target. Trusted extensions may narrow this object. */
+  readonly target: object;
+  readonly contentSize?: Readonly<{ width: number; height: number }>;
+}
+
+/** One host-validated Pixi filter plus its extension-owned lifecycle callbacks. */
+export interface ExtensionTrustedFilterInstance {
+  readonly filter: object;
+  update(
+    parameters: Readonly<Record<string, unknown>>,
+    context: ExtensionTrustedFilterApplyContext,
+  ): void;
+  /** Release resources other than the filter itself; the host destroys `filter`. */
+  destroy?(): void;
+}
+
+/**
+ * Primary trusted filter contract. `createFilter` may construct arbitrary Pixi
+ * filters, including custom GLSL/WGSL programs, using `api.runtime.pixi`.
+ */
+export interface ExtensionTrustedFilterTransformationDefinition
+  extends ExtensionTransformationBaseDefinition {
+  readonly kind: "trusted-filter";
+  readonly defaultParameters?: Readonly<Record<string, JsonValue>>;
+  readonly validateParameters?: (
+    parameters: Readonly<Record<string, unknown>>,
+  ) => boolean;
+  readonly createFilter: () => ExtensionTrustedFilterInstance;
+}
+
+export interface ExtensionTrustedTransformationState {
+  x: number;
+  y: number;
+  scaleX: number;
+  scaleY: number;
+  rotation: number;
+  filters: Array<{
+    type: string;
+    params: Record<string, unknown>;
+  }>;
+  blendMode?: string;
+}
+
+export interface ExtensionTrustedTransformationApplyContext {
+  readonly state: ExtensionTrustedTransformationState;
+  readonly transform: Readonly<{
+    id: string;
+    type: string;
+    isEnabled: boolean;
+    parameters: Readonly<Record<string, unknown>>;
+  }>;
+  readonly render: Readonly<{
+    container: Readonly<{ width: number; height: number }>;
+    content: Readonly<{ width: number; height: number }>;
+    time?: number;
+    visualTime?: number;
+    visualDuration?: number;
+  }>;
+}
+
+/** Primary trusted contract for arbitrary render-state transformations. */
+export interface ExtensionTrustedTransformationDefinition
+  extends ExtensionTransformationBaseDefinition {
+  readonly kind: "trusted-transformation";
+  readonly defaultParameters?: Readonly<Record<string, JsonValue>>;
+  readonly validateParameters?: (
+    parameters: Readonly<Record<string, unknown>>,
+  ) => boolean;
+  readonly apply: (context: ExtensionTrustedTransformationApplyContext) => void;
+}
+
+export type ExtensionTransformationDefinition =
+  | ExtensionTrustedFilterTransformationDefinition
+  | ExtensionTrustedTransformationDefinition
+  | ExtensionHostFilterTransformationDefinition;
 
 export interface ExtensionTransformationRegistration
   extends ExtensionDisposable {
@@ -172,10 +287,59 @@ export interface ExtensionTransformationApi {
   ): ExtensionTransformationRegistration;
 }
 
+export interface ExtensionPixiShaderSource {
+  readonly vertex: string;
+  readonly fragment: string;
+  readonly name?: string;
+}
+
+/**
+ * Deliberately open Pixi filter options. The common shader fields are typed;
+ * trusted extensions may use any other host-version-specific Pixi option.
+ */
+export interface ExtensionPixiFilterOptions {
+  readonly gl?: ExtensionPixiShaderSource;
+  readonly gpu?: Readonly<Record<string, unknown>>;
+  readonly resources?: Readonly<Record<string, unknown>>;
+  readonly padding?: number;
+  readonly resolution?: number | "inherit";
+  readonly antialias?: boolean | "on" | "off" | "inherit";
+  readonly blendRequired?: boolean;
+  readonly clipToViewport?: boolean;
+  readonly [option: string]: unknown;
+}
+
+/**
+ * The actual host `pixi.js` module namespace. Frequently used Filter APIs are
+ * typed here; authors may narrow other exports with type-only Pixi imports.
+ */
+export interface ExtensionPixiRuntime {
+  readonly Filter: {
+    new (options: ExtensionPixiFilterOptions): object;
+    from(options: ExtensionPixiFilterOptions): object;
+  };
+  readonly [exportName: string]: unknown;
+}
+
+export interface ExtensionReactRuntime {
+  createElement(
+    type: unknown,
+    props: Readonly<Record<string, unknown>> | null,
+    ...children: unknown[]
+  ): unknown;
+  readonly [exportName: string]: unknown;
+}
+
+/** Exact host singleton runtimes supplied to trusted frontend extensions. */
+export interface ExtensionHostRuntimeApi {
+  readonly pixi: ExtensionPixiRuntime;
+  readonly react: ExtensionReactRuntime;
+}
+
 export type ExtensionUiSlotId = "transformation-panel.before";
 export type ExtensionUiNoticeTone = "info" | "success" | "warning";
 
-/** Declarative native UI contribution; arbitrary React slots are not portable SDK 1. */
+/** Declarative native UI contribution suitable for future restricted mode. */
 export interface ExtensionUiNoticeDefinition {
   readonly id: string;
   readonly apiVersion: 1;
@@ -194,9 +358,22 @@ export interface ExtensionUiApi {
   registerNotice(
     definition: ExtensionUiNoticeDefinition,
   ): ExtensionUiRegistration;
+  registerComponent(
+    definition: ExtensionTrustedUiComponentDefinition,
+  ): ExtensionUiRegistration;
+}
+
+/** Arbitrary React component rendered inside a host-owned, isolated slot. */
+export interface ExtensionTrustedUiComponentDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly slot: ExtensionUiSlotId;
+  readonly kind: "trusted-react";
+  readonly component: () => unknown;
 }
 
 export interface VloExtensionApi {
+  readonly runtime: ExtensionHostRuntimeApi;
   readonly payloadProviders: ExtensionPayloadProviderApi;
   readonly timeline: ExtensionTimelineApi;
   readonly transformations: ExtensionTransformationApi;

@@ -10,6 +10,7 @@ import { extensionPayloadProviderRegistry } from "../persistence/ExtensionPayloa
 import { createExtensionTimelineApi } from "../timeline/createExtensionTimelineApi";
 import { extensionTransformationRegistry } from "../../transformations/extensionApi";
 import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
+import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
 import {
   fetchExtensionInventory,
@@ -315,6 +316,7 @@ function reportHostDiagnostic(diagnostic: ExtensionDiagnostic): void {
 export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
   (scope) =>
     Object.freeze({
+      runtime: extensionHostRuntimeApi,
       payloadProviders: extensionPayloadProviderRegistry.bind(scope),
       timeline: createExtensionTimelineApi(scope),
       transformations: extensionTransformationRegistry.bind(scope),

@@ -224,26 +224,34 @@ def test_color_grade_fixture_builds_registers_and_stages_through_approval(
             "--eval",
             (
                 f"const extension = await import({json.dumps(built_entry.as_uri())});"
-                "const transformations = []; const notices = []; const logs = [];"
+                "const transformations = []; const components = []; const logs = [];"
+                "let filterOptions;"
                 "await extension.activate({"
                 "extension: { id: 'example.color-grade', version: '1.0.0' },"
                 "sdkVersion: '1.0.0', signal: new AbortController().signal,"
                 "api: {"
+                "runtime: { pixi: { Filter: { from(options) { filterOptions = options; return {}; } } },"
+                "react: { createElement() { return {}; } } },"
                 "transformations: { register(definition) {"
                 "transformations.push(definition);"
                 "return { id: 'example.color-grade/' + definition.id, dispose() {} };"
                 "} },"
-                "ui: { registerNotice(definition) { notices.push(definition);"
+                "ui: { registerComponent(definition) { components.push(definition);"
                 "return { id: 'example.color-grade/' + definition.id, dispose() {} };"
                 "} }"
                 "},"
                 "logger: { debug() {}, info(message) { logs.push(message); },"
                 "warn() {}, error() {} }, onDispose() {}"
                 "});"
-                "if (transformations[0]?.hostFilter !== 'color-adjustment') "
+                "if (transformations[0]?.kind !== 'trusted-filter' || "
+                "typeof transformations[0]?.createFilter !== 'function') "
                 "throw new Error('color-grade transformation missing');"
-                "if (notices[0]?.slot !== 'transformation-panel.before') "
-                "throw new Error('color-grade UI notice missing');"
+                "const filterInstance = transformations[0].createFilter();"
+                "filterInstance.update({ exposure: 1, contrast: 1.2, saturation: 0.8 });"
+                "if (!filterOptions?.gl?.fragment?.includes('uExposure')) "
+                "throw new Error('custom GLSL was not constructed through host Pixi');"
+                "if (components[0]?.kind !== 'trusted-react') "
+                "throw new Error('color-grade trusted UI missing');"
                 "if (!logs.some((message) => message.includes('activated'))) "
                 "throw new Error('activation log missing');"
             ),
@@ -279,5 +287,6 @@ def test_color_grade_fixture_builds_registers_and_stages_through_approval(
         pending.digest,
         "index.js",
     )
-    assert b"Color-grade fixture activated" in frontend_bundle
-    assert b"color-adjustment" in frontend_bundle
+    assert b"Custom GLSL color-grade fixture activated" in frontend_bundle
+    assert b"trusted-filter" in frontend_bundle
+    assert b"example-color-grade" in frontend_bundle

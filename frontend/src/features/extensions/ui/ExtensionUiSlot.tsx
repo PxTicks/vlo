@@ -8,11 +8,11 @@ import { Alert, AlertTitle, Box } from "@mui/material";
 import type { ExtensionUiSlotId } from "../types";
 import {
   extensionUiSlotRegistry,
-  type RegisteredExtensionUiNotice,
+  type RegisteredExtensionUiContribution,
 } from "./ExtensionUiSlotRegistry";
 
 interface ExtensionUiContributionBoundaryProps {
-  contribution: RegisteredExtensionUiNotice;
+  contribution: RegisteredExtensionUiContribution;
   children: ReactNode;
 }
 
@@ -47,6 +47,18 @@ export interface ExtensionUiSlotProps {
   slot: ExtensionUiSlotId;
 }
 
+interface TrustedExtensionComponentProps {
+  contribution: RegisteredExtensionUiContribution;
+}
+
+function TrustedExtensionComponent({
+  contribution,
+}: TrustedExtensionComponentProps) {
+  if (contribution.definition.kind !== "trusted-react") return null;
+  const Component = contribution.definition.component as () => ReactNode;
+  return <Component />;
+}
+
 export function ExtensionUiSlot({ slot }: ExtensionUiSlotProps) {
   useSyncExternalStore(
     (listener) => extensionUiSlotRegistry.subscribe(listener),
@@ -63,14 +75,23 @@ export function ExtensionUiSlot({ slot }: ExtensionUiSlotProps) {
           key={contribution.id}
           contribution={contribution}
         >
-          <Alert
-            data-testid={`extension-ui-contribution-${contribution.id}`}
-            severity={contribution.definition.tone}
-            sx={{ mb: 1 }}
-          >
-            <AlertTitle>{contribution.definition.title}</AlertTitle>
-            {contribution.definition.message}
-          </Alert>
+          {contribution.definition.kind === "notice" ? (
+            <Alert
+              data-testid={`extension-ui-contribution-${contribution.id}`}
+              severity={contribution.definition.tone}
+              sx={{ mb: 1 }}
+            >
+              <AlertTitle>{contribution.definition.title}</AlertTitle>
+              {contribution.definition.message}
+            </Alert>
+          ) : (
+            <Box
+              data-testid={`extension-ui-contribution-${contribution.id}`}
+              sx={{ mb: 1 }}
+            >
+              <TrustedExtensionComponent contribution={contribution} />
+            </Box>
+          )}
         </ExtensionUiContributionBoundary>
       ))}
     </Box>

@@ -246,6 +246,12 @@ describe("ProjectPersistenceService", () => {
       isEnabled: true,
       parameters: { gamma: 1.2, contrast: 1.1, saturation: 0.9 },
     };
+    const executableExtensionTransform = {
+      id: "offset-x-1",
+      type: "example.motion/offset-x",
+      isEnabled: true,
+      parameters: { amount: 24 },
+    };
     files.set(".vloproject/project.json", JSON.stringify(manifest));
     files.set(
       ".vloproject/timeline.json",
@@ -265,7 +271,10 @@ describe("ProjectPersistenceService", () => {
             croppedSourceDuration: 120,
             offset: 0,
             start: 0,
-            transformations: [extensionTransform],
+            transformations: [
+              extensionTransform,
+              executableExtensionTransform,
+            ],
           },
         ],
       }),
@@ -275,6 +284,9 @@ describe("ProjectPersistenceService", () => {
     const loaded = await projectPersistenceService.loadOrMigrateProject();
     expect(loaded.timeline?.clips[0]?.transformations[0]).toEqual(
       extensionTransform,
+    );
+    expect(loaded.timeline?.clips[0]?.transformations[1]).toEqual(
+      executableExtensionTransform,
     );
 
     await projectPersistenceService.updateTimeline((draft) => {
@@ -287,6 +299,9 @@ describe("ProjectPersistenceService", () => {
       ...extensionTransform,
       parameters: { ...extensionTransform.parameters, gamma: 1.4 },
     });
+    expect(persisted.clips[0].transformations[1]).toEqual(
+      executableExtensionTransform,
+    );
   });
 
   it("loads composite clips from a split timeline document", async () => {

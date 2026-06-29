@@ -9,11 +9,15 @@ import {
   dispatchTransform,
   getAddableTransforms,
   getEntryByFilterName,
+  getMissingExtensionTransformationId,
 } from "../../catalogue/TransformationRegistry";
 import { createAddTransform } from "../../hooks/controller/transformFactory";
 import { applyTransformStack } from "../../applyTransformations";
 import { filterApplicator } from "../../catalogue/filterFactory";
 import type { GenericFilterTransform } from "../../types";
+import type { ClipTransformTarget } from "../../catalogue/types";
+import { Filter } from "pixi.js";
+import { createVloExtensionApi } from "../../../extensions/services/FrontendExtensionRuntime";
 import {
   ExtensionTransformationRegistry,
   extensionTransformationRegistry,
@@ -140,6 +144,129 @@ describe("ExtensionTransformationRegistry", () => {
     expect(target.filters[0]).toMatchObject({ gamma: 1, saturation: 1 });
   });
 
+  it("runs arbitrary trusted GLSL filters with the host Pixi singleton", () => {
+    const scope = createScope("example.custom-shader");
+    const api = createVloExtensionApi(scope);
+    const update = vi.fn();
+    const destroy = vi.fn();
+    const createFilter = vi.fn(() => ({
+      filter: api.runtime.pixi.Filter.from({
+        gl: {
+          vertex: `
+            in vec2 aPosition;
+            void main(void) { gl_Position = vec4(aPosition, 0.0, 1.0); }
+          `,
+          fragment: `
+            out vec4 finalColor;
+            void main(void) { finalColor = vec4(1.0); }
+          `,
+        },
+      }),
+      update,
+      destroy,
+    }));
+    const registration = api.transformations.register({
+      id: "custom-glsl",
+      apiVersion: 1,
+      kind: "trusted-filter",
+      label: "Custom GLSL",
+      defaultParameters: { seed: 42 },
+      validateParameters: (parameters) =>
+        typeof parameters.seed === "number",
+      groups: [
+        {
+          id: "shader",
+          title: "Shader",
+          controls: [
+            {
+              type: "slider",
+              name: "strength",
+              label: "Strength",
+              defaultValue: 0.5,
+              min: 0,
+              max: 1,
+            },
+            {
+              type: "checkbox",
+              name: "preserveLuma",
+              label: "Preserve luma",
+              defaultValue: true,
+            },
+            {
+              type: "select",
+              name: "curve",
+              label: "Curve",
+              defaultValue: "filmic",
+              options: [
+                { label: "Linear", value: "linear" },
+                { label: "Filmic", value: "filmic" },
+              ],
+            },
+          ],
+        },
+      ],
+      createFilter,
+    });
+    disposers.push(() => registration.dispose());
+
+    const transform = createAddTransform(
+      "example.custom-shader/custom-glsl",
+      true,
+    );
+    expect(transform?.parameters).toEqual({
+      strength: 0.5,
+      preserveLuma: true,
+      curve: "filmic",
+      seed: 42,
+    });
+    if (!transform) throw new Error("Expected trusted transformation.");
+
+    const applied = applyTransformStack(
+      [transform],
+      {
+        container: { width: 100, height: 100 },
+        content: { width: 100, height: 100 },
+      },
+      0,
+      { notifyLiveParams: false },
+    );
+    const target: ClipTransformTarget & { filters: Filter[] } = {
+      position: { x: 0, y: 0, set: vi.fn() },
+      scale: { x: 1, y: 1, set: vi.fn() },
+      rotation: 0,
+      filters: [],
+    };
+
+    filterApplicator(target, applied.state, { width: 100, height: 100 });
+    const firstFilter = target.filters[0];
+    expect(firstFilter).toBeInstanceOf(Filter);
+    expect(createFilter).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(transform.parameters, {
+      target,
+      contentSize: { width: 100, height: 100 },
+    });
+
+    filterApplicator(target, applied.state, { width: 100, height: 100 });
+    expect(target.filters[0]).toBe(firstFilter);
+    expect(createFilter).toHaveBeenCalledOnce();
+
+    filterApplicator(
+      target,
+      { ...applied.state, filters: [] },
+      { width: 100, height: 100 },
+    );
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(target.filters).toEqual([]);
+
+    filterApplicator(target, applied.state, { width: 100, height: 100 });
+    expect(createFilter).toHaveBeenCalledTimes(2);
+
+    registration.dispose();
+    expect(destroy).toHaveBeenCalledTimes(2);
+    expect(target.filters).toEqual([]);
+    expect(getEntryByFilterName("example.custom-shader/custom-glsl")).toBeUndefined();
+  });
+
   it("isolates invalid persisted parameters and reports the owning extension", () => {
     const report = vi.fn();
     const registration = extensionTransformationRegistry
@@ -197,6 +324,138 @@ describe("ExtensionTransformationRegistry", () => {
       "error",
       expect.stringContaining("invalid parameters"),
       { transformId: "bad-transform" },
+    );
+  });
+
+  it("rejects non-host Pixi instances returned by trusted factories", () => {
+    const report = vi.fn();
+    const registration = extensionTransformationRegistry
+      .bind(createScope("example.invalid-filter", report))
+      .register({
+        id: "invalid-filter",
+        apiVersion: 1,
+        kind: "trusted-filter",
+        label: "Invalid filter",
+        groups: [
+          {
+            id: "invalid",
+            title: "Invalid",
+            controls: [
+              {
+                type: "number",
+                name: "amount",
+                label: "Amount",
+                defaultValue: 1,
+                min: 0,
+                max: 2,
+              },
+            ],
+          },
+        ],
+        createFilter: () => ({ filter: {}, update: vi.fn() }),
+      });
+    disposers.push(() => registration.dispose());
+    const transform = createAddTransform(
+      "example.invalid-filter/invalid-filter",
+      true,
+    );
+    if (!transform) throw new Error("Expected trusted transformation.");
+    const applied = applyTransformStack(
+      [transform],
+      {
+        container: { width: 100, height: 100 },
+        content: { width: 100, height: 100 },
+      },
+      0,
+      { notifyLiveParams: false },
+    );
+    const target = {
+      position: { x: 0, y: 0, set: vi.fn() },
+      scale: { x: 1, y: 1, set: vi.fn() },
+      rotation: 0,
+      filters: [],
+    };
+
+    filterApplicator(target, applied.state);
+
+    expect(target.filters).toEqual([]);
+    expect(report).toHaveBeenCalledWith(
+      "error",
+      expect.stringContaining("failed while applying its filter"),
+      expect.any(Error),
+    );
+  });
+
+  it("registers executable trusted transformations beyond filters", () => {
+    const registration = extensionTransformationRegistry
+      .bind(createScope("example.motion"))
+      .register({
+        id: "offset-x",
+        apiVersion: 1,
+        kind: "trusted-transformation",
+        label: "Custom X Offset",
+        groups: [
+          {
+            id: "offset",
+            title: "Offset",
+            controls: [
+              {
+                type: "number",
+                name: "amount",
+                label: "Amount",
+                defaultValue: 12,
+                min: -10_000,
+                max: 10_000,
+                supportsSpline: true,
+              },
+            ],
+          },
+        ],
+        apply: ({ state, transform }) => {
+          state.x += Number(transform.parameters.amount);
+        },
+      });
+    disposers.push(() => registration.dispose());
+
+    const transform = createAddTransform("example.motion/offset-x");
+    expect(transform).toMatchObject({
+      type: "example.motion/offset-x",
+      parameters: { amount: 12 },
+    });
+    if (!transform) throw new Error("Expected trusted transformation.");
+
+    const result = applyTransformStack(
+      [transform],
+      {
+        container: { width: 100, height: 100 },
+        content: { width: 100, height: 100 },
+      },
+      0,
+      { notifyLiveParams: false },
+    );
+    expect(result.state.x).toBe(62);
+
+    transform.parameters.amount = {
+      type: "spline",
+      points: [
+        { time: 0, value: 0 },
+        { time: 10, value: 20 },
+      ],
+    };
+    const animated = applyTransformStack(
+      [transform],
+      {
+        container: { width: 100, height: 100 },
+        content: { width: 100, height: 100 },
+      },
+      5,
+      { notifyLiveParams: false },
+    );
+    expect(animated.state.x).toBe(60);
+
+    registration.dispose();
+    expect(getMissingExtensionTransformationId(transform)).toBe(
+      "example.motion/offset-x",
     );
   });
 

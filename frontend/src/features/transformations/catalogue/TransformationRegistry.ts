@@ -273,16 +273,16 @@ export function getLabelForTransform(t: ClipTransform): string {
 export function getMissingExtensionTransformationId(
   transform: ClipTransform,
 ): string | null {
+  if (getEntryForTransform(transform)) return null;
   if (
-    transform.type !== "filter" ||
-    !("filterName" in transform) ||
-    typeof transform.filterName !== "string" ||
-    !transform.filterName.includes("/") ||
-    getEntryForTransform(transform)
+    transform.type === "filter" &&
+    "filterName" in transform &&
+    typeof transform.filterName === "string" &&
+    transform.filterName.includes("/")
   ) {
-    return null;
+    return transform.filterName;
   }
-  return transform.filterName;
+  return transform.type.includes("/") ? transform.type : null;
 }
 
 /**

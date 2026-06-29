@@ -5,13 +5,15 @@
  * The handler is in a separate file to avoid circular dependencies.
  */
 
-import type { ClipTransformTarget, TransformState } from "./types";
-import { getEntryByFilterName } from "./TransformationRegistry";
 import { Filter } from "pixi.js";
 import type {
+  ClipTransformTarget,
   FilterParameterPointBinding,
   FilterParameterScaleMode,
+  TransformState,
 } from "./types";
+import { getEntryByFilterName } from "./TransformationRegistry";
+import { releaseTrustedExtensionFilter } from "../extensions/TrustedExtensionFilterRuntime";
 
 // Re-export handler for backwards compatibility
 export { filterHandler } from "./filterHandler";
@@ -248,21 +250,35 @@ export const filterApplicator = (
   for (const filterOp of state.filters) {
     // 1. Look up entry in Registry
     const registryEntry = getEntryByFilterName(filterOp.type);
-    if (!registryEntry || !registryEntry.FilterClass) {
+    if (
+      !registryEntry ||
+      (!registryEntry.FilterClass && !registryEntry.filterFactory)
+    ) {
       continue;
     }
 
     const FilterClass = registryEntry.FilterClass;
+    const filterFactory = registryEntry.filterFactory;
+    let filterInstance: Filter | undefined;
     try {
       // 2. Find reusable instance in pool
-      const poolIndex = pool.findIndex((f) => f instanceof FilterClass);
-      let filterInstance: Filter;
+      const poolIndex = pool.findIndex((filter) =>
+        filterFactory
+          ? filterFactory.owns(filter)
+          : FilterClass
+            ? filter instanceof FilterClass
+            : false,
+      );
 
       if (poolIndex !== -1) {
         filterInstance = pool[poolIndex];
         pool.splice(poolIndex, 1);
-      } else {
+      } else if (filterFactory) {
+        filterInstance = filterFactory.create();
+      } else if (FilterClass) {
         filterInstance = new FilterClass();
+      } else {
+        continue;
       }
 
       // Disable viewport clipping for filters with spatial point bindings
@@ -297,9 +313,16 @@ export const filterApplicator = (
         safePadding,
         contentSize,
       );
-      for (const [key, value] of Object.entries(resolvedParams)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (filterInstance as any)[key] = value;
+      if (filterFactory) {
+        filterFactory.update(filterInstance, resolvedParams, {
+          target,
+          contentSize,
+        });
+      } else {
+        for (const [key, value] of Object.entries(resolvedParams)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (filterInstance as any)[key] = value;
+        }
       }
 
       if (registryEntry.filterPadding && Number.isFinite(nextPadding)) {
@@ -308,14 +331,23 @@ export const filterApplicator = (
 
       newFilters.push(filterInstance);
     } catch (error) {
+      if (filterFactory && filterInstance) {
+        filterFactory.release(filterInstance);
+      }
       if (!registryEntry.extension) throw error;
       registryEntry.extension.reportFailureOnce(
         "filter-application",
         "error",
-        `Transformation '${registryEntry.extension.contributionId}' failed while applying its host filter.`,
+        `Transformation '${registryEntry.extension.contributionId}' failed while applying its filter.`,
         error,
       );
     }
+  }
+
+  // A removed transform or disposed contribution must release any trusted
+  // instance that was attached to this target on the previous frame.
+  for (const unusedFilter of pool) {
+    releaseTrustedExtensionFilter(unusedFilter);
   }
 
   mutableTarget.filters = newFilters;

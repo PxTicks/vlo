@@ -11,6 +11,8 @@ import { LinkControl } from "../../panelUI/components/LinkControl";
 import { NumberControl as PanelNumberControl } from "../../panelUI/components/NumberControl";
 import { SpacerControl } from "../../panelUI/components/SpacerControl";
 import { SliderControl as PanelSliderControl } from "../../panelUI/components/SliderControl";
+import { BufferedTextInput } from "../../panelUI/components/BufferedTextInput";
+import { BufferedColorInput } from "../../panelUI/components/BufferedColorInput";
 import { Timeline } from "@mui/icons-material";
 import { SplineEditorPopover } from "./SplineEditorPopover";
 import { useSplinePopover } from "../hooks/useSplinePopover";
@@ -434,6 +436,36 @@ export const ControlRenderer = memo(function ControlRenderer({
 
   if (control.type === "spacer") {
     return <SpacerControl />;
+  }
+
+  if (control.type === "text") {
+    return (
+      <BufferedTextInput
+        label={control.label}
+        value={
+          typeof value === "string"
+            ? value
+            : String(control.defaultValue ?? "")
+        }
+        onCommit={onCommit}
+        disabled={disabled}
+      />
+    );
+  }
+
+  if (control.type === "color") {
+    return (
+      <BufferedColorInput
+        label={control.label}
+        value={
+          typeof value === "string"
+            ? value
+            : String(control.defaultValue ?? "#000000")
+        }
+        onCommit={onCommit}
+        disabled={disabled}
+      />
+    );
   }
 
   if (control.type === "select") {

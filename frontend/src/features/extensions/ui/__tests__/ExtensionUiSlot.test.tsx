@@ -7,12 +7,15 @@ import {
   extensionUiSlotRegistry,
 } from "../ExtensionUiSlotRegistry";
 
-function createScope(extensionId: string): ExtensionApiScope {
+function createScope(
+  extensionId: string,
+  report: ExtensionApiScope["report"] = vi.fn(),
+): ExtensionApiScope {
   return {
     extension: { id: extensionId, version: "1.0.0" },
     signal: new AbortController().signal,
     own: <TResource extends ExtensionResource>(resource: TResource) => resource,
-    report: vi.fn(),
+    report,
   };
 }
 
@@ -73,5 +76,53 @@ describe("ExtensionUiSlot", () => {
       }),
     ).toThrow(/message must be a non-empty string/);
     expect(registry.list("transformation-panel.before")).toEqual([]);
+  });
+
+  it("renders and isolates trusted React component contributions", () => {
+    const report = vi.fn();
+    const registration = extensionUiSlotRegistry
+      .bind(createScope("example.react", report))
+      .registerComponent({
+        id: "custom-panel",
+        apiVersion: 1,
+        slot: "transformation-panel.before",
+        kind: "trusted-react",
+        component: () => <button type="button">Custom extension control</button>,
+      });
+
+    render(<ExtensionUiSlot slot="transformation-panel.before" />);
+    expect(
+      screen.getByRole("button", { name: "Custom extension control" }),
+    ).toBeInTheDocument();
+
+    act(() => registration.dispose());
+    expect(
+      screen.queryByRole("button", { name: "Custom extension control" }),
+    ).not.toBeInTheDocument();
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  it("contains trusted component render failures", () => {
+    const report = vi.fn();
+    const registration = extensionUiSlotRegistry
+      .bind(createScope("example.broken-react", report))
+      .registerComponent({
+        id: "broken-panel",
+        apiVersion: 1,
+        slot: "transformation-panel.before",
+        kind: "trusted-react",
+        component: () => {
+          throw new Error("component failed");
+        },
+      });
+
+    render(<ExtensionUiSlot slot="transformation-panel.before" />);
+
+    expect(report).toHaveBeenCalledWith(
+      "error",
+      expect.stringContaining("example.broken-react/broken-panel"),
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+    registration.dispose();
   });
 });

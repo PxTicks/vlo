@@ -12,27 +12,39 @@ import {
 import type { Filter } from "pixi.js";
 import type {
   ExtensionApiScope,
-  ExtensionHostFilter,
+  ExtensionDeclarativeHostFilter,
   ExtensionTransformationApi,
+  ExtensionTransformationControl,
   ExtensionTransformationDefinition,
-  ExtensionTransformationNumberControl,
   ExtensionTransformationRegistration,
+  ExtensionTransformationSelectOption,
+  JsonValue,
 } from "../../extensions/types";
 import {
   ExtensionContributionRegistry,
   type ExtensionContributionRegistration,
   type ExtensionContributionDefinition,
 } from "../../extensions/registry/ExtensionContributionRegistry";
-import type { TransformationDefinition } from "../catalogue/types";
-import { filterHandler } from "../catalogue/filterHandler";
+import type {
+  TransformationDefinition,
+  TransformContext,
+  TransformState,
+} from "../catalogue/types";
+import type { ClipTransform } from "../../../types/TimelineTypes";
+import {
+  filterHandler,
+  resolveTransformationParameters,
+} from "../catalogue/filterHandler";
+import { createTrustedExtensionFilterFactory } from "./TrustedExtensionFilterRuntime";
 
 interface RuntimeTransformationContribution
   extends ExtensionContributionDefinition {
   runtimeDefinition: TransformationDefinition;
+  disposeRuntime?: () => void;
 }
 
-const HOST_FILTERS: Record<
-  ExtensionHostFilter,
+const DECLARATIVE_HOST_FILTERS: Record<
+  ExtensionDeclarativeHostFilter,
   {
     FilterClass: new () => Filter;
     parameters: ReadonlySet<string>;
@@ -111,6 +123,8 @@ const HOST_FILTERS: Record<
   },
 };
 
+const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+
 function assertText(value: string, label: string, maxLength: number): void {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`${label} must be a non-empty string.`);
@@ -120,9 +134,89 @@ function assertText(value: string, label: string, maxLength: number): void {
   }
 }
 
+function isJsonValue(
+  value: unknown,
+  ancestors: WeakSet<object> = new WeakSet(),
+): value is JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) {
+    if (ancestors.has(value)) return false;
+    ancestors.add(value);
+    const valid = value.every((entry) => isJsonValue(entry, ancestors));
+    ancestors.delete(value);
+    return valid;
+  }
+  if (typeof value !== "object") return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  if (ancestors.has(value)) return false;
+  ancestors.add(value);
+  const valid = Object.values(value).every((entry) =>
+    isJsonValue(entry, ancestors),
+  );
+  ancestors.delete(value);
+  return valid;
+}
+
+function cloneAndFreezeJsonValue<TValue extends JsonValue>(
+  value: TValue,
+): TValue {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(cloneAndFreezeJsonValue)) as TValue;
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.freeze(
+      Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [
+          key,
+          cloneAndFreezeJsonValue(entry),
+        ]),
+      ),
+    ) as TValue;
+  }
+  return value;
+}
+
+function jsonValuesEqual(left: JsonValue, right: JsonValue): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length &&
+      left.every((value, index) => jsonValuesEqual(value, right[index]!))
+    );
+  }
+  if (
+    typeof left === "object" &&
+    left !== null &&
+    !Array.isArray(left) &&
+    typeof right === "object" &&
+    right !== null &&
+    !Array.isArray(right)
+  ) {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    return (
+      leftKeys.length === rightKeys.length &&
+      leftKeys.every(
+        (key) =>
+          Object.hasOwn(right, key) &&
+          jsonValuesEqual(left[key]!, right[key]!),
+      )
+    );
+  }
+  return false;
+}
+
 function validateControl(
-  control: ExtensionTransformationNumberControl,
-  allowedParameters: ReadonlySet<string>,
+  control: ExtensionTransformationControl,
+  allowedParameters?: ReadonlySet<string>,
 ): void {
   assertText(control.name, "Transformation control name", 80);
   assertText(
@@ -130,36 +224,96 @@ function validateControl(
     `Transformation control '${control.name}' label`,
     120,
   );
-  if (!allowedParameters.has(control.name)) {
+  if (allowedParameters && !allowedParameters.has(control.name)) {
     throw new Error(
       `Host filter does not support parameter '${control.name}'.`,
     );
   }
-  if (
-    !Number.isFinite(control.defaultValue) ||
-    !Number.isFinite(control.min) ||
-    !Number.isFinite(control.max) ||
-    control.min > control.max ||
-    control.defaultValue < control.min ||
-    control.defaultValue > control.max
-  ) {
+  if (allowedParameters && control.type !== "slider" && control.type !== "number") {
     throw new Error(
-      `Transformation control '${control.name}' has invalid numeric bounds.`,
+      `Host filter parameter '${control.name}' must use a numeric control.`,
     );
   }
-  if (
-    control.step !== undefined &&
-    (!Number.isFinite(control.step) || control.step <= 0)
-  ) {
-    throw new Error(
-      `Transformation control '${control.name}' step must be positive.`,
-    );
+
+  if (control.type === "slider" || control.type === "number") {
+    if (
+      !Number.isFinite(control.defaultValue) ||
+      !Number.isFinite(control.min) ||
+      !Number.isFinite(control.max) ||
+      control.min > control.max ||
+      control.defaultValue < control.min ||
+      control.defaultValue > control.max
+    ) {
+      throw new Error(
+        `Transformation control '${control.name}' has invalid numeric bounds.`,
+      );
+    }
+    if (
+      control.step !== undefined &&
+      (!Number.isFinite(control.step) || control.step <= 0)
+    ) {
+      throw new Error(
+        `Transformation control '${control.name}' step must be positive.`,
+      );
+    }
+    return;
+  }
+
+  if (control.type === "text") {
+    if (control.defaultValue.length > 10_000) {
+      throw new Error(
+        `Transformation control '${control.name}' default text is too long.`,
+      );
+    }
+    return;
+  }
+
+  if (control.type === "color") {
+    if (!COLOR_PATTERN.test(control.defaultValue)) {
+      throw new Error(
+        `Transformation control '${control.name}' must use a #RRGGBB color.`,
+      );
+    }
+    return;
+  }
+
+  if (control.type === "select") {
+    if (!Array.isArray(control.options) || control.options.length === 0) {
+      throw new Error(
+        `Transformation control '${control.name}' must declare select options.`,
+      );
+    }
+    for (const option of control.options) {
+      assertText(
+        option.label,
+        `Transformation control '${control.name}' option label`,
+        120,
+      );
+      if (!isJsonValue(option.value)) {
+        throw new Error(
+          `Transformation control '${control.name}' option values must be JSON.`,
+        );
+      }
+    }
+    if (
+      !isJsonValue(control.defaultValue) ||
+      !control.options.some((option) =>
+        jsonValuesEqual(option.value, control.defaultValue),
+      )
+    ) {
+      throw new Error(
+        `Transformation control '${control.name}' default must match an option.`,
+      );
+    }
   }
 }
 
 function isValidSpline(
   value: unknown,
-  control: ExtensionTransformationNumberControl,
+  control: Extract<
+    ExtensionTransformationControl,
+    { type: "slider" | "number" }
+  >,
 ): boolean {
   if (
     typeof value !== "object" ||
@@ -186,19 +340,53 @@ function isValidSpline(
   );
 }
 
+function isValidControlValue(
+  value: unknown,
+  control: ExtensionTransformationControl,
+): boolean {
+  if (control.type === "slider" || control.type === "number") {
+    return (
+      (typeof value === "number" &&
+        Number.isFinite(value) &&
+        value >= control.min &&
+        value <= control.max) ||
+      (control.supportsSpline === true && isValidSpline(value, control))
+    );
+  }
+  if (control.type === "checkbox") return typeof value === "boolean";
+  if (control.type === "text") {
+    return typeof value === "string";
+  }
+  if (control.type === "color") {
+    return typeof value === "string" && COLOR_PATTERN.test(value);
+  }
+  if (control.type === "select") {
+    return (
+      isJsonValue(value) &&
+      control.options.some((option) => jsonValuesEqual(option.value, value))
+    );
+  }
+  return false;
+}
+
 function compileDefinition(
   ownerId: string,
   definition: ExtensionTransformationDefinition,
   report: ExtensionApiScope["report"],
 ): RuntimeTransformationContribution {
+  const definitionId = definition.id;
   if (definition.apiVersion !== 1) {
     throw new Error(
       `Transformation '${definition.id}' must use apiVersion 1.`,
     );
   }
-  if (definition.kind !== "host-filter") {
+  if (
+    definition.kind !== "host-filter" &&
+    definition.kind !== "trusted-filter" &&
+    definition.kind !== "trusted-transformation"
+  ) {
     throw new Error(
-      `Transformation '${definition.id}' has an unsupported kind.`,
+      `Transformation '${definitionId}' has an unsupported kind.`,
     );
   }
   assertText(definition.label, `Transformation '${definition.id}' label`, 120);
@@ -208,19 +396,35 @@ function compileDefinition(
     );
   }
 
-  const hostFilter = HOST_FILTERS[definition.hostFilter];
-  if (!hostFilter) {
+  const hostFilter =
+    definition.kind === "host-filter"
+      ? DECLARATIVE_HOST_FILTERS[definition.hostFilter]
+      : undefined;
+  if (definition.kind === "host-filter" && !hostFilter) {
     throw new Error(
       `Transformation '${definition.id}' requests an unsupported host filter.`,
+    );
+  }
+  if (
+    definition.kind === "trusted-filter" &&
+    typeof definition.createFilter !== "function"
+  ) {
+    throw new Error(
+      `Trusted transformation '${definition.id}' must provide createFilter.`,
+    );
+  }
+  if (
+    definition.kind === "trusted-transformation" &&
+    typeof definition.apply !== "function"
+  ) {
+    throw new Error(
+      `Trusted transformation '${definition.id}' must provide apply.`,
     );
   }
 
   const groupIds = new Set<string>();
   const parameterNames = new Set<string>();
-  const controlsByName = new Map<
-    string,
-    ExtensionTransformationNumberControl
-  >();
+  const controlsByName = new Map<string, ExtensionTransformationControl>();
   const groups = definition.groups.map((group) => {
     assertText(group.id, "Transformation UI group ID", 80);
     assertText(group.title, `Transformation UI group '${group.id}' title`, 120);
@@ -245,15 +449,30 @@ function compileDefinition(
     }
 
     const controls = group.controls.map(
-      (control: ExtensionTransformationNumberControl) => {
-        validateControl(control, hostFilter.parameters);
+      (control: ExtensionTransformationControl) => {
+        validateControl(control, hostFilter?.parameters);
         if (parameterNames.has(control.name)) {
           throw new Error(
             `Duplicate transformation parameter '${control.name}'.`,
           );
         }
         parameterNames.add(control.name);
-        const frozenControl = Object.freeze({ ...control });
+        const frozenControl: ExtensionTransformationControl =
+          control.type === "select"
+            ? Object.freeze({
+                ...control,
+                defaultValue: cloneAndFreezeJsonValue(control.defaultValue),
+                options: Object.freeze(
+                  control.options.map(
+                    (option: ExtensionTransformationSelectOption) =>
+                      Object.freeze({
+                        label: option.label,
+                        value: cloneAndFreezeJsonValue(option.value),
+                      }),
+                  ),
+                ),
+              })
+            : Object.freeze({ ...control });
         controlsByName.set(control.name, frozenControl);
         return frozenControl;
       },
@@ -277,38 +496,116 @@ function compileDefinition(
     reportedFailureKeys.add(key);
     report(level, message, detail);
   };
+
+  const customValidate =
+    definition.kind === "trusted-filter" ||
+    definition.kind === "trusted-transformation"
+      ? definition.validateParameters
+      : undefined;
+  const validateParameters = (
+    parameters: Readonly<Record<string, unknown>>,
+  ): boolean => {
+    for (const [name, control] of controlsByName) {
+      if (
+        !Object.hasOwn(parameters, name) ||
+        !isValidControlValue(parameters[name], control)
+      ) {
+        return false;
+      }
+    }
+    if (!customValidate) {
+      return parameterNames.size === Object.keys(parameters).length;
+    }
+    try {
+      return customValidate(parameters) === true;
+    } catch (error) {
+      reportFailureOnce(
+        "parameter-validator",
+        "error",
+        `Trusted transformation '${contributionId}' threw while validating parameters.`,
+        error,
+      );
+      return false;
+    }
+  };
+
+  const defaultParameters: Record<string, JsonValue> = {};
+  for (const [name, control] of controlsByName) {
+    if (!isJsonValue(control.defaultValue)) {
+      throw new Error(
+        `Transformation control '${name}' default value must be JSON.`,
+      );
+    }
+    defaultParameters[name] = cloneAndFreezeJsonValue(control.defaultValue);
+  }
+  if (
+    (definition.kind === "trusted-filter" ||
+      definition.kind === "trusted-transformation") &&
+    definition.defaultParameters
+  ) {
+    for (const [name, value] of Object.entries(definition.defaultParameters)) {
+      if (!isJsonValue(value)) {
+        throw new Error(
+          `Trusted transformation '${definition.id}' default '${name}' must be JSON.`,
+        );
+      }
+      defaultParameters[name] = cloneAndFreezeJsonValue(value);
+    }
+  }
+  if (!validateParameters(defaultParameters)) {
+    throw new Error(
+      `Transformation '${definition.id}' has invalid default parameters.`,
+    );
+  }
+
+  const filterFactory =
+    definition.kind === "trusted-filter"
+      ? createTrustedExtensionFilterFactory(
+          contributionId,
+          definition,
+          reportFailureOnce,
+        )
+      : undefined;
   const runtimeDefinition: TransformationDefinition = Object.freeze({
-    type: "filter",
-    filterName: contributionId,
-    FilterClass: hostFilter.FilterClass,
+    type:
+      definition.kind === "trusted-transformation"
+        ? contributionId
+        : "filter",
+    filterName:
+      definition.kind === "trusted-transformation"
+        ? undefined
+        : contributionId,
+    FilterClass: hostFilter?.FilterClass,
+    filterFactory,
     label: definition.label.trim(),
     compatibleClips: "visual",
     adjustmentCompatible: definition.adjustmentCompatible === true,
     isDefault: false,
-    handler: filterHandler,
+    handler:
+      definition.kind === "trusted-transformation"
+        ? (
+            state: TransformState,
+            transform: ClipTransform,
+            context: TransformContext,
+          ) =>
+            definition.apply({
+              state,
+              transform: {
+                ...transform,
+                parameters: resolveTransformationParameters(
+                  transform.parameters,
+                  context.time ?? 0,
+                ),
+              },
+              render: context,
+            })
+        : filterHandler,
     uiConfig: Object.freeze({ groups: Object.freeze(groups) }),
+    defaultParameters: Object.freeze(defaultParameters),
     extension: Object.freeze({
       ownerId,
       contributionId,
-      validateParameters: (parameters: Readonly<Record<string, unknown>>) => {
-        for (const [name, value] of Object.entries(parameters)) {
-          const control = controlsByName.get(name);
-          if (!control) return false;
-          if (
-            typeof value === "number" &&
-            Number.isFinite(value) &&
-            value >= control.min &&
-            value <= control.max
-          ) {
-            continue;
-          }
-          if (control.supportsSpline === true && isValidSpline(value, control)) {
-            continue;
-          }
-          return false;
-        }
-        return parameterNames.size === Object.keys(parameters).length;
-      },
+      validateParameters,
       reportFailureOnce,
     }),
   });
@@ -316,7 +613,10 @@ function compileDefinition(
   return {
     id: definition.id,
     apiVersion: definition.apiVersion,
+    execution:
+      definition.kind === "host-filter" ? "restricted" : "trusted",
     runtimeDefinition,
+    disposeRuntime: filterFactory?.dispose,
   };
 }
 
@@ -332,10 +632,27 @@ export class ExtensionTransformationRegistry {
       register: (
         definition: ExtensionTransformationDefinition,
       ): ExtensionTransformationRegistration => {
-        const registration = bound.register(
-          compileDefinition(scope.extension.id, definition, scope.report),
+        const compiled = compileDefinition(
+          scope.extension.id,
+          definition,
+          scope.report,
         );
-        return registration;
+        const registration = bound.register(compiled);
+        if (!compiled.disposeRuntime) return registration;
+
+        let disposed = false;
+        const managedRegistration: ExtensionTransformationRegistration =
+          Object.freeze({
+            id: registration.id,
+            dispose: () => {
+              if (disposed) return;
+              disposed = true;
+              compiled.disposeRuntime?.();
+              registration.dispose();
+            },
+          });
+        scope.own(managedRegistration);
+        return managedRegistration;
       },
     });
   }

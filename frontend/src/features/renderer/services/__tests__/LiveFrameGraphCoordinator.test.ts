@@ -70,6 +70,7 @@ function createEngineHarness(
           assetId,
           effectiveTrackTick: 0,
           rawClipTick: 0,
+          sourceTimeTicks: 0,
           sourceTimeSeconds: 0,
           snappedTimeSeconds: 0,
           frameIndex: 0,

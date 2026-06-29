@@ -3,10 +3,13 @@ import type { WrappedAudioBuffer } from "mediabunny";
 import { ticksPerFrame } from "../../timeline";
 import { resolveScalar } from "../../transformations";
 import {
-  calculatePlayerFrameTime,
-  mediaSecondsToTickExact,
   tickToMediaSeconds,
+  mediaSecondsToTickExact,
 } from "../utils/mediaTime";
+import {
+  resolveClipRenderTime,
+  resolveClipRenderTimeFromEffectiveTick,
+} from "../utils/clipRenderTime";
 import { resolveLiveActiveClip } from "../utils/clipLookup";
 import type { ScalarParameter } from "../../transformations";
 import type { TimelineClip } from "../../../types/TimelineTypes";
@@ -42,7 +45,7 @@ export function getConstantVolumeGain(clip: TimelineClip): number | null {
 
 interface ClipCurveEvaluators {
   constantVolumeGain: number | null;
-  evaluateVolume: (localTimeTicks: number) => number;
+  evaluateVolume: (sourceTimeTicks: number) => number;
 }
 
 export function createClipCurveEvaluators(
@@ -59,9 +62,9 @@ export function createClipCurveEvaluators(
 
   return {
     constantVolumeGain,
-    evaluateVolume: (localTimeTicks: number) => {
+    evaluateVolume: (sourceTimeTicks: number) => {
       if (constantVolumeGain !== null) return Math.max(0, constantVolumeGain);
-      return Math.max(0, resolveScalar(volumeParam, localTimeTicks, 1.0));
+      return Math.max(0, resolveScalar(volumeParam, sourceTimeTicks, 1.0));
     },
   };
 }
@@ -185,13 +188,12 @@ export class TrackAudioRenderer {
     clip: TimelineClip,
     presentationTick: number,
   ): number {
-    const effectiveTick = this.resolveEffectiveTrackTickForClip(
+    return resolveClipRenderTime({
       clip,
       presentationTick,
-    );
-    return mediaSecondsToTickExact(
-      calculatePlayerFrameTime(clip, effectiveTick),
-    );
+      resolveEffectiveTrackTick: (targetClip, tick) =>
+        this.resolveEffectiveTrackTickForClip(targetClip, tick),
+    }).sourceTimeTicks;
   }
 
   private evaluateCompositePlaybackRate(
@@ -578,12 +580,8 @@ export class TrackAudioRenderer {
 
         for (let i = 0; i < sampleCount; i++) {
           const t = startTargetTicks + i * volumeTimeStep;
-          const effectiveTick = this.resolveEffectiveTrackTickForClip(
-            activeClip,
-            t,
-          );
           const volumeGain = clipCurves.evaluateVolume(
-            effectiveTick - activeClip.start,
+            this.getSourceTicksAtPresentationTick(activeClip, t),
           );
 
           // Apply de-clicking envelope
@@ -619,9 +617,8 @@ export class TrackAudioRenderer {
           startTargetTicks,
           windowTicks: mediaSecondsToTickExact(wallDuration),
           sampleCount,
-          localTickAt: (t) =>
-            this.resolveEffectiveTrackTickForClip(activeClip, t) -
-            activeClip.start,
+          sourceTimeTicksAt: (t) =>
+            this.getSourceTicksAtPresentationTick(activeClip, t),
         });
       }
 
@@ -661,7 +658,7 @@ export class TrackAudioRenderer {
       const targetTicks = getTargetTicks(this.nextScheduleTime);
       // Active clip lookup by *presentation* tick. The returned
       // `effectiveTick` has already applied the clip's static/ripple
-      // placement model and feeds calculatePlayerFrameTime below.
+      // placement model and feeds the shared clip render-time resolver below.
       const resolved = this.findActiveClipAtPresentation(
         trackClips,
         targetTicks,
@@ -740,10 +737,12 @@ export class TrackAudioRenderer {
       }
 
       // Get/Create Iterator
-      const localTimeSeconds = calculatePlayerFrameTime(
-        activeClip,
+      const renderTime = resolveClipRenderTimeFromEffectiveTick({
+        clip: activeClip,
+        presentationTick: targetTicks,
         effectiveTrackTick,
-      );
+      });
+      const localTimeSeconds = renderTime.sourceTimeSeconds;
       const epsilon = 0.1;
       const isSequential =
         c.lastAudioEndTimestamp !== null &&

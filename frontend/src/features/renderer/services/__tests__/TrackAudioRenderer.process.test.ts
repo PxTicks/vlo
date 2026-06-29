@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
+import { TICKS_PER_SECOND } from "../../../../core/time/constants";
 
 interface WrappedBuffer {
   buffer: AudioBuffer;
@@ -419,6 +420,56 @@ describe("TrackAudioRenderer process lifecycle", () => {
     expect(sources[0].playbackRate.value).toBeGreaterThan(0);
     expect(gains[0].gain.setValueCurveAtTime).toHaveBeenCalled();
     expect(gains[0].gain.value).toBe(0);
+  });
+
+  it("samples keyframed volume in source-media time under speed changes", async () => {
+    mocks.bufferBatches = [[wrappedBuffer(0.2)], []];
+    const renderer = new TrackAudioRenderer("track-1");
+    const { context, gains } = createContext();
+
+    await renderer.process(
+      context,
+      destination,
+      [
+        clip({
+          transformations: [
+            {
+              id: "speed",
+              type: "speed",
+              isEnabled: true,
+              parameters: { factor: 2 },
+            },
+            {
+              id: "volume",
+              type: "volume",
+              isEnabled: true,
+              parameters: {
+                gain: {
+                  type: "spline",
+                  points: [
+                    { time: 0, value: 0 },
+                    { time: TICKS_PER_SECOND, value: 1 },
+                  ],
+                },
+              },
+            },
+          ],
+        }),
+      ],
+      vi.fn(async () => inputWithTrack()),
+      mapping,
+      { lookahead: 0.05, forceFlush: true },
+    );
+
+    const [curve] = gains[0].gain.setValueCurveAtTime.mock.calls[0];
+    const volumeCurve = curve as Float32Array;
+    const midpoint = volumeCurve[Math.floor(volumeCurve.length / 2)];
+
+    // A 0.2s source buffer at 2x speed occupies ~0.1s of presentation time.
+    // Halfway through that presentation window we are ~0.1s into source, not
+    // ~0.05s. The latter was the old clip-visual sampling bug.
+    expect(midpoint).toBeGreaterThan(0.08);
+    expect(midpoint).toBeLessThan(0.12);
   });
 
   it("late-schedules remaining audio with a playback-rate-adjusted offset", async () => {

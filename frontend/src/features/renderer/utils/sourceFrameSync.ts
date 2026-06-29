@@ -1,16 +1,16 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import {
-  calculatePlayerFrameTime,
   getRenderedSourceFrameReferenceFromSeconds,
-  mediaSecondsToTickExact,
   tickToMediaSeconds,
 } from "./mediaTime";
+import { resolveClipRenderTimeFromEffectiveTick } from "./clipRenderTime";
 
 export interface SourceFrameSyncRef {
   clipId: string;
   assetId: string | null;
   effectiveTrackTick: number;
   rawClipTick: number;
+  sourceTimeTicks: number;
   sourceTimeSeconds: number;
   snappedTimeSeconds: number;
   frameIndex: number;
@@ -136,6 +136,7 @@ export function createSourceFrameSyncRefFromSourceTicks(
     assetId: options.assetId ?? null,
     effectiveTrackTick: options.effectiveTrackTick,
     rawClipTick: options.rawClipTick,
+    sourceTimeTicks: options.sourceTimeTicks,
     sourceTimeSeconds,
     snappedTimeSeconds: canonicalSnappedTimeSeconds,
     frameIndex: renderedSourceFrame.frameIndex,
@@ -160,16 +161,16 @@ export function createSourceFrameSyncRefFromSourceTicks(
 export function createSourceFrameSyncRef(
   options: CreateSourceFrameSyncRefOptions,
 ): SourceFrameSyncRef {
-  const sourceTimeSeconds = calculatePlayerFrameTime(
-    options.clip,
-    options.effectiveTrackTick,
-  );
+  const renderTime = resolveClipRenderTimeFromEffectiveTick({
+    clip: options.clip,
+    effectiveTrackTick: options.effectiveTrackTick,
+  });
   return createSourceFrameSyncRefFromSourceTicks({
     clip: options.clip,
     assetId: options.assetId ?? null,
     effectiveTrackTick: options.effectiveTrackTick,
-    rawClipTick: options.effectiveTrackTick - options.clip.start,
-    sourceTimeTicks: mediaSecondsToTickExact(sourceTimeSeconds),
+    rawClipTick: renderTime.clipVisualTimeTicks,
+    sourceTimeTicks: renderTime.sourceTimeTicks,
     fps: options.fps,
     generation: options.generation,
     frameCount: options.frameCount,

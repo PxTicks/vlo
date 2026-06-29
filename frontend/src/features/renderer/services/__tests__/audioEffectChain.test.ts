@@ -91,7 +91,7 @@ const window: AudioEffectAutomationWindow = {
   startTargetTicks: 0,
   windowTicks: 1000,
   sampleCount: 8,
-  localTickAt: (t) => t,
+  sourceTimeTicksAt: (t) => t,
 };
 
 describe("getAudioEffectTransforms / signature", () => {
@@ -180,6 +180,30 @@ describe("buildAudioEffectChain", () => {
     expect((curve as Float32Array).length).toBe(window.sampleCount);
     expect(start).toBe(0);
     expect(dur).toBe(1);
+  });
+
+  it("samples splined params through the supplied source-time mapper", () => {
+    const ctx = createFakeContext();
+    const chain = buildAudioEffectChain(ctx, [
+      fx("pan", {
+        pan: spline([
+          { time: 0, value: 0 },
+          { time: 1000, value: 1 },
+        ]),
+      }),
+    ])!;
+
+    chain.scheduleAutomation({
+      ...window,
+      sourceTimeTicksAt: (presentationTick) => presentationTick * 2,
+    });
+
+    const pan = chain.inputNode as unknown as FakeNode;
+    const param = pan.pan as ReturnType<typeof makeParam>;
+    const [curve] = param.setValueCurveAtTime.mock.calls[0];
+    const values = curve as Float32Array;
+
+    expect(values[Math.floor(values.length / 2)]).toBeGreaterThan(0.9);
   });
 
   it("disposes by disconnecting all nodes", () => {

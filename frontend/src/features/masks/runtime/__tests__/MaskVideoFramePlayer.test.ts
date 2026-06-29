@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TICKS_PER_SECOND } from "../../../../core/time/constants";
 import type { Asset } from "../../../../types/Asset";
 import {
   createDecoderWorkerPool,
@@ -201,6 +202,7 @@ function sourceFrameAt(
     assetId: "mask_asset",
     effectiveTrackTick: 0,
     rawClipTick: 0,
+    sourceTimeTicks: snappedTimeSeconds * TICKS_PER_SECOND,
     sourceTimeSeconds: snappedTimeSeconds,
     snappedTimeSeconds,
     frameIndex,

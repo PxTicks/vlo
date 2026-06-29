@@ -35,11 +35,11 @@ export interface AudioEffectAutomationWindow {
   /** Number of samples to use when materializing a spline curve. */
   sampleCount: number;
   /**
-   * Maps a presentation tick to the clip-local time fed to `resolveScalar`
-   * (i.e. `resolveEffectiveTrackTickForClip(clip, t) - clip.start`). Supplied by
-   * the renderer so splined effect params evaluate exactly like volume.
+   * Maps a presentation tick to source-media time in project ticks. Supplied by
+   * the renderer so splined effect params use the same media-owned keyframe
+   * domain as volume.
    */
-  localTickAt: (presentationTick: number) => number;
+  sourceTimeTicksAt: (presentationTick: number) => number;
 }
 
 export interface AudioEffectChain {
@@ -85,7 +85,9 @@ function scheduleScalar(
   const step = window.windowTicks / Math.max(1, sampleCount - 1);
   for (let i = 0; i < sampleCount; i++) {
     const t = window.startTargetTicks + i * step;
-    curve[i] = map(resolveScalar(value, window.localTickAt(t), defaultValue));
+    curve[i] = map(
+      resolveScalar(value, window.sourceTimeTicksAt(t), defaultValue),
+    );
   }
 
   try {
@@ -107,7 +109,7 @@ function scalarAtStart(
 ): number {
   return resolveScalar(
     value,
-    window.localTickAt(window.startTargetTicks),
+    window.sourceTimeTicksAt(window.startTargetTicks),
     defaultValue,
   );
 }

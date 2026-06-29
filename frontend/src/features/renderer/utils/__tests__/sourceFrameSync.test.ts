@@ -7,10 +7,10 @@ import {
   isSourceFrameIntentCurrent,
   type SourceFrameSyncRef,
 } from "../sourceFrameSync";
-import { calculatePlayerFrameTime, mediaSecondsToTickExact } from "../mediaTime";
 import { TICKS_PER_SECOND } from "../../../../core/time/constants";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import type { SpeedTransform } from "../../../transformations/types";
+import { resolveClipRenderTimeFromEffectiveTick } from "../clipRenderTime";
 
 /**
  * Feature-facing frame-sync regression suite (ratchet step 5).
@@ -169,18 +169,22 @@ describe("SourceFrameSyncRef regression", () => {
 
     // The ref must match composing the documented helpers directly, proving it
     // does not reconstruct timing privately.
-    const expectedSeconds = calculatePlayerFrameTime(fast, fast.start + rawTick);
+    const renderTime = resolveClipRenderTimeFromEffectiveTick({
+      clip: fast,
+      effectiveTrackTick: fast.start + rawTick,
+    });
     const expected = createSourceFrameSyncRefFromSourceTicks({
       clip: fast,
       assetId: ASSET_ID,
       effectiveTrackTick: fast.start + rawTick,
       rawClipTick: rawTick,
-      sourceTimeTicks: mediaSecondsToTickExact(expectedSeconds),
+      sourceTimeTicks: renderTime.sourceTimeTicks,
       fps: FPS,
       generation: 0,
     });
 
     expect(ref).toEqual(expected);
+    expect(ref.sourceTimeTicks).toBe(2 * TICKS_PER_FRAME);
     // 2x speed: one timeline frame of travel lands on source frame 2.
     expect(ref.frameIndex).toBe(2);
   });

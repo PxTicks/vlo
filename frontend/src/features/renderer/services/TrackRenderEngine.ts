@@ -9,10 +9,11 @@ import type {
 } from "../../../types/TimelineTypes";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
+import { mediaSecondsToTickExact } from "../utils/mediaTime";
 import {
-  calculatePlayerFrameTime,
-  mediaSecondsToTickExact,
-} from "../utils/mediaTime";
+  resolveClipRenderTime,
+  resolveClipRenderTimeFromEffectiveTick,
+} from "../utils/clipRenderTime";
 import {
   createSourceFrameSyncRef,
   isSourceFrameIntentCurrent,
@@ -471,6 +472,11 @@ export class TrackRenderEngine {
     const fps =
       asset?.fps && asset.fps > 0 ? asset.fps : Math.max(1, options.fps);
     this.plannedRenderGeneration += 1;
+    const renderTime = resolveClipRenderTimeFromEffectiveTick({
+      clip: activeClip,
+      presentationTick: options.presentationTick,
+      effectiveTrackTick: effectiveTick,
+    });
     const sourceFrame = createSourceFrameSyncRef({
       clip: activeClip,
       assetId: isAssetBackedClip(activeClip) ? activeClip.assetId : null,
@@ -494,7 +500,7 @@ export class TrackRenderEngine {
       trackId: this.trackId,
       activeClip,
       effectiveTrackTick: effectiveTick,
-      rawClipTick: effectiveTick - activeClip.start,
+      rawClipTick: renderTime.clipVisualTimeTicks,
       sourceFrame,
       maskClips: options.maskClipsByParent.get(activeClip.id) ?? [],
       logicalDimensions: options.logicalDimensions,
@@ -769,13 +775,14 @@ export class TrackRenderEngine {
     }
 
     // 5. Calculate Time
-    const localTimeSeconds = calculatePlayerFrameTime(
-      activeClip,
-      effectiveTick,
-    );
-    const rawTimeSeconds = effectiveTick - activeClip.start;
+    const renderTime = resolveClipRenderTimeFromEffectiveTick({
+      clip: activeClip,
+      presentationTick: currentTime,
+      effectiveTrackTick: effectiveTick,
+    });
+    const { clipVisualTimeTicks, sourceTimeSeconds } = renderTime;
 
-    if (typeof localTimeSeconds !== "number" || isNaN(localTimeSeconds)) {
+    if (typeof sourceTimeSeconds !== "number" || isNaN(sourceTimeSeconds)) {
       if (this.pendingResolve) {
         const resolvePending = this.pendingResolve;
         this.clearPendingFrameState();
@@ -797,7 +804,7 @@ export class TrackRenderEngine {
         maskClips,
         clip: textRenderableClip,
         logicalDimensions,
-        rawTimeTicks: rawTimeSeconds,
+        rawTimeTicks: clipVisualTimeTicks,
         assetsById: assetById,
         sourceFrame,
         fps,
@@ -811,7 +818,7 @@ export class TrackRenderEngine {
           this.applyClipTransformsForClip(
             textRenderableClip,
             logicalDimensions,
-            rawTimeSeconds,
+            clipVisualTimeTicks,
           );
         }
         return Promise.resolve();
@@ -820,7 +827,7 @@ export class TrackRenderEngine {
       return this.renderTextClip(
         textRenderableClip,
         logicalDimensions,
-        rawTimeSeconds,
+        clipVisualTimeTicks,
         maskClips,
         assetById,
         sourceFrame,
@@ -851,7 +858,7 @@ export class TrackRenderEngine {
       maskClips,
       clip: activeClip,
       logicalDimensions,
-      rawTimeTicks: rawTimeSeconds,
+      rawTimeTicks: clipVisualTimeTicks,
       assetsById: assetById,
       sourceFrame,
       fps: clipFps,
@@ -902,7 +909,7 @@ export class TrackRenderEngine {
           maskClips,
           activeClip,
           logicalDimensions,
-          rawTimeSeconds,
+          clipVisualTimeTicks,
           assetById,
           {
             fps: clipFps,
@@ -921,7 +928,7 @@ export class TrackRenderEngine {
       this.applyClipTransformsForClip(
         activeClip,
         logicalDimensions,
-        rawTimeSeconds,
+        clipVisualTimeTicks,
       );
     }
 
@@ -955,13 +962,14 @@ export class TrackRenderEngine {
     }
     const { activeClip, effectiveTick } = resolved;
 
-    const localTimeSeconds = calculatePlayerFrameTime(
-      activeClip,
-      effectiveTick,
-    );
-    const rawTimeSeconds = effectiveTick - activeClip.start;
+    const renderTime = resolveClipRenderTimeFromEffectiveTick({
+      clip: activeClip,
+      presentationTick: currentTime,
+      effectiveTrackTick: effectiveTick,
+    });
+    const { clipVisualTimeTicks, sourceTimeSeconds } = renderTime;
 
-    if (typeof localTimeSeconds !== "number" || isNaN(localTimeSeconds)) {
+    if (typeof sourceTimeSeconds !== "number" || isNaN(sourceTimeSeconds)) {
       return;
     }
 
@@ -984,7 +992,7 @@ export class TrackRenderEngine {
         maskClips,
         clip: textRenderableClip,
         logicalDimensions,
-        rawTimeTicks: rawTimeSeconds,
+        rawTimeTicks: clipVisualTimeTicks,
         assetsById: assetById,
         sourceFrame,
         fps,
@@ -992,7 +1000,7 @@ export class TrackRenderEngine {
       await this.renderTextClip(
         textRenderableClip,
         logicalDimensions,
-        rawTimeSeconds,
+        clipVisualTimeTicks,
         maskClips,
         assetById,
         sourceFrame,
@@ -1027,7 +1035,7 @@ export class TrackRenderEngine {
         fps,
         generation,
         maskClips,
-        rawTimeSeconds,
+        clipVisualTimeTicks,
       },
     );
 
@@ -1086,7 +1094,11 @@ export class TrackRenderEngine {
       return;
     }
 
-    const rawTimeSeconds = effectiveTick - activeClip.start;
+    const { clipVisualTimeTicks } = resolveClipRenderTimeFromEffectiveTick({
+      clip: activeClip,
+      presentationTick: currentTime,
+      effectiveTrackTick: effectiveTick,
+    });
     const maskClips = maskClipsByParent.get(activeClip.id) ?? [];
     const assetById = new Map(
       assets.map((asset) => [asset.id, asset] as const),
@@ -1108,7 +1120,7 @@ export class TrackRenderEngine {
       maskClips,
       clip: activeClip,
       logicalDimensions,
-      rawTimeTicks: rawTimeSeconds,
+      rawTimeTicks: clipVisualTimeTicks,
       assetsById: assetById,
       sourceFrame,
       fps: clipFps,
@@ -1119,7 +1131,7 @@ export class TrackRenderEngine {
         maskClips,
         activeClip,
         logicalDimensions,
-        rawTimeSeconds,
+        clipVisualTimeTicks,
         assetById,
         { fps: clipFps, sourceFrame, skipSam2FrameRender: false },
       );
@@ -1141,7 +1153,7 @@ export class TrackRenderEngine {
       this.applyClipTransformsForClip(
         activeClip,
         logicalDimensions,
-        rawTimeSeconds,
+        clipVisualTimeTicks,
       );
     }
   }
@@ -1156,7 +1168,7 @@ export class TrackRenderEngine {
       fps: number;
       generation: number;
       maskClips: MaskTimelineClip[];
-      rawTimeSeconds: number;
+      clipVisualTimeTicks: number;
     },
   ): Promise<void> {
     const {
@@ -1165,7 +1177,7 @@ export class TrackRenderEngine {
       fps,
       generation,
       maskClips,
-      rawTimeSeconds,
+      clipVisualTimeTicks,
     } = request;
     const textRenderableClip = getTextRenderableClip(activeClip);
     if (textRenderableClip) {
@@ -1185,7 +1197,7 @@ export class TrackRenderEngine {
         maskClips,
         clip: textRenderableClip,
         logicalDimensions,
-        rawTimeTicks: rawTimeSeconds,
+        rawTimeTicks: clipVisualTimeTicks,
         assetsById: assetById,
         sourceFrame,
         fps,
@@ -1193,7 +1205,7 @@ export class TrackRenderEngine {
       await this.renderTextClip(
         textRenderableClip,
         logicalDimensions,
-        rawTimeSeconds,
+        clipVisualTimeTicks,
         maskClips,
         assetById,
         sourceFrame,
@@ -1243,7 +1255,7 @@ export class TrackRenderEngine {
         maskClips,
         clip: activeClip,
         logicalDimensions,
-        rawTimeTicks: rawTimeSeconds,
+        rawTimeTicks: clipVisualTimeTicks,
         assetsById: assetById,
         sourceFrame,
         fps: clipFps,
@@ -1270,14 +1282,14 @@ export class TrackRenderEngine {
             this.requestStrictLiveFrame(
               sourceFrame.snappedTimeSeconds,
               activeClip.id,
-              rawTimeSeconds,
+              clipVisualTimeTicks,
               { timeoutMs: TrackRenderEngine.LIVE_FRAME_TIMEOUT_MS },
             ),
             this.maskController.syncMaskClips(
               maskClips,
               activeClip,
               logicalDimensions,
-              rawTimeSeconds,
+              clipVisualTimeTicks,
               assetById,
               { fps: clipFps, sourceFrame, waitForSam2: true },
             ),
@@ -1302,7 +1314,7 @@ export class TrackRenderEngine {
                 maskClips,
                 activeClip,
                 logicalDimensions,
-                rawTimeSeconds,
+                clipVisualTimeTicks,
                 assetById,
                 sourceFrame,
                 clipFps,
@@ -1363,7 +1375,7 @@ export class TrackRenderEngine {
             maskClips,
             activeClip,
             logicalDimensions,
-            rawTimeSeconds,
+            clipVisualTimeTicks,
             assetById,
             { fps: clipFps, sourceFrame, skipSam2FrameRender: true },
           );
@@ -1376,7 +1388,7 @@ export class TrackRenderEngine {
         this.applyClipTransformsForClip(
           activeClip,
           logicalDimensions,
-          rawTimeSeconds,
+          clipVisualTimeTicks,
         );
       }
 
@@ -1439,6 +1451,11 @@ export class TrackRenderEngine {
       activeClip,
       currentTime,
     );
+    const { clipVisualTimeTicks } = resolveClipRenderTimeFromEffectiveTick({
+      clip: activeClip,
+      presentationTick: currentTime,
+      effectiveTrackTick: effectiveTick,
+    });
 
     const textRenderableClip = getTextRenderableClip(activeClip);
     if (textRenderableClip) {
@@ -1454,7 +1471,7 @@ export class TrackRenderEngine {
       await this.renderTextClip(
         textRenderableClip,
         logicalDimensions,
-        effectiveTick - activeClip.start,
+        clipVisualTimeTicks,
         maskClips,
         assetsById,
         sourceFrame,
@@ -1474,7 +1491,6 @@ export class TrackRenderEngine {
     const clipFps =
       asset?.fps && asset.fps > 0 ? asset.fps : (options.fps ?? 30);
 
-    const rawTime = effectiveTick - activeClip.start;
     const sourceFrame = this.advanceLiveSourceFrameIntent(
       createSourceFrameSyncRef({
         clip: activeClip,
@@ -1488,7 +1504,7 @@ export class TrackRenderEngine {
       maskClips,
       activeClip,
       logicalDimensions,
-      rawTime,
+      clipVisualTimeTicks,
       assetsById,
       { fps: clipFps, sourceFrame, waitForSam2: true },
     );
@@ -1522,7 +1538,7 @@ export class TrackRenderEngine {
               bitmap,
               activeClip,
               logicalDimensions,
-              rawTime,
+              clipVisualTimeTicks,
               {
                 maskClips,
                 assetsById,
@@ -1560,7 +1576,7 @@ export class TrackRenderEngine {
       this.lease.render({
         time: sourceFrame.snappedTimeSeconds,
         clipId: activeClip.id,
-        transformTime: rawTime,
+        transformTime: clipVisualTimeTicks,
         strict: true, // Export needs a response even if null
       });
     });
@@ -2664,17 +2680,18 @@ export class TrackRenderEngine {
         needsEffectPresentationRefresh: false,
       };
     }
-    const effectiveTick = this.resolveEffectiveTrackTickForClip(
-      activeClip,
-      currentTime,
-    );
-    const rawTimeSeconds = effectiveTick - activeClip.start;
+    const { clipVisualTimeTicks } = resolveClipRenderTime({
+      clip: activeClip,
+      presentationTick: currentTime,
+      resolveEffectiveTrackTick: (targetClip, tick) =>
+        this.resolveEffectiveTrackTickForClip(targetClip, tick),
+    });
 
     if (options.updateClipTransforms) {
       this.applyClipTransformsForClip(
         activeClip,
         logicalDimensions,
-        rawTimeSeconds,
+        clipVisualTimeTicks,
       );
     }
 
@@ -2684,7 +2701,7 @@ export class TrackRenderEngine {
             maskClips,
             activeClip,
             logicalDimensions,
-            rawTimeSeconds,
+            clipVisualTimeTicks,
             options.maskClipIds,
           )
         : null;
@@ -2718,14 +2735,16 @@ export class TrackRenderEngine {
       return;
     }
 
-    const effectiveTick = this.resolveEffectiveTrackTickForClip(
-      activeClip,
-      currentTime,
-    );
+    const { clipVisualTimeTicks } = resolveClipRenderTime({
+      clip: activeClip,
+      presentationTick: currentTime,
+      resolveEffectiveTrackTick: (targetClip, tick) =>
+        this.resolveEffectiveTrackTickForClip(targetClip, tick),
+    });
     this.applyClipTransformsForClip(
       activeClip,
       logicalDimensions,
-      effectiveTick - activeClip.start,
+      clipVisualTimeTicks,
     );
   }
 
@@ -2745,7 +2764,11 @@ export class TrackRenderEngine {
       activeClip,
       currentTime,
     );
-    const rawTimeSeconds = effectiveTick - activeClip.start;
+    const { clipVisualTimeTicks } = resolveClipRenderTimeFromEffectiveTick({
+      clip: activeClip,
+      presentationTick: currentTime,
+      effectiveTrackTick: effectiveTick,
+    });
     const fallbackFps = this.latestMaskSyncContext?.fps ?? 30;
     const sourceFrame = this.advanceLiveSourceFrameIntent(
       createSourceFrameSyncRef({
@@ -2759,14 +2782,14 @@ export class TrackRenderEngine {
     this.applyClipTransformsForClip(
       activeClip,
       logicalDimensions,
-      rawTimeSeconds,
+      clipVisualTimeTicks,
     );
     void this.maskController
       .syncMaskClips(
         maskClips,
         activeClip,
         logicalDimensions,
-        rawTimeSeconds,
+        clipVisualTimeTicks,
         assetsById,
         { sourceFrame, skipSam2FrameRender: true },
       )
@@ -2774,7 +2797,7 @@ export class TrackRenderEngine {
         this.applyClipTransformsForClip(
           activeClip,
           logicalDimensions,
-          rawTimeSeconds,
+          clipVisualTimeTicks,
         );
       })
       .catch((error) => {

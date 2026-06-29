@@ -83,14 +83,15 @@ const BUILTIN_TRANSFORMATION_DEFINITIONS: TransformationDefinition[] = [
   // Volume definition — always visible for audio clips
   { ...volumeDefinition, isDefault: true },
 
-  // Audio effects — addable (not default) for audio clips and for video clips
-  // that carry an audio track. Realized in the audio renderer via
+  // Audio effects — always-present default sections (grouped under the "Audio"
+  // category, beside Volume) for audio clips and video clips that carry an
+  // audio track. Realized in the audio renderer via
   // renderer/services/audioEffectChain.ts.
-  { ...panDefinition, isDefault: false },
-  { ...eqDefinition, isDefault: false },
-  { ...compressorDefinition, isDefault: false },
-  { ...reverbDefinition, isDefault: false },
-  { ...delayDefinition, isDefault: false },
+  { ...panDefinition, isDefault: true },
+  { ...eqDefinition, isDefault: true },
+  { ...compressorDefinition, isDefault: true },
+  { ...reverbDefinition, isDefault: true },
+  { ...delayDefinition, isDefault: true },
 
   // Speed — default (always present, not in the add menu) for every clip type
   // it's compatible with. adjustmentCompatible so it's also a default section

@@ -83,8 +83,8 @@ describe("TransformationPanel", () => {
 
   it("renders transformation inputs when a clip is selected", () => {
     render(<TransformationPanel />);
-    expect(screen.getByText("Layout")).toBeInTheDocument();
-    
+    expect(screen.getByText("Display")).toBeInTheDocument();
+
     // Position (Index 0 in BASE_GROUPS)
     const inputsX = screen.getAllByLabelText("X");
     expect(inputsX[0]).toHaveValue(10);
@@ -300,16 +300,16 @@ describe("TransformationPanel", () => {
     render(<TransformationPanel />);
 
     // Check for Collapsible Headers
-    expect(screen.getByText("Layout")).toBeInTheDocument();
+    expect(screen.getByText("Display")).toBeInTheDocument();
     expect(screen.getByText("Color (HSL)")).toBeInTheDocument();
 
-    // Verify Expand/Collapse interactions (Layout)
-    const layoutHeader = screen.getByText("Layout");
+    // Verify Expand/Collapse interactions (Display)
+    const layoutHeader = screen.getByText("Display");
     fireEvent.click(layoutHeader); // Collapse
     fireEvent.click(layoutHeader); // Expand
 
     // Verify Remove Button for Dynamic Section
-    // The "Color (HSL)" section should have a remove button. "Layout" should NOT.
+    // The "Color (HSL)" section should have a remove button. "Display" should NOT.
     const removeButtons = screen.getAllByLabelText("Remove");
     expect(removeButtons).toHaveLength(1);
     

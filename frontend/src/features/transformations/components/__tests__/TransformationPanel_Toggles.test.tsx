@@ -109,27 +109,6 @@ describe("TransformationPanel toggles", () => {
     expect(toggled?.isEnabled).toBe(false);
   }, 15000);
 
-  it("materializes and disables missing default layout transforms", () => {
-    mockTimeline([]);
-
-    render(<TransformationPanel />);
-
-    fireEvent.click(screen.getByLabelText("Layout enabled"));
-
-    expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
-    const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
-    const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
-
-    // FitMode is its own default section since the catalogue split — the
-    // Layout toggle materialises only position/scale/rotation.
-    expect(typed.map((transform) => transform.type)).toEqual([
-      "position",
-      "scale",
-      "rotation",
-    ]);
-    expect(typed.every((transform) => transform.isEnabled === false)).toBe(true);
-  });
-
   it("materializes and disables missing default display transforms", () => {
     mockTimeline([]);
 
@@ -141,14 +120,19 @@ describe("TransformationPanel toggles", () => {
     const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
+    // Layout, Fit Mode and Blend Mode are unified into the single "Display"
+    // section, so its toggle materialises all of them at once.
     expect(typed.map((transform) => transform.type)).toEqual([
+      "position",
+      "scale",
+      "rotation",
       "fitMode",
       "blendMode",
     ]);
     expect(typed.every((transform) => transform.isEnabled === false)).toBe(true);
   });
 
-  it("inserts disabled default layout transforms before dynamic transforms", () => {
+  it("inserts disabled default display transforms before dynamic transforms", () => {
     mockTimeline([
       {
         id: "color_1",
@@ -161,28 +145,30 @@ describe("TransformationPanel toggles", () => {
 
     render(<TransformationPanel />);
 
-    fireEvent.click(screen.getByLabelText("Layout enabled"));
+    fireEvent.click(screen.getByLabelText("Display enabled"));
 
     expect(mockSetClipTransforms).toHaveBeenCalledTimes(1);
     const [, nextTransforms] = mockSetClipTransforms.mock.calls[0];
     const typed = nextTransforms as Array<{ type: string; isEnabled: boolean }>;
 
-    // Layout toggle no longer materialises fitMode (catalogue split).
+    // The unified Display toggle materialises position/scale/rotation/fitMode/
+    // blendMode, inserted before the pre-existing dynamic filter.
     expect(typed.map((transform) => transform.type)).toEqual([
       "position",
       "scale",
       "rotation",
+      "fitMode",
+      "blendMode",
       "filter",
     ]);
-    // Only the materialised layout default-transforms (position/scale/
-    // rotation) should be disabled; the pre-existing dynamic filter
-    // remains enabled.
+    // Only the materialised default-transforms should be disabled; the
+    // pre-existing dynamic filter remains enabled.
     expect(
       typed
-        .slice(0, 3)
+        .slice(0, 5)
         .every((transform) => transform.isEnabled === false),
     ).toBe(true);
-    expect(typed[3].isEnabled).toBe(true);
+    expect(typed[5].isEnabled).toBe(true);
   });
 
   it("shows record path when no position path exists and can arm recording", () => {
@@ -249,7 +235,7 @@ describe("TransformationPanel toggles", () => {
 
     fireEvent.click(screen.getByText("Back To Transform"));
 
-    expect(screen.getByText("Layout")).toBeInTheDocument();
+    expect(screen.getByText("Display")).toBeInTheDocument();
     expect(useTransformationViewStore.getState().pathPanelView).toBe("home");
   });
 });

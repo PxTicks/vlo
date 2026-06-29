@@ -182,4 +182,19 @@ export interface TransformationDefinition {
    * parameters increase.
    */
   filterPadding?: (params: Readonly<Record<string, unknown>>) => number;
+
+  /** Host metadata for a dynamically registered extension contribution. */
+  extension?: Readonly<{
+    ownerId: string;
+    contributionId: string;
+    validateParameters: (
+      parameters: Readonly<Record<string, unknown>>,
+    ) => boolean;
+    reportFailureOnce: (
+      key: string,
+      level: "error" | "warning",
+      message: string,
+      detail?: unknown,
+    ) => void;
+  }>;
 }

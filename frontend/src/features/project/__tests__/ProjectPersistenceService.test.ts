@@ -238,6 +238,57 @@ describe("ProjectPersistenceService", () => {
     expect(persisted.clips[0].extensionPayload).toEqual(extensionPayload);
   });
 
+  it("round-trips namespaced extension transformation parameters", async () => {
+    const extensionTransform = {
+      id: "film-grade-1",
+      type: "filter",
+      filterName: "example.color-grade/film-grade",
+      isEnabled: true,
+      parameters: { gamma: 1.2, contrast: 1.1, saturation: 0.9 },
+    };
+    files.set(".vloproject/project.json", JSON.stringify(manifest));
+    files.set(
+      ".vloproject/timeline.json",
+      JSON.stringify({
+        ...timeline,
+        clips: [
+          {
+            id: "video-graded",
+            trackId: "track-1",
+            type: "video",
+            name: "Graded video",
+            assetId: "asset-1",
+            sourceDuration: 120,
+            transformedDuration: 120,
+            transformedOffset: 0,
+            timelineDuration: 120,
+            croppedSourceDuration: 120,
+            offset: 0,
+            start: 0,
+            transformations: [extensionTransform],
+          },
+        ],
+      }),
+    );
+    files.set(".vloproject/assets.json", JSON.stringify(assetIndex));
+
+    const loaded = await projectPersistenceService.loadOrMigrateProject();
+    expect(loaded.timeline?.clips[0]?.transformations[0]).toEqual(
+      extensionTransform,
+    );
+
+    await projectPersistenceService.updateTimeline((draft) => {
+      draft.clips[0]!.transformations[0]!.parameters.gamma = 1.4;
+    });
+    const persisted = JSON.parse(
+      files.get(".vloproject/timeline.json") ?? "{}",
+    );
+    expect(persisted.clips[0].transformations[0]).toEqual({
+      ...extensionTransform,
+      parameters: { ...extensionTransform.parameters, gamma: 1.4 },
+    });
+  });
+
   it("loads composite clips from a split timeline document", async () => {
     files.set(".vloproject/project.json", JSON.stringify(manifest));
     files.set(

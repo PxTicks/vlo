@@ -1,16 +1,21 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useSyncExternalStore } from "react";
 import { Box, Typography } from "@mui/material";
 import { getAddableTransforms } from "../../catalogue/TransformationRegistry";
 import { TransformationCard } from "./TransformationCard";
+import { extensionTransformationRegistry } from "../../extensions/ExtensionTransformationRegistry";
 
 function TransformationLibraryPanelComponent() {
-  const definitions = useMemo(
-    () =>
-      getAddableTransforms().filter(
-        (definition) => definition.compatibleClips !== "mask",
-      ),
-    [],
+  const registryRevision = useSyncExternalStore(
+    (listener) => extensionTransformationRegistry.subscribe(listener),
+    () => extensionTransformationRegistry.getRevision(),
+    () => extensionTransformationRegistry.getRevision(),
   );
+  const definitions = useMemo(() => {
+    void registryRevision;
+    return getAddableTransforms().filter(
+      (definition) => definition.compatibleClips !== "mask",
+    );
+  }, [registryRevision]);
 
   return (
     <Box

@@ -22,6 +22,9 @@ from services.extensions import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE_ROOT = REPOSITORY_ROOT / "extension-template"
+COLOR_GRADE_FIXTURE_ROOT = (
+    REPOSITORY_ROOT / "extension-fixtures" / "color-grade"
+)
 SDK_ROOT = REPOSITORY_ROOT / "packages" / "extension-sdk"
 NODE_EXECUTABLE = shutil.which("node")
 TYPESCRIPT_CLI = (
@@ -48,6 +51,16 @@ def _copy_template_workspace(tmp_path: Path) -> Path:
     shutil.copytree(TEMPLATE_ROOT, template)
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return template
+
+
+def _copy_color_grade_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "color-grade"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(COLOR_GRADE_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
 
 
 def _run_node(
@@ -195,3 +208,76 @@ def test_official_template_rejects_duplicate_host_singletons(tmp_path: Path):
     assert "Host singleton 'react' cannot be imported" in (
         build.stdout + build.stderr
     )
+
+
+def test_color_grade_fixture_builds_registers_and_stages_through_approval(
+    tmp_path: Path,
+):
+    fixture = _copy_color_grade_fixture_workspace(tmp_path)
+    _build_template(fixture)
+    built_entry = fixture / "frontend" / "dist" / "index.js"
+    assert built_entry.is_file()
+
+    frontend_smoke = _run_node(
+        [
+            "--input-type=module",
+            "--eval",
+            (
+                f"const extension = await import({json.dumps(built_entry.as_uri())});"
+                "const transformations = []; const notices = []; const logs = [];"
+                "await extension.activate({"
+                "extension: { id: 'example.color-grade', version: '1.0.0' },"
+                "sdkVersion: '1.0.0', signal: new AbortController().signal,"
+                "api: {"
+                "transformations: { register(definition) {"
+                "transformations.push(definition);"
+                "return { id: 'example.color-grade/' + definition.id, dispose() {} };"
+                "} },"
+                "ui: { registerNotice(definition) { notices.push(definition);"
+                "return { id: 'example.color-grade/' + definition.id, dispose() {} };"
+                "} }"
+                "},"
+                "logger: { debug() {}, info(message) { logs.push(message); },"
+                "warn() {}, error() {} }, onDispose() {}"
+                "});"
+                "if (transformations[0]?.hostFilter !== 'color-adjustment') "
+                "throw new Error('color-grade transformation missing');"
+                "if (notices[0]?.slot !== 'transformation-panel.before') "
+                "throw new Error('color-grade UI notice missing');"
+                "if (!logs.some((message) => message.includes('activated'))) "
+                "throw new Error('activation log missing');"
+            ),
+        ],
+        cwd=fixture,
+    )
+    _assert_command_succeeded(frontend_smoke)
+
+    extensions_root = tmp_path / "extensions"
+    extensions_root.mkdir()
+    shutil.copytree(fixture, extensions_root / "example.color-grade")
+    state_root = tmp_path / "state"
+    manager = ExtensionManager(
+        extensions_root,
+        ExtensionApprovalStore(state_root / "approvals.json"),
+    )
+    frontend_artifacts = FrontendArtifactStore(
+        state_root / "frontend-artifacts",
+        extensions_root,
+    )
+
+    pending = manager.scan(force_digest=True)[0]
+    assert pending.extension_id == "example.color-grade"
+    assert pending.status == "pending_approval"
+    assert pending.digest is not None
+
+    frontend_artifacts.stage(pending, pending.digest)
+    manager.approve(pending.extension_id, pending.digest)
+    approved = manager.get_item(pending.extension_id, force_digest=True)
+    assert approved.status == "approved"
+    frontend_bundle = frontend_artifacts.read(
+        pending.extension_id,
+        pending.digest,
+        "index.js",
+    )
+    assert b"Color-grade fixture activated" in frontend_bundle
+    assert b"color-adjustment" in frontend_bundle

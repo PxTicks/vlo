@@ -115,9 +115,92 @@ export interface ExtensionTimelineApi {
   ): ExtensionTimelineTransactionResult;
 }
 
+/**
+ * Host-owned filters an SDK 1 transformation may parameterize. Each is a
+ * built-in vlo filter executed by the host; extensions supply only declarative
+ * numeric controls, never filter code. New entries widen this allow-list and
+ * never expose arbitrary shaders.
+ */
+export type ExtensionHostFilter =
+  | "color-adjustment"
+  | "hsl-adjustment"
+  | "bloom"
+  | "glow"
+  | "crt"
+  | "old-film"
+  | "dot"
+  | "ascii"
+  | "bulge-pinch";
+
+export interface ExtensionTransformationNumberControl {
+  readonly type: "slider" | "number";
+  readonly name: string;
+  readonly label: string;
+  readonly defaultValue: number;
+  readonly min: number;
+  readonly max: number;
+  readonly step?: number;
+  readonly supportsSpline?: boolean;
+}
+
+export interface ExtensionTransformationControlGroup {
+  readonly id: string;
+  readonly title: string;
+  readonly columns?: number;
+  readonly controls: readonly ExtensionTransformationNumberControl[];
+}
+
+/** Declarative SDK 1 transformation backed by a host-owned filter runtime. */
+export interface ExtensionTransformationDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly kind: "host-filter";
+  readonly hostFilter: ExtensionHostFilter;
+  readonly label: string;
+  readonly adjustmentCompatible?: boolean;
+  readonly groups: readonly ExtensionTransformationControlGroup[];
+}
+
+export interface ExtensionTransformationRegistration
+  extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionTransformationApi {
+  register(
+    definition: ExtensionTransformationDefinition,
+  ): ExtensionTransformationRegistration;
+}
+
+export type ExtensionUiSlotId = "transformation-panel.before";
+export type ExtensionUiNoticeTone = "info" | "success" | "warning";
+
+/** Declarative native UI contribution; arbitrary React slots are not portable SDK 1. */
+export interface ExtensionUiNoticeDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly slot: ExtensionUiSlotId;
+  readonly kind: "notice";
+  readonly title: string;
+  readonly message: string;
+  readonly tone?: ExtensionUiNoticeTone;
+}
+
+export interface ExtensionUiRegistration extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionUiApi {
+  registerNotice(
+    definition: ExtensionUiNoticeDefinition,
+  ): ExtensionUiRegistration;
+}
+
 export interface VloExtensionApi {
   readonly payloadProviders: ExtensionPayloadProviderApi;
   readonly timeline: ExtensionTimelineApi;
+  readonly transformations: ExtensionTransformationApi;
+  readonly ui: ExtensionUiApi;
 }
 
 export interface ExtensionIdentity {

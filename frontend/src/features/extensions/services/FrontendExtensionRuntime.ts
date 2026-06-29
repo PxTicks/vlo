@@ -8,6 +8,8 @@ import type {
 } from "../types";
 import { extensionPayloadProviderRegistry } from "../persistence/ExtensionPayloadProviderRegistry";
 import { createExtensionTimelineApi } from "../timeline/createExtensionTimelineApi";
+import { extensionTransformationRegistry } from "../../transformations/extensionApi";
+import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
 import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
 import {
   fetchExtensionInventory,
@@ -310,11 +312,14 @@ function reportHostDiagnostic(diagnostic: ExtensionDiagnostic): void {
   );
 }
 
-const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> = (scope) =>
-  Object.freeze({
-    payloadProviders: extensionPayloadProviderRegistry.bind(scope),
-    timeline: createExtensionTimelineApi(scope),
-  });
+export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
+  (scope) =>
+    Object.freeze({
+      payloadProviders: extensionPayloadProviderRegistry.bind(scope),
+      timeline: createExtensionTimelineApi(scope),
+      transformations: extensionTransformationRegistry.bind(scope),
+      ui: extensionUiSlotRegistry.bind(scope),
+    });
 
 const frontendExtensionHost = new ExtensionHost<VloExtensionApi>({
   sdkVersion: VLO_EXTENSION_SDK_VERSION,

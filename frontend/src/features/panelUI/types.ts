@@ -41,12 +41,12 @@ export interface LayoutGroup {
   id: string; // The ID of the group (e.g., "position", "scale")
   title: string; // Display title (e.g., "POSITION (PX)")
   columns?: number | string; // Number of columns (int) or grid-template-columns string
-  controls: ControlDefinition[];
+  controls: readonly ControlDefinition[];
   showLinkButton?: boolean; // Whether to show a link/unlink button between controls
 }
 
 export interface PanelLayoutConfig {
-  groups: LayoutGroup[];
+  groups: readonly LayoutGroup[];
 }
 
 // Backward-compatible alias

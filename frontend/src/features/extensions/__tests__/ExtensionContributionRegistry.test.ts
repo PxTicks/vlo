@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DuplicateExtensionContributionError,
   ExtensionContributionRegistry,
@@ -158,5 +158,35 @@ describe("ExtensionContributionRegistry", () => {
 
     expect(owned).toEqual([registration]);
     expect(registration.contribution.ownerId).toBe("example.owner");
+  });
+
+  it("notifies derived registry consumers on registration and disposal", () => {
+    const registry = new ExtensionContributionRegistry<TestContribution>(
+      "test.registry",
+    );
+    const listener = vi.fn();
+    const unsubscribe = registry.subscribe(listener);
+    const registration = bindRegistry(
+      registry,
+      "example.owner",
+    ).registrar.register({
+      id: "reactive",
+      apiVersion: 1,
+      label: "Reactive",
+    });
+
+    expect(registry.getRevision()).toBe(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    registration.dispose();
+    expect(registry.getRevision()).toBe(2);
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
+    bindRegistry(registry, "example.owner").registrar.register({
+      id: "silent",
+      apiVersion: 1,
+      label: "Silent",
+    });
+    expect(listener).toHaveBeenCalledTimes(2);
   });
 });

@@ -4,9 +4,13 @@ import { ExtensionContributionRegistry } from "../../registry/ExtensionContribut
 import type { ExtensionContributionDefinition } from "../../registry/ExtensionContributionRegistry";
 import type { ExtensionInventoryItem } from "../extensionManagementApi";
 import {
+  createVloExtensionApi,
   FrontendExtensionInventoryTimeoutError,
   FrontendExtensionRuntime,
 } from "../FrontendExtensionRuntime";
+import type { VloExtensionApi } from "../../types";
+import { extensionTransformationRegistry } from "../../../transformations/extensionApi";
+import { extensionUiSlotRegistry } from "../../ui/ExtensionUiSlotRegistry";
 
 interface TestContribution extends ExtensionContributionDefinition {
   value: string;
@@ -103,6 +107,86 @@ function createHarness(
 }
 
 describe("FrontendExtensionRuntime", () => {
+  it("activates and disposes production transformation and UI facades", async () => {
+    const host = new ExtensionHost<VloExtensionApi>({
+      sdkVersion: "1.0.0",
+      createApi: createVloExtensionApi,
+    });
+    const runtime = new FrontendExtensionRuntime({
+      host,
+      loadInventory: async () => [inventoryItem("example.color-grade")],
+      importModule: async () => ({
+        activate: (context: { api: VloExtensionApi }) => {
+          context.api.transformations.register({
+            id: "film-grade",
+            apiVersion: 1,
+            kind: "host-filter",
+            hostFilter: "hsl-adjustment",
+            label: "Film Grade",
+            groups: [
+              {
+                id: "grade",
+                title: "Grade",
+                controls: [
+                  {
+                    type: "slider",
+                    name: "hue",
+                    label: "Hue",
+                    defaultValue: 0,
+                    min: -180,
+                    max: 180,
+                  },
+                ],
+              },
+            ],
+          });
+          context.api.ui.registerNotice({
+            id: "help",
+            apiVersion: 1,
+            slot: "transformation-panel.before",
+            kind: "notice",
+            title: "Film Grade",
+            message: "Choose Film Grade from the Add menu.",
+          });
+        },
+      }),
+    });
+
+    const summary = await runtime.start();
+
+    try {
+      expect(summary.results[0]?.status).toBe("active");
+      expect(
+        extensionTransformationRegistry
+          .listDefinitions()
+          .some(
+            (definition) =>
+              definition.filterName === "example.color-grade/film-grade",
+          ),
+      ).toBe(true);
+      expect(
+        extensionUiSlotRegistry
+          .list("transformation-panel.before")
+          .map((entry) => entry.id),
+      ).toContain("example.color-grade/help");
+    } finally {
+      await host.deactivate("example.color-grade");
+    }
+    expect(
+      extensionTransformationRegistry
+        .listDefinitions()
+        .some(
+          (definition) =>
+            definition.filterName === "example.color-grade/film-grade",
+        ),
+    ).toBe(false);
+    expect(
+      extensionUiSlotRegistry
+        .list("transformation-panel.before")
+        .map((entry) => entry.id),
+    ).not.toContain("example.color-grade/help");
+  });
+
   it("imports and activates only approved frontend packages", async () => {
     const activate = vi.fn();
     const importModule = vi.fn(async () => ({ activate }));

@@ -22,8 +22,10 @@ directory by hand; rebuild it before approval.
 
 - `@vlo/extension-sdk` is type-only. Import it with `import type`; runtime access is
   supplied through the host-owned activation context.
-- The Phase 2 context intentionally has no domain contribution APIs yet. It proves
-  package approval, lifecycle, logging, cancellation, and cleanup only.
+- The host context currently exposes opaque payload providers, labelled timeline
+  transactions, declarative host-filter transformations, and native notice slots.
+  Rendering new entity types, arbitrary React/Pixi contributions, animation/path
+  strategies, and backend jobs arrive in later SDK phases.
 - React, React DOM, MUI/emotion, Zustand, and Pixi are host singletons. SDK 1 has no
   portable runtime mapping for them, so the template build rejects those imports
   instead of bundling duplicate copies or emitting unresolved bare imports.

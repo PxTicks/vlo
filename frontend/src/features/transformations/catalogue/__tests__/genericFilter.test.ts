@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { filterHandler, filterApplicator } from "../filterFactory";
 import { TransformationRegistry } from "../TransformationRegistry";
+import { extensionTransformationRegistry } from "../../extensions/ExtensionTransformationRegistry";
 import type { GenericFilterTransform } from "../../types";
-import type { TransformState } from "../types";
+import type { TransformationDefinition, TransformState } from "../types";
 import { Sprite, Filter, Matrix } from "pixi.js";
 
 // Mock Registry
@@ -22,8 +23,26 @@ const ScaledMockFilter = class extends Filter {
   foo: number = 0;
 };
 
-// Add mock entry to registry for testing
-(TransformationRegistry as unknown[]).push({
+let testDefinitionId = 0;
+function registerTestDefinition(
+  definition: Omit<TransformationDefinition, "handler"> &
+    Partial<Pick<TransformationDefinition, "handler">>,
+): void {
+  testDefinitionId += 1;
+  extensionTransformationRegistry.registerRuntime(
+    {
+      extension: { id: "test.generic-filter", version: "1.0.0" },
+      signal: new AbortController().signal,
+      own: (resource) => resource,
+      report: () => undefined,
+    },
+    `definition-${testDefinitionId}`,
+    { ...definition, handler: definition.handler ?? filterHandler },
+  );
+}
+
+// Add mock entries through the same owned registry used by runtime definitions.
+registerTestDefinition({
   type: "filter",
   filterName: "MockFilter",
   FilterClass: MockFilter,
@@ -32,7 +51,7 @@ const ScaledMockFilter = class extends Filter {
   uiConfig: { groups: [] },
 });
 
-(TransformationRegistry as unknown[]).push({
+registerTestDefinition({
   type: "filter",
   filterName: "ScaledMockFilter",
   FilterClass: ScaledMockFilter,
@@ -223,7 +242,7 @@ describe("Generic Filter System", () => {
         centerY: number = 0;
       };
 
-      (TransformationRegistry as unknown[]).push({
+      registerTestDefinition({
         type: "filter",
         filterName: "PointMockFilter",
         FilterClass: PointMockFilter,
@@ -274,7 +293,7 @@ describe("Generic Filter System", () => {
         centerY: number = 0;
       };
 
-      (TransformationRegistry as unknown[]).push({
+      registerTestDefinition({
         type: "filter",
         filterName: "UnclippedPointMockFilter",
         FilterClass: UnclippedPointMockFilter,
@@ -329,7 +348,7 @@ describe("Generic Filter System", () => {
         offsetY: number = 0;
       };
 
-      (TransformationRegistry as unknown[]).push({
+      registerTestDefinition({
         type: "filter",
         filterName: "GlobalPointMockFilter",
         FilterClass: GlobalPointMockFilter,

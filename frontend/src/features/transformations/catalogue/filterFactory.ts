@@ -253,62 +253,69 @@ export const filterApplicator = (
     }
 
     const FilterClass = registryEntry.FilterClass;
+    try {
+      // 2. Find reusable instance in pool
+      const poolIndex = pool.findIndex((f) => f instanceof FilterClass);
+      let filterInstance: Filter;
 
-    // 2. Find reusable instance in pool
-    const poolIndex = pool.findIndex((f) => f instanceof FilterClass);
-    let filterInstance: Filter;
+      if (poolIndex !== -1) {
+        filterInstance = pool[poolIndex];
+        pool.splice(poolIndex, 1);
+      } else {
+        filterInstance = new FilterClass();
+      }
 
-    if (poolIndex !== -1) {
-      filterInstance = pool[poolIndex];
-      pool.splice(poolIndex, 1);
-    } else {
-      filterInstance = new FilterClass();
-    }
+      // Disable viewport clipping for filters with spatial point bindings
+      // so that the filter texture always covers the full sprite bounds.
+      // Without this, uOutputFrame shifts when the sprite extends off-screen,
+      // causing position-dependent effects to drift.
+      if (registryEntry.filterParameterPoints) {
+        filterInstance.clipToViewport = false;
+      }
 
-    // Disable viewport clipping for filters with spatial point bindings
-    // so that the filter texture always covers the full sprite bounds.
-    // Without this, uOutputFrame shifts when the sprite extends off-screen,
-    // causing position-dependent effects to drift.
-    if (registryEntry.filterParameterPoints) {
-      filterInstance.clipToViewport = false;
-    }
+      // 3. Apply Parameters
+      const preliminaryParams = getScaledFilterParams(
+        filterOp.params,
+        registryEntry.filterParameterScale,
+        target,
+        0,
+        contentSize,
+      );
+      const nextPadding = registryEntry.filterPadding?.(preliminaryParams) ?? 0;
+      const safePadding = Number.isFinite(nextPadding) ? nextPadding : 0;
+      const params = getScaledFilterParams(
+        filterOp.params,
+        registryEntry.filterParameterScale,
+        target,
+        safePadding,
+        contentSize,
+      );
+      const resolvedParams = applyPointBindings(
+        params,
+        registryEntry.filterParameterPoints,
+        target,
+        safePadding,
+        contentSize,
+      );
+      for (const [key, value] of Object.entries(resolvedParams)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (filterInstance as any)[key] = value;
+      }
 
-    // 3. Apply Parameters
-    const preliminaryParams = getScaledFilterParams(
-      filterOp.params,
-      registryEntry.filterParameterScale,
-      target,
-      0,
-      contentSize,
-    );
-    const nextPadding = registryEntry.filterPadding?.(preliminaryParams) ?? 0;
-    const safePadding = Number.isFinite(nextPadding) ? nextPadding : 0;
-    const params = getScaledFilterParams(
-      filterOp.params,
-      registryEntry.filterParameterScale,
-      target,
-      safePadding,
-      contentSize,
-    );
-    const resolvedParams = applyPointBindings(
-      params,
-      registryEntry.filterParameterPoints,
-      target,
-      safePadding,
-      contentSize,
-    );
-    for (const [key, value] of Object.entries(resolvedParams)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (filterInstance as any)[key] = value;
-    }
-
-    if (registryEntry.filterPadding) {
-      if (Number.isFinite(nextPadding)) {
+      if (registryEntry.filterPadding && Number.isFinite(nextPadding)) {
         filterInstance.padding = nextPadding;
       }
-    }
 
-    newFilters.push(filterInstance);
+      newFilters.push(filterInstance);
+    } catch (error) {
+      if (!registryEntry.extension) throw error;
+      registryEntry.extension.reportFailureOnce(
+        "filter-application",
+        "error",
+        `Transformation '${registryEntry.extension.contributionId}' failed while applying its host filter.`,
+        error,
+      );
+    }
   }
 
   mutableTarget.filters = newFilters;

@@ -51,3 +51,7 @@ export {
   type GraphTimeAxis,
 } from "./utils/clipTimeDomains";
 export { resolveScalar } from "./utils/resolveScalar";
+export {
+  ExtensionTransformationRegistry,
+  extensionTransformationRegistry,
+} from "./extensionApi";

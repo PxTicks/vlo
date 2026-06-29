@@ -27,7 +27,7 @@ function supportsEffectMask(
 interface SortableTransformationItemProps {
   id: string;
   transform: ClipTransform;
-  groups: LayoutGroup[];
+  groups: readonly LayoutGroup[];
   title: string;
   bgColor: string;
   onRemove: () => void;

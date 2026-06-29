@@ -83,6 +83,8 @@ export class ExtensionContributionRegistry<
     string,
     RegisteredExtensionContribution<TDefinition>
   >();
+  private readonly listeners = new Set<() => void>();
+  private revision = 0;
 
   constructor(kind: string) {
     assertValidId("registry kind", kind);
@@ -129,6 +131,7 @@ export class ExtensionContributionRegistry<
       });
 
     this.contributions.set(id, contribution);
+    this.emitChange();
 
     let isDisposed = false;
     return Object.freeze({
@@ -137,7 +140,9 @@ export class ExtensionContributionRegistry<
       dispose: () => {
         if (isDisposed) return;
         isDisposed = true;
-        this.contributions.delete(id);
+        if (this.contributions.delete(id)) {
+          this.emitChange();
+        }
       },
     });
   }
@@ -160,5 +165,26 @@ export class ExtensionContributionRegistry<
     return this.list().filter(
       (contribution) => contribution.ownerId === ownerId,
     );
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  getRevision(): number {
+    return this.revision;
+  }
+
+  private emitChange(): void {
+    this.revision += 1;
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch {
+        // Registry observers are derived UI/cache notifications and must not
+        // interfere with contribution registration or disposal.
+      }
+    }
   }
 }

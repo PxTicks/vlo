@@ -1,4 +1,10 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import {
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  useSyncExternalStore,
+} from "react";
 import { Alert, Box, Button, Menu, MenuItem } from "@mui/material";
 import { Add } from "@mui/icons-material";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
@@ -7,6 +13,7 @@ import {
   getAddableTransforms,
   getLayoutGroupsForTransform,
   getLabelForTransform,
+  getMissingExtensionTransformationId,
   isDefaultTransform,
   getDefaultTransforms,
   isTransformCompatible,
@@ -29,6 +36,8 @@ import { getDefaultTransformationSectionModels } from "../utils/defaultSectionMo
 import type { PositionTransform, SplineParameter } from "../types";
 import { PositionPathDetailView } from "./PositionPathDetailView";
 import { extensionPayloadProviderRegistry } from "../../extensions/persistence/publicApi";
+import { ExtensionUiSlot } from "../../extensions/ui/publicApi";
+import { extensionTransformationRegistry } from "../extensions/ExtensionTransformationRegistry";
 
 // DnD Kit Imports
 import {
@@ -49,6 +58,11 @@ import {
 } from "@dnd-kit/sortable";
 
 export function TransformationPanel() {
+  const transformationRegistryRevision = useSyncExternalStore(
+    (listener) => extensionTransformationRegistry.subscribe(listener),
+    () => extensionTransformationRegistry.getRevision(),
+    () => extensionTransformationRegistry.getRevision(),
+  );
   const {
     selectedClipId,
     activeTargetKind,
@@ -128,17 +142,27 @@ export function TransformationPanel() {
 
   // Filter transformations based on clip compatibility
   const compatibleDefaultTransforms = useMemo(() => {
+    void transformationRegistryRevision;
     return getDefaultTransforms().filter((def) =>
       isTransformCompatible(def, compatibilityClipType, compatibilityHasAudio),
     );
-  }, [compatibilityClipType, compatibilityHasAudio]);
+  }, [
+    compatibilityClipType,
+    compatibilityHasAudio,
+    transformationRegistryRevision,
+  ]);
 
   const compatibleAddableTransforms = useMemo(() => {
+    void transformationRegistryRevision;
     return getAddableTransforms({
       clipType: compatibilityClipType,
       hasAudio: compatibilityHasAudio,
     });
-  }, [compatibilityClipType, compatibilityHasAudio]);
+  }, [
+    compatibilityClipType,
+    compatibilityHasAudio,
+    transformationRegistryRevision,
+  ]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -468,6 +492,7 @@ export function TransformationPanel() {
       }}
     >
       <Box sx={{ display: "flex", flexDirection: "column" }}>
+        <ExtensionUiSlot slot="transformation-panel.before" />
         {selectedClip?.type === "extension" ? (
           <Alert
             data-testid="extension-inspector-placeholder"
@@ -530,7 +555,21 @@ export function TransformationPanel() {
               const groups = getLayoutGroupsForTransform(t);
               const title = getLabelForTransform(t);
 
-              if (!groups || groups.length === 0) return null;
+              if (!groups || groups.length === 0) {
+                const missingContributionId =
+                  getMissingExtensionTransformationId(t);
+                return missingContributionId ? (
+                  <Alert
+                    key={t.id}
+                    data-testid="missing-extension-transformation"
+                    severity="warning"
+                    sx={{ m: 1 }}
+                  >
+                    Missing transformation {missingContributionId}. Its
+                    parameters are preserved.
+                  </Alert>
+                ) : null;
+              }
 
               const isEven = index % 2 === 0;
               const bgColor = isEven ? "#202024" : "#18181b";

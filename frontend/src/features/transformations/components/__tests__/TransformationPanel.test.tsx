@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { TransformationPanel } from "../TransformationPanel";
 import { useTimelineStore } from "../../../timeline";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { extensionTransformationRegistry } from "../../extensions/ExtensionTransformationRegistry";
 
 // Mock the store
 vi.mock("../../../timeline/useTimelineStore");
@@ -154,6 +155,84 @@ describe("TransformationPanel", () => {
 
     fireEvent.click(addButton);
     expect(screen.getByText("Color (HSL)")).toBeInTheDocument(); // Menu item from Registry
+  });
+
+  it("shows a registered extension transformation in the Add menu", () => {
+    const registration = extensionTransformationRegistry
+      .bind({
+        extension: { id: "example.color-grade", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: (resource) => resource,
+        report: () => undefined,
+      })
+      .register({
+        id: "film-grade",
+        apiVersion: 1,
+        kind: "host-filter",
+        hostFilter: "hsl-adjustment",
+        label: "Extension Film Grade",
+        groups: [
+          {
+            id: "grade",
+            title: "Grade",
+            controls: [
+              {
+                type: "slider",
+                name: "hue",
+                label: "Hue",
+                defaultValue: 0,
+                min: -180,
+                max: 180,
+              },
+            ],
+          },
+        ],
+      });
+
+    try {
+      render(<TransformationPanel />);
+      fireEvent.click(screen.getByText("Add Transformation"));
+      expect(screen.getByText("Extension Film Grade")).toBeInTheDocument();
+    } finally {
+      registration.dispose();
+    }
+  });
+
+  it("preserves and labels a transformation whose extension is missing", () => {
+    const state = {
+      selectedClipIds: ["clip_1"],
+      clips: [
+        {
+          ...baseClip,
+          transformations: [
+            {
+              id: "missing-grade",
+              type: "filter",
+              filterName: "example.missing/film-grade",
+              isEnabled: true,
+              parameters: { gamma: 1.2 },
+            },
+          ],
+        },
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+    };
+    (
+      useTimelineStore as unknown as ReturnType<typeof vi.fn>
+    ).mockImplementation((selector: (store: typeof state) => unknown) =>
+      selector(state),
+    );
+
+    render(<TransformationPanel />);
+
+    expect(
+      screen.getByTestId("missing-extension-transformation"),
+    ).toHaveTextContent(
+      "Missing transformation example.missing/film-grade. Its parameters are preserved.",
+    );
   });
 
   it("adds a new color transform when menu item is clicked", () => {

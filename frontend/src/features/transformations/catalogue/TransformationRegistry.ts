@@ -50,6 +50,7 @@ import { featherDefinition } from "./mask/feather";
 import { maskGrowDefinition } from "./mask/grow";
 import { filterApplicator } from "./filterFactory";
 import { colorMatrixDefinition } from "./filters/colorMatrix";
+import { extensionTransformationRegistry } from "../extensions/ExtensionTransformationRegistry";
 
 // =============================================================================
 // REGISTRY
@@ -60,7 +61,7 @@ import { colorMatrixDefinition } from "./filters/colorMatrix";
  * `isDefault` is set here centrally — definitions don't carry this flag.
  * Order matters: default (layout) groups should come first.
  */
-export const TransformationRegistry: TransformationDefinition[] = [
+const BUILTIN_TRANSFORMATION_DEFINITIONS: TransformationDefinition[] = [
   // Layout definition (handles position, scale, rotation) — always visible
   // for visual clips and adjustment clips alike.
   { ...layoutDefinition, isDefault: true },
@@ -124,6 +125,29 @@ export const TransformationRegistry: TransformationDefinition[] = [
   { ...featherDefinition, isDefault: false },
 ];
 
+export const TransformationRegistry: readonly TransformationDefinition[] =
+  Object.freeze(
+    BUILTIN_TRANSFORMATION_DEFINITIONS.map((definition) =>
+      Object.freeze(definition),
+    ),
+  );
+
+let registeredTransformationRevision = -1;
+let registeredTransformations: readonly TransformationDefinition[] =
+  TransformationRegistry;
+
+function getRegisteredTransformations(): readonly TransformationDefinition[] {
+  const revision = extensionTransformationRegistry.getRevision();
+  if (revision !== registeredTransformationRevision) {
+    registeredTransformationRevision = revision;
+    registeredTransformations = Object.freeze([
+      ...TransformationRegistry,
+      ...extensionTransformationRegistry.listDefinitions(),
+    ]);
+  }
+  return registeredTransformations;
+}
+
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
@@ -137,14 +161,14 @@ export function getEntryForTransform(
 ): TransformationDefinition | undefined {
   if (t.type === "filter") {
     const filterTransform = t as GenericFilterTransform;
-    return TransformationRegistry.find(
+    return getRegisteredTransformations().find(
       (entry) =>
         entry.type === "filter" &&
         entry.filterName === filterTransform.filterName,
     );
   }
 
-  return TransformationRegistry.find(
+  return getRegisteredTransformations().find(
     (entry) => entry.type === t.type || entry.handledTypes?.includes(t.type),
   );
 }
@@ -155,7 +179,7 @@ export function getEntryForTransform(
 export function getEntryByType(
   type: string,
 ): TransformationDefinition | undefined {
-  return TransformationRegistry.find(
+  return getRegisteredTransformations().find(
     (entry) =>
       (entry.type === type && !entry.filterName) ||
       entry.handledTypes?.includes(type),
@@ -168,7 +192,7 @@ export function getEntryByType(
 export function getEntryByFilterName(
   filterName: string,
 ): TransformationDefinition | undefined {
-  return TransformationRegistry.find(
+  return getRegisteredTransformations().find(
     (entry) => entry.type === "filter" && entry.filterName === filterName,
   );
 }
@@ -177,7 +201,7 @@ export function getEntryByFilterName(
  * Get the layout definition that contains all default transform UI groups.
  */
 export function getLayoutDefinition(): TransformationDefinition {
-  return TransformationRegistry.find((entry) => entry.isDefault)!;
+  return getRegisteredTransformations().find((entry) => entry.isDefault)!;
 }
 
 /**
@@ -187,7 +211,7 @@ export function getAddableTransforms(options?: {
   clipType?: string;
   hasAudio?: boolean;
 }): TransformationDefinition[] {
-  return TransformationRegistry.filter((entry) => {
+  return getRegisteredTransformations().filter((entry) => {
     if (entry.isDefault) return false;
     if (entry.hidden) return false;
     if (!options?.clipType) return true;
@@ -201,7 +225,7 @@ export function getAddableTransforms(options?: {
  */
 export function isDefaultTransform(type: string): boolean {
   // Check if any default transformation definition handles this type
-  const defaultDefinitions = TransformationRegistry.filter(
+  const defaultDefinitions = getRegisteredTransformations().filter(
     (entry) => entry.isDefault,
   );
   return defaultDefinitions.some(
@@ -216,7 +240,7 @@ export function isDefaultTransform(type: string): boolean {
  */
 export function getLayoutGroupsForTransform(
   t: ClipTransform,
-): LayoutGroup[] | undefined {
+): readonly LayoutGroup[] | undefined {
   const entry = getEntryForTransform(t);
   if (!entry) return undefined;
 
@@ -240,14 +264,32 @@ export function getLabelForTransform(t: ClipTransform): string {
     return t.type.charAt(0).toUpperCase() + t.type.slice(1);
   }
 
+  if (!entry && t.type === "filter" && "filterName" in t) {
+    return `Missing · ${String(t.filterName)}`;
+  }
   return entry?.label ?? t.type;
+}
+
+export function getMissingExtensionTransformationId(
+  transform: ClipTransform,
+): string | null {
+  if (
+    transform.type !== "filter" ||
+    !("filterName" in transform) ||
+    typeof transform.filterName !== "string" ||
+    !transform.filterName.includes("/") ||
+    getEntryForTransform(transform)
+  ) {
+    return null;
+  }
+  return transform.filterName;
 }
 
 /**
  * Get all default transformation definitions.
  */
 export function getDefaultTransforms(): TransformationDefinition[] {
-  return TransformationRegistry.filter((entry) => entry.isDefault);
+  return getRegisteredTransformations().filter((entry) => entry.isDefault);
 }
 
 /**
@@ -321,6 +363,9 @@ export const TransformationSystem = {
   }),
 };
 
+const reportedMissingTransformations = new Set<string>();
+const MAX_REPORTED_MISSING_TRANSFORMATIONS = 200;
+
 /**
  * Dispatches a generic transform to its specific handler by looking up
  * the definition in the Registry.
@@ -337,10 +382,43 @@ export function dispatchTransform(
     // 2. Execute the handler defined in the Registry entry
     // The handler inside 'layoutDefinition' must be capable of handling
     // position/scale/rotation types (see Step 4 below).
-    entry.handler(state, transform, context);
+    if (
+      entry.extension &&
+      !entry.extension.validateParameters(transform.parameters)
+    ) {
+      entry.extension.reportFailureOnce(
+        `invalid-parameters:${transform.id}`,
+        "error",
+        `Transformation '${entry.extension.contributionId}' has invalid parameters and was skipped.`,
+        { transformId: transform.id },
+      );
+      return;
+    }
+    try {
+      entry.handler(state, transform, context);
+    } catch (error) {
+      if (entry.extension) {
+        entry.extension.reportFailureOnce(
+          `dispatch:${transform.id}`,
+          "error",
+          `Transformation '${entry.extension.contributionId}' failed during render dispatch.`,
+          error,
+        );
+        return;
+      }
+      throw error;
+    }
   } else {
-    console.warn(
-      `[TransformationRegistry] No handler found for type: ${transform.type}`,
-    );
+    const key =
+      transform.type === "filter" && "filterName" in transform
+        ? `filter:${String(transform.filterName)}`
+        : transform.type;
+    if (
+      !reportedMissingTransformations.has(key) &&
+      reportedMissingTransformations.size < MAX_REPORTED_MISSING_TRANSFORMATIONS
+    ) {
+      reportedMissingTransformations.add(key);
+      console.warn(`[TransformationRegistry] No handler found for: ${key}`);
+    }
   }
 }

@@ -1,4 +1,5 @@
 import type { TransformationDefinition } from "../types";
+import { AUDIO_REVERB_DEFAULTS } from "../../constants";
 import { audioEffectHandler } from "./audioEffectHandler";
 
 // Convolution reverb. The audio renderer generates a procedural impulse
@@ -19,7 +20,7 @@ export const reverbDefinition: TransformationDefinition = {
             type: "slider",
             label: "Mix",
             name: "mix",
-            defaultValue: 0.3,
+            defaultValue: AUDIO_REVERB_DEFAULTS.mix,
             min: 0,
             max: 1,
             step: 0.05,
@@ -29,7 +30,7 @@ export const reverbDefinition: TransformationDefinition = {
             type: "slider",
             label: "Decay (s)",
             name: "decay",
-            defaultValue: 2,
+            defaultValue: AUDIO_REVERB_DEFAULTS.decay,
             min: 0.1,
             max: 10,
             step: 0.1,

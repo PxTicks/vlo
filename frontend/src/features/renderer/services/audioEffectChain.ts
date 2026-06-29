@@ -1,4 +1,10 @@
-import { resolveScalar, isAudioEffectType } from "../../transformations";
+import {
+  AUDIO_COMPRESSOR_DEFAULTS,
+  AUDIO_DELAY_DEFAULTS,
+  AUDIO_REVERB_DEFAULTS,
+  resolveScalar,
+  isAudioEffectType,
+} from "../../transformations";
 import type {
   ScalarParameter,
   AudioEffectTransform,
@@ -235,20 +241,31 @@ function buildCompressor(ctx: BaseAudioContext): EffectSegment {
     schedule: (w, transform) => {
       const p = (transform as CompressorTransform).parameters;
       comp.threshold.setValueAtTime(
-        scalarAtStart(p.threshold, -24, w),
+        scalarAtStart(p.threshold, AUDIO_COMPRESSOR_DEFAULTS.threshold, w),
         w.startContextTime,
       );
-      comp.ratio.setValueAtTime(scalarAtStart(p.ratio, 4, w), w.startContextTime);
+      comp.ratio.setValueAtTime(
+        scalarAtStart(p.ratio, AUDIO_COMPRESSOR_DEFAULTS.ratio, w),
+        w.startContextTime,
+      );
       comp.attack.setValueAtTime(
-        scalarAtStart(p.attack, 0.003, w),
+        scalarAtStart(p.attack, AUDIO_COMPRESSOR_DEFAULTS.attack, w),
         w.startContextTime,
       );
       comp.release.setValueAtTime(
-        scalarAtStart(p.release, 0.25, w),
+        scalarAtStart(p.release, AUDIO_COMPRESSOR_DEFAULTS.release, w),
         w.startContextTime,
       );
-      comp.knee.setValueAtTime(scalarAtStart(p.knee, 30, w), w.startContextTime);
-      scheduleScalar(makeup.gain, p.makeup, 1, w);
+      comp.knee.setValueAtTime(
+        scalarAtStart(p.knee, AUDIO_COMPRESSOR_DEFAULTS.knee, w),
+        w.startContextTime,
+      );
+      scheduleScalar(
+        makeup.gain,
+        p.makeup,
+        AUDIO_COMPRESSOR_DEFAULTS.makeup,
+        w,
+      );
     },
   };
 }
@@ -273,14 +290,23 @@ function buildReverb(ctx: BaseAudioContext): EffectSegment {
     nodes: [input, dry, wet, conv, output],
     schedule: (w, transform) => {
       const p = (transform as ReverbTransform).parameters;
-      const decay = Math.max(0.05, scalarAtStart(p.decay, 2, w));
+      const decay = Math.max(
+        0.05,
+        scalarAtStart(p.decay, AUDIO_REVERB_DEFAULTS.decay, w),
+      );
       const key = `${ctx.sampleRate}:${decay.toFixed(2)}`;
       if (key !== lastIrKey) {
         conv.buffer = getReverbImpulseResponse(ctx, decay);
         lastIrKey = key;
       }
-      scheduleScalar(wet.gain, p.mix, 0.3, w);
-      scheduleScalar(dry.gain, p.mix, 0.3, w, (v) => 1 - v);
+      scheduleScalar(wet.gain, p.mix, AUDIO_REVERB_DEFAULTS.mix, w);
+      scheduleScalar(
+        dry.gain,
+        p.mix,
+        AUDIO_REVERB_DEFAULTS.mix,
+        w,
+        (v) => 1 - v,
+      );
     },
   };
 }
@@ -306,10 +332,21 @@ function buildDelay(ctx: BaseAudioContext): EffectSegment {
     nodes: [input, dry, wet, output, delay, feedback],
     schedule: (w, transform) => {
       const p = (transform as DelayTransform).parameters;
-      scheduleScalar(delay.delayTime, p.time, 0.3, w);
-      scheduleScalar(feedback.gain, p.feedback, 0.4, w);
-      scheduleScalar(wet.gain, p.mix, 0.3, w);
-      scheduleScalar(dry.gain, p.mix, 0.3, w, (v) => 1 - v);
+      scheduleScalar(delay.delayTime, p.time, AUDIO_DELAY_DEFAULTS.time, w);
+      scheduleScalar(
+        feedback.gain,
+        p.feedback,
+        AUDIO_DELAY_DEFAULTS.feedback,
+        w,
+      );
+      scheduleScalar(wet.gain, p.mix, AUDIO_DELAY_DEFAULTS.mix, w);
+      scheduleScalar(
+        dry.gain,
+        p.mix,
+        AUDIO_DELAY_DEFAULTS.mix,
+        w,
+        (v) => 1 - v,
+      );
     },
   };
 }
@@ -384,22 +421,30 @@ export function estimateAudioEffectTailSeconds(
   for (const transform of transforms) {
     if (transform.type === "reverb") {
       const p = (transform as ReverbTransform).parameters;
+      if (scalarParameterMax(p.mix, AUDIO_REVERB_DEFAULTS.mix) <= 0) continue;
       tailSeconds = Math.max(
         tailSeconds,
-        Math.max(0.05, scalarParameterMax(p.decay, 2)),
+        Math.max(
+          0.05,
+          scalarParameterMax(p.decay, AUDIO_REVERB_DEFAULTS.decay),
+        ),
       );
       continue;
     }
 
     if (transform.type === "delay") {
       const p = (transform as DelayTransform).parameters;
+      if (scalarParameterMax(p.mix, AUDIO_DELAY_DEFAULTS.mix) <= 0) continue;
       const delayTime = Math.min(
         1,
-        Math.max(0, scalarParameterMax(p.time, 0.3)),
+        Math.max(0, scalarParameterMax(p.time, AUDIO_DELAY_DEFAULTS.time)),
       );
       const feedback = Math.min(
         0.95,
-        Math.max(0, scalarParameterMax(p.feedback, 0.4)),
+        Math.max(
+          0,
+          scalarParameterMax(p.feedback, AUDIO_DELAY_DEFAULTS.feedback),
+        ),
       );
       const repeats =
         feedback <= 0.001
@@ -414,9 +459,17 @@ export function estimateAudioEffectTailSeconds(
 
     if (transform.type === "compressor") {
       const p = (transform as CompressorTransform).parameters;
+      if (
+        scalarParameterMax(p.ratio, AUDIO_COMPRESSOR_DEFAULTS.ratio) <= 1
+      ) {
+        continue;
+      }
       tailSeconds = Math.max(
         tailSeconds,
-        Math.max(0, scalarParameterMax(p.release, 0.25)),
+        Math.max(
+          0,
+          scalarParameterMax(p.release, AUDIO_COMPRESSOR_DEFAULTS.release),
+        ),
       );
     }
   }

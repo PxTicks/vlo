@@ -1,4 +1,5 @@
 import type { TransformationDefinition } from "../types";
+import { AUDIO_COMPRESSOR_DEFAULTS } from "../../constants";
 import { audioEffectHandler } from "./audioEffectHandler";
 
 // Dynamics compressor (DynamicsCompressorNode) + makeup gain.
@@ -18,7 +19,7 @@ export const compressorDefinition: TransformationDefinition = {
             type: "slider",
             label: "Threshold (dB)",
             name: "threshold",
-            defaultValue: -24,
+            defaultValue: AUDIO_COMPRESSOR_DEFAULTS.threshold,
             min: -100,
             max: 0,
             step: 1,
@@ -27,7 +28,7 @@ export const compressorDefinition: TransformationDefinition = {
             type: "slider",
             label: "Ratio",
             name: "ratio",
-            defaultValue: 4,
+            defaultValue: AUDIO_COMPRESSOR_DEFAULTS.ratio,
             min: 1,
             max: 20,
             step: 0.5,
@@ -36,7 +37,7 @@ export const compressorDefinition: TransformationDefinition = {
             type: "slider",
             label: "Attack (s)",
             name: "attack",
-            defaultValue: 0.003,
+            defaultValue: AUDIO_COMPRESSOR_DEFAULTS.attack,
             min: 0,
             max: 1,
             step: 0.001,
@@ -45,7 +46,7 @@ export const compressorDefinition: TransformationDefinition = {
             type: "slider",
             label: "Release (s)",
             name: "release",
-            defaultValue: 0.25,
+            defaultValue: AUDIO_COMPRESSOR_DEFAULTS.release,
             min: 0,
             max: 1,
             step: 0.01,
@@ -54,7 +55,7 @@ export const compressorDefinition: TransformationDefinition = {
             type: "slider",
             label: "Knee (dB)",
             name: "knee",
-            defaultValue: 30,
+            defaultValue: AUDIO_COMPRESSOR_DEFAULTS.knee,
             min: 0,
             max: 40,
             step: 1,
@@ -63,7 +64,7 @@ export const compressorDefinition: TransformationDefinition = {
             type: "slider",
             label: "Makeup Gain",
             name: "makeup",
-            defaultValue: 1,
+            defaultValue: AUDIO_COMPRESSOR_DEFAULTS.makeup,
             min: 0,
             max: 4,
             step: 0.1,

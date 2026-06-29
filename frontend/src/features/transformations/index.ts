@@ -1,4 +1,9 @@
 export * from "./types";
+export {
+  AUDIO_COMPRESSOR_DEFAULTS,
+  AUDIO_DELAY_DEFAULTS,
+  AUDIO_REVERB_DEFAULTS,
+} from "./constants";
 export { applyClipTransforms, type FitMode } from "./applyTransformations";
 export { TransformationPanel } from "./components/TransformationPanel";
 export { TransformationLibraryPanel } from "./components/library/TransformationLibraryPanel";

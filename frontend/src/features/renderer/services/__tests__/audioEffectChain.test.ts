@@ -7,6 +7,7 @@ import type {
 import {
   buildAudioEffectChain,
   computeAudioEffectSignature,
+  estimateAudioEffectTailSeconds,
   getAudioEffectTransforms,
   getReverbImpulseResponse,
   type AudioEffectAutomationWindow,
@@ -225,6 +226,66 @@ describe("buildAudioEffectChain", () => {
     expect(param.setValueAtTime).toHaveBeenCalledWith(0.7, 0);
   });
 
+  it("uses identity fallbacks for compressor parameters", () => {
+    const ctx = createFakeContext();
+    const transforms = [fx("compressor", {})];
+    const chain = buildAudioEffectChain(ctx, transforms)!;
+
+    chain.scheduleAutomation(window, transforms);
+
+    const compressor = ctx.created[0];
+    const makeup = ctx.created[1];
+    expect(
+      (compressor.threshold as ReturnType<typeof makeParam>).setValueAtTime,
+    ).toHaveBeenCalledWith(0, 0);
+    expect(
+      (compressor.ratio as ReturnType<typeof makeParam>).setValueAtTime,
+    ).toHaveBeenCalledWith(1, 0);
+    expect(
+      (compressor.knee as ReturnType<typeof makeParam>).setValueAtTime,
+    ).toHaveBeenCalledWith(0, 0);
+    expect(
+      (makeup.gain as ReturnType<typeof makeParam>).setValueAtTime,
+    ).toHaveBeenCalledWith(1, 0);
+  });
+
+  it("uses fully dry fallbacks for reverb and delay", () => {
+    const reverbContext = createFakeContext();
+    const reverbTransforms = [fx("reverb", {})];
+    const reverb = buildAudioEffectChain(
+      reverbContext,
+      reverbTransforms,
+    )!;
+    reverb.scheduleAutomation(window, reverbTransforms);
+
+    expect(
+      (reverbContext.created[1].gain as ReturnType<typeof makeParam>)
+        .setValueAtTime,
+    ).toHaveBeenCalledWith(1, 0);
+    expect(
+      (reverbContext.created[2].gain as ReturnType<typeof makeParam>)
+        .setValueAtTime,
+    ).toHaveBeenCalledWith(0, 0);
+
+    const delayContext = createFakeContext();
+    const delayTransforms = [fx("delay", {})];
+    const delay = buildAudioEffectChain(delayContext, delayTransforms)!;
+    delay.scheduleAutomation(window, delayTransforms);
+
+    expect(
+      (delayContext.created[1].gain as ReturnType<typeof makeParam>)
+        .setValueAtTime,
+    ).toHaveBeenCalledWith(1, 0);
+    expect(
+      (delayContext.created[2].gain as ReturnType<typeof makeParam>)
+        .setValueAtTime,
+    ).toHaveBeenCalledWith(0, 0);
+    expect(
+      (delayContext.created[5].gain as ReturnType<typeof makeParam>)
+        .setValueAtTime,
+    ).toHaveBeenCalledWith(0, 0);
+  });
+
   it("disposes by disconnecting all nodes", () => {
     const ctx = createFakeContext();
     const chain = buildAudioEffectChain(ctx, [fx("delay", { time: 0.3 })])!;
@@ -234,6 +295,27 @@ describe("buildAudioEffectChain", () => {
     }
     // idempotent
     expect(() => chain.dispose()).not.toThrow();
+  });
+});
+
+describe("estimateAudioEffectTailSeconds", () => {
+  it("does not retain tails for neutral effect defaults", () => {
+    expect(
+      estimateAudioEffectTailSeconds([
+        fx("compressor", {}),
+        fx("reverb", {}),
+        fx("delay", {}),
+      ]),
+    ).toBe(0);
+  });
+
+  it("retains tails once stateful effects have an audible amount", () => {
+    expect(
+      estimateAudioEffectTailSeconds([
+        fx("reverb", { mix: 0.5, decay: 2 }),
+        fx("delay", { mix: 0.5, time: 0.3, feedback: 0 }),
+      ]),
+    ).toBe(2);
   });
 });
 

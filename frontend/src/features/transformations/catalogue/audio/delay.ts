@@ -1,4 +1,5 @@
 import type { TransformationDefinition } from "../types";
+import { AUDIO_DELAY_DEFAULTS } from "../../constants";
 import { audioEffectHandler } from "./audioEffectHandler";
 
 // Feedback delay / echo (DelayNode + feedback gain), blended wet/dry by `mix`.
@@ -18,7 +19,7 @@ export const delayDefinition: TransformationDefinition = {
             type: "slider",
             label: "Time (s)",
             name: "time",
-            defaultValue: 0.3,
+            defaultValue: AUDIO_DELAY_DEFAULTS.time,
             min: 0,
             max: 1,
             step: 0.01,
@@ -28,7 +29,7 @@ export const delayDefinition: TransformationDefinition = {
             type: "slider",
             label: "Feedback",
             name: "feedback",
-            defaultValue: 0.4,
+            defaultValue: AUDIO_DELAY_DEFAULTS.feedback,
             min: 0,
             max: 0.95,
             step: 0.05,
@@ -38,7 +39,7 @@ export const delayDefinition: TransformationDefinition = {
             type: "slider",
             label: "Mix",
             name: "mix",
-            defaultValue: 0.3,
+            defaultValue: AUDIO_DELAY_DEFAULTS.mix,
             min: 0,
             max: 1,
             step: 0.05,

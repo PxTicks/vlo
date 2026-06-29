@@ -150,7 +150,7 @@ describe("ExtensionTransformationRegistry", () => {
     const update = vi.fn();
     const destroy = vi.fn();
     const createFilter = vi.fn(() => ({
-      filter: api.runtime.pixi.Filter.from({
+      object: api.runtime.pixi.Filter.from({
         gl: {
           vertex: `
             in vec2 aPosition;
@@ -352,7 +352,7 @@ describe("ExtensionTransformationRegistry", () => {
             ],
           },
         ],
-        createFilter: () => ({ filter: {}, update: vi.fn() }),
+        createFilter: () => ({ object: {}, update: vi.fn() }),
       });
     disposers.push(() => registration.dispose());
     const transform = createAddTransform(
@@ -381,8 +381,8 @@ describe("ExtensionTransformationRegistry", () => {
     expect(target.filters).toEqual([]);
     expect(report).toHaveBeenCalledWith(
       "error",
-      expect.stringContaining("failed while applying its filter"),
-      expect.any(Error),
+      expect.stringContaining("incompatible with its host slot"),
+      undefined,
     );
   });
 

@@ -98,6 +98,7 @@ export type {
   ExtensionTrustedFilterApplyContext,
   ExtensionTrustedFilterInstance,
   ExtensionTrustedFilterTransformationDefinition,
+  ExtensionTrustedPixiObjectInstance,
   ExtensionTrustedTransformationApplyContext,
   ExtensionTrustedTransformationDefinition,
   ExtensionTrustedTransformationState,

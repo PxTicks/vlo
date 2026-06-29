@@ -274,7 +274,9 @@ export const filterApplicator = (
         filterInstance = pool[poolIndex];
         pool.splice(poolIndex, 1);
       } else if (filterFactory) {
-        filterInstance = filterFactory.create();
+        const createdFilter = filterFactory.create();
+        if (!createdFilter) continue;
+        filterInstance = createdFilter;
       } else if (FilterClass) {
         filterInstance = new FilterClass();
       } else {
@@ -314,10 +316,13 @@ export const filterApplicator = (
         contentSize,
       );
       if (filterFactory) {
-        filterFactory.update(filterInstance, resolvedParams, {
-          target,
-          contentSize,
-        });
+        const updated = filterFactory.update(
+          filterInstance,
+          resolvedParams,
+          { target, contentSize },
+          newFilters,
+        );
+        if (!updated) continue;
       } else {
         for (const [key, value] of Object.entries(resolvedParams)) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -329,7 +334,9 @@ export const filterApplicator = (
         filterInstance.padding = nextPadding;
       }
 
-      newFilters.push(filterInstance);
+      if (!filterFactory) {
+        newFilters.push(filterInstance);
+      }
     } catch (error) {
       if (filterFactory && filterInstance) {
         filterFactory.release(filterInstance);

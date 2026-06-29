@@ -95,7 +95,7 @@ export const activate: ExtensionModule["activate"] = (context) => {
         resources: { gradeUniforms: uniforms },
       });
       return {
-        filter,
+        object: filter,
         update: (parameters) => {
           uniforms.uExposure.value = Number(parameters.exposure);
           uniforms.uContrast.value = Number(parameters.contrast);

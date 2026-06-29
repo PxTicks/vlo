@@ -28,6 +28,10 @@ directory by hand; rebuild it before approval.
   trusted React component slots may use the supplied React runtime. Declarative
   host filters and native notices remain available as simpler, restricted-ready
   alternatives.
+- Pixi factories return `{ object, update, destroy? }`. The host validates and
+  attaches `object`, calls `update` with resolved parameters, detaches it, and owns
+  final Pixi destruction. `destroy` is only for additional extension-owned
+  resources; extensions never attach directly to the root stage.
 - React, React DOM, MUI/emotion, Zustand, and Pixi remain host singletons. The
   template rejects runtime package imports instead of bundling duplicate copies;
   use the injected runtime namespaces. Type-only package imports are erased and are

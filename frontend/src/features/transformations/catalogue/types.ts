@@ -109,7 +109,7 @@ type FilterConstructor = new () => Filter;
 
 export interface TransformationFilterFactory {
   readonly contributionId: string;
-  create(): Filter;
+  create(): Filter | null;
   owns(filter: Filter): boolean;
   update(
     filter: Filter,
@@ -118,7 +118,8 @@ export interface TransformationFilterFactory {
       readonly target: ClipTransformTarget;
       readonly contentSize?: Readonly<{ width: number; height: number }>;
     },
-  ): void;
+    outputFilters: Filter[],
+  ): boolean;
   release(filter: Filter): void;
   dispose(): void;
 }

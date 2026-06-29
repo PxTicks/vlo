@@ -205,16 +205,26 @@ export interface ExtensionTrustedFilterApplyContext {
   readonly contentSize?: Readonly<{ width: number; height: number }>;
 }
 
-/** One host-validated Pixi filter plus its extension-owned lifecycle callbacks. */
-export interface ExtensionTrustedFilterInstance {
-  readonly filter: object;
-  update(
-    parameters: Readonly<Record<string, unknown>>,
-    context: ExtensionTrustedFilterApplyContext,
-  ): void;
-  /** Release resources other than the filter itself; the host destroys `filter`. */
+/**
+ * One extension-created object from the injected host Pixi runtime. Domain
+ * adapters validate its concrete type and own attachment, detachment, and final
+ * Pixi destruction; extensions update it and release only their extra resources.
+ */
+export interface ExtensionTrustedPixiObjectInstance<
+  TParameters = Readonly<Record<string, unknown>>,
+  TContext = unknown,
+> {
+  readonly object: object;
+  update(parameters: TParameters, context: TContext): void;
+  /** Release resources other than `object`; the host destroys the Pixi object. */
   destroy?(): void;
 }
+
+export type ExtensionTrustedFilterInstance =
+  ExtensionTrustedPixiObjectInstance<
+    Readonly<Record<string, unknown>>,
+    ExtensionTrustedFilterApplyContext
+  >;
 
 /**
  * Primary trusted filter contract. `createFilter` may construct arbitrary Pixi

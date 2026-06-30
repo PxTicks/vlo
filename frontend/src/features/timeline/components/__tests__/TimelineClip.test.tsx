@@ -25,6 +25,8 @@ import {
   TRACK_HEADER_WIDTH,
 } from "../../constants";
 import { extensionPayloadProviderRegistry } from "../../../extensions/persistence/publicApi";
+import { extensionEntityProviderRegistry } from "../../../extensions/entities/publicApi";
+import { Container } from "pixi.js";
 
 // --- MOCKS ---
 
@@ -420,12 +422,77 @@ describe("TimelineClip Visual Geometry", () => {
       ).toHaveTextContent("No renderer · example.shapes/star");
       expect(screen.getByTestId("timeline-clip")).toHaveAttribute(
         "data-extension-provider",
-        "available",
+        "renderer_unavailable",
       );
       expect(screen.getByTestId("timeline-clip")).toHaveAttribute(
         "data-extension-renderer",
         "unavailable",
       );
+    } finally {
+      registration.dispose();
+    }
+  });
+
+  it("uses a trusted entity provider's timeline presentation", () => {
+    const registration = extensionEntityProviderRegistry
+      .bind({
+        extension: { id: "example.shapes", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: (resource) => resource,
+        report: () => undefined,
+      })
+      .register({
+        id: "star",
+        apiVersion: 1,
+        kind: "trusted-pixi",
+        label: "Procedural star",
+        timelineColor: "#7c3aed",
+        schemaVersion: 1,
+        defaultPayload: { points: 5 },
+        validate: () => undefined,
+        createRenderable: () => ({
+          object: new Container(),
+          update: () => undefined,
+        }),
+      });
+    const extensionClip: TimelineClipType = {
+      id: "extension_renderable",
+      trackId: "track_1",
+      start: 0,
+      timelineDuration: 100,
+      type: "extension",
+      name: "Registered star",
+      transformations: [],
+      offset: 0,
+      sourceDuration: null,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      croppedSourceDuration: 100,
+      extensionPayload: {
+        extensionId: "example.shapes",
+        typeId: "star",
+        schemaVersion: 1,
+        data: { points: 5 },
+      },
+    };
+
+    try {
+      render(<TimelineClipItem clip={extensionClip} isOverlay={false} />);
+
+      expect(
+        screen.getByTestId("timeline-clip-extension-label"),
+      ).toHaveTextContent("Procedural star · example.shapes/star");
+      expect(screen.getByTestId("timeline-clip")).toHaveAttribute(
+        "data-extension-provider",
+        "available",
+      );
+      expect(screen.getByTestId("timeline-clip")).toHaveAttribute(
+        "data-extension-renderer",
+        "available",
+      );
+      expect(screen.getByTestId("timeline-clip")).toHaveStyle({
+        backgroundColor: "#7c3aed",
+      });
     } finally {
       registration.dispose();
     }

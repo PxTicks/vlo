@@ -71,6 +71,7 @@ describe("createExtensionTimelineApi", () => {
 
   it("creates an extension entity that round-trips through undo and redo", () => {
     const api = createExtensionTimelineApi(createScope("example.shapes"));
+    expect(api.ticksPerSecond).toBe(96_000);
     let entityId = "";
 
     const result = api.transaction("Create star", (transaction) => {

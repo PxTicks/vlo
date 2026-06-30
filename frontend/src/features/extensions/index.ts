@@ -18,6 +18,10 @@ export {
   ExtensionPayloadProviderRegistry,
   extensionPayloadProviderRegistry,
 } from "./persistence/ExtensionPayloadProviderRegistry";
+export {
+  ExtensionEntityProviderRegistry,
+  extensionEntityProviderRegistry,
+} from "./entities/ExtensionEntityProviderRegistry";
 export type {
   ExtensionPayloadAssetReferenceResolution,
   ExtensionPayloadResolution,
@@ -61,6 +65,12 @@ export type {
   ExtensionDiagnosticLevel,
   ExtensionDiagnosticPhase,
   ExtensionDisposable,
+  ExtensionEntityAssetSnapshot,
+  ExtensionEntityProviderApi,
+  ExtensionEntityProviderRegistration,
+  ExtensionEntityInspectorProps,
+  ExtensionEntityRenderContext,
+  ExtensionEntityRenderParameters,
   ExtensionDeclarativeHostFilter,
   ExtensionExecutionMode,
   ExtensionIdentity,
@@ -98,6 +108,8 @@ export type {
   ExtensionTrustedFilterApplyContext,
   ExtensionTrustedFilterInstance,
   ExtensionTrustedFilterTransformationDefinition,
+  ExtensionTrustedEntityProviderDefinition,
+  ExtensionTrustedEntityRenderableInstance,
   ExtensionTrustedPixiObjectInstance,
   ExtensionTrustedTransformationApplyContext,
   ExtensionTrustedTransformationDefinition,

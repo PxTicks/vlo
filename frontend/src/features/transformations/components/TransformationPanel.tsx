@@ -35,7 +35,10 @@ import {
 import { getDefaultTransformationSectionModels } from "../utils/defaultSectionModels";
 import type { PositionTransform, SplineParameter } from "../types";
 import { PositionPathDetailView } from "./PositionPathDetailView";
-import { extensionPayloadProviderRegistry } from "../../extensions/persistence/publicApi";
+import {
+  ExtensionEntityInspector,
+  extensionEntityProviderRegistry,
+} from "../../extensions/entities/publicApi";
 import { ExtensionUiSlot } from "../../extensions/ui/publicApi";
 import { extensionTransformationRegistry } from "../extensions/ExtensionTransformationRegistry";
 
@@ -62,6 +65,11 @@ export function TransformationPanel() {
     (listener) => extensionTransformationRegistry.subscribe(listener),
     () => extensionTransformationRegistry.getRevision(),
     () => extensionTransformationRegistry.getRevision(),
+  );
+  const entityProviderRevision = useSyncExternalStore(
+    (listener) => extensionEntityProviderRegistry.subscribe(listener),
+    () => extensionEntityProviderRegistry.getRevision(),
+    () => extensionEntityProviderRegistry.getRevision(),
   );
   const {
     selectedClipId,
@@ -106,10 +114,18 @@ export function TransformationPanel() {
   const domainClip = activeTimelineClip ?? selectedClip;
   const extensionAvailability =
     selectedClip?.type === "extension"
-      ? extensionPayloadProviderRegistry.getAvailability(
+      ? extensionEntityProviderRegistry.getAvailability(
           selectedClip.extensionPayload,
         )
       : null;
+  void entityProviderRevision;
+  const extensionEntityProvider =
+    selectedClip?.type === "extension"
+      ? extensionEntityProviderRegistry.get(selectedClip.extensionPayload)
+      : undefined;
+  const hasActiveExtensionInspector =
+    extensionAvailability === "available" &&
+    extensionEntityProvider?.definition.inspector !== undefined;
   const positionTransform = useMemo(
     () =>
       activeTransforms.find(
@@ -494,29 +510,40 @@ export function TransformationPanel() {
       <Box sx={{ display: "flex", flexDirection: "column" }}>
         <ExtensionUiSlot slot="transformation-panel.before" />
         {selectedClip?.type === "extension" ? (
-          <Alert
-            data-testid="extension-inspector-placeholder"
-            severity={
-              extensionAvailability === "available" ? "info" : "warning"
-            }
-            sx={{ m: 1 }}
-          >
-            {extensionAvailability === "available" ? (
-              <>
-                Extension provider {selectedClip.extensionPayload.extensionId}/
-                {selectedClip.extensionPayload.typeId} is active, but its custom
-                renderer and property UI are not available yet.
-              </>
-            ) : (
-              <>
-                {extensionAvailability === "incompatible"
-                  ? "Incompatible"
-                  : "Missing"}{" "}
-                extension provider {selectedClip.extensionPayload.extensionId}/
-                {selectedClip.extensionPayload.typeId}. Its data is preserved.
-              </>
-            )}
-          </Alert>
+          <>
+            <ExtensionEntityInspector clip={selectedClip} />
+            {!hasActiveExtensionInspector ? (
+              <Alert
+                data-testid="extension-inspector-placeholder"
+                severity={
+                  extensionAvailability === "available" ? "info" : "warning"
+                }
+                sx={{ m: 1 }}
+              >
+                {extensionAvailability === "available" ? (
+                  <>
+                    Extension renderer {selectedClip.extensionPayload.extensionId}/
+                    {selectedClip.extensionPayload.typeId} is active. It does not
+                    provide custom property UI.
+                  </>
+                ) : extensionAvailability === "renderer_unavailable" ? (
+                  <>
+                    Extension payload provider {selectedClip.extensionPayload.extensionId}/
+                    {selectedClip.extensionPayload.typeId} is active, but its
+                    renderer and property UI are unavailable.
+                  </>
+                ) : (
+                  <>
+                    {extensionAvailability === "incompatible"
+                      ? "Incompatible"
+                      : "Missing"}{" "}
+                    extension provider {selectedClip.extensionPayload.extensionId}/
+                    {selectedClip.extensionPayload.typeId}. Its data is preserved.
+                  </>
+                )}
+              </Alert>
+            ) : null}
+          </>
         ) : null}
         {selectedClip?.type === "adjustment" ? (
           <AdjustmentDepthSection clip={selectedClip} />

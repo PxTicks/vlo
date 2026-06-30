@@ -3,6 +3,8 @@ import { TransformationPanel } from "../TransformationPanel";
 import { useTimelineStore } from "../../../timeline";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { extensionTransformationRegistry } from "../../extensions/ExtensionTransformationRegistry";
+import { extensionEntityProviderRegistry } from "../../../extensions/entities/publicApi";
+import { Container } from "pixi.js";
 
 // Mock the store
 vi.mock("../../../timeline/useTimelineStore");
@@ -125,6 +127,69 @@ describe("TransformationPanel", () => {
     ).toHaveTextContent(
       "Missing extension provider example.shapes/star. Its data is preserved.",
     );
+  });
+
+  it("renders trusted entity property UI in the host inspector slot", () => {
+    const state = {
+      selectedClipIds: ["extension_1"],
+      clips: [
+        {
+          ...baseClip,
+          id: "extension_1",
+          type: "extension",
+          transformations: [],
+          extensionPayload: {
+            extensionId: "example.shapes",
+            typeId: "star",
+            schemaVersion: 1,
+            data: { points: 5 },
+          },
+        },
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+    };
+    (
+      useTimelineStore as unknown as ReturnType<typeof vi.fn>
+    ).mockImplementation((selector: (store: typeof state) => unknown) =>
+      selector(state),
+    );
+    const registration = extensionEntityProviderRegistry
+      .bind({
+        extension: { id: "example.shapes", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: (resource) => resource,
+        report: () => undefined,
+      })
+      .register({
+        id: "star",
+        apiVersion: 1,
+        kind: "trusted-pixi",
+        label: "Star",
+        schemaVersion: 1,
+        defaultPayload: { points: 5 },
+        validate: () => undefined,
+        createRenderable: () => ({
+          object: new Container(),
+          update: () => undefined,
+        }),
+        inspector: (props) => <div>Star points: {String(props.data)}</div>,
+      });
+
+    try {
+      render(<TransformationPanel />);
+
+      expect(
+        screen.getByTestId(
+          "extension-entity-inspector-example.shapes/star",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId("extension-inspector-placeholder")).toBeNull();
+    } finally {
+      registration.dispose();
+    }
   });
 
   it("calls updateClipTransform when input changes and is committed (blurred)", () => {

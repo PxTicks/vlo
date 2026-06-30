@@ -13,6 +13,7 @@ import {
 } from "../../timeline/api";
 import { extensionPayloadSchema } from "../persistence/extensionPayload";
 import { extensionPayloadProviderRegistry } from "../persistence/ExtensionPayloadProviderRegistry";
+import { TICKS_PER_SECOND } from "../../../core/time/constants";
 
 const MAX_TRANSACTION_LABEL_LENGTH = 120;
 
@@ -77,6 +78,7 @@ export function createExtensionTimelineApi(
   scope: ExtensionApiScope,
 ): ExtensionTimelineApi {
   const api: ExtensionTimelineApi = {
+    ticksPerSecond: TICKS_PER_SECOND,
     listEntities: (): readonly ExtensionTimelineEntitySnapshot[] =>
       getExtensionTimelineEntities(scope.extension.id),
 

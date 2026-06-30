@@ -7,5 +7,5 @@
   "frontend": {
     "entry": "frontend/dist/index.js"
   },
-  "capabilities": ["render.custom-shader", "ui.custom"]
+  "capabilities": ["render.custom-shader", "render.entity", "ui.custom"]
 }

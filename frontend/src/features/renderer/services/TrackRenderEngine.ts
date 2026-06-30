@@ -69,7 +69,10 @@ import type {
   FrameExecutionPolicy,
   ResolvedClipFrameJob,
 } from "./framePlanning";
-import { extensionPayloadProviderRegistry } from "../../extensions/persistence/publicApi";
+import {
+  extensionEntityProviderRegistry,
+  TrustedExtensionEntityRenderer,
+} from "../../extensions/entities/publicApi";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -163,13 +166,20 @@ function getDecoderSourceKind(
 
 export function createExtensionPlaceholderClip(
   clip: ExtensionTimelineClip,
+  failureMessage?: string,
 ): TextTimelineClip {
   const providerId = `${clip.extensionPayload.extensionId}/${clip.extensionPayload.typeId}`;
-  const availability = extensionPayloadProviderRegistry.getAvailability(
+  const availability = extensionEntityProviderRegistry.getAvailability(
     clip.extensionPayload,
   );
   const presentation =
-    availability === "missing"
+    failureMessage
+      ? {
+          title: failureMessage,
+          fill: "#fee2e2",
+          strokeColor: "#991b1b",
+        }
+      : availability === "missing"
       ? {
           title: "Missing extension",
           fill: "#ffedd5",
@@ -181,11 +191,17 @@ export function createExtensionPlaceholderClip(
             fill: "#fee2e2",
             strokeColor: "#991b1b",
           }
-        : {
-            title: "Extension renderer unavailable",
-            fill: "#dbeafe",
-            strokeColor: "#1e3a8a",
-          };
+        : availability === "renderer_unavailable"
+          ? {
+              title: "Extension renderer unavailable",
+              fill: "#dbeafe",
+              strokeColor: "#1e3a8a",
+            }
+          : {
+              title: "Extension renderer failed",
+              fill: "#fee2e2",
+              strokeColor: "#991b1b",
+            };
   return {
     ...clip,
     type: "text",
@@ -205,7 +221,11 @@ function getTextRenderableClip(
   clip: TimelineClip,
 ): TextTimelineClip | null {
   if (clip.type === "text") return clip;
-  if (clip.type === "extension") {
+  if (
+    clip.type === "extension" &&
+    extensionEntityProviderRegistry.getAvailability(clip.extensionPayload) !==
+      "available"
+  ) {
     return createExtensionPlaceholderClip(clip);
   }
   return null;
@@ -268,7 +288,11 @@ export class TrackRenderEngine {
   private preparedClips = new Map<string, string>(); // clipId -> assetId
   private preparedClipTouchedAtMs = new Map<string, number>(); // clipId -> perf.now()
   private currentTextureClipId: string | null = null;
-  private currentTextureSourceKind: "asset" | "text" | null = null;
+  private currentTextureSourceKind:
+    | "asset"
+    | "text"
+    | "extension"
+    | null = null;
   private currentTextTextureSignature: string | null = null;
   private lastRenderRequest: {
     time: number;
@@ -314,6 +338,9 @@ export class TrackRenderEngine {
   // the displayed effect output) and so texture retiring always targets the
   // source, never a pool-owned effect output.
   private readonly maskedEffectRenderer: MaskedEffectRenderer | null;
+  private readonly extensionEntityRenderer:
+    | TrustedExtensionEntityRenderer
+    | null;
   private effectSourceTexture: Texture | null = null;
   private currentSharedTextureHandle: SharedTextureHandle | null = null;
   private disposed = false;
@@ -372,6 +399,9 @@ export class TrackRenderEngine {
     this.container.addChild(this.presentationContainer);
     this.maskedEffectRenderer = renderer
       ? new MaskedEffectRenderer(renderer)
+      : null;
+    this.extensionEntityRenderer = renderer
+      ? new TrustedExtensionEntityRenderer(renderer)
       : null;
     this.maskController = new SpriteClipMaskController(
       this.sprite,
@@ -654,6 +684,24 @@ export class TrackRenderEngine {
       return true;
     }
 
+    if (presentationClip.type === "extension") {
+      const rendered = await this.renderExtensionClip(
+        presentationClip,
+        job.logicalDimensions,
+        job.effectiveTrackTick,
+        job.rawClipTick,
+        [...job.maskClips],
+        assetsById,
+        job.sourceFrame,
+        job.fps,
+        policy.mode === "export",
+      );
+      if (rendered) {
+        sourceHandle?.release();
+        return true;
+      }
+    }
+
     if (!isDecoderRenderableClip(presentationClip)) {
       sourceHandle?.release();
       this.sprite.visible = false;
@@ -837,6 +885,50 @@ export class TrackRenderEngine {
       });
     }
 
+    if (activeClip.type === "extension") {
+      this.invalidateLivePipeline();
+      const sourceFrame = this.advanceLiveSourceFrameIntent(
+        this.createLiveSourceFrameRef(activeClip, null, effectiveTick, fps),
+      );
+      this.latestMaskSyncContext = {
+        maskClips,
+        clip: activeClip,
+        logicalDimensions,
+        rawTimeTicks: clipVisualTimeTicks,
+        assetsById: assetById,
+        sourceFrame,
+        fps,
+      };
+
+      if (!shouldRender) {
+        if (this.sprite.visible && this.currentTextureClipId === activeClip.id) {
+          this.applyClipTransformsForClip(
+            activeClip,
+            logicalDimensions,
+            clipVisualTimeTicks,
+          );
+        }
+        return Promise.resolve();
+      }
+
+      return this.renderExtensionClip(
+        activeClip,
+        logicalDimensions,
+        currentTime,
+        clipVisualTimeTicks,
+        maskClips,
+        assetById,
+        sourceFrame,
+        fps,
+      ).then((rendered) => {
+        if (!rendered) {
+          this.sprite.visible = false;
+          this.currentTextureClipId = null;
+          this.maskController.clear();
+        }
+      });
+    }
+
     if (!isDecoderRenderableClip(activeClip)) {
       this.invalidateLivePipeline();
       this.sprite.visible = false;
@@ -1006,6 +1098,37 @@ export class TrackRenderEngine {
         sourceFrame,
         fps,
       );
+      return;
+    }
+
+    if (activeClip.type === "extension") {
+      const assetById = new Map<string, Asset>(
+        assets.map((asset) => [asset.id, asset] as const),
+      );
+      const sourceFrame = this.setSynchronizedSourceFrameIntent(
+        this.createSynchronizedSourceFrameRef(
+          activeClip,
+          null,
+          effectiveTick,
+          fps,
+          this.synchronizedRenderGeneration,
+        ),
+      );
+      const rendered = await this.renderExtensionClip(
+        activeClip,
+        logicalDimensions,
+        currentTime,
+        clipVisualTimeTicks,
+        maskClips,
+        assetById,
+        sourceFrame,
+        fps,
+      );
+      if (!rendered) {
+        this.sprite.visible = false;
+        this.currentTextureClipId = null;
+        this.maskController.clear();
+      }
       return;
     }
 
@@ -1211,6 +1334,37 @@ export class TrackRenderEngine {
         sourceFrame,
         fps,
       );
+      return;
+    }
+
+    if (activeClip.type === "extension") {
+      const assetById = new Map<string, Asset>(
+        assets.map((asset) => [asset.id, asset] as const),
+      );
+      const sourceFrame = this.setSynchronizedSourceFrameIntent(
+        this.createSynchronizedSourceFrameRef(
+          activeClip,
+          null,
+          effectiveTick,
+          fps,
+          generation,
+        ),
+      );
+      const rendered = await this.renderExtensionClip(
+        activeClip,
+        logicalDimensions,
+        effectiveTick,
+        clipVisualTimeTicks,
+        maskClips,
+        assetById,
+        sourceFrame,
+        fps,
+      );
+      if (!rendered) {
+        this.sprite.visible = false;
+        this.currentTextureClipId = null;
+        this.maskController.clear();
+      }
       return;
     }
 
@@ -1477,6 +1631,35 @@ export class TrackRenderEngine {
         sourceFrame,
         options.fps,
       );
+      return;
+    }
+
+    if (activeClip.type === "extension") {
+      const sourceFrame = this.advanceLiveSourceFrameIntent(
+        createSourceFrameSyncRef({
+          clip: activeClip,
+          assetId: null,
+          effectiveTrackTick: effectiveTick,
+          fps: options.fps ?? 30,
+          generation: this.liveRenderGeneration,
+        }),
+      );
+      const rendered = await this.renderExtensionClip(
+        activeClip,
+        logicalDimensions,
+        currentTime,
+        clipVisualTimeTicks,
+        maskClips,
+        assetsById,
+        sourceFrame,
+        options.fps ?? 30,
+        true,
+      );
+      if (!rendered) {
+        this.sprite.visible = false;
+        this.currentTextureClipId = null;
+        this.maskController.clear();
+      }
       return;
     }
 
@@ -2327,9 +2510,12 @@ export class TrackRenderEngine {
   private applyTexture(
     texture: Texture,
     clipId: string,
-    sourceKind: "asset" | "text",
+    sourceKind: "asset" | "text" | "extension",
     sharedHandle: SharedTextureHandle | null = null,
   ): boolean {
+    if (sourceKind !== "extension") {
+      this.extensionEntityRenderer?.invalidateTextureCache();
+    }
     // Size comparison uses the displayed texture (in offscreen effect mode that
     // is a pool effect output, which is content-sized like the source, so the
     // result is equivalent to comparing sources).
@@ -2533,6 +2719,70 @@ export class TrackRenderEngine {
       parts.push(`${step.transform.id}|${resKey}|${opKey}`);
     }
     return parts.join("::");
+  }
+
+  private async renderExtensionClip(
+    clip: ExtensionTimelineClip,
+    logicalDimensions: { width: number; height: number },
+    presentationTimeTicks: number,
+    rawTime: number,
+    maskClips: MaskTimelineClip[],
+    assetsById: Map<string, Asset>,
+    sourceFrame: SourceFrameSyncRef,
+    fps: number,
+    waitForAssetMasks: boolean = false,
+  ): Promise<boolean> {
+    if (
+      extensionEntityProviderRegistry.getAvailability(clip.extensionPayload) !==
+      "available"
+    ) {
+      return false;
+    }
+
+    const entityRenderer = this.extensionEntityRenderer;
+    const result = entityRenderer?.render({
+      clip,
+      logicalDimensions,
+      presentationTimeTicks,
+      visualTimeTicks: rawTime,
+      sourceTimeTicks: sourceFrame.sourceTimeTicks,
+      fps,
+      assetsById,
+    });
+    if (!result?.ok) {
+      console.warn(
+        `Failed to render extension entity ${clip.extensionPayload.extensionId}/${clip.extensionPayload.typeId}`,
+        result?.error ?? new Error("A Pixi renderer is not available."),
+      );
+      await this.renderTextClip(
+        createExtensionPlaceholderClip(clip, "Extension renderer failed"),
+        logicalDimensions,
+        rawTime,
+        maskClips,
+        assetsById,
+        sourceFrame,
+        fps,
+      );
+      return true;
+    }
+
+    this.applyTexture(result.texture, clip.id, "extension");
+    try {
+      await this.maskController.syncMaskClips(
+        maskClips,
+        clip,
+        logicalDimensions,
+        rawTime,
+        assetsById,
+        waitForAssetMasks
+          ? { fps, sourceFrame, waitForSam2: true }
+          : { fps, sourceFrame, skipSam2FrameRender: true },
+      );
+    } catch (error) {
+      console.warn("Failed to sync extension entity masks", error);
+    }
+    this.applyClipTransformsForClip(clip, logicalDimensions, rawTime);
+    return true;
   }
 
   private async renderTextClip(
@@ -2842,6 +3092,7 @@ export class TrackRenderEngine {
     this.retiredTextures.flush();
 
     this.maskedEffectRenderer?.dispose();
+    this.extensionEntityRenderer?.dispose();
     this.maskController.dispose();
     this.lease.release();
     if (this.container) {

@@ -59,6 +59,106 @@ export interface ExtensionPayloadProviderApi {
   ): ExtensionPayloadProviderRegistration;
 }
 
+export interface ExtensionEntityAssetSnapshot {
+  readonly id: string;
+  readonly hash: string;
+  readonly name: string;
+  readonly type: "video" | "image" | "audio";
+  readonly src: string;
+  readonly durationSeconds?: number;
+  readonly fps?: number;
+  readonly hasAudio?: boolean;
+}
+
+export interface ExtensionEntityRenderParameters {
+  /** Detached, provider-validated payload data for this frame. */
+  readonly data: JsonValue;
+  readonly schemaVersion: number;
+}
+
+export interface ExtensionEntityRenderContext {
+  readonly entity: Readonly<{
+    id: string;
+    name: string;
+    trackId: string;
+    startTicks: number;
+    durationTicks: number;
+  }>;
+  readonly frame: Readonly<{
+    projectWidth: number;
+    projectHeight: number;
+    presentationTimeTicks: number;
+    visualTimeTicks: number;
+    sourceTimeTicks: number;
+    fps: number;
+  }>;
+  /** The exact host renderer. This is intentionally powerful in trusted mode. */
+  readonly renderer: object;
+  readonly assets: Readonly<{
+    get(assetId: string): ExtensionEntityAssetSnapshot | undefined;
+  }>;
+}
+
+export type ExtensionTrustedEntityRenderableInstance =
+  ExtensionTrustedPixiObjectInstance<
+    ExtensionEntityRenderParameters,
+    ExtensionEntityRenderContext
+  >;
+
+export interface ExtensionEntityInspectorProps {
+  readonly entity: Readonly<{
+    id: string;
+    name: string;
+    trackId: string;
+    startTicks: number;
+    durationTicks: number;
+  }>;
+  readonly data: JsonValue;
+  readonly schemaVersion: number;
+  /** Commits one owner-checked, undoable payload update. */
+  updateData(data: JsonValue): ExtensionTimelineTransactionResult;
+}
+
+/**
+ * Primary renderable-entity contract. It deliberately accepts any host-Pixi
+ * Container subclass (Graphics, Sprite, custom containers, shader-backed
+ * objects). The host owns its render slot, compositing, masks, transforms, and
+ * final destruction; the extension owns its contents and update logic.
+ */
+export interface ExtensionTrustedEntityProviderDefinition
+  extends ExtensionPayloadProviderDefinition {
+  readonly kind: "trusted-pixi";
+  readonly label: string;
+  readonly timelineColor?: string;
+  readonly defaultPayload: JsonValue;
+  readonly createRenderable: () => ExtensionTrustedEntityRenderableInstance;
+  /**
+   * Optional cache key for the pixels produced by `update`. Return the same
+   * string only when every provider-owned pixel input beyond the payload
+   * (including time and asset hashes when used) is unchanged. The host always
+   * includes payload data, schema, entity identity, and output dimensions.
+   * Omitting this callback safely disables texture reuse for time-driven or
+   * externally mutable renderers.
+   */
+  readonly getRenderSignature?: (
+    parameters: ExtensionEntityRenderParameters,
+    context: ExtensionEntityRenderContext,
+  ) => string;
+  /** Optional arbitrary React inspector rendered in a host-owned error boundary. */
+  readonly inspector?: (props: ExtensionEntityInspectorProps) => unknown;
+}
+
+export interface ExtensionEntityProviderRegistration
+  extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionEntityProviderApi {
+  register(
+    definition: ExtensionTrustedEntityProviderDefinition,
+  ): ExtensionEntityProviderRegistration;
+}
+
 export interface ExtensionTimelineEntitySnapshot {
   readonly id: string;
   readonly trackId: string;
@@ -104,6 +204,8 @@ export type ExtensionTimelineTransactionResult =
     };
 
 export interface ExtensionTimelineApi {
+  /** Canonical project time base used by all timeline command tick fields. */
+  readonly ticksPerSecond: number;
   /**
    * Returns a detached snapshot for commands and UI events. This clones every
    * payload and is not intended as a render-loop or polling accessor.
@@ -385,6 +487,8 @@ export interface ExtensionTrustedUiComponentDefinition {
 export interface VloExtensionApi {
   readonly runtime: ExtensionHostRuntimeApi;
   readonly payloadProviders: ExtensionPayloadProviderApi;
+  /** Trusted-first, executable Pixi entity providers. */
+  readonly entityProviders: ExtensionEntityProviderApi;
   readonly timeline: ExtensionTimelineApi;
   readonly transformations: ExtensionTransformationApi;
   readonly ui: ExtensionUiApi;

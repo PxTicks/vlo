@@ -11,8 +11,9 @@ import {
 import type { VloExtensionApi } from "../../types";
 import { extensionTransformationRegistry } from "../../../transformations/extensionApi";
 import { extensionUiSlotRegistry } from "../../ui/ExtensionUiSlotRegistry";
-import { Filter } from "pixi.js";
+import { Container, Filter } from "pixi.js";
 import { createElement } from "react";
+import { extensionEntityProviderRegistry } from "../../entities/publicApi";
 
 interface TestContribution extends ExtensionContributionDefinition {
   value: string;
@@ -152,6 +153,19 @@ describe("FrontendExtensionRuntime", () => {
             title: "Film Grade",
             message: "Choose Film Grade from the Add menu.",
           });
+          context.api.entityProviders.register({
+            id: "grade-card",
+            apiVersion: 1,
+            kind: "trusted-pixi",
+            label: "Grade card",
+            schemaVersion: 1,
+            defaultPayload: { color: "#334155" },
+            validate: () => undefined,
+            createRenderable: () => ({
+              object: new Container(),
+              update: () => undefined,
+            }),
+          });
         },
       }),
     });
@@ -173,6 +187,14 @@ describe("FrontendExtensionRuntime", () => {
           .list("transformation-panel.before")
           .map((entry) => entry.id),
       ).toContain("example.color-grade/help");
+      expect(
+        extensionEntityProviderRegistry.get({
+          extensionId: "example.color-grade",
+          typeId: "grade-card",
+          schemaVersion: 1,
+          data: {},
+        }),
+      ).toBeDefined();
     } finally {
       await host.deactivate("example.color-grade");
     }
@@ -189,6 +211,14 @@ describe("FrontendExtensionRuntime", () => {
         .list("transformation-panel.before")
         .map((entry) => entry.id),
     ).not.toContain("example.color-grade/help");
+    expect(
+      extensionEntityProviderRegistry.get({
+        extensionId: "example.color-grade",
+        typeId: "grade-card",
+        schemaVersion: 1,
+        data: {},
+      }),
+    ).toBeUndefined();
   });
 
   it("imports and activates only approved frontend packages", async () => {

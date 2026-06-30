@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import {
   Box,
@@ -40,7 +40,7 @@ import { reverseTimelineClip } from "../utils/reverseClip";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
 import type { TimelineClipPresentation } from "../utils/clipPresentation";
-import { extensionPayloadProviderRegistry } from "../../extensions/persistence/publicApi";
+import { extensionEntityProviderRegistry } from "../../extensions/entities/publicApi";
 
 // --- Sub-component for Handles ---
 interface HandleProps {
@@ -117,6 +117,11 @@ function TimelineClipComponent({
   clipOverlays = [],
   presentation,
 }: TimelineClipProps) {
+  const entityProviderRevision = useSyncExternalStore(
+    (listener) => extensionEntityProviderRegistry.subscribe(listener),
+    () => extensionEntityProviderRegistry.getRevision(),
+    () => extensionEntityProviderRegistry.getRevision(),
+  );
   const domRef = useRef<HTMLElement | null>(null);
   const [contextMenuPos, setContextMenuPos] = useState<{
     x: number;
@@ -136,15 +141,24 @@ function TimelineClipComponent({
       : null;
   const extensionProviderAvailability =
     clip.type === "extension"
-      ? extensionPayloadProviderRegistry.getAvailability(clip.extensionPayload)
+      ? extensionEntityProviderRegistry.getAvailability(clip.extensionPayload)
+      : null;
+  void entityProviderRevision;
+  const extensionPresentation =
+    clip.type === "extension"
+      ? extensionEntityProviderRegistry.getTimelinePresentation(
+          clip.extensionPayload,
+        )
       : null;
   const extensionPlaceholderLabel =
     extensionProviderAvailability === "missing"
       ? "Missing"
       : extensionProviderAvailability === "incompatible"
         ? "Incompatible"
-        : extensionProviderAvailability === "available"
+        : extensionProviderAvailability === "renderer_unavailable"
           ? "No renderer"
+          : extensionProviderAvailability === "available"
+            ? extensionPresentation?.label ?? "Extension"
           : null;
   // Composite placements are ordinary asset-backed video clips, so the
   // thumbnail strip renders straight from the clip's own baked `assetId`.
@@ -320,7 +334,7 @@ function TimelineClipComponent({
         return "#10b981";
       case "extension":
         return extensionProviderAvailability === "available"
-          ? "#1e3a8a"
+          ? (extensionPresentation?.color ?? "#1e3a8a")
           : extensionProviderAvailability === "incompatible"
             ? "#991b1b"
             : "#7c2d12";
@@ -499,7 +513,13 @@ function TimelineClipComponent({
       data-extension-provider={
         extensionProviderAvailability ?? undefined
       }
-      data-extension-renderer={extensionProviderId ? "unavailable" : undefined}
+      data-extension-renderer={
+        extensionProviderId
+          ? extensionProviderAvailability === "available"
+            ? "available"
+            : "unavailable"
+          : undefined
+      }
     >
       {showCompositeLabel || extensionProviderId ? (
         <Box

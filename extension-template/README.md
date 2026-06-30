@@ -32,6 +32,22 @@ directory by hand; rebuild it before approval.
   attaches `object`, calls `update` with resolved parameters, detaches it, and owns
   final Pixi destruction. `destroy` is only for additional extension-owned
   resources; extensions never attach directly to the root stage.
+- `context.api.entityProviders.register(...)` is the trusted-first custom entity
+  path. A provider combines its versioned payload codec with an arbitrary host-Pixi
+  `Container`/`Graphics`/`Sprite` factory, optional trusted React inspector, timeline
+  presentation, asset lookup, and frame timing. The host flattens that private Pixi
+  tree into its ordinary content boundary, so common transformations, filters,
+  masks, selection bounds, still capture, and video export remain host-owned and
+  identical to built-in content. Use `context.api.timeline.transaction(...)` to
+  create and update instances through undoable, owner-checked commands.
+  Static providers should implement `getRenderSignature`; identical signatures
+  reuse the current GPU texture. The signature must include every provider-owned
+  pixel input, including frame time or asset hashes when applicable. Omitting it
+  deliberately renders every requested frame, which is the safe default for
+  animated or externally mutable objects.
+- `context.renderer` is the full host Pixi renderer, not a restricted facade.
+  Mutating it has the same trusted-mode blast radius as using
+  `context.api.runtime.pixi`; restricted providers will not receive this object.
 - React, React DOM, MUI/emotion, Zustand, and Pixi remain host singletons. The
   template rejects runtime package imports instead of bundling duplicate copies;
   use the injected runtime namespaces. Type-only package imports are erased and are

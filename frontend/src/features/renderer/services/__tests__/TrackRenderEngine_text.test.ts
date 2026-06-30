@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Renderer, Sprite } from "pixi.js";
+import { Container, type Renderer, type Sprite } from "pixi.js";
 import type {
   ExtensionTimelineClip,
   TextTimelineClip,
@@ -7,6 +7,7 @@ import type {
 import { livePreviewTextStore } from "../../../text/services/livePreviewTextStore";
 import { resetSharedDecoderWorkerPoolForTests } from "../DecoderWorkerPool";
 import { extensionPayloadProviderRegistry } from "../../../extensions/persistence/publicApi";
+import { extensionEntityProviderRegistry } from "../../../extensions/entities/publicApi";
 
 const mockGenerateTexture = vi.fn(() => ({
   width: 320,
@@ -88,6 +89,12 @@ vi.mock("pixi.js", async () => {
       pivot = { x: 0, y: 0, set: vi.fn() };
       rotation = 0;
       addChild = vi.fn();
+      getLocalBounds = vi.fn(() => ({
+        x: -160,
+        y: -90,
+        width: 320,
+        height: 180,
+      }));
       removeFromParent = vi.fn();
       destroy = vi.fn(() => {
         this.destroyed = true;
@@ -102,6 +109,7 @@ import {
 } from "../TrackRenderEngine";
 
 let disposePayloadProvider: (() => void) | null = null;
+let disposeEntityProvider: (() => void) | null = null;
 
 function createTextClip(
   overrides: Partial<TextTimelineClip> = {},
@@ -168,6 +176,8 @@ describe("TrackRenderEngine text rendering", () => {
   afterEach(() => {
     disposePayloadProvider?.();
     disposePayloadProvider = null;
+    disposeEntityProvider?.();
+    disposeEntityProvider = null;
   });
 
   it("renders text clips without using the decoder worker and reuses the texture until text changes", async () => {
@@ -293,6 +303,147 @@ describe("TrackRenderEngine text rendering", () => {
       content: "Extension renderer unavailable\nexample.shapes/star",
       fill: "#dbeafe",
     });
+  });
+
+  it("renders a trusted Pixi entity through the same live and export texture path", async () => {
+    const updates = vi.fn();
+    const createdObjects: Container[] = [];
+    const registration = extensionEntityProviderRegistry
+      .bind({
+        extension: { id: "example.shapes", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: (resource) => resource,
+        report: () => undefined,
+      })
+      .register({
+        id: "star",
+        apiVersion: 1,
+        kind: "trusted-pixi",
+        label: "Star",
+        schemaVersion: 1,
+        defaultPayload: { points: 5 },
+        validate: () => undefined,
+        getRenderSignature: ({ data }) => JSON.stringify(data),
+        createRenderable: () => {
+          const object = new Container();
+          createdObjects.push(object);
+          return {
+            object,
+            update: (parameters, context) =>
+              updates(parameters, context.frame.visualTimeTicks),
+          };
+        },
+      });
+    disposeEntityProvider = () => registration.dispose();
+    const renderer = {
+      width: 3840,
+      height: 2160,
+      generateTexture: mockGenerateTexture,
+    } as unknown as Renderer;
+    const clip = createExtensionClip();
+    const dimensions = { width: 1920, height: 1080 };
+    const liveEngine = new TrackRenderEngine(1, undefined, renderer);
+    const exportEngine = new TrackRenderEngine(1, undefined, renderer);
+
+    await liveEngine.update(10, [clip], new Map(), [], dimensions);
+    await liveEngine.update(10, [clip], new Map(), [], dimensions);
+    await liveEngine.update(
+      10,
+      [
+        {
+          ...clip,
+          extensionPayload: {
+            ...clip.extensionPayload,
+            data: { points: 7 },
+          },
+        },
+      ],
+      new Map(),
+      [],
+      dimensions,
+    );
+    await exportEngine.renderFrame(20, clip, dimensions, [], new Map(), {
+      fps: 24,
+    });
+
+    expect(createdObjects).toHaveLength(2);
+    expect(updates).toHaveBeenCalledTimes(3);
+    expect(updates.mock.calls[0]?.[0]).toEqual({
+      data: { points: 5 },
+      schemaVersion: 1,
+    });
+    expect(updates.mock.calls[1]?.[0]).toEqual({
+      data: { points: 7 },
+      schemaVersion: 1,
+    });
+    expect(mockGenerateTexture).toHaveBeenCalledTimes(3);
+    const renderTargets = mockGenerateTexture.mock.calls.map(
+      (call) =>
+        (call as unknown as [{ target: object }])[0].target,
+    );
+    expect(renderTargets).toEqual([
+      createdObjects[0],
+      createdObjects[0],
+      createdObjects[1],
+    ]);
+    for (const [options] of mockGenerateTexture.mock.calls as unknown as Array<
+      [{ resolution: number }]
+    >) {
+      expect(options.resolution).toBe(8);
+    }
+    expect((liveEngine.sprite as Sprite).visible).toBe(true);
+    expect((exportEngine.sprite as Sprite).visible).toBe(true);
+    expect(mockWorkerInstances).toHaveLength(0);
+
+    liveEngine.dispose();
+    exportEngine.dispose();
+    expect(createdObjects.every((object) => object.destroyed)).toBe(true);
+  });
+
+  it("does not cache an entity unless its provider declares a render signature", async () => {
+    const update = vi.fn();
+    const registration = extensionEntityProviderRegistry
+      .bind({
+        extension: { id: "example.shapes", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: (resource) => resource,
+        report: () => undefined,
+      })
+      .register({
+        id: "star",
+        apiVersion: 1,
+        kind: "trusted-pixi",
+        label: "Animated star",
+        schemaVersion: 1,
+        defaultPayload: { points: 5 },
+        validate: () => undefined,
+        createRenderable: () => ({
+          object: new Container(),
+          update,
+        }),
+      });
+    disposeEntityProvider = () => registration.dispose();
+    const renderer = {
+      width: 1920,
+      height: 1080,
+      resolution: 1,
+      generateTexture: mockGenerateTexture,
+    } as unknown as Renderer;
+    const engine = new TrackRenderEngine(1, undefined, renderer);
+    const clip = createExtensionClip();
+
+    await engine.update(10, [clip], new Map(), [], {
+      width: 1920,
+      height: 1080,
+    });
+    await engine.update(10, [clip], new Map(), [], {
+      width: 1920,
+      height: 1080,
+    });
+
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(mockGenerateTexture).toHaveBeenCalledTimes(2);
+    engine.dispose();
   });
 
   it("renders rich-text runs via the HTMLText system with bold and italic spans", async () => {

@@ -1,4 +1,7 @@
-import type { ExtensionModule } from "@vlo/extension-sdk";
+import type {
+  ExtensionModule,
+  JsonValue,
+} from "@vlo/extension-sdk";
 
 const FILTER_VERTEX = `
 in vec2 aPosition;
@@ -34,6 +37,49 @@ void main(void) {
   finalColor = vec4(color * source.a, source.a);
 }
 `;
+
+interface FixtureGraphics {
+  clear(): FixtureGraphics;
+  rect(x: number, y: number, width: number, height: number): FixtureGraphics;
+  roundRect(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number,
+  ): FixtureGraphics;
+  fill(color: string): FixtureGraphics;
+}
+
+interface ShapePayload {
+  width: number;
+  height: number;
+  radius: number;
+  color: string;
+}
+
+function shapePayload(data: JsonValue): ShapePayload {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    throw new Error("Shape payload must be an object.");
+  }
+  const { width, height, radius, color } = data;
+  if (
+    typeof width !== "number" ||
+    !Number.isFinite(width) ||
+    width <= 0 ||
+    typeof height !== "number" ||
+    !Number.isFinite(height) ||
+    height <= 0 ||
+    typeof radius !== "number" ||
+    !Number.isFinite(radius) ||
+    radius < 0 ||
+    typeof color !== "string" ||
+    !/^#[0-9a-f]{6}$/i.test(color)
+  ) {
+    throw new Error("Shape payload has invalid geometry or color.");
+  }
+  return { width, height, radius, color };
+}
 
 export const activate: ExtensionModule["activate"] = (context) => {
   const grade = context.api.transformations.register({
@@ -105,6 +151,114 @@ export const activate: ExtensionModule["activate"] = (context) => {
     },
   });
 
+  const Graphics = context.api.runtime.pixi.Graphics as {
+    new (): FixtureGraphics;
+  };
+  const shape = context.api.entityProviders.register({
+    id: "rounded-rectangle",
+    apiVersion: 1,
+    kind: "trusted-pixi",
+    label: "Rounded rectangle",
+    timelineColor: "#7c3aed",
+    schemaVersion: 1,
+    defaultPayload: {
+      width: 640,
+      height: 360,
+      radius: 48,
+      color: "#8b5cf6",
+    },
+    validate: (data) => {
+      shapePayload(data);
+    },
+    getRenderSignature: ({ data }) => JSON.stringify(data),
+    createRenderable: () => {
+      const graphics = new Graphics();
+      return {
+        object: graphics as object,
+        update: ({ data }) => {
+          const value = shapePayload(data);
+          graphics
+            .clear()
+            .roundRect(
+              -value.width / 2,
+              -value.height / 2,
+              value.width,
+              value.height,
+              value.radius,
+            )
+            .fill(value.color);
+        },
+      };
+    },
+    inspector: (props) => {
+      const value = shapePayload(props.data);
+      return context.api.runtime.react.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () =>
+            props.updateData({
+              ...value,
+              color: value.color === "#8b5cf6" ? "#06b6d4" : "#8b5cf6",
+            }),
+        },
+        `Toggle shape color (${value.color})`,
+      );
+    },
+  });
+  const progress = context.api.entityProviders.register({
+    id: "animated-progress",
+    apiVersion: 1,
+    kind: "trusted-pixi",
+    label: "Animated progress",
+    timelineColor: "#0891b2",
+    schemaVersion: 1,
+    defaultPayload: {
+      width: 720,
+      height: 64,
+      background: "#164e63",
+      fill: "#22d3ee",
+    },
+    validate: (data) => {
+      if (typeof data !== "object" || data === null || Array.isArray(data)) {
+        throw new Error("Progress payload must be an object.");
+      }
+      if (
+        typeof data.width !== "number" ||
+        data.width <= 0 ||
+        typeof data.height !== "number" ||
+        data.height <= 0 ||
+        typeof data.background !== "string" ||
+        typeof data.fill !== "string"
+      ) {
+        throw new Error("Progress payload is invalid.");
+      }
+    },
+    createRenderable: () => {
+      const graphics = new Graphics();
+      return {
+        object: graphics as object,
+        update: ({ data }, { entity, frame }) => {
+          if (typeof data !== "object" || data === null || Array.isArray(data)) {
+            throw new Error("Progress payload must be an object.");
+          }
+          const width = Number(data.width);
+          const height = Number(data.height);
+          const fraction = Math.max(
+            0,
+            Math.min(1, frame.visualTimeTicks / entity.durationTicks),
+          );
+          graphics
+            .clear()
+            .rect(-width / 2, -height / 2, width, height)
+            .fill(String(data.background))
+            .rect(-width / 2, -height / 2, width * fraction, height)
+            .fill(String(data.fill));
+        },
+      };
+    },
+  });
+
   context.api.ui.registerComponent({
     id: "film-grade-controls",
     apiVersion: 1,
@@ -112,13 +266,48 @@ export const activate: ExtensionModule["activate"] = (context) => {
     kind: "trusted-react",
     component: () =>
       context.api.runtime.react.createElement(
-        "p",
+        "div",
         { "data-extension": "example.color-grade" },
-        `Custom shader ready: ${grade.id}`,
+        context.api.runtime.react.createElement(
+          "p",
+          null,
+          `Custom shader ready: ${grade.id}`,
+        ),
+        context.api.runtime.react.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () =>
+              context.api.timeline.transaction(
+                "Add rounded rectangle",
+                (transaction) => {
+                  transaction.createEntity({
+                    name: "Rounded rectangle",
+                    startTicks: 0,
+                    durationTicks: context.api.timeline.ticksPerSecond * 5,
+                    payload: {
+                      extensionId: context.extension.id,
+                      typeId: "rounded-rectangle",
+                      schemaVersion: 1,
+                      data: {
+                        width: 640,
+                        height: 360,
+                        radius: 48,
+                        color: "#8b5cf6",
+                      },
+                    },
+                  });
+                },
+              ),
+          },
+          `Add ${shape.id}`,
+        ),
       ),
   });
 
   context.logger.info("Custom GLSL color-grade fixture activated.", {
     contributionId: grade.id,
+    entityProviderId: shape.id,
+    animatedEntityProviderId: progress.id,
   });
 };

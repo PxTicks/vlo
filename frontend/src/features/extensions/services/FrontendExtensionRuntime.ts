@@ -7,6 +7,7 @@ import type {
   VloExtensionApi,
 } from "../types";
 import { extensionPayloadProviderRegistry } from "../persistence/ExtensionPayloadProviderRegistry";
+import { extensionEntityProviderRegistry } from "../entities/ExtensionEntityProviderRegistry";
 import { createExtensionTimelineApi } from "../timeline/createExtensionTimelineApi";
 import { extensionTransformationRegistry } from "../../transformations/extensionApi";
 import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
@@ -318,6 +319,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
     Object.freeze({
       runtime: extensionHostRuntimeApi,
       payloadProviders: extensionPayloadProviderRegistry.bind(scope),
+      entityProviders: extensionEntityProviderRegistry.bind(scope),
       timeline: createExtensionTimelineApi(scope),
       transformations: extensionTransformationRegistry.bind(scope),
       ui: extensionUiSlotRegistry.bind(scope),

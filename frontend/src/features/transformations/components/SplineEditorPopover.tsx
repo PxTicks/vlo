@@ -1,8 +1,11 @@
 import { Box, Button, Popover, Typography } from "@mui/material";
 import { SplineGraph } from "./SplineEditor";
-import type { SplineParameter } from "../types";
+import type { ScalarParameter, SplineParameter } from "../types";
+import { isSplineParameter } from "../types";
 import type { ControlDefinition } from "../../panelUI/types";
 import type { GraphTimeAxis } from "../utils/clipTimeDomains";
+import { ExtensionScalarEditor } from "./ExtensionScalarEditor";
+import { ExtensionAnimationSourceSelector } from "./ExtensionAnimationSourceSelector";
 
 interface SplineEditorPopoverProps {
   open: boolean;
@@ -56,6 +59,14 @@ export function SplineEditorPopover({
           minWidth: 400,
         }}
       >
+        {isSpline && (
+          <ExtensionAnimationSourceSelector
+            value={value as ScalarParameter}
+            minTime={minTime}
+            duration={duration}
+            onChange={onCommit as (nextValue: ScalarParameter) => void}
+          />
+        )}
         <Box
           sx={{
             height: 250,
@@ -64,9 +75,9 @@ export function SplineEditorPopover({
             justifyContent: "center",
           }}
         >
-          {isSpline && (
+          {isSpline && isSplineParameter(value) && (
             <SplineGraph
-              value={value as SplineParameter}
+              value={value}
               onChange={onCommit as (v: SplineParameter) => void}
               width={400}
               height={250}
@@ -79,14 +90,31 @@ export function SplineEditorPopover({
               softMax={control.softMax}
             />
           )}
+          {isSpline && !isSplineParameter(value) && (
+            <ExtensionScalarEditor
+              value={value as ScalarParameter}
+              onChange={onCommit as (nextValue: ScalarParameter) => void}
+              minTime={minTime}
+              duration={duration}
+              minValue={control.min}
+              maxValue={control.max}
+              softMinValue={control.softMin}
+              softMaxValue={control.softMax}
+              width={400}
+              height={250}
+              timeAxis={timeAxis}
+            />
+          )}
         </Box>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <Button onClick={onClear} color="warning" size="small">
             Clear
           </Button>
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Right-click to delete points
-          </Typography>
+          {isSplineParameter(value) && (
+            <Typography variant="caption" sx={{ color: "text.secondary" }}>
+              Right-click to delete points
+            </Typography>
+          )}
           <Box sx={{ display: "flex", gap: 1 }}>
             <Button onClick={onCancel} size="small">
               Cancel

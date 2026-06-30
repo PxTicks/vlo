@@ -1,11 +1,14 @@
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 import type {
-  PositionPathParameter,
   PositionParams,
   ScalarParameter,
   SpeedTransform,
 } from "../types";
-import { isSplineParameter } from "../types";
+import {
+  isExtensionKeyframedScalarParameter,
+  isExtensionScalarSourceParameter,
+  isSplineParameter,
+} from "../types";
 import {
   reflectKeyframeTimes,
   reflectScalarParameterTime,
@@ -65,7 +68,12 @@ function reverseScalarParamMap(
       next[key] = value;
       continue;
     }
-    if (typeof value === "number" || isSplineParameter(value)) {
+    if (
+      typeof value === "number" ||
+      isSplineParameter(value) ||
+      isExtensionScalarSourceParameter(value) ||
+      isExtensionKeyframedScalarParameter(value)
+    ) {
       next[key] = reflectScalarParameterTime(
         value as ScalarParameter,
         mirrorTime,
@@ -87,7 +95,10 @@ function reversePositionParams(
     y: reflectScalarParameterTime(params.y, mirrorTime) as PositionParams["y"],
   };
   if (params.path) {
-    next.path = reversePositionPath(params.path as PositionPathParameter);
+    next.path = reversePositionPath(params.path);
+  }
+  if (params.extensionPath) {
+    next.extensionPath = reversePositionPath(params.extensionPath);
   }
   return next;
 }

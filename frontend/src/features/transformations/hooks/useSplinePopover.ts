@@ -1,8 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
 import { useSplineEditSessionStore } from "../store/useSplineEditSessionStore";
-import { isSplineParameter } from "../types";
-import type { SplineParameter } from "../types";
+import {
+  isExtensionKeyframedScalarParameter,
+  isExtensionScalarSourceParameter,
+  isSplineParameter,
+} from "../types";
+import type { ScalarParameter, SplineParameter } from "../types";
+import { resolveScalar } from "../utils/resolveScalar";
 
 interface SplineContext {
   contextId: string;
@@ -56,20 +61,31 @@ export function useSplinePopover({
       : undefined;
   const effectiveValue = sessionValue ?? value;
 
-  const isSpline = isSplineParameter(effectiveValue);
-  const numericValue = isSpline
-    ? (effectiveValue.points[0]?.value ?? 0)
+  const isAnimatedScalar =
+    isSplineParameter(effectiveValue) ||
+    isExtensionScalarSourceParameter(effectiveValue) ||
+    isExtensionKeyframedScalarParameter(effectiveValue);
+  const numericValue = isAnimatedScalar
+    ? resolveScalar(effectiveValue, minTime, 0)
     : (effectiveValue as number);
 
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const open = Boolean(anchorEl);
 
   const editorValue = useMemo(() => {
-    if (isSplineParameter(sessionValue)) {
+    if (
+      isSplineParameter(sessionValue) ||
+      isExtensionScalarSourceParameter(sessionValue) ||
+      isExtensionKeyframedScalarParameter(sessionValue)
+    ) {
       return sessionValue;
     }
 
-    if (isSplineParameter(value)) {
+    if (
+      isSplineParameter(value) ||
+      isExtensionScalarSourceParameter(value) ||
+      isExtensionKeyframedScalarParameter(value)
+    ) {
       return value;
     }
 
@@ -112,11 +128,12 @@ export function useSplinePopover({
     (event: React.MouseEvent<HTMLButtonElement>) => {
       const sessionId = crypto.randomUUID();
       const originalTargetSnapshot = captureSnapshot?.();
-      const initialSplineValue: SplineParameter = isSplineParameter(value)
-        ? {
-            type: "spline",
-            points: [...value.points],
-          }
+      const existingAnimatedValue =
+        isSplineParameter(value) ||
+        isExtensionScalarSourceParameter(value) ||
+        isExtensionKeyframedScalarParameter(value);
+      const initialSplineValue: ScalarParameter = existingAnimatedValue
+        ? structuredClone(value)
         : {
             type: "spline",
             points: [
@@ -132,7 +149,7 @@ export function useSplinePopover({
       });
       updateSessionId(sessionId);
 
-      if (!isSplineParameter(value)) {
+      if (!existingAnimatedValue) {
         onCommit(initialSplineValue);
       }
 

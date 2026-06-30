@@ -1,4 +1,9 @@
 import type { ClipTransform } from "../../types/TimelineTypes";
+import type {
+  ExtensionKeyframedScalarParameter,
+  ExtensionScalarSourceParameter,
+  ExtensionSpatialPathParameter,
+} from "../extensions/types";
 import type { Point2D } from "./utils/catmullRomUtils";
 
 export type TransformType = "position" | "scale" | "rotation" | "speed" | "volume";
@@ -20,6 +25,10 @@ export interface PositionPathParameter {
   timing: SplineParameter;
 }
 
+export type SpatialPathParameter =
+  | PositionPathParameter
+  | ExtensionSpatialPathParameter;
+
 export function isSplineParameter(val: unknown): val is SplineParameter {
   return (
     typeof val === "object" &&
@@ -29,12 +38,56 @@ export function isSplineParameter(val: unknown): val is SplineParameter {
   );
 }
 
-export type ScalarParameter = number | SplineParameter;
+export function isExtensionScalarSourceParameter(
+  value: unknown,
+): value is ExtensionScalarSourceParameter {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "extension-scalar" &&
+    "source" in value
+  );
+}
+
+export function isExtensionKeyframedScalarParameter(
+  value: unknown,
+): value is ExtensionKeyframedScalarParameter {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "extension-keyframed-scalar" &&
+    "keyframes" in value &&
+    Array.isArray(value.keyframes)
+  );
+}
+
+export function isExtensionSpatialPathParameter(
+  value: unknown,
+): value is ExtensionSpatialPathParameter {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "extension-path2d" &&
+    "geometry" in value &&
+    "timing" in value
+  );
+}
+
+export type ScalarParameter =
+  | number
+  | SplineParameter
+  | ExtensionScalarSourceParameter
+  | ExtensionKeyframedScalarParameter;
 
 export interface PositionParams {
   x: ScalarParameter;
   y: ScalarParameter;
   path?: PositionPathParameter;
+  /** Extension-owned geometry is separate so legacy path editing stays typed. */
+  extensionPath?: ExtensionSpatialPathParameter;
   [key: string]: unknown;
 }
 

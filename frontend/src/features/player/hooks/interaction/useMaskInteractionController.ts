@@ -1449,6 +1449,7 @@ export function useMaskInteractionController(
       const viewMode = useTransformationViewStore.getState().pathPanelView;
       const positionTransform = getMaskPositionTransform(target.maskClip);
       const positionPath = getMaskPositionPath(target.maskClip);
+      const extensionPath = positionTransform?.parameters.extensionPath;
       const isPathEditing =
         viewMode === "path" &&
         !!positionPath &&
@@ -1458,7 +1459,10 @@ export function useMaskInteractionController(
 
       // When a path already drives the position, plain drag would compete
       // with the path. Defer to the path editor / re-record flow instead.
-      if (positionPath && !isArmedRecording && !isPathEditing) {
+      if (
+        extensionPath ||
+        (positionPath && !isArmedRecording && !isPathEditing)
+      ) {
         return false;
       }
 

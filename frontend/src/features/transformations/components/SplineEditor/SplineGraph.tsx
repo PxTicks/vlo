@@ -1,8 +1,9 @@
 import { useRef, useState, useMemo, useEffect, useCallback } from "react";
 import { Box } from "@mui/material";
-import { MonotoneCubicSpline, type SplinePoint } from "../../utils/MonotoneCubicSpline";
+import type { SplinePoint } from "../../utils/MonotoneCubicSpline";
 import type { SplineParameter } from "../../types";
 import type { GraphTimeAxis } from "../../utils/clipTimeDomains";
+import { resolveScalar } from "../../utils/resolveScalar";
 
 interface SplineGraphProps {
   value: SplineParameter;
@@ -195,13 +196,13 @@ export function SplineGraph({
   // straight-in-screen-space spline through the control points.
   const pathD = useMemo(() => {
     if (localPoints.length === 0) return "";
-    const valueSpline = new MonotoneCubicSpline(localPoints);
+    const previewValue: SplineParameter = { type: "spline", points: localPoints };
     const SAMPLE_COUNT = 120;
     let path = "";
     for (let i = 0; i <= SAMPLE_COUNT; i += 1) {
       const x = padding + (i / SAMPLE_COUNT) * graphWidth;
       const sourceT = xToTime(x);
-      const y = valToY(valueSpline.at(sourceT));
+      const y = valToY(resolveScalar(previewValue, sourceT));
       path += `${i === 0 ? "M" : "L"} ${x} ${y} `;
     }
     return path.trim();

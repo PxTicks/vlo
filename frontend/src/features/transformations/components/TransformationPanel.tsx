@@ -33,14 +33,23 @@ import {
   getSectionGroupKeyframeColor,
 } from "../utils/sectionKeyframes";
 import { getDefaultTransformationSectionModels } from "../utils/defaultSectionModels";
-import type { PositionTransform, SplineParameter } from "../types";
+import type {
+  PositionTransform,
+  SplineParameter,
+} from "../types";
 import { PositionPathDetailView } from "./PositionPathDetailView";
+import { ExtensionSpatialPathDetailView } from "./ExtensionSpatialPathDetailView";
 import {
   ExtensionEntityInspector,
   extensionEntityProviderRegistry,
 } from "../../extensions/entities/publicApi";
 import { ExtensionUiSlot } from "../../extensions/ui/publicApi";
 import { extensionTransformationRegistry } from "../extensions/ExtensionTransformationRegistry";
+import {
+  CORE_MONOTONE_INTERPOLATION_ID,
+  extensionSpatialPathRegistry,
+  type RegisteredSpatialPath,
+} from "../animation";
 
 // DnD Kit Imports
 import {
@@ -71,6 +80,11 @@ export function TransformationPanel() {
     () => extensionEntityProviderRegistry.getRevision(),
     () => extensionEntityProviderRegistry.getRevision(),
   );
+  useSyncExternalStore(
+    (listener) => extensionSpatialPathRegistry.subscribe(listener),
+    () => extensionSpatialPathRegistry.getRevision(),
+    () => extensionSpatialPathRegistry.getRevision(),
+  );
   const {
     selectedClipId,
     activeTargetKind,
@@ -90,6 +104,8 @@ export function TransformationPanel() {
   } = useTransformationController();
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [pathProviderAnchorEl, setPathProviderAnchorEl] =
+    useState<HTMLElement | null>(null);
   const [activeDragId, setActiveDragId] = useState<UniqueIdentifier | null>(
     null,
   );
@@ -134,6 +150,9 @@ export function TransformationPanel() {
     [activeTransforms],
   );
   const positionPath = positionTransform?.parameters.path ?? null;
+  const extensionPositionPath =
+    positionTransform?.parameters.extensionPath ?? null;
+  const activePositionPath = extensionPositionPath ?? positionPath;
 
   // Get the asset for the selected clip to check hasAudio
   const selectedAssetId = isAssetBackedClip(selectedClip)
@@ -331,7 +350,7 @@ export function TransformationPanel() {
   }, [setArmedPathRecording]);
 
   const handleOpenPathEditor = useCallback(() => {
-    if (!selectedClipId || !positionTransform || !positionPath) return;
+    if (!selectedClipId || !positionTransform || !activePositionPath) return;
     setArmedPathRecording(null);
     setActivePathEditor({
       clipId: selectedClipId,
@@ -339,7 +358,7 @@ export function TransformationPanel() {
     });
     setPathPanelView("path");
   }, [
-    positionPath,
+    activePositionPath,
     positionTransform,
     selectedClipId,
     setActivePathEditor,
@@ -353,15 +372,16 @@ export function TransformationPanel() {
   }, [setActivePathEditor, setPathPanelView]);
 
   const handleRemovePath = useCallback(() => {
-    if (!positionTransform || !positionPath) return;
+    if (!positionTransform || !activePositionPath) return;
     const nextParameters = { ...positionTransform.parameters };
     delete nextParameters.path;
+    delete nextParameters.extensionPath;
     updateActiveTransform(positionTransform.id, { parameters: nextParameters });
     setArmedPathRecording(null);
     setActivePathEditor(null);
     setPathPanelView("home");
   }, [
-    positionPath,
+    activePositionPath,
     positionTransform,
     setActivePathEditor,
     setArmedPathRecording,
@@ -383,6 +403,62 @@ export function TransformationPanel() {
       });
     },
     [positionPath, positionTransform, updateActiveTransform],
+  );
+
+  const handleExtensionPathChange = useCallback(
+    (nextPath: NonNullable<PositionTransform["parameters"]["extensionPath"]>) => {
+      if (!positionTransform || !extensionPositionPath) return;
+      updateActiveTransform(positionTransform.id, {
+        parameters: {
+          ...positionTransform.parameters,
+          extensionPath: nextPath,
+        },
+      });
+    },
+    [extensionPositionPath, positionTransform, updateActiveTransform],
+  );
+
+  const extensionPathProviders = extensionSpatialPathRegistry
+    .list()
+    .filter(({ ownerId }) => ownerId !== "vlo.core");
+
+  const handleCreateExtensionPath = useCallback(
+    (provider: RegisteredSpatialPath) => {
+      setPathProviderAnchorEl(null);
+      if (!positionTransform) return;
+      const separator = CORE_MONOTONE_INTERPOLATION_ID.indexOf("/");
+      updateActiveTransform(positionTransform.id, {
+        parameters: {
+          ...positionTransform.parameters,
+          extensionPath: {
+            type: "extension-path2d",
+            geometry: {
+              extensionId: provider.ownerId,
+              typeId: provider.localId,
+              schemaVersion: provider.definition.schemaVersion,
+              data: structuredClone(provider.definition.defaultData),
+            },
+            timing: {
+              type: "extension-keyframed-scalar",
+              keyframes: [
+                {
+                  time: 0,
+                  value: 0,
+                  outgoing: {
+                    extensionId: CORE_MONOTONE_INTERPOLATION_ID.slice(0, separator),
+                    typeId: CORE_MONOTONE_INTERPOLATION_ID.slice(separator + 1),
+                    schemaVersion: 1,
+                    data: null,
+                  },
+                },
+                { time: 1, value: 1 },
+              ],
+            },
+          },
+        },
+      });
+    },
+    [positionTransform, updateActiveTransform],
   );
 
   const positionGroupHeaderActions = useMemo(() => {
@@ -412,11 +488,38 @@ export function TransformationPanel() {
       );
     }
 
-    if (!positionPath) {
+    if (!activePositionPath) {
       return (
-        <Button size="small" onClick={handleStartRecording} sx={commonButtonSx}>
-          Record Path
-        </Button>
+        <Box sx={{ display: "flex", gap: 0.5 }}>
+          <Button size="small" onClick={handleStartRecording} sx={commonButtonSx}>
+            Record Path
+          </Button>
+          {positionTransform && extensionPathProviders.length > 0 && (
+            <>
+              <Button
+                size="small"
+                onClick={(event) => setPathProviderAnchorEl(event.currentTarget)}
+                sx={commonButtonSx}
+              >
+                Add Custom Path
+              </Button>
+              <Menu
+                anchorEl={pathProviderAnchorEl}
+                open={Boolean(pathProviderAnchorEl)}
+                onClose={() => setPathProviderAnchorEl(null)}
+              >
+                {extensionPathProviders.map((provider) => (
+                  <MenuItem
+                    key={provider.id}
+                    onClick={() => handleCreateExtensionPath(provider)}
+                  >
+                    {provider.definition.label}
+                  </MenuItem>
+                ))}
+              </Menu>
+            </>
+          )}
+        </Box>
       );
     }
 
@@ -425,9 +528,11 @@ export function TransformationPanel() {
         <Button size="small" onClick={handleOpenPathEditor} sx={commonButtonSx}>
           Edit Path
         </Button>
-        <Button size="small" onClick={handleStartRecording} sx={commonButtonSx}>
-          Re-record
-        </Button>
+        {!extensionPositionPath && (
+          <Button size="small" onClick={handleStartRecording} sx={commonButtonSx}>
+            Re-record
+          </Button>
+        )}
         <Button
           size="small"
           color="error"
@@ -441,10 +546,15 @@ export function TransformationPanel() {
   }, [
     armedPathRecording?.clipId,
     handleCancelRecording,
+    handleCreateExtensionPath,
     handleOpenPathEditor,
     handleRemovePath,
     handleStartRecording,
-    positionPath,
+    activePositionPath,
+    extensionPathProviders,
+    extensionPositionPath,
+    pathProviderAnchorEl,
+    positionTransform,
     selectedClipId,
   ]);
 
@@ -455,25 +565,25 @@ export function TransformationPanel() {
       }
 
       return {
-        disabled: Boolean(positionPath),
-        disableKeyframe: Boolean(positionPath),
+        disabled: Boolean(activePositionPath),
+        disableKeyframe: Boolean(activePositionPath),
         headerActions: positionGroupHeaderActions,
       };
     },
-    [positionGroupHeaderActions, positionPath],
+    [activePositionPath, positionGroupHeaderActions],
   );
 
   const isPathEditorOpen =
     pathPanelView === "path" &&
     !!selectedClipId &&
     !!positionTransform &&
-    !!positionPath &&
+    !!activePositionPath &&
     activePathEditor?.clipId === selectedClipId &&
     activePathEditor.transformId === positionTransform.id;
 
   if (!selectedClipId) return null;
 
-  if (isPathEditorOpen && positionPath) {
+  if (isPathEditorOpen && activePositionPath) {
     return (
       <Box
         data-testid="transformation-panel"
@@ -485,13 +595,23 @@ export function TransformationPanel() {
           overflowY: "auto",
         }}
       >
-        <PositionPathDetailView
-          path={positionPath}
-          onBack={handleBackFromPathEditor}
-          onTimingChange={handlePathTimingChange}
-          onRemove={handleRemovePath}
-          onRerecord={handleStartRecording}
-        />
+        {extensionPositionPath ? (
+          <ExtensionSpatialPathDetailView
+            path={extensionPositionPath}
+            duration={domainClip?.timelineDuration ?? 0}
+            onChange={handleExtensionPathChange}
+            onBack={handleBackFromPathEditor}
+            onRemove={handleRemovePath}
+          />
+        ) : positionPath ? (
+          <PositionPathDetailView
+            path={positionPath}
+            onBack={handleBackFromPathEditor}
+            onTimingChange={handlePathTimingChange}
+            onRemove={handleRemovePath}
+            onRerecord={handleStartRecording}
+          />
+        ) : null}
       </Box>
     );
   }

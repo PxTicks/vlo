@@ -29,6 +29,282 @@ export interface ExtensionPayloadMigration {
   data: JsonValue;
 }
 
+/** A point in project/canvas coordinates. */
+export interface ExtensionPoint2D {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * An arbitrary scalar animation source owned by an extension. Unlike a
+ * keyframe interpolation strategy, a source may be procedural and need not
+ * expose control points at all.
+ */
+export interface ExtensionScalarSourceParameter {
+  readonly type: "extension-scalar";
+  readonly source: ExtensionPayload;
+}
+
+/** One scalar keyframe. `outgoing` owns the following segment's mathematics. */
+export interface ExtensionScalarKeyframe {
+  readonly time: number;
+  readonly value: number;
+  readonly outgoing?: ExtensionPayload;
+}
+
+/**
+ * Host-structured keyframes with extension-owned, versioned segment data.
+ * Every non-final keyframe must identify an outgoing interpolation provider.
+ */
+export interface ExtensionKeyframedScalarParameter {
+  readonly type: "extension-keyframed-scalar";
+  readonly keyframes: readonly ExtensionScalarKeyframe[];
+}
+
+export type ExtensionScalarValue =
+  | number
+  | ExtensionScalarSourceParameter
+  | ExtensionKeyframedScalarParameter;
+
+/** Arbitrary 2D geometry plus an independently extensible progress source. */
+export interface ExtensionSpatialPathParameter {
+  readonly type: "extension-path2d";
+  readonly geometry: ExtensionPayload;
+  readonly timing: ExtensionScalarValue;
+}
+
+export interface ExtensionAnimationDataMigration {
+  readonly schemaVersion: number;
+  readonly data: JsonValue;
+}
+
+export interface ExtensionScalarSampleContext {
+  readonly durationTicks?: number;
+  readonly extrapolate: boolean;
+}
+
+/** Optional mapping needed when a scalar source is used as a speed factor. */
+export interface ExtensionScalarTimeMap {
+  outputToInput(outputTime: number, extrapolate: boolean): number;
+  inputToOutput(inputTime: number): number;
+}
+
+export interface ExtensionCompiledScalarSource extends ExtensionDisposable {
+  sample(time: number, context: ExtensionScalarSampleContext): number;
+  derivative?(
+    time: number,
+    context: ExtensionScalarSampleContext,
+  ): number;
+  /** Deliberately opt-in: not every scalar function is a valid time warp. */
+  readonly timeMap?: ExtensionScalarTimeMap;
+}
+
+export interface ExtensionScalarRemap {
+  readonly timeScale: number;
+  readonly timeOffset: number;
+  readonly valueScale: number;
+  readonly valueOffset: number;
+}
+
+export interface ExtensionAnimationEditorDomain {
+  readonly minTime: number;
+  readonly duration: number;
+  readonly minValue?: number;
+  readonly maxValue?: number;
+  readonly softMinValue?: number;
+  readonly softMaxValue?: number;
+}
+
+export interface ExtensionScalarSourceEditorProps {
+  readonly value: ExtensionScalarSourceParameter;
+  readonly domain: ExtensionAnimationEditorDomain;
+  readonly sample: (time: number) => number;
+  /** The host wraps this callback in its normal preview/undo transaction. */
+  readonly onChange: (value: ExtensionScalarSourceParameter) => void;
+}
+
+export interface ExtensionScalarSourceDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly label: string;
+  readonly schemaVersion: number;
+  readonly defaultData: JsonValue;
+  validate(data: JsonValue, schemaVersion: number): void;
+  migrate?(
+    data: JsonValue,
+    fromSchemaVersion: number,
+  ): ExtensionAnimationDataMigration;
+  compile(
+    data: JsonValue,
+    schemaVersion: number,
+    context: Readonly<{ ticksPerSecond: number }>,
+  ): ExtensionCompiledScalarSource;
+  /** Required for reversal/retiming of persisted procedural source data. */
+  remap?(
+    data: JsonValue,
+    schemaVersion: number,
+    remap: ExtensionScalarRemap,
+  ): ExtensionAnimationDataMigration;
+  /** Arbitrary trusted React editor, isolated by a host error boundary. */
+  readonly editor?: (props: ExtensionScalarSourceEditorProps) => unknown;
+}
+
+export interface ExtensionScalarSourceRegistration extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionScalarSourceApi {
+  register(
+    definition: ExtensionScalarSourceDefinition,
+  ): ExtensionScalarSourceRegistration;
+}
+
+export interface ExtensionInterpolationCompileInput {
+  readonly keyframes: readonly ExtensionScalarKeyframe[];
+  readonly segmentIndex: number;
+  readonly data: JsonValue;
+  readonly schemaVersion: number;
+}
+
+export interface ExtensionCompiledInterpolationSegment
+  extends ExtensionDisposable {
+  sample(time: number): number;
+  derivative?(time: number): number;
+}
+
+export interface ExtensionInterpolationEditorProps {
+  readonly value: ExtensionKeyframedScalarParameter;
+  readonly segmentIndex: number;
+  readonly domain: ExtensionAnimationEditorDomain;
+  readonly sample: (time: number) => number;
+  readonly onChange: (value: ExtensionKeyframedScalarParameter) => void;
+}
+
+/** Mathematics and optional trusted UI for one keyframe segment strategy. */
+export interface ExtensionInterpolationDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly label: string;
+  readonly schemaVersion: number;
+  readonly defaultData: JsonValue;
+  validate(data: JsonValue, schemaVersion: number): void;
+  migrate?(
+    data: JsonValue,
+    fromSchemaVersion: number,
+  ): ExtensionAnimationDataMigration;
+  compile(
+    input: ExtensionInterpolationCompileInput,
+  ): ExtensionCompiledInterpolationSegment;
+  /**
+   * Remaps provider-owned handles/coefficients when the host reverses or
+   * retimes a track. Omit it to make that edit fail closed.
+   */
+  remap?(
+    input: ExtensionInterpolationCompileInput,
+    remap: ExtensionScalarRemap,
+  ): ExtensionAnimationDataMigration;
+  readonly editor?: (props: ExtensionInterpolationEditorProps) => unknown;
+}
+
+export interface ExtensionInterpolationRegistration
+  extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionInterpolationApi {
+  register(
+    definition: ExtensionInterpolationDefinition,
+  ): ExtensionInterpolationRegistration;
+}
+
+export interface ExtensionSpatialPathBounds {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface ExtensionCompiledSpatialPath extends ExtensionDisposable {
+  /** Random-access sampling; progress normally lies in [0, 1]. */
+  pointAt(progress: number): ExtensionPoint2D;
+  tangentAt?(progress: number): ExtensionPoint2D;
+  getBounds?(): ExtensionSpatialPathBounds;
+  getLength?(): number;
+  pointAtDistance?(distance: number): ExtensionPoint2D;
+  hitTest?(point: ExtensionPoint2D, tolerance: number): boolean;
+}
+
+export interface ExtensionSpatialPathEditorProps {
+  readonly value: ExtensionSpatialPathParameter;
+  readonly domain: ExtensionAnimationEditorDomain;
+  readonly currentTime: number;
+  readonly onChange: (value: ExtensionSpatialPathParameter) => void;
+}
+
+export interface ExtensionSpatialPathOverlayParameters {
+  readonly value: ExtensionSpatialPathParameter;
+  readonly currentTime: number;
+  readonly duration: number;
+  readonly selected: boolean;
+}
+
+export interface ExtensionSpatialPathOverlayContext {
+  readonly viewport: Readonly<{
+    width: number;
+    height: number;
+    projectWidth: number;
+    projectHeight: number;
+  }>;
+}
+
+export type ExtensionTrustedSpatialPathOverlayInstance =
+  ExtensionTrustedPixiObjectInstance<
+    ExtensionSpatialPathOverlayParameters,
+    ExtensionSpatialPathOverlayContext
+  >;
+
+/** Geometry, manipulation operations, and optional trusted editor surfaces. */
+export interface ExtensionSpatialPathDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly label: string;
+  readonly schemaVersion: number;
+  readonly defaultData: JsonValue;
+  validate(data: JsonValue, schemaVersion: number): void;
+  migrate?(
+    data: JsonValue,
+    fromSchemaVersion: number,
+  ): ExtensionAnimationDataMigration;
+  compile(
+    data: JsonValue,
+    schemaVersion: number,
+  ): ExtensionCompiledSpatialPath;
+  /** Omit to make host reversal fail closed for this geometry. */
+  reverse?(
+    data: JsonValue,
+    schemaVersion: number,
+  ): ExtensionAnimationDataMigration;
+  readonly editor?: (props: ExtensionSpatialPathEditorProps) => unknown;
+  /** Optional host-slotted Pixi handles/overlay using the shared lifecycle. */
+  readonly createOverlay?: () => ExtensionTrustedSpatialPathOverlayInstance;
+}
+
+export interface ExtensionSpatialPathRegistration extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionSpatialPathApi {
+  register(
+    definition: ExtensionSpatialPathDefinition,
+  ): ExtensionSpatialPathRegistration;
+}
+
+export interface ExtensionAnimationApi {
+  readonly scalarSources: ExtensionScalarSourceApi;
+  readonly interpolations: ExtensionInterpolationApi;
+  readonly spatialPaths: ExtensionSpatialPathApi;
+}
+
 /**
  * Persistence-only contract for one extension-owned payload type. Rendering
  * and editor UI are separate contribution contracts.
@@ -486,6 +762,8 @@ export interface ExtensionTrustedUiComponentDefinition {
 
 export interface VloExtensionApi {
   readonly runtime: ExtensionHostRuntimeApi;
+  /** Trusted-first scalar, keyframe-segment, and spatial-path contributions. */
+  readonly animation: ExtensionAnimationApi;
   readonly payloadProviders: ExtensionPayloadProviderApi;
   /** Trusted-first, executable Pixi entity providers. */
   readonly entityProviders: ExtensionEntityProviderApi;

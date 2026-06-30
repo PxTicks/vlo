@@ -29,12 +29,13 @@ export const positionHandler: TransformHandler<PositionTransform> = (
   }
 
   // 2. Additive Parameters
-  const { x, y, path } = transform.parameters;
+  const { x, y, path, extensionPath } = transform.parameters;
   const t = context.time ?? 0;
 
-  if (path) {
+  const activePath = extensionPath ?? path;
+  if (activePath) {
     const sampledPoint = samplePositionPath(
-      path,
+      activePath,
       context.visualTime ?? t,
       context.visualDuration ?? 0,
     );

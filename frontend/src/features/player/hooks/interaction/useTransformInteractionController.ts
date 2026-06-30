@@ -57,6 +57,7 @@ import {
   getPositionPath,
   getPositionTransform,
 } from "../../../transformations/utils/positionPathState";
+import { TrustedSpatialPathOverlayRenderer } from "../../../transformations/animation";
 
 const POINT_EPSILON_TICKS = 1;
 const DRAG_MOVE_EPSILON = 0.01;
@@ -153,6 +154,10 @@ export function useTransformInteractionController(
 
   const interactionRef = useRef<InteractionState>(createInitialInteractionState());
   const pathOverlayRef = useRef<Graphics | null>(null);
+  const extensionPathOverlayRef = useRef<TrustedSpatialPathOverlayRenderer | null>(
+    null,
+  );
+  extensionPathOverlayRef.current ??= new TrustedSpatialPathOverlayRenderer();
   const resolveViewportCenter = useCallback((): Point2D | null => {
     if (!app || !viewport) return null;
     return toViewportLocal(viewport, {
@@ -233,6 +238,21 @@ export function useTransformInteractionController(
           x: sampled.x,
           y: sampled.y,
           path,
+          customPathActive: false,
+        };
+      }
+      const extensionPath = transform?.parameters.extensionPath ?? null;
+      if (extensionPath) {
+        const sampled = samplePositionPath(
+          extensionPath,
+          localVisualTime,
+          clip.timelineDuration,
+        );
+        return {
+          x: sampled.x,
+          y: sampled.y,
+          path: null,
+          customPathActive: true,
         };
       }
 
@@ -248,6 +268,7 @@ export function useTransformInteractionController(
           ? resolveScalar(transform.parameters.y, transformInputTime, 0)
           : 0,
         path: null,
+        customPathActive: false,
       };
     };
 
@@ -750,6 +771,7 @@ export function useTransformInteractionController(
         x: startX,
         y: startY,
         path: activePath,
+        customPathActive,
       } = resolvePositionAtVisualTime(activeClip, transform, localVisualTime);
       const isArmedRecording = armedPathRecording?.clipId === activeClip.id;
       const isPathEditing =
@@ -758,7 +780,10 @@ export function useTransformInteractionController(
         activePathEditor.transformId === transform?.id &&
         !!activePath;
 
-      if (activePath && !isArmedRecording && !isPathEditing) {
+      if (
+        customPathActive ||
+        (activePath && !isArmedRecording && !isPathEditing)
+      ) {
         return;
       }
 
@@ -960,7 +985,7 @@ export function useTransformInteractionController(
   }, [viewport]);
 
   useEffect(() => {
-    if (!app) {
+    if (!app || !viewport) {
       return;
     }
 
@@ -981,8 +1006,38 @@ export function useTransformInteractionController(
         !sprite.visible
       ) {
         overlay.visible = false;
+        extensionPathOverlayRef.current?.clear();
         return;
       }
+
+      const extensionPath =
+        getPositionTransform(activeClip)?.parameters.extensionPath;
+      if (extensionPath) {
+        const clampedGlobal = Math.max(
+          activeClip.start,
+          Math.min(
+            playbackClock.time,
+            activeClip.start + activeClip.timelineDuration,
+          ),
+        );
+        overlay.visible = false;
+        extensionPathOverlayRef.current?.update(
+          extensionPath,
+          clampedGlobal - activeClip.start,
+          activeClip.timelineDuration,
+          viewport,
+          {
+            viewport: {
+              width: app.screen.width,
+              height: app.screen.height,
+              projectWidth: app.screen.width,
+              projectHeight: app.screen.height,
+            },
+          },
+        );
+        return;
+      }
+      extensionPathOverlayRef.current?.clear();
 
       const currentInteraction = interactionRef.current;
       const interactionMatchesClip =
@@ -1081,11 +1136,20 @@ export function useTransformInteractionController(
         pathOverlayRef.current.visible = false;
       }
     };
-  }, [activeClipRef, app, selectedClipId, sprite, resolveViewportCenter]);
+  }, [
+    activeClipRef,
+    app,
+    selectedClipId,
+    sprite,
+    resolveViewportCenter,
+    viewport,
+  ]);
 
   useEffect(() => {
     return () => {
       handlers.unbindStageListeners();
+      extensionPathOverlayRef.current?.dispose();
+      extensionPathOverlayRef.current = null;
     };
   }, [handlers]);
 

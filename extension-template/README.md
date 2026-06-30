@@ -45,6 +45,16 @@ directory by hand; rebuild it before approval.
   pixel input, including frame time or asset hashes when applicable. Omitting it
   deliberately renders every requested frame, which is the safe default for
   animated or externally mutable objects.
+- `context.api.animation` has three deliberately separate trusted-first registries:
+  `scalarSources` for arbitrary procedural/random-access scalar mathematics,
+  `interpolations` for provider-owned outgoing keyframe segments, and `spatialPaths`
+  for independently sampled 2D geometry. Every definition supplies a label,
+  versioned validated default data, migration and compile functions, plus optional
+  remap/reverse and trusted editor hooks. Spatial paths may also return a trusted Pixi
+  overlay through the same `{ object, update, destroy? }` lifecycle used elsewhere;
+  the host owns its scene slot and final destruction. Procedural sources used as speed
+  factors must explicitly supply a two-way `timeMap`. The host ships no sample curve
+  strategy beyond its existing compatibility behaviour.
 - `context.renderer` is the full host Pixi renderer, not a restricted facade.
   Mutating it has the same trusted-mode blast radius as using
   `context.api.runtime.pixi`; restricted providers will not receive this object.

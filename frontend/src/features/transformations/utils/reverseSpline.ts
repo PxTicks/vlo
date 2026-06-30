@@ -2,10 +2,27 @@ import type { Point2D } from "./catmullRomUtils";
 import type {
   PositionPathParameter,
   ScalarParameter,
+  SpatialPathParameter,
   SplineParameter,
   SplinePoint,
 } from "../types";
-import { isSplineParameter } from "../types";
+import {
+  isExtensionKeyframedScalarParameter,
+  isExtensionScalarSourceParameter,
+  isExtensionSpatialPathParameter,
+  isSplineParameter,
+} from "../types";
+import type {
+  ExtensionKeyframedScalarParameter,
+  ExtensionPayload,
+  ExtensionScalarRemap,
+  ExtensionSpatialPathParameter,
+} from "../../extensions/types";
+import {
+  extensionInterpolationRegistry,
+  extensionScalarSourceRegistry,
+  extensionSpatialPathRegistry,
+} from "../animation";
 
 /**
  * Spline time-inversion primitives.
@@ -72,11 +89,126 @@ export function reflectScalarParameterTime(
 ): ScalarParameter | undefined {
   if (param === undefined || param === null) return param;
   if (typeof param === "number") return param;
-  if (!isSplineParameter(param)) return param;
+  if (isSplineParameter(param)) {
+    return {
+      type: "spline",
+      points: reflectSplinePointsTime(param.points, mirrorTime),
+    };
+  }
+  return remapExtensionScalar(param, {
+    timeScale: -1,
+    timeOffset: 2 * mirrorTime,
+    valueScale: 1,
+    valueOffset: 0,
+  });
+}
+
+function replacePayloadData(
+  payload: ExtensionPayload,
+  migration: { schemaVersion: number; data: ExtensionPayload["data"] },
+): ExtensionPayload {
   return {
-    type: "spline",
-    points: reflectSplinePointsTime(param.points, mirrorTime),
+    ...payload,
+    schemaVersion: migration.schemaVersion,
+    data: migration.data,
   };
+}
+
+function validatePayloadMigration(
+  payload: ExtensionPayload,
+  migration: { schemaVersion: number; data: ExtensionPayload["data"] },
+  resolve: (payload: ExtensionPayload) => {
+    readonly data: ExtensionPayload["data"];
+    readonly schemaVersion: number;
+  },
+): ExtensionPayload {
+  const candidate = replacePayloadData(payload, migration);
+  const validated = resolve(candidate);
+  return replacePayloadData(candidate, validated);
+}
+
+function remapKeyframedScalar(
+  param: ExtensionKeyframedScalarParameter,
+  remap: ExtensionScalarRemap,
+): ExtensionKeyframedScalarParameter {
+  const remappedBase = [...param.keyframes]
+    .map((keyframe) => ({
+      time: keyframe.time * remap.timeScale + remap.timeOffset,
+      value: keyframe.value * remap.valueScale + remap.valueOffset,
+      original: keyframe,
+    }))
+    .sort((left, right) => left.time - right.time);
+
+  const reversed = remap.timeScale < 0;
+  const keyframes = remappedBase.map((keyframe, index) => {
+    if (index === remappedBase.length - 1) {
+      return { time: keyframe.time, value: keyframe.value };
+    }
+    const originalSegmentIndex = reversed
+      ? param.keyframes.length - 2 - index
+      : index;
+    const outgoing = param.keyframes[originalSegmentIndex]?.outgoing;
+    if (!outgoing) {
+      throw new Error(
+        `Cannot remap extension scalar segment ${originalSegmentIndex}: it has no interpolation provider.`,
+      );
+    }
+    const resolved = extensionInterpolationRegistry.resolve(outgoing);
+    if (!resolved.contribution.remap) {
+      throw new Error(
+        `Interpolation '${outgoing.extensionId}/${outgoing.typeId}' does not support reversal or retiming.`,
+      );
+    }
+    const migrated = resolved.contribution.remap(
+      {
+        keyframes: structuredClone(param.keyframes),
+        segmentIndex: originalSegmentIndex,
+        data: structuredClone(resolved.data),
+        schemaVersion: resolved.schemaVersion,
+      },
+      remap,
+    );
+    return {
+      time: keyframe.time,
+      value: keyframe.value,
+      outgoing: validatePayloadMigration(
+        outgoing,
+        migrated,
+        (payload) => extensionInterpolationRegistry.resolve(payload),
+      ),
+    };
+  });
+  return { type: "extension-keyframed-scalar", keyframes };
+}
+
+export function remapExtensionScalar(
+  param: Exclude<ScalarParameter, number | SplineParameter>,
+  remap: ExtensionScalarRemap,
+): ScalarParameter {
+  if (isExtensionKeyframedScalarParameter(param)) {
+    return remapKeyframedScalar(param, remap);
+  }
+  if (isExtensionScalarSourceParameter(param)) {
+    const resolved = extensionScalarSourceRegistry.resolve(param.source);
+    if (!resolved.contribution.remap) {
+      throw new Error(
+        `Scalar source '${param.source.extensionId}/${param.source.typeId}' does not support reversal or retiming.`,
+      );
+    }
+    return {
+      type: "extension-scalar",
+      source: validatePayloadMigration(
+        param.source,
+        resolved.contribution.remap(
+          structuredClone(resolved.data),
+          resolved.schemaVersion,
+          remap,
+        ),
+        (payload) => extensionScalarSourceRegistry.resolve(payload),
+      ),
+    };
+  }
+  return param;
 }
 
 /**
@@ -133,7 +265,43 @@ export function reflectKeyframeTimes(
  */
 export function reversePositionPath(
   path: PositionPathParameter,
-): PositionPathParameter {
+): PositionPathParameter;
+export function reversePositionPath(
+  path: ExtensionSpatialPathParameter,
+): ExtensionSpatialPathParameter;
+export function reversePositionPath(
+  path: SpatialPathParameter,
+): SpatialPathParameter {
+  if (isExtensionSpatialPathParameter(path)) {
+    const resolved = extensionSpatialPathRegistry.resolve(path.geometry);
+    if (!resolved.contribution.reverse) {
+      throw new Error(
+        `Spatial path '${path.geometry.extensionId}/${path.geometry.typeId}' does not support reversal.`,
+      );
+    }
+    const reversedGeometry = resolved.contribution.reverse(
+      structuredClone(resolved.data),
+      resolved.schemaVersion,
+    );
+    const reversedTiming =
+      typeof path.timing === "number"
+        ? 1 - path.timing
+        : (remapExtensionScalar(path.timing, {
+            timeScale: -1,
+            timeOffset: 1,
+            valueScale: -1,
+            valueOffset: 1,
+          }) as typeof path.timing);
+    return {
+      type: "extension-path2d",
+      geometry: validatePayloadMigration(
+        path.geometry,
+        reversedGeometry,
+        (payload) => extensionSpatialPathRegistry.resolve(payload),
+      ),
+      timing: reversedTiming,
+    };
+  }
   const reversedControlPoints: Point2D[] = [];
   for (let i = path.controlPoints.length - 1; i >= 0; i--) {
     const p = path.controlPoints[i];

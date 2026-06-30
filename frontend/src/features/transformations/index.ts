@@ -60,3 +60,13 @@ export {
   ExtensionTransformationRegistry,
   extensionTransformationRegistry,
 } from "./extensionApi";
+export {
+  CORE_CATMULL_ROM_PATH_ID,
+  CORE_MONOTONE_INTERPOLATION_ID,
+  ExtensionInterpolationRegistry,
+  ExtensionScalarSourceRegistry,
+  ExtensionSpatialPathRegistry,
+  extensionInterpolationRegistry,
+  extensionScalarSourceRegistry,
+  extensionSpatialPathRegistry,
+} from "./animation";

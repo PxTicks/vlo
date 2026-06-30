@@ -46,4 +46,64 @@ describe("collectTimelineExtensionRequirements", () => {
       },
     ]);
   });
+
+  it("discovers animation providers nested in transformation parameters", () => {
+    const clip = extensionClip("clip-animation", 1);
+    clip.transformations = [
+      {
+        id: "position-1",
+        type: "position",
+        isEnabled: true,
+        parameters: {
+          x: {
+            type: "extension-scalar",
+            source: {
+              extensionId: "example.math",
+              typeId: "expression",
+              schemaVersion: 2,
+              data: { expression: "time" },
+            },
+          },
+          y: 0,
+          extensionPath: {
+            type: "extension-path2d",
+            geometry: {
+              extensionId: "example.geometry",
+              typeId: "orbit",
+              schemaVersion: 1,
+              data: { radius: 10 },
+            },
+            timing: {
+              type: "extension-keyframed-scalar",
+              keyframes: [
+                {
+                  time: 0,
+                  value: 0,
+                  outgoing: {
+                    extensionId: "example.math",
+                    typeId: "easing",
+                    schemaVersion: 3,
+                    data: null,
+                  },
+                },
+                { time: 1, value: 1 },
+              ],
+            },
+          },
+        },
+      },
+    ];
+
+    expect(
+      collectTimelineExtensionRequirements([clip]).map((requirement) => ({
+        id: requirement.id,
+        availability: requirement.availability,
+      })),
+    ).toEqual([
+      { id: "example.geometry/orbit", availability: "missing" },
+      { id: "example.math/easing", availability: "missing" },
+      { id: "example.math/expression", availability: "missing" },
+      { id: "example.unknown/shape", availability: "missing" },
+    ]);
+  });
 });

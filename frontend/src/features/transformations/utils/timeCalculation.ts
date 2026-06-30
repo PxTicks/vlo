@@ -1,7 +1,14 @@
 import type { TimelineClip, ClipTransform } from "../../../types/TimelineTypes";
 import type { ScalarParameter, SplinePoint, SpeedTransform } from "../types";
+import {
+  isExtensionKeyframedScalarParameter,
+  isExtensionScalarSourceParameter,
+  isSplineParameter,
+} from "../types";
 import { MonotoneCubicSpline } from "./MonotoneCubicSpline";
 import { TICKS_PER_SECOND } from "../../../core/time/constants";
+import { getCompiledScalarSource, resolveScalar } from "./resolveScalar";
+import { extensionInterpolationRegistry } from "../animation";
 
 /**
  * Low-level tick engine for clip-local visual time <-> source-media time.
@@ -111,28 +118,10 @@ export function pushTimeThroughTransforms(
         return pushedTime / k;
       }
 
-      // Inverse of Spline (Input -> Output)
-      // We have t_in (pushedTime). We want t_out.
-      // T_out = Integral(1/Speed(t)) dt
-      if (speedParams.factor && speedParams.factor.type === "spline") {
-        // Let's use the cached inverse spline (Map: Timeline -> Source)
-        // We have Source (pushedTime). We want Timeline.
-        // Timeline = InverseSpline_Inverse(Source).
-        // Since `InverseSpline` is X=Timeline, Y=Source.
-        // We need to find X given Y.
-
-        const inverseSpline = getInverseSpeedSpline(speedParams.factor.points);
-
-        // Note on units: Splines are in TICKS.
-        const sourceSeconds = pushedTime;
-
-        // solveX expects Y value, returns X value.
-        // Y = Source, X = Timeline.
-        const mappedSeconds = inverseSpline.solveX
-          ? inverseSpline.solveX(sourceSeconds)
-          : 0; // Fallback if method missing
-
-        return mappedSeconds;
+      const timeMap = getScalarSpeedTimeMap(speedParams.factor);
+      if (timeMap) {
+        const mapped = timeMap.inputToOutput(pushedTime);
+        return Number.isFinite(mapped) ? mapped : pushedTime;
       }
     }
     return pushedTime;
@@ -154,15 +143,70 @@ export function getIdempotentTimeMap(
     return outputTime * param;
   }
 
-  if (param && param.type === "spline") {
-    const inverseSpline = getInverseSpeedSpline(param.points);
-    // InverseSpline: X=Timeline(Output), Y=Source(Input)
-    // We provide X, get Y.
-    const effectiveSeconds = inverseSpline.at(outputTime, extrapolate);
-    return effectiveSeconds;
+  const timeMap = getScalarSpeedTimeMap(param);
+  if (timeMap) {
+    const mapped = timeMap.outputToInput(outputTime, extrapolate);
+    return Number.isFinite(mapped) ? mapped : outputTime;
   }
 
   return outputTime;
+}
+
+interface ScalarSpeedTimeMap {
+  outputToInput(outputTime: number, extrapolate: boolean): number;
+  inputToOutput(inputTime: number): number;
+}
+
+function inverseSplineTimeMap(spline: MonotoneCubicSpline): ScalarSpeedTimeMap {
+  return {
+    outputToInput: (outputTime, extrapolate) =>
+      spline.at(outputTime, extrapolate),
+    inputToOutput: (inputTime) => spline.solveX(inputTime),
+  };
+}
+
+function getScalarSpeedTimeMap(
+  param: ScalarParameter,
+): ScalarSpeedTimeMap | undefined {
+  if (isSplineParameter(param)) {
+    return inverseSplineTimeMap(getInverseSpeedSpline(param.points));
+  }
+  if (isExtensionScalarSourceParameter(param)) {
+    try {
+      return getCompiledScalarSource(param)?.timeMap;
+    } catch {
+      return undefined;
+    }
+  }
+  if (isExtensionKeyframedScalarParameter(param)) {
+    const last = param.keyframes[param.keyframes.length - 1];
+    if (!last || last.time <= 0) return undefined;
+    return inverseSplineTimeMap(
+      getInverseSpeedSplineForParameter(param, last.time),
+    );
+  }
+  return undefined;
+}
+
+let parameterSpeedMapCache = new WeakMap<object, MonotoneCubicSpline>();
+extensionInterpolationRegistry.subscribe(() => {
+  parameterSpeedMapCache = new WeakMap<object, MonotoneCubicSpline>();
+});
+
+function getInverseSpeedSplineForParameter(
+  param: ScalarParameter,
+  maxSourceTime: number,
+): MonotoneCubicSpline {
+  if (typeof param === "object") {
+    const cached = parameterSpeedMapCache.get(param);
+    if (cached) return cached;
+  }
+  const inverse = createInverseSpeedSplineFromSampler(
+    maxSourceTime,
+    (time) => resolveScalar(param, time, 1),
+  );
+  if (typeof param === "object") parameterSpeedMapCache.set(param, inverse);
+  return inverse;
 }
 
 function getInverseSpeedSpline(points: SplinePoint[]): MonotoneCubicSpline {
@@ -179,9 +223,16 @@ function getInverseSpeedSpline(points: SplinePoint[]): MonotoneCubicSpline {
 function createInverseSpeedSpline(points: SplinePoint[]): MonotoneCubicSpline {
   const speedSpline = new MonotoneCubicSpline(points);
 
-  // 1. Get max source time (This is now in TICKS, e.g., 240,000 for 5 seconds)
-  const maxSourceTime = points[points.length - 1].time;
+  return createInverseSpeedSplineFromSampler(
+    points[points.length - 1].time,
+    (time) => speedSpline.at(time),
+  );
+}
 
+function createInverseSpeedSplineFromSampler(
+  maxSourceTime: number,
+  sampleSpeed: (time: number) => number,
+): MonotoneCubicSpline {
   // 2. DANGER ZONE FIX: Calculate steps based on PHYSICAL DURATION, not raw tick value.
   //    If we used maxSourceTime * 5 here, we would loop ~1.2 million times for a 5s clip.
   //    We maintain the original resolution density (~5 samples per second).
@@ -211,7 +262,7 @@ function createInverseSpeedSpline(points: SplinePoint[]): MonotoneCubicSpline {
     const midT = prevSourceTime + dt / 2;
 
     // speed is a unitless scalar (Multiplier), so no conversion needed.
-    const speed = Math.max(0.01, speedSpline.at(midT));
+    const speed = Math.max(0.01, sampleSpeed(midT));
 
     // dTimeline = Ticks / Scalar = TICKS
     const dTimeline = dt / speed;

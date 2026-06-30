@@ -26,6 +26,9 @@ COLOR_GRADE_FIXTURE_ROOT = (
     REPOSITORY_ROOT / "extension-fixtures" / "color-grade"
 )
 TRACKING_FIXTURE_ROOT = REPOSITORY_ROOT / "extension-fixtures" / "tracking"
+LAYOUT_PROMPT_FIXTURE_ROOT = (
+    REPOSITORY_ROOT / "extension-fixtures" / "layout-prompt"
+)
 SDK_ROOT = REPOSITORY_ROOT / "packages" / "extension-sdk"
 NODE_EXECUTABLE = shutil.which("node")
 TYPESCRIPT_CLI = (
@@ -69,6 +72,16 @@ def _copy_tracking_fixture_workspace(tmp_path: Path) -> Path:
     fixture = workspace / "extension-fixtures" / "tracking"
     fixture.parent.mkdir(parents=True)
     shutil.copytree(TRACKING_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_layout_prompt_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "layout-prompt"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(LAYOUT_PROMPT_FIXTURE_ROOT, fixture)
     shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return fixture
@@ -444,3 +457,40 @@ def test_tracking_fixture_runs_cancellable_job_through_approval_path(
         await runtime.stop()
 
     asyncio.run(scenario())
+
+
+def test_layout_prompt_fixture_builds_and_stages_through_approval(
+    tmp_path: Path,
+):
+    fixture = _copy_layout_prompt_fixture_workspace(tmp_path)
+    _build_template(fixture)
+    built_entry = fixture / "frontend" / "dist" / "index.js"
+    assert built_entry.is_file()
+    assert b"Layout prompt" in built_entry.read_bytes()
+    assert b"generation.toolbar" in built_entry.read_bytes()
+
+    extensions_root = tmp_path / "extensions"
+    extensions_root.mkdir()
+    shutil.copytree(fixture, extensions_root / "example.layout-prompt")
+    state_root = tmp_path / "state"
+    manager = ExtensionManager(
+        extensions_root,
+        ExtensionApprovalStore(state_root / "approvals.json"),
+    )
+    artifacts = FrontendArtifactStore(
+        state_root / "frontend-artifacts",
+        extensions_root,
+    )
+    pending = manager.scan(force_digest=True)[0]
+    assert pending.extension_id == "example.layout-prompt"
+    assert pending.digest is not None
+    artifacts.stage(pending, pending.digest)
+    manager.approve(pending.extension_id, pending.digest)
+
+    bundle = artifacts.read(
+        pending.extension_id,
+        pending.digest,
+        "index.js",
+    )
+    assert b"Visual layout prompt" in bundle
+    assert b"Apply JSON prompt" in bundle

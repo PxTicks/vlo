@@ -896,14 +896,37 @@ export interface ExtensionReactRuntime {
   readonly [exportName: string]: unknown;
 }
 
+/** Host-curated MUI controls without a duplicate emotion/theme tree. */
+export interface ExtensionMuiRuntime {
+  readonly [exportName: string]: unknown;
+}
+
+/** Host-native panel controls (PanelSection, SliderControl, inputs, and peers). */
+export interface ExtensionPanelUiRuntime {
+  readonly [exportName: string]: unknown;
+}
+
 /** Exact host singleton runtimes supplied to trusted frontend extensions. */
 export interface ExtensionHostRuntimeApi {
   readonly pixi: ExtensionPixiRuntime;
   readonly react: ExtensionReactRuntime;
+  readonly mui: ExtensionMuiRuntime;
+  readonly panelUi: ExtensionPanelUiRuntime;
 }
 
-export type ExtensionUiSlotId = "transformation-panel.before";
+/** Open string type; the host still accepts only slot regions it declares. */
+export type ExtensionUiSlotId = string;
 export type ExtensionUiNoticeTone = "info" | "success" | "warning";
+export type ExtensionUiModalSize = "small" | "medium" | "large";
+
+export interface ExtensionUiComponentProps {
+  readonly slot: ExtensionUiSlotId;
+}
+
+export interface ExtensionUiModalComponentProps {
+  readonly input?: JsonValue;
+  close(result?: JsonValue): void;
+}
 
 /** Declarative native UI contribution suitable for future restricted mode. */
 export interface ExtensionUiNoticeDefinition {
@@ -914,6 +937,7 @@ export interface ExtensionUiNoticeDefinition {
   readonly title: string;
   readonly message: string;
   readonly tone?: ExtensionUiNoticeTone;
+  readonly order?: number;
 }
 
 export interface ExtensionUiRegistration extends ExtensionDisposable {
@@ -927,6 +951,11 @@ export interface ExtensionUiApi {
   registerComponent(
     definition: ExtensionTrustedUiComponentDefinition,
   ): ExtensionUiRegistration;
+  registerModal(
+    definition: ExtensionTrustedUiModalDefinition,
+  ): ExtensionUiRegistration;
+  /** Opens one modal registered by the calling extension. */
+  openModal(id: string, input?: JsonValue): Promise<JsonValue | undefined>;
 }
 
 /** Arbitrary React component rendered inside a host-owned, isolated slot. */
@@ -935,13 +964,63 @@ export interface ExtensionTrustedUiComponentDefinition {
   readonly apiVersion: 1;
   readonly slot: ExtensionUiSlotId;
   readonly kind: "trusted-react";
-  readonly component: () => unknown;
+  readonly order?: number;
+  readonly component: (props: ExtensionUiComponentProps) => unknown;
+}
+
+/** Arbitrary trusted React rendered inside a host-owned MUI dialog. */
+export interface ExtensionTrustedUiModalDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly kind: "trusted-modal";
+  readonly title: string;
+  readonly size?: ExtensionUiModalSize;
+  readonly component: (props: ExtensionUiModalComponentProps) => unknown;
+}
+
+export interface ExtensionGenerationInputSnapshot {
+  readonly id: string;
+  readonly nodeId: string;
+  readonly param: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly inputType: "text" | "image" | "video" | "audio";
+  readonly value?: JsonValue;
+}
+
+export interface ExtensionGenerationTransaction {
+  setTextInput(inputId: string, value: string): void;
+}
+
+export type ExtensionGenerationTransactionResult =
+  | { readonly ok: true; readonly changed: boolean; readonly label: string }
+  | {
+      readonly ok: false;
+      readonly code:
+        | "unavailable"
+        | "invalid_label"
+        | "invalid_command"
+        | "input_not_found"
+        | "input_type_mismatch"
+        | "callback_failed";
+      readonly message: string;
+      readonly label: string;
+    };
+
+/** User-event API for the currently mounted generation/workflow panel. */
+export interface ExtensionGenerationApi {
+  listInputs(): readonly ExtensionGenerationInputSnapshot[];
+  transaction(
+    label: string,
+    callback: (transaction: ExtensionGenerationTransaction) => void,
+  ): ExtensionGenerationTransactionResult;
 }
 
 export interface VloExtensionApi {
   readonly runtime: ExtensionHostRuntimeApi;
   readonly backend: ExtensionBackendApi;
   readonly assets: ExtensionAssetApi;
+  readonly generation: ExtensionGenerationApi;
   /** Trusted-first scalar, keyframe-segment, and spatial-path contributions. */
   readonly animation: ExtensionAnimationApi;
   readonly payloadProviders: ExtensionPayloadProviderApi;

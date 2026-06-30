@@ -1,8 +1,6 @@
 import {
-  Component,
   useSyncExternalStore,
-  type ErrorInfo,
-  type ReactNode,
+  type ComponentType,
 } from "react";
 import { Alert, Box, Button } from "@mui/material";
 import { ArrowBack } from "@mui/icons-material";
@@ -12,47 +10,7 @@ import type {
   ExtensionSpatialPathParameter,
 } from "../../extensions/types";
 import { extensionSpatialPathRegistry } from "../animation";
-
-interface ExtensionPathEditorBoundaryProps {
-  readonly contributionId: string;
-  readonly report: (
-    level: "error",
-    message: string,
-    detail?: unknown,
-  ) => void;
-  readonly children: ReactNode;
-}
-
-interface ExtensionPathEditorBoundaryState {
-  readonly failed: boolean;
-}
-
-class ExtensionPathEditorBoundary extends Component<
-  ExtensionPathEditorBoundaryProps,
-  ExtensionPathEditorBoundaryState
-> {
-  state: ExtensionPathEditorBoundaryState = { failed: false };
-
-  static getDerivedStateFromError(): ExtensionPathEditorBoundaryState {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    this.props.report(
-      "error",
-      `Extension spatial-path editor '${this.props.contributionId}' failed to render.`,
-      { error, componentStack: info.componentStack },
-    );
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? (
-      <Alert severity="error">The extension path editor failed.</Alert>
-    ) : (
-      this.props.children
-    );
-  }
-}
+import { ExtensionTrustedReactMount } from "../../extensions/ui/ExtensionTrustedReactMount";
 
 export interface ExtensionSpatialPathDetailViewProps {
   readonly path: ExtensionSpatialPathParameter;
@@ -76,7 +34,7 @@ export function ExtensionSpatialPathDetailView({
   );
   const contribution = extensionSpatialPathRegistry.get(path.geometry);
   const Editor = contribution?.definition.editor as
-    | ((props: ExtensionSpatialPathEditorProps) => ReactNode)
+    | ComponentType<ExtensionSpatialPathEditorProps>
     | undefined;
 
   return (
@@ -95,17 +53,18 @@ export function ExtensionSpatialPathDetailView({
           This spatial-path provider is missing or does not provide an editor.
         </Alert>
       ) : (
-        <ExtensionPathEditorBoundary
+        <ExtensionTrustedReactMount
           contributionId={contribution.id}
+          surface="Extension spatial-path editor"
           report={contribution.definition.report}
-        >
-          <Editor
-            value={path}
-            domain={{ minTime: 0, duration }}
-            currentTime={currentTime}
-            onChange={onChange}
-          />
-        </ExtensionPathEditorBoundary>
+          component={Editor}
+          componentProps={{
+            value: path,
+            domain: { minTime: 0, duration },
+            currentTime,
+            onChange,
+          }}
+        />
       )}
 
       <Button variant="outlined" color="error" onClick={onRemove}>

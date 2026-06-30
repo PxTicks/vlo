@@ -1,7 +1,8 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ExtensionApiScope, ExtensionResource } from "../..";
+import type { ExtensionApiScope, ExtensionResource, JsonValue } from "../..";
 import { ExtensionUiSlot } from "../ExtensionUiSlot";
+import { ExtensionModalHost } from "../ExtensionModalHost";
 import {
   ExtensionUiSlotRegistry,
   extensionUiSlotRegistry,
@@ -76,6 +77,15 @@ describe("ExtensionUiSlot", () => {
       }),
     ).toThrow(/message must be a non-empty string/);
     expect(registry.list("transformation-panel.before")).toEqual([]);
+    expect(() =>
+      api.registerComponent({
+        id: "unknown-slot",
+        apiVersion: 1,
+        slot: "undeclared.surface",
+        kind: "trusted-react",
+        component: () => null,
+      }),
+    ).toThrow(/undeclared host slot/);
   });
 
   it("renders and isolates trusted React component contributions", () => {
@@ -124,5 +134,54 @@ describe("ExtensionUiSlot", () => {
       expect.objectContaining({ error: expect.any(Error) }),
     );
     registration.dispose();
+  });
+
+  it("hosts owner-bound trusted modals and resolves their result", async () => {
+    const api = extensionUiSlotRegistry.bind(createScope("example.modal"));
+    const registration = api.registerModal({
+      id: "prompt-builder",
+      apiVersion: 1,
+      kind: "trusted-modal",
+      title: "Prompt builder",
+      component: ({ input, close }) => (
+        <button
+          type="button"
+          onClick={() => close({ accepted: input ?? null })}
+        >
+          Apply modal
+        </button>
+      ),
+    });
+    let result: Promise<JsonValue | undefined>;
+    act(() => {
+      result = api.openModal("prompt-builder", { source: "generation" });
+    });
+    expect(
+      extensionUiSlotRegistry.getActiveModal()?.contribution.definition,
+    ).toMatchObject({ kind: "trusted-modal", size: "medium" });
+    render(<ExtensionModalHost />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply modal" }));
+    await expect(result!).resolves.toEqual({
+      accepted: { source: "generation" },
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    registration.dispose();
+  });
+
+  it("closes an active modal when its owner registration is disposed", async () => {
+    const api = extensionUiSlotRegistry.bind(createScope("example.modal-dispose"));
+    const registration = api.registerModal({
+      id: "temporary",
+      apiVersion: 1,
+      kind: "trusted-modal",
+      title: "Temporary",
+      component: () => null,
+    });
+    const result = api.openModal("temporary");
+
+    act(() => registration.dispose());
+
+    await expect(result).resolves.toBeUndefined();
   });
 });

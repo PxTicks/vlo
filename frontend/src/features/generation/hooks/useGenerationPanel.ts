@@ -1260,17 +1260,29 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     ],
   );
 
-  const handleTextValueCommit = useCallback(
-    (inputId: string, value: string) => {
+  const handleTextValuesCommit = useCallback(
+    (updates: ReadonlyMap<string, string>) => {
       clearPendingReplayPanelState();
-      const canonicalInputId =
-        resolveWorkflowInputKeys(inputId, workflowInputById)[0] ?? inputId;
       setTextValues((prev) => {
-        if (prev[canonicalInputId] === value) return prev;
-        return { ...prev, [canonicalInputId]: value };
+        let next = prev;
+        for (const [inputId, value] of updates) {
+          const canonicalInputId =
+            resolveWorkflowInputKeys(inputId, workflowInputById)[0] ?? inputId;
+          if (next[canonicalInputId] === value) continue;
+          if (next === prev) next = { ...prev };
+          next[canonicalInputId] = value;
+        }
+        return next;
       });
     },
     [clearPendingReplayPanelState, workflowInputById],
+  );
+
+  const handleTextValueCommit = useCallback(
+    (inputId: string, value: string) => {
+      handleTextValuesCommit(new Map([[inputId, value]]));
+    },
+    [handleTextValuesCommit],
   );
 
   const handleWidgetChange = useCallback(
@@ -1405,6 +1417,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     setUrlInput,
     textValues,
     handleTextValueCommit,
+    handleTextValuesCommit,
     mediaInputs,
 
     // Widget state

@@ -13,6 +13,7 @@ import { extensionTransformationRegistry } from "../../transformations/extension
 import { createExtensionAnimationApi } from "../../transformations/animation";
 import { createExtensionBackendApi } from "../backend/createExtensionBackendApi";
 import { createExtensionAssetApi } from "../assets/createExtensionAssetApi";
+import { createExtensionGenerationApi } from "../generation/ExtensionGenerationBridge";
 import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
@@ -323,6 +324,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       runtime: extensionHostRuntimeApi,
       backend: createExtensionBackendApi(scope),
       assets: createExtensionAssetApi(scope),
+      generation: createExtensionGenerationApi(scope),
       animation: createExtensionAnimationApi(scope),
       payloadProviders: extensionPayloadProviderRegistry.bind(scope),
       entityProviders: extensionEntityProviderRegistry.bind(scope),

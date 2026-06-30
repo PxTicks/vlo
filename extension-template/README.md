@@ -23,11 +23,22 @@ directory by hand; rebuild it before approval.
 - `@vlo/extension-sdk` is type-only. Import it with `import type`; runtime access is
   supplied through the host-owned activation context.
 - Trusted frontend extensions receive the host's exact Pixi and React singletons as
-  `context.api.runtime.pixi` and `context.api.runtime.react`. Transformation
+  `context.api.runtime.pixi` and `context.api.runtime.react`, plus host-curated MUI and
+  native panel-control namespaces as `runtime.mui` and `runtime.panelUi`. Transformation
   factories may create arbitrary Pixi filters, including custom GLSL/WGSL shaders;
   trusted React component slots may use the supplied React runtime. Declarative
   host filters and native notices remain available as simpler, restricted-ready
   alternatives.
+- All trusted React surfaces use the same host mount and error boundary. Register
+  ordinary content with `context.api.ui.registerComponent(...)` in a declared slot
+  such as `transformation-panel.before` or `generation.toolbar`; register larger
+  workflows with `registerModal(...)` and open them by local id with `openModal(...)`.
+  The host owns dialog placement, escape/close behaviour, lifecycle, and isolation.
+- Generation tools can inspect the active workflow through
+  `context.api.generation.listInputs()`. Put one or more prompt changes in a labelled,
+  synchronous `generation.transaction(...)`; the host validates the complete batch
+  and applies it as one panel-state update. The API deliberately targets workflow
+  inputs rather than ComfyUI DOM nodes.
 - Pixi factories return `{ object, update, destroy? }`. The host validates and
   attaches `object`, calls `update` with resolved parameters, detaches it, and owns
   final Pixi destruction. `destroy` is only for additional extension-owned

@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import type { ComponentType } from "react";
 import { Alert } from "@mui/material";
 import type {
   ExtensionInterpolationEditorProps,
@@ -16,47 +16,7 @@ import {
 import { resolveScalar } from "../utils/resolveScalar";
 import type { GraphTimeAxis } from "../utils/clipTimeDomains";
 import { SplineGraph } from "./SplineEditor";
-
-interface ExtensionScalarEditorBoundaryProps {
-  readonly contributionId: string;
-  readonly report: (
-    level: "error",
-    message: string,
-    detail?: unknown,
-  ) => void;
-  readonly children: ReactNode;
-}
-
-interface ExtensionScalarEditorBoundaryState {
-  readonly failed: boolean;
-}
-
-class ExtensionScalarEditorBoundary extends Component<
-  ExtensionScalarEditorBoundaryProps,
-  ExtensionScalarEditorBoundaryState
-> {
-  state: ExtensionScalarEditorBoundaryState = { failed: false };
-
-  static getDerivedStateFromError(): ExtensionScalarEditorBoundaryState {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    this.props.report(
-      "error",
-      `Extension animation editor '${this.props.contributionId}' failed to render.`,
-      { error, componentStack: info.componentStack },
-    );
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? (
-      <Alert severity="error">The extension animation editor failed.</Alert>
-    ) : (
-      this.props.children
-    );
-  }
-}
+import { ExtensionTrustedReactMount } from "../../extensions/ui/ExtensionTrustedReactMount";
 
 export interface ExtensionScalarEditorProps {
   readonly value: ScalarParameter;
@@ -97,7 +57,7 @@ export function ExtensionScalarEditor({
   if (isExtensionScalarSourceParameter(value)) {
     const contribution = extensionScalarSourceRegistry.get(value.source);
     const Editor = contribution?.definition.editor as
-      | ((props: ExtensionScalarSourceEditorProps) => ReactNode)
+      | ComponentType<ExtensionScalarSourceEditorProps>
       | undefined;
     if (!contribution || !Editor) {
       return (
@@ -107,17 +67,21 @@ export function ExtensionScalarEditor({
       );
     }
     return (
-      <ExtensionScalarEditorBoundary
+      <ExtensionTrustedReactMount
         contributionId={contribution.id}
+        surface="Extension animation editor"
         report={contribution.definition.report}
-      >
-        <Editor
-          value={value}
-          domain={domain}
-          sample={(time) => resolveScalar(value, time)}
-          onChange={onChange}
-        />
-      </ExtensionScalarEditorBoundary>
+        component={Editor}
+        componentProps={{
+          value,
+          domain,
+          sample: (time) => resolveScalar(value, time),
+          onChange,
+        }}
+        fallback={
+          <Alert severity="error">The extension animation editor failed.</Alert>
+        }
+      />
     );
   }
 
@@ -133,7 +97,7 @@ export function ExtensionScalarEditor({
       ? extensionInterpolationRegistry.get(payload)
       : undefined;
     const Editor = contribution?.definition.editor as
-      | ((props: ExtensionInterpolationEditorProps) => ReactNode)
+      | ComponentType<ExtensionInterpolationEditorProps>
       | undefined;
     if (!contribution || !Editor || segmentIndex < 0) {
       const fallbackOutgoing = value.keyframes.find(
@@ -173,18 +137,22 @@ export function ExtensionScalarEditor({
       );
     }
     return (
-      <ExtensionScalarEditorBoundary
+      <ExtensionTrustedReactMount
         contributionId={contribution.id}
+        surface="Extension animation editor"
         report={contribution.definition.report}
-      >
-        <Editor
-          value={value}
-          segmentIndex={segmentIndex}
-          domain={domain}
-          sample={(time) => resolveScalar(value, time)}
-          onChange={onChange}
-        />
-      </ExtensionScalarEditorBoundary>
+        component={Editor}
+        componentProps={{
+          value,
+          segmentIndex,
+          domain,
+          sample: (time) => resolveScalar(value, time),
+          onChange,
+        }}
+        fallback={
+          <Alert severity="error">The extension animation editor failed.</Alert>
+        }
+      />
     );
   }
 

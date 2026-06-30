@@ -1,65 +1,44 @@
-import {
-  Component,
-  useSyncExternalStore,
-  type ErrorInfo,
-  type ReactNode,
-} from "react";
+import { useSyncExternalStore, type ComponentType } from "react";
 import { Alert, AlertTitle, Box } from "@mui/material";
-import type { ExtensionUiSlotId } from "../types";
+import type {
+  ExtensionUiComponentProps,
+  ExtensionUiSlotId,
+} from "../types";
 import {
   extensionUiSlotRegistry,
   type RegisteredExtensionUiContribution,
 } from "./ExtensionUiSlotRegistry";
-
-interface ExtensionUiContributionBoundaryProps {
-  contribution: RegisteredExtensionUiContribution;
-  children: ReactNode;
-}
-
-interface ExtensionUiContributionBoundaryState {
-  failed: boolean;
-}
-
-class ExtensionUiContributionBoundary extends Component<
-  ExtensionUiContributionBoundaryProps,
-  ExtensionUiContributionBoundaryState
-> {
-  state: ExtensionUiContributionBoundaryState = { failed: false };
-
-  static getDerivedStateFromError(): ExtensionUiContributionBoundaryState {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    this.props.contribution.definition.report(
-      "error",
-      `UI contribution '${this.props.contribution.id}' failed to render.`,
-      { error, componentStack: info.componentStack },
-    );
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? null : this.props.children;
-  }
-}
+import { ExtensionTrustedReactMount } from "./ExtensionTrustedReactMount";
 
 export interface ExtensionUiSlotProps {
-  slot: ExtensionUiSlotId;
-}
-
-interface TrustedExtensionComponentProps {
-  contribution: RegisteredExtensionUiContribution;
+  readonly slot: ExtensionUiSlotId;
+  readonly presentation?: "stack" | "inline";
 }
 
 function TrustedExtensionComponent({
   contribution,
-}: TrustedExtensionComponentProps) {
+}: {
+  readonly contribution: RegisteredExtensionUiContribution;
+}) {
   if (contribution.definition.kind !== "trusted-react") return null;
-  const Component = contribution.definition.component as () => ReactNode;
-  return <Component />;
+  const component = contribution.definition.component as ComponentType<
+    ExtensionUiComponentProps
+  >;
+  return (
+    <ExtensionTrustedReactMount
+      contributionId={contribution.id}
+      surface="UI contribution"
+      report={contribution.definition.report}
+      component={component}
+      componentProps={{ slot: contribution.definition.slot }}
+    />
+  );
 }
 
-export function ExtensionUiSlot({ slot }: ExtensionUiSlotProps) {
+export function ExtensionUiSlot({
+  slot,
+  presentation = "stack",
+}: ExtensionUiSlotProps) {
   useSyncExternalStore(
     (listener) => extensionUiSlotRegistry.subscribe(listener),
     () => extensionUiSlotRegistry.getRevision(),
@@ -69,31 +48,35 @@ export function ExtensionUiSlot({ slot }: ExtensionUiSlotProps) {
   if (contributions.length === 0) return null;
 
   return (
-    <Box data-testid={`extension-ui-slot-${slot}`} sx={{ px: 1, pt: 1 }}>
-      {contributions.map((contribution) => (
-        <ExtensionUiContributionBoundary
-          key={contribution.id}
-          contribution={contribution}
-        >
-          {contribution.definition.kind === "notice" ? (
-            <Alert
-              data-testid={`extension-ui-contribution-${contribution.id}`}
-              severity={contribution.definition.tone}
-              sx={{ mb: 1 }}
-            >
-              <AlertTitle>{contribution.definition.title}</AlertTitle>
-              {contribution.definition.message}
-            </Alert>
-          ) : (
-            <Box
-              data-testid={`extension-ui-contribution-${contribution.id}`}
-              sx={{ mb: 1 }}
-            >
-              <TrustedExtensionComponent contribution={contribution} />
-            </Box>
-          )}
-        </ExtensionUiContributionBoundary>
-      ))}
+    <Box
+      data-testid={`extension-ui-slot-${slot}`}
+      sx={
+        presentation === "inline"
+          ? { display: "flex", alignItems: "center", gap: 1 }
+          : { px: 1, pt: 1 }
+      }
+    >
+      {contributions.map((contribution) =>
+        contribution.definition.kind === "notice" ? (
+          <Alert
+            key={contribution.id}
+            data-testid={`extension-ui-contribution-${contribution.id}`}
+            severity={contribution.definition.tone}
+            sx={presentation === "stack" ? { mb: 1 } : undefined}
+          >
+            <AlertTitle>{contribution.definition.title}</AlertTitle>
+            {contribution.definition.message}
+          </Alert>
+        ) : contribution.definition.kind === "trusted-react" ? (
+          <Box
+            key={contribution.id}
+            data-testid={`extension-ui-contribution-${contribution.id}`}
+            sx={presentation === "stack" ? { mb: 1 } : undefined}
+          >
+            <TrustedExtensionComponent contribution={contribution} />
+          </Box>
+        ) : null,
+      )}
     </Box>
   );
 }

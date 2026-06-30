@@ -1,9 +1,7 @@
 import {
-  Component,
   useCallback,
   useSyncExternalStore,
-  type ErrorInfo,
-  type ReactNode,
+  type ComponentType,
 } from "react";
 import { Alert, Box } from "@mui/material";
 import type { ExtensionTimelineClip } from "../../../types/TimelineTypes";
@@ -16,44 +14,8 @@ import type {
 import { extensionPayloadProviderRegistry } from "../persistence/ExtensionPayloadProviderRegistry";
 import {
   extensionEntityProviderRegistry,
-  type RegisteredExtensionEntityProvider,
 } from "./ExtensionEntityProviderRegistry";
-
-interface InspectorBoundaryProps {
-  readonly provider: RegisteredExtensionEntityProvider;
-  readonly children: ReactNode;
-}
-
-interface InspectorBoundaryState {
-  readonly failed: boolean;
-}
-
-class InspectorBoundary extends Component<
-  InspectorBoundaryProps,
-  InspectorBoundaryState
-> {
-  state: InspectorBoundaryState = { failed: false };
-
-  static getDerivedStateFromError(): InspectorBoundaryState {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    this.props.provider.definition.report(
-      "error",
-      `Entity inspector '${this.props.provider.id}' failed to render.`,
-      { error, componentStack: info.componentStack },
-    );
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? (
-      <Alert severity="error">Extension property UI failed to render.</Alert>
-    ) : (
-      this.props.children
-    );
-  }
-}
+import { ExtensionTrustedReactMount } from "../ui/ExtensionTrustedReactMount";
 
 function failedUpdate(message: string): ExtensionTimelineTransactionResult {
   return {
@@ -62,18 +24,6 @@ function failedUpdate(message: string): ExtensionTimelineTransactionResult {
     message,
     label: "Update extension entity",
   };
-}
-
-interface TrustedInspectorProps {
-  readonly provider: RegisteredExtensionEntityProvider;
-  readonly props: ExtensionEntityInspectorProps;
-}
-
-function TrustedInspector({ provider, props }: TrustedInspectorProps) {
-  const Inspector = provider.definition.inspector as (
-    props: ExtensionEntityInspectorProps,
-  ) => ReactNode;
-  return <Inspector {...props} />;
 }
 
 export interface ExtensionEntityInspectorPropsInternal {
@@ -136,15 +86,25 @@ export function ExtensionEntityInspector({
     schemaVersion: resolution.payload.schemaVersion,
     updateData,
   };
+  const Inspector = provider.definition.inspector as ComponentType<
+    ExtensionEntityInspectorProps
+  >;
 
   return (
     <Box
       data-testid={`extension-entity-inspector-${provider.id}`}
       sx={{ px: 1, pt: 1 }}
     >
-      <InspectorBoundary provider={provider}>
-        <TrustedInspector provider={provider} props={inspectorProps} />
-      </InspectorBoundary>
+      <ExtensionTrustedReactMount
+        contributionId={provider.id}
+        surface="Entity inspector"
+        report={provider.definition.report}
+        component={Inspector}
+        componentProps={inspectorProps}
+        fallback={
+          <Alert severity="error">Extension property UI failed to render.</Alert>
+        }
+      />
     </Box>
   );
 }

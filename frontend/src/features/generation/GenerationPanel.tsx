@@ -67,6 +67,13 @@ import { resolveNodeDisplayTitle } from "./services/nodeTitles";
 import { isAspectRatioWidget } from "./utils/aspectRatioWidgets";
 import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResolver";
 import { buildWorkflowMenuSections } from "./store/workflowCatalog";
+import {
+  buildWorkflowInputLookup,
+  getWorkflowInputId,
+  getWorkflowInputValue,
+} from "./utils/workflowInputs";
+import { ExtensionUiSlot } from "../extensions/ui/publicApi";
+import { extensionGenerationBridge } from "../extensions/generation/ExtensionGenerationBridge";
 
 const EXACT_ASPECT_RATIO_TOOLTIP =
   "If selected, this will make the output aspect ratio exactly match the input ratio, even if it doesn't match the project-supported aspect ratios. If unselected, it will crop the image to the best supported fit before dispatch.";
@@ -283,6 +290,7 @@ export function GenerationPanel() {
     setUrlInput,
     textValues,
     handleTextValueCommit,
+    handleTextValuesCommit,
     mediaInputs,
 
     // Widget state
@@ -398,6 +406,46 @@ export function GenerationPanel() {
   const displayWidgetInputs = useMemo(
     () => [...pipelineWidgetInputs, ...widgetInputs],
     [pipelineWidgetInputs, widgetInputs],
+  );
+  const extensionGenerationInputLookup = useMemo(
+    () => buildWorkflowInputLookup(workflowInputs),
+    [workflowInputs],
+  );
+  const extensionGenerationInputs = useMemo(
+    () =>
+      workflowInputs.map((input) => {
+        const id = getWorkflowInputId(input);
+        const textValue =
+          input.inputType === "text"
+            ? (getWorkflowInputValue(
+                textValues,
+                input,
+                extensionGenerationInputLookup,
+              ) ??
+              (typeof input.currentValue === "string"
+                ? input.currentValue
+                : ""))
+            : undefined;
+        return Object.freeze({
+          id,
+          nodeId: input.nodeId,
+          param: input.param,
+          label: input.label,
+          ...(input.description ? { description: input.description } : {}),
+          inputType: input.inputType,
+          ...(textValue !== undefined ? { value: textValue } : {}),
+        });
+      }),
+    [extensionGenerationInputLookup, textValues, workflowInputs],
+  );
+
+  useEffect(
+    () =>
+      extensionGenerationBridge.mount({
+        listInputs: () => extensionGenerationInputs,
+        commitTextInputs: handleTextValuesCommit,
+      }),
+    [extensionGenerationInputs, handleTextValuesCommit],
   );
   const exactAspectRatioWidgetKey = useMemo(() => {
     if (!showRulesResolutionSelector) {
@@ -912,6 +960,7 @@ export function GenerationPanel() {
         }}
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <ExtensionUiSlot slot="generation.toolbar" presentation="inline" />
           <Chip
             data-testid="generation-connection-chip"
             size="small"
@@ -1096,29 +1145,32 @@ export function GenerationPanel() {
           ) : null}
 
           {!isWorkflowLoading && !workflowLoadError ? (
-            <GenerationInputs
-              inputs={workflowInputs}
-              sections={activeWorkflowRules?.sections ?? []}
-              textValues={textValues}
-              onTextValueCommit={handleTextValueCommit}
-              mediaInputs={mediaInputs}
-              onInputDrop={handleInputDrop}
-              onExternalInputDrop={handleExternalInputDrop}
-              onInputClear={handleInputClear}
-              onSwapMediaInputs={handleSwapMediaInputs}
-              onClickSelect={handleClickSelect}
-              onEditMedia={handleEditMedia}
-              widgetInputs={displayWidgetInputs}
-              widgetValues={widgetValues}
-              randomizeToggles={randomizeToggles}
-              onWidgetChange={handleDisplayedWidgetChange}
-              onToggleRandomize={handleToggleRandomize}
-              showExactAspectRatioControl={showRulesResolutionSelector}
-              exactAspectRatioWidgetKey={exactAspectRatioWidgetKey}
-              exactAspectRatio={exactAspectRatio}
-              onExactAspectRatioChange={setExactAspectRatio}
-              exactAspectRatioTooltip={EXACT_ASPECT_RATIO_TOOLTIP}
-            />
+            <>
+              <GenerationInputs
+                inputs={workflowInputs}
+                sections={activeWorkflowRules?.sections ?? []}
+                textValues={textValues}
+                onTextValueCommit={handleTextValueCommit}
+                mediaInputs={mediaInputs}
+                onInputDrop={handleInputDrop}
+                onExternalInputDrop={handleExternalInputDrop}
+                onInputClear={handleInputClear}
+                onSwapMediaInputs={handleSwapMediaInputs}
+                onClickSelect={handleClickSelect}
+                onEditMedia={handleEditMedia}
+                widgetInputs={displayWidgetInputs}
+                widgetValues={widgetValues}
+                randomizeToggles={randomizeToggles}
+                onWidgetChange={handleDisplayedWidgetChange}
+                onToggleRandomize={handleToggleRandomize}
+                showExactAspectRatioControl={showRulesResolutionSelector}
+                exactAspectRatioWidgetKey={exactAspectRatioWidgetKey}
+                exactAspectRatio={exactAspectRatio}
+                onExactAspectRatioChange={setExactAspectRatio}
+                exactAspectRatioTooltip={EXACT_ASPECT_RATIO_TOOLTIP}
+              />
+              <ExtensionUiSlot slot="generation.inputs.after" />
+            </>
           ) : null}
 
           {effectiveWorkflowMode === "manual" ? (

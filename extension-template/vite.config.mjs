@@ -34,8 +34,8 @@ function extensionBundleGuard() {
       ) {
         throw new Error(
           `Host singleton '${source}' cannot be imported by SDK 1 extensions. ` +
-            "Use only the type-only @vlo/extension-sdk contract until the host " +
-            "provides a versioned runtime module mapping.",
+            "Use the type-only @vlo/extension-sdk contract and the singleton " +
+            "namespaces injected through context.api.runtime.",
         );
       }
       return null;

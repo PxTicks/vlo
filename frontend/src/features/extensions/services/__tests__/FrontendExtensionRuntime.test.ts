@@ -14,6 +14,8 @@ import { extensionUiSlotRegistry } from "../../ui/ExtensionUiSlotRegistry";
 import { Container, Filter } from "pixi.js";
 import { createElement } from "react";
 import { extensionEntityProviderRegistry } from "../../entities/publicApi";
+import { Button } from "@mui/material";
+import { PanelSection } from "../../../panelUI";
 
 interface TestContribution extends ExtensionContributionDefinition {
   value: string;
@@ -122,6 +124,8 @@ describe("FrontendExtensionRuntime", () => {
         activate: (context: { api: VloExtensionApi }) => {
           expect(context.api.runtime.pixi.Filter).toBe(Filter);
           expect(context.api.runtime.react.createElement).toBe(createElement);
+          expect(context.api.runtime.mui.Button).toBe(Button);
+          expect(context.api.runtime.panelUi.PanelSection).toBe(PanelSection);
           context.api.transformations.register({
             id: "film-grade",
             apiVersion: 1,

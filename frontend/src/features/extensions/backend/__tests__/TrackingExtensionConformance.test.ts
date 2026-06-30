@@ -104,6 +104,8 @@ function createConformanceApi() {
     runtime: {
       pixi: {} as VloExtensionApi["runtime"]["pixi"],
       react: { createElement: () => ({}) },
+      mui: {},
+      panelUi: {},
     },
     backend: {
       call: async () => new Response(),
@@ -134,6 +136,10 @@ function createConformanceApi() {
         fps: 30,
       }),
       readBlob,
+    },
+    generation: {
+      listInputs: () => [],
+      transaction: (label) => ({ ok: true, changed: false, label }),
     },
     animation: {
       scalarSources: {
@@ -199,6 +205,11 @@ function createConformanceApi() {
         uiDefinition = definition;
         return { id: definition.id, dispose: () => undefined };
       },
+      registerModal: (definition) => ({
+        id: definition.id,
+        dispose: () => undefined,
+      }),
+      openModal: async () => undefined,
     },
   };
   return {

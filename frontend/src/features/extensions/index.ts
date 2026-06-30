@@ -89,6 +89,24 @@ export type {
   ExtensionTrustedSpatialPathOverlayInstance,
 } from "./types";
 export type {
+  ExtensionAssetApi,
+  ExtensionBackendApi,
+  ExtensionBackendArtifact,
+  ExtensionBackendArtifactUploadOptions,
+  ExtensionBackendJobDiagnostic,
+  ExtensionBackendJobReadiness,
+  ExtensionBackendJobSnapshot,
+  ExtensionBackendJobStatus,
+  ExtensionBackendJobType,
+  ExtensionBackendJobWaitOptions,
+  ExtensionTimelineClipSnapshot,
+  ExtensionTimelineProjectSnapshot,
+  ExtensionSourceDimensions,
+  ExtensionTimelineTransformInput,
+  ExtensionTimelineTransformSnapshot,
+} from "./types";
+export { ExtensionBackendApiError } from "./backend/createExtensionBackendApi";
+export type {
   ExtensionActivationState,
   ExtensionActivationStatus,
   ExtensionApiFactory,

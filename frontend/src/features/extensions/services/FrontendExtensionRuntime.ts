@@ -11,6 +11,8 @@ import { extensionEntityProviderRegistry } from "../entities/ExtensionEntityProv
 import { createExtensionTimelineApi } from "../timeline/createExtensionTimelineApi";
 import { extensionTransformationRegistry } from "../../transformations/extensionApi";
 import { createExtensionAnimationApi } from "../../transformations/animation";
+import { createExtensionBackendApi } from "../backend/createExtensionBackendApi";
+import { createExtensionAssetApi } from "../assets/createExtensionAssetApi";
 import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
@@ -319,6 +321,8 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
   (scope) =>
     Object.freeze({
       runtime: extensionHostRuntimeApi,
+      backend: createExtensionBackendApi(scope),
+      assets: createExtensionAssetApi(scope),
       animation: createExtensionAnimationApi(scope),
       payloadProviders: extensionPayloadProviderRegistry.bind(scope),
       entityProviders: extensionEntityProviderRegistry.bind(scope),

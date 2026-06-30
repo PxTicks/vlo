@@ -66,7 +66,22 @@ directory by hand; rebuild it before approval.
   hand-written build can bypass it, but may then fail at activation or silently load
   incompatible singleton copies. Host-side bundle validation is future work.
 - The backend is trusted in-process Python. Keep `create_extension` lightweight;
-  defer model loading and long work to requests or future job APIs.
+  defer model loading and long work to a `BackendJobDefinition`. Jobs receive
+  extension-scoped uploaded inputs and output-artifact creation, progress,
+  cancellation checks, and structured diagnostics. Declare readiness and validate
+  both input and output. A job deadline marks ignored work terminal but cannot kill a
+  synchronous Python thread; cooperative runners must call
+  `context.raise_if_cancelled()` regularly. Keep synchronous readiness and validation
+  callbacks lightweight as well; use the job runner for expensive work.
+- Trusted frontend code uses `context.api.assets.readBlob(...)` followed by
+  `context.api.backend.uploadArtifact(...)`; the backend must not assume it can open
+  browser-selected project paths. Prefer the standard `submitJob`/`waitForJob` API.
+  `backend.call(...)` remains the owner-bound raw-route escape hatch.
+- Tracking-style integrations can use `context.api.timeline.sourceFrameToTicks(...)`
+  plus `clipProgressToSourceTicks(...)`/`sourceTicksToClipProgress(...)` to cross a
+  clip's crop and speed clock. `sourcePointToProject(...)` maps declared source pixels
+  into centred project coordinates. Show a local/non-committing preview first, then
+  put all persisted writes in one labelled `timeline.transaction(...)`.
 - Backend SDK 1 deliberately imports the host's supported `services.extensions`
   barrel. Do not import its deeper internal modules; a standalone Python authoring
   package does not exist yet.

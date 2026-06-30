@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,6 +18,11 @@ from services.extensions import (
     BackendArtifactError,
     BackendArtifactStore,
     BackendExtensionRuntime,
+    BackendJobCapacityError,
+    BackendJobError,
+    BackendJobNotFoundError,
+    BackendJobNotReadyError,
+    BackendJobValidationError,
     ExtensionApprovalStateError,
     ExtensionApprovalStore,
     ExtensionInventoryError,
@@ -25,6 +30,9 @@ from services.extensions import (
     ExtensionManager,
     FrontendArtifactError,
     FrontendArtifactStore,
+    ExtensionJobArtifactError,
+    ExtensionJobArtifactNotFoundError,
+    ExtensionJobArtifactTooLargeError,
 )
 
 router = APIRouter(prefix="/app/extensions", tags=["extensions"])
@@ -34,6 +42,13 @@ class ExtensionApprovalRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class BackendJobSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input: object = None
+    artifacts: list[str] = Field(default_factory=list, max_length=32)
 
 
 @dataclass(frozen=True)
@@ -164,6 +179,51 @@ def _mutation_error_response(error: ExtensionInventoryError) -> JSONResponse:
     )
 
 
+def _backend_job_error_response(error: Exception) -> JSONResponse:
+    if isinstance(error, (BackendJobNotFoundError, ExtensionJobArtifactNotFoundError)):
+        return error_response(
+            404,
+            "extension_job_not_found",
+            str(error),
+            retryable=False,
+        )
+    if isinstance(error, BackendJobNotReadyError):
+        return error_response(
+            409,
+            "extension_job_not_ready",
+            str(error),
+            retryable=True,
+        )
+    if isinstance(error, BackendJobCapacityError):
+        return error_response(
+            429,
+            "extension_job_capacity",
+            str(error),
+            retryable=True,
+        )
+    if isinstance(error, ExtensionJobArtifactTooLargeError):
+        return error_response(
+            413,
+            "extension_artifact_too_large",
+            str(error),
+            retryable=False,
+        )
+    if isinstance(error, (BackendJobValidationError, ExtensionJobArtifactError)):
+        return error_response(
+            400,
+            "extension_job_invalid",
+            str(error),
+            retryable=False,
+        )
+    return error_response(
+        500,
+        "extension_job_failed",
+        "The extension job request failed.",
+        retryable=True,
+        details={"reason": str(error)},
+    )
+
+
 @router.get("")
 def list_extensions(services: ExtensionServicesDependency):
     try:
@@ -180,6 +240,126 @@ def list_extensions(services: ExtensionServicesDependency):
             for item in items
         ]
     }
+
+
+@router.get("/{extension_id}/jobs")
+async def list_backend_job_types(
+    extension_id: str,
+    services: ExtensionServicesDependency,
+):
+    try:
+        jobs = await services.backend_runtime.jobs.list_job_types(extension_id)
+    except BackendJobError as exc:
+        return _backend_job_error_response(exc)
+    return {"jobs": list(jobs)}
+
+
+@router.post("/{extension_id}/artifacts")
+async def upload_backend_job_artifact(
+    extension_id: str,
+    request: Request,
+    services: ExtensionServicesDependency,
+    filename: str = Query(min_length=1, max_length=255),
+    content_type: str = Query(
+        default="application/octet-stream",
+        alias="contentType",
+        min_length=1,
+        max_length=200,
+    ),
+):
+    try:
+        content_length = request.headers.get("content-length")
+        if (
+            content_length is not None
+            and int(content_length)
+            > services.backend_runtime.jobs.artifacts.max_artifact_bytes
+        ):
+            raise ExtensionJobArtifactTooLargeError(
+                "artifact exceeds the configured byte limit"
+            )
+        content = await request.body()
+        record = services.backend_runtime.jobs.upload_input(
+            extension_id,
+            content,
+            filename=filename,
+            content_type=content_type,
+        )
+    except (ValueError, BackendJobError, ExtensionJobArtifactError) as exc:
+        return _backend_job_error_response(exc)
+    return {"artifact": record.to_dict()}
+
+
+@router.post("/{extension_id}/jobs/{job_type}")
+async def submit_backend_job(
+    extension_id: str,
+    job_type: str,
+    request: BackendJobSubmitRequest,
+    services: ExtensionServicesDependency,
+):
+    try:
+        snapshot = await services.backend_runtime.jobs.submit(
+            extension_id,
+            job_type,
+            request.input,
+            tuple(request.artifacts),
+        )
+    except (BackendJobError, ExtensionJobArtifactError) as exc:
+        return _backend_job_error_response(exc)
+    return {"job": snapshot.to_dict()}
+
+
+@router.get("/{extension_id}/jobs/{job_id}")
+async def get_backend_job(
+    extension_id: str,
+    job_id: str,
+    services: ExtensionServicesDependency,
+):
+    try:
+        snapshot = services.backend_runtime.jobs.get(extension_id, job_id)
+    except BackendJobError as exc:
+        return _backend_job_error_response(exc)
+    return {"job": snapshot.to_dict()}
+
+
+@router.post("/{extension_id}/jobs/{job_id}/cancel")
+async def cancel_backend_job(
+    extension_id: str,
+    job_id: str,
+    services: ExtensionServicesDependency,
+):
+    try:
+        snapshot = await services.backend_runtime.jobs.cancel(extension_id, job_id)
+    except BackendJobError as exc:
+        return _backend_job_error_response(exc)
+    return {"job": snapshot.to_dict()}
+
+
+@router.get("/{extension_id}/artifacts/{artifact_id}")
+async def get_backend_job_artifact(
+    extension_id: str,
+    artifact_id: str,
+    services: ExtensionServicesDependency,
+):
+    try:
+        record, content = services.backend_runtime.jobs.get_artifact(
+            extension_id,
+            artifact_id,
+        )
+        if record.role != "output":
+            raise ExtensionJobArtifactNotFoundError("artifact was not found")
+    except (BackendJobError, ExtensionJobArtifactError) as exc:
+        return _backend_job_error_response(exc)
+    encoded_filename = quote(record.filename, safe="")
+    return Response(
+        content=content,
+        media_type=record.content_type,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "X-Content-Type-Options": "nosniff",
+            "ETag": f'"sha256:{record.sha256}"',
+        },
+    )
 
 
 @router.post("/{extension_id}/approve")

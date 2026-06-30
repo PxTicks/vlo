@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
@@ -20,6 +21,7 @@ from routers.extensions import (
     approve_extension,
     disable_extension,
     get_frontend_artifact,
+    get_extension_services,
     list_extensions,
     revoke_extension_approval,
     router,
@@ -142,7 +144,123 @@ def test_router_registers_management_and_artifact_paths():
         "/app/extensions/{extension_id}/disable",
         "/app/extensions/{extension_id}/approval",
         "/app/extensions/{extension_id}/frontend/{digest}/{artifact_path:path}",
+        "/app/extensions/{extension_id}/jobs",
+        "/app/extensions/{extension_id}/jobs/{job_type}",
+        "/app/extensions/{extension_id}/jobs/{job_id}",
+        "/app/extensions/{extension_id}/jobs/{job_id}/cancel",
+        "/app/extensions/{extension_id}/artifacts",
+        "/app/extensions/{extension_id}/artifacts/{artifact_id}",
     }
+
+
+def test_standard_backend_job_routes_exchange_bytes_and_results(tmp_path: Path):
+    services, extensions_root, _state_root = _create_services(tmp_path)
+    package_dir = _create_backend_package(extensions_root, "example.job-routes")
+    entry = package_dir / "backend" / "extension" / "__init__.py"
+    entry.write_text(
+        (
+            "from fastapi import APIRouter\n"
+            "from services.extensions import (\n"
+            "    BackendExtensionDefinition, BackendJobDefinition, BackendJobReadiness\n"
+            ")\n"
+            "router = APIRouter()\n"
+            "def validate_input(value):\n"
+            "    if not isinstance(value, dict) or value.get('copies') != 2:\n"
+            "        raise ValueError('copies must equal 2')\n"
+            "    return value\n"
+            "def run(context, value):\n"
+            "    source = context.artifacts.read(context.artifacts.input_ids[0])\n"
+            "    context.report_progress(0.5, 'Tracking bytes')\n"
+            "    artifact = context.artifacts.create(\n"
+            "        source * value['copies'], filename='tracking.json', "
+            "content_type='application/json'\n"
+            "    )\n"
+            "    return {'schemaVersion': 1, 'artifactId': artifact.artifact_id}\n"
+            "@router.get('/status')\n"
+            "async def status():\n"
+            "    return {'raw': True}\n"
+            "def create_extension(context):\n"
+            "    assert context.raw_api_prefix == '/app/extensions/example.job-routes/api'\n"
+            "    return BackendExtensionDefinition(\n"
+            "        router=router,\n"
+            "        jobs=(BackendJobDefinition(\n"
+            "            id='track', label='Track', run=run,\n"
+            "            validate_input=validate_input,\n"
+            "            readiness=lambda: BackendJobReadiness.available('Fixture ready')\n"
+            "        ),)\n"
+            "    )\n"
+        ),
+        encoding="utf-8",
+    )
+    pending = list_extensions(services)["extensions"][0]
+    _approve(services, "example.job-routes", pending["digest"])
+
+    app = FastAPI()
+    app.include_router(router)
+    async def override_services():
+        return services
+
+    app.dependency_overrides[get_extension_services] = override_services
+    async def scenario() -> None:
+        summary = await services.backend_runtime.start(app)
+        assert summary.records[0].status == "active"
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            readiness = await client.get(
+                "/app/extensions/example.job-routes/jobs"
+            )
+            assert readiness.status_code == 200
+            assert readiness.json()["jobs"][0]["readiness"] == {
+                "ready": True,
+                "message": "Fixture ready",
+            }
+            upload = await client.post(
+                "/app/extensions/example.job-routes/artifacts",
+                params={"filename": "clip.bin", "contentType": "video/mp4"},
+                content=b"{}",
+            )
+            assert upload.status_code == 200
+            input_artifact_id = upload.json()["artifact"]["artifactId"]
+            submitted = await client.post(
+                "/app/extensions/example.job-routes/jobs/track",
+                json={
+                    "input": {"copies": 2},
+                    "artifacts": [input_artifact_id],
+                },
+            )
+            assert submitted.status_code == 200
+            job_id = submitted.json()["job"]["jobId"]
+
+            completed = None
+            for _attempt in range(100):
+                response = await client.get(
+                    f"/app/extensions/example.job-routes/jobs/{job_id}"
+                )
+                completed = response.json()["job"]
+                if completed["status"] == "succeeded":
+                    break
+                await asyncio.sleep(0.01)
+            assert completed is not None
+            assert completed["status"] == "succeeded"
+            assert completed["result"]["schemaVersion"] == 1
+            output_artifact_id = completed["artifacts"][0]["artifactId"]
+            output = await client.get(
+                f"/app/extensions/example.job-routes/artifacts/{output_artifact_id}"
+            )
+            assert output.status_code == 200
+            assert output.content == b"{}{}"
+            assert output.headers["cache-control"] == "no-store"
+            raw_status = await client.get(
+                "/app/extensions/example.job-routes/api/status"
+            )
+            assert raw_status.json() == {"raw": True}
+
+        assert await services.backend_runtime.stop() == ()
+
+    asyncio.run(scenario())
 
 
 def test_inventory_approval_and_immutable_artifact_delivery(tmp_path: Path):

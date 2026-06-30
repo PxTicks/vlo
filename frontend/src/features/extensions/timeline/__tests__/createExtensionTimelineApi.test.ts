@@ -220,4 +220,71 @@ describe("createExtensionTimelineApi", () => {
       api.transaction("Async transaction", async () => undefined),
     ).toMatchObject({ ok: false, code: "invalid_command" });
   });
+
+  it("commits a tracking transform to an ordinary clip in one undo entry", () => {
+    const api = createExtensionTimelineApi(createScope("example.tracker"));
+    const result = api.transaction("Apply tracking result", (transaction) => {
+      transaction.upsertTransform("shape-1", {
+        id: "tracked-position",
+        type: "position",
+        parameters: {
+          x: 0,
+          y: 0,
+          extensionPath: {
+            type: "extension-path2d",
+            geometry: {
+              extensionId: "example.tracker",
+              typeId: "tracking-path",
+              schemaVersion: 1,
+              data: { points: [{ x: 0, y: 0 }, { x: 10, y: 5 }] },
+            },
+            timing: 0.5,
+          },
+        },
+      });
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      changed: true,
+      label: "Apply tracking result",
+    });
+    expect(useTimelineStore.getState().undoLabel).toBe("Apply tracking result");
+    expect(
+      useTimelineStore.getState().clips.find((clip) => clip.id === "shape-1")
+        ?.transformations,
+    ).toEqual([
+      expect.objectContaining({
+        id: "tracked-position",
+        type: "position",
+      }),
+    ]);
+    expect(api.listClips().find((clip) => clip.id === "shape-1")).toMatchObject({
+      durationTicks: 100,
+      transformations: [{ id: "tracked-position" }],
+    });
+
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(
+      useTimelineStore.getState().clips.find((clip) => clip.id === "shape-1")
+        ?.transformations,
+    ).toEqual([]);
+  });
+
+  it("maps source frames and pixels into canonical timeline/project domains", () => {
+    const api = createExtensionTimelineApi(createScope("example.tracker"));
+    const project = api.getProject();
+
+    expect(project).toMatchObject({ width: 1920, height: 1080, fps: 30 });
+    expect(api.sourceFrameToTicks(15, 30)).toBe(48_000);
+    expect(api.clipProgressToSourceTicks("shape-1", 0.5)).toBe(50);
+    expect(api.sourceTicksToClipProgress("shape-1", 75)).toBe(0.75);
+    expect(
+      api.sourcePointToProject(
+        { x: 1280, y: 360 },
+        { width: 1280, height: 720 },
+      ),
+    ).toEqual({ x: 960, y: 0 });
+    expect(() => api.sourceFrameToTicks(-1, 30)).toThrow(/non-negative/);
+  });
 });

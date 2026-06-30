@@ -69,6 +69,24 @@ export type {
 } from "@vlo/extension-sdk";
 
 export type {
+  ExtensionAssetApi,
+  ExtensionBackendApi,
+  ExtensionBackendArtifact,
+  ExtensionBackendArtifactUploadOptions,
+  ExtensionBackendJobDiagnostic,
+  ExtensionBackendJobReadiness,
+  ExtensionBackendJobSnapshot,
+  ExtensionBackendJobStatus,
+  ExtensionBackendJobType,
+  ExtensionBackendJobWaitOptions,
+  ExtensionTimelineClipSnapshot,
+  ExtensionTimelineProjectSnapshot,
+  ExtensionSourceDimensions,
+  ExtensionTimelineTransformInput,
+  ExtensionTimelineTransformSnapshot,
+} from "@vlo/extension-sdk";
+
+export type {
   ExtensionAnimationApi,
   ExtensionAnimationDataMigration,
   ExtensionAnimationEditorDomain,

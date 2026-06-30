@@ -27,6 +27,8 @@ from services.extensions.manager import (
     ExtensionInventoryItem,
     ExtensionManager,
 )
+from services.extensions.job_artifacts import ExtensionJobArtifactStore
+from services.extensions.jobs import BackendJobDefinition, BackendJobManager
 from services.extensions.manifest import (
     EXTENSION_SDK_VERSION,
     is_extension_sdk_compatible,
@@ -57,11 +59,13 @@ class BackendExtensionContext:
     sdk_version: str
     package_dir: Path
     logger: logging.LoggerAdapter[logging.Logger]
+    raw_api_prefix: str
 
 
 @dataclass(frozen=True)
 class BackendExtensionDefinition:
     router: APIRouter | None = None
+    jobs: tuple[BackendJobDefinition, ...] = ()
     shutdown: BackendShutdown | None = None
 
 
@@ -355,6 +359,7 @@ class BackendExtensionRuntime:
         activation_timeout_seconds: float = (
             DEFAULT_BACKEND_EXTENSION_ACTIVATION_TIMEOUT_SECONDS
         ),
+        job_artifacts: ExtensionJobArtifactStore | None = None,
     ) -> None:
         if (
             not math.isfinite(activation_timeout_seconds)
@@ -363,6 +368,10 @@ class BackendExtensionRuntime:
             raise ValueError("activation_timeout_seconds must be positive and finite")
         self._manager = manager
         self._artifacts = artifacts
+        self._job_artifacts = job_artifacts or ExtensionJobArtifactStore(
+            artifacts.root.parent / "job-artifacts"
+        )
+        self._jobs = BackendJobManager(self._job_artifacts)
         self._activation_timeout_seconds = activation_timeout_seconds
         self._start_lock = asyncio.Lock()
         self._started = False
@@ -373,6 +382,10 @@ class BackendExtensionRuntime:
     @property
     def artifacts(self) -> BackendArtifactStore:
         return self._artifacts
+
+    @property
+    def jobs(self) -> BackendJobManager:
+        return self._jobs
 
     def active_digest(self, extension_id: str) -> str | None:
         return next(
@@ -423,6 +436,14 @@ class BackendExtensionRuntime:
         sessions = tuple(self._sessions)
         for session in reversed(sessions):
             try:
+                await self._jobs.shutdown_extension(session.extension_id)
+            except Exception as exc:
+                errors.append(f"{session.extension_id} job cleanup: {exc}")
+                logging.getLogger(__name__).exception(
+                    "Backend extension job cleanup failed: %s",
+                    session.extension_id,
+                )
+            try:
                 await _call_shutdown(session.shutdown)
             except Exception as exc:
                 errors.append(f"{session.extension_id}: {exc}")
@@ -433,6 +454,7 @@ class BackendExtensionRuntime:
             finally:
                 _remove_modules(session.module_prefix)
         self._sessions.clear()
+        await self._jobs.shutdown_all()
         for extension_id in {session.extension_id for session in sessions}:
             try:
                 self._prune_stopped_artifacts(extension_id)
@@ -537,6 +559,7 @@ class BackendExtensionRuntime:
                 sdk_version=EXTENSION_SDK_VERSION,
                 package_dir=staged.package_dir,
                 logger=logger,
+                raw_api_prefix=prefix,
             )
             activation_started = asyncio.get_running_loop().time()
             factory_call = await _call_factory_without_blocking_startup(
@@ -567,6 +590,11 @@ class BackendExtensionRuntime:
                         f"{self._activation_timeout_seconds:g} seconds"
                     ) from exc
             definition = _normalize_definition(factory_result)
+            self._jobs.register_extension(
+                extension_id,
+                item.manifest.version,
+                definition.jobs,
+            )
             if definition.router is not None:
                 _validate_router(app, definition.router, prefix)
                 _include_router_before_frontend_fallback(
@@ -590,6 +618,7 @@ class BackendExtensionRuntime:
                 message="Backend extension is active.",
             )
         except Exception as exc:
+            self._jobs.unregister_extension(extension_id)
             try:
                 if definition is not None:
                     await _call_shutdown(definition.shutdown)

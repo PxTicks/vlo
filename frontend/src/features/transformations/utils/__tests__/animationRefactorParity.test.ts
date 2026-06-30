@@ -31,7 +31,7 @@ import { TICKS_PER_SECOND } from "../../../../core/time/constants";
 import { resolveScalar } from "../resolveScalar";
 import { getIdempotentTimeMap } from "../timeCalculation";
 import { samplePositionPath } from "../positionPath";
-import type { SplineParameter, SpatialPathParameter } from "../types";
+import type { SplineParameter, SpatialPathParameter } from "../../types";
 
 // Tight enough to catch routing/segmentation drift; loose enough to ignore
 // last-bit float reassociation. The shared primitives make exact agreement the

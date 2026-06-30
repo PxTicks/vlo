@@ -2,6 +2,7 @@ import type {
   ExtensionPayload,
   ExtensionTimelineTransactionFailureCode,
 } from "@vlo/extension-sdk";
+import type { ClipTransform } from "../../../types/TimelineTypes";
 import {
   isExtensionTimelineClip,
   type ExtensionTimelineClip,
@@ -42,6 +43,16 @@ export type ExtensionTimelineCommand =
   | {
       kind: "remove_entity";
       entityId: string;
+    }
+  | {
+      kind: "upsert_transform";
+      clipId: string;
+      transform: ClipTransform;
+    }
+  | {
+      kind: "remove_transform";
+      clipId: string;
+      transformId: string;
     };
 
 export class ExtensionTimelineCommandError extends Error {
@@ -79,7 +90,44 @@ export function applyExtensionTimelineCommands(
     return entity;
   };
 
+  const getClip = (clipId: string) => {
+    const clip = draft.clips.find((candidate) => candidate.id === clipId);
+    if (!clip) {
+      throw new ExtensionTimelineCommandError(
+        "clip_not_found",
+        `Timeline clip '${clipId}' was not found.`,
+      );
+    }
+    return clip;
+  };
+
   for (const command of commands) {
+    if (command.kind === "upsert_transform") {
+      const clip = getClip(command.clipId);
+      const transform = structuredClone(command.transform);
+      const existingIndex = clip.transformations.findIndex(
+        (candidate) => candidate.id === transform.id,
+      );
+      if (existingIndex >= 0) clip.transformations[existingIndex] = transform;
+      else clip.transformations.push(transform);
+      continue;
+    }
+
+    if (command.kind === "remove_transform") {
+      const clip = getClip(command.clipId);
+      const existingIndex = clip.transformations.findIndex(
+        (candidate) => candidate.id === command.transformId,
+      );
+      if (existingIndex < 0) {
+        throw new ExtensionTimelineCommandError(
+          "transform_not_found",
+          `Transform '${command.transformId}' was not found on clip '${clip.id}'.`,
+        );
+      }
+      clip.transformations.splice(existingIndex, 1);
+      continue;
+    }
+
     if (command.kind === "create_entity") {
       if (draft.clips.some((clip) => clip.id === command.entityId)) {
         throw new ExtensionTimelineCommandError(

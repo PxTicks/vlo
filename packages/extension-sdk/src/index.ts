@@ -29,6 +29,107 @@ export interface ExtensionPayloadMigration {
   data: JsonValue;
 }
 
+export interface ExtensionBackendArtifact {
+  readonly artifactId: string;
+  readonly role: "input" | "output";
+  readonly filename: string;
+  readonly contentType: string;
+  readonly size: number;
+  readonly sha256: string;
+}
+
+export type ExtensionBackendJobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export interface ExtensionBackendJobReadiness {
+  readonly ready: boolean;
+  readonly message: string;
+  readonly details?: JsonValue;
+}
+
+export interface ExtensionBackendJobType {
+  readonly id: string;
+  readonly label: string;
+  readonly timeoutSeconds: number;
+  readonly readiness: ExtensionBackendJobReadiness;
+}
+
+export interface ExtensionBackendJobDiagnostic {
+  readonly level: "debug" | "info" | "warning" | "error";
+  readonly message: string;
+  readonly timestamp: number;
+  readonly detail?: JsonValue;
+}
+
+export interface ExtensionBackendJobSnapshot {
+  readonly jobId: string;
+  readonly jobType: string;
+  readonly extensionId: string;
+  readonly extensionVersion: string;
+  readonly status: ExtensionBackendJobStatus;
+  readonly progress: number;
+  readonly message: string;
+  readonly cancelRequested: boolean;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly result?: JsonValue;
+  readonly error?: string;
+  readonly artifacts: readonly ExtensionBackendArtifact[];
+  readonly diagnostics: readonly ExtensionBackendJobDiagnostic[];
+}
+
+export interface ExtensionBackendArtifactUploadOptions {
+  readonly filename: string;
+  readonly contentType?: string;
+  readonly signal?: AbortSignal;
+}
+
+export interface ExtensionBackendJobWaitOptions {
+  readonly signal?: AbortSignal;
+  readonly pollIntervalMs?: number;
+  readonly onProgress?: (snapshot: ExtensionBackendJobSnapshot) => void;
+}
+
+/** Owner-bound frontend client for one trusted extension's backend half. */
+export interface ExtensionBackendApi {
+  /** Raw trusted escape hatch, always relative to this extension's `/api`. */
+  call(path: string, init?: RequestInit): Promise<Response>;
+  listJobs(options?: { readonly signal?: AbortSignal }): Promise<
+    readonly ExtensionBackendJobType[]
+  >;
+  uploadArtifact(
+    content: Blob,
+    options: ExtensionBackendArtifactUploadOptions,
+  ): Promise<ExtensionBackendArtifact>;
+  submitJob(
+    jobType: string,
+    input: JsonValue,
+    artifactIds?: readonly string[],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<ExtensionBackendJobSnapshot>;
+  getJob(
+    jobId: string,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<ExtensionBackendJobSnapshot>;
+  cancelJob(
+    jobId: string,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<ExtensionBackendJobSnapshot>;
+  waitForJob(
+    jobId: string,
+    options?: ExtensionBackendJobWaitOptions,
+  ): Promise<ExtensionBackendJobSnapshot>;
+  getArtifact(
+    artifactId: string,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<Blob>;
+  getArtifactUrl(artifactId: string): string;
+}
+
 /** A point in project/canvas coordinates. */
 export interface ExtensionPoint2D {
   readonly x: number;
@@ -346,6 +447,13 @@ export interface ExtensionEntityAssetSnapshot {
   readonly hasAudio?: boolean;
 }
 
+export interface ExtensionAssetApi {
+  list(): readonly ExtensionEntityAssetSnapshot[];
+  get(assetId: string): ExtensionEntityAssetSnapshot | undefined;
+  /** Loads browser-selected/project-backed bytes without exposing a file path. */
+  readBlob(assetId: string): Promise<Blob>;
+}
+
 export interface ExtensionEntityRenderParameters {
   /** Detached, provider-validated payload data for this frame. */
   readonly data: JsonValue;
@@ -443,6 +551,49 @@ export interface ExtensionTimelineEntitySnapshot {
   readonly payload: ExtensionPayload;
 }
 
+export interface ExtensionTimelineTransformSnapshot {
+  readonly id: string;
+  readonly type: string;
+  readonly isEnabled: boolean;
+  readonly parameters: Readonly<Record<string, JsonValue>>;
+  readonly keyframeTimes?: readonly number[];
+  readonly templateId?: string;
+  readonly filterName?: string;
+}
+
+export interface ExtensionTimelineClipSnapshot {
+  readonly id: string;
+  readonly type: string;
+  readonly name: string;
+  readonly trackId: string;
+  readonly startTicks: number;
+  readonly durationTicks: number;
+  readonly assetId?: string;
+  readonly transformations: readonly ExtensionTimelineTransformSnapshot[];
+}
+
+export interface ExtensionTimelineTransformInput {
+  readonly id?: string;
+  readonly type: string;
+  readonly isEnabled?: boolean;
+  readonly parameters: Readonly<Record<string, JsonValue>>;
+  readonly keyframeTimes?: readonly number[];
+  readonly templateId?: string;
+  readonly filterName?: string;
+}
+
+export interface ExtensionTimelineProjectSnapshot {
+  readonly width: number;
+  readonly height: number;
+  readonly fps: number;
+  readonly fitMode: "contain" | "cover";
+}
+
+export interface ExtensionSourceDimensions {
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface ExtensionTimelineEntityCreateInput {
   readonly name: string;
   readonly trackId?: string;
@@ -460,12 +611,20 @@ export interface ExtensionTimelineTransaction {
     placement: { readonly startTicks?: number; readonly trackId?: string },
   ): void;
   removeEntity(entityId: string): void;
+  /** Adds or replaces a transform by ID and returns its stable ID. */
+  upsertTransform(
+    clipId: string,
+    transform: ExtensionTimelineTransformInput,
+  ): string;
+  removeTransform(clipId: string, transformId: string): void;
 }
 
 export type ExtensionTimelineTransactionFailureCode =
   | "invalid_label"
   | "invalid_command"
   | "entity_not_found"
+  | "clip_not_found"
+  | "transform_not_found"
   | "wrong_owner"
   | "incompatible_payload"
   | "callback_failed";
@@ -487,6 +646,25 @@ export interface ExtensionTimelineApi {
    * payload and is not intended as a render-loop or polling accessor.
    */
   listEntities(): readonly ExtensionTimelineEntitySnapshot[];
+  /** Detached snapshots for user-driven commands; not a render-loop accessor. */
+  listClips(): readonly ExtensionTimelineClipSnapshot[];
+  /** Current render-domain dimensions and timebase, detached from host state. */
+  getProject(): ExtensionTimelineProjectSnapshot;
+  /** Converts a zero-based source frame index into vlo's canonical tick unit. */
+  sourceFrameToTicks(frameIndex: number, sourceFps: number): number;
+  /** Maps normalized clip-local visual progress through crop/speed into source time. */
+  clipProgressToSourceTicks(clipId: string, progress: number): number;
+  /** Inverse crop/speed mapping used to place source-owned results visually. */
+  sourceTicksToClipProgress(clipId: string, sourceTimeTicks: number): number;
+  /**
+   * Maps source-pixel coordinates through the project's centred contain/cover
+   * layout into the additive, centre-origin position-transform domain.
+   */
+  sourcePointToProject(
+    point: ExtensionPoint2D,
+    source: ExtensionSourceDimensions,
+    fitMode?: "contain" | "cover",
+  ): ExtensionPoint2D;
   transaction(
     label: string,
     callback: (transaction: ExtensionTimelineTransaction) => void,
@@ -762,6 +940,8 @@ export interface ExtensionTrustedUiComponentDefinition {
 
 export interface VloExtensionApi {
   readonly runtime: ExtensionHostRuntimeApi;
+  readonly backend: ExtensionBackendApi;
+  readonly assets: ExtensionAssetApi;
   /** Trusted-first scalar, keyframe-segment, and spatial-path contributions. */
   readonly animation: ExtensionAnimationApi;
   readonly payloadProviders: ExtensionPayloadProviderApi;

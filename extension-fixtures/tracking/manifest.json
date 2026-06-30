@@ -1,0 +1,20 @@
+{
+  "manifestVersion": 1,
+  "id": "example.tracking",
+  "name": "Tracking Job Conformance Fixture",
+  "version": "1.0.0",
+  "sdk": ">=1.0.0 <2.0.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "backend": {
+    "mode": "in_process",
+    "entry": "backend.extension:create_extension"
+  },
+  "capabilities": [
+    "assets.read",
+    "backend.jobs",
+    "timeline.write",
+    "ui.custom"
+  ]
+}

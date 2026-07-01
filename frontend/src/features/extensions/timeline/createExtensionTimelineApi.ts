@@ -28,6 +28,7 @@ import {
   clipSourceTimeToVisual,
   clipVisualToSourceTime,
 } from "../../transformations";
+import { extensionClipOverlayRegistry } from "./ExtensionClipOverlayRegistry";
 
 const MAX_TRANSACTION_LABEL_LENGTH = 120;
 
@@ -197,6 +198,7 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 export function createExtensionTimelineApi(
   scope: ExtensionApiScope,
 ): ExtensionTimelineApi {
+  const boundClipOverlays = extensionClipOverlayRegistry.bind(scope);
   const api: ExtensionTimelineApi = {
     ticksPerSecond: TICKS_PER_SECOND,
     listEntities: (): readonly ExtensionTimelineEntitySnapshot[] =>
@@ -422,6 +424,8 @@ export function createExtensionTimelineApi(
         commands,
       );
     },
+
+    registerClipOverlay: (definition) => boundClipOverlays.register(definition),
   };
   return Object.freeze(api);
 }

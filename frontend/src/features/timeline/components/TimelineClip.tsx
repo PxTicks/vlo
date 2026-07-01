@@ -1,7 +1,15 @@
-import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useDraggable } from "@dnd-kit/core";
 import {
   Box,
+  Divider,
   ListItemIcon,
   ListItemText,
   Menu,
@@ -32,6 +40,9 @@ import { isAssetBackedClip, isCompositeClip } from "../../../types/TimelineTypes
 import type { MarkersComponent } from "../../../types/Components";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
+import { toExtensionClipSnapshot } from "../api";
+import type { ExtensionUiMenuItemContext } from "../../extensions";
+import { useExtensionMenuItems } from "../../extensions/ui/publicApi";
 import { useAsset } from "../../userAssets/api";
 import { useTimelineStore } from "../useTimelineStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
@@ -135,6 +146,30 @@ function TimelineClipComponent({
   const displayDuration = presentation?.duration ?? clip.timelineDuration;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
   const showCompositeLabel = isCompositeClip(timelineClip) && !isOverlay;
+  // Detached subject for extension context-menu commands. Non-overlay clips
+  // (the only ones whose menu can open) always narrow to a full TimelineClip.
+  const clipMenuContext = useMemo<ExtensionUiMenuItemContext>(
+    () => ({
+      slot: "timeline.clip.context",
+      clip:
+        timelineClip !== null
+          ? toExtensionClipSnapshot(timelineClip)
+          : Object.freeze({
+              id: clip.id,
+              type: clip.type,
+              name: clip.name,
+              trackId: "trackId" in clip ? clip.trackId : "",
+              startTicks: startTime,
+              durationTicks: clip.timelineDuration,
+              transformations: [],
+            }),
+    }),
+    [clip, timelineClip, startTime],
+  );
+  const extensionMenuItems = useExtensionMenuItems(
+    "timeline.clip.context",
+    clipMenuContext,
+  );
   const extensionProviderId =
     clip.type === "extension"
       ? `${clip.extensionPayload.extensionId}/${clip.extensionPayload.typeId}`
@@ -672,6 +707,20 @@ function TimelineClipComponent({
             <ListItemText>Remove Beats</ListItemText>
           </MenuItem>
         )}
+        {extensionMenuItems.length > 0 ? <Divider /> : null}
+        {extensionMenuItems.map((item) => (
+          <MenuItem
+            key={item.id}
+            data-testid={`extension-clip-menu-item-${item.id}`}
+            onClick={() => {
+              item.select();
+              closeContextMenu();
+            }}
+          >
+            {item.icon ? <ListItemIcon>{item.icon}</ListItemIcon> : null}
+            <ListItemText>{item.label}</ListItemText>
+          </MenuItem>
+        ))}
       </Menu>
     </ClipRoot>
   );

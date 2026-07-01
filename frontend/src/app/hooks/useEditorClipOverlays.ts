@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import {
   useTimelineClipMuteOverlay,
   useTimelineMarkersClipOverlay,
@@ -11,6 +11,7 @@ import {
   useTimelineCompositeRevealClipOverlay,
   useTimelineCompositeRenderStatusOverlay,
 } from "../../features/composite";
+import { extensionClipOverlayRegistry } from "../../features/extensions/timeline/ExtensionClipOverlayRegistry";
 
 export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[] {
   const keyframeClipOverlay = useTimelineKeyframeClipOverlay();
@@ -22,6 +23,14 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
     useTimelineCompositeRenderStatusOverlay();
   const compositeRevealClipOverlay = useTimelineCompositeRevealClipOverlay();
 
+  // Extension-registered overlays share the same hot render path as built-in
+  // overlays; re-derive when the owner-scoped registry changes.
+  const extensionOverlayRevision = useSyncExternalStore(
+    (listener) => extensionClipOverlayRegistry.subscribe(listener),
+    () => extensionClipOverlayRegistry.getRevision(),
+    () => extensionClipOverlayRegistry.getRevision(),
+  );
+
   return useMemo(
     () => [
       keyframeClipOverlay,
@@ -31,6 +40,9 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
       markersClipOverlay,
       reverseStatusClipOverlay,
       compositeRenderStatusClipOverlay,
+      ...extensionClipOverlayRegistry
+        .list()
+        .map((contribution) => contribution.definition.overlay),
     ],
     [
       assetRevealClipOverlay,
@@ -40,6 +52,7 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
       markersClipOverlay,
       muteClipOverlay,
       reverseStatusClipOverlay,
+      extensionOverlayRevision,
     ],
   );
 }

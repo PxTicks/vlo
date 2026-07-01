@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Input } from "mediabunny";
+import type { ExtensionEntityAssetSnapshot } from "@vlo/extension-sdk";
 import type { Asset, AssetFamily, AssetFamilyCompatibility } from "../../types/Asset";
 import { buildAssetFamilyCompatibility } from "../../shared/utils/assetFamilies";
 import { useAssetStore } from "./useAssetStore";
@@ -29,6 +30,22 @@ function resolveHydratedSourceUrl(
   asset: Asset | null | undefined,
 ): string | null {
   return asset && isHydratedAssetUrl(asset.src) ? asset.src : null;
+}
+
+/** Detached, extension-facing view of an asset (shared by the asset API). */
+export function toExtensionAssetSnapshot(
+  asset: Asset,
+): ExtensionEntityAssetSnapshot {
+  return Object.freeze({
+    id: asset.id,
+    hash: asset.hash,
+    name: asset.name,
+    type: asset.type,
+    src: asset.src,
+    durationSeconds: asset.duration,
+    fps: asset.fps ?? undefined,
+    hasAudio: asset.hasAudio,
+  });
 }
 
 export function useAsset(assetId: string | null | undefined): Asset | undefined {

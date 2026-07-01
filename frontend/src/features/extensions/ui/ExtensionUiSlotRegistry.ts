@@ -4,6 +4,9 @@ import type {
   ExtensionTrustedUiModalDefinition,
   ExtensionTrustedUiWorkspaceDefinition,
   ExtensionUiApi,
+  ExtensionUiMenuItemContext,
+  ExtensionUiMenuItemDefinition,
+  ExtensionUiMenuSlotId,
   ExtensionUiNoticeDefinition,
   ExtensionUiRegistration,
   ExtensionUiSlotId,
@@ -25,6 +28,10 @@ const HOST_UI_SLOTS = [
   "timeline.toolbar",
 ] as const;
 const HOST_WORKSPACE_LOCATIONS = ["right-sidebar", "left-sidebar"] as const;
+const HOST_MENU_SLOTS = [
+  "timeline.clip.context",
+  "library.item.actions",
+] as const;
 
 interface RuntimeUiNoticeDefinition extends ExtensionContributionDefinition {
   readonly slot: ExtensionUiSlotId;
@@ -64,6 +71,18 @@ export interface RuntimeTrustedUiWorkspaceDefinition
   readonly report: ExtensionApiScope["report"];
 }
 
+export interface RuntimeUiMenuItemDefinition
+  extends ExtensionContributionDefinition {
+  readonly slot: ExtensionUiMenuSlotId;
+  readonly kind: "menu-item";
+  readonly label: string;
+  readonly order: number;
+  readonly icon?: ExtensionUiMenuItemDefinition["icon"];
+  readonly isVisible?: ExtensionUiMenuItemDefinition["isVisible"];
+  readonly onSelect: ExtensionUiMenuItemDefinition["onSelect"];
+  readonly report: ExtensionApiScope["report"];
+}
+
 type RuntimeUiSlotDefinition =
   | RuntimeUiNoticeDefinition
   | RuntimeTrustedUiComponentDefinition;
@@ -71,7 +90,8 @@ type RuntimeUiSlotDefinition =
 type RuntimeUiContributionDefinition =
   | RuntimeUiSlotDefinition
   | RuntimeTrustedUiModalDefinition
-  | RuntimeTrustedUiWorkspaceDefinition;
+  | RuntimeTrustedUiWorkspaceDefinition
+  | RuntimeUiMenuItemDefinition;
 
 interface ActiveModalRequest {
   readonly contributionId: string;
@@ -121,6 +141,7 @@ export class ExtensionUiContributionRegistry {
       "ui-contribution",
     );
   private readonly declaredSlots = new Set<string>(HOST_UI_SLOTS);
+  private readonly declaredMenuSlots = new Set<string>(HOST_MENU_SLOTS);
   private readonly listeners = new Set<() => void>();
   private activeModal: ActiveModalRequest | null = null;
   private modalRevision = 0;
@@ -171,6 +192,10 @@ export class ExtensionUiContributionRegistry {
         definition: ExtensionTrustedUiWorkspaceDefinition,
       ): ExtensionUiRegistration =>
         bound.register(this.compileWorkspace(definition, scope.report)),
+      registerMenuItem: (
+        definition: ExtensionUiMenuItemDefinition,
+      ): ExtensionUiRegistration =>
+        bound.register(this.compileMenuItem(definition, scope.report)),
       openModal: (id: string, input?: JsonValue) =>
         this.openModal(scope, id, input),
       openWorkspace: (id: string) => this.openWorkspace(scope, id),
@@ -182,7 +207,9 @@ export class ExtensionUiContributionRegistry {
       .list()
       .filter(
         (entry) =>
-          "slot" in entry.definition && entry.definition.slot === slot,
+          (entry.definition.kind === "notice" ||
+            entry.definition.kind === "trusted-react") &&
+          entry.definition.slot === slot,
       )
       .sort(
         (left, right) =>
@@ -220,6 +247,24 @@ export class ExtensionUiContributionRegistry {
         (left, right) =>
           (left.definition as RuntimeTrustedUiWorkspaceDefinition).order -
             (right.definition as RuntimeTrustedUiWorkspaceDefinition).order ||
+          left.id.localeCompare(right.id),
+      );
+  }
+
+  listMenuItems(
+    slot: ExtensionUiMenuSlotId,
+  ): readonly RegisteredExtensionUiContribution[] {
+    return this.registry
+      .list()
+      .filter(
+        (entry) =>
+          entry.definition.kind === "menu-item" &&
+          entry.definition.slot === slot,
+      )
+      .sort(
+        (left, right) =>
+          (left.definition as RuntimeUiMenuItemDefinition).order -
+            (right.definition as RuntimeUiMenuItemDefinition).order ||
           left.id.localeCompare(right.id),
       );
   }
@@ -400,6 +445,51 @@ export class ExtensionUiContributionRegistry {
       location: definition.location,
       order: assertOrder(definition.order, definition.id),
       component: definition.component,
+      execution: "trusted",
+      report,
+    });
+  }
+
+  private compileMenuItem(
+    definition: ExtensionUiMenuItemDefinition,
+    report: ExtensionApiScope["report"],
+  ): RuntimeUiMenuItemDefinition {
+    if (definition.apiVersion !== 1 || definition.kind !== "menu-item") {
+      throw new Error(`UI menu item '${definition.id}' must use menu-item API 1.`);
+    }
+    if (!this.declaredMenuSlots.has(definition.slot)) {
+      throw new Error(
+        `UI menu item '${definition.id}' targets undeclared host menu '${definition.slot}'.`,
+      );
+    }
+    if (typeof definition.onSelect !== "function") {
+      throw new TypeError(
+        `UI menu item '${definition.id}' must define onSelect().`,
+      );
+    }
+    if (definition.icon !== undefined && typeof definition.icon !== "function") {
+      throw new TypeError(
+        `UI menu item '${definition.id}' icon must be a component function.`,
+      );
+    }
+    if (
+      definition.isVisible !== undefined &&
+      typeof definition.isVisible !== "function"
+    ) {
+      throw new TypeError(
+        `UI menu item '${definition.id}' isVisible must be a function.`,
+      );
+    }
+    return Object.freeze({
+      id: definition.id,
+      apiVersion: 1,
+      slot: definition.slot,
+      kind: "menu-item",
+      label: assertText(definition.label, `UI menu item '${definition.id}' label`, 120),
+      order: assertOrder(definition.order, definition.id),
+      icon: definition.icon,
+      isVisible: definition.isVisible,
+      onSelect: definition.onSelect,
       execution: "trusted",
       report,
     });

@@ -47,6 +47,27 @@ Render ordinary HTML5 canvas, SVG, WebGL, or browser controls inside a trusted s
 modal, or workspace. Keep host navigation, dialog close semantics, and dock placement
 outside the extension component.
 
+## Context/action menus
+
+`registerMenuItem({ id, slot, label, icon?, order?, isVisible?, onSelect })` adds a
+declarative command to a host-owned menu. Current menu slots are
+`timeline.clip.context` (timeline clip right-click) and `library.item.actions` (asset
+three-dot menu). The host renders the native menu item; `onSelect(context)` runs with a
+detached snapshot of the clicked subject (`context.clip` or `context.asset`, narrow on
+`context.slot`). Return `false` from `isVisible(context)` to hide the item for a given
+subject. Keeping this declarative preserves restricted-mode reachability; `onSelect`
+and `isVisible` failures are isolated and reported.
+
+## Per-clip timeline overlays
+
+`context.api.timeline.registerClipOverlay({ id, apiVersion: 1, kind: "trusted-overlay",
+useItems })` adds badges, markers, or draggable handles to every timeline clip.
+`useItems({ clip, isSelected })` is a React hook run on the timeline's hot render
+path — obey the Rules of Hooks and keep it cheap. Each item declares `content` (trusted
+React), a `placement` (`endpoint` or source-time), optional `onClick`/`onContextMenu`,
+and optional `drag` handlers that receive source/visual/presentation tick maths. `clip`
+is a detached snapshot; the registration is owner-scoped and removed on deactivation.
+
 ## Read and write generation inputs
 
 Call `context.api.generation.listInputs()` during user-driven UI work to obtain

@@ -1,6 +1,7 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Box,
+  Divider,
   IconButton,
   ListItemIcon,
   ListItemText,
@@ -32,6 +33,9 @@ import { getTimelineSelectionFromAsset } from "../../timelineSelection";
 import { useAssetStore } from "../useAssetStore";
 import { deleteAssetWithConfirmation } from "../utils/deleteAssetWithConfirmation";
 import { canRegenerateAsset, regenerateAsset } from "../assetRegenerator";
+import { toExtensionAssetSnapshot } from "../api";
+import type { ExtensionUiMenuItemContext } from "../../extensions";
+import { useExtensionMenuItems } from "../../extensions/ui/publicApi";
 
 interface AssetCardProps {
   asset: Asset;
@@ -217,6 +221,14 @@ function AssetCardContent({
   const canDeleteAll = Boolean(asset.familyId && onDeleteAll);
   const canShowFamily = Boolean(asset.familyId && onShowFamily);
   const isMenuOpen = Boolean(menuAnchorEl);
+  const assetMenuContext = useMemo<ExtensionUiMenuItemContext>(
+    () => ({ slot: "library.item.actions", asset: toExtensionAssetSnapshot(asset) }),
+    [asset],
+  );
+  const extensionMenuItems = useExtensionMenuItems(
+    "library.item.actions",
+    assetMenuContext,
+  );
 
   const handleMouseLeave = useCallback(() => {
     setIsPlaying(false);
@@ -465,6 +477,20 @@ function AssetCardContent({
               </ListItemIcon>
               <ListItemText>Delete</ListItemText>
             </MenuItem>
+            {extensionMenuItems.length > 0 ? <Divider /> : null}
+            {extensionMenuItems.map((item) => (
+              <MenuItem
+                key={item.id}
+                data-testid={`extension-asset-menu-item-${item.id}`}
+                onClick={() => {
+                  item.select();
+                  handleCloseMenu();
+                }}
+              >
+                {item.icon ? <ListItemIcon>{item.icon}</ListItemIcon> : null}
+                <ListItemText>{item.label}</ListItemText>
+              </MenuItem>
+            ))}
           </Menu>
         ) : null}
 

@@ -1,12 +1,31 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ExtensionApiScope, ExtensionResource, JsonValue } from "../..";
+import type {
+  ExtensionApiScope,
+  ExtensionResource,
+  ExtensionUiMenuItemContext,
+  JsonValue,
+} from "../..";
 import { ExtensionUiSlot } from "../ExtensionUiSlot";
 import { ExtensionModalHost } from "../ExtensionModalHost";
+import { useExtensionMenuItems } from "../useExtensionMenuItems";
 import {
   ExtensionUiSlotRegistry,
   extensionUiSlotRegistry,
 } from "../ExtensionUiSlotRegistry";
+
+const CLIP_MENU_CONTEXT: ExtensionUiMenuItemContext = {
+  slot: "timeline.clip.context",
+  clip: {
+    id: "clip-1",
+    type: "video",
+    name: "Clip",
+    trackId: "track-1",
+    startTicks: 0,
+    durationTicks: 100,
+    transformations: [],
+  },
+};
 
 function createScope(
   extensionId: string,
@@ -125,6 +144,123 @@ describe("ExtensionUiSlot", () => {
 
     registration.dispose();
     expect(registry.getSelectedWorkspaceId("left-sidebar")).toBeNull();
+  });
+
+  it("orders menu items and rejects undeclared menu slots", () => {
+    const registry = new ExtensionUiSlotRegistry();
+    const api = registry.bind(createScope("example.menu"));
+    const second = api.registerMenuItem({
+      id: "second",
+      apiVersion: 1,
+      slot: "timeline.clip.context",
+      kind: "menu-item",
+      label: "Second",
+      order: 2,
+      onSelect: vi.fn(),
+    });
+    const first = api.registerMenuItem({
+      id: "first",
+      apiVersion: 1,
+      slot: "timeline.clip.context",
+      kind: "menu-item",
+      label: "First",
+      order: 1,
+      onSelect: vi.fn(),
+    });
+
+    expect(
+      registry
+        .listMenuItems("timeline.clip.context")
+        .map((entry) => (entry.definition as { label: string }).label),
+    ).toEqual(["First", "Second"]);
+    // Menu items must not leak into the component/notice slot listing.
+    expect(registry.list("timeline.clip.context")).toEqual([]);
+    expect(() =>
+      api.registerMenuItem({
+        id: "stray",
+        apiVersion: 1,
+        slot: "undeclared.menu",
+        kind: "menu-item",
+        label: "Stray",
+        onSelect: vi.fn(),
+      }),
+    ).toThrow(/undeclared host menu/);
+
+    first.dispose();
+    second.dispose();
+  });
+
+  it("renders declarative menu items with visibility, selection, and isolation", () => {
+    const report = vi.fn();
+    const onSelect = vi.fn();
+    const api = extensionUiSlotRegistry.bind(
+      createScope("example.menu-render", report),
+    );
+    const visible = api.registerMenuItem({
+      id: "go",
+      apiVersion: 1,
+      slot: "timeline.clip.context",
+      kind: "menu-item",
+      label: "Go",
+      onSelect,
+    });
+    const hidden = api.registerMenuItem({
+      id: "hidden",
+      apiVersion: 1,
+      slot: "timeline.clip.context",
+      kind: "menu-item",
+      label: "Hidden",
+      isVisible: () => false,
+      onSelect: vi.fn(),
+    });
+    const boom = api.registerMenuItem({
+      id: "boom",
+      apiVersion: 1,
+      slot: "timeline.clip.context",
+      kind: "menu-item",
+      label: "Boom",
+      onSelect: () => {
+        throw new Error("boom failed");
+      },
+    });
+
+    function Host() {
+      const items = useExtensionMenuItems(
+        "timeline.clip.context",
+        CLIP_MENU_CONTEXT,
+      );
+      return (
+        <ul>
+          {items.map((item) => (
+            <li key={item.id}>
+              <button type="button" onClick={item.select}>
+                {item.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    try {
+      render(<Host />);
+      expect(screen.getByText("Go")).toBeInTheDocument();
+      expect(screen.queryByText("Hidden")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByText("Go"));
+      expect(onSelect).toHaveBeenCalledWith(CLIP_MENU_CONTEXT);
+
+      fireEvent.click(screen.getByText("Boom"));
+      expect(report).toHaveBeenCalledWith(
+        "error",
+        expect.stringContaining("example.menu-render/boom"),
+        expect.any(Error),
+      );
+    } finally {
+      visible.dispose();
+      hidden.dispose();
+      boom.dispose();
+    }
   });
 
   it("validates slot metadata before registration", () => {

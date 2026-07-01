@@ -638,6 +638,97 @@ export type ExtensionTimelineTransactionResult =
       readonly label: string;
     };
 
+export type ExtensionClipOverlayVisibility = "always" | "selected";
+export type ExtensionClipOverlayLane = "top" | "middle" | "bottom";
+export type ExtensionClipOverlayEdge = "start" | "end";
+
+/** Anchored to a clip edge; multiple items in the same edge/lane stack. */
+export interface ExtensionEndpointOverlayPlacement {
+  readonly kind: "endpoint";
+  readonly edge: ExtensionClipOverlayEdge;
+  readonly lane: ExtensionClipOverlayLane;
+  readonly insetPx: number;
+  readonly order: number;
+}
+
+/** Anchored to a source-time position, tracked through crop/speed. */
+export interface ExtensionSourceTimeOverlayPlacement {
+  readonly kind: "sourceTime";
+  readonly sourceTimeTicks: number;
+  readonly lane: ExtensionClipOverlayLane;
+  readonly offsetPx: number;
+  readonly verticalOffsetPx: number;
+}
+
+export type ExtensionClipOverlayPlacement =
+  | ExtensionEndpointOverlayPlacement
+  | ExtensionSourceTimeOverlayPlacement;
+
+export interface ExtensionClipOverlayRenderContext {
+  readonly clip: ExtensionTimelineClipSnapshot;
+  readonly isSelected: boolean;
+  readonly item: ExtensionClipOverlayItem;
+}
+
+/** Pointer-drag context with the host's source/visual/presentation tick maths. */
+export interface ExtensionClipOverlayDragContext
+  extends ExtensionClipOverlayRenderContext {
+  readonly event: PointerEvent;
+  /** The overlay item's root element; use for direct effects during drag. */
+  readonly targetElement: HTMLElement;
+  readonly clipLocalX: number;
+  readonly presentationOffsetTicks: number;
+  readonly visualTimeTicks: number;
+  readonly sourceTimeTicks: number;
+  readonly deltaClipX: number;
+  readonly deltaPresentationOffsetTicks: number;
+  readonly deltaVisualTimeTicks: number;
+  readonly deltaSourceTimeTicks: number;
+  readonly mapPresentationOffsetToClipOffset: (offsetTicks: number) => number;
+  readonly mapClipOffsetToPresentationOffset: (offsetTicks: number) => number;
+}
+
+export interface ExtensionClipOverlayItemDrag {
+  readonly onDragStart?: (context: ExtensionClipOverlayDragContext) => void;
+  readonly onDrag?: (context: ExtensionClipOverlayDragContext) => void;
+  readonly onDragEnd?: (context: ExtensionClipOverlayDragContext) => void;
+}
+
+export interface ExtensionClipOverlayItem {
+  readonly id: string;
+  /** Trusted React node rendered inside the host-positioned overlay cell. */
+  readonly content: unknown;
+  readonly visibility?: ExtensionClipOverlayVisibility;
+  readonly placement: ExtensionClipOverlayPlacement;
+  readonly minClipWidthPx?: number;
+  readonly onClick?: () => void;
+  readonly onContextMenu?: (event: unknown) => void;
+  readonly drag?: ExtensionClipOverlayItemDrag;
+}
+
+export interface ExtensionClipOverlaySourceProps {
+  readonly clip: ExtensionTimelineClipSnapshot;
+  readonly isSelected: boolean;
+}
+
+/**
+ * A per-clip timeline overlay. `useItems` is a React hook run on every clip
+ * render (obey the Rules of Hooks and keep it cheap — it is on the timeline's
+ * hot path). Items are positioned, error-isolated, and disposed by the host.
+ */
+export interface ExtensionClipOverlayDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly kind: "trusted-overlay";
+  readonly useItems: (
+    props: ExtensionClipOverlaySourceProps,
+  ) => readonly ExtensionClipOverlayItem[];
+}
+
+export interface ExtensionClipOverlayRegistration extends ExtensionDisposable {
+  readonly id: string;
+}
+
 export interface ExtensionTimelineApi {
   /** Canonical project time base used by all timeline command tick fields. */
   readonly ticksPerSecond: number;
@@ -669,6 +760,13 @@ export interface ExtensionTimelineApi {
     label: string,
     callback: (transaction: ExtensionTimelineTransaction) => void,
   ): ExtensionTimelineTransactionResult;
+  /**
+   * Registers a per-clip timeline overlay. The registration is owner-scoped and
+   * removed on disposal/deactivation.
+   */
+  registerClipOverlay(
+    definition: ExtensionClipOverlayDefinition,
+  ): ExtensionClipOverlayRegistration;
 }
 
 /** Restricted-ready convenience filters executed entirely by the host. */
@@ -966,6 +1064,10 @@ export interface ExtensionUiApi {
   registerWorkspace(
     definition: ExtensionTrustedUiWorkspaceDefinition,
   ): ExtensionUiRegistration;
+  /** Adds a command to a host-owned context/action menu (see menu slots). */
+  registerMenuItem(
+    definition: ExtensionUiMenuItemDefinition,
+  ): ExtensionUiRegistration;
   /** Opens one modal registered by the calling extension. */
   openModal(id: string, input?: JsonValue): Promise<JsonValue | undefined>;
   /** Selects one workspace registered by the calling extension. */
@@ -1001,6 +1103,44 @@ export interface ExtensionTrustedUiWorkspaceDefinition {
   readonly location: ExtensionUiWorkspaceLocation;
   readonly order?: number;
   readonly component: (props: ExtensionUiWorkspaceComponentProps) => unknown;
+}
+
+/**
+ * Open string type; the host accepts only the menu regions it declares. Current
+ * host catalogue: `timeline.clip.context` (timeline clip right-click) and
+ * `library.item.actions` (asset three-dot menu).
+ */
+export type ExtensionUiMenuSlotId = string;
+
+/** Detached, JSON-serialisable subject of the menu the user opened. */
+export type ExtensionUiMenuItemContext =
+  | {
+      readonly slot: "timeline.clip.context";
+      readonly clip: ExtensionTimelineClipSnapshot;
+    }
+  | {
+      readonly slot: "library.item.actions";
+      readonly asset: ExtensionEntityAssetSnapshot;
+    };
+
+/**
+ * A declarative command in a host-owned menu. The host renders the native menu
+ * item; the extension supplies the label, an optional trusted icon, and the
+ * action invoked with the clicked subject. Keeping this declarative preserves
+ * restricted-mode reachability.
+ */
+export interface ExtensionUiMenuItemDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly slot: ExtensionUiMenuSlotId;
+  readonly kind: "menu-item";
+  readonly label: string;
+  readonly order?: number;
+  /** Optional trusted icon component rendered before the label. */
+  readonly icon?: () => unknown;
+  /** Hide the item for a given subject (e.g. only for video clips). */
+  readonly isVisible?: (context: ExtensionUiMenuItemContext) => boolean;
+  readonly onSelect: (context: ExtensionUiMenuItemContext) => void;
 }
 
 export interface ExtensionGenerationInputSnapshot {

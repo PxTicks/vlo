@@ -4,6 +4,8 @@ export { ExtensionModalHost } from "./ExtensionModalHost";
 export { ExtensionTrustedReactMount } from "./ExtensionTrustedReactMount";
 export { ExtensionWorkspaceMount } from "./ExtensionWorkspaceMount";
 export { useExtensionWorkspaceRegion } from "./useExtensionWorkspaceRegion";
+export { useExtensionMenuItems } from "./useExtensionMenuItems";
+export type { ExtensionMenuItemView } from "./useExtensionMenuItems";
 export type { ExtensionWorkspaceMountProps } from "./ExtensionWorkspaceMount";
 export type {
   ExtensionWorkspaceDescriptor,

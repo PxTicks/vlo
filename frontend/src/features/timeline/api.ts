@@ -180,38 +180,49 @@ export function getExtensionTimelineEntities(
   );
 }
 
-export function getExtensionTimelineClips(): readonly ExtensionTimelineClipSnapshot[] {
-  return Object.freeze(
-    useTimelineStore.getState().clips.map((clip) =>
-      Object.freeze({
-        id: clip.id,
-        type: clip.type,
-        name: clip.name,
-        trackId: clip.trackId,
-        startTicks: clip.start,
-        durationTicks: clip.timelineDuration,
-        ...("assetId" in clip && typeof clip.assetId === "string"
-          ? { assetId: clip.assetId }
+export function toExtensionClipSnapshot(
+  clip: TimelineClip,
+): ExtensionTimelineClipSnapshot {
+  return Object.freeze({
+    id: clip.id,
+    type: clip.type,
+    name: clip.name,
+    trackId: clip.trackId,
+    startTicks: clip.start,
+    durationTicks: clip.timelineDuration,
+    ...("assetId" in clip && typeof clip.assetId === "string"
+      ? { assetId: clip.assetId }
+      : {}),
+    transformations: structuredClone(clip.transformations).map(
+      (transform): ExtensionTimelineTransformSnapshot => ({
+        id: transform.id,
+        type: transform.type,
+        isEnabled: transform.isEnabled,
+        parameters: transform.parameters as Record<string, JsonValue>,
+        ...(transform.keyframeTimes
+          ? { keyframeTimes: transform.keyframeTimes }
           : {}),
-        transformations: structuredClone(clip.transformations).map(
-          (transform): ExtensionTimelineTransformSnapshot => ({
-            id: transform.id,
-            type: transform.type,
-            isEnabled: transform.isEnabled,
-            parameters: transform.parameters as Record<string, JsonValue>,
-            ...(transform.keyframeTimes
-              ? { keyframeTimes: transform.keyframeTimes }
-              : {}),
-            ...(transform.templateId ? { templateId: transform.templateId } : {}),
-            ...("filterName" in transform &&
-            typeof transform.filterName === "string"
-              ? { filterName: transform.filterName }
-              : {}),
-          }),
-        ),
+        ...(transform.templateId ? { templateId: transform.templateId } : {}),
+        ...("filterName" in transform &&
+        typeof transform.filterName === "string"
+          ? { filterName: transform.filterName }
+          : {}),
       }),
     ),
+  });
+}
+
+export function getExtensionTimelineClips(): readonly ExtensionTimelineClipSnapshot[] {
+  return Object.freeze(
+    useTimelineStore.getState().clips.map(toExtensionClipSnapshot),
   );
+}
+
+export function getExtensionTimelineClipSnapshot(
+  clipId: string,
+): ExtensionTimelineClipSnapshot | null {
+  const clip = getTimelineClipById(clipId);
+  return clip ? toExtensionClipSnapshot(clip) : null;
 }
 
 export function commitExtensionTimelineTransaction(

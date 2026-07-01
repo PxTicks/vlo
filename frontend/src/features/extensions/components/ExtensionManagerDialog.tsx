@@ -16,10 +16,13 @@ import {
   Typography,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import { VLO_EXTENSION_SDK_VERSION } from "../constants";
 import type {
   ExtensionInventoryItem,
   ExtensionInventoryStatus,
+  ExtensionPreflightReport,
 } from "../services/extensionManagementApi";
 import { useExtensionManagementStore } from "../store/useExtensionManagementStore";
 import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
@@ -107,6 +110,90 @@ function backendRuntimeMessage(item: ExtensionInventoryItem) {
     <Alert severity={severity}>
       Backend runtime: {item.backendRuntime.message}
     </Alert>
+  );
+}
+
+function DependencyPreflightSection({
+  preflight,
+}: {
+  preflight: ExtensionPreflightReport | null;
+}) {
+  if (preflight === null) return null;
+
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">
+        Python dependency preflight
+      </Typography>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        display="block"
+        sx={{ overflowWrap: "anywhere" }}
+      >
+        Backend environment: {preflight.environment}
+        {preflight.isolated ? "" : " (not an isolated virtual environment)"}
+      </Typography>
+      <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+        {preflight.dependencies.map((dependency) => (
+          <Box
+            key={dependency.module}
+            sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}
+          >
+            {dependency.satisfied ? (
+              <CheckCircleOutlineIcon color="success" fontSize="small" />
+            ) : (
+              <ErrorOutlineIcon color="warning" fontSize="small" />
+            )}
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2">
+                <strong>{dependency.module}</strong>
+                {dependency.distribution
+                  ? ` · ${dependency.distribution}`
+                  : ""}
+              </Typography>
+              {dependency.purpose ? (
+                <Typography variant="caption" color="text.secondary">
+                  {dependency.purpose}
+                </Typography>
+              ) : null}
+              {!dependency.satisfied ? (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  {dependency.detail}
+                </Typography>
+              ) : null}
+            </Box>
+          </Box>
+        ))}
+      </Stack>
+      {preflight.satisfied ? (
+        <Alert severity="success" sx={{ mt: 1 }}>
+          All declared Python dependencies are installed in the backend
+          environment.
+        </Alert>
+      ) : (
+        <Alert severity="warning" sx={{ mt: 1 }}>
+          Install the missing dependencies into the backend virtual environment,
+          then restart the backend:
+          <Box
+            component="pre"
+            sx={{
+              mt: 1,
+              mb: 0,
+              p: 1,
+              borderRadius: 1,
+              bgcolor: "action.hover",
+              fontFamily: "monospace",
+              fontSize: "0.75rem",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {preflight.installHints.join("\n")}
+          </Box>
+        </Alert>
+      )}
+    </Box>
   );
 }
 
@@ -216,6 +303,8 @@ function ExtensionCard({
           </Stack>
         ) : null}
 
+        <DependencyPreflightSection preflight={item.preflight} />
+
         <Stack direction="row" spacing={1} justifyContent="flex-end">
           {canRevoke ? (
             <Button
@@ -286,10 +375,13 @@ function ExtensionApprovalDialog({
           ) : null}
           {manifest?.backend ? (
             <Alert severity="info">
-              Backend activation requires an application restart. Dependency
-              installation is a separate operation and is not performed by this
-              approval.
+              Backend activation requires an application restart. Approval never
+              installs dependencies; use the preflight below to prepare the
+              backend environment yourself.
             </Alert>
+          ) : null}
+          {item ? (
+            <DependencyPreflightSection preflight={item.preflight} />
           ) : null}
           {manifest?.frontend ? (
             <Alert severity="info">

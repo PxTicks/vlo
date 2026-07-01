@@ -66,8 +66,14 @@ from services.extensions.manifest import (
     ExtensionManifest,
     ExtensionManifestError,
     FrontendExtensionEntry,
+    PythonDependency,
     is_extension_sdk_compatible,
     load_extension_manifest,
+)
+from services.extensions.preflight import (
+    PreflightReport,
+    PythonDependencyStatus,
+    check_python_dependencies,
 )
 from services.extensions.package_digest import (
     ExtensionPackageChangedError,
@@ -129,9 +135,13 @@ __all__ = [
     "ExtensionManifestError",
     "ExtensionPackageChangedError",
     "FrontendExtensionEntry",
+    "PreflightReport",
+    "PythonDependency",
+    "PythonDependencyStatus",
     "StagedFrontendArtifacts",
     "StagedBackendArtifacts",
     "UnsafeExtensionPackageError",
+    "check_python_dependencies",
     "compute_package_digest",
     "is_package_digest",
     "is_extension_sdk_compatible",

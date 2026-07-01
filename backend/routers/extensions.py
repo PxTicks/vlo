@@ -33,6 +33,7 @@ from services.extensions import (
     ExtensionJobArtifactError,
     ExtensionJobArtifactNotFoundError,
     ExtensionJobArtifactTooLargeError,
+    check_python_dependencies,
 )
 
 router = APIRouter(prefix="/app/extensions", tags=["extensions"])
@@ -114,6 +115,34 @@ def _frontend_entry_url(
     )
 
 
+def _preflight_report(item: ExtensionInventoryItem) -> dict[str, object] | None:
+    """Report declared Python dependency readiness as an inert checklist.
+
+    Returns ``None`` when no dependencies are declared so the UI can omit the
+    section entirely. This never installs or imports extension code.
+    """
+
+    if item.manifest is None or not item.manifest.python_dependencies:
+        return None
+    report = check_python_dependencies(item.manifest.python_dependencies)
+    return {
+        "satisfied": report.satisfied,
+        "dependencies": [
+            {
+                "module": status.module,
+                "distribution": status.distribution,
+                "purpose": status.purpose,
+                "satisfied": status.satisfied,
+                "detail": status.detail,
+            }
+            for status in report.dependencies
+        ],
+        "installHints": list(report.install_hints),
+        "environment": report.environment,
+        "isolated": report.isolated,
+    }
+
+
 def _serialize_inventory_item(
     item: ExtensionInventoryItem,
     artifacts: FrontendArtifactStore,
@@ -149,6 +178,7 @@ def _serialize_inventory_item(
             "message": backend_runtime_view.message,
             "digest": backend_runtime_view.digest,
         },
+        "preflight": _preflight_report(item),
     }
 
 

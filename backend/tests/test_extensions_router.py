@@ -628,3 +628,56 @@ def test_artifact_store_rejects_escaping_identifiers_and_paths(tmp_path: Path):
         services.artifacts.read("..", digest, "index.js")
     with pytest.raises(FrontendArtifactError, match="artifact path"):
         services.artifacts.read("example.safe", digest, "../secret.txt")
+
+
+def test_inventory_reports_python_dependency_preflight(tmp_path: Path):
+    services, extensions_root, _state_root = _create_services(tmp_path)
+    package_dir = extensions_root / "example.preflight"
+    entry = package_dir / "frontend" / "dist" / "index.js"
+    entry.parent.mkdir(parents=True)
+    entry.write_text("export function activate() {}\n", encoding="utf-8")
+    manifest = {
+        "manifestVersion": 1,
+        "id": "example.preflight",
+        "name": "Preflight Router Extension",
+        "version": "1.0.0",
+        "sdk": ">=1.0.0 <2.0.0",
+        "frontend": {"entry": "frontend/dist/index.js"},
+        "capabilities": [],
+        "pythonDependencies": [
+            {"module": "json", "purpose": "Already present"},
+            {
+                "module": "vlo_definitely_absent_dependency",
+                "distribution": "vlo-example-dist",
+                "purpose": "Missing dependency",
+            },
+        ],
+    }
+    (package_dir / "manifest.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+
+    inventory = list_extensions(services)
+    assert isinstance(inventory, dict)
+    preflight = inventory["extensions"][0]["preflight"]
+
+    assert preflight is not None
+    assert preflight["satisfied"] is False
+    statuses = {dep["module"]: dep for dep in preflight["dependencies"]}
+    assert statuses["json"]["satisfied"] is True
+    assert statuses["vlo_definitely_absent_dependency"]["satisfied"] is False
+    assert any(
+        "vlo-example-dist" in hint for hint in preflight["installHints"]
+    )
+    assert preflight["environment"] == sys.prefix
+    assert isinstance(preflight["isolated"], bool)
+
+
+def test_inventory_omits_preflight_when_no_dependencies_declared(tmp_path: Path):
+    services, extensions_root, _state_root = _create_services(tmp_path)
+    _create_package(extensions_root, "example.nodeps")
+
+    inventory = list_extensions(services)
+    assert isinstance(inventory, dict)
+    assert inventory["extensions"][0]["preflight"] is None

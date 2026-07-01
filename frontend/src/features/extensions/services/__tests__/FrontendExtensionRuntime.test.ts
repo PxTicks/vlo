@@ -82,6 +82,7 @@ function inventoryItem(
     frontendEntryUrl: frontend
       ? `/app/extensions/${id}/frontend/${digest}/index.js`
       : null,
+    preflight: null,
   };
 }
 

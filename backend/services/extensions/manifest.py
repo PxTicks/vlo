@@ -23,6 +23,10 @@ from pydantic import (
 
 _EXTENSION_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$")
 _CAPABILITY_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$")
+# A dependency's probe name must be a single top-level Python identifier. This
+# keeps the preflight importability check inert: locating a top-level module spec
+# never executes package code, whereas a dotted probe would import parent packages.
+_PYTHON_MODULE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _BACKEND_ENTRY_PATTERN = re.compile(
     r"^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*"
     r":[a-zA-Z_][a-zA-Z0-9_]*$"
@@ -146,6 +150,41 @@ class BackendExtensionEntry(_ManifestModel):
         return normalized
 
 
+class PythonDependency(_ManifestModel):
+    """One declared Python import the backend needs at runtime.
+
+    Dependencies are advisory metadata for a preflight checklist, never an
+    installation instruction. The host probes ``module`` for importability and
+    surfaces ``distribution``/``purpose`` to the user; it never installs anything.
+    """
+
+    module: str = Field(min_length=1, max_length=128)
+    distribution: str | None = Field(default=None, max_length=200)
+    purpose: str | None = Field(default=None, max_length=200)
+
+    @field_validator("module")
+    @classmethod
+    def validate_module(cls, value: str) -> str:
+        normalized = value.strip()
+        if not _PYTHON_MODULE_PATTERN.fullmatch(normalized):
+            raise ValueError(
+                "python dependency module must be a single top-level import name"
+            )
+        return normalized
+
+    @field_validator("distribution", "purpose")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if any(character in normalized for character in "\r\n\t"):
+            raise ValueError("value cannot contain control characters")
+        return normalized
+
+
 class ExtensionManifest(_ManifestModel):
     manifest_version: Literal[1] = Field(alias="manifestVersion")
     id: str = Field(min_length=1, max_length=128)
@@ -155,6 +194,26 @@ class ExtensionManifest(_ManifestModel):
     frontend: FrontendExtensionEntry | None = None
     backend: BackendExtensionEntry | None = None
     capabilities: list[str] = Field(default_factory=list, max_length=100)
+    python_dependencies: list[PythonDependency] = Field(
+        default_factory=list,
+        alias="pythonDependencies",
+        max_length=100,
+    )
+
+    @field_validator("python_dependencies")
+    @classmethod
+    def validate_python_dependencies(
+        cls,
+        values: list[PythonDependency],
+    ) -> list[PythonDependency]:
+        seen: set[str] = set()
+        for dependency in values:
+            if dependency.module in seen:
+                raise ValueError(
+                    f"duplicate python dependency '{dependency.module}'"
+                )
+            seen.add(dependency.module)
+        return values
 
     @field_validator("id")
     @classmethod

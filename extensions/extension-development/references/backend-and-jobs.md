@@ -23,6 +23,31 @@ the extension's host-owned `/api` namespace; never assume a global route.
 Use the shutdown callback for resources owned by the active backend session. Expect
 enable/code changes to require backend restart in V1.
 
+## Declare Python dependencies for the preflight checklist
+
+The host never installs Python packages: backend extensions run in-process in the
+single shared `backend/.venv`, so any third-party import must already be present
+there. Declare each required top-level import in the manifest so the extension
+manager can show the user an inert readiness checklist before approval:
+
+```json
+"pythonDependencies": [
+  { "module": "torch", "distribution": "torch", "purpose": "GPU inference" },
+  { "module": "whisper", "distribution": "openai-whisper" }
+]
+```
+
+`module` is a single top-level import name the host probes with `importlib` (never
+executing package code); `distribution` is the pip/uv install name shown in the
+generated hint; `purpose` is a short human note. The manager marks each dependency
+satisfied or missing and reports the environment the probe actually resolved
+against — the backend's own `sys.prefix`, which is authoritative regardless of
+shell activation. When anything is missing it prints `pip` and `uv` commands that
+target the live interpreter by absolute path (`sys.executable`), so they are correct
+for a plain venv or a uv-managed one. This is advisory only — it does not gate
+approval or activation, and readiness callbacks on individual jobs remain the place
+to fail cleanly when a model or dependency is unavailable at run time.
+
 ## Register long-running work as jobs
 
 Create `BackendJobDefinition` with:

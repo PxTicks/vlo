@@ -12,6 +12,12 @@ const backendEntrySchema = z.object({
   entry: z.string(),
 });
 
+const pythonDependencySchema = z.object({
+  module: z.string(),
+  distribution: z.string().optional(),
+  purpose: z.string().optional(),
+});
+
 const extensionManifestSchema = z.object({
   manifestVersion: z.literal(1),
   id: z.string(),
@@ -21,6 +27,7 @@ const extensionManifestSchema = z.object({
   frontend: frontendEntrySchema.optional(),
   backend: backendEntrySchema.optional(),
   capabilities: z.array(z.string()),
+  pythonDependencies: z.array(pythonDependencySchema).optional(),
 });
 
 const extensionApprovalSchema = z.object({
@@ -41,6 +48,24 @@ const backendRuntimeSchema = z.object({
   message: z.string(),
   digest: z.string().nullable(),
 });
+
+const preflightDependencySchema = z.object({
+  module: z.string(),
+  distribution: z.string().nullable(),
+  purpose: z.string().nullable(),
+  satisfied: z.boolean(),
+  detail: z.string(),
+});
+
+const preflightSchema = z.object({
+  satisfied: z.boolean(),
+  dependencies: z.array(preflightDependencySchema),
+  installHints: z.array(z.string()),
+  environment: z.string(),
+  isolated: z.boolean(),
+});
+
+export type ExtensionPreflightReport = z.infer<typeof preflightSchema>;
 
 export function prefixExtensionFrontendEntryUrl(
   frontendEntryUrl: string | null,
@@ -66,6 +91,7 @@ const extensionInventoryItemSchema = z.object({
   manifest: extensionManifestSchema.nullable(),
   approval: extensionApprovalSchema.nullable(),
   backendRuntime: backendRuntimeSchema,
+  preflight: preflightSchema.nullable(),
   frontendEntryUrl: z
     .string()
     .startsWith("/app/extensions/")

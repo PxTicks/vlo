@@ -48,6 +48,7 @@ function extensionItem(status: "pending_approval" | "approved") {
       status === "approved"
         ? `/app/extensions/example.dialog/frontend/${digest}/index.js`
         : null,
+    preflight: null,
   };
 }
 
@@ -123,6 +124,40 @@ describe("ExtensionManagerDialog", () => {
       screen.getByText(/backend runtime: approved backend code will activate/i),
     ).toBeInTheDocument();
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders the Python dependency preflight checklist with install hints", async () => {
+    const item = {
+      ...extensionItem("pending_approval"),
+      preflight: {
+        satisfied: false,
+        dependencies: [
+          {
+            module: "torch",
+            distribution: "torch",
+            purpose: "GPU inference",
+            satisfied: false,
+            detail: "Not installed in the backend environment.",
+          },
+        ],
+        installHints: ["/venv/bin/python -m pip install torch"],
+        environment: "/venv",
+        isolated: true,
+      },
+    };
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      response({ extensions: [item] }),
+    );
+
+    render(<ExtensionManagerDialog open onClose={vi.fn()} />);
+
+    expect(
+      await screen.findByText("Python dependency preflight"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("GPU inference")).toBeInTheDocument();
+    expect(
+      screen.getByText(/pip install torch/i),
+    ).toBeInTheDocument();
   });
 
   it("shows structured inventory failures without hiding the trust warning", async () => {

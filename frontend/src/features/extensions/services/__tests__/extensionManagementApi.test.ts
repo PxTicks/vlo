@@ -44,6 +44,7 @@ function inventoryItem(status = "pending_approval") {
       status === "approved"
         ? `/app/extensions/example.test/frontend/${digest}/index.js`
         : null,
+    preflight: null,
   };
 }
 
@@ -76,6 +77,43 @@ describe("extensionManagementApi", () => {
       "/app/extensions",
       undefined,
     );
+  });
+
+  it("parses the Python dependency preflight report", async () => {
+    const item = {
+      ...inventoryItem(),
+      manifest: {
+        ...inventoryItem().manifest,
+        pythonDependencies: [
+          { module: "torch", distribution: "torch", purpose: "GPU inference" },
+        ],
+      },
+      preflight: {
+        satisfied: false,
+        dependencies: [
+          {
+            module: "torch",
+            distribution: "torch",
+            purpose: "GPU inference",
+            satisfied: false,
+            detail: "Not installed in the backend environment.",
+          },
+        ],
+        installHints: ["/venv/bin/python -m pip install torch"],
+        environment: "/venv",
+        isolated: true,
+      },
+    };
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      jsonResponse({ extensions: [item] }),
+    );
+
+    const items = await fetchExtensionInventory();
+
+    expect(items[0]?.preflight?.satisfied).toBe(false);
+    expect(items[0]?.preflight?.dependencies[0]?.module).toBe("torch");
+    expect(items[0]?.preflight?.installHints).toHaveLength(1);
+    expect(items[0]?.manifest?.pythonDependencies?.[0]?.module).toBe("torch");
   });
 
   it("prefixes backend artifact paths for sub-path deployments", () => {

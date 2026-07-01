@@ -28,6 +28,7 @@ function inventoryItem(id: string): ExtensionInventoryItem {
       digest: null,
     },
     frontendEntryUrl: null,
+    preflight: null,
   };
 }
 

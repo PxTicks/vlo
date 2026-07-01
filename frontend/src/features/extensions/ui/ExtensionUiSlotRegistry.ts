@@ -22,8 +22,9 @@ const HOST_UI_SLOTS = [
   "transformation-panel.before",
   "generation.toolbar",
   "generation.inputs.after",
+  "timeline.toolbar",
 ] as const;
-const HOST_WORKSPACE_LOCATIONS = ["right-sidebar"] as const;
+const HOST_WORKSPACE_LOCATIONS = ["right-sidebar", "left-sidebar"] as const;
 
 interface RuntimeUiNoticeDefinition extends ExtensionContributionDefinition {
   readonly slot: ExtensionUiSlotId;

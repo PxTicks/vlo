@@ -918,7 +918,7 @@ export interface ExtensionHostRuntimeApi {
 export type ExtensionUiSlotId = string;
 export type ExtensionUiNoticeTone = "info" | "success" | "warning";
 export type ExtensionUiModalSize = "small" | "medium" | "large";
-export type ExtensionUiWorkspaceLocation = "right-sidebar";
+export type ExtensionUiWorkspaceLocation = "right-sidebar" | "left-sidebar";
 
 export interface ExtensionUiComponentProps {
   readonly slot: ExtensionUiSlotId;

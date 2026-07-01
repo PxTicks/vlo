@@ -45,6 +45,7 @@ import {
   detectBeats,
   registerBeatThisSource,
 } from "../services/beatThisApi";
+import { ExtensionUiSlot } from "../../extensions/ui/publicApi";
 
 export const TimelineToolbar = () => {
   const zoomScale = useTimelineViewStore((state) => state.zoomScale);
@@ -419,6 +420,7 @@ export const TimelineToolbar = () => {
           </IconButton>
         </Tooltip>
 
+        <ExtensionUiSlot slot="timeline.toolbar" presentation="inline" />
       </Stack>
 
       <Box sx={{ justifySelf: "center" }}>

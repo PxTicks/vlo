@@ -62,6 +62,49 @@ describe("ExtensionUiSlot", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("accepts trusted contributions to the timeline.toolbar slot", () => {
+    const registration = extensionUiSlotRegistry
+      .bind(createScope("example.toolbar"))
+      .registerComponent({
+        id: "beat-tool",
+        apiVersion: 1,
+        slot: "timeline.toolbar",
+        kind: "trusted-react",
+        component: () => <button type="button">Beat tool</button>,
+      });
+
+    render(<ExtensionUiSlot slot="timeline.toolbar" presentation="inline" />);
+    expect(
+      screen.getByRole("button", { name: "Beat tool" }),
+    ).toBeInTheDocument();
+
+    act(() => registration.dispose());
+    expect(
+      screen.queryByRole("button", { name: "Beat tool" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("registers workspaces at the left-sidebar location", () => {
+    const registry = new ExtensionUiSlotRegistry();
+    const ownerApi = registry.bind(createScope("example.left"));
+    const registration = ownerApi.registerWorkspace({
+      id: "tool",
+      apiVersion: 1,
+      kind: "trusted-workspace",
+      title: "Tool",
+      location: "left-sidebar",
+      component: () => null,
+    });
+
+    expect(ownerApi.openWorkspace("tool")).toBe(true);
+    expect(registry.getSelectedWorkspaceId("left-sidebar")).toBe(
+      "example.left/tool",
+    );
+
+    registration.dispose();
+    expect(registry.getSelectedWorkspaceId("left-sidebar")).toBeNull();
+  });
+
   it("validates slot metadata before registration", () => {
     const registry = new ExtensionUiSlotRegistry();
     const api = registry.bind(createScope("example.ui"));

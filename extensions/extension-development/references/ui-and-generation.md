@@ -26,7 +26,8 @@ Current curated component slots are:
 
 - `transformation-panel.before`;
 - `generation.toolbar`;
-- `generation.inputs.after`.
+- `generation.inputs.after`;
+- `timeline.toolbar`.
 
 Slot IDs are an open SDK string but a closed host catalogue at runtime. Do not invent
 a slot without adding a corresponding host mount and declaration.
@@ -35,8 +36,10 @@ Use `openModal(localId, input?)` to open only the caller's modal. Keep input and
 result finite JSON. Handle an `undefined` result as cancellation or disposal.
 Omitted modal size defaults to `medium`.
 
-Register `kind: "trusted-workspace"` at `location: "right-sidebar"` for a larger
-editor. Use `openWorkspace(localId)` to select it. Workspaces mount lazily on first
+Register `kind: "trusted-workspace"` at `location: "right-sidebar"` (clip/generation
+editors) or `location: "left-sidebar"` (an input-source tab alongside Assets, Text,
+Composite, Effects, and Transitions) for a larger editor. Use `openWorkspace(localId)`
+to select it. Workspaces mount lazily on first
 selection, then remain mounted to preserve state. Observe the `active` prop and pause
 animation loops, camera capture, polling, or expensive previews while hidden.
 

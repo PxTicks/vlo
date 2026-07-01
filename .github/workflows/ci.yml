@@ -16,6 +16,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Use Node.js 20.x
       uses: actions/setup-node@v4
@@ -23,6 +25,22 @@ jobs:
         node-version: '20.x'
         cache: 'npm'
         cache-dependency-path: frontend/package-lock.json
+
+    - name: Catalogue extension contract impact
+      id: extension-impact
+      working-directory: .
+      env:
+        EXTENSION_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        EXTENSION_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: >-
+        node scripts/check-extension-surface.mjs
+        --base "$EXTENSION_BASE_SHA"
+        --head "$EXTENSION_HEAD_SHA"
+        --github
+
+    - name: Test extension surface catalogue
+      working-directory: .
+      run: npm run test:extension-surface
 
     - name: Install dependencies
       run: npm ci

@@ -77,3 +77,13 @@ focused frontend Vitest files and backend pytest files touched by the change. Be
 handoff, run relevant TypeScript checks, ESLint, production build, backend extension
 tests, and broader suites proportional to impact. Run the skill validator separately
 when changing this skill package.
+
+Run `npm run check:extension-surface` before handoff. Review every reported category:
+
+- `public` is a supported compatibility surface;
+- `host` and `adapter` are contract-sensitive implementation;
+- `authoring` and `fixture` affect extension packaging or conformance;
+- `governance` changes the catalogue or its guidance.
+
+Treat the report as a review trigger, not proof of compatibility. Run behavioural
+contract tests and add any missed transitive adapter to `.gitattributes`.

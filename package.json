@@ -7,6 +7,8 @@
     "test": "npm run test --prefix frontend",
     "lint": "npm run lint --prefix frontend",
     "build": "npm run build --prefix frontend",
+    "check:extension-surface": "node scripts/check-extension-surface.mjs",
+    "test:extension-surface": "node --test scripts/check-extension-surface.test.mjs",
     "frontend": "cd frontend && npm run dev",
     "backend": "node scripts/run-backend.js --reload",
     "dev": "concurrently \"npm run backend\" \"npm run frontend\""

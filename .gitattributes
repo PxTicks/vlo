@@ -1,0 +1,66 @@
+# Machine-readable catalogue for extension contract impact reporting.
+# Values describe review sensitivity, not whether every file is a stable API.
+
+# Host implementation spine.
+/frontend/src/features/extensions/** extension-surface=host
+/backend/services/extensions/** extension-surface=host
+/backend/routers/extensions.py extension-surface=host
+/backend/main.py extension-surface=adapter
+
+# Portable V1 contracts. Keep these after broader host rules so they override.
+/packages/extension-sdk/** extension-surface=public
+/backend/services/extensions/__init__.py extension-surface=public
+
+# Authoring packages and executable conformance fixtures.
+/extension-template/** extension-surface=authoring
+/extensions/extension-development/** extension-surface=authoring
+/extension-fixtures/** extension-surface=fixture
+/backend/tests/test_extension*.py extension-surface=fixture
+/backend/tests/test_backend_extension_runtime.py extension-surface=fixture
+
+# Distributed frontend adapters that dispatch or persist extension behaviour.
+/frontend/src/app/App.tsx extension-surface=adapter
+/frontend/src/app/layout/EditorLeftSidebar.tsx extension-surface=adapter
+/frontend/src/app/layout/LeftSidebarPanel.tsx extension-surface=adapter
+/frontend/src/app/layout/ProjectSettingsMenu.tsx extension-surface=adapter
+/frontend/src/app/layout/RightSidebarPanel.tsx extension-surface=adapter
+/frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
+/frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
+/frontend/src/features/project/utils/extensionRequirements.ts extension-surface=adapter
+/frontend/src/features/renderer/services/ExportRenderer.ts extension-surface=adapter
+/frontend/src/features/renderer/services/TrackRenderEngine.ts extension-surface=adapter
+/frontend/src/features/renderer/services/projectFrameCapture.ts extension-surface=adapter
+/frontend/src/features/timeline/api.ts extension-surface=adapter
+/frontend/src/features/timeline/components/TimelineClip.tsx extension-surface=adapter
+/frontend/src/features/timeline/components/TimelineToolbar.tsx extension-surface=adapter
+/frontend/src/features/timeline/model/** extension-surface=adapter
+/frontend/src/features/timeline/useTimelineStore.ts extension-surface=adapter
+/frontend/src/features/transformations/animation/** extension-surface=adapter
+/frontend/src/features/transformations/catalogue/TransformationRegistry.ts extension-surface=adapter
+/frontend/src/features/transformations/catalogue/filterFactory.ts extension-surface=adapter
+/frontend/src/features/transformations/catalogue/filters/** extension-surface=adapter
+/frontend/src/features/transformations/catalogue/types.ts extension-surface=adapter
+/frontend/src/features/transformations/components/Extension*.tsx extension-surface=adapter
+/frontend/src/features/transformations/components/SplineEditorPopover.tsx extension-surface=adapter
+/frontend/src/features/transformations/components/TransformationPanel.tsx extension-surface=adapter
+/frontend/src/features/transformations/components/library/TransformationLibraryPanel.tsx extension-surface=adapter
+/frontend/src/features/transformations/extensionApi.ts extension-surface=adapter
+/frontend/src/features/transformations/extensions/** extension-surface=adapter
+/frontend/src/features/transformations/hooks/useSplinePopover.ts extension-surface=adapter
+/frontend/src/features/transformations/types.ts extension-surface=adapter
+/frontend/src/features/transformations/utils/positionPath.ts extension-surface=adapter
+/frontend/src/features/transformations/utils/resolveScalar.ts extension-surface=adapter
+/frontend/src/features/transformations/utils/reverseSpline.ts extension-surface=adapter
+/frontend/src/features/transformations/utils/reverseTransformations.ts extension-surface=adapter
+/frontend/src/features/transformations/utils/timeCalculation.ts extension-surface=adapter
+/frontend/src/features/timeline/utils/formatting.ts extension-surface=adapter
+/frontend/src/types/TimelineTypes.ts extension-surface=adapter
+
+# Catalogue, checker, and architectural guidance.
+/.gitattributes extension-surface=governance
+/.github/workflows/ci.yml extension-surface=governance
+/AGENTS.md extension-surface=governance
+/docs/extension-system-plan.md extension-surface=governance
+/package.json extension-surface=governance
+/scripts/check-extension-surface.mjs extension-surface=governance
+/scripts/check-extension-surface.test.mjs extension-surface=governance

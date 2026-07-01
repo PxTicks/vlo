@@ -55,11 +55,14 @@ function LeftSidebarPanelComponent({
     >
       <Tabs
         orientation="vertical"
+        variant="scrollable"
+        scrollButtons="auto"
         value={activeTab}
         onChange={(_, value: string) => onTabChange(value)}
         aria-label="Input sources"
         sx={{
           minHeight: 0,
+          maxHeight: "100%",
           "& .MuiTabs-indicator": {
             left: 0,
             width: 3,

@@ -62,6 +62,28 @@ describe("ExtensionUiSlot", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("renders inline notices compactly so they fit a toolbar", () => {
+    const registration = extensionUiSlotRegistry
+      .bind(createScope("example.notice"))
+      .registerNotice({
+        id: "hint",
+        apiVersion: 1,
+        slot: "timeline.toolbar",
+        kind: "notice",
+        title: "Beat sync",
+        message: "Detect beats before adding markers.",
+        tone: "info",
+      });
+
+    render(<ExtensionUiSlot slot="timeline.toolbar" presentation="inline" />);
+    // Compact chip shows the title; the full-height Alert (role="alert") that
+    // would overflow the 40px toolbar is not rendered inline.
+    expect(screen.getByText("Beat sync")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    act(() => registration.dispose());
+  });
+
   it("accepts trusted contributions to the timeline.toolbar slot", () => {
     const registration = extensionUiSlotRegistry
       .bind(createScope("example.toolbar"))

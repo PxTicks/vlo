@@ -1,7 +1,11 @@
 import { useSyncExternalStore, type ComponentType } from "react";
-import { Alert, AlertTitle, Box } from "@mui/material";
+import { Alert, AlertTitle, Box, Chip, Tooltip } from "@mui/material";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import type {
   ExtensionUiComponentProps,
+  ExtensionUiNoticeTone,
   ExtensionUiSlotId,
 } from "../types";
 import {
@@ -13,6 +17,44 @@ import { ExtensionTrustedReactMount } from "./ExtensionTrustedReactMount";
 export interface ExtensionUiSlotProps {
   readonly slot: ExtensionUiSlotId;
   readonly presentation?: "stack" | "inline";
+}
+
+const NOTICE_TONE: Record<
+  ExtensionUiNoticeTone,
+  { readonly color: "info" | "success" | "warning"; readonly Icon: typeof InfoOutlinedIcon }
+> = {
+  info: { color: "info", Icon: InfoOutlinedIcon },
+  success: { color: "success", Icon: CheckCircleOutlineIcon },
+  warning: { color: "warning", Icon: WarningAmberIcon },
+};
+
+/**
+ * Compact single-line notice for inline slots (e.g. the 40px timeline/generation
+ * toolbars), where a full stacked `<Alert>` would overflow. The title stays
+ * visible; the message is surfaced on hover so no information is lost.
+ */
+function InlineNotice({
+  title,
+  message,
+  tone,
+}: {
+  readonly title: string;
+  readonly message: string;
+  readonly tone: ExtensionUiNoticeTone;
+}) {
+  const { color, Icon } = NOTICE_TONE[tone];
+  return (
+    <Tooltip title={message}>
+      <Chip
+        size="small"
+        color={color}
+        variant="outlined"
+        icon={<Icon fontSize="small" />}
+        label={title}
+        sx={{ maxWidth: 220, height: 24 }}
+      />
+    </Tooltip>
+  );
 }
 
 function TrustedExtensionComponent({
@@ -58,15 +100,24 @@ export function ExtensionUiSlot({
     >
       {contributions.map((contribution) =>
         contribution.definition.kind === "notice" ? (
-          <Alert
+          <Box
             key={contribution.id}
             data-testid={`extension-ui-contribution-${contribution.id}`}
-            severity={contribution.definition.tone}
             sx={presentation === "stack" ? { mb: 1 } : undefined}
           >
-            <AlertTitle>{contribution.definition.title}</AlertTitle>
-            {contribution.definition.message}
-          </Alert>
+            {presentation === "inline" ? (
+              <InlineNotice
+                title={contribution.definition.title}
+                message={contribution.definition.message}
+                tone={contribution.definition.tone}
+              />
+            ) : (
+              <Alert severity={contribution.definition.tone}>
+                <AlertTitle>{contribution.definition.title}</AlertTitle>
+                {contribution.definition.message}
+              </Alert>
+            )}
+          </Box>
         ) : contribution.definition.kind === "trusted-react" ? (
           <Box
             key={contribution.id}

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { useState } from "react";
 import { TextField } from "@mui/material";
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -10,6 +10,12 @@ import {
 } from "../../../features/timeline/api";
 import { useMaskViewStore } from "../../../features/masks";
 import type { TimelineClip } from "../../../types/TimelineTypes";
+import type {
+  ExtensionApiScope,
+  ExtensionResource,
+  ExtensionUiWorkspaceComponentProps,
+} from "../../../features/extensions";
+import { extensionUiSlotRegistry } from "../../../features/extensions/ui/publicApi";
 
 vi.mock("../../../features/timeline/api", () => ({
   useSelectedTimelineClipIds: vi.fn(),
@@ -146,6 +152,79 @@ describe("RightSidebarPanel", () => {
     expect(screen.getByLabelText("Generation input")).toHaveValue(
       "persistent prompt",
     );
+  });
+
+  it("hosts stateful extension workspaces as persistent sidebar tabs", () => {
+    const scope: ExtensionApiScope = {
+      extension: { id: "example.canvas", version: "1.0.0" },
+      signal: new AbortController().signal,
+      own: <TResource extends ExtensionResource>(resource: TResource) => resource,
+      report: vi.fn(),
+    };
+    const ui = extensionUiSlotRegistry.bind(scope);
+
+    function StatefulWorkspace({ active }: ExtensionUiWorkspaceComponentProps) {
+      const [value, setValue] = useState("");
+      return (
+        <label>
+          Workspace value
+          <canvas aria-label="Workspace canvas" />
+          <input
+            aria-label="Workspace value"
+            data-active={String(active)}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+        </label>
+      );
+    }
+    const registration = ui.registerWorkspace({
+      id: "drawing",
+      apiVersion: 1,
+      kind: "trusted-workspace",
+      title: "AI Canvas",
+      location: "right-sidebar",
+      component: StatefulWorkspace,
+    });
+
+    try {
+      render(<RightSidebarPanel />);
+
+      expect(screen.getByRole("tab", { name: "AI Canvas" })).toBeInTheDocument();
+      expect(screen.queryByLabelText("Workspace value")).not.toBeInTheDocument();
+
+      act(() => expect(ui.openWorkspace("drawing")).toBe(true));
+      const workspaceTab = screen.getByRole("tab", { name: "AI Canvas" });
+      expect(workspaceTab).toHaveAttribute("aria-selected", "true");
+      expect(workspaceTab).toHaveAttribute(
+        "aria-controls",
+        "extension-workspace-panel-example.canvas/drawing",
+      );
+      expect(screen.getByLabelText("Workspace canvas")).toBeInstanceOf(
+        globalThis.HTMLCanvasElement,
+      );
+      const input = screen.getByLabelText("Workspace value");
+      expect(input).toHaveAttribute("data-active", "true");
+      fireEvent.change(input, { target: { value: "unfinished sketch" } });
+
+      fireEvent.click(screen.getByRole("tab", { name: "Generate" }));
+      expect(input).toHaveValue("unfinished sketch");
+      expect(input).toHaveAttribute("data-active", "false");
+
+      fireEvent.click(screen.getByRole("tab", { name: "AI Canvas" }));
+      expect(input).toHaveValue("unfinished sketch");
+
+      act(() => registration.dispose());
+      expect(
+        screen.queryByRole("tab", { name: "AI Canvas" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    } finally {
+      registration.dispose();
+    }
   });
 
   it("tracks whether the Mask tab is active", () => {

@@ -918,6 +918,7 @@ export interface ExtensionHostRuntimeApi {
 export type ExtensionUiSlotId = string;
 export type ExtensionUiNoticeTone = "info" | "success" | "warning";
 export type ExtensionUiModalSize = "small" | "medium" | "large";
+export type ExtensionUiWorkspaceLocation = "right-sidebar";
 
 export interface ExtensionUiComponentProps {
   readonly slot: ExtensionUiSlotId;
@@ -926,6 +927,14 @@ export interface ExtensionUiComponentProps {
 export interface ExtensionUiModalComponentProps {
   readonly input?: JsonValue;
   close(result?: JsonValue): void;
+}
+
+export interface ExtensionUiWorkspaceComponentProps {
+  /** Globally owner-qualified contribution ID. */
+  readonly workspaceId: string;
+  readonly location: ExtensionUiWorkspaceLocation;
+  /** Once opened, inactive workspaces remain mounted so editor state survives. */
+  readonly active: boolean;
 }
 
 /** Declarative native UI contribution suitable for future restricted mode. */
@@ -954,8 +963,13 @@ export interface ExtensionUiApi {
   registerModal(
     definition: ExtensionTrustedUiModalDefinition,
   ): ExtensionUiRegistration;
+  registerWorkspace(
+    definition: ExtensionTrustedUiWorkspaceDefinition,
+  ): ExtensionUiRegistration;
   /** Opens one modal registered by the calling extension. */
   openModal(id: string, input?: JsonValue): Promise<JsonValue | undefined>;
+  /** Selects one workspace registered by the calling extension. */
+  openWorkspace(id: string): boolean;
 }
 
 /** Arbitrary React component rendered inside a host-owned, isolated slot. */
@@ -976,6 +990,17 @@ export interface ExtensionTrustedUiModalDefinition {
   readonly title: string;
   readonly size?: ExtensionUiModalSize;
   readonly component: (props: ExtensionUiModalComponentProps) => unknown;
+}
+
+/** Arbitrary trusted React rendered in a host-owned editor workspace. */
+export interface ExtensionTrustedUiWorkspaceDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly kind: "trusted-workspace";
+  readonly title: string;
+  readonly location: ExtensionUiWorkspaceLocation;
+  readonly order?: number;
+  readonly component: (props: ExtensionUiWorkspaceComponentProps) => unknown;
 }
 
 export interface ExtensionGenerationInputSnapshot {

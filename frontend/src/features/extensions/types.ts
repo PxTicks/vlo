@@ -66,6 +66,7 @@ export type {
   ExtensionTrustedTransformationState,
   ExtensionTrustedUiComponentDefinition,
   ExtensionTrustedUiModalDefinition,
+  ExtensionTrustedUiWorkspaceDefinition,
   ExtensionUiApi,
   ExtensionUiComponentProps,
   ExtensionUiModalComponentProps,
@@ -74,6 +75,8 @@ export type {
   ExtensionUiNoticeTone,
   ExtensionUiRegistration,
   ExtensionUiSlotId,
+  ExtensionUiWorkspaceComponentProps,
+  ExtensionUiWorkspaceLocation,
   JsonValue,
   VloExtensionApi,
 } from "@vlo/extension-sdk";

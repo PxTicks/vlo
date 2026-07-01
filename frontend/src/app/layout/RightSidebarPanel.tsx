@@ -10,18 +10,26 @@ import { TransformationPanel } from "../../features/transformations";
 import { GenerationPanel } from "../../features/generation";
 import { MaskPanel, useMaskViewStore } from "../../features/masks";
 import { TransitionPanel } from "../../features/transitions";
+import {
+  ExtensionWorkspaceMount,
+  useExtensionWorkspaceRegion,
+} from "../../features/extensions/ui/publicApi";
 
-type RightSidebarTab = "transform" | "mask" | "generate" | "transition";
+type CoreRightSidebarTab = "transform" | "mask" | "generate" | "transition";
 
 interface TabPanelProps {
   readonly active: boolean;
   readonly children: ReactNode;
+  readonly id?: string;
+  readonly labelledBy?: string;
 }
 
-function TabPanel({ active, children }: TabPanelProps) {
+function TabPanel({ active, children, id, labelledBy }: TabPanelProps) {
   return (
     <Box
+      id={id}
       role="tabpanel"
+      aria-labelledby={labelledBy}
       aria-hidden={!active}
       sx={{
         position: "absolute",
@@ -48,10 +56,17 @@ function RightSidebarPanelComponent() {
   // attachments nor range-mask components have any render-time effect.
   const primarySelectedClip = useTimelineClip(selectedClipIds[0]);
   const isAdjustmentSelected = primarySelectedClip?.type === "adjustment";
-  const [activeTab, setActiveTab] = useState<RightSidebarTab>("generate");
+  const [activeTab, setActiveTab] = useState<CoreRightSidebarTab>("generate");
+  const {
+    workspaces,
+    selectedWorkspaceId,
+    selectWorkspace,
+  } = useExtensionWorkspaceRegion("right-sidebar");
 
   // On selection-kind changes, snap to the matching editor: Transition for a
   // transition, Transform for a clip, and Generate when selection is cleared.
+  // A selected extension workspace remains open; the matching core tab is
+  // prepared underneath it for when the user returns to a built-in surface.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveTab(
@@ -69,13 +84,14 @@ function RightSidebarPanelComponent() {
   // render rather than via a follow-up effect (which would briefly leave
   // value="mask" without a Mask child, triggering MUI warnings and a
   // spurious setMaskTabActive(true) tick).
-  const visibleTab = hasTransitionSelection
+  const visibleCoreTab = hasTransitionSelection
     ? "transition"
     : !hasClipSelection
       ? "generate"
       : isAdjustmentSelected && activeTab === "mask"
         ? "transform"
         : activeTab;
+  const visibleTab = selectedWorkspaceId ?? visibleCoreTab;
 
   useEffect(() => {
     const { setMaskTabActive } = useMaskViewStore.getState();
@@ -87,9 +103,19 @@ function RightSidebarPanelComponent() {
       <Tabs
         data-testid="right-sidebar-tabs"
         value={visibleTab}
-        onChange={(_, v: RightSidebarTab) => setActiveTab(v)}
+        onChange={(_, value: string) => {
+          const workspace = workspaces.find((entry) => entry.id === value);
+          if (workspace) {
+            selectWorkspace(workspace.id);
+            return;
+          }
+          selectWorkspace(null);
+          setActiveTab(value as CoreRightSidebarTab);
+        }}
         textColor="primary"
         indicatorColor="primary"
+        variant="scrollable"
+        scrollButtons="auto"
         sx={{
           minHeight: 40,
           borderBottom: "1px solid #333",
@@ -118,6 +144,16 @@ function RightSidebarPanelComponent() {
         {hasClipSelection && !isAdjustmentSelected && (
           <Tab data-testid="right-sidebar-tab-mask" label="Mask" value="mask" />
         )}
+        {workspaces.map((workspace) => (
+          <Tab
+            key={workspace.id}
+            id={`extension-workspace-tab-${workspace.id}`}
+            aria-controls={`extension-workspace-panel-${workspace.id}`}
+            data-testid={`right-sidebar-tab-${workspace.id}`}
+            label={workspace.title}
+            value={workspace.id}
+          />
+        ))}
       </Tabs>
       <Box sx={{ flexGrow: 1, position: "relative", overflow: "hidden" }}>
         <TabPanel active={visibleTab === "generate"}>
@@ -138,6 +174,20 @@ function RightSidebarPanelComponent() {
             <MaskPanel />
           </TabPanel>
         )}
+        {workspaces.map((workspace) => (
+          <TabPanel
+            key={workspace.id}
+            id={`extension-workspace-panel-${workspace.id}`}
+            labelledBy={`extension-workspace-tab-${workspace.id}`}
+            active={visibleTab === workspace.id}
+          >
+            <ExtensionWorkspaceMount
+              workspaceId={workspace.id}
+              location={workspace.location}
+              active={visibleTab === workspace.id}
+            />
+          </TabPanel>
+        ))}
       </Box>
     </Box>
   );

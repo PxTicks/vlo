@@ -1,4 +1,9 @@
-from fastapi import APIRouter, Request, WebSocket
+import json
+from pathlib import Path
+from urllib.parse import unquote
+
+from fastapi import APIRouter, Request, Response, WebSocket
+from fastapi.responses import FileResponse
 
 from services.comfyui.comfyui_proxy import (
     PROXY_HTTP_METHODS,
@@ -10,6 +15,47 @@ from services.comfyui.comfyui_proxy import (
 
 compat_router = APIRouter(tags=["comfyui-compat"])
 
+_BRIDGE_EXTENSION_URL = "/extensions/vlo-host/vlo-bridge.js"
+_BRIDGE_ASSET_ROOT = (
+    Path(__file__).resolve().parent.parent / "assets" / "comfyui_bridge"
+)
+_BRIDGE_ASSETS = {
+    "extensions/vlo-host/vlo-bridge.js": _BRIDGE_ASSET_ROOT / "vlo-bridge.js",
+    "extensions/vlo-host/bridge-core.mjs": _BRIDGE_ASSET_ROOT / "bridge-core.mjs",
+}
+_IFRAME_EXTENSION_LIST_PATHS = {"api/extensions", "extensions"}
+
+
+def _is_installed_vlo_bridge(extension_url: str) -> bool:
+    normalized = unquote(extension_url).replace("\\", "/").lower()
+    return normalized.endswith("/comfyui-vlo/vlo-bridge.js")
+
+
+def _decorate_extension_list(response: Response) -> Response:
+    if response.status_code < 200 or response.status_code >= 300:
+        return response
+    try:
+        payload = json.loads(bytes(response.body))
+    except (AttributeError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        return response
+    if not isinstance(payload, list) or not all(
+        isinstance(item, str) for item in payload
+    ):
+        return response
+
+    extensions = [
+        item
+        for item in payload
+        if item != _BRIDGE_EXTENSION_URL and not _is_installed_vlo_bridge(item)
+    ]
+    extensions.append(_BRIDGE_EXTENSION_URL)
+    return Response(
+        content=json.dumps(extensions),
+        status_code=response.status_code,
+        media_type="application/json",
+        headers={"Cache-Control": "no-store"},
+    )
+
 
 # ---------------------------------------------------------------------------
 # Root compatibility routes for same-origin ComfyUI iframe usage
@@ -18,9 +64,23 @@ compat_router = APIRouter(tags=["comfyui-compat"])
 @compat_router.api_route("/comfyui-frame", methods=PROXY_HTTP_METHODS)
 @compat_router.api_route("/comfyui-frame/{path:path}", methods=PROXY_HTTP_METHODS)
 async def proxy_comfyui_frame(request: Request, path: str = ""):
+    normalized_path = path.strip("/")
+    bridge_asset = _BRIDGE_ASSETS.get(normalized_path)
+    if bridge_asset is not None:
+        return FileResponse(
+            bridge_asset,
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-store"},
+        )
+    if normalized_path.startswith("extensions/vlo-host/"):
+        return Response(status_code=404, content="Bridge asset not found")
+
     # Preserve raw encoded file paths when proxying iframe-scoped requests.
     upstream_path = upstream_path_from_raw_request(request, "/comfyui-frame")
-    return await proxy_http_request(request, upstream_path)
+    response = await proxy_http_request(request, upstream_path)
+    if request.method == "GET" and normalized_path in _IFRAME_EXTENSION_LIST_PATHS:
+        return _decorate_extension_list(response)
+    return response
 
 
 @compat_router.api_route("/api", methods=PROXY_HTTP_METHODS)

@@ -1,5 +1,5 @@
-import type { ComfyUIPreview } from "../services/ComfyUIWebSocket";
-import type { GenerationJob, GenerationJobOutput } from "../types";
+import type { ParsedBinaryPreview as ComfyUIPreview } from "../services/previewBinary";
+import type { GenerationJob } from "../types";
 import {
   getPreviewFrameExtension,
   getPreviewFrameIndex,
@@ -20,13 +20,6 @@ type JobErrorState = Pick<
   GenerationStore,
   "jobs" | "jobPreviewFrames" | "previewAnimation" | "activeJobId" | "connectionStatus"
 >;
-
-type JobCompletionState = Pick<
-  GenerationStore,
-  "jobs" | "previewAnimation" | "activeJobId"
->;
-
-type JobProgressState = Pick<GenerationStore, "jobs" | "activeJobId">;
 
 type JobPreviewState = Pick<
   GenerationStore,
@@ -151,95 +144,6 @@ export function setJobPostprocessResult(
     postprocessedPreview: result.postprocessedPreview ?? null,
     postprocessError: result.postprocessError,
     importedAssetIds: result.importedAssetIds ?? currentJob.importedAssetIds,
-  });
-  return { jobs: updated };
-}
-
-export function completeGenerationJob(
-  state: JobCompletionState,
-  promptId: string,
-  outputsOverride?: GenerationJob["outputs"],
-): { patch: GenerationStorePatch; completedJob: GenerationJob | null } {
-  const currentJob = state.jobs.get(promptId);
-  if (
-    !currentJob ||
-    currentJob.status === "error" ||
-    currentJob.status === "completed"
-  ) {
-    return { patch: {}, completedJob: null };
-  }
-
-  const completedJob: GenerationJob = {
-    ...currentJob,
-    status: "completed",
-    progress: 100,
-    currentNode: null,
-    completedAt: Date.now(),
-    outputs: outputsOverride ?? currentJob.outputs,
-  };
-
-  const updated = new Map(state.jobs);
-  updated.set(promptId, completedJob);
-  revokePreviewAnimation(state.previewAnimation);
-
-  return {
-    patch: {
-      jobs: updated,
-      previewAnimation: null,
-      ...(state.activeJobId === promptId ? { activeJobId: null } : {}),
-    },
-    completedJob,
-  };
-}
-
-export function applyJobProgress(
-  state: JobProgressState,
-  promptId: string,
-  progress: number,
-  currentNode: string,
-): GenerationStorePatch {
-  const job = state.jobs.get(promptId);
-  if (!isActiveGenerationJob(job)) return {};
-
-  const updated = new Map(state.jobs);
-  updated.set(promptId, {
-    ...job,
-    status: "running",
-    progress,
-    currentNode,
-  });
-  return { jobs: updated, activeJobId: promptId };
-}
-
-export function applyExecutingNode(
-  state: JobProgressState,
-  promptId: string,
-  currentNode: string,
-): GenerationStorePatch {
-  const job = state.jobs.get(promptId);
-  if (!isActiveGenerationJob(job)) return {};
-
-  const updated = new Map(state.jobs);
-  updated.set(promptId, {
-    ...job,
-    status: "running",
-    currentNode,
-  });
-  return { jobs: updated, activeJobId: promptId };
-}
-
-export function appendJobOutputs(
-  state: Pick<GenerationStore, "jobs">,
-  promptId: string,
-  newOutputs: GenerationJobOutput[],
-): GenerationStorePatch {
-  const job = state.jobs.get(promptId);
-  if (!job || job.status === "error" || newOutputs.length === 0) return {};
-
-  const updated = new Map(state.jobs);
-  updated.set(promptId, {
-    ...job,
-    outputs: [...job.outputs, ...newOutputs],
   });
   return { jobs: updated };
 }

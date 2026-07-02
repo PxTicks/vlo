@@ -1,12 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  applyPreviewUpdate,
-  completeGenerationJob,
-  markActiveJobError,
-} from "../jobMutations";
+import { applyPreviewUpdate, markActiveJobError } from "../jobMutations";
 
 type ErrorState = Parameters<typeof markActiveJobError>[0];
-type CompletionState = Parameters<typeof completeGenerationJob>[0];
 type PreviewState = Parameters<typeof applyPreviewUpdate>[0];
 
 function makeErrorState(overrides: Partial<ErrorState> = {}): ErrorState {
@@ -15,17 +10,6 @@ function makeErrorState(overrides: Partial<ErrorState> = {}): ErrorState {
     activeJobId: null,
     jobs: new Map(),
     jobPreviewFrames: new Map(),
-    previewAnimation: null,
-    ...overrides,
-  };
-}
-
-function makeCompletionState(
-  overrides: Partial<CompletionState> = {},
-): CompletionState {
-  return {
-    activeJobId: null,
-    jobs: new Map(),
     previewAnimation: null,
     ...overrides,
   };
@@ -90,37 +74,6 @@ describe("jobMutations", () => {
       completedAt: 10,
     });
     expect(revokeSpy).toHaveBeenCalledWith("blob:1");
-  });
-
-  it("marks a job completed and clears it as the active job", () => {
-    const state = makeCompletionState({
-      activeJobId: "job-1",
-      jobs: new Map([
-        [
-          "job-1",
-          {
-            id: "job-1",
-            status: "running",
-            progress: 80,
-            currentNode: "node-2",
-            outputs: [],
-            error: null,
-            submittedAt: 1,
-            completedAt: null,
-          },
-        ],
-      ]),
-    });
-
-    const result = completeGenerationJob(state, "job-1");
-
-    expect(result.completedJob).not.toBeNull();
-    expect(result.patch.activeJobId).toBeNull();
-    expect(result.patch.jobs?.get("job-1")).toMatchObject({
-      status: "completed",
-      progress: 100,
-      currentNode: null,
-    });
   });
 
   it("collects websocket preview frames for SaveImageWebsocket outputs", () => {

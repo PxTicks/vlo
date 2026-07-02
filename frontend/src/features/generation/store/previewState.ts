@@ -1,4 +1,4 @@
-import type { ComfyUIPreview } from "../services/ComfyUIWebSocket";
+import type { ParsedBinaryPreview as ComfyUIPreview } from "../services/previewBinary";
 import type { GenerationJob } from "../types";
 import type { PreviewAnimation } from "./types";
 

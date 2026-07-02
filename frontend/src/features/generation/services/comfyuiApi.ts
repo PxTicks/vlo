@@ -13,12 +13,6 @@ import type { WorkflowOption } from "../store/types";
 
 const COMFY_API = `${API_BASE_URL}/comfy`;
 
-export interface PromptSubmission {
-  prompt: Record<string, unknown>;
-  client_id: string;
-  prompt_id?: string;
-}
-
 export interface PromptResponse {
   prompt_id: string;
   delivery_id?: string;
@@ -150,40 +144,6 @@ export class ComfyApiError extends Error {
     this.payload = payload;
     this.nodeErrors = extractNodeErrors(payload);
   }
-}
-
-export async function submitPrompt(
-  submission: PromptSubmission,
-): Promise<PromptResponse> {
-  const resp = await fetch(`${COMFY_API}/prompt`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(submission),
-  });
-  if (!resp.ok) {
-    const payload = await parsePayload(resp);
-    throw new ComfyApiError(
-      formatComfyErrorMessage("Prompt submission", resp.status, payload),
-      resp.status,
-      payload,
-    );
-  }
-
-  const data = (await resp.json()) as PromptResponse;
-  if (hasNodeErrors(data.node_errors)) {
-    const validationStatus = resp.status >= 400 ? resp.status : 400;
-    const payload = {
-      error: { message: "Prompt validation failed before execution" },
-      node_errors: data.node_errors,
-    };
-    throw new ComfyApiError(
-      formatComfyErrorMessage("Prompt submission", validationStatus, payload),
-      validationStatus,
-      payload,
-    );
-  }
-
-  return data;
 }
 
 export async function interrupt(): Promise<void> {
@@ -343,24 +303,6 @@ export async function generate(
   }
 
   return data;
-}
-
-export async function getHistory(
-  promptId: string,
-): Promise<Record<string, unknown>> {
-  const resp = await fetch(`${COMFY_API}/history/${promptId}`);
-  if (!resp.ok) {
-    await throwRequestError("History fetch", resp);
-  }
-  return (await resp.json()) as Record<string, unknown>;
-}
-
-export async function getQueue(): Promise<Record<string, unknown>> {
-  const resp = await fetch(`${COMFY_API}/api/queue`);
-  if (!resp.ok) {
-    await throwRequestError("Queue fetch", resp);
-  }
-  return (await resp.json()) as Record<string, unknown>;
 }
 
 export async function fetchOutputAsFile(

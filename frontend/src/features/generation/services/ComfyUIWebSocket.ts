@@ -3,112 +3,23 @@ export interface ComfyUIStatusEvent {
   data: { status: { exec_info: { queue_remaining: number } }; sid?: string };
 }
 
-export interface ComfyUIProgressEvent {
-  type: "progress";
-  data: { value: number; max: number; prompt_id: string; node: string };
-}
-
-export interface ComfyUIExecutionStartEvent {
-  type: "execution_start";
-  data: { prompt_id: string };
-}
-
-export interface ComfyUIExecutionCachedEvent {
-  type: "execution_cached";
-  data: { prompt_id: string; nodes: string[] };
-}
-
-export interface ComfyUIExecutionSuccessEvent {
-  type: "execution_success";
-  data: { prompt_id: string; timestamp: number };
-}
-
-export interface ComfyUIExecutingEvent {
-  type: "executing";
-  data: { node: string | null; display_node?: string; prompt_id: string };
-}
-
-export interface ComfyUIExecutedEvent {
-  type: "executed";
-  data: {
-    node: string;
-    display_node?: string;
-    prompt_id: string;
-    output: {
-      images?: Array<{ filename: string; subfolder: string; type: string }>;
-      gifs?: Array<{ filename: string; subfolder: string; type: string }>;
-      videos?: Array<{ filename: string; subfolder: string; type: string }>;
-    };
-  };
-}
-
-export interface ComfyUIExecutionErrorEvent {
-  type: "execution_error";
-  data: {
-    prompt_id: string;
-    node_id: string;
-    node_type: string;
-    exception_message: string;
-    exception_type: string;
-    traceback: string[];
-  };
-}
-
-export interface ComfyUIExecutionInterruptedEvent {
-  type: "execution_interrupted";
-  data: {
-    prompt_id: string;
-    node_id: string;
-    node_type: string;
-    executed: string[];
-  };
-}
-
 export interface ComfyUIProxyErrorEvent {
   type: "error";
   data: { message: string };
 }
 
-interface ComfyUIFeatureFlagsEvent {
-  type: "feature_flags";
-  data: Record<string, unknown>;
-}
-
-interface ComfyUIVhsLatentPreviewEvent {
-  type: "VHS_latentpreview";
-  data: { length: number; rate: number; id: string };
-}
-
-export type ComfyUIEvent =
-  | ComfyUIStatusEvent
-  | ComfyUIProgressEvent
-  | ComfyUIExecutionStartEvent
-  | ComfyUIExecutionCachedEvent
-  | ComfyUIExecutionSuccessEvent
-  | ComfyUIExecutingEvent
-  | ComfyUIExecutedEvent
-  | ComfyUIExecutionErrorEvent
-  | ComfyUIExecutionInterruptedEvent
-  | ComfyUIProxyErrorEvent;
-
-import {
-  parseBinaryPreviewPayload,
-  type ParsedBinaryPreview,
-  type PreviewSequenceMetadata,
-} from "./previewBinary";
-
-const PREVIEW_METADATA_FEATURE_FLAGS = JSON.stringify({
-  type: "feature_flags",
-  data: {
-    supports_preview_metadata: true,
-  },
-});
-
-export type ComfyUIPreview = ParsedBinaryPreview;
+/**
+ * Events consumed from the ComfyUI status websocket.
+ *
+ * This channel is connection-health only: ComfyUI unicasts per-job events
+ * (progress, executing, executed, execution_success/error) to the submitting
+ * client_id, which is the backend delivery monitor. Job lifecycle reaches the
+ * frontend via the generation delivery websocket instead.
+ */
+export type ComfyUIEvent = ComfyUIStatusEvent | ComfyUIProxyErrorEvent;
 
 export type ComfyUIConnectionState = "connected" | "disconnected";
 export type ComfyUIEventHandler = (event: ComfyUIEvent) => void;
-export type ComfyUIPreviewHandler = (preview: ComfyUIPreview) => void;
 export type ComfyUIConnectionChangeHandler = (
   state: ComfyUIConnectionState,
 ) => void;
@@ -118,14 +29,9 @@ export class ComfyUIWebSocket {
   private readonly clientId: string;
   private readonly baseUrl: string;
   private eventHandlers = new Set<ComfyUIEventHandler>();
-  private previewHandlers = new Set<ComfyUIPreviewHandler>();
   private connectionChangeHandlers = new Set<ComfyUIConnectionChangeHandler>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
-  private readonly previewSequenceMetadataByNodeId = new Map<
-    string,
-    PreviewSequenceMetadata
-  >();
 
   constructor(baseUrl: string) {
     this.clientId = crypto.randomUUID();
@@ -156,10 +62,8 @@ export class ComfyUIWebSocket {
     const wsUrl = `${protocol}//${window.location.host}${this.baseUrl}/comfy/ws?clientId=${this.clientId}`;
 
     this.ws = new WebSocket(wsUrl);
-    this.ws.binaryType = "arraybuffer";
 
     this.ws.onopen = () => {
-      this.ws?.send(PREVIEW_METADATA_FEATURE_FLAGS);
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
@@ -168,10 +72,8 @@ export class ComfyUIWebSocket {
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
-      if (event.data instanceof ArrayBuffer) {
-        this.handleBinaryMessage(event.data);
-      } else {
-        this.handleTextMessage(event.data as string);
+      if (typeof event.data === "string") {
+        this.handleTextMessage(event.data);
       }
     };
 
@@ -210,13 +112,6 @@ export class ComfyUIWebSocket {
     };
   }
 
-  onPreview(handler: ComfyUIPreviewHandler): () => void {
-    this.previewHandlers.add(handler);
-    return () => {
-      this.previewHandlers.delete(handler);
-    };
-  }
-
   onConnectionChange(handler: ComfyUIConnectionChangeHandler): () => void {
     this.connectionChangeHandlers.add(handler);
     return () => {
@@ -225,59 +120,20 @@ export class ComfyUIWebSocket {
   }
 
   private handleTextMessage(data: string): void {
+    let event: unknown;
     try {
-      const event = JSON.parse(data) as
-        | ComfyUIEvent
-        | ComfyUIFeatureFlagsEvent
-        | ComfyUIVhsLatentPreviewEvent;
-
-      if (this.isVhsLatentPreviewEvent(event)) {
-        this.previewSequenceMetadataByNodeId.set(event.data.id, {
-          frameRate: event.data.rate,
-          nodeId: event.data.id,
-          totalFrames: event.data.length,
-        });
-        return;
-      }
-
-      if (!this.isComfyUIEvent(event)) {
-        return;
-      }
-
-      for (const handler of this.eventHandlers) {
-        handler(event);
-      }
+      event = JSON.parse(data);
     } catch {
-      // ignore unparseable messages (e.g. feature_flags)
-    }
-  }
-
-  private handleBinaryMessage(data: ArrayBuffer): void {
-    const parsed = parseBinaryPreviewPayload(data, (nodeId) =>
-      this.findPreviewSequenceMetadata(nodeId),
-    );
-    if (!parsed) return;
-
-    for (const handler of this.previewHandlers) {
-      handler(parsed);
-    }
-  }
-
-  private findPreviewSequenceMetadata(
-    nodeId: string,
-  ): PreviewSequenceMetadata | null {
-    const exactMatch = this.previewSequenceMetadataByNodeId.get(nodeId);
-    if (exactMatch) {
-      return exactMatch;
+      return;
     }
 
-    for (const [knownNodeId, metadata] of this.previewSequenceMetadataByNodeId) {
-      if (knownNodeId.startsWith(nodeId) || nodeId.startsWith(knownNodeId)) {
-        return metadata;
-      }
+    if (!this.isComfyUIEvent(event)) {
+      return;
     }
 
-    return null;
+    for (const handler of this.eventHandlers) {
+      handler(event);
+    }
   }
 
   private isComfyUIEvent(event: unknown): event is ComfyUIEvent {
@@ -286,28 +142,7 @@ export class ComfyUIWebSocket {
     }
 
     const eventType = (event as { type?: unknown }).type;
-    return (
-      eventType === "status" ||
-      eventType === "progress" ||
-      eventType === "execution_start" ||
-      eventType === "execution_cached" ||
-      eventType === "execution_success" ||
-      eventType === "executing" ||
-      eventType === "executed" ||
-      eventType === "execution_error" ||
-      eventType === "execution_interrupted" ||
-      eventType === "error"
-    );
-  }
-
-  private isVhsLatentPreviewEvent(
-    event: unknown,
-  ): event is ComfyUIVhsLatentPreviewEvent {
-    if (!event || typeof event !== "object") {
-      return false;
-    }
-
-    return (event as { type?: unknown }).type === "VHS_latentpreview";
+    return eventType === "status" || eventType === "error";
   }
 
   private notifyConnectionChange(state: ComfyUIConnectionState): void {

@@ -5,17 +5,14 @@ import {
   generate,
   getConfig,
   getHealth,
-  getHistory,
   getObjectInfo,
   getOutputViewUrl,
-  getQueue,
   getWorkflowContent,
   getWorkflowRules,
   interrupt,
   listWorkflows,
   resolveWorkflowRules,
   saveWorkflowContent,
-  submitPrompt,
   syncObjectInfo,
   updateConfig,
   uploadWorkflowJsonFiles,
@@ -82,105 +79,6 @@ afterEach(() => {
 function lastFetchUrl(): string {
   return String(fetchMock.mock.calls.at(-1)?.[0]);
 }
-
-describe("comfyuiApi submitPrompt", () => {
-  it("returns parsed response on success", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({ body: { prompt_id: "p1", number: 1, node_errors: {} } }),
-    );
-
-    const result = await submitPrompt({ prompt: {}, client_id: "c1" });
-    expect(result.prompt_id).toBe("p1");
-    expect(lastFetchUrl()).toContain("/comfy/prompt");
-  });
-
-  it("throws ComfyApiError with extracted nested error message on failure", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        ok: false,
-        status: 422,
-        body: { error: { message: "bad prompt" } },
-      }),
-    );
-
-    await expect(submitPrompt({ prompt: {}, client_id: "c1" })).rejects.toThrow(
-      /Prompt submission failed \(422\): bad prompt/,
-    );
-  });
-
-  it("treats node_errors in a 200 response as a validation failure", async () => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        body: {
-          prompt_id: "p1",
-          number: 1,
-          node_errors: {
-            "5": {
-              class_type: "KSampler",
-              errors: [{ message: "missing", details: "seed" }],
-            },
-          },
-        },
-      }),
-    );
-
-    await expect(
-      submitPrompt({ prompt: {}, client_id: "c1" }),
-    ).rejects.toMatchObject({
-      name: "ComfyApiError",
-      status: 400,
-    });
-  });
-
-  it.each([
-    {
-      body: "plain failure",
-      contentType: "text/plain",
-      expected: "plain failure",
-    },
-    {
-      body: { message: "top-level failure" },
-      contentType: "application/json",
-      expected: "top-level failure",
-    },
-    {
-      text: "{bad-json",
-      contentType: "application/json",
-      expected: "{bad-json",
-    },
-  ])("extracts useful error detail from $contentType", async (response) => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        ok: false,
-        status: 400,
-        ...response,
-      }),
-    );
-
-    await expect(
-      submitPrompt({ prompt: {}, client_id: "c1" }),
-    ).rejects.toThrow(response.expected);
-  });
-
-  it.each([
-    [{ "3": "invalid" }, "node 3"],
-    [{ "4": { class_type: "Sampler" } }, "node 4 (Sampler)"],
-    [{ "5": { errors: [{ message: " bad ", details: " seed " }] } }, "bad seed"],
-    [{ "6": { errors: [{}] } }, "node 6"],
-  ])("summarizes node validation errors %#", async (nodeErrors, expected) => {
-    fetchMock.mockResolvedValueOnce(
-      makeResponse({
-        ok: false,
-        status: 422,
-        body: { node_errors: nodeErrors },
-      }),
-    );
-
-    await expect(
-      submitPrompt({ prompt: {}, client_id: "c1" }),
-    ).rejects.toThrow(expected);
-  });
-});
 
 describe("comfyuiApi generate", () => {
   function baseRequest(): GenerationRequest {
@@ -304,6 +202,51 @@ describe("comfyuiApi generate", () => {
       status: 400,
     });
   });
+
+  it.each([
+    {
+      body: "plain failure",
+      contentType: "text/plain",
+      expected: "plain failure",
+    },
+    {
+      body: { message: "top-level failure" },
+      contentType: "application/json",
+      expected: "top-level failure",
+    },
+    {
+      text: "{bad-json",
+      contentType: "application/json",
+      expected: "{bad-json",
+    },
+  ])("extracts useful error detail from $contentType", async (response) => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse({
+        ok: false,
+        status: 400,
+        ...response,
+      }),
+    );
+
+    await expect(generate(baseRequest())).rejects.toThrow(response.expected);
+  });
+
+  it.each([
+    [{ "3": "invalid" }, "node 3"],
+    [{ "4": { class_type: "Sampler" } }, "node 4 (Sampler)"],
+    [{ "5": { errors: [{ message: " bad ", details: " seed " }] } }, "bad seed"],
+    [{ "6": { errors: [{}] } }, "node 6"],
+  ])("summarizes node validation errors %#", async (nodeErrors, expected) => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse({
+        ok: false,
+        status: 422,
+        body: { node_errors: nodeErrors },
+      }),
+    );
+
+    await expect(generate(baseRequest())).rejects.toThrow(expected);
+  });
 });
 
 describe("comfyuiApi simple endpoints", () => {
@@ -330,7 +273,6 @@ describe("comfyuiApi simple endpoints", () => {
   it.each([
     ["health", () => getHealth(), "ComfyUI health check"],
     ["config", () => getConfig(), "ComfyUI config fetch"],
-    ["history", () => getHistory("p1"), "History fetch"],
     ["object info", () => getObjectInfo(), "object_info fetch"],
     ["sync", () => syncObjectInfo(), "object_info sync"],
   ])("%s surfaces HTTP failures", async (_name, request, operation) => {
@@ -359,15 +301,11 @@ describe("comfyuiApi simple endpoints", () => {
     );
   });
 
-  it("getHistory, getQueue, getObjectInfo, syncObjectInfo return JSON", async () => {
+  it("getObjectInfo and syncObjectInfo return JSON", async () => {
     fetchMock
-      .mockResolvedValueOnce(makeResponse({ body: { h: 1 } }))
-      .mockResolvedValueOnce(makeResponse({ body: { q: 1 } }))
       .mockResolvedValueOnce(makeResponse({ body: { o: 1 } }))
       .mockResolvedValueOnce(makeResponse({ body: { synced: true, node_classes: 3 } }));
 
-    expect(await getHistory("p1")).toEqual({ h: 1 });
-    expect(await getQueue()).toEqual({ q: 1 });
     expect(await getObjectInfo()).toEqual({ o: 1 });
     expect(await syncObjectInfo()).toEqual({ synced: true, node_classes: 3 });
   });
@@ -376,7 +314,9 @@ describe("comfyuiApi simple endpoints", () => {
     fetchMock.mockResolvedValueOnce(
       makeResponse({ ok: false, status: 404, text: "" }),
     );
-    await expect(getQueue()).rejects.toThrow(/Queue fetch failed \(404\)$/);
+    await expect(getObjectInfo()).rejects.toThrow(
+      /object_info fetch failed \(404\)$/,
+    );
   });
 });
 

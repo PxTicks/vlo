@@ -43,8 +43,12 @@ Generation is gated on `isWorkflowReady && !isWorkflowLoading`.
 Each submitted prompt is tracked as a `GenerationJob`:
 
 - `queued -> running -> completed | error`
-- incremental outputs from websocket `executed` events
-- final output reconciliation via history fetch retry
+- all job lifecycle updates (progress, outputs, completion, errors) arrive via
+  the generation delivery websocket (`store/deliveryEvents.ts`), fed by the
+  backend delivery monitor
+- the direct ComfyUI websocket (`services/ComfyUIWebSocket.ts`) is a
+  connection-status channel only: ComfyUI unicasts per-job events to the
+  submitting client_id, which is the backend monitor, never the browser
 
 ## End-to-end flow
 
@@ -140,5 +144,6 @@ npm run test --prefix frontend -- --run src/features/generation
   - inspect `workflowSyncController` deferral reason
 
 - Output missing from panel but job completed:
-  - inspect history fetch retries in `store/history.ts`
-  - verify backend `/history` compatibility routing
+  - inspect the delivery manifest state (`/app/generation-delivery` routes)
+  - check the backend delivery monitor logs (reconcile backstop in
+    `backend/services/generation_delivery/service.py`)

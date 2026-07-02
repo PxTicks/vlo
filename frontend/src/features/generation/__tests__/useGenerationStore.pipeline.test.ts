@@ -12,10 +12,7 @@ const {
   mockFrontendPreprocess,
   mockGenerate,
   mockGetConfig,
-  mockGetPromptHistoryStateWithRetry,
-  mockGetQueue,
   mockGetRuntimeStatus,
-  mockGetHistoryOutputsWithRetry,
   mockInterrupt,
   mockListWorkflows,
   mockPreResolvePrompt,
@@ -26,10 +23,7 @@ const {
   mockFrontendPreprocess: vi.fn(),
   mockGenerate: vi.fn(),
   mockGetConfig: vi.fn(),
-  mockGetPromptHistoryStateWithRetry: vi.fn(),
-  mockGetQueue: vi.fn(),
   mockGetRuntimeStatus: vi.fn(),
-  mockGetHistoryOutputsWithRetry: vi.fn(),
   mockInterrupt: vi.fn(),
   mockListWorkflows: vi.fn(),
   mockPreResolvePrompt: vi.fn(),
@@ -197,6 +191,17 @@ vi.mock("../services/GenerationDeliveryWebSocket", () => ({
       }
     }
 
+    emitPreview(preview: {
+      blob: Blob;
+      frameIndex?: number;
+      frameRate?: number;
+      totalFrames?: number;
+    }): void {
+      for (const handler of this.previewHandlers) {
+        handler(preview);
+      }
+    }
+
     emitConnectionChange(state: "connected" | "disconnected"): void {
       for (const handler of this.connectionChangeHandlers) {
         handler(state);
@@ -212,7 +217,6 @@ vi.mock("../services/comfyuiApi", async (importOriginal) => {
     ...actual,
     generate: mockGenerate,
     getConfig: mockGetConfig,
-    getQueue: mockGetQueue,
     interrupt: mockInterrupt,
     listWorkflows: mockListWorkflows,
   };
@@ -220,11 +224,6 @@ vi.mock("../services/comfyuiApi", async (importOriginal) => {
 
 vi.mock("../../../services/runtimeApi", () => ({
   getRuntimeStatus: mockGetRuntimeStatus,
-}));
-
-vi.mock("../store/history", () => ({
-  getHistoryOutputsWithRetry: mockGetHistoryOutputsWithRetry,
-  getPromptHistoryStateWithRetry: mockGetPromptHistoryStateWithRetry,
 }));
 
 vi.mock("../utils/pipeline", async (importOriginal) => {
@@ -410,6 +409,25 @@ function getLatestClient(): MockWsClient {
   return latest as MockWsClient;
 }
 
+interface MockDeliveryClient {
+  emitMessage: (message: unknown) => void;
+  emitPreview: (preview: {
+    blob: Blob;
+    frameIndex?: number;
+    frameRate?: number;
+    totalFrames?: number;
+  }) => void;
+  emitConnectionChange: (state: "connected" | "disconnected") => void;
+}
+
+function getLatestDeliveryClient(): MockDeliveryClient {
+  const latest = mockDeliveryWsInstances[mockDeliveryWsInstances.length - 1];
+  if (!latest) {
+    throw new Error("Expected a delivery websocket client instance");
+  }
+  return latest as MockDeliveryClient;
+}
+
 describe("useGenerationStore pipeline phases", () => {
   beforeEach(() => {
     mockWsInstances.length = 0;
@@ -418,10 +436,7 @@ describe("useGenerationStore pipeline phases", () => {
     mockFrontendPostprocess.mockReset();
     mockGenerate.mockReset();
     mockGetConfig.mockReset();
-    mockGetPromptHistoryStateWithRetry.mockReset();
-    mockGetQueue.mockReset();
     mockGetRuntimeStatus.mockReset();
-    mockGetHistoryOutputsWithRetry.mockReset();
     mockInterrupt.mockReset();
     mockListWorkflows.mockReset();
     mockPreResolvePrompt.mockReset();
@@ -474,22 +489,6 @@ describe("useGenerationStore pipeline phases", () => {
         status: "available",
         error: null,
       },
-    });
-    mockGetHistoryOutputsWithRetry.mockResolvedValue([
-      {
-        filename: "output.png",
-        subfolder: "",
-        type: "output",
-        viewUrl: "/output.png",
-      },
-    ]);
-    mockGetPromptHistoryStateWithRetry.mockResolvedValue({
-      hasPromptEntry: false,
-      outputs: [],
-    });
-    mockGetQueue.mockResolvedValue({
-      queue_running: [],
-      queue_pending: [],
     });
     mockInterrupt.mockResolvedValue(undefined);
     mockListWorkflows.mockResolvedValue([]);
@@ -1903,378 +1902,6 @@ describe("useGenerationStore pipeline phases", () => {
     expect(useGenerationStore.getState().jobs.size).toBe(0);
   });
 
-  it("tracks postprocessing jobs after completion and clears once postprocess finishes", async () => {
-    const postprocessDeferred = createDeferred<{
-      postprocessedPreview: null;
-      postprocessError: null;
-      importedAssetIds: string[];
-    }>();
-    mockFrontendPostprocess.mockReturnValue(postprocessDeferred.promise);
-
-    useGenerationStore.setState({
-      jobs: new Map([["prompt-post", makeQueuedJob("prompt-post")]]),
-      activeJobId: "prompt-post",
-      pipelineRunToken: 1,
-    });
-
-    useGenerationStore.getState().connect();
-    const client = getLatestClient();
-    client.emitEvent({
-      type: "executing",
-      data: {
-        node: null,
-        prompt_id: "prompt-post",
-      },
-    });
-    await flushMicrotasks();
-
-    expect(useGenerationStore.getState().postprocessingJobIds).toEqual([
-      "prompt-post",
-    ]);
-
-    postprocessDeferred.resolve({
-      postprocessedPreview: null,
-      postprocessError: null,
-      importedAssetIds: ["asset-1"],
-    });
-    await flushMicrotasks();
-
-    const state = useGenerationStore.getState();
-    expect(state.postprocessingJobIds).toEqual([]);
-    expect(state.jobs.get("prompt-post")?.importedAssetIds).toEqual([
-      "asset-1",
-    ]);
-  });
-
-  it("passes an auto family hash into postprocess for generated outputs", async () => {
-    makeReadyStoreState();
-    useGenerationStore.setState({
-      wsClient: null,
-      connectionStatus: "disconnected",
-      syncedWorkflow: {
-        "1": {
-          class_type: "LoadImage",
-          inputs: {
-            image: "input.png",
-          },
-        },
-        "2": {
-          class_type: "ImageConsumer",
-          inputs: {
-            image: ["1", 0],
-            seed: 123,
-          },
-        },
-      },
-    });
-
-    useGenerationStore.getState().connect();
-    await flushMicrotasks();
-    const client = getLatestClient();
-
-    const submitPromise = useGenerationStore.getState().submitGeneration({});
-    const jobId = await submitPromise;
-    expect(jobId).toBe("prompt-1");
-
-    client.emitEvent({
-      type: "executing",
-      data: {
-        node: null,
-        prompt_id: "prompt-1",
-      },
-    });
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    expect(mockFrontendPostprocess).toHaveBeenCalledWith(
-      expect.any(Array),
-      expect.objectContaining({
-        autoFamilyRequestKey: expect.stringMatching(
-          /^generation-family-request:v1:/,
-        ),
-      }),
-    );
-  });
-
-  it("dispatches the next queued generation while the previous one is still postprocessing", async () => {
-    makeReadyStoreState();
-    useGenerationStore.setState({
-      wsClient: null,
-      connectionStatus: "disconnected",
-    });
-    const postprocessDeferred = createDeferred<{
-      postprocessedPreview: null;
-      postprocessError: null;
-      importedAssetIds: string[];
-    }>();
-    mockFrontendPostprocess.mockReturnValue(postprocessDeferred.promise);
-    mockGenerate
-      .mockResolvedValueOnce({
-        prompt_id: "prompt-1",
-        number: 1,
-        node_errors: {},
-      })
-      .mockResolvedValueOnce({
-        prompt_id: "prompt-2",
-        number: 2,
-        node_errors: {},
-      });
-
-    useGenerationStore.getState().connect();
-    await flushMicrotasks();
-    const client = getLatestClient();
-
-    await useGenerationStore.getState().queueGeneration({}, {}, {}, {}, 2);
-    expect(mockGenerate).toHaveBeenCalledTimes(1);
-    expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
-
-    client.emitEvent({
-      type: "executing",
-      data: {
-        node: null,
-        prompt_id: "prompt-1",
-      },
-    });
-    await flushMicrotasks();
-    // Completion kicks off postprocess and the next queue dispatch on separate
-    // async hops, so we wait for both state transitions before asserting.
-    await flushMicrotasks();
-
-    const stateWhileOverlapped = useGenerationStore.getState();
-    expect(mockGenerate).toHaveBeenCalledTimes(2);
-    expect(stateWhileOverlapped.postprocessingJobIds).toEqual(["prompt-1"]);
-    expect(stateWhileOverlapped.activeJobId).toBe("prompt-2");
-    expect(stateWhileOverlapped.generationQueue).toHaveLength(0);
-
-    postprocessDeferred.resolve({
-      postprocessedPreview: null,
-      postprocessError: null,
-      importedAssetIds: ["asset-1"],
-    });
-    await flushMicrotasks();
-
-    expect(useGenerationStore.getState().postprocessingJobIds).toEqual([]);
-  });
-
-  it("completes cached queued generations when ComfyUI emits execution_success without executing-null", async () => {
-    makeReadyStoreState();
-    useGenerationStore.setState({
-      wsClient: null,
-      connectionStatus: "disconnected",
-    });
-    mockGenerate
-      .mockResolvedValueOnce({
-        prompt_id: "prompt-1",
-        number: 1,
-        node_errors: {},
-      })
-      .mockResolvedValueOnce({
-        prompt_id: "prompt-2",
-        number: 2,
-        node_errors: {},
-      });
-    mockGetHistoryOutputsWithRetry
-      .mockResolvedValueOnce([
-        {
-          filename: "output.png",
-          subfolder: "",
-          type: "output",
-          viewUrl: "/output.png",
-        },
-      ])
-      .mockResolvedValueOnce([]);
-
-    useGenerationStore.getState().connect();
-    await flushMicrotasks();
-    const client = getLatestClient();
-
-    await useGenerationStore.getState().queueGeneration({}, {}, {}, {}, 2);
-    expect(useGenerationStore.getState().activeJobId).toBe("prompt-1");
-
-    client.emitEvent({
-      type: "executing",
-      data: {
-        node: null,
-        prompt_id: "prompt-1",
-      },
-    });
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    expect(useGenerationStore.getState().activeJobId).toBe("prompt-2");
-
-    client.emitEvent({
-      type: "execution_cached",
-      data: {
-        prompt_id: "prompt-2",
-        nodes: [],
-      },
-    });
-    client.emitEvent({
-      type: "execution_success",
-      data: {
-        prompt_id: "prompt-2",
-        timestamp: Date.now(),
-      },
-    });
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    const finalState = useGenerationStore.getState();
-    expect(finalState.activeJobId).toBeNull();
-    expect(finalState.generationQueue).toHaveLength(0);
-    expect(finalState.jobs.get("prompt-2")?.status).toBe("completed");
-    expect(finalState.jobs.get("prompt-2")?.outputs).toEqual([]);
-  });
-
-  it("finalizes a prompt only once when both executing-null and execution_success arrive", async () => {
-    const historyDeferred = createDeferred<
-      Array<{
-        filename: string;
-        subfolder: string;
-        type: string;
-        viewUrl: string;
-      }>
-    >();
-    const postprocessDeferred = createDeferred<{
-      postprocessedPreview: null;
-      postprocessError: null;
-      importedAssetIds: string[];
-    }>();
-
-    mockGetHistoryOutputsWithRetry.mockReturnValue(historyDeferred.promise);
-    mockFrontendPostprocess.mockReturnValue(postprocessDeferred.promise);
-
-    useGenerationStore.setState({
-      jobs: new Map([["prompt-dual-finish", makeQueuedJob("prompt-dual-finish")]]),
-      activeJobId: "prompt-dual-finish",
-      pipelineRunToken: 1,
-    });
-
-    useGenerationStore.getState().connect();
-    const client = getLatestClient();
-
-    client.emitEvent({
-      type: "executing",
-      data: {
-        node: null,
-        prompt_id: "prompt-dual-finish",
-      },
-    });
-    client.emitEvent({
-      type: "execution_success",
-      data: {
-        prompt_id: "prompt-dual-finish",
-        timestamp: Date.now(),
-      },
-    });
-    await flushMicrotasks();
-
-    expect(mockGetHistoryOutputsWithRetry).toHaveBeenCalledTimes(1);
-
-    historyDeferred.resolve([
-      {
-        filename: "output.png",
-        subfolder: "",
-        type: "output",
-        viewUrl: "/output.png",
-      },
-    ]);
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    expect(mockFrontendPostprocess).toHaveBeenCalledTimes(1);
-    expect(useGenerationStore.getState().postprocessingJobIds).toEqual([
-      "prompt-dual-finish",
-    ]);
-
-    postprocessDeferred.resolve({
-      postprocessedPreview: null,
-      postprocessError: null,
-      importedAssetIds: ["asset-1"],
-    });
-    await flushMicrotasks();
-
-    expect(
-      useGenerationStore.getState().jobs.get("prompt-dual-finish")
-        ?.importedAssetIds,
-    ).toEqual(["asset-1"]);
-  });
-
-  it("reconciles an in-flight job from history after websocket reconnect", async () => {
-    useGenerationStore.setState({
-      jobs: new Map([["prompt-recover", makeQueuedJob("prompt-recover")]]),
-      activeJobId: "prompt-recover",
-      pipelineRunToken: 1,
-    });
-    mockGetPromptHistoryStateWithRetry.mockResolvedValueOnce({
-      hasPromptEntry: true,
-      outputs: [
-        {
-          filename: "recovered.png",
-          subfolder: "",
-          type: "output",
-          viewUrl: "/recovered.png",
-        },
-      ],
-    });
-    mockGetHistoryOutputsWithRetry.mockResolvedValueOnce([
-      {
-        filename: "recovered.png",
-        subfolder: "",
-        type: "output",
-        viewUrl: "/recovered.png",
-      },
-    ]);
-
-    useGenerationStore.getState().connect();
-    const client = getLatestClient();
-
-    client.emitConnectionChange("connected");
-    await flushMicrotasks();
-    client.emitConnectionChange("disconnected");
-    client.emitConnectionChange("connected");
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    const state = useGenerationStore.getState();
-    expect(state.activeJobId).toBeNull();
-    expect(state.jobs.get("prompt-recover")?.status).toBe("completed");
-    expect(state.jobs.get("prompt-recover")?.outputs).toEqual([
-      {
-        filename: "recovered.png",
-        subfolder: "",
-        type: "output",
-        viewUrl: "/recovered.png",
-      },
-    ]);
-  });
-
-  it("marks unrecoverable in-flight jobs as error after websocket reconnect", async () => {
-    useGenerationStore.setState({
-      jobs: new Map([["prompt-missing", makeQueuedJob("prompt-missing")]]),
-      activeJobId: "prompt-missing",
-      pipelineRunToken: 1,
-    });
-
-    useGenerationStore.getState().connect();
-    const client = getLatestClient();
-
-    client.emitConnectionChange("connected");
-    await flushMicrotasks();
-    client.emitConnectionChange("disconnected");
-    client.emitConnectionChange("connected");
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    const state = useGenerationStore.getState();
-    expect(state.activeJobId).toBeNull();
-    expect(state.jobs.get("prompt-missing")?.status).toBe("error");
-    expect(state.jobs.get("prompt-missing")?.error).toContain(
-      "could not be recovered",
-    );
-  });
-
   it("queues generations when graph snapshots include non-serializable browser values", async () => {
     const isBrowserEnv =
       typeof window !== "undefined" && typeof document !== "undefined";
@@ -2339,55 +1966,6 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockGetRuntimeStatus).toHaveBeenCalledTimes(2);
   });
 
-  it("resumes the queue when ComfyUI emits execution_interrupted", async () => {
-    makeReadyStoreState();
-    useGenerationStore.setState({
-      wsClient: null,
-      connectionStatus: "disconnected",
-    });
-    mockGenerate
-      .mockResolvedValueOnce({
-        prompt_id: "prompt-1",
-        number: 1,
-        node_errors: {},
-      })
-      .mockResolvedValueOnce({
-        prompt_id: "prompt-2",
-        number: 2,
-        node_errors: {},
-      });
-
-    useGenerationStore.getState().connect();
-    await flushMicrotasks();
-    const client = getLatestClient();
-
-    await useGenerationStore.getState().queueGeneration({}, {}, {}, {}, 2);
-    expect(useGenerationStore.getState().activeJobId).toBe("prompt-1");
-    expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
-
-    client.emitEvent({
-      type: "execution_interrupted",
-      data: {
-        prompt_id: "prompt-1",
-        node_id: "node-1",
-        node_type: "KSampler",
-        executed: [],
-      },
-    });
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    const finalState = useGenerationStore.getState();
-    expect(mockGenerate).toHaveBeenCalledTimes(2);
-    expect(finalState.activeJobId).toBe("prompt-2");
-    expect(finalState.generationQueue).toHaveLength(0);
-    expect(finalState.jobs.get("prompt-1")).toMatchObject({
-      status: "error",
-      error: "Generation interrupted",
-      currentNode: "node-1",
-    });
-  });
-
   it("keeps websocket preview frames ordered by explicit frame index", async () => {
     if (!("createObjectURL" in URL)) {
       Object.defineProperty(URL, "createObjectURL", {
@@ -2423,13 +2001,13 @@ describe("useGenerationStore pipeline phases", () => {
     });
 
     useGenerationStore.getState().connect();
-    const client = getLatestClient();
+    const deliveryClient = getLatestDeliveryClient();
 
-    client.emitPreview({
+    deliveryClient.emitPreview({
       blob: new Blob(["frame-2"], { type: "image/jpeg" }),
       frameIndex: 2,
     });
-    client.emitPreview({
+    deliveryClient.emitPreview({
       blob: new Blob(["frame-0"], { type: "image/jpeg" }),
       frameIndex: 0,
     });
@@ -2473,9 +2051,9 @@ describe("useGenerationStore pipeline phases", () => {
     });
 
     useGenerationStore.getState().connect();
-    const client = getLatestClient();
+    const deliveryClient = getLatestDeliveryClient();
 
-    client.emitPreview({
+    deliveryClient.emitPreview({
       blob: new Blob(["vhs-frame"], { type: "image/png" }),
       frameIndex: 1,
       frameRate: 8,
@@ -2485,7 +2063,7 @@ describe("useGenerationStore pipeline phases", () => {
     const animationState = useGenerationStore.getState();
     expect(animationState.previewAnimation?.frameUrls[1]).toBe("blob:vhs-frame-1");
 
-    client.emitPreview({
+    deliveryClient.emitPreview({
       blob: new Blob(["plain-preview"], { type: "image/png" }),
     });
 

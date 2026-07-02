@@ -9,11 +9,6 @@ import httpx
 from fastapi import APIRouter, File, Request, Response, UploadFile, WebSocket
 from fastapi.responses import JSONResponse
 from services.comfyui import comfyui_generate as comfyui_generate_service
-from services.gen_pipeline.processors.utils.video_crop import (
-    analyze_mask_video_bounds,
-    crop_video,
-    get_video_dimensions,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +24,6 @@ from services.comfyui.comfyui_generate import (
     INPUT_NODE_MAP,
     WIDGET_CONTROL_MODES,
     GenerationInput,
-    _upload_video_bytes_to_comfy,
     execute_generation,
     parse_widget_form_key,
 )
@@ -62,8 +56,14 @@ from services.gen_pipeline.processors.validate_inputs import (
 from routers.comfyui_compat import compat_router  # noqa: F401 -- re-exported for main.py
 from services.generation_delivery import generation_holding_service
 
-WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
-DEFAULT_WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / ".config" / "default_workflows"
+# Single source of truth for workflow asset locations lives in the generation
+# service; the router previously re-derived and monkey-patched these per
+# request.
+from services.comfyui.comfyui_generate import (  # noqa: E402
+    DEFAULT_WORKFLOWS_DIR,
+    WORKFLOWS_DIR,
+)
+
 DUMMY_PHOTO_PATH = DEFAULT_WORKFLOWS_DIR.parent / "dummy_photo.jpeg"
 WORKFLOW_MENU_CONFIG_PATH = (
     Path(__file__).parent.parent / "assets" / ".config" / "workflow_menu.json"
@@ -296,36 +296,6 @@ async def update_comfyui_config(request: Request):
             retryable=False,
         )
     return {"comfyui_url": url}
-
-
-# ---------------------------------------------------------------------------
-# Prompt submission (dedicated route for clarity)
-# ---------------------------------------------------------------------------
-
-@router.post("/prompt")
-async def submit_prompt(request: Request):
-    body = await request.json()
-    body.setdefault("client_id", str(uuid.uuid4()))
-    body.setdefault("prompt_id", str(uuid.uuid4()))
-
-    try:
-        client = await get_http_client()
-        resp = await client.post("/prompt", json=body)
-    except (httpx.RequestError, ValueError) as exc:
-        return error_response(
-            503,
-            "comfyui_unreachable",
-            "Prompt submission failed because ComfyUI is unavailable",
-            retryable=True,
-            details={"reason": str(exc)},
-        )
-
-    return Response(
-        content=resp.content,
-        status_code=resp.status_code,
-        media_type=resp.headers.get("content-type", "application/json"),
-    )
-
 
 
 # ---------------------------------------------------------------------------
@@ -785,22 +755,6 @@ def _parse_workflow_inputs(workflow: dict) -> list[dict]:
     return inputs
 
 
-@router.get("/workflow/inputs")
-async def get_workflow_inputs():
-    """Returns discoverable inputs from the stored workflow template (fallback)."""
-    workflow_path = WORKFLOWS_DIR / "test_workflow_API.json"
-    workflow = json.loads(workflow_path.read_text())
-    return {"inputs": _parse_workflow_inputs(workflow)}
-
-
-@router.get("/workflow/graph")
-async def get_workflow_graph():
-    """Returns the visual-format workflow for loading into the ComfyUI editor."""
-    workflow_path = WORKFLOWS_DIR / "test_workflow_notAPI.json"
-    workflow = json.loads(workflow_path.read_text())
-    return workflow
-
-
 # ---------------------------------------------------------------------------
 # Workflow Management
 # ---------------------------------------------------------------------------
@@ -1145,8 +1099,6 @@ async def generate(request: Request):
             retryable=False,
         )
 
-    client_id_raw = form.get("client_id")
-    client_id = client_id_raw if isinstance(client_id_raw, str) else str(uuid.uuid4())
     workflow_id_raw = form.get("workflow_id")
     workflow_id = workflow_id_raw if isinstance(workflow_id_raw, str) else None
 
@@ -1209,11 +1161,20 @@ async def generate(request: Request):
     # --- Optional visual graph data (for embedding in output file metadata) ---
     graph_data: dict | None = None
     graph_data_json = form.get("graph_data")
+    graph_data_warning: dict[str, Any] | None = None
     if isinstance(graph_data_json, str) and graph_data_json.strip():
         try:
             graph_data = json.loads(graph_data_json)
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as exc:
+            # Not fatal (graph_data only enriches output metadata), but losing
+            # it silently makes replay debugging miserable — surface a warning.
+            logger.warning("Discarding malformed graph_data payload: %s", exc.msg)
+            graph_data_warning = {
+                "code": "invalid_graph_data_payload",
+                "message": "graph_data was not valid JSON and was ignored; "
+                "output metadata will lack the visual workflow",
+                "details": {"reason": exc.msg},
+            }
 
     workflow_rules: dict[str, Any] | None = None
     workflow_rules_json = form.get("workflow_rules")
@@ -1289,6 +1250,8 @@ async def generate(request: Request):
     # --- Collect injections from form fields ---
     injections: dict[str, dict[str, Any]] = {}
     workflow_warnings: list[dict[str, Any]] = []
+    if graph_data_warning is not None:
+        workflow_warnings.append(graph_data_warning)
 
     cached_media_inputs_json = form.get("cached_media_inputs")
     if isinstance(cached_media_inputs_json, str) and cached_media_inputs_json.strip():
@@ -1529,14 +1492,9 @@ async def generate(request: Request):
         delivery_id=delivery_id,
         prompt_id=gen_input.prompt_id or "",
         client_id=gen_input.client_id,
+        wait_for_connection=True,
     )
 
-    comfyui_generate_service.WORKFLOWS_DIR = WORKFLOWS_DIR
-    comfyui_generate_service.DEFAULT_WORKFLOWS_DIR = DEFAULT_WORKFLOWS_DIR
-    comfyui_generate_service.analyze_mask_video_bounds = analyze_mask_video_bounds
-    comfyui_generate_service.crop_video = crop_video
-    comfyui_generate_service.get_video_dimensions = get_video_dimensions
-    comfyui_generate_service._upload_video_bytes_to_comfy = _upload_video_bytes_to_comfy
     try:
         result = await execute_generation(gen_input, client)
     except httpx.RequestError as exc:

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import sys
@@ -201,8 +202,9 @@ async def test_generation_holding_service_resyncs_all_persisted_deliveries_acros
 
 
 @pytest.mark.asyncio
-async def test_generation_holding_service_marks_stale_inflight_delivery_on_load(
+async def test_generation_holding_service_reattaches_inflight_delivery_on_load(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "holding"
     manifest_root = root / "project-1" / "delivery-1"
@@ -241,12 +243,36 @@ async def test_generation_holding_service_marks_stale_inflight_delivery_on_load(
         encoding="utf-8",
     )
 
+    connect_calls: list[str] = []
+    fake_comfy_ws = _FakeComfyWebSocket([])
+
+    def _fake_connect(url: str, *args, **kwargs):
+        connect_calls.append(url)
+        return _FakeComfyConnect(fake_comfy_ws)
+
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        _fake_connect,
+    )
+
     service = GenerationHoldingService(root=root)
     deliveries = await service.list_project_deliveries("project-1")
 
+    # Inflight deliveries are no longer force-errored on load; a monitor is
+    # re-attached and the reconcile backstop settles them from history/queue.
     assert len(deliveries) == 1
-    assert deliveries[0]["status"] == "error"
-    assert deliveries[0]["error"] == "Backend restarted before delivery completed"
+    assert deliveries[0]["status"] == "queued"
+    assert "delivery-1" in service._monitor_tasks
+
+    # The monitor runs as a background task; yield so it reaches connect.
+    for _ in range(20):
+        if connect_calls:
+            break
+        await asyncio.sleep(0)
+    assert connect_calls and "client-1" in connect_calls[0]
+
+    await service.cancel_monitor("delivery-1")
 
 
 @pytest.mark.asyncio

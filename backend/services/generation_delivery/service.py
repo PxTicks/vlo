@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 import websockets
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 
 from config import RUNTIME_ROOT
 from services.comfyui.comfyui_client import get_comfyui_url, get_http_client
@@ -25,7 +25,22 @@ GENERATION_HOLDING_ROOT = RUNTIME_ROOT / "generation_holding"
 GENERATION_HOLDING_ROOT.mkdir(parents=True, exist_ok=True)
 
 HISTORY_FETCH_ATTEMPTS = 4
-HISTORY_FETCH_RETRY_MS = 0.25
+HISTORY_FETCH_RETRY_SECONDS = 0.25
+
+# How long a /generate request waits for the monitor websocket to be
+# registered with ComfyUI before dispatching anyway (the reconcile backstop
+# covers the miss).
+MONITOR_CONNECT_TIMEOUT_SECONDS = 5.0
+# Websocket drop tolerance: reconnect with the same clientId (ComfyUI re-binds
+# the sid) before handing resolution over to the reconcile backstop.
+MONITOR_RECONNECT_ATTEMPTS = 5
+MONITOR_RECONNECT_BASE_DELAY_SECONDS = 0.5
+MONITOR_RECONNECT_MAX_DELAY_SECONDS = 10.0
+# Reconcile backstop: poll /history + /queue so a delivery can settle even if
+# every websocket event was missed.
+MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS = 10.0
+MONITOR_BACKSTOP_INTERVAL_SECONDS = 5.0
+MONITOR_BACKSTOP_MISS_THRESHOLD = 3
 
 BINARY_PREVIEW_IMAGE = 1
 BINARY_PREVIEW_IMAGE_WITH_METADATA = 4
@@ -273,6 +288,49 @@ def _parse_history_outputs(history: Any, prompt_id: str) -> list[dict[str, Any]]
     return outputs
 
 
+def _parse_queue_prompt_ids(queue: Any) -> set[str]:
+    """Extract prompt ids from ComfyUI's /queue payload (running + pending)."""
+    prompt_ids: set[str] = set()
+    if not isinstance(queue, dict):
+        return prompt_ids
+    for key in ("queue_running", "queue_pending"):
+        entries = queue.get(key)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if (
+                isinstance(entry, (list, tuple))
+                and len(entry) > 1
+                and isinstance(entry[1], str)
+            ):
+                prompt_ids.add(entry[1])
+            elif isinstance(entry, dict) and isinstance(entry.get("prompt_id"), str):
+                prompt_ids.add(entry["prompt_id"])
+    return prompt_ids
+
+
+def _extract_history_error(prompt_history: Any) -> str | None:
+    """Return an error message if the history entry records a failed run."""
+    if not isinstance(prompt_history, dict):
+        return None
+    status = prompt_history.get("status")
+    if not isinstance(status, dict) or status.get("status_str") != "error":
+        return None
+    messages = status.get("messages")
+    if isinstance(messages, list):
+        for message in messages:
+            if not isinstance(message, (list, tuple)) or len(message) < 2:
+                continue
+            event_name, event_data = message[0], message[1]
+            if event_name == "execution_interrupted":
+                return "Generation interrupted"
+            if event_name == "execution_error" and isinstance(event_data, dict):
+                exception_message = event_data.get("exception_message")
+                if isinstance(exception_message, str) and exception_message:
+                    return exception_message
+    return "Generation failed"
+
+
 class _ProjectConsumer:
     def __init__(self, project_id: str, websocket: WebSocket) -> None:
         self.id = str(uuid.uuid4())
@@ -294,12 +352,27 @@ class GenerationHoldingService:
         self._monitor_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def _ensure_loaded(self) -> None:
+        reattach_manifests: list[dict[str, Any]] = []
         async with self._lock:
             if self._loaded:
                 return
 
-            await self._sync_persisted_deliveries_locked(mark_stale_inflight=True)
+            await self._sync_persisted_deliveries_locked(
+                inflight_out=reattach_manifests,
+            )
             self._loaded = True
+
+        # Re-attach monitors for deliveries that were in flight when the
+        # backend went down. ComfyUI keeps executing (and its history keeps
+        # the outputs), so the reconcile backstop can settle anything that
+        # completed or vanished during the downtime.
+        for manifest in reattach_manifests:
+            await self.start_monitor(
+                project_id=manifest["project_id"],
+                delivery_id=manifest["delivery_id"],
+                prompt_id=manifest["prompt_id"],
+                client_id=manifest["client_id"],
+            )
 
     def _has_live_monitor(self, delivery_id: str) -> bool:
         task = self._monitor_tasks.get(delivery_id)
@@ -309,7 +382,7 @@ class GenerationHoldingService:
         self,
         manifest_path: Path,
         *,
-        mark_stale_inflight: bool,
+        inflight_out: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -326,24 +399,37 @@ class GenerationHoldingService:
         if not isinstance(delivery_id, str) or not isinstance(project_id, str):
             return None
 
-        if mark_stale_inflight and manifest.get("status") in {"queued", "running"}:
-            manifest["status"] = "error"
-            manifest["error"] = "Backend restarted before delivery completed"
-            manifest["updated_at"] = _now_ms()
-            try:
-                manifest_path.write_text(
-                    json.dumps(manifest, indent=2, sort_keys=True),
-                    encoding="utf-8",
-                )
-            except OSError:
-                logger.warning("Failed to rewrite stale manifest %s", manifest_path)
+        if inflight_out is not None and manifest.get("status") in {"queued", "running"}:
+            prompt_id = manifest.get("prompt_id")
+            client_id = manifest.get("client_id")
+            if (
+                isinstance(prompt_id, str)
+                and prompt_id
+                and isinstance(client_id, str)
+                and client_id
+            ):
+                inflight_out.append(manifest)
+            else:
+                # Without the ids there is nothing to re-attach to.
+                manifest["status"] = "error"
+                manifest["error"] = "Backend restarted before delivery completed"
+                manifest["updated_at"] = _now_ms()
+                try:
+                    manifest_path.write_text(
+                        json.dumps(manifest, indent=2, sort_keys=True),
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    logger.warning(
+                        "Failed to rewrite stale manifest %s", manifest_path
+                    )
 
         return manifest
 
     async def _sync_persisted_deliveries_locked(
         self,
         *,
-        mark_stale_inflight: bool,
+        inflight_out: list[dict[str, Any]] | None = None,
     ) -> None:
         seen_delivery_ids: set[str] = set()
 
@@ -356,7 +442,7 @@ class GenerationHoldingService:
                     continue
                 manifest = self._load_manifest_from_disk(
                     manifest_path,
-                    mark_stale_inflight=mark_stale_inflight,
+                    inflight_out=inflight_out,
                 )
                 if not manifest:
                     continue
@@ -385,8 +471,9 @@ class GenerationHoldingService:
         await self._ensure_loaded()
         async with self._lock:
             # Re-read manifests on reconnect/list paths so the holding area
-            # works across backend instances and late reconnects.
-            await self._sync_persisted_deliveries_locked(mark_stale_inflight=False)
+            # works across backend instances and late reconnects. No monitor
+            # re-attach here — that only happens on the initial load.
+            await self._sync_persisted_deliveries_locked()
 
     def _project_root(self, project_id: str) -> Path:
         return self._root / project_id
@@ -764,8 +851,14 @@ class GenerationHoldingService:
                             delivery_id,
                             error_message if isinstance(error_message, str) else None,
                         )
-        except Exception:
+        except WebSocketDisconnect:
             pass
+        except Exception as exc:
+            logger.warning(
+                "Generation delivery consumer for project %s failed: %s",
+                project_id,
+                exc,
+            )
         finally:
             await self._unregister_consumer(consumer)
 
@@ -776,20 +869,40 @@ class GenerationHoldingService:
         delivery_id: str,
         prompt_id: str,
         client_id: str,
+        wait_for_connection: bool = False,
     ) -> None:
         await self._ensure_loaded()
         existing = self._monitor_tasks.get(delivery_id)
         if existing and not existing.done():
             return
+        connected = asyncio.Event()
         task = asyncio.create_task(
             self._monitor_delivery(
                 project_id=project_id,
                 delivery_id=delivery_id,
                 prompt_id=prompt_id,
                 client_id=client_id,
+                connected_event=connected,
             )
         )
         self._monitor_tasks[delivery_id] = task
+        if wait_for_connection:
+            # Ensure the monitor's socket is registered with ComfyUI before
+            # the prompt is dispatched, so fast/cached prompts can't complete
+            # before anyone is listening. On timeout we proceed anyway — the
+            # reconcile backstop covers missed events.
+            try:
+                await asyncio.wait_for(
+                    connected.wait(),
+                    timeout=MONITOR_CONNECT_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Generation monitor for %s did not connect within %.1fs; "
+                    "relying on reconcile backstop",
+                    delivery_id,
+                    MONITOR_CONNECT_TIMEOUT_SECONDS,
+                )
 
     async def cancel_monitor(self, delivery_id: str) -> None:
         task = self._monitor_tasks.pop(delivery_id, None)
@@ -960,7 +1073,7 @@ class GenerationHoldingService:
             except Exception as exc:  # pragma: no cover - defensive fetch fallback
                 last_error = exc if isinstance(exc, Exception) else Exception(str(exc))
             if attempt < HISTORY_FETCH_ATTEMPTS - 1:
-                await asyncio.sleep(HISTORY_FETCH_RETRY_MS)
+                await asyncio.sleep(HISTORY_FETCH_RETRY_SECONDS)
         if last_error:
             raise last_error
         return []
@@ -1091,6 +1204,45 @@ class GenerationHoldingService:
                 await self._persist_manifest(manifest)
         await self.mark_completed(delivery_id, outputs)
 
+    async def _reconcile_prompt_state(
+        self,
+        prompt_id: str,
+    ) -> tuple[str, str | None]:
+        """Classify a prompt against ComfyUI's history and queue.
+
+        Returns one of:
+        - ("completed", error_message | None): history has an entry; error
+          message is set when the history records a failed/interrupted run.
+        - ("pending", None): still in queue_running / queue_pending.
+        - ("missing", None): unknown to both history and queue.
+        - ("unknown", None): ComfyUI could not be queried (network trouble);
+          callers should neither settle nor count this as a miss.
+        """
+        try:
+            client = await get_http_client()
+            response = await client.get(f"/history/{prompt_id}")
+            response.raise_for_status()
+            history = response.json()
+        except Exception:
+            return "unknown", None
+
+        prompt_history = (
+            history.get(prompt_id) if isinstance(history, dict) else None
+        )
+        if isinstance(prompt_history, dict):
+            return "completed", _extract_history_error(prompt_history)
+
+        try:
+            response = await client.get("/queue")
+            response.raise_for_status()
+            queue = response.json()
+        except Exception:
+            return "unknown", None
+
+        if prompt_id in _parse_queue_prompt_ids(queue):
+            return "pending", None
+        return "missing", None
+
     async def _monitor_delivery(
         self,
         *,
@@ -1098,8 +1250,8 @@ class GenerationHoldingService:
         delivery_id: str,
         prompt_id: str,
         client_id: str,
+        connected_event: asyncio.Event | None = None,
     ) -> None:
-        finalized = False
         current_node: str | None = None
         save_node_ids: set[str] = set()
         uses_ws_outputs = False
@@ -1115,118 +1267,242 @@ class GenerationHoldingService:
                     if isinstance(node_id, str)
                 }
         websocket_outputs: list[dict[str, Any]] = []
-        try:
-            async with websockets.connect(
-                _build_ws_url(client_id),
-                max_size=None,
-                max_queue=None,
-            ) as comfy_ws:
-                await comfy_ws.send(PREVIEW_METADATA_FEATURE_FLAGS)
-                async for message in comfy_ws:
-                    if isinstance(message, str):
-                        try:
-                            event = json.loads(message)
-                        except json.JSONDecodeError:
-                            continue
-                        if not isinstance(event, dict):
-                            continue
-                        event_type = event.get("type")
-                        data = event.get("data")
-                        if not isinstance(data, dict):
-                            continue
-                        if event_type == "VHS_latentpreview":
-                            await self._broadcast_text(project_id, message)
-                            continue
-                        if data.get("prompt_id") != prompt_id:
-                            continue
+        settled = False
 
-                        if event_type == "progress":
-                            value = data.get("value")
-                            maximum = data.get("max")
-                            progress = 0
-                            if isinstance(value, (int, float)) and isinstance(maximum, (int, float)) and maximum:
-                                progress = max(0, min(100, round((float(value) / float(maximum)) * 100)))
-                            progress_node = data.get("node")
-                            if isinstance(progress_node, str):
-                                current_node = progress_node
-                            await self.mark_running(
+        async def _try_finalize() -> bool:
+            """Finalize the delivery (success or honest error); idempotent.
+
+            Returns False only when finalization itself failed (e.g. ComfyUI
+            unreachable while fetching outputs) so the backstop can retry.
+            """
+            nonlocal settled
+            if settled:
+                return True
+            try:
+                await self._finalize_delivery(
+                    project_id,
+                    delivery_id,
+                    prompt_id,
+                    websocket_outputs,
+                )
+                settled = True
+                return True
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "Finalizing delivery %s failed (will retry via backstop): %s",
+                    delivery_id,
+                    exc,
+                )
+                return False
+
+        async def _settle_error(message: str) -> None:
+            nonlocal settled
+            if settled:
+                return
+            settled = True
+            await self.mark_error(delivery_id, message)
+
+        async def _handle_text_message(message: str) -> bool:
+            """Process one JSON event; returns True when terminal."""
+            nonlocal current_node
+            try:
+                event = json.loads(message)
+            except json.JSONDecodeError:
+                return False
+            if not isinstance(event, dict):
+                return False
+            event_type = event.get("type")
+            data = event.get("data")
+            if not isinstance(data, dict):
+                return False
+            if event_type == "VHS_latentpreview":
+                await self._broadcast_text(project_id, message)
+                return False
+            if data.get("prompt_id") != prompt_id:
+                return False
+
+            if event_type == "progress":
+                value = data.get("value")
+                maximum = data.get("max")
+                progress = 0
+                if (
+                    isinstance(value, (int, float))
+                    and isinstance(maximum, (int, float))
+                    and maximum
+                ):
+                    progress = max(
+                        0, min(100, round((float(value) / float(maximum)) * 100))
+                    )
+                progress_node = data.get("node")
+                if isinstance(progress_node, str):
+                    current_node = progress_node
+                await self.mark_running(
+                    delivery_id,
+                    progress=progress,
+                    current_node=progress_node
+                    if isinstance(progress_node, str)
+                    else None,
+                )
+            elif event_type == "executing":
+                node = data.get("node")
+                if node is None:
+                    current_node = None
+                    await _try_finalize()
+                    return True
+                if isinstance(node, str):
+                    current_node = node
+                    await self.mark_running(delivery_id, current_node=node)
+            elif event_type == "execution_success":
+                await _try_finalize()
+                return True
+            elif event_type == "execution_error":
+                await _settle_error(
+                    data.get("exception_message")
+                    if isinstance(data.get("exception_message"), str)
+                    else "Generation failed",
+                )
+                return True
+            elif event_type == "execution_interrupted":
+                await _settle_error("Generation interrupted")
+                return True
+            return False
+
+        async def _handle_binary_message(message: bytes | bytearray | memoryview) -> None:
+            frame = bytes(message)
+            if not _is_preview_binary_frame(frame):
+                return
+            if (
+                uses_ws_outputs
+                and current_node is not None
+                and current_node in save_node_ids
+            ):
+                captured = await self._capture_websocket_output(
+                    project_id,
+                    delivery_id,
+                    frame,
+                    len(websocket_outputs),
+                )
+                if captured is not None:
+                    websocket_outputs.append(captured)
+            await self._broadcast_binary(project_id, frame)
+
+        async def _consume_events() -> None:
+            """Websocket loop with bounded reconnects.
+
+            A connection that ends without a terminal event (drop or clean
+            close) counts against the reconnect budget; once exhausted, the
+            reconcile backstop owns resolution.
+            """
+            reconnects = 0
+            while not settled:
+                try:
+                    async with websockets.connect(
+                        _build_ws_url(client_id),
+                        # SaveImageWebsocket can emit large full-size images;
+                        # the client's default max_size (1 MiB) is too low.
+                        max_size=None,
+                        max_queue=None,
+                    ) as comfy_ws:
+                        if connected_event is not None:
+                            connected_event.set()
+                        await comfy_ws.send(PREVIEW_METADATA_FEATURE_FLAGS)
+                        async for message in comfy_ws:
+                            if isinstance(message, str):
+                                if await _handle_text_message(message):
+                                    return
+                            else:
+                                await _handle_binary_message(message)
+                            if settled:
+                                return
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.warning(
+                        "Generation monitor websocket for %s dropped: %s",
+                        delivery_id,
+                        exc,
+                    )
+                if settled:
+                    return
+                reconnects += 1
+                if reconnects > MONITOR_RECONNECT_ATTEMPTS:
+                    logger.warning(
+                        "Generation monitor websocket for %s gave up after %d "
+                        "attempts; reconcile backstop owns resolution",
+                        delivery_id,
+                        reconnects - 1,
+                    )
+                    return
+                await asyncio.sleep(
+                    min(
+                        MONITOR_RECONNECT_BASE_DELAY_SECONDS
+                        * (2 ** (reconnects - 1)),
+                        MONITOR_RECONNECT_MAX_DELAY_SECONDS,
+                    )
+                )
+
+        async def _run_backstop() -> None:
+            """Settle the delivery from /history + /queue if events are lost."""
+            await asyncio.sleep(MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS)
+            misses = 0
+            while not settled:
+                verdict, error_message = await self._reconcile_prompt_state(
+                    prompt_id
+                )
+                if settled:
+                    return
+                if verdict == "completed":
+                    if error_message is not None:
+                        await _settle_error(error_message)
+                        return
+                    if await _try_finalize():
+                        return
+                elif verdict == "pending":
+                    misses = 0
+                elif verdict == "missing":
+                    misses += 1
+                    if misses >= MONITOR_BACKSTOP_MISS_THRESHOLD:
+                        await _settle_error(
+                            "Prompt is no longer known to ComfyUI"
+                        )
+                        return
+                # "unknown": ComfyUI unreachable — neither settle nor count.
+                await asyncio.sleep(MONITOR_BACKSTOP_INTERVAL_SECONDS)
+
+        try:
+            pending: set[asyncio.Task[None]] = {
+                asyncio.create_task(_consume_events()),
+                asyncio.create_task(_run_backstop()),
+            }
+            try:
+                while pending and not settled:
+                    done, pending = await asyncio.wait(
+                        pending, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for task in done:
+                        exc = task.exception()
+                        if exc is not None:
+                            logger.warning(
+                                "Generation monitor task for %s failed: %s",
                                 delivery_id,
-                                progress=progress,
-                                current_node=progress_node if isinstance(progress_node, str) else None,
+                                exc,
                             )
-                        elif event_type == "executing":
-                            node = data.get("node")
-                            if node is None:
-                                current_node = None
-                                if not finalized:
-                                    finalized = True
-                                    await self._finalize_delivery(
-                                        project_id,
-                                        delivery_id,
-                                        prompt_id,
-                                        websocket_outputs,
-                                    )
-                                break
-                            if isinstance(node, str):
-                                current_node = node
-                                await self.mark_running(delivery_id, current_node=node)
-                        elif event_type == "execution_success":
-                            if not finalized:
-                                finalized = True
-                                await self._finalize_delivery(
-                                    project_id,
-                                    delivery_id,
-                                    prompt_id,
-                                    websocket_outputs,
-                                )
-                            break
-                        elif event_type == "execution_error":
-                            await self.mark_error(
-                                delivery_id,
-                                data.get("exception_message")
-                                if isinstance(data.get("exception_message"), str)
-                                else "Generation failed",
-                            )
-                            break
-                        elif event_type == "execution_interrupted":
-                            await self.mark_error(delivery_id, "Generation interrupted")
-                            break
-                    else:
-                        frame = bytes(message)
-                        if not _is_preview_binary_frame(frame):
-                            continue
-                        if (
-                            uses_ws_outputs
-                            and current_node is not None
-                            and current_node in save_node_ids
-                        ):
-                            captured = await self._capture_websocket_output(
-                                project_id,
-                                delivery_id,
-                                frame,
-                                len(websocket_outputs),
-                            )
-                            if captured is not None:
-                                websocket_outputs.append(captured)
-                        await self._broadcast_binary(project_id, frame)
+                if not settled and not pending:
+                    await _settle_error(
+                        "Generation monitor lost track of the prompt"
+                    )
+            finally:
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
-            logger.warning("Generation delivery monitor failed for %s: %s", delivery_id, exc)
-            if not finalized:
-                try:
-                    await self._finalize_delivery(
-                        project_id,
-                        delivery_id,
-                        prompt_id,
-                        websocket_outputs,
-                    )
-                except Exception:
-                    await self.mark_error(
-                        delivery_id,
-                        f"Generation monitor failed: {exc}",
-                    )
         finally:
+            if connected_event is not None:
+                connected_event.set()
             self._monitor_tasks.pop(delivery_id, None)
 
 

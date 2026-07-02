@@ -182,7 +182,7 @@ async def proxy_websocket(ws: WebSocket, upstream_path: str = "/ws"):
 
     except Exception as e:
         try:
-            print(f"Error connecting to ComfyUI WS at {comfy_ws_url}: {e}")
+            logger.warning("Error connecting to ComfyUI WS at %s: %s", comfy_ws_url, e)
             if (
                 ws.client_state == WebSocketState.CONNECTED
                 and ws.application_state == WebSocketState.CONNECTED

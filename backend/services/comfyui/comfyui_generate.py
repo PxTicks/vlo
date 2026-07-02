@@ -21,8 +21,10 @@ from services.workflow_rules.input_labels import default_input_label
 
 logger = logging.getLogger(__name__)
 
-WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
-DEFAULT_WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / ".config" / "default_workflows"
+# backend/assets/... (this module lives at backend/services/comfyui/).
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+WORKFLOWS_DIR = _BACKEND_ROOT / "assets" / "workflows"
+DEFAULT_WORKFLOWS_DIR = _BACKEND_ROOT / "assets" / ".config" / "default_workflows"
 
 # Maps ComfyUI class_type -> discoverable input type
 INPUT_NODE_MAP = {
@@ -76,65 +78,6 @@ def parse_widget_form_key(raw_key: str) -> tuple[str, str] | None:
     if not node_id or not param:
         return None
     return node_id, param
-
-
-async def upload_form_media_to_comfy(
-    client: httpx.AsyncClient,
-    upload_file: Any,
-    media_type: str,
-) -> tuple[str | None, dict[str, Any] | None]:
-    if not hasattr(upload_file, "read"):
-        return None, {
-            "code": "invalid_upload_field",
-            "message": "Upload field is not a file-like object",
-            "details": {"media_type": media_type},
-        }
-
-    # ComfyUI accepts all media types via the /upload/image endpoint.
-    fallback_content_types = {"image": "image/png", "video": "video/mp4", "audio": "audio/wav"}
-    fallback_content_type = fallback_content_types.get(media_type)
-    if fallback_content_type is None:
-        return None, {
-            "code": "unsupported_media_type",
-            "message": "Unsupported upload media type",
-            "details": {"media_type": media_type},
-        }
-
-    media_bytes = await upload_file.read()
-    filename_value = getattr(upload_file, "filename", f"upload.{media_type}")
-    content_type = getattr(upload_file, "content_type", None) or fallback_content_type
-
-    upload_resp = await client.post(
-        "/upload/image",
-        files={"image": (filename_value, media_bytes, content_type)},
-        data={"overwrite": "true"},
-    )
-
-    if upload_resp.status_code != 200:
-        return None, {
-            "code": "media_upload_failed",
-            "message": "Failed to upload media to ComfyUI",
-            "details": {"media_type": media_type, "status": upload_resp.status_code},
-        }
-
-    try:
-        upload_json = upload_resp.json()
-    except ValueError:
-        return None, {
-            "code": "media_upload_failed",
-            "message": "ComfyUI returned invalid JSON after upload",
-            "details": {"media_type": media_type, "status": upload_resp.status_code},
-        }
-
-    filename = upload_json.get("name") if isinstance(upload_json, dict) else None
-    if not isinstance(filename, str) or filename.strip() == "":
-        return None, {
-            "code": "media_upload_failed",
-            "message": "ComfyUI upload response missing filename",
-            "details": {"media_type": media_type, "status": upload_resp.status_code},
-        }
-
-    return filename, None
 
 
 async def _upload_video_bytes_to_comfy(

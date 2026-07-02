@@ -64,3 +64,4 @@ ComfyUI-vlo
 backend/assets/workflows/Invert_Image.json
 backend/sam2
 .claude
+backend/runtime/

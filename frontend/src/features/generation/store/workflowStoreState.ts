@@ -1,10 +1,6 @@
 import * as comfyApi from "../services/comfyuiApi";
-import {
-  buildWorkflowResultFromGraphData,
-  isIframeAppReady,
-  readPendingWarningsFromIframe,
-  refreshMissingModelsInIframe,
-} from "../services/workflowBridge";
+import { buildWorkflowResultFromGraphData } from "../services/workflowBridge";
+import { iframeBridge } from "../services/iframeBridgeClient";
 import {
   DEFAULT_GENERATION_TARGET_RESOLUTION,
   getClosestWorkflowResolution,
@@ -84,6 +80,7 @@ const APP_READY_LOAD_TIMEOUT_MS = 30_000;
  * burns backend fetches without helping.
  */
 const APP_NOT_READY_RETRY_DELAY_MS = 2_000;
+const MAX_BRIDGE_LOAD_RETRIES = 3;
 
 /**
  * Number of consecutive editor reads that must report the same rule loss
@@ -126,9 +123,13 @@ export function buildWorkflowStoreState(
   get: GenerationStoreGet,
   options: WorkflowStoreStateOptions,
 ): GenerationWorkflowState {
+  const bridgeLoadRetryCounts = new Map<string, number>();
+
   return {
     syncedWorkflow: null,
     syncedGraphData: null,
+    iframeWorkflowInstanceId: null,
+    iframeWorkflowRevision: null,
     workflowInputs: [],
     availableWorkflows: [],
     tempWorkflow: null,
@@ -166,6 +167,7 @@ export function buildWorkflowStoreState(
 
     registerEditor: (iframe) => {
       set({ editorRef: iframe });
+      iframeBridge.bindIframe(iframe);
 
       const { selectedWorkflowId, isWorkflowLoading, workflowInputs } = get();
       if (!selectedWorkflowId) return;
@@ -175,7 +177,14 @@ export function buildWorkflowStoreState(
       }
     },
 
-    unregisterEditor: () => set({ editorRef: null }),
+    unregisterEditor: () => {
+      iframeBridge.bindIframe(null);
+      set({
+        editorRef: null,
+        iframeWorkflowInstanceId: null,
+        iframeWorkflowRevision: null,
+      });
+    },
 
     setWorkflowLoading: (loading) =>
       set((state) => ({
@@ -204,18 +213,22 @@ export function buildWorkflowStoreState(
     refreshMissingModelsFromIframe: async () => {
       const { editorRef } = get();
       if (!editorRef) return false;
-      const ok = await refreshMissingModelsInIframe(editorRef);
-      if (!ok) return false;
-      // The ComfyUI pipeline mutates `activeWorkflow.pendingWarnings`
-      // in-place. Re-read and let an empty result clear the warning.
-      const warnings = readPendingWarningsFromIframe(editorRef);
-      set({ workflowWarning: warnings });
-      return true;
+      try {
+        const ok = await iframeBridge.refreshMissingModels();
+        if (!ok) return false;
+        const warnings = await iframeBridge.readPendingWarnings();
+        set({ workflowWarning: warnings });
+        return true;
+      } catch (error) {
+        console.warn("[Generation] Failed to refresh iframe model warnings", error);
+        return false;
+      }
     },
     ...buildMediaInputActions(set, get),
 
     syncWorkflow: (workflow, graphData, inputs, options) => {
       const markReady = options?.markReady ?? true;
+      const bridgeIdentity = options?.bridgeIdentity ?? null;
       const state = get();
       const applicableRules = pruneWorkflowRulesForWorkflows(
         [graphData, workflow],
@@ -235,6 +248,8 @@ export function buildWorkflowStoreState(
       set((currentState) => ({
         syncedWorkflow: workflow,
         syncedGraphData: graphData,
+        iframeWorkflowInstanceId: bridgeIdentity?.workflowInstanceId ?? null,
+        iframeWorkflowRevision: bridgeIdentity?.revision ?? null,
         workflowInputs: presented.inputs,
         hasInferredInputs: presented.hasInferredInputs,
         derivedMaskMappings: presented.derivedMaskMappings,
@@ -255,7 +270,13 @@ export function buildWorkflowStoreState(
       }));
     },
 
-    registerWorkflowFromEditor: async (workflow, graphData, inputs, filename) => {
+    registerWorkflowFromEditor: async (
+      workflow,
+      graphData,
+      inputs,
+      filename,
+      bridgeIdentity = null,
+    ) => {
       const state = get();
       const { availableWorkflows, selectedWorkflowId, tempWorkflow } = state;
       const currentWorkflowContext = [graphData, workflow];
@@ -391,6 +412,8 @@ export function buildWorkflowStoreState(
         set((currentState) => ({
           syncedWorkflow: workflow,
           syncedGraphData: graphData,
+          iframeWorkflowInstanceId: bridgeIdentity?.workflowInstanceId ?? null,
+          iframeWorkflowRevision: bridgeIdentity?.revision ?? null,
           workflowInputs: deferredPresented.inputs,
           hasInferredInputs: deferredPresented.hasInferredInputs,
           derivedMaskMappings: deferredPresented.derivedMaskMappings,
@@ -451,6 +474,8 @@ export function buildWorkflowStoreState(
         set((currentState) => ({
           syncedWorkflow: workflow,
           syncedGraphData: graphData,
+          iframeWorkflowInstanceId: bridgeIdentity?.workflowInstanceId ?? null,
+          iframeWorkflowRevision: bridgeIdentity?.revision ?? null,
           workflowInputs: presented.inputs,
           hasInferredInputs: presented.hasInferredInputs,
           derivedMaskMappings: presented.derivedMaskMappings,
@@ -492,6 +517,8 @@ export function buildWorkflowStoreState(
       set((currentState) => ({
         syncedWorkflow: workflow,
         syncedGraphData: graphData,
+        iframeWorkflowInstanceId: bridgeIdentity?.workflowInstanceId ?? null,
+        iframeWorkflowRevision: bridgeIdentity?.revision ?? null,
         workflowInputs: presented.inputs,
         hasInferredInputs: presented.hasInferredInputs,
         derivedMaskMappings: presented.derivedMaskMappings,
@@ -566,6 +593,9 @@ export function buildWorkflowStoreState(
     },
 
     loadWorkflow: async (workflowId: string) => {
+      if (get().selectedWorkflowId !== workflowId) {
+        bridgeLoadRetryCounts.clear();
+      }
       const requestId = options.getNextWorkflowLoadRequestId();
       const isStale = () => !options.isCurrentWorkflowLoadRequestId(requestId);
       const {
@@ -580,6 +610,17 @@ export function buildWorkflowStoreState(
 
       const scheduleRetry = (reason: string, delayMs = 750) => {
         if (isTempWorkflow || isStale()) return;
+        const nextAttempt = (bridgeLoadRetryCounts.get(workflowId) ?? 0) + 1;
+        bridgeLoadRetryCounts.set(workflowId, nextAttempt);
+        if (nextAttempt >= MAX_BRIDGE_LOAD_RETRIES) {
+          set({
+            workflowLoadError: `${reason}. Reconnect the ComfyUI editor and try again.`,
+            isWorkflowLoading: false,
+            workflowLoadState: "error",
+            isWorkflowReady: false,
+          });
+          return;
+        }
         if (import.meta.env.DEV) {
           console.info("[Generation] Retrying workflow load", {
             workflowId,
@@ -603,6 +644,8 @@ export function buildWorkflowStoreState(
         isWorkflowReady: false,
         syncedWorkflow: null,
         syncedGraphData: null,
+        iframeWorkflowInstanceId: null,
+        iframeWorkflowRevision: null,
         workflowWarning: null,
         workflowRuleWarnings: [],
         hasInferredInputs: false,
@@ -690,6 +733,8 @@ export function buildWorkflowStoreState(
           set((state) => ({
             syncedWorkflow: tempWorkflow.workflow,
             syncedGraphData: graphData,
+            iframeWorkflowInstanceId: null,
+            iframeWorkflowRevision: null,
             workflowInputs: presented.inputs,
             hasInferredInputs: presented.hasInferredInputs,
             derivedMaskMappings: presented.derivedMaskMappings,
@@ -717,13 +762,13 @@ export function buildWorkflowStoreState(
           // discovery, but do not mark ready — readiness must wait for the
           // iframe to confirm it has the new graph loaded. Otherwise a
           // deferred injection leaves the panel "ready" while the iframe
-          // still holds the previous workflow, and graphToPrompt at submit
-          // time returns the wrong graph.
+          // still holds the previous workflow, and clone resolution at submit
+          // time targets the wrong workflow instance.
           get().syncWorkflow(
             initialWorkflowResult.workflow,
             initialWorkflowResult.graphData,
             initialWorkflowResult.inputs,
-            { markReady: false },
+            { markReady: false, bridgeIdentity: null },
           );
         }
 
@@ -739,7 +784,7 @@ export function buildWorkflowStoreState(
           // we never have to wait — if the iframe isn't ready synchronously
           // we just skip the inject and let the panel mark ready off the
           // optimistic sync above.
-          let appReady = isIframeAppReady(editorRef);
+          let appReady = iframeBridge.isReady;
           if (!appReady && !isTempWorkflow) {
             appReady = await waitForAppReady(
               editorRef,
@@ -772,10 +817,23 @@ export function buildWorkflowStoreState(
             }
 
             if (syncResult.workflowResult) {
+              bridgeLoadRetryCounts.delete(workflowId);
               get().syncWorkflow(
                 syncResult.workflowResult.workflow,
                 syncResult.workflowResult.graphData,
                 syncResult.workflowResult.inputs,
+                {
+                  bridgeIdentity:
+                    typeof syncResult.workflowResult.workflowInstanceId ===
+                      "string" &&
+                    typeof syncResult.workflowResult.revision === "number"
+                      ? {
+                          workflowInstanceId:
+                            syncResult.workflowResult.workflowInstanceId,
+                          revision: syncResult.workflowResult.revision,
+                        }
+                      : null,
+                },
               );
             } else if (!isTempWorkflow && syncResult.deferred) {
               // Iframe didn't confirm the new graph. Hold isWorkflowReady

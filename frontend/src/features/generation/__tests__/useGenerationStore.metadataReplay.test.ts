@@ -30,6 +30,9 @@ vi.mock("../utils/manualSlotMedia", () => ({
 
 vi.mock("../services/workflowSyncController", () => ({
   injectWorkflowAndRead: mocks.injectWorkflowAndRead,
+  // The bridge singleton is unbound in tests, so the store always takes the
+  // async readiness wait; report ready so injection proceeds.
+  waitForAppReady: vi.fn(async () => true),
 }));
 
 function makeReadyEditorRef(): HTMLIFrameElement {

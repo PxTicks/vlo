@@ -7,6 +7,7 @@ import {
 import { useProjectStore } from "../../project";
 
 const {
+  mockBridgeReadActive,
   mockDeliveryWsInstances,
   mockFrontendPostprocess,
   mockFrontendPreprocess,
@@ -18,6 +19,7 @@ const {
   mockPreResolvePrompt,
   mockWsInstances,
 } = vi.hoisted(() => ({
+  mockBridgeReadActive: vi.fn(),
   mockDeliveryWsInstances: [] as unknown[],
   mockFrontendPostprocess: vi.fn(),
   mockFrontendPreprocess: vi.fn(),
@@ -235,9 +237,22 @@ vi.mock("../utils/pipeline", async (importOriginal) => {
   };
 });
 
-vi.mock("../services/preResolvePrompt", () => ({
-  isGraphMutationInFlight: () => false,
-  preResolvePrompt: mockPreResolvePrompt,
+vi.mock("../services/iframeBridgeClient", () => ({
+  iframeBridge: {
+    isReady: false,
+    bindIframe: () => {},
+    notifyIframeReloaded: () => {},
+    onReady: () => () => {},
+    onGraphChanged: () => () => {},
+    onHealthChanged: () => () => {},
+    waitForReady: async () => false,
+    health: async () => null,
+    readActive: mockBridgeReadActive,
+    injectWorkflow: async () => null,
+    resolvePrompt: mockPreResolvePrompt,
+    refreshMissingModels: async () => false,
+    readPendingWarnings: async () => null,
+  },
 }));
 
 import { useGenerationStore } from "../useGenerationStore";
@@ -288,6 +303,8 @@ function makeReadyStoreState(): void {
     selectedWorkflowId: "wf.json",
     availableWorkflows: [{ id: "wf.json", name: "Workflow Display Name" }],
     syncedWorkflow: {},
+    iframeWorkflowInstanceId: "workflow-instance",
+    iframeWorkflowRevision: 0,
     workflowInputs: [],
     mediaInputs: {},
     activeWorkflowRules: makeWorkflowRules(),
@@ -440,6 +457,8 @@ describe("useGenerationStore pipeline phases", () => {
     mockInterrupt.mockReset();
     mockListWorkflows.mockReset();
     mockPreResolvePrompt.mockReset();
+    mockBridgeReadActive.mockReset();
+    mockBridgeReadActive.mockResolvedValue(null);
 
     mockFrontendPreprocess.mockImplementation(
       async (
@@ -1261,7 +1280,7 @@ describe("useGenerationStore pipeline phases", () => {
       }),
     );
     expect(mockPreResolvePrompt).toHaveBeenCalledTimes(2);
-    expect(mockPreResolvePrompt.mock.calls[1]?.[1]).not.toContain("92");
+    expect(mockPreResolvePrompt.mock.calls[1]?.[0]).not.toContain("92");
   });
 
   it("reruns media preprocessing when the source file changes", async () => {
@@ -1618,49 +1637,34 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockPreResolvePrompt.mock.calls[0]?.[1]).not.toContain("693");
   });
 
-  it("refuses to submit when the iframe holds a different workflow than the panel", async () => {
+  it("refuses to submit when the bridge reports workflow revision drift", async () => {
     makeReadyStoreState();
 
     const expectedGraphData = {
       "100": { class_type: "ExpectedNode", inputs: {} },
       "101": { class_type: "AnotherExpectedNode", inputs: {} },
     };
-    const iframeGraphData = {
-      "200": { class_type: "DriftedNode", inputs: {} },
-      "201": { class_type: "AnotherDriftedNode", inputs: {} },
-    };
-
-    // iframe-shaped editorRef whose activeWorkflow exposes a *different*
-    // graph + filename than what the panel thinks is selected.
-    const editorRef = {
-      contentWindow: {
-        app: {
-          extensionManager: {
-            workflow: {
-              activeWorkflow: {
-                filename: "drifted.json",
-                activeState: iframeGraphData,
-              },
-            },
-          },
-        },
-      },
-    } as unknown as HTMLIFrameElement;
+    mockPreResolvePrompt.mockRejectedValueOnce(
+      new Error("The ComfyUI workflow changed before prompt resolution"),
+    );
 
     useGenerationStore.setState({
       selectedWorkflowId: "wf.json",
       rulesWorkflowSourceId: "wf.json",
       syncedGraphData: expectedGraphData,
       syncedWorkflow: expectedGraphData,
-      editorRef,
+      editorRef: {} as HTMLIFrameElement,
       preResolvedPromptEnabled: true,
     });
 
     try {
       await useGenerationStore.getState().submitGeneration({});
 
-      // graphToPrompt must NOT be called; we throw before producing a payload.
-      expect(mockPreResolvePrompt).not.toHaveBeenCalled();
+      expect(mockPreResolvePrompt).toHaveBeenCalledWith(
+        { workflowInstanceId: "workflow-instance", revision: 0 },
+        expect.any(Array),
+        expect.any(Array),
+      );
       expect(mockGenerate).not.toHaveBeenCalled();
 
       const state = useGenerationStore.getState();
@@ -1668,8 +1672,7 @@ describe("useGenerationStore pipeline phases", () => {
         ? state.jobs.get(state.activeJobId)
         : null;
       expect(errorJob?.status).toBe("error");
-      expect(errorJob?.error ?? "").toContain("drifted.json");
-      expect(errorJob?.error ?? "").toContain("wf.json");
+      expect(errorJob?.error ?? "").toContain("workflow changed");
     } finally {
       // The store has no global beforeEach reset, and this test mutates state
       // (editorRef, syncedGraphData, error job) that subsequent tests don't
@@ -1685,7 +1688,7 @@ describe("useGenerationStore pipeline phases", () => {
     }
   });
 
-  it("submits when the iframe filename matches the selected workflow even if widget edits diverge", async () => {
+  it("submits from the synchronized workflow instance and revision", async () => {
     makeReadyStoreState();
 
     const panelGraphData = {
@@ -1697,27 +1700,18 @@ describe("useGenerationStore pipeline phases", () => {
       "100": { class_type: "MatchingNode", inputs: { value: 999 } },
     };
 
-    const editorRef = {
-      contentWindow: {
-        app: {
-          extensionManager: {
-            workflow: {
-              activeWorkflow: {
-                filename: "wf.json",
-                activeState: iframeGraphData,
-              },
-            },
-          },
-        },
-      },
-    } as unknown as HTMLIFrameElement;
+    mockBridgeReadActive.mockResolvedValue({
+      graphData: iframeGraphData,
+      filename: "wf.json",
+      isModified: false,
+    });
 
     useGenerationStore.setState({
       selectedWorkflowId: "wf.json",
       rulesWorkflowSourceId: "wf.json",
       syncedGraphData: panelGraphData,
       syncedWorkflow: panelGraphData,
-      editorRef,
+      editorRef: {} as HTMLIFrameElement,
       preResolvedPromptEnabled: true,
     });
 
@@ -2241,50 +2235,6 @@ describe("useGenerationStore pipeline phases", () => {
 
     expect(useGenerationStore.getState().generationQueue).toHaveLength(1);
     expect(mockInterrupt).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps the user cancellation message when ComfyUI emits a late execution error", async () => {
-    const runningJob = {
-      ...makeQueuedJob("prompt-running"),
-      status: "running" as const,
-    };
-    const interruptDeferred = createDeferred<void>();
-    mockInterrupt.mockReturnValueOnce(interruptDeferred.promise);
-
-    useGenerationStore.setState({
-      jobs: new Map([[runningJob.id, runningJob]]),
-      activeJobId: runningJob.id,
-      wsClient: null,
-      connectionStatus: "disconnected",
-    });
-    useGenerationStore.getState().connect();
-    const client = getLatestClient();
-
-    const interruptPromise = useGenerationStore
-      .getState()
-      .interruptCurrentGeneration();
-    await flushMicrotasks();
-
-    client.emitEvent({
-      type: "execution_error",
-      data: {
-        prompt_id: runningJob.id,
-        node_id: "load-video",
-        node_type: "LoadVideo",
-        exception_message: "400: video is required",
-        exception_type: "ValidationError",
-        traceback: [],
-      },
-    });
-
-    interruptDeferred.resolve();
-    await interruptPromise;
-
-    expect(useGenerationStore.getState().jobs.get(runningJob.id)).toMatchObject({
-      status: "error",
-      error: "Generation cancelled by user",
-      currentNode: null,
-    });
   });
 
   it("clears queued future generations without interrupting the active one", () => {

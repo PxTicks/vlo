@@ -24,9 +24,7 @@ import {
   evaluateWidgetDefaultOverrides,
   type RewriteRule,
 } from "../services/evaluateRewrites";
-import { preResolvePrompt } from "../services/preResolvePrompt";
-import { readActiveWorkflowFromIframe } from "../services/workflowBridge";
-import { normalizeWorkflowFilename } from "../services/workflowFilenames";
+import { iframeBridge } from "../services/iframeBridgeClient";
 import {
   getMaskCropModeDefault,
   getWorkflowPostprocessingConfig,
@@ -38,7 +36,6 @@ import {
   getNodeInputRequestKey,
   getWorkflowInputId,
 } from "../utils/workflowInputs";
-import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
 import {
   createGenerationAbortError,
   isAbortError,
@@ -131,7 +128,7 @@ function collectProvidedInputIds(
 
     // Cached reruns submit backend loader ids instead of fresh file uploads.
     // These still count as present for rewrite/default evaluation, otherwise
-    // preResolvePrompt can wrongly bypass the very nodes that need reinjection.
+    // Prompt resolution can wrongly bypass the very nodes that need reinjection.
     for (const [nodeId, values] of Object.entries(request.cachedMediaInputs ?? {})) {
       if (!values || typeof values !== "object" || Array.isArray(values)) {
         continue;
@@ -429,78 +426,9 @@ export class WorkflowOutOfSyncError extends Error {
   }
 }
 
-function iframeMatchesExpectedWorkflow(
-  iframeFilename: string | null,
-  iframeGraphData: Record<string, unknown>,
-  expectedWorkflowId: string | null,
-  expectedGraphData: Record<string, unknown> | null,
-): boolean {
-  // Filename match wins when both sides expose one — it's the cheap and
-  // definitive identifier. We compare normalized basenames so leading paths
-  // like `default_workflows/foo.json` and `foo.json` are treated as equal.
-  if (expectedWorkflowId && iframeFilename) {
-    const expectedNormalized = normalizeWorkflowFilename(expectedWorkflowId);
-    const iframeNormalized = normalizeWorkflowFilename(iframeFilename);
-    if (
-      expectedNormalized &&
-      iframeNormalized &&
-      expectedNormalized === iframeNormalized
-    ) {
-      return true;
-    }
-  }
-
-  // Fall back to a node-set signature so small in-iframe edits (added widget
-  // values, repositioned nodes, even an extra utility node) don't trip the
-  // guard. This is the same tolerance used by `matchesExpectedWorkflowResult`
-  // in workflowSyncController.
-  if (expectedGraphData) {
-    return haveMatchingWorkflowNodes(expectedGraphData, iframeGraphData);
-  }
-
-  return false;
-}
-
-function verifyIframeMatchesPanel(
-  iframe: HTMLIFrameElement,
-  state: ReturnType<GenerationStoreGet>,
-): void {
-  const iframeWorkflow = readActiveWorkflowFromIframe(iframe);
-  if (!iframeWorkflow) {
-    // No active iframe workflow at all — let preResolvePrompt produce its
-    // own "graphToPrompt unavailable" error; we don't want to mask that
-    // with an out-of-sync message.
-    return;
-  }
-
-  const expectedWorkflowId =
-    state.rulesWorkflowSourceId ??
-    (state.selectedWorkflowId === TEMP_WORKFLOW_ID ||
-    isTemporaryWorkflowPersistenceId(state.selectedWorkflowId)
-      ? null
-      : state.selectedWorkflowId);
-
-  if (
-    iframeMatchesExpectedWorkflow(
-      iframeWorkflow.filename,
-      iframeWorkflow.graphData,
-      expectedWorkflowId,
-      state.syncedGraphData,
-    )
-  ) {
-    return;
-  }
-
-  throw new WorkflowOutOfSyncError(
-    expectedWorkflowId,
-    iframeWorkflow.filename,
-  );
-}
-
 // The submitted workflow ALWAYS comes from app.graphToPrompt() — never from
-// buildWorkflowFromGraphData. We temporarily mutate the live graph using v3
-// frontend graph effects, let ComfyUI's graphToPrompt prune it, and submit
-// that already-resolved prompt so the backend never performs graph rewrites.
+// buildWorkflowFromGraphData. The hosted bridge applies frontend graph
+// effects to a temporary clone and lets ComfyUI's graphToPrompt prune it.
 async function captureSubmittedWorkflow(
   plan: GenerationPlan,
   state: ReturnType<GenerationStoreGet>,
@@ -517,11 +445,12 @@ async function captureSubmittedWorkflow(
     );
   }
 
-  // Belt-and-suspenders guard: even though `isWorkflowReady` should now wait
-  // for iframe coherence, the iframe can still drift between readiness and
-  // submission (e.g. ComfyUI internal state churn). If it has, fail fast
-  // rather than calling graphToPrompt on the wrong graph.
-  verifyIframeMatchesPanel(iframe, state);
+  if (
+    typeof state.iframeWorkflowInstanceId !== "string" ||
+    typeof state.iframeWorkflowRevision !== "number"
+  ) {
+    throw new WorkflowOutOfSyncError(state.selectedWorkflowId, null);
+  }
 
   const rewrites: RewriteRule[] =
     (plan.workflow.workflowRules?.rewrites as RewriteRule[] | undefined) ?? [];
@@ -552,18 +481,20 @@ async function captureSubmittedWorkflow(
       ...plan.submission.bypassNodeIds,
     ]),
   );
-  const widgetOverrides: Parameters<typeof preResolvePrompt>[2] = [
+  const widgetOverrides = [
     ...defaultWidgetOverrides,
     ...rewriteWidgetOverrides,
     ...effectSwitchEffects.widgetOverrides,
   ];
 
-  const resolved = await preResolvePrompt(iframe, bypassNodeIds, widgetOverrides);
-  if (!resolved) {
-    throw new Error(
-      "graphToPrompt failed; cannot construct submission payload (check that ComfyUI graphToPrompt is available)",
-    );
-  }
+  const resolved = await iframeBridge.resolvePrompt(
+    {
+      workflowInstanceId: state.iframeWorkflowInstanceId,
+      revision: state.iframeWorkflowRevision,
+    },
+    bypassNodeIds,
+    widgetOverrides,
+  );
 
   return {
     workflow: cloneSubmittedWorkflow(resolved.output),

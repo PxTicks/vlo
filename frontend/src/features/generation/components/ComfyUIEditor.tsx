@@ -10,12 +10,13 @@ import { Close, OpenInNew } from "@mui/icons-material";
 import { useGenerationStore } from "../useGenerationStore";
 import {
   buildWorkflowResultFromGraphData,
-  readActiveWorkflowFromIframe,
-  isIframeAppReady,
-  isIframeBackendConnected,
   type WorkflowReadResult,
 } from "../services/workflowBridge";
-import { isGraphMutationInFlight } from "../services/preResolvePrompt";
+import {
+  iframeBridge,
+  type BridgeHealth,
+  type BridgeWorkflowSnapshot,
+} from "../services/iframeBridgeClient";
 import {
   injectWorkflowAndRead,
   readWorkflowWithRetry,
@@ -23,7 +24,7 @@ import {
   type ShouldAbort,
 } from "../services/workflowSyncController";
 
-const POLL_INTERVAL_MS = 2000;
+const HEALTH_WATCHDOG_MS = 10_000;
 const APP_READY_TIMEOUT_MS = 10_000;
 const RECOVERY_POLL_MS = 3000;
 const MAX_CONSECUTIVE_READ_FAILURES = 3;
@@ -41,8 +42,8 @@ interface ComfyUIEditorProps {
 /**
  * Returns a same-origin URL for the ComfyUI iframe.
  *
- * Same-origin is required so that the workflowBridge can access
- * iframe.contentWindow.app (different ports = different origin).
+ * Same-origin is required by the authenticated postMessage bridge and by the
+ * backend's hosted ComfyUI extension-module proxy.
  */
 function getSameOriginUrl(): string {
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -127,10 +128,12 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   );
 
   const buildWorkflowResult = useCallback(
-    (graphData: Record<string, unknown>, filename: string | null) =>
-      buildWorkflowResultFromGraphData(graphData, filename, {
+    (snapshot: BridgeWorkflowSnapshot) =>
+      buildWorkflowResultFromGraphData(snapshot.graphData, snapshot.filename, {
         inputNodeMap,
         objectInfo: rawObjectInfo,
+        workflowInstanceId: snapshot.workflowInstanceId,
+        revision: snapshot.revision,
       }),
     [inputNodeMap, rawObjectInfo],
   );
@@ -150,6 +153,13 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         result.graphData,
         result.inputs,
         result.filename,
+        typeof result.workflowInstanceId === "string" &&
+        typeof result.revision === "number"
+          ? {
+              workflowInstanceId: result.workflowInstanceId,
+              revision: result.revision,
+            }
+          : null,
       );
     },
     [registerWorkflowFromEditor],
@@ -174,6 +184,10 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       setLoading(true);
       setEditorNeedsReconnect(false);
       useGenerationStore.getState().setWorkflowLoading(true);
+      useGenerationStore.setState({
+        iframeWorkflowInstanceId: null,
+        iframeWorkflowRevision: null,
+      });
 
       console.warn(`[ComfyUIEditor] Recovering iframe: ${reason}`);
 
@@ -188,6 +202,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           iframe.src = iframeUrl;
         }
       }
+      // Pending bridge requests belong to the old document.
+      iframeBridge.notifyIframeReloaded();
     },
     [iframeUrl, setEditorNeedsReconnect],
   );
@@ -223,10 +239,12 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       if (!ready) {
         if (!shouldAbort()) {
           setEditorNeedsReconnect(true);
-          // If the backend is reported as reachable but the app object never
-          // appeared, the iframe likely loaded a dead/stale page (e.g. ComfyUI
-          // was down on first load). Trigger recovery.
-          if (isIframeBackendConnected(iframe)) {
+          // If the backend reports ComfyUI as reachable but the bridge never
+          // announced, the iframe likely loaded a dead/stale page (e.g.
+          // ComfyUI was down on first load). Trigger recovery.
+          if (
+            useGenerationStore.getState().connectionStatus === "connected"
+          ) {
             recoverIframe("app initialization failed while backend connected");
           }
         }
@@ -269,6 +287,18 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
               syncResult.workflowResult.workflow,
               syncResult.workflowResult.graphData,
               syncResult.workflowResult.inputs,
+              {
+                bridgeIdentity:
+                  typeof syncResult.workflowResult.workflowInstanceId ===
+                    "string" &&
+                  typeof syncResult.workflowResult.revision === "number"
+                    ? {
+                        workflowInstanceId:
+                          syncResult.workflowResult.workflowInstanceId,
+                        revision: syncResult.workflowResult.revision,
+                      }
+                    : null,
+              },
             );
           rememberWorkflowSignature(
             syncResult.workflowResult.graphData,
@@ -303,6 +333,16 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
             firstResult.workflow,
             firstResult.graphData,
             firstResult.inputs,
+            {
+              bridgeIdentity:
+                typeof firstResult.workflowInstanceId === "string" &&
+                typeof firstResult.revision === "number"
+                  ? {
+                      workflowInstanceId: firstResult.workflowInstanceId,
+                      revision: firstResult.revision,
+                    }
+                  : null,
+            },
           );
         rememberWorkflowSignature(firstResult.graphData, firstResult.filename);
       }
@@ -370,54 +410,41 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     if (connectionStatus !== "connected") return;
     const iframe = iframeRef.current;
     if (!iframe) return;
-    if (isIframeAppReady(iframe)) return;
+    if (iframeBridge.isReady) return;
     recoverIframe("ComfyUI became reachable; iframe app never initialized");
   }, [connectionStatus, recoverIframe]);
 
   const syncLatestWorkflowFromIframe = useCallback(async () => {
-    if (isGraphMutationInFlight()) return;
     const iframe = iframeRef.current;
     if (!iframe) return;
 
-    const activeWorkflow = readActiveWorkflowFromIframe(iframe);
+    const activeWorkflow = await iframeBridge.readActive();
     if (!activeWorkflow) {
       return;
     }
 
-    await commitWorkflowResult(
-      buildWorkflowResult(activeWorkflow.graphData, activeWorkflow.filename),
-      true,
-    );
+    await commitWorkflowResult(buildWorkflowResult(activeWorkflow), true);
   }, [buildWorkflowResult, commitWorkflowResult]);
 
-  const pollWorkflow = useCallback(async () => {
-    if (pollingRef.current) return;
-    pollingRef.current = true;
-    try {
-      if (isGraphMutationInFlight()) return;
-      const iframe = iframeRef.current;
-      if (!iframe) return;
+  // Graph edits are pushed by the hosted vlo bridge (debounced inside the
+  // iframe), replacing the previous full-graph read poll.
+  useEffect(() => {
+    return iframeBridge.onGraphChanged((snapshot) => {
+      void commitWorkflowResult(buildWorkflowResult(snapshot));
+    });
+  }, [buildWorkflowResult, commitWorkflowResult]);
 
-      const activeWorkflow = readActiveWorkflowFromIframe(iframe);
-
-      if (activeWorkflow) {
-        await commitWorkflowResult(
-          buildWorkflowResult(activeWorkflow.graphData, activeWorkflow.filename),
-        );
+  const applyHealth = useCallback(
+    (health: BridgeHealth) => {
+      if (health.appReady && health.backendConnected) {
         consecutiveReadFailuresRef.current = 0;
         consecutiveBackendDisconnectsRef.current = 0;
         setEditorNeedsReconnect(false);
         return;
       }
-
       consecutiveReadFailuresRef.current += 1;
-      const backendConnected = isIframeBackendConnected(iframe);
-
-      if (!backendConnected) {
-        if (Date.now() < visibilityResumeGraceUntilRef.current) {
-          return;
-        }
-
+      if (!health.backendConnected) {
+        if (Date.now() < visibilityResumeGraceUntilRef.current) return;
         consecutiveBackendDisconnectsRef.current += 1;
         setEditorNeedsReconnect(true);
         if (
@@ -428,20 +455,36 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         }
         return;
       }
-
       consecutiveBackendDisconnectsRef.current = 0;
       if (consecutiveReadFailuresRef.current >= MAX_CONSECUTIVE_READ_FAILURES) {
-        recoverIframe("repeated active workflow read failures");
+        recoverIframe("repeated bridge health failures");
+      }
+    },
+    [recoverIframe, setEditorNeedsReconnect],
+  );
+
+  useEffect(() => iframeBridge.onHealthChanged(applyHealth), [applyHealth]);
+
+  const pollWorkflow = useCallback(async () => {
+    if (pollingRef.current) return;
+    pollingRef.current = true;
+    try {
+      const iframe = iframeRef.current;
+      if (!iframe) return;
+
+      if (!iframeBridge.isReady) {
+        applyHealth({ appReady: false, backendConnected: false });
+        return;
+      }
+      try {
+        applyHealth(await iframeBridge.health());
+      } catch {
+        applyHealth({ appReady: false, backendConnected: false });
       }
     } finally {
       pollingRef.current = false;
     }
-  }, [
-    buildWorkflowResult,
-    commitWorkflowResult,
-    recoverIframe,
-    setEditorNeedsReconnect,
-  ]);
+  }, [applyHealth]);
 
   // On close, always do one last read to capture unsynced edits.
   useEffect(() => {
@@ -467,19 +510,21 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
 
     tick();
 
-    const interval = appReady ? POLL_INTERVAL_MS : RECOVERY_POLL_MS;
+    const interval = appReady ? HEALTH_WATCHDOG_MS : RECOVERY_POLL_MS;
     const timer = setInterval(tick, interval);
     return () => clearInterval(timer);
   }, [open, appReady, initializeIframe, pollWorkflow]);
 
+  // Re-derive panel inputs when the parsing context (object_info / node map)
+  // changes; the graph itself is unchanged so force a re-commit.
   useEffect(() => {
     if (!open || !appReady) {
       return;
     }
 
     lastWorkflowSignatureRef.current = null;
-    void pollWorkflow();
-  }, [open, appReady, inputNodeMap, rawObjectInfo, pollWorkflow]);
+    void syncLatestWorkflowFromIframe();
+  }, [open, appReady, inputNodeMap, rawObjectInfo, syncLatestWorkflowFromIframe]);
 
   // When the user returns to the tab, do a quick health check. We give the
   // iframe a short grace period because browsers can briefly suspend sockets
@@ -494,13 +539,11 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       const iframe = iframeRef.current;
       if (!iframe) return;
 
-      if (!isIframeAppReady(iframe)) {
+      if (!iframeBridge.isReady) {
         setAppReady(false);
         void initializeIframe();
         return;
       }
-
-      if (isGraphMutationInFlight()) return;
 
       if (appReady) {
         pollWorkflow();

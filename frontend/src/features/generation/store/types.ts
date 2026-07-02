@@ -64,6 +64,8 @@ export interface WorkflowReplayPanelState {
 export interface GenerationWorkflowState {
   syncedWorkflow: Record<string, unknown> | null;
   syncedGraphData: Record<string, unknown> | null;
+  iframeWorkflowInstanceId: string | null;
+  iframeWorkflowRevision: number | null;
   workflowInputs: WorkflowInput[];
   availableWorkflows: WorkflowOption[];
   tempWorkflow: TempWorkflow | null;
@@ -138,13 +140,17 @@ export interface GenerationWorkflowState {
     workflow: Record<string, unknown> | null,
     graphData: Record<string, unknown>,
     inputs: WorkflowInput[],
-    options?: { markReady?: boolean },
+    options?: {
+      markReady?: boolean;
+      bridgeIdentity?: { workflowInstanceId: string; revision: number } | null;
+    },
   ) => void;
   registerWorkflowFromEditor: (
     workflow: Record<string, unknown> | null,
     graphData: Record<string, unknown>,
     inputs: WorkflowInput[],
     filename: string | null,
+    bridgeIdentity?: { workflowInstanceId: string; revision: number } | null,
   ) => Promise<void>;
   fetchWorkflows: () => Promise<void>;
   loadWorkflow: (filename: string) => Promise<void>;

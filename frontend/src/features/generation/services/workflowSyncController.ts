@@ -2,98 +2,69 @@ import type {
   WorkflowReadResult,
   WorkflowWarningSummary,
 } from "./workflowBridge";
+import { buildWorkflowResultFromGraphData } from "./workflowBridge";
 import {
-  buildWorkflowResultFromGraphData,
-  capturePendingWarningsForWorkflowFromIframe,
-  isIframeAppReady,
-  loadWorkflowIntoIframe,
-  readActiveWorkflowFromIframe,
-} from "./workflowBridge";
+  IframeBridgeError,
+  iframeBridge,
+  type BridgeWorkflowSnapshot,
+} from "./iframeBridgeClient";
 import type { InputNodeMap } from "../constants/inputNodeMap";
-import { normalizeWorkflowFilename } from "./workflowFilenames";
-import { haveMatchingWorkflowNodes } from "../utils/workflowNodeSignature";
 
-const APP_READY_POLL_MS = 100;
 const APP_READY_TIMEOUT_MS = 3000;
 const READ_RETRY_POLL_MS = 100;
 const READ_RETRY_TIMEOUT_MS = 3000;
-const WARNING_CAPTURE_SETTLE_TIMEOUT_MS = 1000;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
 }
 
 export type ShouldAbort = () => boolean;
 
-function matchesExpectedWorkflowResult(
-  workflowResult: WorkflowReadResult,
-  expectedGraphData: Record<string, unknown>,
-  expectedWorkflowId: string,
-): boolean {
-  if (!workflowResult) {
-    return false;
-  }
-
-  const normalizedExpectedWorkflowId =
-    normalizeWorkflowFilename(expectedWorkflowId);
-  const normalizedActualWorkflowId = workflowResult.filename
-    ? normalizeWorkflowFilename(workflowResult.filename)
-    : null;
-
-  if (
-    normalizedExpectedWorkflowId &&
-    normalizedActualWorkflowId &&
-    normalizedExpectedWorkflowId === normalizedActualWorkflowId
-  ) {
-    return true;
-  }
-
-  return (
-    haveMatchingWorkflowNodes(expectedGraphData, workflowResult.graphData) ||
-    haveMatchingWorkflowNodes(expectedGraphData, workflowResult.workflow)
+function buildWorkflowResult(
+  snapshot: BridgeWorkflowSnapshot,
+  inputNodeMap?: InputNodeMap | null,
+  objectInfo?: Record<string, unknown> | null,
+): WorkflowReadResult {
+  return buildWorkflowResultFromGraphData(
+    snapshot.graphData,
+    snapshot.filename,
+    {
+      inputNodeMap,
+      objectInfo,
+      workflowInstanceId: snapshot.workflowInstanceId,
+      revision: snapshot.revision,
+    },
   );
 }
 
 export async function waitForAppReady(
-  iframe: HTMLIFrameElement,
+  _iframe: HTMLIFrameElement,
   shouldAbort: ShouldAbort,
   timeoutMs = APP_READY_TIMEOUT_MS,
 ): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (shouldAbort()) return false;
-    if (isIframeAppReady(iframe)) return true;
-    await sleep(APP_READY_POLL_MS);
-  }
-  return false;
+  return iframeBridge.waitForReady(timeoutMs, shouldAbort);
 }
 
 export async function readWorkflowWithRetry(
-  iframe: HTMLIFrameElement,
+  _iframe: HTMLIFrameElement,
   shouldAbort: ShouldAbort,
   timeoutMs = READ_RETRY_TIMEOUT_MS,
   inputNodeMap?: InputNodeMap | null,
   objectInfo?: Record<string, unknown> | null,
-  isAcceptableResult?: (
-    result: NonNullable<WorkflowReadResult>,
-  ) => boolean,
 ): Promise<WorkflowReadResult | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (shouldAbort()) return null;
-    const activeWorkflow = readActiveWorkflowFromIframe(iframe);
-    const result = activeWorkflow
-      ? buildWorkflowResultFromGraphData(
-          activeWorkflow.graphData,
-          activeWorkflow.filename,
-          {
-            inputNodeMap,
-            objectInfo,
-          },
-        )
-      : null;
-    if (result && (!isAcceptableResult || isAcceptableResult(result))) {
-      return result;
+    try {
+      const snapshot = await iframeBridge.readActive();
+      if (snapshot) return buildWorkflowResult(snapshot, inputNodeMap, objectInfo);
+    } catch (error) {
+      if (
+        error instanceof IframeBridgeError &&
+        (error.code === "incompatible" || error.code === "not-bound")
+      ) {
+        throw error;
+      }
     }
     await sleep(READ_RETRY_POLL_MS);
   }
@@ -121,69 +92,48 @@ export async function injectWorkflowAndRead(
     return {
       ok: false,
       deferred: true,
-      reason: "iframe app not ready",
+      reason: "iframe bridge not ready",
       warnings: null,
       workflowResult: null,
     };
   }
 
-  const loadResult = await loadWorkflowIntoIframe(iframe, graphData, workflowId, {
-    deferWarnings: true,
-    capturePendingWarnings: true,
-  });
-  if (shouldAbort()) {
+  try {
+    const result = await iframeBridge.injectWorkflow(graphData, workflowId);
+    if (shouldAbort()) {
+      return {
+        ok: false,
+        deferred: true,
+        reason: "workflow load aborted",
+        warnings: result.warnings,
+        workflowResult: null,
+      };
+    }
     return {
-      ok: false,
-      deferred: true,
-      reason: "workflow load aborted",
-      warnings: loadResult.warnings,
-      workflowResult: null,
+      ok: true,
+      deferred: false,
+      reason: null,
+      warnings: result.warnings,
+      workflowResult: buildWorkflowResult(
+        result.snapshot,
+        inputNodeMap,
+        objectInfo,
+      ),
     };
+  } catch (error) {
+    if (error instanceof IframeBridgeError) {
+      const terminal =
+        error.code === "incompatible" ||
+        error.code === "invalid-response" ||
+        error.code === "clone-unavailable";
+      return {
+        ok: false,
+        deferred: !terminal,
+        reason: error.message,
+        warnings: null,
+        workflowResult: null,
+      };
+    }
+    throw error;
   }
-
-  const workflowResult = await readWorkflowWithRetry(
-    iframe,
-    shouldAbort,
-    READ_RETRY_TIMEOUT_MS,
-    inputNodeMap,
-    objectInfo,
-    (result) =>
-      matchesExpectedWorkflowResult(result, graphData, workflowId),
-  );
-  if (!workflowResult) {
-    return {
-      ok: false,
-      deferred: true,
-      reason: "loaded workflow did not become active",
-      warnings: loadResult.warnings,
-      workflowResult: null,
-    };
-  }
-
-  const warnings =
-    loadResult.warnings ??
-    (await capturePendingWarningsForWorkflowFromIframe(
-      iframe,
-      graphData,
-      workflowId,
-      WARNING_CAPTURE_SETTLE_TIMEOUT_MS,
-      WARNING_CAPTURE_SETTLE_TIMEOUT_MS,
-    ));
-  if (shouldAbort()) {
-    return {
-      ok: false,
-      deferred: true,
-      reason: "workflow warning capture aborted",
-      warnings,
-      workflowResult: null,
-    };
-  }
-
-  return {
-    ok: loadResult.ok,
-    deferred: false,
-    reason: loadResult.ok ? null : "workflow injection failed",
-    warnings,
-    workflowResult,
-  };
 }

@@ -62,12 +62,11 @@ vi.mock("../../services/evaluateRewrites", () => ({
   evaluateWidgetDefaultOverrides: vi.fn(() => []),
 }));
 
-vi.mock("../../services/preResolvePrompt", () => ({
-  preResolvePrompt: mocks.preResolvePrompt,
-}));
-
-vi.mock("../../services/workflowBridge", () => ({
-  readActiveWorkflowFromIframe: mocks.readActiveWorkflowFromIframe,
+vi.mock("../../services/iframeBridgeClient", () => ({
+  iframeBridge: {
+    resolvePrompt: mocks.preResolvePrompt,
+    readActive: mocks.readActiveWorkflowFromIframe,
+  },
 }));
 
 vi.mock("../../services/workflowFilenames", () => ({
@@ -205,6 +204,8 @@ function createHarness(overrides: Record<string, unknown> = {}): Harness {
     workflowInputs: [],
     syncedWorkflow: {},
     syncedGraphData: { nodes: [] },
+    iframeWorkflowInstanceId: "workflow-instance",
+    iframeWorkflowRevision: 0,
     mediaInputs: {},
     derivedMaskMappings: [],
     exactAspectRatio: false,
@@ -391,7 +392,7 @@ describe("buildExecutionStoreState", () => {
     await expect(harness.actions.submitGeneration({})).resolves.toBe("prompt-1");
 
     expect(mocks.preResolvePrompt).toHaveBeenCalledWith(
-      expect.anything(),
+      { workflowInstanceId: "workflow-instance", revision: 0 },
       [],
       [],
     );
@@ -434,14 +435,11 @@ describe("buildExecutionStoreState", () => {
       "error-job",
     );
 
-    mocks.readActiveWorkflowFromIframe.mockReturnValue({
-      filename: "other.json",
-      graphData: { nodes: [{ id: 99 }] },
-    });
-    mocks.haveMatchingWorkflowNodes.mockReturnValue(false);
     const drifted = createHarness({
       editorRef: {} as HTMLIFrameElement,
       syncedGraphData: null,
+      iframeWorkflowInstanceId: null,
+      iframeWorkflowRevision: null,
     });
     await expect(drifted.actions.submitGeneration({})).resolves.toBe(
       "error-job",
@@ -449,7 +447,7 @@ describe("buildExecutionStoreState", () => {
     expect(
       (drifted.state.jobs as Map<string, { error: string }>).get("error-job")
         ?.error,
-    ).toMatch(/still has other.json loaded/);
+    ).toMatch(/unknown workflow/);
   });
 
   it("exposes workflow mismatch details", () => {

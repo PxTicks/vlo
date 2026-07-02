@@ -255,6 +255,69 @@ describe("deliveryEvents", () => {
     ]);
   });
 
+  it("tracks overlapping delivery postprocessing independently", async () => {
+    const resolvers: Array<() => void> = [];
+    mockFrontendPostprocess.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(() =>
+            resolve({
+              postprocessedPreview: null,
+              postprocessError: null,
+              importedAssetIds: [],
+            }),
+          );
+        }),
+    );
+    mockWaitForAssetsPersistence.mockResolvedValue(undefined);
+    useGenerationStore.setState({
+      jobs: new Map<string, GenerationJob>([
+        ["prompt-1", makeQueuedJob("prompt-1")],
+        [
+          "prompt-2",
+          {
+            ...makeQueuedJob("prompt-2"),
+            deliveryId: "delivery-2",
+          },
+        ],
+      ]),
+    });
+
+    client.emitMessage({
+      type: "lease_state",
+      data: { project_id: "project-1", active: true },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: { delivery: makeCompletedManifest() },
+    });
+    client.emitMessage({
+      type: "delivery_update",
+      data: {
+        delivery: makeCompletedManifest({
+          delivery_id: "delivery-2",
+          prompt_id: "prompt-2",
+        }),
+      },
+    });
+    await flushMicrotasks();
+
+    expect(useGenerationStore.getState().postprocessingJobIds).toEqual([
+      "prompt-1",
+      "prompt-2",
+    ]);
+
+    for (const resolve of resolvers) resolve();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(useGenerationStore.getState().postprocessingJobIds).toEqual([]);
+    expect(client.acknowledgedDeliveryIds).toEqual([
+      "delivery-1",
+      "delivery-2",
+    ]);
+  });
+
   it("preserves frontend-only metadata fields when the manifest doesn't carry them", async () => {
     // Repro: on cached preprocess runs the backend's mask_crop is inactive,
     // so the manifest's generation_metadata is missing maskCropMetadata and

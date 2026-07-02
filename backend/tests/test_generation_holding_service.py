@@ -14,6 +14,8 @@ from services.generation_delivery.service import (
     GenerationHoldingService,
     PREVIEW_METADATA_FEATURE_FLAGS,
     _ProjectConsumer,
+    _extract_history_error,
+    _parse_queue_prompt_ids,
 )
 
 
@@ -59,6 +61,25 @@ class _FakeComfyConnect:
         return None
 
 
+class _FakeResponse:
+    def __init__(self, payload: object) -> None:
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> object:
+        return self._payload
+
+
+class _FakeHttpClient:
+    def __init__(self, responses: dict[str, object]) -> None:
+        self._responses = responses
+
+    async def get(self, path: str) -> _FakeResponse:
+        return _FakeResponse(self._responses[path])
+
+
 def _delivery_context() -> dict:
     return {
         "plan_id": "plan-1",
@@ -80,7 +101,12 @@ def _delivery_context() -> dict:
     }
 
 
-@pytest.mark.asyncio
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.mark.anyio
 async def test_generation_holding_service_persists_and_acknowledges_delivery(
     tmp_path: Path,
 ) -> None:
@@ -137,7 +163,7 @@ async def test_generation_holding_service_persists_and_acknowledges_delivery(
     assert not (tmp_path / "holding" / "project-1" / "delivery-1").exists()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generation_holding_service_keeps_nacked_delivery_pending(
     tmp_path: Path,
 ) -> None:
@@ -157,7 +183,7 @@ async def test_generation_holding_service_keeps_nacked_delivery_pending(
     assert delivery["last_delivery_error"] == "Frontend ingest failed"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generation_holding_service_resyncs_all_persisted_deliveries_across_instances(
     tmp_path: Path,
 ) -> None:
@@ -201,7 +227,7 @@ async def test_generation_holding_service_resyncs_all_persisted_deliveries_acros
     assert refreshed[0]["last_delivery_error"] == "Frontend ingest failed"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generation_holding_service_reattaches_inflight_delivery_on_load(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -275,7 +301,7 @@ async def test_generation_holding_service_reattaches_inflight_delivery_on_load(
     await service.cancel_monitor("delivery-1")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generation_holding_service_captures_websocket_outputs_and_finalizes(
     tmp_path: Path,
 ) -> None:
@@ -338,7 +364,7 @@ async def test_generation_holding_service_captures_websocket_outputs_and_finaliz
     assert delivery["preview_frames"][1]["filename"].startswith("ws-000001")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generation_holding_service_captures_offset_four_websocket_images(
     tmp_path: Path,
 ) -> None:
@@ -374,7 +400,7 @@ async def test_generation_holding_service_captures_offset_four_websocket_images(
     assert captured_path.read_bytes() == png_bytes
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generation_holding_service_scans_preview_header_for_image_payload(
     tmp_path: Path,
 ) -> None:
@@ -414,7 +440,7 @@ async def test_generation_holding_service_scans_preview_header_for_image_payload
     assert captured_path.read_bytes() == jpeg_bytes
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generation_holding_service_errors_when_no_websocket_outputs_captured(
     tmp_path: Path,
 ) -> None:
@@ -438,7 +464,7 @@ async def test_generation_holding_service_errors_when_no_websocket_outputs_captu
     assert delivery["status"] == "error"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generation_monitor_requests_preview_metadata_feature_flag(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -483,7 +509,7 @@ async def test_generation_monitor_requests_preview_metadata_feature_flag(
     assert fake_comfy_ws.sent_messages == [PREVIEW_METADATA_FEATURE_FLAGS]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generation_holding_service_project_lease_switches_to_latest_consumer(
     tmp_path: Path,
 ) -> None:
@@ -528,3 +554,300 @@ async def test_generation_holding_service_project_lease_switches_to_latest_consu
         "data": {"project_id": "project-1", "active": True},
     }
     assert ws_one.sent_payloads[-1]["type"] == "snapshot"
+
+
+def test_queue_prompt_parser_accepts_tuple_and_dictionary_entries() -> None:
+    queue = {
+        "queue_running": [[1, "tuple-running", {}, {}, []]],
+        "queue_pending": [
+            (2, "tuple-pending", {}, {}, []),
+            {"prompt_id": "dictionary-pending"},
+            {"prompt_id": 42},
+        ],
+    }
+
+    assert _parse_queue_prompt_ids(queue) == {
+        "tuple-running",
+        "tuple-pending",
+        "dictionary-pending",
+    }
+
+
+@pytest.mark.parametrize(
+    ("messages", "expected"),
+    [
+        (
+            [["execution_error", {"exception_message": "Model failed"}]],
+            "Model failed",
+        ),
+        ([["execution_interrupted", {}]], "Generation interrupted"),
+    ],
+)
+def test_history_error_parser_reports_failures_and_interruptions(
+    messages: list[object],
+    expected: str,
+) -> None:
+    assert (
+        _extract_history_error(
+            {"status": {"status_str": "error", "messages": messages}}
+        )
+        == expected
+    )
+
+
+@pytest.mark.anyio
+async def test_generation_monitor_history_backstop_handles_every_missed_event(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    finalized = asyncio.Event()
+
+    async def _finalize(*_args, **_kwargs) -> None:
+        finalized.set()
+
+    async def _completed(_prompt_id: str) -> tuple[str, str | None]:
+        return "completed", None
+
+    monkeypatch.setattr(service, "_finalize_delivery", _finalize)
+    monkeypatch.setattr(service, "_reconcile_prompt_state", _completed)
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS",
+        0,
+    )
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_RECONNECT_ATTEMPTS",
+        0,
+    )
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        lambda *_args, **_kwargs: _FakeComfyConnect(_FakeComfyWebSocket([])),
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+    )
+
+    assert finalized.is_set()
+
+
+@pytest.mark.anyio
+async def test_generation_monitor_resets_reconnect_budget_after_healthy_traffic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    finalized = asyncio.Event()
+    progress_event = json.dumps(
+        {
+            "type": "progress",
+            "data": {"prompt_id": "prompt-1", "value": 1, "max": 2},
+        }
+    )
+    success_event = json.dumps(
+        {"type": "execution_success", "data": {"prompt_id": "prompt-1"}}
+    )
+    sockets = [
+        _FakeComfyWebSocket([progress_event]),
+        _FakeComfyWebSocket([progress_event]),
+        _FakeComfyWebSocket([success_event]),
+    ]
+
+    async def _finalize(*_args, **_kwargs) -> None:
+        finalized.set()
+
+    def _connect(*_args, **_kwargs) -> _FakeComfyConnect:
+        return _FakeComfyConnect(sockets.pop(0))
+
+    monkeypatch.setattr(service, "_finalize_delivery", _finalize)
+    monkeypatch.setattr(delivery_service_module.websockets, "connect", _connect)
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_RECONNECT_ATTEMPTS",
+        1,
+    )
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_RECONNECT_BASE_DELAY_SECONDS",
+        0,
+    )
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS",
+        60,
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+    )
+
+    assert finalized.is_set()
+    assert sockets == []
+
+
+@pytest.mark.anyio
+async def test_generation_monitor_marks_disappeared_prompt_as_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await service.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        delivery_context=_delivery_context(),
+    )
+
+    async def _missing(_prompt_id: str) -> tuple[str, str | None]:
+        return "missing", None
+
+    monkeypatch.setattr(service, "_reconcile_prompt_state", _missing)
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS",
+        0,
+    )
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_BACKSTOP_INTERVAL_SECONDS",
+        0,
+    )
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_BACKSTOP_MISS_THRESHOLD",
+        2,
+    )
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_RECONNECT_ATTEMPTS",
+        0,
+    )
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        lambda *_args, **_kwargs: _FakeComfyConnect(_FakeComfyWebSocket([])),
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+    )
+
+    delivery = await service.get_delivery("project-1", "delivery-1")
+    assert delivery is not None
+    assert delivery["status"] == "error"
+    assert delivery["error"] == "Prompt is no longer known to ComfyUI"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            ["execution_error", {"exception_message": "Sampler failed"}],
+            "Sampler failed",
+        ),
+        (["execution_interrupted", {}], "Generation interrupted"),
+    ],
+)
+async def test_reconcile_prompt_state_reads_history_terminal_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    message: list[object],
+    expected: str,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    client = _FakeHttpClient(
+        {
+            "/history/prompt-1": {
+                "prompt-1": {
+                    "status": {"status_str": "error", "messages": [message]}
+                }
+            }
+        }
+    )
+
+    async def _client() -> _FakeHttpClient:
+        return client
+
+    monkeypatch.setattr(delivery_service_module, "get_http_client", _client)
+
+    assert await service._reconcile_prompt_state("prompt-1") == (
+        "completed",
+        expected,
+    )
+
+
+@pytest.mark.anyio
+async def test_start_monitor_reports_connection_and_returns_after_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    release = asyncio.Event()
+
+    async def _hanging_monitor(**_kwargs) -> None:
+        await release.wait()
+
+    monkeypatch.setattr(service, "_monitor_delivery", _hanging_monitor)
+    monkeypatch.setattr(
+        delivery_service_module,
+        "MONITOR_CONNECT_TIMEOUT_SECONDS",
+        0.001,
+    )
+
+    await service.start_monitor(
+        project_id="project-1",
+        delivery_id="delivery-timeout",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        wait_for_connection=True,
+    )
+
+    assert "delivery-timeout" in service._monitor_tasks
+    release.set()
+    await service.cancel_monitor("delivery-timeout")
+
+
+@pytest.mark.anyio
+async def test_monitor_sets_connected_event_when_websocket_opens(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    connected = asyncio.Event()
+    interrupted = json.dumps(
+        {
+            "type": "execution_interrupted",
+            "data": {"prompt_id": "prompt-1"},
+        }
+    )
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        lambda *_args, **_kwargs: _FakeComfyConnect(
+            _FakeComfyWebSocket([interrupted])
+        ),
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        connected_event=connected,
+    )
+
+    assert connected.is_set()

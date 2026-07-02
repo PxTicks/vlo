@@ -8,14 +8,35 @@ import {
   waitFor,
 } from "@testing-library/react";
 
+const bridgeMocks = vi.hoisted(() => ({
+  state: { isReady: false },
+  readActive: vi.fn(),
+  health: vi.fn(),
+  onGraphChanged: vi.fn(
+    (_handler: (snapshot: unknown) => void): (() => void) => () => {},
+  ),
+  onHealthChanged: vi.fn(
+    (_handler: (health: unknown) => void): (() => void) => () => {},
+  ),
+  notifyIframeReloaded: vi.fn(),
+  waitForReady: vi.fn(),
+}));
+
 vi.mock("../../services/workflowBridge", () => ({
   buildWorkflowResultFromGraphData: vi.fn(),
-  readActiveWorkflowFromIframe: vi.fn(() => null),
-  isIframeAppReady: vi.fn(() => false),
-  isIframeBackendConnected: vi.fn(() => false),
 }));
-vi.mock("../../services/preResolvePrompt", () => ({
-  isGraphMutationInFlight: vi.fn(() => false),
+vi.mock("../../services/iframeBridgeClient", () => ({
+  iframeBridge: {
+    get isReady() {
+      return bridgeMocks.state.isReady;
+    },
+    readActive: bridgeMocks.readActive,
+    health: bridgeMocks.health,
+    onGraphChanged: bridgeMocks.onGraphChanged,
+    onHealthChanged: bridgeMocks.onHealthChanged,
+    notifyIframeReloaded: bridgeMocks.notifyIframeReloaded,
+    waitForReady: bridgeMocks.waitForReady,
+  },
 }));
 vi.mock("../../services/workflowSyncController", () => ({
   // Never resolves: keeps the init effect parked so it can't churn state
@@ -31,12 +52,7 @@ import {
   readWorkflowWithRetry,
   waitForAppReady,
 } from "../../services/workflowSyncController";
-import {
-  buildWorkflowResultFromGraphData,
-  isIframeAppReady,
-  readActiveWorkflowFromIframe,
-} from "../../services/workflowBridge";
-import { isGraphMutationInFlight } from "../../services/preResolvePrompt";
+import { buildWorkflowResultFromGraphData } from "../../services/workflowBridge";
 import { useGenerationStore } from "../../useGenerationStore";
 
 function resetStore(overrides: Record<string, unknown> = {}) {
@@ -57,6 +73,9 @@ function resetStore(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   resetStore();
+  bridgeMocks.state.isReady = false;
+  bridgeMocks.readActive.mockResolvedValue(null);
+  bridgeMocks.health.mockResolvedValue(null);
   vi.mocked(waitForAppReady).mockImplementation(
     () => new Promise<boolean>(() => undefined),
   );
@@ -151,6 +170,8 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
         graphData: { nodes: [{ id: 1, type: "LoadImage" }] },
         inputs: [],
         filename: "selected.json",
+        workflowInstanceId: "workflow-1",
+        revision: 1,
       },
       warnings: { missingNodeTypes: ["Missing"], missingModels: [] },
     });
@@ -162,6 +183,12 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
       null,
       { nodes: [{ id: 1, type: "LoadImage" }] },
       [],
+      {
+        bridgeIdentity: {
+          workflowInstanceId: "workflow-1",
+          revision: 1,
+        },
+      },
     );
     expect(useGenerationStore.getState().workflowWarning).toEqual({
       missingNodeTypes: ["Missing"],
@@ -199,16 +226,46 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
     vi.mocked(readWorkflowWithRetry).mockResolvedValue({
       workflow: null,
       graphData: { nodes: [{ id: 2, type: "Text" }] },
-      inputs: [{ id: "2:text" }],
+      inputs: [
+        {
+          id: "2:text",
+          nodeId: "2",
+          classType: "Text",
+          inputType: "text",
+          param: "text",
+          label: "Text",
+          currentValue: "",
+          origin: "inferred",
+        },
+      ],
       filename: "current.json",
-    } as never);
+      workflowInstanceId: "workflow-2",
+      revision: 2,
+    });
     render(<ComfyUIEditor open onClose={() => undefined} />);
 
     await waitFor(() => expect(readWorkflowWithRetry).toHaveBeenCalled());
     expect(syncWorkflow).toHaveBeenCalledWith(
       null,
       { nodes: [{ id: 2, type: "Text" }] },
-      [{ id: "2:text" }],
+      [
+        {
+          id: "2:text",
+          nodeId: "2",
+          classType: "Text",
+          inputType: "text",
+          param: "text",
+          label: "Text",
+          currentValue: "",
+          origin: "inferred",
+        },
+      ],
+      {
+        bridgeIdentity: {
+          workflowInstanceId: "workflow-2",
+          revision: 2,
+        },
+      },
     );
   });
 
@@ -239,16 +296,21 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
       comfyuiDirectUrl: "http://comfy.local",
       registerWorkflowFromEditor,
     });
-    vi.mocked(readActiveWorkflowFromIframe).mockReturnValue({
+    bridgeMocks.readActive.mockResolvedValue({
       graphData: { nodes: [{ id: 3 }] },
       filename: "edited.json",
       isModified: true,
+      workflowInstanceId: "workflow-3",
+      revision: 3,
+      fingerprint: "fingerprint-3",
     });
     vi.mocked(buildWorkflowResultFromGraphData).mockReturnValue({
       workflow: null,
       graphData: { nodes: [{ id: 3 }] },
       inputs: [],
       filename: "edited.json",
+      workflowInstanceId: "workflow-3",
+      revision: 3,
     });
     const { rerender } = render(
       <ComfyUIEditor open onClose={() => undefined} />,
@@ -261,59 +323,81 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
         { nodes: [{ id: 3 }] },
         [],
         "edited.json",
+        { workflowInstanceId: "workflow-3", revision: 3 },
       ),
     );
   });
 
-  it("skips close synchronization while graph mutation is in flight", async () => {
-    const registerWorkflowFromEditor = vi.fn();
-    resetStore({
-      comfyuiDirectUrl: "http://comfy.local",
-      registerWorkflowFromEditor,
-    });
-    vi.mocked(isGraphMutationInFlight).mockReturnValue(true);
-    const { rerender } = render(
-      <ComfyUIEditor open onClose={() => undefined} />,
-    );
-    rerender(<ComfyUIEditor open={false} onClose={() => undefined} />);
-    await Promise.resolve();
-    expect(readActiveWorkflowFromIframe).not.toHaveBeenCalled();
-    expect(registerWorkflowFromEditor).not.toHaveBeenCalled();
-    vi.mocked(isGraphMutationInFlight).mockReturnValue(false);
-  });
-
-  it("health-checks a visible ready iframe on window focus", async () => {
+  it("commits bridge graph-changed events into the store", async () => {
     const registerWorkflowFromEditor = vi.fn().mockResolvedValue(undefined);
     resetStore({
       comfyuiDirectUrl: "http://comfy.local",
       registerWorkflowFromEditor,
     });
-    vi.mocked(isIframeAppReady).mockReturnValue(true);
+    const handlers: Array<(snapshot: unknown) => void> = [];
+    bridgeMocks.onGraphChanged.mockImplementation((handler) => {
+      handlers.push(handler);
+      return () => {};
+    });
+    vi.mocked(buildWorkflowResultFromGraphData).mockReturnValue({
+      workflow: null,
+      graphData: { nodes: [{ id: 5 }] },
+      inputs: [],
+      filename: "live.json",
+      workflowInstanceId: "workflow-5",
+      revision: 5,
+    });
+
+    render(<ComfyUIEditor open onClose={() => undefined} />);
+    expect(handlers.length).toBeGreaterThan(0);
+
+    for (const handler of handlers) {
+      handler({
+        graphData: { nodes: [{ id: 5 }] },
+        filename: "live.json",
+        isModified: true,
+        workflowInstanceId: "workflow-5",
+        revision: 5,
+        fingerprint: "fingerprint-5",
+      });
+    }
+
+    await waitFor(() =>
+      expect(registerWorkflowFromEditor).toHaveBeenCalledWith(
+        null,
+        { nodes: [{ id: 5 }] },
+        [],
+        "live.json",
+        { workflowInstanceId: "workflow-5", revision: 5 },
+      ),
+    );
+  });
+
+  it("health-checks the bridge on window focus once ready", async () => {
+    resetStore({
+      comfyuiDirectUrl: "http://comfy.local",
+    });
+    bridgeMocks.state.isReady = true;
+    bridgeMocks.health.mockResolvedValue({
+      appReady: true,
+      backendConnected: true,
+      version: 1,
+    });
     vi.mocked(waitForAppReady).mockResolvedValue(true);
     vi.mocked(readWorkflowWithRetry).mockResolvedValue({
       workflow: null,
       graphData: { nodes: [] },
       inputs: [],
       filename: null,
-    });
-    vi.mocked(readActiveWorkflowFromIframe).mockReturnValue({
-      graphData: { nodes: [{ id: 4 }] },
-      filename: "focus.json",
-      isModified: false,
-    });
-    vi.mocked(buildWorkflowResultFromGraphData).mockReturnValue({
-      workflow: null,
-      graphData: { nodes: [{ id: 4 }] },
-      inputs: [],
-      filename: "focus.json",
+      workflowInstanceId: "workflow-empty",
+      revision: 0,
     });
     render(<ComfyUIEditor open onClose={() => undefined} />);
     await waitFor(() =>
       expect(screen.queryByText(/Connecting to ComfyUI/i)).not.toBeInTheDocument(),
     );
+    bridgeMocks.health.mockClear();
     fireEvent.focus(window);
-    await waitFor(() =>
-      expect(registerWorkflowFromEditor).toHaveBeenCalled(),
-    );
+    await waitFor(() => expect(bridgeMocks.health).toHaveBeenCalled());
   });
 });

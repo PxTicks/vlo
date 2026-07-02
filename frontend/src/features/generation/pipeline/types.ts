@@ -163,9 +163,9 @@ export interface GenerationWorkflowSnapshot {
   workflowRules: WorkflowRules | null;
   workflowInputs: WorkflowInput[];
   // The exact workflow payload to POST to the backend. Always produced by
-  // ComfyUI's `app.graphToPrompt()` (via preResolvePrompt) at submission
-  // time, never by buildWorkflowFromGraphData. `null` only until the
-  // submission step has captured it.
+  // ComfyUI's `app.graphToPrompt()` on the bridge's temporary graph clone at
+  // submission time, never by buildWorkflowFromGraphData. `null` only until
+  // the submission step has captured it.
   submittedWorkflow?: Record<string, unknown> | null;
   // True when `submittedWorkflow` is graphToPrompt output from the frontend
   // pre-resolution transaction. Drives the backend's `prompt_is_pre_resolved`

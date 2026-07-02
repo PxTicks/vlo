@@ -16,12 +16,15 @@ The feature is split by responsibility:
 - `hooks/useGenerationPanel.ts`: UI orchestration and derived state.
 - `useGenerationStore.ts`: Main runtime state and actions.
 - `services/comfyuiApi.ts`: Backend transport (`/comfy/*`).
-- `services/workflowBridge.ts`: Same-origin iframe bridge to ComfyUI app internals.
+- `services/iframeBridgeClient.ts`: Typed protocol-v2 client for vlo's hosted
+  bridge runtime. The backend proxy inserts that runtime into the ComfyUI
+  iframe automatically; `ComfyUI-vlo` is not an iframe dependency.
+- `services/workflowBridge.ts`: Pure LiteGraph-JSON → panel input parsing.
 - `services/workflowSyncController.ts`: Single owner for workflow iframe sync orchestration.
 - `services/workflowRules.ts`: Rule normalization and input presentation.
 - `services/parsers.ts`: Output/history parsing helpers.
 - `services/warnings.ts`: Warning merge/dedup helpers.
-- `store/*`: Focused store helpers for workflow, submission, history, and media input lifecycle.
+- `store/*`: Focused store helpers for workflow, submission, delivery, and media input lifecycle.
 - `utils/*`: Pre/post pipeline utilities (slot normalization, rendering, extraction).
 - `constants/inputNodeMap.ts`: Frontend node class to input mapping contract.
 - `constants/mediaKinds.ts`: Shared output media kind detection.
@@ -67,15 +70,23 @@ Each submitted prompt is tracked as a `GenerationJob`:
 ## Workflow sync ownership
 
 Workflow synchronization with ComfyUI iframe is centralized in
-`services/workflowSyncController.ts`:
+`services/workflowSyncController.ts`, on top of the hosted vlo bridge:
 
-- wait for iframe app readiness
-- inject workflow into iframe
+- wait for the protocol-v2 readiness handshake and capability check
+- inject the workflow (`inject-workflow` does inject + wait-active + warning
+  capture + stale-tab cleanup in one round trip inside the iframe)
 - read back normalized workflow inputs
 - return deferral reason for retry scheduling
 
-`ComfyUIEditor` no longer owns the workflow injection/readback sequence directly;
-it triggers store actions and handles iframe health checks/recovery.
+`ComfyUIEditor` subscribes to `graph-changed` push events for live edits
+(no more per-2s full-graph polling) and runs a lightweight `health` ping for
+recovery. Submission payloads come from the `resolve-prompt` request, which
+runs `graphToPrompt` on a temporary graph clone inside the iframe — the live
+graph is never mutated, so concurrent user edits can't be clobbered.
+
+The bridge returns a per-workflow instance ID and revision. Submission must
+present the same identity before and after prompt resolution, so switching or
+editing workflows during submission fails closed with a reconnect/retry path.
 
 ## Inputs
 
@@ -129,7 +140,16 @@ npm run test --prefix frontend -- --run src/features/generation
 - Keep `constants/inputNodeMap.ts` aligned with backend mapping in
   `backend/routers/comfyui.py` (`INPUT_NODE_MAP`).
 - The ComfyUI iframe must remain same-origin through `/comfyui-frame/`.
+- The backend proxy owns the iframe bridge assets and extension-list entry;
+  installing `ComfyUI-vlo` is only necessary for workflows using its Python
+  or memory-loader nodes.
 - `workflowLoadState` should be treated as source of truth for generate-button eligibility.
+
+Accepted delivery limitations:
+
+- Preview frames emitted while the monitor websocket is disconnected are lost.
+- SaveImageWebsocket delivery promotes its last captured frame as the output.
+- The delivery consumer lease remains last-connected-wins.
 
 ## Troubleshooting
 

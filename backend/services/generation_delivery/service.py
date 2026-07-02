@@ -1392,8 +1392,9 @@ class GenerationHoldingService:
             """Websocket loop with bounded reconnects.
 
             A connection that ends without a terminal event (drop or clean
-            close) counts against the reconnect budget; once exhausted, the
-            reconcile backstop owns resolution.
+            close) counts against the reconnect budget. Healthy traffic resets
+            that budget, so isolated drops during a long generation do not
+            accumulate; once exhausted, the reconcile backstop owns resolution.
             """
             reconnects = 0
             while not settled:
@@ -1409,6 +1410,7 @@ class GenerationHoldingService:
                             connected_event.set()
                         await comfy_ws.send(PREVIEW_METADATA_FEATURE_FLAGS)
                         async for message in comfy_ws:
+                            reconnects = 0
                             if isinstance(message, str):
                                 if await _handle_text_message(message):
                                     return

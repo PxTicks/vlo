@@ -1499,6 +1499,9 @@ describe("useGenerationStore workflow editor sync", () => {
       reason: "loaded workflow did not become active",
       warnings: null,
     });
+    // The bridge singleton is unbound in tests; short-circuit the readiness
+    // wait so the store reaches the injection attempt.
+    vi.spyOn(workflowSyncController, "waitForAppReady").mockResolvedValue(true);
 
     useGenerationStore.setState({
       syncedWorkflow: { old: true },
@@ -1573,6 +1576,8 @@ describe("useGenerationStore workflow editor sync", () => {
         graphData: { nodes: [{ id: 1, type: "LoadImage" }] },
         inputs: makeInputs(),
         filename: "wf.json",
+        workflowInstanceId: "workflow-1",
+        revision: 1,
       },
       reason: null,
       warnings: null,
@@ -1643,6 +1648,7 @@ describe("useGenerationStore workflow editor sync", () => {
       reason: "sync failed",
       warnings: null,
     });
+    vi.spyOn(workflowSyncController, "waitForAppReady").mockResolvedValue(true);
 
     useGenerationStore.setState({
       syncedWorkflow: { old: true },

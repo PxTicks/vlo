@@ -21,14 +21,34 @@ function createHarness() {
     location: { origin: "http://vlo.test" },
     postMessage: vi.fn((message: Record<string, unknown>) => posted.push(message)),
   };
+  // Mirrors ComfyUI ≥1.45 semantics: `filename` is extension-stripped and
+  // `activeState` is a Vue reactive Proxy that structuredClone rejects.
   const activeWorkflow = {
-    filename: "workflow.json",
+    filename: "workflow",
+    fullFilename: "workflow.json",
+    key: "workflow.json",
+    path: "workflows/workflow.json",
     isModified: false,
-    activeState: {
-      nodes: [{ id: "node-a", type: "LoadImage" }],
-      links: [],
-    },
+    activeState: new Proxy(
+      {
+        nodes: [{ id: "node-a", type: "LoadImage" }],
+        links: [],
+      },
+      {},
+    ),
     pendingWarnings: null,
+  };
+  // Present in `workflows` (persisted list) but not `openWorkflows`; the
+  // bridge must never close it.
+  const persistedTemplate = {
+    filename: "Image Blur",
+    key: "Image Blur.json",
+    path: "subgraphs/Image Blur.json",
+  };
+  const otherOpenTab = {
+    filename: "scratch",
+    key: "scratch.json",
+    path: "workflows/scratch.json",
   };
   const liveNode = {
     id: "node-a",
@@ -77,7 +97,8 @@ function createHarness() {
       spinner: false,
       workflow: {
         activeWorkflow,
-        workflows: [activeWorkflow],
+        workflows: [activeWorkflow, otherOpenTab, persistedTemplate],
+        openWorkflows: [activeWorkflow, otherOpenTab],
         closeWorkflow: vi.fn(),
       },
     },
@@ -139,6 +160,8 @@ function createHarness() {
 
   return {
     activeWorkflow,
+    otherOpenTab,
+    persistedTemplate,
     app,
     api,
     emitApi,
@@ -224,8 +247,28 @@ describe("hosted iframe bridge runtime", () => {
     });
   });
 
-  it("injects the exact workflow and returns parsed warnings", async () => {
+  it("injects the workflow despite ComfyUI load-time drift and returns parsed warnings", async () => {
     const harness = createHarness();
+    // Post-load activeState: object-form links with renumbered target slots,
+    // behind a reactive Proxy — as the real frontend produces.
+    harness.activeWorkflow.activeState = new Proxy(
+      {
+        nodes: [
+          { id: "node-a", type: "LoadImage" },
+          { id: "node-b", type: "PreviewImage" },
+        ],
+        links: [
+          {
+            origin_id: "node-a",
+            origin_slot: 0,
+            target_id: "node-b",
+            target_slot: 2,
+            type: "IMAGE",
+          },
+        ],
+      },
+      {},
+    ) as never;
     harness.activeWorkflow.pendingWarnings = {
       missingNodeTypes: [{ type: "MissingNode" }],
       missingModelCandidates: [
@@ -240,7 +283,14 @@ describe("hosted iframe bridge runtime", () => {
     });
     hello(harness);
     request(harness, "inject-1", "inject-workflow", {
-      graphData: harness.activeWorkflow.activeState,
+      // As-injected file: tuple-form links with pre-load slot numbering.
+      graphData: {
+        nodes: [
+          { id: "node-a", type: "LoadImage" },
+          { id: "node-b", type: "PreviewImage" },
+        ],
+        links: [[7, "node-a", 0, "node-b", 0, "IMAGE"]],
+      },
       filename: "workflow.json",
     });
 
@@ -260,11 +310,45 @@ describe("hosted iframe bridge runtime", () => {
           missingModels: ["missing.safetensors"],
         },
         snapshot: {
-          filename: "workflow.json",
+          filename: "workflow",
           workflowInstanceId: "workflow-instance",
         },
       },
     });
+    const closeWorkflow = harness.app.extensionManager.workflow.closeWorkflow;
+    expect(closeWorkflow).toHaveBeenCalledTimes(1);
+    expect(closeWorkflow).toHaveBeenCalledWith(harness.otherOpenTab);
+    expect(closeWorkflow).not.toHaveBeenCalledWith(harness.persistedTemplate);
+  });
+
+  it("accepts a de-duplicated tab name for the injected workflow", async () => {
+    const harness = createHarness();
+    harness.activeWorkflow.filename = "workflow (2)";
+    harness.activeWorkflow.fullFilename = "workflow (2).json";
+    harness.activeWorkflow.key = "workflow (2).json";
+    harness.activeWorkflow.path = "workflows/workflow (2).json";
+    harness.activeWorkflow.pendingWarnings = {
+      missingNodeTypes: ["MissingNode"],
+    } as never;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "inject-dup", "inject-workflow", {
+      graphData: { nodes: [{ id: "node-a", type: "LoadImage" }], links: [] },
+      filename: "workflow.json",
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "inject-dup"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "inject-dup"),
+    ).toMatchObject({ ok: true });
   });
 
   it("resolves on a clone and leaves the live graph untouched", async () => {
@@ -463,6 +547,19 @@ describe("hosted iframe bridge runtime", () => {
       links: [],
     };
     expect(fingerprintWorkflow(first)).not.toBe(fingerprintWorkflow(second));
+
+    // Load-stable identity: link representation, slot indexes, and link
+    // types all drift when ComfyUI loads a workflow, so they must not
+    // affect the fingerprint.
+    const objectLinksWithDrift = {
+      ...first,
+      links: [
+        { origin_id: 1, origin_slot: 3, target_id: 2, target_slot: 5, type: "MASK" },
+      ],
+    };
+    expect(fingerprintWorkflow(objectLinksWithDrift)).toBe(
+      fingerprintWorkflow(first),
+    );
 
     const firstSubgraph = {
       ...first,

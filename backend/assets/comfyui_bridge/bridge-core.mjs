@@ -58,15 +58,37 @@ function resolveTabFilename(workflow) {
   return null;
 }
 
+// ComfyUI's workflow.filename strips the ".json" extension while injected
+// workflow ids usually carry it, so filename comparisons must use stems.
+function filenameStem(value) {
+  const normalized = normalizeFilename(value);
+  return normalized ? normalized.replace(/\.json$/i, "") : null;
+}
+
+// ComfyUI de-duplicates colliding tab names as "<stem> (2)", "<stem> (3)", …
+function stemMatchesExpected(activeStem, expectedStem) {
+  if (!activeStem || !expectedStem) return false;
+  if (activeStem === expectedStem) return true;
+  return (
+    activeStem.startsWith(`${expectedStem} (`) &&
+    /^ \(\d+\)$/.test(activeStem.slice(expectedStem.length))
+  );
+}
+
 function cloneValue(windowObject, value) {
   const clone = windowObject.structuredClone ?? globalThis.structuredClone;
-  if (typeof clone !== "function") {
-    throw new BridgeRuntimeError(
-      "clone-unavailable",
-      "structuredClone is unavailable in the ComfyUI iframe",
-    );
+  if (typeof clone === "function") {
+    try {
+      return clone(value);
+    } catch {
+      // ComfyUI ≥1.45 exposes activeWorkflow.activeState as a Vue reactive
+      // Proxy, which the structured clone algorithm rejects (DataCloneError).
+    }
   }
-  return clone(value);
+  // Workflow state is JSON-serializable by definition (it round-trips to
+  // disk), so a JSON clone is lossless where it matters and reads through
+  // proxies.
+  return JSON.parse(JSON.stringify(value));
 }
 
 function stableStringify(value) {
@@ -83,19 +105,16 @@ function stableStringify(value) {
 }
 
 function normalizeLink(link) {
-  if (Array.isArray(link)) {
-    return link.slice(1, 6).map((value) =>
-      typeof value === "number" || typeof value === "string" ? String(value) : null,
-    );
-  }
-  if (!isRecord(link)) return null;
-  return [
-    link.origin_id,
-    link.origin_slot,
-    link.target_id,
-    link.target_slot,
-    link.type,
-  ].map((value) =>
+  // Endpoint node ids only: ComfyUI renumbers slot indexes on load
+  // (widget→input conversion shifts them) and can resolve wildcard ("*")
+  // link types, so slots and types are not load-stable.
+  const endpoints = Array.isArray(link)
+    ? [link[1], link[3]]
+    : isRecord(link)
+      ? [link.origin_id, link.target_id]
+      : null;
+  if (!endpoints) return null;
+  return endpoints.map((value) =>
     typeof value === "number" || typeof value === "string" ? String(value) : null,
   );
 }
@@ -348,29 +367,40 @@ export function startVloBridge({ app, api, windowObject = window }) {
     return null;
   }
 
-  async function waitForInjectedWorkflow(graphData, filename) {
+  async function waitForInjectedWorkflow(graphData, filename, previousActive) {
     const expectedFingerprint = fingerprintWorkflow(graphData);
-    const expectedFilename = normalizeFilename(filename);
+    const expectedStem = filenameStem(filename);
     const deadline = Date.now() + WORKFLOW_ACTIVE_TIMEOUT_MS;
+    let lastObservation = null;
     while (Date.now() < deadline) {
       const active = getActiveWorkflow();
-      const activeFingerprint = fingerprintWorkflow(active?.activeState);
-      const activeFilename = resolveTabFilename(active);
-      const filenameMatches =
-        !expectedFilename || expectedFilename === activeFilename;
-      if (active && filenameMatches && activeFingerprint === expectedFingerprint) return active;
+      const fingerprintMatches =
+        fingerprintWorkflow(active?.activeState) === expectedFingerprint;
+      const activeStem = filenameStem(resolveTabFilename(active));
+      const stemMatches =
+        !expectedStem || stemMatchesExpected(activeStem, expectedStem);
+      lastObservation = { activeStem, stemMatches, fingerprintMatches };
+      if (active && fingerprintMatches) {
+        // A fingerprint hit on a tab that either carries the injected name or
+        // only just became active is our injection; anything stricter trips
+        // over ComfyUI's tab-naming quirks.
+        if (stemMatches || active !== previousActive) return active;
+      }
       await sleep(windowObject, APP_READY_POLL_MS);
     }
     throw new BridgeRuntimeError(
       "workflow-not-active",
       "The injected workflow did not become the active ComfyUI workflow",
+      { expectedStem, ...lastObservation },
     );
   }
 
   async function closeOtherWorkflowTabs(keep) {
     const workflowApi = getWorkflowApi();
     if (!workflowApi || typeof workflowApi.closeWorkflow !== "function") return;
-    const open = workflowApi.workflows ?? workflowApi.openWorkflows ?? [];
+    // `workflows` lists every persisted workflow and template, not tabs;
+    // only `openWorkflows` is safe to close.
+    const open = workflowApi.openWorkflows ?? [];
     for (const workflow of open) {
       if (workflow === keep) continue;
       try {
@@ -396,8 +426,13 @@ export function startVloBridge({ app, api, windowObject = window }) {
       type: "application/json",
     });
     const file = new windowObject.File([blob], filename, { type: "application/json" });
+    const previousActive = getActiveWorkflow();
     await app.handleFile(file, undefined, { deferWarnings: true });
-    const active = await waitForInjectedWorkflow(payload.graphData, filename);
+    const active = await waitForInjectedWorkflow(
+      payload.graphData,
+      filename,
+      previousActive,
+    );
     const warnings = await captureWarnings(active);
     await closeOtherWorkflowTabs(active);
     return { snapshot: readActive(), warnings };

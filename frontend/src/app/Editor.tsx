@@ -6,12 +6,17 @@ import {
   pointerWithin,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragCancelEvent,
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { useProjectStore } from "../features/project";
+import {
+  COMFYUI_CANVAS_DROP_ID,
+  COMFYUI_EDITOR_DROP_SINK_ID,
+} from "../features/generation";
 import {
   AssetDragOverlay,
   Timeline,
@@ -42,6 +47,21 @@ const ASSET_AUTO_SCROLL = {
   interval: 5,
   layoutShiftCompensation: false,
 } as const;
+
+// The fullscreen ComfyUI editor overlays the whole app, but the droppables
+// underneath (timeline tracks, panel slots) keep their measured rects. Its
+// drop layers only mount while a drag is active over the open editor, so when
+// the pointer is within one of them it must win outright — the canvas zone
+// first, then the sink that swallows everything else.
+const collisionDetectionWithComfyPriority: CollisionDetection = (args) => {
+  const collisions = pointerWithin(args);
+  const priorityCollision =
+    collisions.find((collision) => collision.id === COMFYUI_CANVAS_DROP_ID) ??
+    collisions.find(
+      (collision) => collision.id === COMFYUI_EDITOR_DROP_SINK_ID,
+    );
+  return priorityCollision ? [priorityCollision] : collisions;
+};
 
 export function Editor() {
   const layoutMode = useProjectStore(
@@ -150,7 +170,7 @@ export function Editor() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={pointerWithin}
+      collisionDetection={collisionDetectionWithComfyPriority}
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}

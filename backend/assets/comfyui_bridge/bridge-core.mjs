@@ -10,6 +10,7 @@ export const BRIDGE_CAPABILITIES = Object.freeze([
   "refresh-missing-models",
   "graph-changed",
   "workflow-revision",
+  "drop-asset",
 ]);
 
 const APP_READY_POLL_MS = 100;
@@ -213,6 +214,22 @@ function readWarnings(workflow, clear) {
   if (clear) workflow.pendingWarnings = null;
   if (missingNodeTypes.length === 0 && missingModels.length === 0) return null;
   return { missingNodeTypes, missingModels };
+}
+
+// Mirrors the backend's bool-like coercion for loader widget values such as
+// vloMemory loaders' `disable_in_memory` (booleans, 0/1, "true"/"false").
+function isTruthyWidgetValue(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    return ["true", "1", "yes", "on"].includes(value.trim().toLowerCase());
+  }
+  return false;
+}
+
+function findNodeWidget(node, widgetName) {
+  if (!Array.isArray(node?.widgets)) return null;
+  return node.widgets.find((widget) => widget?.name === widgetName) ?? null;
 }
 
 function getNodeByExternalId(graph, rawId) {
@@ -526,6 +543,163 @@ export function startVloBridge({ app, api, windowObject = window }) {
     };
   }
 
+  function toGraphPosition(clientX, clientY) {
+    try {
+      if (typeof app.clientPosToCanvasPos === "function") {
+        const converted = app.clientPosToCanvasPos([clientX, clientY]);
+        if (
+          Array.isArray(converted) &&
+          Number.isFinite(converted[0]) &&
+          Number.isFinite(converted[1])
+        ) {
+          return [converted[0], converted[1]];
+        }
+      }
+    } catch {
+      // Fall through to the manual DragAndScale conversion below.
+    }
+    const canvasElement = app.canvas?.canvas;
+    const dragAndScale = app.canvas?.ds;
+    if (typeof canvasElement?.getBoundingClientRect !== "function" || !dragAndScale) {
+      throw new BridgeRuntimeError("canvas-unavailable", "ComfyUI canvas is unavailable");
+    }
+    const rect = canvasElement.getBoundingClientRect();
+    const offsetX = clientX - rect.left;
+    const offsetY = clientY - rect.top;
+    if (typeof dragAndScale.convertOffsetToCanvas === "function") {
+      const converted = dragAndScale.convertOffsetToCanvas([offsetX, offsetY]);
+      if (
+        Array.isArray(converted) &&
+        Number.isFinite(converted[0]) &&
+        Number.isFinite(converted[1])
+      ) {
+        return [converted[0], converted[1]];
+      }
+    }
+    const scale =
+      typeof dragAndScale.scale === "number" && dragAndScale.scale > 0
+        ? dragAndScale.scale
+        : 1;
+    const offset = Array.isArray(dragAndScale.offset) ? dragAndScale.offset : [0, 0];
+    return [offsetX / scale - (offset[0] ?? 0), offsetY / scale - (offset[1] ?? 0)];
+  }
+
+  function applyLoaderFilename(node, widget, filename) {
+    // Loader combos list the input directory; a freshly staged file may not be
+    // in the list yet, so append it before selecting (matching ComfyUI's own
+    // upload widget behaviour). Prompt validation re-lists the directory, so a
+    // stale combo list is cosmetic only.
+    const values = widget.options?.values;
+    if (Array.isArray(values) && !values.includes(filename)) {
+      values.push(filename);
+    }
+    widget.value = filename;
+    try {
+      widget.callback?.(filename, app.canvas, node);
+    } catch (error) {
+      console.warn("[vlo-bridge] loader widget callback failed:", error);
+    }
+    node.setDirtyCanvas?.(true, true);
+  }
+
+  async function dropAsset(payload) {
+    if (!(await waitForAppReady())) {
+      throw new BridgeRuntimeError("app-not-ready", "ComfyUI is not ready");
+    }
+    const clientX = Number(payload?.clientX);
+    const clientY = Number(payload?.clientY);
+    const filename =
+      typeof payload?.filename === "string" && payload.filename.trim()
+        ? payload.filename.trim()
+        : null;
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || !filename) {
+      throw new BridgeRuntimeError(
+        "invalid-payload",
+        "drop-asset requires clientX, clientY and filename",
+      );
+    }
+    const targets = Array.isArray(payload?.targets)
+      ? payload.targets.filter(isRecord)
+      : [];
+    const create = isRecord(payload?.create) ? payload.create : null;
+    // Drops land in the graph currently in view (which may be a subgraph).
+    const graph = app.canvas?.graph ?? getRootGraph();
+    if (!graph || typeof graph.add !== "function") {
+      throw new BridgeRuntimeError("workflow-unavailable", "ComfyUI graph is unavailable");
+    }
+    const position = toGraphPosition(clientX, clientY);
+
+    const hitNode =
+      typeof graph.getNodeOnPos === "function"
+        ? graph.getNodeOnPos(position[0], position[1])
+        : null;
+    if (hitNode) {
+      const target = targets.find(
+        (candidate) => candidate.classType === hitNode.type,
+      );
+      if (target && typeof target.widget === "string") {
+        if (typeof target.requiresTruthyWidget === "string") {
+          const guard = findNodeWidget(hitNode, target.requiresTruthyWidget);
+          if (!isTruthyWidgetValue(guard?.value)) {
+            throw new BridgeRuntimeError(
+              "memory-loader-active",
+              "This loader reads media from memory; enable its disable_in_memory option to drop staged files onto it",
+            );
+          }
+        }
+        const widget = findNodeWidget(hitNode, target.widget);
+        if (widget) {
+          applyLoaderFilename(hitNode, widget, filename);
+          handleGraphChanged();
+          return {
+            action: "updated",
+            nodeId: String(hitNode.id),
+            classType: String(hitNode.type ?? ""),
+          };
+        }
+      }
+    }
+
+    if (
+      !create ||
+      typeof create.classType !== "string" ||
+      typeof create.widget !== "string"
+    ) {
+      throw new BridgeRuntimeError(
+        "drop-unsupported",
+        "No compatible loader node type is available for this asset",
+      );
+    }
+    const liteGraph = windowObject.LiteGraph;
+    if (typeof liteGraph?.createNode !== "function") {
+      throw new BridgeRuntimeError(
+        "node-create-unavailable",
+        "ComfyUI did not expose LiteGraph.createNode",
+      );
+    }
+    const node = liteGraph.createNode(create.classType);
+    if (!node) {
+      throw new BridgeRuntimeError(
+        "node-create-failed",
+        `ComfyUI could not create a ${create.classType} node`,
+      );
+    }
+    const width =
+      Array.isArray(node.size) && Number.isFinite(node.size[0]) ? node.size[0] : 0;
+    node.pos = [position[0] - width / 2, position[1]];
+    graph.add(node);
+    const widget = findNodeWidget(node, create.widget);
+    if (widget) {
+      applyLoaderFilename(node, widget, filename);
+    }
+    handleGraphChanged();
+    return {
+      action: "created",
+      nodeId: String(node.id),
+      classType: create.classType,
+    };
+  }
+
   const handlers = {
     health: async () => ({
       appReady: isAppReady(),
@@ -535,6 +709,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
     "read-pending-warnings": async () => readWarnings(getActiveWorkflow(), false),
     "inject-workflow": injectWorkflow,
     "resolve-prompt": resolvePrompt,
+    "drop-asset": dropAsset,
     "refresh-missing-models": async () => {
       if (typeof app?.refreshMissingModels !== "function") return { refreshed: false };
       await app.refreshMissingModels({ silent: true });

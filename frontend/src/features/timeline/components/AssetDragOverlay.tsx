@@ -36,7 +36,9 @@ export const AssetDragOverlay = React.memo(() => {
   // CASE 1: NOT OVER TIMELINE -> SHOW THUMBNAIL (Standard Cursor Follow)
   if (!isOverTimeline && asset) {
     return (
-      <DragOverlay dropAnimation={null}>
+      // Above the fullscreen ComfyUI editor overlay (z-index 1300) so the
+      // ghost stays visible when dragging assets onto the ComfyUI canvas.
+      <DragOverlay dropAnimation={null} zIndex={1400}>
         <Box
           sx={{
             width: 180, // Approximate card width

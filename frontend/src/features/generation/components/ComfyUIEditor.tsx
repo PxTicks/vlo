@@ -1,13 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Box,
+  Button,
   IconButton,
   Dialog,
   Typography,
   CircularProgress,
 } from "@mui/material";
-import { Close, OpenInNew } from "@mui/icons-material";
+import { Close, OpenInNew, PhotoLibrary } from "@mui/icons-material";
+import { useDndContext, useDroppable } from "@dnd-kit/core";
+import type { Asset, AssetType } from "../../../types/Asset";
+import { AssetBrowser } from "../../userAssets";
 import { useGenerationStore } from "../useGenerationStore";
+import { dropAssetIntoComfyCanvas } from "../services/comfyAssetDrop";
 import {
   buildWorkflowResultFromGraphData,
   type WorkflowReadResult,
@@ -39,10 +44,102 @@ const RECOVERY_RELOAD_COOLDOWN_MS = 2000;
 const VISIBILITY_RESUME_GRACE_MS = 5000;
 const CONNECTING_HELPER_TEXT = "Connecting to ComfyUI...";
 const RECONNECTING_HELPER_TEXT = "Reconnecting to ComfyUI...";
+const ASSET_DOCK_WIDTH = 340;
+const DROP_FEEDBACK_TTL_MS = 4000;
+
+/** Droppable over the ComfyUI canvas while an asset drag is active. The
+ * Editor's collision detection gives it top priority. */
+export const COMFYUI_CANVAS_DROP_ID = "comfyui-editor-canvas-drop";
+/** Full-screen droppable sink under the canvas zone that swallows drops so
+ * they never reach droppables hidden beneath the editor overlay (timeline
+ * tracks, generation panel slots). */
+export const COMFYUI_EDITOR_DROP_SINK_ID = "comfyui-editor-drop-sink";
+
+const CANVAS_DROP_ACCEPT: AssetType[] = ["video", "image", "audio"];
 
 interface ComfyUIEditorProps {
   open: boolean;
   onClose: () => void;
+}
+
+interface DropFeedback {
+  tone: "pending" | "success" | "error";
+  message: string;
+}
+
+function ComfyUIDropSink() {
+  const { setNodeRef } = useDroppable({
+    id: COMFYUI_EDITOR_DROP_SINK_ID,
+    // An asset-slot that accepts nothing: useAssetDrag swallows the drop
+    // without invoking timeline insertion for droppables hidden underneath.
+    data: { type: "asset-slot", accept: [] },
+  });
+
+  return (
+    <Box
+      ref={setNodeRef}
+      data-testid="comfyui-editor-drop-sink"
+      sx={{ position: "absolute", inset: 0, zIndex: 20 }}
+    />
+  );
+}
+
+function ComfyUICanvasDropZone({
+  leftOffset,
+  onDropAsset,
+}: {
+  leftOffset: number;
+  onDropAsset: (
+    asset: Asset,
+    pointer: { clientX: number; clientY: number } | null,
+  ) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: COMFYUI_CANVAS_DROP_ID,
+    data: {
+      type: "asset-slot",
+      accept: CANVAS_DROP_ACCEPT,
+      onDrop: onDropAsset,
+    },
+  });
+
+  return (
+    <Box
+      ref={setNodeRef}
+      data-testid="comfyui-canvas-drop-zone"
+      sx={{
+        position: "absolute",
+        top: 0,
+        bottom: 0,
+        right: 0,
+        left: leftOffset,
+        zIndex: 21,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        border: isOver ? "2px dashed #4dabf5" : "2px dashed transparent",
+        bgcolor: isOver ? "rgba(77, 171, 245, 0.08)" : "transparent",
+        transition: "background-color 0.15s, border-color 0.15s",
+      }}
+    >
+      {isOver && (
+        <Typography
+          variant="caption"
+          sx={{
+            mt: 6,
+            px: 2,
+            py: 0.75,
+            borderRadius: 1,
+            bgcolor: "rgba(18, 18, 18, 0.92)",
+            color: "#c9d1d9",
+            pointerEvents: "none",
+          }}
+        >
+          Drop to add to the ComfyUI graph
+        </Typography>
+      )}
+    </Box>
+  );
 }
 
 /**
@@ -96,7 +193,17 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const comfyQueueRemaining = useGenerationStore((s) => s.comfyQueueRemaining);
   const [loading, setLoading] = useState(true);
   const [appReady, setAppReady] = useState(false);
+  const [assetDockOpen, setAssetDockOpen] = useState(false);
+  const [dropFeedback, setDropFeedback] = useState<DropFeedback | null>(null);
+  const dropFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const dropRequestIdRef = useRef(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  const { active: activeDrag } = useDndContext();
+  const isAssetDragActive =
+    open && activeDrag?.data.current?.type === "asset";
 
   const iframeRefCb = useCallback(
     (node: HTMLIFrameElement | null) => {
@@ -122,6 +229,75 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const visibilityResumeGraceUntilRef = useRef(0);
 
   const iframeUrl = comfyuiDirectUrl ? getSameOriginUrl() : null;
+
+  const showTransientDropFeedback = useCallback(
+    (tone: "success" | "error", message: string) => {
+      setDropFeedback({ tone, message });
+      if (dropFeedbackTimerRef.current) {
+        clearTimeout(dropFeedbackTimerRef.current);
+      }
+      dropFeedbackTimerRef.current = setTimeout(() => {
+        dropFeedbackTimerRef.current = null;
+        setDropFeedback(null);
+      }, DROP_FEEDBACK_TTL_MS);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (dropFeedbackTimerRef.current) {
+        clearTimeout(dropFeedbackTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCanvasAssetDrop = useCallback(
+    (asset: Asset, pointer: { clientX: number; clientY: number } | null) => {
+      const iframe = iframeRef.current;
+      if (!iframe || !pointer) return;
+      const iframeRect = iframe.getBoundingClientRect();
+      const requestId = ++dropRequestIdRef.current;
+
+      if (dropFeedbackTimerRef.current) {
+        clearTimeout(dropFeedbackTimerRef.current);
+        dropFeedbackTimerRef.current = null;
+      }
+      setDropFeedback({
+        tone: "pending",
+        message: `Adding ${asset.name} to ComfyUI...`,
+      });
+
+      const { inputNodeMap, rawObjectInfo } = useGenerationStore.getState();
+      void dropAssetIntoComfyCanvas({
+        asset,
+        clientX: pointer.clientX - iframeRect.left,
+        clientY: pointer.clientY - iframeRect.top,
+        inputNodeMap,
+        rawObjectInfo,
+      })
+        .then((result) => {
+          if (requestId !== dropRequestIdRef.current) return;
+          showTransientDropFeedback(
+            "success",
+            result.action === "updated"
+              ? `Updated ${result.classType || "loader"} with ${asset.name}`
+              : `Added ${result.classType || "loader"} for ${asset.name}`,
+          );
+        })
+        .catch((error) => {
+          if (requestId !== dropRequestIdRef.current) return;
+          console.warn("[ComfyUIEditor] Asset drop failed", error);
+          showTransientDropFeedback(
+            "error",
+            error instanceof Error
+              ? error.message
+              : "Failed to add the asset to ComfyUI",
+          );
+        });
+    },
+    [showTransientDropFeedback],
+  );
 
   const rememberWorkflowSignature = useCallback(
     (
@@ -665,6 +841,20 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           <Typography variant="subtitle1" sx={{ color: "#ccc" }}>
             ComfyUI Node Editor
           </Typography>
+          <Button
+            size="small"
+            startIcon={<PhotoLibrary fontSize="small" />}
+            onClick={() => setAssetDockOpen((current) => !current)}
+            aria-pressed={assetDockOpen}
+            data-testid="comfyui-asset-dock-toggle"
+            sx={{
+              color: assetDockOpen ? "#4dabf5" : "#888",
+              textTransform: "none",
+              minWidth: 0,
+            }}
+          >
+            Assets
+          </Button>
           {typeof comfyQueueRemaining === "number" && comfyQueueRemaining > 0 && (
             <Typography
               variant="caption"
@@ -688,6 +878,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           <IconButton
             size="small"
             onClick={onClose}
+            aria-label="Close editor"
             sx={{ color: "text.secondary" }}
           >
             <Close />
@@ -741,7 +932,77 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
             display: "block",
           }}
         />
+
+        {/* Collapsible asset browser floating over the canvas. Mounted only
+            while the editor is open: the browser is a singleton and the left
+            sidebar's instance yields to this one (see EditorLeftSidebar). */}
+        {open && assetDockOpen && (
+          <Box
+            data-testid="comfyui-asset-dock"
+            sx={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: 0,
+              width: ASSET_DOCK_WIDTH,
+              zIndex: 15,
+              display: "flex",
+              flexDirection: "column",
+              bgcolor: "#121212",
+              borderRight: "1px solid #333",
+              boxShadow: "4px 0 12px rgba(0, 0, 0, 0.5)",
+            }}
+          >
+            <AssetBrowser />
+          </Box>
+        )}
+
+        {/* While an asset drag is live, cover the iframe so the parent keeps
+            receiving pointer events and dnd-kit can resolve the drop. */}
+        {isAssetDragActive && (
+          <ComfyUICanvasDropZone
+            leftOffset={assetDockOpen ? ASSET_DOCK_WIDTH : 0}
+            onDropAsset={handleCanvasAssetDrop}
+          />
+        )}
+
+        {dropFeedback && (
+          <Box
+            data-testid="comfyui-drop-feedback"
+            sx={{
+              position: "absolute",
+              top: 12,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 30,
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              px: 2,
+              py: 0.75,
+              borderRadius: 1,
+              pointerEvents: "none",
+              bgcolor:
+                dropFeedback.tone === "error"
+                  ? "rgba(211, 47, 47, 0.92)"
+                  : dropFeedback.tone === "success"
+                    ? "rgba(46, 125, 50, 0.92)"
+                    : "rgba(18, 18, 18, 0.92)",
+            }}
+          >
+            {dropFeedback.tone === "pending" && (
+              <CircularProgress size={14} sx={{ color: "#c9d1d9" }} />
+            )}
+            <Typography variant="caption" sx={{ color: "#f1f3f4" }}>
+              {dropFeedback.message}
+            </Typography>
+          </Box>
+        )}
       </Box>
+
+      {/* Swallow drops anywhere over the editor (header, dock) so hidden
+          droppables underneath never receive them. */}
+      {isAssetDragActive && <ComfyUIDropSink />}
     </Box>
   );
 }

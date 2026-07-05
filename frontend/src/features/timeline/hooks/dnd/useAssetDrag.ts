@@ -4,12 +4,28 @@ import type {
   DragEndEvent,
   DragMoveEvent,
 } from "@dnd-kit/core";
+import { getEventCoordinates } from "@dnd-kit/utilities";
 import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../useInteractionStore";
 import { useClipMove } from "./useClipMove";
 import type { BaseClip } from "../../../../types/TimelineTypes";
 import type { Asset, AssetType } from "../../../../types/Asset";
 import { assetMatchesType } from "../../../../shared/utils/assetTypeDetection";
+
+/** Final pointer viewport position of a drag, reconstructed from the
+ * activator event plus the accumulated drag delta. */
+function getDropPointerPosition(
+  event: DragEndEvent,
+): { clientX: number; clientY: number } | null {
+  const coordinates = event.activatorEvent
+    ? getEventCoordinates(event.activatorEvent)
+    : null;
+  if (!coordinates) return null;
+  return {
+    clientX: coordinates.x + event.delta.x,
+    clientY: coordinates.y + event.delta.y,
+  };
+}
 
 export const useAssetDrag = () => {
   // We need a ref to the scroll container for coordinate calculations (drops)
@@ -83,7 +99,7 @@ export const useAssetDrag = () => {
               assetMatchesType(asset, acceptedType),
             )
           ) {
-            overData.onDrop(asset);
+            overData.onDrop(asset, getDropPointerPosition(event));
           }
           return;
         }

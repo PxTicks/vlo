@@ -59,6 +59,9 @@ export function buildRuntimeStoreState(
     inputNodeMap: null,
     editorNeedsReconnect: false,
     editorReconnectSignal: 0,
+    editorOpen: false,
+
+    setEditorOpen: (open) => set({ editorOpen: open }),
 
     setEditorNeedsReconnect: (required) =>
       set({ editorNeedsReconnect: required }),

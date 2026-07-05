@@ -71,11 +71,16 @@ vi.mock("../../features/userAssets", () => ({
 
 vi.mock("../../features/generation", () => ({
   canRegenerateFromAssetMetadata: vi.fn(() => false),
-  useGenerationStore: {
-    getState: () => ({
-      loadWorkflowFromAssetMetadata: vi.fn(),
-    }),
-  },
+  COMFYUI_CANVAS_DROP_ID: "comfyui-editor-canvas-drop",
+  COMFYUI_EDITOR_DROP_SINK_ID: "comfyui-editor-drop-sink",
+  useGenerationStore: Object.assign(
+    (selector: (state: unknown) => unknown) => selector({ editorOpen: false }),
+    {
+      getState: () => ({
+        loadWorkflowFromAssetMetadata: vi.fn(),
+      }),
+    },
+  ),
 }));
 
 vi.mock("../../features/text", () => ({

@@ -128,8 +128,7 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
     const onClose = vi.fn();
     render(<ComfyUIEditor open onClose={onClose} />);
 
-    // The OpenInNew control is an anchor (link role); the only button is Close.
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: /close editor/i }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 

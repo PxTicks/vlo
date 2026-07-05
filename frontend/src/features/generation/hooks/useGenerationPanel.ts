@@ -227,7 +227,8 @@ async function extractVideoTimelineSelection({
 }
 
 export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
-  const [editorOpen, setEditorOpen] = useState(false);
+  const editorOpen = useGenerationStore((s) => s.editorOpen);
+  const setEditorOpen = useGenerationStore((s) => s.setEditorOpen);
   const [urlAnchorEl, setUrlAnchorEl] = useState<null | HTMLElement>(null);
   const [urlInput, setUrlInput] = useState("");
 
@@ -832,7 +833,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const handleOpenEditorFromWarning = useCallback(() => {
     clearWorkflowWarning();
     setEditorOpen(true);
-  }, [clearWorkflowWarning]);
+  }, [clearWorkflowWarning, setEditorOpen]);
 
   const handleInputDrop = useCallback(
     (inputId: string, asset: Asset) => {

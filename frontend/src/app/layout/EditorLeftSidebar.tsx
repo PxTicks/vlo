@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Box } from "@mui/material";
 import { AssetBrowser } from "../../features/userAssets";
+import { useGenerationStore } from "../../features/generation";
 import { TextPanel } from "../../features/text";
 import { CompositePanel } from "../../features/composite";
 import { TransformationLibraryPanel } from "../../features/transformations";
@@ -15,6 +16,10 @@ import type { LeftSidebarTab } from "./LeftSidebarPanel";
 export function EditorLeftSidebar() {
   const [activeLeftSidebarTab, setActiveLeftSidebarTab] =
     useState<LeftSidebarTab>("assets");
+  // The fullscreen ComfyUI editor mounts its own AssetBrowser dock; the
+  // browser is a singleton (shared draggable ids, window-level key handlers),
+  // so the sidebar instance yields while that overlay is open.
+  const comfyEditorOpen = useGenerationStore((state) => state.editorOpen);
   const { workspaces, selectedWorkspaceId, selectWorkspace } =
     useExtensionWorkspaceRegion("left-sidebar");
 
@@ -53,7 +58,7 @@ export function EditorLeftSidebar() {
           flexGrow: 1,
         }}
       >
-        {visibleTab === "assets" ? <AssetBrowser /> : null}
+        {visibleTab === "assets" && !comfyEditorOpen ? <AssetBrowser /> : null}
         {visibleTab === "text" ? <TextPanel /> : null}
         {visibleTab === "composite" ? <CompositePanel /> : null}
         {visibleTab === "effects" ? <TransformationLibraryPanel /> : null}

@@ -580,6 +580,196 @@ describe("hosted iframe bridge runtime", () => {
     });
   });
 
+  it("creates a loader node at the drop position on empty canvas", async () => {
+    const harness = createHarness();
+    const dropGraph = {
+      add: vi.fn((node: { id: number }) => {
+        node.id = 42;
+      }),
+      getNodeOnPos: vi.fn(() => null),
+    };
+    harness.app.canvas = {
+      graph: dropGraph,
+      ds: { scale: 2, offset: [10, 20] },
+      canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    } as never;
+    const createdNode = {
+      id: 0,
+      type: "LoadImage",
+      size: [200, 60],
+      pos: [0, 0] as number[],
+      widgets: [
+        {
+          name: "image",
+          value: "",
+          options: { values: ["existing.png"] },
+          callback: vi.fn(),
+        },
+      ],
+      setDirtyCanvas: vi.fn(),
+    };
+    (harness.windowObject as unknown as { LiteGraph?: unknown }).LiteGraph = {
+      createNode: vi.fn(() => createdNode),
+    };
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "drop-create", "drop-asset", {
+      clientX: 100,
+      clientY: 200,
+      filename: "staged.png",
+      targets: [{ classType: "LoadImage", widget: "image" }],
+      create: { classType: "LoadImage", widget: "image" },
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "drop-create"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "drop-create"),
+    ).toMatchObject({
+      ok: true,
+      result: { action: "created", nodeId: "42", classType: "LoadImage" },
+    });
+    // Manual DragAndScale conversion: [100/2 - 10, 200/2 - 20] = [40, 80],
+    // then the node is horizontally centered on the pointer (width 200).
+    expect(dropGraph.getNodeOnPos).toHaveBeenCalledWith(40, 80);
+    expect(createdNode.pos).toEqual([-60, 80]);
+    expect(dropGraph.add).toHaveBeenCalledWith(createdNode);
+    expect(createdNode.widgets[0].value).toBe("staged.png");
+    expect(createdNode.widgets[0].options.values).toContain("staged.png");
+    expect(createdNode.widgets[0].callback).toHaveBeenCalledWith(
+      "staged.png",
+      harness.app.canvas,
+      createdNode,
+    );
+  });
+
+  it("retargets a matching loader node under the pointer instead of creating", async () => {
+    const harness = createHarness();
+    const existingNode = {
+      id: 7,
+      type: "VHS_LoadVideo",
+      widgets: [
+        { name: "video", value: "old.mp4", options: { values: [] }, callback: vi.fn() },
+      ],
+      setDirtyCanvas: vi.fn(),
+    };
+    const dropGraph = {
+      add: vi.fn(),
+      getNodeOnPos: vi.fn(() => existingNode),
+    };
+    harness.app.canvas = {
+      graph: dropGraph,
+      ds: { scale: 1, offset: [0, 0] },
+      canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    } as never;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "drop-update", "drop-asset", {
+      clientX: 300,
+      clientY: 120,
+      filename: "clips/staged.mp4",
+      targets: [{ classType: "VHS_LoadVideo", widget: "video" }],
+      create: { classType: "VHS_LoadVideo", widget: "video" },
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "drop-update"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "drop-update"),
+    ).toMatchObject({
+      ok: true,
+      result: { action: "updated", nodeId: "7", classType: "VHS_LoadVideo" },
+    });
+    expect(existingNode.widgets[0].value).toBe("clips/staged.mp4");
+    expect(dropGraph.add).not.toHaveBeenCalled();
+  });
+
+  it("rejects drops onto memory loaders unless in-memory loading is disabled", async () => {
+    const harness = createHarness();
+    const memoryNode = {
+      id: 3,
+      type: "vloMemoryLoadImage",
+      widgets: [
+        { name: "image", value: "media-id-1" },
+        { name: "disable_in_memory", value: false },
+      ],
+      setDirtyCanvas: vi.fn(),
+    };
+    const dropGraph = {
+      add: vi.fn(),
+      getNodeOnPos: vi.fn(() => memoryNode),
+    };
+    harness.app.canvas = {
+      graph: dropGraph,
+      ds: { scale: 1, offset: [0, 0] },
+      canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    } as never;
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    const payload = {
+      clientX: 50,
+      clientY: 60,
+      filename: "staged.png",
+      targets: [
+        {
+          classType: "vloMemoryLoadImage",
+          widget: "image",
+          requiresTruthyWidget: "disable_in_memory",
+        },
+      ],
+      create: null,
+    };
+    request(harness, "drop-memory", "drop-asset", payload);
+
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "drop-memory"),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "drop-memory"),
+    ).toMatchObject({ ok: false, error: { code: "memory-loader-active" } });
+    expect(memoryNode.widgets[0].value).toBe("media-id-1");
+
+    // Disk mode ("true" string, as combo widgets serialize) accepts the drop.
+    memoryNode.widgets[1].value = "true" as never;
+    request(harness, "drop-memory-disabled", "drop-asset", payload);
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some(
+          (message) => message.requestId === "drop-memory-disabled",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      harness.posted.find(
+        (message) => message.requestId === "drop-memory-disabled",
+      ),
+    ).toMatchObject({
+      ok: true,
+      result: { action: "updated", nodeId: "3" },
+    });
+    expect(memoryNode.widgets[0].value).toBe("staged.png");
+  });
+
   it("fingerprints node identity and topology rather than only node classes", () => {
     const first = {
       nodes: [

@@ -183,6 +183,11 @@ export interface GenerationRuntimeState {
   inputNodeMap: import("../constants/inputNodeMap").InputNodeMap | null;
   editorNeedsReconnect: boolean;
   editorReconnectSignal: number;
+  /** Whether the fullscreen ComfyUI editor overlay is showing. Store-owned so
+   * surfaces outside the generation panel (e.g. the left sidebar's asset
+   * browser, which must not double-mount) can react to it. */
+  editorOpen: boolean;
+  setEditorOpen: (open: boolean) => void;
   setEditorNeedsReconnect: (required: boolean) => void;
   requestEditorReconnect: () => void;
   connect: () => void;

@@ -11,6 +11,7 @@ export const REQUIRED_BRIDGE_CAPABILITIES = [
   "refresh-missing-models",
   "graph-changed",
   "workflow-revision",
+  "drop-asset",
 ] as const;
 
 export type BridgeClientStatus =
@@ -88,6 +89,32 @@ export interface BridgeWidgetOverride {
 export interface BridgeWorkflowExpectation {
   workflowInstanceId: string;
   revision: number;
+}
+
+export interface BridgeDropAssetTarget {
+  classType: string;
+  widget: string;
+  /** Widget that must hold a truthy value for the target to accept staged
+   * filenames (vloMemory loaders' `disable_in_memory`). */
+  requiresTruthyWidget?: string;
+}
+
+export interface BridgeDropAssetRequest {
+  /** Pointer position relative to the iframe viewport. */
+  clientX: number;
+  clientY: number;
+  /** Staged filename relative to ComfyUI's input directory. */
+  filename: string;
+  /** Existing-node types whose widget may be retargeted by the drop. */
+  targets: BridgeDropAssetTarget[];
+  /** Node to create when the drop lands on empty canvas. */
+  create: { classType: string; widget: string } | null;
+}
+
+export interface BridgeDropAssetResult {
+  action: "updated" | "created";
+  nodeId: string;
+  classType: string;
 }
 
 const HELLO_RETRY_MS = 500;
@@ -351,6 +378,25 @@ export class IframeBridgeClient {
   async refreshMissingModels(): Promise<boolean> {
     const result = await this.request("refresh-missing-models");
     return isRecord(result) && result.refreshed === true;
+  }
+
+  async dropAsset(request: BridgeDropAssetRequest): Promise<BridgeDropAssetResult> {
+    const result = await this.request("drop-asset", request);
+    if (
+      !isRecord(result) ||
+      (result.action !== "updated" && result.action !== "created") ||
+      typeof result.nodeId !== "string"
+    ) {
+      throw new IframeBridgeError(
+        "invalid-response",
+        "The iframe bridge returned an invalid drop-asset result",
+      );
+    }
+    return {
+      action: result.action,
+      nodeId: result.nodeId,
+      classType: typeof result.classType === "string" ? result.classType : "",
+    };
   }
 
   async readPendingWarnings(): Promise<BridgeWarningSummary | null> {

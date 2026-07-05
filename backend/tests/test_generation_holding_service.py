@@ -660,7 +660,7 @@ async def test_backstop_only_monitor_never_opens_a_websocket(
     monkeypatch.setattr(service, "_finalize_delivery", _finalize)
     monkeypatch.setattr(service, "_reconcile_prompt_state", _completed)
     monkeypatch.setattr(
-        delivery_service_module, "MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS", 0
+        delivery_service_module, "MONITOR_BACKSTOP_ONLY_INITIAL_DELAY_SECONDS", 0
     )
     monkeypatch.setattr(
         delivery_service_module.websockets, "connect", _forbid_connect
@@ -675,6 +675,58 @@ async def test_backstop_only_monitor_never_opens_a_websocket(
     )
 
     assert finalized.is_set()
+
+
+@pytest.mark.anyio
+async def test_backstop_settles_cleared_queued_prompt_after_fewer_misses(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A still-queued prompt that vanishes (e.g. an iframe queue-clear) settles
+    on the tighter queued threshold, not the slower running-phase one."""
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    await service.create_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        delivery_context=_delivery_context(),
+    )
+    # Never marked running -> stays "queued", so the queued threshold applies.
+
+    calls = 0
+
+    async def _missing(_prompt_id: str) -> tuple[str, str | None]:
+        nonlocal calls
+        calls += 1
+        return "missing", None
+
+    monkeypatch.setattr(service, "_reconcile_prompt_state", _missing)
+    monkeypatch.setattr(
+        delivery_service_module, "MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS", 0
+    )
+    monkeypatch.setattr(
+        delivery_service_module, "MONITOR_BACKSTOP_QUEUED_INTERVAL_SECONDS", 0
+    )
+    monkeypatch.setattr(delivery_service_module, "MONITOR_RECONNECT_ATTEMPTS", 0)
+    monkeypatch.setattr(
+        delivery_service_module.websockets,
+        "connect",
+        lambda *_a, **_k: _FakeComfyConnect(_FakeComfyWebSocket([])),
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+    )
+
+    delivery = service._deliveries["delivery-1"]
+    assert delivery["status"] == "error"
+    # Queued threshold is 2 — settled without waiting the full running-phase 3.
+    assert calls == delivery_service_module.MONITOR_BACKSTOP_QUEUED_MISS_THRESHOLD
+    assert calls == 2
 
 
 @pytest.mark.anyio

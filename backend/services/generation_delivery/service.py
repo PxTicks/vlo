@@ -41,6 +41,18 @@ MONITOR_RECONNECT_MAX_DELAY_SECONDS = 10.0
 MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS = 10.0
 MONITOR_BACKSTOP_INTERVAL_SECONDS = 5.0
 MONITOR_BACKSTOP_MISS_THRESHOLD = 3
+# While a delivery is still queued (pre-running) the backstop polls tighter and
+# settles a vanished prompt after fewer misses: this is the window where a queue
+# clear/delete (e.g. from the ComfyUI iframe) removes a job that will never run,
+# and there is no websocket progress to wait for. A prompt that actually ran
+# leaves a /history entry, so a queued prompt that disappears without one was
+# removed — only the sub-second queue→history transition can briefly read as
+# "missing", which two consecutive misses rule out.
+MONITOR_BACKSTOP_QUEUED_INTERVAL_SECONDS = 2.0
+MONITOR_BACKSTOP_QUEUED_MISS_THRESHOLD = 2
+# Backstop-only monitors (adopted in-editor generations) have no websocket to
+# race, so their first reconcile need not wait out the websocket grace window.
+MONITOR_BACKSTOP_ONLY_INITIAL_DELAY_SECONDS = 2.0
 
 BINARY_PREVIEW_IMAGE = 1
 BINARY_PREVIEW_IMAGE_WITH_METADATA = 4
@@ -1559,8 +1571,20 @@ class GenerationHoldingService:
                 )
 
         async def _run_backstop() -> None:
-            """Settle the delivery from /history + /queue if events are lost."""
-            await asyncio.sleep(MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS)
+            """Settle the delivery from /history + /queue if events are lost.
+
+            Cadence and the "missing" threshold tighten while the delivery is
+            still queued (never observed running): that is the window a queue
+            clear/delete lands in, and the websocket offers no progress there
+            anyway. Once running, the slower safety cadence resumes — the
+            websocket is primary and only the brief queue→history transition
+            could misread as missing.
+            """
+            await asyncio.sleep(
+                MONITOR_BACKSTOP_ONLY_INITIAL_DELAY_SECONDS
+                if monitor_mode == "backstop"
+                else MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS
+            )
             misses = 0
             while not settled:
                 verdict, error_message = await self._reconcile_prompt_state(
@@ -1568,6 +1592,11 @@ class GenerationHoldingService:
                 )
                 if settled:
                     return
+                # A synchronous dict read — no await, so no lock needed.
+                manifest = self._deliveries.get(delivery_id)
+                pre_running = (
+                    manifest is not None and manifest.get("status") == "queued"
+                )
                 if verdict == "completed":
                     if error_message is not None:
                         await _settle_error(error_message)
@@ -1578,13 +1607,22 @@ class GenerationHoldingService:
                     misses = 0
                 elif verdict == "missing":
                     misses += 1
-                    if misses >= MONITOR_BACKSTOP_MISS_THRESHOLD:
+                    threshold = (
+                        MONITOR_BACKSTOP_QUEUED_MISS_THRESHOLD
+                        if pre_running
+                        else MONITOR_BACKSTOP_MISS_THRESHOLD
+                    )
+                    if misses >= threshold:
                         await _settle_error(
                             "Prompt is no longer known to ComfyUI"
                         )
                         return
                 # "unknown": ComfyUI unreachable — neither settle nor count.
-                await asyncio.sleep(MONITOR_BACKSTOP_INTERVAL_SECONDS)
+                await asyncio.sleep(
+                    MONITOR_BACKSTOP_QUEUED_INTERVAL_SECONDS
+                    if pre_running
+                    else MONITOR_BACKSTOP_INTERVAL_SECONDS
+                )
 
         try:
             # Adopted in-editor generations run backstop-only: the iframe owns

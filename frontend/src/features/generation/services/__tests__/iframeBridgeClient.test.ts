@@ -212,6 +212,40 @@ describe("IframeBridgeClient", () => {
     });
   });
 
+  it("fans out validated iframe-generation events and drops malformed ones", () => {
+    const { client, contentWindow, hello } = setupClient();
+    announceReady(contentWindow, hello);
+    const handler = vi.fn();
+    client.onIframeGeneration(handler);
+
+    dispatchFromIframe(contentWindow, {
+      protocol: BRIDGE_PROTOCOL,
+      version: BRIDGE_VERSION,
+      channelId: hello.channelId,
+      type: "event",
+      event: "iframe-generation",
+      data: { promptId: "p-1", phase: "progress", value: 3, max: 4, node: "n" },
+    });
+    // Missing promptId -> invalid -> ignored, not thrown.
+    dispatchFromIframe(contentWindow, {
+      protocol: BRIDGE_PROTOCOL,
+      version: BRIDGE_VERSION,
+      channelId: hello.channelId,
+      type: "event",
+      event: "iframe-generation",
+      data: { phase: "started" },
+    });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({
+      promptId: "p-1",
+      phase: "progress",
+      value: 3,
+      max: 4,
+      node: "n",
+    });
+  });
+
   it("times out unanswered requests with a typed error", async () => {
     vi.useFakeTimers();
     const { client, contentWindow, hello } = setupClient();

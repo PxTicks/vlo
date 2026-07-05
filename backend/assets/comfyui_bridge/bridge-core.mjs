@@ -624,10 +624,54 @@ export function startVloBridge({ app, api, windowObject = window }) {
     });
   }
 
+  // In-editor generation observation. ComfyUI unicasts a submitting client's
+  // execution events to it, so as the iframe's own client we see exactly the
+  // prompts queued from inside the editor (and nothing vlo submitted, whose
+  // events go to the backend monitor's client_id). We forward them so the
+  // parent can adopt the run as a delivery. execution_start scopes the set of
+  // prompt ids we own; progress/terminal events are filtered against it.
+  const observedPromptIds = new Set();
+
+  function postIframeGeneration(data) {
+    post({ type: "event", event: "iframe-generation", data });
+  }
+
+  function handleExecutionStart(event) {
+    const promptId = event?.detail?.prompt_id;
+    if (typeof promptId !== "string" || !promptId) return;
+    observedPromptIds.add(promptId);
+    postIframeGeneration({ promptId, phase: "started" });
+  }
+
+  function handleExecutionProgress(event) {
+    const detail = event?.detail;
+    const promptId = detail?.prompt_id;
+    if (typeof promptId !== "string" || !observedPromptIds.has(promptId)) return;
+    postIframeGeneration({
+      promptId,
+      phase: "progress",
+      value: typeof detail.value === "number" ? detail.value : null,
+      max: typeof detail.max === "number" ? detail.max : null,
+      node: typeof detail.node === "string" ? detail.node : null,
+    });
+  }
+
+  function handleExecutionEnd(event) {
+    const promptId = event?.detail?.prompt_id;
+    if (typeof promptId !== "string" || !observedPromptIds.has(promptId)) return;
+    observedPromptIds.delete(promptId);
+    postIframeGeneration({ promptId, phase: "finished" });
+  }
+
   windowObject.addEventListener("message", handleMessage);
   api?.addEventListener?.("graphChanged", handleGraphChanged);
   api?.addEventListener?.("status", pushHealthChanged);
   api?.addEventListener?.("reconnected", pushHealthChanged);
+  api?.addEventListener?.("execution_start", handleExecutionStart);
+  api?.addEventListener?.("progress", handleExecutionProgress);
+  api?.addEventListener?.("execution_success", handleExecutionEnd);
+  api?.addEventListener?.("execution_error", handleExecutionEnd);
+  api?.addEventListener?.("execution_interrupted", handleExecutionEnd);
 
   return {
     stop() {
@@ -638,6 +682,11 @@ export function startVloBridge({ app, api, windowObject = window }) {
       api?.removeEventListener?.("graphChanged", handleGraphChanged);
       api?.removeEventListener?.("status", pushHealthChanged);
       api?.removeEventListener?.("reconnected", pushHealthChanged);
+      api?.removeEventListener?.("execution_start", handleExecutionStart);
+      api?.removeEventListener?.("progress", handleExecutionProgress);
+      api?.removeEventListener?.("execution_success", handleExecutionEnd);
+      api?.removeEventListener?.("execution_error", handleExecutionEnd);
+      api?.removeEventListener?.("execution_interrupted", handleExecutionEnd);
     },
     readActive,
   };

@@ -9,6 +9,7 @@ import { useProjectStore } from "../../project";
 const {
   mockBridgeReadActive,
   mockDeliveryWsInstances,
+  mockDeleteQueueItems,
   mockFrontendPostprocess,
   mockFrontendPreprocess,
   mockGenerate,
@@ -20,6 +21,7 @@ const {
   mockWsInstances,
 } = vi.hoisted(() => ({
   mockBridgeReadActive: vi.fn(),
+  mockDeleteQueueItems: vi.fn(),
   mockDeliveryWsInstances: [] as unknown[],
   mockFrontendPostprocess: vi.fn(),
   mockFrontendPreprocess: vi.fn(),
@@ -220,6 +222,7 @@ vi.mock("../services/comfyuiApi", async (importOriginal) => {
     generate: mockGenerate,
     getConfig: mockGetConfig,
     interrupt: mockInterrupt,
+    deleteQueueItems: mockDeleteQueueItems,
     listWorkflows: mockListWorkflows,
   };
 });
@@ -1958,6 +1961,20 @@ describe("useGenerationStore pipeline phases", () => {
     await flushMicrotasks();
 
     expect(mockGetRuntimeStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("tracks ComfyUI's global queue depth from status broadcasts", async () => {
+    useGenerationStore.getState().connect();
+    const client = getLatestClient();
+    expect(useGenerationStore.getState().comfyQueueRemaining).toBeNull();
+
+    client.emitEvent({
+      type: "status",
+      data: { status: { exec_info: { queue_remaining: 3 } } },
+    });
+    await flushMicrotasks();
+
+    expect(useGenerationStore.getState().comfyQueueRemaining).toBe(3);
   });
 
   it("keeps websocket preview frames ordered by explicit frame index", async () => {

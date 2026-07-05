@@ -154,8 +154,8 @@ function createHarness() {
     }
   }
 
-  function emitApi(name: string) {
-    for (const listener of apiListeners.get(name) ?? []) listener();
+  function emitApi(name: string, event?: unknown) {
+    for (const listener of apiListeners.get(name) ?? []) listener(event);
   }
 
   return {
@@ -245,6 +245,55 @@ describe("hosted iframe bridge runtime", () => {
       channelId: "channel-1",
       capabilities: [...BRIDGE_CAPABILITIES],
     });
+  });
+
+  it("forwards the iframe's own generation lifecycle, scoped to prompts it started", () => {
+    const harness = createHarness();
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    harness.posted.length = 0;
+
+    // Progress for a prompt we never saw start (e.g. a broadcast interrupt for
+    // a vlo-submitted job) is not ours to adopt.
+    harness.emitApi("progress", {
+      detail: { prompt_id: "foreign", value: 1, max: 4 },
+    });
+    expect(
+      harness.posted.filter((m) => m.event === "iframe-generation"),
+    ).toHaveLength(0);
+
+    harness.emitApi("execution_start", { detail: { prompt_id: "p-1" } });
+    harness.emitApi("progress", {
+      detail: { prompt_id: "p-1", value: 2, max: 4, node: "ksampler" },
+    });
+    harness.emitApi("execution_success", { detail: { prompt_id: "p-1" } });
+
+    const events = harness.posted.filter(
+      (m) => m.event === "iframe-generation",
+    );
+    expect(events.map((m) => (m.data as { phase: string }).phase)).toEqual([
+      "started",
+      "progress",
+      "finished",
+    ]);
+    expect(events[1].data).toMatchObject({
+      promptId: "p-1",
+      value: 2,
+      max: 4,
+      node: "ksampler",
+    });
+
+    // After the terminal event the prompt is forgotten; late progress is dropped.
+    harness.emitApi("progress", {
+      detail: { prompt_id: "p-1", value: 3, max: 4 },
+    });
+    expect(
+      harness.posted.filter((m) => m.event === "iframe-generation"),
+    ).toHaveLength(3);
   });
 
   it("injects the workflow despite ComfyUI load-time drift and returns parsed warnings", async () => {

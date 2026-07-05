@@ -122,6 +122,46 @@ export async function getPendingDeliveries(
   return Array.isArray(payload.deliveries) ? payload.deliveries : [];
 }
 
+export async function adoptIframeGeneration(
+  projectId: string,
+  promptId: string,
+  workflowName?: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/app/generation-delivery/projects/${encodeURIComponent(projectId)}/adopt`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt_id: promptId, workflow_name: workflowName }),
+    },
+  );
+  if (!response.ok) {
+    await throwRequestError("Adopt in-editor generation", response);
+  }
+}
+
+export async function reportIframeGenerationProgress(
+  projectId: string,
+  promptId: string,
+  progress: { progress: number; node: string | null },
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/app/generation-delivery/projects/${encodeURIComponent(
+      projectId,
+    )}/adopt/${encodeURIComponent(promptId)}/progress`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(progress),
+    },
+  );
+  // Progress is best-effort. A 404 just means the adopt has not landed yet or
+  // the run already settled via the backstop; don't surface those as errors.
+  if (!response.ok && response.status !== 404) {
+    await throwRequestError("Report in-editor generation progress", response);
+  }
+}
+
 export async function fetchDeliveryFileAsFile(
   fileRef: GenerationDeliveryFileRef | null | undefined,
 ): Promise<File | null> {

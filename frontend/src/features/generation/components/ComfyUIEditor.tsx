@@ -23,8 +23,14 @@ import {
   waitForAppReady,
   type ShouldAbort,
 } from "../services/workflowSyncController";
+import {
+  adoptIframeGeneration,
+  reportIframeGenerationProgress,
+} from "../services/generationDeliveryApi";
+import { useProjectStore } from "../../project";
 
 const HEALTH_WATCHDOG_MS = 10_000;
+const IFRAME_PROGRESS_THROTTLE_MS = 250;
 const APP_READY_TIMEOUT_MS = 10_000;
 const RECOVERY_POLL_MS = 3000;
 const MAX_CONSECUTIVE_READ_FAILURES = 3;
@@ -87,6 +93,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     (s) => s.setEditorNeedsReconnect,
   );
   const connectionStatus = useGenerationStore((s) => s.connectionStatus);
+  const comfyQueueRemaining = useGenerationStore((s) => s.comfyQueueRemaining);
   const [loading, setLoading] = useState(true);
   const [appReady, setAppReady] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -465,6 +472,62 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
 
   useEffect(() => iframeBridge.onHealthChanged(applyHealth), [applyHealth]);
 
+  // Adopt generations the user launches from inside the ComfyUI editor. The
+  // bridge observes the iframe's own execution events; we attach the active
+  // project (attribution ComfyUI can't do) so outputs import as deliveries.
+  // The backend backstop owns settlement — this only starts and reports
+  // progress, so failures here are non-fatal.
+  useEffect(() => {
+    const lastProgressAt = new Map<string, number>();
+    return iframeBridge.onIframeGeneration((generation) => {
+      const projectId = useProjectStore.getState().project?.id;
+      if (!projectId) return;
+
+      if (generation.phase === "started") {
+        void adoptIframeGeneration(projectId, generation.promptId).catch(
+          (error) => {
+            console.warn(
+              "[ComfyUIEditor] Failed to adopt in-editor generation",
+              error,
+            );
+          },
+        );
+        return;
+      }
+
+      if (generation.phase === "finished") {
+        lastProgressAt.delete(generation.promptId);
+        return;
+      }
+
+      if (
+        generation.value === null ||
+        generation.max === null ||
+        generation.max <= 0
+      ) {
+        return;
+      }
+      const now = Date.now();
+      if (
+        now - (lastProgressAt.get(generation.promptId) ?? 0) <
+        IFRAME_PROGRESS_THROTTLE_MS
+      ) {
+        return;
+      }
+      lastProgressAt.set(generation.promptId, now);
+      const progress = Math.max(
+        0,
+        Math.min(100, Math.round((generation.value / generation.max) * 100)),
+      );
+      void reportIframeGenerationProgress(projectId, generation.promptId, {
+        progress,
+        node: generation.node,
+      }).catch(() => {
+        // Best-effort; the backstop still settles the delivery.
+      });
+    });
+  }, []);
+
   const pollWorkflow = useCallback(async () => {
     if (pollingRef.current) return;
     pollingRef.current = true;
@@ -598,9 +661,19 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           borderBottom: "1px solid #333",
         }}
       >
-        <Typography variant="subtitle1" sx={{ color: "#ccc" }}>
-          ComfyUI Node Editor
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+          <Typography variant="subtitle1" sx={{ color: "#ccc" }}>
+            ComfyUI Node Editor
+          </Typography>
+          {typeof comfyQueueRemaining === "number" && comfyQueueRemaining > 0 && (
+            <Typography
+              variant="caption"
+              sx={{ color: "#f0a020", whiteSpace: "nowrap" }}
+            >
+              {comfyQueueRemaining} in ComfyUI queue
+            </Typography>
+          )}
+        </Box>
         <Box>
           <IconButton
             size="small"

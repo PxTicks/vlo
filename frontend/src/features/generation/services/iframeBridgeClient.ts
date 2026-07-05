@@ -66,6 +66,14 @@ export interface BridgeHealth {
   backendConnected: boolean;
 }
 
+export interface BridgeIframeGeneration {
+  promptId: string;
+  phase: "started" | "progress" | "finished";
+  value: number | null;
+  max: number | null;
+  node: string | null;
+}
+
 export interface BridgeResolvedPrompt {
   output: Record<string, unknown>;
   workflow: Record<string, unknown>;
@@ -126,6 +134,29 @@ function toSnapshot(value: unknown): BridgeWorkflowSnapshot {
   };
 }
 
+function toIframeGeneration(value: unknown): BridgeIframeGeneration {
+  if (
+    !isRecord(value) ||
+    typeof value.promptId !== "string" ||
+    !value.promptId ||
+    (value.phase !== "started" &&
+      value.phase !== "progress" &&
+      value.phase !== "finished")
+  ) {
+    throw new IframeBridgeError(
+      "invalid-response",
+      "The iframe bridge returned an invalid iframe-generation event",
+    );
+  }
+  return {
+    promptId: value.promptId,
+    phase: value.phase,
+    value: typeof value.value === "number" ? value.value : null,
+    max: typeof value.max === "number" ? value.max : null,
+    node: typeof value.node === "string" ? value.node : null,
+  };
+}
+
 function toWarningSummary(value: unknown): BridgeWarningSummary | null {
   if (value === null || value === undefined) return null;
   if (!isRecord(value)) {
@@ -165,6 +196,9 @@ export class IframeBridgeClient {
   >();
   private readonly healthChangedHandlers = new Set<
     (health: BridgeHealth) => void
+  >();
+  private readonly iframeGenerationHandlers = new Set<
+    (generation: BridgeIframeGeneration) => void
   >();
 
   get isReady(): boolean {
@@ -230,6 +264,13 @@ export class IframeBridgeClient {
   onHealthChanged(handler: (health: BridgeHealth) => void): () => void {
     this.healthChangedHandlers.add(handler);
     return () => this.healthChangedHandlers.delete(handler);
+  }
+
+  onIframeGeneration(
+    handler: (generation: BridgeIframeGeneration) => void,
+  ): () => void {
+    this.iframeGenerationHandlers.add(handler);
+    return () => this.iframeGenerationHandlers.delete(handler);
   }
 
   async waitForReady(
@@ -385,6 +426,19 @@ export class IframeBridgeClient {
         for (const handler of this.healthChangedHandlers) handler(health);
       } catch (error) {
         console.warn("[iframeBridge] Ignoring invalid health-changed event", error);
+      }
+      return;
+    }
+
+    if (data.type === "event" && data.event === "iframe-generation") {
+      try {
+        const generation = toIframeGeneration(data.data);
+        for (const handler of this.iframeGenerationHandlers) handler(generation);
+      } catch (error) {
+        console.warn(
+          "[iframeBridge] Ignoring invalid iframe-generation event",
+          error,
+        );
       }
       return;
     }

@@ -146,10 +146,41 @@ export class ComfyApiError extends Error {
   }
 }
 
-export async function interrupt(): Promise<void> {
-  const resp = await fetch(`${COMFY_API}/api/interrupt`, { method: "POST" });
+export async function interrupt(promptId?: string): Promise<void> {
+  // ComfyUI's queue is a single global FIFO shared with the in-editor iframe.
+  // A bodyless interrupt is a *global* interrupt that kills whichever prompt is
+  // running — possibly the iframe's, not ours. Passing prompt_id makes ComfyUI
+  // interrupt only if that prompt is the one currently running (else a no-op).
+  const resp = await fetch(`${COMFY_API}/api/interrupt`, {
+    method: "POST",
+    ...(promptId
+      ? {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt_id: promptId }),
+        }
+      : {}),
+  });
   if (!resp.ok) {
     await throwRequestError("Interrupt", resp);
+  }
+}
+
+/**
+ * Remove prompts from ComfyUI's *pending* queue by id. Scoped to the exact ids
+ * we own so a cancel never clears the iframe's queued work; a bodyless queue
+ * clear (which ComfyUI's own UI issues) would wipe everyone's pending prompts.
+ */
+export async function deleteQueueItems(promptIds: string[]): Promise<void> {
+  if (promptIds.length === 0) {
+    return;
+  }
+  const resp = await fetch(`${COMFY_API}/api/queue`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ delete: promptIds }),
+  });
+  if (!resp.ok) {
+    await throwRequestError("Queue delete", resp);
   }
 }
 

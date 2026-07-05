@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, WebSocket
+from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse
 
 from services.generation_delivery import generation_holding_service
@@ -16,6 +16,59 @@ async def list_pending_generation_deliveries(project_id: str):
         "project_id": project_id,
         "deliveries": await generation_holding_service.list_project_deliveries(project_id),
     }
+
+
+@router.post("/projects/{project_id}/adopt")
+async def adopt_iframe_generation(project_id: str, request: Request):
+    """Adopt a generation the user submitted inside the ComfyUI editor iframe.
+
+    The parent frontend supplies the project (attribution ComfyUI can't know)
+    and the prompt id observed by the bridge; the backend creates a delivery
+    with a backstop-only monitor so the outputs import like any other.
+    """
+    body = await request.json()
+    prompt_id = body.get("prompt_id") if isinstance(body, dict) else None
+    if not isinstance(prompt_id, str) or not prompt_id.strip():
+        raise HTTPException(status_code=400, detail="prompt_id is required")
+    client_id = body.get("client_id")
+    workflow_name = body.get("workflow_name")
+    delivery = await generation_holding_service.adopt_delivery(
+        project_id=project_id,
+        prompt_id=prompt_id.strip(),
+        client_id=client_id if isinstance(client_id, str) and client_id else None,
+        workflow_name=workflow_name if isinstance(workflow_name, str) else None,
+    )
+    return {"delivery": delivery}
+
+
+@router.post("/projects/{project_id}/adopt/{prompt_id}/progress")
+async def report_adopted_generation_progress(
+    project_id: str,
+    prompt_id: str,
+    request: Request,
+):
+    body = await request.json()
+    if not isinstance(body, dict):
+        body = {}
+    raw_progress = body.get("progress")
+    progress = (
+        max(0, min(100, int(raw_progress)))
+        if isinstance(raw_progress, (int, float))
+        else None
+    )
+    node = body.get("node")
+    updated = await generation_holding_service.mark_running_for_prompt(
+        project_id,
+        prompt_id,
+        progress=progress,
+        current_node=node if isinstance(node, str) else None,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail="No active adopted delivery for prompt",
+        )
+    return {"ok": True}
 
 
 @router.get("/projects/{project_id}/deliveries/{delivery_id}")

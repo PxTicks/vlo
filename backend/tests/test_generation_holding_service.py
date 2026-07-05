@@ -638,6 +638,119 @@ async def test_generation_monitor_history_backstop_handles_every_missed_event(
 
 
 @pytest.mark.anyio
+async def test_backstop_only_monitor_never_opens_a_websocket(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Adopted in-editor generations must not open a socket on the iframe's
+    client_id (that would steal the iframe's own job events); they settle from
+    history/queue polling only."""
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    finalized = asyncio.Event()
+
+    async def _finalize(*_args, **_kwargs) -> None:
+        finalized.set()
+
+    async def _completed(_prompt_id: str) -> tuple[str, str | None]:
+        return "completed", None
+
+    def _forbid_connect(*_args, **_kwargs):
+        raise AssertionError("backstop-only monitor must not open a websocket")
+
+    monkeypatch.setattr(service, "_finalize_delivery", _finalize)
+    monkeypatch.setattr(service, "_reconcile_prompt_state", _completed)
+    monkeypatch.setattr(
+        delivery_service_module, "MONITOR_BACKSTOP_INITIAL_DELAY_SECONDS", 0
+    )
+    monkeypatch.setattr(
+        delivery_service_module.websockets, "connect", _forbid_connect
+    )
+
+    await service._monitor_delivery(
+        project_id="project-1",
+        delivery_id="delivery-1",
+        prompt_id="prompt-1",
+        client_id="client-1",
+        monitor_mode="backstop",
+    )
+
+    assert finalized.is_set()
+
+
+@pytest.mark.anyio
+async def test_adopt_delivery_is_idempotent_and_reports_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+    started: list[dict] = []
+
+    async def _fake_start_monitor(**kwargs) -> None:
+        started.append(kwargs)
+
+    monkeypatch.setattr(service, "start_monitor", _fake_start_monitor)
+
+    first = await service.adopt_delivery(project_id="p1", prompt_id="prompt-1")
+    second = await service.adopt_delivery(project_id="p1", prompt_id="prompt-1")
+
+    # Idempotent per (project, prompt): one delivery, one monitor.
+    assert first["delivery_id"] == second["delivery_id"]
+    assert len(started) == 1
+    assert started[0]["monitor_mode"] == "backstop"
+    assert first["status"] == "queued"
+    assert first["generation_metadata"]["source"] == "generated"
+    assert service._deliveries[first["delivery_id"]]["monitor_mode"] == "backstop"
+
+    # Bridge-forwarded progress marks the delivery running.
+    assert (
+        await service.mark_running_for_prompt(
+            "p1", "prompt-1", progress=42, current_node="node-9"
+        )
+        is True
+    )
+    delivery = await service.get_delivery("p1", first["delivery_id"])
+    assert delivery["status"] == "running"
+    assert delivery["progress"] == 42
+    assert delivery["current_node"] == "node-9"
+
+    # Unknown prompt -> no-op signal.
+    assert await service.mark_running_for_prompt("p1", "ghost", progress=10) is False
+
+    # A late progress ping cannot resurrect a delivery the backstop settled.
+    await service.mark_error(first["delivery_id"], "boom")
+    assert (
+        await service.mark_running_for_prompt("p1", "prompt-1", progress=99) is False
+    )
+
+
+@pytest.mark.anyio
+async def test_adopted_delivery_reattaches_in_backstop_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "holding"
+    service = GenerationHoldingService(root=root)
+
+    async def _noop_start_monitor(**_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(service, "start_monitor", _noop_start_monitor)
+    adopted = await service.adopt_delivery(project_id="p1", prompt_id="prompt-1")
+    assert adopted["status"] == "queued"  # inflight -> eligible for re-attach
+
+    fresh = GenerationHoldingService(root=root)
+    modes: list[str | None] = []
+
+    async def _capture_start_monitor(**kwargs) -> None:
+        modes.append(kwargs.get("monitor_mode"))
+
+    monkeypatch.setattr(fresh, "start_monitor", _capture_start_monitor)
+    await fresh._ensure_loaded()
+
+    assert modes == ["backstop"]
+
+
+@pytest.mark.anyio
 async def test_generation_monitor_resets_reconnect_budget_after_healthy_traffic(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

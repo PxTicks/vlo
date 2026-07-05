@@ -372,6 +372,7 @@ class GenerationHoldingService:
                 delivery_id=manifest["delivery_id"],
                 prompt_id=manifest["prompt_id"],
                 client_id=manifest["client_id"],
+                monitor_mode=manifest.get("monitor_mode", "full"),
             )
 
     def _has_live_monitor(self, delivery_id: str) -> bool:
@@ -602,6 +603,7 @@ class GenerationHoldingService:
         prompt_id: str,
         client_id: str,
         delivery_context: dict[str, Any],
+        monitor_mode: str = "full",
     ) -> dict[str, Any]:
         await self._ensure_loaded()
 
@@ -611,6 +613,10 @@ class GenerationHoldingService:
             "project_id": project_id,
             "prompt_id": prompt_id,
             "client_id": client_id,
+            # "full": vlo-submitted, monitored over its own websocket.
+            # "backstop": adopted in-editor generation, settled by history/queue
+            # polling only (the iframe owns the websocket for this client_id).
+            "monitor_mode": monitor_mode,
             "status": "queued",
             "progress": 0,
             "current_node": None,
@@ -649,6 +655,104 @@ class GenerationHoldingService:
 
         await self._broadcast_delivery_update(project_id, manifest)
         return manifest
+
+    def _find_delivery_id_for_prompt_locked(
+        self,
+        project_id: str,
+        prompt_id: str,
+    ) -> str | None:
+        for delivery_id, manifest in self._deliveries.items():
+            if (
+                manifest.get("project_id") == project_id
+                and manifest.get("prompt_id") == prompt_id
+            ):
+                return delivery_id
+        return None
+
+    async def adopt_delivery(
+        self,
+        *,
+        project_id: str,
+        prompt_id: str,
+        client_id: str | None = None,
+        workflow_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Adopt a generation submitted natively inside the ComfyUI iframe.
+
+        Creates a delivery manifest and a backstop-only monitor so the run
+        settles from ComfyUI's history/queue without opening a websocket on the
+        iframe's client_id (which would steal the iframe's own job events).
+        Idempotent per (project_id, prompt_id).
+        """
+        await self._ensure_loaded()
+        async with self._lock:
+            existing_id = self._find_delivery_id_for_prompt_locked(
+                project_id, prompt_id
+            )
+            if existing_id is not None:
+                return self._serialize_delivery(self._deliveries[existing_id])
+
+        label = workflow_name or "ComfyUI (in-editor)"
+        delivery_id = str(uuid.uuid4())
+        # A non-empty client_id keeps restart re-attach happy; it is otherwise
+        # unused in backstop mode (no websocket is opened with it).
+        manifest = await self.create_delivery(
+            project_id=project_id,
+            delivery_id=delivery_id,
+            prompt_id=prompt_id,
+            client_id=client_id or f"iframe:{prompt_id}",
+            delivery_context={
+                "workflow_name": label,
+                "generation_metadata": {
+                    "source": "generated",
+                    "workflowName": label,
+                    "inputs": [],
+                },
+                "adopted_from_iframe": True,
+            },
+            monitor_mode="backstop",
+        )
+        await self.start_monitor(
+            project_id=project_id,
+            delivery_id=delivery_id,
+            prompt_id=prompt_id,
+            client_id=manifest["client_id"],
+            monitor_mode="backstop",
+        )
+        return self._serialize_delivery(manifest)
+
+    async def mark_running_for_prompt(
+        self,
+        project_id: str,
+        prompt_id: str,
+        *,
+        progress: int | None = None,
+        current_node: str | None = None,
+    ) -> bool:
+        """Progress update for an adopted delivery, keyed by prompt id.
+
+        The bridge forwards the iframe's native progress events; a terminal
+        state is still owned by the backstop, so this only ever marks running.
+        """
+        await self._ensure_loaded()
+        async with self._lock:
+            delivery_id = self._find_delivery_id_for_prompt_locked(
+                project_id, prompt_id
+            )
+            manifest = self._deliveries.get(delivery_id) if delivery_id else None
+            # Never resurrect an already-settled delivery with a late progress
+            # ping (the backstop may have finalized it first).
+            if manifest is None or manifest.get("status") in {
+                "completed_pending_ack",
+                "error",
+            }:
+                return False
+        await self.mark_running(
+            delivery_id,
+            progress=progress,
+            current_node=current_node,
+        )
+        return True
 
     async def update_submission_metadata(
         self,
@@ -702,6 +806,12 @@ class GenerationHoldingService:
         async with self._lock:
             manifest = self._deliveries.get(delivery_id)
             if not manifest:
+                return
+            # Never resurrect a settled delivery. A late progress event (e.g. a
+            # bridge-forwarded update racing the backstop's finalize on an
+            # adopted generation) must not flip a terminal manifest back to
+            # running.
+            if manifest.get("status") in {"completed_pending_ack", "error"}:
                 return
             manifest["status"] = "running"
             if progress is not None:
@@ -870,6 +980,7 @@ class GenerationHoldingService:
         prompt_id: str,
         client_id: str,
         wait_for_connection: bool = False,
+        monitor_mode: str = "full",
     ) -> None:
         await self._ensure_loaded()
         existing = self._monitor_tasks.get(delivery_id)
@@ -883,6 +994,7 @@ class GenerationHoldingService:
                 prompt_id=prompt_id,
                 client_id=client_id,
                 connected_event=connected,
+                monitor_mode=monitor_mode,
             )
         )
         self._monitor_tasks[delivery_id] = task
@@ -1251,6 +1363,7 @@ class GenerationHoldingService:
         prompt_id: str,
         client_id: str,
         connected_event: asyncio.Event | None = None,
+        monitor_mode: str = "full",
     ) -> None:
         current_node: str | None = None
         save_node_ids: set[str] = set()
@@ -1474,10 +1587,15 @@ class GenerationHoldingService:
                 await asyncio.sleep(MONITOR_BACKSTOP_INTERVAL_SECONDS)
 
         try:
-            pending: set[asyncio.Task[None]] = {
-                asyncio.create_task(_consume_events()),
-                asyncio.create_task(_run_backstop()),
-            }
+            # Adopted in-editor generations run backstop-only: the iframe owns
+            # the ComfyUI websocket for its own client_id, so a second monitor
+            # socket would steal its job events. History/queue polling settles
+            # the delivery; progress arrives via the bridge instead.
+            pending: set[asyncio.Task[None]] = {asyncio.create_task(_run_backstop())}
+            if monitor_mode != "backstop":
+                pending.add(asyncio.create_task(_consume_events()))
+            elif connected_event is not None:
+                connected_event.set()
             try:
                 while pending and not settled:
                     done, pending = await asyncio.wait(

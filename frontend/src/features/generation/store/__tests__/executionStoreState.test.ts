@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   generate: vi.fn(),
   interrupt: vi.fn(),
+  deleteQueueItems: vi.fn(),
   createGenerationPlan: vi.fn(),
   prepareGenerationPlan: vi.fn(),
   buildSubmittedGeneration: vi.fn(),
@@ -32,6 +33,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../services/comfyuiApi", () => ({
   generate: mocks.generate,
   interrupt: mocks.interrupt,
+  deleteQueueItems: mocks.deleteQueueItems,
 }));
 
 vi.mock("../../../project", () => ({
@@ -726,7 +728,11 @@ describe("buildExecutionStoreState", () => {
     ]);
     const harness = createHarness({ jobs, activeJobId: "job-1" });
     await harness.actions.cancelGeneration();
+    // Cancel must be scoped to our own prompt id so it can't touch the iframe's
+    // jobs on the shared global queue.
+    expect(mocks.deleteQueueItems).toHaveBeenCalledWith(["job-1"]);
     expect(mocks.interrupt).toHaveBeenCalledTimes(1);
+    expect(mocks.interrupt).toHaveBeenCalledWith("job-1");
     expect(harness.state.activeJobId).toBeNull();
 
     const failedJobs = new Map([

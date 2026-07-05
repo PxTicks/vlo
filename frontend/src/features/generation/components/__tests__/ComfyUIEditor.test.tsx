@@ -18,6 +18,9 @@ const bridgeMocks = vi.hoisted(() => ({
   onHealthChanged: vi.fn(
     (_handler: (health: unknown) => void): (() => void) => () => {},
   ),
+  onIframeGeneration: vi.fn(
+    (_handler: (generation: unknown) => void): (() => void) => () => {},
+  ),
   notifyIframeReloaded: vi.fn(),
   waitForReady: vi.fn(),
 }));
@@ -34,6 +37,7 @@ vi.mock("../../services/iframeBridgeClient", () => ({
     health: bridgeMocks.health,
     onGraphChanged: bridgeMocks.onGraphChanged,
     onHealthChanged: bridgeMocks.onHealthChanged,
+    onIframeGeneration: bridgeMocks.onIframeGeneration,
     notifyIframeReloaded: bridgeMocks.notifyIframeReloaded,
     waitForReady: bridgeMocks.waitForReady,
   },

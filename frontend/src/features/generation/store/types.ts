@@ -167,6 +167,13 @@ export interface GenerationRuntimeState {
   connectionStatus: ComfyUIConnectionStatus;
   runtimeStatus: RuntimeStatus | null;
   runtimeStatusError: string | null;
+  /**
+   * Total items in ComfyUI's single global queue (running + pending) across
+   * every client, from the broadcast `status` event. vlo submits serially so it
+   * keeps at most one job in that queue; a value above vlo's own in-flight count
+   * means the editor iframe (or another client) is also using ComfyUI. `null`
+   * until the first status frame. */
+  comfyQueueRemaining: number | null;
   comfyuiDirectUrl: string | null;
   wsClient: ComfyUIWebSocket | null;
   deliveryClient: GenerationDeliveryWebSocket | null;

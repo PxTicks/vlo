@@ -995,8 +995,12 @@ export function buildExecutionStoreState(
       ),
     );
 
+    // The active job's id is its ComfyUI prompt_id. Scope the cancel to it:
+    // drop it if still pending, and interrupt only if it is the running prompt.
+    // Both are no-ops against the iframe's jobs sharing the global queue.
     try {
-      await comfyApi.interrupt();
+      await comfyApi.deleteQueueItems([activeJob.id]);
+      await comfyApi.interrupt(activeJob.id);
     } catch (error) {
       const message =
         error instanceof Error

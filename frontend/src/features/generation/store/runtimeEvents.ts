@@ -25,6 +25,13 @@ export function attachRuntimeClientHandlers(
   client.onEvent((event: ComfyUIEvent) => {
     switch (event.type) {
       case "status": {
+        // ComfyUI broadcasts its global queue depth (running + pending across
+        // all clients) on every queue change. Tracking it makes vlo aware that
+        // the editor iframe — or another client — is also using ComfyUI.
+        const queueRemaining = event.data.status?.exec_info?.queue_remaining;
+        if (typeof queueRemaining === "number") {
+          set({ comfyQueueRemaining: queueRemaining });
+        }
         if (get().connectionStatus !== "connected") {
           set((state) => ({
             connectionStatus: "connected",

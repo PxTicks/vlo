@@ -9,6 +9,7 @@ export interface TimelineSelectionState {
   selectionEndTick: number;
   selectionMessage: string | null;
   selectionIncludeModeEnabled: boolean;
+  selectionAllowIncludeAll: boolean;
   selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
   selectionFrameStep: number;
@@ -21,6 +22,7 @@ export interface TimelineSelectionState {
     options?: {
       message?: string | null;
       includeTracks?: boolean;
+      allowIncludeAll?: boolean;
       includedTrackIds?: string[];
     },
   ) => void;
@@ -30,6 +32,7 @@ export interface TimelineSelectionState {
   enterTrackSelectionStage: () => void;
   returnToRangeSelectionStage: () => void;
   toggleSelectionIncludedTrack: (trackId: string) => void;
+  includeAllSelectionTracks: (trackIds: readonly string[]) => void;
   setSelectionFpsOverride: (fps: number | null) => void;
   setSelectionFrameStep: (step: number) => void;
   setSelectionRecommendations: (options: {
@@ -48,6 +51,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
   selectionEndTick: 0,
   selectionMessage: null,
   selectionIncludeModeEnabled: false,
+  selectionAllowIncludeAll: false,
   selectionIncludedTrackIds: [],
   selectionFpsOverride: null,
   selectionFrameStep: 1,
@@ -65,6 +69,8 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
           ? options.message.trim()
           : null,
       selectionIncludeModeEnabled: options?.includeTracks === true,
+      selectionAllowIncludeAll:
+        options?.includeTracks === true && options?.allowIncludeAll === true,
       selectionIncludedTrackIds:
         options?.includeTracks === true && Array.isArray(options?.includedTrackIds)
         ? options.includedTrackIds.filter(
@@ -102,6 +108,20 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
         selectionIncludedTrackIds: hasTrack
           ? state.selectionIncludedTrackIds.filter((id) => id !== normalizedTrackId)
           : [...state.selectionIncludedTrackIds, normalizedTrackId],
+      };
+    }),
+  includeAllSelectionTracks: (trackIds) =>
+    set((state) => {
+      if (!state.selectionIncludeModeEnabled || !state.selectionAllowIncludeAll) {
+        return {};
+      }
+      return {
+        selectionIncludedTrackIds: trackIds.filter(
+          (trackId, index, list): trackId is string =>
+            typeof trackId === "string" &&
+            trackId.trim().length > 0 &&
+            list.indexOf(trackId) === index,
+        ),
       };
     }),
   setSelectionFpsOverride: (fps) =>
@@ -149,6 +169,7 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       selectionEndTick: 0,
       selectionMessage: null,
       selectionIncludeModeEnabled: false,
+      selectionAllowIncludeAll: false,
       selectionIncludedTrackIds: [],
       selectionRecommendedFps: null,
       selectionRecommendedFrameStep: null,

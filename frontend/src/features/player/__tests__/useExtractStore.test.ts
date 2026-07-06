@@ -10,6 +10,7 @@ describe("useExtractStore", () => {
       result.current.closeDialog();
       result.current.exitFrameSelectionMode();
       result.current.setOnConfirmSelection(null);
+      result.current.setOnCancelSelection(null);
       result.current.setIsProcessing(false);
       result.current.setProgress(0);
     });
@@ -94,6 +95,23 @@ describe("useExtractStore", () => {
 
       act(() => {
         result.current.onConfirmSelection?.();
+      });
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("Cancel selection callback", () => {
+    it("sets and invokes the callback", () => {
+      const { result } = renderHook(() => useExtractStore());
+      const callback = vi.fn();
+
+      act(() => {
+        result.current.setOnCancelSelection(callback);
+      });
+
+      act(() => {
+        result.current.onCancelSelection?.();
       });
 
       expect(callback).toHaveBeenCalledTimes(1);

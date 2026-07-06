@@ -22,6 +22,8 @@ export interface ExtractState {
   // Callback set by Player.tsx, invoked by SelectionOverlay on confirm
   onConfirmSelection: (() => void) | null;
   setOnConfirmSelection: (cb: (() => void) | null) => void;
+  onCancelSelection: (() => void) | null;
+  setOnCancelSelection: (cb: (() => void) | null) => void;
 
   // Processing progress (shared)
   isProcessing: boolean;
@@ -49,6 +51,8 @@ export const useExtractStore = create<ExtractState>((set) => ({
 
   onConfirmSelection: null,
   setOnConfirmSelection: (cb) => set({ onConfirmSelection: cb }),
+  onCancelSelection: null,
+  setOnCancelSelection: (cb) => set({ onCancelSelection: cb }),
 
   isProcessing: false,
   progress: 0,

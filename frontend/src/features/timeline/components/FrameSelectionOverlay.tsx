@@ -10,11 +10,20 @@ export function FrameSelectionOverlay() {
   );
   const onConfirmSelection = useExtractStore((s) => s.onConfirmSelection);
   const setOnConfirmSelection = useExtractStore((s) => s.setOnConfirmSelection);
+  const onCancelSelection = useExtractStore((s) => s.onCancelSelection);
+  const setOnCancelSelection = useExtractStore((s) => s.setOnCancelSelection);
 
   const handleCancel = useCallback(() => {
+    onCancelSelection?.();
     exitFrameSelectionMode();
     setOnConfirmSelection(null);
-  }, [exitFrameSelectionMode, setOnConfirmSelection]);
+    setOnCancelSelection(null);
+  }, [
+    exitFrameSelectionMode,
+    onCancelSelection,
+    setOnCancelSelection,
+    setOnConfirmSelection,
+  ]);
 
   const handleConfirm = useCallback(() => {
     if (onConfirmSelection) onConfirmSelection();

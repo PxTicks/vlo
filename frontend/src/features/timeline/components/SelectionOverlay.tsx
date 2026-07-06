@@ -68,6 +68,9 @@ export function SelectionOverlay({
   const selectionIncludeModeEnabled = useTimelineSelectionStore(
     (s) => s.selectionIncludeModeEnabled,
   );
+  const selectionAllowIncludeAll = useTimelineSelectionStore(
+    (s) => s.selectionAllowIncludeAll,
+  );
   const selectionIncludedTrackIds = useTimelineSelectionStore(
     (s) => s.selectionIncludedTrackIds,
   );
@@ -79,6 +82,9 @@ export function SelectionOverlay({
   );
   const toggleSelectionIncludedTrack = useTimelineSelectionStore(
     (s) => s.toggleSelectionIncludedTrack,
+  );
+  const includeAllSelectionTracks = useTimelineSelectionStore(
+    (s) => s.includeAllSelectionTracks,
   );
   const recommendedFpsFromStore = useTimelineSelectionStore(
     (s) => s.selectionRecommendedFps,
@@ -96,6 +102,7 @@ export function SelectionOverlay({
     (s) => s.setSelectionFrameStep,
   );
   const onConfirmSelection = useExtractStore((s) => s.onConfirmSelection);
+  const onCancelSelection = useExtractStore((s) => s.onCancelSelection);
   const zoomScale = useTimelineViewStore((s) => s.zoomScale);
   const scrollContainer = useTimelineViewStore((s) => s.scrollContainer);
   const projectFps = useProjectStore((s) => s.config.fps);
@@ -403,9 +410,12 @@ export function SelectionOverlay({
 
   const handleCancel = useCallback(() => {
     useInteractionStore.getState().clearSnapPreview();
+    onCancelSelection?.();
     useTimelineSelectionStore.getState().exitSelectionMode();
-    useExtractStore.getState().setOnConfirmSelection(null);
-  }, []);
+    const extractStore = useExtractStore.getState();
+    extractStore.setOnConfirmSelection(null);
+    extractStore.setOnCancelSelection(null);
+  }, [onCancelSelection]);
 
   const handleConfirm = useCallback(() => {
     if (selectionIncludeModeEnabled && selectionStage === "range") {
@@ -966,14 +976,29 @@ export function SelectionOverlay({
             }}
           >
             {isTrackSelectionStage ? (
-              <Button
-                size="small"
-                color="inherit"
-                onClick={handleReturnToRangeSelection}
-                sx={{ color: "#aaa" }}
-              >
-                Back to Range
-              </Button>
+              <>
+                <Button
+                  size="small"
+                  color="inherit"
+                  onClick={handleReturnToRangeSelection}
+                  sx={{ color: "#aaa" }}
+                >
+                  Back to Range
+                </Button>
+                {selectionAllowIncludeAll ? (
+                  <Button
+                    size="small"
+                    color="inherit"
+                    onClick={() =>
+                      includeAllSelectionTracks(tracks.map((track) => track.id))
+                    }
+                    data-testid="selection-include-all"
+                    sx={{ color: "#7ec8e3" }}
+                  >
+                    Include All
+                  </Button>
+                ) : null}
+              </>
             ) : null}
             <Button
               size="small"

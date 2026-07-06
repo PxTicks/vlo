@@ -17,6 +17,7 @@ interface MockSelectionState {
   selectionEndTick: number;
   selectionMessage: string | null;
   selectionIncludeModeEnabled: boolean;
+  selectionAllowIncludeAll: boolean;
   selectionIncludedTrackIds: string[];
   selectionFpsOverride: number | null;
   selectionFrameStep: number;
@@ -30,6 +31,7 @@ interface MockSelectionState {
   enterTrackSelectionStage: Mock;
   returnToRangeSelectionStage: Mock;
   toggleSelectionIncludedTrack: Mock;
+  includeAllSelectionTracks: Mock;
   exitSelectionMode: Mock;
 }
 
@@ -57,6 +59,7 @@ function createSelectionState(
     selectionEndTick: 96_000,
     selectionMessage: "Use the highlighted tracks for this pass",
     selectionIncludeModeEnabled: true,
+    selectionAllowIncludeAll: false,
     selectionIncludedTrackIds: ["track-1", "track-2"],
     selectionFpsOverride: null,
     selectionFrameStep: 1,
@@ -70,6 +73,7 @@ function createSelectionState(
     enterTrackSelectionStage: vi.fn(),
     returnToRangeSelectionStage: vi.fn(),
     toggleSelectionIncludedTrack: vi.fn(),
+    includeAllSelectionTracks: vi.fn(),
     exitSelectionMode: vi.fn(),
     ...overrides,
   };
@@ -305,6 +309,23 @@ describe("SelectionOverlay", () => {
     fireEvent.click(screen.getByTestId("selection-track-row-track-3"));
 
     expect(selectionState.toggleSelectionIncludedTrack).toHaveBeenCalledWith("track-3");
+  });
+
+  it("optionally exposes an include-all shortcut for track selection", () => {
+    selectionState = createSelectionState({
+      selectionStage: "tracks",
+      selectionAllowIncludeAll: true,
+      selectionIncludedTrackIds: [],
+    });
+
+    render(<SelectionOverlay />);
+    fireEvent.click(screen.getByTestId("selection-include-all"));
+
+    expect(selectionState.includeAllSelectionTracks).toHaveBeenCalledWith([
+      "track-1",
+      "track-2",
+      "track-3",
+    ]);
   });
 
   it("falls back to the default track prompt when no workflow message is provided", () => {

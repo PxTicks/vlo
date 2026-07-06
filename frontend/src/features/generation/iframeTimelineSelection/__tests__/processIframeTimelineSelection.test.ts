@@ -35,27 +35,38 @@ function createDeps(options: { transparent: boolean }) {
       }),
     },
     metadata: {
+      // Emitted in project (== logical) space: the crop runs on the project-dim
+      // render, before the strided resize.
       mode: "cropped",
-      crop_position: [10, 20],
-      crop_size: [640, 360],
-      container_size: [1280, 720],
+      crop_position: [100, 60],
+      crop_size: [960, 540],
+      container_size: [1920, 1080],
       scale: 0.5,
     },
     warnings: [],
   });
   const captureThumbnail = vi.fn().mockResolvedValue(thumbnail);
   const captureMaskThumbnail = vi.fn().mockResolvedValue(maskThumbnail);
+  const resizeVideo = vi
+    .fn()
+    .mockImplementation(async (file: File) =>
+      new File([`resized-${file.name}`], `resized-${file.name}`, {
+        type: "video/mp4",
+      }),
+    );
   return {
     source,
     mask,
     maskThumbnail,
     renderWithMask,
     applyMaskCrop,
+    resizeVideo,
     captureThumbnail,
     captureMaskThumbnail,
     deps: {
       renderWithMask,
       applyMaskCrop,
+      resizeVideo,
       captureThumbnail,
       captureMaskThumbnail,
     } as ProcessIframeTimelineSelectionDeps,
@@ -83,9 +94,11 @@ describe("processIframeTimelineSelection", () => {
     expect(result.maskCropMetadata).toEqual({ mode: "full" });
     expect(mocks.applyMaskCrop).not.toHaveBeenCalled();
     expect(mocks.captureMaskThumbnail).not.toHaveBeenCalled();
+    // Aspect-ratio processing is disabled here, so nothing is resized.
+    expect(mocks.resizeVideo).not.toHaveBeenCalled();
   });
 
-  it("uses strided dimensions and crops synchronized video and mask outputs", async () => {
+  it("crops at project dims, then resizes the cropped outputs to strided dims", async () => {
     const mocks = createDeps({ transparent: true });
     const settings = createDefaultIframeTimelineSelectionSettings();
     settings.aspectRatio.enabled = true;
@@ -97,15 +110,16 @@ describe("processIframeTimelineSelection", () => {
       deps: mocks.deps,
     });
 
-    expect(mocks.renderWithMask).toHaveBeenCalledWith(
-      selection,
-      "binary",
-      expect.objectContaining({
-        sourceVideoTreatment: "preserve_transparency",
-        outputWidth: 1280,
-        outputHeight: 720,
-      }),
-    );
+    // The render happens at the project's own dimensions (no strided override):
+    // the crop must be taken from full-fidelity project pixels so the emitted
+    // mask-crop metadata stays in project (== logical) space.
+    const renderOptions = mocks.renderWithMask.mock.calls[0][2];
+    expect(renderOptions).toMatchObject({
+      sourceVideoTreatment: "preserve_transparency",
+    });
+    expect(renderOptions).not.toHaveProperty("outputWidth");
+    expect(renderOptions).not.toHaveProperty("outputHeight");
+
     expect(mocks.applyMaskCrop).toHaveBeenCalledWith(
       expect.objectContaining({
         video: mocks.source,
@@ -115,8 +129,28 @@ describe("processIframeTimelineSelection", () => {
         cropDilation: 0.1,
       }),
     );
-    expect(result.video.name).toBe("cropped.mp4");
-    expect(result.mask?.name).toBe("cropped-mask.mp4");
+
+    // The stride guarantee is enforced by resizing the cropped video and mask
+    // to the strided dimensions after cropping.
+    expect(mocks.resizeVideo).toHaveBeenCalledTimes(2);
+    expect(mocks.resizeVideo).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ name: "cropped.mp4" }),
+      1280,
+      720,
+      expect.any(Object),
+    );
+    expect(mocks.resizeVideo).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ name: "cropped-mask.mp4" }),
+      1280,
+      720,
+      expect.any(Object),
+    );
+    expect(result.video.name).toBe("resized-cropped.mp4");
+    expect(result.mask?.name).toBe("resized-cropped-mask.mp4");
+
+    // The mask thumbnail is captured from the final (resized) mask.
     expect(mocks.captureMaskThumbnail).toHaveBeenCalledWith(result.mask);
     expect(result.maskThumbnail).toBe(mocks.maskThumbnail);
     expect(result.aspectRatioProcessing?.strided).toMatchObject({
@@ -124,6 +158,11 @@ describe("processIframeTimelineSelection", () => {
       height: 720,
       stride: 16,
     });
-    expect(result.maskCropMetadata.mode).toBe("cropped");
+    // Crop metadata stays in project space (container == render/logical dims),
+    // not the strided render size — this is what keeps timeline placement right.
+    expect(result.maskCropMetadata).toMatchObject({
+      mode: "cropped",
+      container_size: [1920, 1080],
+    });
   });
 });

@@ -1,8 +1,10 @@
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { useProjectStore } from "../../project";
 import {
+  MASK_CROP_VIDEO_BITRATE,
   applyMaskCropProcessing,
   buildAspectRatioProcessingPlan,
+  resizeVideoToDimensions,
   type MaskCropProcessingResult,
 } from "../processing";
 import {
@@ -36,6 +38,7 @@ async function captureMaskThumbnailFile(maskFile: File): Promise<File> {
 export interface ProcessIframeTimelineSelectionDeps {
   renderWithMask: typeof renderTimelineSelectionToMp4WithMask;
   applyMaskCrop: typeof applyMaskCropProcessing;
+  resizeVideo: typeof resizeVideoToDimensions;
   captureThumbnail: typeof captureFramePngAtTick;
   captureMaskThumbnail: (maskFile: File) => Promise<File>;
 }
@@ -43,6 +46,7 @@ export interface ProcessIframeTimelineSelectionDeps {
 const DEFAULT_DEPS: ProcessIframeTimelineSelectionDeps = {
   renderWithMask: renderTimelineSelectionToMp4WithMask,
   applyMaskCrop: applyMaskCropProcessing,
+  resizeVideo: resizeVideoToDimensions,
   captureThumbnail: captureFramePngAtTick,
   captureMaskThumbnail: captureMaskThumbnailFile,
 };
@@ -92,11 +96,14 @@ export async function processIframeTimelineSelection(
     );
   }
 
+  // Render (and later crop) at the project's own render dimensions, matching
+  // the backend which crops the uploaded input `before_upload` at native dims.
+  // Strided resizing is a separate, later step (below), so the crop is taken
+  // from full-fidelity project pixels and the mask-crop metadata is emitted in
+  // project (== logical) space — keeping timeline placement correct.
   const rendered = await deps.renderWithMask(timelineSelection, "binary", {
     signal: options.signal,
     sourceVideoTreatment: "preserve_transparency",
-    outputWidth: aspectPlan.metadata?.strided.width,
-    outputHeight: aspectPlan.metadata?.strided.height,
   });
 
   let cropResult: MaskCropProcessingResult = {
@@ -119,20 +126,40 @@ export async function processIframeTimelineSelection(
     warnings.push(...cropResult.warnings);
   }
 
+  let video = cropResult.video;
+  let mask = rendered.maskHasVisibleContent
+    ? (cropResult.masks.video_binary ?? rendered.mask)
+    : null;
+
+  // Frontend substitute for the backend aspect-ratio stage (which hijacks the
+  // workflow's resize nodes rather than the media): stretch the cropped content
+  // to the model-friendly strided dimensions. Doing this after the crop is what
+  // keeps the stride guarantee — the previous order cropped a strided render and
+  // shipped crop-region-sized (non-strided) files.
+  const strided = aspectPlan.metadata?.strided;
+  if (strided) {
+    video = await deps.resizeVideo(video, strided.width, strided.height, {
+      signal: options.signal,
+    });
+    if (mask) {
+      mask = await deps.resizeVideo(mask, strided.width, strided.height, {
+        signal: options.signal,
+        bitrate: MASK_CROP_VIDEO_BITRATE,
+      });
+    }
+  }
+
   const thumbnail = await deps.captureThumbnail(
     timelineSelection.start,
     "iframe-timeline-selection",
     timelineSelection,
   );
 
-  const mask = rendered.maskHasVisibleContent
-    ? (cropResult.masks.video_binary ?? rendered.mask)
-    : null;
   const maskThumbnail = mask ? await deps.captureMaskThumbnail(mask) : null;
 
   return {
     timelineSelection: structuredClone(timelineSelection),
-    video: cropResult.video,
+    video,
     mask,
     maskThumbnail,
     thumbnail,

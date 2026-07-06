@@ -41,6 +41,10 @@ export {
   type CropVideoToRectOptions,
 } from "./videoRectCrop";
 export {
+  resizeVideoToDimensions,
+  type ResizeVideoOptions,
+} from "./videoResize";
+export {
   applyMaskCropProcessing,
   isAudioTimingMaskRenderKey,
   type MaskCropMode,

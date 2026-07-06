@@ -712,9 +712,20 @@ export class TrackRenderEngine {
 
     if (!sourceHandle || sourceHandle.texture === Texture.EMPTY) {
       sourceHandle?.release();
-      if (this.currentTextureClipId !== job.activeClip.id) {
+      // An empty decode means no content exists at this source time. In export
+      // we must render black rather than freeze the active clip's last decoded
+      // frame: a timeline selection can sample past a clip's decodable content
+      // (its source ends before the selection/footprint does), and holding the
+      // stale texture ships duplicated frames instead of the expected black.
+      // Live preview still keeps the last good frame for the same clip so a
+      // transient decode gap during scrub/playback doesn't flash to black.
+      if (
+        policy.mode === "export" ||
+        this.currentTextureClipId !== job.activeClip.id
+      ) {
         this.sprite.visible = false;
         this.currentTextureClipId = null;
+        this.maskController.clear();
       }
       return true;
     }

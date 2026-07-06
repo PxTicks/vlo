@@ -50,7 +50,13 @@ export const useExtractStore = create<ExtractState>((set) => ({
   exitFrameSelectionMode: () => set({ frameSelectionMode: false }),
 
   onConfirmSelection: null,
-  setOnConfirmSelection: (cb) => set({ onConfirmSelection: cb }),
+  // Arming a confirm handler begins a new selection flow, so it also clears any
+  // cancel handler left over from a previous flow. Only the ComfyUI editor arms
+  // a cancel handler (to reopen itself); without this reset it could outlive a
+  // takeover by another flow and fire on that flow's unrelated cancel. A flow
+  // that wants both handlers (the editor) must set confirm first, then cancel.
+  setOnConfirmSelection: (cb) =>
+    set({ onConfirmSelection: cb, onCancelSelection: null }),
   onCancelSelection: null,
   setOnCancelSelection: (cb) => set({ onCancelSelection: cb }),
 

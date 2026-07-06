@@ -357,9 +357,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     const settingsSnapshot = structuredClone(selectionSettings);
     const extractStore = useExtractStore.getState();
 
-    extractStore.setOnCancelSelection(() => {
-      useGenerationStore.getState().setEditorOpen(true);
-    });
+    // Arm confirm first: setOnConfirmSelection clears any stale cancel handler,
+    // so our cancel handler is armed afterwards (below) to survive alongside it.
     extractStore.setOnConfirmSelection(() => {
       void (async () => {
         const currentSelectionStore = useTimelineSelectionStore.getState();
@@ -406,6 +405,9 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           setSelectionProcessing(false);
         }
       })();
+    });
+    extractStore.setOnCancelSelection(() => {
+      useGenerationStore.getState().setEditorOpen(true);
     });
 
     useGenerationStore.getState().setEditorOpen(false);
@@ -1003,18 +1005,20 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
             >
               Select from timeline
             </Button>
+            {/* No wrapper span: it would take the ButtonGroup's grouped
+                styling instead of the Button, leaving the Button its own
+                border/radius and natural height (a visible offset). The group's
+                `disabled` already covers processing; dropping the per-button
+                `disabled` also keeps Tooltip from seeing a disabled child. */}
             <Tooltip title="Timeline selection settings">
-              <span>
-                <Button
-                  aria-label="Timeline selection settings"
-                  onClick={() => setSelectionSettingsOpen(true)}
-                  disabled={selectionProcessing}
-                  data-testid="comfyui-timeline-selection-settings"
-                  sx={{ color: "#aaa", minWidth: 34, px: 0.75 }}
-                >
-                  <Settings fontSize="small" />
-                </Button>
-              </span>
+              <Button
+                aria-label="Timeline selection settings"
+                onClick={() => setSelectionSettingsOpen(true)}
+                data-testid="comfyui-timeline-selection-settings"
+                sx={{ color: "#aaa", minWidth: 34, px: 0.75 }}
+              >
+                <Settings fontSize="small" />
+              </Button>
             </Tooltip>
           </ButtonGroup>
           {typeof comfyQueueRemaining === "number" && comfyQueueRemaining > 0 && (

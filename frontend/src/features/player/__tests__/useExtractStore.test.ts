@@ -116,6 +116,22 @@ describe("useExtractStore", () => {
 
       expect(callback).toHaveBeenCalledTimes(1);
     });
+
+    it("is cleared when a new flow arms a confirm handler", () => {
+      const { result } = renderHook(() => useExtractStore());
+      const staleCancel = vi.fn();
+
+      act(() => {
+        result.current.setOnCancelSelection(staleCancel);
+      });
+      // A different flow taking over arms only a confirm handler; the stale
+      // cancel handler must not survive to fire on that flow's cancel.
+      act(() => {
+        result.current.setOnConfirmSelection(vi.fn());
+      });
+
+      expect(result.current.onCancelSelection).toBeNull();
+    });
   });
 
   describe("Processing state", () => {

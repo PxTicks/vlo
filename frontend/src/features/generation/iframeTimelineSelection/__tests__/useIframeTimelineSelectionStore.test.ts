@@ -77,6 +77,23 @@ describe("useIframeTimelineSelectionStore", () => {
     });
   });
 
+  it("clears node bindings on workflow switch without discarding the temporary assets", async () => {
+    const stored = await useIframeTimelineSelectionStore
+      .getState()
+      .storeProcessedSelection(createResult(true));
+    const store = useIframeTimelineSelectionStore.getState();
+    store.bindNodeToAsset("source-node", stored.videoAsset.asset.id);
+
+    expect(getIframeTimelineSelectionCreationInputs()).toHaveLength(1);
+
+    store.clearNodeBindings();
+
+    // Bindings are gone, but the temporary selection assets remain available to
+    // re-drop into the newly loaded workflow.
+    expect(getIframeTimelineSelectionCreationInputs()).toEqual([]);
+    expect(useIframeTimelineSelectionStore.getState().assets).toHaveLength(2);
+  });
+
   it("clears a stale timeline binding when a regular asset replaces the node", async () => {
     const stored = await useIframeTimelineSelectionStore
       .getState()

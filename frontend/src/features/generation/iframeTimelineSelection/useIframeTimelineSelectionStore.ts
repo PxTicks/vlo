@@ -23,6 +23,14 @@ interface IframeTimelineSelectionState {
     result: ProcessedIframeTimelineSelection,
   ) => Promise<StoredIframeTimelineSelection>;
   bindNodeToAsset: (nodeId: string, assetId: string) => void;
+  /**
+   * Drops node→asset bindings without touching the temporary selection assets
+   * (which are project-session-scoped and may be re-dropped into a new graph).
+   * Node ids are workflow-scoped, so bindings must be cleared when the loaded
+   * workflow identity changes or a later generation could adopt stale
+   * provenance from a colliding node id.
+   */
+  clearNodeBindings: () => void;
   clearRuntime: () => void;
 }
 
@@ -148,6 +156,8 @@ export const useIframeTimelineSelectionStore =
         ],
       }));
     },
+
+    clearNodeBindings: () => set({ nodeBindings: [] }),
 
     clearRuntime: () =>
       set((state) => {

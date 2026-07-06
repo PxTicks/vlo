@@ -218,6 +218,9 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   );
   const connectionStatus = useGenerationStore((s) => s.connectionStatus);
   const comfyQueueRemaining = useGenerationStore((s) => s.comfyQueueRemaining);
+  const iframeWorkflowInstanceId = useGenerationStore(
+    (s) => s.iframeWorkflowInstanceId,
+  );
   const [loading, setLoading] = useState(true);
   const [appReady, setAppReady] = useState(false);
   const [assetDockOpen, setAssetDockOpen] = useState(false);
@@ -761,6 +764,15 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   );
 
   useEffect(() => iframeBridge.onHealthChanged(applyHealth), [applyHealth]);
+
+  // Node→asset bindings are keyed by ComfyUI node id, which is scoped to the
+  // loaded workflow. Clear them whenever the workflow identity changes — a real
+  // switch, since drops only bump the revision, not the instance id — so a later
+  // generation can't adopt stale timeline-selection provenance from a colliding
+  // node id in the new graph.
+  useEffect(() => {
+    useIframeTimelineSelectionStore.getState().clearNodeBindings();
+  }, [iframeWorkflowInstanceId]);
 
   // Adopt generations the user launches from inside the ComfyUI editor. The
   // bridge observes the iframe's own execution events; we attach the active

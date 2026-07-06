@@ -125,14 +125,24 @@ export async function getPendingDeliveries(
 export async function adoptIframeGeneration(
   projectId: string,
   promptId: string,
-  workflowName?: string,
+  options: {
+    workflowName?: string;
+    generationMetadata?: Pick<
+      GeneratedCreationMetadata,
+      "inputs" | "maskCropMetadata" | "targetResolution"
+    >;
+  } = {},
 ): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/app/generation-delivery/projects/${encodeURIComponent(projectId)}/adopt`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt_id: promptId, workflow_name: workflowName }),
+      body: JSON.stringify({
+        prompt_id: promptId,
+        workflow_name: options.workflowName,
+        generation_metadata: options.generationMetadata,
+      }),
     },
   );
   if (!response.ok) {

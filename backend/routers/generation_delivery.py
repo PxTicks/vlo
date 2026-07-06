@@ -32,11 +32,15 @@ async def adopt_iframe_generation(project_id: str, request: Request):
         raise HTTPException(status_code=400, detail="prompt_id is required")
     client_id = body.get("client_id")
     workflow_name = body.get("workflow_name")
+    generation_metadata = body.get("generation_metadata")
     delivery = await generation_holding_service.adopt_delivery(
         project_id=project_id,
         prompt_id=prompt_id.strip(),
         client_id=client_id if isinstance(client_id, str) and client_id else None,
         workflow_name=workflow_name if isinstance(workflow_name, str) else None,
+        generation_metadata=(
+            generation_metadata if isinstance(generation_metadata, dict) else None
+        ),
     )
     return {"delivery": delivery}
 

@@ -491,9 +491,16 @@ describe("inputSelection", () => {
         clips: useTimelineStore.getState().clips,
       },
       "soft",
-      { sourceVideoTreatment: "preserve_transparency" },
+      {
+        sourceVideoTreatment: "preserve_transparency",
+        outputWidth: 640,
+        outputHeight: 384,
+      },
     );
 
+    expect(ExportRenderer.create).toHaveBeenCalledWith(
+      expect.objectContaining({ outputWidth: 640, outputHeight: 384 }),
+    );
     expect(renderSpy).toHaveBeenCalledOnce();
     expect(renderSpy.mock.calls[0][3]?.outputs).toEqual([
       expect.objectContaining({ id: "video" }),

@@ -40,6 +40,7 @@ import { useExtensionMenuItems } from "../../extensions/ui/publicApi";
 interface AssetCardProps {
   asset: Asset;
   disableDrag?: boolean;
+  hideActions?: boolean;
   isSelected?: boolean;
   onDeleteAll?: (familyId: string) => void;
   onShowFamily?: (familyId: string) => void;
@@ -202,6 +203,7 @@ const formatDuration = (seconds?: number) => {
 
 function AssetCardContent({
   asset,
+  hideActions = false,
   onDeleteAll,
   onShowFamily,
   onRequestPreview,
@@ -397,26 +399,30 @@ function AssetCardContent({
           )}
         </ThumbnailContainer>
 
-        <StyledFavouriteButton
-          size="small"
-          onClick={handleFavouriteToggle}
-          onPointerDown={(event) => event.stopPropagation()}
-          aria-label={
-            asset.favourite ? "Remove from favourites" : "Add to favourites"
-          }
-          title={asset.favourite ? "Remove from favourites" : "Add to favourites"}
-          sx={{
-            color: asset.favourite ? "#ff4d4f" : "white",
-          }}
-        >
-          {asset.favourite ? (
-            <FavoriteIcon fontSize="small" />
-          ) : (
-            <FavoriteBorderIcon fontSize="small" />
-          )}
-        </StyledFavouriteButton>
+        {!hideActions ? (
+          <StyledFavouriteButton
+            size="small"
+            onClick={handleFavouriteToggle}
+            onPointerDown={(event) => event.stopPropagation()}
+            aria-label={
+              asset.favourite ? "Remove from favourites" : "Add to favourites"
+            }
+            title={
+              asset.favourite ? "Remove from favourites" : "Add to favourites"
+            }
+            sx={{
+              color: asset.favourite ? "#ff4d4f" : "white",
+            }}
+          >
+            {asset.favourite ? (
+              <FavoriteIcon fontSize="small" />
+            ) : (
+              <FavoriteBorderIcon fontSize="small" />
+            )}
+          </StyledFavouriteButton>
+        ) : null}
 
-        {canShowFamily ? (
+        {!hideActions && canShowFamily ? (
           <StyledMenuButton
             size="small"
             onClick={handleOpenFamily}
@@ -429,16 +435,18 @@ function AssetCardContent({
           </StyledMenuButton>
         ) : null}
 
-        <StyledMenuButton
-          size="small"
-          onClick={handleOpenMenu}
-          onPointerDown={(e) => e.stopPropagation()}
-          aria-label="Asset actions"
-          title="Asset actions"
-        >
-          <MoreVertIcon fontSize="small" />
-        </StyledMenuButton>
-        {isMenuOpen ? (
+        {!hideActions ? (
+          <StyledMenuButton
+            size="small"
+            onClick={handleOpenMenu}
+            onPointerDown={(e) => e.stopPropagation()}
+            aria-label="Asset actions"
+            title="Asset actions"
+          >
+            <MoreVertIcon fontSize="small" />
+          </StyledMenuButton>
+        ) : null}
+        {!hideActions && isMenuOpen ? (
           <Menu
             anchorEl={menuAnchorEl}
             open
@@ -530,6 +538,7 @@ const MemoizedAssetCardContent = React.memo(AssetCardContent);
 function AssetCardComponent({
   asset,
   disableDrag = false,
+  hideActions = false,
   isSelected = false,
   onDeleteAll,
   onShowFamily,
@@ -573,6 +582,7 @@ function AssetCardComponent({
     >
       <MemoizedAssetCardContent
         asset={asset}
+        hideActions={hideActions}
         onDeleteAll={onDeleteAll}
         onShowFamily={onShowFamily}
         onRequestPreview={onRequestPreview}

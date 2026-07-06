@@ -743,7 +743,28 @@ async def test_adopt_delivery_is_idempotent_and_reports_progress(
 
     monkeypatch.setattr(service, "start_monitor", _fake_start_monitor)
 
-    first = await service.adopt_delivery(project_id="p1", prompt_id="prompt-1")
+    selection_input = {
+        "nodeId": "7",
+        "kind": "timelineSelection",
+        "timelineSelection": {
+            "start": 96_000,
+            "end": 192_000,
+            "clips": [],
+        },
+    }
+    first = await service.adopt_delivery(
+        project_id="p1",
+        prompt_id="prompt-1",
+        generation_metadata={
+            "inputs": [selection_input],
+            "maskCropMetadata": {
+                "mode": "cropped",
+                "crop_position": [10, 20],
+                "scale": 0.5,
+            },
+            "targetResolution": 720,
+        },
+    )
     second = await service.adopt_delivery(project_id="p1", prompt_id="prompt-1")
 
     # Idempotent per (project, prompt): one delivery, one monitor.
@@ -752,6 +773,9 @@ async def test_adopt_delivery_is_idempotent_and_reports_progress(
     assert started[0]["monitor_mode"] == "backstop"
     assert first["status"] == "queued"
     assert first["generation_metadata"]["source"] == "generated"
+    assert first["generation_metadata"]["inputs"] == [selection_input]
+    assert first["generation_metadata"]["maskCropMetadata"]["mode"] == "cropped"
+    assert first["generation_metadata"]["targetResolution"] == 720
     assert service._deliveries[first["delivery_id"]]["monitor_mode"] == "backstop"
 
     # Bridge-forwarded progress marks the delivery running.

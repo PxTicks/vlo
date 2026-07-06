@@ -2,15 +2,22 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Box,
   Button,
+  ButtonGroup,
   IconButton,
   Dialog,
+  Tooltip,
   Typography,
   CircularProgress,
 } from "@mui/material";
-import { Close, OpenInNew, PhotoLibrary } from "@mui/icons-material";
+import {
+  Close,
+  OpenInNew,
+  PhotoLibrary,
+  Settings,
+  Timeline,
+} from "@mui/icons-material";
 import { useDndContext, useDroppable } from "@dnd-kit/core";
 import type { Asset, AssetType } from "../../../types/Asset";
-import { AssetBrowser } from "../../userAssets";
 import { useGenerationStore } from "../useGenerationStore";
 import { dropAssetIntoComfyCanvas } from "../services/comfyAssetDrop";
 import {
@@ -33,6 +40,26 @@ import {
   reportIframeGenerationProgress,
 } from "../services/generationDeliveryApi";
 import { useProjectStore } from "../../project";
+import { useExtractStore } from "../../../core/extract/useExtractStore";
+import { playbackClock } from "../../../core/playback/PlaybackClock";
+import { usePlayerStore } from "../../player";
+import {
+  createTimelineSelection,
+  getDefaultSelectionEnd,
+  useTimelineSelectionStore,
+} from "../../timelineSelection";
+import {
+  createDefaultIframeTimelineSelectionSettings,
+  getIframeTimelineSelectionGenerationMetadata,
+  processIframeTimelineSelection,
+  useIframeTimelineSelectionStore,
+  type IframeTimelineSelectionSettings,
+} from "../iframeTimelineSelection";
+import {
+  IframeAssetDock,
+  type IframeAssetDockTab,
+} from "../iframeTimelineSelection/IframeAssetDock";
+import { IframeTimelineSelectionSettingsDialog } from "../iframeTimelineSelection/IframeTimelineSelectionSettingsDialog";
 
 const HEALTH_WATCHDOG_MS = 10_000;
 const IFRAME_PROGRESS_THROTTLE_MS = 250;
@@ -44,7 +71,7 @@ const RECOVERY_RELOAD_COOLDOWN_MS = 2000;
 const VISIBILITY_RESUME_GRACE_MS = 5000;
 const CONNECTING_HELPER_TEXT = "Connecting to ComfyUI...";
 const RECONNECTING_HELPER_TEXT = "Reconnecting to ComfyUI...";
-const ASSET_DOCK_WIDTH = 340;
+const ASSET_DOCK_WIDTH = 396;
 const DROP_FEEDBACK_TTL_MS = 4000;
 
 /** Droppable over the ComfyUI canvas while an asset drag is active. The
@@ -194,6 +221,14 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const [loading, setLoading] = useState(true);
   const [appReady, setAppReady] = useState(false);
   const [assetDockOpen, setAssetDockOpen] = useState(false);
+  const [assetDockTab, setAssetDockTab] =
+    useState<IframeAssetDockTab>("assets");
+  const [selectionSettingsOpen, setSelectionSettingsOpen] = useState(false);
+  const [selectionSettings, setSelectionSettings] =
+    useState<IframeTimelineSelectionSettings>(() =>
+      createDefaultIframeTimelineSelectionSettings(),
+    );
+  const [selectionProcessing, setSelectionProcessing] = useState(false);
   const [dropFeedback, setDropFeedback] = useState<DropFeedback | null>(null);
   const dropFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -278,6 +313,9 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       })
         .then((result) => {
           if (requestId !== dropRequestIdRef.current) return;
+          useIframeTimelineSelectionStore
+            .getState()
+            .bindNodeToAsset(result.nodeId, asset.id);
           showTransientDropFeedback(
             "success",
             result.action === "updated"
@@ -298,6 +336,82 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     },
     [showTransientDropFeedback],
   );
+
+  const handleSelectFromTimeline = useCallback(() => {
+    if (selectionProcessing) return;
+
+    const playerStore = usePlayerStore.getState();
+    if (playerStore.isPlaying) {
+      playerStore.setIsPlaying(false);
+    }
+
+    const selectionStore = useTimelineSelectionStore.getState();
+    selectionStore.clearSelectionRecommendations();
+    selectionStore.setSelectionFpsOverride(null);
+    selectionStore.setSelectionFrameStep(1);
+    const startTick = playbackClock.time;
+    const endTick = getDefaultSelectionEnd(startTick);
+    const settingsSnapshot = structuredClone(selectionSettings);
+    const extractStore = useExtractStore.getState();
+
+    extractStore.setOnCancelSelection(() => {
+      useGenerationStore.getState().setEditorOpen(true);
+    });
+    extractStore.setOnConfirmSelection(() => {
+      void (async () => {
+        const currentSelectionStore = useTimelineSelectionStore.getState();
+        const timelineSelection = createTimelineSelection(
+          currentSelectionStore.selectionStartTick,
+          currentSelectionStore.selectionEndTick,
+        );
+        currentSelectionStore.exitSelectionMode();
+        const currentExtractStore = useExtractStore.getState();
+        currentExtractStore.setOnConfirmSelection(null);
+        currentExtractStore.setOnCancelSelection(null);
+        useGenerationStore.getState().setEditorOpen(true);
+
+        setSelectionProcessing(true);
+        setDropFeedback({
+          tone: "pending",
+          message: "Rendering timeline selection...",
+        });
+        try {
+          const processed = await processIframeTimelineSelection(
+            timelineSelection,
+            settingsSnapshot,
+          );
+          await useIframeTimelineSelectionStore
+            .getState()
+            .storeProcessedSelection(processed);
+          setAssetDockTab("temporary");
+          setAssetDockOpen(true);
+          showTransientDropFeedback(
+            "success",
+            processed.mask
+              ? "Timeline video and transparency mask are ready"
+              : "Timeline video is ready",
+          );
+        } catch (error) {
+          console.error("[ComfyUIEditor] Timeline selection failed", error);
+          showTransientDropFeedback(
+            "error",
+            error instanceof Error
+              ? error.message
+              : "Failed to render timeline selection",
+          );
+        } finally {
+          setSelectionProcessing(false);
+        }
+      })();
+    });
+
+    useGenerationStore.getState().setEditorOpen(false);
+    selectionStore.enterSelectionMode(startTick, endTick, {
+      message: "Choose which timeline tracks to include in the ComfyUI input.",
+      includeTracks: true,
+      allowIncludeAll: true,
+    });
+  }, [selectionProcessing, selectionSettings, showTransientDropFeedback]);
 
   const rememberWorkflowSignature = useCallback(
     (
@@ -660,7 +774,9 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       if (!projectId) return;
 
       if (generation.phase === "started") {
-        void adoptIframeGeneration(projectId, generation.promptId).catch(
+        void adoptIframeGeneration(projectId, generation.promptId, {
+          generationMetadata: getIframeTimelineSelectionGenerationMetadata(),
+        }).catch(
           (error) => {
             console.warn(
               "[ComfyUIEditor] Failed to adopt in-editor generation",
@@ -855,6 +971,40 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           >
             Assets
           </Button>
+          <ButtonGroup
+            size="small"
+            variant="outlined"
+            disabled={selectionProcessing}
+            data-testid="comfyui-timeline-selection-controls"
+          >
+            <Button
+              startIcon={
+                selectionProcessing ? (
+                  <CircularProgress size={14} color="inherit" />
+                ) : (
+                  <Timeline fontSize="small" />
+                )
+              }
+              onClick={handleSelectFromTimeline}
+              data-testid="comfyui-select-from-timeline"
+              sx={{ color: "#aaa", textTransform: "none" }}
+            >
+              Select from timeline
+            </Button>
+            <Tooltip title="Timeline selection settings">
+              <span>
+                <Button
+                  aria-label="Timeline selection settings"
+                  onClick={() => setSelectionSettingsOpen(true)}
+                  disabled={selectionProcessing}
+                  data-testid="comfyui-timeline-selection-settings"
+                  sx={{ color: "#aaa", minWidth: 34, px: 0.75 }}
+                >
+                  <Settings fontSize="small" />
+                </Button>
+              </span>
+            </Tooltip>
+          </ButtonGroup>
           {typeof comfyQueueRemaining === "number" && comfyQueueRemaining > 0 && (
             <Typography
               variant="caption"
@@ -953,7 +1103,10 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
               boxShadow: "4px 0 12px rgba(0, 0, 0, 0.5)",
             }}
           >
-            <AssetBrowser />
+            <IframeAssetDock
+              activeTab={assetDockTab}
+              onTabChange={setAssetDockTab}
+            />
           </Box>
         )}
 
@@ -1003,6 +1156,12 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       {/* Swallow drops anywhere over the editor (header, dock) so hidden
           droppables underneath never receive them. */}
       {isAssetDragActive && <ComfyUIDropSink />}
+      <IframeTimelineSelectionSettingsDialog
+        open={selectionSettingsOpen}
+        settings={selectionSettings}
+        onChange={setSelectionSettings}
+        onClose={() => setSelectionSettingsOpen(false)}
+      />
     </Box>
   );
 }

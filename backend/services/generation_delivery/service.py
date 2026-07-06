@@ -725,6 +725,7 @@ class GenerationHoldingService:
         prompt_id: str,
         client_id: str | None = None,
         workflow_name: str | None = None,
+        generation_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Adopt a generation submitted natively inside the ComfyUI iframe.
 
@@ -745,6 +746,33 @@ class GenerationHoldingService:
         delivery_id = str(uuid.uuid4())
         # A non-empty client_id keeps restart re-attach happy; it is otherwise
         # unused in backstop mode (no websocket is opened with it).
+        supplied_inputs = (
+            generation_metadata.get("inputs")
+            if isinstance(generation_metadata, dict)
+            else None
+        )
+        adopted_generation_metadata: dict[str, Any] = {
+            "source": "generated",
+            "workflowName": label,
+            "inputs": [
+                dict(generation_input)
+                for generation_input in (supplied_inputs or [])
+                if isinstance(generation_input, dict)
+            ],
+            # Lets the frontend route regeneration back into the
+            # ComfyUI editor rather than the generation panel.
+            "generatedInEditor": True,
+        }
+        if isinstance(generation_metadata, dict):
+            mask_crop_metadata = generation_metadata.get("maskCropMetadata")
+            if isinstance(mask_crop_metadata, dict):
+                adopted_generation_metadata["maskCropMetadata"] = dict(
+                    mask_crop_metadata
+                )
+            target_resolution = generation_metadata.get("targetResolution")
+            if isinstance(target_resolution, int) and target_resolution > 0:
+                adopted_generation_metadata["targetResolution"] = target_resolution
+
         manifest = await self.create_delivery(
             project_id=project_id,
             delivery_id=delivery_id,
@@ -752,14 +780,7 @@ class GenerationHoldingService:
             client_id=client_id or f"iframe:{prompt_id}",
             delivery_context={
                 "workflow_name": label,
-                "generation_metadata": {
-                    "source": "generated",
-                    "workflowName": label,
-                    "inputs": [],
-                    # Lets the frontend route regeneration back into the
-                    # ComfyUI editor rather than the generation panel.
-                    "generatedInEditor": True,
-                },
+                "generation_metadata": adopted_generation_metadata,
                 "adopted_from_iframe": True,
             },
             monitor_mode="backstop",

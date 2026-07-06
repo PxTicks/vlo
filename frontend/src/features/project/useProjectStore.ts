@@ -4,6 +4,7 @@ import type { Project } from "../../types/ProjectState";
 import { runPreSaveHooks } from "../../core/persistence/preSaveHooks";
 import { fileSystemService } from "./services/FileSystemService";
 import { projectPersistenceService } from "./services/ProjectPersistenceService";
+import { projectTemporaryFileService } from "./services/ProjectTemporaryFileService";
 import { recentProjectsService } from "./services/RecentProjectsService";
 import { VLO_APP_VERSION } from "./constants";
 import { PROJECT_ASPECT_RATIOS } from "./aspectRatioOptions";
@@ -149,6 +150,14 @@ async function clearProjectDeferredCleanupTrash(): Promise<void> {
   }
 }
 
+async function clearProjectTemporaryFiles(): Promise<void> {
+  try {
+    await projectTemporaryFileService.clearTemporaryFiles();
+  } catch (error) {
+    console.warn("Failed to clear project temporary files", error);
+  }
+}
+
 export interface ProjectState {
   project: Project | null;
   rootHandle: FileSystemDirectoryHandle | null;
@@ -189,6 +198,7 @@ export const useProjectStore = create<ProjectState>()(
         try {
           await flushOpenProjectPersistence();
           await clearProjectDeferredCleanupTrash();
+          await clearProjectTemporaryFiles();
 
           const exists = await fileSystemService.checkDirectoryExists(
             parentHandle,
@@ -205,6 +215,7 @@ export const useProjectStore = create<ProjectState>()(
           fileSystemService.setHandle(projectHandle);
           projectPersistenceService.resetCaches();
           await clearProjectDeferredCleanupTrash();
+          await clearProjectTemporaryFiles();
 
           const newProject: Project = {
             id: crypto.randomUUID(),
@@ -243,10 +254,12 @@ export const useProjectStore = create<ProjectState>()(
         try {
           await flushOpenProjectPersistence();
           await clearProjectDeferredCleanupTrash();
+          await clearProjectTemporaryFiles();
 
           fileSystemService.setHandle(handle);
           projectPersistenceService.resetCaches();
           await clearProjectDeferredCleanupTrash();
+          await clearProjectTemporaryFiles();
 
           const loaded = await projectPersistenceService.loadOrMigrateProject();
           const data = loaded.manifest;
@@ -392,6 +405,7 @@ export const useProjectStore = create<ProjectState>()(
 
       resetProject: () => {
         void clearProjectDeferredCleanupTrash();
+        void clearProjectTemporaryFiles();
         projectPersistenceService.resetCaches();
         set({
           project: null,

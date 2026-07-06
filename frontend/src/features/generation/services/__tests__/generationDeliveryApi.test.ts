@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockResponse, stubFetch } from "../../../../testUtils/fetch";
 import {
+  adoptIframeGeneration,
   fetchDeliveryFileAsFile,
   getPendingDeliveries,
   parseGenerationDeliveryMessage,
@@ -20,6 +21,48 @@ describe("generationDeliveryApi", () => {
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/app/generation-delivery/projects/project%20%2F%20one/pending",
+    );
+  });
+
+  it("adopts iframe generations with timeline-selection provenance", async () => {
+    const fetchMock = stubFetch(createMockResponse({ json: { delivery: {} } }));
+    const timelineSelection = {
+      start: 96_000,
+      end: 192_000,
+      clips: [],
+    };
+
+    await adoptIframeGeneration("project one", "prompt-1", {
+      generationMetadata: {
+        inputs: [
+          {
+            nodeId: "7",
+            kind: "timelineSelection",
+            timelineSelection,
+          },
+        ],
+        maskCropMetadata: { mode: "full" },
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/app/generation-delivery/projects/project%20one/adopt",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          prompt_id: "prompt-1",
+          generation_metadata: {
+            inputs: [
+              {
+                nodeId: "7",
+                kind: "timelineSelection",
+                timelineSelection,
+              },
+            ],
+            maskCropMetadata: { mode: "full" },
+          },
+        }),
+      }),
     );
   });
 

@@ -58,6 +58,8 @@ import {
 } from "../../services/workflowSyncController";
 import { buildWorkflowResultFromGraphData } from "../../services/workflowBridge";
 import { useGenerationStore } from "../../useGenerationStore";
+import { useExtractStore } from "../../../../core/extract/useExtractStore";
+import { useTimelineSelectionStore } from "../../../timelineSelection";
 
 function resetStore(overrides: Record<string, unknown> = {}) {
   useGenerationStore.setState({
@@ -77,6 +79,9 @@ function resetStore(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   resetStore();
+  useTimelineSelectionStore.getState().exitSelectionMode();
+  useExtractStore.getState().setOnConfirmSelection(null);
+  useExtractStore.getState().setOnCancelSelection(null);
   bridgeMocks.state.isReady = false;
   bridgeMocks.readActive.mockResolvedValue(null);
   bridgeMocks.health.mockResolvedValue(null);
@@ -122,6 +127,38 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
     const openLink = screen.getByRole("link");
     expect(openLink).toHaveAttribute("href", "/comfyui-frame/");
     expect(openLink).toHaveAttribute("target", "_blank");
+  });
+
+  it("opens advanced settings from the timeline-selection split button", () => {
+    render(<ComfyUIEditor open onClose={() => {}} />);
+
+    expect(screen.getByTestId("comfyui-select-from-timeline")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByTestId("comfyui-timeline-selection-settings"),
+    );
+
+    expect(screen.getByText("Timeline selection settings")).toBeInTheDocument();
+    expect(
+      screen.getByText("Apply aspect-ratio processing"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Mask crop")).toBeInTheDocument();
+  });
+
+  it("temporarily closes the iframe and launches range then track selection", () => {
+    useGenerationStore.setState({ editorOpen: true });
+    render(<ComfyUIEditor open onClose={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("comfyui-select-from-timeline"));
+
+    const selectionState = useTimelineSelectionStore.getState();
+    expect(selectionState.selectionMode).toBe(true);
+    expect(selectionState.selectionStage).toBe("range");
+    expect(selectionState.selectionIncludeModeEnabled).toBe(true);
+    expect(selectionState.selectionAllowIncludeAll).toBe(true);
+    expect(useGenerationStore.getState().editorOpen).toBe(false);
+
+    useExtractStore.getState().onCancelSelection?.();
+    expect(useGenerationStore.getState().editorOpen).toBe(true);
   });
 
   it("invokes onClose when the close button is pressed", () => {

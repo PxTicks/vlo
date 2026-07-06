@@ -757,11 +757,24 @@ export async function renderTimelineSelectionToMp4WithMask(
     signal?: AbortSignal;
     sourceVideoTreatment?: DerivedMaskSourceVideoTreatment;
     renderInputs?: RenderInputsOverride;
+    outputWidth?: number;
+    outputHeight?: number;
   } = {},
 ): Promise<TimelineSelectionWithMaskResult> {
   throwIfAborted(options.signal);
   const { exportConfig, projectData } =
     options.renderInputs ?? buildProjectRenderInputs();
+  const renderConfig: ExportConfig = {
+    ...exportConfig,
+    outputWidth: normalizeOutputDimension(
+      options.outputWidth,
+      exportConfig.outputWidth,
+    ),
+    outputHeight: normalizeOutputDimension(
+      options.outputHeight,
+      exportConfig.outputHeight,
+    ),
+  };
   const normalizedSelection = normalizeTimelineSelection(
     timelineSelection,
     projectData.clips,
@@ -778,10 +791,10 @@ export async function renderTimelineSelectionToMp4WithMask(
     let maskHasVisibleContent = true;
 
     if (sourceVideoTreatment === "remove_transparency") {
-      const maskRenderer = await ExportRenderer.create(exportConfig);
+      const maskRenderer = await ExportRenderer.create(renderConfig);
       const maskResult = await maskRenderer.render(
         projectData,
-        exportConfig,
+        renderConfig,
         () => {},
         {
           timelineSelection: normalizedSelection,
@@ -797,10 +810,10 @@ export async function renderTimelineSelectionToMp4WithMask(
       );
       throwIfAborted(options.signal);
 
-      const videoRenderer = await ExportRenderer.create(exportConfig);
+      const videoRenderer = await ExportRenderer.create(renderConfig);
       const videoResult = await videoRenderer.render(
         projectData,
-        exportConfig,
+        renderConfig,
         () => {},
         {
           timelineSelection: normalizedSelection,
@@ -815,10 +828,10 @@ export async function renderTimelineSelectionToMp4WithMask(
         "generation source video",
       );
     } else {
-      const renderer = await ExportRenderer.create(exportConfig);
+      const renderer = await ExportRenderer.create(renderConfig);
       const result = await renderer.render(
         projectData,
-        exportConfig,
+        renderConfig,
         () => {},
         {
           timelineSelection: normalizedSelection,

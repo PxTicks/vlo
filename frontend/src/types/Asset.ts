@@ -97,6 +97,9 @@ export interface GeneratedCreationMetadata {
   comfyuiPrompt?: Record<string, unknown>;
   /** The authored ComfyUI visual workflow graph (LiteGraph format) used for editing/replay. */
   comfyuiWorkflow?: Record<string, unknown>;
+  /** Generated inside the ComfyUI editor iframe (adopted delivery); regeneration
+   *  reopens the editor instead of staying in the generation panel. */
+  generatedInEditor?: boolean;
 }
 
 export interface ExtractedAudioClipMetadata {

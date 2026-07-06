@@ -8,6 +8,11 @@ import { formatWorkflowName } from "../store/workflowCatalog";
 import type { WorkflowOption } from "../store/types";
 
 const UNKNOWN_WORKFLOW_NAME = "Unknown Workflow";
+/** Placeholder label the backend stamps on adopted in-editor deliveries
+ * (see adopt_delivery). It is not a saved workflow, so it must never count
+ * as a resolvable name — legacy adopted assets without a captured prompt or
+ * graph cannot be regenerated. */
+const IN_EDITOR_WORKFLOW_NAME = "ComfyUI (in-editor)";
 
 function normalizeWorkflowMatchValue(
   value: string | null | undefined,
@@ -28,7 +33,8 @@ function hasResolvableWorkflowName(workflowName: string): boolean {
   const normalizedName = normalizeWorkflowMatchValue(workflowName);
   return (
     normalizedName !== null &&
-    normalizedName !== normalizeWorkflowMatchValue(UNKNOWN_WORKFLOW_NAME)
+    normalizedName !== normalizeWorkflowMatchValue(UNKNOWN_WORKFLOW_NAME) &&
+    normalizedName !== normalizeWorkflowMatchValue(IN_EDITOR_WORKFLOW_NAME)
   );
 }
 

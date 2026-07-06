@@ -66,6 +66,7 @@ describe("useGenerationStore metadata replay", () => {
     useAssetStore.setState({ assets: [] });
     useGenerationStore.setState({
       editorRef: null,
+      editorOpen: false,
       tempWorkflow: null,
       availableWorkflows: [],
       selectedWorkflowId: null,
@@ -497,6 +498,46 @@ describe("useGenerationStore metadata replay", () => {
         },
     });
     expect(getWorkflowContentSpy).not.toHaveBeenCalled();
+  });
+
+  it("reopens the ComfyUI editor only for in-editor generations", async () => {
+    const makeGeneratedAsset = (generatedInEditor: boolean): Asset => ({
+      id: generatedInEditor ? "iframe-asset" : "panel-asset",
+      hash: "hash-generated",
+      name: "generated.png",
+      type: "image",
+      src: "generated.png",
+      createdAt: Date.now(),
+      creationMetadata: {
+        source: "generated",
+        workflowName: generatedInEditor
+          ? "ComfyUI (in-editor)"
+          : "Original Workflow",
+        inputs: [],
+        ...(generatedInEditor ? { generatedInEditor: true } : {}),
+        comfyuiPrompt: {
+          "7": { class_type: "LoadImage", inputs: { image: "staged.png" } },
+        },
+        comfyuiWorkflow: {
+          nodes: [{ id: 7, type: "LoadImage", widgets_values: ["staged.png"] }],
+        },
+      },
+    });
+    const panelAsset = makeGeneratedAsset(false);
+    const iframeAsset = makeGeneratedAsset(true);
+    useAssetStore.setState({ assets: [panelAsset, iframeAsset] });
+
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([]);
+
+    await useGenerationStore.getState().loadWorkflowFromAssetMetadata(panelAsset);
+    expect(useGenerationStore.getState().editorOpen).toBe(false);
+
+    await useGenerationStore
+      .getState()
+      .loadWorkflowFromAssetMetadata(iframeAsset);
+    const state = useGenerationStore.getState();
+    expect(state.selectedWorkflowId).toBe(TEMP_WORKFLOW_ID);
+    expect(state.editorOpen).toBe(true);
   });
 
   it("keeps replayed workflows temporary when the iframe sync reports a synthetic temp filename", async () => {

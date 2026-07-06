@@ -1000,6 +1000,14 @@ export function buildWorkflowStoreState(
           });
 
           await get().loadWorkflow(TEMP_WORKFLOW_ID);
+
+          // In-editor generations were authored in the ComfyUI editor, so
+          // regeneration lands the user back there with the restored graph.
+          // Opened only after the load so the editor's init loop cannot race
+          // the replay injection with a stale workflow load.
+          if (metadata.generatedInEditor === true) {
+            get().setEditorOpen(true);
+          }
         } else {
           const resolvedWorkflow = await resolveMetadataWorkflowNameMatch(
             metadata.workflowName,

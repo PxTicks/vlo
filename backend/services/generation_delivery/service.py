@@ -321,6 +321,43 @@ def _parse_queue_prompt_ids(queue: Any) -> set[str]:
     return prompt_ids
 
 
+def _extract_history_prompt_metadata(
+    history: Any,
+    prompt_id: str,
+) -> dict[str, Any]:
+    """Lift the deterministic workflow record ComfyUI keeps for a completed
+    prompt: the API prompt and the authored graph the frontend attached via
+    ``extra_data.extra_pnginfo.workflow`` (ComfyUI strips only auth tokens
+    before queueing). History prompt tuple shape:
+    ``[number, prompt_id, prompt, extra_data, outputs_to_execute]``.
+
+    Keys are camelCase to match the frontend's GeneratedCreationMetadata.
+    """
+    if not isinstance(history, dict):
+        return {}
+    prompt_history = history.get(prompt_id)
+    if not isinstance(prompt_history, dict):
+        return {}
+    prompt_tuple = prompt_history.get("prompt")
+    if not isinstance(prompt_tuple, (list, tuple)) or len(prompt_tuple) < 4:
+        return {}
+
+    extracted: dict[str, Any] = {}
+    api_prompt = prompt_tuple[2]
+    if isinstance(api_prompt, dict) and api_prompt:
+        extracted["comfyuiPrompt"] = api_prompt
+
+    extra_data = prompt_tuple[3]
+    if isinstance(extra_data, dict):
+        extra_pnginfo = extra_data.get("extra_pnginfo")
+        if isinstance(extra_pnginfo, dict):
+            workflow = extra_pnginfo.get("workflow")
+            if isinstance(workflow, dict) and workflow:
+                extracted["comfyuiWorkflow"] = workflow
+
+    return extracted
+
+
 def _extract_history_error(prompt_history: Any) -> str | None:
     """Return an error message if the history entry records a failed run."""
     if not isinstance(prompt_history, dict):
@@ -719,6 +756,9 @@ class GenerationHoldingService:
                     "source": "generated",
                     "workflowName": label,
                     "inputs": [],
+                    # Lets the frontend route regeneration back into the
+                    # ComfyUI editor rather than the generation panel.
+                    "generatedInEditor": True,
                 },
                 "adopted_from_iframe": True,
             },
@@ -1286,6 +1326,60 @@ class GenerationHoldingService:
             "category": "preview_frames",
         }
 
+    async def _enrich_generation_metadata_from_history(
+        self,
+        delivery_id: str,
+        prompt_id: str,
+    ) -> None:
+        """Backfill comfyuiPrompt/comfyuiWorkflow from ComfyUI history.
+
+        Adopted in-editor deliveries are created with a stub
+        ``generation_metadata`` (the bridge only knows the prompt id), which
+        leaves the imported asset without the workflow record that
+        regeneration replays. The history entry fetched at settle time carries
+        both the API prompt and the authored graph, so lift them into the
+        manifest before completion is broadcast. Panel submissions already
+        stamp these fields at submission time and are skipped. Best-effort:
+        enrichment must never block settlement.
+        """
+        async with self._lock:
+            manifest = self._deliveries.get(delivery_id)
+            if manifest is None:
+                return
+            metadata = manifest.get("generation_metadata")
+            if not isinstance(metadata, dict):
+                return
+            if metadata.get("comfyuiPrompt") or metadata.get("comfyuiWorkflow"):
+                return
+
+        try:
+            client = await get_http_client()
+            response = await client.get(f"/history/{prompt_id}")
+            response.raise_for_status()
+            history = response.json()
+        except Exception:
+            return
+
+        extracted = _extract_history_prompt_metadata(history, prompt_id)
+        if not extracted:
+            return
+
+        async with self._lock:
+            manifest = self._deliveries.get(delivery_id)
+            if manifest is None:
+                return
+            metadata = manifest.get("generation_metadata")
+            if not isinstance(metadata, dict):
+                return
+            changed = False
+            for key, value in extracted.items():
+                if not metadata.get(key):
+                    metadata[key] = value
+                    changed = True
+            if changed:
+                manifest["updated_at"] = _now_ms()
+                await self._persist_manifest(manifest)
+
     async def _finalize_delivery(
         self,
         project_id: str,
@@ -1321,6 +1415,9 @@ class GenerationHoldingService:
                 "Generation completed without persisted final outputs for delivery",
             )
             return
+        # Before completion is broadcast, so the frontend imports the asset
+        # with the workflow record already attached.
+        await self._enrich_generation_metadata_from_history(delivery_id, prompt_id)
         async with self._lock:
             manifest = self._deliveries.get(delivery_id)
             if manifest is not None:

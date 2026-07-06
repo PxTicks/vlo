@@ -15,6 +15,7 @@ from services.generation_delivery.service import (
     PREVIEW_METADATA_FEATURE_FLAGS,
     _ProjectConsumer,
     _extract_history_error,
+    _extract_history_prompt_metadata,
     _parse_queue_prompt_ids,
 )
 
@@ -773,6 +774,150 @@ async def test_adopt_delivery_is_idempotent_and_reports_progress(
     assert (
         await service.mark_running_for_prompt("p1", "prompt-1", progress=99) is False
     )
+
+
+def test_history_prompt_metadata_extractor_reads_the_prompt_tuple() -> None:
+    api_prompt = {"7": {"class_type": "LoadImage", "inputs": {"image": "a.png"}}}
+    graph = {"nodes": [{"id": 7, "type": "LoadImage"}], "links": []}
+    history = {
+        "prompt-1": {
+            "prompt": [
+                5,
+                "prompt-1",
+                api_prompt,
+                {"extra_pnginfo": {"workflow": graph}, "client_id": "iframe-1"},
+                ["9"],
+            ],
+            "outputs": {},
+        }
+    }
+
+    assert _extract_history_prompt_metadata(history, "prompt-1") == {
+        "comfyuiPrompt": api_prompt,
+        "comfyuiWorkflow": graph,
+    }
+    # Malformed payloads degrade to no enrichment, never an exception.
+    assert _extract_history_prompt_metadata(None, "prompt-1") == {}
+    assert _extract_history_prompt_metadata({}, "prompt-1") == {}
+    assert (
+        _extract_history_prompt_metadata({"prompt-1": {"prompt": [1, "x"]}}, "prompt-1")
+        == {}
+    )
+
+
+@pytest.mark.anyio
+async def test_finalize_enriches_adopted_metadata_from_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Adopted in-editor deliveries start with a stub generation_metadata; the
+    settle-time history fetch backfills the API prompt and authored graph so
+    the imported asset supports regeneration."""
+    service = GenerationHoldingService(root=tmp_path / "holding")
+
+    async def _noop_start_monitor(**_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(service, "start_monitor", _noop_start_monitor)
+    adopted = await service.adopt_delivery(project_id="p1", prompt_id="prompt-1")
+    delivery_id = adopted["delivery_id"]
+    assert adopted["generation_metadata"]["generatedInEditor"] is True
+    assert "comfyuiPrompt" not in adopted["generation_metadata"]
+
+    api_prompt = {"7": {"class_type": "LoadImage", "inputs": {"image": "a.png"}}}
+    graph = {"nodes": [{"id": 7, "type": "LoadImage"}], "links": []}
+
+    async def _client() -> _FakeHttpClient:
+        return _FakeHttpClient(
+            {
+                "/history/prompt-1": {
+                    "prompt-1": {
+                        "prompt": [
+                            5,
+                            "prompt-1",
+                            api_prompt,
+                            {"extra_pnginfo": {"workflow": graph}},
+                            ["9"],
+                        ],
+                        "outputs": {},
+                    }
+                }
+            }
+        )
+
+    monkeypatch.setattr(delivery_service_module, "get_http_client", _client)
+
+    async def _outputs(
+        _project_id: str, _delivery_id: str, _prompt_id: str
+    ) -> list[dict]:
+        return [
+            {
+                "filename": "out.png",
+                "subfolder": "",
+                "type": "output",
+                "mime_type": "image/png",
+                "storage_name": "000_out.png",
+            }
+        ]
+
+    monkeypatch.setattr(service, "_capture_history_outputs", _outputs)
+
+    await service._finalize_delivery("p1", delivery_id, "prompt-1")
+
+    manifest = service._deliveries[delivery_id]
+    assert manifest["status"] == "completed_pending_ack"
+    assert manifest["generation_metadata"]["comfyuiPrompt"] == api_prompt
+    assert manifest["generation_metadata"]["comfyuiWorkflow"] == graph
+    # The stub fields survive untouched.
+    assert manifest["generation_metadata"]["workflowName"] == "ComfyUI (in-editor)"
+    assert manifest["generation_metadata"]["generatedInEditor"] is True
+
+    persisted = json.loads(service._manifest_path("p1", delivery_id).read_text())
+    assert persisted["generation_metadata"]["comfyuiWorkflow"] == graph
+
+
+@pytest.mark.anyio
+async def test_metadata_enrichment_skips_panel_submissions_and_survives_fetch_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GenerationHoldingService(root=tmp_path / "holding")
+
+    # Panel submissions already carry the workflow record: no history fetch.
+    context = _delivery_context()
+    context["generation_metadata"]["comfyuiPrompt"] = {"1": {"class_type": "X"}}
+    await service.create_delivery(
+        project_id="p1",
+        delivery_id="delivery-panel",
+        prompt_id="prompt-panel",
+        client_id="client-1",
+        delivery_context=context,
+    )
+
+    async def _forbid_client() -> _FakeHttpClient:
+        raise AssertionError("enrichment must not fetch for panel submissions")
+
+    monkeypatch.setattr(delivery_service_module, "get_http_client", _forbid_client)
+    await service._enrich_generation_metadata_from_history(
+        "delivery-panel", "prompt-panel"
+    )
+
+    # A failing history fetch is best-effort: settlement must not be blocked.
+    async def _noop_start_monitor(**_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(service, "start_monitor", _noop_start_monitor)
+    adopted = await service.adopt_delivery(project_id="p1", prompt_id="prompt-2")
+
+    async def _broken_client() -> _FakeHttpClient:
+        raise RuntimeError("ComfyUI unreachable")
+
+    monkeypatch.setattr(delivery_service_module, "get_http_client", _broken_client)
+    await service._enrich_generation_metadata_from_history(
+        adopted["delivery_id"], "prompt-2"
+    )
+    metadata = service._deliveries[adopted["delivery_id"]]["generation_metadata"]
+    assert "comfyuiPrompt" not in metadata
 
 
 @pytest.mark.anyio

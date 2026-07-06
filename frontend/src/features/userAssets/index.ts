@@ -1,5 +1,6 @@
 export { AssetBrowser } from "./AssetBrowser";
 export { AssetCard } from "./components/AssetCard";
+export { AssetPreviewDialog } from "./components/AssetPreviewDialog";
 export { useTimelineAssetRevealClipOverlay } from "./hooks/useTimelineAssetRevealClipOverlay";
 export { useAssetStore } from "./useAssetStore";
 export { revealAssetInBrowser, useAssetBrowserRevealStore } from "./useAssetBrowserRevealStore";

@@ -123,7 +123,7 @@ export const useIframeTimelineSelectionStore =
           "mask",
           result.mask,
           maskPath,
-          result.thumbnail,
+          result.maskThumbnail ?? result.thumbnail,
           result.timelineSelection,
           result,
         );

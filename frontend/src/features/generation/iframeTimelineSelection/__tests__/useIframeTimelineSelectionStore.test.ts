@@ -22,6 +22,9 @@ function createResult(withMask: boolean): ProcessedIframeTimelineSelection {
       ? new File(["mask"], "mask.mp4", { type: "video/mp4" })
       : null,
     thumbnail: new File(["thumb"], "thumb.png", { type: "image/png" }),
+    maskThumbnail: withMask
+      ? new File(["mask-thumb"], "mask-thumb.png", { type: "image/png" })
+      : null,
     aspectRatioProcessing: null,
     maskCropMetadata: { mode: "full" },
     warnings: [],

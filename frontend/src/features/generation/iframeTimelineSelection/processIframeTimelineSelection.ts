@@ -9,21 +9,42 @@ import {
   captureFramePngAtTick,
   renderTimelineSelectionToMp4WithMask,
 } from "../utils/inputSelection";
+import { captureVideoFrameFile } from "../utils/miniEditorEdit";
 import type {
   IframeTimelineSelectionSettings,
   ProcessedIframeTimelineSelection,
 } from "./types";
 
+/**
+ * Captures the mask matte's own first frame so the mask card renders the
+ * black/white matte instead of reusing the source video's poster (which read
+ * as a duplicate "two videos" card).
+ */
+async function captureMaskThumbnailFile(maskFile: File): Promise<File> {
+  const url = URL.createObjectURL(maskFile);
+  try {
+    return await captureVideoFrameFile(
+      url,
+      0,
+      `iframe-timeline-selection-mask-thumb-${Date.now()}.png`,
+    );
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export interface ProcessIframeTimelineSelectionDeps {
   renderWithMask: typeof renderTimelineSelectionToMp4WithMask;
   applyMaskCrop: typeof applyMaskCropProcessing;
   captureThumbnail: typeof captureFramePngAtTick;
+  captureMaskThumbnail: (maskFile: File) => Promise<File>;
 }
 
 const DEFAULT_DEPS: ProcessIframeTimelineSelectionDeps = {
   renderWithMask: renderTimelineSelectionToMp4WithMask,
   applyMaskCrop: applyMaskCropProcessing,
   captureThumbnail: captureFramePngAtTick,
+  captureMaskThumbnail: captureMaskThumbnailFile,
 };
 
 export function createDefaultIframeTimelineSelectionSettings(): IframeTimelineSelectionSettings {
@@ -104,12 +125,16 @@ export async function processIframeTimelineSelection(
     timelineSelection,
   );
 
+  const mask = rendered.maskHasVisibleContent
+    ? (cropResult.masks.video_binary ?? rendered.mask)
+    : null;
+  const maskThumbnail = mask ? await deps.captureMaskThumbnail(mask) : null;
+
   return {
     timelineSelection: structuredClone(timelineSelection),
     video: cropResult.video,
-    mask: rendered.maskHasVisibleContent
-      ? (cropResult.masks.video_binary ?? rendered.mask)
-      : null,
+    mask,
+    maskThumbnail,
     thumbnail,
     aspectRatioProcessing: aspectPlan.metadata,
     maskCropMetadata: cropResult.metadata,

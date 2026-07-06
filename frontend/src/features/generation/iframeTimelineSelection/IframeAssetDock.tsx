@@ -1,14 +1,30 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Box, Tab, Tabs, Typography } from "@mui/material";
 import VideoLibraryIcon from "@mui/icons-material/VideoLibrary";
 import LayersIcon from "@mui/icons-material/Layers";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
+import type { Asset } from "../../../types/Asset";
 import { LibraryBrowserGrid } from "../../libraryBrowser";
 import { useCompositeLibraryStore } from "../../composite";
-import { AssetBrowser, AssetCard, useAssetStore } from "../../userAssets";
+import {
+  AssetBrowser,
+  AssetCard,
+  AssetPreviewDialog,
+  useAssetStore,
+} from "../../userAssets";
 import { useIframeTimelineSelectionStore } from "./useIframeTimelineSelectionStore";
 
 export type IframeAssetDockTab = "assets" | "composites" | "temporary";
+
+/**
+ * Preview request from a dock card. Temporary selections are not in the asset
+ * store, so they carry their ready blob URL directly; composite baked clips are
+ * store assets and hydrate through the store instead.
+ */
+interface DockPreviewTarget {
+  asset: Asset;
+  sourceUrlOverride?: string;
+}
 
 interface IframeAssetDockProps {
   activeTab: IframeAssetDockTab;
@@ -46,7 +62,11 @@ function DockPanelHeader({ children }: { children: string }) {
   );
 }
 
-function IframeCompositeLibrary() {
+function IframeCompositeLibrary({
+  onPreview,
+}: {
+  onPreview: (target: DockPreviewTarget) => void;
+}) {
   const composites = useCompositeLibraryStore((state) => state.composites);
   const assets = useAssetStore((state) => state.assets);
   const bakedAssets = useMemo(() => {
@@ -69,13 +89,23 @@ function IframeCompositeLibrary() {
         items={bakedAssets}
         getItemId={(asset) => asset.id}
         emptyMessage="No rendered composite clips are available."
-        renderItem={(asset) => <AssetCard asset={asset} hideActions />}
+        renderItem={(asset) => (
+          <AssetCard
+            asset={asset}
+            hideActions
+            onRequestPreview={() => onPreview({ asset })}
+          />
+        )}
       />
     </Box>
   );
 }
 
-function IframeTemporaryLibrary() {
+function IframeTemporaryLibrary({
+  onPreview,
+}: {
+  onPreview: (target: DockPreviewTarget) => void;
+}) {
   const entries = useIframeTimelineSelectionStore((state) => state.assets);
 
   return (
@@ -89,7 +119,16 @@ function IframeTemporaryLibrary() {
         getItemId={(entry) => entry.asset.id}
         emptyMessage="Timeline selections made here appear for this project session."
         renderItem={(entry) => (
-          <AssetCard asset={entry.asset} hideActions />
+          <AssetCard
+            asset={entry.asset}
+            hideActions
+            onRequestPreview={() =>
+              onPreview({
+                asset: entry.asset,
+                sourceUrlOverride: entry.asset.src,
+              })
+            }
+          />
         )}
       />
     </Box>
@@ -105,6 +144,7 @@ export function IframeAssetDock({
   );
   const visibleTab =
     activeTab === "composites" && !hasComposites ? "assets" : activeTab;
+  const [preview, setPreview] = useState<DockPreviewTarget | null>(null);
 
   return (
     <Box sx={{ display: "flex", minWidth: 0, minHeight: 0, flex: 1 }}>
@@ -164,9 +204,20 @@ export function IframeAssetDock({
         }}
       >
         {visibleTab === "assets" ? <AssetBrowser /> : null}
-        {visibleTab === "composites" ? <IframeCompositeLibrary /> : null}
-        {visibleTab === "temporary" ? <IframeTemporaryLibrary /> : null}
+        {visibleTab === "composites" ? (
+          <IframeCompositeLibrary onPreview={setPreview} />
+        ) : null}
+        {visibleTab === "temporary" ? (
+          <IframeTemporaryLibrary onPreview={setPreview} />
+        ) : null}
       </Box>
+      {preview ? (
+        <AssetPreviewDialog
+          asset={preview.asset}
+          sourceUrlOverride={preview.sourceUrlOverride}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
     </Box>
   );
 }

@@ -19,6 +19,9 @@ function createDeps(options: { transparent: boolean }) {
   const source = new File(["source"], "source.mp4", { type: "video/mp4" });
   const mask = new File(["mask"], "mask.mp4", { type: "video/mp4" });
   const thumbnail = new File(["thumb"], "thumb.png", { type: "image/png" });
+  const maskThumbnail = new File(["mask-thumb"], "mask-thumb.png", {
+    type: "image/png",
+  });
   const renderWithMask = vi.fn().mockResolvedValue({
     video: source,
     mask,
@@ -41,16 +44,20 @@ function createDeps(options: { transparent: boolean }) {
     warnings: [],
   });
   const captureThumbnail = vi.fn().mockResolvedValue(thumbnail);
+  const captureMaskThumbnail = vi.fn().mockResolvedValue(maskThumbnail);
   return {
     source,
     mask,
+    maskThumbnail,
     renderWithMask,
     applyMaskCrop,
     captureThumbnail,
+    captureMaskThumbnail,
     deps: {
       renderWithMask,
       applyMaskCrop,
       captureThumbnail,
+      captureMaskThumbnail,
     } as ProcessIframeTimelineSelectionDeps,
   };
 }
@@ -72,8 +79,10 @@ describe("processIframeTimelineSelection", () => {
 
     expect(result.video).toBe(mocks.source);
     expect(result.mask).toBeNull();
+    expect(result.maskThumbnail).toBeNull();
     expect(result.maskCropMetadata).toEqual({ mode: "full" });
     expect(mocks.applyMaskCrop).not.toHaveBeenCalled();
+    expect(mocks.captureMaskThumbnail).not.toHaveBeenCalled();
   });
 
   it("uses strided dimensions and crops synchronized video and mask outputs", async () => {
@@ -108,6 +117,8 @@ describe("processIframeTimelineSelection", () => {
     );
     expect(result.video.name).toBe("cropped.mp4");
     expect(result.mask?.name).toBe("cropped-mask.mp4");
+    expect(mocks.captureMaskThumbnail).toHaveBeenCalledWith(result.mask);
+    expect(result.maskThumbnail).toBe(mocks.maskThumbnail);
     expect(result.aspectRatioProcessing?.strided).toMatchObject({
       width: 1280,
       height: 720,

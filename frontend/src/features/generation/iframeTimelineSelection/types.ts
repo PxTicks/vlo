@@ -32,7 +32,14 @@ export interface ProcessedIframeTimelineSelection {
   timelineSelection: TimelineSelection;
   video: File;
   mask: File | null;
+  /** Thumbnail captured from the timeline frame (the video's poster). */
   thumbnail: File;
+  /**
+   * Thumbnail captured from the rendered mask matte itself, so the mask card
+   * shows the black/white matte rather than reusing the video's frame. Null
+   * whenever there is no mask.
+   */
+  maskThumbnail: File | null;
   aspectRatioProcessing: AspectRatioProcessingMetadata | null;
   maskCropMetadata: MaskCropMetadata;
   warnings: ProcessingWarning[];

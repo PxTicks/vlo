@@ -28,6 +28,7 @@ vi.mock("../../../userAssets", () => ({
   AssetCard: ({ asset }: { asset: { name: string } }) => (
     <div data-testid="asset-card">{asset.name}</div>
   ),
+  AssetPreviewDialog: () => null,
   useAssetStore: (selector: (state: unknown) => unknown) =>
     selector({ assets: mocks.assets }),
 }));

@@ -20,6 +20,12 @@ interface AssetPreviewDialogProps {
   onNext?: () => void;
   hasPrev?: boolean;
   hasNext?: boolean;
+  /**
+   * Explicit source URL for assets that are not in the asset store (e.g. the
+   * ComfyUI dock's temporary timeline selections, whose `src` is already a
+   * ready blob URL). When set, store hydration is skipped.
+   */
+  sourceUrlOverride?: string | null;
 }
 
 export function AssetPreviewDialog({
@@ -29,8 +35,10 @@ export function AssetPreviewDialog({
   onNext,
   hasPrev = false,
   hasNext = false,
+  sourceUrlOverride,
 }: AssetPreviewDialogProps) {
-  const sourceUrl = useAssetSourceUrl(asset.id, true);
+  const resolvedSourceUrl = useAssetSourceUrl(asset.id, !sourceUrlOverride);
+  const sourceUrl = sourceUrlOverride ?? resolvedSourceUrl;
 
   useEffect(() => {
     function handleWindowBlur() {

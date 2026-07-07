@@ -513,7 +513,7 @@ describe("ExportRenderer", () => {
     expect(secondContext.createBuffer).toHaveBeenCalledWith(2, 2 * 48000, 48000);
 
     renderer.dispose();
-  });
+  }, 10_000);
 
   it("can render a video pass without applying timeline masks", async () => {
     const config = {

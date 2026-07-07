@@ -503,7 +503,10 @@ describe("inputSelection", () => {
     );
     expect(renderSpy).toHaveBeenCalledOnce();
     expect(renderSpy.mock.calls[0][3]?.outputs).toEqual([
-      expect.objectContaining({ id: "video" }),
+      expect.objectContaining({
+        id: "video",
+        transformStack: expect.arrayContaining([expect.any(Function)]),
+      }),
       expect.objectContaining({ id: "mask", contentProbe: "non_black_pixels" }),
     ]);
     expect(result.maskHasVisibleContent).toBe(false);

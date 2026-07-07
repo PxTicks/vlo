@@ -44,6 +44,10 @@ import {
   type OutputVideoDefinition,
 } from "./TextureOutputEncoder";
 import {
+  createFilterStackTransform,
+  createOpaqueOutputColorMatrixFilter,
+} from "../utils/outputTransformStack";
+import {
   BatchFrameGraphExecutor,
   FrameJobResolver,
   buildFrameResolutionGraph,
@@ -133,6 +137,9 @@ function resolveOutputDefinitions(
       id: "video",
       format: fallbackFormat,
       includeAudio: true,
+      transformStack: [
+        createFilterStackTransform([createOpaqueOutputColorMatrixFilter()]),
+      ],
     },
   ];
 

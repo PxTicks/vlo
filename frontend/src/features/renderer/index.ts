@@ -56,6 +56,7 @@ export {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
+  createOpaqueOutputColorMatrixFilter,
 } from "./utils/outputTransformStack";
 export {
   createDecoderWorkerPool,

@@ -9,6 +9,7 @@ import {
   createBinaryMaskOutputFilter,
   createFilterStackTransform,
   createNonBinaryMaskOutputColorMatrixFilter,
+  createOpaqueOutputColorMatrixFilter,
   isBlankStrictRenderHealth,
   renderProjectFrameFileAtTick,
   renderSelectionToVideoFile,
@@ -277,6 +278,9 @@ function createVideoOutputDefinition() {
     id: "video",
     format: "mp4" as const,
     includeAudio: true,
+    transformStack: [
+      createFilterStackTransform([createOpaqueOutputColorMatrixFilter()]),
+    ],
   };
 }
 

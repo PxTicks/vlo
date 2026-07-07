@@ -572,6 +572,35 @@ export interface ExtensionTimelineClipSnapshot {
   readonly transformations: readonly ExtensionTimelineTransformSnapshot[];
 }
 
+export interface ExtensionTimelineMaskBounds {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface ExtensionTimelineMaskActiveRange {
+  readonly startSourceTicks: number;
+  readonly endSourceTicks: number;
+}
+
+export interface ExtensionTimelineMaskSnapshot {
+  readonly id: string;
+  readonly parentClipId: string;
+  readonly localId: string;
+  readonly name: string;
+  readonly startTicks: number;
+  readonly durationTicks: number;
+  readonly maskType: string;
+  readonly maskMode: string;
+  readonly maskInverted: boolean;
+  readonly parameters: Readonly<Record<string, JsonValue>>;
+  readonly assetId?: string;
+  readonly paintedBounds?: ExtensionTimelineMaskBounds;
+  readonly activeRange?: ExtensionTimelineMaskActiveRange;
+  readonly transformations: readonly ExtensionTimelineTransformSnapshot[];
+}
+
 export interface ExtensionTimelineTransformInput {
   readonly id?: string;
   readonly type: string;
@@ -739,6 +768,8 @@ export interface ExtensionTimelineApi {
   listEntities(): readonly ExtensionTimelineEntitySnapshot[];
   /** Detached snapshots for user-driven commands; not a render-loop accessor. */
   listClips(): readonly ExtensionTimelineClipSnapshot[];
+  /** Detached mask snapshots attached to a clip. */
+  listClipMasks(clipId: string): readonly ExtensionTimelineMaskSnapshot[];
   /** Current render-domain dimensions and timebase, detached from host state. */
   getProject(): ExtensionTimelineProjectSnapshot;
   /** Converts a zero-based source frame index into vlo's canonical tick unit. */

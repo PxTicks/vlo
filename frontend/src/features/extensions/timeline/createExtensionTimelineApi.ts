@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import {
   commitExtensionTimelineTransaction,
+  getExtensionTimelineClipMasks,
   getExtensionTimelineClips,
   getExtensionTimelineEntities,
   getTimelineClipById,
@@ -27,7 +28,7 @@ import { getProjectDimensions, mediaSecondsToTick } from "../../renderer";
 import {
   clipSourceTimeToVisual,
   clipVisualToSourceTime,
-} from "../../transformations";
+} from "../../transformations/utils/clipTimeDomains";
 import { extensionClipOverlayRegistry } from "./ExtensionClipOverlayRegistry";
 
 const MAX_TRANSACTION_LABEL_LENGTH = 120;
@@ -204,6 +205,7 @@ export function createExtensionTimelineApi(
     listEntities: (): readonly ExtensionTimelineEntitySnapshot[] =>
       getExtensionTimelineEntities(scope.extension.id),
     listClips: () => getExtensionTimelineClips(),
+    listClipMasks: (clipId) => getExtensionTimelineClipMasks(clipId),
     getProject: getExtensionProjectSnapshot,
     sourceFrameToTicks: (frameIndex, sourceFps) => {
       if (!Number.isInteger(frameIndex) || frameIndex < 0) {

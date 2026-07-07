@@ -165,6 +165,7 @@ function createConformanceApi() {
       ticksPerSecond: 96_000,
       listEntities: () => [],
       listClips: () => [clip],
+      listClipMasks: () => [],
       getProject: () => ({
         width: 1920,
         height: 1080,
@@ -195,6 +196,10 @@ function createConformanceApi() {
         callback(transaction);
         return { ok: true, changed: true, label };
       },
+      registerClipOverlay: (definition) => ({
+        id: definition.id,
+        dispose: () => undefined,
+      }),
     },
     transformations: {
       register: (definition) => ({ id: definition.id, dispose: () => undefined }),

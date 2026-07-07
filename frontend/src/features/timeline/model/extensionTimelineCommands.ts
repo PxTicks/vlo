@@ -68,6 +68,38 @@ export class ExtensionTimelineCommandError extends Error {
   }
 }
 
+const DEFAULT_TRANSFORM_ORDER = [
+  "position",
+  "scale",
+  "rotation",
+  "fitMode",
+  "blendMode",
+  "speed",
+  "volume",
+];
+
+function getDefaultTransformOrder(type: string): number {
+  return DEFAULT_TRANSFORM_ORDER.indexOf(type);
+}
+
+function insertTransformInDefaultOrder(
+  transforms: ClipTransform[],
+  transform: ClipTransform,
+): void {
+  const order = getDefaultTransformOrder(transform.type);
+  if (order < 0) {
+    transforms.push(transform);
+    return;
+  }
+
+  const insertionIndex = transforms.findIndex((candidate) => {
+    const candidateOrder = getDefaultTransformOrder(candidate.type);
+    return candidateOrder < 0 || candidateOrder > order;
+  });
+  if (insertionIndex < 0) transforms.push(transform);
+  else transforms.splice(insertionIndex, 0, transform);
+}
+
 export function applyExtensionTimelineCommands(
   draft: TimelineModelState,
   ownerId: string,
@@ -109,7 +141,7 @@ export function applyExtensionTimelineCommands(
         (candidate) => candidate.id === transform.id,
       );
       if (existingIndex >= 0) clip.transformations[existingIndex] = transform;
-      else clip.transformations.push(transform);
+      else insertTransformInDefaultOrder(clip.transformations, transform);
       continue;
     }
 

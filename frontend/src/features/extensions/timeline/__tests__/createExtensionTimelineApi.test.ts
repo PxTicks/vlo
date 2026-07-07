@@ -5,7 +5,9 @@ import type {
   ExtensionTimelineTransaction,
 } from "../..";
 import type {
+  ClipTransform,
   ExtensionTimelineClip,
+  MaskTimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
@@ -46,8 +48,48 @@ function createExtensionClip(
   };
 }
 
+function createMaskClip(parentClipId: string): MaskTimelineClip {
+  return {
+    id: `${parentClipId}::mask::mask-1`,
+    parentClipId,
+    trackId: "track-visual",
+    type: "mask",
+    name: "Mask 1",
+    sourceDuration: 100,
+    start: 0,
+    timelineDuration: 100,
+    offset: 0,
+    transformedDuration: 100,
+    transformedOffset: 0,
+    croppedSourceDuration: 100,
+    transformations: [
+      {
+        id: "mask-position",
+        type: "position",
+        isEnabled: true,
+        parameters: { x: 12, y: 8 },
+      },
+    ],
+    maskType: "brush",
+    maskMode: "apply",
+    maskInverted: false,
+    maskParameters: { baseWidth: 200, baseHeight: 100 },
+    brushMaskAssetId: "mask-asset-1",
+    brushPaintedBounds: { x: 20, y: 30, width: 40, height: 50 },
+    activeRange: { startSourceTicks: 10, endSourceTicks: 90 },
+  };
+}
+
 describe("createExtensionTimelineApi", () => {
   beforeEach(() => {
+    const shapeClip = createExtensionClip("shape-1", "example.shapes");
+    shapeClip.components = [
+      {
+        id: "mask-ref-1",
+        type: "mask_ref",
+        parameters: { maskClipId: "shape-1::mask::mask-1" },
+      },
+    ];
     const tracks: TimelineTrack[] = [
       {
         id: "track-visual",
@@ -61,8 +103,9 @@ describe("createExtensionTimelineApi", () => {
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks,
       clips: [
-        createExtensionClip("shape-1", "example.shapes"),
+        shapeClip,
         createExtensionClip("tracker-1", "example.tracker"),
+        createMaskClip("shape-1"),
       ],
       transitions: [],
     });
@@ -267,8 +310,80 @@ describe("createExtensionTimelineApi", () => {
     expect(useTimelineStore.getState().undo()).toBe(true);
     expect(
       useTimelineStore.getState().clips.find((clip) => clip.id === "shape-1")
-        ?.transformations,
+      ?.transformations,
     ).toEqual([]);
+  });
+
+  it("inserts extension-created default transforms before dynamic transforms", () => {
+    const shape = createExtensionClip("shape-with-filter", "example.shapes");
+    shape.transformations = [
+      {
+        id: "filter-1",
+        type: "filter",
+        filterName: "HslAdjustmentFilter",
+        isEnabled: true,
+        parameters: { hue: 0 },
+      } as ClipTransform & { filterName: string },
+    ];
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        {
+          id: "track-visual",
+          label: "Visual",
+          type: "visual",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+        },
+      ],
+      clips: [shape],
+      transitions: [],
+    });
+
+    const api = createExtensionTimelineApi(createScope("example.tracker"));
+    const result = api.transaction("Apply tracking result", (transaction) => {
+      transaction.upsertTransform("shape-with-filter", {
+        id: "tracked-position",
+        type: "position",
+        parameters: { x: 0, y: 0 },
+      });
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(
+      useTimelineStore
+        .getState()
+        .clips.find((clip) => clip.id === "shape-with-filter")
+        ?.transformations.map((transform) => transform.type),
+    ).toEqual(["position", "filter"]);
+  });
+
+  it("lists detached mask snapshots for a clip", () => {
+    const api = createExtensionTimelineApi(createScope("example.tracker"));
+
+    expect(api.listClipMasks("shape-1")).toEqual([
+      expect.objectContaining({
+        id: "shape-1::mask::mask-1",
+        parentClipId: "shape-1",
+        localId: "mask-1",
+        startTicks: 0,
+        durationTicks: 100,
+        maskType: "brush",
+        maskMode: "apply",
+        maskInverted: false,
+        parameters: { baseWidth: 200, baseHeight: 100 },
+        assetId: "mask-asset-1",
+        paintedBounds: { x: 20, y: 30, width: 40, height: 50 },
+        activeRange: { startSourceTicks: 10, endSourceTicks: 90 },
+        transformations: [
+          expect.objectContaining({
+            id: "mask-position",
+            type: "position",
+            parameters: { x: 12, y: 8 },
+          }),
+        ],
+      }),
+    ]);
   });
 
   it("maps source frames and pixels into canonical timeline/project domains", () => {

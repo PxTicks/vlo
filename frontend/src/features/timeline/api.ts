@@ -26,6 +26,7 @@ import {
 import type {
   ExtensionTimelineEntitySnapshot,
   ExtensionTimelineClipSnapshot,
+  ExtensionTimelineMaskSnapshot,
   ExtensionTimelineTransformSnapshot,
   JsonValue,
   ExtensionTimelineTransactionResult,
@@ -398,9 +399,75 @@ export function toExtensionClipSnapshot(
   });
 }
 
+function toExtensionTransformSnapshot(
+  transform: ClipTransform,
+): ExtensionTimelineTransformSnapshot {
+  return {
+    id: transform.id,
+    type: transform.type,
+    isEnabled: transform.isEnabled,
+    parameters: transform.parameters as Record<string, JsonValue>,
+    ...(transform.keyframeTimes ? { keyframeTimes: transform.keyframeTimes } : {}),
+    ...(transform.templateId ? { templateId: transform.templateId } : {}),
+    ...("filterName" in transform && typeof transform.filterName === "string"
+      ? { filterName: transform.filterName }
+      : {}),
+  };
+}
+
+function getMaskAssetId(maskClip: MaskTimelineClip): string | undefined {
+  if (maskClip.maskType === "sam2") return maskClip.sam2MaskAssetId;
+  if (maskClip.maskType === "generation") return maskClip.generationMaskAssetId;
+  if (maskClip.maskType === "brush") return maskClip.brushMaskAssetId;
+  return undefined;
+}
+
+export function toExtensionMaskSnapshot(
+  maskClip: MaskTimelineClip,
+): ExtensionTimelineMaskSnapshot {
+  const parsed = parseMaskClipId(maskClip.id);
+  return Object.freeze({
+    id: maskClip.id,
+    parentClipId: maskClip.parentClipId ?? parsed?.clipId ?? "",
+    localId: parsed?.maskId ?? maskClip.id,
+    name: maskClip.name,
+    startTicks: maskClip.start,
+    durationTicks: maskClip.timelineDuration,
+    maskType: maskClip.maskType,
+    maskMode: maskClip.maskMode,
+    maskInverted: maskClip.maskInverted,
+    parameters: structuredClone(maskClip.maskParameters) as unknown as Record<
+      string,
+      JsonValue
+    >,
+    ...(getMaskAssetId(maskClip)
+      ? { assetId: getMaskAssetId(maskClip) }
+      : {}),
+    ...(maskClip.brushPaintedBounds
+      ? { paintedBounds: { ...maskClip.brushPaintedBounds } }
+      : {}),
+    ...(maskClip.activeRange
+      ? { activeRange: { ...maskClip.activeRange } }
+      : {}),
+    transformations: structuredClone(maskClip.transformations).map(
+      toExtensionTransformSnapshot,
+    ),
+  });
+}
+
 export function getExtensionTimelineClips(): readonly ExtensionTimelineClipSnapshot[] {
   return Object.freeze(
     useTimelineStore.getState().clips.map(toExtensionClipSnapshot),
+  );
+}
+
+export function getExtensionTimelineClipMasks(
+  clipId: string,
+): readonly ExtensionTimelineMaskSnapshot[] {
+  return Object.freeze(
+    selectMaskClipsForParent(useTimelineStore.getState(), clipId).map(
+      toExtensionMaskSnapshot,
+    ),
   );
 }
 

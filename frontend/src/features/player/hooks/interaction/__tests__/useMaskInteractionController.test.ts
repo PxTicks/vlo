@@ -6,7 +6,8 @@ import type {
   MaskTimelineClip,
 } from "../../../../../types/TimelineTypes";
 import type { BrushBuffer } from "../../../../masks/runtime/brushBufferRegistry";
-import { useTimelineStore, TICKS_PER_SECOND } from "../../../../timeline";
+import { TICKS_PER_SECOND } from "../../../../timeline";
+import { useTimelineStore } from "../../../../timeline/useTimelineStore";
 import { useMaskViewStore } from "../../../../masks/store/useMaskViewStore";
 import { createMaskLayoutTransforms } from "../../../../masks/model/maskFactory";
 import { useMaskInteractionController } from "../useMaskInteractionController";

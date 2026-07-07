@@ -6,7 +6,10 @@ import {
   renamespaceCompositeContentTracks,
   selectionToCompositeContent,
 } from "../../timelineSelection";
-import { useTimelineStore } from "../../timeline/useTimelineStore";
+import {
+  getTimelineTracks,
+  groupTimelineClipsIntoComposite,
+} from "../../timeline/api";
 import { useProjectStore } from "../../project/useProjectStore";
 import { createCompositeTimelineClipFromAsset } from "../utils/createCompositeClip";
 import { useCompositeLibraryStore } from "../useCompositeLibraryStore";
@@ -23,7 +26,7 @@ export interface GroupSelectionOptions {
  * back to the first selected clip's track, then the first project track.
  */
 function pickTargetTrackId(selection: TimelineSelection): string | null {
-  const tracks = selection.tracks ?? useTimelineStore.getState().tracks;
+  const tracks = selection.tracks ?? getTimelineTracks();
   const occupiedTrackIds = new Set(
     selection.clips
       .filter((clip) => clip.type !== "mask")
@@ -82,9 +85,10 @@ export async function groupSelectionIntoComposite(
   });
 
   const sourceClipIds = selection.clips.map((clip) => clip.id);
-  const didCommit = useTimelineStore
-    .getState()
-    .groupClipsIntoComposite(sourceClipIds, compositeClip);
+  const didCommit = groupTimelineClipsIntoComposite(
+    sourceClipIds,
+    compositeClip,
+  );
 
   if (!didCommit) {
     await useCompositeLibraryStore

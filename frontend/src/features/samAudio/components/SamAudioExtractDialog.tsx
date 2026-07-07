@@ -26,10 +26,11 @@ import type {
 } from "../../../types/TimelineTypes";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
+import { TICKS_PER_SECOND } from "../../../core/time/constants";
 import {
-  TICKS_PER_SECOND,
-  useTimelineStore,
-} from "../../timeline";
+  useTimelineClip,
+  useTimelineTracks,
+} from "../../timeline/api";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStore";
@@ -141,22 +142,15 @@ export function SamAudioExtractDialog() {
   const operationAbortRef = useRef<AbortController | null>(null);
   const activeJobIdRef = useRef<string | null>(null);
 
-  const { clip, track } = useTimelineStore(
-    useShallow((state) => {
-      const foundClip =
-        clipId !== null
-          ? state.clips.find((candidate) => candidate.id === clipId) ?? null
-          : null;
-      const foundTrack =
-        foundClip !== null
-          ? state.tracks.find((candidate) => candidate.id === foundClip.trackId) ??
-            null
-          : null;
-      return {
-        clip: foundClip,
-        track: foundTrack,
-      };
-    }),
+  const clip = useTimelineClip(clipId) ?? null;
+  const timelineTracks = useTimelineTracks();
+  const track = useMemo(
+    () =>
+      clip !== null
+        ? timelineTracks.find((candidate) => candidate.id === clip.trackId) ??
+          null
+        : null,
+    [clip, timelineTracks],
   );
   const hasPrompt = promptText.trim().length > 0;
   const hasRange = range !== null;

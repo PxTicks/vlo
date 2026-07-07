@@ -13,10 +13,15 @@ import {
   startFramePlanningDiagnosticsConsole,
 } from "../renderer";
 import {
-  useTimelineStore,
   useTimelineDuration,
   snapTickToFrameGrid,
 } from "../timeline";
+import {
+  getTimelineModelState,
+  useTimelineClips,
+  useTimelineTracks,
+  useTimelineTransitions,
+} from "../timeline/api";
 import { useProjectStore } from "../project";
 import { audioSystem } from "./services/AudioSystem";
 import { usePlayerStore } from "./usePlayerStore";
@@ -69,9 +74,9 @@ function PlayerImpl() {
   const maxTimelineDurationRef = useRef(0);
 
   // --- Store Data ---
-  const tracks = useTimelineStore((state) => state.tracks);
-  const clips = useTimelineStore((state) => state.clips);
-  const transitions = useTimelineStore((state) => state.transitions);
+  const tracks = useTimelineTracks();
+  const clips = useTimelineClips();
+  const transitions = useTimelineTransitions();
   const timelineDuration = useTimelineDuration();
   const config = useProjectStore((state) => state.config);
 
@@ -338,7 +343,7 @@ function PlayerImpl() {
             liveFrameGraphCoordinator &&
             liveFrameGraphCoordinator.participantCount > 0
           ) {
-            const timelineState = useTimelineStore.getState();
+            const timelineState = getTimelineModelState();
             const result = await liveFrameGraphCoordinator.renderFrame(
               nextFrame.time,
               {

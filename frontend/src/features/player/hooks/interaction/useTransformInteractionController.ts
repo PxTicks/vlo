@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Graphics } from "pixi.js";
 import type { Application, Container, FederatedPointerEvent, Sprite } from "pixi.js";
-import { getTimelineClipById, useTimelineStore } from "../../../timeline";
-import { useProjectStore } from "../../../project/useProjectStore";
+import {
+  addTimelineClipTransform,
+  getTimelineClipById,
+  getTimelinePresentationContext,
+  selectTimelineClip,
+  setTimelineClipTransforms,
+  updateTimelineClipTransform,
+  useSelectedTimelineClipId,
+} from "../../../timeline/api";
 import { usePlayerStore } from "../../usePlayerStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 import type { ClipTransform, TimelineClip } from "../../../../types/TimelineTypes";
@@ -15,7 +22,6 @@ import type {
 import {
   computeCommitMutation,
   createAddTransform,
-  clipVisualToSourceTime,
   insertTransformRespectingDefaultOrder,
   presentationToClipSourceTime,
   resolveScalar,
@@ -127,13 +133,7 @@ export function useTransformInteractionController(
   onLiveSpriteTransform?: () => void,
 ): TransformInteractionHandlers {
   const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
-  const addClipTransform = useTimelineStore((state) => state.addClipTransform);
-  const updateClipTransform = useTimelineStore((state) => state.updateClipTransform);
-  const setClipTransforms = useTimelineStore((state) => state.setClipTransforms);
-  const selectClip = useTimelineStore((state) => state.selectClip);
-  const selectedClipId = useTimelineStore(
-    (state) => state.selectedClipIds[0] ?? null,
-  );
+  const selectedClipId = useSelectedTimelineClipId();
   const selectCanvasClip = useCanvasSelectionStore((state) => state.selectClip);
   const armedPathRecording = useTransformationViewStore(
     (state) => state.armedPathRecording,
@@ -206,20 +206,11 @@ export function useTransformInteractionController(
         clip.start,
         Math.min(playbackClock.time, clip.start + clip.timelineDuration),
       );
-      const timelineState = useTimelineStore.getState();
-      const fps = useProjectStore.getState()?.config?.fps;
-      if (timelineState?.tracks && timelineState?.clips && fps != null) {
-        return presentationToClipSourceTime(
-          {
-            tracks: timelineState.tracks,
-            clips: timelineState.clips,
-            fps,
-          },
-          clip,
-          presentationTick,
-        );
-      }
-      return clipVisualToSourceTime(clip, presentationTick - clip.start);
+      return presentationToClipSourceTime(
+        getTimelinePresentationContext(),
+        clip,
+        presentationTick,
+      );
     };
 
     const resolvePositionAtVisualTime = (
@@ -285,7 +276,7 @@ export function useTransformInteractionController(
           : getPositionTransform(clip)) as PositionTransform | undefined;
 
       if (positionTransform) {
-        updateClipTransform(clip.id, positionTransform.id, {
+        updateTimelineClipTransform(clip.id, positionTransform.id, {
           parameters: {
             ...positionTransform.parameters,
             path,
@@ -308,7 +299,7 @@ export function useTransformInteractionController(
         clip.transformations || [],
         created,
       );
-      setClipTransforms(clip.id, nextTransforms);
+      setTimelineClipTransforms(clip.id, nextTransforms);
       return created.id;
     };
 
@@ -330,7 +321,11 @@ export function useTransformInteractionController(
         playheadTicks: playbackClock.time,
         keyframeSourceTimeTicks: resolveSourceKeyframeTime(clip),
         pointEpsilonTicks: POINT_EPSILON_TICKS,
-        actions: { addClipTransform, setClipTransforms, updateClipTransform },
+        actions: {
+          addClipTransform: addTimelineClipTransform,
+          setClipTransforms: setTimelineClipTransforms,
+          updateClipTransform: updateTimelineClipTransform,
+        },
       });
     };
 
@@ -363,7 +358,7 @@ export function useTransformInteractionController(
         clip.transformations || [],
         commit.createdTransform,
       );
-      setClipTransforms(clip.id, orderedTransforms);
+      setTimelineClipTransforms(clip.id, orderedTransforms);
       return commit.createdTransform.id;
     };
 
@@ -762,7 +757,7 @@ export function useTransformInteractionController(
         Boolean(modifierEvent.shiftKey) ||
         Boolean(modifierEvent.ctrlKey) ||
         Boolean(modifierEvent.metaKey);
-      selectClip(activeClip.id, isMulti);
+      selectTimelineClip(activeClip.id, isMulti);
       selectCanvasClip(activeClip.id);
 
       const transform = getPositionTransform(activeClip) ?? undefined;
@@ -874,7 +869,7 @@ export function useTransformInteractionController(
       }
 
       if (didMaterializeTransform) {
-        setClipTransforms(activeClip.id, nextTransforms);
+        setTimelineClipTransforms(activeClip.id, nextTransforms);
         activeClipRef.current = {
           ...activeClip,
           transformations: nextTransforms,
@@ -952,10 +947,6 @@ export function useTransformInteractionController(
     activePathEditor,
     pathPanelView,
     setIsPlaying,
-    addClipTransform,
-    updateClipTransform,
-    setClipTransforms,
-    selectClip,
     selectCanvasClip,
     setArmedPathRecording,
     setActivePathEditor,

@@ -1,7 +1,10 @@
 import type { TextClipData } from "../../../types/TimelineTypes";
 import { useProjectStore } from "../../project/useProjectStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
-import { insertBaseClipAtTime, useTimelineStore } from "../../timeline";
+import {
+  insertTimelineBaseClipAtTime,
+  selectTimelineClip,
+} from "../../timeline/api";
 import { getTicksPerFrame, snapTickToFrame } from "../../timelineSelection";
 import { createTextClip } from "./createTextClip";
 
@@ -16,12 +19,12 @@ export function insertTextClipAtPlayhead(
 ): string | null {
   const clipStart = Math.max(0, snapPlayheadToFrame());
   const baseClip = createTextClip(textOverrides);
-  const clipId = insertBaseClipAtTime(baseClip, clipStart);
+  const clipId = insertTimelineBaseClipAtTime(baseClip, clipStart);
 
   if (!clipId) {
     return null;
   }
 
-  useTimelineStore.getState().selectClip(clipId);
+  selectTimelineClip(clipId);
   return clipId;
 }

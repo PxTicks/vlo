@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { StandardTimelineClip } from "../../../types/TimelineTypes";
 import type { MaskCompositionComponent } from "../../../types/Components";
-import { useTimelineStore } from "../../timeline";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { createMaskLayoutTransforms } from "../../masks/model/maskFactory";
 import { useTransformationController } from "../hooks/useTransformationController";

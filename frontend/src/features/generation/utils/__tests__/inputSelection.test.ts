@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExportRenderer } from "../../../renderer";
 import { useProjectStore } from "../../../project/useProjectStore";
-import { useTimelineStore } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { useAssetStore } from "../../../userAssets";
 import {
   captureFramePngAtTick,

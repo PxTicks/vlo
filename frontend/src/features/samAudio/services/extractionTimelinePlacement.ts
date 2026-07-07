@@ -1,30 +1,33 @@
 import type { Asset } from "../../../types/Asset";
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { useTimelineStore } from "../../timeline";
-import { createClipFromAsset } from "../../timeline/utils/clipFactory";
+import {
+  addTimelineClipsOnNewTracksBelow,
+  createTimelineClipFromAsset,
+  getTimelineClipById,
+  toggleTimelineClipMute,
+} from "../../timeline/api";
 
 export function muteSourceClipAudio(clipId: string): void {
-  const timeline = useTimelineStore.getState();
-  const clip = timeline.clips.find((candidate) => candidate.id === clipId);
+  const clip = getTimelineClipById(clipId);
   if (!clip || clip.type === "mask" || clip.isMuted === true) {
     return;
   }
 
-  timeline.toggleClipMute(clipId);
+  toggleTimelineClipMute(clipId);
 }
 
 export function insertExtractedAudioClipBelowSource(
   sourceClip: TimelineClip,
   extractedAudioAsset: Asset,
 ): string | null {
-  const [clipId] = useTimelineStore.getState().addClipsOnNewTracksBelow(
+  const [clipId] = addTimelineClipsOnNewTracksBelow(
     sourceClip.trackId,
     [
       {
         trackLabel: `${sourceClip.name} Audio`,
         trackType: "audio",
         createClip: (trackId) => {
-          const baseClip = createClipFromAsset(extractedAudioAsset);
+          const baseClip = createTimelineClipFromAsset(extractedAudioAsset);
           if (baseClip.type !== "audio") {
             throw new Error("Extracted audio asset did not create an audio clip.");
           }

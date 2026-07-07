@@ -2,17 +2,11 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { act } from "react";
 import {
-  Application,
-  Container,
-  FederatedPointerEvent,
-  Graphics,
-  Sprite,
-} from "pixi.js";
+  Application, Container, FederatedPointerEvent, Graphics, Sprite, } from "pixi.js";
 import type {
-  TimelineClip,
-  TimelineTrack,
-} from "../../../../../types/TimelineTypes";
-import { TICKS_PER_SECOND, useTimelineStore } from "../../../../timeline";
+  TimelineClip, TimelineTrack, } from "../../../../../types/TimelineTypes";
+import { TICKS_PER_SECOND } from "../../../../timeline";
+import { useTimelineStore } from "../../../../timeline/useTimelineStore";
 import { useProjectStore } from "../../../../project/useProjectStore";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
 import { usePlayerStore } from "../../../usePlayerStore";

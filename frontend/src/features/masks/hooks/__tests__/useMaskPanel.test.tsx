@@ -3,13 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeStatus } from "../../../../types/RuntimeStatus";
 import type { MaskCompositionComponent } from "../../../../types/Components";
 import type {
-  AssetBackedClipType,
-  AssetBackedTimelineClip,
-  MaskTimelineClip,
-  TimelineClip,
-} from "../../../../types/TimelineTypes";
+  AssetBackedClipType, AssetBackedTimelineClip, MaskTimelineClip, TimelineClip, } from "../../../../types/TimelineTypes";
 import { playbackClock } from "../../../../core/playback/PlaybackClock";
-import { TICKS_PER_SECOND, useTimelineStore } from "../../../timeline";
+import { TICKS_PER_SECOND } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { useAssetStore } from "../../../userAssets";
 import { useMaskViewStore } from "../../store/useMaskViewStore";
 import {

@@ -41,7 +41,7 @@ vi.mock("../brushBufferRegistry", () => ({
   recalculateBrushPaintedBounds: mockRecalculateBrushPaintedBounds,
 }));
 
-import { useTimelineStore } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { useAssetStore } from "../../../userAssets";
 import { commitBrushMaskAsset, flushBrushMaskCommit } from "../brushAssetSync";
 

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { Application, FederatedPointerEvent } from "pixi.js";
 import { claimEditorRegion } from "../../../editorFocus";
-import { useTimelineStore } from "../../../timeline";
+import { useSelectedTimelineClipId } from "../../../timeline/api";
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 
@@ -104,9 +104,7 @@ export function registerCanvasSelectable(
 }
 
 export function useCanvasSelectionManager(app: Application | null) {
-  const selectedClipId = useTimelineStore(
-    (state) => state.selectedClipIds[0] ?? null,
-  );
+  const selectedClipId = useSelectedTimelineClipId();
   const rememberedMaskId = useMaskViewStore((state) =>
     selectedClipId
       ? (state.selectedMaskByClipId[selectedClipId] ?? null)

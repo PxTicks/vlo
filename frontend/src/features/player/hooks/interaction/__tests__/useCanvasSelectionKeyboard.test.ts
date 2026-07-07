@@ -2,10 +2,9 @@ import { fireEvent, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useEditorFocusStore } from "../../../../editorFocus";
 import type {
-  MaskTimelineClip,
-  TimelineClip,
-} from "../../../../../types/TimelineTypes";
-import { TICKS_PER_SECOND, useTimelineStore } from "../../../../timeline";
+  MaskTimelineClip, TimelineClip, } from "../../../../../types/TimelineTypes";
+import { TICKS_PER_SECOND } from "../../../../timeline";
+import { useTimelineStore } from "../../../../timeline/useTimelineStore";
 import { createMaskLayoutTransforms } from "../../../../masks/model/maskFactory";
 import { useMaskViewStore } from "../../../../masks/store/useMaskViewStore";
 import { useAssetBrowserSelectionStore } from "../../../../userAssets";

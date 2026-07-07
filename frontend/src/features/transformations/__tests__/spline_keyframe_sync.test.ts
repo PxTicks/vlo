@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { TICKS_PER_SECOND, useTimelineStore } from "../../timeline";
+import { TICKS_PER_SECOND } from "../../timeline";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { useTransformationController } from "../hooks/useTransformationController";
 
 const clipId = "clip-spline-sync";

@@ -312,7 +312,7 @@ vi.mock("../../renderer", () => ({
 import { Player } from "../Player";
 import { useProjectStore } from "../../project";
 import { fileSystemService } from "../../project";
-import { useTimelineStore } from "../../timeline";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { usePlayerStore } from "../usePlayerStore";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { useTimelineSelectionStore } from "../../timelineSelection";

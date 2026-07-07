@@ -1,7 +1,8 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { TransformationPanel } from "../TransformationPanel";
-import { useTimelineStore, TICKS_PER_SECOND } from "../../../timeline";
+import { TICKS_PER_SECOND } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { useTransformationViewStore } from "../../store/useTransformationViewStore";
 
 vi.mock("../../../timeline/useTimelineStore");
@@ -29,6 +30,16 @@ describe("TransformationPanel toggles", () => {
     transformedDuration: 10 * TICKS_PER_SECOND,
     transformedOffset: 0,
   };
+  const tracks = [
+    {
+      id: "track_1",
+      label: "Track 1",
+      isVisible: true,
+      isLocked: false,
+      isMuted: false,
+      type: "visual",
+    },
+  ];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -48,9 +59,8 @@ describe("TransformationPanel toggles", () => {
       parameters: Record<string, unknown>;
     }>,
   ) {
-    (
-      useTimelineStore as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation((selector: (state: {
+    const state: {
+      tracks: typeof tracks;
       selectedClipIds: string[];
       clips: Array<
         typeof baseClip & {
@@ -65,25 +75,33 @@ describe("TransformationPanel toggles", () => {
       updateClipShape: typeof mockUpdateClipShape;
       setClipMaskCompositeTransforms: typeof mockSetClipMaskCompositeTransforms;
       updateClipMask: typeof mockUpdateClipMask;
-    }) => unknown) =>
-      selector({
-        selectedClipIds: ["clip_1"],
-        clips: [
-          {
-            ...baseClip,
-            transformations,
-          },
-        ],
-        addClipTransform: mockAddClipTransform,
-        updateClipTransform: mockUpdateClipTransform,
-        removeClipTransform: mockRemoveClipTransform,
-        setClipTransforms: mockSetClipTransforms,
-        setClipTransformsAndShape: mockSetClipTransformsAndShape,
-        updateClipShape: mockUpdateClipShape,
-        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
-        updateClipMask: mockUpdateClipMask,
-      }),
+    } = {
+      tracks,
+      selectedClipIds: ["clip_1"],
+      clips: [
+        {
+          ...baseClip,
+          transformations,
+        },
+      ],
+      addClipTransform: mockAddClipTransform,
+      updateClipTransform: mockUpdateClipTransform,
+      removeClipTransform: mockRemoveClipTransform,
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      updateClipShape: mockUpdateClipShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+    };
+    const mockedStore = useTimelineStore as unknown as ReturnType<
+      typeof vi.fn
+    > & {
+      getState: ReturnType<typeof vi.fn>;
+    };
+    mockedStore.mockImplementation(
+      (selector: (store: typeof state) => unknown) => selector(state),
     );
+    mockedStore.getState = vi.fn(() => state);
   }
 
   it("disables a dynamic section from its header checkbox", () => {

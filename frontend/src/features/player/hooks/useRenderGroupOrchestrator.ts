@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { Container } from "pixi.js";
-import { useTimelineStore } from "../../timeline/useTimelineStore";
+import {
+  useTimelineClips,
+  useTimelineTracks,
+} from "../../timeline/api";
 import { useProjectStore } from "../../project/useProjectStore";
 import { RenderGroupOrchestrator } from "../../renderer/services/RenderGroupOrchestrator";
 import { AdjustmentEffectResolver } from "../../renderer/services/AdjustmentEffectResolver";
@@ -56,8 +59,8 @@ export function useRenderGroupOrchestrator(
   // Subscribe to the canonical source-of-truth for adjustment-clip
   // derivation. Tolerate undefined from test mocks that don't include the
   // store fields — defaults to empty arrays.
-  const tracks = useTimelineStore((s) => s.tracks ?? []);
-  const clips = useTimelineStore((s) => s.clips ?? []);
+  const tracks = useTimelineTracks();
+  const clips = useTimelineClips();
   const projectFps = useProjectStore((s) => s.config.fps);
   useEffect(() => {
     adjustmentEffectResolver.setAdjustmentSource(tracks, clips, projectFps);

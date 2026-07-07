@@ -5,7 +5,13 @@ import type {
   StandardTimelineClip,
 } from "../../../types/TimelineTypes";
 import type { RangeMaskComponent } from "../../../types/Components";
-import { TICKS_PER_SECOND, useTimelineStore } from "../../timeline";
+import { TICKS_PER_SECOND } from "../../../core/time/constants";
+import {
+  addTimelineClipComponent,
+  getTimelinePresentationContext,
+  removeTimelineClipComponent,
+  updateTimelineClipComponent,
+} from "../../timeline/api";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
@@ -13,7 +19,6 @@ import {
   mapSourceTimeToVisualTime,
   type ClipPresentationContext,
 } from "../../transformations";
-import { useProjectStore } from "../../project/useProjectStore";
 import { toClipInputTimeTicks } from "../utils/clipTime";
 
 interface UpdateClipMaskFn {
@@ -35,12 +40,7 @@ interface UseRangeMaskSelectionArgs {
 }
 
 function getClipPresentationContext(): ClipPresentationContext {
-  const timelineState = useTimelineStore.getState();
-  return {
-    tracks: timelineState.tracks,
-    clips: timelineState.clips,
-    fps: useProjectStore.getState().config.fps,
-  };
+  return getTimelinePresentationContext();
 }
 
 export interface UseRangeMaskSelectionResult {
@@ -61,14 +61,6 @@ export function useRangeMaskSelection({
   selectedMask,
   updateClipMask,
 }: UseRangeMaskSelectionArgs): UseRangeMaskSelectionResult {
-  const addClipComponent = useTimelineStore((state) => state.addClipComponent);
-  const updateClipComponent = useTimelineStore(
-    (state) => state.updateClipComponent,
-  );
-  const removeClipComponent = useTimelineStore(
-    (state) => state.removeClipComponent,
-  );
-
   const rangeMaskComponents = useMemo<RangeMaskComponent[]>(
     () =>
       (standardSelectedClip?.components ?? []).filter(
@@ -139,9 +131,9 @@ export function useRangeMaskSelection({
           isActive: true,
         },
       };
-      addClipComponent(selectedClipId, newComponent);
+      addTimelineClipComponent(selectedClipId, newComponent);
     });
-  }, [addClipComponent, beginClipSelection, selectedClipId, standardSelectedClip]);
+  }, [beginClipSelection, selectedClipId, standardSelectedClip]);
 
   const startEditRangeMask = useCallback(
     (rangeMaskId: string) => {
@@ -166,7 +158,7 @@ export function useRangeMaskSelection({
       const seededEnd = Math.max(clipStart, Math.min(rawEnd, clipEnd));
 
       beginClipSelection(clip, seededStart, seededEnd, (startSourceTicks, endSourceTicks) => {
-        updateClipComponent(selectedClipId, rangeMaskId, (component) => {
+        updateTimelineClipComponent(selectedClipId, rangeMaskId, (component) => {
           if (component.type !== "range_mask") return component;
           return {
             ...component,
@@ -179,21 +171,21 @@ export function useRangeMaskSelection({
         });
       });
     },
-    [beginClipSelection, selectedClipId, standardSelectedClip, updateClipComponent],
+    [beginClipSelection, selectedClipId, standardSelectedClip],
   );
 
   const removeRangeMask = useCallback(
     (rangeMaskId: string) => {
       if (!selectedClipId) return;
-      removeClipComponent(selectedClipId, rangeMaskId);
+      removeTimelineClipComponent(selectedClipId, rangeMaskId);
     },
-    [removeClipComponent, selectedClipId],
+    [selectedClipId],
   );
 
   const toggleRangeMaskActive = useCallback(
     (rangeMaskId: string) => {
       if (!selectedClipId) return;
-      updateClipComponent(selectedClipId, rangeMaskId, (component) => {
+      updateTimelineClipComponent(selectedClipId, rangeMaskId, (component) => {
         if (component.type !== "range_mask") return component;
         return {
           ...component,
@@ -204,7 +196,7 @@ export function useRangeMaskSelection({
         };
       });
     },
-    [selectedClipId, updateClipComponent],
+    [selectedClipId],
   );
 
   const selectedMaskActiveRange = useMemo<MaskActiveRange | null>(() => {

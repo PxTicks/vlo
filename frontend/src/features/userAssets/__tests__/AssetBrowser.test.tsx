@@ -13,7 +13,7 @@ import { useAssetStore } from "../useAssetStore";
 import type { Asset, AssetFamily } from "../../../types/Asset";
 import type { BaseClip, TimelineClip } from "../../../types/TimelineTypes";
 import { useInteractionStore } from "../../timeline/hooks/useInteractionStore";
-import { useTimelineStore } from "../../timeline";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { useProjectStore } from "../../project";
 import {
   revealAssetInBrowser,

@@ -14,13 +14,18 @@ import type {
   MaskTimelineClip,
 } from "../../../../types/TimelineTypes";
 import {
+  addTimelineClipMask,
+  getSelectedTimelineClipId,
   getTimelineClipById,
-  useTimelineStore,
-  selectMaskClipsForParent,
+  getTimelinePresentationContext,
+  getMaskClipsForParent,
   parseMaskClipId,
-} from "../../../timeline";
+  selectTimelineClip,
+  updateTimelineClipMask,
+  useMaskClipsForParent,
+  useSelectedTimelineClipId,
+} from "../../../timeline/api";
 import { usePlayerStore } from "../../usePlayerStore";
-import { useShallow } from "zustand/react/shallow";
 import {
   calculateClipTime,
   commitLayoutControlToTransforms,
@@ -276,8 +281,7 @@ interface SelectedMaskContext {
 }
 
 function resolveSelectedMaskContext(): SelectedMaskContext {
-  const timelineState = useTimelineStore.getState();
-  const selectedClipId = timelineState.selectedClipIds[0] ?? null;
+  const selectedClipId = getSelectedTimelineClipId();
   const selectedClip = getTimelineClipById(selectedClipId) ?? null;
 
   if (!selectedClipId || !selectedClip) {
@@ -300,7 +304,7 @@ function resolveSelectedMaskContext(): SelectedMaskContext {
     };
   }
 
-  const maskClips = selectMaskClipsForParent(timelineState, selectedClipId);
+  const maskClips = getMaskClipsForParent(selectedClipId);
   const maskClip =
     maskClips.find((c) => {
       const parsed = parseMaskClipId(c.id);
@@ -326,9 +330,6 @@ export function useMaskInteractionController(
   const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
   const projectFps = useProjectStore((state) => state.config.fps);
   const assets = useAssetStore((state) => state.assets);
-  const addClipMask = useTimelineStore((state) => state.addClipMask);
-  const updateClipMask = useTimelineStore((state) => state.updateClipMask);
-  const selectClip = useTimelineStore((state) => state.selectClip);
   const activeCanvasSelection = useCanvasSelectionStore(
     (state) => state.activeSelection,
   );
@@ -356,9 +357,7 @@ export function useMaskInteractionController(
     (state) => state.setPathPanelView,
   );
 
-  const selectedClipId = useTimelineStore(
-    (state) => state.selectedClipIds[0] ?? null,
-  );
+  const selectedClipId = useSelectedTimelineClipId();
   const selectedMaskId = useMaskViewStore((state) =>
     selectedClipId
       ? (state.selectedMaskByClipId[selectedClipId] ?? null)
@@ -377,17 +376,15 @@ export function useMaskInteractionController(
     (state) => state.pendingDrawRequest,
   );
 
-  const selectedMaskClip = useTimelineStore(
-    useShallow((state) => {
-      if (!selectedClipId || !selectedMaskId) return null;
-      const maskClips = selectMaskClipsForParent(state, selectedClipId);
-      return (
-        maskClips.find(
-          (c) => parseMaskClipId(c.id)?.maskId === selectedMaskId,
-        ) ?? null
-      );
-    }),
-  );
+  const parentMaskClips = useMaskClipsForParent(selectedClipId);
+  const selectedMaskClip = useMemo(() => {
+    if (!selectedClipId || !selectedMaskId) return null;
+    return (
+      parentMaskClips.find(
+        (c) => parseMaskClipId(c.id)?.maskId === selectedMaskId,
+      ) ?? null
+    );
+  }, [parentMaskClips, selectedClipId, selectedMaskId]);
 
   const interactionRef = useRef<MaskInteractionState>(
     createInitialMaskInteractionState(),
@@ -492,15 +489,10 @@ export function useMaskInteractionController(
         return null;
       }
 
-      const timelineState = useTimelineStore.getState();
       const sourceTimeTicks = Math.max(
         0,
         presentationToClipSourceTime(
-          {
-            tracks: timelineState.tracks,
-            clips: timelineState.clips,
-            fps: projectFps,
-          },
+          getTimelinePresentationContext(),
           activeClip,
           playbackClock.time,
         ),
@@ -854,8 +846,7 @@ export function useMaskInteractionController(
       if (!activeClip) return null;
       if (!syncOverlayToSprite()) return null;
 
-      const timelineState = useTimelineStore.getState();
-      const maskClips = selectMaskClipsForParent(timelineState, activeClip.id);
+      const maskClips = getMaskClipsForParent(activeClip.id);
 
       const selectedMaskLocalId =
         useMaskViewStore.getState().selectedMaskByClipId[activeClip.id] ?? null;
@@ -885,8 +876,7 @@ export function useMaskInteractionController(
       maskLocalId: string,
       update: (points: ClipMaskPoint[]) => ClipMaskPoint[],
     ) => {
-      const state = useTimelineStore.getState();
-      const maskClips = selectMaskClipsForParent(state, clipId);
+      const maskClips = getMaskClipsForParent(clipId);
       const maskClip = maskClips.find((candidate) => {
         const parsed = parseMaskClipId(candidate.id);
         return parsed?.maskId === maskLocalId;
@@ -909,9 +899,9 @@ export function useMaskInteractionController(
         });
       if (!didChange) return;
 
-      updateClipMask(clipId, maskLocalId, { maskPoints: nextPoints });
+      updateTimelineClipMask(clipId, maskLocalId, { maskPoints: nextPoints });
     },
-    [updateClipMask],
+    [],
   );
 
   const getTargetMaskForEditing =
@@ -1021,7 +1011,7 @@ export function useMaskInteractionController(
             : transform,
       );
 
-      updateClipMask(parsed.clipId, parsed.maskId, {
+      updateTimelineClipMask(parsed.clipId, parsed.maskId, {
         transformations: nextTransforms,
       });
       return positionTransform.id;
@@ -1040,8 +1030,7 @@ export function useMaskInteractionController(
       maskLocalId: string,
       updates: Partial<MaskLayoutState>,
     ) => {
-      const state = useTimelineStore.getState();
-      const maskClips = selectMaskClipsForParent(state, clipId);
+      const maskClips = getMaskClipsForParent(clipId);
       const maskClip = maskClips.find((c) => {
         const parsed = parseMaskClipId(c.id);
         return parsed?.maskId === maskLocalId;
@@ -1094,7 +1083,9 @@ export function useMaskInteractionController(
         );
       }
 
-      updateClipMask(clipId, maskLocalId, { transformations: nextTransforms });
+      updateTimelineClipMask(clipId, maskLocalId, {
+        transformations: nextTransforms,
+      });
     };
 
     function onPointerMove(e: FederatedPointerEvent) {
@@ -1300,8 +1291,7 @@ export function useMaskInteractionController(
         current.path &&
         current.startLayout
       ) {
-        const state = useTimelineStore.getState();
-        const maskClips = selectMaskClipsForParent(state, current.clipId);
+        const maskClips = getMaskClipsForParent(current.clipId);
         const latestMaskClip = maskClips.find((candidate) => {
           const parsed = parseMaskClipId(candidate.id);
           return parsed?.maskId === current.maskId;
@@ -1387,7 +1377,7 @@ export function useMaskInteractionController(
               },
             },
           );
-          addClipMask(current.clipId, finalMask);
+          addTimelineClipMask(current.clipId, finalMask);
           setSelectedMask(current.clipId, finalMask.id);
           selectCanvasMask(current.clipId, finalMask.id);
           setInteractionContext({
@@ -1436,7 +1426,7 @@ export function useMaskInteractionController(
 
       e.stopPropagation();
       setIsPlaying(false);
-      selectClip(target.clipId, false);
+      selectTimelineClip(target.clipId, false);
       setSelectedMask(target.clipId, target.maskLocalId);
       selectCanvasMask(target.clipId, target.maskLocalId);
       clearLiveMaskLayoutPreview();
@@ -1540,7 +1530,7 @@ export function useMaskInteractionController(
 
       e.stopPropagation();
       setIsPlaying(false);
-      selectClip(target.clipId, false);
+      selectTimelineClip(target.clipId, false);
       setSelectedMask(target.clipId, target.maskLocalId);
       selectCanvasMask(target.clipId, target.maskLocalId);
       clearLiveMaskLayoutPreview();
@@ -1574,7 +1564,7 @@ export function useMaskInteractionController(
           canvasSize.height !== params?.baseHeight)
       ) {
         // Persist the finalized canvas size so reloads/hydration restore it.
-        updateClipMask(target.clipId, target.maskLocalId, {
+        updateTimelineClipMask(target.clipId, target.maskLocalId, {
           maskParameters: {
             baseWidth: canvasSize.width,
             baseHeight: canvasSize.height,
@@ -1650,7 +1640,7 @@ export function useMaskInteractionController(
       }
       e.stopPropagation();
       setIsPlaying(false);
-      selectClip(target.clipId, false);
+      selectTimelineClip(target.clipId, false);
       setSelectedMask(target.clipId, target.maskLocalId);
       selectCanvasMask(target.clipId, target.maskLocalId);
       clearLiveMaskLayoutPreview();
@@ -1719,15 +1709,14 @@ export function useMaskInteractionController(
       const activeClip = activeClipRef.current;
       if (!activeClip || !viewport) return false;
 
-      const timelineState = useTimelineStore.getState();
-      const selectedId = timelineState.selectedClipIds[0] ?? null;
+      const selectedId = getSelectedTimelineClipId();
       if (!selectedId || activeClip.id !== selectedId) return false;
 
       const pendingDraw = useMaskViewStore.getState().pendingDrawRequest;
       if (pendingDraw && pendingDraw.clipId === selectedId) {
         e.stopPropagation();
         setIsPlaying(false);
-        selectClip(selectedId, false);
+        selectTimelineClip(selectedId, false);
         selectCanvasClip(selectedId);
         clearLiveMaskLayoutPreview();
 
@@ -1795,7 +1784,7 @@ export function useMaskInteractionController(
 
       e.stopPropagation();
       setIsPlaying(false);
-      selectClip(targetMask.clipId, false);
+      selectTimelineClip(targetMask.clipId, false);
       setSelectedMask(targetMask.clipId, targetMask.maskLocalId);
       selectCanvasMask(targetMask.clipId, targetMask.maskLocalId);
       clearLiveMaskLayoutPreview();
@@ -1844,7 +1833,6 @@ export function useMaskInteractionController(
     };
   }, [
     activeClipRef,
-    addClipMask,
     app,
     clearPendingDraw,
     clearLiveMaskLayoutPreview,
@@ -1859,7 +1847,6 @@ export function useMaskInteractionController(
     resolveMaskLayoutAtPlayhead,
     resolveMaskLayoutBaseSize,
     resolveActiveClipContentSize,
-    selectClip,
     selectCanvasClip,
     selectCanvasMask,
     setActivePathEditor,
@@ -1874,7 +1861,6 @@ export function useMaskInteractionController(
     toSam2LocalPoint,
     toSam2NormalizedPoint,
     toClipLocal,
-    updateClipMask,
     updateSam2MaskPoints,
     viewport,
   ]);

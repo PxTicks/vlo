@@ -1,6 +1,12 @@
 import { useEffect } from "react";
 import { useEditorFocusStore } from "../../../editorFocus";
-import { useTimelineStore } from "../../../timeline";
+import {
+  getSelectedTimelineClipIds,
+  removeTimelineClip,
+  removeTimelineClipMask,
+  removeTimelineClips,
+  selectTimelineClip,
+} from "../../../timeline/api";
 import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
 
@@ -20,10 +26,6 @@ function isMaskEquationTarget(target: EventTarget | null): boolean {
 }
 
 export function useCanvasSelectionKeyboard() {
-  const removeClip = useTimelineStore((state) => state.removeClip);
-  const removeClips = useTimelineStore((state) => state.removeClips);
-  const removeClipMask = useTimelineStore((state) => state.removeClipMask);
-  const selectClip = useTimelineStore((state) => state.selectClip);
   const setSelectedMask = useMaskViewStore((state) => state.setSelectedMask);
 
   useEffect(() => {
@@ -49,32 +51,32 @@ export function useCanvasSelectionKeyboard() {
       // the clip (see useCanvasSelectionManager). Delete therefore acts on
       // exactly the indicated object instead of walking through every mask.
       if (activeSelection.kind === "mask") {
-        removeClipMask(activeSelection.clipId, activeSelection.maskId);
+        removeTimelineClipMask(activeSelection.clipId, activeSelection.maskId);
         // Fall back to the clip's transform gizmo rather than advancing to the
         // next mask; a further, deliberate Delete then removes the clip. This
         // is what prevents a held Delete from cascading through every mask.
         setSelectedMask(activeSelection.clipId, null);
-        selectClip(activeSelection.clipId, false);
+        selectTimelineClip(activeSelection.clipId, false);
         selectionStore.selectClip(activeSelection.clipId);
         return;
       }
 
-      const { selectedClipIds } = useTimelineStore.getState();
+      const selectedClipIds = getSelectedTimelineClipIds();
       const clipIdsToRemove = selectedClipIds.includes(activeSelection.clipId)
         ? selectedClipIds
         : [activeSelection.clipId];
 
       if (clipIdsToRemove.length > 1) {
-        removeClips(clipIdsToRemove);
+        removeTimelineClips(clipIdsToRemove);
       } else {
-        removeClip(activeSelection.clipId);
+        removeTimelineClip(activeSelection.clipId);
       }
-      selectClip(null);
+      selectTimelineClip(null);
       selectionStore.clearSelection();
     };
 
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () =>
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, [removeClip, removeClips, removeClipMask, selectClip, setSelectedMask]);
+  }, [setSelectedMask]);
 }

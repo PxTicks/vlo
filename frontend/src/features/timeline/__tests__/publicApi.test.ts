@@ -30,7 +30,6 @@ import {
   useTimelineClipCountForAsset,
   useTimelineClipsForTrack,
   useTimelineDuration,
-  useTimelineStore,
   TICKS_PER_SECOND,
 } from "..";
 import {
@@ -40,6 +39,7 @@ import {
   useTimelineClips,
   useTimelineTracks,
 } from "../api";
+import { useTimelineStore } from "../useTimelineStore";
 import { useProjectStore } from "../../project/useProjectStore";
 
 const TRACKS: TimelineTrack[] = [

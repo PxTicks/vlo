@@ -9,7 +9,7 @@ import {
   type AdjustmentTimelineClip,
   type TimelineTrack,
 } from "../../../../types/TimelineTypes";
-import { useTimelineStore } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { AdjustmentDepthSection } from "../AdjustmentDepthSection";
 
 function adjustmentTrack(id: string): TimelineTrack {

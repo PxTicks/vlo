@@ -14,13 +14,10 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../timeline", () => ({
-  useTimelineStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      clips: mocks.clips,
-      selectedClipIds: mocks.selectedClipIds,
-      updateTextClipData: mocks.updateTextClipData,
-    }),
+vi.mock("../../timeline/api", () => ({
+  useTimelineClips: () => mocks.clips,
+  useSelectedTimelineClipIds: () => mocks.selectedClipIds,
+  updateTimelineTextClipData: mocks.updateTextClipData,
 }));
 
 vi.mock("../utils/insertTextClipAtPlayhead", () => ({

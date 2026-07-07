@@ -1,14 +1,14 @@
 import { useMemo } from "react";
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import { useShallow } from "zustand/react/shallow";
 import type { TimelineClipOverlayDefinition } from "../../timeline/clipOverlayApi";
 import { createSourceTimeOverlayItem } from "../../timeline/clipOverlayApi";
 import {
+  getTimelineClipById,
   parseMaskClipId,
-  selectMaskClipsForParent,
-  useTimelineStore,
-} from "../../timeline/useTimelineStore";
+  updateTimelineClipTransform,
+  useMaskClipsForParent,
+} from "../../timeline/api";
 import { useTimelineViewStore } from "../../timeline/hooks/useTimelineViewStore";
 import { buildFrameSnappedSourceTimeDrag } from "../../timeline/utils/snapDragOverlay";
 import { useProjectStore } from "../../project/useProjectStore";
@@ -117,8 +117,7 @@ function commitKeyframeMove(
   oldSourceTimeTicks: number,
   newSourceTimeTicks: number,
 ): void {
-  const store = useTimelineStore.getState();
-  const hostClip = store.clips.find((candidate) => candidate.id === hostClipId);
+  const hostClip = getTimelineClipById(hostClipId);
   if (!hostClip) return;
   const transform = hostClip.transformations.find((t) => t.id === transformId);
   if (!transform) return;
@@ -153,7 +152,7 @@ function commitKeyframeMove(
     nextParameters[key] = { type: "spline" as const, points: newPoints };
   });
 
-  store.updateClipTransform(hostClipId, transformId, {
+  updateTimelineClipTransform(hostClipId, transformId, {
     parameters: nextParameters,
     keyframeTimes: nextTimes,
   });
@@ -183,9 +182,7 @@ function useKeyframeOverlayItems({
     return null;
   });
 
-  const maskClips = useTimelineStore(
-    useShallow((state) => selectMaskClipsForParent(state, clip.id)),
-  );
+  const maskClips = useMaskClipsForParent(clip.id);
 
   return useMemo(() => {
     const keyframes = resolveActiveClipKeyframes(clip, maskClips, activeSection);

@@ -3,10 +3,12 @@ import type {
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
 import {
-  countBrushMaskAssetConsumers,
+  getTimelineBrushMaskAssetConsumerCount,
+  getTimelineBrushMaskClipIds,
+  getTimelineMaskClipById,
   parseMaskClipId,
-  useTimelineStore,
-} from "../../timeline/useTimelineStore";
+  updateTimelineClipMask,
+} from "../../timeline/api";
 import { useAssetStore } from "../../userAssets/useAssetStore";
 import {
   disposeBrushBuffer,
@@ -48,16 +50,14 @@ export async function commitBrushMaskAsset(
   if (!paintedBounds || paintedBounds.width <= 0 || paintedBounds.height <= 0) {
     if (!shouldCommit()) return null;
     // Nothing painted: clear any existing asset reference.
-    useTimelineStore.getState().updateClipMask(parentClipId, maskLocalId, {
+    updateTimelineClipMask(parentClipId, maskLocalId, {
       brushMaskAssetId: undefined,
       brushPaintedBounds: undefined,
     });
     if (previousAssetId) {
       try {
-        const remaining = countBrushMaskAssetConsumers(
-          useTimelineStore.getState().clips,
-          previousAssetId,
-        );
+        const remaining =
+          getTimelineBrushMaskAssetConsumerCount(previousAssetId);
         if (remaining === 0) {
           await useAssetStore.getState().deleteAsset(previousAssetId);
         }
@@ -93,17 +93,15 @@ export async function commitBrushMaskAsset(
     return null;
   }
 
-  useTimelineStore.getState().updateClipMask(parentClipId, maskLocalId, {
+  updateTimelineClipMask(parentClipId, maskLocalId, {
     brushMaskAssetId: created.id,
     brushPaintedBounds: paintedBounds,
   });
 
   if (previousAssetId && previousAssetId !== created.id) {
     try {
-      const remaining = countBrushMaskAssetConsumers(
-        useTimelineStore.getState().clips,
-        previousAssetId,
-      );
+      const remaining =
+        getTimelineBrushMaskAssetConsumerCount(previousAssetId);
       if (remaining === 0) {
         await useAssetStore.getState().deleteAsset(previousAssetId);
       }
@@ -116,11 +114,7 @@ export async function commitBrushMaskAsset(
 }
 
 function findMaskClip(maskClipId: string): MaskTimelineClip | null {
-  const clip = useTimelineStore
-    .getState()
-    .clips.find((candidate) => candidate.id === maskClipId);
-  if (!clip || clip.type !== "mask") return null;
-  return clip;
+  return getTimelineMaskClipById(maskClipId);
 }
 
 /**
@@ -203,13 +197,7 @@ export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
  * PNG assets before we persist timeline/assets documents or switch projects.
  */
 export async function flushAllBrushMaskCommits(): Promise<void> {
-  const brushMaskClipIds = useTimelineStore
-    .getState()
-    .clips.filter(
-      (clip): clip is MaskTimelineClip =>
-        clip.type === "mask" && clip.maskType === "brush",
-    )
-    .map((clip) => clip.id);
+  const brushMaskClipIds = getTimelineBrushMaskClipIds();
 
   await Promise.all(
     brushMaskClipIds.map((maskClipId) => flushBrushMaskCommit(maskClipId)),

@@ -24,7 +24,12 @@ import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 
 import type { Asset, AssetType } from "../../types/Asset";
 import { doesAssetBelongToFamily } from "../../shared/utils/assetFamilies";
-import { getTimelineClipCountForAsset, useTimelineStore } from "../timeline";
+import {
+  getSelectedTimelineClipIds,
+  getTimelineClipCountForAsset,
+  selectTimelineClip,
+  useTimelineClips,
+} from "../timeline/api";
 import { useInteractionStore } from "../timeline/hooks/useInteractionStore";
 import { useProjectStore } from "../project/useProjectStore";
 import { LibraryBrowserGrid, type LibraryBrowserGridApi } from "../libraryBrowser";
@@ -146,7 +151,7 @@ function AssetBrowserComponent() {
   const addLocalAssets = useAssetStore((state) => state.addLocalAssets);
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
   const isUploading = useAssetStore((state) => state.isUploading);
-  const timelineClips = useTimelineStore((state) => state.clips);
+  const timelineClips = useTimelineClips();
   const assetBrowserDisplay = useProjectStore(
     (state) => state.config.assetBrowserDisplay,
   );
@@ -488,7 +493,7 @@ function AssetBrowserComponent() {
     setSelectedAssetIds(nextSelectedAssetIds);
 
     if (nextSelectedAssetIds.length === 0) {
-      useTimelineStore.getState().selectClip(null);
+      selectTimelineClip(null);
     }
   }, [selectedAssetIds, setSelectedAssetIds, visibleAssetIds]);
 
@@ -503,7 +508,7 @@ function AssetBrowserComponent() {
         (clip) => isAssetBackedClip(clip) && selectedAssetIdSet.has(clip.assetId),
       )
       .map((clip) => clip.id);
-    const { selectedClipIds, selectClip } = useTimelineStore.getState();
+    const selectedClipIds = getSelectedTimelineClipIds();
 
     if (
       selectedClipIds.length === nextSelectedClipIds.length &&
@@ -514,9 +519,9 @@ function AssetBrowserComponent() {
       return;
     }
 
-    selectClip(null);
+    selectTimelineClip(null);
     nextSelectedClipIds.forEach((clipId) => {
-      selectClip(clipId, true);
+      selectTimelineClip(clipId, true);
     });
   }, [selectedAssetIds, timelineClips]);
 
@@ -540,7 +545,7 @@ function AssetBrowserComponent() {
       }
 
       clearSelectedAssets();
-      useTimelineStore.getState().selectClip(null);
+      selectTimelineClip(null);
     }
 
     window.addEventListener("mousedown", handleWindowMouseDown);
@@ -611,7 +616,7 @@ function AssetBrowserComponent() {
           setSelectedAssetIds(remainingAssetIds);
 
           if (remainingAssetIds.length === 0) {
-            useTimelineStore.getState().selectClip(null);
+            selectTimelineClip(null);
           }
         } finally {
           isDeletingSelectedAssetsRef.current = false;
@@ -685,7 +690,7 @@ function AssetBrowserComponent() {
         setSelectedAssetIds(nextSelectedAssetIds);
 
         if (nextSelectedAssetIds.length === 0) {
-          useTimelineStore.getState().selectClip(null);
+          selectTimelineClip(null);
         }
         return;
       }
@@ -733,7 +738,7 @@ function AssetBrowserComponent() {
       }
 
       clearSelectedAssets();
-      useTimelineStore.getState().selectClip(null);
+      selectTimelineClip(null);
     },
     [clearSelectedAssets],
   );

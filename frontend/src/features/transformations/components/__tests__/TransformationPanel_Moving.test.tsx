@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { TransformationPanel } from "../TransformationPanel";
-import { useTimelineStore } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Mock the store

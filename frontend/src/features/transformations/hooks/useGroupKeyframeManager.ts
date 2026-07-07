@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutGroup, ControlDefinition } from "../../panelUI/types";
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
-import { useTimelineStore, useTimelineClip } from "../../timeline";
-import { useProjectStore } from "../../project/useProjectStore";
+import {
+  getTimelinePresentationContext,
+  setTimelineClipTransforms,
+  updateTimelineClipTransform,
+  useTimelineClip,
+} from "../../timeline/api";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import {
-  clipVisualToSourceTime,
   presentationToClipSourceTime,
 } from "../utils/clipTimeDomains";
 import { resolveScalar } from "../utils/resolveScalar";
@@ -68,8 +71,6 @@ export function useGroupKeyframeManager({
 }: UseGroupKeyframeManagerInput): UseGroupKeyframeManagerResult {
   const storeClip = useTimelineClip(clipId);
   const clip = timelineClip ?? storeClip;
-  const setClipTransforms = useTimelineStore((state) => state.setClipTransforms);
-  const updateClipTransform = useTimelineStore((state) => state.updateClipTransform);
   const setActiveSpline = useTransformationViewStore((state) => state.setActiveSpline);
   const splineableControls = useMemo(() => getSplineableControls(group), [group]);
   const enabled = splineableControls.length > 0 && !!clip;
@@ -116,20 +117,11 @@ export function useGroupKeyframeManager({
 
       // Presentation-aware and source-anchored: this is the source-media time
       // (in project ticks) displayed at the playhead.
-      const timelineState = useTimelineStore.getState();
-      const fps = useProjectStore.getState()?.config?.fps;
-      const keyframeTime =
-        timelineState?.tracks && timelineState?.clips && fps != null
-          ? presentationToClipSourceTime(
-              {
-                tracks: timelineState.tracks,
-                clips: timelineState.clips,
-                fps,
-              },
-              currentClip,
-              clampedTime,
-            )
-          : clipVisualToSourceTime(currentClip, clampedTime - currentClip.start);
+      const keyframeTime = presentationToClipSourceTime(
+        getTimelinePresentationContext(),
+        currentClip,
+        clampedTime,
+      );
 
       keyframeTimeRef.current = keyframeTime;
 
@@ -197,7 +189,7 @@ export function useGroupKeyframeManager({
             keyframeTimes: newKeyframeTimes,
           });
         } else {
-          updateClipTransform(currentClip.id, currentTransform.id, {
+          updateTimelineClipTransform(currentClip.id, currentTransform.id, {
             parameters: nextParams,
             keyframeTimes: newKeyframeTimes,
           });
@@ -237,7 +229,7 @@ export function useGroupKeyframeManager({
             keyframeTimes: newKeyframeTimes,
           });
         } else {
-          updateClipTransform(currentClip.id, currentTransform.id, {
+          updateTimelineClipTransform(currentClip.id, currentTransform.id, {
             parameters: nextParams,
             keyframeTimes: newKeyframeTimes,
           });
@@ -283,7 +275,7 @@ export function useGroupKeyframeManager({
     if (onSetTransforms) {
       onSetTransforms(nextTransforms);
     } else {
-      setClipTransforms(currentClip.id, nextTransforms);
+      setTimelineClipTransforms(currentClip.id, nextTransforms);
     }
 
     if (targetContextId) {
@@ -296,8 +288,6 @@ export function useGroupKeyframeManager({
   }, [
     splineableControls,
     group,
-    updateClipTransform,
-    setClipTransforms,
     setActiveSpline,
     onToggleKeyframe,
     onUpdateTransform,

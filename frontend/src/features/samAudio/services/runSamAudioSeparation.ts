@@ -1,7 +1,10 @@
 import type { Asset } from "../../../types/Asset";
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import { useProjectStore } from "../../project";
-import { useTimelineStore } from "../../timeline";
+import {
+  addTimelineClipsOnNewTracksBelow,
+  getTimelineClipById,
+  getTimelinePresentationContext,
+} from "../../timeline/api";
 import { ensureAssetFileLoaded } from "../../userAssets/api";
 import { useAssetStore } from "../../userAssets/useAssetStore";
 import { createSplitAudioStemClip } from "../model/createSplitAudioClip";
@@ -145,9 +148,7 @@ function getClipAndAsset(clipId: string): {
   clip: TimelineClip & { assetId: string };
   asset: Asset;
 } {
-  const clip = useTimelineStore
-    .getState()
-    .clips.find((candidate) => candidate.id === clipId) ?? null;
+  const clip = getTimelineClipById(clipId) ?? null;
   if (!isAudioCapableClip(clip)) {
     throw new Error("Select an audio or video clip with audio first.");
   }
@@ -168,7 +169,7 @@ function insertSplitAudioClips(args: {
   residualAsset: Asset;
   durationTicks: number;
 }): string[] {
-  return useTimelineStore.getState().addClipsOnNewTracksBelow(
+  return addTimelineClipsOnNewTracksBelow(
     args.sourceClip.trackId,
     [
       {
@@ -215,11 +216,7 @@ export async function runSamAudioSeparation({
     progress: 0.08,
   });
 
-  const presentationContext = {
-    tracks: useTimelineStore.getState().tracks,
-    clips: useTimelineStore.getState().clips,
-    fps: useProjectStore.getState().config.fps,
-  };
+  const presentationContext = getTimelinePresentationContext();
   const anchors = createSpanAnchorsForClip(
     clip,
     presentationContext,

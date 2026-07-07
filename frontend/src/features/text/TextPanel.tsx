@@ -10,7 +10,6 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
-import { useShallow } from "zustand/react/shallow";
 import type {
   TextAlignment,
   TextClipData,
@@ -23,7 +22,11 @@ import {
   PanelSection,
   RichTextInput,
 } from "../panelUI";
-import { useTimelineStore } from "../timeline";
+import {
+  updateTimelineTextClipData,
+  useSelectedTimelineClipIds,
+  useTimelineClips,
+} from "../timeline/api";
 import { TEXT_FONT_OPTIONS } from "./constants";
 import { livePreviewTextStore } from "./services/livePreviewTextStore";
 import { insertTextClipAtPlayhead } from "./utils/insertTextClipAtPlayhead";
@@ -201,13 +204,8 @@ function TextFormFields({
 }
 
 export function TextPanel() {
-  const { clips, selectedClipIds, updateTextClipData } = useTimelineStore(
-    useShallow((state) => ({
-      clips: state.clips,
-      selectedClipIds: state.selectedClipIds,
-      updateTextClipData: state.updateTextClipData,
-    })),
-  );
+  const clips = useTimelineClips();
+  const selectedClipIds = useSelectedTimelineClipIds();
   const [draftTextData, setDraftTextData] = useState<TextClipData>(() =>
     resolveTextClipData(),
   );
@@ -255,9 +253,9 @@ export function TextPanel() {
         return;
       }
 
-      updateTextClipData(selectedTextClip.id, updates);
+      updateTimelineTextClipData(selectedTextClip.id, updates);
     },
-    [selectedTextClip, updateTextClipData],
+    [selectedTextClip],
   );
 
   const clearSelectedTextPreview = useCallback(

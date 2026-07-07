@@ -7,8 +7,8 @@ import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import {
   createEndpointOverlayItem,
   type TimelineClipOverlayDefinition,
-  useTimelineStore,
 } from "../../timeline";
+import { replaceTimelineClipAsset } from "../../timeline/api";
 import { revealAssetInBrowser } from "../useAssetBrowserRevealStore";
 import { useAssetStore } from "../useAssetStore";
 import { getAdjacentFamilyMemberForAsset } from "../utils/familyMembers";
@@ -107,7 +107,7 @@ function useAssetRevealOverlayItems({
         </FamilySwapBadge>
       ),
       onClick: () => {
-        useTimelineStore.getState().replaceClipAsset(clip.id, nextAsset);
+        replaceTimelineClipAsset(clip.id, nextAsset);
       },
     }),
     createEndpointOverlayItem({
@@ -122,7 +122,7 @@ function useAssetRevealOverlayItems({
         </FamilySwapBadge>
       ),
       onClick: () => {
-        useTimelineStore.getState().replaceClipAsset(clip.id, previousAsset);
+        replaceTimelineClipAsset(clip.id, previousAsset);
       },
     }),
   );

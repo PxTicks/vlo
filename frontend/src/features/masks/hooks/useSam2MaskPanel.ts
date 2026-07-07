@@ -9,9 +9,11 @@ import type {
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import {
   TICKS_PER_SECOND,
-  countSam2MaskAssetConsumers,
-  useTimelineStore,
-} from "../../timeline";
+} from "../../../core/time/constants";
+import {
+  getTimelinePresentationContext,
+  getTimelineSam2MaskAssetConsumerCount,
+} from "../../timeline/api";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
@@ -43,12 +45,7 @@ const sam2SourceRegistrationCache = new Map<
 >();
 
 function getClipPresentationContext(): ClipPresentationContext {
-  const timelineState = useTimelineStore.getState();
-  return {
-    tracks: timelineState.tracks,
-    clips: timelineState.clips,
-    fps: useProjectStore.getState().config.fps,
-  };
+  return getTimelinePresentationContext();
 }
 
 async function resolveAssetFile(asset: {
@@ -856,10 +853,8 @@ export function useSam2MaskPanel({
 
       if (previousSam2AssetId && previousSam2AssetId !== createdAsset.id) {
         try {
-          const remainingConsumers = countSam2MaskAssetConsumers(
-            useTimelineStore.getState().clips,
-            previousSam2AssetId,
-          );
+          const remainingConsumers =
+            getTimelineSam2MaskAssetConsumerCount(previousSam2AssetId);
           if (remainingConsumers === 0) {
             await deleteAsset(previousSam2AssetId);
           }

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useTransformationController } from "../hooks/useTransformationController";
-import { useTimelineStore, TICKS_PER_SECOND } from "../../timeline";
+import { TICKS_PER_SECOND } from "../../timeline";
+import { useTimelineStore } from "../../timeline/useTimelineStore";
 
 // Mock Layout Config to ensure we have valid groups
 vi.mock("../catalogue/layout/layoutConfig", () => ({

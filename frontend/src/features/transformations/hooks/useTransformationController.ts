@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useShallow } from "zustand/react/shallow";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import {
-  selectTimelineClipById,
-  useTimelineStore,
+  getTimelineClips,
+  getTimelinePresentationContext,
+  getTimelineTracks,
   parseMaskClipId,
-  selectMaskClipsForParent,
-} from "../../timeline";
+  setTimelineClipMaskCompositeTransforms,
+  setTimelineClipTransforms,
+  setTimelineClipTransformsAndShape,
+  updateTimelineClipMask,
+  useMaskClipsForParent,
+  useSelectedTimelineClipIds,
+  useTimelineClip,
+} from "../../timeline/api";
 import { useProjectStore } from "../../project/useProjectStore";
 import {
   introducesTimelineClipPresentationCollision,
@@ -16,7 +22,6 @@ import {
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { isDefaultTransform } from "../catalogue/TransformationRegistry";
 import {
-  clipVisualToSourceTime,
   presentationToClipSourceTime,
 } from "../utils/clipTimeDomains";
 import { computeCommitMutation } from "./controller/commitComputation";
@@ -105,28 +110,8 @@ export function useTransformationController(
   options: UseTransformationControllerOptions = {},
 ) {
   const targetMode = options.target ?? "clip";
-  const {
-    selectedClipIds,
-    setClipTransforms,
-    setClipTransformsAndShape,
-    setClipMaskCompositeTransforms,
-    updateClipMask,
-    activeClip,
-  } = useTimelineStore(
-    useShallow((state) => {
-      const firstId = state.selectedClipIds[0];
-      const clip = selectTimelineClipById(state, firstId);
-      return {
-        selectedClipIds: state.selectedClipIds,
-        setClipTransforms: state.setClipTransforms,
-        setClipTransformsAndShape: state.setClipTransformsAndShape,
-        setClipMaskCompositeTransforms: state.setClipMaskCompositeTransforms,
-        updateClipMask: state.updateClipMask,
-        activeClip: clip,
-      };
-    }),
-  );
-
+  const selectedClipIds = useSelectedTimelineClipIds();
+  const activeClip = useTimelineClip(selectedClipIds[0]) ?? null;
   const selectedClipId = activeClip ? selectedClipIds[0] : undefined;
   const selectedMaskId = useMaskViewStore((state) =>
     (targetMode === "mask" || targetMode === "auto") && selectedClipId
@@ -135,17 +120,18 @@ export function useTransformationController(
   );
 
   // Resolve mask clip from the store
-  const selectedMaskClip = useTimelineStore(
-    useShallow((state) =>
+  const parentMaskClips = useMaskClipsForParent(selectedClipId);
+  const selectedMaskClip = useMemo(
+    () =>
       targetMode === "clip" ||
       targetMode === "maskComposite" ||
       !selectedClipId ||
       !selectedMaskId
         ? undefined
-        : selectMaskClipsForParent(state, selectedClipId).find(
+        : parentMaskClips.find(
             (c) => parseMaskClipId(c.id)?.maskId === selectedMaskId,
           ),
-    ),
+    [parentMaskClips, selectedClipId, selectedMaskId, targetMode],
   );
 
   const activeTarget = useMemo<ActiveTransformTarget | null>(() => {
@@ -249,8 +235,8 @@ export function useTransformationController(
         const clip = currentTarget.timelineClip;
         const shapeUpdate = getChangedClipShapeUpdate(clip, nextTransforms);
         if (shapeUpdate) {
-          const allClips = useTimelineStore.getState().clips;
-          const tracks = useTimelineStore.getState().tracks;
+          const allClips = getTimelineClips();
+          const tracks = getTimelineTracks();
           // Single, presentation-aware, frame-quantized collision gate — the
           // same grid the renderer selects on. (The former raw hasAnyCollision
           // pre-check is dropped: it tested stored timing and so disagreed with
@@ -271,7 +257,7 @@ export function useTransformationController(
           ) {
             return;
           }
-          setClipTransformsAndShape(
+          setTimelineClipTransformsAndShape(
             currentTarget.clipId,
             nextTransforms,
             shapeUpdate,
@@ -279,27 +265,26 @@ export function useTransformationController(
           return;
         }
 
-        setClipTransforms(currentTarget.clipId, nextTransforms);
+        setTimelineClipTransforms(currentTarget.clipId, nextTransforms);
         return;
       }
 
       if (currentTarget.kind === "maskComposite") {
-        setClipMaskCompositeTransforms(currentTarget.clipId, nextTransforms);
+        setTimelineClipMaskCompositeTransforms(
+          currentTarget.clipId,
+          nextTransforms,
+        );
         return;
       }
 
       if (!currentTarget.maskId) return;
       // For mask targets, set the mask-local transforms via updateClipMask
-      updateClipMask(currentTarget.clipId, currentTarget.maskId, {
+      updateTimelineClipMask(currentTarget.clipId, currentTarget.maskId, {
         transformations: nextTransforms,
       });
     },
     [
       getChangedClipShapeUpdate,
-      setClipMaskCompositeTransforms,
-      setClipTransforms,
-      setClipTransformsAndShape,
-      updateClipMask,
     ],
   );
 
@@ -353,7 +338,7 @@ export function useTransformationController(
       }
 
       if (snapshot.kind === "clip") {
-        setClipTransformsAndShape(
+        setTimelineClipTransformsAndShape(
           snapshot.clipId,
           structuredClone(snapshot.transforms),
           snapshot.shape,
@@ -362,18 +347,18 @@ export function useTransformationController(
       }
 
       if (snapshot.kind === "mask") {
-        updateClipMask(snapshot.clipId, snapshot.maskId, {
+        updateTimelineClipMask(snapshot.clipId, snapshot.maskId, {
           transformations: structuredClone(snapshot.transforms),
         });
         return;
       }
 
-      setClipMaskCompositeTransforms(
+      setTimelineClipMaskCompositeTransforms(
         snapshot.clipId,
         structuredClone(snapshot.transforms),
       );
     },
-    [setClipMaskCompositeTransforms, setClipTransformsAndShape, updateClipMask],
+    [],
   );
 
   const updateTargetTransform = useCallback(
@@ -501,8 +486,6 @@ export function useTransformationController(
       // adjustment-layer retiming, matching the frame shown by the viewer.
       let keyframeSourceTimeTicks: number | undefined;
       if (activeClip) {
-        const timelineState = useTimelineStore.getState();
-        const fps = useProjectStore.getState()?.config?.fps;
         const presentationTick = Math.max(
           activeClip.start,
           Math.min(
@@ -510,21 +493,11 @@ export function useTransformationController(
             activeClip.start + activeClip.timelineDuration,
           ),
         );
-        keyframeSourceTimeTicks =
-          timelineState?.tracks && timelineState?.clips && fps != null
-            ? presentationToClipSourceTime(
-                {
-                  tracks: timelineState.tracks,
-                  clips: timelineState.clips,
-                  fps,
-                },
-                activeClip,
-                presentationTick,
-              )
-            : clipVisualToSourceTime(
-                activeClip,
-                presentationTick - activeClip.start,
-              );
+        keyframeSourceTimeTicks = presentationToClipSourceTime(
+          getTimelinePresentationContext(),
+          activeClip,
+          presentationTick,
+        );
       }
 
       const commit = computeCommitMutation({

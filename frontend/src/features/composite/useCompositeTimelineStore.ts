@@ -2,12 +2,15 @@ import { create } from "zustand";
 import type { CompositeContent } from "../../types/TimelineTypes";
 import { isCompositeClip } from "../../types/TimelineTypes";
 import type { TimelineSnapshot } from "../project/types/ProjectDocument";
-import { useProjectStore } from "../project/useProjectStore";
 import { playbackClock } from "../../core/playback/PlaybackClock";
-import { TICKS_PER_SECOND } from "../../core/time/constants";
-import { createDefaultTimelineSnapshot } from "../timeline/model/timelineTrackModel";
-import { computeFurthestPresentationEnd } from "../timeline/utils/clipPresentation";
-import { useTimelineStore } from "../timeline/useTimelineStore";
+import {
+  createEmptyTimelineSnapshot,
+  getTimelineClipById,
+  getTimelineCompositeContent,
+  getTimelineSnapshot,
+  replaceTimelineSnapshot,
+  setTimelinePersistenceSuspended,
+} from "../timeline/api";
 import { useCompositeLibraryStore } from "./useCompositeLibraryStore";
 
 interface CompositeTimelineFrame {
@@ -38,11 +41,7 @@ function cloneTimelineSnapshot(snapshot: TimelineSnapshot): TimelineSnapshot {
 }
 
 function getCurrentTimelineSnapshot(): TimelineSnapshot {
-  const { tracks, clips } = useTimelineStore.getState();
-  return {
-    tracks: structuredClone(tracks),
-    clips: structuredClone(clips),
-  };
+  return getTimelineSnapshot();
 }
 
 function getSnapshotForCompositeContent(content: CompositeContent): TimelineSnapshot {
@@ -50,31 +49,13 @@ function getSnapshotForCompositeContent(content: CompositeContent): TimelineSnap
     tracks:
       content.tracks && content.tracks.length > 0
         ? structuredClone(content.tracks)
-        : createDefaultTimelineSnapshot().tracks,
+        : createEmptyTimelineSnapshot().tracks,
     clips: structuredClone(content.clips),
   };
 }
 
 function getCurrentCompositeContent(): CompositeContent {
-  const { clips, tracks } = useTimelineStore.getState();
-  // Presentation-aware so an adjustment-speed clip inside the subtimeline bakes
-  // to its true rendered length; clamped to a 1s minimum like an empty scene.
-  const durationTicks = Math.max(
-    TICKS_PER_SECOND,
-    computeFurthestPresentationEnd(
-      tracks,
-      clips,
-      useProjectStore.getState().config.fps,
-    ),
-  );
-
-  return {
-    clips: structuredClone(clips),
-    tracks: structuredClone(tracks),
-    durationTicks,
-    fps: useProjectStore.getState().config.fps,
-    frameStep: 1,
-  };
+  return getTimelineCompositeContent();
 }
 
 function isEmptyNewSceneContent(content: CompositeContent): boolean {
@@ -107,10 +88,8 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
       if (state.stack.length > 0) return false;
 
       const previousSnapshot = getCurrentTimelineSnapshot();
-      useTimelineStore.getState().setTimelinePersistenceSuspended(true);
-      useTimelineStore
-        .getState()
-        .replaceTimelineSnapshot(createDefaultTimelineSnapshot());
+      setTimelinePersistenceSuspended(true);
+      replaceTimelineSnapshot(createEmptyTimelineSnapshot());
       playbackClock.setTime(0);
 
       set({
@@ -143,12 +122,8 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
         return false;
       }
 
-      useTimelineStore.getState().setTimelinePersistenceSuspended(true);
-      useTimelineStore
-        .getState()
-        .replaceTimelineSnapshot(
-          getSnapshotForCompositeContent(compositeAsset.content),
-        );
+      setTimelinePersistenceSuspended(true);
+      replaceTimelineSnapshot(getSnapshotForCompositeContent(compositeAsset.content));
       playbackClock.setTime(0);
 
       set({
@@ -166,9 +141,7 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
     },
 
     openCompositeClip: (clipId) => {
-      const clip = useTimelineStore
-        .getState()
-        .clips.find((candidate) => candidate.id === clipId);
+      const clip = getTimelineClipById(clipId);
       if (!isCompositeClip(clip)) {
         return false;
       }
@@ -200,15 +173,11 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
           // first (and dropping persistence suspension when we're back on the
           // main timeline) keeps the placement's `assetId` consistent with the
           // bake we keep, so it never points at the deleted old bake.
-          useTimelineStore
-            .getState()
-            .replaceTimelineSnapshot(
-              cloneTimelineSnapshot(frame.previousSnapshot),
-            );
+          replaceTimelineSnapshot(cloneTimelineSnapshot(frame.previousSnapshot));
 
           const returningToMainTimeline = stack.length === 0;
           if (returningToMainTimeline) {
-            useTimelineStore.getState().setTimelinePersistenceSuspended(false);
+            setTimelinePersistenceSuspended(false);
           }
 
           if (shouldCommitFrame) {
@@ -237,9 +206,7 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
         return true;
       } catch (error) {
         const message = getErrorMessage(error);
-        useTimelineStore
-          .getState()
-          .setTimelinePersistenceSuspended(get().stack.length > 0);
+        setTimelinePersistenceSuspended(get().stack.length > 0);
         set({ isBusy: false, lastError: message });
         console.error("Failed to save composite subtimeline", error);
         return false;

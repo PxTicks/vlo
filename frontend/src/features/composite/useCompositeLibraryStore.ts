@@ -3,11 +3,14 @@ import type {
   CompositeAsset,
   CompositeContent,
 } from "../../types/TimelineTypes";
-import { isCompositeClip } from "../../types/TimelineTypes";
 import { projectPersistenceService } from "../project";
 import { deleteAsset } from "../userAssets";
-import { insertBaseClipAtTime } from "../timeline/utils/insertAssetToTimeline";
-import { useTimelineStore } from "../timeline/useTimelineStore";
+import {
+  getTimelineCompositePlacementIds,
+  insertTimelineBaseClipAtTime,
+  relinkTimelineCompositePlacements,
+  removeTimelineClips,
+} from "../timeline/api";
 import { bakeComposite } from "./services/bakeComposite";
 import {
   beginCompositeRender,
@@ -106,12 +109,7 @@ function getCompositeOrThrow(
 }
 
 function getPlacementIdsForComposite(compositeAssetId: string): string[] {
-  return useTimelineStore
-    .getState()
-    .clips.filter(
-      (clip) => isCompositeClip(clip) && clip.compositeId === compositeAssetId,
-    )
-    .map((clip) => clip.id);
+  return getTimelineCompositePlacementIds([compositeAssetId]);
 }
 
 async function deleteBakedAsset(assetId: string | undefined): Promise<void> {
@@ -229,13 +227,11 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
       set({ composites: nextComposites });
       // Repoint every placement at the fresh bake so the edit shows everywhere,
       // then drop the now-unreferenced previous bake.
-      useTimelineStore
-        .getState()
-        .relinkCompositePlacements(
-          compositeAssetId,
-          asset.id,
-          bakedDurationTicks,
-        );
+      relinkTimelineCompositePlacements(
+        compositeAssetId,
+        asset.id,
+        bakedDurationTicks,
+      );
       if (existing.bakedAssetId && existing.bakedAssetId !== asset.id) {
         await deleteBakedAsset(existing.bakedAssetId);
       }
@@ -283,7 +279,7 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
 
       const placementIds = getPlacementIdsForComposite(compositeAssetId);
       if (placementIds.length > 0) {
-        useTimelineStore.getState().removeClips(placementIds);
+        removeTimelineClips(placementIds);
       }
       await deleteBakedAsset(composite.bakedAssetId);
     },
@@ -296,7 +292,7 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
         return null;
       }
 
-      return insertBaseClipAtTime(
+      return insertTimelineBaseClipAtTime(
         createCompositeBaseClipFromAsset(composite),
         startTick,
       );

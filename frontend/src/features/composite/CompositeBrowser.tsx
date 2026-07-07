@@ -18,8 +18,12 @@ import {
   useRegionFocus,
 } from "../editorFocus";
 import { playbackClock } from "../../core/playback/PlaybackClock";
-import { isCompositeClip } from "../../types/TimelineTypes";
-import { useTimelineStore } from "../timeline/useTimelineStore";
+import {
+  getSelectedTimelineClipIds,
+  getTimelineCompositePlacementIds,
+  selectTimelineClip,
+  useSelectedTimelineClipIds,
+} from "../timeline/api";
 import { useCompositeLibraryStore } from "./useCompositeLibraryStore";
 import { useCompositeTimelineStore } from "./useCompositeTimelineStore";
 import { CompositeCard } from "./components/CompositeCard";
@@ -33,17 +37,7 @@ interface CompositeBrowserProps {
 }
 
 function getTimelinePlacementIds(compositeAssetIds: readonly string[]): string[] {
-  const selected = new Set(compositeAssetIds);
-  if (selected.size === 0) {
-    return [];
-  }
-
-  return useTimelineStore
-    .getState()
-    .clips.filter(
-      (clip) => isCompositeClip(clip) && selected.has(clip.compositeId),
-    )
-    .map((clip) => clip.id);
+  return getTimelineCompositePlacementIds(compositeAssetIds);
 }
 
 function getCompositeDeleteMessage(placementCount: number): string {
@@ -101,7 +95,7 @@ export function CompositeBrowser({
   const openCompositeAsset = useCompositeTimelineStore(
     (state) => state.openCompositeAsset,
   );
-  const selectedClipIds = useTimelineStore((state) => state.selectedClipIds);
+  const selectedClipIds = useSelectedTimelineClipIds();
   const visibleCompositeIds = useMemo(
     () => new Set(composites.map((composite) => composite.id)),
     [composites],
@@ -122,7 +116,7 @@ export function CompositeBrowser({
 
     setSelectedCompositeIds(nextSelectedCompositeIds);
     if (nextSelectedCompositeIds.length === 0) {
-      useTimelineStore.getState().selectClip(null);
+      selectTimelineClip(null);
     }
   }, [selectedCompositeIds, setSelectedCompositeIds, visibleCompositeIds]);
 
@@ -132,7 +126,7 @@ export function CompositeBrowser({
     }
 
     const placementIds = getTimelinePlacementIds(selectedCompositeIds);
-    const { selectedClipIds, selectClip } = useTimelineStore.getState();
+    const selectedClipIds = getSelectedTimelineClipIds();
     if (
       selectedClipIds.length === placementIds.length &&
       selectedClipIds.every((clipId, index) => clipId === placementIds[index])
@@ -140,8 +134,8 @@ export function CompositeBrowser({
       return;
     }
 
-    selectClip(null);
-    placementIds.forEach((clipId) => selectClip(clipId, true));
+    selectTimelineClip(null);
+    placementIds.forEach((clipId) => selectTimelineClip(clipId, true));
   }, [selectedCompositeIds, selectedClipIds]);
 
   useEffect(() => {
@@ -229,7 +223,7 @@ export function CompositeBrowser({
     }
 
     clearSelection();
-    useTimelineStore.getState().selectClip(null);
+    selectTimelineClip(null);
   };
 
   const handleRename = (compositeAssetId: string, currentName: string) => {
@@ -254,7 +248,7 @@ export function CompositeBrowser({
       playbackClock.time,
     );
     if (placedClipId) {
-      useTimelineStore.getState().selectClip(placedClipId);
+      selectTimelineClip(placedClipId);
     }
   };
 

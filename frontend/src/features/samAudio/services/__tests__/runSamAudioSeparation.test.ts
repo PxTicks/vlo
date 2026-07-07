@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import type {
-  TimelineClip,
-  TimelineTrack,
-} from "../../../../types/TimelineTypes";
-import { TICKS_PER_SECOND, useTimelineStore } from "../../../timeline";
+  TimelineClip, TimelineTrack, } from "../../../../types/TimelineTypes";
+import { TICKS_PER_SECOND } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { useAssetStore } from "../../../userAssets";
 import { runSamAudioSeparation } from "../runSamAudioSeparation";
 

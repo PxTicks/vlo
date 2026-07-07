@@ -4,7 +4,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import { useShallow } from "zustand/react/shallow";
 import type {
   ClipMaskPoint,
   MaskActiveRange,
@@ -19,11 +18,18 @@ import {
   type RangeMaskComponent,
 } from "../../../types/Components";
 import {
-  useTimelineStore,
   useTimelineClip,
   parseMaskClipId,
-  selectMaskClipsForParent,
-} from "../../timeline";
+  addTimelineClipMask,
+  duplicateTimelineClipMask,
+  removeTimelineClipMask,
+  setTimelineClipMaskBooleanExpression,
+  setTimelineClipMaskCompositionAlgebra,
+  setTimelineClipMaskExpressionEnabled,
+  updateTimelineClipMask,
+  useMaskClipsForParent,
+  useSelectedTimelineClipId,
+} from "../../timeline/api";
 import {
   useMaskViewStore,
 } from "../store/useMaskViewStore";
@@ -120,24 +126,8 @@ export function useMaskPanel(): UseMaskPanelResult {
     null,
   );
 
-  const selectedClipId = useTimelineStore(
-    (state) => state.selectedClipIds[0] ?? null,
-  );
+  const selectedClipId = useSelectedTimelineClipId();
   const selectedClip = useTimelineClip(selectedClipId) ?? null;
-
-  const updateClipMask = useTimelineStore((state) => state.updateClipMask);
-  const duplicateClipMask = useTimelineStore((state) => state.duplicateClipMask);
-  const removeClipMask = useTimelineStore((state) => state.removeClipMask);
-  const addClipMask = useTimelineStore((state) => state.addClipMask);
-  const setClipMaskBooleanExpression = useTimelineStore(
-    (state) => state.setClipMaskBooleanExpression,
-  );
-  const setClipMaskCompositionAlgebra = useTimelineStore(
-    (state) => state.setClipMaskCompositionAlgebra,
-  );
-  const setClipMaskExpressionEnabled = useTimelineStore(
-    (state) => state.setClipMaskExpressionEnabled,
-  );
 
   const selectedMaskId = useMaskViewStore((state) =>
     selectedClipId
@@ -156,14 +146,8 @@ export function useMaskPanel(): UseMaskPanelResult {
     (state) => state.clearMaskPreviewTarget,
   );
 
-  // Read mask clips from the store via parent's mask clip components
-  const masks = useTimelineStore(
-    useShallow((state) =>
-      selectedClipId
-        ? selectMaskClipsForParent(state, selectedClipId)
-        : [],
-    ),
-  );
+  // Read mask clips from the store via parent's mask clip components.
+  const masks = useMaskClipsForParent(selectedClipId);
   const maskBooleanExpression = useMemo(() => {
     if (!selectedClip || selectedClip.type === "mask") {
       return null;
@@ -226,7 +210,7 @@ export function useMaskPanel(): UseMaskPanelResult {
     selectedMaskId,
     selectedMask,
     isMaskTabActive,
-    updateClipMask,
+    updateClipMask: updateTimelineClipMask,
   });
   const {
     brushTool,
@@ -295,7 +279,7 @@ export function useMaskPanel(): UseMaskPanelResult {
         maskPoints: shape === "sam2" ? [] : undefined,
       });
 
-      addClipMask(selectedClipId, newMask);
+      addTimelineClipMask(selectedClipId, newMask);
       setSelectedMask(selectedClipId, newMask.id);
       if (shape === "brush") {
         setBrushTool("paint");
@@ -305,7 +289,6 @@ export function useMaskPanel(): UseMaskPanelResult {
     },
     [
       isAddDisabled,
-      addClipMask,
       selectedClipId,
       setBrushTool,
       setSelectedMask,
@@ -349,25 +332,27 @@ export function useMaskPanel(): UseMaskPanelResult {
   const setMaskExpressionEnabled = useCallback(
     (enabled: boolean) => {
       if (!selectedClipId) return;
-      setClipMaskExpressionEnabled(selectedClipId, enabled);
+      setTimelineClipMaskExpressionEnabled(selectedClipId, enabled);
     },
-    [selectedClipId, setClipMaskExpressionEnabled],
+    [selectedClipId],
   );
 
   const setMaskName = useCallback(
     (name: string) => {
       if (!selectedClipId || !selectedMaskId) return;
-      updateClipMask(selectedClipId, selectedMaskId, { name });
+      updateTimelineClipMask(selectedClipId, selectedMaskId, { name });
     },
-    [selectedClipId, selectedMaskId, updateClipMask],
+    [selectedClipId, selectedMaskId],
   );
 
   const setMaskInverted = useCallback(
     (inverted: boolean) => {
       if (!selectedClipId || !selectedMaskId) return;
-      updateClipMask(selectedClipId, selectedMaskId, { maskInverted: inverted });
+      updateTimelineClipMask(selectedClipId, selectedMaskId, {
+        maskInverted: inverted,
+      });
     },
-    [selectedClipId, selectedMaskId, updateClipMask],
+    [selectedClipId, selectedMaskId],
   );
 
   const maskInverted = selectedMask?.maskInverted ?? false;
@@ -390,18 +375,21 @@ export function useMaskPanel(): UseMaskPanelResult {
     standardSelectedClip,
     selectedMaskId,
     selectedMask,
-    updateClipMask,
+    updateClipMask: updateTimelineClipMask,
   });
 
   const duplicateMask = useCallback(
     (maskId: string) => {
       if (!selectedClipId) return;
-      const duplicatedMaskId = duplicateClipMask(selectedClipId, maskId);
+      const duplicatedMaskId = duplicateTimelineClipMask(
+        selectedClipId,
+        maskId,
+      );
       if (duplicatedMaskId) {
         setSelectedMask(selectedClipId, duplicatedMaskId);
       }
     },
-    [duplicateClipMask, selectedClipId, setSelectedMask],
+    [selectedClipId, setSelectedMask],
   );
 
   const deleteMask = useCallback(
@@ -418,14 +406,13 @@ export function useMaskPanel(): UseMaskPanelResult {
         ? (parseMaskClipId(fallbackMask.id)?.maskId ?? null)
         : null;
 
-      removeClipMask(selectedClipId, maskId);
+      removeTimelineClipMask(selectedClipId, maskId);
       if (selectedMaskId === maskId) {
         setSelectedMask(selectedClipId, fallbackId);
       }
     },
     [
       masks,
-      removeClipMask,
       selectedClipId,
       selectedMaskId,
       setSelectedMask,
@@ -461,7 +448,7 @@ export function useMaskPanel(): UseMaskPanelResult {
       setMaskPreview,
       setMaskBooleanExpression: (expression) => {
         if (!selectedClipId) return;
-        setClipMaskBooleanExpression(selectedClipId, expression);
+        setTimelineClipMaskBooleanExpression(selectedClipId, expression);
       },
       setMaskName,
       maskInverted,
@@ -469,7 +456,7 @@ export function useMaskPanel(): UseMaskPanelResult {
       maskCompositionAlgebra,
       setMaskCompositionAlgebra: (algebra) => {
         if (!selectedClipId) return;
-        setClipMaskCompositionAlgebra(selectedClipId, algebra);
+        setTimelineClipMaskCompositionAlgebra(selectedClipId, algebra);
       },
       maskExpressionEnabled,
       setMaskExpressionEnabled,

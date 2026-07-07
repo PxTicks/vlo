@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, beforeEach } from "vitest";
-import { useTimelineStore } from "../../../../timeline";
+import { useTimelineStore } from "../../../../timeline/useTimelineStore";
 import { useMaskViewStore } from "../../../../masks/store/useMaskViewStore";
 import { useCanvasSelectionStore } from "../../../useCanvasSelectionStore";
 import {

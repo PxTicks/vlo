@@ -1091,8 +1091,8 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     }
 
     try {
-      const { useTimelineStore } = await import("../timeline");
-      useTimelineStore.getState().removeClipsByAssetId(id);
+      const { removeTimelineClipsByAssetId } = await import("../timeline/api");
+      removeTimelineClipsByAssetId(id);
     } catch (error) {
       console.warn(
         `[AssetStore] Failed to remove timeline clips for asset '${id}'`,

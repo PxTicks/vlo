@@ -14,7 +14,11 @@ import {
   isAdjustmentDepthAll,
   type AdjustmentTimelineClip,
 } from "../../../types/TimelineTypes";
-import { useTimelineStore } from "../../timeline";
+import {
+  setTimelineAdjustmentDepth,
+  setTimelineAdjustmentRetimingMode,
+  useTimelineTracks,
+} from "../../timeline/api";
 
 interface AdjustmentDepthSectionProps {
   clip: AdjustmentTimelineClip;
@@ -78,19 +82,14 @@ function AdjustmentDepthInput({
  * something valid.
  */
 export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
-  const setAdjustmentDepth = useTimelineStore(
-    (state) => state.setAdjustmentDepth,
-  );
-  const setAdjustmentRetimingMode = useTimelineStore(
-    (state) => state.setAdjustmentRetimingMode,
-  );
-  const tracksBelowCount = useTimelineStore((state) => {
-    const trackIndex = state.tracks.findIndex((track) => track.id === clip.trackId);
+  const tracks = useTimelineTracks();
+  const tracksBelowCount = (() => {
+    const trackIndex = tracks.findIndex((track) => track.id === clip.trackId);
     if (trackIndex < 0) {
       return 0;
     }
-    return Math.max(0, state.tracks.length - trackIndex - 1);
-  });
+    return Math.max(0, tracks.length - trackIndex - 1);
+  })();
   const isAllTracksBelow = isAdjustmentDepthAll(clip.depth);
   const isRippleRetiming =
     getAdjustmentRetimingMode(clip) === ADJUSTMENT_RETIMING_RIPPLE;
@@ -101,16 +100,16 @@ export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
   const handleAllTracksToggle = (checked: boolean) => {
     if (checked) {
       if (isAllTracksBelow) return;
-      setAdjustmentDepth(clip.id, ADJUSTMENT_DEPTH_ALL);
+      setTimelineAdjustmentDepth(clip.id, ADJUSTMENT_DEPTH_ALL);
       return;
     }
 
     if (!isAllTracksBelow && clip.depth === fallbackNumericDepth) return;
-    setAdjustmentDepth(clip.id, fallbackNumericDepth);
+    setTimelineAdjustmentDepth(clip.id, fallbackNumericDepth);
   };
 
   const handleRetimingToggle = (checked: boolean) => {
-    setAdjustmentRetimingMode(
+    setTimelineAdjustmentRetimingMode(
       clip.id,
       checked ? ADJUSTMENT_RETIMING_RIPPLE : ADJUSTMENT_RETIMING_STATIC,
     );
@@ -196,7 +195,7 @@ export function AdjustmentDepthSection({ clip }: AdjustmentDepthSectionProps) {
             key={`${clip.id}:${numericDepth}`}
             committedDepth={numericDepth}
             onCommitDepth={(nextDepth) =>
-              setAdjustmentDepth(clip.id, nextDepth)
+              setTimelineAdjustmentDepth(clip.id, nextDepth)
             }
           />
         </Box>

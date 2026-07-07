@@ -3,10 +3,8 @@ import { describe, expect, it } from "vitest";
 /**
  * Ratchet guard for the timeline API migration.
  *
- * `useTimelineStore` is still widely consumed outside `features/timeline`, but
- * new cross-feature store imports should go through `features/timeline/api`.
- * When an allowlisted file is migrated, remove it from this list in the same
- * change. Adding to this list should be treated as boundary debt.
+ * Cross-feature timeline consumers should go through `features/timeline/api`.
+ * Adding to this list should be treated as deliberate boundary debt.
  */
 
 const RAW_FILES = import.meta.glob("../**/*.{ts,tsx}", {
@@ -15,33 +13,7 @@ const RAW_FILES = import.meta.glob("../**/*.{ts,tsx}", {
   eager: true,
 }) as Record<string, string>;
 
-const ALLOWLIST = [
-  "features/composite/CompositeBrowser.tsx",
-  "features/composite/services/groupSelectionIntoComposite.ts",
-  "features/composite/useCompositeLibraryStore.ts",
-  "features/composite/useCompositeTimelineStore.ts",
-  "features/masks/hooks/useMaskPanel.ts",
-  "features/masks/hooks/useRangeMaskSelection.ts",
-  "features/masks/hooks/useSam2MaskPanel.ts",
-  "features/masks/runtime/brushAssetSync.ts",
-  "features/player/Player.tsx",
-  "features/player/hooks/interaction/useCanvasSelectionKeyboard.ts",
-  "features/player/hooks/interaction/useCanvasSelectionManager.ts",
-  "features/player/hooks/interaction/useMaskInteractionController.ts",
-  "features/player/hooks/interaction/useTransformInteractionController.ts",
-  "features/player/hooks/useRenderGroupOrchestrator.ts",
-  "features/samAudio/components/SamAudioExtractDialog.tsx",
-  "features/samAudio/services/extractionTimelinePlacement.ts",
-  "features/samAudio/services/runSamAudioSeparation.ts",
-  "features/text/TextPanel.tsx",
-  "features/text/utils/insertTextClipAtPlayhead.ts",
-  "features/transformations/components/AdjustmentDepthSection.tsx",
-  "features/transformations/hooks/useGroupKeyframeManager.ts",
-  "features/transformations/hooks/useTimelineKeyframeClipOverlay.tsx",
-  "features/transformations/hooks/useTransformationController.ts",
-  "features/userAssets/AssetBrowser.tsx",
-  "features/userAssets/hooks/useTimelineAssetRevealClipOverlay.tsx",
-];
+const ALLOWLIST: string[] = [];
 
 const TIMELINE_STORE_IMPORT =
   /(?:^|\n)\s*import\s+(?!type\b)[\s\S]*?\buseTimelineStore\b[\s\S]*?\sfrom\s*["'][^"']+["']/;

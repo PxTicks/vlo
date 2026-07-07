@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useExtractStore } from "../../../../core/extract/useExtractStore";
-import { TICKS_PER_SECOND, useTimelineStore } from "../../../timeline";
+import { TICKS_PER_SECOND } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { useTimelineSelectionStore } from "../../../timelineSelection";
 import type {
   TimelineClip,

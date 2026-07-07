@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { TransformationPanel } from "../TransformationPanel";
-import { useTimelineStore } from "../../../timeline";
+import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { extensionTransformationRegistry } from "../../extensions/ExtensionTransformationRegistry";
 import { extensionEntityProviderRegistry } from "../../../extensions/entities/publicApi";
@@ -28,58 +28,55 @@ describe("TransformationPanel", () => {
     transformedDuration: 10_000,
     transformedOffset: 0,
   };
+  const tracks = [
+    {
+      id: "track_1",
+      label: "Track 1",
+      isVisible: true,
+      isLocked: false,
+      isMuted: false,
+      type: "visual",
+    },
+  ];
+
+  function installTimelineState<T extends {
+    selectedClipIds: string[];
+    clips: unknown[];
+  }>(state: T): void {
+    const stateWithTracks = { tracks, ...state };
+    const mockedStore = useTimelineStore as unknown as ReturnType<
+      typeof vi.fn
+    > & {
+      getState: ReturnType<typeof vi.fn>;
+    };
+    mockedStore.mockImplementation(
+      (selector: (store: typeof stateWithTracks) => unknown) =>
+        selector(stateWithTracks),
+    );
+    mockedStore.getState = vi.fn(() => stateWithTracks);
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (
-      useTimelineStore as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation((selector: (state: {
-      selectedClipIds: string[];
-      clips: Array<{
-        id: string;
-        trackId: string;
-        start: number;
-        timelineDuration: number;
-        offset: number;
-        type: string;
-        croppedSourceDuration: number;
-        name: string;
-        assetId: string;
-        sourceDuration: number;
-        transformedDuration: number;
-        transformedOffset: number;
-        transformations: Array<{
-          id: string;
-          type: string;
-          isEnabled: boolean;
-          parameters: Record<string, unknown>;
-        }>;
-      }>;
-      setClipTransforms: typeof mockSetClipTransforms;
-      setClipTransformsAndShape: typeof mockSetClipTransformsAndShape;
-      setClipMaskCompositeTransforms: typeof mockSetClipMaskCompositeTransforms;
-      updateClipMask: typeof mockUpdateClipMask;
-    }) => unknown) => {
-      return selector({
-        selectedClipIds: ["clip_1"],
-        clips: [
-          {
-            ...baseClip,
-            transformations: [
-              {
-                id: "pos_1",
-                type: "position",
-                isEnabled: true,
-                parameters: { x: 10, y: 20 },
-              },
-            ],
-          },
-        ],
-        setClipTransforms: mockSetClipTransforms,
-        setClipTransformsAndShape: mockSetClipTransformsAndShape,
-        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
-        updateClipMask: mockUpdateClipMask,
-      });
+    installTimelineState({
+      selectedClipIds: ["clip_1"],
+      clips: [
+        {
+          ...baseClip,
+          transformations: [
+            {
+              id: "pos_1",
+              type: "position",
+              isEnabled: true,
+              parameters: { x: 10, y: 20 },
+            },
+          ],
+        },
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
     });
   });
 
@@ -114,11 +111,7 @@ describe("TransformationPanel", () => {
       setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
       updateClipMask: mockUpdateClipMask,
     };
-    (
-      useTimelineStore as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation((selector: (store: typeof state) => unknown) =>
-      selector(state),
-    );
+    installTimelineState(state);
 
     render(<TransformationPanel />);
 
@@ -151,11 +144,7 @@ describe("TransformationPanel", () => {
       setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
       updateClipMask: mockUpdateClipMask,
     };
-    (
-      useTimelineStore as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation((selector: (store: typeof state) => unknown) =>
-      selector(state),
-    );
+    installTimelineState(state);
     const registration = extensionEntityProviderRegistry
       .bind({
         extension: { id: "example.shapes", version: "1.0.0" },
@@ -285,11 +274,7 @@ describe("TransformationPanel", () => {
       setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
       updateClipMask: mockUpdateClipMask,
     };
-    (
-      useTimelineStore as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation((selector: (store: typeof state) => unknown) =>
-      selector(state),
-    );
+    installTimelineState(state);
 
     render(<TransformationPanel />);
 
@@ -356,11 +341,7 @@ describe("TransformationPanel", () => {
       updateClipMask: mockUpdateClipMask,
     };
 
-    (
-      useTimelineStore as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation((selector: (s: typeof state) => unknown) =>
-      selector(state),
-    );
+    installTimelineState(state);
 
     render(<TransformationPanel />);
 

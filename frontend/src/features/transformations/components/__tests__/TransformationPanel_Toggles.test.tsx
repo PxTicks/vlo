@@ -189,7 +189,7 @@ describe("TransformationPanel toggles", () => {
     expect(typed[5].isEnabled).toBe(true);
   });
 
-  it("shows record path when no position path exists and can arm recording", () => {
+  it("shows add path choices when no position path exists and can arm recording", () => {
     mockTimeline([
       {
         id: "position_1",
@@ -201,7 +201,8 @@ describe("TransformationPanel toggles", () => {
 
     render(<TransformationPanel />);
 
-    fireEvent.click(screen.getByText("Record Path"));
+    fireEvent.click(screen.getByText("Add Path"));
+    fireEvent.click(screen.getByText("From Drag"));
 
     expect(screen.getByText("Cancel Recording")).toBeInTheDocument();
     expect(useTransformationViewStore.getState().armedPathRecording).toEqual({

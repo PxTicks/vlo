@@ -5,7 +5,7 @@ import {
   useEffect,
   useSyncExternalStore,
 } from "react";
-import { Alert, Box, Button, Menu, MenuItem } from "@mui/material";
+import { Alert, Box, Button, Divider, Menu, MenuItem } from "@mui/material";
 import { Add } from "@mui/icons-material";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import { useTransformationController } from "../hooks/useTransformationController";
@@ -23,10 +23,22 @@ import { TransformationSection } from "./TransformationSection";
 import { SortableTransformationItem } from "./SortableTransformationItem";
 import { DefaultTransformationSections } from "./DefaultTransformationSections";
 import { AdjustmentDepthSection } from "./AdjustmentDepthSection";
-import { useTimelineClip, parseMaskClipId } from "../../timeline";
-import { useAsset } from "../../userAssets/api";
+import {
+  useTimelineClip,
+  parseMaskClipId,
+  useMaskClipsForParent,
+} from "../../timeline";
+import { getExtensionTimelineClipMasks } from "../../timeline/api";
+import { toExtensionAssetSnapshot, useAsset } from "../../userAssets/api";
+import { useAssetStore } from "../../userAssets/useAssetStore";
 import { useActiveTransformationSection } from "../hooks/useActiveTransformationSection";
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
+import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
+import {
+  canCreateTrackingPathFromMask,
+  createPositionPathFromMaskTracking,
+} from "../../masks/utils/maskTracking";
+import { commitTrackingPositionPath } from "../../tracking/positionPathCommit";
 import { getTransformLayerDomain } from "../utils/layerDomain";
 import {
   getDynamicSectionId,
@@ -104,8 +116,10 @@ export function TransformationPanel() {
   } = useTransformationController();
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [pathProviderAnchorEl, setPathProviderAnchorEl] =
+  const [pathMenuAnchorEl, setPathMenuAnchorEl] =
     useState<HTMLElement | null>(null);
+  const [pathTrackingError, setPathTrackingError] = useState<string | null>(null);
+  const [isCreatingPathFromMask, setIsCreatingPathFromMask] = useState(false);
   const [activeDragId, setActiveDragId] = useState<UniqueIdentifier | null>(
     null,
   );
@@ -127,6 +141,26 @@ export function TransformationPanel() {
   );
 
   const selectedClip = useTimelineClip(selectedClipId);
+  const maskClipsForTrackingInvalidation =
+    useMaskClipsForParent(selectedClipId);
+  const assetsForTrackingInvalidation = useAssetStore((state) => state.assets);
+  const trackingAssetLookup = useMemo(
+    () =>
+      Object.freeze({
+        get: (assetId: string) => {
+          const asset = assetsForTrackingInvalidation.find(
+            (candidate) => candidate.id === assetId,
+          );
+          return asset ? toExtensionAssetSnapshot(asset) : undefined;
+        },
+      }),
+    [assetsForTrackingInvalidation],
+  );
+  const selectedMaskIdForTracking = useMaskViewStore((state) =>
+    selectedClipId
+      ? (state.selectedMaskByClipId[selectedClipId] ?? null)
+      : null,
+  );
   const domainClip = activeTimelineClip ?? selectedClip;
   const extensionAvailability =
     selectedClip?.type === "extension"
@@ -153,6 +187,29 @@ export function TransformationPanel() {
   const extensionPositionPath =
     positionTransform?.parameters.extensionPath ?? null;
   const activePositionPath = extensionPositionPath ?? positionPath;
+  const trackingMask = useMemo(() => {
+    void maskClipsForTrackingInvalidation;
+    if (!selectedClipId) return null;
+    const masks = getExtensionTimelineClipMasks(selectedClipId);
+    const selected = selectedMaskIdForTracking
+      ? (masks.find((mask) => mask.localId === selectedMaskIdForTracking) ??
+        null)
+      : null;
+    if (
+      selected &&
+      canCreateTrackingPathFromMask(selected, trackingAssetLookup)
+    ) {
+      return selected;
+    }
+    return masks.find((mask) =>
+      canCreateTrackingPathFromMask(mask, trackingAssetLookup),
+    ) ?? null;
+  }, [
+    maskClipsForTrackingInvalidation,
+    selectedClipId,
+    selectedMaskIdForTracking,
+    trackingAssetLookup,
+  ]);
 
   // Get the asset for the selected clip to check hasAudio
   const selectedAssetId = isAssetBackedClip(selectedClip)
@@ -331,8 +388,10 @@ export function TransformationPanel() {
 
   const handleStartRecording = useCallback(() => {
     if (!selectedClipId) return;
+    setPathMenuAnchorEl(null);
     setPathPanelView("home");
     setActivePathEditor(null);
+    setPathTrackingError(null);
     setArmedPathRecording({
       clipId: selectedClipId,
       transformId: positionTransform?.id ?? null,
@@ -348,6 +407,57 @@ export function TransformationPanel() {
   const handleCancelRecording = useCallback(() => {
     setArmedPathRecording(null);
   }, [setArmedPathRecording]);
+
+  const handleCreatePathFromMask = useCallback(async () => {
+    setPathMenuAnchorEl(null);
+    if (!selectedClipId || !trackingMask) return;
+
+    setIsCreatingPathFromMask(true);
+    setPathTrackingError(null);
+    try {
+      const { createNativeTrackingExtensionApis } = await import(
+        "../../tracking/extensionApi"
+      );
+      const trackingExtensionApis = createNativeTrackingExtensionApis();
+      const path = await createPositionPathFromMaskTracking({
+        timeline: trackingExtensionApis.timeline,
+        assets: trackingExtensionApis.assets,
+        clipId: selectedClipId,
+        mask: trackingMask,
+      });
+      if (!path) {
+        setPathTrackingError("Mask tracking did not find enough motion.");
+        return;
+      }
+
+      const commit = commitTrackingPositionPath({
+        timeline: trackingExtensionApis.timeline,
+        clipId: selectedClipId,
+        path,
+      });
+      if (!commit.ok) {
+        setPathTrackingError(commit.message);
+        return;
+      }
+
+      setArmedPathRecording(null);
+      setActivePathEditor({
+        clipId: selectedClipId,
+        transformId: commit.transformId,
+      });
+      setPathPanelView("path");
+    } catch (error) {
+      setPathTrackingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCreatingPathFromMask(false);
+    }
+  }, [
+    selectedClipId,
+    setActivePathEditor,
+    setArmedPathRecording,
+    setPathPanelView,
+    trackingMask,
+  ]);
 
   const handleOpenPathEditor = useCallback(() => {
     if (!selectedClipId || !positionTransform || !activePositionPath) return;
@@ -424,7 +534,7 @@ export function TransformationPanel() {
 
   const handleCreateExtensionPath = useCallback(
     (provider: RegisteredSpatialPath) => {
-      setPathProviderAnchorEl(null);
+      setPathMenuAnchorEl(null);
       if (!positionTransform) return;
       const separator = CORE_MONOTONE_INTERPOLATION_ID.indexOf("/");
       updateActiveTransform(positionTransform.id, {
@@ -491,34 +601,39 @@ export function TransformationPanel() {
     if (!activePositionPath) {
       return (
         <Box sx={{ display: "flex", gap: 0.5 }}>
-          <Button size="small" onClick={handleStartRecording} sx={commonButtonSx}>
-            Record Path
+          <Button
+            size="small"
+            onClick={(event) => setPathMenuAnchorEl(event.currentTarget)}
+            sx={commonButtonSx}
+            disabled={isCreatingPathFromMask}
+          >
+            Add Path
           </Button>
-          {positionTransform && extensionPathProviders.length > 0 && (
-            <>
-              <Button
-                size="small"
-                onClick={(event) => setPathProviderAnchorEl(event.currentTarget)}
-                sx={commonButtonSx}
-              >
-                Add Custom Path
-              </Button>
-              <Menu
-                anchorEl={pathProviderAnchorEl}
-                open={Boolean(pathProviderAnchorEl)}
-                onClose={() => setPathProviderAnchorEl(null)}
-              >
-                {extensionPathProviders.map((provider) => (
-                  <MenuItem
-                    key={provider.id}
-                    onClick={() => handleCreateExtensionPath(provider)}
-                  >
-                    {provider.definition.label}
-                  </MenuItem>
-                ))}
-              </Menu>
-            </>
-          )}
+          <Menu
+            anchorEl={pathMenuAnchorEl}
+            open={Boolean(pathMenuAnchorEl)}
+            onClose={() => setPathMenuAnchorEl(null)}
+          >
+            <MenuItem onClick={handleStartRecording}>From Drag</MenuItem>
+            <MenuItem
+              onClick={() => void handleCreatePathFromMask()}
+              disabled={!trackingMask || isCreatingPathFromMask}
+            >
+              From Mask
+            </MenuItem>
+            {positionTransform && extensionPathProviders.length > 0 ? (
+              <Divider />
+            ) : null}
+            {positionTransform &&
+              extensionPathProviders.map((provider) => (
+                <MenuItem
+                  key={provider.id}
+                  onClick={() => handleCreateExtensionPath(provider)}
+                >
+                  {provider.definition.label}
+                </MenuItem>
+              ))}
+          </Menu>
         </Box>
       );
     }
@@ -546,6 +661,7 @@ export function TransformationPanel() {
   }, [
     armedPathRecording?.clipId,
     handleCancelRecording,
+    handleCreatePathFromMask,
     handleCreateExtensionPath,
     handleOpenPathEditor,
     handleRemovePath,
@@ -553,9 +669,11 @@ export function TransformationPanel() {
     activePositionPath,
     extensionPathProviders,
     extensionPositionPath,
-    pathProviderAnchorEl,
+    isCreatingPathFromMask,
+    pathMenuAnchorEl,
     positionTransform,
     selectedClipId,
+    trackingMask,
   ]);
 
   const getDefaultGroupProps = useCallback(
@@ -629,6 +747,11 @@ export function TransformationPanel() {
     >
       <Box sx={{ display: "flex", flexDirection: "column" }}>
         <ExtensionUiSlot slot="transformation-panel.before" />
+        {pathTrackingError ? (
+          <Alert severity="warning" sx={{ m: 1 }}>
+            {pathTrackingError}
+          </Alert>
+        ) : null}
         {selectedClip?.type === "extension" ? (
           <>
             <ExtensionEntityInspector clip={selectedClip} />

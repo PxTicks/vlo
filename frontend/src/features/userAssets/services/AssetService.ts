@@ -7,7 +7,11 @@ import {
   doesAssetMatchFamilyCompatibility,
   isAssetFamilyCompatibilityComplete,
 } from "../../../shared/utils/assetFamilies";
-import { fileSystemService, projectPersistenceService } from "../../project";
+import {
+  fileSystemService,
+  projectPersistenceService,
+  type PersistedAssetIndexEntry,
+} from "../../project";
 import { mediaProcessingService } from "./MediaProcessingService";
 
 const assetPersistencePromises = new Map<string, Promise<void>>();
@@ -93,6 +97,41 @@ function resolveAssetStoragePath(
   return assetFileName;
 }
 
+function isNotFoundError(error: unknown): boolean {
+  return (
+    (error as DOMException | undefined)?.name === "NotFoundError" ||
+    (error instanceof Error && /not found|missing/i.test(error.message))
+  );
+}
+
+function createAssetSnapshotFromPersistedEntry(
+  entry: PersistedAssetIndexEntry,
+): Asset {
+  return {
+    ...entry,
+    sourcePath: entry.src,
+    thumbnailPath: entry.thumbnail,
+    proxyPath: entry.proxySrc,
+    metadataLoaded: !entry.metadataRef,
+  };
+}
+
+function mergeAssetSnapshots(
+  first: readonly Asset[],
+  second: readonly Asset[],
+): Asset[] {
+  const mergedById = new Map<string, Asset>();
+  for (const asset of first) {
+    mergedById.set(asset.id, asset);
+  }
+  for (const asset of second) {
+    if (!mergedById.has(asset.id)) {
+      mergedById.set(asset.id, asset);
+    }
+  }
+  return [...mergedById.values()];
+}
+
 export class AssetService {
   async waitForAssetPersistence(assetId: string): Promise<void> {
     const persistencePromise = assetPersistencePromises.get(assetId);
@@ -129,9 +168,30 @@ export class AssetService {
   async scanForNewAssets(existingAssets: readonly Asset[]): Promise<Asset[]> {
     console.log("[Scanner] Starting scan...");
 
+    let persistedAssets: Asset[] = [];
+    try {
+      const assetIndex = await projectPersistenceService.readAssetIndex();
+      persistedAssets = Object.values(assetIndex.assets).map(
+        createAssetSnapshotFromPersistedEntry,
+      );
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        console.error(
+          "[Scanner] Failed to read persisted asset index; skipping scan to avoid duplicate ingestion.",
+          error,
+        );
+        return [];
+      }
+    }
+
     // Local working copy so in-loop hash/name dedup sees newly-ingested assets
-    // without touching the caller's array.
-    const workingAssets: Asset[] = [...existingAssets];
+    // without touching the caller's array. Include the persisted index too so
+    // a stale in-memory store cannot re-ingest files that are already in
+    // assets.json.
+    const workingAssets: Asset[] = mergeAssetSnapshots(
+      existingAssets,
+      persistedAssets,
+    );
 
     // Deduplication Set
     const knownPaths = new Set(workingAssets.map((a) => a.name));
@@ -202,6 +262,7 @@ export class AssetService {
           true,
           true,
           workingAssets,
+          { source: "uploaded" },
         );
         if (ingestResult.status === "created") {
           newAssetsToPersist.push(ingestResult.asset);

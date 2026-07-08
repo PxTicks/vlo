@@ -207,6 +207,41 @@ describe("AssetService", () => {
     expect(spyIngest).not.toHaveBeenCalled();
   });
 
+  it("should not duplicate files that are only present in the persisted asset index", async () => {
+    (fileSystemService.listDirectory as Mock).mockResolvedValue(["known.mp4"]);
+    (fileSystemService.readFile as Mock).mockImplementation(
+      async (path: string) => {
+        if (path === ".vloproject/assets.json") {
+          return {
+            text: async () =>
+              JSON.stringify({
+                ...emptyAssetIndex,
+                assets: {
+                  "persisted-asset": {
+                    id: "persisted-asset",
+                    name: "known.mp4",
+                    hash: "known-hash",
+                    src: "known.mp4",
+                    type: "video",
+                    createdAt: 1,
+                  },
+                },
+              }),
+          };
+        }
+        return new File(["video"], "known.mp4", { type: "video/mp4" });
+      },
+    );
+
+    const spyIngest = vi.spyOn(assetService, "ingestAssetWithResult");
+
+    const newAssets = await assetService.scanForNewAssets([]);
+
+    expect(newAssets).toHaveLength(0);
+    expect(spyIngest).not.toHaveBeenCalled();
+    expect(fileSystemService.readFile).not.toHaveBeenCalledWith("known.mp4");
+  });
+
   it("should rename unsanitized file and ingest the new name if it does not exist", async () => {
     // Arrange
     // On disk: "fresh file.png" -> "fresh_file.png"

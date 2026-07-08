@@ -195,6 +195,29 @@ describe("useAssetStore - Local Assets", () => {
     expect(result.skippedExistingFiles).toBe(1);
   });
 
+  it("deduplicates concurrent local ingests against the latest store state", async () => {
+    const { mediaProcessingService } =
+      await import("../services/MediaProcessingService");
+
+    vi.mocked(mediaProcessingService.computeChecksum).mockResolvedValue(
+      "shared-hash",
+    );
+
+    const store = useAssetStore.getState();
+    const firstFile = new File(["same"], "first.mp4", { type: "video/mp4" });
+    const secondFile = new File(["same"], "second.mp4", { type: "video/mp4" });
+
+    const [firstAsset, secondAsset] = await Promise.all([
+      store.addLocalAsset(firstFile),
+      store.addLocalAsset(secondFile),
+    ]);
+
+    expect(firstAsset).not.toBeNull();
+    expect(secondAsset).toBeNull();
+    expect(useAssetStore.getState().assets).toHaveLength(1);
+    expect(useAssetStore.getState().assets[0].hash).toBe("shared-hash");
+  });
+
   it("can bypass hash deduplication when explicitly requested", async () => {
     const { mediaProcessingService } =
       await import("../services/MediaProcessingService");

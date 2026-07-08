@@ -130,9 +130,25 @@ function disposeAssetCollectionRuntimeResources(
 
 const sourceHydrationPromises = new Map<string, Promise<Asset | null>>();
 const metadataHydrationPromises = new Map<string, Promise<Asset | null>>();
+let assetIngestQueue = Promise.resolve();
 const DEFERRED_CLEANUP_ASSET_SOURCES = new Set<
   NonNullable<Asset["creationMetadata"]>["source"]
 >(["sam2_mask", "brush_mask"]);
+
+async function runQueuedAssetIngest<T>(task: () => Promise<T>): Promise<T> {
+  const previousIngest = assetIngestQueue;
+  let releaseQueue: () => void = () => undefined;
+  assetIngestQueue = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
+
+  try {
+    await previousIngest.catch(() => undefined);
+    return await task();
+  } finally {
+    releaseQueue();
+  }
+}
 
 function shouldDeferAssetCleanup(
   asset: Asset,
@@ -400,52 +416,54 @@ async function ingestLocalAssetsIntoStore(
   }));
 
   try {
-    const { assetService } = await import("./services/AssetService");
-    const assets = [...get().assets];
+    return await runQueuedAssetIngest(async () => {
+      const { assetService } = await import("./services/AssetService");
+      const assets = [...get().assets];
 
-    for (const file of files) {
-      const ingestResult = await assetService.ingestAssetWithResult(
-        file,
-        false,
-        false,
-        assets,
-        creationMetadata,
-        family,
-        compatibilityHint,
-        options,
-      );
+      for (const file of files) {
+        const ingestResult = await assetService.ingestAssetWithResult(
+          file,
+          false,
+          false,
+          assets,
+          creationMetadata,
+          family,
+          compatibilityHint,
+          options,
+        );
 
-      if (ingestResult.status === "skipped_existing") {
-        skippedExistingFiles += 1;
-        continue;
-      }
+        if (ingestResult.status === "skipped_existing") {
+          skippedExistingFiles += 1;
+          continue;
+        }
 
-      if (ingestResult.status === "reused_existing") {
-        // Existing record stays in the store; surface it so callers can link
-        // (e.g. a generated asset pointing to a shared generation mask).
+        if (ingestResult.status === "reused_existing") {
+          // Existing record stays in the store; surface it so callers can link
+          // (e.g. a generated asset pointing to a shared generation mask).
+          returnedAssets.push(ingestResult.asset);
+          continue;
+        }
+
+        if (ingestResult.status !== "created") {
+          continue;
+        }
+
+        assets.push(ingestResult.asset);
+        newlyCreatedAssets.push(ingestResult.asset);
         returnedAssets.push(ingestResult.asset);
-        continue;
       }
 
-      if (ingestResult.status !== "created") {
-        continue;
+      if (newlyCreatedAssets.length > 0) {
+        set((state) => ({
+          assets: [...state.assets, ...newlyCreatedAssets],
+        }));
       }
 
-      assets.push(ingestResult.asset);
-      newlyCreatedAssets.push(ingestResult.asset);
-      returnedAssets.push(ingestResult.asset);
-    }
-
-    if (newlyCreatedAssets.length > 0) {
-      set((state) => ({
-        assets: [...state.assets, ...newlyCreatedAssets],
-      }));
-    }
-
-    return {
-      assets: returnedAssets,
-      skippedExistingFiles,
-    };
+      return {
+        assets: returnedAssets,
+        skippedExistingFiles,
+      };
+    });
   } finally {
     set((state) => {
       const uploadingCount = Math.max(0, state.uploadingCount - 1);
@@ -649,16 +667,18 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       isUploading: true,
     }));
     try {
-      const { assets } = get();
-      const { assetService } = await import("./services/AssetService");
+      await runQueuedAssetIngest(async () => {
+        const { assets } = get();
+        const { assetService } = await import("./services/AssetService");
 
-      const newAssets = await assetService.scanForNewAssets(assets);
+        const newAssets = await assetService.scanForNewAssets(assets);
 
-      if (newAssets.length > 0) {
-        set((state) => ({
-          assets: [...state.assets, ...newAssets],
-        }));
-      }
+        if (newAssets.length > 0) {
+          set((state) => ({
+            assets: [...state.assets, ...newAssets],
+          }));
+        }
+      });
     } catch (e) {
       console.error("Failed to scan assets directory", e);
     } finally {

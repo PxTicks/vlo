@@ -45,6 +45,9 @@ synchronous and inspect the structured result. Available commands currently incl
 - `removeEntity`;
 - `upsertTransform`;
 - `removeTransform`.
+- `createTransition`;
+- `updateTransitionParameters`;
+- `removeTransition`.
 
 Stage all related commands in one transaction so the host validates ownership and
 creates one undo entry. Do not retain the transaction object or call it after the
@@ -52,6 +55,8 @@ callback. Do not mutate raw Zustand state as a portable extension strategy.
 
 Creation supplies common placement and an `ExtensionPayload`; the host generates the
 entity ID. Payload updates must remain compatible with the calling extension.
+Transition creation targets one of the caller's registered transition contribution
+IDs; transition updates/removal are limited to extension-owned transition types.
 
 ## Cross media and project domains
 

@@ -1,7 +1,12 @@
 export {
   TransitionRegistry,
   createTransition,
+  findTransitionDefinition,
   getTransitionDefinition,
+  getTransitionDefinitions,
+  getTransitionRegistryRevision,
+  isBuiltinTransitionType,
+  subscribeTransitionRegistry,
   type TransitionDefinition,
 } from "./catalogue/TransitionRegistry";
 export {
@@ -19,3 +24,7 @@ export { TransitionDragOverlay } from "./components/TransitionDragOverlay";
 export { TransitionOverlay } from "./components/TransitionOverlay";
 export { TransitionPanel } from "./components/TransitionPanel";
 export { useTransitionDrag } from "./hooks/useTransitionDrag";
+export {
+  ExtensionTransitionRegistry,
+  extensionTransitionRegistry,
+} from "./extensions/ExtensionTransitionRegistry";

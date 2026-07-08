@@ -1,9 +1,20 @@
-import { memo } from "react";
+import { memo, useSyncExternalStore } from "react";
 import { Box, Typography } from "@mui/material";
-import { TransitionRegistry } from "../catalogue/TransitionRegistry";
+import {
+  getTransitionDefinitions,
+  getTransitionRegistryRevision,
+  subscribeTransitionRegistry,
+} from "../catalogue/TransitionRegistry";
 import { TransitionCard } from "./TransitionCard";
 
 function TransitionLibraryPanelComponent() {
+  useSyncExternalStore(
+    subscribeTransitionRegistry,
+    getTransitionRegistryRevision,
+    getTransitionRegistryRevision,
+  );
+  const transitions = getTransitionDefinitions();
+
   return (
     <Box
       sx={{
@@ -28,7 +39,7 @@ function TransitionLibraryPanelComponent() {
           overflowY: "auto",
         }}
       >
-        {TransitionRegistry.map((definition) => (
+        {transitions.map((definition) => (
           <TransitionCard key={definition.type} definition={definition} />
         ))}
       </Box>

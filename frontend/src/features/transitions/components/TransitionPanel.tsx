@@ -1,16 +1,23 @@
-import { memo, useCallback, useState } from "react";
-import { Box, Typography } from "@mui/material";
+import { memo, useCallback, useState, useSyncExternalStore } from "react";
+import { Box, Checkbox, FormControlLabel, Typography } from "@mui/material";
 import {
   updateTimelineTransitionParameters,
   useSelectedTimelineTransitionId,
   useTimelineTransitions,
 } from "../../timeline/api";
 import { ControlGroup } from "../../panelUI/components/ControlGroup";
+import { NumberControl } from "../../panelUI/components/NumberControl";
 import { SelectControl } from "../../panelUI/components/SelectControl";
 import { SliderControl } from "../../panelUI/components/SliderControl";
 import { BufferedColorInput } from "../../panelUI/components/BufferedColorInput";
+import { BufferedTextInput } from "../../panelUI/components/BufferedTextInput";
 import type { ControlRenderProps } from "../../panelUI/types";
-import { getTransitionDefinition } from "../catalogue/TransitionRegistry";
+import {
+  getTransitionDefinition,
+  getTransitionRegistryRevision,
+  subscribeTransitionRegistry,
+  validateTransitionParameterUpdates,
+} from "../catalogue/TransitionRegistry";
 
 function TransitionSlider({
   control,
@@ -47,7 +54,33 @@ function TransitionSlider({
   );
 }
 
+function TransitionNumber({
+  control,
+  value,
+  onCommit,
+}: ControlRenderProps) {
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof control.defaultValue === "number"
+        ? control.defaultValue
+        : 0;
+  return (
+    <NumberControl
+      label={control.label}
+      value={numericValue}
+      step={control.step}
+      onCommit={onCommit}
+    />
+  );
+}
+
 function TransitionPanelComponent() {
+  useSyncExternalStore(
+    subscribeTransitionRegistry,
+    getTransitionRegistryRevision,
+    getTransitionRegistryRevision,
+  );
   const selectedTransitionId = useSelectedTimelineTransitionId();
   const transitions = useTimelineTransitions();
   const transition = transitions.find(
@@ -67,6 +100,9 @@ function TransitionPanelComponent() {
     if (props.control.type === "slider") {
       return <TransitionSlider {...props} />;
     }
+    if (props.control.type === "number") {
+      return <TransitionNumber {...props} />;
+    }
     if (props.control.type === "color") {
       return (
         <BufferedColorInput
@@ -78,6 +114,33 @@ function TransitionPanelComponent() {
           }
           onCommit={props.onCommit}
           sx={{ mx: 1 }}
+        />
+      );
+    }
+    if (props.control.type === "text") {
+      return (
+        <BufferedTextInput
+          label={props.control.label}
+          value={
+            typeof props.value === "string"
+              ? props.value
+              : String(props.control.defaultValue ?? "")
+          }
+          onCommit={props.onCommit}
+        />
+      );
+    }
+    if (props.control.type === "checkbox") {
+      return (
+        <FormControlLabel
+          control={
+            <Checkbox
+              size="small"
+              checked={props.value === true}
+              onChange={(_, checked) => props.onCommit(checked)}
+            />
+          }
+          label={props.control.label}
         />
       );
     }
@@ -106,9 +169,13 @@ function TransitionPanelComponent() {
           group={group}
           values={transition.parameters}
           onCommit={(_groupId, controlName, value) => {
-            updateTimelineTransitionParameters(transition.id, {
+            const updates = {
               [controlName]: value,
-            });
+            };
+            if (!validateTransitionParameterUpdates(transition, updates)) {
+              return;
+            }
+            updateTimelineTransitionParameters(transition.id, updates);
           }}
           renderControl={renderControl}
         />

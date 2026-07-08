@@ -35,6 +35,7 @@
 /frontend/src/features/timeline/components/TimelineToolbar.tsx extension-surface=adapter
 /frontend/src/features/timeline/model/** extension-surface=adapter
 /frontend/src/features/timeline/useTimelineStore.ts extension-surface=adapter
+/frontend/src/features/transitions/** extension-surface=adapter
 /frontend/src/features/transformations/animation/** extension-surface=adapter
 /frontend/src/features/transformations/catalogue/TransformationRegistry.ts extension-surface=adapter
 /frontend/src/features/transformations/catalogue/filterFactory.ts extension-surface=adapter

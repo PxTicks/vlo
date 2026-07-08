@@ -109,9 +109,10 @@ const timelineTrackSchema = z
 const transitionSchema = z
   .object({
     id: z.string(),
-    type: z.enum(["dissolve", "slideAway", "slideOutIn", "dipToColor"]),
+    type: z.string(),
     outgoingClipId: z.string(),
     incomingClipId: z.string(),
+    schemaVersion: z.number().int().positive().optional(),
     parameters: z.record(z.string(), z.unknown()),
   })
   .passthrough() as unknown as z.ZodType<Transition>;

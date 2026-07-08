@@ -2,7 +2,7 @@ import type {
   ExtensionPayload,
   ExtensionTimelineTransactionFailureCode,
 } from "@vlo/extension-sdk";
-import type { ClipTransform } from "../../../types/TimelineTypes";
+import type { ClipTransform, Transition } from "../../../types/TimelineTypes";
 import {
   isExtensionTimelineClip,
   type ExtensionTimelineClip,
@@ -13,6 +13,9 @@ import {
   addClipToDraft,
   planTimelineRemoval,
   removeClipIdsFromDraft,
+  addTransitionToDraft,
+  removeTransitionFromDraft,
+  updateTransitionParametersInDraft,
 } from "./timelineCommands";
 import {
   createNewTrack,
@@ -53,6 +56,19 @@ export type ExtensionTimelineCommand =
       kind: "remove_transform";
       clipId: string;
       transformId: string;
+    }
+  | {
+      kind: "create_transition";
+      transition: Transition;
+    }
+  | {
+      kind: "update_transition_parameters";
+      transitionId: string;
+      parameters: Record<string, unknown>;
+    }
+  | {
+      kind: "remove_transition";
+      transitionId: string;
     };
 
 export class ExtensionTimelineCommandError extends Error {
@@ -133,7 +149,58 @@ export function applyExtensionTimelineCommands(
     return clip;
   };
 
+  const getOwnedTransition = (transitionId: string) => {
+    const transition = draft.transitions.find(
+      (candidate) => candidate.id === transitionId,
+    );
+    if (!transition) {
+      throw new ExtensionTimelineCommandError(
+        "transition_not_found",
+        `Transition '${transitionId}' was not found.`,
+      );
+    }
+    if (!transition.type.startsWith(`${ownerId}/`)) {
+      throw new ExtensionTimelineCommandError(
+        "wrong_owner",
+        `Extension '${ownerId}' cannot mutate transition '${transitionId}'.`,
+      );
+    }
+    return transition;
+  };
+
   for (const command of commands) {
+    if (command.kind === "create_transition") {
+      if (!command.transition.type.startsWith(`${ownerId}/`)) {
+        throw new ExtensionTimelineCommandError(
+          "wrong_owner",
+          `Extension '${ownerId}' cannot create transition type '${command.transition.type}'.`,
+        );
+      }
+      if (!addTransitionToDraft(draft, command.transition)) {
+        throw new ExtensionTimelineCommandError(
+          "invalid_command",
+          `Transition '${command.transition.id}' could not be added.`,
+        );
+      }
+      continue;
+    }
+
+    if (command.kind === "update_transition_parameters") {
+      getOwnedTransition(command.transitionId);
+      updateTransitionParametersInDraft(
+        draft,
+        command.transitionId,
+        command.parameters,
+      );
+      continue;
+    }
+
+    if (command.kind === "remove_transition") {
+      getOwnedTransition(command.transitionId);
+      removeTransitionFromDraft(draft, command.transitionId);
+      continue;
+    }
+
     if (command.kind === "upsert_transform") {
       const clip = getClip(command.clipId);
       const transform = structuredClone(command.transform);

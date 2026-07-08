@@ -113,19 +113,23 @@ export function buildTransitionTransforms(
       : [];
   }
 
-  return side === "outgoing"
-    ? [
-        positionTransform(
-          `${transition.id}:${side}`,
-          vector.x * p,
-          vector.y * p,
-        ),
-      ]
-    : [
-        positionTransform(
-          `${transition.id}:${side}`,
-          -vector.x * (1 - p),
-          -vector.y * (1 - p),
-        ),
-      ];
+  if (transition.type === "slideOutIn") {
+    return side === "outgoing"
+      ? [
+          positionTransform(
+            `${transition.id}:${side}`,
+            vector.x * p,
+            vector.y * p,
+          ),
+        ]
+      : [
+          positionTransform(
+            `${transition.id}:${side}`,
+            -vector.x * (1 - p),
+            -vector.y * (1 - p),
+          ),
+        ];
+  }
+
+  return [];
 }

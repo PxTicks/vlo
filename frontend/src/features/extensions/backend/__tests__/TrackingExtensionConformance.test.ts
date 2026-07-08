@@ -165,6 +165,7 @@ function createConformanceApi() {
       ticksPerSecond: 96_000,
       listEntities: () => [],
       listClips: () => [clip],
+      listTransitions: () => [],
       listClipMasks: () => [],
       getProject: () => ({
         width: 1920,
@@ -192,6 +193,9 @@ function createConformanceApi() {
             return transform.id ?? "generated";
           },
           removeTransform: () => undefined,
+          createTransition: () => "unused-transition",
+          updateTransitionParameters: () => undefined,
+          removeTransition: () => undefined,
         };
         callback(transaction);
         return { ok: true, changed: true, label };
@@ -202,6 +206,9 @@ function createConformanceApi() {
       }),
     },
     transformations: {
+      register: (definition) => ({ id: definition.id, dispose: () => undefined }),
+    },
+    transitions: {
       register: (definition) => ({ id: definition.id, dispose: () => undefined }),
     },
     ui: {

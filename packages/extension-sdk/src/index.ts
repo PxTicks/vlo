@@ -601,6 +601,15 @@ export interface ExtensionTimelineMaskSnapshot {
   readonly transformations: readonly ExtensionTimelineTransformSnapshot[];
 }
 
+export interface ExtensionTimelineTransitionSnapshot {
+  readonly id: string;
+  readonly type: string;
+  readonly outgoingClipId: string;
+  readonly incomingClipId: string;
+  readonly schemaVersion?: number;
+  readonly parameters: Readonly<Record<string, JsonValue>>;
+}
+
 export interface ExtensionTimelineTransformInput {
   readonly id?: string;
   readonly type: string;
@@ -631,6 +640,14 @@ export interface ExtensionTimelineEntityCreateInput {
   readonly payload: ExtensionPayload;
 }
 
+export interface ExtensionTimelineTransitionCreateInput {
+  /** Local transition contribution ID registered by this extension. */
+  readonly transitionType: string;
+  readonly outgoingClipId: string;
+  readonly incomingClipId: string;
+  readonly parameters?: Readonly<Record<string, JsonValue>>;
+}
+
 export interface ExtensionTimelineTransaction {
   /** Returns the host-generated entity ID used by later commands in this transaction. */
   createEntity(input: ExtensionTimelineEntityCreateInput): string;
@@ -646,6 +663,13 @@ export interface ExtensionTimelineTransaction {
     transform: ExtensionTimelineTransformInput,
   ): string;
   removeTransform(clipId: string, transformId: string): void;
+  /** Creates a first-class transition using one of this extension's transition contributions. */
+  createTransition(input: ExtensionTimelineTransitionCreateInput): string;
+  updateTransitionParameters(
+    transitionId: string,
+    parameters: Readonly<Record<string, JsonValue>>,
+  ): void;
+  removeTransition(transitionId: string): void;
 }
 
 export type ExtensionTimelineTransactionFailureCode =
@@ -653,6 +677,8 @@ export type ExtensionTimelineTransactionFailureCode =
   | "invalid_command"
   | "entity_not_found"
   | "clip_not_found"
+  | "transition_not_found"
+  | "transition_type_not_found"
   | "transform_not_found"
   | "wrong_owner"
   | "incompatible_payload"
@@ -768,6 +794,8 @@ export interface ExtensionTimelineApi {
   listEntities(): readonly ExtensionTimelineEntitySnapshot[];
   /** Detached snapshots for user-driven commands; not a render-loop accessor. */
   listClips(): readonly ExtensionTimelineClipSnapshot[];
+  /** Detached transition snapshots for user-driven commands. */
+  listTransitions(): readonly ExtensionTimelineTransitionSnapshot[];
   /** Detached mask snapshots attached to a clip. */
   listClipMasks(clipId: string): readonly ExtensionTimelineMaskSnapshot[];
   /** Current render-domain dimensions and timebase, detached from host state. */
@@ -980,6 +1008,138 @@ export interface ExtensionTransformationApi {
   register(
     definition: ExtensionTransformationDefinition,
   ): ExtensionTransformationRegistration;
+}
+
+export interface ExtensionTransitionNumberControl {
+  readonly type: "slider" | "number";
+  readonly name: string;
+  readonly label: string;
+  readonly defaultValue: number;
+  readonly min: number;
+  readonly max: number;
+  readonly step?: number;
+}
+
+export interface ExtensionTransitionCheckboxControl {
+  readonly type: "checkbox";
+  readonly name: string;
+  readonly label: string;
+  readonly defaultValue: boolean;
+}
+
+export interface ExtensionTransitionTextControl {
+  readonly type: "text" | "color";
+  readonly name: string;
+  readonly label: string;
+  readonly defaultValue: string;
+}
+
+export interface ExtensionTransitionSelectOption {
+  readonly label: string;
+  readonly value: string | number | boolean;
+}
+
+export interface ExtensionTransitionSelectControl {
+  readonly type: "select";
+  readonly name: string;
+  readonly label: string;
+  readonly defaultValue: string | number | boolean;
+  readonly options: readonly ExtensionTransitionSelectOption[];
+}
+
+export type ExtensionTransitionControl =
+  | ExtensionTransitionNumberControl
+  | ExtensionTransitionCheckboxControl
+  | ExtensionTransitionTextControl
+  | ExtensionTransitionSelectControl;
+
+export interface ExtensionTransitionControlGroup {
+  readonly id: string;
+  readonly title: string;
+  readonly columns?: number;
+  readonly controls: readonly ExtensionTransitionControl[];
+}
+
+export type ExtensionTransitionZOrder =
+  | "default"
+  | "outgoing-on-top"
+  | "incoming-on-top";
+
+export interface ExtensionTransitionTransform {
+  readonly id?: string;
+  readonly type: string;
+  readonly isEnabled?: boolean;
+  readonly parameters: Readonly<Record<string, JsonValue>>;
+  readonly templateId?: string;
+  readonly filterName?: string;
+}
+
+export interface ExtensionTransitionColorLayer {
+  readonly id?: string;
+  readonly color: string;
+  readonly zIndexOffset?: number;
+}
+
+export interface ExtensionTransitionRenderInput {
+  readonly parameters: Readonly<Record<string, JsonValue>>;
+  readonly schemaVersion: number;
+  readonly progress: number;
+  readonly transition: Readonly<{
+    readonly id: string;
+    readonly startTicks: number;
+    readonly endTicks: number;
+    readonly durationTicks: number;
+  }>;
+  readonly outgoingClip: ExtensionTimelineClipSnapshot;
+  readonly incomingClip: ExtensionTimelineClipSnapshot;
+  readonly frame: Readonly<{
+    readonly projectWidth: number;
+    readonly projectHeight: number;
+    readonly fps: number;
+    readonly presentationTimeTicks: number;
+  }>;
+}
+
+export interface ExtensionTransitionFrame {
+  readonly outgoingTransforms?: readonly ExtensionTransitionTransform[];
+  readonly incomingTransforms?: readonly ExtensionTransitionTransform[];
+  readonly colorLayers?: readonly ExtensionTransitionColorLayer[];
+  readonly zOrder?: ExtensionTransitionZOrder;
+}
+
+export interface ExtensionTransitionParameterMigration {
+  readonly schemaVersion: number;
+  readonly parameters: Readonly<Record<string, JsonValue>>;
+}
+
+export interface ExtensionTransitionDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly label: string;
+  readonly glyph: string;
+  readonly schemaVersion: number;
+  readonly defaultParameters?: Readonly<Record<string, JsonValue>>;
+  readonly groups?: readonly ExtensionTransitionControlGroup[];
+  readonly zOrder?: ExtensionTransitionZOrder;
+  validateParameters?(
+    parameters: Readonly<Record<string, JsonValue>>,
+    schemaVersion: number,
+  ): boolean;
+  migrateParameters?(
+    parameters: Readonly<Record<string, JsonValue>>,
+    fromSchemaVersion: number,
+  ): ExtensionTransitionParameterMigration;
+  renderFrame(input: ExtensionTransitionRenderInput): ExtensionTransitionFrame;
+}
+
+export interface ExtensionTransitionRegistration extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionTransitionApi {
+  register(
+    definition: ExtensionTransitionDefinition,
+  ): ExtensionTransitionRegistration;
 }
 
 export interface ExtensionPixiShaderSource {
@@ -1223,6 +1383,7 @@ export interface VloExtensionApi {
   /** Trusted-first, executable Pixi entity providers. */
   readonly entityProviders: ExtensionEntityProviderApi;
   readonly timeline: ExtensionTimelineApi;
+  readonly transitions: ExtensionTransitionApi;
   readonly transformations: ExtensionTransformationApi;
   readonly ui: ExtensionUiApi;
 }

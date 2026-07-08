@@ -10,6 +10,7 @@ import { extensionPayloadProviderRegistry } from "../persistence/ExtensionPayloa
 import { extensionEntityProviderRegistry } from "../entities/ExtensionEntityProviderRegistry";
 import { createExtensionTimelineApi } from "../timeline/createExtensionTimelineApi";
 import { extensionTransformationRegistry } from "../../transformations/extensionApi";
+import { extensionTransitionRegistry } from "../../transitions/extensions/ExtensionTransitionRegistry";
 import { createExtensionAnimationApi } from "../../transformations/animation";
 import { createExtensionBackendApi } from "../backend/createExtensionBackendApi";
 import { createExtensionAssetApi } from "../assets/createExtensionAssetApi";
@@ -329,6 +330,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       payloadProviders: extensionPayloadProviderRegistry.bind(scope),
       entityProviders: extensionEntityProviderRegistry.bind(scope),
       timeline: createExtensionTimelineApi(scope),
+      transitions: extensionTransitionRegistry.bind(scope),
       transformations: extensionTransformationRegistry.bind(scope),
       ui: extensionUiSlotRegistry.bind(scope),
     });

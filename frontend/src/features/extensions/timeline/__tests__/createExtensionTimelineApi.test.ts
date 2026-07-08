@@ -12,6 +12,7 @@ import type {
 } from "../../../../types/TimelineTypes";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { createExtensionTimelineApi } from "../createExtensionTimelineApi";
+import { extensionTransitionRegistry } from "../../../transitions/extensions/ExtensionTransitionRegistry";
 
 function createScope(extensionId: string): ExtensionApiScope {
   return {
@@ -356,6 +357,216 @@ describe("createExtensionTimelineApi", () => {
         .clips.find((clip) => clip.id === "shape-with-filter")
         ?.transformations.map((transform) => transform.type),
     ).toEqual(["position", "filter"]);
+  });
+
+  it("creates, updates, lists, and removes extension-owned transitions", () => {
+    const scope = createScope("example.wipes");
+    const registration = extensionTransitionRegistry.bind(scope).register({
+      id: "push",
+      apiVersion: 1,
+      label: "Push",
+      glyph: "P",
+      schemaVersion: 1,
+      groups: [
+        {
+          id: "motion",
+          title: "Motion",
+          controls: [
+            {
+              type: "slider",
+              name: "distance",
+              label: "Distance",
+              defaultValue: 1,
+              min: 0,
+              max: 2,
+            },
+          ],
+        },
+      ],
+      renderFrame: ({ progress, parameters }) => ({
+        outgoingTransforms: [
+          {
+            type: "position",
+            parameters: {
+              x:
+                -100 *
+                progress *
+                (typeof parameters.distance === "number"
+                  ? parameters.distance
+                  : 1),
+              y: 0,
+            },
+          },
+        ],
+      }),
+    });
+
+    try {
+      const outgoing = createExtensionClip("outgoing", "example.shapes");
+      outgoing.trackId = "track-lower";
+      outgoing.start = 0;
+      outgoing.timelineDuration = 96_000;
+      outgoing.transformedDuration = 96_000;
+      outgoing.croppedSourceDuration = 96_000;
+      const incoming = createExtensionClip("incoming", "example.shapes");
+      incoming.trackId = "track-upper";
+      incoming.start = 48_000;
+      incoming.timelineDuration = 96_000;
+      incoming.transformedDuration = 96_000;
+      incoming.croppedSourceDuration = 96_000;
+      useTimelineStore.getState().replaceTimelineSnapshot({
+        tracks: [
+          {
+            id: "track-upper",
+            label: "Upper",
+            type: "visual",
+            isVisible: true,
+            isLocked: false,
+            isMuted: false,
+          },
+          {
+            id: "track-lower",
+            label: "Lower",
+            type: "visual",
+            isVisible: true,
+            isLocked: false,
+            isMuted: false,
+          },
+        ],
+        clips: [outgoing, incoming],
+        transitions: [],
+      });
+
+      const api = createExtensionTimelineApi(scope);
+      let transitionId = "";
+      const createResult = api.transaction("Create push", (transaction) => {
+        transitionId = transaction.createTransition({
+          transitionType: "push",
+          outgoingClipId: "outgoing",
+          incomingClipId: "incoming",
+          parameters: { distance: 0.75 },
+        });
+      });
+      expect(createResult).toEqual({
+        ok: true,
+        changed: true,
+        label: "Create push",
+      });
+
+      expect(api.listTransitions()).toEqual([
+        expect.objectContaining({
+          id: transitionId,
+          type: "example.wipes/push",
+          schemaVersion: 1,
+          parameters: { distance: 0.75 },
+        }),
+      ]);
+
+      expect(
+        api.transaction("Update push", (transaction) => {
+          transaction.updateTransitionParameters(transitionId, {
+            distance: 0.25,
+          });
+        }),
+      ).toMatchObject({ ok: true, changed: true });
+      expect(useTimelineStore.getState().transitions[0]?.parameters).toEqual({
+        distance: 0.25,
+      });
+
+      expect(
+        api.transaction("Remove push", (transaction) => {
+          transaction.removeTransition(transitionId);
+        }),
+      ).toMatchObject({ ok: true, changed: true });
+      expect(useTimelineStore.getState().transitions).toEqual([]);
+
+      expect(useTimelineStore.getState().undo()).toBe(true);
+      expect(useTimelineStore.getState().transitions[0]?.id).toBe(transitionId);
+    } finally {
+      registration.dispose();
+    }
+  });
+
+  it("reports transition-specific staging failures", () => {
+    const api = createExtensionTimelineApi(createScope("example.wipes"));
+
+    expect(
+      api.transaction("Create missing transition", (transaction) => {
+        transaction.createTransition({
+          transitionType: "missing",
+          outgoingClipId: "shape-1",
+          incomingClipId: "tracker-1",
+        });
+      }),
+    ).toMatchObject({
+      ok: false,
+      code: "transition_type_not_found",
+    });
+
+    expect(
+      api.transaction("Remove missing transition", (transaction) => {
+        transaction.removeTransition("transition-missing");
+      }),
+    ).toMatchObject({
+      ok: false,
+      code: "transition_not_found",
+    });
+  });
+
+  it("rejects transition removal on behalf of another extension before commit", () => {
+    const outgoing = createExtensionClip("outgoing", "example.shapes");
+    outgoing.trackId = "track-lower";
+    outgoing.start = 0;
+    outgoing.timelineDuration = 96_000;
+    outgoing.transformedDuration = 96_000;
+    outgoing.croppedSourceDuration = 96_000;
+    const incoming = createExtensionClip("incoming", "example.shapes");
+    incoming.trackId = "track-upper";
+    incoming.start = 48_000;
+    incoming.timelineDuration = 96_000;
+    incoming.transformedDuration = 96_000;
+    incoming.croppedSourceDuration = 96_000;
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [
+        {
+          id: "track-upper",
+          label: "Upper",
+          type: "visual",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+        },
+        {
+          id: "track-lower",
+          label: "Lower",
+          type: "visual",
+          isVisible: true,
+          isLocked: false,
+          isMuted: false,
+        },
+      ],
+      clips: [outgoing, incoming],
+      transitions: [
+        {
+          id: "transition-owned",
+          type: "example.other/wipe",
+          outgoingClipId: "outgoing",
+          incomingClipId: "incoming",
+          schemaVersion: 1,
+          parameters: {},
+        },
+      ],
+    });
+
+    const api = createExtensionTimelineApi(createScope("example.wipes"));
+    expect(
+      api.transaction("Remove other transition", (transaction) => {
+        transaction.removeTransition("transition-owned");
+      }),
+    ).toMatchObject({
+      ok: false,
+      code: "wrong_owner",
+    });
   });
 
   it("lists detached mask snapshots for a clip", () => {

@@ -133,17 +133,20 @@ export interface ClipTransform {
   effectMask?: EffectMask;
 }
 
-export type TransitionType =
+export type BuiltinTransitionType =
   | "dissolve"
   | "slideAway"
   | "slideOutIn"
   | "dipToColor";
+
+export type TransitionType = BuiltinTransitionType | (string & {});
 
 export interface Transition {
   id: string;
   type: TransitionType;
   outgoingClipId: string;
   incomingClipId: string;
+  schemaVersion?: number;
   parameters: Record<string, unknown>;
 }
 

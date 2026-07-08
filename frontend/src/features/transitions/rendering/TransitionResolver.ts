@@ -9,7 +9,8 @@ import {
   resolveActiveTransitions,
   resolveTransitionProgress,
 } from "../../timeline/model/transitionModel";
-import { getTransitionDefinition } from "../catalogue/TransitionRegistry";
+import { findTransitionDefinition } from "../catalogue/TransitionRegistry";
+import type { TransitionFrameResult, TransitionZOrder } from "../catalogue/types";
 import { buildTransitionTransforms } from "./buildTransitionTransforms";
 
 export interface TransitionColorLayer {
@@ -23,6 +24,16 @@ export interface ResolvedTransitionFrame {
   transformsByClipId: ReadonlyMap<string, readonly ClipTransform[]>;
   zIndexOverrides: ReadonlyMap<string, number>;
   colorLayers: readonly TransitionColorLayer[];
+}
+
+function resolveZOrder(
+  frame: TransitionFrameResult,
+  definition: NonNullable<ReturnType<typeof findTransitionDefinition>>,
+): TransitionZOrder {
+  if (frame.zOrder) return frame.zOrder;
+  if (definition.zOrder) return definition.zOrder;
+  if (definition.hijackZOrder) return "outgoing-on-top";
+  return "default";
 }
 
 function buildParentGroupByTrack(
@@ -47,7 +58,7 @@ export function resolveTransitionFrame(options: {
   visualTrackOrder: readonly string[];
   adjustmentForest: readonly DerivedRenderGroup[];
 }): ResolvedTransitionFrame {
-  const transformsByClipId = new Map<string, ClipTransform[]>();
+  const transformsByClipId = new Map<string, readonly ClipTransform[]>();
   const zIndexOverrides = new Map<string, number>();
   const colorLayers: TransitionColorLayer[] = [];
   const active = resolveActiveTransitions(
@@ -72,27 +83,46 @@ export function resolveTransitionFrame(options: {
     ) {
       continue;
     }
+    const definition = findTransitionDefinition(resolved.transition.type);
+    if (!definition) continue;
+
     const progress = resolveTransitionProgress(
       resolved,
       options.presentationTick,
     );
+    const transitionFrame =
+      definition.renderFrame?.({
+        transition: resolved.transition,
+        outgoingClip: resolved.outgoingClip,
+        incomingClip: resolved.incomingClip,
+        progress,
+        startTick: resolved.start,
+        endTick: resolved.end,
+        durationTicks: resolved.duration,
+        presentationTick: options.presentationTick,
+        fps: options.fps,
+        logicalDimensions: options.logicalDimensions,
+      }) ?? {
+        outgoingTransforms: buildTransitionTransforms(
+          resolved.transition,
+          "outgoing",
+          progress,
+          options.logicalDimensions,
+        ),
+        incomingTransforms: buildTransitionTransforms(
+          resolved.transition,
+          "incoming",
+          progress,
+          options.logicalDimensions,
+        ),
+      };
     transformsByClipId.set(
       resolved.outgoingClip.id,
-      buildTransitionTransforms(
-        resolved.transition,
-        "outgoing",
-        progress,
-        options.logicalDimensions,
-      ),
+      transitionFrame.outgoingTransforms ?? [],
     );
     transformsByClipId.set(
       resolved.incomingClip.id,
-      buildTransitionTransforms(
-        resolved.transition,
-        "incoming",
-        progress,
-        options.logicalDimensions,
-      ),
+      transitionFrame.incomingTransforms ?? [],
     );
 
     const outgoingParent =
@@ -104,10 +134,8 @@ export function resolveTransitionFrame(options: {
 
     const outgoingZ = baseZByTrack.get(resolved.outgoingClip.trackId) ?? 0;
     const incomingZ = baseZByTrack.get(resolved.incomingClip.trackId) ?? 0;
-    if (
-      outgoingParent === incomingParent &&
-      getTransitionDefinition(resolved.transition.type).hijackZOrder
-    ) {
+    const zOrder = resolveZOrder(transitionFrame, definition);
+    if (outgoingParent === incomingParent && zOrder === "outgoing-on-top") {
       zIndexOverrides.set(
         resolved.outgoingClip.trackId,
         Math.max(outgoingZ, incomingZ),
@@ -115,6 +143,16 @@ export function resolveTransitionFrame(options: {
       zIndexOverrides.set(
         resolved.incomingClip.trackId,
         Math.min(outgoingZ, incomingZ),
+      );
+    }
+    if (outgoingParent === incomingParent && zOrder === "incoming-on-top") {
+      zIndexOverrides.set(
+        resolved.outgoingClip.trackId,
+        Math.min(outgoingZ, incomingZ),
+      );
+      zIndexOverrides.set(
+        resolved.incomingClip.trackId,
+        Math.max(outgoingZ, incomingZ),
       );
     }
 
@@ -128,6 +166,15 @@ export function resolveTransitionFrame(options: {
         color,
         parentGroupId: sharedParent,
         zIndex: Math.min(outgoingZ, incomingZ) - 0.5,
+      });
+    }
+    for (const layer of transitionFrame.colorLayers ?? []) {
+      colorLayers.push({
+        id: layer.id ?? `${resolved.transition.id}:color`,
+        color: layer.color,
+        parentGroupId: sharedParent,
+        zIndex:
+          Math.min(outgoingZ, incomingZ) - 0.5 + (layer.zIndexOffset ?? 0),
       });
     }
   }

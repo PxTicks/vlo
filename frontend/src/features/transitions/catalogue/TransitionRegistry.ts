@@ -1,22 +1,11 @@
 import type {
-  ControlDefinition,
-  LayoutGroup,
-} from "../../panelUI/types";
-import type {
+  BuiltinTransitionType,
   Transition,
   TransitionType,
 } from "../../../types/TimelineTypes";
-
-export interface TransitionDefinition {
-  type: TransitionType;
-  label: string;
-  glyph: string;
-  parameters: Record<string, unknown>;
-  uiConfig: {
-    groups: LayoutGroup[];
-  };
-  hijackZOrder?: boolean;
-}
+import { extensionTransitionRegistry } from "../extensions/ExtensionTransitionRegistry";
+import type { TransitionDefinition } from "./types";
+import type { ControlDefinition } from "../../panelUI/types";
 
 const DIRECTION_CONTROL: ControlDefinition = {
   type: "select",
@@ -151,13 +140,79 @@ export const TransitionRegistry: readonly TransitionDefinition[] = [
   },
 ];
 
+let registeredTransitionRevision = -1;
+let registeredTransitionDefinitions: readonly TransitionDefinition[] =
+  TransitionRegistry;
+
+export function getTransitionRegistryRevision(): number {
+  return extensionTransitionRegistry.getRevision();
+}
+
+export function subscribeTransitionRegistry(listener: () => void): () => void {
+  return extensionTransitionRegistry.subscribe(listener);
+}
+
+export function getTransitionDefinitions(): readonly TransitionDefinition[] {
+  const revision = extensionTransitionRegistry.getRevision();
+  if (revision !== registeredTransitionRevision) {
+    registeredTransitionRevision = revision;
+    registeredTransitionDefinitions = Object.freeze([
+      ...TransitionRegistry,
+      ...extensionTransitionRegistry.listDefinitions(),
+    ]);
+  }
+  return registeredTransitionDefinitions;
+}
+
+export function isBuiltinTransitionType(
+  type: TransitionType,
+): type is BuiltinTransitionType {
+  return (
+    type === "dissolve" ||
+    type === "slideAway" ||
+    type === "slideOutIn" ||
+    type === "dipToColor"
+  );
+}
+
+export function findTransitionDefinition(
+  type: TransitionType,
+): TransitionDefinition | undefined {
+  return getTransitionDefinitions().find(
+    (definition) => definition.type === type,
+  );
+}
+
 export function getTransitionDefinition(
   type: TransitionType,
 ): TransitionDefinition {
   return (
-    TransitionRegistry.find((definition) => definition.type === type) ??
+    findTransitionDefinition(type) ??
     TransitionRegistry[0]
   );
+}
+
+export function validateTransitionParameters(
+  transition: Transition,
+  parameters: Readonly<Record<string, unknown>>,
+): boolean {
+  const definition = findTransitionDefinition(transition.type);
+  const extension = definition?.extension;
+  if (!extension) return true;
+  return extension.validateParameters(
+    parameters,
+    transition.schemaVersion ?? definition.schemaVersion ?? 1,
+  );
+}
+
+export function validateTransitionParameterUpdates(
+  transition: Transition,
+  updates: Readonly<Record<string, unknown>>,
+): boolean {
+  return validateTransitionParameters(transition, {
+    ...transition.parameters,
+    ...updates,
+  });
 }
 
 export function createTransition(
@@ -171,6 +226,11 @@ export function createTransition(
     type,
     outgoingClipId,
     incomingClipId,
+    ...(definition.schemaVersion
+      ? { schemaVersion: definition.schemaVersion }
+      : {}),
     parameters: structuredClone(definition.parameters),
   };
 }
+
+export type { TransitionDefinition };

@@ -10,6 +10,7 @@ import {
 } from "../FrontendExtensionRuntime";
 import type { VloExtensionApi } from "../../types";
 import { extensionTransformationRegistry } from "../../../transformations/extensionApi";
+import { extensionTransitionRegistry } from "../../../transitions/extensions/ExtensionTransitionRegistry";
 import { extensionUiSlotRegistry } from "../../ui/ExtensionUiSlotRegistry";
 import { Container, Filter } from "pixi.js";
 import { createElement } from "react";
@@ -171,6 +172,37 @@ describe("FrontendExtensionRuntime", () => {
               update: () => undefined,
             }),
           });
+          context.api.transitions.register({
+            id: "fade-through-grade",
+            apiVersion: 1,
+            label: "Fade through grade",
+            glyph: "F",
+            schemaVersion: 1,
+            groups: [
+              {
+                id: "appearance",
+                title: "Appearance",
+                controls: [
+                  {
+                    type: "color",
+                    name: "color",
+                    label: "Color",
+                    defaultValue: "#112233",
+                  },
+                ],
+              },
+            ],
+            renderFrame: ({ parameters }) => ({
+              colorLayers: [
+                {
+                  color:
+                    typeof parameters.color === "string"
+                      ? parameters.color
+                      : "#112233",
+                },
+              ],
+            }),
+          });
         },
       }),
     });
@@ -200,6 +232,14 @@ describe("FrontendExtensionRuntime", () => {
           data: {},
         }),
       ).toBeDefined();
+      expect(
+        extensionTransitionRegistry
+          .listDefinitions()
+          .some(
+            (definition) =>
+              definition.type === "example.color-grade/fade-through-grade",
+          ),
+      ).toBe(true);
     } finally {
       await host.deactivate("example.color-grade");
     }
@@ -224,6 +264,14 @@ describe("FrontendExtensionRuntime", () => {
         data: {},
       }),
     ).toBeUndefined();
+    expect(
+      extensionTransitionRegistry
+        .listDefinitions()
+        .some(
+          (definition) =>
+            definition.type === "example.color-grade/fade-through-grade",
+        ),
+    ).toBe(false);
   });
 
   it("imports and activates only approved frontend packages", async () => {

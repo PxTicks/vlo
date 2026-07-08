@@ -150,6 +150,50 @@ export const activate: ExtensionModule["activate"] = (context) => {
       };
     },
   });
+  const gradeFade = context.api.transitions.register({
+    id: "film-grade-fade",
+    apiVersion: 1,
+    label: "Film grade fade",
+    glyph: "F",
+    schemaVersion: 1,
+    groups: [
+      {
+        id: "grade",
+        title: "Grade",
+        controls: [
+          {
+            type: "slider",
+            name: "peakExposure",
+            label: "Peak exposure",
+            defaultValue: 0.5,
+            min: -2,
+            max: 2,
+            step: 0.1,
+          },
+        ],
+      },
+    ],
+    zOrder: "incoming-on-top",
+    renderFrame: ({ progress, parameters }) => {
+      const peakExposure =
+        typeof parameters.peakExposure === "number"
+          ? parameters.peakExposure
+          : 0.5;
+      return {
+        incomingTransforms: [
+          {
+            type: "filter",
+            filterName: grade.id,
+            parameters: {
+              exposure: peakExposure * progress,
+              contrast: 1,
+              saturation: 1,
+            },
+          },
+        ],
+      };
+    },
+  });
 
   const Graphics = context.api.runtime.pixi.Graphics as {
     new (): FixtureGraphics;
@@ -307,6 +351,7 @@ export const activate: ExtensionModule["activate"] = (context) => {
 
   context.logger.info("Custom GLSL color-grade fixture activated.", {
     contributionId: grade.id,
+    transitionId: gradeFade.id,
     entityProviderId: shape.id,
     animatedEntityProviderId: progress.id,
   });

@@ -5,16 +5,20 @@ import type {
   ExtensionTimelineEntitySnapshot,
   ExtensionTimelineTransformInput,
   ExtensionTimelineTransaction,
+  ExtensionTimelineTransactionFailureCode,
   ExtensionTimelineTransactionResult,
   ExtensionPoint2D,
   ExtensionSourceDimensions,
+  JsonValue,
 } from "../types";
 import {
   commitExtensionTimelineTransaction,
   getExtensionTimelineClipMasks,
   getExtensionTimelineClips,
   getExtensionTimelineEntities,
+  getExtensionTimelineTransitions,
   getTimelineClipById,
+  getTimelineTransitions,
   type ExtensionTimelineCommand,
 } from "../../timeline/api";
 import {
@@ -30,6 +34,8 @@ import {
   clipVisualToSourceTime,
 } from "../../transformations/utils/clipTimeDomains";
 import { extensionClipOverlayRegistry } from "./ExtensionClipOverlayRegistry";
+import { extensionTransitionRegistry } from "../../transitions/extensions/ExtensionTransitionRegistry";
+import type { Transition } from "../../../types/TimelineTypes";
 
 const MAX_TRANSACTION_LABEL_LENGTH = 120;
 
@@ -80,15 +86,21 @@ function requireTimelineClip(clipId: string) {
 }
 
 class InvalidExtensionTimelineCommandError extends Error {
-  constructor(message: string) {
+  readonly code: ExtensionTimelineTransactionFailureCode;
+
+  constructor(
+    message: string,
+    code: ExtensionTimelineTransactionFailureCode = "invalid_command",
+  ) {
     super(message);
     this.name = "InvalidExtensionTimelineCommandError";
+    this.code = code;
   }
 }
 
 function failedTransaction(
   label: string,
-  code: "invalid_label" | "invalid_command" | "callback_failed",
+  code: ExtensionTimelineTransactionFailureCode,
   error: unknown,
 ): ExtensionTimelineTransactionResult {
   return {
@@ -167,6 +179,24 @@ function cloneTransformInput(
   };
 }
 
+function cloneJsonObjectInput(
+  value: unknown,
+  label: string,
+): Record<string, JsonValue> {
+  const parsed = jsonValueSchema.safeParse(value);
+  if (
+    !parsed.success ||
+    typeof parsed.data !== "object" ||
+    parsed.data === null ||
+    Array.isArray(parsed.data)
+  ) {
+    throw new InvalidExtensionTimelineCommandError(
+      `${label} must be a JSON object.`,
+    );
+  }
+  return structuredClone(parsed.data) as Record<string, JsonValue>;
+}
+
 function clonePayload(payload: ExtensionPayload): ExtensionPayload {
   const parsed = extensionPayloadSchema.safeParse(payload);
   if (!parsed.success) {
@@ -187,6 +217,11 @@ function clonePayload(payload: ExtensionPayload): ExtensionPayload {
   return structuredClone(parsed.data);
 }
 
+function transitionOwnerId(type: string): string | null {
+  const separatorIndex = type.indexOf("/");
+  return separatorIndex > 0 ? type.slice(0, separatorIndex) : null;
+}
+
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return (
     typeof value === "object" &&
@@ -205,6 +240,7 @@ export function createExtensionTimelineApi(
     listEntities: (): readonly ExtensionTimelineEntitySnapshot[] =>
       getExtensionTimelineEntities(scope.extension.id),
     listClips: () => getExtensionTimelineClips(),
+    listTransitions: () => getExtensionTimelineTransitions(),
     listClipMasks: (clipId) => getExtensionTimelineClipMasks(clipId),
     getProject: getExtensionProjectSnapshot,
     sourceFrameToTicks: (frameIndex, sourceFps) => {
@@ -393,6 +429,140 @@ export function createExtensionTimelineApi(
             transformId: assertIdentifier(transformId, "Transform ID"),
           });
         },
+        createTransition: (input) => {
+          assertOpen();
+          if (typeof input !== "object" || input === null) {
+            throw new InvalidExtensionTimelineCommandError(
+              "createTransition requires an input object.",
+            );
+          }
+          const localType = assertIdentifier(
+            input.transitionType,
+            "Transition type",
+          );
+          const definition = extensionTransitionRegistry.getDefinitionForOwner(
+            scope.extension.id,
+            localType,
+          );
+          if (!definition) {
+            throw new InvalidExtensionTimelineCommandError(
+              `Transition type '${localType}' is not registered by this extension.`,
+              "transition_type_not_found",
+            );
+          }
+          const parameters = {
+            ...structuredClone(definition.parameters),
+            ...(input.parameters
+              ? cloneJsonObjectInput(input.parameters, "Transition parameters")
+              : {}),
+          };
+          if (
+            !definition.extension?.validateParameters(
+              parameters,
+              definition.schemaVersion ?? 1,
+            )
+          ) {
+            throw new InvalidExtensionTimelineCommandError(
+              `Transition type '${localType}' rejected the supplied parameters.`,
+            );
+          }
+          const transition: Transition = {
+            id: `transition_${crypto.randomUUID()}`,
+            type: definition.type,
+            outgoingClipId: assertIdentifier(
+              input.outgoingClipId,
+              "Outgoing clip ID",
+            ),
+            incomingClipId: assertIdentifier(
+              input.incomingClipId,
+              "Incoming clip ID",
+            ),
+            schemaVersion: definition.schemaVersion,
+            parameters,
+          };
+          commands.push({ kind: "create_transition", transition });
+          return transition.id;
+        },
+        updateTransitionParameters: (transitionId, parameters) => {
+          assertOpen();
+          const normalizedTransitionId = assertIdentifier(
+            transitionId,
+            "Transition ID",
+          );
+          const transition = getTimelineTransitions().find(
+            (candidate) => candidate.id === normalizedTransitionId,
+          );
+          if (!transition) {
+            throw new InvalidExtensionTimelineCommandError(
+              `Transition '${normalizedTransitionId}' was not found.`,
+              "transition_not_found",
+            );
+          }
+          if (transitionOwnerId(transition.type) !== scope.extension.id) {
+            throw new InvalidExtensionTimelineCommandError(
+              `Extension '${scope.extension.id}' cannot mutate transition '${normalizedTransitionId}'.`,
+              "wrong_owner",
+            );
+          }
+          const definition = extensionTransitionRegistry.getDefinition(
+            transition.type,
+          );
+          if (!definition) {
+            throw new InvalidExtensionTimelineCommandError(
+              `Transition type '${transition.type}' is not available.`,
+              "transition_type_not_found",
+            );
+          }
+          const updates = cloneJsonObjectInput(
+            parameters,
+            "Transition parameters",
+          );
+          const nextParameters = {
+            ...transition.parameters,
+            ...updates,
+          };
+          if (
+            !definition.extension?.validateParameters(
+              nextParameters,
+              transition.schemaVersion ?? definition.schemaVersion ?? 1,
+            )
+          ) {
+            throw new InvalidExtensionTimelineCommandError(
+              `Transition type '${transition.type}' rejected the supplied parameters.`,
+            );
+          }
+          commands.push({
+            kind: "update_transition_parameters",
+            transitionId: normalizedTransitionId,
+            parameters: updates,
+          });
+        },
+        removeTransition: (transitionId) => {
+          assertOpen();
+          const normalizedTransitionId = assertIdentifier(
+            transitionId,
+            "Transition ID",
+          );
+          const transition = getTimelineTransitions().find(
+            (candidate) => candidate.id === normalizedTransitionId,
+          );
+          if (!transition) {
+            throw new InvalidExtensionTimelineCommandError(
+              `Transition '${normalizedTransitionId}' was not found.`,
+              "transition_not_found",
+            );
+          }
+          if (transitionOwnerId(transition.type) !== scope.extension.id) {
+            throw new InvalidExtensionTimelineCommandError(
+              `Extension '${scope.extension.id}' cannot remove transition '${normalizedTransitionId}'.`,
+              "wrong_owner",
+            );
+          }
+          commands.push({
+            kind: "remove_transition",
+            transitionId: normalizedTransitionId,
+          });
+        },
       };
       Object.freeze(transaction);
 
@@ -413,7 +583,7 @@ export function createExtensionTimelineApi(
       } catch (error) {
         const code =
           error instanceof InvalidExtensionTimelineCommandError
-            ? "invalid_command"
+            ? error.code
             : "callback_failed";
         return failedTransaction(normalizedLabel, code, error);
       } finally {

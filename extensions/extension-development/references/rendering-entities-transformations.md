@@ -1,7 +1,7 @@
 # Rendering, entities, and transformations
 
 Use this reference for trusted Pixi rendering, transformations, custom entities,
-and preview/export parity.
+transitions, and preview/export parity.
 
 ## Reuse the trusted Pixi lifecycle
 
@@ -54,6 +54,25 @@ visibility, blend behaviour, bounds composition, and capture/export routing.
 
 Use inspector `updateData` for one owner-checked undoable payload update. Do not
 reach into the timeline store from inspector controls.
+
+## Register transitions
+
+Use `context.api.transitions.register` for first-class timeline transitions. Define
+a stable local ID, label, glyph, schema version, optional native controls/defaults,
+optional static z-order preference, and a deterministic `renderFrame` callback.
+
+`renderFrame` receives validated JSON parameters, normalized progress, detached
+outgoing/incoming clip snapshots, timing, project dimensions, and FPS. Return
+transient outgoing/incoming transforms and optional color layers. To use custom
+shader effects, register a trusted filter transformation and return a `filter`
+transform whose `filterName` is that registration ID. Keep callbacks synchronous
+and side-effect free; the same resolver feeds live preview and export.
+
+Transition parameter migrations are currently applied at render time only; they
+do not rewrite the persisted project transition immediately and panel/API edits
+still validate against the stored schema version. Keep migration functions
+deterministic and compatible with old saved data until the host adds a
+project-level transition upgrade pass.
 
 ## Cache only truly static pixels
 

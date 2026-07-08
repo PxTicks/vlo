@@ -69,6 +69,9 @@ describe("commitTrackingPositionPath", () => {
             return transform.id ?? "generated";
           },
           removeTransform: () => undefined,
+          createTransition: () => "unused-transition",
+          updateTransitionParameters: () => undefined,
+          removeTransition: () => undefined,
         };
         callback(draft);
         return { ok: true, changed: true, label };

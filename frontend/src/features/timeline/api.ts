@@ -27,6 +27,7 @@ import type {
   ExtensionTimelineEntitySnapshot,
   ExtensionTimelineClipSnapshot,
   ExtensionTimelineMaskSnapshot,
+  ExtensionTimelineTransitionSnapshot,
   ExtensionTimelineTransformSnapshot,
   JsonValue,
   ExtensionTimelineTransactionResult,
@@ -455,9 +456,33 @@ export function toExtensionMaskSnapshot(
   });
 }
 
+export function toExtensionTransitionSnapshot(
+  transition: Transition,
+): ExtensionTimelineTransitionSnapshot {
+  return Object.freeze({
+    id: transition.id,
+    type: transition.type,
+    outgoingClipId: transition.outgoingClipId,
+    incomingClipId: transition.incomingClipId,
+    ...(transition.schemaVersion
+      ? { schemaVersion: transition.schemaVersion }
+      : {}),
+    parameters: structuredClone(transition.parameters) as Record<
+      string,
+      JsonValue
+    >,
+  });
+}
+
 export function getExtensionTimelineClips(): readonly ExtensionTimelineClipSnapshot[] {
   return Object.freeze(
     useTimelineStore.getState().clips.map(toExtensionClipSnapshot),
+  );
+}
+
+export function getExtensionTimelineTransitions(): readonly ExtensionTimelineTransitionSnapshot[] {
+  return Object.freeze(
+    useTimelineStore.getState().transitions.map(toExtensionTransitionSnapshot),
   );
 }
 

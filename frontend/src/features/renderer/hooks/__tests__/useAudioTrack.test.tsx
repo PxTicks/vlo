@@ -30,7 +30,7 @@ vi.mock("../../../player/usePlayerStore", () => {
   return { usePlayerStore };
 });
 
-vi.mock("../../../timeline", () => ({
+vi.mock("../../../timeline/api", () => ({
   useTimelineClipsForTrack: () => mocks.clips,
 }));
 

@@ -19,10 +19,17 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../../renderer", () => ({
-  getProjectDimensions: mocks.getProjectDimensions,
+// bakeComposite dynamically imports these renderer subpaths to avoid a static
+// composite -> renderer import edge, so mock the concrete modules it loads.
+vi.mock("../../../renderer/services/renderSelectionToVideoFile", () => ({
   renderSelectionToVideoFile: mocks.renderSelectionToVideoFile,
 }));
+
+vi.mock("../../../renderer/utils/dimensions", () => ({
+  getProjectDimensions: mocks.getProjectDimensions,
+}));
+// `mediaSecondsToTick` is intentionally left unmocked (as before this refactor);
+// bakeComposite dynamically imports the real implementation.
 
 vi.mock("../../../timelineSelection", () => ({
   compositeContentToSelection: mocks.compositeContentToSelection,

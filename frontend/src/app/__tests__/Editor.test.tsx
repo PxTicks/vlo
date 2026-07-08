@@ -102,6 +102,15 @@ vi.mock("../../features/composite", () => ({
 }));
 
 vi.mock("../../features/timeline", () => ({
+  useTimelineStore: Object.assign(() => undefined, {
+    getState: () => ({
+      setFocused: vi.fn(),
+    }),
+  }),
+}));
+
+// UI surface moved from the timeline barrel to `timeline/ui`.
+vi.mock("../../features/timeline/ui", () => ({
   Timeline: () => <div data-testid="timeline-container">Timeline</div>,
   useAssetDrag: () => ({
     handleAssetDragStart: vi.fn(),
@@ -111,11 +120,6 @@ vi.mock("../../features/timeline", () => ({
     scrollContainerRef: { current: null },
   }),
   AssetDragOverlay: () => <div data-testid="asset-drag-overlay" />,
-  useTimelineStore: Object.assign(() => undefined, {
-    getState: () => ({
-      setFocused: vi.fn(),
-    }),
-  }),
   useTimelineClipMuteOverlay: () => ({
     id: "mute-overlay",
     useItems: () => [],

@@ -152,6 +152,17 @@ vi.mock("../../../transformations", async (importOriginal) => {
   };
 });
 
+// useTrackRenderEngine now imports applyClipTransforms from the runtime source
+// module directly, so mock that path too.
+vi.mock("../../../transformations/applyTransformations", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../transformations/applyTransformations")>();
+  return {
+    ...actual,
+    applyClipTransforms: vi.fn(),
+  };
+});
+
 // 4. Mock Stores
 vi.mock("../../../timeline/useTimelineStore", () => ({
   useTimelineStore: Object.assign(

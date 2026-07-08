@@ -24,7 +24,7 @@ import {
   findActiveClipAtTicks,
   resolveLiveActiveClip,
 } from "../utils/clipLookup";
-import { applyClipTransforms } from "../../transformations";
+import { applyClipTransforms } from "../../transformations/applyTransformations";
 import {
   planTransformRender,
   type FilterRenderStep,
@@ -36,7 +36,7 @@ import {
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
 import { MaskedEffectRenderer } from "../../masks/runtime/MaskedEffectRenderer";
 import { useDebugStore } from "../../../shared/debug/useDebugStore";
-import { ticksPerFrame } from "../../timeline";
+import { ticksPerFrame } from "../../../core/time/frameGrid";
 import { ensureAssetSourceLoaded } from "../../userAssets";
 import { hasEmbeddedAssetSource } from "../utils/assetSource";
 import {

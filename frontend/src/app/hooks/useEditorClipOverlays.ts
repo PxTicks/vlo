@@ -3,7 +3,7 @@ import {
   useTimelineClipMuteOverlay,
   useTimelineMarkersClipOverlay,
   useTimelineReverseStatusOverlay,
-} from "../../features/timeline";
+} from "../../features/timeline/ui";
 import type { TimelineClipOverlayDefinition } from "../../features/timeline";
 import { useTimelineKeyframeClipOverlay } from "../../features/transformations";
 import { useTimelineAssetRevealClipOverlay } from "../../features/userAssets";

@@ -3,7 +3,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { TransformationPanel } from "../TransformationPanel";
 import { TICKS_PER_SECOND } from "../../../timeline";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
+import { useMaskViewStore } from "../../../masks/store/useMaskViewStore";
 import { useTransformationViewStore } from "../../store/useTransformationViewStore";
+import type { MaskTimelineClip } from "../../../../types/TimelineTypes";
 
 vi.mock("../../../timeline/useTimelineStore");
 
@@ -48,7 +50,32 @@ describe("TransformationPanel toggles", () => {
       armedPathRecording: null,
       activePathEditor: null,
     });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: {},
+    });
   });
+
+  function createMaskClip(localId: string, name: string): MaskTimelineClip {
+    return {
+      id: `clip_1::mask::${localId}`,
+      parentClipId: "clip_1",
+      trackId: "track_1",
+      type: "mask",
+      name,
+      start: 0,
+      sourceDuration: 10 * TICKS_PER_SECOND,
+      timelineDuration: 10 * TICKS_PER_SECOND,
+      croppedSourceDuration: 10 * TICKS_PER_SECOND,
+      offset: 0,
+      transformedDuration: 10 * TICKS_PER_SECOND,
+      transformedOffset: 0,
+      transformations: [],
+      maskType: "rectangle",
+      maskMode: "apply",
+      maskInverted: false,
+      maskParameters: { baseWidth: 20, baseHeight: 10 },
+    };
+  }
 
   function mockTimeline(
     transformations: Array<{
@@ -58,15 +85,25 @@ describe("TransformationPanel toggles", () => {
       filterName?: string;
       parameters: Record<string, unknown>;
     }>,
+    maskClips: readonly MaskTimelineClip[] = [],
   ) {
+    const parentClip = {
+      ...baseClip,
+      transformations,
+      ...(maskClips.length > 0
+        ? {
+            components: maskClips.map((maskClip) => ({
+              id: `${maskClip.id}_ref`,
+              type: "mask_ref" as const,
+              parameters: { maskClipId: maskClip.id },
+            })),
+          }
+        : {}),
+    };
     const state: {
       tracks: typeof tracks;
       selectedClipIds: string[];
-      clips: Array<
-        typeof baseClip & {
-          transformations: typeof transformations;
-        }
-      >;
+      clips: Array<typeof parentClip | MaskTimelineClip>;
       addClipTransform: typeof mockAddClipTransform;
       updateClipTransform: typeof mockUpdateClipTransform;
       removeClipTransform: typeof mockRemoveClipTransform;
@@ -78,12 +115,7 @@ describe("TransformationPanel toggles", () => {
     } = {
       tracks,
       selectedClipIds: ["clip_1"],
-      clips: [
-        {
-          ...baseClip,
-          transformations,
-        },
-      ],
+      clips: [parentClip, ...maskClips],
       addClipTransform: mockAddClipTransform,
       updateClipTransform: mockUpdateClipTransform,
       removeClipTransform: mockRemoveClipTransform,
@@ -209,6 +241,34 @@ describe("TransformationPanel toggles", () => {
       clipId: "clip_1",
       transformId: "position_1",
     });
+  });
+
+  it("lists each trackable mask as a selectable path source", () => {
+    const faceMask = createMaskClip("face", "Face");
+    const handMask = createMaskClip("hand", "Hand");
+    useMaskViewStore.getState().setSelectedMask("clip_1", "hand");
+    mockTimeline(
+      [
+        {
+          id: "position_1",
+          type: "position",
+          isEnabled: true,
+          parameters: { x: 10, y: 20 },
+        },
+      ],
+      [faceMask, handMask],
+    );
+
+    render(<TransformationPanel />);
+
+    fireEvent.click(screen.getByText("Add Path"));
+
+    expect(screen.getByText("From Mask: Face")).toBeInTheDocument();
+    const selectedMaskItem = screen.getByText("From Mask: Hand");
+    expect(selectedMaskItem).toBeInTheDocument();
+    expect(selectedMaskItem.closest("[role='menuitem']")).toHaveClass(
+      "Mui-selected",
+    );
   });
 
   it("shows path actions, disables position inputs, and opens the path detail view", () => {

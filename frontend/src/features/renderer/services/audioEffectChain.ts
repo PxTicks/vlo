@@ -2,9 +2,9 @@ import {
   AUDIO_COMPRESSOR_DEFAULTS,
   AUDIO_DELAY_DEFAULTS,
   AUDIO_REVERB_DEFAULTS,
-  resolveScalar,
-  isAudioEffectType,
-} from "../../transformations";
+} from "../../transformations/constants";
+import { resolveScalar } from "../../transformations/utils/resolveScalar";
+import { isAudioEffectType } from "../../transformations/types";
 import type {
   ScalarParameter,
   AudioEffectTransform,

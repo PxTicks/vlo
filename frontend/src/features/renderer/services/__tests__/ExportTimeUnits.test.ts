@@ -2,7 +2,7 @@ import { TrackRenderEngine } from "../TrackRenderEngine";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import type { Asset } from "../../../../types/Asset";
-import { applyClipTransforms } from "../../../transformations";
+import { applyClipTransforms } from "../../../transformations/applyTransformations";
 import { resetSharedDecoderWorkerPoolForTests } from "../DecoderWorkerPool";
 
 // Mock PixiJS
@@ -74,8 +74,9 @@ vi.mock("@decoder-worker-loader", () => {
 });
 
 // Mock applyClipTransforms (keep real calculateClipTime for renderTime)
-vi.mock("../../../transformations", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../transformations")>();
+vi.mock("../../../transformations/applyTransformations", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../transformations/applyTransformations")>();
   return {
     ...actual,
     applyClipTransforms: vi.fn(),

@@ -21,7 +21,7 @@ import {
   AssetDragOverlay,
   Timeline,
   useAssetDrag,
-} from "../features/timeline";
+} from "../features/timeline/ui";
 import { TransformationDragOverlay } from "../features/transformations/components/TransformationDragOverlay";
 import { useTransformDrag } from "../features/transformations/hooks/useTransformDrag";
 import {

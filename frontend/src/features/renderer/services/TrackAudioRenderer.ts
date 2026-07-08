@@ -1,7 +1,7 @@
 import { Input, AudioBufferSink } from "mediabunny";
 import type { WrappedAudioBuffer } from "mediabunny";
-import { ticksPerFrame } from "../../timeline";
-import { resolveScalar } from "../../transformations";
+import { ticksPerFrame } from "../../../core/time/frameGrid";
+import { resolveScalar } from "../../transformations/utils/resolveScalar";
 import {
   tickToMediaSeconds,
   mediaSecondsToTickExact,

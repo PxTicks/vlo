@@ -1,13 +1,14 @@
 import type { Asset } from "../../../types/Asset";
 import type { CompositeContent } from "../../../types/TimelineTypes";
-import {
-  getProjectDimensions,
-  renderSelectionToVideoFile,
-  type ExportConfig,
-  type ProjectData,
-  type SelectionRenderInputs,
+// Renderer entry points are imported dynamically (see `bakeComposite`) so that
+// `composite` does not statically depend on the renderer feature. Composite
+// baking is a downward call into rendering, but a static edge here would close
+// the renderer <-> feature-UI import cycle. Types are erased and stay static.
+import type {
+  ExportConfig,
+  ProjectData,
+  SelectionRenderInputs,
 } from "../../renderer";
-import { mediaSecondsToTick } from "../../renderer/utils/mediaTime";
 import {
   compositeContentToSelection,
   hashCompositeContent,
@@ -39,6 +40,7 @@ function toEven(value: number): number {
 
 function durationSecondsToTicks(
   durationSeconds: number | null | undefined,
+  mediaSecondsToTick: typeof import("../../renderer/utils/mediaTime")["mediaSecondsToTick"],
 ): number | null {
   if (
     typeof durationSeconds !== "number" ||
@@ -58,6 +60,7 @@ function durationSecondsToTicks(
  */
 function buildCompositeRenderInputs(
   content: CompositeContent,
+  getProjectDimensions: typeof import("../../renderer/utils/dimensions")["getProjectDimensions"],
 ): SelectionRenderInputs {
   const project = useProjectStore.getState();
   const dimensions = getProjectDimensions(project.config.aspectRatio);
@@ -97,8 +100,16 @@ export async function bakeComposite(
   const selection = compositeContentToSelection(content);
   const contentHash = hashCompositeContent(content);
 
+  // Dynamic import keeps `composite` off the static renderer import graph.
+  const [{ renderSelectionToVideoFile }, { getProjectDimensions }, { mediaSecondsToTick }] =
+    await Promise.all([
+      import("../../renderer/services/renderSelectionToVideoFile"),
+      import("../../renderer/utils/dimensions"),
+      import("../../renderer/utils/mediaTime"),
+    ]);
+
   const file = await renderSelectionToVideoFile(selection, {
-    renderInputs: buildCompositeRenderInputs(content),
+    renderInputs: buildCompositeRenderInputs(content, getProjectDimensions),
     signal: options.signal,
     onProgress: options.onProgress,
     filenamePrefix: "composite",
@@ -130,7 +141,7 @@ export async function bakeComposite(
 
   return {
     asset,
-    bakedDurationTicks: durationSecondsToTicks(asset.duration),
+    bakedDurationTicks: durationSecondsToTicks(asset.duration, mediaSecondsToTick),
     contentHash,
   };
 }

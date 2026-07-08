@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-const MAX_LARGEST_SCC_SIZE = 61;
+// The former 61-module timeline/renderer/masks/userAssets/transformations
+// value-import SCC has been decoupled (see docs/todos/large-import-scc-decoupling.md).
+// The only remaining cycle is the local 2-module transformations registry
+// (TransformationRegistry <-> filterFactory). Never raise this budget.
+const MAX_LARGEST_SCC_SIZE = 2;
 
 const RAW_FILES = import.meta.glob("../**/*.{ts,tsx}", {
   query: "?raw",

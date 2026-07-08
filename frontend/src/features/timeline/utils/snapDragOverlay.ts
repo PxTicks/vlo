@@ -2,7 +2,7 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
 import {
   clipSourceTimeToVisual,
   clipVisualToSourceTime,
-} from "../../transformations";
+} from "../../transformations/utils/clipTimeDomains";
 import { snapTickToFrame } from "../../timelineSelection";
 import type {
   TimelineClipOverlayDragContext,

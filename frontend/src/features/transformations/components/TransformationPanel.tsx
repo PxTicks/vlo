@@ -55,6 +55,7 @@ import {
   ExtensionEntityInspector,
   extensionEntityProviderRegistry,
 } from "../../extensions/entities/publicApi";
+import type { ExtensionTimelineMaskSnapshot } from "../../extensions/types";
 import { ExtensionUiSlot } from "../../extensions/ui/publicApi";
 import { extensionTransformationRegistry } from "../extensions/ExtensionTransformationRegistry";
 import {
@@ -80,6 +81,17 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+
+function getTrackingMaskMenuLabel(
+  mask: ExtensionTimelineMaskSnapshot,
+  maskCount: number,
+): string {
+  if (maskCount <= 1) {
+    return "From Mask";
+  }
+  const label = mask.name.trim() || mask.localId || "Mask";
+  return `From Mask: ${label}`;
+}
 
 export function TransformationPanel() {
   const transformationRegistryRevision = useSyncExternalStore(
@@ -187,27 +199,15 @@ export function TransformationPanel() {
   const extensionPositionPath =
     positionTransform?.parameters.extensionPath ?? null;
   const activePositionPath = extensionPositionPath ?? positionPath;
-  const trackingMask = useMemo(() => {
+  const trackableMasks = useMemo(() => {
     void maskClipsForTrackingInvalidation;
-    if (!selectedClipId) return null;
-    const masks = getExtensionTimelineClipMasks(selectedClipId);
-    const selected = selectedMaskIdForTracking
-      ? (masks.find((mask) => mask.localId === selectedMaskIdForTracking) ??
-        null)
-      : null;
-    if (
-      selected &&
-      canCreateTrackingPathFromMask(selected, trackingAssetLookup)
-    ) {
-      return selected;
-    }
-    return masks.find((mask) =>
+    if (!selectedClipId) return [];
+    return getExtensionTimelineClipMasks(selectedClipId).filter((mask) =>
       canCreateTrackingPathFromMask(mask, trackingAssetLookup),
-    ) ?? null;
+    );
   }, [
     maskClipsForTrackingInvalidation,
     selectedClipId,
-    selectedMaskIdForTracking,
     trackingAssetLookup,
   ]);
 
@@ -408,9 +408,11 @@ export function TransformationPanel() {
     setArmedPathRecording(null);
   }, [setArmedPathRecording]);
 
-  const handleCreatePathFromMask = useCallback(async () => {
+  const handleCreatePathFromMask = useCallback(async (
+    mask: ExtensionTimelineMaskSnapshot,
+  ) => {
     setPathMenuAnchorEl(null);
-    if (!selectedClipId || !trackingMask) return;
+    if (!selectedClipId) return;
 
     setIsCreatingPathFromMask(true);
     setPathTrackingError(null);
@@ -423,7 +425,7 @@ export function TransformationPanel() {
         timeline: trackingExtensionApis.timeline,
         assets: trackingExtensionApis.assets,
         clipId: selectedClipId,
-        mask: trackingMask,
+        mask,
       });
       if (!path) {
         setPathTrackingError("Mask tracking did not find enough motion.");
@@ -456,7 +458,6 @@ export function TransformationPanel() {
     setActivePathEditor,
     setArmedPathRecording,
     setPathPanelView,
-    trackingMask,
   ]);
 
   const handleOpenPathEditor = useCallback(() => {
@@ -615,12 +616,20 @@ export function TransformationPanel() {
             onClose={() => setPathMenuAnchorEl(null)}
           >
             <MenuItem onClick={handleStartRecording}>From Drag</MenuItem>
-            <MenuItem
-              onClick={() => void handleCreatePathFromMask()}
-              disabled={!trackingMask || isCreatingPathFromMask}
-            >
-              From Mask
-            </MenuItem>
+            {trackableMasks.length > 0 ? (
+              trackableMasks.map((mask) => (
+                <MenuItem
+                  key={mask.id}
+                  onClick={() => void handleCreatePathFromMask(mask)}
+                  disabled={isCreatingPathFromMask}
+                  selected={mask.localId === selectedMaskIdForTracking}
+                >
+                  {getTrackingMaskMenuLabel(mask, trackableMasks.length)}
+                </MenuItem>
+              ))
+            ) : (
+              <MenuItem disabled>From Mask</MenuItem>
+            )}
             {positionTransform && extensionPathProviders.length > 0 ? (
               <Divider />
             ) : null}
@@ -673,7 +682,8 @@ export function TransformationPanel() {
     pathMenuAnchorEl,
     positionTransform,
     selectedClipId,
-    trackingMask,
+    selectedMaskIdForTracking,
+    trackableMasks,
   ]);
 
   const getDefaultGroupProps = useCallback(

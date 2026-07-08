@@ -1,5 +1,6 @@
-export { TimelineContainer as Timeline } from "./TimelineContainer";
-export type { TimelineContainerProps } from "./TimelineContainer";
+// The timeline UI surface (Timeline component, DnD overlay, UI-only overlay
+// hooks) lives in `./ui` so API/primitive consumers don't transitively import
+// the timeline UI cycle. Only the editor/app shell imports `./ui`.
 export {
   countSam2MaskAssetConsumers,
   countBrushMaskAssetConsumers,
@@ -40,7 +41,6 @@ export {
 } from "../../core/time/pixelGrid";
 export { timelineSpanStyleX } from "./utils/timelineGeometry";
 export type { TimelineSpanStyleOptions } from "./utils/timelineGeometry";
-export { AssetDragOverlay } from "./components/AssetDragOverlay";
 export {
   createEndpointOverlayItem,
   createSourceTimeOverlayItem,
@@ -53,10 +53,6 @@ export type {
   TimelineClipOverlaySourceProps,
   TimelineClipOverlayVisibility,
 } from "./clipOverlayApi";
-export { useAssetDrag } from "./hooks/dnd/useAssetDrag";
-export { useTimelineClipMuteOverlay } from "./hooks/useTimelineClipMuteOverlay";
-export { useTimelineMarkersClipOverlay } from "./hooks/useTimelineMarkersClipOverlay";
-export { useTimelineReverseStatusOverlay } from "./hooks/useTimelineReverseStatusOverlay";
 export {
   insertAssetAtTime,
   insertBaseClipAtTime,

@@ -13,6 +13,8 @@ const PUBLIC_TIMELINE_TARGETS = new Set([
   "features/timeline/constants",
 ]);
 
+const APP_SHELL_TIMELINE_TARGETS = new Set(["features/timeline/ui"]);
+
 const LEGACY_INTERNAL_ALLOWLIST = [
   "features/composite/CompositeBrowser.tsx -> features/timeline/hooks/useInteractionStore",
   "features/renderer/services/AdjustmentEffectResolver.ts -> features/timeline/utils/clipPresentation",
@@ -91,6 +93,9 @@ function timelineImportEdges(path: string, source: string): string[] {
       continue;
     }
     if (PUBLIC_TIMELINE_TARGETS.has(resolved)) continue;
+    if (path.startsWith("app/") && APP_SHELL_TIMELINE_TARGETS.has(resolved)) {
+      continue;
+    }
     edges.push(`${path} -> ${resolved}`);
   }
   return edges;

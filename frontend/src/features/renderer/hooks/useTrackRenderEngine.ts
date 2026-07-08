@@ -3,7 +3,7 @@ import type { Application, Container, Sprite } from "pixi.js";
 import {
   getTimelineClipsForTrack,
   useTimelineClipsForTrack,
-} from "../../timeline";
+} from "../../timeline/api";
 import { useAssetStore } from "../../userAssets";
 import { useProjectStore } from "../../project/useProjectStore";
 import { livePreviewTextStore } from "../../text/services/livePreviewTextStore";
@@ -16,7 +16,7 @@ import type {
   TimelineClip,
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
-import { applyClipTransforms } from "../../transformations";
+import { applyClipTransforms } from "../../transformations/applyTransformations";
 import {
   livePreviewParamStore,
   type LivePreviewParamChange,

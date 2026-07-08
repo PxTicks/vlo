@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { Input } from "mediabunny";
-import { useTimelineClipsForTrack } from "../../timeline";
+import { useTimelineClipsForTrack } from "../../timeline/api";
 import { useAssetStore } from "../../userAssets";
 import { usePlayerStore } from "../../player/usePlayerStore";
 import { audioSystem } from "../../player/services/AudioSystem";

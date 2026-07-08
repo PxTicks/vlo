@@ -15,7 +15,7 @@ interface RuntimeMessageEvent {
 
 function createHarness() {
   const messageListeners = new Set<(event: RuntimeMessageEvent) => void>();
-  const apiListeners = new Map<string, Set<() => void>>();
+  const apiListeners = new Map<string, Set<(event?: unknown) => void>>();
   const posted: Array<Record<string, unknown>> = [];
   const parent = {
     location: { origin: "http://vlo.test" },

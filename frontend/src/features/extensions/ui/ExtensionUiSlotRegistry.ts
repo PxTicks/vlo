@@ -4,7 +4,6 @@ import type {
   ExtensionTrustedUiModalDefinition,
   ExtensionTrustedUiWorkspaceDefinition,
   ExtensionUiApi,
-  ExtensionUiMenuItemContext,
   ExtensionUiMenuItemDefinition,
   ExtensionUiMenuSlotId,
   ExtensionUiNoticeDefinition,

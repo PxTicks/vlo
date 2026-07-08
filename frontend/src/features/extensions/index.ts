@@ -135,6 +135,8 @@ export type {
   ExtensionApiFactory,
   ExtensionApiScope,
   ExtensionCleanup,
+  ExtensionClipOverlayItem,
+  ExtensionClipOverlayItemDrag,
   ExtensionContext,
   ExtensionDiagnostic,
   ExtensionDiagnosticLevel,

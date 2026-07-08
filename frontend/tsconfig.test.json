@@ -7,7 +7,7 @@
       ],
       "@vlo/extension-sdk": ["../packages/extension-sdk/src/index.ts"]
     },
-    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
+    "types": ["node", "vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
   "include": ["src"],
   "exclude": []

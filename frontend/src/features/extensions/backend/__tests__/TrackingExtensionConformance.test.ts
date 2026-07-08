@@ -225,6 +225,10 @@ function createConformanceApi() {
         id: definition.id,
         dispose: () => undefined,
       }),
+      registerMenuItem: (definition) => ({
+        id: definition.id,
+        dispose: () => undefined,
+      }),
       openModal: async () => undefined,
       openWorkspace: () => false,
     },

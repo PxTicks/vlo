@@ -48,7 +48,9 @@ export function useModelDownloadController({
   const [error, setError] = useState<string | null>(null);
 
   const subscriptionsRef = useRef<Map<string, () => void>>(new Map());
-  const completionTimersRef = useRef<Map<string, number>>(new Map());
+  const completionTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
   const adoptedJobIdsRef = useRef<Set<string>>(new Set());
 
   const activeDownloadsRef = useRef(activeDownloads);

@@ -11,17 +11,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from config import COMFYUI_INSTALL_DIR, SAM2_SEARCH_PATHS, SAM_AUDIO_SEARCH_PATHS
+from config import SAM2_SEARCH_PATHS, SAM_AUDIO_SEARCH_PATHS
 from services.download_service import DownloadFileSpec
+from services.runtime_settings import get_comfyui_install_dir
 from services.sam2.sam2_discovery import discover_sam2_models
 from services.sam_audio.sam_audio_discovery import discover_sam_audio_models
+from services.workflow_modes import WORKFLOWS_DIR, get_packaged_workflows_dir
 
 _HF_RESOLVE = "https://huggingface.co/{repo}/resolve/main/{filename}"
-_WORKFLOWS_DIR = Path(__file__).parent.parent / "assets" / "workflows"
-_DEFAULT_WORKFLOWS_DIR = (
-    Path(__file__).parent.parent / "assets" / ".config" / "default_workflows"
-)
-
 # black-forest-labs FLUX.1/FLUX.2 repos are gated on HuggingFace (the user
 # must accept the license before downloading), except for FLUX.1-schnell and
 # any FLUX.2-klein 4B variant, which are released openly.
@@ -75,7 +72,7 @@ SAM_AUDIO_MODELS: dict[str, dict] = {
 
 
 def is_comfyui_model_downloads_enabled() -> bool:
-    return COMFYUI_INSTALL_DIR is not None
+    return get_comfyui_install_dir() is not None
 
 
 def _is_safe_workflow_filename(filename: str) -> bool:
@@ -88,10 +85,10 @@ def _is_safe_workflow_filename(filename: str) -> bool:
 
 
 def _resolve_workflow_path(filename: str) -> Path | None:
-    main = _WORKFLOWS_DIR / filename
+    main = WORKFLOWS_DIR / filename
     if main.exists():
         return main
-    default = _DEFAULT_WORKFLOWS_DIR / filename
+    default = get_packaged_workflows_dir() / filename
     if default.exists():
         return default
     return None
@@ -332,10 +329,11 @@ def get_available_workflow_models(workflow_id: str) -> list[dict[str, Any]]:
     models = _extract_workflow_models(workflow)
 
     result: list[dict[str, Any]] = []
+    comfyui_install_dir = get_comfyui_install_dir()
     for model in models:
         dest_path = (
-            COMFYUI_INSTALL_DIR / "models" / model["directory"] / model["filename"]
-            if COMFYUI_INSTALL_DIR is not None
+            comfyui_install_dir / "models" / model["directory"] / model["filename"]
+            if comfyui_install_dir is not None
             else None
         )
         installed = dest_path.is_file() if dest_path is not None else False
@@ -353,7 +351,7 @@ def get_available_workflow_models(workflow_id: str) -> list[dict[str, Any]]:
 
 
 def is_workflow_model_gated(workflow_id: str, model_key: str) -> bool:
-    if COMFYUI_INSTALL_DIR is None:
+    if get_comfyui_install_dir() is None:
         return False
     workflow = _load_workflow_json(workflow_id)
     for model in _extract_workflow_models(workflow):
@@ -363,7 +361,8 @@ def is_workflow_model_gated(workflow_id: str, model_key: str) -> bool:
 
 
 def get_workflow_download_specs(workflow_id: str, model_key: str) -> list[DownloadFileSpec]:
-    if COMFYUI_INSTALL_DIR is None:
+    comfyui_install_dir = get_comfyui_install_dir()
+    if comfyui_install_dir is None:
         raise ValueError("ComfyUI model downloads are not configured")
 
     workflow = _load_workflow_json(workflow_id)
@@ -371,7 +370,7 @@ def get_workflow_download_specs(workflow_id: str, model_key: str) -> list[Downlo
         if model["key"] != model_key:
             continue
 
-        dest_path = COMFYUI_INSTALL_DIR / "models" / model["directory"] / model["filename"]
+        dest_path = comfyui_install_dir / "models" / model["directory"] / model["filename"]
         return [
             DownloadFileSpec(
                 url=model["url"],

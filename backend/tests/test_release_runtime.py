@@ -42,6 +42,30 @@ class FailingClient:
         )
 
 
+def fake_settings_payload(_vram_info=None):
+    return {
+        "settings": {
+            "workflowMode": "default",
+            "comfyuiUrl": "http://127.0.0.1:8188",
+            "comfyuiInstallDir": "/tmp/comfy",
+            "highVramPromptStatus": None,
+            "comfyuiInstallDirPromptStatus": None,
+        },
+        "hardware": {
+            "vram": {
+                "totalMb": None,
+                "source": None,
+                "meetsHighVramThreshold": False,
+            },
+            "highVramThresholdMb": 49152,
+        },
+        "recommendations": {
+            "shouldPromptForHighVram": False,
+            "shouldPromptForComfyuiInstallDir": False,
+        },
+    }
+
+
 def test_backend_extension_runtime_follows_application_lifespan(monkeypatch):
     events: list[str] = []
 
@@ -91,6 +115,8 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
     monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
     monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
+    monkeypatch.setattr(main, "get_comfyui_install_dir", lambda: Path("/tmp/comfy"))
+    monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
     monkeypatch.setattr(
         main.sam2_service,
         "get_health",
@@ -119,8 +145,11 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
             "status": "connected",
             "url": "http://127.0.0.1:8188",
             "error": None,
-            "modelDownloadsEnabled": main.COMFYUI_INSTALL_DIR is not None,
+            "modelDownloadsEnabled": True,
         },
+        "settings": fake_settings_payload()["settings"],
+        "hardware": fake_settings_payload()["hardware"],
+        "recommendations": fake_settings_payload()["recommendations"],
         "sam2": {
             "status": "available",
             "error": None,
@@ -145,6 +174,8 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
     monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
+    monkeypatch.setattr(main, "get_comfyui_install_dir", lambda: Path("/tmp/comfy"))
+    monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
     monkeypatch.setattr(
         main.sam2_service,
         "get_health",
@@ -162,9 +193,7 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     assert status["backend"]["status"] == "ok"
     assert status["comfyui"]["status"] == "disconnected"
     assert "ComfyUI offline" in (status["comfyui"]["error"] or "")
-    assert status["comfyui"]["modelDownloadsEnabled"] == (
-        main.COMFYUI_INSTALL_DIR is not None
-    )
+    assert status["comfyui"]["modelDownloadsEnabled"] is True
     assert status["sam2"] == {
         "status": "unavailable",
         "error": "No SAM2 models discovered",
@@ -182,6 +211,8 @@ def test_app_status_uses_installed_sam2_model_inventory(monkeypatch):
     monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
     monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
+    monkeypatch.setattr(main, "get_comfyui_install_dir", lambda: Path("/tmp/comfy"))
+    monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
     monkeypatch.setattr(
         main.sam2_service,
         "get_health",

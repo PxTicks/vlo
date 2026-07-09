@@ -1,5 +1,9 @@
 import { API_BASE_URL } from "../config";
-import type { RuntimeStatus } from "../types/RuntimeStatus";
+import type {
+  RuntimeSettingsPatch,
+  RuntimeSettingsPayload,
+  RuntimeStatus,
+} from "../types/RuntimeStatus";
 
 const APP_API = `${API_BASE_URL}/app`;
 
@@ -72,4 +76,32 @@ export async function getRuntimeStatus(
     throw new Error(await parseErrorMessage(response));
   }
   return (await response.json()) as RuntimeStatus;
+}
+
+export async function getRuntimeSettings(
+  options: { signal?: AbortSignal } = {},
+): Promise<RuntimeSettingsPayload> {
+  const response = await fetch(`${APP_API}/settings`, {
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as RuntimeSettingsPayload;
+}
+
+export async function updateRuntimeSettings(
+  patch: RuntimeSettingsPatch,
+): Promise<RuntimeSettingsPayload> {
+  const response = await fetch(`${APP_API}/settings`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as RuntimeSettingsPayload;
 }

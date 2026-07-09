@@ -205,14 +205,14 @@
         "widget_ue_connectable": {},
         "models": [
           {
-            "name": "umt5_xxl_int8_convrot.safetensors",
-            "url": "https://huggingface.co/Winnougan/Wan2.2-INT8-Convrot/resolve/main/umt5_xxl_int8_convrot.safetensors",
+            "name": "umt5_xxl_fp16.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp16.safetensors",
             "directory": "text_encoders"
           }
         ]
       },
       "widgets_values": [
-        "umt5_xxl_int8_convrot.safetensors",
+        "umt5_xxl_fp16.safetensors",
         "wan",
         "default"
       ]

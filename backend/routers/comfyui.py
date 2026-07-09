@@ -63,6 +63,7 @@ from services.comfyui.comfyui_generate import (  # noqa: E402
     DEFAULT_WORKFLOWS_DIR,
     WORKFLOWS_DIR,
 )
+from services.workflow_modes import get_packaged_workflows_dir
 
 DUMMY_PHOTO_PATH = DEFAULT_WORKFLOWS_DIR.parent / "dummy_photo.jpeg"
 WORKFLOW_MENU_CONFIG_PATH = (
@@ -359,7 +360,7 @@ def _resolve_workflow_path(filename: str) -> Path | None:
     main = WORKFLOWS_DIR / filename
     if main.exists():
         return main
-    default = DEFAULT_WORKFLOWS_DIR / filename
+    default = get_packaged_workflows_dir() / filename
     if default.exists():
         return default
     return None
@@ -370,7 +371,7 @@ def _resolve_workflow_sidecar_path(filename: str) -> Path | None:
     if main.exists():
         return main
 
-    default = sidecar_path_for_workflow(DEFAULT_WORKFLOWS_DIR, filename)
+    default = sidecar_path_for_workflow(get_packaged_workflows_dir(), filename)
     if default.exists():
         return default
 
@@ -417,7 +418,7 @@ def _resolve_workflow_media_fallbacks(
     rules_model, warning_models = load_rules_model_for_workflow(
         WORKFLOWS_DIR,
         workflow_id,
-        fallback_dirs=[DEFAULT_WORKFLOWS_DIR],
+        fallback_dirs=[get_packaged_workflows_dir()],
     )
     workflow_warnings.extend(dump_warning_models(warning_models))
     rules = dump_resolved_rules(rules_model)
@@ -510,7 +511,7 @@ def _resolve_workflow_rules_response(
     rules_model, warnings = load_rules_model_for_workflow(
         WORKFLOWS_DIR,
         workflow_id,
-        fallback_dirs=[DEFAULT_WORKFLOWS_DIR],
+        fallback_dirs=[get_packaged_workflows_dir()],
     )
     rules_model = enrich_rules_with_object_info(rules_model, workflow)
     rules = dump_resolved_rules(rules_model)
@@ -779,7 +780,7 @@ async def list_workflows():
                 name = path.stem
                 rules, _ = load_rules_model_for_workflow(
                     WORKFLOWS_DIR, path.name,
-                    fallback_dirs=[DEFAULT_WORKFLOWS_DIR],
+                    fallback_dirs=[get_packaged_workflows_dir()],
                 )
                 if rules.name:
                     name = rules.name
@@ -790,14 +791,15 @@ async def list_workflows():
                 workflows.append(workflow_item)
 
         # Default dir – only add workflows not already seen.
-        if DEFAULT_WORKFLOWS_DIR.exists():
-            for path in DEFAULT_WORKFLOWS_DIR.glob("*.json"):
+        packaged_workflows_dir = get_packaged_workflows_dir()
+        if packaged_workflows_dir.exists():
+            for path in packaged_workflows_dir.glob("*.json"):
                 if path.name.endswith(".rules.json"):
                     continue
                 if path.name in seen:
                     continue
                 name = path.stem
-                rules, _ = load_rules_model_for_workflow(DEFAULT_WORKFLOWS_DIR, path.name)
+                rules, _ = load_rules_model_for_workflow(packaged_workflows_dir, path.name)
                 if rules.name:
                     name = rules.name
                 workflow_item = {"id": path.name, "name": name}

@@ -5,7 +5,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from config import (
     PROJECTS_ROOT,
-    COMFYUI_INSTALL_DIR,
     CORS_ALLOW_ORIGINS,
     CORS_ALLOW_ORIGIN_REGEX,
 )
@@ -23,6 +22,10 @@ from routers.sam_audio import router as sam_audio_router
 from routers.beats import router as beats_router
 from routers.downloads import router as downloads_router
 from routers.generation_delivery import router as generation_delivery_router
+from routers.app_settings import (
+    build_public_settings_payload,
+    router as app_settings_router,
+)
 from routers.extensions import (
     get_extension_services,
     router as extensions_router,
@@ -35,6 +38,7 @@ from services.comfyui.comfyui_client import (
     get_comfyui_url_error,
     get_http_client,
 )
+from services.hardware import detect_local_vram, detect_vram_from_system_stats
 from services.ai_models.health import AppStatusProvider
 from services.model_registry import (
     get_available_sam2_models,
@@ -43,6 +47,7 @@ from services.model_registry import (
 from services.sam2 import sam2_service
 from services.sam_audio import sam_audio_service
 from services.beats import beats_service
+from services.runtime_settings import get_comfyui_install_dir
 
 
 @asynccontextmanager
@@ -68,6 +73,7 @@ app.include_router(beats_router)
 app.include_router(downloads_router)
 app.include_router(generation_delivery_router)
 app.include_router(extensions_router)
+app.include_router(app_settings_router)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -177,16 +183,26 @@ async def get_app_status():
     comfyui_config_error = get_comfyui_url_error()
     comfyui_status = "invalid_config" if comfyui_config_error else "disconnected"
     comfyui_error = comfyui_config_error
+    vram_info = detect_local_vram()
 
     if not comfyui_config_error:
         try:
             client = await get_http_client()
-            await client.get(
+            system_stats_response = await client.get(
                 "/system_stats",
                 timeout=httpx.Timeout(5.0, connect=2.0),
             )
             comfyui_status = "connected"
             comfyui_error = None
+            system_stats = (
+                system_stats_response.json()
+                if hasattr(system_stats_response, "json")
+                else system_stats_response
+            )
+            if isinstance(system_stats, dict):
+                comfyui_vram_info = detect_vram_from_system_stats(system_stats)
+                if comfyui_vram_info.total_mb is not None:
+                    vram_info = comfyui_vram_info
         except (httpx.RequestError, ValueError) as exc:
             comfyui_status = "disconnected"
             comfyui_error = str(exc)
@@ -195,6 +211,7 @@ async def get_app_status():
         provider.response_key: provider.to_app_status()
         for provider in AI_APP_STATUS_PROVIDERS
     }
+    settings_payload = build_public_settings_payload(vram_info)
 
     return {
         "backend": {
@@ -206,8 +223,11 @@ async def get_app_status():
             "status": comfyui_status,
             "url": comfyui_url,
             "error": comfyui_error,
-            "modelDownloadsEnabled": COMFYUI_INSTALL_DIR is not None,
+            "modelDownloadsEnabled": get_comfyui_install_dir() is not None,
         },
+        "settings": settings_payload["settings"],
+        "hardware": settings_payload["hardware"],
+        "recommendations": settings_payload["recommendations"],
         **ai_statuses,
     }
 

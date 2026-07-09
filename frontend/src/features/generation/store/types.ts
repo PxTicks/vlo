@@ -1,5 +1,8 @@
 import type { Asset } from "../../../types/Asset";
-import type { RuntimeStatus } from "../../../types/RuntimeStatus";
+import type {
+  RuntimeSettingsPatch,
+  RuntimeStatus,
+} from "../../../types/RuntimeStatus";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import type {
   DerivedMaskMapping,
@@ -193,6 +196,7 @@ export interface GenerationRuntimeState {
   connect: () => void;
   disconnect: () => void;
   refreshRuntimeStatus: () => Promise<RuntimeStatus | null>;
+  updateRuntimeSettings: (patch: RuntimeSettingsPatch) => Promise<void>;
   updateComfyUrl: (url: string) => Promise<void>;
   syncObjectInfo: () => Promise<void>;
 }

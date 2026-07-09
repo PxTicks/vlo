@@ -336,7 +336,7 @@
         }
       },
       "widgets_values": [
-        "seedvr2_7b_int8_convrot.safetensors",
+        "seedvr2_ema_7b_fp16.safetensors",
         "cuda:0",
         32,
         false,

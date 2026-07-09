@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockResponse, stubFetch } from "../../testUtils/fetch";
-import { getRuntimeStatus } from "../runtimeApi";
+import {
+  getRuntimeSettings,
+  getRuntimeStatus,
+  updateRuntimeSettings,
+} from "../runtimeApi";
 
 describe("getRuntimeStatus", () => {
   afterEach(() => {
@@ -22,6 +26,45 @@ describe("getRuntimeStatus", () => {
     ).resolves.toEqual(status);
     expect(fetchMock).toHaveBeenCalledWith("/app/status", {
       signal: controller.signal,
+    });
+  });
+
+  it("fetches runtime settings with an abort signal", async () => {
+    const settings = {
+      settings: { workflowMode: "default", comfyuiUrl: "http://x" },
+      hardware: { vram: { totalMb: null } },
+      recommendations: { shouldPromptForHighVram: false },
+    };
+    const response = createMockResponse({ json: settings });
+    const fetchMock = stubFetch(response);
+    const controller = new AbortController();
+
+    await expect(
+      getRuntimeSettings({ signal: controller.signal }),
+    ).resolves.toEqual(settings);
+    expect(fetchMock).toHaveBeenCalledWith("/app/settings", {
+      signal: controller.signal,
+    });
+  });
+
+  it("patches runtime settings", async () => {
+    const payload = {
+      settings: { workflowMode: "high_vram", comfyuiUrl: "http://x" },
+      hardware: { vram: { totalMb: 49152 } },
+      recommendations: { shouldPromptForHighVram: false },
+    };
+    const response = createMockResponse({ json: payload });
+    const fetchMock = stubFetch(response);
+
+    await expect(
+      updateRuntimeSettings({ workflowMode: "high_vram" }),
+    ).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/app/settings", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ workflowMode: "high_vram" }),
     });
   });
 

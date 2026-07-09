@@ -1,5 +1,8 @@
 import { API_BASE_URL } from "../../../config";
-import { getRuntimeStatus } from "../../../services/runtimeApi";
+import {
+  getRuntimeStatus,
+  updateRuntimeSettings as patchRuntimeSettings,
+} from "../../../services/runtimeApi";
 import { ComfyUIWebSocket } from "../services/ComfyUIWebSocket";
 import { GenerationDeliveryWebSocket } from "../services/GenerationDeliveryWebSocket";
 import * as comfyApi from "../services/comfyuiApi";
@@ -139,6 +142,55 @@ export function buildRuntimeStoreState(
             : {}),
         }));
         return null;
+      }
+    },
+
+    updateRuntimeSettings: async (patch) => {
+      const previousWorkflowMode =
+        get().runtimeStatus?.settings?.workflowMode ?? null;
+      const previousUrl =
+        get().runtimeStatus?.settings?.comfyuiUrl ??
+        get().comfyuiDirectUrl ??
+        null;
+      const urlChanged =
+        typeof patch.comfyuiUrl === "string" &&
+        patch.comfyuiUrl.trim().length > 0 &&
+        patch.comfyuiUrl.trim().replace(/\/+$/, "") !== previousUrl;
+      const workflowModeChanged =
+        typeof patch.workflowMode === "string" &&
+        patch.workflowMode !== previousWorkflowMode;
+
+      if (urlChanged) {
+        get().disconnect();
+      }
+
+      await patchRuntimeSettings(patch);
+      const runtimeStatus = await get().refreshRuntimeStatus();
+      set((state) => ({
+        comfyuiDirectUrl:
+          runtimeStatus?.settings?.comfyuiUrl ??
+          runtimeStatus?.comfyui.url ??
+          patch.comfyuiUrl ??
+          state.comfyuiDirectUrl,
+        ...(runtimeStatus
+          ? {
+              runtimeStatus,
+              runtimeStatusError: null,
+              connectionStatus: connectionStatusFromRuntime(runtimeStatus),
+            }
+          : {}),
+      }));
+
+      if (urlChanged) {
+        get().connect();
+      }
+
+      if (workflowModeChanged) {
+        const selectedWorkflowId = get().selectedWorkflowId;
+        await get().fetchWorkflows();
+        if (selectedWorkflowId && selectedWorkflowId !== TEMP_WORKFLOW_ID) {
+          await get().loadWorkflow(selectedWorkflowId);
+        }
       }
     },
 

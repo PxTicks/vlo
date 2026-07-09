@@ -68,14 +68,14 @@
         "widget_ue_connectable": {},
         "models": [
           {
-            "name": "wan2.2_i2v_high_noise_14B_int8_convrot.safetensors",
-            "url": "https://huggingface.co/Winnougan/Wan2.2-INT8-Convrot/resolve/main/wan2.2_i2v_high_noise_14B_int8_convrot.safetensors",
+            "name": "wan2.2_i2v_high_noise_14B_fp16.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp16.safetensors",
             "directory": "diffusion_models"
           }
         ]
       },
       "widgets_values": [
-        "wan2.2_i2v_high_noise_14B_int8_convrot.safetensors",
+        "wan2.2_i2v_high_noise_14B_fp16.safetensors",
         "default"
       ]
     },
@@ -123,13 +123,13 @@
         "widget_ue_connectable": {},
         "models": [
           {
-            "name": "wan2.2_i2v_low_noise_14B_int8_convrot.safetensors",
-            "url": "https://huggingface.co/Winnougan/Wan2.2-INT8-Convrot/resolve/main/wan2.2_i2v_low_noise_14B_int8_convrot.safetensors",
+            "name": "wan2.2_i2v_low_noise_14B_fp16.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp16.safetensors",
             "directory": "diffusion_models"
           }
         ]
       },
-      "widgets_values": ["wan2.2_i2v_low_noise_14B_int8_convrot.safetensors", "default"]
+      "widgets_values": ["wan2.2_i2v_low_noise_14B_fp16.safetensors", "default"]
     },
     {
       "id": 38,
@@ -185,14 +185,14 @@
         "widget_ue_connectable": {},
         "models": [
           {
-            "name": "umt5_xxl_int8_convrot.safetensors",
-            "url": "https://huggingface.co/Winnougan/Wan2.2-INT8-Convrot/resolve/main/umt5_xxl_int8_convrot.safetensors",
+            "name": "umt5_xxl_fp16.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp16.safetensors",
             "directory": "text_encoders"
           }
         ]
       },
       "widgets_values": [
-        "umt5_xxl_int8_convrot.safetensors",
+        "umt5_xxl_fp16.safetensors",
         "wan",
         "default"
       ]
@@ -212,7 +212,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "[Tutorial](https://docs.comfy.org/tutorials/video/wan/wan2_2\n) | [\u6559\u7a0b](https://docs.comfy.org/zh-CN/tutorials/video/wan/wan2_2\n)\n\n**Diffusion Model**\n- [wan2.2_i2v_high_noise_14B_int8_convrot.safetensors](https://huggingface.co/Winnougan/Wan2.2-INT8-Convrot/resolve/main/wan2.2_i2v_high_noise_14B_int8_convrot.safetensors)\n- [wan2.2_i2v_low_noise_14B_int8_convrot.safetensors](https://huggingface.co/Winnougan/Wan2.2-INT8-Convrot/resolve/main/wan2.2_i2v_low_noise_14B_int8_convrot.safetensors)\n\n**VAE**\n- [wan_2.1_vae.safetensors](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors)\n\n**Text Encoder**   \n- [umt5_xxl_int8_convrot.safetensors](https://huggingface.co/Winnougan/Wan2.2-INT8-Convrot/resolve/main/umt5_xxl_int8_convrot.safetensors)\n\n\nFile save location\n\n```\nComfyUI/\n\u251c\u2500\u2500\u2500\ud83d\udcc2 models/\n\u2502   \u251c\u2500\u2500\u2500\ud83d\udcc2 diffusion_models/\n\u2502   \u2502   \u251c\u2500\u2500\u2500 wan2.2_i2v_low_noise_14B_int8_convrot.safetensors\n\u2502   \u2502   \u2514\u2500\u2500\u2500 wan2.2_i2v_high_noise_14B_int8_convrot.safetensors\n\u2502   \u251c\u2500\u2500\u2500\ud83d\udcc2 text_encoders/\n\u2502   \u2502   \u2514\u2500\u2500\u2500 umt5_xxl_int8_convrot.safetensors \n\u2502   \u2514\u2500\u2500\u2500\ud83d\udcc2 vae/\n\u2502       \u2514\u2500\u2500 wan_2.1_vae.safetensors\n```\n"
+        "[Tutorial](https://docs.comfy.org/tutorials/video/wan/wan2_2\n) | [\u6559\u7a0b](https://docs.comfy.org/zh-CN/tutorials/video/wan/wan2_2\n)\n\n**Diffusion Model**\n- [wan2.2_i2v_high_noise_14B_fp16.safetensors](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp16.safetensors)\n- [wan2.2_i2v_low_noise_14B_fp16.safetensors](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp16.safetensors)\n\n**VAE**\n- [wan_2.1_vae.safetensors](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors)\n\n**Text Encoder**   \n- [umt5_xxl_fp16.safetensors](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp16.safetensors)\n\n\nFile save location\n\n```\nComfyUI/\n\u251c\u2500\u2500\u2500\ud83d\udcc2 models/\n\u2502   \u251c\u2500\u2500\u2500\ud83d\udcc2 diffusion_models/\n\u2502   \u2502   \u251c\u2500\u2500\u2500 wan2.2_i2v_low_noise_14B_fp16.safetensors\n\u2502   \u2502   \u2514\u2500\u2500\u2500 wan2.2_i2v_high_noise_14B_fp16.safetensors\n\u2502   \u251c\u2500\u2500\u2500\ud83d\udcc2 text_encoders/\n\u2502   \u2502   \u2514\u2500\u2500\u2500 umt5_xxl_fp16.safetensors \n\u2502   \u2514\u2500\u2500\u2500\ud83d\udcc2 vae/\n\u2502       \u2514\u2500\u2500 wan_2.1_vae.safetensors\n```\n"
       ],
       "color": "#432",
       "bgcolor": "#653"

@@ -3,7 +3,6 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -18,13 +17,13 @@ from services.gen_pipeline.processors.utils.video_crop import analyze_mask_video
 from services.workflow_rules.class_types import get_class_type_aliases
 from services.workflow_rules.object_info import build_input_node_map
 from services.workflow_rules.input_labels import default_input_label
+from services.workflow_modes import (
+    DEFAULT_WORKFLOWS_DIR,
+    WORKFLOWS_DIR,
+    get_packaged_workflows_dir,
+)
 
 logger = logging.getLogger(__name__)
-
-# backend/assets/... (this module lives at backend/services/comfyui/).
-_BACKEND_ROOT = Path(__file__).resolve().parents[2]
-WORKFLOWS_DIR = _BACKEND_ROOT / "assets" / "workflows"
-DEFAULT_WORKFLOWS_DIR = _BACKEND_ROOT / "assets" / ".config" / "default_workflows"
 
 # Maps ComfyUI class_type -> discoverable input type
 INPUT_NODE_MAP = {
@@ -308,7 +307,7 @@ async def run_backend_preprocess(ctx: BackendPipelineContext) -> None:
 
     preprocessors = build_backend_preprocessors(
         workflows_dir=WORKFLOWS_DIR,
-        fallback_workflow_dirs=[DEFAULT_WORKFLOWS_DIR],
+        fallback_workflow_dirs=[get_packaged_workflows_dir()],
         input_node_map=dynamic_map,
         analyze_mask_video_bounds_fn=analyze_mask_video_bounds,
         crop_video_fn=crop_video,

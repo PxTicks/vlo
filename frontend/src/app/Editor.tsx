@@ -31,6 +31,7 @@ import {
 import { useEditorFocusReconciler } from "../features/editorFocus";
 import { Player } from "../features/player/Player";
 import { EditorLayout } from "./layout/EditorLayout";
+import { HighVramWorkflowPrompt } from "./layout/HighVramWorkflowPrompt";
 import { EditorLeftSidebar } from "./layout/EditorLeftSidebar";
 import { EditorTopBar } from "./layout/EditorTopBar";
 import { RightSidebarPanel } from "./layout/RightSidebarPanel";
@@ -214,6 +215,7 @@ export function Editor() {
       <AssetDragOverlay />
       <TransformationDragOverlay />
       <TransitionDragOverlay />
+      <HighVramWorkflowPrompt />
     </DndContext>
   );
 }

@@ -1,0 +1,301 @@
+{
+  "version": 3,
+  "name": "Wan2.2",
+  "nodes": {
+    "57": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 3
+        },
+        "start_at_step": {
+          "value_type": "int",
+          "hidden": true
+        },
+        "end_at_step": {
+          "value_type": "int",
+          "hidden": true
+        },
+        "cfg": {
+          "value_type": "float",
+          "hidden": true
+        }
+      }
+    },
+    "58": {
+      "widgets": {
+        "noise_seed": {
+          "control_after_generate": true,
+          "value_type": "int",
+          "hidden": true
+        },
+        "start_at_step": {
+          "value_type": "int",
+          "hidden": true
+        },
+        "cfg": {
+          "value_type": "float",
+          "hidden": true
+        }
+      }
+    },
+    "85": {
+      "widgets": {
+        "value": {
+          "label": "Total Steps",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "86": {
+      "widgets": {
+        "value": {
+          "label": "Split Steps",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "98": {
+      "widgets": {
+        "value": {
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "99": {
+      "widgets": {
+        "value": {
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "105": {
+      "widgets": {
+        "value": {
+          "label": "V2V",
+          "value_type": "boolean",
+          "hidden": true
+        }
+      }
+    },
+    "93": {
+      "present": {
+        "label": "End frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 1,
+        "required": false,
+        "input_type": "image",
+        "param": "image",
+        "class_type": "vloMemoryLoadImage"
+      }
+    },
+    "92": {
+      "present": {
+        "label": "Start frame",
+        "group_id": "frames",
+        "group_title": "Frames",
+        "group_order": 0,
+        "required": false,
+        "input_type": "image",
+        "param": "image",
+        "class_type": "vloMemoryLoadImage"
+      }
+    },
+    "94": {
+      "present": {
+        "label": "Source video",
+        "required": false,
+        "input_type": "video",
+        "param": "file",
+        "class_type": "vloMemoryLoadVideo"
+      },
+      "selection": {
+        "export_fps": 16,
+        "frame_step": 4,
+        "max_frames": 81
+      }
+    },
+    "112": {
+      "widgets": {
+        "value": {
+          "label": "Length",
+          "when": {
+            "kind": "input_presence",
+            "inputs": ["94"],
+            "match": "all_missing"
+          },
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 81,
+          "step": 4,
+          "display_unit": {
+            "scale": 0.0625,
+            "unit": "s",
+            "precision": 1
+          },
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0
+        }
+      }
+    }
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "at_least_n",
+        "inputs": ["92", "93"],
+        "min": 1,
+        "message": "Provide at least one frame input."
+      },
+      {
+        "kind": "optional",
+        "input": "94"
+      }
+    ]
+  },
+  "derived_widgets": [
+    {
+      "id": "dual_sampler_denoise",
+      "kind": "dual_sampler_denoise",
+      "label": "Denoise",
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["94"],
+        "match": "all_present"
+      },
+      "group_id": "video_generation",
+      "group_title": "Video Generation",
+      "group_order": 1,
+      "total_steps": {
+        "node_id": "85",
+        "param": "value"
+      },
+      "start_step": {
+        "node_id": "57",
+        "param": "start_at_step"
+      },
+      "base_split_step": {
+        "node_id": "86",
+        "param": "value"
+      },
+      "split_step_targets": [
+        {
+          "node_id": "57",
+          "param": "end_at_step"
+        },
+        {
+          "node_id": "58",
+          "param": "start_at_step"
+        }
+      ],
+      "second_sampler_add_noise": {
+        "node_id": "58",
+        "param": "add_noise"
+      }
+    }
+  ],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["92"],
+        "match": "all_missing"
+      },
+      "bypass": ["92", "100"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["93"],
+        "match": "all_missing"
+      },
+      "bypass": ["93", "101"]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["94"],
+        "match": "all_present"
+      },
+      "set_widgets": [
+        {
+          "node_id": "105",
+          "widget": "value",
+          "value": true
+        }
+      ]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["94"],
+        "match": "all_missing"
+      },
+      "set_widgets": [
+        {
+          "node_id": "105",
+          "widget": "value",
+          "value": false
+        }
+      ]
+    }
+  ],
+  "slots": {},
+  "pipeline": [
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolutions": [480, 720],
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": {
+            "node_id": "98",
+            "param": "value"
+          },
+          "height": {
+            "node_id": "99",
+            "param": "value"
+          }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "options": [480, 720],
+          "default": 720
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "expose": "none",
+          "source": "client"
+        }
+      ]
+    }
+  ]
+}

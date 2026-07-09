@@ -142,6 +142,11 @@ def test_list_workflows_applies_menu_groups_and_preserves_shadowing(
 
     monkeypatch.setattr(comfyui, "WORKFLOWS_DIR", workflows_dir)
     monkeypatch.setattr(comfyui, "DEFAULT_WORKFLOWS_DIR", default_workflows_dir)
+    monkeypatch.setattr(
+        comfyui,
+        "get_packaged_workflows_dir",
+        lambda: default_workflows_dir,
+    )
     monkeypatch.setattr(comfyui, "WORKFLOW_MENU_CONFIG_PATH", workflow_menu_path)
 
     workflows = asyncio.run(comfyui.list_workflows())

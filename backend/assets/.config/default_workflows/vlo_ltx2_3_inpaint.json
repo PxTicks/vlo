@@ -1889,15 +1889,15 @@
         "Node name for S&R": "UNETLoader",
         "models": [
           {
-            "name": "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
-            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/diffusion_models/ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+            "name": "ltx-2.3-22b-distilled-1.1_transformer_only_int8_convrot.safetensors",
+            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/diffusion_models/ltx-2.3-22b-distilled-1.1_transformer_only_int8_convrot.safetensors",
             "directory": "diffusion_models"
           }
         ],
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+        "ltx-2.3-22b-distilled-1.1_transformer_only_int8_convrot.safetensors",
         "default"
       ],
       "color": "#1f1f48",

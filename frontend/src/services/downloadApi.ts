@@ -128,7 +128,27 @@ export interface DownloadProgressEvent {
 
 export async function getAvailableModels(options: {
   workflowId?: string;
+  /** Active editor graph. Authoritative when set: it covers workflows opened
+   * in the ComfyUI editor (no file on disk) and saved workflows whose on-disk
+   * copy is stale. The backend still enforces its own model URL allow-list. */
+  workflowGraph?: Record<string, unknown> | null;
 } = {}): Promise<AvailableModelsResponse> {
+  const fallbackMessage = options.workflowId
+    ? "Unable to load model download options"
+    : "Unable to load SAM2 model list";
+
+  if (options.workflowGraph) {
+    const response = await fetch(`${DOWNLOADS_API}/models`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workflowId: options.workflowId,
+        workflowGraph: options.workflowGraph,
+      }),
+    });
+    return parseJsonResponse<AvailableModelsResponse>(response, fallbackMessage);
+  }
+
   const params = new URLSearchParams();
   if (options.workflowId) {
     params.set("workflowId", options.workflowId);
@@ -139,12 +159,7 @@ export async function getAvailableModels(options: {
       ? `${DOWNLOADS_API}/models?${params.toString()}`
       : `${DOWNLOADS_API}/models`;
   const response = await fetch(url);
-  return parseJsonResponse<AvailableModelsResponse>(
-    response,
-    options.workflowId
-      ? "Unable to load model download options"
-      : "Unable to load SAM2 model list",
-  );
+  return parseJsonResponse<AvailableModelsResponse>(response, fallbackMessage);
 }
 
 export async function startModelDownload(
@@ -153,6 +168,7 @@ export async function startModelDownload(
   options: {
     workflowId?: string;
     hfToken?: string;
+    workflowGraph?: Record<string, unknown> | null;
   } = {},
 ): Promise<StartDownloadResponse> {
   const body: Record<string, unknown> = {
@@ -162,6 +178,9 @@ export async function startModelDownload(
   };
   if (options.hfToken) {
     body.hfToken = options.hfToken;
+  }
+  if (options.workflowGraph) {
+    body.workflowGraph = options.workflowGraph;
   }
 
   const response = await fetch(`${DOWNLOADS_API}/start`, {
@@ -181,6 +200,7 @@ export async function startModelDownloadBatch(
   options: {
     workflowId?: string;
     hfToken?: string;
+    workflowGraph?: Record<string, unknown> | null;
   } = {},
 ): Promise<StartBatchResponse> {
   const body: Record<string, unknown> = {
@@ -190,6 +210,9 @@ export async function startModelDownloadBatch(
   };
   if (options.hfToken) {
     body.hfToken = options.hfToken;
+  }
+  if (options.workflowGraph) {
+    body.workflowGraph = options.workflowGraph;
   }
 
   const response = await fetch(`${DOWNLOADS_API}/start-batch`, {

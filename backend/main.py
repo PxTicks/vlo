@@ -43,11 +43,11 @@ from services.ai_models.health import AppStatusProvider
 from services.model_registry import (
     get_available_sam2_models,
     get_available_sam_audio_models,
+    is_comfyui_model_downloads_enabled,
 )
 from services.sam2 import sam2_service
 from services.sam_audio import sam_audio_service
 from services.beats import beats_service
-from services.runtime_settings import get_comfyui_install_dir
 
 
 @asynccontextmanager
@@ -223,7 +223,7 @@ async def get_app_status():
             "status": comfyui_status,
             "url": comfyui_url,
             "error": comfyui_error,
-            "modelDownloadsEnabled": get_comfyui_install_dir() is not None,
+            "modelDownloadsEnabled": is_comfyui_model_downloads_enabled(),
         },
         "settings": settings_payload["settings"],
         "hardware": settings_payload["hardware"],

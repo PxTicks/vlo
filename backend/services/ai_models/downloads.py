@@ -18,6 +18,8 @@ IsEnabledFn = Callable[["DownloadContext"], bool]
 class DownloadContext:
     workflow_id: str | None = None
     hf_token: str | None = None
+    # Graph for workflows that exist only in the ComfyUI editor, never on disk.
+    workflow_graph: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,7 @@ import {
   startModelDownload,
   subscribeToProgress,
 } from "../../../../services/downloadApi";
+import { TEMP_WORKFLOW_ID, useGenerationStore } from "../../useGenerationStore";
 
 vi.mock("../../../../services/downloadApi", () => ({
   getAvailableModels: vi.fn(),
@@ -19,6 +20,7 @@ describe("WorkflowDependencyResolver", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(subscribeToProgress).mockReturnValue(() => undefined);
+    useGenerationStore.setState({ syncedGraphData: null });
   });
 
   it("shows only the ComfyUI editor action when nodes are missing but models are not", () => {
@@ -87,6 +89,79 @@ describe("WorkflowDependencyResolver", () => {
     expect(screen.getByRole("button", { name: /download/i })).toBeInTheDocument();
   });
 
+  it("sends the synced graph so editor-opened workflows can resolve download options", async () => {
+    const syncedGraphData = {
+      nodes: [
+        {
+          properties: {
+            models: [
+              {
+                name: "model.safetensors",
+                url: "https://huggingface.co/acme/repo/resolve/main/model.safetensors",
+                directory: "checkpoints",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    useGenerationStore.setState({ syncedGraphData });
+    vi.mocked(startModelDownload).mockResolvedValue({
+      jobId: "job-graph",
+      label: "model.safetensors",
+      status: "pending",
+    });
+    vi.mocked(getAvailableModels).mockResolvedValue({
+      sam2: [],
+      comfyui: {
+        modelDownloadsEnabled: true,
+        workflowModels: [
+          {
+            key: "checkpoints:model.safetensors",
+            label: "model.safetensors",
+            description: "Save to ComfyUI/models/checkpoints",
+            installed: false,
+            filename: "model.safetensors",
+            directory: "checkpoints",
+          },
+        ],
+      },
+    });
+
+    render(
+      <WorkflowDependencyResolver
+        workflowId={TEMP_WORKFLOW_ID}
+        warning={{
+          missingNodeTypes: [],
+          missingModels: ["model.safetensors"],
+        }}
+        onOpenEditor={vi.fn()}
+        onRefreshWarning={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getAvailableModels).toHaveBeenCalledWith({
+        workflowId: TEMP_WORKFLOW_ID,
+        workflowGraph: syncedGraphData,
+      });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: /^download$/i }));
+
+    await waitFor(() => {
+      expect(startModelDownload).toHaveBeenCalledWith(
+        "comfyui-workflow",
+        "checkpoints:model.safetensors",
+        {
+          workflowId: TEMP_WORKFLOW_ID,
+          hfToken: undefined,
+          workflowGraph: syncedGraphData,
+        },
+      );
+    });
+  });
+
   it("falls back to the ComfyUI editor path when workflow download metadata is unavailable", async () => {
     vi.mocked(getAvailableModels).mockRejectedValue(
       new Error("Unable to load model download options"),
@@ -106,7 +181,10 @@ describe("WorkflowDependencyResolver", () => {
     );
 
     await waitFor(() => {
-      expect(getAvailableModels).toHaveBeenCalledWith({ workflowId: "wf.json" });
+      expect(getAvailableModels).toHaveBeenCalledWith({
+        workflowId: "wf.json",
+        workflowGraph: null,
+      });
     });
 
     expect(screen.queryByRole("button", { name: /download/i })).not.toBeInTheDocument();
@@ -181,6 +259,7 @@ describe("WorkflowDependencyResolver", () => {
         {
           workflowId: "vlo_klein_multi.json",
           hfToken: "hf_abc123",
+          workflowGraph: null,
         },
       );
     });
@@ -231,7 +310,7 @@ describe("WorkflowDependencyResolver", () => {
       expect(startModelDownload).toHaveBeenCalledWith(
         "comfyui-workflow",
         "checkpoints:model.safetensors",
-        { workflowId: "wf.json" },
+        { workflowId: "wf.json", hfToken: undefined, workflowGraph: null },
       );
     });
   });
@@ -394,7 +473,7 @@ describe("WorkflowDependencyResolver", () => {
       expect(startModelDownloadBatch).toHaveBeenCalledWith(
         "comfyui-workflow",
         ["checkpoints:a.safetensors", "checkpoints:b.safetensors"],
-        { workflowId: "wf.json" },
+        { workflowId: "wf.json", hfToken: undefined, workflowGraph: null },
       );
     });
     // Per-row "Download" should not have been called — the batch endpoint

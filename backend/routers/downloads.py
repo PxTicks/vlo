@@ -39,6 +39,7 @@ class StartDownloadRequest(BaseModel):
     modelKey: str
     workflowId: str | None = None
     hfToken: str | None = None
+    workflowGraph: dict | None = None
 
 
 class StartBatchRequest(BaseModel):
@@ -46,6 +47,12 @@ class StartBatchRequest(BaseModel):
     modelKeys: list[str]
     workflowId: str | None = None
     hfToken: str | None = None
+    workflowGraph: dict | None = None
+
+
+class ListModelsRequest(BaseModel):
+    workflowId: str | None = None
+    workflowGraph: dict | None = None
 
 
 SAM_AUDIO_GATED_MESSAGE = (
@@ -88,19 +95,24 @@ def _download_provider_registry() -> DownloadProviderRegistry:
                 model_type="comfyui-workflow",
                 response_key="workflowModels",
                 list_models_fn=lambda context: (
-                    get_available_workflow_models(context.workflow_id)
-                    if context.workflow_id
+                    get_available_workflow_models(
+                        context.workflow_id,
+                        context.workflow_graph,
+                    )
+                    if context.workflow_id or context.workflow_graph
                     else []
                 ),
                 download_specs_fn=lambda model_key, context: (
                     get_workflow_download_specs(
-                        _require_workflow_id(context.workflow_id),
+                        _require_workflow_source(context),
                         model_key,
+                        context.workflow_graph,
                     )
                 ),
                 is_gated_fn=lambda model_key, context: is_workflow_model_gated(
-                    _require_workflow_id(context.workflow_id),
+                    _require_workflow_source(context),
                     model_key,
+                    context.workflow_graph,
                 ),
                 gated_message=WORKFLOW_GATED_MESSAGE,
                 is_enabled_fn=lambda _context: is_comfyui_model_downloads_enabled(),
@@ -109,10 +121,12 @@ def _download_provider_registry() -> DownloadProviderRegistry:
     )
 
 
-def _require_workflow_id(workflow_id: str | None) -> str:
-    if not workflow_id:
-        raise ValueError("workflowId is required for ComfyUI workflow downloads")
-    return workflow_id
+def _require_workflow_source(context: DownloadContext) -> str | None:
+    if not context.workflow_id and not context.workflow_graph:
+        raise ValueError(
+            "workflowId or workflowGraph is required for ComfyUI workflow downloads"
+        )
+    return context.workflow_id
 
 
 def _resolve_download_request(
@@ -120,9 +134,14 @@ def _resolve_download_request(
     model_key: str,
     workflow_id: str | None,
     hf_token: str | None,
+    workflow_graph: dict | None = None,
 ) -> tuple[str, list[download_service.DownloadFileSpec], str | None]:
     """Return (label, specs, auth_token) or raise HTTPException."""
-    context = DownloadContext(workflow_id=workflow_id, hf_token=hf_token)
+    context = DownloadContext(
+        workflow_id=workflow_id,
+        hf_token=hf_token,
+        workflow_graph=workflow_graph,
+    )
     try:
         resolved = _download_provider_registry().resolve_download(
             model_type,
@@ -136,8 +155,23 @@ def _resolve_download_request(
 
 @router.get("/models")
 def list_available_models(workflowId: str | None = None):
+    return _list_available_models(DownloadContext(workflow_id=workflowId))
+
+
+@router.post("/models")
+def list_available_models_for_graph(request: ListModelsRequest):
+    """POST variant for workflows that live only in the ComfyUI editor: their
+    graph has to travel in the body since there is nothing to load by id."""
+    return _list_available_models(
+        DownloadContext(
+            workflow_id=request.workflowId,
+            workflow_graph=request.workflowGraph,
+        )
+    )
+
+
+def _list_available_models(context: DownloadContext):
     registry = _download_provider_registry()
-    context = DownloadContext(workflow_id=workflowId)
     try:
         sam2_models = registry.list_models_for("sam2", context)
         sam_audio_models = registry.list_models_for("sam-audio", context)
@@ -168,7 +202,11 @@ def list_available_models(workflowId: str | None = None):
 @router.post("/start")
 async def start_download(request: StartDownloadRequest):
     label, specs, auth_token = _resolve_download_request(
-        request.modelType, request.modelKey, request.workflowId, request.hfToken
+        request.modelType,
+        request.modelKey,
+        request.workflowId,
+        request.hfToken,
+        request.workflowGraph,
     )
 
     try:
@@ -195,7 +233,11 @@ async def start_batch_download(request: StartBatchRequest):
     for model_key in request.modelKeys:
         try:
             label, specs, auth_token = _resolve_download_request(
-                request.modelType, model_key, request.workflowId, request.hfToken
+                request.modelType,
+                model_key,
+                request.workflowId,
+                request.hfToken,
+                request.workflowGraph,
             )
         except HTTPException as exc:
             errors.append({"modelKey": model_key, "message": str(exc.detail)})

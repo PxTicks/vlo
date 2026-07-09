@@ -113,6 +113,116 @@ describe("downloadApi", () => {
     );
   });
 
+  it("posts the workflow graph when listing models for an editor-opened workflow", async () => {
+    const workflowGraph = { nodes: [{ properties: { models: [] } }] };
+    const payload = { sam2: [], comfyui: { modelDownloadsEnabled: true, workflowModels: [] } };
+    vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse(payload));
+
+    await expect(
+      getAvailableModels({ workflowId: "__temp__", workflowGraph }),
+    ).resolves.toEqual(payload);
+
+    // A graph cannot ride on a GET query string.
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/downloads\/models$/),
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workflowId: "__temp__", workflowGraph }),
+      }),
+    );
+  });
+
+  it("posts the workflow graph even without a workflow id", async () => {
+    const workflowGraph = { nodes: [] };
+    vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse({ sam2: [] }));
+
+    await getAvailableModels({ workflowGraph });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/downloads\/models$/),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ workflowGraph }),
+      }),
+    );
+  });
+
+  it("falls back to the GET query when the graph is null", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse({ sam2: [] }));
+
+    await getAvailableModels({ workflowId: "wf.json", workflowGraph: null });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/downloads/models?workflowId=wf.json"),
+    );
+  });
+
+  it("sends the workflow graph when starting single and batch downloads", async () => {
+    const workflowGraph = { nodes: [{ id: 1 }] };
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      jsonResponse({ jobId: "job-1", label: "m", status: "pending" }),
+    );
+
+    await startModelDownload("comfyui-workflow", "checkpoints:m.safetensors", {
+      workflowId: "__temp__",
+      workflowGraph,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/downloads/start"),
+      expect.objectContaining({
+        body: JSON.stringify({
+          modelType: "comfyui-workflow",
+          modelKey: "checkpoints:m.safetensors",
+          workflowId: "__temp__",
+          workflowGraph,
+        }),
+      }),
+    );
+
+    vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse({ jobs: [], errors: [] }));
+
+    await startModelDownloadBatch("comfyui-workflow", ["checkpoints:m.safetensors"], {
+      workflowId: "__temp__",
+      workflowGraph,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/downloads/start-batch"),
+      expect.objectContaining({
+        body: JSON.stringify({
+          modelType: "comfyui-workflow",
+          modelKeys: ["checkpoints:m.safetensors"],
+          workflowId: "__temp__",
+          workflowGraph,
+        }),
+      }),
+    );
+  });
+
+  it("omits the workflow graph from request bodies when it is null", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      jsonResponse({ jobId: "job-1", label: "m", status: "pending" }),
+    );
+
+    await startModelDownload("comfyui-workflow", "checkpoints:m.safetensors", {
+      workflowId: "wf.json",
+      workflowGraph: null,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/downloads/start"),
+      expect.objectContaining({
+        body: JSON.stringify({
+          modelType: "comfyui-workflow",
+          modelKey: "checkpoints:m.safetensors",
+          workflowId: "wf.json",
+        }),
+      }),
+    );
+  });
+
   it("returns model listings and omits the query when no workflow is selected", async () => {
     const payload = { sam2: [{ key: "tiny", installed: true }] };
     vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse(payload));

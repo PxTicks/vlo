@@ -105,6 +105,12 @@ export function WorkflowDependencyResolver({
   const [loading, setLoading] = useState(false);
   const workflowModelsRequestIdRef = useRef(0);
 
+  // The synced graph is what we will actually dispatch, so it decides which
+  // models are needed. Workflows opened straight from the ComfyUI editor have
+  // no file on disk at all, and a saved workflow edited in the editor has an
+  // out-of-date one.
+  const syncedGraphData = useGenerationStore((state) => state.syncedGraphData);
+
   const fetchWorkflowModels = useCallback(
     async (options: { silent?: boolean } = {}) => {
       const requestId = workflowModelsRequestIdRef.current + 1;
@@ -120,7 +126,10 @@ export function WorkflowDependencyResolver({
         setLoading(true);
       }
       try {
-        const response = await getAvailableModels({ workflowId });
+        const response = await getAvailableModels({
+          workflowId,
+          workflowGraph: syncedGraphData,
+        });
         if (workflowModelsRequestIdRef.current !== requestId) {
           return;
         }
@@ -136,7 +145,7 @@ export function WorkflowDependencyResolver({
         }
       }
     },
-    [warning.missingModels.length, workflowId],
+    [syncedGraphData, warning.missingModels.length, workflowId],
   );
 
   // Fetch-on-mount + refetch-on-dep-change is the documented escape hatch
@@ -190,11 +199,13 @@ export function WorkflowDependencyResolver({
       startModelDownload("comfyui-workflow", modelKey, {
         workflowId: workflowId ?? undefined,
         hfToken: context?.hfToken,
+        workflowGraph: syncedGraphData,
       }),
     startBatch: (modelKeys, context) =>
       startModelDownloadBatch("comfyui-workflow", modelKeys, {
         workflowId: workflowId ?? undefined,
         hfToken: context?.hfToken,
+        workflowGraph: syncedGraphData,
       }),
     onDownloadComplete: () => {
       // Refresh model list so the just-downloaded entry flips to "installed"

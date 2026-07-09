@@ -95,7 +95,7 @@ def test_list_available_models_includes_workflow_models(monkeypatch):
     )
     monkeypatch.setattr(
         "routers.downloads.get_available_workflow_models",
-        lambda workflow_id: [
+        lambda workflow_id, workflow_graph=None: [
             {
                 "key": "checkpoints:model.safetensors",
                 "label": "model.safetensors",
@@ -146,13 +146,13 @@ def test_start_download_route_supports_workflow_models(monkeypatch, tmp_path):
     monkeypatch.setattr(download_service, "_job_destinations", {})
     monkeypatch.setattr(
         "routers.downloads.get_workflow_download_specs",
-        lambda workflow_id, model_key: [spec]
+        lambda workflow_id, model_key, workflow_graph=None: [spec]
         if workflow_id == "wf.json" and model_key == "checkpoints:model.safetensors"
         else [],
     )
     monkeypatch.setattr(
         "routers.downloads.get_available_workflow_models",
-        lambda workflow_id: [
+        lambda workflow_id, workflow_graph=None: [
             {"key": "checkpoints:model.safetensors", "label": "model.safetensors"}
         ]
         if workflow_id == "wf.json"
@@ -160,7 +160,7 @@ def test_start_download_route_supports_workflow_models(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "routers.downloads.is_workflow_model_gated",
-        lambda workflow_id, model_key: False,
+        lambda workflow_id, model_key, workflow_graph=None: False,
     )
 
     def fake_start_download(
@@ -202,17 +202,17 @@ def test_start_gated_workflow_download_requires_hf_token(monkeypatch, tmp_path):
     monkeypatch.setattr(download_service, "_job_destinations", {})
     monkeypatch.setattr(
         "routers.downloads.get_workflow_download_specs",
-        lambda workflow_id, model_key: [spec],
+        lambda workflow_id, model_key, workflow_graph=None: [spec],
     )
     monkeypatch.setattr(
         "routers.downloads.get_available_workflow_models",
-        lambda workflow_id: [
+        lambda workflow_id, workflow_graph=None: [
             {"key": "diffusion_models:flux.safetensors", "label": "flux.safetensors"}
         ],
     )
     monkeypatch.setattr(
         "routers.downloads.is_workflow_model_gated",
-        lambda workflow_id, model_key: True,
+        lambda workflow_id, model_key, workflow_graph=None: True,
     )
 
     import pytest
@@ -408,17 +408,17 @@ def test_start_gated_workflow_download_forwards_token(monkeypatch, tmp_path):
     monkeypatch.setattr(download_service, "_job_destinations", {})
     monkeypatch.setattr(
         "routers.downloads.get_workflow_download_specs",
-        lambda workflow_id, model_key: [spec],
+        lambda workflow_id, model_key, workflow_graph=None: [spec],
     )
     monkeypatch.setattr(
         "routers.downloads.get_available_workflow_models",
-        lambda workflow_id: [
+        lambda workflow_id, workflow_graph=None: [
             {"key": "diffusion_models:flux.safetensors", "label": "flux.safetensors"}
         ],
     )
     monkeypatch.setattr(
         "routers.downloads.is_workflow_model_gated",
-        lambda workflow_id, model_key: True,
+        lambda workflow_id, model_key, workflow_graph=None: True,
     )
 
     received_tokens: list[str | None] = []
@@ -457,10 +457,10 @@ def test_start_batch_enqueues_per_key_and_surfaces_errors(monkeypatch, tmp_path)
 
     monkeypatch.setattr(
         "routers.downloads.is_workflow_model_gated",
-        lambda workflow_id, model_key: model_key.startswith("gated:"),
+        lambda workflow_id, model_key, workflow_graph=None: model_key.startswith("gated:"),
     )
 
-    def fake_specs(workflow_id, model_key):
+    def fake_specs(workflow_id, model_key, workflow_graph=None):
         return [
             DownloadFileSpec(
                 url=f"https://example.com/{model_key}",
@@ -472,7 +472,7 @@ def test_start_batch_enqueues_per_key_and_surfaces_errors(monkeypatch, tmp_path)
     monkeypatch.setattr("routers.downloads.get_workflow_download_specs", fake_specs)
     monkeypatch.setattr(
         "routers.downloads.get_available_workflow_models",
-        lambda workflow_id: [
+        lambda workflow_id, workflow_graph=None: [
             {"key": "checkpoints:a.safetensors", "label": "a"},
             {"key": "checkpoints:b.safetensors", "label": "b"},
             {"key": "gated:c.safetensors", "label": "c"},

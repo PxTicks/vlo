@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import json
 import re
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from config import SAM2_SEARCH_PATHS, SAM_AUDIO_SEARCH_PATHS
+from services.comfyui.comfyui_client import get_comfyui_url
 from services.download_service import DownloadFileSpec
 from services.runtime_settings import get_comfyui_install_dir
 from services.sam2.sam2_discovery import discover_sam2_models
@@ -30,6 +32,33 @@ _OPEN_FLUX_REPO_EXCEPTIONS = (
     re.compile(r"^black-forest-labs/FLUX\.1-schnell$", re.IGNORECASE),
     re.compile(r"^black-forest-labs/FLUX\.2-klein-base-4b", re.IGNORECASE),
 )
+
+# Download policy, mirroring ComfyUI's missingModelDownload.ts. Workflow graphs
+# are untrusted input — a graph opened in the editor can name any URL — so the
+# backend enforces the same allow-list rather than trusting the client.
+_ALLOWED_MODEL_SOURCES = (
+    "https://civitai.com/",
+    "https://civitai.red/",
+    "https://huggingface.co/",
+    "http://localhost:",
+)
+# Deliberately narrower than the set of extensions ComfyUI will *scan* for:
+# .bin, .onnx and .gguf are recognised as models but are not downloadable.
+_ALLOWED_MODEL_SUFFIXES = (".safetensors", ".sft", ".ckpt", ".pth", ".pt")
+_WHITELISTED_MODEL_URLS = frozenset({
+    "https://huggingface.co/stabilityai/stable-zero123/resolve/main/stable_zero123.ckpt",
+    "https://huggingface.co/TencentARC/T2I-Adapter/resolve/main/models/t2iadapter_depth_sd14v1.pth?download=true",
+    "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
+})
+
+
+def is_downloadable_model_url(url: str, filename: str) -> bool:
+    """Whether a workflow-declared model may be fetched by the download service."""
+    if url in _WHITELISTED_MODEL_URLS:
+        return True
+    if not url.startswith(_ALLOWED_MODEL_SOURCES):
+        return False
+    return filename.endswith(_ALLOWED_MODEL_SUFFIXES)
 
 SAM2_MODELS: dict[str, dict] = {
     "sam2.1_hiera_large": {
@@ -71,8 +100,26 @@ SAM_AUDIO_MODELS: dict[str, dict] = {
 }
 
 
+def is_comfyui_local() -> bool:
+    """Whether the configured ComfyUI runs on this machine.
+
+    Downloads land in the local install directory, so they are only meaningful
+    when that install is the one serving requests. A local install paired with
+    a remote ComfyUI URL would fetch models the remote never sees.
+    """
+    hostname = urlparse(get_comfyui_url()).hostname
+    if not hostname:
+        return False
+    if hostname == "localhost":
+        return True
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
 def is_comfyui_model_downloads_enabled() -> bool:
-    return get_comfyui_install_dir() is not None
+    return get_comfyui_install_dir() is not None and is_comfyui_local()
 
 
 def _is_safe_workflow_filename(filename: str) -> bool:
@@ -137,6 +184,27 @@ def _load_workflow_json(workflow_id: str) -> dict[str, Any]:
         raise ValueError(f"Workflow {workflow_id} is not a JSON object")
 
     return workflow
+
+
+def _resolve_workflow_graph(
+    workflow_id: str | None,
+    workflow_graph: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """A supplied graph is authoritative; otherwise load the workflow by id.
+
+    The graph the client sends is the active editor state — the same graph it
+    will dispatch for execution. That may be a workflow opened directly in the
+    ComfyUI editor (never written to vlo's workflow directories) or a saved
+    workflow edited but not saved back, so the on-disk copy can be stale. Only
+    fall back to disk when the caller has no graph to offer.
+    """
+    if isinstance(workflow_graph, dict):
+        return workflow_graph
+
+    if workflow_id:
+        return _load_workflow_json(workflow_id)
+
+    raise ValueError("A workflow id or workflow graph is required")
 
 
 def _iter_workflow_nodes(workflow: dict[str, Any]) -> list[dict[str, Any]]:
@@ -222,7 +290,7 @@ def _extract_workflow_models(workflow: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
 
             url = raw_url.strip()
-            if not url.startswith(("http://", "https://")):
+            if not is_downloadable_model_url(url, filename):
                 continue
 
             key = _build_workflow_model_key(directory, filename)
@@ -321,11 +389,14 @@ def is_sam_audio_model_gated(model_key: str) -> bool:
     return bool(model and model.get("gated"))
 
 
-def get_available_workflow_models(workflow_id: str) -> list[dict[str, Any]]:
+def get_available_workflow_models(
+    workflow_id: str | None,
+    workflow_graph: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     if not is_comfyui_model_downloads_enabled():
         return []
 
-    workflow = _load_workflow_json(workflow_id)
+    workflow = _resolve_workflow_graph(workflow_id, workflow_graph)
     models = _extract_workflow_models(workflow)
 
     result: list[dict[str, Any]] = []
@@ -350,22 +421,36 @@ def get_available_workflow_models(workflow_id: str) -> list[dict[str, Any]]:
     return result
 
 
-def is_workflow_model_gated(workflow_id: str, model_key: str) -> bool:
-    if get_comfyui_install_dir() is None:
+def is_workflow_model_gated(
+    workflow_id: str | None,
+    model_key: str,
+    workflow_graph: dict[str, Any] | None = None,
+) -> bool:
+    if not is_comfyui_model_downloads_enabled():
         return False
-    workflow = _load_workflow_json(workflow_id)
+    workflow = _resolve_workflow_graph(workflow_id, workflow_graph)
     for model in _extract_workflow_models(workflow):
         if model["key"] == model_key:
             return bool(model["gated"])
     return False
 
 
-def get_workflow_download_specs(workflow_id: str, model_key: str) -> list[DownloadFileSpec]:
+def get_workflow_download_specs(
+    workflow_id: str | None,
+    model_key: str,
+    workflow_graph: dict[str, Any] | None = None,
+) -> list[DownloadFileSpec]:
     comfyui_install_dir = get_comfyui_install_dir()
     if comfyui_install_dir is None:
         raise ValueError("ComfyUI model downloads are not configured")
+    if not is_comfyui_local():
+        raise ValueError(
+            "vlo is connected to a remote ComfyUI at "
+            f"{get_comfyui_url()}, so downloading into the local install "
+            "directory would not make the model available to it"
+        )
 
-    workflow = _load_workflow_json(workflow_id)
+    workflow = _resolve_workflow_graph(workflow_id, workflow_graph)
     for model in _extract_workflow_models(workflow):
         if model["key"] != model_key:
             continue

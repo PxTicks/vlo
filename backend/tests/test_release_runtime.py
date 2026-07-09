@@ -115,7 +115,7 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
     monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
     monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
-    monkeypatch.setattr(main, "get_comfyui_install_dir", lambda: Path("/tmp/comfy"))
+    monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
     monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
     monkeypatch.setattr(
         main.sam2_service,
@@ -174,7 +174,7 @@ def test_app_status_reports_disconnected_comfyui_and_unavailable_sam2(
     monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
     monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
-    monkeypatch.setattr(main, "get_comfyui_install_dir", lambda: Path("/tmp/comfy"))
+    monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
     monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
     monkeypatch.setattr(
         main.sam2_service,
@@ -211,7 +211,7 @@ def test_app_status_uses_installed_sam2_model_inventory(monkeypatch):
     monkeypatch.setattr(main, "get_comfyui_url", lambda: "http://127.0.0.1:8188")
     monkeypatch.setattr(main, "get_comfyui_url_error", lambda: None)
     monkeypatch.setattr(main, "get_http_client", fake_get_http_client)
-    monkeypatch.setattr(main, "get_comfyui_install_dir", lambda: Path("/tmp/comfy"))
+    monkeypatch.setattr(main, "is_comfyui_model_downloads_enabled", lambda: True)
     monkeypatch.setattr(main, "build_public_settings_payload", fake_settings_payload)
     monkeypatch.setattr(
         main.sam2_service,

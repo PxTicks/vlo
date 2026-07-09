@@ -137,7 +137,10 @@ export type BuiltinTransitionType =
   | "dissolve"
   | "slideAway"
   | "slideOutIn"
-  | "dipToColor";
+  | "dipToColor"
+  | "zoom"
+  | "spin"
+  | "whipPan";
 
 export type TransitionType = BuiltinTransitionType | (string & {});
 

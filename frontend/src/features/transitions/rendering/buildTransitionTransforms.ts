@@ -49,6 +49,36 @@ function positionTransform(
   };
 }
 
+// Multiplicative scale factor around the clip's centered anchor.
+function scaleTransform(transitionId: string, factor: number): ClipTransform {
+  return {
+    id: `${transitionId}:scale`,
+    type: "scale",
+    isEnabled: true,
+    parameters: { x: factor, y: factor },
+  };
+}
+
+// Additive rotation (radians) around the clip's centered anchor.
+function rotationTransform(transitionId: string, angle: number): ClipTransform {
+  return {
+    id: `${transitionId}:rotation`,
+    type: "rotation",
+    isEnabled: true,
+    parameters: { angle: Object.is(angle, -0) ? 0 : angle },
+  };
+}
+
+function blurTransform(transitionId: string, strength: number): ClipTransform {
+  return {
+    id: `${transitionId}:blur`,
+    type: "filter",
+    filterName: "BlurFilter",
+    isEnabled: true,
+    parameters: { strength: Math.max(0, strength) },
+  } as GenericFilterTransform;
+}
+
 function directionVector(
   direction: unknown,
   dimensions: { width: number; height: number },
@@ -94,6 +124,38 @@ export function buildTransitionTransforms(
     return [alphaTransform(`${transition.id}:${side}`, alpha)];
   }
 
+  if (transition.type === "zoom") {
+    const target = numericParameter(transition.parameters, "scale", 1.4);
+    // Continuous punch-in: outgoing grows toward `target` while fading out;
+    // incoming starts at `target` and settles to 1 while fading in.
+    const factor =
+      side === "outgoing" ? 1 + (target - 1) * p : 1 + (target - 1) * (1 - p);
+    return [
+      scaleTransform(`${transition.id}:${side}`, factor),
+      alphaTransform(`${transition.id}:${side}`, side === "outgoing" ? 1 - p : p),
+    ];
+  }
+
+  if (transition.type === "spin") {
+    const rotations = numericParameter(transition.parameters, "rotations", 1);
+    const sign =
+      transition.parameters.direction === "counterclockwise" ? -1 : 1;
+    const fullAngle = sign * rotations * Math.PI * 2;
+    const minScale = 0.2;
+    if (side === "outgoing") {
+      return [
+        rotationTransform(`${transition.id}:${side}`, fullAngle * p),
+        scaleTransform(`${transition.id}:${side}`, 1 - (1 - minScale) * p),
+        alphaTransform(`${transition.id}:${side}`, 1 - p),
+      ];
+    }
+    return [
+      rotationTransform(`${transition.id}:${side}`, -fullAngle * (1 - p)),
+      scaleTransform(`${transition.id}:${side}`, minScale + (1 - minScale) * p),
+      alphaTransform(`${transition.id}:${side}`, p),
+    ];
+  }
+
   const distance = numericParameter(transition.parameters, "distance", 1);
   const vector = directionVector(
     transition.parameters.direction,
@@ -128,6 +190,30 @@ export function buildTransitionTransforms(
             -vector.x * (1 - p),
             -vector.y * (1 - p),
           ),
+        ];
+  }
+
+  if (transition.type === "whipPan") {
+    // Locked directional push with motion blur that peaks mid-transition and
+    // resolves to zero at both ends for a clean in/out.
+    const peak = numericParameter(transition.parameters, "blur", 12);
+    const blur = peak * Math.sin(Math.PI * Math.max(0, Math.min(1, p)));
+    return side === "outgoing"
+      ? [
+          positionTransform(
+            `${transition.id}:${side}`,
+            vector.x * p,
+            vector.y * p,
+          ),
+          blurTransform(`${transition.id}:${side}`, blur),
+        ]
+      : [
+          positionTransform(
+            `${transition.id}:${side}`,
+            -vector.x * (1 - p),
+            -vector.y * (1 - p),
+          ),
+          blurTransform(`${transition.id}:${side}`, blur),
         ];
   }
 

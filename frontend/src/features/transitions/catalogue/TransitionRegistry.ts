@@ -20,6 +20,17 @@ const DIRECTION_CONTROL: ControlDefinition = {
   ],
 };
 
+const SPIN_DIRECTION_CONTROL: ControlDefinition = {
+  type: "select",
+  label: "Direction",
+  name: "direction",
+  defaultValue: "clockwise",
+  options: [
+    { label: "Clockwise", value: "clockwise" },
+    { label: "Counter-clockwise", value: "counterclockwise" },
+  ],
+};
+
 const EASING_CONTROL: ControlDefinition = {
   type: "select",
   label: "Easing",
@@ -138,6 +149,97 @@ export const TransitionRegistry: readonly TransitionDefinition[] = [
       ],
     },
   },
+  {
+    type: "zoom",
+    label: "Zoom",
+    glyph: "⤢",
+    parameters: {
+      scale: 1.4,
+      easing: "easeInOut",
+    },
+    uiConfig: {
+      groups: [
+        {
+          id: "motion",
+          title: "Motion",
+          controls: [
+            {
+              type: "slider",
+              label: "Zoom",
+              name: "scale",
+              defaultValue: 1.4,
+              min: 1.05,
+              max: 3,
+              step: 0.05,
+            },
+            EASING_CONTROL,
+          ],
+        },
+      ],
+    },
+  },
+  {
+    type: "spin",
+    label: "Spin",
+    glyph: "↻",
+    parameters: {
+      direction: "clockwise",
+      rotations: 1,
+      easing: "easeInOut",
+    },
+    uiConfig: {
+      groups: [
+        {
+          id: "motion",
+          title: "Motion",
+          controls: [
+            SPIN_DIRECTION_CONTROL,
+            {
+              type: "slider",
+              label: "Rotations",
+              name: "rotations",
+              defaultValue: 1,
+              min: 0.25,
+              max: 4,
+              step: 0.25,
+            },
+            EASING_CONTROL,
+          ],
+        },
+      ],
+    },
+  },
+  {
+    type: "whipPan",
+    label: "Whip pan",
+    glyph: "»",
+    parameters: {
+      direction: "left",
+      blur: 12,
+      easing: "easeInOut",
+    },
+    uiConfig: {
+      groups: [
+        {
+          id: "motion",
+          title: "Motion",
+          controls: [
+            DIRECTION_CONTROL,
+            {
+              type: "slider",
+              label: "Blur",
+              name: "blur",
+              defaultValue: 12,
+              min: 0,
+              max: 20,
+              step: 0.5,
+            },
+            EASING_CONTROL,
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 let registeredTransitionRevision = -1;
@@ -171,7 +273,10 @@ export function isBuiltinTransitionType(
     type === "dissolve" ||
     type === "slideAway" ||
     type === "slideOutIn" ||
-    type === "dipToColor"
+    type === "dipToColor" ||
+    type === "zoom" ||
+    type === "spin" ||
+    type === "whipPan"
   );
 }
 

@@ -1034,6 +1034,19 @@ export function useTransformInteractionController(
       const interactionMatchesClip =
         currentInteraction.active &&
         currentInteraction.clipId === activeClip.id;
+
+      // Path point markers should only appear on the frame while the path edit
+      // menu is open for this clip. An active record/edit drag is part of
+      // building the path, so keep it visible even before the panel commits.
+      const pathViewState = useTransformationViewStore.getState();
+      const inPathEditMenu =
+        pathViewState.pathPanelView === "path" &&
+        pathViewState.activePathEditor?.clipId === activeClip.id;
+      if (!inPathEditMenu && !interactionMatchesClip) {
+        overlay.visible = false;
+        return;
+      }
+
       let controlPoints: Point2D[] | null = null;
       let currentPoint: Point2D | null = null;
       let isProvisional = false;

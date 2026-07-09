@@ -1977,6 +1977,18 @@ export function useMaskInteractionController(
       const interactionMatchesMask =
         currentInteraction.active && currentInteraction.maskId === maskClip.id;
 
+      // Path point markers should only appear on the frame while the path edit
+      // menu is open for this mask. An active record/edit drag is part of
+      // building the path, so keep it visible even before the panel commits.
+      const pathViewState = useTransformationViewStore.getState();
+      const inPathEditMenu =
+        pathViewState.pathPanelView === "path" &&
+        pathViewState.activePathEditor?.clipId === maskClip.id;
+      if (!inPathEditMenu && !interactionMatchesMask) {
+        overlay.visible = false;
+        return;
+      }
+
       let controlPoints: Point2D[] | null = null;
       let currentPoint: Point2D | null = null;
       let isProvisional = false;

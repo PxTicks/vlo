@@ -33,6 +33,7 @@ import { reverbDefinition } from "./audio/reverb";
 import { delayDefinition } from "./audio/delay";
 import { hslFilterDefinition } from "./filters/hslAdjustment";
 import { colorAdjustmentDefinition } from "./filters/colorAdjustment";
+import { colorGradeDefinition } from "./filters/colorGrade";
 import { alphaFilterDefinition } from "./filters/alpha";
 import { blurFilterDefinition } from "./filters/blur";
 import { bloomFilterDefinition } from "./filters/bloom";
@@ -103,6 +104,7 @@ const BUILTIN_TRANSFORMATION_DEFINITIONS: TransformationDefinition[] = [
 
   // Filters (all spatial / pixel-based; safe on textureless containers
   // now that filterApplicator accepts an explicit contentSize).
+  { ...colorGradeDefinition, isDefault: false },
   { ...hslFilterDefinition, isDefault: false, adjustmentCompatible: true },
   { ...colorAdjustmentDefinition, isDefault: false, adjustmentCompatible: true },
   { ...blurFilterDefinition, isDefault: false, adjustmentCompatible: true },

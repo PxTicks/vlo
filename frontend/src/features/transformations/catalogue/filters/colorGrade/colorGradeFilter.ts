@@ -1,4 +1,11 @@
-import { Filter, GlProgram, UniformGroup } from "pixi.js";
+import {
+  Filter,
+  GlProgram,
+  UniformGroup,
+  type FilterSystem,
+  type RenderSurface,
+  type Texture,
+} from "pixi.js";
 import {
   DEFAULT_COLOR_GRADE_PRIMARIES,
   V1_AUTHORED_COLOR_MODEL,
@@ -6,15 +13,27 @@ import {
   type AuthoredColorModelV1,
   type ColorCurveParameterName,
 } from "../../../../../core/color";
-import { COLOR_GRADE_FRAGMENT, COLOR_GRADE_VERTEX } from "./shader";
+import {
+  COLOR_GRADE_SHADER_STAGE,
+  COLOR_GRADE_VERTEX,
+  buildColorGradeFragment,
+} from "./shader";
 import { CurveTextureBaker } from "./curveTextures";
 import { livePreviewParamStore } from "../../../../../core/liveParams/livePreviewParamStore";
 
-const SHARED_COLOR_GRADE_PROGRAM = GlProgram.from({
-  vertex: COLOR_GRADE_VERTEX,
-  fragment: COLOR_GRADE_FRAGMENT,
-  name: "color-grade-filter",
-});
+const COLOR_GRADE_PROGRAM_CACHE = new Map<number, GlProgram>();
+
+function getColorGradeProgram(variantKey: number): GlProgram {
+  const cached = COLOR_GRADE_PROGRAM_CACHE.get(variantKey);
+  if (cached) return cached;
+  const program = GlProgram.from({
+    vertex: COLOR_GRADE_VERTEX,
+    fragment: buildColorGradeFragment(variantKey),
+    name: `color-grade-filter-${variantKey}`,
+  });
+  COLOR_GRADE_PROGRAM_CACHE.set(variantKey, program);
+  return program;
+}
 
 type ColorGradeUniformDefinitions = {
   uExposure: { value: number; type: "f32" };
@@ -53,6 +72,14 @@ export class ColorGradeFilter extends Filter {
   };
   private currentTemperature = DEFAULT_COLOR_GRADE_PRIMARIES.temperature;
   private currentTint = DEFAULT_COLOR_GRADE_PRIMARIES.tint;
+  private currentExposure = DEFAULT_COLOR_GRADE_PRIMARIES.exposure;
+  private currentContrast = DEFAULT_COLOR_GRADE_PRIMARIES.contrast;
+  private currentKneeSoftness = DEFAULT_COLOR_GRADE_PRIMARIES.kneeSoftness;
+  private currentToeAmount = DEFAULT_COLOR_GRADE_PRIMARIES.toeAmount;
+  private currentToeSoftness = DEFAULT_COLOR_GRADE_PRIMARIES.toeSoftness;
+  private currentSaturation = DEFAULT_COLOR_GRADE_PRIMARIES.saturation;
+  private currentVibrance = DEFAULT_COLOR_GRADE_PRIMARIES.vibrance;
+  private currentHueRotate = DEFAULT_COLOR_GRADE_PRIMARIES.hueRotate;
   private authoredModel: AuthoredColorModelV1 = V1_AUTHORED_COLOR_MODEL;
 
   constructor() {
@@ -60,7 +87,7 @@ export class ColorGradeFilter extends Filter {
       livePreviewParamStore.requestRender();
     });
     super({
-      glProgram: SHARED_COLOR_GRADE_PROGRAM,
+      glProgram: getColorGradeProgram(0),
       resources: {
         filterUniforms: new UniformGroup<ColorGradeUniformDefinitions>({
           uExposure: { value: DEFAULT_COLOR_GRADE_PRIMARIES.exposure, type: "f32" },
@@ -120,6 +147,55 @@ export class ColorGradeFilter extends Filter {
     this.uniforms.uWhiteBalanceRow2.set(matrix.slice(6, 9));
   }
 
+  public get shaderVariantKey(): number {
+    let key = 0;
+    const hasWhiteBalance =
+      this.currentTemperature !== DEFAULT_COLOR_GRADE_PRIMARIES.temperature ||
+      this.currentTint !== DEFAULT_COLOR_GRADE_PRIMARIES.tint;
+    if (
+      this.currentExposure !== DEFAULT_COLOR_GRADE_PRIMARIES.exposure ||
+      hasWhiteBalance
+    ) {
+      key |= COLOR_GRADE_SHADER_STAGE.SCENE_LINEAR;
+    }
+    if (hasWhiteBalance) key |= COLOR_GRADE_SHADER_STAGE.WHITE_BALANCE;
+    if (
+      Object.values(this.wheelValues).some((wheel) =>
+        wheel.some((value) => value !== 0),
+      )
+    ) {
+      key |= COLOR_GRADE_SHADER_STAGE.WHEELS;
+    }
+    if (
+      this.currentContrast !== DEFAULT_COLOR_GRADE_PRIMARIES.contrast ||
+      this.currentKneeSoftness > 0 ||
+      (this.currentToeAmount > 0 && this.currentToeSoftness > 0)
+    ) {
+      key |= COLOR_GRADE_SHADER_STAGE.TONE;
+    }
+    if (this.curveTextures.hasActiveCurves) {
+      key |= COLOR_GRADE_SHADER_STAGE.CURVES;
+    }
+    if (
+      this.currentSaturation !== DEFAULT_COLOR_GRADE_PRIMARIES.saturation ||
+      this.currentVibrance !== DEFAULT_COLOR_GRADE_PRIMARIES.vibrance ||
+      this.currentHueRotate !== DEFAULT_COLOR_GRADE_PRIMARIES.hueRotate
+    ) {
+      key |= COLOR_GRADE_SHADER_STAGE.COLOR;
+    }
+    return key;
+  }
+
+  public override apply(
+    filterManager: FilterSystem,
+    input: Texture,
+    output: RenderSurface,
+    clearMode: boolean,
+  ): void {
+    this.glProgram = getColorGradeProgram(this.shaderVariantKey);
+    super.apply(filterManager, input, output, clearMode);
+  }
+
   public set colorModel(value: AuthoredColorModelV1) {
     if (value?.version === 1 && value.gradingSpace === "srgb-rec709") {
       this.authoredModel = value;
@@ -131,7 +207,8 @@ export class ColorGradeFilter extends Filter {
   }
 
   public set exposure(value: number) {
-    this.uniforms.uExposure = finiteOr(value, 0);
+    this.currentExposure = finiteOr(value, 0);
+    this.uniforms.uExposure = this.currentExposure;
   }
 
   public set temperature(value: number) {
@@ -145,7 +222,8 @@ export class ColorGradeFilter extends Filter {
   }
 
   public set contrast(value: number) {
-    this.uniforms.uContrast = Math.max(0, finiteOr(value, 1));
+    this.currentContrast = Math.max(0, finiteOr(value, 1));
+    this.uniforms.uContrast = this.currentContrast;
   }
 
   public set pivot(value: number) {
@@ -157,27 +235,33 @@ export class ColorGradeFilter extends Filter {
   }
 
   public set kneeSoftness(value: number) {
-    this.uniforms.uKneeSoftness = Math.max(0, finiteOr(value, 0));
+    this.currentKneeSoftness = Math.max(0, finiteOr(value, 0));
+    this.uniforms.uKneeSoftness = this.currentKneeSoftness;
   }
 
   public set toeAmount(value: number) {
-    this.uniforms.uToeAmount = Math.max(0, Math.min(1, finiteOr(value, 0)));
+    this.currentToeAmount = Math.max(0, Math.min(1, finiteOr(value, 0)));
+    this.uniforms.uToeAmount = this.currentToeAmount;
   }
 
   public set toeSoftness(value: number) {
-    this.uniforms.uToeSoftness = Math.max(0, finiteOr(value, 0));
+    this.currentToeSoftness = Math.max(0, finiteOr(value, 0));
+    this.uniforms.uToeSoftness = this.currentToeSoftness;
   }
 
   public set saturation(value: number) {
-    this.uniforms.uSaturation = Math.max(0, finiteOr(value, 1));
+    this.currentSaturation = Math.max(0, finiteOr(value, 1));
+    this.uniforms.uSaturation = this.currentSaturation;
   }
 
   public set vibrance(value: number) {
-    this.uniforms.uVibrance = Math.max(-1, Math.min(1, finiteOr(value, 0)));
+    this.currentVibrance = Math.max(-1, Math.min(1, finiteOr(value, 0)));
+    this.uniforms.uVibrance = this.currentVibrance;
   }
 
   public set hueRotate(value: number) {
-    this.uniforms.uHueRotate = finiteOr(value, 0) / 360;
+    this.currentHueRotate = finiteOr(value, 0);
+    this.uniforms.uHueRotate = this.currentHueRotate / 360;
   }
 
   public set ditherStrength(value: number) {
@@ -228,8 +312,9 @@ export class ColorGradeFilter extends Filter {
   public set curveHueSat(value: unknown) { this.setCurve("curveHueSat", value); }
   public set curveLumaSat(value: unknown) { this.setCurve("curveLumaSat", value); }
 
-  public override destroy(destroyPrograms?: boolean): void {
+  public override destroy(): void {
     this.curveTextures.destroy();
-    super.destroy(destroyPrograms);
+    // Variant programs are shared across all color-grade filter instances.
+    super.destroy(false);
   }
 }

@@ -51,6 +51,7 @@ export class CurveTextureBaker {
     readonly ColorCurvePoint[]
   >();
   private readonly hashes = new Map<ColorCurveParameterName, string>();
+  private readonly activeCurves = new Set<ColorCurveParameterName>();
   private bakeTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly onBake?: () => void;
 
@@ -87,8 +88,17 @@ export class CurveTextureBaker {
     if (this.hashes.get(name) === nextHash) return false;
     this.hashes.set(name, nextHash);
     this.curves.set(name, points);
+    if (nextHash === curveHash(DEFAULT_COLOR_CURVES[name])) {
+      this.activeCurves.delete(name);
+    } else {
+      this.activeCurves.add(name);
+    }
     this.scheduleBake();
     return true;
+  }
+
+  public get hasActiveCurves(): boolean {
+    return this.activeCurves.size > 0;
   }
 
   public flush(): void {

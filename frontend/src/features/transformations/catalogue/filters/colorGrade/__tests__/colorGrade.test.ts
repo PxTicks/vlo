@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { V1_AUTHORED_COLOR_MODEL } from "../../../../../../core/color";
 import { getEntryByFilterName, isTransformCompatible } from "../../../TransformationRegistry";
 import { COLOR_GRADE_FILTER_NAME, colorGradeDefinition } from "../definition";
-import { COLOR_GRADE_FRAGMENT } from "../shader";
+import {
+  COLOR_GRADE_FRAGMENT,
+  COLOR_GRADE_SHADER_STAGE,
+  buildColorGradeFragment,
+} from "../shader";
 import { ColorGradeFilter } from "../colorGradeFilter";
 import { createAddTransform } from "../../../../hooks/controller/transformFactory";
 import { planTransformRender } from "../../../../effectMaskRenderPlan";
@@ -90,6 +94,65 @@ describe("Color Grade transformation", () => {
     expect(COLOR_GRADE_FRAGMENT).toContain("vloApplySaturationVibranceHue");
     expect(COLOR_GRADE_FRAGMENT).toContain("vloBlueNoise(gl_FragCoord.xy)");
     expect(COLOR_GRADE_FRAGMENT).toContain("encoded * source.a");
+  });
+
+  it("compiles untouched grading stages out of the identity shader", () => {
+    const identityFragment = buildColorGradeFragment(0);
+    expect(identityFragment).not.toContain("#define VLO_USE_CURVES");
+    expect(identityFragment).not.toContain("#define VLO_USE_WHEELS");
+    expect(identityFragment).not.toContain("#define VLO_USE_TONE");
+    expect(identityFragment).not.toContain("#define VLO_USE_COLOR");
+
+    const curveFragment = buildColorGradeFragment(
+      COLOR_GRADE_SHADER_STAGE.CURVES,
+    );
+    expect(curveFragment).toContain("#define VLO_USE_CURVES");
+    expect(curveFragment).not.toContain("#define VLO_USE_WHEELS");
+  });
+
+  it("selects shader stages from effective non-identity parameters", () => {
+    const filter = new ColorGradeFilter();
+    expect(filter.shaderVariantKey).toBe(0);
+
+    filter.pivot = 0.7;
+    filter.kneeThreshold = 0.8;
+    filter.toeAmount = 0.5;
+    expect(filter.shaderVariantKey).toBe(0);
+
+    filter.exposure = 1;
+    expect(filter.shaderVariantKey).toBe(
+      COLOR_GRADE_SHADER_STAGE.SCENE_LINEAR,
+    );
+    filter.exposure = 0;
+    filter.temperature = 10;
+    expect(filter.shaderVariantKey).toBe(
+      COLOR_GRADE_SHADER_STAGE.SCENE_LINEAR |
+        COLOR_GRADE_SHADER_STAGE.WHITE_BALANCE,
+    );
+    filter.temperature = 0;
+
+    filter.liftR = 0.1;
+    expect(filter.shaderVariantKey).toBe(COLOR_GRADE_SHADER_STAGE.WHEELS);
+    filter.liftR = 0;
+    filter.curveMaster = [
+      { x: 0, y: 0.1 },
+      { x: 1, y: 1 },
+    ];
+    expect(filter.shaderVariantKey).toBe(COLOR_GRADE_SHADER_STAGE.CURVES);
+    filter.curveMaster = [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ];
+    expect(filter.shaderVariantKey).toBe(0);
+    filter.destroy();
+  });
+
+  it("shares cached programs between equivalent filters", () => {
+    const first = new ColorGradeFilter();
+    const second = new ColorGradeFilter();
+    expect(first.glProgram).toBe(second.glProgram);
+    first.destroy();
+    second.destroy();
   });
 
   it("accepts repeated property assignment updates used by filter pooling", () => {

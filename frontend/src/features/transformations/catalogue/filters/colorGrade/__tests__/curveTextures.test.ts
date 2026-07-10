@@ -21,6 +21,7 @@ describe("CurveTextureBaker", () => {
 
   it("starts with identity value curves and flat modifier curves", () => {
     const baker = createBaker();
+    expect(baker.hasActiveCurves).toBe(false);
     expect(baker.texture.source.autoGarbageCollect).toBe(true);
     const sample = 512;
     const x = sample / (CURVE_TEXTURE_WIDTH - 1);
@@ -37,6 +38,7 @@ describe("CurveTextureBaker", () => {
       { x: 1, y: 1 },
     ];
     expect(baker.setCurve("curveMaster", points)).toBe(true);
+    expect(baker.hasActiveCurves).toBe(true);
     expect(baker.setCurve("curveMaster", points.map((point) => ({ ...point })))).toBe(false);
     baker.flush();
 
@@ -46,6 +48,21 @@ describe("CurveTextureBaker", () => {
       points.map((point) => ({ time: point.x, value: point.y })),
     ).at(x);
     expect(baker.pixels[sample * 4]).toBeCloseTo(expected, 5);
+  });
+
+  it("clears the active flag when a curve returns to its identity", () => {
+    const baker = createBaker();
+    baker.setCurve("curveHueSat", [
+      { x: 0, y: 0.2 },
+      { x: 1, y: 0.2 },
+    ]);
+    expect(baker.hasActiveCurves).toBe(true);
+
+    baker.setCurve("curveHueSat", [
+      { x: 0, y: 0 },
+      { x: 0.5, y: 0 },
+    ]);
+    expect(baker.hasActiveCurves).toBe(false);
   });
 
   it("coalesces rapid changes into one scheduled bake", () => {

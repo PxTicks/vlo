@@ -40,5 +40,7 @@ describe("value curve math", () => {
     ];
     expect(clampCurvePointX(points, 1, 0.95)).toBeCloseTo(0.7999);
     expect(clampCurvePointX(points, 2, 0.1)).toBeCloseTo(0.4001);
+    expect(clampCurvePointX(points, 0, 0.25)).toBe(0.25);
+    expect(clampCurvePointX(points, 3, 0.9)).toBe(0.9);
   });
 });

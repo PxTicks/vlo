@@ -38,11 +38,10 @@ export function clampCurvePointX(
   index: number,
   nextX: number,
 ): number {
-  if (index <= 0 || index >= points.length - 1) return points[index].x;
-  return Math.max(
-    points[index - 1].x + 0.0001,
-    Math.min(points[index + 1].x - 0.0001, nextX),
-  );
+  const lowerBound = index > 0 ? points[index - 1].x + 0.0001 : 0;
+  const upperBound =
+    index < points.length - 1 ? points[index + 1].x - 0.0001 : 1;
+  return Math.max(lowerBound, Math.min(upperBound, nextX));
 }
 
 export function curvePointFromClient(

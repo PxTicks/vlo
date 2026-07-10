@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Application, Graphics } from "pixi.js";
+import { Application, Graphics, Rectangle } from "pixi.js";
 import { Viewport } from "pixi-viewport";
+import {
+  clearActivePixiContentTarget,
+  setActivePixiContentTarget,
+} from "../../../core/pixi/activeApplication";
 
 interface ViewportConfig {
   screenWidth: number;
@@ -85,6 +89,10 @@ export function useViewport(app: Application | null, config: ViewportConfig) {
     viewport.sortableChildren = true;
 
     app.stage.addChild(viewport);
+    setActivePixiContentTarget(
+      viewport,
+      new Rectangle(0, 0, logicalWidth, logicalHeight),
+    );
     viewportRef.current = viewport;
 
     // Avoid synchronous setState warning by deferring the update
@@ -93,6 +101,7 @@ export function useViewport(app: Application | null, config: ViewportConfig) {
     });
 
     return () => {
+      clearActivePixiContentTarget(viewport);
       if (app.stage && !app.stage.destroyed) {
         app.stage.removeChild(viewport);
       }
@@ -111,6 +120,10 @@ export function useViewport(app: Application | null, config: ViewportConfig) {
         config.screenHeight,
         config.logicalWidth,
         config.logicalHeight,
+      );
+      setActivePixiContentTarget(
+        viewportRef.current,
+        new Rectangle(0, 0, config.logicalWidth, config.logicalHeight),
       );
 
       // Update Overlay Dimensions

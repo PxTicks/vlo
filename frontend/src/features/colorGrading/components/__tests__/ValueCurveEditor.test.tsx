@@ -12,6 +12,7 @@ const tabs: readonly CurveEditorTab[] = [
     yMin: 0,
     yMax: 1,
     background: "#000",
+    histogram: "luma",
   },
 ];
 
@@ -69,6 +70,66 @@ describe("ValueCurveEditor", () => {
     expect(onCommit).toHaveBeenCalledWith(
       "curveMaster",
       DEFAULT_COLOR_CURVES.curveMaster,
+    );
+  });
+
+  it("draws a histogram behind the active curve", () => {
+    render(
+      <ValueCurveEditor
+        tabs={tabs}
+        values={{ curveMaster: DEFAULT_COLOR_CURVES.curveMaster }}
+        histograms={{
+          luma: new Float32Array([0, 0.5, 1]),
+          red: new Float32Array(),
+          green: new Float32Array(),
+          blue: new Float32Array(),
+          hue: new Float32Array(),
+        }}
+        onPreview={vi.fn()}
+        onCommit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Master histogram")).toHaveAttribute(
+      "d",
+      expect.stringContaining("L 100 0"),
+    );
+  });
+
+  it("lets an endpoint move on both axes", () => {
+    const onCommit = vi.fn();
+    render(
+      <ValueCurveEditor
+        tabs={tabs}
+        values={{ curveMaster: DEFAULT_COLOR_CURVES.curveMaster }}
+        onPreview={vi.fn()}
+        onCommit={onCommit}
+      />,
+    );
+    const editor = screen.getByLabelText(
+      "Master curve editor",
+    ) as unknown as SVGSVGElement;
+    vi.spyOn(editor, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 180,
+      right: 200,
+      bottom: 180,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    editor.setPointerCapture = vi.fn();
+    editor.releasePointerCapture = vi.fn();
+
+    fireEvent.pointerDown(editor, { pointerId: 4, clientX: 0, clientY: 180 });
+    fireEvent.pointerMove(editor, { pointerId: 4, clientX: 40, clientY: 140 });
+    fireEvent.pointerUp(editor, { pointerId: 4, clientX: 40, clientY: 140 });
+    expect(onCommit).toHaveBeenCalledWith(
+      "curveMaster",
+      expect.arrayContaining([
+        expect.objectContaining({ x: 0.2, y: expect.closeTo(2 / 9, 4) }),
+      ]),
     );
   });
 });

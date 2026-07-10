@@ -11,6 +11,11 @@ import {
   curvePointFromClient,
   sanitizeCurvePoints,
 } from "../utils/curveMath";
+import {
+  curveHistogramAreaPath,
+  type CurveHistogramKind,
+  type CurveHistograms,
+} from "../utils/curveHistogram";
 
 export interface CurveEditorTab {
   readonly name: ColorCurveParameterName;
@@ -20,11 +25,13 @@ export interface CurveEditorTab {
   readonly yMin: number;
   readonly yMax: number;
   readonly background: string;
+  readonly histogram: CurveHistogramKind;
 }
 
 interface ValueCurveEditorProps {
   tabs: readonly CurveEditorTab[];
   values: Readonly<Record<string, unknown>>;
+  histograms?: CurveHistograms;
   disabled?: boolean;
   onPreview: (
     name: ColorCurveParameterName,
@@ -56,6 +63,7 @@ function readPoints(
 export function ValueCurveEditor({
   tabs,
   values,
+  histograms,
   disabled = false,
   onPreview,
   onCommit,
@@ -90,6 +98,13 @@ export function ValueCurveEditor({
       return `${index === 0 ? "M" : "L"} ${x * 100} ${(1 - normalizedY) * 100}`;
     }).join(" ");
   }, [activeTab, curveEvaluator]);
+  const histogramPath = useMemo(
+    () =>
+      curveHistogramAreaPath(
+        histograms?.[activeTab.histogram] ?? new Float32Array(),
+      ),
+    [activeTab.histogram, histograms],
+  );
 
   const previewPoints = useCallback(
     (nextPoints: ColorCurvePoint[]) => {
@@ -181,13 +196,8 @@ export function ValueCurveEditor({
             if (dragIndex === null) return;
             const nextPoint = locatePoint(event);
             const nextPoints = pendingRef.current.map((point) => ({ ...point }));
-            const isValueEndpoint =
-              !activeTab.periodic &&
-              (dragIndex === 0 || dragIndex === nextPoints.length - 1);
             nextPoints[dragIndex] = {
-              x: isValueEndpoint
-                ? nextPoints[dragIndex].x
-                : clampCurvePointX(nextPoints, dragIndex, nextPoint.x),
+              x: clampCurvePointX(nextPoints, dragIndex, nextPoint.x),
               y: nextPoint.y,
             };
             previewPoints(nextPoints);
@@ -208,6 +218,18 @@ export function ValueCurveEditor({
           }}
           style={{ width: "100%", height: "100%", cursor: disabled ? "default" : "crosshair" }}
         >
+          {histogramPath ? (
+            <path
+              d={histogramPath}
+              fill={activeTab.color}
+              fillOpacity="0.16"
+              stroke={activeTab.color}
+              strokeOpacity="0.28"
+              strokeWidth="0.35"
+              pointerEvents="none"
+              aria-label={`${activeTab.label} histogram`}
+            />
+          ) : null}
           <g stroke="rgba(255,255,255,0.12)" strokeWidth="0.35">
             <path d="M 25 0 V 100 M 50 0 V 100 M 75 0 V 100" />
             <path d="M 0 25 H 100 M 0 50 H 100 M 0 75 H 100" />

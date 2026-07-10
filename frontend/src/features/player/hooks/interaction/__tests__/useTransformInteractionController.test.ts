@@ -749,6 +749,15 @@ describe("useTransformInteractionController", () => {
 
     useTimelineStore.getState().addClip(clip);
     useTimelineStore.getState().selectClip(clip.id);
+    // Path point markers only render while the path edit menu is open for the
+    // clip (see the "viewable during edit" gate in the controller).
+    useTransformationViewStore.setState({
+      pathPanelView: "path",
+      activePathEditor: {
+        clipId: clip.id,
+        transformId: "position_path_anchor",
+      },
+    });
     activeClipRef = { current: clip };
 
     renderHook(() =>

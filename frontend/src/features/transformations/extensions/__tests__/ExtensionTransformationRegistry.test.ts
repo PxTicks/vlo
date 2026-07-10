@@ -129,6 +129,7 @@ describe("ExtensionTransformationRegistry", () => {
       {
         type: "example.color-grade/film-grade",
         params: { gamma: 1, saturation: 1 },
+        sourceTransformId: transform.id,
       },
     ]);
     expect(exported.state.filters).toEqual(live.state.filters);

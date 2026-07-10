@@ -17,7 +17,17 @@ interface DeferredAdd {
   reject: (reason: unknown) => void;
   promise: Promise<void>;
 }
+interface ColorTaggedVideoEncoderConfig extends VideoEncoderConfig {
+  colorSpace?: VideoColorSpaceInit;
+}
 const addCalls: DeferredAdd[] = [];
+const canvasSourceConfigs: Array<{
+  onEncoderConfig?: (config: VideoEncoderConfig) => void;
+  onEncodedPacket?: (
+    packet: unknown,
+    metadata: EncodedVideoChunkMetadata | undefined,
+  ) => void;
+}> = [];
 
 vi.mock("pixi.js", () => ({
   Container: class {
@@ -46,6 +56,9 @@ vi.mock("mediabunny", () => ({
   },
   StreamTarget: class {},
   CanvasSource: class {
+    constructor(_canvas: HTMLCanvasElement, config: (typeof canvasSourceConfigs)[number]) {
+      canvasSourceConfigs.push(config);
+    }
     add = vi.fn(() => {
       let resolve!: () => void;
       let reject!: (reason: unknown) => void;
@@ -88,6 +101,7 @@ describe("TextureOutputEncoder encode backpressure window", () => {
 
   beforeEach(() => {
     addCalls.length = 0;
+    canvasSourceConfigs.length = 0;
   });
 
   afterEach(() => {
@@ -109,6 +123,26 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     expect(f0.isDone()).toBe(true);
     expect(f1.isDone()).toBe(true);
     expect(addCalls).toHaveLength(2);
+  });
+
+  it("tags AVC encoder and MP4 decoder metadata as BT.709/sRGB", async () => {
+    const encoder = new TextureOutputEncoder(app, 30, [definition]);
+    await encoder.start();
+
+    const config = {} as ColorTaggedVideoEncoderConfig;
+    canvasSourceConfigs[0].onEncoderConfig?.(config);
+    expect(config.colorSpace).toEqual({
+      primaries: "bt709",
+      transfer: "iec61966-2-1",
+      matrix: "bt709",
+      fullRange: false,
+    });
+
+    const metadata = {
+      decoderConfig: {},
+    } as EncodedVideoChunkMetadata;
+    canvasSourceConfigs[0].onEncodedPacket?.({}, metadata);
+    expect(metadata.decoderConfig?.colorSpace).toEqual(config.colorSpace);
   });
 
   it("throttles once the window is full and resumes when the oldest drains", async () => {

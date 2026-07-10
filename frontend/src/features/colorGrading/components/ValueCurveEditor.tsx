@@ -261,7 +261,7 @@ export function ValueCurveEditor({
         </svg>
       </Box>
       <Typography variant="caption" sx={{ color: "text.disabled" }}>
-        Double-click to reset · right-click a point to remove · Shift is reserved for fine wheel drags
+        Double-click to reset · right-click a point to remove · histogram is a fixed reference
       </Typography>
     </Box>
   );

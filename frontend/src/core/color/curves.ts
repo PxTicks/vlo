@@ -185,6 +185,25 @@ export function createColorCurveSampler(
   };
 }
 
+export function isIdentityColorCurve(
+  name: ColorCurveParameterName,
+  points: readonly ColorCurvePoint[],
+): boolean {
+  const cyclic = (CYCLIC_CURVE_PARAMETER_NAMES as readonly string[]).includes(
+    name,
+  );
+  const valueCurve = (VALUE_CURVE_PARAMETER_NAMES as readonly string[]).includes(
+    name,
+  );
+  const sampler = createColorCurveSampler(points, cyclic);
+  for (let sample = 0; sample <= 128; sample += 1) {
+    const x = sample / 128;
+    const expected = valueCurve ? x : 0;
+    if (Math.abs(sampler.at(x) - expected) > 1e-6) return false;
+  }
+  return true;
+}
+
 function curvePoints(
   curves: ColorCurveSet,
   name: ColorCurveParameterName,
@@ -241,15 +260,19 @@ export function sampleColorCurveLut(
 }
 
 export function applyColorCurveLut(color: Rgb, pixels: Float32Array): Rgb {
+  const applyValueCurve = (input: number, channel: 0 | 1 | 2 | 3): number => {
+    const bounded = Math.max(0, Math.min(1, input));
+    return input + sampleColorCurveLut(pixels, 0, channel, bounded) - bounded;
+  };
   let curved: Rgb = [
-    sampleColorCurveLut(pixels, 0, 0, color[0]),
-    sampleColorCurveLut(pixels, 0, 0, color[1]),
-    sampleColorCurveLut(pixels, 0, 0, color[2]),
+    applyValueCurve(color[0], 0),
+    applyValueCurve(color[1], 0),
+    applyValueCurve(color[2], 0),
   ];
   curved = [
-    sampleColorCurveLut(pixels, 0, 1, curved[0]),
-    sampleColorCurveLut(pixels, 0, 2, curved[1]),
-    sampleColorCurveLut(pixels, 0, 3, curved[2]),
+    applyValueCurve(curved[0], 1),
+    applyValueCurve(curved[1], 2),
+    applyValueCurve(curved[2], 3),
   ];
   const hsv = rgbToHsv(curved);
   const hue = hsv[0];
@@ -257,12 +280,11 @@ export function applyColorCurveLut(color: Rgb, pixels: Float32Array): Rgb {
   const hueSaturation = sampleColorCurveLut(pixels, 1, 1, hue);
   const luma = curved[0] * 0.2126 + curved[1] * 0.7152 + curved[2] * 0.0722;
   const lumaSaturation = sampleColorCurveLut(pixels, 1, 2, luma);
+  const adjustedSaturation =
+    hsv[1] * Math.max(0, 1 + hueSaturation + lumaSaturation);
   return hsvToRgb([
     wrapUnit(hue + hueShift),
-    Math.max(
-      0,
-      Math.min(1, hsv[1] * Math.max(0, 1 + hueSaturation + lumaSaturation)),
-    ),
+    Math.max(0, Math.min(Math.max(1, hsv[1]), adjustedSaturation)),
     hsv[2],
   ]);
 }

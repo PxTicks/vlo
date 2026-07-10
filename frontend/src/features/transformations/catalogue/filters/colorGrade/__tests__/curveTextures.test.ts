@@ -23,6 +23,7 @@ describe("CurveTextureBaker", () => {
     const baker = createBaker();
     expect(baker.hasActiveCurves).toBe(false);
     expect(baker.texture.source.autoGarbageCollect).toBe(true);
+    expect(baker.texture.source.alphaMode).toBe("no-premultiply-alpha");
     const sample = 512;
     const x = sample / (CURVE_TEXTURE_WIDTH - 1);
     expect(baker.pixels[sample * 4]).toBeCloseTo(x, 6);
@@ -62,6 +63,18 @@ describe("CurveTextureBaker", () => {
       { x: 0, y: 0 },
       { x: 0.5, y: 0 },
     ]);
+    expect(baker.hasActiveCurves).toBe(false);
+  });
+
+  it("keeps a value curve with a redundant identity point inactive", () => {
+    const baker = createBaker();
+    expect(
+      baker.setCurve("curveMaster", [
+        { x: 0, y: 0 },
+        { x: 0.5, y: 0.5 },
+        { x: 1, y: 1 },
+      ]),
+    ).toBe(true);
     expect(baker.hasActiveCurves).toBe(false);
   });
 

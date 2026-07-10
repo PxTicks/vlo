@@ -84,7 +84,7 @@ const HUE_TABS: readonly CurveEditorTab[] = [
 ];
 
 export function GradeCurvesControl(props: CustomControlRenderProps) {
-  const histograms = useCurveHistograms();
+  const histograms = useCurveHistograms(props.transformId ?? "unbound-grade");
   const kind = props.control.config?.kind;
   const tabs = kind === "hue" ? HUE_TABS : VALUE_TABS;
 

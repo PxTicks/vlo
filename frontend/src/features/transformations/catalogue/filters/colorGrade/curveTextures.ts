@@ -6,6 +6,7 @@ import {
   MODIFIER_CURVE_PARAMETER_NAMES,
   VALUE_CURVE_PARAMETER_NAMES,
   bakeColorCurveLut,
+  isIdentityColorCurve,
   type ColorCurveParameterName,
   type ColorCurvePoint,
 } from "../../../../../core/color";
@@ -65,6 +66,8 @@ export class CurveTextureBaker {
       width: CURVE_TEXTURE_WIDTH,
       height: CURVE_TEXTURE_HEIGHT,
       format: "rgba32float",
+      // RGBA stores four independent curves; A is data, not opacity.
+      alphaMode: "no-premultiply-alpha",
       scaleMode: "nearest",
       autoGenerateMipmaps: false,
       autoGarbageCollect: true,
@@ -88,7 +91,7 @@ export class CurveTextureBaker {
     if (this.hashes.get(name) === nextHash) return false;
     this.hashes.set(name, nextHash);
     this.curves.set(name, points);
-    if (nextHash === curveHash(DEFAULT_COLOR_CURVES[name])) {
+    if (isIdentityColorCurve(name, points)) {
       this.activeCurves.delete(name);
     } else {
       this.activeCurves.add(name);

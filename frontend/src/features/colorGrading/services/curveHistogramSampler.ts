@@ -12,25 +12,47 @@ const SAMPLE_MAX_DIMENSION = 256;
 
 type HistogramListener = (histograms: CurveHistograms) => void;
 
-class CurveHistogramSampler {
-  private readonly listeners = new Set<HistogramListener>();
+interface HistogramSubscription {
+  readonly referenceKey: string;
+  readonly listener: HistogramListener;
+}
+
+export class CurveHistogramSampler {
+  private readonly subscriptions = new Set<HistogramSubscription>();
+  private readonly references = new Map<string, CurveHistograms>();
+  private readonly pendingReferenceKeys = new Set<string>();
   private timer: ReturnType<typeof setInterval> | null = null;
-  private latest: CurveHistograms | null = null;
   private sampling = false;
 
-  public subscribe(listener: HistogramListener): () => void {
-    this.listeners.add(listener);
-    if (this.latest) listener(this.latest);
-    if (this.listeners.size === 1) this.start();
+  public subscribe(
+    referenceKey: string,
+    listener: HistogramListener,
+  ): () => void {
+    const subscription = { referenceKey, listener };
+    this.subscriptions.add(subscription);
+    const reference = this.references.get(referenceKey);
+    if (reference) {
+      listener(reference);
+    } else {
+      this.pendingReferenceKeys.add(referenceKey);
+      if (this.timer === null) this.start();
+    }
     return () => {
-      this.listeners.delete(listener);
-      if (this.listeners.size === 0) this.stop();
+      this.subscriptions.delete(subscription);
+      const stillSubscribed = [...this.subscriptions].some(
+        (current) => current.referenceKey === referenceKey,
+      );
+      if (!stillSubscribed) {
+        this.references.delete(referenceKey);
+        this.pendingReferenceKeys.delete(referenceKey);
+      }
+      if (this.pendingReferenceKeys.size === 0) this.stop();
     };
   }
 
   private start(): void {
-    this.sample();
     this.timer = setInterval(() => this.sample(), SAMPLE_INTERVAL_MS);
+    this.sample();
   }
 
   private stop(): void {
@@ -57,8 +79,17 @@ class CurveHistogramSampler {
         resolution,
       });
       const histograms = buildCurveHistograms(result.pixels);
-      this.latest = histograms;
-      this.listeners.forEach((listener) => listener(histograms));
+      const capturedKeys = new Set(this.pendingReferenceKeys);
+      capturedKeys.forEach((referenceKey) => {
+        this.references.set(referenceKey, histograms);
+      });
+      this.pendingReferenceKeys.clear();
+      this.subscriptions.forEach((subscription) => {
+        if (capturedKeys.has(subscription.referenceKey)) {
+          subscription.listener(histograms);
+        }
+      });
+      this.stop();
     } catch {
       // Rendering can be between targets while playback is advancing; retry next tick.
     } finally {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_COLOR_GRADE_PRIMARIES,
   V1_COLOR_MODEL,
+  applyColorCurveLut,
   applyAscCdl,
   applyHighlightKnee,
   applyLiftGammaGainOffset,
@@ -163,7 +164,7 @@ describe("reference color-grade pipeline", () => {
     expect(green.slice(1)).toEqual([1, 1]);
   });
 
-  it("matches the shader's curve LUT clamp and channel curves", () => {
+  it("preserves headroom while applying channel curves", () => {
     const output = applyReferenceColorGrade([0.8, 0.4, 0.2], {
       ...DEFAULT_COLOR_GRADE_PRIMARIES,
       gainMaster: 1,
@@ -172,7 +173,7 @@ describe("reference color-grade pipeline", () => {
         { x: 1, y: 0.5 },
       ],
     });
-    expect(output[0]).toBeCloseTo(0.5, 5);
+    expect(output[0]).toBeCloseTo(1.1, 5);
     expect(output[1]).toBeCloseTo(0.8, 5);
     expect(output[2]).toBeCloseTo(0.4, 5);
   });
@@ -186,5 +187,32 @@ describe("reference color-grade pipeline", () => {
       ],
     });
     expect(sampleColorCurveLut(lut, 0, 0, 0.5)).toBeCloseTo(0.25, 5);
+  });
+
+  it("keeps an identity curve silent outside the LUT domain", () => {
+    const identity = bakeColorCurveLut({});
+    const output = applyColorCurveLut([1.4, 0.5, -0.2], identity);
+    expect(output[0]).toBeCloseTo(1.4, 6);
+    expect(output[1]).toBeCloseTo(0.5, 6);
+    expect(output[2]).toBeCloseTo(-0.2, 6);
+  });
+
+  it("does not change a grade when an identity point is inserted", () => {
+    const parameters = {
+      ...DEFAULT_COLOR_GRADE_PRIMARIES,
+      exposure: 2,
+    };
+    const baseline = applyReferenceColorGrade([0.8, 0.4, 0.2], parameters);
+    const withRedundantPoint = applyReferenceColorGrade([0.8, 0.4, 0.2], {
+      ...parameters,
+      curveMaster: [
+        { x: 0, y: 0 },
+        { x: 0.5, y: 0.5 },
+        { x: 1, y: 1 },
+      ],
+    });
+    expect(withRedundantPoint).toEqual(
+      baseline.map((channel) => expect.closeTo(channel, 6)),
+    );
   });
 });

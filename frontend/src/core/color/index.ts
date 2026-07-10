@@ -66,6 +66,7 @@ export {
   applyColorCurveLut,
   bakeColorCurveLut,
   createColorCurveSampler,
+  isIdentityColorCurve,
   sampleColorCurveLut,
   type ColorCurveSampler,
   type ColorCurveSet,

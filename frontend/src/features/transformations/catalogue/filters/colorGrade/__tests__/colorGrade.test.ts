@@ -135,6 +135,12 @@ describe("Color Grade transformation", () => {
     expect(filter.shaderVariantKey).toBe(COLOR_GRADE_SHADER_STAGE.WHEELS);
     filter.liftR = 0;
     filter.curveMaster = [
+      { x: 0, y: 0 },
+      { x: 0.5, y: 0.5 },
+      { x: 1, y: 1 },
+    ];
+    expect(filter.shaderVariantKey).toBe(0);
+    filter.curveMaster = [
       { x: 0, y: 0.1 },
       { x: 1, y: 1 },
     ];

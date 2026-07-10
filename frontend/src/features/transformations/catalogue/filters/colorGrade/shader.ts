@@ -107,16 +107,21 @@ vec4 vloSampleCurveRow(float inputValue, float row) {
   return mix(leftSample, rightSample, amount);
 }
 
+float vloApplyValueCurve(float inputValue, float mappedValue) {
+  float boundedInput = clamp(inputValue, 0.0, 1.0);
+  return inputValue + mappedValue - boundedInput;
+}
+
 vec3 vloApplyColorCurves(vec3 color) {
   color = vec3(
-    vloSampleCurveRow(color.r, 0.25).r,
-    vloSampleCurveRow(color.g, 0.25).r,
-    vloSampleCurveRow(color.b, 0.25).r
+    vloApplyValueCurve(color.r, vloSampleCurveRow(color.r, 0.25).r),
+    vloApplyValueCurve(color.g, vloSampleCurveRow(color.g, 0.25).r),
+    vloApplyValueCurve(color.b, vloSampleCurveRow(color.b, 0.25).r)
   );
   color = vec3(
-    vloSampleCurveRow(color.r, 0.25).g,
-    vloSampleCurveRow(color.g, 0.25).b,
-    vloSampleCurveRow(color.b, 0.25).a
+    vloApplyValueCurve(color.r, vloSampleCurveRow(color.r, 0.25).g),
+    vloApplyValueCurve(color.g, vloSampleCurveRow(color.g, 0.25).b),
+    vloApplyValueCurve(color.b, vloSampleCurveRow(color.b, 0.25).a)
   );
 
   vec3 hsv = vloRgbToHsv(color);
@@ -125,7 +130,8 @@ vec3 vloApplyColorCurves(vec3 color) {
   float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
   float lumaSat = vloSampleCurveRow(luma, 0.75).b;
   hsv.x = fract(hsv.x + hueCurves.r);
-  hsv.y = clamp(hsv.y * max(0.0, 1.0 + hueCurves.g + lumaSat), 0.0, 1.0);
+  float adjustedSaturation = hsv.y * max(0.0, 1.0 + hueCurves.g + lumaSat);
+  hsv.y = clamp(adjustedSaturation, 0.0, max(1.0, hsv.y));
   return vloHsvToRgb(hsv);
 }
 #endif

@@ -23,11 +23,6 @@ interface TransformationGroupProps {
     value: unknown,
     transformId?: string,
   ) => void;
-  onCommitMany?: (
-    groupId: string,
-    values: Readonly<Record<string, unknown>>,
-    transformId?: string,
-  ) => void;
   minTime?: number;
   duration?: number;
   clipId?: string;
@@ -52,7 +47,6 @@ export const TransformationGroup = memo(function TransformationGroup({
   disableKeyframe = false,
   hideTitle = false,
   onCommit,
-  onCommitMany,
   minTime,
   duration,
   clipId,
@@ -109,9 +103,7 @@ export const TransformationGroup = memo(function TransformationGroup({
       <ControlRenderer
         control={props.control}
         value={props.value}
-        values={props.values}
         onCommit={props.onCommit}
-        onCommitMany={props.onCommitMany}
         groupId={props.groupId}
         transformId={transform?.id}
         clipId={clipId}
@@ -135,26 +127,11 @@ export const TransformationGroup = memo(function TransformationGroup({
     ],
   );
 
-  const handleCommitMany = useCallback(
-    (groupId: string, nextValues: Readonly<Record<string, unknown>>) => {
-      onGroupEdited?.();
-      if (onCommitMany) {
-        onCommitMany(groupId, nextValues, transform?.id);
-        return;
-      }
-      Object.entries(nextValues).forEach(([name, nextValue]) => {
-        onCommit(groupId, name, nextValue, transform?.id);
-      });
-    },
-    [onCommit, onCommitMany, onGroupEdited, transform?.id],
-  );
-
   return (
     <ControlGroup
       group={group}
       values={values}
       onCommit={handleCommit}
-      onCommitMany={handleCommitMany}
       renderControl={renderControl}
       headerActions={headerActions}
       disabled={disabled}

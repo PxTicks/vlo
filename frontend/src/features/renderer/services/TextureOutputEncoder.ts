@@ -12,7 +12,6 @@ import {
   applyOutputTransformStack,
   type OutputTransform,
 } from "../utils/outputTransformStack";
-import { V1_COLOR_MODEL } from "../../../core/color";
 
 export type OutputVideoFormat = "mp4";
 export type OutputContentProbe = "non_black_pixels";
@@ -85,10 +84,6 @@ const DEFAULT_ENCODE_QUEUE_FRAMES = 4;
 export interface TextureOutputEncoderOptions {
   /** Frames in flight per output before the producer is throttled. Min 1. */
   encodeQueueSize?: number;
-}
-
-interface ColorTaggedVideoEncoderConfig extends VideoEncoderConfig {
-  colorSpace?: VideoColorSpaceInit;
 }
 
 /** Captured outcome of a deferred encode; never rejects so it can sit unawaited. */
@@ -181,24 +176,6 @@ export class TextureOutputEncoder {
           bitrate: definition.bitrate ?? 6_000_000,
           latencyMode: "quality",
           hardwareAcceleration: "prefer-hardware",
-          // Mediabunny 1.34 exposes the WebCodecs config immediately before it
-          // checks/configures the encoder. Supplying a complete color space
-          // gives the encoder the information needed for H.264 VUI metadata.
-          onEncoderConfig: (config) => {
-            (config as ColorTaggedVideoEncoderConfig).colorSpace = {
-              ...V1_COLOR_MODEL.export,
-            };
-          },
-          // The MP4 muxer emits `colr` when the first decoder config carries a
-          // complete color space. Keep this explicit even on encoders that omit
-          // the fields from their returned metadata.
-          onEncodedPacket: (_packet, metadata) => {
-            if (metadata?.decoderConfig) {
-              metadata.decoderConfig.colorSpace = {
-                ...V1_COLOR_MODEL.export,
-              };
-            }
-          },
         });
         output.addVideoTrack(videoSource, { frameRate: this.frameRate });
 

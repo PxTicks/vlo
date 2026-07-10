@@ -209,15 +209,38 @@ def _resolve_workflow_graph(
 
 def _iter_workflow_nodes(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     raw_nodes = workflow.get("nodes")
-    if isinstance(raw_nodes, list):
-        return [node for node in raw_nodes if isinstance(node, dict)]
+    if not isinstance(raw_nodes, list):
+        return [
+            node
+            for node in workflow.values()
+            if isinstance(node, dict)
+            and isinstance(node.get("properties"), dict)
+        ]
 
-    return [
-        node
-        for node in workflow.values()
-        if isinstance(node, dict)
-        and isinstance(node.get("properties"), dict)
-    ]
+    nodes = [node for node in raw_nodes if isinstance(node, dict)]
+
+    # Subgraph-based workflows (ComfyUI's own templates since frontend 1.16)
+    # keep their loader nodes — and thus the model declarations — inside
+    # definitions.subgraphs, not the top-level node list.
+    pending: list[dict[str, Any]] = [workflow]
+    while pending:
+        definitions = pending.pop().get("definitions")
+        if not isinstance(definitions, dict):
+            continue
+        subgraphs = definitions.get("subgraphs")
+        if not isinstance(subgraphs, list):
+            continue
+        for subgraph in subgraphs:
+            if not isinstance(subgraph, dict):
+                continue
+            raw_subgraph_nodes = subgraph.get("nodes")
+            if isinstance(raw_subgraph_nodes, list):
+                nodes.extend(
+                    node for node in raw_subgraph_nodes if isinstance(node, dict)
+                )
+            pending.append(subgraph)
+
+    return nodes
 
 
 def _build_workflow_model_key(directory: str, filename: str) -> str:

@@ -34,6 +34,41 @@ GRAPH = {
 }
 
 
+def _subgraph_workflow(definitions_nesting: int = 1) -> dict:
+    """A workflow whose only loader nodes live inside subgraph definitions,
+    the shape ComfyUI's subgraph-based templates ship in."""
+    subgraph = {
+        "id": "b0e5ca93-2731-42b9-8e0a-d28ea851ff81",
+        "nodes": [
+            {
+                "type": "UNETLoader",
+                "properties": {
+                    "models": [
+                        {
+                            "name": "inner.safetensors",
+                            "url": "https://huggingface.co/acme/repo/resolve/main/inner.safetensors",
+                            "directory": "diffusion_models",
+                        }
+                    ]
+                },
+            }
+        ],
+    }
+    for _ in range(definitions_nesting - 1):
+        subgraph = {
+            "id": "outer",
+            "nodes": [],
+            "definitions": {"subgraphs": [subgraph]},
+        }
+    return {
+        "nodes": [
+            {"type": "SaveImage", "properties": {}},
+            {"type": "b0e5ca93-2731-42b9-8e0a-d28ea851ff81", "properties": {}},
+        ],
+        "definitions": {"subgraphs": [subgraph]},
+    }
+
+
 @pytest.fixture
 def comfyui_dir(tmp_path, monkeypatch):
     install_dir = tmp_path / "ComfyUI"
@@ -97,6 +132,43 @@ def test_download_specs_read_from_graph_when_workflow_is_not_on_disk(comfyui_dir
     assert specs[0].dest_path == str(
         comfyui_dir / "models" / "checkpoints" / "model.safetensors"
     )
+
+
+def test_available_models_include_subgraph_loader_nodes(comfyui_dir):
+    (comfyui_dir / "models" / "diffusion_models").mkdir(parents=True)
+
+    models = get_available_workflow_models("__temp__", _subgraph_workflow())
+
+    assert [model["key"] for model in models] == [
+        "diffusion_models:inner.safetensors"
+    ]
+
+
+def test_download_specs_resolve_subgraph_models(comfyui_dir):
+    (comfyui_dir / "models" / "diffusion_models").mkdir(parents=True)
+
+    specs = get_workflow_download_specs(
+        "__temp__",
+        "diffusion_models:inner.safetensors",
+        _subgraph_workflow(),
+    )
+
+    assert len(specs) == 1
+    assert specs[0].url == (
+        "https://huggingface.co/acme/repo/resolve/main/inner.safetensors"
+    )
+
+
+def test_available_models_include_nested_subgraph_definitions(comfyui_dir):
+    (comfyui_dir / "models" / "diffusion_models").mkdir(parents=True)
+
+    models = get_available_workflow_models(
+        "__temp__", _subgraph_workflow(definitions_nesting=3)
+    )
+
+    assert [model["key"] for model in models] == [
+        "diffusion_models:inner.safetensors"
+    ]
 
 
 def test_gating_is_read_from_graph(comfyui_dir):

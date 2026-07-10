@@ -37,11 +37,6 @@ interface SortableTransformationItemProps {
     val: unknown,
     transformId?: string,
   ) => void;
-  onCommitMany?: (
-    groupId: string,
-    values: Readonly<Record<string, unknown>>,
-    transformId?: string,
-  ) => void;
   minTime?: number;
   duration?: number;
   clipId: string | undefined;
@@ -72,7 +67,6 @@ export function SortableTransformationItem({
   bgColor,
   onRemove,
   onCommit,
-  onCommitMany,
   minTime,
   duration,
   isPanelDragging,
@@ -126,7 +120,6 @@ export function SortableTransformationItem({
             group={group}
             transform={transform}
             onCommit={onCommit}
-            onCommitMany={onCommitMany}
             minTime={minTime}
             duration={duration}
             clipId={clipId}

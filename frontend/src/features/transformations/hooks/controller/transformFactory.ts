@@ -12,7 +12,6 @@ function extractDefaultParams(typeOrFilterName: string, isFilter: boolean) {
 
   entry?.uiConfig.groups.forEach((group) => {
     group.controls.forEach((control) => {
-      if (control.type === "custom" || control.type === "spacer") return;
       params[control.name] = control.defaultValue;
     });
   });

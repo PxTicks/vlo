@@ -122,7 +122,6 @@ export function TransformationPanel() {
     handleSetTransformEnabled,
     handleSetDefaultGroupsEnabled,
     handleCommit,
-    handleCommitMany,
     handleReorder,
     captureActiveTargetSnapshot,
     restoreTargetSnapshot,
@@ -867,7 +866,6 @@ export function TransformationPanel() {
                   bgColor={bgColor}
                   onRemove={() => handleRemoveTransform(t.id)}
                   onCommit={handleCommit}
-                  onCommitMany={handleCommitMany}
                   minTime={domain.minTime}
                   duration={domain.duration}
                   isPanelDragging={!!activeDragId}

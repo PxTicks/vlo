@@ -6,10 +6,6 @@ interface ControlGroupProps {
   group: LayoutGroup;
   values: Record<string, unknown>;
   onCommit: (groupId: string, controlName: string, value: unknown) => void;
-  onCommitMany?: (
-    groupId: string,
-    values: Readonly<Record<string, unknown>>,
-  ) => void;
   renderControl: (props: ControlRenderProps) => React.ReactNode;
   headerActions?: React.ReactNode;
   disabled?: boolean;
@@ -27,7 +23,6 @@ export const ControlGroup = memo(function ControlGroup({
   group,
   values,
   onCommit,
-  onCommitMany,
   renderControl,
   headerActions,
   disabled = false,
@@ -36,9 +31,7 @@ export const ControlGroup = memo(function ControlGroup({
 }: ControlGroupProps) {
   // Resolve display values by applying valueTransform.toView
   const displayValues = useMemo(() => {
-    // Rich controls may coordinate parameters that are intentionally not
-    // represented as individual visible controls (for example curve arrays).
-    const result: Record<string, unknown> = { ...values };
+    const result: Record<string, unknown> = {};
     group.controls.forEach((control) => {
       const val = values[control.name] ?? control.defaultValue;
 
@@ -150,17 +143,7 @@ export const ControlGroup = memo(function ControlGroup({
             {renderControl({
               control,
               value: displayValues[control.name],
-              values: displayValues,
               onCommit: (val: unknown) => onCommit(group.id, control.name, val),
-              onCommitMany: (nextValues) => {
-                if (onCommitMany) {
-                  onCommitMany(group.id, nextValues);
-                  return;
-                }
-                Object.entries(nextValues).forEach(([name, nextValue]) => {
-                  onCommit(group.id, name, nextValue);
-                });
-              },
               groupId: group.id,
               disabled,
             })}

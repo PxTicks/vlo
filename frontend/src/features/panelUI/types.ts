@@ -1,5 +1,3 @@
-import type { ComponentType, ReactNode } from "react";
-
 // === Control definition types ===
 
 export type ControlType =
@@ -11,7 +9,6 @@ export type ControlType =
   | "color"
   | "link"
   | "slider"
-  | "custom"
   | "spacer";
 
 export interface ControlOption {
@@ -36,10 +33,6 @@ export interface ControlDefinition {
     toView: (modelValue: unknown) => unknown;
   };
   supportsSpline?: boolean;
-  /** Registered rich-control component. Only used when `type` is `custom`. */
-  componentId?: string;
-  /** JSON-like component configuration owned by the registered control. */
-  config?: Readonly<Record<string, unknown>>;
 }
 
 // === Layout types ===
@@ -64,17 +57,7 @@ export type TransformationLayoutConfig = PanelLayoutConfig;
 export interface ControlRenderProps {
   control: ControlDefinition;
   value: unknown;
-  values: Readonly<Record<string, unknown>>;
   onCommit: (value: unknown) => void;
-  onCommitMany: (values: Readonly<Record<string, unknown>>) => void;
   groupId: string;
-  transformId?: string;
   disabled?: boolean;
 }
-
-export interface CustomControlRenderProps extends ControlRenderProps {
-  /** Render a hidden scalar parameter with the host's standard animation UI. */
-  renderParameterControl?: (control: ControlDefinition) => ReactNode;
-}
-
-export type CustomControlComponent = ComponentType<CustomControlRenderProps>;

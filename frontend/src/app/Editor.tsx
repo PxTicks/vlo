@@ -40,9 +40,6 @@ import { useEditorAssetLibrary } from "./hooks/useEditorAssetLibrary";
 import { useEditorClipOverlays } from "./hooks/useEditorClipOverlays";
 import { useEditorSelectionLock } from "./hooks/useEditorSelectionLock";
 import { useEditorOrchestration } from "./orchestration/useEditorOrchestration";
-import { registerColorGradingCustomControls } from "../features/colorGrading";
-
-registerColorGradingCustomControls();
 
 const ASSET_DRAG_ACTIVATION_DISTANCE_PX = 1;
 

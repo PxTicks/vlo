@@ -3,10 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { Application } from "pixi.js";
 import { usePlayerStore } from "../usePlayerStore";
 import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes";
-import {
-  clearActivePixiApplication,
-  setActivePixiApplication,
-} from "../../../core/pixi/activeApplication";
 
 
 export function usePixiApp(
@@ -53,7 +49,6 @@ export function usePixiApp(
       pixiApp.stage.hitArea = pixiApp.screen;
 
       appRef.current = pixiApp;
-      setActivePixiApplication(pixiApp);
       (window as unknown as Record<string, unknown>).__PIXI_APP__ = pixiApp;
       setApp(pixiApp);
       setCanvasSize({ width: clientWidth, height: clientHeight });
@@ -63,7 +58,6 @@ export function usePixiApp(
 
     return () => {
       if (appRef.current) {
-        clearActivePixiApplication(appRef.current);
         appRef.current.destroy(false, { children: true, texture: true });
         appRef.current = null;
         setApp(null);

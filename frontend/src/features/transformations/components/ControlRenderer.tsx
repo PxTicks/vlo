@@ -1,5 +1,4 @@
-import { createElement, useState, useEffect, useRef, memo, useMemo } from "react";
-import type { ReactElement } from "react";
+import { useState, useEffect, useRef, memo, useMemo } from "react";
 import {
   Box,
   Checkbox,
@@ -7,7 +6,6 @@ import {
   IconButton,
 } from "@mui/material";
 import type { ControlDefinition } from "../../panelUI/types";
-import { getCustomControl } from "../../panelUI/customControlRegistry";
 import { SelectControl } from "../../panelUI/components/SelectControl";
 import { LinkControl } from "../../panelUI/components/LinkControl";
 import { NumberControl as PanelNumberControl } from "../../panelUI/components/NumberControl";
@@ -354,12 +352,10 @@ function TransformSliderControl({
 interface ControlRendererProps {
   control: ControlDefinition;
   value: unknown;
-  values?: Readonly<Record<string, unknown>>;
 
   // Pre-wrapped commit handler: (value) => void
   // The ControlGroup render prop already wraps with groupId and controlName
   onCommit: (value: unknown) => void;
-  onCommitMany?: (values: Readonly<Record<string, unknown>>) => void;
 
   // Identifiers for this specific control instance
   groupId: string;
@@ -377,9 +373,7 @@ interface ControlRendererProps {
 export const ControlRenderer = memo(function ControlRenderer({
   control,
   value,
-  values = {},
   onCommit,
-  onCommitMany,
   groupId,
   transformId,
   clipId,
@@ -389,7 +383,7 @@ export const ControlRenderer = memo(function ControlRenderer({
   disabled = false,
   captureSnapshot,
   restoreSnapshot,
-}: ControlRendererProps): ReactElement | null {
+}: ControlRendererProps) {
   const context = useMemo(
     () =>
       clipId
@@ -397,42 +391,6 @@ export const ControlRenderer = memo(function ControlRenderer({
         : undefined,
     [transformId, clipId, control.name],
   );
-
-  if (control.type === "custom") {
-    const CustomControl = getCustomControl(control.componentId);
-    return CustomControl
-      ? createElement(CustomControl, {
-          control,
-          value,
-          values,
-          onCommit,
-          onCommitMany: onCommitMany ?? (() => undefined),
-          groupId,
-          transformId,
-          disabled,
-          renderParameterControl: (
-            parameterControl: ControlDefinition,
-          ): ReactElement =>
-            createElement(ControlRenderer, {
-              control: parameterControl,
-              value: values[parameterControl.name],
-              values,
-              onCommit: (nextValue: unknown) =>
-                onCommitMany?.({ [parameterControl.name]: nextValue }),
-              onCommitMany,
-              groupId,
-              transformId,
-              clipId,
-              minTime,
-              duration,
-              timeAxis,
-              disabled,
-              captureSnapshot,
-              restoreSnapshot,
-            }),
-        })
-      : null;
-  }
 
   if (control.type === "number") {
     return (

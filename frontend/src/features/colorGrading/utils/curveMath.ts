@@ -1,6 +1,8 @@
-import type { ColorCurvePoint } from "../../../core/color";
-import { MonotoneCubicSpline } from "../../transformations/utils/MonotoneCubicSpline";
-import { PeriodicCubicSpline } from "../../transformations/utils/PeriodicCubicSpline";
+import {
+  createColorCurveSampler,
+  type ColorCurvePoint,
+  type ColorCurveSampler,
+} from "../../../core/color";
 
 export function sanitizeCurvePoints(
   points: readonly ColorCurvePoint[],
@@ -21,13 +23,26 @@ export function sampleCurve(
   x: number,
   periodic: boolean,
 ): number {
-  const splinePoints = points.map((point) => ({
-    time: point.x,
-    value: point.y,
-  }));
-  return periodic
-    ? new PeriodicCubicSpline(splinePoints).at(x)
-    : new MonotoneCubicSpline(splinePoints).at(x);
+  return createCurveEvaluator(points, periodic).at(x);
+}
+
+export function createCurveEvaluator(
+  points: readonly ColorCurvePoint[],
+  periodic: boolean,
+): ColorCurveSampler {
+  return createColorCurveSampler(points, periodic);
+}
+
+export function clampCurvePointX(
+  points: readonly ColorCurvePoint[],
+  index: number,
+  nextX: number,
+): number {
+  if (index <= 0 || index >= points.length - 1) return points[index].x;
+  return Math.max(
+    points[index - 1].x + 0.0001,
+    Math.min(points[index + 1].x - 0.0001, nextX),
+  );
 }
 
 export function curvePointFromClient(

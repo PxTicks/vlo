@@ -61,7 +61,13 @@ export function ColorWheel({
   onCommit,
 }: ColorWheelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dragModeRef = useRef<"color" | "master" | null>(null);
+  const dragRef = useRef<{
+    mode: "color" | "master";
+    startX: number;
+    startY: number;
+    startValue: WheelAdjustment;
+    fine: boolean;
+  } | null>(null);
   const pendingRef = useRef(value);
 
   useEffect(() => {
@@ -79,27 +85,58 @@ export function ColorWheel({
       const scaleY = CANVAS_SIZE / rect.height;
       const x = (event.clientX - rect.left) * scaleX - CENTER;
       const y = (event.clientY - rect.top) * scaleY - CENTER;
-      const mode = dragModeRef.current;
-      if (!mode) return;
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (event.shiftKey !== drag.fine) {
+        dragRef.current = {
+          ...drag,
+          startX: x,
+          startY: y,
+          startValue: pendingRef.current,
+          fine: event.shiftKey,
+        };
+        return;
+      }
       const next =
-        mode === "master"
+        drag.mode === "master"
           ? {
               ...pendingRef.current,
-              master:
-                Math.max(-1, Math.min(1, -y / DISC_RADIUS)) *
-                maxMaster *
-                (event.shiftKey ? 0.2 : 1),
+              master: drag.fine
+                ? Math.max(
+                    -maxMaster,
+                    Math.min(
+                      maxMaster,
+                      drag.startValue.master -
+                        ((y - drag.startY) / DISC_RADIUS) * maxMaster * 0.2,
+                    ),
+                  )
+                : Math.max(-1, Math.min(1, -y / DISC_RADIUS)) * maxMaster,
             }
-          : {
-              ...pendingRef.current,
-              ...wheelPointToAdjustment(
-                x,
-                y,
-                DISC_RADIUS,
-                maxChroma,
-                event.shiftKey,
-              ),
-            };
+          : drag.fine
+            ? (() => {
+                const delta = wheelPointToAdjustment(
+                  x - drag.startX,
+                  y - drag.startY,
+                  DISC_RADIUS,
+                  maxChroma,
+                  true,
+                );
+                return {
+                  ...pendingRef.current,
+                  r: drag.startValue.r + delta.r,
+                  g: drag.startValue.g + delta.g,
+                  b: drag.startValue.b + delta.b,
+                };
+              })()
+            : {
+                ...pendingRef.current,
+                ...wheelPointToAdjustment(
+                  x,
+                  y,
+                  DISC_RADIUS,
+                  maxChroma,
+                ),
+              };
       pendingRef.current = next;
       onPreview(next);
     },
@@ -125,16 +162,22 @@ export function ColorWheel({
             const rect = event.currentTarget.getBoundingClientRect();
             const x = (event.clientX - rect.left) * (CANVAS_SIZE / rect.width) - CENTER;
             const y = (event.clientY - rect.top) * (CANVAS_SIZE / rect.height) - CENTER;
-            dragModeRef.current =
-              Math.hypot(x, y) >= RING_INNER_RADIUS ? "master" : "color";
+            dragRef.current = {
+              mode:
+                Math.hypot(x, y) >= RING_INNER_RADIUS ? "master" : "color",
+              startX: x,
+              startY: y,
+              startValue: pendingRef.current,
+              fine: event.shiftKey,
+            };
             event.currentTarget.setPointerCapture(event.pointerId);
             updateFromPointer(event);
           }}
           onPointerMove={(event) => updateFromPointer(event)}
           onPointerUp={(event) => {
-            if (!dragModeRef.current) return;
+            if (!dragRef.current) return;
             updateFromPointer(event);
-            dragModeRef.current = null;
+            dragRef.current = null;
             onCommit(pendingRef.current);
             event.currentTarget.releasePointerCapture(event.pointerId);
           }}

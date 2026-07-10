@@ -5,7 +5,12 @@ import {
   type ColorCurveParameterName,
   type ColorCurvePoint,
 } from "../../../core/color";
-import { curvePointFromClient, sampleCurve, sanitizeCurvePoints } from "../utils/curveMath";
+import {
+  clampCurvePointX,
+  createCurveEvaluator,
+  curvePointFromClient,
+  sanitizeCurvePoints,
+} from "../utils/curveMath";
 
 export interface CurveEditorTab {
   readonly name: ColorCurveParameterName;
@@ -72,15 +77,19 @@ export function ValueCurveEditor({
   );
   const points = draft ?? committedPoints;
 
+  const curveEvaluator = useMemo(
+    () => createCurveEvaluator(points, activeTab.periodic),
+    [activeTab.periodic, points],
+  );
   const path = useMemo(() => {
     const samples = 128;
     return Array.from({ length: samples }, (_, index) => {
       const x = index / (samples - 1);
-      const y = sampleCurve(points, x, activeTab.periodic);
+      const y = curveEvaluator.at(x);
       const normalizedY = (y - activeTab.yMin) / (activeTab.yMax - activeTab.yMin);
       return `${index === 0 ? "M" : "L"} ${x * 100} ${(1 - normalizedY) * 100}`;
     }).join(" ");
-  }, [activeTab, points]);
+  }, [activeTab, curveEvaluator]);
 
   const previewPoints = useCallback(
     (nextPoints: ColorCurvePoint[]) => {
@@ -176,7 +185,9 @@ export function ValueCurveEditor({
               !activeTab.periodic &&
               (dragIndex === 0 || dragIndex === nextPoints.length - 1);
             nextPoints[dragIndex] = {
-              x: isValueEndpoint ? nextPoints[dragIndex].x : nextPoint.x,
+              x: isValueEndpoint
+                ? nextPoints[dragIndex].x
+                : clampCurvePointX(nextPoints, dragIndex, nextPoint.x),
               y: nextPoint.y,
             };
             previewPoints(nextPoints);

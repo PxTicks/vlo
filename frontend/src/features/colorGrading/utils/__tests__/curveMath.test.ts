@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { curvePointFromClient, sampleCurve } from "../curveMath";
+import {
+  clampCurvePointX,
+  curvePointFromClient,
+  sampleCurve,
+} from "../curveMath";
 
 describe("value curve math", () => {
   it("maps client coordinates into curve coordinates", () => {
@@ -25,5 +29,16 @@ describe("value curve math", () => {
       sampleCurve(periodic, 0.99, true),
       12,
     );
+  });
+
+  it("keeps a dragged point between its neighbours", () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 0.4, y: 0.5 },
+      { x: 0.8, y: 0.7 },
+      { x: 1, y: 1 },
+    ];
+    expect(clampCurvePointX(points, 1, 0.95)).toBeCloseTo(0.7999);
+    expect(clampCurvePointX(points, 2, 0.1)).toBeCloseTo(0.4001);
   });
 });

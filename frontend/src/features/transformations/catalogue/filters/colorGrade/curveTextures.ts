@@ -1,16 +1,17 @@
 import { BufferImageSource, Texture } from "pixi.js";
 import {
+  COLOR_CURVE_LUT_HEIGHT,
+  COLOR_CURVE_LUT_WIDTH,
   DEFAULT_COLOR_CURVES,
-  PERIODIC_CURVE_PARAMETER_NAMES,
+  MODIFIER_CURVE_PARAMETER_NAMES,
   VALUE_CURVE_PARAMETER_NAMES,
+  bakeColorCurveLut,
   type ColorCurveParameterName,
   type ColorCurvePoint,
 } from "../../../../../core/color";
-import { MonotoneCubicSpline } from "../../../utils/MonotoneCubicSpline";
-import { PeriodicCubicSpline } from "../../../utils/PeriodicCubicSpline";
 
-export const CURVE_TEXTURE_WIDTH = 1024;
-export const CURVE_TEXTURE_HEIGHT = 2;
+export const CURVE_TEXTURE_WIDTH = COLOR_CURVE_LUT_WIDTH;
+export const CURVE_TEXTURE_HEIGHT = COLOR_CURVE_LUT_HEIGHT;
 
 function sanitizeCurve(
   value: unknown,
@@ -65,12 +66,13 @@ export class CurveTextureBaker {
       format: "rgba32float",
       scaleMode: "nearest",
       autoGenerateMipmaps: false,
+      autoGarbageCollect: true,
       label: "color-grade-curves",
     });
     this.texture = new Texture({ source: this.source });
     for (const name of [
       ...VALUE_CURVE_PARAMETER_NAMES,
-      ...PERIODIC_CURVE_PARAMETER_NAMES,
+      ...MODIFIER_CURVE_PARAMETER_NAMES,
     ]) {
       const points = DEFAULT_COLOR_CURVES[name];
       this.curves.set(name, points);
@@ -112,38 +114,12 @@ export class CurveTextureBaker {
   }
 
   private bakeNow(notify = true): void {
-    const samplers = VALUE_CURVE_PARAMETER_NAMES.map((name) => {
-      const points = this.curves.get(name) ?? DEFAULT_COLOR_CURVES[name];
-      return new MonotoneCubicSpline(
-        points.map((point) => ({ time: point.x, value: point.y })),
-      );
-    });
-    const periodicSamplers = PERIODIC_CURVE_PARAMETER_NAMES.map((name) => {
-      const points = this.curves.get(name) ?? DEFAULT_COLOR_CURVES[name];
-      const splinePoints = points.map((point) => ({
-        time: point.x,
-        value: point.y,
-      }));
-      return name === "curveLumaSat"
-        ? new MonotoneCubicSpline(splinePoints)
-        : new PeriodicCubicSpline(splinePoints);
-    });
-
-    for (let sample = 0; sample < CURVE_TEXTURE_WIDTH; sample += 1) {
-      const x = sample / (CURVE_TEXTURE_WIDTH - 1);
-      const valueOffset = sample * 4;
-      const periodicOffset = (CURVE_TEXTURE_WIDTH + sample) * 4;
-      for (let channel = 0; channel < 4; channel += 1) {
-        this.pixels[valueOffset + channel] = Math.max(
-          0,
-          Math.min(1, samplers[channel].at(x)),
-        );
-        this.pixels[periodicOffset + channel] =
-          channel < periodicSamplers.length
-            ? Math.max(-0.5, Math.min(0.5, periodicSamplers[channel].at(x)))
-            : 0;
-      }
-    }
+    this.pixels.set(
+      bakeColorCurveLut(Object.fromEntries(this.curves) as Record<
+        ColorCurveParameterName,
+        readonly ColorCurvePoint[]
+      >),
+    );
     this.source.update();
     if (notify) this.onBake?.();
   }

@@ -21,6 +21,7 @@ describe("CurveTextureBaker", () => {
 
   it("starts with identity value curves and flat modifier curves", () => {
     const baker = createBaker();
+    expect(baker.texture.source.autoGarbageCollect).toBe(true);
     const sample = 512;
     const x = sample / (CURVE_TEXTURE_WIDTH - 1);
     expect(baker.pixels[sample * 4]).toBeCloseTo(x, 6);

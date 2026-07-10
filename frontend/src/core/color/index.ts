@@ -53,14 +53,24 @@ export {
   applyReferenceColorGradePixel,
   DEFAULT_COLOR_GRADE_PRIMARIES,
   type ColorGradePrimaries,
+  type ColorGradeReferenceParameters,
 } from "./referencePipeline";
 export type { Matrix3, Rgb, Rgba } from "./types";
 export {
   DEFAULT_COLOR_CURVES,
-  PERIODIC_CURVE_PARAMETER_NAMES,
+  CYCLIC_CURVE_PARAMETER_NAMES,
+  MODIFIER_CURVE_PARAMETER_NAMES,
   VALUE_CURVE_PARAMETER_NAMES,
+  COLOR_CURVE_LUT_HEIGHT,
+  COLOR_CURVE_LUT_WIDTH,
+  applyColorCurveLut,
+  bakeColorCurveLut,
+  createColorCurveSampler,
+  sampleColorCurveLut,
+  type ColorCurveSampler,
+  type ColorCurveSet,
   type ColorCurveParameterName,
   type ColorCurvePoint,
-  type PeriodicCurveParameterName,
+  type ModifierCurveParameterName,
   type ValueCurveParameterName,
 } from "./curves";

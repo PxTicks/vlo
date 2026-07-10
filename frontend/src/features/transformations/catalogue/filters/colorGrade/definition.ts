@@ -7,14 +7,11 @@ import {
   COLOR_WHEELS_CONTROL_ID,
   HUE_CURVES_CONTROL_ID,
   VALUE_CURVES_CONTROL_ID,
-  registerColorGradingCustomControls,
-} from "../../../../colorGrading";
+} from "../../../../colorGrading/constants";
 import { filterHandler } from "../../filterHandler";
 import type { TransformationDefinition } from "../../types";
 import type { ControlDefinition } from "../../../../panelUI";
 import { ColorGradeFilter } from "./colorGradeFilter";
-
-registerColorGradingCustomControls();
 
 export const COLOR_GRADE_FILTER_NAME = "ColorGradeFilter";
 

@@ -26,4 +26,14 @@ describe("color wheel math", () => {
     const marker = adjustmentToWheelPoint(normal, 40, 0.5);
     expect(Math.hypot(marker.x, marker.y)).toBeGreaterThan(0);
   });
+
+  it("round-trips wheel radius at non-primary hues", () => {
+    const angle = Math.PI / 6;
+    const x = Math.cos(angle) * 32;
+    const y = Math.sin(angle) * 32;
+    const adjustment = wheelPointToAdjustment(x, y, 40, 0.5);
+    const marker = adjustmentToWheelPoint(adjustment, 40, 0.5);
+    expect(marker.x).toBeCloseTo(x, 10);
+    expect(marker.y).toBeCloseTo(y, 10);
+  });
 });

@@ -56,4 +56,29 @@ describe("ColorWheel", () => {
     fireEvent.doubleClick(canvas);
     expect(onCommit).toHaveBeenCalledWith({ r: 0, g: 0, b: 0, master: 0 });
   });
+
+  it("rebases when Shift changes so fine drag does not jump", () => {
+    const { canvas, onPreview } = renderWheel();
+    fireEvent.pointerDown(canvas, { pointerId: 3, clientX: 76, clientY: 56 });
+    fireEvent.pointerMove(canvas, { pointerId: 3, clientX: 86, clientY: 56 });
+    const beforeShift = onPreview.mock.calls.at(-1)?.[0];
+    const callsBeforeShift = onPreview.mock.calls.length;
+
+    fireEvent.pointerMove(canvas, {
+      pointerId: 3,
+      clientX: 86,
+      clientY: 56,
+      shiftKey: true,
+    });
+    expect(onPreview).toHaveBeenCalledTimes(callsBeforeShift);
+    fireEvent.pointerMove(canvas, {
+      pointerId: 3,
+      clientX: 91,
+      clientY: 56,
+      shiftKey: true,
+    });
+    const afterFineMove = onPreview.mock.calls.at(-1)?.[0];
+    expect(afterFineMove.r).toBeGreaterThan(beforeShift.r);
+    expect(afterFineMove.r - beforeShift.r).toBeLessThan(0.02);
+  });
 });

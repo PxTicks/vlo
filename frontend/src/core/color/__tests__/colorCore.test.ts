@@ -5,6 +5,8 @@ import {
   applyAscCdl,
   applyHighlightKnee,
   applyLiftGammaGainOffset,
+  bakeColorCurveLut,
+  sampleColorCurveLut,
   applyMatrix3,
   applyReferenceColorGrade,
   applyReferenceColorGradePixel,
@@ -126,7 +128,8 @@ describe("reference color-grade pipeline", () => {
     const input = [0.12, 0.5, 0.91] as const;
     const output = applyReferenceColorGrade(input);
     output.forEach((channel, index) => {
-      expect(channel).toBeCloseTo(input[index], 9);
+      // The reference deliberately traverses the shader's float32 curve LUT.
+      expect(channel).toBeCloseTo(input[index], 6);
     });
   });
 
@@ -137,9 +140,9 @@ describe("reference color-grade pipeline", () => {
     });
     const expected = linearChannelToSrgb(srgbChannelToLinear(0.5) * 2);
     expect(output).toEqual([
-      expect.closeTo(expected, 10),
-      expect.closeTo(expected, 10),
-      expect.closeTo(expected, 10),
+      expect.closeTo(expected, 7),
+      expect.closeTo(expected, 7),
+      expect.closeTo(expected, 7),
     ]);
   });
 
@@ -158,5 +161,30 @@ describe("reference color-grade pipeline", () => {
     const green = rgbToHsv([0, 1, 0]);
     expect(green[0]).toBeCloseTo(1 / 3, 14);
     expect(green.slice(1)).toEqual([1, 1]);
+  });
+
+  it("matches the shader's curve LUT clamp and channel curves", () => {
+    const output = applyReferenceColorGrade([0.8, 0.4, 0.2], {
+      ...DEFAULT_COLOR_GRADE_PRIMARIES,
+      gainMaster: 1,
+      curveR: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0.5 },
+      ],
+    });
+    expect(output[0]).toBeCloseTo(0.5, 5);
+    expect(output[1]).toBeCloseTo(0.8, 5);
+    expect(output[2]).toBeCloseTo(0.4, 5);
+  });
+
+  it("uses the same manually interpolated 1024-sample curve LUT", () => {
+    const lut = bakeColorCurveLut({
+      curveMaster: [
+        { x: 0, y: 0 },
+        { x: 0.5, y: 0.25 },
+        { x: 1, y: 1 },
+      ],
+    });
+    expect(sampleColorCurveLut(lut, 0, 0, 0.5)).toBeCloseTo(0.25, 5);
   });
 });

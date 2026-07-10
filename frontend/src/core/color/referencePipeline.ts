@@ -3,6 +3,13 @@ import { applyLiftGammaGainOffset } from "./cdl";
 import { applyMatrix3, whiteBalanceMatrix } from "./matrices";
 import { linearToSrgb, srgbToLinear } from "./transfer";
 import { applyToneCurve } from "./toneCurve";
+import {
+  applyColorCurveLut,
+  bakeColorCurveLut,
+  MODIFIER_CURVE_PARAMETER_NAMES,
+  VALUE_CURVE_PARAMETER_NAMES,
+  type ColorCurveSet,
+} from "./curves";
 import type { Rgb, Rgba } from "./types";
 
 export interface ColorGradePrimaries {
@@ -67,9 +74,37 @@ export const DEFAULT_COLOR_GRADE_PRIMARIES: ColorGradePrimaries = Object.freeze(
   offsetMaster: 0,
 });
 
+export type ColorGradeReferenceParameters = ColorGradePrimaries & ColorCurveSet;
+
+const curveLutCache = new Map<string, Float32Array>();
+const MAX_CURVE_LUT_CACHE_ENTRIES = 16;
+
+function getCurveLut(parameters: ColorCurveSet): Float32Array {
+  const names = [
+    ...VALUE_CURVE_PARAMETER_NAMES,
+    ...MODIFIER_CURVE_PARAMETER_NAMES,
+  ];
+  const key = names
+    .map((name) =>
+      (parameters[name] ?? [])
+        .map((point) => `${point.x.toFixed(6)}:${point.y.toFixed(6)}`)
+        .join("|"),
+    )
+    .join(";");
+  const cached = curveLutCache.get(key);
+  if (cached) return cached;
+  const lut = bakeColorCurveLut(parameters);
+  curveLutCache.set(key, lut);
+  if (curveLutCache.size > MAX_CURVE_LUT_CACHE_ENTRIES) {
+    const oldest = curveLutCache.keys().next().value;
+    if (oldest !== undefined) curveLutCache.delete(oldest);
+  }
+  return lut;
+}
+
 export function applyReferenceColorGrade(
   encodedColor: Rgb,
-  parameters: ColorGradePrimaries = DEFAULT_COLOR_GRADE_PRIMARIES,
+  parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
 ): Rgb {
   let linear = srgbToLinear(encodedColor);
   linear = applyMatrix3(
@@ -93,6 +128,7 @@ export function applyReferenceColorGrade(
     offsetMaster: parameters.offsetMaster,
   });
   gradingColor = applyToneCurve(gradingColor, parameters);
+  gradingColor = applyColorCurveLut(gradingColor, getCurveLut(parameters));
   return applySaturationVibranceHue(
     gradingColor,
     parameters.saturation,
@@ -103,7 +139,7 @@ export function applyReferenceColorGrade(
 
 export function applyReferenceColorGradePixel(
   premultipliedColor: Rgba,
-  parameters: ColorGradePrimaries = DEFAULT_COLOR_GRADE_PRIMARIES,
+  parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
 ): Rgba {
   const alpha = premultipliedColor[3];
   if (alpha <= 1e-6) return [0, 0, 0, 0];

@@ -40,10 +40,25 @@ export function adjustmentToWheelPoint(
     values[2] - minimum,
   ];
   const hsv = rgbToHsv(shifted);
+  const basis = hsvToRgb([hsv[0], 1, 1]);
+  const basisAverage = (basis[0] + basis[1] + basis[2]) / 3;
+  const direction: Rgb = [
+    basis[0] - basisAverage,
+    basis[1] - basisAverage,
+    basis[2] - basisAverage,
+  ];
+  const denominator =
+    direction[0] ** 2 + direction[1] ** 2 + direction[2] ** 2;
+  const recoveredScale =
+    denominator <= Number.EPSILON
+      ? 0
+      : (values[0] * direction[0] +
+          values[1] * direction[1] +
+          values[2] * direction[2]) /
+        denominator;
   const magnitude = Math.min(
     1,
-    Math.max(Math.abs(adjustment.r), Math.abs(adjustment.g), Math.abs(adjustment.b)) /
-      Math.max(maxChroma * (2 / 3), Number.EPSILON),
+    Math.abs(recoveredScale) / Math.max(maxChroma, Number.EPSILON),
   );
   const angle = hsv[0] * Math.PI * 2;
   return {

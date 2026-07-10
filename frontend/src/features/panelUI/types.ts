@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 
 // === Control definition types ===
 
@@ -72,6 +72,9 @@ export interface ControlRenderProps {
   disabled?: boolean;
 }
 
-export type CustomControlRenderProps = ControlRenderProps;
+export interface CustomControlRenderProps extends ControlRenderProps {
+  /** Render a hidden scalar parameter with the host's standard animation UI. */
+  renderParameterControl?: (control: ControlDefinition) => ReactNode;
+}
 
 export type CustomControlComponent = ComponentType<CustomControlRenderProps>;

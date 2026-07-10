@@ -1,4 +1,5 @@
 import { createElement, useState, useEffect, useRef, memo, useMemo } from "react";
+import type { ReactElement } from "react";
 import {
   Box,
   Checkbox,
@@ -388,7 +389,7 @@ export const ControlRenderer = memo(function ControlRenderer({
   disabled = false,
   captureSnapshot,
   restoreSnapshot,
-}: ControlRendererProps) {
+}: ControlRendererProps): ReactElement | null {
   const context = useMemo(
     () =>
       clipId
@@ -409,6 +410,26 @@ export const ControlRenderer = memo(function ControlRenderer({
           groupId,
           transformId,
           disabled,
+          renderParameterControl: (
+            parameterControl: ControlDefinition,
+          ): ReactElement =>
+            createElement(ControlRenderer, {
+              control: parameterControl,
+              value: values[parameterControl.name],
+              values,
+              onCommit: (nextValue: unknown) =>
+                onCommitMany?.({ [parameterControl.name]: nextValue }),
+              onCommitMany,
+              groupId,
+              transformId,
+              clipId,
+              minTime,
+              duration,
+              timeAxis,
+              disabled,
+              captureSnapshot,
+              restoreSnapshot,
+            }),
         })
       : null;
   }

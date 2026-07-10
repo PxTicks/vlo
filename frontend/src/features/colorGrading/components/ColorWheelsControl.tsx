@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box } from "@mui/material";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { ExpandMore } from "@mui/icons-material";
+import { Box, Button, Collapse, Typography } from "@mui/material";
 import type { CustomControlRenderProps } from "../../panelUI";
 import { liveParamStore } from "../../../core/liveParams/liveParamStore";
 import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import {
   COLOR_WHEEL_NAMES,
   getWheelParameterNames,
+  getWheelParameterControls,
   type ColorWheelName,
 } from "../constants";
 import { ColorWheel } from "./ColorWheel";
@@ -41,6 +43,7 @@ export function ColorWheelsControl({
   onCommitMany,
   transformId,
   disabled,
+  renderParameterControl,
 }: CustomControlRenderProps) {
   const initial = useMemo(
     () =>
@@ -50,6 +53,8 @@ export function ColorWheelsControl({
     [values],
   );
   const [wheelValues, setWheelValues] = useState(initial);
+  const [showChannelAnimation, setShowChannelAnimation] = useState(false);
+  const channelAnimationId = useId();
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -113,19 +118,77 @@ export function ColorWheelsControl({
   );
 
   return (
-    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(112px, 1fr))", gap: 1.5 }}>
-      {COLOR_WHEEL_NAMES.map((wheel) => (
-        <ColorWheel
-          key={wheel}
-          label={wheel[0].toUpperCase() + wheel.slice(1)}
-          value={wheelValues[wheel]}
-          maxChroma={wheel === "offset" || wheel === "lift" ? 0.3 : 0.5}
-          maxMaster={wheel === "offset" || wheel === "lift" ? 0.5 : 1}
-          disabled={disabled}
-          onPreview={(value) => preview(wheel, value)}
-          onCommit={(value) => commit(wheel, value)}
-        />
-      ))}
+    <Box>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(112px, 1fr))",
+          gap: 1.5,
+        }}
+      >
+        {COLOR_WHEEL_NAMES.map((wheel) => (
+          <ColorWheel
+            key={wheel}
+            label={wheel[0].toUpperCase() + wheel.slice(1)}
+            value={wheelValues[wheel]}
+            maxChroma={wheel === "offset" || wheel === "lift" ? 0.3 : 0.5}
+            maxMaster={wheel === "offset" || wheel === "lift" ? 0.5 : 1}
+            disabled={disabled}
+            onPreview={(value) => preview(wheel, value)}
+            onCommit={(value) => commit(wheel, value)}
+          />
+        ))}
+      </Box>
+      {renderParameterControl ? (
+        <Box sx={{ mt: 1 }}>
+          <Button
+            size="small"
+            color="inherit"
+            onClick={() => setShowChannelAnimation((current) => !current)}
+            endIcon={
+              <ExpandMore
+                sx={{
+                  transform: showChannelAnimation
+                    ? "rotate(180deg)"
+                    : "rotate(0deg)",
+                  transition: "transform 150ms ease",
+                }}
+              />
+            }
+            aria-expanded={showChannelAnimation}
+            aria-controls={channelAnimationId}
+            sx={{ color: "text.secondary", px: 0.5 }}
+          >
+            Channel animation
+          </Button>
+          <Collapse in={showChannelAnimation} unmountOnExit>
+            {showChannelAnimation ? (
+              <Box
+                id={channelAnimationId}
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 1.5,
+                  pt: 1,
+                }}
+              >
+                {COLOR_WHEEL_NAMES.map((wheel) => (
+                  <Box key={wheel} sx={{ display: "grid", gap: 0.75 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {wheel[0].toUpperCase() + wheel.slice(1)} channels
+                    </Typography>
+                    {getWheelParameterControls(wheel).map((control) => (
+                      <Box key={control.name}>
+                        {renderParameterControl(control)}
+                      </Box>
+                    ))}
+                  </Box>
+                ))}
+              </Box>
+            ) : null}
+          </Collapse>
+        </Box>
+      ) : null}
     </Box>
   );
 }

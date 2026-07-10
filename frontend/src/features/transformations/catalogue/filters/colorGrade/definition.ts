@@ -4,32 +4,16 @@ import {
   V1_AUTHORED_COLOR_MODEL,
 } from "../../../../../core/color";
 import {
+  COLOR_WHEEL_PARAMETER_CONTROLS,
   COLOR_WHEELS_CONTROL_ID,
   HUE_CURVES_CONTROL_ID,
   VALUE_CURVES_CONTROL_ID,
 } from "../../../../colorGrading/constants";
 import { filterHandler } from "../../filterHandler";
 import type { TransformationDefinition } from "../../types";
-import type { ControlDefinition } from "../../../../panelUI";
 import { ColorGradeFilter } from "./colorGradeFilter";
 
 export const COLOR_GRADE_FILTER_NAME = "ColorGradeFilter";
-
-const WHEEL_NAMES = ["lift", "gamma", "gain", "offset"] as const;
-const WHEEL_CONTROLS: readonly ControlDefinition[] = WHEEL_NAMES.flatMap(
-  (wheel) =>
-    (["R", "G", "B", "Master"] as const).map((channel) => ({
-      type: "number" as const,
-      label: `${wheel} ${channel}`,
-      name: `${wheel}${channel}`,
-      defaultValue: 0,
-      min: -1,
-      max: 1,
-      step: 0.01,
-      supportsSpline: true,
-      hidden: true,
-    })),
-);
 
 export const colorGradeDefinition: TransformationDefinition = {
   type: "filter",
@@ -98,7 +82,7 @@ export const colorGradeDefinition: TransformationDefinition = {
             name: "_colorWheels",
             componentId: COLOR_WHEELS_CONTROL_ID,
           },
-          ...WHEEL_CONTROLS,
+          ...COLOR_WHEEL_PARAMETER_CONTROLS,
         ],
       },
       {

@@ -76,6 +76,13 @@ export const DEFAULT_COLOR_GRADE_PRIMARIES: ColorGradePrimaries = Object.freeze(
 
 export type ColorGradeReferenceParameters = ColorGradePrimaries & ColorCurveSet;
 
+export interface ColorGradeReferenceEvaluator {
+  beforeCurves(color: Rgb): Rgb;
+  curves(color: Rgb): Rgb;
+  afterCurves(color: Rgb): Rgb;
+  apply(color: Rgb): Rgb;
+}
+
 const curveLutCache = new Map<string, Float32Array>();
 const MAX_CURVE_LUT_CACHE_ENTRIES = 16;
 
@@ -102,7 +109,62 @@ function getCurveLut(parameters: ColorCurveSet): Float32Array {
   return lut;
 }
 
+export function createReferenceColorGradeEvaluator(
+  parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
+): ColorGradeReferenceEvaluator {
+  const whiteBalance = whiteBalanceMatrix(
+    parameters.temperature,
+    parameters.tint,
+  );
+  const exposureMultiplier = Math.pow(2, parameters.exposure);
+  const curveLut = getCurveLut(parameters);
+  const wheelParameters = {
+    lift: [parameters.liftR, parameters.liftG, parameters.liftB] as Rgb,
+    liftMaster: parameters.liftMaster,
+    gamma: [parameters.gammaR, parameters.gammaG, parameters.gammaB] as Rgb,
+    gammaMaster: parameters.gammaMaster,
+    gain: [parameters.gainR, parameters.gainG, parameters.gainB] as Rgb,
+    gainMaster: parameters.gainMaster,
+    offset: [parameters.offsetR, parameters.offsetG, parameters.offsetB] as Rgb,
+    offsetMaster: parameters.offsetMaster,
+  };
+
+  const beforeCurves = (encodedColor: Rgb): Rgb => {
+    let linear = applyMatrix3(whiteBalance, srgbToLinear(encodedColor));
+    linear = linear.map(
+      (channel) => channel * exposureMultiplier,
+    ) as unknown as Rgb;
+    let gradingColor = linearToSrgb(linear);
+    gradingColor = applyLiftGammaGainOffset(gradingColor, wheelParameters);
+    return applyToneCurve(gradingColor, parameters);
+  };
+  const curves = (color: Rgb): Rgb => applyColorCurveLut(color, curveLut);
+  const afterCurves = (color: Rgb): Rgb =>
+    applySaturationVibranceHue(
+      color,
+      parameters.saturation,
+      parameters.vibrance,
+      parameters.hueRotate,
+    );
+
+  return {
+    beforeCurves,
+    curves,
+    afterCurves,
+    apply(color) {
+      return afterCurves(curves(beforeCurves(color)));
+    },
+  };
+}
+
 export function applyReferenceColorGrade(
+  encodedColor: Rgb,
+  parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
+): Rgb {
+  return createReferenceColorGradeEvaluator(parameters).apply(encodedColor);
+}
+
+export function applyReferenceColorGradeBeforeCurves(
   encodedColor: Rgb,
   parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
 ): Rgb {
@@ -128,7 +190,20 @@ export function applyReferenceColorGrade(
     offsetMaster: parameters.offsetMaster,
   });
   gradingColor = applyToneCurve(gradingColor, parameters);
-  gradingColor = applyColorCurveLut(gradingColor, getCurveLut(parameters));
+  return gradingColor;
+}
+
+export function applyReferenceColorGradeCurves(
+  gradingColor: Rgb,
+  parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
+): Rgb {
+  return applyColorCurveLut(gradingColor, getCurveLut(parameters));
+}
+
+export function applyReferenceColorGradeAfterCurves(
+  gradingColor: Rgb,
+  parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
+): Rgb {
   return applySaturationVibranceHue(
     gradingColor,
     parameters.saturation,

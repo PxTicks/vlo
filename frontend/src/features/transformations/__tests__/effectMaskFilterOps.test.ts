@@ -48,6 +48,7 @@ describe("buildResolvedFilterOpLookup", () => {
     expect(lookup.size).toBe(2);
     expect(lookup.get(blur)).toEqual({
       type: "AlphaFilter",
+      sourceTransformId: "blur",
       params: { alpha: 0.5 },
     });
     expect(lookup.get(colour)?.type).toBe("HslAdjustmentFilter");
@@ -94,6 +95,7 @@ describe("buildResolvedFilterOpLookup", () => {
     expect(lookup.has(unknown)).toBe(false);
     expect(lookup.get(before)).toEqual({
       type: "AlphaFilter",
+      sourceTransformId: "before",
       params: { alpha: 0.4 },
     });
     expect(lookup.get(after)?.type).toBe("HslAdjustmentFilter");

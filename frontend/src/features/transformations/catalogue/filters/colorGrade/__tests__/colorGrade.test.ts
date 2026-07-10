@@ -8,6 +8,8 @@ import {
   buildColorGradeFragment,
 } from "../shader";
 import { ColorGradeFilter } from "../colorGradeFilter";
+import { FusedColorGradeFilter } from "../fusedColorGradeFilter";
+import { buildFusedColorGradeFragment } from "../fusedShader";
 import { createAddTransform } from "../../../../hooks/controller/transformFactory";
 import { planTransformRender } from "../../../../effectMaskRenderPlan";
 import type { MaskBooleanExpression } from "../../../../../../types/TimelineTypes";
@@ -159,6 +161,30 @@ describe("Color Grade transformation", () => {
     expect(first.glProgram).toBe(second.glProgram);
     first.destroy();
     second.destroy();
+  });
+
+  it("builds one ordered shader for a run of authored grades", () => {
+    const fragment = buildFusedColorGradeFragment([
+      COLOR_GRADE_SHADER_STAGE.SCENE_LINEAR,
+      COLOR_GRADE_SHADER_STAGE.CURVES | COLOR_GRADE_SHADER_STAGE.COLOR,
+    ]);
+    expect(fragment.match(/Authored Color Grade/g)).toHaveLength(2);
+    expect(fragment.indexOf("Authored Color Grade 1")).toBeLessThan(
+      fragment.indexOf("Authored Color Grade 2"),
+    );
+    expect(fragment).toContain("vloApplyColorCurves(gradingColor, 1.0)");
+
+    const filter = new FusedColorGradeFilter();
+    filter.grades = [
+      { transformId: "a", parameters: { exposure: 1 } },
+      { transformId: "b", parameters: { saturation: 0.5 } },
+    ];
+    expect(filter.gradeCount).toBe(2);
+    expect(filter.shaderVariantKeys).toEqual([
+      COLOR_GRADE_SHADER_STAGE.SCENE_LINEAR,
+      COLOR_GRADE_SHADER_STAGE.COLOR,
+    ]);
+    filter.destroy();
   });
 
   it("accepts repeated property assignment updates used by filter pooling", () => {

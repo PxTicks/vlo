@@ -1,19 +1,26 @@
 import { useEffect, useState } from "react";
-import { curveHistogramSampler } from "../services/curveHistogramSampler";
-import type { CurveHistograms } from "../utils/curveHistogram";
+import {
+  colorGradeHistogramRuntime,
+  type ColorGradeHistogramSnapshot,
+} from "../../../core/color";
+import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 
-export function useCurveHistograms(referenceKey: string): CurveHistograms | null {
-  const [reference, setReference] = useState<{
-    key: string;
-    histograms: CurveHistograms | null;
-  }>({ key: referenceKey, histograms: null });
-  if (reference.key !== referenceKey) {
-    setReference({ key: referenceKey, histograms: null });
-  }
+export function useCurveHistograms(
+  transformId: string,
+  active = true,
+): ColorGradeHistogramSnapshot | null {
+  const key = active ? transformId : null;
+  const [state, setState] = useState<{
+    key: string | null;
+    snapshot: ColorGradeHistogramSnapshot | null;
+  }>({ key: null, snapshot: null });
   useEffect(() => {
-    return curveHistogramSampler.subscribe(referenceKey, (histograms) => {
-      setReference({ key: referenceKey, histograms });
+    if (!active) return;
+    const unsubscribe = colorGradeHistogramRuntime.subscribe(transformId, (snapshot) => {
+      setState({ key: transformId, snapshot });
     });
-  }, [referenceKey]);
-  return reference.key === referenceKey ? reference.histograms : null;
+    livePreviewParamStore.requestRender();
+    return unsubscribe;
+  }, [active, transformId]);
+  return state.key === key ? state.snapshot : null;
 }

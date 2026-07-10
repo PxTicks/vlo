@@ -13,6 +13,7 @@ import {
 } from "../utils/curveMath";
 import {
   curveHistogramAreaPath,
+  curveHistogramLinePath,
   type CurveHistogramKind,
   type CurveHistograms,
 } from "../utils/curveHistogram";
@@ -31,7 +32,8 @@ export interface CurveEditorTab {
 interface ValueCurveEditorProps {
   tabs: readonly CurveEditorTab[];
   values: Readonly<Record<string, unknown>>;
-  histograms?: CurveHistograms;
+  beforeHistograms?: CurveHistograms;
+  afterHistograms?: CurveHistograms;
   disabled?: boolean;
   onPreview: (
     name: ColorCurveParameterName,
@@ -63,7 +65,8 @@ function readPoints(
 export function ValueCurveEditor({
   tabs,
   values,
-  histograms,
+  beforeHistograms,
+  afterHistograms,
   disabled = false,
   onPreview,
   onCommit,
@@ -98,12 +101,19 @@ export function ValueCurveEditor({
       return `${index === 0 ? "M" : "L"} ${x * 100} ${(1 - normalizedY) * 100}`;
     }).join(" ");
   }, [activeTab, curveEvaluator]);
-  const histogramPath = useMemo(
+  const beforeHistogramPath = useMemo(
     () =>
       curveHistogramAreaPath(
-        histograms?.[activeTab.histogram] ?? new Float32Array(),
+        beforeHistograms?.[activeTab.histogram] ?? new Float32Array(),
       ),
-    [activeTab.histogram, histograms],
+    [activeTab.histogram, beforeHistograms],
+  );
+  const afterHistogramPath = useMemo(
+    () =>
+      curveHistogramLinePath(
+        afterHistograms?.[activeTab.histogram] ?? new Float32Array(),
+      ),
+    [activeTab.histogram, afterHistograms],
   );
 
   const previewPoints = useCallback(
@@ -218,9 +228,9 @@ export function ValueCurveEditor({
           }}
           style={{ width: "100%", height: "100%", cursor: disabled ? "default" : "crosshair" }}
         >
-          {histogramPath ? (
+          {beforeHistogramPath ? (
             <path
-              d={histogramPath}
+              d={beforeHistogramPath}
               fill={activeTab.color}
               fillOpacity="0.16"
               stroke={activeTab.color}
@@ -228,6 +238,18 @@ export function ValueCurveEditor({
               strokeWidth="0.35"
               pointerEvents="none"
               aria-label={`${activeTab.label} histogram`}
+            />
+          ) : null}
+          {afterHistogramPath ? (
+            <path
+              d={afterHistogramPath}
+              fill="none"
+              stroke={activeTab.color}
+              strokeOpacity="0.72"
+              strokeWidth="0.7"
+              strokeDasharray="1.5 1"
+              pointerEvents="none"
+              aria-label={`${activeTab.label} after histogram`}
             />
           ) : null}
           <g stroke="rgba(255,255,255,0.12)" strokeWidth="0.35">
@@ -261,7 +283,7 @@ export function ValueCurveEditor({
         </svg>
       </Box>
       <Typography variant="caption" sx={{ color: "text.disabled" }}>
-        Double-click to reset · right-click a point to remove · histogram is a fixed reference
+        Filled: curve input · dashed: after curves · updates during playback while visible
       </Typography>
     </Box>
   );

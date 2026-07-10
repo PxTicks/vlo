@@ -1,7 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Box } from "@mui/material";
 import type { CustomControlRenderProps } from "../../panelUI";
 import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
-import type { ColorCurveParameterName, ColorCurvePoint } from "../../../core/color";
+import {
+  colorGradeHistogramRuntime,
+  type ColorCurveParameterName,
+  type ColorCurvePoint,
+} from "../../../core/color";
 import { useCurveHistograms } from "../hooks/useCurveHistograms";
 import { ValueCurveEditor, type CurveEditorTab } from "./ValueCurveEditor";
 
@@ -84,9 +89,43 @@ const HUE_TABS: readonly CurveEditorTab[] = [
 ];
 
 export function GradeCurvesControl(props: CustomControlRenderProps) {
-  const histograms = useCurveHistograms(props.transformId ?? "unbound-grade");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
+  const histograms = useCurveHistograms(
+    props.transformId ?? "unbound-grade",
+    visible && Boolean(props.transformId),
+  );
   const kind = props.control.config?.kind;
   const tabs = kind === "hue" ? HUE_TABS : VALUE_TABS;
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    let intersecting = true;
+    const update = (): void => {
+      setVisible(
+        intersecting &&
+          (typeof document === "undefined" ||
+            document.visibilityState !== "hidden"),
+      );
+    };
+    const observer =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver(([entry]) => {
+            intersecting = entry?.isIntersecting ?? false;
+            update();
+          });
+    observer?.observe(root);
+    document.addEventListener("visibilitychange", update);
+    update();
+    return () => {
+      observer?.disconnect();
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
 
   useEffect(() => {
     if (!props.transformId) return;
@@ -105,20 +144,24 @@ export function GradeCurvesControl(props: CustomControlRenderProps) {
   };
 
   return (
-    <ValueCurveEditor
-      tabs={tabs}
-      values={props.values}
-      histograms={histograms ?? undefined}
-      disabled={props.disabled}
-      onPreview={(name, points) => {
-        if (props.transformId) {
-          livePreviewParamStore.set(props.transformId, name, points);
-        }
-      }}
-      onCommit={(name, points: readonly ColorCurvePoint[]) => {
-        props.onCommitMany({ [name]: points });
-        clearPreview(name);
-      }}
-    />
+    <Box ref={rootRef}>
+      <ValueCurveEditor
+        tabs={tabs}
+        values={props.values}
+        beforeHistograms={histograms?.before}
+        afterHistograms={histograms?.after}
+        disabled={props.disabled}
+        onPreview={(name, points) => {
+          if (props.transformId) {
+            colorGradeHistogramRuntime.invalidate(props.transformId);
+            livePreviewParamStore.set(props.transformId, name, points);
+          }
+        }}
+        onCommit={(name, points: readonly ColorCurvePoint[]) => {
+          props.onCommitMany({ [name]: points });
+          clearPreview(name);
+        }}
+      />
+    </Box>
   );
 }

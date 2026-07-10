@@ -78,7 +78,7 @@ describe("ValueCurveEditor", () => {
       <ValueCurveEditor
         tabs={tabs}
         values={{ curveMaster: DEFAULT_COLOR_CURVES.curveMaster }}
-        histograms={{
+        beforeHistograms={{
           luma: new Float32Array([0, 0.5, 1]),
           red: new Float32Array(),
           green: new Float32Array(),

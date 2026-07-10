@@ -11,7 +11,7 @@ import {
 } from "../../../../colorGrading/constants";
 import { filterHandler } from "../../filterHandler";
 import type { TransformationDefinition } from "../../types";
-import { ColorGradeFilter } from "./colorGradeFilter";
+import { FusedColorGradeFilter } from "./fusedColorGradeFilter";
 
 export const COLOR_GRADE_FILTER_NAME = "ColorGradeFilter";
 
@@ -20,7 +20,7 @@ export const colorGradeDefinition: TransformationDefinition = {
   compatibleClips: "visual",
   adjustmentCompatible: true,
   filterName: COLOR_GRADE_FILTER_NAME,
-  FilterClass: ColorGradeFilter,
+  FilterClass: FusedColorGradeFilter,
   label: "Color Grade",
   handler: filterHandler,
   defaultParameters: {

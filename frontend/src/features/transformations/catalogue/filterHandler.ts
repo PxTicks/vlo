@@ -76,5 +76,6 @@ export const filterHandler: TransformHandler<GenericFilterTransform> = (
   state.filters.push({
     type: transform.filterName,
     params: resolvedParams,
+    sourceTransformId: transform.id,
   });
 };

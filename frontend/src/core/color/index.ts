@@ -50,11 +50,27 @@ export {
 } from "./qualifier";
 export {
   applyReferenceColorGrade,
+  applyReferenceColorGradeAfterCurves,
+  applyReferenceColorGradeBeforeCurves,
+  applyReferenceColorGradeCurves,
+  createReferenceColorGradeEvaluator,
   applyReferenceColorGradePixel,
   DEFAULT_COLOR_GRADE_PRIMARIES,
   type ColorGradePrimaries,
   type ColorGradeReferenceParameters,
+  type ColorGradeReferenceEvaluator,
 } from "./referencePipeline";
+export {
+  COLOR_HISTOGRAM_BIN_COUNT,
+  buildColorHistograms,
+  type ColorHistogramKind,
+  type ColorHistograms,
+} from "./histogram";
+export {
+  colorGradeHistogramRuntime,
+  ColorGradeHistogramRuntime,
+  type ColorGradeHistogramSnapshot,
+} from "./histogramRuntime";
 export type { Matrix3, Rgb, Rgba } from "./types";
 export {
   DEFAULT_COLOR_CURVES,

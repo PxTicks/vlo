@@ -14,6 +14,13 @@ export interface FilterParameterPointBinding {
   space: FilterParameterPointSpace;
 }
 
+export interface FilterOperation {
+  type: string;
+  params: Record<string, unknown>;
+  /** The authored transform that emitted this resolved operation. */
+  sourceTransformId?: string;
+}
+
 export interface TransformState {
   scaleX: number;
   scaleY: number;
@@ -21,10 +28,7 @@ export interface TransformState {
   y: number;
   rotation: number;
   /* Visual Effects State (Data-Driven) */
-  filters: Array<{
-    type: string;
-    params: Record<string, unknown>;
-  }>;
+  filters: FilterOperation[];
   /** PixiJS blend mode applied to the rendered target. Defaults to "normal"
    *  when no blend-mode transform is present. Advanced modes (overlay,
    *  color-burn, ...) require the advanced-blend-modes extension + back buffer

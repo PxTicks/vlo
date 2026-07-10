@@ -5,16 +5,14 @@ import {
 } from "./applyTransformations";
 import { getEntryForTransform } from "./catalogue/TransformationRegistry";
 import type { ClipTransform } from "../../types/TimelineTypes";
+import type { FilterOperation } from "./catalogue/types";
 
 /**
  * A resolved filter operation — one entry of `TransformState.filters`: the
  * filter name plus its time-sampled parameters, ready to instantiate a Pixi
  * filter. This is what the offscreen masked-effect path applies per filter.
  */
-export interface ResolvedFilterOp {
-  type: string;
-  params: Record<string, unknown>;
-}
+export type ResolvedFilterOp = FilterOperation;
 
 /**
  * Resolve each enabled filter transform to its time-sampled filter op.

@@ -14,6 +14,7 @@ import type {
 } from "./types";
 import { getEntryByFilterName } from "./TransformationRegistry";
 import { releaseTrustedExtensionFilter } from "../extensions/TrustedExtensionFilterRuntime";
+import { preResolveFilterOperations } from "./filterPreResolution";
 
 // Re-export handler for backwards compatibility
 export { filterHandler } from "./filterHandler";
@@ -247,7 +248,7 @@ export const filterApplicator = (
   // Create a pool of available existing filters for reuse
   const pool = [...existingFilters];
 
-  for (const filterOp of state.filters) {
+  for (const filterOp of preResolveFilterOperations(state.filters)) {
     // 1. Look up entry in Registry
     const registryEntry = getEntryByFilterName(filterOp.type);
     if (

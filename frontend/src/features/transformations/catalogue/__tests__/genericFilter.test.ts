@@ -125,6 +125,7 @@ describe("Generic Filter System", () => {
       expect(state.filters).toHaveLength(1);
       expect(state.filters[0]).toEqual({
         type: "MockFilter",
+        sourceTransformId: "1",
         params: {
           foo: 42,
           enabled: true,

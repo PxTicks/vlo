@@ -1,4 +1,5 @@
 import {
+  ASC_CDL_GLSL,
   GRADING_GLSL,
   MATRIX_GLSL,
   SRGB_TRANSFER_GLSL,
@@ -49,11 +50,55 @@ uniform float uSaturation;
 uniform float uVibrance;
 uniform float uHueRotate;
 uniform float uDitherStrength;
+uniform vec4 uLift;
+uniform vec4 uGamma;
+uniform vec4 uGain;
+uniform vec4 uOffset;
+uniform sampler2D uCurveTexture;
 
 ${SRGB_TRANSFER_GLSL}
 ${MATRIX_GLSL}
 ${TONE_CURVE_GLSL}
 ${GRADING_GLSL}
+${ASC_CDL_GLSL}
+
+vec4 vloSampleCurveRow(float inputValue, float row) {
+  float scaled = clamp(inputValue, 0.0, 1.0) * 1023.0;
+  float leftIndex = floor(scaled);
+  float rightIndex = min(1023.0, leftIndex + 1.0);
+  float amount = scaled - leftIndex;
+  vec4 leftSample = texture(
+    uCurveTexture,
+    vec2((leftIndex + 0.5) / 1024.0, row)
+  );
+  vec4 rightSample = texture(
+    uCurveTexture,
+    vec2((rightIndex + 0.5) / 1024.0, row)
+  );
+  return mix(leftSample, rightSample, amount);
+}
+
+vec3 vloApplyColorCurves(vec3 color) {
+  color = vec3(
+    vloSampleCurveRow(color.r, 0.25).r,
+    vloSampleCurveRow(color.g, 0.25).r,
+    vloSampleCurveRow(color.b, 0.25).r
+  );
+  color = vec3(
+    vloSampleCurveRow(color.r, 0.25).g,
+    vloSampleCurveRow(color.g, 0.25).b,
+    vloSampleCurveRow(color.b, 0.25).a
+  );
+
+  vec3 hsv = vloRgbToHsv(color);
+  float originalHue = hsv.x;
+  vec4 hueCurves = vloSampleCurveRow(originalHue, 0.75);
+  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  float lumaSat = vloSampleCurveRow(luma, 0.75).b;
+  hsv.x = fract(hsv.x + hueCurves.r);
+  hsv.y = clamp(hsv.y * max(0.0, 1.0 + hueCurves.g + lumaSat), 0.0, 1.0);
+  return vloHsvToRgb(hsv);
+}
 
 float vloDitherHash(vec2 position) {
   vec3 p3 = fract(vec3(position.xyx) * 0.1031);
@@ -94,6 +139,13 @@ void main(void) {
   linear *= exp2(uExposure);
 
   vec3 gradingColor = vloLinearToSrgb(linear);
+  gradingColor = vloApplyLiftGammaGainOffset(
+    gradingColor,
+    uLift,
+    uGamma,
+    uGain,
+    uOffset
+  );
   gradingColor = vloApplyToneCurve(
     gradingColor,
     uContrast,
@@ -103,6 +155,7 @@ void main(void) {
     uToeAmount,
     uToeSoftness
   );
+  gradingColor = vloApplyColorCurves(gradingColor);
   gradingColor = vloApplySaturationVibranceHue(
     gradingColor,
     uSaturation,
@@ -115,4 +168,3 @@ void main(void) {
   finalColor = vec4(encoded * source.a, source.a);
 }
 `;
-

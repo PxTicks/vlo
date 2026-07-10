@@ -4,6 +4,7 @@ import {
   V1_COLOR_MODEL,
   applyAscCdl,
   applyHighlightKnee,
+  applyLiftGammaGainOffset,
   applyMatrix3,
   applyReferenceColorGrade,
   applyReferenceColorGradePixel,
@@ -76,6 +77,24 @@ describe("ASC CDL and tone controls", () => {
     expect(result[0]).toBeCloseTo(0.36, 10);
     expect(result[1]).toBeCloseTo(0.5, 10);
     expect(result[2]).toBeCloseTo(0.375, 10);
+  });
+
+  it("applies lift/gamma/gain/offset wheel deltas", () => {
+    const result = applyLiftGammaGainOffset([0.25, 0.5, 0.75], {
+      lift: [0.1, 0, 0],
+      liftMaster: 0,
+      gamma: [0, 0, 0],
+      gammaMaster: 0,
+      gain: [0, 0.2, 0],
+      gainMaster: 0,
+      offset: [0, 0, -0.1],
+      offsetMaster: 0,
+    });
+    expect(result).toEqual([
+      expect.closeTo(0.35, 10),
+      expect.closeTo(0.6, 10),
+      expect.closeTo(0.65, 10),
+    ]);
   });
 
   it("keeps disabled toe/knee exactly neutral", () => {

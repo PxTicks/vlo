@@ -25,6 +25,7 @@ import {
   presentationToClipSourceTime,
 } from "../utils/clipTimeDomains";
 import { computeCommitMutation } from "./controller/commitComputation";
+import { computeBatchCommitMutations } from "./controller/batchCommitComputation";
 import { computeSpeedShapeUpdateForTransforms } from "./controller/speedDuration";
 import { createAddTransform } from "./controller/transformFactory";
 import {
@@ -532,6 +533,45 @@ export function useTransformationController(
     [applyTargetTransforms, updateTargetTransform],
   );
 
+  const handleCommitMany = useCallback(
+    (
+      groupId: string,
+      values: Readonly<Record<string, unknown>>,
+      transformId?: string,
+    ) => {
+      const currentTarget = activeTargetRef.current;
+      if (!currentTarget || Object.keys(values).length === 0) return;
+
+      const activeClip = currentTarget.timelineClip;
+      const presentationTick = Math.max(
+        activeClip.start,
+        Math.min(
+          playbackClock.time,
+          activeClip.start + activeClip.timelineDuration,
+        ),
+      );
+      const keyframeSourceTimeTicks = presentationToClipSourceTime(
+        getTimelinePresentationContext(),
+        activeClip,
+        presentationTick,
+      );
+
+      applyTargetTransforms(
+        computeBatchCommitMutations({
+          groupId,
+          values,
+          transformId,
+          transforms: activeTransformsRef.current,
+          activeClip,
+          playheadTicks: playbackClock.time,
+          pointEpsilonTicks: POINT_EPSILON_TICKS,
+          keyframeSourceTimeTicks,
+        }),
+      );
+    },
+    [applyTargetTransforms],
+  );
+
   const handleReorder = useCallback(
     (activeId: UniqueIdentifier, overId: UniqueIdentifier) => {
       const currentTarget = activeTargetRef.current;
@@ -563,6 +603,7 @@ export function useTransformationController(
     handleSetTransformEnabled,
     handleSetDefaultGroupsEnabled,
     handleCommit,
+    handleCommitMany,
     handleReorder,
     captureActiveTargetSnapshot,
     restoreTargetSnapshot,

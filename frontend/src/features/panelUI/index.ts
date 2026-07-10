@@ -7,7 +7,13 @@ export type {
   PanelLayoutConfig,
   TransformationLayoutConfig,
   ControlRenderProps,
+  CustomControlComponent,
+  CustomControlRenderProps,
 } from "./types";
+export {
+  getCustomControl,
+  registerCustomControl,
+} from "./customControlRegistry";
 
 // Components
 export { AssetDropSlot } from "./components/AssetDropSlot";

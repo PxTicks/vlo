@@ -1,4 +1,5 @@
 import { applySaturationVibranceHue } from "./grading";
+import { applyLiftGammaGainOffset } from "./cdl";
 import { applyMatrix3, whiteBalanceMatrix } from "./matrices";
 import { linearToSrgb, srgbToLinear } from "./transfer";
 import { applyToneCurve } from "./toneCurve";
@@ -17,6 +18,22 @@ export interface ColorGradePrimaries {
   readonly saturation: number;
   readonly vibrance: number;
   readonly hueRotate: number;
+  readonly liftR: number;
+  readonly liftG: number;
+  readonly liftB: number;
+  readonly liftMaster: number;
+  readonly gammaR: number;
+  readonly gammaG: number;
+  readonly gammaB: number;
+  readonly gammaMaster: number;
+  readonly gainR: number;
+  readonly gainG: number;
+  readonly gainB: number;
+  readonly gainMaster: number;
+  readonly offsetR: number;
+  readonly offsetG: number;
+  readonly offsetB: number;
+  readonly offsetMaster: number;
 }
 
 export const DEFAULT_COLOR_GRADE_PRIMARIES: ColorGradePrimaries = Object.freeze({
@@ -32,6 +49,22 @@ export const DEFAULT_COLOR_GRADE_PRIMARIES: ColorGradePrimaries = Object.freeze(
   saturation: 1,
   vibrance: 0,
   hueRotate: 0,
+  liftR: 0,
+  liftG: 0,
+  liftB: 0,
+  liftMaster: 0,
+  gammaR: 0,
+  gammaG: 0,
+  gammaB: 0,
+  gammaMaster: 0,
+  gainR: 0,
+  gainG: 0,
+  gainB: 0,
+  gainMaster: 0,
+  offsetR: 0,
+  offsetG: 0,
+  offsetB: 0,
+  offsetMaster: 0,
 });
 
 export function applyReferenceColorGrade(
@@ -49,6 +82,16 @@ export function applyReferenceColorGrade(
   ) as unknown as Rgb;
 
   let gradingColor = linearToSrgb(linear);
+  gradingColor = applyLiftGammaGainOffset(gradingColor, {
+    lift: [parameters.liftR, parameters.liftG, parameters.liftB],
+    liftMaster: parameters.liftMaster,
+    gamma: [parameters.gammaR, parameters.gammaG, parameters.gammaB],
+    gammaMaster: parameters.gammaMaster,
+    gain: [parameters.gainR, parameters.gainG, parameters.gainB],
+    gainMaster: parameters.gainMaster,
+    offset: [parameters.offsetR, parameters.offsetG, parameters.offsetB],
+    offsetMaster: parameters.offsetMaster,
+  });
   gradingColor = applyToneCurve(gradingColor, parameters);
   return applySaturationVibranceHue(
     gradingColor,
@@ -72,4 +115,3 @@ export function applyReferenceColorGradePixel(
   const graded = applyReferenceColorGrade(straight, parameters);
   return [graded[0] * alpha, graded[1] * alpha, graded[2] * alpha, alpha];
 }
-

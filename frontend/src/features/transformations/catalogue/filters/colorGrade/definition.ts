@@ -1,12 +1,38 @@
 import {
   DEFAULT_COLOR_GRADE_PRIMARIES,
+  DEFAULT_COLOR_CURVES,
   V1_AUTHORED_COLOR_MODEL,
 } from "../../../../../core/color";
+import {
+  COLOR_WHEELS_CONTROL_ID,
+  HUE_CURVES_CONTROL_ID,
+  VALUE_CURVES_CONTROL_ID,
+  registerColorGradingCustomControls,
+} from "../../../../colorGrading";
 import { filterHandler } from "../../filterHandler";
 import type { TransformationDefinition } from "../../types";
+import type { ControlDefinition } from "../../../../panelUI";
 import { ColorGradeFilter } from "./colorGradeFilter";
 
+registerColorGradingCustomControls();
+
 export const COLOR_GRADE_FILTER_NAME = "ColorGradeFilter";
+
+const WHEEL_NAMES = ["lift", "gamma", "gain", "offset"] as const;
+const WHEEL_CONTROLS: readonly ControlDefinition[] = WHEEL_NAMES.flatMap(
+  (wheel) =>
+    (["R", "G", "B", "Master"] as const).map((channel) => ({
+      type: "number" as const,
+      label: `${wheel} ${channel}`,
+      name: `${wheel}${channel}`,
+      defaultValue: 0,
+      min: -1,
+      max: 1,
+      step: 0.01,
+      supportsSpline: true,
+      hidden: true,
+    })),
+);
 
 export const colorGradeDefinition: TransformationDefinition = {
   type: "filter",
@@ -23,6 +49,7 @@ export const colorGradeDefinition: TransformationDefinition = {
     toeAmount: DEFAULT_COLOR_GRADE_PRIMARIES.toeAmount,
     toeSoftness: DEFAULT_COLOR_GRADE_PRIMARIES.toeSoftness,
     ditherStrength: 1,
+    ...DEFAULT_COLOR_CURVES,
   },
   uiConfig: {
     groups: [
@@ -64,6 +91,20 @@ export const colorGradeDefinition: TransformationDefinition = {
         ],
       },
       {
+        id: "color_grade_wheels",
+        title: "Primaries",
+        columns: 1,
+        controls: [
+          {
+            type: "custom",
+            label: "Color wheels",
+            name: "_colorWheels",
+            componentId: COLOR_WHEELS_CONTROL_ID,
+          },
+          ...WHEEL_CONTROLS,
+        ],
+      },
+      {
         id: "color_grade_tone",
         title: "Tone",
         columns: 1,
@@ -80,6 +121,46 @@ export const colorGradeDefinition: TransformationDefinition = {
           },
           {
             type: "slider",
+            label: "Knee threshold",
+            name: "kneeThreshold",
+            defaultValue: DEFAULT_COLOR_GRADE_PRIMARIES.kneeThreshold,
+            min: 0.5,
+            max: 1.5,
+            step: 0.01,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Knee softness",
+            name: "kneeSoftness",
+            defaultValue: DEFAULT_COLOR_GRADE_PRIMARIES.kneeSoftness,
+            min: 0,
+            max: 0.5,
+            step: 0.005,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Toe amount",
+            name: "toeAmount",
+            defaultValue: DEFAULT_COLOR_GRADE_PRIMARIES.toeAmount,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
+            label: "Toe softness",
+            name: "toeSoftness",
+            defaultValue: DEFAULT_COLOR_GRADE_PRIMARIES.toeSoftness,
+            min: 0,
+            max: 0.5,
+            step: 0.005,
+            supportsSpline: true,
+          },
+          {
+            type: "slider",
             label: "Pivot",
             name: "pivot",
             defaultValue: DEFAULT_COLOR_GRADE_PRIMARIES.pivot,
@@ -87,6 +168,27 @@ export const colorGradeDefinition: TransformationDefinition = {
             max: 1,
             step: 0.005,
             supportsSpline: true,
+          },
+        ],
+      },
+      {
+        id: "color_grade_curves",
+        title: "Curves",
+        columns: 1,
+        controls: [
+          {
+            type: "custom",
+            label: "Value curves",
+            name: "_valueCurves",
+            componentId: VALUE_CURVES_CONTROL_ID,
+            config: { kind: "value" },
+          },
+          {
+            type: "custom",
+            label: "Hue and saturation curves",
+            name: "_hueCurves",
+            componentId: HUE_CURVES_CONTROL_ID,
+            config: { kind: "hue" },
           },
         ],
       },
@@ -130,4 +232,3 @@ export const colorGradeDefinition: TransformationDefinition = {
     ],
   },
 };
-

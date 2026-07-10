@@ -22,7 +22,13 @@ export {
   whiteBalanceMatrix,
   XYZ_D65_TO_REC709,
 } from "./matrices";
-export { applyAscCdl, ASC_CDL_GLSL, type AscCdlParameters } from "./cdl";
+export {
+  applyAscCdl,
+  applyLiftGammaGainOffset,
+  ASC_CDL_GLSL,
+  type AscCdlParameters,
+  type LiftGammaGainOffsetParameters,
+} from "./cdl";
 export {
   applyHighlightKnee,
   applyShadowToe,
@@ -49,3 +55,12 @@ export {
   type ColorGradePrimaries,
 } from "./referencePipeline";
 export type { Matrix3, Rgb, Rgba } from "./types";
+export {
+  DEFAULT_COLOR_CURVES,
+  PERIODIC_CURVE_PARAMETER_NAMES,
+  VALUE_CURVE_PARAMETER_NAMES,
+  type ColorCurveParameterName,
+  type ColorCurvePoint,
+  type PeriodicCurveParameterName,
+  type ValueCurveParameterName,
+} from "./curves";

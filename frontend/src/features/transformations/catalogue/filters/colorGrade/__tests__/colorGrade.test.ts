@@ -24,8 +24,15 @@ describe("Color Grade transformation", () => {
     const controls = colorGradeDefinition.uiConfig.groups.flatMap(
       (group) => group.controls,
     );
-    expect(controls).toHaveLength(8);
-    expect(controls.every((control) => control.supportsSpline)).toBe(true);
+    expect(controls.filter((control) => control.type === "custom")).toHaveLength(3);
+    expect(
+      controls
+        .filter(
+          (control) =>
+            control.type === "number" || control.type === "slider",
+        )
+        .every((control) => control.supportsSpline),
+    ).toBe(true);
   });
 
   it("creates a fully defaulted, serializable grade from the add menu", () => {
@@ -39,8 +46,16 @@ describe("Color Grade transformation", () => {
         contrast: 1,
         saturation: 1,
         ditherStrength: 1,
+        liftR: 0,
+        gainMaster: 0,
+        curveMaster: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
       },
     });
+    expect(transform?.parameters).not.toHaveProperty("_colorWheels");
+    expect(transform?.parameters).not.toHaveProperty("_valueCurves");
     expect(() => JSON.stringify(transform)).not.toThrow();
   });
 
@@ -70,6 +85,8 @@ describe("Color Grade transformation", () => {
     expect(COLOR_GRADE_FRAGMENT).toContain("vloSrgbToLinear(straight)");
     expect(COLOR_GRADE_FRAGMENT).toContain("linear *= exp2(uExposure)");
     expect(COLOR_GRADE_FRAGMENT).toContain("vloApplyToneCurve");
+    expect(COLOR_GRADE_FRAGMENT).toContain("vloApplyLiftGammaGainOffset");
+    expect(COLOR_GRADE_FRAGMENT).toContain("vloApplyColorCurves");
     expect(COLOR_GRADE_FRAGMENT).toContain("vloApplySaturationVibranceHue");
     expect(COLOR_GRADE_FRAGMENT).toContain("vloBlueNoise(gl_FragCoord.xy)");
     expect(COLOR_GRADE_FRAGMENT).toContain("encoded * source.a");
@@ -83,6 +100,8 @@ describe("Color Grade transformation", () => {
     filter.contrast = 1.25;
     filter.saturation = 0.8;
     filter.hueRotate = 90;
+    filter.liftR = 0.1;
+    filter.gammaMaster = 0.2;
 
     const uniforms = (
       filter.resources.filterUniforms as {
@@ -93,6 +112,8 @@ describe("Color Grade transformation", () => {
     expect(uniforms.uContrast).toBe(1.25);
     expect(uniforms.uSaturation).toBe(0.8);
     expect(uniforms.uHueRotate).toBe(0.25);
+    expect(uniforms.uLift).toEqual(new Float32Array([0.1, 0, 0, 0]));
+    expect(uniforms.uGamma).toEqual(new Float32Array([0, 0, 0, 0.2]));
     expect(uniforms.uWhiteBalanceRow0).not.toEqual(
       new Float32Array([1, 0, 0]),
     );

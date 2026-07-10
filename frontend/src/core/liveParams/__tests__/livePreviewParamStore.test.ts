@@ -25,4 +25,20 @@ describe("livePreviewParamStore", () => {
     });
     unsubscribe();
   });
+
+  it("holds JSON curve arrays as transient render overrides", () => {
+    const curve = [
+      { x: 0, y: 0 },
+      { x: 0.5, y: 0.7 },
+      { x: 1, y: 1 },
+    ];
+    livePreviewParamStore.set("grade-1", "curveMaster", curve);
+    expect(
+      livePreviewParamStore.get<typeof curve>("grade-1", "curveMaster"),
+    ).toEqual(curve);
+    livePreviewParamStore.clear("grade-1", "curveMaster");
+    expect(
+      livePreviewParamStore.get<typeof curve>("grade-1", "curveMaster"),
+    ).toBeUndefined();
+  });
 });

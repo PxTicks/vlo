@@ -1,7 +1,7 @@
 export interface LivePreviewParamUpdate {
   transformId: string;
   paramName: string;
-  value: number;
+  value: unknown;
 }
 
 export interface LivePreviewParamKey {
@@ -29,14 +29,19 @@ function createKey(transformId: string, paramName: string): string {
  * the timeline model through undo/persist work on every pointer move.
  */
 class LivePreviewParamStore {
-  private readonly overrides = new Map<string, number>();
+  private readonly overrides = new Map<string, unknown>();
   private readonly listeners = new Set<PreviewListener>();
 
-  get(transformId: string, paramName: string): number | undefined {
-    return this.overrides.get(createKey(transformId, paramName));
+  get<TValue = number>(
+    transformId: string,
+    paramName: string,
+  ): TValue | undefined {
+    return this.overrides.get(createKey(transformId, paramName)) as
+      | TValue
+      | undefined;
   }
 
-  set(transformId: string, paramName: string, value: number): void {
+  set(transformId: string, paramName: string, value: unknown): void {
     this.setMany([{ transformId, paramName, value }]);
   }
 

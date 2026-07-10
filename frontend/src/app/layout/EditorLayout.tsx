@@ -5,7 +5,7 @@ import { useRegionFocus, useEditorFocusStore } from "../../features/editorFocus"
 import { EditorRegion } from "./EditorRegion";
 
 const LEFT_PANEL_WIDTH = 356;
-const RIGHT_SIDEBAR_WIDTH = 300;
+const RIGHT_SIDEBAR_WIDTH = 340;
 const TIMELINE_HEIGHT = 280;
 
 interface EditorLayoutProps {

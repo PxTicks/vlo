@@ -72,9 +72,9 @@ export function ValueCurveEditor({
   onCommit,
 }: ValueCurveEditorProps) {
   const [activeName, setActiveName] = useState(tabs[0].name);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<ColorCurvePoint[] | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const dragIndexRef = useRef<number | null>(null);
   const pendingRef = useRef<ColorCurvePoint[]>([]);
   const activeTab = tabs.find((tab) => tab.name === activeName) ?? tabs[0];
   const committedPoints = useMemo(
@@ -154,7 +154,7 @@ export function ValueCurveEditor({
             onClick={() => {
               setActiveName(tab.name);
               setDraft(null);
-              setDragIndex(null);
+              dragIndexRef.current = null;
             }}
             sx={{ minWidth: 0, color: tab.name === activeTab.name ? undefined : tab.color }}
           >
@@ -192,17 +192,22 @@ export function ValueCurveEditor({
                 Math.abs(point.y - nextPoint.y) <= thresholdY,
             );
             const nextPoints = points.map((point) => ({ ...point }));
+            const addedPoint = index === -1;
             if (index === -1) {
               nextPoints.push(nextPoint);
               nextPoints.sort((left, right) => left.x - right.x);
               index = nextPoints.findIndex((point) => point === nextPoint);
             }
-            pendingRef.current = nextPoints;
-            setDraft(nextPoints);
-            setDragIndex(index);
+            dragIndexRef.current = index;
+            if (addedPoint) {
+              previewPoints(nextPoints);
+            } else {
+              pendingRef.current = nextPoints;
+            }
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerMove={(event) => {
+            const dragIndex = dragIndexRef.current;
             if (dragIndex === null) return;
             const nextPoint = locatePoint(event);
             const nextPoints = pendingRef.current.map((point) => ({ ...point }));
@@ -213,10 +218,10 @@ export function ValueCurveEditor({
             previewPoints(nextPoints);
           }}
           onPointerUp={(event) => {
-            if (dragIndex === null) return;
+            if (dragIndexRef.current === null) return;
             onCommit(activeTab.name, pendingRef.current);
             setDraft(null);
-            setDragIndex(null);
+            dragIndexRef.current = null;
             event.currentTarget.releasePointerCapture(event.pointerId);
           }}
           onDoubleClick={() => {

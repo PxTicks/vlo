@@ -37,11 +37,13 @@ describe("color grade histogram analysis", () => {
     ).get("selected");
 
     expect(result).toBeDefined();
-    expect(peakIndex(result?.before.luma ?? new Float32Array())).toBeGreaterThan(
-      31,
-    );
-    expect(peakIndex(result?.after.luma ?? new Float32Array())).toBeLessThan(
-      peakIndex(result?.before.luma ?? new Float32Array()),
+    expect(
+      peakIndex(result?.snapshot.before.luma ?? new Float32Array()),
+    ).toBeGreaterThan(31);
+    expect(
+      peakIndex(result?.snapshot.after.luma ?? new Float32Array()),
+    ).toBeLessThan(
+      peakIndex(result?.snapshot.before.luma ?? new Float32Array()),
     );
   });
 });

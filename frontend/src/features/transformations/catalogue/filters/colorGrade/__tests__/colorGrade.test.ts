@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { V1_AUTHORED_COLOR_MODEL } from "../../../../../../core/color";
 import { getEntryByFilterName, isTransformCompatible } from "../../../TransformationRegistry";
 import { COLOR_GRADE_FILTER_NAME, colorGradeDefinition } from "../definition";
@@ -10,6 +10,8 @@ import {
 import { ColorGradeFilter } from "../colorGradeFilter";
 import { FusedColorGradeFilter } from "../fusedColorGradeFilter";
 import { buildFusedColorGradeFragment } from "../fusedShader";
+import { FusedColorGradeTextures } from "../fusedColorGradeTextures";
+import { normalizeColorGradeLayer } from "../fusedColorGradeParameters";
 import { createAddTransform } from "../../../../hooks/controller/transformFactory";
 import { planTransformRender } from "../../../../effectMaskRenderPlan";
 import type { MaskBooleanExpression } from "../../../../../../types/TimelineTypes";
@@ -185,6 +187,32 @@ describe("Color Grade transformation", () => {
       COLOR_GRADE_SHADER_STAGE.COLOR,
     ]);
     filter.destroy();
+  });
+
+  it("coalesces interactive curve LUT bakes onto the live render path", () => {
+    vi.useFakeTimers();
+    const onBake = vi.fn();
+    const textures = new FusedColorGradeTextures(onBake);
+    textures.update([
+      normalizeColorGradeLayer({ transformId: "a", parameters: {} }),
+    ]);
+    textures.update([
+      normalizeColorGradeLayer({
+        transformId: "a",
+        parameters: {
+          curveMaster: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0.8 },
+          ],
+        },
+      }),
+    ]);
+
+    expect(onBake).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(16);
+    expect(onBake).toHaveBeenCalledTimes(1);
+    textures.destroy();
+    vi.useRealTimers();
   });
 
   it("accepts repeated property assignment updates used by filter pooling", () => {

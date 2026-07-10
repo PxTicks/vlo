@@ -46,6 +46,7 @@ describe("ValueCurveEditor", () => {
     editor.releasePointerCapture = vi.fn();
 
     fireEvent.pointerDown(editor, { pointerId: 2, clientX: 100, clientY: 60 });
+    expect(onPreview).toHaveBeenCalledTimes(1);
     fireEvent.pointerMove(editor, { pointerId: 2, clientX: 100, clientY: 55 });
     fireEvent.pointerUp(editor, { pointerId: 2, clientX: 100, clientY: 55 });
     expect(onPreview).toHaveBeenCalled();

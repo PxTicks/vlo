@@ -19,6 +19,21 @@ function curveHash(grades: readonly NormalizedColorGradeLayer[]): string {
     .join("|");
 }
 
+function parameterHash(grades: readonly NormalizedColorGradeLayer[]): string {
+  return grades
+    .map((grade) =>
+      JSON.stringify({
+        parameters: Object.fromEntries(
+          Object.entries(grade.parameters).filter(
+            ([name]) => !name.startsWith("curve"),
+          ),
+        ),
+        ditherStrength: grade.ditherStrength,
+      }),
+    )
+    .join("|");
+}
+
 export class FusedColorGradeTextures {
   public readonly parameterSource: BufferImageSource;
   public readonly curveSource: BufferImageSource;
@@ -30,8 +45,15 @@ export class FusedColorGradeTextures {
   );
   private gradeCount = 1;
   private currentCurveHash = "";
+  private currentParameterHash = "";
+  private pendingCurveHash: string | null = null;
+  private pendingCurveGrades: readonly NormalizedColorGradeLayer[] = [];
+  private curveBakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private hasBakedCurves = false;
+  private readonly onCurveBake?: () => void;
 
-  constructor() {
+  constructor(onCurveBake?: () => void) {
+    this.onCurveBake = onCurveBake;
     this.parameterSource = new BufferImageSource({
       resource: this.parameterPixels,
       width: FUSED_GRADE_PARAMETER_TEXTURE_WIDTH,
@@ -58,7 +80,9 @@ export class FusedColorGradeTextures {
 
   public update(grades: readonly NormalizedColorGradeLayer[]): void {
     const nextGradeCount = Math.max(1, grades.length);
-    if (nextGradeCount !== this.gradeCount) {
+    const gradeCountChanged = nextGradeCount !== this.gradeCount;
+    const nextParameterHash = parameterHash(grades);
+    if (gradeCountChanged) {
       this.gradeCount = nextGradeCount;
       this.parameterPixels = new Float32Array(
         FUSED_GRADE_PARAMETER_TEXTURE_WIDTH * this.gradeCount * 4,
@@ -68,16 +92,47 @@ export class FusedColorGradeTextures {
         FUSED_GRADE_PARAMETER_TEXTURE_WIDTH,
         this.gradeCount,
       );
-    } else {
+    }
+    if (gradeCountChanged || nextParameterHash !== this.currentParameterHash) {
+      this.currentParameterHash = nextParameterHash;
       this.parameterPixels.fill(0);
+      grades.forEach((grade, row) => this.writeGradeParameters(grade, row));
+      this.parameterSource.update();
     }
 
-    grades.forEach((grade, row) => this.writeGradeParameters(grade, row));
-    this.parameterSource.update();
-
     const nextCurveHash = curveHash(grades);
-    if (nextCurveHash === this.currentCurveHash) return;
-    this.currentCurveHash = nextCurveHash;
+    if (nextCurveHash === this.currentCurveHash) {
+      this.cancelPendingCurveBake();
+      return;
+    }
+    if (nextCurveHash === this.pendingCurveHash) return;
+    this.pendingCurveHash = nextCurveHash;
+    this.pendingCurveGrades = grades;
+    if (!this.hasBakedCurves || gradeCountChanged) {
+      this.bakePendingCurves(false);
+      return;
+    }
+    if (this.curveBakeTimer !== null) return;
+    this.curveBakeTimer = setTimeout(() => {
+      this.curveBakeTimer = null;
+      this.bakePendingCurves(true);
+    }, 16);
+  }
+
+  public destroy(): void {
+    this.cancelPendingCurveBake();
+    this.parameterSource.destroy();
+    this.curveSource.destroy();
+  }
+
+  private bakePendingCurves(notify: boolean): void {
+    if (this.pendingCurveHash === null) return;
+    if (this.curveBakeTimer !== null) clearTimeout(this.curveBakeTimer);
+    this.curveBakeTimer = null;
+    const grades = this.pendingCurveGrades;
+    this.currentCurveHash = this.pendingCurveHash;
+    this.pendingCurveHash = null;
+    this.pendingCurveGrades = [];
     this.curvePixels = new Float32Array(
       COLOR_CURVE_LUT_WIDTH * COLOR_CURVE_LUT_HEIGHT * this.gradeCount * 4,
     );
@@ -93,11 +148,15 @@ export class FusedColorGradeTextures {
       COLOR_CURVE_LUT_HEIGHT * this.gradeCount,
     );
     this.curveSource.update();
+    this.hasBakedCurves = true;
+    if (notify) this.onCurveBake?.();
   }
 
-  public destroy(): void {
-    this.parameterSource.destroy();
-    this.curveSource.destroy();
+  private cancelPendingCurveBake(): void {
+    if (this.curveBakeTimer !== null) clearTimeout(this.curveBakeTimer);
+    this.curveBakeTimer = null;
+    this.pendingCurveHash = null;
+    this.pendingCurveGrades = [];
   }
 
   private writeGradeParameters(

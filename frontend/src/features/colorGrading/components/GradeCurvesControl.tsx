@@ -3,7 +3,6 @@ import { Box } from "@mui/material";
 import type { CustomControlRenderProps } from "../../panelUI";
 import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import {
-  colorGradeHistogramRuntime,
   type ColorCurveParameterName,
   type ColorCurvePoint,
 } from "../../../core/color";
@@ -153,7 +152,6 @@ export function GradeCurvesControl(props: CustomControlRenderProps) {
         disabled={props.disabled}
         onPreview={(name, points) => {
           if (props.transformId) {
-            colorGradeHistogramRuntime.invalidate(props.transformId);
             livePreviewParamStore.set(props.transformId, name, points);
           }
         }}

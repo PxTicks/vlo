@@ -328,4 +328,230 @@ describe("workflowBridge", () => {
     ).toEqual([]);
   });
 
+  describe("subgraph discovery", () => {
+    const SUBGRAPH_ID = "b0e5ca93-2731-42b9-8e0a-d28ea851ff81";
+    const INPUT_NODE_MAP_FIXTURE = {
+      CLIPTextEncode: [
+        { inputType: "text" as const, param: "text", label: "Prompt" },
+      ],
+    };
+
+    /** A subgraph whose CLIPTextEncode.text is promoted to the boundary:
+     * linked internally (link 45) from the definition's `text` input slot. */
+    function buildSubgraphDefinition() {
+      return {
+        id: SUBGRAPH_ID,
+        name: "Text to Image",
+        inputs: [{ id: "uuid-in", name: "text", type: "STRING", linkIds: [45] }],
+        nodes: [
+          {
+            id: 6,
+            type: "CLIPTextEncode",
+            inputs: [{ name: "text", link: 45 }],
+            widgets_values: ["a martini glass"],
+          },
+        ],
+        links: [
+          {
+            id: 45,
+            origin_id: -10,
+            origin_slot: 0,
+            target_id: 6,
+            target_slot: 0,
+            type: "STRING",
+          },
+        ],
+      };
+    }
+
+    it("discovers nodes inside subgraph definitions with instance-scoped ids", () => {
+      const inputs = parseInputsFromGraphData(
+        {
+          nodes: [{ id: 30, type: SUBGRAPH_ID, inputs: [] }],
+          definitions: { subgraphs: [buildSubgraphDefinition()] },
+        },
+        { inputNodeMap: INPUT_NODE_MAP_FIXTURE },
+      );
+
+      expect(inputs).toHaveLength(1);
+      expect(inputs[0]).toMatchObject({
+        id: "30:6:text",
+        nodeId: "30:6",
+        classType: "CLIPTextEncode",
+        inputType: "text",
+        param: "text",
+      });
+    });
+
+    it("reads promoted widget values from the inner node when the outer slot is unconnected", () => {
+      const inputs = parseInputsFromGraphData(
+        {
+          nodes: [
+            {
+              id: 30,
+              type: SUBGRAPH_ID,
+              inputs: [{ name: "text", type: "STRING", link: null }],
+            },
+          ],
+          definitions: { subgraphs: [buildSubgraphDefinition()] },
+        },
+        { inputNodeMap: INPUT_NODE_MAP_FIXTURE },
+      );
+
+      expect(inputs[0].currentValue).toBe("a martini glass");
+    });
+
+    it("treats promoted params as linked when the outer slot is wired externally", () => {
+      const inputs = parseInputsFromGraphData(
+        {
+          nodes: [
+            { id: 7, type: "PrimitiveStringMultiline", widgets_values: ["outer"] },
+            {
+              id: 30,
+              type: SUBGRAPH_ID,
+              inputs: [{ name: "text", type: "STRING", link: 99 }],
+            },
+          ],
+          links: [[99, 7, 0, 30, 0, "STRING"]],
+          definitions: { subgraphs: [buildSubgraphDefinition()] },
+        },
+        { inputNodeMap: INPUT_NODE_MAP_FIXTURE },
+      );
+
+      expect(inputs).toHaveLength(1);
+      expect(inputs[0].currentValue).toBeNull();
+    });
+
+    it("keeps internally-linked params linked", () => {
+      const definition = {
+        id: SUBGRAPH_ID,
+        inputs: [],
+        nodes: [
+          {
+            id: 6,
+            type: "CLIPTextEncode",
+            inputs: [{ name: "text", link: 72 }],
+            widgets_values: ["stale"],
+          },
+          { id: 28, type: "ComfySwitchNode", widgets_values: [false] },
+        ],
+        links: [
+          {
+            id: 72,
+            origin_id: 28,
+            origin_slot: 0,
+            target_id: 6,
+            target_slot: 0,
+            type: "STRING",
+          },
+        ],
+      };
+
+      const inputs = parseInputsFromGraphData(
+        {
+          nodes: [{ id: 30, type: SUBGRAPH_ID }],
+          definitions: { subgraphs: [definition] },
+        },
+        { inputNodeMap: INPUT_NODE_MAP_FIXTURE },
+      );
+
+      expect(inputs).toHaveLength(1);
+      expect(inputs[0].currentValue).toBeNull();
+    });
+
+    it("skips inner nodes of bypassed or muted instances", () => {
+      const inputs = parseInputsFromGraphData(
+        {
+          nodes: [{ id: 30, type: SUBGRAPH_ID, mode: 4 }],
+          definitions: { subgraphs: [buildSubgraphDefinition()] },
+        },
+        { inputNodeMap: INPUT_NODE_MAP_FIXTURE },
+      );
+
+      expect(inputs).toEqual([]);
+    });
+
+    it("scopes ids through nested subgraph instances", () => {
+      const innerId = "11111111-2222-3333-4444-555555555555";
+      const inputs = parseInputsFromGraphData(
+        {
+          nodes: [{ id: 40, type: SUBGRAPH_ID }],
+          definitions: {
+            subgraphs: [
+              {
+                id: SUBGRAPH_ID,
+                inputs: [],
+                nodes: [{ id: 12, type: innerId }],
+                links: [],
+              },
+              {
+                id: innerId,
+                inputs: [],
+                nodes: [
+                  {
+                    id: 6,
+                    type: "CLIPTextEncode",
+                    widgets_values: ["nested"],
+                  },
+                ],
+                links: [],
+              },
+            ],
+          },
+        },
+        { inputNodeMap: INPUT_NODE_MAP_FIXTURE },
+      );
+
+      expect(inputs).toHaveLength(1);
+      expect(inputs[0]).toMatchObject({
+        id: "40:12:6:text",
+        nodeId: "40:12:6",
+        currentValue: "nested",
+      });
+    });
+
+    it("discovers each instance of a shared definition separately", () => {
+      const inputs = parseInputsFromGraphData(
+        {
+          nodes: [
+            { id: 31, type: SUBGRAPH_ID },
+            { id: 30, type: SUBGRAPH_ID },
+          ],
+          definitions: { subgraphs: [buildSubgraphDefinition()] },
+        },
+        { inputNodeMap: INPUT_NODE_MAP_FIXTURE },
+      );
+
+      expect(inputs.map((input) => input.nodeId)).toEqual(["30:6", "31:6"]);
+    });
+
+    it("does not recurse into self-referential definitions", () => {
+      const inputs = parseInputsFromGraphData(
+        {
+          nodes: [{ id: 30, type: SUBGRAPH_ID }],
+          definitions: {
+            subgraphs: [
+              {
+                id: SUBGRAPH_ID,
+                inputs: [],
+                nodes: [
+                  { id: 5, type: SUBGRAPH_ID },
+                  {
+                    id: 6,
+                    type: "CLIPTextEncode",
+                    widgets_values: ["safe"],
+                  },
+                ],
+                links: [],
+              },
+            ],
+          },
+        },
+        { inputNodeMap: INPUT_NODE_MAP_FIXTURE },
+      );
+
+      expect(inputs.map((input) => input.nodeId)).toEqual(["30:6"]);
+    });
+  });
+
 });

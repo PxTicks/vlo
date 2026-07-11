@@ -8,17 +8,15 @@ import {
 import { Box, Button, Collapse, Typography } from "@mui/material";
 import { ExpandMore } from "@mui/icons-material";
 import type { CustomControlRenderProps } from "../../panelUI";
-import { SliderControl } from "../../panelUI";
 import { liveParamStore } from "../../../core/liveParams/liveParamStore";
 import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import { TONE_SHAPING_PARAMETER_CONTROLS } from "../constants";
 import {
-  highlightRolloffStrength,
-  shadowLiftStrength,
   toneMacroUpdate,
   type ToneMacro,
-  type ToneParameters,
+  type ToneGraphParameters,
 } from "../utils/toneShaping";
+import { ToneResponseGraph } from "./ToneResponseGraph";
 
 function finiteValue(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -26,8 +24,10 @@ function finiteValue(value: unknown, fallback: number): number {
 
 function readToneParameters(
   values: Readonly<Record<string, unknown>>,
-): ToneParameters {
+): ToneGraphParameters {
   return {
+    contrast: finiteValue(values.contrast, 1),
+    pivot: finiteValue(values.pivot, 0.435),
     kneeThreshold: finiteValue(values.kneeThreshold, 1),
     kneeSoftness: finiteValue(values.kneeSoftness, 0),
     toeAmount: finiteValue(values.toeAmount, 0),
@@ -54,11 +54,17 @@ export function ToneShapingControl({
 
   useEffect(() => {
     if (!transformId) return;
-    const unsubscribers = TONE_SHAPING_PARAMETER_CONTROLS.map((control) =>
-      liveParamStore.subscribe(transformId, control.name, (value) => {
-        setParameters((current) => ({ ...current, [control.name]: value }));
+    const parameterNames = [
+      "contrast",
+      "pivot",
+      ...TONE_SHAPING_PARAMETER_CONTROLS.map((control) => control.name),
+    ];
+    const unsubscribers = parameterNames.map((parameterName) =>
+      liveParamStore.subscribe(transformId, parameterName, (value) => {
+        setParameters((current) => ({ ...current, [parameterName]: value }));
       }),
     );
+    livePreviewParamStore.requestRender();
     return () => {
       unsubscribers.forEach((unsubscribe) => unsubscribe());
       livePreviewParamStore.clearMany(
@@ -99,43 +105,14 @@ export function ToneShapingControl({
     [onCommitMany, transformId],
   );
 
-  const macros = [
-    {
-      key: "highlight" as const,
-      label: "Highlight rolloff",
-      value: highlightRolloffStrength(parameters),
-    },
-    {
-      key: "shadow" as const,
-      label: "Shadow lift",
-      value: shadowLiftStrength(parameters),
-    },
-  ];
-
   return (
     <Box>
-      <Box sx={{ display: "grid", gap: 1 }}>
-        {macros.map((macro) => (
-          <SliderControl
-            key={macro.key}
-            label={macro.label}
-            value={macro.value}
-            min={0}
-            max={1}
-            step={0.01}
-            disabled={disabled}
-            onChange={(_event, value) => preview(macro.key, value as number)}
-            onChangeCommitted={(_event, value) =>
-              commit(macro.key, value as number)
-            }
-            onInputCommit={(value) => commit(macro.key, value)}
-          />
-        ))}
-      </Box>
-      <Typography variant="caption" sx={{ color: "text.disabled", px: 1 }}>
-        Quick controls: each slider drives a linked parameter pair. Rolloff
-        compresses pushed highlights; shadow lift raises the black floor.
-      </Typography>
+      <ToneResponseGraph
+        parameters={parameters}
+        disabled={disabled}
+        onPreview={preview}
+        onCommit={commit}
+      />
       {renderParameterControl ? (
         <Box sx={{ mt: 0.5 }}>
           <Button
@@ -160,7 +137,7 @@ export function ToneShapingControl({
             {showAdvanced ? (
               <Box id={advancedId} sx={{ display: "grid", gap: 0.75, pt: 1 }}>
                 <Typography variant="caption" sx={{ color: "text.disabled", px: 1 }}>
-                  These are the exact values driven by the quick controls.
+                  These are the exact values driven by the handles above.
                   Threshold and amount are inactive when their transition is
                   zero; use these controls for precise values and keyframes.
                 </Typography>

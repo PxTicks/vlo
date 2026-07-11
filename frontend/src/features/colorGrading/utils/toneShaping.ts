@@ -5,6 +5,11 @@ export interface ToneParameters {
   toeSoftness: number;
 }
 
+export interface ToneGraphParameters extends ToneParameters {
+  contrast: number;
+  pivot: number;
+}
+
 export type ToneMacro = "highlight" | "shadow";
 
 function clampUnit(value: number): number {

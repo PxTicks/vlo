@@ -41,6 +41,7 @@ import { useEditorClipOverlays } from "./hooks/useEditorClipOverlays";
 import { useEditorSelectionLock } from "./hooks/useEditorSelectionLock";
 import { useEditorOrchestration } from "./orchestration/useEditorOrchestration";
 import { registerColorGradingCustomControls } from "../features/colorGrading";
+import { ScopesDock } from "../features/scopes";
 
 registerColorGradingCustomControls();
 
@@ -219,6 +220,7 @@ export function Editor() {
       <TransformationDragOverlay />
       <TransitionDragOverlay />
       <HighVramWorkflowPrompt />
+      <ScopesDock />
     </DndContext>
   );
 }

@@ -6,6 +6,7 @@ export const HUE_CURVES_CONTROL_ID = "color-grading.hue-curves";
 export const TONE_SHAPING_CONTROL_ID = "color-grading.tone-shaping";
 export const QUALIFIER_CONTROL_ID = "color-grading.qualifier";
 export const LUT_CONTROL_ID = "color-grading.lut";
+export const GRADE_MANAGEMENT_CONTROL_ID = "color-grading.management";
 
 export const QUALIFIER_PARAMETER_CONTROLS: readonly ControlDefinition[] = [
   { type: "checkbox", label: "Enabled", name: "qualifierEnabled", defaultValue: false, hidden: true },

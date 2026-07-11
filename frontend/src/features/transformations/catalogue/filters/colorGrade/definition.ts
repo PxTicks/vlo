@@ -14,6 +14,7 @@ import {
   TONE_SHAPING_PARAMETER_CONTROLS,
   VALUE_CURVES_CONTROL_ID,
   QUALIFIER_CONTROL_ID,
+  GRADE_MANAGEMENT_CONTROL_ID,
 } from "../../../../colorGrading/constants";
 import { filterHandler } from "../../filterHandler";
 import type { TransformationDefinition } from "../../types";
@@ -42,6 +43,19 @@ export const colorGradeDefinition: TransformationDefinition = {
   },
   uiConfig: {
     groups: [
+      {
+        id: "color_grade_management",
+        title: "Grade",
+        columns: 1,
+        controls: [
+          {
+            type: "custom",
+            label: "Grade management",
+            name: "_gradeManagement",
+            componentId: GRADE_MANAGEMENT_CONTROL_ID,
+          },
+        ],
+      },
       {
         id: "color_grade_light",
         title: "Light",

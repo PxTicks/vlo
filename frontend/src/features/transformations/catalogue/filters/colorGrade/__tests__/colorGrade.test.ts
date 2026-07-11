@@ -33,7 +33,7 @@ describe("Color Grade transformation", () => {
     const controls = colorGradeDefinition.uiConfig.groups.flatMap(
       (group) => group.controls,
     );
-    expect(controls.filter((control) => control.type === "custom")).toHaveLength(6);
+    expect(controls.filter((control) => control.type === "custom")).toHaveLength(7);
     expect(
       controls
         .filter(
@@ -70,6 +70,7 @@ describe("Color Grade transformation", () => {
     expect(transform?.parameters).not.toHaveProperty("_toneShaping");
     expect(transform?.parameters).not.toHaveProperty("_qualifier");
     expect(transform?.parameters).not.toHaveProperty("_lut");
+    expect(transform?.parameters).not.toHaveProperty("_gradeManagement");
     expect(() => JSON.stringify(transform)).not.toThrow();
   });
 

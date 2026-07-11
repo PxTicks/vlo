@@ -5,3 +5,4 @@ export {
   TONE_SHAPING_CONTROL_ID,
 } from "./constants";
 export { registerColorGradingCustomControls } from "./registerCustomControls";
+export { useGradePresetStore } from "./useGradePresetStore";

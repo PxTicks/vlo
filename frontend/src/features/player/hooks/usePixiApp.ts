@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Application } from "pixi.js";
 import { usePlayerStore } from "../usePlayerStore";
 import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes";
+import { configureFilterIntermediatePrecision } from "../../../core/pixi/filterPrecision";
 import {
   clearActivePixiApplication,
   setActivePixiApplication,
@@ -47,6 +48,7 @@ export function usePixiApp(
         autoStart: false, // Disable internal ticker
         sharedTicker: false, // Use isolated ticker (though we won't use it)
       });
+      configureFilterIntermediatePrecision(pixiApp.renderer);
 
       // Enable global interactivity for the stage to handle drag events outside sprites
       pixiApp.stage.eventMode = 'static';

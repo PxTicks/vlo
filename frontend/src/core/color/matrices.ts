@@ -12,6 +12,18 @@ export const XYZ_D65_TO_REC709: Matrix3 = Object.freeze([
   0.05563008, -0.20397696, 1.05697151,
 ]);
 
+export const BT2020_TO_XYZ_D65: Matrix3 = Object.freeze([
+  0.63695805, 0.1446169, 0.16888098,
+  0.26270021, 0.67799807, 0.05930172,
+  0, 0.02807269, 1.06098506,
+]);
+
+export const XYZ_D65_TO_BT2020: Matrix3 = Object.freeze([
+  1.71665119, -0.35567078, -0.25336628,
+  -0.66668435, 1.61648124, 0.01576855,
+  0.01763986, -0.04277061, 0.94210312,
+]);
+
 const BRADFORD: Matrix3 = [
   0.8951, 0.2664, -0.1614,
   -0.7502, 1.7135, 0.0367,
@@ -27,7 +39,7 @@ const BRADFORD_INVERSE: Matrix3 = [
 const D65_XY = Object.freeze([0.3127, 0.329]) as readonly [number, number];
 const IDENTITY: Matrix3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
-function multiplyMatrix(left: Matrix3, right: Matrix3): Matrix3 {
+export function multiplyMatrix3(left: Matrix3, right: Matrix3): Matrix3 {
   const output = new Array<number>(9);
   for (let row = 0; row < 3; row += 1) {
     for (let column = 0; column < 3; column += 1) {
@@ -39,6 +51,10 @@ function multiplyMatrix(left: Matrix3, right: Matrix3): Matrix3 {
   }
   return output as unknown as Matrix3;
 }
+
+export const BT2020_TO_REC709: Matrix3 = Object.freeze(
+  multiplyMatrix3(XYZ_D65_TO_REC709, BT2020_TO_XYZ_D65),
+);
 
 export function applyMatrix3(matrix: Matrix3, value: Rgb): Rgb {
   return [
@@ -67,9 +83,9 @@ export function bradfordAdaptationMatrix(
     destinationLms[1] / sourceLms[1],
     destinationLms[2] / sourceLms[2],
   ];
-  return multiplyMatrix(
+  return multiplyMatrix3(
     BRADFORD_INVERSE,
-    multiplyMatrix(diagonal(scale), BRADFORD),
+    multiplyMatrix3(diagonal(scale), BRADFORD),
   );
 }
 
@@ -92,9 +108,9 @@ export function whiteBalanceMatrix(
     D65_XY[1] + normalizedTemperature * 0.01 - normalizedTint * 0.025,
   ];
   const xyzAdaptation = bradfordAdaptationMatrix(D65_XY, adjustedWhite);
-  return multiplyMatrix(
+  return multiplyMatrix3(
     XYZ_D65_TO_REC709,
-    multiplyMatrix(xyzAdaptation, REC709_TO_XYZ_D65),
+    multiplyMatrix3(xyzAdaptation, REC709_TO_XYZ_D65),
   );
 }
 
@@ -103,4 +119,3 @@ vec3 vloApplyMatrixRows(vec3 value, vec3 row0, vec3 row1, vec3 row2) {
   return vec3(dot(row0, value), dot(row1, value), dot(row2, value));
 }
 `;
-

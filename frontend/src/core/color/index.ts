@@ -20,8 +20,25 @@ export {
   MATRIX_GLSL,
   REC709_TO_XYZ_D65,
   whiteBalanceMatrix,
+  BT2020_TO_XYZ_D65,
+  XYZ_D65_TO_BT2020,
+  BT2020_TO_REC709,
+  multiplyMatrix3,
   XYZ_D65_TO_REC709,
 } from "./matrices";
+export {
+  pqEotf,
+  pqOetf,
+  hlgEotf,
+  hlgOetf,
+  mapHdrTransfer,
+  HDR_TRANSFER_GLSL,
+} from "./hdrTransfer";
+export {
+  applyColorInputTransform,
+  type ColorInputTransform,
+  type ColorInputTransformOptions,
+} from "./inputTransform";
 export {
   applyAscCdl,
   applyLiftGammaGainOffset,

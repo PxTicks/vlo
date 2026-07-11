@@ -1,4 +1,9 @@
-export type InputColorSpace = "auto" | "srgb" | "rec709";
+export type InputColorSpace =
+  | "auto"
+  | "srgb"
+  | "rec709"
+  | "bt2020-pq"
+  | "bt2020-hlg";
 export type GradingSpace = "srgb-rec709";
 export type HueBasis = "hsv";
 
@@ -82,4 +87,3 @@ export const V1_AUTHORED_COLOR_MODEL: AuthoredColorModelV1 = Object.freeze({
   version: 1,
   gradingSpace: V1_COLOR_MODEL.working.gradingSpace,
 });
-

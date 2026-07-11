@@ -32,7 +32,7 @@ describe("Color Grade transformation", () => {
     const controls = colorGradeDefinition.uiConfig.groups.flatMap(
       (group) => group.controls,
     );
-    expect(controls.filter((control) => control.type === "custom")).toHaveLength(3);
+    expect(controls.filter((control) => control.type === "custom")).toHaveLength(4);
     expect(
       controls
         .filter(
@@ -64,6 +64,7 @@ describe("Color Grade transformation", () => {
     });
     expect(transform?.parameters).not.toHaveProperty("_colorWheels");
     expect(transform?.parameters).not.toHaveProperty("_valueCurves");
+    expect(transform?.parameters).not.toHaveProperty("_toneShaping");
     expect(() => JSON.stringify(transform)).not.toThrow();
   });
 

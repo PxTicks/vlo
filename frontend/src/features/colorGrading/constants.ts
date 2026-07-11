@@ -3,6 +3,54 @@ import type { ControlDefinition } from "../panelUI";
 export const COLOR_WHEELS_CONTROL_ID = "color-grading.wheels";
 export const VALUE_CURVES_CONTROL_ID = "color-grading.value-curves";
 export const HUE_CURVES_CONTROL_ID = "color-grading.hue-curves";
+export const TONE_SHAPING_CONTROL_ID = "color-grading.tone-shaping";
+
+export const TONE_SHAPING_PARAMETER_CONTROLS: readonly ControlDefinition[] = [
+  {
+    type: "slider",
+    label: "Highlight threshold (exact)",
+    name: "kneeThreshold",
+    defaultValue: 1,
+    min: 0.5,
+    max: 1.5,
+    step: 0.01,
+    supportsSpline: true,
+    hidden: true,
+  },
+  {
+    type: "slider",
+    label: "Highlight transition (exact)",
+    name: "kneeSoftness",
+    defaultValue: 0,
+    min: 0,
+    max: 0.5,
+    step: 0.005,
+    supportsSpline: true,
+    hidden: true,
+  },
+  {
+    type: "slider",
+    label: "Shadow amount (exact)",
+    name: "toeAmount",
+    defaultValue: 0,
+    min: 0,
+    max: 1,
+    step: 0.01,
+    supportsSpline: true,
+    hidden: true,
+  },
+  {
+    type: "slider",
+    label: "Shadow transition (exact)",
+    name: "toeSoftness",
+    defaultValue: 0,
+    min: 0,
+    max: 0.5,
+    step: 0.005,
+    supportsSpline: true,
+    hidden: true,
+  },
+];
 
 export const COLOR_WHEEL_NAMES = ["lift", "gamma", "gain", "offset"] as const;
 export type ColorWheelName = (typeof COLOR_WHEEL_NAMES)[number];

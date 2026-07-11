@@ -101,8 +101,12 @@ function SliderControlComponent({
         step={step}
         onChange={onChange}
         onChangeCommitted={onChangeCommitted}
-        onMouseDown={onMouseDown}
-        onMouseUp={onMouseUp}
+        // Never forward these as explicit `undefined`: MUI's mergeSlotProps
+        // spreads non-function `on*` props over the slider's own composed
+        // handlers, so `onMouseDown={undefined}` erases MUI's internal
+        // mousedown handler and leaves the slider mouse-dead.
+        {...(onMouseDown ? { onMouseDown } : {})}
+        {...(onMouseUp ? { onMouseUp } : {})}
         size="small"
         disabled={disabled}
       />

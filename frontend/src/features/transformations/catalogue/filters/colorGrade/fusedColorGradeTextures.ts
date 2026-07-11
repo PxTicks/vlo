@@ -7,7 +7,7 @@ import {
 } from "../../../../../core/color";
 import type { NormalizedColorGradeLayer } from "./fusedColorGradeParameters";
 
-export const FUSED_GRADE_PARAMETER_TEXTURE_WIDTH = 10;
+export const FUSED_GRADE_PARAMETER_TEXTURE_WIDTH = 14;
 
 function curveHash(grades: readonly NormalizedColorGradeLayer[]): string {
   return grades
@@ -212,6 +212,30 @@ export class FusedColorGradeTextures {
       parameters.offsetG,
       parameters.offsetB,
       parameters.offsetMaster,
+    ]);
+    this.write(row, 10, [
+      parameters.qualifierEnabled ? 1 : 0,
+      parameters.qualifierInvert ? 1 : 0,
+      parameters.mattePreview ? 1 : 0,
+      parameters.hueCenter,
+    ]);
+    this.write(row, 11, [
+      parameters.hueWidth,
+      parameters.hueSoftLo,
+      parameters.hueSoftHi,
+      parameters.satLo,
+    ]);
+    this.write(row, 12, [
+      parameters.satHi,
+      parameters.satSoftLo,
+      parameters.satSoftHi,
+      parameters.lumaLo,
+    ]);
+    this.write(row, 13, [
+      parameters.lumaHi,
+      parameters.lumaSoftLo,
+      parameters.lumaSoftHi,
+      0,
     ]);
   }
 

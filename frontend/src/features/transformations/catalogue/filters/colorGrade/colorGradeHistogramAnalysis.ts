@@ -56,14 +56,18 @@ export function analyzeColorGradeHistograms(
     for (let gradeIndex = 0; gradeIndex < grades.length; gradeIndex += 1) {
       const grade = grades[gradeIndex];
       const evaluator = evaluators[gradeIndex];
-      const beforeCurves = evaluator.beforeCurves(color);
+      const gradeInput = color;
+      const beforeCurves = evaluator.beforeCurves(gradeInput);
       const afterCurves = evaluator.curves(beforeCurves);
       const sample = samples.get(grade.transformId);
       if (sample) {
         writePixel(sample.before, offset, beforeCurves, alpha);
         writePixel(sample.after, offset, afterCurves, alpha);
       }
-      color = evaluator.afterCurves(afterCurves);
+      color = evaluator.composite(
+        gradeInput,
+        evaluator.afterCurves(afterCurves),
+      );
     }
   }
 

@@ -43,10 +43,13 @@ export {
   rgbToHsv,
 } from "./grading";
 export {
+  colorQualifierWeight,
   circularHueWeight,
+  DEFAULT_COLOR_QUALIFIER,
   QUALIFIER_GLSL,
   smoothstep,
   softTrapezoidWeight,
+  type ColorQualifierParameters,
 } from "./qualifier";
 export {
   applyReferenceColorGrade,

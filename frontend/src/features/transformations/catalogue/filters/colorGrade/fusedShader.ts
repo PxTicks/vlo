@@ -2,11 +2,13 @@ import {
   ASC_CDL_GLSL,
   GRADING_GLSL,
   MATRIX_GLSL,
+  QUALIFIER_GLSL,
   SRGB_TRANSFER_GLSL,
   TONE_CURVE_GLSL,
 } from "../../../../../core/color";
 import { FUSED_GRADE_PARAMETER_TEXTURE_WIDTH } from "./fusedColorGradeTextures";
 import { COLOR_GRADE_SHADER_STAGE, COLOR_GRADE_VERTEX } from "./shader";
+import { FUSED_COLOR_GRADE_SHADER_STAGE } from "./fusedShaderStages";
 
 function uses(variantKey: number, stage: number): boolean {
   return (variantKey & stage) !== 0;
@@ -16,6 +18,9 @@ function buildGradeBody(variantKey: number, index: number): string {
   const row = `${index}.0`;
   const sections: string[] = [
     `  // Authored Color Grade ${index + 1}`,
+    ...(uses(variantKey, FUSED_COLOR_GRADE_SHADER_STAGE.QUALIFIER)
+      ? [`  vec3 grade${index}Input = gradingColor;`]
+      : []),
     `  vec4 grade${index}p0 = vloGradeParam(${row}, 0.0);`,
   ];
   if (
@@ -84,6 +89,34 @@ function buildGradeBody(variantKey: number, index: number): string {
       "  );",
     );
   }
+  if (uses(variantKey, FUSED_COLOR_GRADE_SHADER_STAGE.QUALIFIER)) {
+    sections.push(
+      `  vec4 grade${index}p10 = vloGradeParam(${row}, 10.0);`,
+      `  vec4 grade${index}p11 = vloGradeParam(${row}, 11.0);`,
+      `  vec4 grade${index}p12 = vloGradeParam(${row}, 12.0);`,
+      `  vec4 grade${index}p13 = vloGradeParam(${row}, 13.0);`,
+      `  vec3 grade${index}Hsv = vloRgbToHsv(grade${index}Input);`,
+      `  float grade${index}Matte = vloCircularHueWeight(`,
+      `    grade${index}Hsv.x, grade${index}p10.w, grade${index}p11.x,`,
+      `    grade${index}p11.y, grade${index}p11.z`,
+      "  );",
+      `  grade${index}Matte *= vloSoftTrapezoid(`,
+      `    grade${index}Hsv.y, grade${index}p11.w, grade${index}p12.x,`,
+      `    grade${index}p12.y, grade${index}p12.z`,
+      "  );",
+      `  grade${index}Matte *= vloSoftTrapezoid(`,
+      `    dot(grade${index}Input, vec3(0.2126, 0.7152, 0.0722)),`,
+      `    grade${index}p12.w, grade${index}p13.x,`,
+      `    grade${index}p13.y, grade${index}p13.z`,
+      "  );",
+      `  grade${index}Matte = mix(`,
+      `    grade${index}Matte, 1.0 - grade${index}Matte, grade${index}p10.y`,
+      "  );",
+      uses(variantKey, FUSED_COLOR_GRADE_SHADER_STAGE.MATTE_PREVIEW)
+        ? `  gradingColor = vec3(grade${index}Matte);`
+        : `  gradingColor = mix(grade${index}Input, gradingColor, grade${index}Matte);`,
+    );
+  }
   return sections.join("\n");
 }
 
@@ -94,8 +127,16 @@ export function buildFusedColorGradeFragment(
   const hasCurves = variantKeys.some((key) =>
     uses(key, COLOR_GRADE_SHADER_STAGE.CURVES),
   );
+  const hasQualifier = variantKeys.some((key) =>
+    uses(key, FUSED_COLOR_GRADE_SHADER_STAGE.QUALIFIER),
+  );
   const hasActiveGrade = variantKeys.some((key) => key !== 0);
-  const gradeBodies = variantKeys.map(buildGradeBody).join("\n");
+  const matteIndex = variantKeys.findIndex((key) =>
+    uses(key, FUSED_COLOR_GRADE_SHADER_STAGE.MATTE_PREVIEW),
+  );
+  const renderedVariantKeys =
+    matteIndex >= 0 ? variantKeys.slice(0, matteIndex + 1) : variantKeys;
+  const gradeBodies = renderedVariantKeys.map(buildGradeBody).join("\n");
   const curveFunctions = hasCurves
     ? `
 vec4 vloSampleCurveRow(float inputValue, float row) {
@@ -160,6 +201,7 @@ ${MATRIX_GLSL}
 ${TONE_CURVE_GLSL}
 ${GRADING_GLSL}
 ${ASC_CDL_GLSL}
+${hasQualifier ? QUALIFIER_GLSL : ""}
 
 vec4 vloGradeParam(float row, float column) {
   return texture(
@@ -198,7 +240,7 @@ void main(void) {
   vec3 gradingColor = source.rgb / source.a;
 ${gradeBodies}
   float ditherStrength = ${
-    hasActiveGrade
+    matteIndex < 0 && hasActiveGrade
       ? `vloGradeParam(${variantKeys.length - 1}.0, 2.0).z`
       : "0.0"
   };

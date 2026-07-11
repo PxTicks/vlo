@@ -12,6 +12,7 @@ import { FusedColorGradeFilter } from "../fusedColorGradeFilter";
 import { buildFusedColorGradeFragment } from "../fusedShader";
 import { FusedColorGradeTextures } from "../fusedColorGradeTextures";
 import { normalizeColorGradeLayer } from "../fusedColorGradeParameters";
+import { FUSED_COLOR_GRADE_SHADER_STAGE } from "../fusedShaderStages";
 import { createAddTransform } from "../../../../hooks/controller/transformFactory";
 import { planTransformRender } from "../../../../effectMaskRenderPlan";
 import type { MaskBooleanExpression } from "../../../../../../types/TimelineTypes";
@@ -32,7 +33,7 @@ describe("Color Grade transformation", () => {
     const controls = colorGradeDefinition.uiConfig.groups.flatMap(
       (group) => group.controls,
     );
-    expect(controls.filter((control) => control.type === "custom")).toHaveLength(4);
+    expect(controls.filter((control) => control.type === "custom")).toHaveLength(5);
     expect(
       controls
         .filter(
@@ -65,6 +66,7 @@ describe("Color Grade transformation", () => {
     expect(transform?.parameters).not.toHaveProperty("_colorWheels");
     expect(transform?.parameters).not.toHaveProperty("_valueCurves");
     expect(transform?.parameters).not.toHaveProperty("_toneShaping");
+    expect(transform?.parameters).not.toHaveProperty("_qualifier");
     expect(() => JSON.stringify(transform)).not.toThrow();
   });
 
@@ -188,6 +190,25 @@ describe("Color Grade transformation", () => {
       COLOR_GRADE_SHADER_STAGE.COLOR,
     ]);
     filter.destroy();
+  });
+
+  it("masks each fused grade and isolates matte preview from later grades", () => {
+    const normalized = normalizeColorGradeLayer({
+      transformId: "qualified",
+      parameters: { qualifierEnabled: true, mattePreview: true },
+    });
+    expect(normalized.variantKey).toBe(
+      FUSED_COLOR_GRADE_SHADER_STAGE.QUALIFIER |
+        FUSED_COLOR_GRADE_SHADER_STAGE.MATTE_PREVIEW,
+    );
+
+    const fragment = buildFusedColorGradeFragment([
+      normalized.variantKey,
+      COLOR_GRADE_SHADER_STAGE.COLOR,
+    ]);
+    expect(fragment).toContain("vloCircularHueWeight");
+    expect(fragment).toContain("gradingColor = vec3(grade0Matte)");
+    expect(fragment).not.toContain("Authored Color Grade 2");
   });
 
   it("coalesces interactive curve LUT bakes onto the live render path", () => {

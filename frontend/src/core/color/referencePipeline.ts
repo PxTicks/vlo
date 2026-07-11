@@ -11,6 +11,11 @@ import {
   type ColorCurveSet,
 } from "./curves";
 import type { Rgb, Rgba } from "./types";
+import {
+  colorQualifierWeight,
+  DEFAULT_COLOR_QUALIFIER,
+  type ColorQualifierParameters,
+} from "./qualifier";
 
 export interface ColorGradePrimaries {
   readonly exposure: number;
@@ -74,12 +79,15 @@ export const DEFAULT_COLOR_GRADE_PRIMARIES: ColorGradePrimaries = Object.freeze(
   offsetMaster: 0,
 });
 
-export type ColorGradeReferenceParameters = ColorGradePrimaries & ColorCurveSet;
+export type ColorGradeReferenceParameters = ColorGradePrimaries &
+  ColorCurveSet &
+  Partial<ColorQualifierParameters>;
 
 export interface ColorGradeReferenceEvaluator {
   beforeCurves(color: Rgb): Rgb;
   curves(color: Rgb): Rgb;
   afterCurves(color: Rgb): Rgb;
+  composite(input: Rgb, graded: Rgb): Rgb;
   apply(color: Rgb): Rgb;
 }
 
@@ -146,13 +154,32 @@ export function createReferenceColorGradeEvaluator(
       parameters.vibrance,
       parameters.hueRotate,
     );
+  const qualifierParameters: ColorQualifierParameters = {
+    ...DEFAULT_COLOR_QUALIFIER,
+    ...parameters,
+  };
+  const composite = (input: Rgb, graded: Rgb): Rgb => {
+    const weight = colorQualifierWeight(input, qualifierParameters);
+    if (
+      qualifierParameters.qualifierEnabled &&
+      qualifierParameters.mattePreview
+    ) {
+      return [weight, weight, weight];
+    }
+    return [
+      input[0] + (graded[0] - input[0]) * weight,
+      input[1] + (graded[1] - input[1]) * weight,
+      input[2] + (graded[2] - input[2]) * weight,
+    ];
+  };
 
   return {
     beforeCurves,
     curves,
     afterCurves,
+    composite,
     apply(color) {
-      return afterCurves(curves(beforeCurves(color)));
+      return composite(color, afterCurves(curves(beforeCurves(color))));
     },
   };
 }

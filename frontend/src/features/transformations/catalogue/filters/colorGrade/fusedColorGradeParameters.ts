@@ -1,25 +1,36 @@
 import {
   DEFAULT_COLOR_CURVES,
   DEFAULT_COLOR_GRADE_PRIMARIES,
+  DEFAULT_COLOR_QUALIFIER,
   MODIFIER_CURVE_PARAMETER_NAMES,
   VALUE_CURVE_PARAMETER_NAMES,
   isIdentityColorCurve,
   type ColorCurveParameterName,
   type ColorCurvePoint,
   type ColorGradeReferenceParameters,
+  type ColorQualifierParameters,
 } from "../../../../../core/color";
 import type { ResolvedColorGradeLayer } from "../../filterPreResolution";
 import { COLOR_GRADE_SHADER_STAGE } from "./shader";
+import { FUSED_COLOR_GRADE_SHADER_STAGE } from "./fusedShaderStages";
 
 export interface NormalizedColorGradeLayer {
   readonly transformId: string;
-  readonly parameters: ColorGradeReferenceParameters;
+  readonly parameters: ColorGradeReferenceParameters & ColorQualifierParameters;
   readonly ditherStrength: number;
   readonly variantKey: number;
 }
 
 function finiteOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function clamp(value: number, low: number, high: number): number {
+  return Math.max(low, Math.min(high, value));
+}
+
+function booleanOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function curvePoints(
@@ -51,7 +62,11 @@ export function normalizeColorGradeLayer(
   layer: ResolvedColorGradeLayer,
 ): NormalizedColorGradeLayer {
   const source = layer.parameters;
-  const parameters: ColorGradeReferenceParameters = {
+  const satA = clamp(finiteOr(source.satLo, DEFAULT_COLOR_QUALIFIER.satLo), 0, 1);
+  const satB = clamp(finiteOr(source.satHi, DEFAULT_COLOR_QUALIFIER.satHi), 0, 1);
+  const lumaA = clamp(finiteOr(source.lumaLo, DEFAULT_COLOR_QUALIFIER.lumaLo), 0, 1);
+  const lumaB = clamp(finiteOr(source.lumaHi, DEFAULT_COLOR_QUALIFIER.lumaHi), 0, 1);
+  const parameters: ColorGradeReferenceParameters & ColorQualifierParameters = {
     exposure: finiteOr(source.exposure, DEFAULT_COLOR_GRADE_PRIMARIES.exposure),
     temperature: finiteOr(
       source.temperature,
@@ -135,6 +150,59 @@ export function normalizeColorGradeLayer(
     curveHueHue: curvePoints("curveHueHue", source.curveHueHue),
     curveHueSat: curvePoints("curveHueSat", source.curveHueSat),
     curveLumaSat: curvePoints("curveLumaSat", source.curveLumaSat),
+    qualifierEnabled: booleanOr(
+      source.qualifierEnabled,
+      DEFAULT_COLOR_QUALIFIER.qualifierEnabled,
+    ),
+    hueCenter:
+      ((finiteOr(source.hueCenter, DEFAULT_COLOR_QUALIFIER.hueCenter) % 1) + 1) % 1,
+    hueWidth: clamp(
+      finiteOr(source.hueWidth, DEFAULT_COLOR_QUALIFIER.hueWidth),
+      0,
+      1,
+    ),
+    hueSoftLo: clamp(
+      finiteOr(source.hueSoftLo, DEFAULT_COLOR_QUALIFIER.hueSoftLo),
+      0,
+      0.5,
+    ),
+    hueSoftHi: clamp(
+      finiteOr(source.hueSoftHi, DEFAULT_COLOR_QUALIFIER.hueSoftHi),
+      0,
+      0.5,
+    ),
+    satLo: Math.min(satA, satB),
+    satHi: Math.max(satA, satB),
+    satSoftLo: clamp(
+      finiteOr(source.satSoftLo, DEFAULT_COLOR_QUALIFIER.satSoftLo),
+      0,
+      1,
+    ),
+    satSoftHi: clamp(
+      finiteOr(source.satSoftHi, DEFAULT_COLOR_QUALIFIER.satSoftHi),
+      0,
+      1,
+    ),
+    lumaLo: Math.min(lumaA, lumaB),
+    lumaHi: Math.max(lumaA, lumaB),
+    lumaSoftLo: clamp(
+      finiteOr(source.lumaSoftLo, DEFAULT_COLOR_QUALIFIER.lumaSoftLo),
+      0,
+      1,
+    ),
+    lumaSoftHi: clamp(
+      finiteOr(source.lumaSoftHi, DEFAULT_COLOR_QUALIFIER.lumaSoftHi),
+      0,
+      1,
+    ),
+    qualifierInvert: booleanOr(
+      source.qualifierInvert,
+      DEFAULT_COLOR_QUALIFIER.qualifierInvert,
+    ),
+    mattePreview: booleanOr(
+      source.mattePreview,
+      DEFAULT_COLOR_QUALIFIER.mattePreview,
+    ),
   };
 
   const hasWhiteBalance =
@@ -194,6 +262,12 @@ export function normalizeColorGradeLayer(
     parameters.hueRotate !== DEFAULT_COLOR_GRADE_PRIMARIES.hueRotate
   ) {
     variantKey |= COLOR_GRADE_SHADER_STAGE.COLOR;
+  }
+  if (parameters.qualifierEnabled) {
+    variantKey |= FUSED_COLOR_GRADE_SHADER_STAGE.QUALIFIER;
+    if (parameters.mattePreview) {
+      variantKey |= FUSED_COLOR_GRADE_SHADER_STAGE.MATTE_PREVIEW;
+    }
   }
 
   return {

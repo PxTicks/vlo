@@ -1,6 +1,7 @@
 import {
   DEFAULT_COLOR_GRADE_PRIMARIES,
   DEFAULT_COLOR_CURVES,
+  DEFAULT_COLOR_QUALIFIER,
   V1_AUTHORED_COLOR_MODEL,
 } from "../../../../../core/color";
 import {
@@ -10,6 +11,7 @@ import {
   TONE_SHAPING_CONTROL_ID,
   TONE_SHAPING_PARAMETER_CONTROLS,
   VALUE_CURVES_CONTROL_ID,
+  QUALIFIER_CONTROL_ID,
 } from "../../../../colorGrading/constants";
 import { filterHandler } from "../../filterHandler";
 import type { TransformationDefinition } from "../../types";
@@ -32,6 +34,7 @@ export const colorGradeDefinition: TransformationDefinition = {
     toeAmount: DEFAULT_COLOR_GRADE_PRIMARIES.toeAmount,
     toeSoftness: DEFAULT_COLOR_GRADE_PRIMARIES.toeSoftness,
     ditherStrength: 1,
+    ...DEFAULT_COLOR_QUALIFIER,
     ...DEFAULT_COLOR_CURVES,
   },
   uiConfig: {
@@ -139,6 +142,19 @@ export const colorGradeDefinition: TransformationDefinition = {
             name: "_hueCurves",
             componentId: HUE_CURVES_CONTROL_ID,
             config: { kind: "hue" },
+          },
+        ],
+      },
+      {
+        id: "color_grade_qualifier",
+        title: "Qualifier",
+        columns: 1,
+        controls: [
+          {
+            type: "custom",
+            label: "Qualifier",
+            name: "_qualifier",
+            componentId: QUALIFIER_CONTROL_ID,
           },
         ],
       },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_COLOR_GRADE_PRIMARIES,
+  DEFAULT_COLOR_QUALIFIER,
   V1_COLOR_MODEL,
   applyColorCurveLut,
   applyAscCdl,
@@ -121,6 +122,37 @@ describe("qualifier weights", () => {
   it("wraps HSV hue across the seam", () => {
     expect(circularHueWeight(0.99, 0.01, 0.1, 0.02, 0.02)).toBe(1);
     expect(circularHueWeight(0.5, 0.01, 0.1, 0.02, 0.02)).toBe(0);
+  });
+
+  it("masks a complete grade from its ungraded input", () => {
+    const parameters = {
+      ...DEFAULT_COLOR_GRADE_PRIMARIES,
+      ...DEFAULT_COLOR_QUALIFIER,
+      exposure: 1,
+      qualifierEnabled: true,
+      hueCenter: 0,
+      hueWidth: 0.1,
+    };
+    const selected = applyReferenceColorGrade([0.8, 0.1, 0.1], parameters);
+    const rejected = applyReferenceColorGrade([0.1, 0.1, 0.8], parameters);
+    expect(selected[0]).toBeGreaterThan(0.8);
+    expect(rejected).toEqual([
+      expect.closeTo(0.1, 8),
+      expect.closeTo(0.1, 8),
+      expect.closeTo(0.8, 8),
+    ]);
+  });
+
+  it("returns the qualifier weight in matte preview", () => {
+    const output = applyReferenceColorGrade([0.8, 0.1, 0.1], {
+      ...DEFAULT_COLOR_GRADE_PRIMARIES,
+      ...DEFAULT_COLOR_QUALIFIER,
+      qualifierEnabled: true,
+      mattePreview: true,
+      hueCenter: 0.5,
+      hueWidth: 0.1,
+    });
+    expect(output).toEqual([0, 0, 0]);
   });
 });
 

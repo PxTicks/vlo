@@ -5,11 +5,13 @@ import {
   VALUE_CURVES_CONTROL_ID,
   TONE_SHAPING_CONTROL_ID,
   QUALIFIER_CONTROL_ID,
+  LUT_CONTROL_ID,
 } from "./constants";
 import { ColorWheelsControl } from "./components/ColorWheelsControl";
 import { GradeCurvesControl } from "./components/GradeCurvesControl";
 import { ToneShapingControl } from "./components/ToneShapingControl";
 import { QualifierControl } from "./components/QualifierControl";
+import { LutControl } from "./components/LutControl";
 
 let registered = false;
 
@@ -21,4 +23,5 @@ export function registerColorGradingCustomControls(): void {
   registerCustomControl(HUE_CURVES_CONTROL_ID, GradeCurvesControl);
   registerCustomControl(TONE_SHAPING_CONTROL_ID, ToneShapingControl);
   registerCustomControl(QUALIFIER_CONTROL_ID, QualifierControl);
+  registerCustomControl(LUT_CONTROL_ID, LutControl);
 }

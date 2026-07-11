@@ -440,7 +440,7 @@ export interface ExtensionEntityAssetSnapshot {
   readonly id: string;
   readonly hash: string;
   readonly name: string;
-  readonly type: "video" | "image" | "audio";
+  readonly type: "video" | "image" | "audio" | "lut";
   readonly src: string;
   readonly durationSeconds?: number;
   readonly fps?: number;

@@ -1,6 +1,6 @@
 import type { ClipTransform, TimelineSelection } from "./TimelineTypes";
 
-export type AssetType = "video" | "image" | "audio";
+export type AssetType = "video" | "image" | "audio" | "lut";
 
 export interface AssetFamilyCompatibility {
   assetType: AssetType;

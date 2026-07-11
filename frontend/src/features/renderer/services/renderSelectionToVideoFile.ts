@@ -1,5 +1,6 @@
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { normalizeTimelineSelection } from "../../timelineSelection";
+import { preloadColorGradeLuts } from "../../transformations/catalogue/filters/colorGrade/lutTexture";
 import {
   ExportRenderer,
   type ExportConfig,
@@ -55,6 +56,10 @@ export async function renderSelectionToVideoFile(
   const selection = options.skipNormalize
     ? timelineSelection
     : normalizeTimelineSelection(timelineSelection, projectData.clips);
+
+  // Strict rendering starts pulling frames immediately; referenced grade LUTs
+  // must be cached up front or early frames would render without them.
+  await preloadColorGradeLuts(projectData.clips);
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {

@@ -17,6 +17,7 @@ const AUDIO_EXTENSIONS = new Set([
   ".aac",
 ]);
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".mkv"]);
+const LUT_EXTENSIONS = new Set([".cube"]);
 
 function fileExtension(name: string): string {
   const dotIndex = name.lastIndexOf(".");
@@ -39,6 +40,7 @@ function assetTypeFromFilename(filename: string | null | undefined): AssetType |
   if (IMAGE_EXTENSIONS.has(extension)) return "image";
   if (AUDIO_EXTENSIONS.has(extension)) return "audio";
   if (VIDEO_EXTENSIONS.has(extension)) return "video";
+  if (LUT_EXTENSIONS.has(extension)) return "lut";
   return null;
 }
 

@@ -132,6 +132,7 @@ export class FusedColorGradeFilter extends Filter {
       resources: {
         uGradeParams: textures.parameterSource,
         uCurveTexture: textures.curveSource,
+        uLutAtlas: textures.lutSource,
       },
     });
     this.textures = textures;

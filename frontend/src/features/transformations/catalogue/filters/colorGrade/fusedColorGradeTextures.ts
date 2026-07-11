@@ -6,8 +6,16 @@ import {
   whiteBalanceMatrix,
 } from "../../../../../core/color";
 import type { NormalizedColorGradeLayer } from "./fusedColorGradeParameters";
+import {
+  getLoadedCubeLut,
+  planCubeLutAtlas,
+  subscribeCubeLutLoads,
+  writeCubeLutAtlas,
+  type CubeLutAtlasPlan,
+  type CubeLutAtlasTile,
+} from "./lutTexture";
 
-export const FUSED_GRADE_PARAMETER_TEXTURE_WIDTH = 14;
+export const FUSED_GRADE_PARAMETER_TEXTURE_WIDTH = 17;
 
 function curveHash(grades: readonly NormalizedColorGradeLayer[]): string {
   return grades
@@ -34,23 +42,40 @@ function parameterHash(grades: readonly NormalizedColorGradeLayer[]): string {
     .join("|");
 }
 
+function lutSignature(
+  grades: readonly NormalizedColorGradeLayer[],
+  plan: CubeLutAtlasPlan,
+): string {
+  return grades
+    .map((grade, index) => {
+      const tile = plan.tiles[index];
+      return `${grade.parameters.lutAssetId ?? ""}:${tile ? tile.size : "-"}`;
+    })
+    .join("|");
+}
+
 export class FusedColorGradeTextures {
   public readonly parameterSource: BufferImageSource;
   public readonly curveSource: BufferImageSource;
+  public readonly lutSource: BufferImageSource;
   private parameterPixels = new Float32Array(
     FUSED_GRADE_PARAMETER_TEXTURE_WIDTH * 4,
   );
   private curvePixels = new Float32Array(
     COLOR_CURVE_LUT_WIDTH * COLOR_CURVE_LUT_HEIGHT * 4,
   );
+  private lutPixels = new Float32Array(4);
   private gradeCount = 1;
   private currentCurveHash = "";
   private currentParameterHash = "";
+  private currentLutSignature = "";
+  private lastGrades: readonly NormalizedColorGradeLayer[] = [];
   private pendingCurveHash: string | null = null;
   private pendingCurveGrades: readonly NormalizedColorGradeLayer[] = [];
   private curveBakeTimer: ReturnType<typeof setTimeout> | null = null;
   private hasBakedCurves = false;
   private readonly onCurveBake?: () => void;
+  private readonly unsubscribeLutLoads: () => void;
 
   constructor(onCurveBake?: () => void) {
     this.onCurveBake = onCurveBake;
@@ -76,12 +101,45 @@ export class FusedColorGradeTextures {
       autoGarbageCollect: true,
       label: "fused-color-grade-curves",
     });
+    this.lutSource = new BufferImageSource({
+      resource: this.lutPixels,
+      width: 1,
+      height: 1,
+      format: "rgba32float",
+      alphaMode: "no-premultiply-alpha",
+      scaleMode: "nearest",
+      autoGenerateMipmaps: false,
+      autoGarbageCollect: true,
+      label: "fused-color-grade-luts",
+    });
+    // A finished `.cube` load re-derives the atlas and parameter rows for the
+    // last grades seen, then requests a render (same path as curve bakes).
+    this.unsubscribeLutLoads = subscribeCubeLutLoads(() => {
+      if (
+        !this.lastGrades.some((grade) => grade.parameters.lutAssetId !== null)
+      ) {
+        return;
+      }
+      this.update(this.lastGrades);
+      this.onCurveBake?.();
+    });
   }
 
   public update(grades: readonly NormalizedColorGradeLayer[]): void {
+    this.lastGrades = grades;
+    const lutPlan = planCubeLutAtlas(
+      grades.map((grade) =>
+        grade.parameters.lutAssetId
+          ? getLoadedCubeLut(grade.parameters.lutAssetId)
+          : null,
+      ),
+    );
+    const nextLutSignature = lutSignature(grades, lutPlan);
     const nextGradeCount = Math.max(1, grades.length);
     const gradeCountChanged = nextGradeCount !== this.gradeCount;
-    const nextParameterHash = parameterHash(grades);
+    // The atlas layout feeds parameter texels, so its signature is part of
+    // the parameter hash: a LUT finishing its load must rewrite both.
+    const nextParameterHash = `${parameterHash(grades)}@${nextLutSignature}`;
     if (gradeCountChanged) {
       this.gradeCount = nextGradeCount;
       this.parameterPixels = new Float32Array(
@@ -96,8 +154,17 @@ export class FusedColorGradeTextures {
     if (gradeCountChanged || nextParameterHash !== this.currentParameterHash) {
       this.currentParameterHash = nextParameterHash;
       this.parameterPixels.fill(0);
-      grades.forEach((grade, row) => this.writeGradeParameters(grade, row));
+      grades.forEach((grade, row) =>
+        this.writeGradeParameters(grade, row, lutPlan.tiles[row] ?? null, lutPlan),
+      );
       this.parameterSource.update();
+    }
+    if (nextLutSignature !== this.currentLutSignature) {
+      this.currentLutSignature = nextLutSignature;
+      this.lutPixels = writeCubeLutAtlas(lutPlan);
+      this.lutSource.resource = this.lutPixels;
+      this.lutSource.resize(lutPlan.width, lutPlan.height);
+      this.lutSource.update();
     }
 
     const nextCurveHash = curveHash(grades);
@@ -120,9 +187,11 @@ export class FusedColorGradeTextures {
   }
 
   public destroy(): void {
+    this.unsubscribeLutLoads();
     this.cancelPendingCurveBake();
     this.parameterSource.destroy();
     this.curveSource.destroy();
+    this.lutSource.destroy();
   }
 
   private bakePendingCurves(notify: boolean): void {
@@ -162,6 +231,8 @@ export class FusedColorGradeTextures {
   private writeGradeParameters(
     grade: NormalizedColorGradeLayer,
     row: number,
+    lutTile: CubeLutAtlasTile | null,
+    lutPlan: CubeLutAtlasPlan,
   ): void {
     const parameters = grade.parameters;
     this.write(row, 0, [
@@ -237,6 +308,27 @@ export class FusedColorGradeTextures {
       parameters.lumaSoftHi,
       0,
     ]);
+    // Effective intensity is zero until the referenced LUT has loaded, so the
+    // shader's LUT stage passes its input through instead of sampling an
+    // atlas region that does not exist yet.
+    this.write(row, 14, [
+      lutTile ? parameters.lutIntensity : 0,
+      lutTile?.size ?? 0,
+      lutTile?.tilesX ?? 0,
+      lutTile?.rowOffset ?? 0,
+    ]);
+    if (lutTile) {
+      const { domainMin, domainMax } = lutTile.lut;
+      // The atlas texel size rides in the two free .w slots: GLSL ES 1.00 has
+      // no textureSize(), so the shader needs it to normalize coordinates.
+      this.write(row, 15, [...domainMin, 1 / lutPlan.width]);
+      this.write(row, 16, [
+        1 / (domainMax[0] - domainMin[0]),
+        1 / (domainMax[1] - domainMin[1]),
+        1 / (domainMax[2] - domainMin[2]),
+        1 / lutPlan.height,
+      ]);
+    }
   }
 
   private write(row: number, column: number, values: readonly number[]): void {

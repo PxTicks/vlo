@@ -13,6 +13,7 @@ import {
 import { styled } from "@mui/material/styles";
 import { useDraggable } from "@dnd-kit/core";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
+import GradientIcon from "@mui/icons-material/Gradient";
 import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
 import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
@@ -339,6 +340,8 @@ function AssetCardContent({
             <Box sx={EMPTY_PREVIEW_STYLES}>
               {asset.type === "audio" ? (
                 <MusicNoteIcon sx={{ fontSize: 40, color: "#888" }} />
+              ) : asset.type === "lut" ? (
+                <GradientIcon sx={{ fontSize: 40, color: "#888" }} />
               ) : (
                 <Typography variant="caption" sx={{ color: "#555" }}>
                   No Preview
@@ -549,7 +552,8 @@ function AssetCardComponent({
   const draggableData = React.useMemo(
     () => ({
       type: "asset",
-      clip: createClipFromAsset(asset),
+      // LUTs never become timeline clips; they only drop onto asset slots.
+      clip: asset.type === "lut" ? null : createClipFromAsset(asset),
       asset,
     }),
     [asset],

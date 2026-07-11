@@ -16,6 +16,7 @@ import {
   DEFAULT_COLOR_QUALIFIER,
   type ColorQualifierParameters,
 } from "./qualifier";
+import { sampleCubeLut, type CubeLut } from "./cube";
 
 export interface ColorGradePrimaries {
   readonly exposure: number;
@@ -79,15 +80,33 @@ export const DEFAULT_COLOR_GRADE_PRIMARIES: ColorGradePrimaries = Object.freeze(
   offsetMaster: 0,
 });
 
+/** Creative-LUT slot on a grade; the `.cube` payload lives in a user asset. */
+export interface ColorGradeLutParameters {
+  readonly lutAssetId: string | null;
+  readonly lutIntensity: number;
+}
+
+export const DEFAULT_COLOR_GRADE_LUT: ColorGradeLutParameters = Object.freeze({
+  lutAssetId: null,
+  lutIntensity: 1,
+});
+
 export type ColorGradeReferenceParameters = ColorGradePrimaries &
   ColorCurveSet &
-  Partial<ColorQualifierParameters>;
+  Partial<ColorQualifierParameters> &
+  Partial<ColorGradeLutParameters>;
+
+/** Out-of-band inputs the parameter JSON only references (LUT asset data). */
+export interface ColorGradeReferenceOptions {
+  readonly lut?: CubeLut | null;
+}
 
 export interface ColorGradeReferenceEvaluator {
   beforeCurves(color: Rgb): Rgb;
   curves(color: Rgb): Rgb;
   afterCurves(color: Rgb): Rgb;
   composite(input: Rgb, graded: Rgb): Rgb;
+  lut(color: Rgb): Rgb;
   apply(color: Rgb): Rgb;
 }
 
@@ -119,6 +138,7 @@ function getCurveLut(parameters: ColorCurveSet): Float32Array {
 
 export function createReferenceColorGradeEvaluator(
   parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
+  options: ColorGradeReferenceOptions = {},
 ): ColorGradeReferenceEvaluator {
   const whiteBalance = whiteBalanceMatrix(
     parameters.temperature,
@@ -173,13 +193,30 @@ export function createReferenceColorGradeEvaluator(
     ];
   };
 
+  // Per the pipeline order (§2.3), the creative LUT applies after the
+  // qualifier has mixed the graded result back over its input.
+  const lutData = options.lut ?? null;
+  const lutIntensity = Math.max(0, Math.min(1, parameters.lutIntensity ?? 1));
+  const matteBypassesLut =
+    qualifierParameters.qualifierEnabled && qualifierParameters.mattePreview;
+  const lut = (color: Rgb): Rgb => {
+    if (!lutData || lutIntensity <= 0 || matteBypassesLut) return color;
+    const mapped = sampleCubeLut(lutData, color);
+    return [
+      color[0] + (mapped[0] - color[0]) * lutIntensity,
+      color[1] + (mapped[1] - color[1]) * lutIntensity,
+      color[2] + (mapped[2] - color[2]) * lutIntensity,
+    ];
+  };
+
   return {
     beforeCurves,
     curves,
     afterCurves,
     composite,
+    lut,
     apply(color) {
-      return composite(color, afterCurves(curves(beforeCurves(color))));
+      return lut(composite(color, afterCurves(curves(beforeCurves(color)))));
     },
   };
 }
@@ -187,8 +224,11 @@ export function createReferenceColorGradeEvaluator(
 export function applyReferenceColorGrade(
   encodedColor: Rgb,
   parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
+  options: ColorGradeReferenceOptions = {},
 ): Rgb {
-  return createReferenceColorGradeEvaluator(parameters).apply(encodedColor);
+  return createReferenceColorGradeEvaluator(parameters, options).apply(
+    encodedColor,
+  );
 }
 
 export function applyReferenceColorGradeBeforeCurves(
@@ -242,6 +282,7 @@ export function applyReferenceColorGradeAfterCurves(
 export function applyReferenceColorGradePixel(
   premultipliedColor: Rgba,
   parameters: ColorGradeReferenceParameters = DEFAULT_COLOR_GRADE_PRIMARIES,
+  options: ColorGradeReferenceOptions = {},
 ): Rgba {
   const alpha = premultipliedColor[3];
   if (alpha <= 1e-6) return [0, 0, 0, 0];
@@ -250,6 +291,54 @@ export function applyReferenceColorGradePixel(
     premultipliedColor[1] / alpha,
     premultipliedColor[2] / alpha,
   ];
-  const graded = applyReferenceColorGrade(straight, parameters);
+  const graded = applyReferenceColorGrade(straight, parameters, options);
   return [graded[0] * alpha, graded[1] * alpha, graded[2] * alpha, alpha];
+}
+
+export const COLOR_GRADE_CUBE_EXPORT_SIZE = 33;
+
+/**
+ * Bakes the full grade (including qualifier compositing and any creative LUT,
+ * both pure color→color maps) into a 3D LUT over the grading-space unit cube.
+ * Matte preview is a debug view and is excluded; outputs are clamped to [0,1]
+ * to match the renderer's final encode.
+ */
+export function bakeColorGradeCube(
+  parameters: ColorGradeReferenceParameters,
+  options: {
+    readonly size?: number;
+    readonly title?: string | null;
+    readonly lut?: CubeLut | null;
+  } = {},
+): CubeLut {
+  const size = options.size ?? COLOR_GRADE_CUBE_EXPORT_SIZE;
+  const evaluator = createReferenceColorGradeEvaluator(
+    { ...parameters, mattePreview: false },
+    { lut: options.lut },
+  );
+  const data = new Float32Array(size * size * size * 3);
+  let offset = 0;
+  for (let b = 0; b < size; b += 1) {
+    for (let g = 0; g < size; g += 1) {
+      for (let r = 0; r < size; r += 1) {
+        const graded = evaluator.apply([
+          r / (size - 1),
+          g / (size - 1),
+          b / (size - 1),
+        ]);
+        data[offset] = Math.max(0, Math.min(1, graded[0]));
+        data[offset + 1] = Math.max(0, Math.min(1, graded[1]));
+        data[offset + 2] = Math.max(0, Math.min(1, graded[2]));
+        offset += 3;
+      }
+    }
+  }
+  return {
+    title: options.title ?? null,
+    dimensions: 3,
+    size,
+    domainMin: [0, 0, 0],
+    domainMax: [1, 1, 1],
+    data,
+  };
 }

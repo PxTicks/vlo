@@ -17,6 +17,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import VideoLibraryIcon from "@mui/icons-material/VideoLibrary";
 import PhotoLibraryIcon from "@mui/icons-material/PhotoLibrary";
 import LibraryMusicIcon from "@mui/icons-material/LibraryMusic";
+import GradientIcon from "@mui/icons-material/Gradient";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SortIcon from "@mui/icons-material/Sort";
 import FavoriteIcon from "@mui/icons-material/Favorite";
@@ -50,7 +51,7 @@ import { isAssetVisibleInBrowser } from "./utils/assetVisibility";
 import { getAssetsForFamilyId, getFamilyMembers } from "./utils/familyMembers";
 
 type SortOption = "dateDesc" | "dateAsc" | "nameAsc";
-const ASSET_TYPE_PRIORITY: AssetType[] = ["video", "image", "audio"];
+const ASSET_TYPE_PRIORITY: AssetType[] = ["video", "image", "audio", "lut"];
 
 interface FamilyScope {
   familyId: string;
@@ -826,6 +827,12 @@ function AssetBrowserComponent() {
               aria-label="Audio"
               data-testid="asset-browser-tab-audio"
             />
+            <Tab
+              icon={<GradientIcon fontSize="small" />}
+              value="lut"
+              aria-label="LUTs"
+              data-testid="asset-browser-tab-lut"
+            />
           </Tabs>
 
           {isFamilyScopeActive && selectedFamily ? (
@@ -951,7 +958,7 @@ function AssetBrowserComponent() {
             data-testid="hidden-file-input"
             ref={fileInputRef}
             onChange={handleFileSelect}
-            accept="video/*,image/*,audio/*"
+            accept="video/*,image/*,audio/*,.cube"
             multiple
           />
           <Tooltip title="Import Asset">

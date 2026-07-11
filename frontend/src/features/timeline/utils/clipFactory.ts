@@ -9,7 +9,10 @@ import {
 import { durationSecondsToTicks } from "./assetDuration";
 
 export const createClipFromAsset = (asset: Asset): BaseClip => {
-  // AssetType is "video" | "image" | "audio", which matches ClipType subset
+  if (asset.type === "lut") {
+    throw new Error("LUT assets cannot be placed on the timeline");
+  }
+  // The remaining asset types ("video" | "image" | "audio") match a ClipType subset
   const type: ClipType = asset.type;
   const isImage = asset.type === "image";
   const hasFiniteDuration =

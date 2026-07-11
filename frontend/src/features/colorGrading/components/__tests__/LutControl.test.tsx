@@ -1,0 +1,180 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { parseCubeLut } from "../../../../core/color";
+import type { CustomControlRenderProps } from "../../../panelUI";
+import type { Asset } from "../../../../types/Asset";
+
+const { useAssetMock, addLocalAssetMock, ensureAssetFileLoadedMock } =
+  vi.hoisted(() => ({
+    useAssetMock: vi.fn<(assetId: string | null | undefined) => Asset | undefined>(),
+    addLocalAssetMock: vi.fn<(file: File) => Promise<Asset | null>>(),
+    ensureAssetFileLoadedMock: vi.fn<(assetId: string) => Promise<File | null>>(),
+  }));
+
+vi.mock("../../../userAssets", () => ({
+  useAsset: useAssetMock,
+  addLocalAsset: addLocalAssetMock,
+  ensureAssetFileLoaded: ensureAssetFileLoadedMock,
+}));
+
+import { LutControl } from "../LutControl";
+
+// jsdom's Blob/File lack .text(); the component and assertions rely on it.
+if (typeof Blob.prototype.text !== "function") {
+  Object.defineProperty(Blob.prototype, "text", {
+    configurable: true,
+    writable: true,
+    value(this: Blob): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(this);
+      });
+    },
+  });
+}
+
+const IDENTITY_2_CUBE = [
+  "LUT_3D_SIZE 2",
+  "0 0 0",
+  "1 0 0",
+  "0 1 0",
+  "1 1 0",
+  "0 0 1",
+  "1 0 1",
+  "0 1 1",
+  "1 1 1",
+].join("\n");
+
+const control: CustomControlRenderProps["control"] = {
+  type: "custom",
+  label: "LUT",
+  name: "_lut",
+};
+
+function renderControl(
+  values: Record<string, unknown>,
+  onCommitMany = vi.fn(),
+) {
+  render(
+    <LutControl
+      control={control}
+      value={undefined}
+      values={values}
+      onCommit={vi.fn()}
+      onCommitMany={onCommitMany}
+      groupId="color_grade_lut"
+      transformId="grade-1"
+    />,
+  );
+  return onCommitMany;
+}
+
+describe("LutControl", () => {
+  beforeEach(() => {
+    useAssetMock.mockReturnValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("ingests a browsed .cube file and commits its asset id", async () => {
+    addLocalAssetMock.mockResolvedValue({ id: "lut-asset-1" } as Asset);
+    const onCommitMany = renderControl({ lutAssetId: null, lutIntensity: 1 });
+
+    const input = document.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    );
+    expect(input).not.toBeNull();
+    const file = new File([IDENTITY_2_CUBE], "identity.cube", {
+      type: "text/plain",
+    });
+    fireEvent.change(input!, { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect(onCommitMany).toHaveBeenCalledWith({ lutAssetId: "lut-asset-1" }),
+    );
+    expect(addLocalAssetMock).toHaveBeenCalledWith(file);
+  });
+
+  it("rejects malformed cube files before they become assets", async () => {
+    const onCommitMany = renderControl({ lutAssetId: null, lutIntensity: 1 });
+
+    const input = document.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    );
+    const file = new File(["LUT_3D_SIZE 2\nnot a number\n"], "broken.cube", {
+      type: "text/plain",
+    });
+    fireEvent.change(input!, { target: { files: [file] } });
+
+    await screen.findByRole("alert");
+    expect(addLocalAssetMock).not.toHaveBeenCalled();
+    expect(onCommitMany).not.toHaveBeenCalled();
+  });
+
+  it("shows the assigned LUT, clears it, and flags missing assets", () => {
+    useAssetMock.mockReturnValue({
+      id: "lut-asset-1",
+      name: "teal.cube",
+      type: "lut",
+    } as Asset);
+    const onCommitMany = renderControl({
+      lutAssetId: "lut-asset-1",
+      lutIntensity: 1,
+    });
+
+    expect(screen.getByText("teal.cube")).toBeInTheDocument();
+    fireEvent.click(document.querySelector(".drop-slot-clear")!);
+    expect(onCommitMany).toHaveBeenCalledWith({ lutAssetId: null });
+
+    useAssetMock.mockReturnValue(undefined);
+    renderControl({ lutAssetId: "gone", lutIntensity: 1 });
+    expect(
+      screen.getByText(/referenced LUT asset is missing/i),
+    ).toBeInTheDocument();
+  });
+
+  it("exports the current grade as a valid 33³ .cube download", async () => {
+    const objectUrls: string[] = [];
+    const blobs: Blob[] = [];
+    const createObjectURL = vi.fn((blob: Blob) => {
+      blobs.push(blob);
+      objectUrls.push(`blob:mock-${blobs.length}`);
+      return objectUrls[objectUrls.length - 1];
+    });
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL,
+    });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    try {
+      renderControl({
+        lutAssetId: null,
+        lutIntensity: 1,
+        exposure: 0.5,
+        saturation: 1.2,
+      });
+      fireEvent.click(screen.getByRole("button", { name: /export \.cube/i }));
+
+      await waitFor(() => expect(click).toHaveBeenCalled());
+      const exported = parseCubeLut(await blobs[0].text());
+      expect(exported.size).toBe(33);
+      expect(exported.title).toBe("vlo color grade");
+      // A brightening grade must lift the mid-gray lattice point.
+      const mid = 16 + 16 * 33 + 16 * 33 * 33;
+      expect(exported.data[mid * 3]).toBeGreaterThan(0.5);
+      expect(revokeObjectURL).toHaveBeenCalled();
+    } finally {
+      click.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+});

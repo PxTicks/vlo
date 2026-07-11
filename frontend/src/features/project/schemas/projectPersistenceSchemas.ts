@@ -75,7 +75,7 @@ export const projectRelativePathSchema = z
   .string()
   .refine(isSafeProjectRelativePath, "Expected a safe project-relative path");
 
-const assetTypeSchema = z.enum(["video", "image", "audio"]) satisfies z.ZodType<AssetType>;
+const assetTypeSchema = z.enum(["video", "image", "audio", "lut"]) satisfies z.ZodType<AssetType>;
 
 const trackTypeSchema = z.enum([
   "visual",

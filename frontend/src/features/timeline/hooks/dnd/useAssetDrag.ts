@@ -41,6 +41,9 @@ export const useAssetDrag = () => {
 
       if (!data || data.type !== "asset") return;
 
+      // Clip-less assets (LUTs) only target asset slots, never the timeline.
+      if (!data.clip) return;
+
       // 1. Deselect timeline clips to avoid confusion
       useTimelineStore.getState().selectClip(null);
 

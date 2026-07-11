@@ -117,6 +117,32 @@ function buildGradeBody(variantKey: number, index: number): string {
         : `  gradingColor = mix(grade${index}Input, gradingColor, grade${index}Matte);`,
     );
   }
+  if (
+    uses(variantKey, FUSED_COLOR_GRADE_SHADER_STAGE.LUT) &&
+    !uses(variantKey, FUSED_COLOR_GRADE_SHADER_STAGE.MATTE_PREVIEW)
+  ) {
+    // Creative LUT applies after the qualifier composite (§2.3). Intensity is
+    // written as zero while the `.cube` asset is still loading, so the branch
+    // also guards against sampling an unbaked atlas region.
+    sections.push(
+      `  vec4 grade${index}lut = vloGradeParam(${row}, 14.0);`,
+      `  if (grade${index}lut.x > 0.0) {`,
+      `    vec4 grade${index}lutMin = vloGradeParam(${row}, 15.0);`,
+      `    vec4 grade${index}lutScale = vloGradeParam(${row}, 16.0);`,
+      `    gradingColor = mix(`,
+      `      gradingColor,`,
+      `      vloSampleLut3d(`,
+      `        gradingColor,`,
+      `        grade${index}lut.yzw,`,
+      `        vec2(grade${index}lutMin.w, grade${index}lutScale.w),`,
+      `        grade${index}lutMin.rgb,`,
+      `        grade${index}lutScale.rgb`,
+      `      ),`,
+      `      grade${index}lut.x`,
+      `    );`,
+      "  }",
+    );
+  }
   return sections.join("\n");
 }
 
@@ -129,6 +155,13 @@ export function buildFusedColorGradeFragment(
   );
   const hasQualifier = variantKeys.some((key) =>
     uses(key, FUSED_COLOR_GRADE_SHADER_STAGE.QUALIFIER),
+  );
+  // A matte-preview grade replaces its output with the matte, so its LUT
+  // stage never renders and must not force the sampler/functions in.
+  const hasLut = variantKeys.some(
+    (key) =>
+      uses(key, FUSED_COLOR_GRADE_SHADER_STAGE.LUT) &&
+      !uses(key, FUSED_COLOR_GRADE_SHADER_STAGE.MATTE_PREVIEW),
   );
   const hasActiveGrade = variantKeys.some((key) => key !== 0);
   const matteIndex = variantKeys.findIndex((key) =>
@@ -187,6 +220,79 @@ vec3 vloApplyColorCurves(vec3 color, float gradeIndex) {
 }
 `
     : "";
+  // Tetrahedral interpolation over a tiled slice atlas: 4 lattice fetches per
+  // pixel, exact on lattice points and visibly cleaner than trilinear for
+  // saturated grades. Mirrors sampleCubeLut in core/color/cube.ts. All index
+  // math stays in floats with normalized texture() reads — like the curve
+  // sampling above — because the fragment may compile as GLSL ES 1.00, which
+  // has no texelFetch/ivec/integer-modulus.
+  const lutFunctions = hasLut
+    ? `
+vec3 vloLutLattice(
+  vec3 corner,
+  float lutSize,
+  float tilesX,
+  float rowOffset,
+  vec2 lutTexel
+) {
+  float x = mod(corner.z, tilesX) * lutSize + corner.x;
+  float y = rowOffset + floor(corner.z / tilesX) * lutSize + corner.y;
+  return texture(uLutAtlas, vec2(x + 0.5, y + 0.5) * lutTexel).rgb;
+}
+
+vec3 vloSampleLut3d(
+  vec3 color,
+  vec3 lutLayout,
+  vec2 lutTexel,
+  vec3 domainMin,
+  vec3 domainInvScale
+) {
+  float lutSize = lutLayout.x;
+  float tilesX = lutLayout.y;
+  float rowOffset = lutLayout.z;
+  vec3 normalized = clamp((color - domainMin) * domainInvScale, 0.0, 1.0);
+  vec3 position = normalized * (lutSize - 1.0);
+  vec3 base = min(floor(position), vec3(lutSize - 2.0));
+  vec3 f = position - base;
+  vec3 c000 = vloLutLattice(base, lutSize, tilesX, rowOffset, lutTexel);
+  vec3 c111 = vloLutLattice(base + vec3(1.0), lutSize, tilesX, rowOffset, lutTexel);
+  vec4 weights;
+  vec3 cornerA;
+  vec3 cornerB;
+  if (f.x >= f.y) {
+    if (f.y >= f.z) {
+      weights = vec4(1.0 - f.x, f.x - f.y, f.y - f.z, f.z);
+      cornerA = vec3(1.0, 0.0, 0.0);
+      cornerB = vec3(1.0, 1.0, 0.0);
+    } else if (f.x >= f.z) {
+      weights = vec4(1.0 - f.x, f.x - f.z, f.z - f.y, f.y);
+      cornerA = vec3(1.0, 0.0, 0.0);
+      cornerB = vec3(1.0, 0.0, 1.0);
+    } else {
+      weights = vec4(1.0 - f.z, f.z - f.x, f.x - f.y, f.y);
+      cornerA = vec3(0.0, 0.0, 1.0);
+      cornerB = vec3(1.0, 0.0, 1.0);
+    }
+  } else if (f.z >= f.y) {
+    weights = vec4(1.0 - f.z, f.z - f.y, f.y - f.x, f.x);
+    cornerA = vec3(0.0, 0.0, 1.0);
+    cornerB = vec3(0.0, 1.0, 1.0);
+  } else if (f.z >= f.x) {
+    weights = vec4(1.0 - f.y, f.y - f.z, f.z - f.x, f.x);
+    cornerA = vec3(0.0, 1.0, 0.0);
+    cornerB = vec3(0.0, 1.0, 1.0);
+  } else {
+    weights = vec4(1.0 - f.y, f.y - f.x, f.x - f.z, f.z);
+    cornerA = vec3(0.0, 1.0, 0.0);
+    cornerB = vec3(1.0, 1.0, 0.0);
+  }
+  return weights.x * c000
+    + weights.y * vloLutLattice(base + cornerA, lutSize, tilesX, rowOffset, lutTexel)
+    + weights.z * vloLutLattice(base + cornerB, lutSize, tilesX, rowOffset, lutTexel)
+    + weights.w * c111;
+}
+`
+    : "";
 
   return `
 in vec2 vTextureCoord;
@@ -195,6 +301,7 @@ out vec4 finalColor;
 uniform sampler2D uTexture;
 uniform sampler2D uGradeParams;
 ${hasCurves ? "uniform sampler2D uCurveTexture;" : ""}
+${hasLut ? "uniform sampler2D uLutAtlas;" : ""}
 
 ${SRGB_TRANSFER_GLSL}
 ${MATRIX_GLSL}
@@ -212,7 +319,7 @@ vec4 vloGradeParam(float row, float column) {
     )
   );
 }
-${curveFunctions}
+${curveFunctions}${lutFunctions}
 float vloDitherHash(vec2 position) {
   vec3 p3 = fract(vec3(position.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_COLOR_GRADE_LUT,
   DEFAULT_COLOR_GRADE_PRIMARIES,
   DEFAULT_COLOR_CURVES,
   DEFAULT_COLOR_QUALIFIER,
@@ -8,6 +9,7 @@ import {
   COLOR_WHEEL_PARAMETER_CONTROLS,
   COLOR_WHEELS_CONTROL_ID,
   HUE_CURVES_CONTROL_ID,
+  LUT_CONTROL_ID,
   TONE_SHAPING_CONTROL_ID,
   TONE_SHAPING_PARAMETER_CONTROLS,
   VALUE_CURVES_CONTROL_ID,
@@ -36,6 +38,7 @@ export const colorGradeDefinition: TransformationDefinition = {
     ditherStrength: 1,
     ...DEFAULT_COLOR_QUALIFIER,
     ...DEFAULT_COLOR_CURVES,
+    ...DEFAULT_COLOR_GRADE_LUT,
   },
   uiConfig: {
     groups: [
@@ -191,6 +194,29 @@ export const colorGradeDefinition: TransformationDefinition = {
             min: -180,
             max: 180,
             step: 1,
+            supportsSpline: true,
+          },
+        ],
+      },
+      {
+        id: "color_grade_lut",
+        title: "Creative LUT",
+        columns: 1,
+        controls: [
+          {
+            type: "custom",
+            label: "LUT",
+            name: "_lut",
+            componentId: LUT_CONTROL_ID,
+          },
+          {
+            type: "slider",
+            label: "LUT intensity",
+            name: "lutIntensity",
+            defaultValue: DEFAULT_COLOR_GRADE_LUT.lutIntensity,
+            min: 0,
+            max: 1,
+            step: 0.01,
             supportsSpline: true,
           },
         ],

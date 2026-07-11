@@ -314,11 +314,15 @@ export class AssetService {
     const processor = mediaProcessingService.createProcessor(file);
 
     try {
+      // LUTs are plain text; identified by extension, never by magic bytes.
+      const isLut = /\.cube$/i.test(file.name);
+
       // Fix missing or generic MIME type (Shared logic for Scan & Upload)
       if (
-        !file.type ||
-        file.type === "application/octet-stream" ||
-        file.type === "text/plain"
+        !isLut &&
+        (!file.type ||
+          file.type === "application/octet-stream" ||
+          file.type === "text/plain")
       ) {
         let inferredType = "";
 
@@ -344,12 +348,12 @@ export class AssetService {
       const safeName = mediaProcessingService.sanitizeFilename(file.name);
 
       const assetId = crypto.randomUUID();
-      const isImage = file.type.startsWith("image/");
-      const isAudio = file.type.startsWith("audio/");
-      const isVideo = file.type.startsWith("video/");
+      const isImage = !isLut && file.type.startsWith("image/");
+      const isAudio = !isLut && file.type.startsWith("audio/");
+      const isVideo = !isLut && file.type.startsWith("video/");
 
       // Only process supported types
-      if (!isImage && !isAudio && !isVideo) {
+      if (!isImage && !isAudio && !isVideo && !isLut) {
         console.warn("Skipping unsupported file type:", file.name, file.type);
         return {
           status: "skipped",
@@ -459,7 +463,13 @@ export class AssetService {
         }
       }
 
-      const assetType = isImage ? "image" : isAudio ? "audio" : "video";
+      const assetType = isLut
+        ? "lut"
+        : isImage
+          ? "image"
+          : isAudio
+            ? "audio"
+            : "video";
       const resolvedCompatibilityHint =
         compatibilityHint &&
         isAssetFamilyCompatibilityComplete(compatibilityHint) &&

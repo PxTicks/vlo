@@ -5,6 +5,7 @@ import {
   type Rgb,
 } from "../../../../../core/color";
 import type { NormalizedColorGradeLayer } from "./fusedColorGradeParameters";
+import { getLoadedCubeLut } from "./lutTexture";
 
 export interface ColorGradeHistogramAnalysis {
   readonly snapshot: ColorGradeHistogramSnapshot;
@@ -29,7 +30,11 @@ export function analyzeColorGradeHistograms(
   requestedTransformIds: ReadonlySet<string>,
 ): Map<string, ColorGradeHistogramAnalysis> {
   const evaluators = grades.map((grade) =>
-    createReferenceColorGradeEvaluator(grade.parameters),
+    createReferenceColorGradeEvaluator(grade.parameters, {
+      lut: grade.parameters.lutAssetId
+        ? getLoadedCubeLut(grade.parameters.lutAssetId)
+        : null,
+    }),
   );
   const samples = new Map<
     string,
@@ -64,9 +69,8 @@ export function analyzeColorGradeHistograms(
         writePixel(sample.before, offset, beforeCurves, alpha);
         writePixel(sample.after, offset, afterCurves, alpha);
       }
-      color = evaluator.composite(
-        gradeInput,
-        evaluator.afterCurves(afterCurves),
+      color = evaluator.lut(
+        evaluator.composite(gradeInput, evaluator.afterCurves(afterCurves)),
       );
     }
   }

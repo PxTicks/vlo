@@ -1,5 +1,6 @@
 import {
   DEFAULT_COLOR_CURVES,
+  DEFAULT_COLOR_GRADE_LUT,
   DEFAULT_COLOR_GRADE_PRIMARIES,
   DEFAULT_COLOR_QUALIFIER,
   MODIFIER_CURVE_PARAMETER_NAMES,
@@ -7,6 +8,7 @@ import {
   isIdentityColorCurve,
   type ColorCurveParameterName,
   type ColorCurvePoint,
+  type ColorGradeLutParameters,
   type ColorGradeReferenceParameters,
   type ColorQualifierParameters,
 } from "../../../../../core/color";
@@ -16,7 +18,9 @@ import { FUSED_COLOR_GRADE_SHADER_STAGE } from "./fusedShaderStages";
 
 export interface NormalizedColorGradeLayer {
   readonly transformId: string;
-  readonly parameters: ColorGradeReferenceParameters & ColorQualifierParameters;
+  readonly parameters: ColorGradeReferenceParameters &
+    ColorQualifierParameters &
+    ColorGradeLutParameters;
   readonly ditherStrength: number;
   readonly variantKey: number;
 }
@@ -66,7 +70,9 @@ export function normalizeColorGradeLayer(
   const satB = clamp(finiteOr(source.satHi, DEFAULT_COLOR_QUALIFIER.satHi), 0, 1);
   const lumaA = clamp(finiteOr(source.lumaLo, DEFAULT_COLOR_QUALIFIER.lumaLo), 0, 1);
   const lumaB = clamp(finiteOr(source.lumaHi, DEFAULT_COLOR_QUALIFIER.lumaHi), 0, 1);
-  const parameters: ColorGradeReferenceParameters & ColorQualifierParameters = {
+  const parameters: ColorGradeReferenceParameters &
+    ColorQualifierParameters &
+    ColorGradeLutParameters = {
     exposure: finiteOr(source.exposure, DEFAULT_COLOR_GRADE_PRIMARIES.exposure),
     temperature: finiteOr(
       source.temperature,
@@ -203,6 +209,15 @@ export function normalizeColorGradeLayer(
       source.mattePreview,
       DEFAULT_COLOR_QUALIFIER.mattePreview,
     ),
+    lutAssetId:
+      typeof source.lutAssetId === "string" && source.lutAssetId.length > 0
+        ? source.lutAssetId
+        : DEFAULT_COLOR_GRADE_LUT.lutAssetId,
+    lutIntensity: clamp(
+      finiteOr(source.lutIntensity, DEFAULT_COLOR_GRADE_LUT.lutIntensity),
+      0,
+      1,
+    ),
   };
 
   const hasWhiteBalance =
@@ -268,6 +283,11 @@ export function normalizeColorGradeLayer(
     if (parameters.mattePreview) {
       variantKey |= FUSED_COLOR_GRADE_SHADER_STAGE.MATTE_PREVIEW;
     }
+  }
+  // Compiled whenever a LUT asset is referenced; load state and an animated
+  // intensity stay runtime parameters so neither forces a shader rebuild.
+  if (parameters.lutAssetId) {
+    variantKey |= FUSED_COLOR_GRADE_SHADER_STAGE.LUT;
   }
 
   return {

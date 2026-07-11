@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { ExpandMore } from "@mui/icons-material";
 import { Box, Button, Collapse, Typography } from "@mui/material";
-import type { CustomControlRenderProps } from "../../panelUI";
+import {
+  useLiveParameterPreviewSession,
+  type CustomControlRenderProps,
+} from "../../panelUI";
 import { liveParamStore } from "../../../core/liveParams/liveParamStore";
-import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import {
   COLOR_WHEEL_NAMES,
   getWheelParameterNames,
@@ -55,6 +57,10 @@ export function ColorWheelsControl({
   const [wheelValues, setWheelValues] = useState(initial);
   const [showChannelAnimation, setShowChannelAnimation] = useState(false);
   const channelAnimationId = useId();
+  const {
+    preview: previewParameters,
+    commit: commitParameters,
+  } = useLiveParameterPreviewSession({ transformId, onCommitMany });
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -76,45 +82,23 @@ export function ColorWheelsControl({
         }),
       ),
     );
-    return () => {
-      unsubscribers.forEach((unsubscribe) => unsubscribe());
-      livePreviewParamStore.clearMany(
-        COLOR_WHEEL_NAMES.flatMap((wheel) =>
-          getWheelParameterNames(wheel).map((paramName) => ({
-            transformId,
-            paramName,
-          })),
-        ),
-      );
-    };
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [transformId]);
 
   const preview = useCallback(
     (wheel: ColorWheelName, value: WheelAdjustment) => {
       setWheelValues((current) => ({ ...current, [wheel]: value }));
-      if (!transformId) return;
-      livePreviewParamStore.setMany(
-        Object.entries(wheelUpdate(wheel, value)).map(([paramName, nextValue]) => ({
-          transformId,
-          paramName,
-          value: nextValue,
-        })),
-      );
+      previewParameters(wheelUpdate(wheel, value));
     },
-    [transformId],
+    [previewParameters],
   );
 
   const commit = useCallback(
     (wheel: ColorWheelName, value: WheelAdjustment) => {
       const update = wheelUpdate(wheel, value);
-      onCommitMany(update);
-      if (transformId) {
-        livePreviewParamStore.clearMany(
-          Object.keys(update).map((paramName) => ({ transformId, paramName })),
-        );
-      }
+      commitParameters(update);
     },
-    [onCommitMany, transformId],
+    [commitParameters],
   );
 
   return (

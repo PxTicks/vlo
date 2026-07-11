@@ -7,7 +7,10 @@ import {
 } from "react";
 import { Box, Button, Collapse, Typography } from "@mui/material";
 import { ExpandMore } from "@mui/icons-material";
-import type { CustomControlRenderProps } from "../../panelUI";
+import {
+  useLiveParameterPreviewSession,
+  type CustomControlRenderProps,
+} from "../../panelUI";
 import { liveParamStore } from "../../../core/liveParams/liveParamStore";
 import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import { TONE_SHAPING_PARAMETER_CONTROLS } from "../constants";
@@ -46,6 +49,10 @@ export function ToneShapingControl({
   const [parameters, setParameters] = useState(initial);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const advancedId = useId();
+  const {
+    preview: previewParameters,
+    commit: commitParameters,
+  } = useLiveParameterPreviewSession({ transformId, onCommitMany });
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -65,44 +72,25 @@ export function ToneShapingControl({
       }),
     );
     livePreviewParamStore.requestRender();
-    return () => {
-      unsubscribers.forEach((unsubscribe) => unsubscribe());
-      livePreviewParamStore.clearMany(
-        TONE_SHAPING_PARAMETER_CONTROLS.map((control) => ({
-          transformId,
-          paramName: control.name,
-        })),
-      );
-    };
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [transformId]);
 
   const preview = useCallback(
     (macro: ToneMacro, strength: number) => {
       const update = toneMacroUpdate(macro, strength);
       setParameters((current) => ({ ...current, ...update }));
-      if (!transformId) return;
-      livePreviewParamStore.setMany(
-        Object.entries(update).map(([paramName, value]) => ({
-          transformId,
-          paramName,
-          value,
-        })),
-      );
+      previewParameters(update);
     },
-    [transformId],
+    [previewParameters],
   );
 
   const commit = useCallback(
     (macro: ToneMacro, strength: number) => {
       const update = toneMacroUpdate(macro, strength);
       setParameters((current) => ({ ...current, ...update }));
-      onCommitMany(update);
-      if (!transformId) return;
-      livePreviewParamStore.clearMany(
-        Object.keys(update).map((paramName) => ({ transformId, paramName })),
-      );
+      commitParameters(update);
     },
-    [onCommitMany, transformId],
+    [commitParameters],
   );
 
   return (

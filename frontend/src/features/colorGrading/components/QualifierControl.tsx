@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -16,8 +16,10 @@ import {
   type ColorQualifierParameters,
 } from "../../../core/color";
 import { liveParamStore } from "../../../core/liveParams/liveParamStore";
-import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
-import type { CustomControlRenderProps } from "../../panelUI";
+import {
+  useLiveParameterPreviewSession,
+  type CustomControlRenderProps,
+} from "../../panelUI";
 import { QUALIFIER_PARAMETER_CONTROLS } from "../constants";
 import { pickColorFromViewer } from "../services/viewerColorPicker";
 import {
@@ -91,9 +93,11 @@ export function QualifierControl({
   const initial = useMemo(() => readParameters(values), [values]);
   const [parameters, setParameters] = useState(initial);
   const [pickerMessage, setPickerMessage] = useState<string | null>(null);
-  const pendingCommitRef = useRef<Partial<ColorQualifierParameters> | null>(
-    null,
-  );
+  const {
+    begin: beginInteraction,
+    preview: previewChanges,
+    commit: commitChanges,
+  } = useLiveParameterPreviewSession({ transformId, onCommitMany });
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -110,59 +114,25 @@ export function QualifierControl({
         setParameters((current) => ({ ...current, [name]: value }));
       }),
     );
-    return () => {
-      unsubscribers.forEach((unsubscribe) => unsubscribe());
-      livePreviewParamStore.clearMany(
-        numericNames.map((paramName) => ({ transformId, paramName })),
-      );
-    };
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [transformId]);
 
   const update = useCallback(
     (changes: Partial<ColorQualifierParameters>, commit: boolean) => {
       setParameters((current) => ({ ...current, ...changes }));
       if (commit) {
-        pendingCommitRef.current = null;
-        onCommitMany(changes);
-        if (transformId) {
-          livePreviewParamStore.clearMany(
-            Object.keys(changes).map((paramName) => ({ transformId, paramName })),
-          );
-        }
+        commitChanges(changes);
       } else {
-        pendingCommitRef.current = {
-          ...pendingCommitRef.current,
-          ...changes,
-        };
-        if (transformId) {
-          livePreviewParamStore.setMany(
-            Object.entries(changes).map(([paramName, value]) => ({
-              transformId,
-              paramName,
-              value,
-            })),
-          );
-        }
+        previewChanges(changes);
       }
     },
-    [onCommitMany, transformId],
+    [commitChanges, previewChanges],
   );
 
-  const beginInteraction = useCallback(() => {
-    pendingCommitRef.current = null;
-  }, []);
-
-  const commitInteraction = useCallback(() => {
-    const changes = pendingCommitRef.current;
-    pendingCommitRef.current = null;
-    if (!changes) return;
-    onCommitMany(changes);
-    if (transformId) {
-      livePreviewParamStore.clearMany(
-        Object.keys(changes).map((paramName) => ({ transformId, paramName })),
-      );
-    }
-  }, [onCommitMany, transformId]);
+  const commitInteraction = useCallback(
+    () => commitChanges(),
+    [commitChanges],
+  );
 
   const changeHue = (
     boundary: QualifierBoundaryId,

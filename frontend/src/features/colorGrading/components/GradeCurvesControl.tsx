@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
-import type { CustomControlRenderProps } from "../../panelUI";
-import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import {
-  type ColorCurveParameterName,
-  type ColorCurvePoint,
-} from "../../../core/color";
+  useLiveParameterPreviewSession,
+  type CustomControlRenderProps,
+} from "../../panelUI";
+import type { ColorCurvePoint } from "../../../core/color";
 import { useCurveHistograms } from "../hooks/useCurveHistograms";
 import { ValueCurveEditor, type CurveEditorTab } from "./ValueCurveEditor";
 
@@ -98,6 +97,13 @@ export function GradeCurvesControl(props: CustomControlRenderProps) {
   );
   const kind = props.control.config?.kind;
   const tabs = kind === "hue" ? HUE_TABS : VALUE_TABS;
+  const {
+    preview: previewParameters,
+    commit: commitParameters,
+  } = useLiveParameterPreviewSession({
+    transformId: props.transformId,
+    onCommitMany: props.onCommitMany,
+  });
 
   useEffect(() => {
     const root = rootRef.current;
@@ -126,22 +132,6 @@ export function GradeCurvesControl(props: CustomControlRenderProps) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!props.transformId) return;
-    const transformId = props.transformId;
-    return () => {
-      livePreviewParamStore.clearMany(
-        tabs.map((tab) => ({ transformId, paramName: tab.name })),
-      );
-    };
-  }, [props.transformId, tabs]);
-
-  const clearPreview = (name: ColorCurveParameterName): void => {
-    if (props.transformId) {
-      livePreviewParamStore.clear(props.transformId, name);
-    }
-  };
-
   return (
     <Box ref={rootRef}>
       <ValueCurveEditor
@@ -151,13 +141,10 @@ export function GradeCurvesControl(props: CustomControlRenderProps) {
         afterHistograms={histograms?.after}
         disabled={props.disabled}
         onPreview={(name, points) => {
-          if (props.transformId) {
-            livePreviewParamStore.set(props.transformId, name, points);
-          }
+          previewParameters({ [name]: points });
         }}
         onCommit={(name, points: readonly ColorCurvePoint[]) => {
-          props.onCommitMany({ [name]: points });
-          clearPreview(name);
+          commitParameters({ [name]: points });
         }}
       />
     </Box>

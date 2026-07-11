@@ -43,3 +43,8 @@ export { PanelSection } from "./components/PanelSection";
 export { SortableSection } from "./components/SortableSection";
 export type { SliderControlProps } from "./components/SliderControl";
 export { SliderControl } from "./components/SliderControl";
+export {
+  useLiveParameterPreviewSession,
+  type LiveParameterChanges,
+  type LiveParameterPreviewSession,
+} from "./hooks/useLiveParameterPreviewSession";

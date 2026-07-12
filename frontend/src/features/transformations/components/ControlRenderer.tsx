@@ -410,6 +410,7 @@ export const ControlRenderer = memo(function ControlRenderer({
           groupId,
           transformId,
           disabled,
+          sourceTimeRange: { minTime, duration },
           renderParameterControl: (
             parameterControl: ControlDefinition,
           ): ReactElement =>

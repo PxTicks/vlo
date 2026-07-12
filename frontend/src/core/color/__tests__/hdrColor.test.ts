@@ -28,7 +28,7 @@ describe("HDR color transforms", () => {
     expect(red[0]).toBeGreaterThan(1.6);
     expect(red[1]).toBeLessThan(0);
     const white = applyColorInputTransform([1, 1, 1], {
-      transform: "hlg-bt2020",
+      transform: "bt2020-hlg",
     });
     white.forEach((channel) => expect(channel).toBeCloseTo(1, 5));
   });

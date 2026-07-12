@@ -1,17 +1,25 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { GradeParameterJson } from "./gradeParameters";
+import type {
+  GradeParameterJson,
+  GradeTimeRange,
+} from "./gradeParameters";
 
 export interface GradePreset {
   readonly id: string;
   readonly name: string;
   readonly parameters: GradeParameterJson;
+  readonly sourceTimeRange?: GradeTimeRange;
   readonly createdAt: number;
 }
 
 interface GradePresetState {
   presets: GradePreset[];
-  savePreset(name: string, parameters: GradeParameterJson): void;
+  savePreset(
+    name: string,
+    parameters: GradeParameterJson,
+    sourceTimeRange?: GradeTimeRange,
+  ): void;
   removePreset(id: string): void;
 }
 
@@ -41,7 +49,7 @@ export const useGradePresetStore = create<GradePresetState>()(
   persist(
     (set) => ({
       presets: [],
-      savePreset: (name, parameters) =>
+      savePreset: (name, parameters, sourceTimeRange) =>
         set((state) => ({
           presets: [
             ...state.presets,
@@ -49,6 +57,7 @@ export const useGradePresetStore = create<GradePresetState>()(
               id: crypto.randomUUID(),
               name: name.trim(),
               parameters,
+              ...(sourceTimeRange ? { sourceTimeRange } : {}),
               createdAt: Date.now(),
             },
           ],

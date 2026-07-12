@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { CustomControlRenderProps } from "../../../panelUI";
 import { clearCopiedGradeParameters } from "../../gradeParameters";
 import { useGradePresetStore } from "../../useGradePresetStore";
@@ -17,7 +17,7 @@ describe("GradeManagementControl", () => {
     useGradePresetStore.setState({ presets: [] });
   });
 
-  it("copies and pastes the same parameter JSON", () => {
+  it("copies and pastes the same parameter JSON", async () => {
     const onCommitMany = vi.fn();
     render(
       <GradeManagementControl
@@ -31,9 +31,11 @@ describe("GradeManagementControl", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Copy grade" }));
     fireEvent.click(screen.getByRole("button", { name: "Paste grade" }));
-    expect(onCommitMany).toHaveBeenCalledWith({
-      exposure: 1,
-      curveMaster: [{ x: 0, y: 0 }],
+    await waitFor(() => {
+      expect(onCommitMany).toHaveBeenCalledWith({
+        exposure: 1,
+        curveMaster: [{ x: 0, y: 0 }],
+      });
     });
   });
 

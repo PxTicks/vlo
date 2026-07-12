@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildHdrCapabilityMatrix } from "../hdrCapabilities";
+import {
+  buildHdrCapabilityMatrix,
+  detectHdrCapabilities,
+} from "../hdrCapabilities";
 
 describe("HDR capability matrix", () => {
   it("keeps browser paths gated while pure color math remains available", () => {
@@ -17,5 +20,19 @@ describe("HDR capability matrix", () => {
       hdrCanvas: "unavailable",
       tenBitExport: "experimental",
     });
+  });
+
+  it("classifies display P3 as unavailable when the canvas enum throws", () => {
+    const environmentDocument = {
+      createElement: () => ({
+        getContext: () => {
+          throw new TypeError("Unsupported CanvasColorSpace");
+        },
+      }),
+    } as unknown as Pick<Document, "createElement">;
+
+    expect(detectHdrCapabilities(environmentDocument).wideGamutCanvas).toBe(
+      "unavailable",
+    );
   });
 });

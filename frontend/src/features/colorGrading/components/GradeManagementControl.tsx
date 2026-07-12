@@ -18,6 +18,7 @@ import {
   captureGradeParameters,
   copyGradeParameters,
   readCopiedGradeParameters,
+  remapGradeParameterTimes,
 } from "../gradeParameters";
 import {
   BUILT_IN_GRADE_PRESETS,
@@ -28,6 +29,7 @@ export function GradeManagementControl({
   values,
   onCommitMany,
   disabled,
+  sourceTimeRange,
 }: CustomControlRenderProps) {
   const [name, setName] = useState("");
   const [selectedPresetId, setSelectedPresetId] = useState("");
@@ -44,7 +46,13 @@ export function GradeManagementControl({
     setSelectedPresetId(id);
     const preset = presets.find((entry) => entry.id === id);
     if (!preset) return;
-    onCommitMany(preset.parameters);
+    onCommitMany(
+      remapGradeParameterTimes(
+        preset.parameters,
+        preset.sourceTimeRange,
+        sourceTimeRange,
+      ),
+    );
     setMessage(`Applied ${preset.name}`);
   };
 
@@ -95,7 +103,7 @@ export function GradeManagementControl({
           aria-label="Save grade preset"
           disabled={disabled || name.trim().length === 0}
           onClick={() => {
-            savePreset(name, captureGradeParameters(values));
+            savePreset(name, captureGradeParameters(values), sourceTimeRange);
             setMessage(`Saved ${name.trim()}`);
             setName("");
           }}
@@ -109,7 +117,7 @@ export function GradeManagementControl({
           startIcon={<ContentCopyIcon />}
           disabled={disabled}
           onClick={() => {
-            copyGradeParameters(captureGradeParameters(values));
+            copyGradeParameters(captureGradeParameters(values), sourceTimeRange);
             setMessage("Grade copied");
           }}
         >
@@ -119,8 +127,8 @@ export function GradeManagementControl({
           size="small"
           startIcon={<ContentPasteIcon />}
           disabled={disabled}
-          onClick={() => {
-            const copied = readCopiedGradeParameters();
+          onClick={async () => {
+            const copied = await readCopiedGradeParameters(sourceTimeRange);
             if (!copied) {
               setMessage("No copied grade");
               return;

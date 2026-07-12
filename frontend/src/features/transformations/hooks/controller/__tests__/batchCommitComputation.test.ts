@@ -48,4 +48,40 @@ describe("computeBatchCommitMutations", () => {
     }
     expect(next[0].parameters.liftMaster).toBe(0);
   });
+
+  it("rebuilds grade keyframe bookkeeping when replacing grade parameters", () => {
+    const transform = createAddTransform("ColorGradeFilter", true);
+    expect(transform).not.toBeNull();
+    if (!transform) return;
+    transform.parameters.exposure = {
+      type: "spline",
+      points: [{ time: 25, value: 1 }],
+    };
+    transform.parameters.saturation = {
+      type: "spline",
+      points: [{ time: 75, value: 0.8 }],
+    };
+    transform.keyframeTimes = [25, 75, 90];
+
+    const next = computeBatchCommitMutations({
+      groupId: "color_grade_management",
+      values: {
+        exposure: 0,
+        contrast: {
+          type: "spline",
+          points: [
+            { time: 10, value: 1 },
+            { time: 60, value: 1.2 },
+          ],
+        },
+      },
+      transformId: transform.id,
+      transforms: [transform],
+      playheadTicks: 50,
+      pointEpsilonTicks: 1,
+    });
+
+    expect(next[0].parameters.exposure).toBe(0);
+    expect(next[0].keyframeTimes).toEqual([10, 60, 75]);
+  });
 });

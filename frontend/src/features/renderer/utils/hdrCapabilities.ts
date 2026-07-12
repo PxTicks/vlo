@@ -32,16 +32,24 @@ export function buildHdrCapabilityMatrix(
   };
 }
 
-export function detectHdrCapabilities(): HdrCapabilityMatrix {
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d", {
-    colorSpace: "display-p3",
-  } as CanvasRenderingContext2DSettings);
-  const attributes = context?.getContextAttributes?.();
+export function detectHdrCapabilities(
+  environmentDocument: Pick<Document, "createElement"> = document,
+): HdrCapabilityMatrix {
+  let displayP3Canvas = false;
+  try {
+    const canvas = environmentDocument.createElement("canvas");
+    const context = canvas.getContext("2d", {
+      colorSpace: "display-p3",
+    } as CanvasRenderingContext2DSettings);
+    displayP3Canvas =
+      context?.getContextAttributes?.().colorSpace === "display-p3";
+  } catch {
+    // Older CanvasColorSpace WebIDL enums throw instead of returning null.
+  }
   return buildHdrCapabilityMatrix({
     videoFrame: typeof VideoFrame !== "undefined",
     videoEncoder: typeof VideoEncoder !== "undefined",
-    displayP3Canvas: attributes?.colorSpace === "display-p3",
+    displayP3Canvas,
     hdrCanvas: false,
   });
 }

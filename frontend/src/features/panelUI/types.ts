@@ -73,6 +73,11 @@ export interface ControlRenderProps {
 }
 
 export interface CustomControlRenderProps extends ControlRenderProps {
+  /** Source-media time domain for controls that transfer animated values. */
+  sourceTimeRange?: {
+    readonly minTime: number;
+    readonly duration: number;
+  };
   /** Render a hidden scalar parameter with the host's standard animation UI. */
   renderParameterControl?: (control: ControlDefinition) => ReactNode;
 }

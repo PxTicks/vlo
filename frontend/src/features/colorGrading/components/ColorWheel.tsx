@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, Slider, Typography } from "@mui/material";
 import { hsvToRgb } from "../../../core/color";
 import {
   adjustmentToWheelPoint,
@@ -7,11 +7,9 @@ import {
   type WheelAdjustment,
 } from "../utils/wheelMath";
 
-const CANVAS_SIZE = 112;
+const CANVAS_SIZE = 96;
 const CENTER = CANVAS_SIZE / 2;
-const DISC_RADIUS = 43;
-const RING_INNER_RADIUS = 47;
-const RING_OUTER_RADIUS = 54;
+const DISC_RADIUS = 45;
 
 interface ColorWheelProps {
   label: string;
@@ -37,9 +35,6 @@ function drawWheel(canvas: HTMLCanvasElement): void {
       if (distance <= DISC_RADIUS) {
         const hue = ((Math.atan2(dy, dx) / (Math.PI * 2)) + 1) % 1;
         rgb = hsvToRgb([hue, distance / DISC_RADIUS, 0.92]);
-      } else if (distance >= RING_INNER_RADIUS && distance <= RING_OUTER_RADIUS) {
-        const level = Math.max(0.12, Math.min(0.95, 0.5 - dy / (RING_OUTER_RADIUS * 2)));
-        rgb = [level, level, level];
       }
       if (!rgb) continue;
       image.data[index] = Math.round(rgb[0] * 255);
@@ -62,7 +57,6 @@ export function ColorWheel({
 }: ColorWheelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{
-    mode: "color" | "master";
     startX: number;
     startY: number;
     startValue: WheelAdjustment;
@@ -97,125 +91,183 @@ export function ColorWheel({
         };
         return;
       }
-      const next =
-        drag.mode === "master"
-          ? {
+      const next = drag.fine
+        ? (() => {
+            const delta = wheelPointToAdjustment(
+              x - drag.startX,
+              y - drag.startY,
+              DISC_RADIUS,
+              maxChroma,
+              true,
+            );
+            return {
               ...pendingRef.current,
-              master: drag.fine
-                ? Math.max(
-                    -maxMaster,
-                    Math.min(
-                      maxMaster,
-                      drag.startValue.master -
-                        ((y - drag.startY) / DISC_RADIUS) * maxMaster * 0.2,
-                    ),
-                  )
-                : Math.max(-1, Math.min(1, -y / DISC_RADIUS)) * maxMaster,
-            }
-          : drag.fine
-            ? (() => {
-                const delta = wheelPointToAdjustment(
-                  x - drag.startX,
-                  y - drag.startY,
-                  DISC_RADIUS,
-                  maxChroma,
-                  true,
-                );
-                return {
-                  ...pendingRef.current,
-                  r: drag.startValue.r + delta.r,
-                  g: drag.startValue.g + delta.g,
-                  b: drag.startValue.b + delta.b,
-                };
-              })()
-            : {
-                ...pendingRef.current,
-                ...wheelPointToAdjustment(
-                  x,
-                  y,
-                  DISC_RADIUS,
-                  maxChroma,
-                ),
-              };
+              r: drag.startValue.r + delta.r,
+              g: drag.startValue.g + delta.g,
+              b: drag.startValue.b + delta.b,
+            };
+          })()
+        : {
+            ...pendingRef.current,
+            ...wheelPointToAdjustment(x, y, DISC_RADIUS, maxChroma),
+          };
       pendingRef.current = next;
       onPreview(next);
     },
-    [maxChroma, maxMaster, onPreview],
+    [maxChroma, onPreview],
   );
 
   const marker = adjustmentToWheelPoint(value, DISC_RADIUS, maxChroma);
-  const masterY = CENTER - (value.master / maxMaster) * DISC_RADIUS;
+
+  const previewMaster = useCallback(
+    (master: number) => {
+      const next = { ...pendingRef.current, master };
+      pendingRef.current = next;
+      onPreview(next);
+    },
+    [onPreview],
+  );
+
+  const commitMaster = useCallback(
+    (master: number) => {
+      const next = { ...pendingRef.current, master };
+      pendingRef.current = next;
+      onCommit(next);
+    },
+    [onCommit],
+  );
 
   return (
-    <Box sx={{ minWidth: 112, textAlign: "center", opacity: disabled ? 0.5 : 1 }}>
+    <Box sx={{ minWidth: 124, textAlign: "center", opacity: disabled ? 0.5 : 1 }}>
       <Typography variant="caption" sx={{ color: "text.secondary" }}>
         {label}
       </Typography>
-      <Box sx={{ position: "relative", width: CANVAS_SIZE, height: CANVAS_SIZE, mx: "auto" }}>
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_SIZE}
-          height={CANVAS_SIZE}
-          aria-label={`${label} color wheel`}
-          onPointerDown={(event) => {
-            if (disabled) return;
-            const rect = event.currentTarget.getBoundingClientRect();
-            const x = (event.clientX - rect.left) * (CANVAS_SIZE / rect.width) - CENTER;
-            const y = (event.clientY - rect.top) * (CANVAS_SIZE / rect.height) - CENTER;
-            dragRef.current = {
-              mode:
-                Math.hypot(x, y) >= RING_INNER_RADIUS ? "master" : "color",
-              startX: x,
-              startY: y,
-              startValue: pendingRef.current,
-              fine: event.shiftKey,
-            };
-            event.currentTarget.setPointerCapture(event.pointerId);
-            updateFromPointer(event);
-          }}
-          onPointerMove={(event) => updateFromPointer(event)}
-          onPointerUp={(event) => {
-            if (!dragRef.current) return;
-            updateFromPointer(event);
-            dragRef.current = null;
-            onCommit(pendingRef.current);
-            event.currentTarget.releasePointerCapture(event.pointerId);
-          }}
-          onDoubleClick={() => {
-            if (disabled) return;
-            const reset = { r: 0, g: 0, b: 0, master: 0 };
-            pendingRef.current = reset;
-            onPreview(reset);
-            onCommit(reset);
-          }}
-          style={{ display: "block", width: CANVAS_SIZE, height: CANVAS_SIZE, cursor: disabled ? "default" : "crosshair" }}
-        />
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1,
+        }}
+      >
         <Box
           sx={{
-            position: "absolute",
-            left: CENTER + marker.x - 4,
-            top: CENTER + marker.y - 4,
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            border: "1px solid white",
-            boxShadow: "0 0 2px #000",
-            pointerEvents: "none",
+            position: "relative",
+            width: CANVAS_SIZE,
+            height: CANVAS_SIZE,
           }}
-        />
+        >
+          <canvas
+            ref={canvasRef}
+            width={CANVAS_SIZE}
+            height={CANVAS_SIZE}
+            aria-label={`${label} color wheel`}
+            onPointerDown={(event) => {
+              if (disabled) return;
+              const rect = event.currentTarget.getBoundingClientRect();
+              const x =
+                (event.clientX - rect.left) * (CANVAS_SIZE / rect.width) -
+                CENTER;
+              const y =
+                (event.clientY - rect.top) * (CANVAS_SIZE / rect.height) -
+                CENTER;
+              dragRef.current = {
+                startX: x,
+                startY: y,
+                startValue: pendingRef.current,
+                fine: event.shiftKey,
+              };
+              event.currentTarget.setPointerCapture(event.pointerId);
+              updateFromPointer(event);
+            }}
+            onPointerMove={(event) => updateFromPointer(event)}
+            onPointerUp={(event) => {
+              if (!dragRef.current) return;
+              updateFromPointer(event);
+              dragRef.current = null;
+              onCommit(pendingRef.current);
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+            onDoubleClick={() => {
+              if (disabled) return;
+              const reset = { ...pendingRef.current, r: 0, g: 0, b: 0 };
+              pendingRef.current = reset;
+              onPreview(reset);
+              onCommit(reset);
+            }}
+            style={{
+              display: "block",
+              width: CANVAS_SIZE,
+              height: CANVAS_SIZE,
+              cursor: disabled ? "default" : "crosshair",
+            }}
+          />
+          <Box
+            sx={{
+              position: "absolute",
+              left: CENTER + marker.x - 4,
+              top: CENTER + marker.y - 4,
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              border: "1px solid white",
+              boxShadow: "0 0 2px #000",
+              pointerEvents: "none",
+            }}
+          />
+        </Box>
         <Box
           sx={{
-            position: "absolute",
-            left: CENTER + RING_INNER_RADIUS - 2,
-            top: masterY - 2,
-            width: 5,
-            height: 5,
-            borderRadius: "50%",
-            bgcolor: "white",
-            boxShadow: "0 0 2px #000",
-            pointerEvents: "none",
+            alignSelf: "stretch",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 20,
           }}
-        />
+        >
+          <Slider
+            orientation="vertical"
+            min={-maxMaster}
+            max={maxMaster}
+            step={maxMaster / 100}
+            value={value.master}
+            disabled={disabled}
+            aria-label={`${label} master`}
+            onChange={(_, next) => previewMaster(next as number)}
+            onChangeCommitted={(_, next) => commitMaster(next as number)}
+            onDoubleClick={(event) => {
+              if (disabled) return;
+              event.stopPropagation();
+              previewMaster(0);
+              commitMaster(0);
+            }}
+            sx={{
+              height: 72,
+              color: "text.primary",
+              "& .MuiSlider-rail": {
+                opacity: 1,
+                bgcolor: "divider",
+                width: 4,
+              },
+              "& .MuiSlider-track": { width: 4 },
+              "& .MuiSlider-thumb": {
+                width: 16,
+                height: 8,
+                borderRadius: 0.75,
+                border: "1px solid",
+                borderColor: "background.paper",
+                boxShadow: 1,
+              },
+            }}
+          />
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", fontSize: "0.62rem", lineHeight: 1 }}
+          >
+            M
+          </Typography>
+        </Box>
       </Box>
       <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.62rem" }}>
         R {value.r.toFixed(2)} · G {value.g.toFixed(2)} · B {value.b.toFixed(2)} · M {value.master.toFixed(2)}

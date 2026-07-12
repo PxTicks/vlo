@@ -106,7 +106,7 @@ export function ColorWheelsControl({
       <Box
         sx={{
           display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(112px, 1fr))",
+          gridTemplateColumns: "repeat(2, minmax(124px, 1fr))",
           gap: 1.5,
         }}
       >

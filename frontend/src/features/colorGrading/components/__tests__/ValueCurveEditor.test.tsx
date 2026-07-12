@@ -133,4 +133,67 @@ describe("ValueCurveEditor", () => {
       ]),
     );
   });
+
+  it("labels the neutral row on a resultant-hue field", () => {
+    render(
+      <ValueCurveEditor
+        tabs={[
+          {
+            name: "curveHueHue",
+            label: "H→H",
+            color: "#fff",
+            periodic: true,
+            yMin: -0.5,
+            yMax: 0.5,
+            background: "#000",
+            backgroundKind: "hue-result",
+            histogram: "hue",
+          },
+        ]}
+        values={{ curveHueHue: DEFAULT_COLOR_CURVES.curveHueHue }}
+        onPreview={vi.fn()}
+        onCommit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Zero curve adjustment")).toBeInTheDocument();
+    expect(screen.getByText(/Field: resulting hue/)).toBeInTheDocument();
+  });
+
+  it("describes the hue and luma saturation response fields", () => {
+    const modifierTabs: readonly CurveEditorTab[] = [
+      {
+        name: "curveHueSat",
+        label: "H→S",
+        color: "#fff",
+        periodic: true,
+        yMin: -0.5,
+        yMax: 0.5,
+        background: "#000",
+        backgroundKind: "hue-saturation-result",
+        histogram: "hue",
+      },
+      {
+        name: "curveLumaSat",
+        label: "L→S",
+        color: "#fff",
+        periodic: false,
+        yMin: -0.5,
+        yMax: 0.5,
+        background: "#000",
+        backgroundKind: "luma-saturation-result",
+        histogram: "luma",
+      },
+    ];
+    render(
+      <ValueCurveEditor
+        tabs={modifierTabs}
+        values={{}}
+        onPreview={vi.fn()}
+        onCommit={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/relative resulting saturation by input hue/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "L→S" }));
+    expect(screen.getByText(/reference blue by input luma/)).toBeInTheDocument();
+  });
 });

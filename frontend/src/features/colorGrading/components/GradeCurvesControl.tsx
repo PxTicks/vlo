@@ -61,6 +61,7 @@ const HUE_TABS: readonly CurveEditorTab[] = [
     yMax: 0.5,
     background:
       "linear-gradient(90deg, #ef4444, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7, #ef4444)",
+    backgroundKind: "hue-result",
     histogram: "hue",
   },
   {
@@ -72,6 +73,7 @@ const HUE_TABS: readonly CurveEditorTab[] = [
     yMax: 0.5,
     background:
       "linear-gradient(90deg, #7f1d1d, #713f12, #14532d, #164e63, #1e3a8a, #581c87, #7f1d1d)",
+    backgroundKind: "hue-saturation-result",
     histogram: "hue",
   },
   {
@@ -82,6 +84,7 @@ const HUE_TABS: readonly CurveEditorTab[] = [
     yMin: -0.5,
     yMax: 0.5,
     background: "linear-gradient(90deg, #000, #fff)",
+    backgroundKind: "luma-saturation-result",
     histogram: "luma",
   },
 ];

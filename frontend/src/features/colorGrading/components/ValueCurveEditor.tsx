@@ -17,6 +17,11 @@ import {
   type CurveHistogramKind,
   type CurveHistograms,
 } from "../utils/curveHistogram";
+import {
+  createHueHueFieldBackground,
+  createHueSaturationFieldBackground,
+  createLumaSaturationFieldBackground,
+} from "../utils/curveResponseField";
 
 export interface CurveEditorTab {
   readonly name: ColorCurveParameterName;
@@ -26,6 +31,10 @@ export interface CurveEditorTab {
   readonly yMin: number;
   readonly yMax: number;
   readonly background: string;
+  readonly backgroundKind?:
+    | "hue-result"
+    | "hue-saturation-result"
+    | "luma-saturation-result";
   readonly histogram: CurveHistogramKind;
 }
 
@@ -115,6 +124,17 @@ export function ValueCurveEditor({
       ),
     [activeTab.histogram, afterHistograms],
   );
+  const editorBackground = useMemo(
+    () =>
+      activeTab.backgroundKind === "hue-result"
+        ? createHueHueFieldBackground(activeTab.yMin, activeTab.yMax)
+        : activeTab.backgroundKind === "hue-saturation-result"
+          ? createHueSaturationFieldBackground(activeTab.yMin, activeTab.yMax)
+          : activeTab.backgroundKind === "luma-saturation-result"
+            ? createLumaSaturationFieldBackground(activeTab.yMin, activeTab.yMax)
+            : activeTab.background,
+    [activeTab],
+  );
 
   const previewPoints = useCallback(
     (nextPoints: ColorCurvePoint[]) => {
@@ -170,7 +190,8 @@ export function ValueCurveEditor({
           borderColor: "divider",
           borderRadius: 1,
           overflow: "hidden",
-          background: activeTab.background,
+          background: editorBackground,
+          backgroundSize: "100% 100%",
           opacity: disabled ? 0.5 : 1,
         }}
       >
@@ -257,10 +278,19 @@ export function ValueCurveEditor({
               aria-label={`${activeTab.label} after histogram`}
             />
           ) : null}
-          <g stroke="rgba(255,255,255,0.12)" strokeWidth="0.35">
+          <g stroke="rgba(255,255,255,0.15)" strokeWidth="0.35">
             <path d="M 25 0 V 100 M 50 0 V 100 M 75 0 V 100" />
             <path d="M 0 25 H 100 M 0 50 H 100 M 0 75 H 100" />
           </g>
+          {activeTab.backgroundKind ? (
+            <path
+              d="M 0 50 H 100"
+              stroke="rgba(255,255,255,0.38)"
+              strokeWidth="0.55"
+              pointerEvents="none"
+              aria-label="Zero curve adjustment"
+            />
+          ) : null}
           <path d={path} fill="none" stroke={activeTab.color} strokeWidth="1.5" />
           {points.map((point, index) => {
             const normalizedY =
@@ -288,7 +318,13 @@ export function ValueCurveEditor({
         </svg>
       </Box>
       <Typography variant="caption" sx={{ color: "text.disabled" }}>
-        Filled: curve input · dashed: after curves · updates during playback while visible
+        {activeTab.backgroundKind === "hue-result"
+          ? "Field: resulting hue · centre: zero offset · filled: input · dashed: after"
+          : activeTab.backgroundKind === "hue-saturation-result"
+            ? "Field: relative resulting saturation by input hue · centre: unchanged"
+            : activeTab.backgroundKind === "luma-saturation-result"
+              ? "Field: relative saturation at reference blue by input luma · centre: unchanged"
+              : "Filled: curve input · dashed: after curves · updates during playback while visible"}
       </Typography>
     </Box>
   );

@@ -5,6 +5,8 @@ import {
 } from "../../../core/pixi/activeApplication";
 import type { Rgb } from "../../../core/color";
 
+const EYEDROPPER_CURSOR_CLASS = "eyedropper-cursor";
+
 function sampleViewerColor(event: PointerEvent): Rgb | null {
   const application = getActivePixiApplication();
   const content = getActivePixiContentTarget();
@@ -39,11 +41,10 @@ export function pickColorFromViewer(): Promise<Rgb> {
 
   return new Promise((resolve, reject) => {
     const canvas = application.canvas;
-    const previousCursor = canvas.style.cursor;
-    canvas.style.cursor = "crosshair";
+    canvas.classList.add(EYEDROPPER_CURSOR_CLASS);
 
     const cleanup = (): void => {
-      canvas.style.cursor = previousCursor;
+      canvas.classList.remove(EYEDROPPER_CURSOR_CLASS);
       window.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("keydown", onKeyDown, true);
     };

@@ -37,7 +37,7 @@ export const dotFilterDefinition: TransformationDefinition = {
             supportsSpline: true,
           },
           {
-            type: "link",
+            type: "checkbox",
             label: "Grayscale",
             name: "grayscale",
             defaultValue: true,

@@ -68,7 +68,7 @@ export const godrayFilterDefinition: TransformationDefinition = {
             supportsSpline: true,
           },
           {
-            type: "link",
+            type: "checkbox",
             label: "Parallel",
             name: "parallel",
             defaultValue: true,

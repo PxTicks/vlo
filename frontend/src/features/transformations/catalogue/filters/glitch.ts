@@ -67,7 +67,7 @@ export const glitchFilterDefinition: TransformationDefinition = {
             supportsSpline: false,
           },
           {
-            type: "link",
+            type: "checkbox",
             label: "Average",
             name: "average",
             defaultValue: false,

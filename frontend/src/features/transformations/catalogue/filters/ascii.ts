@@ -34,7 +34,7 @@ export const asciiFilterDefinition: TransformationDefinition = {
             supportsSpline: false,
           },
           {
-            type: "link",
+            type: "checkbox",
             label: "Replace Color",
             name: "replaceColor",
             defaultValue: false,

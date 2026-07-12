@@ -84,7 +84,7 @@ export const crtFilterDefinition: TransformationDefinition = {
             supportsSpline: true,
           },
           {
-            type: "link",
+            type: "checkbox",
             label: "Vertical Lines",
             name: "verticalLine",
             defaultValue: false,

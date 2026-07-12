@@ -43,7 +43,7 @@ export const reflectionFilterDefinition: TransformationDefinition = {
             supportsSpline: true,
           },
           {
-            type: "link",
+            type: "checkbox",
             label: "Mirror",
             name: "mirror",
             defaultValue: true,

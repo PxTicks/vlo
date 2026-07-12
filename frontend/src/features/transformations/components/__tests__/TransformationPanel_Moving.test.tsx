@@ -142,6 +142,7 @@ describe("TransformationPanel Moving Reproduction", () => {
     const { unmount } = render(<TransformationPanel />);
 
     // Apply Speed 2x
+    fireEvent.click(screen.getByRole("tab", { name: "Speed" }));
     const input = screen.getByLabelText("Factor");
     fireEvent.change(input, { target: { value: "2" } });
 
@@ -226,6 +227,7 @@ describe("TransformationPanel Moving Reproduction", () => {
     render(<TransformationPanel />);
 
     // Apply Speed 2x
+    fireEvent.click(screen.getByRole("tab", { name: "Speed" }));
     const inputMoved = screen.getByLabelText("Factor");
     fireEvent.change(inputMoved, { target: { value: "2" } });
 
@@ -315,6 +317,7 @@ describe("TransformationPanel Moving Reproduction", () => {
     const { unmount } = render(<TransformationPanel />);
 
     // Apply Speed 2x
+    fireEvent.click(screen.getByRole("tab", { name: "Speed" }));
     const input = screen.getByLabelText("Factor");
     fireEvent.change(input, { target: { value: "2" } });
 
@@ -397,6 +400,7 @@ describe("TransformationPanel Moving Reproduction", () => {
 
     render(<TransformationPanel />);
 
+    fireEvent.click(screen.getByRole("tab", { name: "Speed" }));
     const inputMoved = screen.getByLabelText("Factor");
     fireEvent.change(inputMoved, { target: { value: "2" } });
 

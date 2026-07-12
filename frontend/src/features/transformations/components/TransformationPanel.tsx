@@ -3,14 +3,23 @@ import {
   useMemo,
   useCallback,
   useEffect,
+  useRef,
   useSyncExternalStore,
 } from "react";
-import { Alert, Box, Button, Divider, Menu, MenuItem } from "@mui/material";
-import { Add } from "@mui/icons-material";
+import {
+  Alert,
+  Box,
+  Button,
+  Divider,
+  Menu,
+  MenuItem,
+  Typography,
+} from "@mui/material";
 import { isAssetBackedClip } from "../../../types/TimelineTypes";
 import { useTransformationController } from "../hooks/useTransformationController";
 import {
-  getAddableTransforms,
+  getEntryForTransform,
+  getEntryByFilterName,
   getLayoutGroupsForTransform,
   getLabelForTransform,
   getMissingExtensionTransformationId,
@@ -63,6 +72,13 @@ import {
   extensionSpatialPathRegistry,
   type RegisteredSpatialPath,
 } from "../animation";
+import { PanelTabs } from "../../panelUI";
+import {
+  getTransformationDefinitionTab,
+  getTransformationTab,
+  TRANSFORMATION_TABS,
+  type TransformationTabId,
+} from "../utils/transformationTabs";
 
 // DnD Kit Imports
 import {
@@ -93,7 +109,40 @@ function getTrackingMaskMenuLabel(
   return `From Mask: ${label}`;
 }
 
-export function TransformationPanel() {
+interface TransformationPanelContainerProps {
+  readonly effectsOnly: boolean;
+  readonly activeTab: TransformationTabId;
+  readonly onTabChange: (tab: TransformationTabId) => void;
+  readonly children: React.ReactNode;
+}
+
+function TransformationPanelContainer({
+  effectsOnly,
+  activeTab,
+  onTabChange,
+  children,
+}: TransformationPanelContainerProps) {
+  if (effectsOnly) return children;
+  return (
+    <PanelTabs
+      ariaLabel="Transformation categories"
+      tabs={TRANSFORMATION_TABS}
+      value={activeTab}
+      onChange={onTabChange}
+    >
+      {children}
+    </PanelTabs>
+  );
+}
+
+interface TransformationPanelSurfaceProps {
+  readonly variant: "transformations" | "effects";
+}
+
+export function TransformationPanelSurface({
+  variant,
+}: TransformationPanelSurfaceProps) {
+  const effectsOnly = variant === "effects";
   const transformationRegistryRevision = useSyncExternalStore(
     (listener) => extensionTransformationRegistry.subscribe(listener),
     () => extensionTransformationRegistry.getRevision(),
@@ -128,7 +177,9 @@ export function TransformationPanel() {
     restoreTargetSnapshot,
   } = useTransformationController();
 
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [activeTab, setActiveTab] =
+    useState<TransformationTabId>("display");
+  const colorGradeMaterializationRef = useRef<string | null>(null);
   const [pathMenuAnchorEl, setPathMenuAnchorEl] =
     useState<HTMLElement | null>(null);
   const [pathTrackingError, setPathTrackingError] = useState<string | null>(null);
@@ -220,7 +271,11 @@ export function TransformationPanel() {
   const compatibilityClipType =
     activeTargetKind === "mask" ? "shape" : (selectedClip?.type ?? "shape");
   const compatibilityHasAudio =
-    activeTargetKind === "mask" ? false : clipAsset?.hasAudio;
+    activeTargetKind === "mask"
+      ? false
+      : selectedClip?.type === "video"
+        ? true
+        : clipAsset?.hasAudio;
 
   const [expandedStates, setExpandedStates] = useState<Record<string, boolean>>(
     {},
@@ -245,18 +300,6 @@ export function TransformationPanel() {
     transformationRegistryRevision,
   ]);
 
-  const compatibleAddableTransforms = useMemo(() => {
-    void transformationRegistryRevision;
-    return getAddableTransforms({
-      clipType: compatibilityClipType,
-      hasAudio: compatibilityHasAudio,
-    });
-  }, [
-    compatibilityClipType,
-    compatibilityHasAudio,
-    transformationRegistryRevision,
-  ]);
-
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -273,9 +316,98 @@ export function TransformationPanel() {
     [activeTransforms],
   );
 
-  const itemIds = useMemo(
-    () => dynamicTransforms.map((t) => t.id),
+  const colorGradeTransform = useMemo(
+    () =>
+      dynamicTransforms.find(
+        (transform) =>
+          transform.type === "filter" &&
+          "filterName" in transform &&
+          transform.filterName === "ColorGradeFilter",
+      ),
     [dynamicTransforms],
+  );
+
+  const canUseColorGrade = useMemo(() => {
+    const definition = getEntryByFilterName("ColorGradeFilter");
+    return (
+      activeTargetKind !== "mask" &&
+      definition !== undefined &&
+      isTransformCompatible(
+        definition,
+        compatibilityClipType,
+        compatibilityHasAudio,
+      )
+    );
+  }, [activeTargetKind, compatibilityClipType, compatibilityHasAudio]);
+
+  useEffect(() => {
+    if (effectsOnly) return;
+    if (colorGradeTransform) {
+      colorGradeMaterializationRef.current = null;
+      return;
+    }
+    if (
+      activeTab !== "color" ||
+      !activeContextId ||
+      !canUseColorGrade ||
+      colorGradeMaterializationRef.current === activeContextId
+    ) {
+      return;
+    }
+
+    colorGradeMaterializationRef.current = activeContextId;
+    handleAddTransform("ColorGradeFilter", true);
+  }, [
+    activeContextId,
+    activeTab,
+    canUseColorGrade,
+    colorGradeTransform,
+    effectsOnly,
+    handleAddTransform,
+  ]);
+
+  const visibleDefaultTransforms = useMemo(
+    () =>
+      effectsOnly
+        ? []
+        : compatibleDefaultTransforms.filter(
+            (definition) =>
+              getTransformationDefinitionTab(definition) === activeTab,
+          ),
+    [activeTab, compatibleDefaultTransforms, effectsOnly],
+  );
+
+  const visibleDynamicTransforms = useMemo(
+    () =>
+      dynamicTransforms.filter((transform) => {
+        const definition = getEntryForTransform(transform);
+        const isCompatible =
+          !definition ||
+          isTransformCompatible(
+            definition,
+            compatibilityClipType,
+            compatibilityHasAudio,
+          );
+        const tab = getTransformationTab(transform);
+        return (
+          isCompatible &&
+          (effectsOnly
+            ? tab === "display"
+            : tab !== "display" && tab === activeTab)
+        );
+      }),
+    [
+      activeTab,
+      compatibilityClipType,
+      compatibilityHasAudio,
+      dynamicTransforms,
+      effectsOnly,
+    ],
+  );
+
+  const itemIds = useMemo(
+    () => visibleDynamicTransforms.map((transform) => transform.id),
+    [visibleDynamicTransforms],
   );
 
   const sectionOrder = useMemo(() => {
@@ -300,6 +432,7 @@ export function TransformationPanel() {
   );
 
   useEffect(() => {
+    if (effectsOnly) return;
     // Mask-owned armed/editor state lives in the same shared store but is
     // managed by the mask panel. Don't touch it from here even when the
     // selected clip is the mask's parent — otherwise we race-clear what the
@@ -350,6 +483,7 @@ export function TransformationPanel() {
   }, [
     activePathEditor,
     armedPathRecording,
+    effectsOnly,
     pathPanelView,
     positionPath,
     selectedClipId,
@@ -359,19 +493,6 @@ export function TransformationPanel() {
   ]);
 
   // --- Handlers ---
-
-  const handleOpenAddMenu = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleCloseAddMenu = () => {
-    setAnchorEl(null);
-  };
-
-  const onAddTransform = (typeOrName: string, isFilter: boolean) => {
-    handleAddTransform(typeOrName, isFilter);
-    handleCloseAddMenu();
-  };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -712,7 +833,7 @@ export function TransformationPanel() {
 
   if (!selectedClipId) return null;
 
-  if (isPathEditorOpen && activePositionPath) {
+  if (!effectsOnly && isPathEditorOpen && activePositionPath) {
     return (
       <Box
         data-testid="transformation-panel"
@@ -757,13 +878,15 @@ export function TransformationPanel() {
       }}
     >
       <Box sx={{ display: "flex", flexDirection: "column" }}>
-        <ExtensionUiSlot slot="transformation-panel.before" />
-        {pathTrackingError ? (
+        {!effectsOnly ? (
+          <ExtensionUiSlot slot="transformation-panel.before" />
+        ) : null}
+        {!effectsOnly && pathTrackingError ? (
           <Alert severity="warning" sx={{ m: 1 }}>
             {pathTrackingError}
           </Alert>
         ) : null}
-        {selectedClip?.type === "extension" ? (
+        {!effectsOnly && selectedClip?.type === "extension" ? (
           <>
             <ExtensionEntityInspector clip={selectedClip} />
             {!hasActiveExtensionInspector ? (
@@ -799,11 +922,16 @@ export function TransformationPanel() {
             ) : null}
           </>
         ) : null}
-        {selectedClip?.type === "adjustment" ? (
+        {!effectsOnly && selectedClip?.type === "adjustment" ? (
           <AdjustmentDepthSection clip={selectedClip} />
         ) : null}
+        <TransformationPanelContainer
+          effectsOnly={effectsOnly}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        >
         <DefaultTransformationSections
-          definitions={compatibleDefaultTransforms}
+          definitions={visibleDefaultTransforms}
           activeTransforms={activeTransforms}
           activeContextId={activeContextId}
           activeSectionId={activeSectionId}
@@ -830,7 +958,7 @@ export function TransformationPanel() {
             items={itemIds}
             strategy={verticalListSortingStrategy}
           >
-            {dynamicTransforms.map((t, index) => {
+            {visibleDynamicTransforms.map((t, index) => {
               const sectionId = getDynamicSectionId(t.id);
               const isActiveSection = activeSectionId === sectionId;
               const groups = getLayoutGroupsForTransform(t);
@@ -865,7 +993,11 @@ export function TransformationPanel() {
                   groups={groups}
                   title={title}
                   bgColor={bgColor}
-                  onRemove={() => handleRemoveTransform(t.id)}
+                  onRemove={
+                    getTransformationTab(t) === "color"
+                      ? undefined
+                      : () => handleRemoveTransform(t.id)
+                  }
                   onCommit={handleCommit}
                   onCommitMany={handleCommitMany}
                   minTime={domain.minTime}
@@ -896,7 +1028,7 @@ export function TransformationPanel() {
             {(() => {
               if (!activeDragId) return null;
 
-              const t = dynamicTransforms.find(
+              const t = visibleDynamicTransforms.find(
                 (item) => item.id === activeDragId,
               );
               if (!t) return null;
@@ -954,51 +1086,31 @@ export function TransformationPanel() {
           </DragOverlay>
         </DndContext>
 
-        <Box sx={{ mt: 2, px: 2, pb: 2 }}>
-          <Button
-            data-testid="transformation-add-button"
-            fullWidth
-            variant="outlined"
-            startIcon={<Add />}
-            onClick={handleOpenAddMenu}
-            sx={{
-              borderStyle: "dashed",
-              color: "text.secondary",
-              borderColor: "divider",
-              py: 1,
-              textTransform: "none",
-              "&:hover": {
-                borderColor: "primary.main",
-                color: "primary.main",
-                bgcolor: "action.hover",
-              },
-            }}
+        {visibleDefaultTransforms.length === 0 &&
+        visibleDynamicTransforms.length === 0 &&
+        !(!effectsOnly && activeTab === "color" && canUseColorGrade) ? (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ px: 2, py: 3, textAlign: "center" }}
           >
-            Add Transformation
-          </Button>
-
-          <Menu
-            data-testid="transformation-add-menu"
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleCloseAddMenu}
-          >
-            {compatibleAddableTransforms.map((entry) => (
-              <MenuItem
-                key={entry.filterName || entry.type}
-                onClick={() =>
-                  onAddTransform(
-                    entry.filterName || entry.type,
-                    entry.type === "filter",
-                  )
-                }
-              >
-                {entry.label}
-              </MenuItem>
-            ))}
-          </Menu>
-        </Box>
+            {effectsOnly
+              ? "No effects have been added to this clip."
+              : activeTab === "audio"
+              ? "No audio controls are available for this clip."
+              : activeTab === "speed"
+                ? "No speed controls are available for this clip."
+              : activeTab === "color"
+                ? "No color grading transformations have been added."
+                : "No display controls are available for this clip."}
+          </Typography>
+        ) : null}
+        </TransformationPanelContainer>
       </Box>
     </Box>
   );
+}
+
+export function TransformationPanel() {
+  return <TransformationPanelSurface variant="transformations" />;
 }

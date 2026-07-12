@@ -5,6 +5,7 @@ export {
   AUDIO_REVERB_DEFAULTS,
 } from "./constants";
 export { applyClipTransforms, type FitMode } from "./applyTransformations";
+export { EffectsPanel } from "./components/EffectsPanel";
 export { TransformationPanel } from "./components/TransformationPanel";
 export { TransformationLibraryPanel } from "./components/library/TransformationLibraryPanel";
 export { DefaultTransformationSections } from "./components/DefaultTransformationSections";

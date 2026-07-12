@@ -30,7 +30,7 @@ interface SortableTransformationItemProps {
   groups: readonly LayoutGroup[];
   title: string;
   bgColor: string;
-  onRemove: () => void;
+  onRemove?: () => void;
   onCommit: (
     groupId: string,
     controlName: string,

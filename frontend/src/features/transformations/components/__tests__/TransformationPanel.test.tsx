@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
+import { EffectsPanel } from "../EffectsPanel";
 import { TransformationPanel } from "../TransformationPanel";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -82,11 +83,170 @@ describe("TransformationPanel", () => {
 
   it("renders transformation inputs when a clip is selected", () => {
     render(<TransformationPanel />);
-    expect(screen.getByText("Display")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Display" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(
+      screen.getAllByRole("tab").map((tab) => tab.textContent),
+    ).toEqual([
+      "Display",
+      "Speed",
+      "Audio",
+      "Color",
+    ]);
+    expect(screen.getByRole("tabpanel", { name: "Display" })).toBeInTheDocument();
 
     // Position (Index 0 in BASE_GROUPS)
     const inputsX = screen.getAllByLabelText("X");
     expect(inputsX[0]).toHaveValue(10);
+  });
+
+  it("routes controls through the transformation subtabs", () => {
+    installTimelineState({
+      selectedClipIds: ["clip_1"],
+      clips: [
+        {
+          ...baseClip,
+          transformations: [
+            {
+              id: "pos_1",
+              type: "position",
+              isEnabled: true,
+              parameters: { x: 10, y: 20 },
+            },
+            {
+              id: "grade-1",
+              type: "filter",
+              filterName: "ColorGradeFilter",
+              isEnabled: true,
+              parameters: {},
+            },
+          ],
+        },
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+    });
+
+    render(<TransformationPanel />);
+
+    expect(
+      screen.queryByRole("heading", { name: "Speed Adjustment" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Speed" }));
+    expect(
+      screen.getByRole("heading", { name: "Speed Adjustment" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Audio" }));
+    expect(screen.getByRole("tabpanel", { name: "Audio" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Audio" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Color" }));
+    expect(screen.getByText("Color Grade")).toBeInTheDocument();
+  });
+
+  it("keeps the complete color grade in Color Grading", () => {
+    installTimelineState({
+      selectedClipIds: ["clip_1"],
+      clips: [
+        {
+          ...baseClip,
+          transformations: [
+            {
+              id: "hsl-1",
+              type: "filter",
+              filterName: "HslAdjustmentFilter",
+              isEnabled: true,
+              parameters: { hue: 0 },
+            },
+            {
+              id: "grade-1",
+              type: "filter",
+              filterName: "ColorGradeFilter",
+              isEnabled: true,
+              parameters: {},
+            },
+          ],
+        },
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+    });
+
+    render(<TransformationPanel />);
+
+    expect(screen.queryByText("Color (HSL)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Color Grade")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Color" }));
+
+    expect(screen.getByText("Color Grade")).toBeInTheDocument();
+    expect(screen.queryByText("Color (HSL)")).not.toBeInTheDocument();
+  });
+
+  it("materializes the built-in color grade when its tab is opened", () => {
+    render(<TransformationPanel />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Color" }));
+
+    expect(mockSetClipTransforms).toHaveBeenCalledWith(
+      "clip_1",
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "filter",
+          filterName: "ColorGradeFilter",
+          isEnabled: true,
+        }),
+      ]),
+    );
+  });
+
+  it("gates added visual transformations from audio clips", () => {
+    installTimelineState({
+      selectedClipIds: ["clip_1"],
+      clips: [
+        {
+          ...baseClip,
+          type: "audio",
+          transformations: [
+            {
+              id: "hsl-1",
+              type: "filter",
+              filterName: "HslAdjustmentFilter",
+              isEnabled: true,
+              parameters: { hue: 0 },
+            },
+            {
+              id: "grade-1",
+              type: "filter",
+              filterName: "ColorGradeFilter",
+              isEnabled: true,
+              parameters: {},
+            },
+          ],
+        },
+      ],
+      setClipTransforms: mockSetClipTransforms,
+      setClipTransformsAndShape: mockSetClipTransformsAndShape,
+      setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+      updateClipMask: mockUpdateClipMask,
+    });
+
+    render(<TransformationPanel />);
+
+    expect(screen.queryByText("Color (HSL)")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Color" }));
+    expect(
+      screen.getByText("No color grading transformations have been added."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Audio" }));
+    expect(screen.getByRole("heading", { name: "Audio" })).toBeInTheDocument();
   });
 
   it("shows a payload-preserving placeholder for a missing extension provider", () => {
@@ -202,16 +362,12 @@ describe("TransformationPanel", () => {
   });
 
 
-  it("renders the Add Transformation button and opens menu", () => {
+  it("does not offer a second transformation add surface", () => {
     render(<TransformationPanel />);
-    const addButton = screen.getByText("Add Transformation");
-    expect(addButton).toBeInTheDocument();
-
-    fireEvent.click(addButton);
-    expect(screen.getByText("Color (HSL)")).toBeInTheDocument(); // Menu item from Registry
+    expect(screen.queryByText("Add Transformation")).not.toBeInTheDocument();
   });
 
-  it("shows a registered extension transformation in the Add menu", () => {
+  it("shows a registered added extension transformation in Effects", () => {
     const registration = extensionTransformationRegistry
       .bind({
         extension: { id: "example.color-grade", version: "1.0.0" },
@@ -244,8 +400,28 @@ describe("TransformationPanel", () => {
       });
 
     try {
-      render(<TransformationPanel />);
-      fireEvent.click(screen.getByText("Add Transformation"));
+      installTimelineState({
+        selectedClipIds: ["clip_1"],
+        clips: [
+          {
+            ...baseClip,
+            transformations: [
+              {
+                id: "extension-grade",
+                type: "filter",
+                filterName: "example.color-grade/film-grade",
+                isEnabled: true,
+                parameters: { hue: 0 },
+              },
+            ],
+          },
+        ],
+        setClipTransforms: mockSetClipTransforms,
+        setClipTransformsAndShape: mockSetClipTransformsAndShape,
+        setClipMaskCompositeTransforms: mockSetClipMaskCompositeTransforms,
+        updateClipMask: mockUpdateClipMask,
+      });
+      render(<EffectsPanel />);
       expect(screen.getByText("Extension Film Grade")).toBeInTheDocument();
     } finally {
       registration.dispose();
@@ -276,7 +452,7 @@ describe("TransformationPanel", () => {
     };
     installTimelineState(state);
 
-    render(<TransformationPanel />);
+    render(<EffectsPanel />);
 
     expect(
       screen.getByTestId("missing-extension-transformation"),
@@ -285,29 +461,7 @@ describe("TransformationPanel", () => {
     );
   });
 
-  it("adds a new color transform when menu item is clicked", () => {
-    render(<TransformationPanel />);
-    
-    // Open Menu
-    fireEvent.click(screen.getByText("Add Transformation"));
-    
-    // Click Color (HSL)
-    fireEvent.click(screen.getByText("Color (HSL)"));
-
-    expect(mockSetClipTransforms).toHaveBeenCalledWith(
-      "clip_1",
-      expect.arrayContaining([
-        expect.objectContaining({ id: "pos_1", type: "position" }),
-        expect.objectContaining({
-          type: "filter",
-          filterName: "HslAdjustmentFilter",
-          parameters: expect.objectContaining({ hue: 0, saturation: 0 }),
-        }),
-      ]),
-    );
-  });
-
-  it("renders collapsible Base Layout and Dynamic sections", () => {
+  it("renders added effects as removable sections in Effects", () => {
     // Hoist the state so every useTimelineStore() call returns the same
     // references. Otherwise useShallow() in useTransformationController
     // sees new references each render — combined with the dnd-kit state
@@ -343,19 +497,14 @@ describe("TransformationPanel", () => {
 
     installTimelineState(state);
 
-    render(<TransformationPanel />);
+    render(<EffectsPanel />);
 
-    // Check for Collapsible Headers
-    expect(screen.getByText("Display")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Display" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Display" })).not.toBeInTheDocument();
     expect(screen.getByText("Color (HSL)")).toBeInTheDocument();
 
-    // Verify Expand/Collapse interactions (Display)
-    const layoutHeader = screen.getByText("Display");
-    fireEvent.click(layoutHeader); // Collapse
-    fireEvent.click(layoutHeader); // Expand
-
     // Verify Remove Button for Dynamic Section
-    // The "Color (HSL)" section should have a remove button. "Display" should NOT.
+    // Added effects remain removable from their dedicated inspector.
     const removeButtons = screen.getAllByLabelText("Remove");
     expect(removeButtons).toHaveLength(1);
     

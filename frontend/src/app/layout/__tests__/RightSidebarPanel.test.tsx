@@ -27,6 +27,7 @@ vi.mock("../../../features/transformations", () => ({
   TransformationPanel: () => (
     <div data-testid="mock-transform-panel">Transform Panel</div>
   ),
+  EffectsPanel: () => <div data-testid="mock-effects-panel">Effects Panel</div>,
 }));
 
 vi.mock("../../../features/transitions", () => ({
@@ -93,16 +94,19 @@ describe("RightSidebarPanel", () => {
 
     expect(screen.getByRole("tab", { name: "Generate" })).toBeInTheDocument();
     expect(
-      screen.queryByRole("tab", { name: "Transform" }),
+      screen.queryByRole("tab", { name: "Adjust" }),
     ).not.toBeInTheDocument();
     expect(screen.getByTestId("mock-generation-panel")).toBeInTheDocument();
   });
 
-  it("defaults to the Transform tab when a clip is selected", () => {
+  it("defaults to the Adjust tab when a clip is selected", () => {
     selectedClipIds = ["clip-1"];
 
     render(<RightSidebarPanel />);
 
+    expect(
+      screen.getByRole("tab", { name: "Adjust" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Transform" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Mask" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Generate" })).toBeInTheDocument();
@@ -122,6 +126,7 @@ describe("RightSidebarPanel", () => {
 
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       "Generate",
+      "Adjust",
       "Transform",
       "Mask",
     ]);
@@ -137,6 +142,18 @@ describe("RightSidebarPanel", () => {
     expect(screen.getByTestId("mock-mask-panel")).toBeInTheDocument();
   });
 
+  it("shows the added-effects inspector in its own panel", () => {
+    selectedClipIds = ["clip-1"];
+
+    render(<RightSidebarPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "Transform" }));
+
+    expect(screen.getByTestId("mock-effects-panel")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("mock-effects-panel").closest('[role="tabpanel"]'),
+    ).toHaveAttribute("aria-hidden", "false");
+  });
+
   it("preserves generation input state when switching tabs", async () => {
     selectedClipIds = ["clip-1"];
 
@@ -145,7 +162,7 @@ describe("RightSidebarPanel", () => {
     const input = screen.getByLabelText("Generation input");
     fireEvent.change(input, { target: { value: "persistent prompt" } });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Transform" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Adjust" }));
     expect(screen.getByTestId("mock-transform-panel")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Generate" }));
@@ -235,7 +252,7 @@ describe("RightSidebarPanel", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Mask" }));
     expect(setMaskTabActive).toHaveBeenCalledWith(true);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Transform" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Adjust" }));
     expect(setMaskTabActive).toHaveBeenCalledWith(false);
   });
 
@@ -250,7 +267,9 @@ describe("RightSidebarPanel", () => {
 
     render(<RightSidebarPanel />);
 
-    expect(screen.getByRole("tab", { name: "Transform" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Adjust" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Mask" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("mock-mask-panel")).not.toBeInTheDocument();
   });
@@ -263,7 +282,7 @@ describe("RightSidebarPanel", () => {
     expect(screen.getByRole("tab", { name: "Transition" })).toBeInTheDocument();
     expect(screen.getByTestId("mock-transition-panel")).toBeInTheDocument();
     expect(
-      screen.queryByRole("tab", { name: "Transform" }),
+      screen.queryByRole("tab", { name: "Adjust" }),
     ).not.toBeInTheDocument();
   });
 

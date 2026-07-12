@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { EffectsPanel } from "../EffectsPanel";
 import { TransformationPanel } from "../TransformationPanel";
 import { TICKS_PER_SECOND } from "../../../timeline";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
@@ -147,7 +148,7 @@ describe("TransformationPanel toggles", () => {
       },
     ]);
 
-    render(<TransformationPanel />);
+    render(<EffectsPanel />);
 
     fireEvent.click(screen.getByLabelText("Color (HSL) enabled"));
 
@@ -314,7 +315,10 @@ describe("TransformationPanel toggles", () => {
 
     fireEvent.click(screen.getByText("Back To Transform"));
 
-    expect(screen.getByText("Display")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Display" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(useTransformationViewStore.getState().pathPanelView).toBe("home");
   });
 });

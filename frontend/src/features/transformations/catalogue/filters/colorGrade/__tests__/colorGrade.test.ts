@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { V1_AUTHORED_COLOR_MODEL } from "../../../../../../core/color";
-import { getEntryByFilterName, isTransformCompatible } from "../../../TransformationRegistry";
+import {
+  getAddableTransforms,
+  getEntryByFilterName,
+  isTransformCompatible,
+} from "../../../TransformationRegistry";
 import { COLOR_GRADE_FILTER_NAME, colorGradeDefinition } from "../definition";
 import {
   COLOR_GRADE_FRAGMENT,
@@ -22,6 +26,11 @@ describe("Color Grade transformation", () => {
     const entry = getEntryByFilterName(COLOR_GRADE_FILTER_NAME);
     expect(entry).toBeDefined();
     expect(entry?.label).toBe("Color Grade");
+    expect(
+      getAddableTransforms().some(
+        (definition) => definition.filterName === COLOR_GRADE_FILTER_NAME,
+      ),
+    ).toBe(false);
     expect(isTransformCompatible(colorGradeDefinition, "video")).toBe(true);
     expect(isTransformCompatible(colorGradeDefinition, "adjustment")).toBe(true);
   });
@@ -44,7 +53,7 @@ describe("Color Grade transformation", () => {
     ).toBe(true);
   });
 
-  it("creates a fully defaulted, serializable grade from the add menu", () => {
+  it("creates a fully defaulted, serializable grade for panel materialization", () => {
     const transform = createAddTransform(COLOR_GRADE_FILTER_NAME, true);
     expect(transform).toMatchObject({
       type: "filter",

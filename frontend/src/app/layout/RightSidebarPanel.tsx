@@ -6,7 +6,10 @@ import {
   useSelectedTimelineTransitionId,
   useTimelineClip,
 } from "../../features/timeline/api";
-import { TransformationPanel } from "../../features/transformations";
+import {
+  EffectsPanel,
+  TransformationPanel,
+} from "../../features/transformations";
 import { GenerationPanel } from "../../features/generation";
 import { MaskPanel, useMaskViewStore } from "../../features/masks";
 import { TransitionPanel } from "../../features/transitions";
@@ -15,7 +18,12 @@ import {
   useExtensionWorkspaceRegion,
 } from "../../features/extensions/ui/publicApi";
 
-type CoreRightSidebarTab = "transform" | "mask" | "generate" | "transition";
+type CoreRightSidebarTab =
+  | "transform"
+  | "effects"
+  | "mask"
+  | "generate"
+  | "transition";
 
 interface TabPanelProps {
   readonly active: boolean;
@@ -137,8 +145,15 @@ function RightSidebarPanelComponent() {
         {hasClipSelection ? (
           <Tab
             data-testid="right-sidebar-tab-transform"
-            label="Transform"
+            label="Adjust"
             value="transform"
+          />
+        ) : null}
+        {hasClipSelection ? (
+          <Tab
+            data-testid="right-sidebar-tab-effects"
+            label="Transform"
+            value="effects"
           />
         ) : null}
         {hasClipSelection && !isAdjustmentSelected && (
@@ -167,6 +182,11 @@ function RightSidebarPanelComponent() {
         {hasClipSelection && (
           <TabPanel active={visibleTab === "transform"}>
             <TransformationPanel />
+          </TabPanel>
+        )}
+        {hasClipSelection && (
+          <TabPanel active={visibleTab === "effects"}>
+            <EffectsPanel />
           </TabPanel>
         )}
         {hasClipSelection && !isAdjustmentSelected && (

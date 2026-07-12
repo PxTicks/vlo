@@ -104,7 +104,9 @@ const BUILTIN_TRANSFORMATION_DEFINITIONS: TransformationDefinition[] = [
 
   // Filters (all spatial / pixel-based; safe on textureless containers
   // now that filterApplicator accepts an explicit contentSize).
-  { ...colorGradeDefinition, isDefault: false },
+  // Color Grade has a dedicated built-in panel tab. It remains a filter in
+  // the render stack, but is materialized by that tab rather than the library.
+  { ...colorGradeDefinition, isDefault: false, hidden: true },
   { ...hslFilterDefinition, isDefault: false, adjustmentCompatible: true },
   { ...colorAdjustmentDefinition, isDefault: false, adjustmentCompatible: true },
   { ...blurFilterDefinition, isDefault: false, adjustmentCompatible: true },

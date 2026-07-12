@@ -368,7 +368,7 @@ describe("TrackAudioRenderer process lifecycle", () => {
 
   it("merges staged buffers before scheduling", async () => {
     mocks.bufferBatches = [
-      [wrappedBuffer(1.1, 1), wrappedBuffer(1.1, 2.1)],
+      [wrappedBuffer(0.2, 1), wrappedBuffer(0.2, 1.2)],
       [],
     ];
     const renderer = new TrackAudioRenderer("track-1");
@@ -590,6 +590,65 @@ describe("TrackAudioRenderer process lifecycle", () => {
       0.1,
       expect.closeTo(0.1),
     );
+  });
+
+  it("integrates a speed ramp when late-scheduling the source offset", async () => {
+    mocks.bufferBatches = [[wrappedBuffer(1)], []];
+    const renderer = new TrackAudioRenderer("track-1");
+    const { context, sources } = createContext(0.2);
+
+    await renderer.process(
+      context,
+      destination,
+      [
+        clip({
+          transformations: [
+            {
+              id: "speed",
+              type: "speed",
+              isEnabled: true,
+              parameters: {
+                factor: {
+                  type: "spline",
+                  points: [
+                    { time: 0, value: 1 },
+                    { time: TICKS_PER_SECOND, value: 3 },
+                  ],
+                },
+              },
+            },
+          ],
+        }),
+      ],
+      vi.fn(async () => inputWithTrack()),
+      mapping,
+      { lookahead: 0.01, forceFlush: true },
+    );
+
+    const [, sourceOffset] = sources[0].start.mock.calls[0];
+    expect(sourceOffset).toBeGreaterThan(0.2);
+  });
+
+  it("rebases live scheduling instead of decoding an expired backlog", async () => {
+    mocks.bufferBatches = [[wrappedBuffer(0.2, 0.65)], []];
+    const renderer = new TrackAudioRenderer("track-1");
+    renderer.reset(0);
+    const { context, sources } = createContext(0.5);
+
+    await renderer.process(
+      context,
+      destination,
+      [clip()],
+      vi.fn(async () => inputWithTrack()),
+      {
+        baseTicks: TICKS_PER_SECOND * 0.5,
+        baseContextTime: 0.5,
+      },
+      { lookahead: 0.2, forceFlush: true },
+    );
+
+    expect(mocks.sinkStarts[0]).toBeCloseTo(0.65);
+    expect(sources[0].start).toHaveBeenCalledWith(0.65);
   });
 
   it("restarts the iterator after a seek and closes iterators on disposal", async () => {

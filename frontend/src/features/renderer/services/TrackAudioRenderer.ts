@@ -25,6 +25,11 @@ import {
 const REALTIME_CURVE_SAMPLE_COUNT = 64;
 const OFFLINE_CURVE_SAMPLE_COUNT = 256;
 const MIN_SCHEDULE_STEP_SECONDS = 0.01;
+const REALTIME_STAGING_TARGET_SECONDS = 0.5;
+const OFFLINE_STAGING_TARGET_SECONDS = 2.0;
+const URGENT_SCHEDULE_WINDOW_SECONDS = 0.2;
+const MIN_STAGING_DURATION_SECONDS = 0.1;
+const MAX_REALTIME_SCHEDULE_LAG_SECONDS = 0.25;
 
 function isRealtimeAudioContext(ctx: BaseAudioContext): boolean {
   return (
@@ -463,6 +468,23 @@ export class TrackAudioRenderer {
       return timeMapping.baseTicks + mediaSecondsToTickExact(deltaSeconds);
     };
 
+    // If renderer work starves long enough for the schedule cursor to fall
+    // well behind the hardware audio clock, decoding the expired backlog only
+    // prolongs the dropout. Rebase live playback onto a fresh pre-buffered
+    // cursor; offline rendering has no advancing deadline and must stay exact.
+    const recoverExpiredRealtimeSchedule = (): boolean => {
+      if (
+        !isRealtimeAudioContext(ctx) ||
+        this.nextScheduleTime >=
+          ctx.currentTime - MAX_REALTIME_SCHEDULE_LAG_SECONDS
+      ) {
+        return false;
+      }
+      this.reset(ctx.currentTime);
+      return true;
+    };
+    recoverExpiredRealtimeSchedule();
+
     const clipCurveCache = new Map<string, ClipCurveEvaluators>();
     const getClipCurveEvaluators = (
       clip: TimelineClip,
@@ -576,8 +598,6 @@ export class TrackAudioRenderer {
         speedCurve[i] = this.evaluateCompositePlaybackRate(activeClip, t);
       }
 
-      const startPlaybackRate = speedCurve[0];
-
       try {
         source.playbackRate.setValueCurveAtTime(
           speedCurve,
@@ -686,7 +706,25 @@ export class TrackAudioRenderer {
         // Late schedule
         const offset = ctx.currentTime - startContextTime;
         if (offset < wallDuration) {
-          source.start(ctx.currentTime, offset * startPlaybackRate);
+          // AudioBufferSourceNode offsets are expressed in source-media time,
+          // so a wall-clock offset multiplied by only the ramp's initial rate
+          // drifts whenever playback speed changes within the late window.
+          const latePresentationTick =
+            startTargetTicks + mediaSecondsToTickExact(offset);
+          const sourceOffsetTicks =
+            this.getSourceTicksAtPresentationTick(
+              activeClip,
+              latePresentationTick,
+            ) -
+            this.getSourceTicksAtPresentationTick(
+              activeClip,
+              startTargetTicks,
+            );
+          const sourceOffsetSeconds = Math.max(
+            0,
+            tickToMediaSeconds(sourceOffsetTicks),
+          );
+          source.start(ctx.currentTime, sourceOffsetSeconds);
           this.scheduledNodes.push(source);
           source.onended = () => {
             if (effectChain) {
@@ -723,6 +761,11 @@ export class TrackAudioRenderer {
     // We only loop if we need to fill time.
 
     while (this.nextScheduleTime < ctx.currentTime + options.lookahead) {
+      // currentTime can advance substantially while a decode is awaited, so
+      // repeat the lag check inside the fill loop as well as at entry.
+      if (recoverExpiredRealtimeSchedule()) {
+        continue;
+      }
       const targetTicks = getTargetTicks(this.nextScheduleTime);
       // Active clip lookup by *presentation* tick. The returned
       // `effectiveTick` has already applied the clip's static/ripple
@@ -879,18 +922,22 @@ export class TrackAudioRenderer {
       // For Export: We want largest possible stable chunks?
       // For Live: We want responsiveness.
       const timeUntilDeadline = c.staging.startContextTime - ctx.currentTime;
-      const IS_URGENT = timeUntilDeadline < 0.2;
+      const isUrgent =
+        timeUntilDeadline < URGENT_SCHEDULE_WINDOW_SECONDS;
       const bufferedDuration =
         this.nextScheduleTime - c.staging.startContextTime;
 
-      // Just use same thresholds
-      const TARGET_THRESHOLD = 2.0;
-      const MIN_THRESHOLD = 0.1;
-
-      if (IS_URGENT) {
-        if (bufferedDuration >= MIN_THRESHOLD) await flushStagingBuffer();
-      } else {
-        if (bufferedDuration >= TARGET_THRESHOLD) await flushStagingBuffer();
+      // Commit live chunks incrementally. Keeping two seconds in staging made
+      // all of that decoded audio vulnerable to a later main-thread stall;
+      // smaller scheduled nodes continue playing on the audio thread while
+      // the renderer catches up. Offline export retains the larger batches.
+      const stagingTarget = isUrgent
+        ? MIN_STAGING_DURATION_SECONDS
+        : isRealtimeAudioContext(ctx)
+          ? REALTIME_STAGING_TARGET_SECONDS
+          : OFFLINE_STAGING_TARGET_SECONDS;
+      if (bufferedDuration >= stagingTarget) {
+        await flushStagingBuffer();
       }
     } // End While
 

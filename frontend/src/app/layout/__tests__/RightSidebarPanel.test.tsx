@@ -114,9 +114,8 @@ describe("RightSidebarPanel", () => {
       screen.queryByRole("tab", { name: "Audio Split" }),
     ).not.toBeInTheDocument();
     expect(screen.getByTestId("mock-transform-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("mock-mask-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("mock-mask-panel").closest('[role="tabpanel"]'))
-      .toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByTestId("mock-effects-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mock-mask-panel")).not.toBeInTheDocument();
   });
 
   it("renders Generate first so the tab order stays stable", () => {
@@ -149,6 +148,7 @@ describe("RightSidebarPanel", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Transform" }));
 
     expect(screen.getByTestId("mock-effects-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("mock-transform-panel")).not.toBeInTheDocument();
     expect(
       screen.getByTestId("mock-effects-panel").closest('[role="tabpanel"]'),
     ).toHaveAttribute("aria-hidden", "false");

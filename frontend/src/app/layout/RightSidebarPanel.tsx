@@ -30,9 +30,16 @@ interface TabPanelProps {
   readonly children: ReactNode;
   readonly id?: string;
   readonly labelledBy?: string;
+  readonly keepMounted?: boolean;
 }
 
-function TabPanel({ active, children, id, labelledBy }: TabPanelProps) {
+function TabPanel({
+  active,
+  children,
+  id,
+  labelledBy,
+  keepMounted = false,
+}: TabPanelProps) {
   return (
     <Box
       id={id}
@@ -48,7 +55,7 @@ function TabPanel({ active, children, id, labelledBy }: TabPanelProps) {
         pointerEvents: active ? "auto" : "none",
       }}
     >
-      {children}
+      {active || keepMounted ? children : null}
     </Box>
   );
 }
@@ -171,7 +178,7 @@ function RightSidebarPanelComponent() {
         ))}
       </Tabs>
       <Box sx={{ flexGrow: 1, position: "relative", overflow: "hidden" }}>
-        <TabPanel active={visibleTab === "generate"}>
+        <TabPanel active={visibleTab === "generate"} keepMounted>
           <GenerationPanel />
         </TabPanel>
         {hasTransitionSelection && (
@@ -200,6 +207,7 @@ function RightSidebarPanelComponent() {
             id={`extension-workspace-panel-${workspace.id}`}
             labelledBy={`extension-workspace-tab-${workspace.id}`}
             active={visibleTab === workspace.id}
+            keepMounted
           >
             <ExtensionWorkspaceMount
               workspaceId={workspace.id}

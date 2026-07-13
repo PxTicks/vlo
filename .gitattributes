@@ -19,6 +19,9 @@
 /backend/tests/test_backend_extension_runtime.py extension-surface=fixture
 
 # Distributed frontend adapters that dispatch or persist extension behaviour.
+# gradeSchema owns the V1 grade parameter contract that `api.color.grade` mirrors;
+# the renderer and the SDK must not drift apart on defaults or bounds.
+/frontend/src/core/color/gradeSchema.ts extension-surface=adapter
 /frontend/src/app/App.tsx extension-surface=adapter
 /frontend/src/app/layout/EditorLeftSidebar.tsx extension-surface=adapter
 /frontend/src/app/layout/LeftSidebarPanel.tsx extension-surface=adapter

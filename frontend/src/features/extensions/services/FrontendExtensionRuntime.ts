@@ -17,6 +17,7 @@ import { createExtensionAssetApi } from "../assets/createExtensionAssetApi";
 import { createExtensionGenerationApi } from "../generation/ExtensionGenerationBridge";
 import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
+import { extensionColorApi } from "./extensionColorApi";
 import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
 import {
   fetchExtensionInventory,
@@ -323,6 +324,7 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
   (scope) =>
     Object.freeze({
       runtime: extensionHostRuntimeApi,
+      color: extensionColorApi,
       backend: createExtensionBackendApi(scope),
       assets: createExtensionAssetApi(scope),
       generation: createExtensionGenerationApi(scope),

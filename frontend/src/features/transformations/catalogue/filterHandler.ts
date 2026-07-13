@@ -11,9 +11,25 @@ import type {
   TransformState,
   TransformContext,
 } from "./types";
-import type { GenericFilterTransform } from "../types";
+import {
+  isExtensionKeyframedScalarParameter,
+  isExtensionScalarSourceParameter,
+  isSplineParameter,
+  type GenericFilterTransform,
+  type ScalarParameter,
+} from "../types";
 import { resolveScalar } from "../utils/resolveScalar";
-import { isSplineParameter } from "../utils/typeGuards";
+
+export function isResolvableTransformationScalar(
+  value: unknown,
+): value is ScalarParameter {
+  return (
+    typeof value === "number" ||
+    isSplineParameter(value) ||
+    isExtensionScalarSourceParameter(value) ||
+    isExtensionKeyframedScalarParameter(value)
+  );
+}
 
 export function resolveTransformationParameters(
   parameters: Readonly<Record<string, unknown>>,
@@ -37,7 +53,7 @@ export function resolveTransformationParameters(
       continue;
     }
 
-    if (isSplineParameter(value)) {
+    if (isResolvableTransformationScalar(value)) {
       resolvedParams[key] = resolveScalar(value, time, 0);
       continue;
     }

@@ -234,7 +234,7 @@ describe("ExtensionManagerDialog", () => {
     render(<ExtensionManagerDialog open onClose={vi.fn()} />);
 
     expect(
-      await screen.findByText(/cannot activate with extension SDK 1\.0\.0/i),
+      await screen.findByText(/cannot activate with extension SDK 1\.1\.0/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Approve current digest" }),

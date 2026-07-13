@@ -1372,11 +1372,358 @@ export interface ExtensionGenerationApi {
   ): ExtensionGenerationTransactionResult;
 }
 
+// === Color ===
+
+export type ColorGradingSpace = "srgb-rec709";
+
+/** The color model a grade was authored against. V1 is the only model today. */
+export interface AuthoredColorModelV1 {
+  readonly version: 1;
+  readonly gradingSpace: ColorGradingSpace;
+}
+
+export type ColorRgb = readonly [number, number, number];
+/** Premultiplied RGBA, matching the renderer's compositing convention. */
+export type ColorRgba = readonly [number, number, number, number];
+
+export interface ColorCurvePoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** A parsed `.cube` LUT. Produced by `parseCubeLut` and `bakeColorGradeCube`. */
+export interface CubeLut {
+  readonly title: string | null;
+  readonly dimensions: 1 | 3;
+  readonly size: number;
+  readonly domainMin: ColorRgb;
+  readonly domainMax: ColorRgb;
+  /** rgb triples; length = size * 3 (1D) or size³ * 3 (3D). */
+  readonly data: Float32Array;
+}
+
+/** The seven grade curves. Each is optional; omitted curves are identity. */
+export interface ColorCurveSet {
+  readonly curveMaster?: readonly ColorCurvePoint[];
+  readonly curveR?: readonly ColorCurvePoint[];
+  readonly curveG?: readonly ColorCurvePoint[];
+  readonly curveB?: readonly ColorCurvePoint[];
+  readonly curveHueHue?: readonly ColorCurvePoint[];
+  readonly curveHueSat?: readonly ColorCurvePoint[];
+  readonly curveLumaSat?: readonly ColorCurvePoint[];
+}
+
+export interface ColorCurveSampler {
+  at(value: number): number;
+}
+
+/**
+ * Grade values ready for numeric evaluation: every animatable field is a plain
+ * number. Obtain one from `resolve()` or `normalize()`, never by casting
+ * persisted parameters.
+ */
+export interface ColorGradeResolvedParametersV1 {
+  readonly colorModel: AuthoredColorModelV1;
+
+  readonly exposure: number;
+  readonly temperature: number;
+  readonly tint: number;
+  readonly contrast: number;
+  readonly pivot: number;
+  readonly kneeThreshold: number;
+  readonly kneeSoftness: number;
+  readonly toeAmount: number;
+  readonly toeSoftness: number;
+  readonly saturation: number;
+  readonly vibrance: number;
+  readonly hueRotate: number;
+
+  readonly liftR: number;
+  readonly liftG: number;
+  readonly liftB: number;
+  readonly liftMaster: number;
+  readonly gammaR: number;
+  readonly gammaG: number;
+  readonly gammaB: number;
+  readonly gammaMaster: number;
+  readonly gainR: number;
+  readonly gainG: number;
+  readonly gainB: number;
+  readonly gainMaster: number;
+  readonly offsetR: number;
+  readonly offsetG: number;
+  readonly offsetB: number;
+  readonly offsetMaster: number;
+
+  readonly curveMaster: readonly ColorCurvePoint[];
+  readonly curveR: readonly ColorCurvePoint[];
+  readonly curveG: readonly ColorCurvePoint[];
+  readonly curveB: readonly ColorCurvePoint[];
+  readonly curveHueHue: readonly ColorCurvePoint[];
+  readonly curveHueSat: readonly ColorCurvePoint[];
+  readonly curveLumaSat: readonly ColorCurvePoint[];
+
+  readonly qualifierEnabled: boolean;
+  readonly hueCenter: number;
+  readonly hueWidth: number;
+  readonly hueSoftLo: number;
+  readonly hueSoftHi: number;
+  readonly satLo: number;
+  readonly satHi: number;
+  readonly satSoftLo: number;
+  readonly satSoftHi: number;
+  readonly lumaLo: number;
+  readonly lumaHi: number;
+  readonly lumaSoftLo: number;
+  readonly lumaSoftHi: number;
+  readonly qualifierInvert: boolean;
+  readonly mattePreview: boolean;
+
+  /** Creative LUT slot. References a project asset; the bytes live out of band. */
+  readonly lutAssetId: string | null;
+  readonly lutIntensity: number;
+
+  readonly ditherStrength: number;
+}
+
+export interface ColorGradeSplinePointV1 {
+  readonly time: number;
+  readonly value: number;
+}
+
+/** Legacy host-authored animation retained for grade round trips. */
+export interface ColorGradeSplineParameterV1 {
+  readonly type: "spline";
+  readonly points: readonly ColorGradeSplinePointV1[];
+}
+
+export type ColorGradeAuthoredScalarV1 =
+  | ExtensionScalarValue
+  | ColorGradeSplineParameterV1;
+
+/**
+ * Grade values as persisted. An animatable field may hold an authored animation
+ * object rather than a number, so these must be resolved at a source time
+ * before evaluation. Passing them to `normalize()` throws rather than silently
+ * replacing the animation with a default.
+ */
+export interface ColorGradeAuthoredParametersV1 {
+  readonly colorModel: AuthoredColorModelV1;
+
+  readonly exposure?: ColorGradeAuthoredScalarV1;
+  readonly temperature?: ColorGradeAuthoredScalarV1;
+  readonly tint?: ColorGradeAuthoredScalarV1;
+  readonly contrast?: ColorGradeAuthoredScalarV1;
+  readonly pivot?: ColorGradeAuthoredScalarV1;
+  readonly kneeThreshold?: ColorGradeAuthoredScalarV1;
+  readonly kneeSoftness?: ColorGradeAuthoredScalarV1;
+  readonly toeAmount?: ColorGradeAuthoredScalarV1;
+  readonly toeSoftness?: ColorGradeAuthoredScalarV1;
+  readonly saturation?: ColorGradeAuthoredScalarV1;
+  readonly vibrance?: ColorGradeAuthoredScalarV1;
+  readonly hueRotate?: ColorGradeAuthoredScalarV1;
+
+  readonly liftR?: ColorGradeAuthoredScalarV1;
+  readonly liftG?: ColorGradeAuthoredScalarV1;
+  readonly liftB?: ColorGradeAuthoredScalarV1;
+  readonly liftMaster?: ColorGradeAuthoredScalarV1;
+  readonly gammaR?: ColorGradeAuthoredScalarV1;
+  readonly gammaG?: ColorGradeAuthoredScalarV1;
+  readonly gammaB?: ColorGradeAuthoredScalarV1;
+  readonly gammaMaster?: ColorGradeAuthoredScalarV1;
+  readonly gainR?: ColorGradeAuthoredScalarV1;
+  readonly gainG?: ColorGradeAuthoredScalarV1;
+  readonly gainB?: ColorGradeAuthoredScalarV1;
+  readonly gainMaster?: ColorGradeAuthoredScalarV1;
+  readonly offsetR?: ColorGradeAuthoredScalarV1;
+  readonly offsetG?: ColorGradeAuthoredScalarV1;
+  readonly offsetB?: ColorGradeAuthoredScalarV1;
+  readonly offsetMaster?: ColorGradeAuthoredScalarV1;
+
+  readonly curveMaster?: readonly ColorCurvePoint[];
+  readonly curveR?: readonly ColorCurvePoint[];
+  readonly curveG?: readonly ColorCurvePoint[];
+  readonly curveB?: readonly ColorCurvePoint[];
+  readonly curveHueHue?: readonly ColorCurvePoint[];
+  readonly curveHueSat?: readonly ColorCurvePoint[];
+  readonly curveLumaSat?: readonly ColorCurvePoint[];
+
+  readonly qualifierEnabled?: boolean;
+  readonly hueCenter?: ColorGradeAuthoredScalarV1;
+  readonly hueWidth?: ColorGradeAuthoredScalarV1;
+  readonly hueSoftLo?: ColorGradeAuthoredScalarV1;
+  readonly hueSoftHi?: ColorGradeAuthoredScalarV1;
+  readonly satLo?: ColorGradeAuthoredScalarV1;
+  readonly satHi?: ColorGradeAuthoredScalarV1;
+  readonly satSoftLo?: ColorGradeAuthoredScalarV1;
+  readonly satSoftHi?: ColorGradeAuthoredScalarV1;
+  readonly lumaLo?: ColorGradeAuthoredScalarV1;
+  readonly lumaHi?: ColorGradeAuthoredScalarV1;
+  readonly lumaSoftLo?: ColorGradeAuthoredScalarV1;
+  readonly lumaSoftHi?: ColorGradeAuthoredScalarV1;
+  readonly qualifierInvert?: boolean;
+  readonly mattePreview?: boolean;
+
+  readonly lutAssetId?: string | null;
+  readonly lutIntensity?: ColorGradeAuthoredScalarV1;
+  readonly ditherStrength?: ColorGradeAuthoredScalarV1;
+}
+
+/** A static partial grade, suitable for presets and direct normalization. */
+export type ColorGradeParameterPatchV1 = Readonly<
+  Partial<Omit<ColorGradeResolvedParametersV1, "colorModel">>
+>;
+
+/** Static grade input; a missing model is interpreted as legacy V1. */
+export type ColorGradeStaticInputV1 = ColorGradeParameterPatchV1 &
+  Readonly<{ colorModel?: AuthoredColorModelV1 }>;
+
+export interface ColorGradeEvaluatorOptions {
+  /** Creative-LUT bytes. Without them the evaluator skips the LUT stage. */
+  readonly lut?: CubeLut | null;
+}
+
+/** Stage-wise CPU evaluation of a grade, matching the renderer's pipeline. */
+export interface ColorGradeEvaluator {
+  beforeCurves(color: ColorRgb): ColorRgb;
+  curves(color: ColorRgb): ColorRgb;
+  afterCurves(color: ColorRgb): ColorRgb;
+  composite(input: ColorRgb, graded: ColorRgb): ColorRgb;
+  lut(color: ColorRgb): ColorRgb;
+  apply(color: ColorRgb): ColorRgb;
+}
+
+export type ColorHistogramKind = "luma" | "red" | "green" | "blue" | "hue";
+/** Each channel holds `COLOR_HISTOGRAM_BIN_COUNT` normalized bins. */
+export type ColorHistograms = Readonly<Record<ColorHistogramKind, Float32Array>>;
+
+export type ColorMatrix3 = readonly [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+/** Reading, computing, and writing V1 color grades. */
+export interface ExtensionColorGradeApi {
+  /** Catalogue identity of the host's color grade. */
+  readonly filterName: "ColorGradeFilter";
+  readonly defaults: ColorGradeResolvedParametersV1;
+
+  /**
+   * Returns the authored grade carried by a transform, or `null` if the
+   * transform is not a color grade. Fails closed on an unsupported color model
+   * rather than coercing a future grade into V1.
+   */
+  parseTransform(
+    transform: ExtensionTimelineTransformSnapshot,
+  ): ColorGradeAuthoredParametersV1 | null;
+
+  /** Fills defaults and clamps. Throws if any value is an animation object. */
+  normalize(partial: ColorGradeStaticInputV1): ColorGradeResolvedParametersV1;
+
+  /**
+   * Clamps only the fields present, leaving the rest of a grade untouched.
+   * Unknown keys are rejected. Use for partial patches such as presets.
+   */
+  normalizePatch(
+    patch: ColorGradeParameterPatchV1,
+  ): Partial<ColorGradeResolvedParametersV1>;
+
+  /** Resolves authored animation at a source-media time, then normalizes. */
+  resolve(
+    authored: ColorGradeAuthoredParametersV1,
+    options: { readonly sourceTime: number },
+  ): ColorGradeResolvedParametersV1;
+
+  /**
+   * Builds an input for `timeline.transaction().upsertTransform()`. Pass the
+   * existing `transformId` when updating a grade; omitting it creates a second
+   * grade transform on the clip rather than replacing the first.
+   */
+  toTransformInput(
+    grade: ColorGradeAuthoredParametersV1 | ColorGradeResolvedParametersV1,
+    options?: {
+      readonly transformId?: string;
+      readonly isEnabled?: boolean;
+    },
+  ): ExtensionTimelineTransformInput;
+}
+
+/**
+ * The host's own color implementation. Calculations performed here match the
+ * renderer because they run the same code, not a reimplementation of it.
+ *
+ * A grade's creative LUT is referenced by asset ID only. To evaluate one with
+ * full renderer parity, load the bytes out of band first:
+ *
+ * ```ts
+ * const grade = api.color.grade.resolve(authored, { sourceTime });
+ * const blob = grade.lutAssetId
+ *   ? await api.assets.readBlob(grade.lutAssetId)
+ *   : null;
+ * const lut = blob ? api.color.parseCubeLut(await blob.text()) : null;
+ * const evaluator = api.color.createReferenceColorGradeEvaluator(grade, { lut });
+ * ```
+ *
+ * Evaluating without the LUT bytes intentionally applies only the non-LUT
+ * portion of the grade.
+ */
+export interface ExtensionColorApi {
+  readonly grade: ExtensionColorGradeApi;
+
+  createReferenceColorGradeEvaluator(
+    grade: ColorGradeResolvedParametersV1,
+    options?: ColorGradeEvaluatorOptions,
+  ): ColorGradeEvaluator;
+  /** Grades one premultiplied RGBA pixel. */
+  applyReferenceColorGradePixel(
+    premultipliedColor: ColorRgba,
+    grade: ColorGradeResolvedParametersV1,
+    options?: ColorGradeEvaluatorOptions,
+  ): ColorRgba;
+
+  /** Bakes a grade into a `.cube` LUT that the fused grade pass can run directly. */
+  bakeColorGradeCube(
+    grade: ColorGradeResolvedParametersV1,
+    options?: {
+      readonly size?: number;
+      readonly title?: string | null;
+      readonly lut?: CubeLut | null;
+    },
+  ): CubeLut;
+  parseCubeLut(text: string): CubeLut;
+  serializeCubeLut(lut: CubeLut): string;
+  sampleCubeLut(lut: CubeLut, color: ColorRgb): ColorRgb;
+  createIdentityCubeLut(size: number): CubeLut;
+
+  readonly COLOR_HISTOGRAM_BIN_COUNT: number;
+  buildColorHistograms(pixels: ArrayLike<number>): ColorHistograms;
+
+  createColorCurveSampler(
+    points: readonly ColorCurvePoint[],
+    cyclic?: boolean,
+  ): ColorCurveSampler;
+  bakeColorCurveLut(curves: ColorCurveSet, width?: number): Float32Array;
+
+  srgbToLinear(color: ColorRgb): ColorRgb;
+  linearToSrgb(color: ColorRgb): ColorRgb;
+  whiteBalanceMatrix(temperature: number, tint: number): ColorMatrix3;
+  applyMatrix3(matrix: ColorMatrix3, value: ColorRgb): ColorRgb;
+}
+
 export interface VloExtensionApi {
   readonly runtime: ExtensionHostRuntimeApi;
   readonly backend: ExtensionBackendApi;
   readonly assets: ExtensionAssetApi;
   readonly generation: ExtensionGenerationApi;
+  /** Curated color math shared with the renderer, and the V1 grade contract. */
+  readonly color: ExtensionColorApi;
   /** Trusted-first scalar, keyframe-segment, and spatial-path contributions. */
   readonly animation: ExtensionAnimationApi;
   readonly payloadProviders: ExtensionPayloadProviderApi;

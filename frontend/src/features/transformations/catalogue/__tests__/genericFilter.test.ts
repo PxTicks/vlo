@@ -158,6 +158,38 @@ describe("Generic Filter System", () => {
       expect(state.filters[0].type).toBe("MockFilter");
       expect(state.filters[0].params.foo).toBeCloseTo(50);
     });
+
+    it("resolves SDK keyframed scalar parameters in filterHandler", () => {
+      const state = createBaseState();
+      const transform: GenericFilterTransform = {
+        id: "3",
+        type: "filter",
+        isEnabled: true,
+        filterName: "MockFilter",
+        parameters: {
+          foo: {
+            type: "extension-keyframed-scalar",
+            keyframes: [
+              {
+                time: 0,
+                value: 0,
+                outgoing: {
+                  extensionId: "vlo.core",
+                  typeId: "monotone-cubic",
+                  schemaVersion: 1,
+                  data: null,
+                },
+              },
+              { time: 10, value: 100 },
+            ],
+          },
+        },
+      };
+
+      filterHandler(state, transform, { ...mockContext, time: 5 });
+
+      expect(state.filters[0].params.foo).toBeCloseTo(50);
+    });
   });
 
   describe("filterApplicator", () => {

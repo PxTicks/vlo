@@ -17,6 +17,7 @@ import {
   runTrackingJob,
   type TrackingResult,
 } from "../../../../../../extension-fixtures/tracking/frontend/src/index";
+import { extensionColorApi } from "../../services/extensionColorApi";
 
 const clip: ExtensionTimelineClipSnapshot = {
   id: "clip-1",
@@ -107,6 +108,7 @@ function createConformanceApi() {
       mui: {},
       panelUi: {},
     },
+    color: extensionColorApi,
     backend: {
       call: async () => new Response(),
       listJobs: async () => [

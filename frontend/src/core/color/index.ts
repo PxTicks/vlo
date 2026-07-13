@@ -86,6 +86,21 @@ export {
   type ColorGradeReferenceEvaluator,
 } from "./referencePipeline";
 export {
+  COLOR_GRADE_PARAMETER_NAMES,
+  ColorGradeSchemaError,
+  DEFAULT_COLOR_GRADE_PARAMETERS,
+  assertStaticColorGradeValues,
+  getColorGradeParameterKind,
+  isAuthoredAnimationValue,
+  isColorGradeParameterName,
+  isSupportedColorGradeModel,
+  normalizeColorGradeParameterPatch,
+  normalizeColorGradeParameters,
+  type ColorGradeParameterKind,
+  type ColorGradeParameterName,
+  type ColorGradeResolvedParametersV1,
+} from "./gradeSchema";
+export {
   CubeLutParseError,
   createIdentityCubeLut,
   expandCubeLutTo3d,

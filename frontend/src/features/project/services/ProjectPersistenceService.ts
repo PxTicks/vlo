@@ -283,8 +283,10 @@ function createManifestDocument(
     title: input.title,
     created_at: input.createdAt,
     last_modified: Date.now(),
-    createdWithVloVersion: input.createdWithVloVersion ?? VLO_APP_VERSION,
-    lastSavedWithVloVersion: input.lastSavedWithVloVersion ?? VLO_APP_VERSION,
+    createdWithVloVersion:
+      input.createdWithVloVersion ?? VLO_APP_VERSION ?? undefined,
+    lastSavedWithVloVersion:
+      input.lastSavedWithVloVersion ?? VLO_APP_VERSION ?? undefined,
     migratedFromSchemaVersion: input.migratedFromSchemaVersion,
     config: clone(input.config),
     files: {
@@ -529,7 +531,7 @@ export class ProjectPersistenceService {
       const next = produce(current, (draft) => {
         mutator(draft);
         draft.last_modified = Date.now();
-        draft.lastSavedWithVloVersion = VLO_APP_VERSION;
+        draft.lastSavedWithVloVersion = VLO_APP_VERSION ?? undefined;
       });
       return this.persistManifest(next);
     });

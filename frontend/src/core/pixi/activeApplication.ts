@@ -1,6 +1,7 @@
 import type { Application, Container, Rectangle } from "pixi.js";
 
 let activeApplication: Application | null = null;
+const activeApplicationListeners = new Set<() => void>();
 let activeContentTarget: {
   target: Container;
   frame: Rectangle;
@@ -9,16 +10,23 @@ let activeContentTarget: {
 export function setActivePixiApplication(application: Application): void {
   activeApplication = application;
   activeContentTarget = null;
+  for (const listener of activeApplicationListeners) listener();
 }
 
 export function clearActivePixiApplication(application: Application): void {
   if (activeApplication !== application) return;
   activeApplication = null;
   activeContentTarget = null;
+  for (const listener of activeApplicationListeners) listener();
 }
 
 export function getActivePixiApplication(): Application | null {
   return activeApplication;
+}
+
+export function subscribeActivePixiApplication(listener: () => void): () => void {
+  activeApplicationListeners.add(listener);
+  return () => activeApplicationListeners.delete(listener);
 }
 
 export function setActivePixiContentTarget(

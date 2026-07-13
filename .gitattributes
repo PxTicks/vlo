@@ -27,8 +27,13 @@
 /frontend/src/app/layout/LeftSidebarPanel.tsx extension-surface=adapter
 /frontend/src/app/layout/ProjectSettingsMenu.tsx extension-surface=adapter
 /frontend/src/app/layout/RightSidebarPanel.tsx extension-surface=adapter
+/frontend/src/core/pixi/activeApplication.ts extension-surface=adapter
+/frontend/src/core/playback/PlaybackClock.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
+/frontend/src/features/project/constants.ts extension-surface=adapter
+/frontend/src/features/project/services/ProjectPersistenceService.ts extension-surface=adapter
+/frontend/src/features/project/useProjectStore.ts extension-surface=adapter
 /frontend/src/features/project/utils/extensionRequirements.ts extension-surface=adapter
 /frontend/src/features/renderer/services/ExportRenderer.ts extension-surface=adapter
 /frontend/src/features/renderer/services/TrackRenderEngine.ts extension-surface=adapter
@@ -69,6 +74,8 @@
 /AGENTS.md extension-surface=governance
 /docs/extension-system-plan.md extension-surface=governance
 /docs/trusted-extension-authority-plan.md extension-surface=governance
+/docs/trusted-extension-authority.md extension-surface=governance
+/frontend/vite.config.ts extension-surface=governance
 /package.json extension-surface=governance
 /scripts/check-extension-surface.mjs extension-surface=governance
 /scripts/check-extension-surface.test.mjs extension-surface=governance

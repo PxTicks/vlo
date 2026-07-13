@@ -16,6 +16,7 @@ import { Container, Filter } from "pixi.js";
 import { createElement } from "react";
 import { extensionEntityProviderRegistry } from "../../entities/publicApi";
 import { Button } from "@mui/material";
+import { VLO_APP_VERSION } from "../../../project/constants";
 import {
   PanelSection,
   getCustomControl,
@@ -35,6 +36,7 @@ function inventoryItem(
   options: {
     status?: ExtensionInventoryItem["status"];
     sdk?: string;
+    vlo?: string;
     frontend?: boolean;
     backend?: boolean;
     backendStatus?: ExtensionInventoryItem["backendRuntime"]["status"];
@@ -55,6 +57,7 @@ function inventoryItem(
       name: id,
       version: "1.0.0",
       sdk: options.sdk ?? ">=1.0.0 <2.0.0",
+      ...(options.vlo ? { vlo: options.vlo } : {}),
       ...(frontend ? { frontend: { entry: "frontend/dist/index.js" } } : {}),
       ...(!frontend || options.backend
         ? {
@@ -118,6 +121,49 @@ function createHarness(
 }
 
 describe("FrontendExtensionRuntime", () => {
+  it("rolls trusted patches back on activation failure and deactivation", async () => {
+    const target = { value: "original" };
+    const host = new ExtensionHost<VloExtensionApi>({
+      sdkVersion: "1.3.0",
+      createApi: createVloExtensionApi,
+    });
+    const install = (context: { api: VloExtensionApi }) => {
+      context.api.trusted.host.patchProperty(target, "value", (previous) => ({
+        ...previous,
+        configurable: true,
+        value: "patched",
+      }));
+    };
+
+    await host.activate(
+      { id: "example.patch-active", version: "1.0.0" },
+      { activate: install },
+    );
+    expect(target.value).toBe("patched");
+    expect(host.getDiagnostics("example.patch-active")).toContainEqual(
+      expect.objectContaining({
+        level: "debug",
+        message: "Trusted host access used.",
+        detail: { hostVersion: VLO_APP_VERSION },
+      }),
+    );
+    await host.deactivate("example.patch-active");
+    expect(target.value).toBe("original");
+
+    await expect(
+      host.activate(
+        { id: "example.patch-failed", version: "1.0.0" },
+        {
+          activate: (context) => {
+            install(context);
+            throw new Error("activation failed");
+          },
+        },
+      ),
+    ).rejects.toThrow("Failed to activate");
+    expect(target.value).toBe("original");
+  });
+
   it("activates and disposes production transformation and UI facades", async () => {
     const host = new ExtensionHost<VloExtensionApi>({
       sdkVersion: "1.0.0",
@@ -329,6 +375,84 @@ describe("FrontendExtensionRuntime", () => {
       status: "incompatible",
       stage: "compatibility",
     });
+  });
+
+  it("fails before import for an incompatible known VLO range", async () => {
+    const item = inventoryItem("example.future-vlo", { vlo: ">=0.3.0" });
+    const importModule = vi.fn(async () => ({ activate: vi.fn() }));
+    const host = new ExtensionHost<Record<string, never>>({
+      sdkVersion: "1.0.0",
+      hostVersion: "0.2.0",
+      createApi: () => ({}),
+    });
+    const runtime = new FrontendExtensionRuntime({
+      host,
+      loadInventory: async () => [item],
+      importModule,
+    });
+
+    const summary = await runtime.start();
+
+    expect(importModule).not.toHaveBeenCalled();
+    expect(summary.results[0]).toMatchObject({
+      status: "incompatible",
+      stage: "compatibility",
+      message: expect.stringContaining("VLO application 0.2.0"),
+    });
+  });
+
+  it("warns and activates when the VLO build version is unknown", async () => {
+    const warning = vi.fn();
+    const importModule = vi.fn(async () => ({ activate: vi.fn() }));
+    const host = new ExtensionHost<Record<string, never>>({
+      sdkVersion: "1.0.0",
+      hostVersion: null,
+      createApi: () => ({}),
+    });
+    const runtime = new FrontendExtensionRuntime({
+      host,
+      onCompatibilityWarning: warning,
+      loadInventory: async () => [
+        inventoryItem("example.unknown-vlo", { vlo: ">=0.2.0 <0.3.0" }),
+      ],
+      importModule,
+    });
+
+    const summary = await runtime.start();
+
+    expect(summary.results[0]?.status).toBe("active");
+    expect(warning).toHaveBeenCalledWith(
+      "example.unknown-vlo",
+      expect.stringContaining("could not be verified"),
+    );
+  });
+
+  it("shares the host version between compatibility and the trusted API", async () => {
+    const hostVersion = "0.2.7";
+    let trustedApiHostVersion: string | null | undefined;
+    const host = new ExtensionHost<VloExtensionApi>({
+      sdkVersion: "1.0.0",
+      hostVersion,
+      createApi: createVloExtensionApi,
+    });
+    const runtime = new FrontendExtensionRuntime({
+      host,
+      loadInventory: async () => [
+        inventoryItem("example.shared-host-version", {
+          vlo: ">=0.2.7 <0.3.0",
+        }),
+      ],
+      importModule: async () => ({
+        activate: (context: { api: VloExtensionApi }) => {
+          trustedApiHostVersion = context.api.trusted.host.hostVersion;
+        },
+      }),
+    });
+
+    const summary = await runtime.start();
+
+    expect(summary.results[0]?.status).toBe("active");
+    expect(trustedApiHostVersion).toBe(hostVersion);
   });
 
   it("waits for backend readiness before importing a combined package", async () => {

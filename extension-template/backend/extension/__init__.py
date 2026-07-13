@@ -11,6 +11,8 @@ from services.extensions import (
 def create_extension(
     context: BackendExtensionContext,
 ) -> BackendExtensionDefinition:
+    # `services.extensions` is the supported barrel. Trusted deeper imports are
+    # allowed when needed, but must be version-coupled and restored in shutdown.
     router = APIRouter()
 
     @router.get("/status")

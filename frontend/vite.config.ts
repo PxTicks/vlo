@@ -59,7 +59,14 @@ const rootPackageJsonPath = resolve(frontendRoot, "../package.json");
 const rootPackageJson = JSON.parse(
   readFileSync(rootPackageJsonPath, "utf-8"),
 ) as PackageManifest;
-const vloAppVersion = rootPackageJson.version ?? "0.0.0";
+const stableAppVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const packageAppVersion = rootPackageJson.version?.trim();
+const vloAppVersion =
+  packageAppVersion &&
+  packageAppVersion !== "0.0.0" &&
+  stableAppVersionPattern.test(packageAppVersion)
+    ? packageAppVersion
+    : null;
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");

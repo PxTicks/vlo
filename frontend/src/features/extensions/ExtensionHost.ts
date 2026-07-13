@@ -34,6 +34,8 @@ interface ActiveExtensionSession {
 
 export interface ExtensionHostOptions<TApi extends object> {
   sdkVersion: string;
+  /** Application/build version, distinct from the extension SDK version. */
+  hostVersion?: string | null;
   createApi: ExtensionApiFactory<TApi>;
   onDiagnostic?: (diagnostic: ExtensionDiagnostic) => void;
   now?: () => number;
@@ -186,6 +188,7 @@ function validateMaxDiagnostics(maxDiagnostics: number): void {
 
 export class ExtensionHost<TApi extends object = Record<string, never>> {
   private readonly sdkVersion: string;
+  private readonly hostVersion: string | null | undefined;
   private readonly createApi: ExtensionApiFactory<TApi>;
   private readonly onDiagnostic?: (diagnostic: ExtensionDiagnostic) => void;
   private readonly now: () => number;
@@ -207,6 +210,7 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
     validateMaxDiagnostics(maxDiagnostics);
 
     this.sdkVersion = options.sdkVersion;
+    this.hostVersion = options.hostVersion;
     this.createApi = options.createApi;
     this.onDiagnostic = options.onDiagnostic;
     this.now = options.now ?? Date.now;
@@ -295,6 +299,10 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
     return diagnostics.map((diagnostic) => ({ ...diagnostic }));
   }
 
+  getHostVersion(): string | null | undefined {
+    return this.hostVersion;
+  }
+
   private async runActivation(
     session: ActiveExtensionSession,
     extensionModule: ExtensionModule<TApi>,
@@ -328,6 +336,9 @@ export class ExtensionHost<TApi extends object = Record<string, never>> {
     const scope: ExtensionApiScope = Object.freeze({
       extension: identity,
       signal: session.abortController.signal,
+      ...(this.hostVersion === undefined
+        ? {}
+        : { hostVersion: this.hostVersion }),
       own,
       report: (
         level: ExtensionDiagnosticLevel,

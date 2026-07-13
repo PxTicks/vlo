@@ -13,6 +13,11 @@ host singleton families.
 All trusted UI runs with main-page authority. Host error boundaries contain ordinary
 render failures and report diagnostics; they are not a security boundary.
 
+`runtime.panelUi` is the complete host barrel, including its raw custom-control
+registry. Trusted code may also use the DOM and browser APIs directly. When no slot,
+zone, or workspace fits without losing important functionality, use raw panel/DOM
+integration with explicit `onDispose()` cleanup and document the VLO coupling.
+
 ## Select a UI contribution
 
 Register through `context.api.ui`:
@@ -29,8 +34,9 @@ Current curated component slots are:
 - `generation.inputs.after`;
 - `timeline.toolbar`.
 
-Slot IDs are an open SDK string but a closed host catalogue at runtime. Do not invent
-a slot without adding a corresponding host mount and declaration.
+Slot IDs are an open SDK string but a closed host catalogue at runtime. Prefer adding
+a reusable host mount when the location is generally useful; use trusted raw DOM or
+host access for one-off, exploratory, or build-coupled integrations.
 
 Use `openModal(localId, input?)` to open only the caller's modal. Keep input and
 result finite JSON. Handle an `undefined` result as cancellation or disposal.

@@ -13,6 +13,8 @@ from fastapi import FastAPI
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import services.extensions.backend_runtime as backend_runtime_module
+
 from services.extensions import (
     BackendArtifactError,
     BackendArtifactStore,
@@ -296,6 +298,74 @@ def test_backend_runtime_rechecks_sdk_compatibility_before_import(
         in summary.records[0].message
     )
     assert marker.exists() is False
+
+
+def test_backend_runtime_rechecks_known_vlo_compatibility_before_import(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime, manager, _artifacts, extensions_root = _create_runtime(tmp_path)
+    marker = tmp_path / "incompatible-vlo-import.txt"
+    _write_backend_package(
+        extensions_root,
+        "example.incompatible-vlo-runtime",
+        (
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('imported', encoding='utf-8')\n"
+            "def create_extension(_context):\n"
+            "    return None\n"
+        ),
+    )
+    _approve(manager, "example.incompatible-vlo-runtime")
+    approved = manager.scan(force_digest=True)[0]
+    assert approved.manifest is not None
+    incompatible_item = replace(
+        approved,
+        manifest=approved.manifest.model_copy(update={"vlo": ">=0.3.0"}),
+    )
+    monkeypatch.setattr(manager, "scan", lambda *, force_digest=False: [incompatible_item])
+    monkeypatch.setattr(backend_runtime_module, "VLO_APPLICATION_VERSION", "0.2.0")
+
+    summary = asyncio.run(runtime.start(FastAPI()))
+
+    assert summary.records[0].status == "failed"
+    assert "does not include host application 0.2.0" in summary.records[0].message
+    assert marker.exists() is False
+
+
+def test_backend_runtime_warns_and_activates_when_vlo_version_is_unknown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    runtime, manager, _artifacts, extensions_root = _create_runtime(tmp_path)
+    marker = tmp_path / "unknown-vlo-import.txt"
+    _write_backend_package(
+        extensions_root,
+        "example.unknown-vlo-runtime",
+        (
+            "from pathlib import Path\n"
+            "def create_extension(_context):\n"
+            f"    Path({str(marker)!r}).write_text('active', encoding='utf-8')\n"
+        ),
+    )
+    _approve(manager, "example.unknown-vlo-runtime")
+    approved = manager.scan(force_digest=True)[0]
+    assert approved.manifest is not None
+    declared_item = replace(
+        approved,
+        manifest=approved.manifest.model_copy(update={"vlo": ">=0.3.0"}),
+    )
+    monkeypatch.setattr(manager, "scan", lambda *, force_digest=False: [declared_item])
+    monkeypatch.setattr(backend_runtime_module, "VLO_APPLICATION_VERSION", None)
+
+    with caplog.at_level("WARNING", logger="vlo.extensions"):
+        summary = asyncio.run(runtime.start(FastAPI()))
+
+    assert summary.records[0].status == "active"
+    assert marker.read_text(encoding="utf-8") == "active"
+    assert "compatibility was not verified" in caplog.text
+    assert asyncio.run(runtime.stop()) == ()
 
 
 def test_cooperative_async_factory_is_cancelled_at_activation_timeout(

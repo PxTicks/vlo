@@ -77,6 +77,11 @@ export {
   parseMaskClipId,
 };
 
+/** Host composition-root seam; ordinary feature consumers should use selectors. */
+export function getTimelineStoreForTrustedHostAccess(): typeof useTimelineStore {
+  return useTimelineStore;
+}
+
 export function useTimelineClip(
   clipId: string | null | undefined,
 ): TimelineClip | undefined {

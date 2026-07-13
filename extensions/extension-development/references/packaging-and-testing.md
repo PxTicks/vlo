@@ -27,6 +27,10 @@ version, supported SDK range, explicit frontend/backend entries, and honest
 capability metadata. Capabilities explain trusted authority to users but do not
 enforce it.
 
+Add a narrow optional `vlo` range when using raw host entries or deep backend
+imports. Feature-detect each entry even within that range. Unknown host build
+metadata warns and fails open; a known mismatch blocks approval/activation.
+
 ## Build immutable frontend ESM
 
 Produce a prebuilt ESM entry under `frontend/dist/`. Keep relative chunks/assets
@@ -37,6 +41,10 @@ Retain the template guard against runtime imports of React, React DOM, Pixi,
 MUI/emotion, and Zustand, plus unresolved emitted imports. Treat this as authoring
 protection, not a host security boundary; custom build configurations can bypass it
 and are responsible for compatibility.
+
+Do not bundle a source-tree barrel expecting it to reach live singleton state. Use
+`api.trusted.host` for runtime frontend internals and matching source imports only for
+erased type information.
 
 ## Respect approval and activation
 

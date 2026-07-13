@@ -32,7 +32,9 @@ from services.extensions.jobs import BackendJobDefinition, BackendJobManager
 from services.extensions.manifest import (
     EXTENSION_SDK_VERSION,
     is_extension_sdk_compatible,
+    is_stable_semver_range_compatible,
 )
+from services.extensions.host_version import VLO_APPLICATION_VERSION
 
 DEFAULT_BACKEND_EXTENSION_ACTIVATION_TIMEOUT_SECONDS = 10.0
 
@@ -536,6 +538,22 @@ class BackendExtensionRuntime:
                     f"extension SDK range does not include host SDK "
                     f"{EXTENSION_SDK_VERSION}"
                 )
+            if item.manifest.vlo is not None:
+                if VLO_APPLICATION_VERSION is None:
+                    logging.getLogger("vlo.extensions").warning(
+                        "Extension '%s' declares VLO range '%s', but the host "
+                        "application version is unknown; compatibility was not verified.",
+                        extension_id,
+                        item.manifest.vlo,
+                    )
+                elif not is_stable_semver_range_compatible(
+                    item.manifest.vlo,
+                    VLO_APPLICATION_VERSION,
+                ):
+                    raise BackendExtensionActivationError(
+                        f"extension VLO range does not include host application "
+                        f"{VLO_APPLICATION_VERSION}"
+                    )
             staged = self._artifacts.stage(item, digest)
             if staged is None:
                 raise BackendArtifactError("backend staging produced no artifact")

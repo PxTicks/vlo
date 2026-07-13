@@ -19,6 +19,15 @@ export interface ExtensionSdkCompatibility {
   reason?: string;
 }
 
+export interface ExtensionVersionCompatibility {
+  compatible: boolean;
+  valid: boolean;
+  hostVersion: string | null;
+  declaredRange: string;
+  reason?: string;
+  warning?: string;
+}
+
 function parseStableSemver(value: string): StableSemver | null {
   const match = STABLE_SEMVER_PATTERN.exec(value);
   if (!match) return null;
@@ -58,11 +67,7 @@ export function evaluateExtensionSdkCompatibility(
   declaredRange: string,
   sdkVersion = VLO_EXTENSION_SDK_VERSION,
 ): ExtensionSdkCompatibility {
-  const version = parseStableSemver(sdkVersion);
-  const normalizedRange = declaredRange
-    .trim()
-    .replace(/(<=|>=|<|>|=)\s+(?=\d)/g, "$1");
-  if (!version) {
+  if (!parseStableSemver(sdkVersion)) {
     return {
       compatible: false,
       valid: false,
@@ -71,13 +76,36 @@ export function evaluateExtensionSdkCompatibility(
       reason: `Host SDK version '${sdkVersion}' is not a stable semantic version.`,
     };
   }
+  const result = evaluateExtensionVersionCompatibility(
+    declaredRange,
+    sdkVersion,
+    "SDK",
+  );
+  return {
+    compatible: result.compatible,
+    valid: result.valid,
+    sdkVersion,
+    declaredRange,
+    ...(result.reason ? { reason: result.reason } : {}),
+  };
+}
+
+/** Evaluate the shared stable-semver comparator grammar for any host surface. */
+export function evaluateExtensionVersionCompatibility(
+  declaredRange: string,
+  hostVersion: string | null,
+  label: string,
+): ExtensionVersionCompatibility {
+  const normalizedRange = declaredRange
+    .trim()
+    .replace(/(<=|>=|<|>|=)\s+(?=\d)/g, "$1");
   if (!normalizedRange) {
     return {
       compatible: false,
       valid: false,
-      sdkVersion,
+      hostVersion,
       declaredRange,
-      reason: "The extension SDK range is empty.",
+      reason: `The ${label} range is empty.`,
     };
   }
 
@@ -91,15 +119,33 @@ export function evaluateExtensionSdkCompatibility(
       target,
     };
   });
-
   if (comparators.some((comparator) => comparator === null)) {
     return {
       compatible: false,
       valid: false,
-      sdkVersion,
+      hostVersion,
       declaredRange,
-      reason:
-        "The SDK range must use exact stable versions or whitespace-separated comparators.",
+      reason: `The ${label} range must use exact stable versions or whitespace-separated comparators.`,
+    };
+  }
+
+  if (hostVersion === null) {
+    return {
+      compatible: true,
+      valid: true,
+      hostVersion,
+      declaredRange,
+      warning: `The host ${label} version is unknown, so compatibility could not be verified.`,
+    };
+  }
+  const version = parseStableSemver(hostVersion);
+  if (!version) {
+    return {
+      compatible: true,
+      valid: true,
+      hostVersion: null,
+      declaredRange,
+      warning: `The host ${label} version is unknown, so compatibility could not be verified.`,
     };
   }
 
@@ -111,12 +157,23 @@ export function evaluateExtensionSdkCompatibility(
   return {
     compatible,
     valid: true,
-    sdkVersion,
+    hostVersion,
     declaredRange,
     ...(compatible
       ? {}
       : {
-          reason: `Extension range '${declaredRange}' does not include SDK ${sdkVersion}.`,
+          reason: `Extension range '${declaredRange}' does not include ${label} ${hostVersion}.`,
         }),
   };
+}
+
+export function evaluateExtensionVloCompatibility(
+  declaredRange: string,
+  hostVersion: string | null,
+): ExtensionVersionCompatibility {
+  return evaluateExtensionVersionCompatibility(
+    declaredRange,
+    hostVersion,
+    "VLO application",
+  );
 }

@@ -12,8 +12,11 @@ Return `ExtensionTrustedPixiObjectInstance` from Pixi factories:
 - `destroy?()`: cleanup for extra extension resources only.
 
 Let the host validate, attach, detach, composite, and finally destroy `object`.
-Never attach directly to the root stage. Never lease one Pixi object to two host
-slots. Keep updates deterministic and avoid I/O.
+This managed path is the parity-safe default. When it cannot express the behaviour,
+a trusted extension may resolve `renderer.runtime`, attach to the live stage, or
+patch renderer internals. Such raw work must clean up, re-resolve mount-scoped
+references, and verify live, still, and export behaviour itself. Never lease one
+managed Pixi object to two host slots.
 
 ## Register transformations
 

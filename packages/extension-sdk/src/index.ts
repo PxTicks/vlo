@@ -1227,6 +1227,47 @@ export interface ExtensionHostRuntimeApi {
   readonly panelUi: ExtensionPanelUiRuntime;
 }
 
+/** One discoverable, version-coupled live host reference. */
+export interface ExtensionTrustedHostEntry {
+  readonly id: string;
+  readonly available: boolean;
+  /** Session entries retain identity; availability entries may be replaced. */
+  readonly lifetime: "session" | "availability";
+}
+
+/**
+ * Stable reachability mechanism for trusted extensions. Entry IDs and returned
+ * shapes are raw host internals and are not SDK compatibility promises.
+ */
+export interface ExtensionTrustedHostApi {
+  /** VLO application/build version, distinct from the extension SDK version. */
+  readonly hostVersion: string | null;
+  /** Discovery is isolated: one invalid host entry is reported as unavailable. */
+  list(): readonly ExtensionTrustedHostEntry[];
+  /** Return the live reference, or undefined when unavailable or shape-invalid. */
+  get(id: string): unknown;
+  /** Return the live reference or throw an extension-labelled diagnostic error. */
+  require(id: string): unknown;
+  /** Monotonic change token for availability-scoped entries. */
+  getRevision(): number;
+  subscribe(listener: () => void): () => void;
+  /**
+   * Install an owner-tracked descriptor-factory patch. Factories may be run
+   * repeatedly and must be synchronous, deterministic, and side-effect free.
+   */
+  patchProperty(
+    target: object,
+    property: PropertyKey,
+    createDescriptor: (
+      previous: PropertyDescriptor | undefined,
+    ) => PropertyDescriptor,
+  ): ExtensionDisposable;
+}
+
+export interface ExtensionTrustedApi {
+  readonly host: ExtensionTrustedHostApi;
+}
+
 /** Open string type; the host still accepts only slot regions it declares. */
 export type ExtensionUiSlotId = string;
 export type ExtensionUiNoticeTone = "info" | "success" | "warning";
@@ -1805,6 +1846,11 @@ export interface ExtensionColorApi {
 }
 
 export interface VloExtensionApi {
+  /**
+   * Canonical trusted fallback when scoped contributions cannot express the
+   * feature. This is version-coupled host access, not a restricted facade.
+   */
+  readonly trusted: ExtensionTrustedApi;
   readonly runtime: ExtensionHostRuntimeApi;
   readonly backend: ExtensionBackendApi;
   readonly assets: ExtensionAssetApi;
@@ -1886,6 +1932,8 @@ export interface ExtensionActivationState extends ExtensionIdentity {
 export interface ExtensionApiScope {
   readonly extension: Readonly<ExtensionIdentity>;
   readonly signal: AbortSignal;
+  /** Application/build version shared by host compatibility and API binding. */
+  readonly hostVersion?: string | null;
   own<TResource extends ExtensionResource>(resource: TResource): TResource;
   report(
     level: ExtensionDiagnosticLevel,

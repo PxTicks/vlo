@@ -51,7 +51,9 @@ synchronous and inspect the structured result. Available commands currently incl
 
 Stage all related commands in one transaction so the host validates ownership and
 creates one undo entry. Do not retain the transaction object or call it after the
-callback. Do not mutate raw Zustand state as a portable extension strategy.
+callback. Raw mutation of the live `timeline.store` is permitted for a trusted,
+version-coupled integration, but the extension then owns undo/history, validation,
+persistence consistency, cleanup, and missing-extension behaviour.
 
 Creation supplies common placement and an `ExtensionPayload`; the host generates the
 entity ID. Payload updates must remain compatible with the calling extension.

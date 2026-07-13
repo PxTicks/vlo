@@ -1,0 +1,19 @@
+{
+  "manifestVersion": 1,
+  "id": "example.trusted-host-access",
+  "name": "Trusted Host Access Conformance Fixture",
+  "version": "1.0.0",
+  "sdk": ">=1.0.0 <2.0.0",
+  "vlo": ">=0.2.0 <0.3.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "backend": {
+    "mode": "in_process",
+    "entry": "backend.extension:create_extension"
+  },
+  "capabilities": [
+    "host.raw",
+    "ui.custom"
+  ]
+}

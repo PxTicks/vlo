@@ -68,6 +68,7 @@ export {
 } from "./utils/collision";
 export {
   getTimelineClips,
+  getTimelineStoreForTrustedHostAccess,
   getTimelineModelState,
   getTimelineClipById,
   getTimelineTracks,

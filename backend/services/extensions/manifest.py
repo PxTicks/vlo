@@ -46,7 +46,7 @@ _SDK_COMPARATOR_PATTERN = re.compile(
 _MAX_MANIFEST_BYTES = 1024 * 1024
 # Runtime deployments do not need the TypeScript authoring package. Its package
 # version is the release authority, with a contract test keeping this copy aligned.
-EXTENSION_SDK_VERSION = "1.2.0"
+EXTENSION_SDK_VERSION = "1.3.0"
 
 
 class ExtensionManifestError(ValueError):
@@ -64,7 +64,7 @@ def _parse_stable_semver(value: str) -> tuple[int, int, int] | None:
     )
 
 
-def _parse_sdk_range(
+def _parse_stable_semver_range(
     declared_range: str,
 ) -> list[tuple[str, tuple[int, int, int]]]:
     normalized = re.sub(
@@ -73,14 +73,14 @@ def _parse_sdk_range(
         declared_range.strip(),
     )
     if not normalized:
-        raise ValueError("extension SDK range cannot be empty")
+        raise ValueError("extension version range cannot be empty")
 
     comparators: list[tuple[str, tuple[int, int, int]]] = []
     for token in normalized.split():
         match = _SDK_COMPARATOR_PATTERN.fullmatch(token)
         if match is None:
             raise ValueError(
-                "extension SDK range must use exact stable versions or "
+                "extension version range must use exact stable versions or "
                 "whitespace-separated comparators"
             )
         version = _parse_stable_semver(match.group("version"))
@@ -89,19 +89,17 @@ def _parse_sdk_range(
     return comparators
 
 
-def is_extension_sdk_compatible(
+def is_stable_semver_range_compatible(
     declared_range: str,
-    sdk_version: str = EXTENSION_SDK_VERSION,
+    host_version: str,
 ) -> bool:
-    """Evaluate the manifest v1 comparator grammar against one stable SDK."""
+    """Evaluate the shared comparator grammar against one stable host version."""
 
-    version = _parse_stable_semver(sdk_version)
+    version = _parse_stable_semver(host_version)
     if version is None:
-        raise ValueError(
-            "host extension SDK version must be a stable semantic version"
-        )
+        raise ValueError("host version must be a stable semantic version")
 
-    for operator, target in _parse_sdk_range(declared_range):
+    for operator, target in _parse_stable_semver_range(declared_range):
         if operator == "<" and not version < target:
             return False
         if operator == "<=" and not version <= target:
@@ -113,6 +111,15 @@ def is_extension_sdk_compatible(
         if operator == "=" and version != target:
             return False
     return True
+
+
+def is_extension_sdk_compatible(
+    declared_range: str,
+    sdk_version: str = EXTENSION_SDK_VERSION,
+) -> bool:
+    """Evaluate the shared grammar against the supported SDK version."""
+
+    return is_stable_semver_range_compatible(declared_range, sdk_version)
 
 
 class _ManifestModel(BaseModel):
@@ -191,6 +198,7 @@ class ExtensionManifest(_ManifestModel):
     name: str = Field(min_length=1, max_length=200)
     version: str = Field(pattern=_SEMVER_PATTERN)
     sdk: str = Field(min_length=1, max_length=200)
+    vlo: str | None = Field(default=None, min_length=1, max_length=200)
     frontend: FrontendExtensionEntry | None = None
     backend: BackendExtensionEntry | None = None
     capabilities: list[str] = Field(default_factory=list, max_length=100)
@@ -242,6 +250,17 @@ class ExtensionManifest(_ManifestModel):
             raise ValueError(
                 f"extension SDK range does not include host SDK {EXTENSION_SDK_VERSION}"
             )
+        return normalized
+
+    @field_validator("vlo")
+    @classmethod
+    def validate_vlo(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("extension VLO range cannot be blank")
+        _parse_stable_semver_range(normalized)
         return normalized
 
     @field_validator("capabilities")

@@ -13,7 +13,9 @@ from services.extensions.manifest import (
     ExtensionManifestError,
     backend_entry_candidates,
     load_extension_manifest,
+    is_stable_semver_range_compatible,
 )
+from services.extensions.host_version import VLO_APPLICATION_VERSION
 from services.extensions.package_digest import (
     PackageSnapshot,
     UnsafeExtensionPackageError,
@@ -134,6 +136,19 @@ class ExtensionManager:
         if item.digest != expected_digest:
             raise ExtensionInventoryError(
                 f"extension '{extension_id}' changed before approval"
+            )
+        if (
+            item.manifest is not None
+            and item.manifest.vlo is not None
+            and VLO_APPLICATION_VERSION is not None
+            and not is_stable_semver_range_compatible(
+                item.manifest.vlo,
+                VLO_APPLICATION_VERSION,
+            )
+        ):
+            raise ExtensionInventoryError(
+                f"extension '{extension_id}' VLO range does not include host "
+                f"application {VLO_APPLICATION_VERSION}"
             )
         return item
 

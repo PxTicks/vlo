@@ -386,6 +386,67 @@ def test_manifest_accepts_the_shared_sdk_comparator_grammar(tmp_path: Path):
     assert is_extension_sdk_compatible(loaded.sdk) is True
 
 
+def test_manifest_accepts_optional_vlo_range_with_shared_grammar(tmp_path: Path):
+    package_dir = tmp_path / "example.raw"
+    manifest = _frontend_manifest("example.raw")
+    manifest["vlo"] = ">= 0.2.0 < 0.3.0"
+    manifest["capabilities"] = ["host.raw"]
+    _write_manifest(package_dir, manifest)
+
+    loaded = load_extension_manifest(package_dir / "manifest.json")
+
+    assert loaded.vlo == ">= 0.2.0 < 0.3.0"
+
+
+@pytest.mark.parametrize("vlo_range", ["^0.2.0", "~0.2.0", ">=0.2"])
+def test_manifest_rejects_invalid_vlo_ranges(
+    tmp_path: Path,
+    vlo_range: str,
+):
+    package_dir = tmp_path / "example.invalid-vlo"
+    manifest = _frontend_manifest("example.invalid-vlo")
+    manifest["vlo"] = vlo_range
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(ValueError, match="manifest validation failed"):
+        load_extension_manifest(package_dir / "manifest.json")
+
+
+def test_known_incompatible_vlo_range_blocks_approval(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(extension_manager_module, "VLO_APPLICATION_VERSION", "0.2.0")
+    manager, extensions_root, _state_path = _create_manager(tmp_path)
+    package_dir = _create_frontend_package(extensions_root, "example.future-vlo")
+    manifest = _frontend_manifest("example.future-vlo")
+    manifest["vlo"] = ">=0.3.0"
+    _write_manifest(package_dir, manifest)
+    item = manager.scan()[0]
+
+    assert item.status == "pending_approval"
+    assert item.digest is not None
+    with pytest.raises(ExtensionInventoryError, match="does not include host"):
+        manager.approve(item.extension_id, item.digest)
+
+
+def test_unknown_host_version_allows_vlo_approval_with_runtime_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(extension_manager_module, "VLO_APPLICATION_VERSION", None)
+    manager, extensions_root, _state_path = _create_manager(tmp_path)
+    package_dir = _create_frontend_package(extensions_root, "example.unknown-vlo")
+    manifest = _frontend_manifest("example.unknown-vlo")
+    manifest["vlo"] = ">=0.2.0 <0.3.0"
+    _write_manifest(package_dir, manifest)
+    item = manager.scan()[0]
+
+    assert item.digest is not None
+    manager.approve(item.extension_id, item.digest)
+    assert manager.scan()[0].status == "approved"
+
+
 @pytest.mark.parametrize(
     "sdk_range",
     ["^1.0.0", "~1.0.0", ">=1", "1.0.0 || 2.0.0", ">=2.0.0"],

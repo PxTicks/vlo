@@ -23,6 +23,12 @@ the extension's host-owned `/api` namespace; never assume a global route.
 Use the shutdown callback for resources owned by the active backend session. Expect
 enable/code changes to require backend restart in V1.
 
+The `services.extensions` barrel is the supported compatibility contract, not an
+authority ceiling. Trusted in-process code may import deeper host modules, inspect
+process state, use filesystem/network APIs, or monkeypatch Python objects when the
+supported surface is insufficient. Declare the VLO range, restore hooks in shutdown
+where practical, and accept that deep shapes can change without an SDK-major bump.
+
 ## Declare Python dependencies for the preflight checklist
 
 The host never installs Python packages: backend extensions run in-process in the

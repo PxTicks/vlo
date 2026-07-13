@@ -20,11 +20,18 @@ directory by hand; rebuild it before approval.
 
 ## SDK 1 boundaries
 
+Use this decision ladder: start with scoped contribution and transaction APIs; use
+`context.api.trusted.host`, browser APIs, raw registries, or deeper Python imports
+when the scoped surface cannot express the feature; promote a repeated raw seam into
+a host contract when reuse, portability, or future restricted-mode value warrants
+it. The fallback is expected trusted-alpha behaviour, but it is version-coupled.
+
 - `@vlo/extension-sdk` is type-only. Import it with `import type`; runtime access is
   supplied through the host-owned activation context.
 - Trusted frontend extensions receive the host's exact Pixi and React singletons as
   `context.api.runtime.pixi` and `context.api.runtime.react`, plus host-curated MUI and
-  native panel-control namespaces as `runtime.mui` and `runtime.panelUi`. Transformation
+  native panel-control namespaces as `runtime.mui` and `runtime.panelUi`. `panelUi`
+  is the complete live barrel, including its raw custom-control registry. Transformation
   factories may create arbitrary Pixi filters, including custom GLSL/WGSL shaders;
   trusted React component slots may use the supplied React runtime. Declarative
   host filters and native notices remain available as simpler, restricted-ready
@@ -48,7 +55,9 @@ directory by hand; rebuild it before approval.
 - Pixi factories return `{ object, update, destroy? }`. The host validates and
   attaches `object`, calls `update` with resolved parameters, detaches it, and owns
   final Pixi destruction. `destroy` is only for additional extension-owned
-  resources; extensions never attach directly to the root stage.
+  resources. This is the parity-safe default; trusted code may use raw
+  `renderer.runtime`/stage access when necessary and then owns teardown and export
+  parity.
 - `context.api.entityProviders.register(...)` is the trusted-first custom entity
   path. A provider combines its versioned payload codec with an arbitrary host-Pixi
   `Container`/`Graphics`/`Sprite` factory, optional trusted React inspector, timeline
@@ -79,7 +88,11 @@ directory by hand; rebuild it before approval.
   template rejects runtime package imports instead of bundling duplicate copies;
   use the injected runtime namespaces. Type-only package imports are erased and are
   permitted for richer editor typings when the package is a development dependency.
-- That bundle guard belongs to this template, not the host approval boundary. A
+- Resolve other live frontend internals through `context.api.trusted.host`. Runtime
+  imports from `frontend/src/...` are not canonical: production cannot resolve
+  arbitrary source paths, and bundling them may create detached module state.
+- That bundle guard prevents common duplicate-singleton mistakes; it is not an
+  authority boundary. A
   hand-written build can bypass it, but may then fail at activation or silently load
   incompatible singleton copies. Host-side bundle validation is future work.
 - The backend is trusted in-process Python. Keep `create_extension` lightweight;
@@ -99,9 +112,10 @@ directory by hand; rebuild it before approval.
   clip's crop and speed clock. `sourcePointToProject(...)` maps declared source pixels
   into centred project coordinates. Show a local/non-committing preview first, then
   put all persisted writes in one labelled `timeline.transaction(...)`.
-- Backend SDK 1 deliberately imports the host's supported `services.extensions`
-  barrel. Do not import its deeper internal modules; a standalone Python authoring
-  package does not exist yet.
+- Backend SDK 1 uses `services.extensions` as its supported compatibility barrel.
+  Trusted code may import deeper modules or patch process objects when necessary;
+  declare a narrow `vlo` range and restore hooks from `shutdown`, because those
+  shapes have no SDK compatibility guarantee.
 - Backend staging contains only this package's `backend/` subtree. Put Python
   runtime resources below `backend/`, not in a sibling directory.
 - Capability declarations are visible trust metadata, not enforced permissions.

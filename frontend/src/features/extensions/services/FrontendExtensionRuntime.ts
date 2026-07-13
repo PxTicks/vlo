@@ -19,7 +19,13 @@ import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
 import { extensionPanelControlRegistry } from "../ui/ExtensionPanelControlRegistry";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { extensionColorApi } from "./extensionColorApi";
-import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
+import {
+  evaluateExtensionSdkCompatibility,
+  evaluateExtensionVloCompatibility,
+} from "../utils/sdkCompatibility";
+import { VLO_APP_VERSION } from "../../project/constants";
+import { trustedHostAccessDirectory } from "../runtime/TrustedHostAccessDirectory";
+import { registerTrustedHostEntries } from "../runtime/registerTrustedHostEntries";
 import {
   fetchExtensionInventory,
   type ExtensionInventoryItem,
@@ -65,6 +71,8 @@ export interface FrontendExtensionRuntimeOptions<TApi extends object> {
   importModule: FrontendExtensionModuleImporter;
   inventoryTimeoutMs?: number | null;
   evaluateCompatibility?: typeof evaluateExtensionSdkCompatibility;
+  evaluateVloCompatibility?: typeof evaluateExtensionVloCompatibility;
+  onCompatibilityWarning?: (extensionId: string, message: string) => void;
   onResult?: (result: FrontendExtensionStartResult) => void;
 }
 
@@ -129,6 +137,12 @@ export class FrontendExtensionRuntime<TApi extends object> {
   private readonly importModule: FrontendExtensionModuleImporter;
   private readonly inventoryTimeoutMs: number | null;
   private readonly evaluateCompatibility: typeof evaluateExtensionSdkCompatibility;
+  private readonly evaluateVloCompatibility: typeof evaluateExtensionVloCompatibility;
+  private readonly hostVersion: string | null;
+  private readonly onCompatibilityWarning?: (
+    extensionId: string,
+    message: string,
+  ) => void;
   private readonly onResult?: (result: FrontendExtensionStartResult) => void;
   private startPromise?: Promise<FrontendExtensionStartSummary>;
 
@@ -148,6 +162,12 @@ export class FrontendExtensionRuntime<TApi extends object> {
     }
     this.evaluateCompatibility =
       options.evaluateCompatibility ?? evaluateExtensionSdkCompatibility;
+    this.evaluateVloCompatibility =
+      options.evaluateVloCompatibility ?? evaluateExtensionVloCompatibility;
+    const hostVersion = options.host.getHostVersion();
+    this.hostVersion =
+      hostVersion === undefined ? VLO_APP_VERSION : hostVersion;
+    this.onCompatibilityWarning = options.onCompatibilityWarning;
     this.onResult = options.onResult;
   }
 
@@ -245,6 +265,30 @@ export class FrontendExtensionRuntime<TApi extends object> {
       };
     }
 
+    if (item.manifest.vlo !== undefined) {
+      const vloCompatibility = this.evaluateVloCompatibility(
+        item.manifest.vlo,
+        this.hostVersion,
+      );
+      if (!vloCompatibility.compatible) {
+        return {
+          extensionId: item.id,
+          status: "incompatible",
+          stage: "compatibility",
+          message:
+            vloCompatibility.reason ??
+            "The extension VLO application range is incompatible.",
+          digest: item.digest,
+        };
+      }
+      if (vloCompatibility.warning) {
+        this.onCompatibilityWarning?.(
+          item.id,
+          vloCompatibility.warning,
+        );
+      }
+    }
+
     if (
       item.manifest.backend !== undefined &&
       (item.backendRuntime.status !== "active" ||
@@ -324,6 +368,12 @@ function reportHostDiagnostic(diagnostic: ExtensionDiagnostic): void {
 export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
   (scope) =>
     Object.freeze({
+      trusted: Object.freeze({
+        host: trustedHostAccessDirectory.bind(
+          scope,
+          scope.hostVersion === undefined ? VLO_APP_VERSION : scope.hostVersion,
+        ),
+      }),
       runtime: extensionHostRuntimeApi,
       color: extensionColorApi,
       backend: createExtensionBackendApi(scope),
@@ -345,14 +395,27 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
 
 const frontendExtensionHost = new ExtensionHost<VloExtensionApi>({
   sdkVersion: VLO_EXTENSION_SDK_VERSION,
+  hostVersion: VLO_APP_VERSION,
   createApi: createVloExtensionApi,
   onDiagnostic: reportHostDiagnostic,
 });
+
+export const frontendTrustedHostEntriesRegistration =
+  registerTrustedHostEntries(frontendExtensionHost);
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    frontendTrustedHostEntriesRegistration.dispose();
+  });
+}
 
 export const frontendExtensionRuntime = new FrontendExtensionRuntime({
   host: frontendExtensionHost,
   loadInventory: (signal) => fetchExtensionInventory({ signal }),
   importModule: importApprovedFrontendModule,
+  onCompatibilityWarning: (extensionId, message) => {
+    console.warn(`[Extension ${extensionId}] ${message}`);
+  },
   onResult: (result) => {
     if (result.status === "active") return;
     const output =

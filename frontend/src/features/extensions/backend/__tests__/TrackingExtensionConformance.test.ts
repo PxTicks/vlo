@@ -102,6 +102,19 @@ function createConformanceApi() {
   const readBlob = vi.fn(async () => new Blob(["source"], { type: "video/mp4" }));
 
   const api: VloExtensionApi = {
+    trusted: {
+      host: {
+        hostVersion: "0.2.0",
+        list: () => [],
+        get: () => undefined,
+        require: () => {
+          throw new Error("unavailable");
+        },
+        getRevision: () => 0,
+        subscribe: () => () => undefined,
+        patchProperty: () => ({ dispose: () => undefined }),
+      },
+    },
     runtime: {
       pixi: {} as VloExtensionApi["runtime"]["pixi"],
       react: { createElement: () => ({}) },

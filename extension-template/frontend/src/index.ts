@@ -6,6 +6,8 @@ import type {
 export const activate: ExtensionModule["activate"] = (
   context: ExtensionContext,
 ) => {
+  // Prefer scoped APIs. If they cannot express the feature, discover exact live
+  // internals through context.api.trusted.host and register raw cleanup here.
   context.logger.info("Minimal frontend extension activated.", {
     sdkVersion: context.sdkVersion,
   });

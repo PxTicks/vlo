@@ -68,6 +68,7 @@ from services.extensions.manifest import (
     FrontendExtensionEntry,
     PythonDependency,
     is_extension_sdk_compatible,
+    is_stable_semver_range_compatible,
     load_extension_manifest,
 )
 from services.extensions.preflight import (
@@ -145,6 +146,7 @@ __all__ = [
     "compute_package_digest",
     "is_package_digest",
     "is_extension_sdk_compatible",
+    "is_stable_semver_range_compatible",
     "load_extension_manifest",
     "read_package_file_bytes",
     "read_package_files_bytes",

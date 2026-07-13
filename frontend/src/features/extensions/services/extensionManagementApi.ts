@@ -24,6 +24,7 @@ const extensionManifestSchema = z.object({
   name: z.string(),
   version: z.string(),
   sdk: z.string(),
+  vlo: z.string().optional(),
   frontend: frontendEntrySchema.optional(),
   backend: backendEntrySchema.optional(),
   capabilities: z.array(z.string()),

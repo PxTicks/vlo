@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,9 @@ COLOR_GRADE_FIXTURE_ROOT = (
 TRACKING_FIXTURE_ROOT = REPOSITORY_ROOT / "extension-fixtures" / "tracking"
 LAYOUT_PROMPT_FIXTURE_ROOT = (
     REPOSITORY_ROOT / "extension-fixtures" / "layout-prompt"
+)
+TRUSTED_HOST_FIXTURE_ROOT = (
+    REPOSITORY_ROOT / "extension-fixtures" / "trusted-host-access"
 )
 SDK_ROOT = REPOSITORY_ROOT / "packages" / "extension-sdk"
 NODE_EXECUTABLE = shutil.which("node")
@@ -83,6 +87,16 @@ def _copy_layout_prompt_fixture_workspace(tmp_path: Path) -> Path:
     fixture = workspace / "extension-fixtures" / "layout-prompt"
     fixture.parent.mkdir(parents=True)
     shutil.copytree(LAYOUT_PROMPT_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_trusted_host_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "trusted-host-access"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(TRUSTED_HOST_FIXTURE_ROOT, fixture)
     shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return fixture
@@ -233,6 +247,69 @@ def test_official_template_rejects_duplicate_host_singletons(tmp_path: Path):
     assert "Host singleton 'react' cannot be imported" in (
         build.stdout + build.stderr
     )
+
+
+def test_trusted_host_fixture_builds_and_cleans_backend_hook_through_approval(
+    tmp_path: Path,
+):
+    fixture = _copy_trusted_host_fixture_workspace(tmp_path)
+    _build_template(fixture)
+    built_entry = fixture / "frontend" / "dist" / "index.js"
+    assert built_entry.is_file()
+    bundle = built_entry.read_bytes()
+    assert b"timeline.store" in bundle
+    assert b"renderer.runtime" in bundle
+    assert b"frontend/src" not in bundle
+
+    extensions_root = tmp_path / "extensions"
+    extensions_root.mkdir()
+    shutil.copytree(fixture, extensions_root / "example.trusted-host-access")
+    state_root = tmp_path / "state"
+    manager = ExtensionManager(
+        extensions_root,
+        ExtensionApprovalStore(state_root / "approvals.json"),
+    )
+    backend_artifacts = BackendArtifactStore(
+        state_root / "backend-artifacts",
+        extensions_root,
+    )
+    runtime = BackendExtensionRuntime(manager, backend_artifacts)
+    extension_modules_before_scan = {
+        name for name in sys.modules if name.startswith("_vlo_extension_")
+    }
+
+    pending = manager.scan(force_digest=True)[0]
+
+    assert pending.status == "pending_approval"
+    assert pending.manifest is not None
+    assert pending.manifest.vlo == ">=0.2.0 <0.3.0"
+    assert pending.digest is not None
+    assert {
+        name for name in sys.modules if name.startswith("_vlo_extension_")
+    } == extension_modules_before_scan
+
+    backend_artifacts.stage(pending, pending.digest)
+    manager.approve(pending.extension_id, pending.digest)
+    extension_logger = logging.getLogger(
+        "vlo.extensions.example.trusted-host-access"
+    )
+    original_filters = tuple(extension_logger.filters)
+    app = FastAPI()
+
+    summary = asyncio.run(runtime.start(app))
+
+    assert summary.records[0].status == "active"
+    assert len(extension_logger.filters) == len(original_filters) + 1
+    version_route = next(
+        route
+        for route in app.routes
+        if route.path
+        == "/app/extensions/example.trusted-host-access/api/host-version"
+    )
+    assert version_route.endpoint()["vloVersion"] == "0.2.0"
+
+    assert asyncio.run(runtime.stop()) == ()
+    assert tuple(extension_logger.filters) == original_filters
 
 
 def test_color_grade_fixture_builds_registers_and_stages_through_approval(

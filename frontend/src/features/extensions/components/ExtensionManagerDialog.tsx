@@ -19,6 +19,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import { VLO_EXTENSION_SDK_VERSION } from "../constants";
+import { VLO_APP_VERSION } from "../../project/constants";
 import type {
   ExtensionInventoryItem,
   ExtensionInventoryStatus,
@@ -26,6 +27,7 @@ import type {
 } from "../services/extensionManagementApi";
 import { useExtensionManagementStore } from "../store/useExtensionManagementStore";
 import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
+import { evaluateExtensionVloCompatibility } from "../utils/sdkCompatibility";
 
 interface ExtensionManagerDialogProps {
   open: boolean;
@@ -208,10 +210,14 @@ function ExtensionCard({
   const sdkCompatibility = manifest
     ? evaluateExtensionSdkCompatibility(manifest.sdk)
     : null;
+  const vloCompatibility = manifest?.vlo
+    ? evaluateExtensionVloCompatibility(manifest.vlo, VLO_APP_VERSION)
+    : null;
   const canApprove =
     manifest !== null &&
     item.digest !== null &&
     sdkCompatibility?.compatible === true &&
+    vloCompatibility?.compatible !== false &&
     ["pending_approval", "changed", "disabled"].includes(item.status);
   const canRevoke = item.approval !== null && item.status !== "invalid";
 
@@ -252,6 +258,16 @@ function ExtensionCard({
           </Alert>
         ) : null}
 
+        {vloCompatibility && !vloCompatibility.compatible ? (
+          <Alert severity="error">
+            This package cannot activate with VLO {VLO_APP_VERSION}.{" "}
+            {vloCompatibility.reason}
+          </Alert>
+        ) : null}
+        {vloCompatibility?.warning ? (
+          <Alert severity="warning">{vloCompatibility.warning}</Alert>
+        ) : null}
+
         <Box>
           <Typography variant="caption" color="text.secondary">
             Package
@@ -281,6 +297,12 @@ function ExtensionCard({
               Declared SDK range: <strong>{manifest.sdk}</strong> · Host SDK:{" "}
               <strong>{VLO_EXTENSION_SDK_VERSION}</strong>
             </Typography>
+            {manifest.vlo ? (
+              <Typography variant="body2">
+                Declared VLO range: <strong>{manifest.vlo}</strong> · Host VLO:{" "}
+                <strong>{VLO_APP_VERSION ?? "unknown"}</strong>
+              </Typography>
+            ) : null}
             <Typography variant="body2">
               Entry points: {[manifest.frontend?.entry, manifest.backend?.entry]
                 .filter((entry): entry is string => Boolean(entry))
@@ -300,6 +322,13 @@ function ExtensionCard({
                 )}
               </Stack>
             </Box>
+            {manifest.capabilities.includes("host.raw") ? (
+              <Alert severity="info">
+                This package declares intentional version-coupled host access.
+                The declaration is informational; trusted authority is granted by
+                package approval, not by this metadata.
+              </Alert>
+            ) : null}
           </Stack>
         ) : null}
 
@@ -393,6 +422,11 @@ function ExtensionApprovalDialog({
             <Typography variant="body2" color="text.secondary">
               Declared SDK range: {manifest.sdk}. Approval does not guarantee
               that an incompatible package can activate.
+            </Typography>
+          ) : null}
+          {manifest?.vlo ? (
+            <Typography variant="body2" color="text.secondary">
+              Declared VLO range: {manifest.vlo}. Current host: {VLO_APP_VERSION ?? "unknown"}.
             </Typography>
           ) : null}
         </Stack>

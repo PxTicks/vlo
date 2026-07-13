@@ -392,7 +392,7 @@ export const useProjectStore = create<ProjectState>()(
             draft.id = project.id;
             draft.title = project.title;
             draft.created_at = project.createdAt;
-            draft.lastSavedWithVloVersion = VLO_APP_VERSION;
+            draft.lastSavedWithVloVersion = VLO_APP_VERSION ?? undefined;
             draft.config = structuredClone(config);
           });
 

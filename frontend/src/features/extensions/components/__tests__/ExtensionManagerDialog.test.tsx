@@ -4,11 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtensionManagerDialog } from "../ExtensionManagerDialog";
 import { useExtensionManagementStore } from "../../store/useExtensionManagementStore";
 import { VLO_EXTENSION_SDK_VERSION } from "../../constants";
+import type { ExtensionInventoryItem } from "../../services/extensionManagementApi";
 
 const originalFetch = globalThis.fetch;
 const digest = `sha256:${"a".repeat(64)}`;
 
-function extensionItem(status: "pending_approval" | "approved") {
+function extensionItem(
+  status: "pending_approval" | "approved",
+): ExtensionInventoryItem {
   return {
     id: "example.dialog",
     sourcePath: "/extensions/example.dialog",
@@ -227,6 +230,7 @@ describe("ExtensionManagerDialog", () => {
 
   it("blocks approval when the declared SDK range is incompatible", async () => {
     const incompatible = extensionItem("pending_approval");
+    if (!incompatible.manifest) throw new Error("fixture manifest missing");
     incompatible.manifest.sdk = ">=2.0.0";
     vi.mocked(globalThis.fetch).mockResolvedValue(
       response({ extensions: [incompatible] }),
@@ -242,6 +246,24 @@ describe("ExtensionManagerDialog", () => {
         ),
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Approve current digest" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows raw-access metadata and blocks an incompatible VLO range", async () => {
+    const incompatible = extensionItem("pending_approval");
+    if (!incompatible.manifest) throw new Error("fixture manifest missing");
+    incompatible.manifest.vlo = ">=0.3.0";
+    incompatible.manifest.capabilities = ["host.raw"];
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      response({ extensions: [incompatible] }),
+    );
+
+    render(<ExtensionManagerDialog open onClose={vi.fn()} />);
+
+    expect(await screen.findByText("host.raw")).toBeInTheDocument();
+    expect(screen.getByText(/cannot activate with VLO/i)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Approve current digest" }),
     ).not.toBeInTheDocument();

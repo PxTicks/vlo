@@ -129,12 +129,20 @@ function RightSidebarPanelComponent() {
         }}
         textColor="primary"
         indicatorColor="primary"
-        variant="scrollable"
+        variant={workspaces.length === 0 ? "fullWidth" : "scrollable"}
         scrollButtons="auto"
         sx={{
-          minHeight: 40,
+          minHeight: 36,
           borderBottom: "1px solid #333",
-          "& .MuiTab-root": { minHeight: 40, textTransform: "none" },
+          "& .MuiTab-root": {
+            minWidth: 0,
+            minHeight: 36,
+            px: 0.75,
+            py: 0.5,
+            fontSize: "0.72rem",
+            lineHeight: 1.2,
+            textTransform: "none",
+          },
         }}
       >
         <Tab

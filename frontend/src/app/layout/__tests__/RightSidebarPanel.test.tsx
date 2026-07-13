@@ -123,12 +123,15 @@ describe("RightSidebarPanel", () => {
 
     render(<RightSidebarPanel />);
 
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+    const tabs = screen.getAllByRole("tab");
+
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
       "Generate",
       "Adjust",
       "Transform",
       "Mask",
     ]);
+    tabs.forEach((tab) => expect(tab).toHaveClass("MuiTab-fullWidth"));
   });
 
   it("shows mask panel when the Mask tab is selected", () => {
@@ -208,6 +211,9 @@ describe("RightSidebarPanel", () => {
       render(<RightSidebarPanel />);
 
       expect(screen.getByRole("tab", { name: "AI Canvas" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Generate" })).not.toHaveClass(
+        "MuiTab-fullWidth",
+      );
       expect(screen.queryByLabelText("Workspace value")).not.toBeInTheDocument();
 
       act(() => expect(ui.openWorkspace("drawing")).toBe(true));

@@ -68,6 +68,7 @@
 /.github/workflows/ci.yml extension-surface=governance
 /AGENTS.md extension-surface=governance
 /docs/extension-system-plan.md extension-surface=governance
+/docs/trusted-extension-authority-plan.md extension-surface=governance
 /package.json extension-surface=governance
 /scripts/check-extension-surface.mjs extension-surface=governance
 /scripts/check-extension-surface.test.mjs extension-surface=governance

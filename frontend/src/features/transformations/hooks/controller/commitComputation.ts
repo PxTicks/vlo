@@ -118,9 +118,19 @@ export function computeCommitMutation({
   if (existingTransform) {
     const entry = getEntryForTransform(existingTransform);
     if (entry) {
-      groupConfig =
+      const requestedGroup =
         entry.uiConfig.groups.find((group) => group.id === groupId) ||
         entry.uiConfig.groups[0];
+      // Aggregate/custom controls can commit parameters owned by another group.
+      // Resolve that owning group so value transforms, linked controls, and
+      // spline/keyframe bookkeeping behave exactly like the built-in control.
+      groupConfig = requestedGroup?.controls.some(
+        (control) => control.name === controlName,
+      )
+        ? requestedGroup
+        : entry.uiConfig.groups.find((group) =>
+            group.controls.some((control) => control.name === controlName),
+          ) ?? requestedGroup;
     }
   } else {
     const entry = getEntryByType(groupId);

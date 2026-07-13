@@ -84,4 +84,71 @@ describe("computeBatchCommitMutations", () => {
     expect(next[0].parameters.exposure).toBe(0);
     expect(next[0].keyframeTimes).toEqual([10, 60, 75]);
   });
+
+  it("uses owning control metadata for scalar commits from the grade extension zone", () => {
+    const transform = createAddTransform("ColorGradeFilter", true);
+    expect(transform).not.toBeNull();
+    if (!transform) return;
+    transform.parameters.exposure = {
+      type: "spline",
+      points: [
+        { time: 0, value: 0 },
+        { time: 100, value: 1 },
+      ],
+    };
+    transform.keyframeTimes = [0, 100];
+    const clip = createClip([transform]);
+
+    const next = computeBatchCommitMutations({
+      groupId: "color_grade_extensions",
+      values: { exposure: 0.75 },
+      transformId: transform.id,
+      transforms: [transform],
+      activeClip: clip,
+      playheadTicks: 50,
+      pointEpsilonTicks: 1,
+      keyframeSourceTimeTicks: 50,
+    });
+
+    expect(next[0].keyframeTimes).toEqual([0, 50, 100]);
+    expect(isSplineParameter(next[0].parameters.exposure)).toBe(true);
+    if (!isSplineParameter(next[0].parameters.exposure)) return;
+    expect(
+      next[0].parameters.exposure.points.find((point) => point.time === 50)?.value,
+    ).toBe(0.75);
+  });
+
+  it("updates keyframe bookkeeping for spline commits from the grade extension zone", () => {
+    const transform = createAddTransform("ColorGradeFilter", true);
+    expect(transform).not.toBeNull();
+    if (!transform) return;
+    transform.parameters.exposure = {
+      type: "spline",
+      points: [
+        { time: 0, value: 0 },
+        { time: 100, value: 1 },
+      ],
+    };
+    transform.keyframeTimes = [0, 100];
+
+    const next = computeBatchCommitMutations({
+      groupId: "color_grade_extensions",
+      values: {
+        exposure: {
+          type: "spline",
+          points: [
+            { time: 0, value: 0 },
+            { time: 40, value: 0.5 },
+            { time: 100, value: 1 },
+          ],
+        },
+      },
+      transformId: transform.id,
+      transforms: [transform],
+      playheadTicks: 40,
+      pointEpsilonTicks: 1,
+    });
+
+    expect(next[0].keyframeTimes).toEqual([0, 40, 100]);
+  });
 });

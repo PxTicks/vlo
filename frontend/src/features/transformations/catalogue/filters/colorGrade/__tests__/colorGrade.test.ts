@@ -42,7 +42,8 @@ describe("Color Grade transformation", () => {
     const controls = colorGradeDefinition.uiConfig.groups.flatMap(
       (group) => group.controls,
     );
-    expect(controls.filter((control) => control.type === "custom")).toHaveLength(7);
+    // Seven grading controls, plus the extension zone.
+    expect(controls.filter((control) => control.type === "custom")).toHaveLength(8);
     expect(
       controls
         .filter(

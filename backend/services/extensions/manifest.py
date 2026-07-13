@@ -46,7 +46,7 @@ _SDK_COMPARATOR_PATTERN = re.compile(
 _MAX_MANIFEST_BYTES = 1024 * 1024
 # Runtime deployments do not need the TypeScript authoring package. Its package
 # version is the release authority, with a contract test keeping this copy aligned.
-EXTENSION_SDK_VERSION = "1.1.0"
+EXTENSION_SDK_VERSION = "1.2.0"
 
 
 class ExtensionManifestError(ValueError):

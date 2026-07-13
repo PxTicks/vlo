@@ -16,7 +16,11 @@ import { Container, Filter } from "pixi.js";
 import { createElement } from "react";
 import { extensionEntityProviderRegistry } from "../../entities/publicApi";
 import { Button } from "@mui/material";
-import { PanelSection } from "../../../panelUI";
+import {
+  PanelSection,
+  getCustomControl,
+  registerCustomControl,
+} from "../../../panelUI";
 
 interface TestContribution extends ExtensionContributionDefinition {
   value: string;
@@ -128,6 +132,12 @@ describe("FrontendExtensionRuntime", () => {
           expect(context.api.runtime.react.createElement).toBe(createElement);
           expect(context.api.runtime.mui.Button).toBe(Button);
           expect(context.api.runtime.panelUi.PanelSection).toBe(PanelSection);
+          expect(context.api.runtime.panelUi.registerCustomControl).toBe(
+            registerCustomControl,
+          );
+          expect(context.api.runtime.panelUi.getCustomControl).toBe(
+            getCustomControl,
+          );
           context.api.transformations.register({
             id: "film-grade",
             apiVersion: 1,

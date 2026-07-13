@@ -44,6 +44,7 @@
 /frontend/src/features/transformations/catalogue/filterFactory.ts extension-surface=adapter
 /frontend/src/features/transformations/catalogue/filters/** extension-surface=adapter
 /frontend/src/features/transformations/catalogue/types.ts extension-surface=adapter
+/frontend/src/features/transformations/components/ControlRenderer.tsx extension-surface=adapter
 /frontend/src/features/transformations/components/Extension*.tsx extension-surface=adapter
 /frontend/src/features/transformations/components/SplineEditorPopover.tsx extension-surface=adapter
 /frontend/src/features/transformations/components/TransformationPanel.tsx extension-surface=adapter
@@ -58,6 +59,8 @@
 /frontend/src/features/transformations/utils/reverseTransformations.ts extension-surface=adapter
 /frontend/src/features/transformations/utils/timeCalculation.ts extension-surface=adapter
 /frontend/src/features/timeline/utils/formatting.ts extension-surface=adapter
+/frontend/src/features/panelUI/customControlRegistry.ts extension-surface=adapter
+/frontend/src/features/panelUI/types.ts extension-surface=adapter
 /frontend/src/types/TimelineTypes.ts extension-surface=adapter
 
 # Catalogue, checker, and architectural guidance.

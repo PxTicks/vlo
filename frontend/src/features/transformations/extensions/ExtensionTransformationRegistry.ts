@@ -214,6 +214,8 @@ function jsonValuesEqual(left: JsonValue, right: JsonValue): boolean {
   return false;
 }
 
+const LOCAL_COMPONENT_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
+
 function validateControl(
   control: ExtensionTransformationControl,
   allowedParameters?: ReadonlySet<string>,
@@ -224,6 +226,11 @@ function validateControl(
     `Transformation control '${control.name}' label`,
     120,
   );
+  if (allowedParameters && control.type === "custom") {
+    throw new Error(
+      `Host filter '${control.name}' cannot use a custom control.`,
+    );
+  }
   if (allowedParameters && !allowedParameters.has(control.name)) {
     throw new Error(
       `Host filter does not support parameter '${control.name}'.`,
@@ -233,6 +240,34 @@ function validateControl(
     throw new Error(
       `Host filter parameter '${control.name}' must use a numeric control.`,
     );
+  }
+
+  if (control.type === "custom") {
+    // A local ID only. Qualification is the host's job, so one extension cannot
+    // mount another extension's component by naming its qualified ID here.
+    if (
+      typeof control.componentId !== "string" ||
+      !LOCAL_COMPONENT_ID_PATTERN.test(control.componentId)
+    ) {
+      throw new Error(
+        `Transformation control '${control.name}' must name a panel control registered by this extension.`,
+      );
+    }
+    if (control.config !== undefined && !isJsonValue(control.config)) {
+      throw new Error(
+        `Transformation control '${control.name}' config must be JSON.`,
+      );
+    }
+    if (
+      control.parameterNames !== undefined &&
+      (!Array.isArray(control.parameterNames) ||
+        control.parameterNames.some((name) => typeof name !== "string"))
+    ) {
+      throw new Error(
+        `Transformation control '${control.name}' parameterNames must be strings.`,
+      );
+    }
+    return;
   }
 
   if (control.type === "slider" || control.type === "number") {
@@ -369,6 +404,11 @@ function isValidControlValue(
   return false;
 }
 
+type ExtensionTransformationParameterControl = Exclude<
+  ExtensionTransformationControl,
+  { type: "custom" }
+>;
+
 function compileDefinition(
   ownerId: string,
   definition: ExtensionTransformationDefinition,
@@ -423,9 +463,17 @@ function compileDefinition(
   }
 
   const groupIds = new Set<string>();
+  const controlNames = new Set<string>();
   const parameterNames = new Set<string>();
-  const controlsByName = new Map<string, ExtensionTransformationControl>();
-  const groups = definition.groups.map((group) => {
+  const controlsByName = new Map<
+    string,
+    ExtensionTransformationParameterControl
+  >();
+
+  // First pass validates and collects the persisted parameter set. Custom
+  // controls are UI-only: they never become parameters, so they are excluded
+  // from `controlsByName` and from `defaultParameters`.
+  for (const group of definition.groups) {
     assertText(group.id, "Transformation UI group ID", 80);
     assertText(group.title, `Transformation UI group '${group.id}' title`, 120);
     if (groupIds.has(group.id)) {
@@ -447,43 +495,71 @@ function compileDefinition(
         `Transformation UI group '${group.id}' columns must be an integer from 1 to 4.`,
       );
     }
-
-    const controls = group.controls.map(
-      (control: ExtensionTransformationControl) => {
-        validateControl(control, hostFilter?.parameters);
-        if (parameterNames.has(control.name)) {
-          throw new Error(
-            `Duplicate transformation parameter '${control.name}'.`,
-          );
-        }
-        parameterNames.add(control.name);
-        const frozenControl: ExtensionTransformationControl =
-          control.type === "select"
-            ? Object.freeze({
-                ...control,
-                defaultValue: cloneAndFreezeJsonValue(control.defaultValue),
-                options: Object.freeze(
-                  control.options.map(
-                    (option: ExtensionTransformationSelectOption) =>
-                      Object.freeze({
-                        label: option.label,
-                        value: cloneAndFreezeJsonValue(option.value),
-                      }),
-                  ),
+    for (const control of group.controls) {
+      validateControl(control, hostFilter?.parameters);
+      if (controlNames.has(control.name)) {
+        throw new Error(
+          `Duplicate transformation control '${control.name}'.`,
+        );
+      }
+      controlNames.add(control.name);
+      if (control.type === "custom") continue;
+      parameterNames.add(control.name);
+      const frozenControl: ExtensionTransformationParameterControl =
+        control.type === "select"
+          ? Object.freeze({
+              ...control,
+              defaultValue: cloneAndFreezeJsonValue(control.defaultValue),
+              options: Object.freeze(
+                control.options.map(
+                  (option: ExtensionTransformationSelectOption) =>
+                    Object.freeze({
+                      label: option.label,
+                      value: cloneAndFreezeJsonValue(option.value),
+                    }),
                 ),
-              })
-            : Object.freeze({ ...control });
-        controlsByName.set(control.name, frozenControl);
-        return frozenControl;
-      },
-    );
-    return Object.freeze({
+              ),
+            })
+          : Object.freeze({ ...control });
+      controlsByName.set(control.name, frozenControl);
+    }
+  }
+
+  // Second pass emits the panel layout. A custom control's commit allowlist can
+  // only be resolved once every parameter in the definition is known, since a
+  // rich editor may appear before the parameters it edits.
+  const groups = definition.groups.map((group) =>
+    Object.freeze({
       id: group.id,
       title: group.title,
       columns: group.columns,
-      controls: Object.freeze(controls),
-    });
-  });
+      controls: Object.freeze(
+        group.controls.map((control: ExtensionTransformationControl) => {
+          if (control.type !== "custom") {
+            return controlsByName.get(control.name)!;
+          }
+          const allowed = control.parameterNames ?? [...parameterNames];
+          for (const name of allowed) {
+            if (!parameterNames.has(name)) {
+              throw new Error(
+                `Transformation control '${control.name}' cannot commit unknown parameter '${name}'.`,
+              );
+            }
+          }
+          return Object.freeze({
+            type: "custom" as const,
+            name: control.name,
+            label: control.label,
+            componentId: `${ownerId}/${control.componentId}`,
+            ...(control.config
+              ? { config: cloneAndFreezeJsonValue(control.config) }
+              : {}),
+            parameterNames: Object.freeze([...allowed]),
+          });
+        }),
+      ),
+    }),
+  );
 
   const contributionId = `${ownerId}/${definition.id}`;
   const reportedFailureKeys = new Set<string>();

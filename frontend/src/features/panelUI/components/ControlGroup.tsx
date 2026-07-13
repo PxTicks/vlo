@@ -72,7 +72,10 @@ export const ControlGroup = memo(function ControlGroup({
     return result;
   }, [group, values]);
 
-  const showHeader = !hideTitle || headerActions || keyframe?.enabled;
+  // A titleless group renders no header row at all, so a group whose controls all
+  // render nothing (an empty extension zone) collapses instead of leaving chrome.
+  const showHeader =
+    (!hideTitle && Boolean(group.title)) || headerActions || keyframe?.enabled;
 
   return (
     <Box>

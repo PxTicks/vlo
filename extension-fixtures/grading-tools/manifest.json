@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "example.grading-tools",
+  "name": "Grading Tools Conformance Fixture",
+  "version": "1.0.0",
+  "sdk": ">=1.2.0 <2.0.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "capabilities": ["ui.panel-control", "color.grade"]
+}

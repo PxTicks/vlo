@@ -1,0 +1,15 @@
+{
+  "name": "vlo-grading-tools-extension-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build"
+  },
+  "devDependencies": {
+    "@vlo/extension-sdk": "file:../../packages/extension-sdk",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4"
+  }
+}

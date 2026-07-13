@@ -19,6 +19,7 @@ from services.extensions import (
     ExtensionManager,
     FrontendArtifactStore,
 )
+from services.extensions.manifest import EXTENSION_SDK_VERSION
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE_ROOT = REPOSITORY_ROOT / "extension-template"
@@ -210,7 +211,7 @@ def test_official_template_builds_and_activates_through_approval_path(
     assert status_route.endpoint() == {
         "extensionId": "example.minimal",
         "version": "1.0.0",
-        "sdkVersion": "1.0.0",
+        "sdkVersion": EXTENSION_SDK_VERSION,
     }
     assert asyncio.run(runtime.stop()) == ()
 
@@ -249,6 +250,7 @@ def test_color_grade_fixture_builds_registers_and_stages_through_approval(
             (
                 f"const extension = await import({json.dumps(built_entry.as_uri())});"
                 "const transformations = []; const components = []; const entities = []; const logs = [];"
+                "const transitions = [];"
                 "let filterOptions; const hostFilter = {};"
                 "await extension.activate({"
                 "extension: { id: 'example.color-grade', version: '1.0.0' },"
@@ -264,6 +266,10 @@ def test_color_grade_fixture_builds_registers_and_stages_through_approval(
                 "ui: { registerComponent(definition) { components.push(definition);"
                 "return { id: 'example.color-grade/' + definition.id, dispose() {} };"
                 "} },"
+                "transitions: { register(definition) { transitions.push(definition);"
+                "return { id: 'example.color-grade/' + definition.id, dispose() {} };"
+                "} },"
+                "timeline: { ticksPerSecond: 1000, transaction() { return { ok: true }; } },"
                 "entityProviders: { register(definition) { entities.push(definition);"
                 "return { id: 'example.color-grade/' + definition.id, dispose() {} };"
                 "} }"

@@ -41,9 +41,11 @@ import { useEditorClipOverlays } from "./hooks/useEditorClipOverlays";
 import { useEditorSelectionLock } from "./hooks/useEditorSelectionLock";
 import { useEditorOrchestration } from "./orchestration/useEditorOrchestration";
 import { registerColorGradingCustomControls } from "../features/colorGrading";
+import { registerHostPanelControls } from "../features/extensions/ui/registerHostPanelControls";
 import { ScopesDock } from "../features/scopes";
 
 registerColorGradingCustomControls();
+registerHostPanelControls();
 
 const ASSET_DRAG_ACTIVATION_DISTANCE_PX = 1;
 

@@ -881,11 +881,31 @@ export interface ExtensionTransformationSelectControl {
   readonly options: readonly ExtensionTransformationSelectOption[];
 }
 
+/**
+ * Mounts a rich control registered with `ui.registerPanelControl()` inside this
+ * transformation's own group. UI-only: `name` identifies the control, it is not
+ * a persisted parameter, and it never appears in `defaultParameters`.
+ */
+export interface ExtensionTransformationCustomControl {
+  readonly type: "custom";
+  readonly name: string;
+  readonly label: string;
+  /** A panel-control ID registered by the same extension. Not owner-qualified. */
+  readonly componentId: string;
+  readonly config?: Readonly<Record<string, JsonValue>>;
+  /**
+   * Restricts what the control may commit. Omit to allow every parameter this
+   * transformation declares.
+   */
+  readonly parameterNames?: readonly string[];
+}
+
 export type ExtensionTransformationControl =
   | ExtensionTransformationNumberControl
   | ExtensionTransformationCheckboxControl
   | ExtensionTransformationTextControl
-  | ExtensionTransformationSelectControl;
+  | ExtensionTransformationSelectControl
+  | ExtensionTransformationCustomControl;
 
 export interface ExtensionTransformationControlGroup {
   readonly id: string;
@@ -1190,7 +1210,11 @@ export interface ExtensionMuiRuntime {
   readonly [exportName: string]: unknown;
 }
 
-/** Host-native panel controls (PanelSection, SliderControl, inputs, and peers). */
+/**
+ * Complete, version-coupled host panelUI barrel for trusted extensions.
+ * Prefer scoped contribution APIs where available; this runtime remains the
+ * unscoped authority escape hatch and is not restricted-mode compatible.
+ */
 export interface ExtensionPanelUiRuntime {
   readonly [exportName: string]: unknown;
 }
@@ -1242,7 +1266,70 @@ export interface ExtensionUiRegistration extends ExtensionDisposable {
   readonly id: string;
 }
 
+// === Panel controls ===
+
+/**
+ * Props handed to a rich panel control. Values crossing this boundary are cloned
+ * in both directions, so mutating them has no effect on host state; commit
+ * instead.
+ */
+export interface ExtensionPanelControlProps {
+  /** Live parameter values of the transformation this control is mounted in. */
+  readonly values: Readonly<Record<string, JsonValue>>;
+  readonly transformId?: string;
+  readonly disabled: boolean;
+  /** Source-media time domain, for controls that transfer animated values. */
+  readonly sourceTimeRange?: {
+    readonly minTime: number;
+    readonly duration: number;
+  };
+  /** Placement config, or the custom control's `config`. Empty when unset. */
+  readonly config: Readonly<Record<string, JsonValue>>;
+
+  /**
+   * Commits through the host panel's own path, so live preview, undo, history,
+   * and keyframe handling all behave as they do for built-in controls. Commits
+   * to parameters outside the control's allowlist are rejected and reported.
+   */
+  commitParameter(name: string, value: JsonValue): void;
+  commitParameters(values: Readonly<Record<string, JsonValue>>): void;
+}
+
+/**
+ * Mounts a control into a host-declared panel zone. The host owns the placement
+ * catalogue; an extension cannot invent a target.
+ */
+export interface ExtensionPanelControlPlacement {
+  readonly target: {
+    readonly kind: "filter";
+    readonly filterName: string;
+    readonly zone: string;
+  };
+  readonly order?: number;
+  readonly config?: Readonly<Record<string, JsonValue>>;
+}
+
+export interface ExtensionPanelControlDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly kind: "trusted-react";
+  readonly component: (props: ExtensionPanelControlProps) => unknown;
+  /** Omit to use the control only inside this extension's own transformations. */
+  readonly placements?: readonly ExtensionPanelControlPlacement[];
+}
+
+export interface ExtensionPanelControlRegistration extends ExtensionDisposable {
+  readonly id: string;
+}
+
 export interface ExtensionUiApi {
+  /**
+   * Registers a rich React control. Use it in an extension transformation's own
+   * groups via a `custom` control, or place it in a host panel zone, or both.
+   */
+  registerPanelControl(
+    definition: ExtensionPanelControlDefinition,
+  ): ExtensionPanelControlRegistration;
   registerNotice(
     definition: ExtensionUiNoticeDefinition,
   ): ExtensionUiRegistration;

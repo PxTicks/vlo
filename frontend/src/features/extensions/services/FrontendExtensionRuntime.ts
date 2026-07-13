@@ -16,6 +16,7 @@ import { createExtensionBackendApi } from "../backend/createExtensionBackendApi"
 import { createExtensionAssetApi } from "../assets/createExtensionAssetApi";
 import { createExtensionGenerationApi } from "../generation/ExtensionGenerationBridge";
 import { extensionUiSlotRegistry } from "../ui/ExtensionUiSlotRegistry";
+import { extensionPanelControlRegistry } from "../ui/ExtensionPanelControlRegistry";
 import { extensionHostRuntimeApi } from "./extensionHostRuntimeApi";
 import { extensionColorApi } from "./extensionColorApi";
 import { evaluateExtensionSdkCompatibility } from "../utils/sdkCompatibility";
@@ -334,7 +335,12 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       timeline: createExtensionTimelineApi(scope),
       transitions: extensionTransitionRegistry.bind(scope),
       transformations: extensionTransformationRegistry.bind(scope),
-      ui: extensionUiSlotRegistry.bind(scope),
+      // Panel controls live in their own registry but are exposed on the UI
+      // domain, so an author sees one place to register UI.
+      ui: Object.freeze({
+        ...extensionUiSlotRegistry.bind(scope),
+        ...extensionPanelControlRegistry.bind(scope),
+      }),
     });
 
 const frontendExtensionHost = new ExtensionHost<VloExtensionApi>({

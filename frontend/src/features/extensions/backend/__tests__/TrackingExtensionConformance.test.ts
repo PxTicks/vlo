@@ -214,6 +214,10 @@ function createConformanceApi() {
       register: (definition) => ({ id: definition.id, dispose: () => undefined }),
     },
     ui: {
+      registerPanelControl: (definition) => ({
+        id: definition.id,
+        dispose: () => undefined,
+      }),
       registerNotice: (definition) => ({ id: definition.id, dispose: () => undefined }),
       registerComponent: (definition) => {
         uiDefinition = definition;

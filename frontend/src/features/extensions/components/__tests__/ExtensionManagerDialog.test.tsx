@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtensionManagerDialog } from "../ExtensionManagerDialog";
 import { useExtensionManagementStore } from "../../store/useExtensionManagementStore";
+import { VLO_EXTENSION_SDK_VERSION } from "../../constants";
 
 const originalFetch = globalThis.fetch;
 const digest = `sha256:${"a".repeat(64)}`;
@@ -234,7 +235,12 @@ describe("ExtensionManagerDialog", () => {
     render(<ExtensionManagerDialog open onClose={vi.fn()} />);
 
     expect(
-      await screen.findByText(/cannot activate with extension SDK 1\.1\.0/i),
+      await screen.findByText(
+        new RegExp(
+          `cannot activate with extension SDK ${VLO_EXTENSION_SDK_VERSION.replace(/\./g, "\\.")}`,
+          "i",
+        ),
+      ),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Approve current digest" }),

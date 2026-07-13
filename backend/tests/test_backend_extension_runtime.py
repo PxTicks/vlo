@@ -20,6 +20,7 @@ from services.extensions import (
     ExtensionApprovalStore,
     ExtensionManager,
 )
+from services.extensions.manifest import EXTENSION_SDK_VERSION
 
 
 def _create_runtime(
@@ -151,7 +152,7 @@ def test_approved_backend_activates_from_staged_digest_with_relative_imports(
         ("example.active", "active")
     ]
     assert marker.read_text(encoding="utf-8") == (
-        f"example.active|1.2.3|1.0.0|{digest.removeprefix('sha256:')}"
+        f"example.active|1.2.3|{EXTENSION_SDK_VERSION}|{digest.removeprefix('sha256:')}"
     )
     route_paths = [route.path for route in app.routes]
     extension_route = "/app/extensions/example.active/api/value"
@@ -290,7 +291,10 @@ def test_backend_runtime_rechecks_sdk_compatibility_before_import(
     summary = asyncio.run(runtime.start(FastAPI()))
 
     assert summary.records[0].status == "failed"
-    assert "does not include host SDK 1.0.0" in summary.records[0].message
+    assert (
+        f"does not include host SDK {EXTENSION_SDK_VERSION}"
+        in summary.records[0].message
+    )
     assert marker.exists() is False
 
 

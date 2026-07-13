@@ -19,6 +19,8 @@ import {
   type RegisteredExtensionContribution,
 } from "../registry/ExtensionContributionRegistry";
 
+type ExtensionUiSlotApi = Omit<ExtensionUiApi, "registerPanelControl">;
+
 const SLOT_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
 const HOST_UI_SLOTS = [
   "transformation-panel.before",
@@ -172,7 +174,7 @@ export class ExtensionUiContributionRegistry {
     this.declaredSlots.add(slot);
   }
 
-  bind(scope: ExtensionApiScope): ExtensionUiApi {
+  bind(scope: ExtensionApiScope): ExtensionUiSlotApi {
     const bound = this.registry.bind(scope);
     return Object.freeze({
       registerNotice: (

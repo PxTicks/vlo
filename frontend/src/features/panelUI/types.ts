@@ -38,6 +38,11 @@ export interface ControlDefinition {
   supportsSpline?: boolean;
   /** Registered rich-control component. Only used when `type` is `custom`. */
   componentId?: string;
+  /**
+   * Parameters a rich control is allowed to commit. Only used when `type` is
+   * `custom`; omitted means the owning transformation's whole parameter set.
+   */
+  parameterNames?: readonly string[];
   /** JSON-like component configuration owned by the registered control. */
   config?: Readonly<Record<string, unknown>>;
 }

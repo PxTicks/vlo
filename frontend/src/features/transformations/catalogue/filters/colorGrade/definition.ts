@@ -1,10 +1,12 @@
 import {
+  COLOR_GRADE_PARAMETER_NAMES,
   DEFAULT_COLOR_GRADE_LUT,
   DEFAULT_COLOR_GRADE_PRIMARIES,
   DEFAULT_COLOR_CURVES,
   DEFAULT_COLOR_QUALIFIER,
   V1_AUTHORED_COLOR_MODEL,
 } from "../../../../../core/color";
+import { EXTENSION_PANEL_CONTROL_ZONE_ID } from "../../../../extensions/ui/panelControlZoneId";
 import {
   COLOR_WHEEL_PARAMETER_CONTROLS,
   COLOR_WHEELS_CONTROL_ID,
@@ -232,6 +234,27 @@ export const colorGradeDefinition: TransformationDefinition = {
             max: 1,
             step: 0.01,
             supportsSpline: true,
+          },
+        ],
+      },
+      {
+        // Extension zone. The group is static and titleless, so it collapses to
+        // nothing until an extension places a control here. Commits are limited
+        // to real V1 grade parameters.
+        id: "color_grade_extensions",
+        title: "",
+        columns: 1,
+        controls: [
+          {
+            type: "custom",
+            label: "Extensions",
+            name: "_extensions",
+            componentId: EXTENSION_PANEL_CONTROL_ZONE_ID,
+            config: {
+              filterName: COLOR_GRADE_FILTER_NAME,
+              zone: "extensions",
+            },
+            parameterNames: COLOR_GRADE_PARAMETER_NAMES,
           },
         ],
       },

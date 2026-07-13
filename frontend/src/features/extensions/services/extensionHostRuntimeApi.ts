@@ -51,5 +51,11 @@ export const extensionHostRuntimeApi: ExtensionHostRuntimeApi = Object.freeze({
     Typography,
     useTheme,
   }),
+  /**
+   * The complete host panelUI barrel is an intentionally version-coupled
+   * trusted escape hatch. Extensions should prefer owner-bound APIs such as
+   * `ui.registerPanelControl()` when they want validation and activation
+   * rollback, but trusted mode does not make that contract an authority ceiling.
+   */
   panelUi: panelUi as unknown as ExtensionHostRuntimeApi["panelUi"],
 });

@@ -1,6 +1,15 @@
 import { useState, memo, useEffect } from "react";
 import type { ReactNode } from "react";
-import { Box, Tabs, Tab } from "@mui/material";
+import {
+  Box,
+  IconButton,
+  Menu,
+  MenuItem,
+  Tab,
+  Tabs,
+  Tooltip,
+} from "@mui/material";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import {
   useSelectedTimelineClipIds,
   useSelectedTimelineTransitionId,
@@ -29,6 +38,7 @@ interface TabPanelProps {
   readonly active: boolean;
   readonly children: ReactNode;
   readonly id?: string;
+  readonly label?: string;
   readonly labelledBy?: string;
   readonly keepMounted?: boolean;
 }
@@ -37,6 +47,7 @@ function TabPanel({
   active,
   children,
   id,
+  label,
   labelledBy,
   keepMounted = false,
 }: TabPanelProps) {
@@ -44,6 +55,7 @@ function TabPanel({
     <Box
       id={id}
       role="tabpanel"
+      aria-label={label}
       aria-labelledby={labelledBy}
       aria-hidden={!active}
       sx={{
@@ -72,6 +84,8 @@ function RightSidebarPanelComponent() {
   const primarySelectedClip = useTimelineClip(selectedClipIds[0]);
   const isAdjustmentSelected = primarySelectedClip?.type === "adjustment";
   const [activeTab, setActiveTab] = useState<CoreRightSidebarTab>("generate");
+  const [workspaceMenuAnchor, setWorkspaceMenuAnchor] =
+    useState<HTMLElement | null>(null);
   const {
     workspaces,
     selectedWorkspaceId,
@@ -107,6 +121,9 @@ function RightSidebarPanelComponent() {
         ? "transform"
         : activeTab;
   const visibleTab = selectedWorkspaceId ?? visibleCoreTab;
+  const selectedWorkspace = workspaces.find(
+    (workspace) => workspace.id === selectedWorkspaceId,
+  );
 
   useEffect(() => {
     const { setMaskTabActive } = useMaskViewStore.getState();
@@ -115,76 +132,133 @@ function RightSidebarPanelComponent() {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <Tabs
-        data-testid="right-sidebar-tabs"
-        value={visibleTab}
-        onChange={(_, value: string) => {
-          const workspace = workspaces.find((entry) => entry.id === value);
-          if (workspace) {
-            selectWorkspace(workspace.id);
-            return;
-          }
-          selectWorkspace(null);
-          setActiveTab(value as CoreRightSidebarTab);
-        }}
-        textColor="primary"
-        indicatorColor="primary"
-        variant={workspaces.length === 0 ? "fullWidth" : "scrollable"}
-        scrollButtons="auto"
+      <Box
         sx={{
-          minHeight: 36,
+          display: "flex",
+          alignItems: "stretch",
           borderBottom: "1px solid #333",
-          "& .MuiTab-root": {
-            minWidth: 0,
-            minHeight: 36,
-            px: 0.75,
-            py: 0.5,
-            fontSize: "0.72rem",
-            lineHeight: 1.2,
-            textTransform: "none",
-          },
         }}
       >
-        <Tab
-          data-testid="right-sidebar-tab-generate"
-          label="Generate"
-          value="generate"
-        />
-        {hasTransitionSelection ? (
+        <Tabs
+          data-testid="right-sidebar-tabs"
+          value={selectedWorkspaceId === null ? visibleCoreTab : false}
+          onChange={(_, value: CoreRightSidebarTab) => {
+            selectWorkspace(null);
+            setActiveTab(value);
+          }}
+          textColor="primary"
+          indicatorColor="primary"
+          variant="fullWidth"
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 36,
+            "& .MuiTab-root": {
+              minWidth: 0,
+              minHeight: 36,
+              px: 0.75,
+              py: 0.5,
+              fontSize: "0.72rem",
+              lineHeight: 1.2,
+              textTransform: "none",
+            },
+          }}
+        >
           <Tab
-            data-testid="right-sidebar-tab-transition"
-            label="Transition"
-            value="transition"
+            data-testid="right-sidebar-tab-generate"
+            label="Generate"
+            value="generate"
           />
+          {hasTransitionSelection ? (
+            <Tab
+              data-testid="right-sidebar-tab-transition"
+              label="Transition"
+              value="transition"
+            />
+          ) : null}
+          {hasClipSelection ? (
+            <Tab
+              data-testid="right-sidebar-tab-transform"
+              label="Adjust"
+              value="transform"
+            />
+          ) : null}
+          {hasClipSelection ? (
+            <Tab
+              data-testid="right-sidebar-tab-effects"
+              label="Transform"
+              value="effects"
+            />
+          ) : null}
+          {hasClipSelection && !isAdjustmentSelected && (
+            <Tab
+              data-testid="right-sidebar-tab-mask"
+              label="Mask"
+              value="mask"
+            />
+          )}
+        </Tabs>
+        {workspaces.length > 0 ? (
+          <>
+            <Tooltip title={selectedWorkspace?.title ?? "More panels"}>
+              <IconButton
+                data-testid="right-sidebar-workspace-menu-button"
+                aria-label="More panels"
+                aria-haspopup="menu"
+                aria-expanded={workspaceMenuAnchor !== null}
+                aria-controls={
+                  workspaceMenuAnchor === null
+                    ? undefined
+                    : "right-sidebar-workspace-menu"
+                }
+                aria-pressed={selectedWorkspaceId !== null}
+                size="small"
+                onClick={(event) => setWorkspaceMenuAnchor(event.currentTarget)}
+                sx={{
+                  width: 32,
+                  minHeight: 36,
+                  flexShrink: 0,
+                  borderLeft: "1px solid #333",
+                  borderRadius: 0,
+                  color:
+                    selectedWorkspaceId === null
+                      ? "text.secondary"
+                      : "primary.main",
+                  bgcolor:
+                    selectedWorkspaceId === null
+                      ? "transparent"
+                      : "action.selected",
+                }}
+              >
+                <ArrowDropDownIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Menu
+              id="right-sidebar-workspace-menu"
+              anchorEl={workspaceMenuAnchor}
+              open={workspaceMenuAnchor !== null}
+              onClose={() => setWorkspaceMenuAnchor(null)}
+              anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+              transformOrigin={{ vertical: "top", horizontal: "right" }}
+              slotProps={{ paper: { sx: { maxHeight: 320 } } }}
+            >
+              {workspaces.map((workspace) => (
+                <MenuItem
+                  key={workspace.id}
+                  data-testid={`right-sidebar-workspace-menu-item-${workspace.id}`}
+                  selected={workspace.id === selectedWorkspaceId}
+                  onClick={() => {
+                    selectWorkspace(workspace.id);
+                    setWorkspaceMenuAnchor(null);
+                  }}
+                >
+                  {workspace.title}
+                </MenuItem>
+              ))}
+            </Menu>
+          </>
         ) : null}
-        {hasClipSelection ? (
-          <Tab
-            data-testid="right-sidebar-tab-transform"
-            label="Adjust"
-            value="transform"
-          />
-        ) : null}
-        {hasClipSelection ? (
-          <Tab
-            data-testid="right-sidebar-tab-effects"
-            label="Transform"
-            value="effects"
-          />
-        ) : null}
-        {hasClipSelection && !isAdjustmentSelected && (
-          <Tab data-testid="right-sidebar-tab-mask" label="Mask" value="mask" />
-        )}
-        {workspaces.map((workspace) => (
-          <Tab
-            key={workspace.id}
-            id={`extension-workspace-tab-${workspace.id}`}
-            aria-controls={`extension-workspace-panel-${workspace.id}`}
-            data-testid={`right-sidebar-tab-${workspace.id}`}
-            label={workspace.title}
-            value={workspace.id}
-          />
-        ))}
-      </Tabs>
+      </Box>
       <Box sx={{ flexGrow: 1, position: "relative", overflow: "hidden" }}>
         <TabPanel active={visibleTab === "generate"} keepMounted>
           <GenerationPanel />
@@ -213,7 +287,7 @@ function RightSidebarPanelComponent() {
           <TabPanel
             key={workspace.id}
             id={`extension-workspace-panel-${workspace.id}`}
-            labelledBy={`extension-workspace-tab-${workspace.id}`}
+            label={workspace.title}
             active={visibleTab === workspace.id}
             keepMounted
           >

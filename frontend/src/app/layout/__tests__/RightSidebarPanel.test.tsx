@@ -174,7 +174,7 @@ describe("RightSidebarPanel", () => {
     );
   });
 
-  it("hosts stateful extension workspaces as persistent sidebar tabs", () => {
+  it("hosts stateful extension workspaces in the sidebar overflow menu", () => {
     const scope: ExtensionApiScope = {
       extension: { id: "example.canvas", version: "1.0.0" },
       signal: new AbortController().signal,
@@ -210,17 +210,27 @@ describe("RightSidebarPanel", () => {
     try {
       render(<RightSidebarPanel />);
 
-      expect(screen.getByRole("tab", { name: "AI Canvas" })).toBeInTheDocument();
-      expect(screen.getByRole("tab", { name: "Generate" })).not.toHaveClass(
+      expect(
+        screen.queryByRole("tab", { name: "AI Canvas" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Generate" })).toHaveClass(
         "MuiTab-fullWidth",
       );
+      const workspaceMenuButton = screen.getByRole("button", {
+        name: "More panels",
+      });
+      expect(workspaceMenuButton).toHaveAttribute("aria-pressed", "false");
+      expect(
+        screen.queryByRole("menuitem", { name: "AI Canvas" }),
+      ).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Workspace value")).not.toBeInTheDocument();
 
       act(() => expect(ui.openWorkspace("drawing")).toBe(true));
-      const workspaceTab = screen.getByRole("tab", { name: "AI Canvas" });
-      expect(workspaceTab).toHaveAttribute("aria-selected", "true");
-      expect(workspaceTab).toHaveAttribute(
-        "aria-controls",
+      expect(workspaceMenuButton).toHaveAttribute("aria-pressed", "true");
+      expect(
+        screen.getByRole("tabpanel", { name: "AI Canvas" }),
+      ).toHaveAttribute(
+        "id",
         "extension-workspace-panel-example.canvas/drawing",
       );
       expect(screen.getByLabelText("Workspace canvas")).toBeInstanceOf(
@@ -234,12 +244,18 @@ describe("RightSidebarPanel", () => {
       expect(input).toHaveValue("unfinished sketch");
       expect(input).toHaveAttribute("data-active", "false");
 
-      fireEvent.click(screen.getByRole("tab", { name: "AI Canvas" }));
+      fireEvent.click(workspaceMenuButton);
+      const workspaceMenuItem = screen.getByRole("menuitem", {
+        name: "AI Canvas",
+      });
+      expect(workspaceMenuItem).not.toHaveClass("Mui-selected");
+      fireEvent.click(workspaceMenuItem);
       expect(input).toHaveValue("unfinished sketch");
+      expect(input).toHaveAttribute("data-active", "true");
 
       act(() => registration.dispose());
       expect(
-        screen.queryByRole("tab", { name: "AI Canvas" }),
+        screen.queryByRole("button", { name: "More panels" }),
       ).not.toBeInTheDocument();
       expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute(
         "aria-selected",

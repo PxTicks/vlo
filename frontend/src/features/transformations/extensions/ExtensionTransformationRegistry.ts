@@ -702,7 +702,9 @@ export class ExtensionTransformationRegistry {
       "transformation",
     );
 
-  bind(scope: ExtensionApiScope): ExtensionTransformationApi {
+  bind(
+    scope: ExtensionApiScope,
+  ): Pick<ExtensionTransformationApi, "register"> {
     const bound = this.registry.bind(scope);
     return Object.freeze({
       register: (

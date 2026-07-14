@@ -1,6 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { CustomControlRenderProps } from "../../../panelUI";
+import { extensionParameterPresetRegistry } from "../../../extensions/registry/ExtensionParameterPresetRegistry";
+import type {
+  ExtensionApiScope,
+  ExtensionParameterPresetRegistration,
+} from "../../../extensions/types";
 import { clearCopiedGradeParameters } from "../../gradeParameters";
 import { useGradePresetStore } from "../../useGradePresetStore";
 import { GradeManagementControl } from "../GradeManagementControl";
@@ -11,11 +17,29 @@ const control: CustomControlRenderProps["control"] = {
   name: "_gradeManagement",
 };
 
+function registerExtensionPreset(): ExtensionParameterPresetRegistration {
+  const scope = {
+    extension: { id: "example.grading-tools", version: "1.0.0" },
+    signal: new AbortController().signal,
+    own: <T,>(resource: T): T => resource,
+    report: vi.fn(),
+  } as unknown as ExtensionApiScope;
+  return extensionParameterPresetRegistry.bind(scope).register({
+    id: "bleach-bypass",
+    apiVersion: 1,
+    label: "Bleach bypass",
+    target: { kind: "filter", filterName: "ColorGradeFilter" },
+    parameters: { contrast: 1.18, saturation: 0.62 },
+  });
+}
+
 describe("GradeManagementControl", () => {
   beforeEach(() => {
     clearCopiedGradeParameters();
     useGradePresetStore.setState({ presets: [] });
   });
+
+  afterEach(cleanup);
 
   it("copies and pastes the same parameter JSON", async () => {
     const onCommitMany = vi.fn();
@@ -57,6 +81,37 @@ describe("GradeManagementControl", () => {
     expect(useGradePresetStore.getState().presets[0]).toMatchObject({
       name: "Muted",
       parameters: { saturation: 0.8 },
+    });
+  });
+
+  it("applies a contributed preset and drops it when the extension deactivates", async () => {
+    const registration = registerExtensionPreset();
+    const onCommitMany = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <GradeManagementControl
+        control={control}
+        value={undefined}
+        values={{ saturation: 1 }}
+        onCommit={vi.fn()}
+        onCommitMany={onCommitMany}
+        groupId="grade"
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("option", { name: "Bleach bypass" }));
+    expect(onCommitMany).toHaveBeenCalledWith({
+      contrast: 1.18,
+      saturation: 0.62,
+    });
+
+    void registration.dispose();
+    await user.click(screen.getByRole("combobox"));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("option", { name: "Bleach bypass" }),
+      ).toBeNull();
     });
   });
 });

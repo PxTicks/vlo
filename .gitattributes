@@ -29,6 +29,7 @@
 /frontend/src/app/layout/RightSidebarPanel.tsx extension-surface=adapter
 /frontend/src/core/pixi/activeApplication.ts extension-surface=adapter
 /frontend/src/core/playback/PlaybackClock.ts extension-surface=adapter
+/frontend/src/features/colorGrading/components/GradeManagementControl.tsx extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
 /frontend/src/features/project/constants.ts extension-surface=adapter

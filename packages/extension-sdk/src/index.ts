@@ -1024,10 +1024,54 @@ export interface ExtensionTransformationRegistration
   readonly id: string;
 }
 
+// === Parameter presets ===
+
+/**
+ * The transformation a preset patches. The registry is generic, but each target
+ * is host-adapted: it needs a declared identity, a parameter validator, merge
+ * semantics, and host UI that consumes the registry. `ColorGradeFilter` is the
+ * first supported target.
+ */
+export interface ExtensionParameterPresetTarget {
+  readonly kind: "filter";
+  readonly filterName: string;
+}
+
+export interface ExtensionParameterPresetDefinition {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly label: string;
+  readonly target: ExtensionParameterPresetTarget;
+  /**
+   * A partial, static parameter patch, validated and clamped by the target's
+   * host schema. Omitted fields keep their authored values, so a preset never
+   * resets parameters it does not mention.
+   *
+   * API version 1 rejects animated values, because transferring them correctly
+   * needs a source time range the preset cannot carry, and `lutAssetId`, because
+   * an extension package cannot know a durable project asset ID.
+   */
+  readonly parameters: Readonly<Record<string, JsonValue>>;
+  readonly order?: number;
+}
+
+export interface ExtensionParameterPresetRegistration
+  extends ExtensionDisposable {
+  readonly id: string;
+}
+
+export interface ExtensionParameterPresetApi {
+  register(
+    definition: ExtensionParameterPresetDefinition,
+  ): ExtensionParameterPresetRegistration;
+}
+
 export interface ExtensionTransformationApi {
   register(
     definition: ExtensionTransformationDefinition,
   ): ExtensionTransformationRegistration;
+  /** Static parameter patches offered by host panels that support a target. */
+  readonly presets: ExtensionParameterPresetApi;
 }
 
 export interface ExtensionTransitionNumberControl {

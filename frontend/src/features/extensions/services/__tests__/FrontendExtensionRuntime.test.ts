@@ -15,8 +15,10 @@ import { extensionUiSlotRegistry } from "../../ui/ExtensionUiSlotRegistry";
 import { Container, Filter } from "pixi.js";
 import { createElement } from "react";
 import { extensionEntityProviderRegistry } from "../../entities/publicApi";
+import { extensionParameterPresetRegistry } from "../../registry/publicApi";
 import { Button } from "@mui/material";
 import { VLO_APP_VERSION } from "../../../project/constants";
+import { VLO_EXTENSION_SDK_VERSION } from "../../constants";
 import {
   PanelSection,
   getCustomControl,
@@ -166,7 +168,7 @@ describe("FrontendExtensionRuntime", () => {
 
   it("activates and disposes production transformation and UI facades", async () => {
     const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.0.0",
+      sdkVersion: VLO_EXTENSION_SDK_VERSION,
       createApi: createVloExtensionApi,
     });
     const runtime = new FrontendExtensionRuntime({
@@ -206,6 +208,13 @@ describe("FrontendExtensionRuntime", () => {
                 ],
               },
             ],
+          });
+          context.api.transformations.presets.register({
+            id: "muted-look",
+            apiVersion: 1,
+            label: "Muted look",
+            target: { kind: "filter", filterName: "ColorGradeFilter" },
+            parameters: { saturation: 0.7 },
           });
           context.api.ui.registerNotice({
             id: "help",
@@ -296,6 +305,11 @@ describe("FrontendExtensionRuntime", () => {
               definition.type === "example.color-grade/fade-through-grade",
           ),
       ).toBe(true);
+      expect(
+        extensionParameterPresetRegistry
+          .list({ kind: "filter", filterName: "ColorGradeFilter" })
+          .map((preset) => preset.id),
+      ).toContain("example.color-grade/muted-look");
     } finally {
       await host.deactivate("example.color-grade");
     }
@@ -328,6 +342,42 @@ describe("FrontendExtensionRuntime", () => {
             definition.type === "example.color-grade/fade-through-grade",
         ),
     ).toBe(false);
+    expect(
+      extensionParameterPresetRegistry
+        .list({ kind: "filter", filterName: "ColorGradeFilter" })
+        .map((preset) => preset.id),
+    ).not.toContain("example.color-grade/muted-look");
+  });
+
+  it("rolls parameter presets back when activation later fails", async () => {
+    const host = new ExtensionHost<VloExtensionApi>({
+      sdkVersion: VLO_EXTENSION_SDK_VERSION,
+      createApi: createVloExtensionApi,
+    });
+
+    await expect(
+      host.activate(
+        { id: "example.failed-preset", version: "1.0.0" },
+        {
+          activate: (context) => {
+            context.api.transformations.presets.register({
+              id: "temporary-look",
+              apiVersion: 1,
+              label: "Temporary look",
+              target: { kind: "filter", filterName: "ColorGradeFilter" },
+              parameters: { contrast: 1.1 },
+            });
+            throw new Error("activation failed");
+          },
+        },
+      ),
+    ).rejects.toThrow("Failed to activate");
+
+    expect(
+      extensionParameterPresetRegistry
+        .list({ kind: "filter", filterName: "ColorGradeFilter" })
+        .map((preset) => preset.id),
+    ).not.toContain("example.failed-preset/temporary-look");
   });
 
   it("imports and activates only approved frontend packages", async () => {

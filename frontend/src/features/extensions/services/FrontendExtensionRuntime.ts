@@ -7,6 +7,7 @@ import type {
   VloExtensionApi,
 } from "../types";
 import { extensionPayloadProviderRegistry } from "../persistence/ExtensionPayloadProviderRegistry";
+import { extensionParameterPresetRegistry } from "../registry/ExtensionParameterPresetRegistry";
 import { extensionEntityProviderRegistry } from "../entities/ExtensionEntityProviderRegistry";
 import { createExtensionTimelineApi } from "../timeline/createExtensionTimelineApi";
 import { extensionTransformationRegistry } from "../../transformations/extensionApi";
@@ -384,7 +385,12 @@ export const createVloExtensionApi: ExtensionApiFactory<VloExtensionApi> =
       entityProviders: extensionEntityProviderRegistry.bind(scope),
       timeline: createExtensionTimelineApi(scope),
       transitions: extensionTransitionRegistry.bind(scope),
-      transformations: extensionTransformationRegistry.bind(scope),
+      // Presets live in their own generic registry but belong to the
+      // transformation they patch, so authors register them next to it.
+      transformations: Object.freeze({
+        ...extensionTransformationRegistry.bind(scope),
+        presets: extensionParameterPresetRegistry.bind(scope),
+      }),
       // Panel controls live in their own registry but are exposed on the UI
       // domain, so an author sees one place to register UI.
       ui: Object.freeze({

@@ -58,6 +58,12 @@ it. The fallback is expected trusted-alpha behaviour, but it is version-coupled.
   resources. This is the parity-safe default; trusted code may use raw
   `renderer.runtime`/stage access when necessary and then owns teardown and export
   parity.
+- Host-adapted static parameter presets register through
+  `context.api.transformations.presets.register(...)`. API version 1 supports
+  partial `ColorGradeFilter` patches: omitted grade fields remain unchanged, while
+  animation values and `lutAssetId` are rejected. Use
+  `context.api.color.grade.filterName` for the target identity. Registration is
+  owner-scoped and rolls back with activation.
 - `context.api.entityProviders.register(...)` is the trusted-first custom entity
   path. A provider combines its versioned payload codec with an arbitrary host-Pixi
   `Container`/`Graphics`/`Sprite` factory, optional trusted React inspector, timeline

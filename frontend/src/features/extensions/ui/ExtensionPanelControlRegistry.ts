@@ -1,10 +1,10 @@
 import { registerCustomControl } from "../../panelUI";
-import { jsonValueSchema } from "../persistence/extensionPayload";
 import {
   ExtensionContributionRegistry,
   type ExtensionContributionDefinition,
   type RegisteredExtensionContribution,
 } from "../registry/ExtensionContributionRegistry";
+import { cloneFrozenJsonObject } from "../registry/frozenJson";
 import { createHostCustomControl } from "./createHostCustomControl";
 import type {
   ExtensionApiScope,
@@ -51,42 +51,12 @@ export interface RuntimePanelControlDefinition
 export type RegisteredExtensionPanelControl =
   RegisteredExtensionContribution<RuntimePanelControlDefinition>;
 
-function cloneAndFreezeJsonValue<TValue extends JsonValue>(
-  value: TValue,
-): TValue {
-  if (Array.isArray(value)) {
-    return Object.freeze(value.map(cloneAndFreezeJsonValue)) as TValue;
-  }
-  if (typeof value === "object" && value !== null) {
-    return Object.freeze(
-      Object.fromEntries(
-        Object.entries(value).map(([key, entry]) => [
-          key,
-          cloneAndFreezeJsonValue(entry),
-        ]),
-      ),
-    ) as TValue;
-  }
-  return value;
-}
-
 function cloneConfig(
   value: Readonly<Record<string, JsonValue>> | undefined,
   label: string,
 ): Readonly<Record<string, JsonValue>> {
   if (value === undefined) return Object.freeze({});
-  const parsed = jsonValueSchema.safeParse(value);
-  if (
-    !parsed.success ||
-    typeof parsed.data !== "object" ||
-    parsed.data === null ||
-    Array.isArray(parsed.data)
-  ) {
-    throw new Error(`${label} config must be a finite JSON object.`);
-  }
-  return cloneAndFreezeJsonValue(
-    structuredClone(parsed.data) as Record<string, JsonValue>,
-  );
+  return cloneFrozenJsonObject(value, `${label} config`);
 }
 
 export class ExtensionPanelControlRegistry {

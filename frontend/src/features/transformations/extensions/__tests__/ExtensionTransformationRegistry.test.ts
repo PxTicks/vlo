@@ -572,7 +572,9 @@ describe("ExtensionTransformationRegistry", () => {
 
   it("rolls registration back when extension activation fails", async () => {
     const registry = new ExtensionTransformationRegistry();
-    const host = new ExtensionHost<{ transformations: ExtensionTransformationApi }>({
+    const host = new ExtensionHost<{
+      transformations: Pick<ExtensionTransformationApi, "register">;
+    }>({
       sdkVersion: "1.0.0",
       createApi: (scope) => ({ transformations: registry.bind(scope) }),
     });

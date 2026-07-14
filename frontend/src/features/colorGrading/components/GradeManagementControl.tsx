@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   Box,
   Button,
@@ -14,6 +14,9 @@ import ContentPasteIcon from "@mui/icons-material/ContentPaste";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import type { CustomControlRenderProps } from "../../panelUI";
+import { extensionParameterPresetRegistry } from "../../extensions/registry/publicApi";
+import { COLOR_GRADE_FILTER_NAME } from "../../transformations/catalogue/filters/colorGrade";
+import type { GradeParameterJson, GradeTimeRange } from "../gradeParameters";
 import {
   captureGradeParameters,
   copyGradeParameters,
@@ -24,6 +27,26 @@ import {
   BUILT_IN_GRADE_PRESETS,
   useGradePresetStore,
 } from "../useGradePresetStore";
+
+interface PresetEntry {
+  readonly id: string;
+  readonly name: string;
+  readonly parameters: GradeParameterJson;
+  readonly sourceTimeRange?: GradeTimeRange;
+}
+
+const EXTENSION_PRESET_TARGET = {
+  kind: "filter",
+  filterName: COLOR_GRADE_FILTER_NAME,
+} as const;
+
+function subscribeExtensionPresets(listener: () => void): () => void {
+  return extensionParameterPresetRegistry.subscribe(listener);
+}
+
+function getExtensionPresetRevision(): number {
+  return extensionParameterPresetRegistry.getRevision();
+}
 
 export function GradeManagementControl({
   values,
@@ -37,9 +60,30 @@ export function GradeManagementControl({
   const customPresets = useGradePresetStore((state) => state.presets);
   const savePreset = useGradePresetStore((state) => state.savePreset);
   const removePreset = useGradePresetStore((state) => state.removePreset);
-  const presets = useMemo(
-    () => [...BUILT_IN_GRADE_PRESETS, ...customPresets],
-    [customPresets],
+  const extensionRevision = useSyncExternalStore(
+    subscribeExtensionPresets,
+    getExtensionPresetRevision,
+    getExtensionPresetRevision,
+  );
+  // Extension presets are static, validated patches, so they merge into the same
+  // dropdown and apply through the same commit path as the other two sources.
+  // Deactivating an extension drops its entries without touching applied grades.
+  const extensionPresets = useMemo<readonly PresetEntry[]>(
+    () =>
+      extensionParameterPresetRegistry
+        .list(EXTENSION_PRESET_TARGET)
+        .map((contribution) => ({
+          id: contribution.id,
+          name: contribution.definition.label,
+          parameters: contribution.definition.parameters,
+        })),
+    // `extensionRevision` is the registry's change signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [extensionRevision],
+  );
+  const presets = useMemo<readonly PresetEntry[]>(
+    () => [...BUILT_IN_GRADE_PRESETS, ...customPresets, ...extensionPresets],
+    [customPresets, extensionPresets],
   );
 
   const applyPreset = (id: string): void => {

@@ -144,8 +144,27 @@ export const activate: ExtensionModule["activate"] = (context) => {
     },
   });
 
+  // A static partial patch: it touches these fields and leaves the rest of the
+  // grade authored as it is. It applies, undoes, and reloads like any other
+  // preset, and disappears from the catalogue when this extension is disabled.
+  const look = context.api.transformations.presets.register({
+    id: "bleach-bypass",
+    apiVersion: 1,
+    label: "Bleach bypass",
+    target: { kind: "filter", filterName: color.grade.filterName },
+    parameters: {
+      contrast: 1.18,
+      saturation: 0.62,
+      kneeThreshold: 0.9,
+      kneeSoftness: 0.2,
+      toeAmount: 0.08,
+    },
+    order: 10,
+  });
+
   context.logger.info("Grading tools fixture activated.", {
     panelControlId: inspector.id,
     transformationId: nudge.id,
+    presetId: look.id,
   });
 };

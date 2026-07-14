@@ -40,6 +40,21 @@ Expect the host to resolve animated parameters and reuse trusted filter instance
 Isolate extension-owned resources in `destroy`; do not destroy the host filter
 object yourself.
 
+## Contribute parameter presets
+
+Register a host-panel preset through
+`context.api.transformations.presets.register`. The host owner-qualifies its stable
+local ID, validates it during activation, removes it on rollback or deactivation,
+and applies it through the target panel's ordinary undoable commit path.
+
+Preset support is host-adapted rather than automatic for every transformation. In
+API version 1 the only target is the `ColorGradeFilter` identity exposed as
+`context.api.color.grade.filterName`. Its `parameters` are a static partial patch:
+omitted fields keep their authored values, recognized fields are clamped, and
+animation objects, synthetic UI keys, `colorModel`, and `lutAssetId` are rejected.
+LUT-backed preset contributions are not supported in API version 1; do not put
+package paths or guessed project asset IDs in a grade preset.
+
 ## Register rendered entities
 
 Use `context.api.entityProviders.register` for a new timeline content type. Define:

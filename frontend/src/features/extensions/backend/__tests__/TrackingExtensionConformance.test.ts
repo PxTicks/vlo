@@ -222,6 +222,12 @@ function createConformanceApi() {
     },
     transformations: {
       register: (definition) => ({ id: definition.id, dispose: () => undefined }),
+      presets: {
+        register: (definition) => ({
+          id: definition.id,
+          dispose: () => undefined,
+        }),
+      },
     },
     transitions: {
       register: (definition) => ({ id: definition.id, dispose: () => undefined }),

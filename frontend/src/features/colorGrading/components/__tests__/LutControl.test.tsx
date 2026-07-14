@@ -79,6 +79,25 @@ function renderControl(
   return onCommitMany;
 }
 
+function projectWarmLook(packageDigest: string): void {
+  const failures = extensionLutRegistry.reconcilePackages([
+    {
+      ownerId: "example.looks",
+      packageVersion: "1.0.0",
+      packageDigest,
+      luts: [
+        {
+          id: "warm",
+          label: "Warm",
+          order: 0,
+          resourceUrl: "/look-pack/warm.cube",
+        },
+      ],
+    },
+  ]);
+  expect(failures).toEqual([]);
+}
+
 describe("LutControl", () => {
   beforeEach(() => {
     useAssetMock.mockReturnValue(undefined);
@@ -112,18 +131,7 @@ describe("LutControl", () => {
   });
 
   it("materializes a contributed look-pack LUT before committing it", async () => {
-    const registration = extensionLutRegistry.registerPackageLut(
-      "example.looks",
-      {
-        id: "warm",
-        apiVersion: 1,
-        label: "Warm",
-        order: 0,
-        resourceUrl: "/look-pack/warm.cube",
-        packageVersion: "1.0.0",
-        packageDigest: `sha256:${"a".repeat(64)}`,
-      },
-    );
+    projectWarmLook(`sha256:${"a".repeat(64)}`);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
@@ -156,24 +164,13 @@ describe("LutControl", () => {
       fireEvent.click(await screen.findByText("Warm — example.looks"));
       await waitFor(() => expect(onCommitMany).toHaveBeenCalledTimes(2));
     } finally {
-      act(() => registration.dispose());
+      act(() => void extensionLutRegistry.reconcilePackages([]));
       vi.unstubAllGlobals();
     }
   });
 
   it("keeps a failed look-pack choice retryable", async () => {
-    const registration = extensionLutRegistry.registerPackageLut(
-      "example.looks",
-      {
-        id: "warm",
-        apiVersion: 1,
-        label: "Warm",
-        order: 0,
-        resourceUrl: "/look-pack/warm.cube",
-        packageVersion: "1.0.0",
-        packageDigest: `sha256:${"b".repeat(64)}`,
-      },
-    );
+    projectWarmLook(`sha256:${"b".repeat(64)}`);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
@@ -200,7 +197,7 @@ describe("LutControl", () => {
         expect(onCommitMany).toHaveBeenCalledWith({ lutAssetId: "project-lut" }),
       );
     } finally {
-      act(() => registration.dispose());
+      act(() => void extensionLutRegistry.reconcilePackages([]));
       vi.unstubAllGlobals();
     }
   });

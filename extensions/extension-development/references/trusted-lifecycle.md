@@ -38,6 +38,12 @@ Keep activation lightweight. Defer large imports, model readiness, and expensive
 work to user actions or backend jobs. Observe `context.signal` in asynchronous work
 and prevent late writes after abort.
 
+Declarative manifest contributions do not use this executable lifecycle. The host
+projects approved, compatible look-pack catalogues directly from startup inventory
+and reconciles each package digest atomically. In mixed packages, that projection is
+independent of frontend code activation, so activation failure does not suppress
+valid static resources. V1 still applies inventory changes after page reload.
+
 ## Use host singleton runtimes
 
 Import `@vlo/extension-sdk` with `import type`. Obtain runtime values from:

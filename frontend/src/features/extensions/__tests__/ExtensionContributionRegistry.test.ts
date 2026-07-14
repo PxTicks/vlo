@@ -189,4 +189,50 @@ describe("ExtensionContributionRegistry", () => {
     });
     expect(listener).toHaveBeenCalledTimes(2);
   });
+
+  it("atomically replaces one owner's projected contributions", () => {
+    const registry = new ExtensionContributionRegistry<TestContribution>(
+      "test.registry",
+    );
+    registry.replaceForOwner("example.owner", [
+      { id: "old", apiVersion: 1, label: "Old" },
+    ]);
+    const snapshots: string[][] = [];
+    registry.subscribe(() => {
+      snapshots.push(registry.list().map((entry) => entry.id));
+    });
+
+    registry.replaceForOwner("example.owner", [
+      { id: "new-a", apiVersion: 1, label: "New A" },
+      { id: "new-b", apiVersion: 1, label: "New B" },
+    ]);
+
+    expect(snapshots).toEqual([
+      ["example.owner/new-a", "example.owner/new-b"],
+    ]);
+    expect(registry.getRevision()).toBe(2);
+  });
+
+  it("leaves a projection untouched when replacement validation fails", () => {
+    const registry = new ExtensionContributionRegistry<TestContribution>(
+      "test.registry",
+    );
+    registry.replaceForOwner("example.owner", [
+      { id: "stable", apiVersion: 1, label: "Stable" },
+    ]);
+    const listener = vi.fn();
+    registry.subscribe(listener);
+
+    expect(() =>
+      registry.replaceForOwner("example.owner", [
+        { id: "duplicate", apiVersion: 1, label: "First" },
+        { id: "duplicate", apiVersion: 1, label: "Second" },
+      ]),
+    ).toThrow(DuplicateExtensionContributionError);
+
+    expect(registry.list().map((entry) => entry.id)).toEqual([
+      "example.owner/stable",
+    ]);
+    expect(listener).not.toHaveBeenCalled();
+  });
 });

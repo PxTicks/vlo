@@ -61,8 +61,10 @@ normally needs lifecycle, assets/timeline, UI, backend jobs, and packaging.
 4. Use a code-free declarative look pack for static `.cube` resources, an
    ordinary `trusted-filter` frontend extension for Pixi filter packs, or start
    other executable work from `extension-template/`.
-5. Register contributions inside `activate(context)`; use scoped APIs first and
-   `api.trusted.host` when they are materially insufficient.
+5. For executable packages, register contributions inside `activate(context)`;
+   use scoped APIs first and `api.trusted.host` when they are materially
+   insufficient. Declarative look-pack catalogues are projected by the host and
+   do not execute `activate()`.
 6. Put user-visible writes in synchronous labelled transactions.
 7. Exercise failure, disposal, missing-provider, and reload behaviour as applicable.
 8. Verify through focused tests, package build, and approval-path coverage.

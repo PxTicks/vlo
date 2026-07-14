@@ -31,7 +31,7 @@ import {
   fetchExtensionInventory,
   type ExtensionInventoryItem,
 } from "./extensionManagementApi";
-import { composeManifestContributions } from "./manifestContributions";
+import { projectManifestContributions } from "./manifestContributions";
 
 const DEFAULT_INVENTORY_TIMEOUT_MS = 15_000;
 
@@ -67,16 +67,10 @@ export type FrontendExtensionModuleImporter = (
   url: string,
 ) => Promise<unknown>;
 
-export type FrontendExtensionModuleComposer<TApi extends object> = (
-  item: ExtensionInventoryItem,
-  executableModule?: ExtensionModule<TApi>,
-) => ExtensionModule<TApi> | undefined;
-
 export interface FrontendExtensionRuntimeOptions<TApi extends object> {
   host: ExtensionHost<TApi>;
   loadInventory(signal: AbortSignal): Promise<ExtensionInventoryItem[]>;
   importModule: FrontendExtensionModuleImporter;
-  composeModule?: FrontendExtensionModuleComposer<TApi>;
   inventoryTimeoutMs?: number | null;
   evaluateCompatibility?: typeof evaluateExtensionSdkCompatibility;
   evaluateVloCompatibility?: typeof evaluateExtensionVloCompatibility;
@@ -141,7 +135,6 @@ export class FrontendExtensionRuntime<TApi extends object> {
     signal: AbortSignal,
   ) => Promise<ExtensionInventoryItem[]>;
   private readonly importModule: FrontendExtensionModuleImporter;
-  private readonly composeModule?: FrontendExtensionModuleComposer<TApi>;
   private readonly inventoryTimeoutMs: number | null;
   private readonly evaluateCompatibility: typeof evaluateExtensionSdkCompatibility;
   private readonly evaluateVloCompatibility: typeof evaluateExtensionVloCompatibility;
@@ -157,7 +150,6 @@ export class FrontendExtensionRuntime<TApi extends object> {
     this.host = options.host;
     this.loadInventory = options.loadInventory;
     this.importModule = options.importModule;
-    this.composeModule = options.composeModule;
     this.inventoryTimeoutMs =
       options.inventoryTimeoutMs === undefined
         ? DEFAULT_INVENTORY_TIMEOUT_MS
@@ -202,8 +194,7 @@ export class FrontendExtensionRuntime<TApi extends object> {
     for (const item of inventory) {
       if (
         item.status !== "approved" ||
-        (item.manifest?.frontend === undefined &&
-          (item.lutContributions?.length ?? 0) === 0)
+        item.manifest?.frontend === undefined
       ) {
         continue;
       }
@@ -261,18 +252,14 @@ export class FrontendExtensionRuntime<TApi extends object> {
       };
     }
 
-    let frontendEntryUrl: string | null = null;
-    if (item.manifest.frontend !== undefined) {
-      if (item.frontendEntryUrl === null) {
-        return {
-          extensionId: item.id,
-          status: "failed",
-          stage: "validation",
-          message: "Approved frontend package has no content-addressed entry URL.",
-          digest: item.digest,
-        };
-      }
-      frontendEntryUrl = item.frontendEntryUrl;
+    if (item.frontendEntryUrl === null) {
+      return {
+        extensionId: item.id,
+        status: "failed",
+        stage: "validation",
+        message: "Approved frontend package has no content-addressed entry URL.",
+        digest: item.digest,
+      };
     }
 
     const compatibility = this.evaluateCompatibility(item.manifest.sdk);
@@ -329,43 +316,26 @@ export class FrontendExtensionRuntime<TApi extends object> {
       };
     }
 
-    let executableModule: ExtensionModule<TApi> | undefined;
-    if (frontendEntryUrl !== null) {
-      let importedModule: unknown;
-      try {
-        importedModule = await this.importModule(frontendEntryUrl);
-      } catch (error) {
-        return {
-          extensionId: item.id,
-          status: "failed",
-          stage: "import",
-          message: `Frontend module import failed: ${errorMessage(error)}`,
-          digest: item.digest,
-          error,
-        };
-      }
-
-      if (!isExtensionModule<TApi>(importedModule)) {
-        return {
-          extensionId: item.id,
-          status: "failed",
-          stage: "validation",
-          message: "Frontend module must export an activate(context) function.",
-          digest: item.digest,
-        };
-      }
-      executableModule = importedModule;
+    let importedModule: unknown;
+    try {
+      importedModule = await this.importModule(item.frontendEntryUrl);
+    } catch (error) {
+      return {
+        extensionId: item.id,
+        status: "failed",
+        stage: "import",
+        message: `Frontend module import failed: ${errorMessage(error)}`,
+        digest: item.digest,
+        error,
+      };
     }
 
-    const extensionModule = this.composeModule
-      ? this.composeModule(item, executableModule)
-      : executableModule;
-    if (!extensionModule) {
+    if (!isExtensionModule<TApi>(importedModule)) {
       return {
         extensionId: item.id,
         status: "failed",
         stage: "validation",
-        message: "Approved package has no activatable frontend contributions.",
+        message: "Frontend module must export an activate(context) function.",
         digest: item.digest,
       };
     }
@@ -373,13 +343,13 @@ export class FrontendExtensionRuntime<TApi extends object> {
     try {
       await this.host.activate(
         { id: item.id, version: item.manifest.version },
-        extensionModule,
+        importedModule,
       );
       return {
         extensionId: item.id,
         status: "active",
         stage: "activation",
-        message: "Extension package activated.",
+        message: "Frontend extension activated.",
         digest: item.digest,
       };
     } catch (error) {
@@ -455,9 +425,19 @@ if (import.meta.hot) {
 
 export const frontendExtensionRuntime = new FrontendExtensionRuntime({
   host: frontendExtensionHost,
-  loadInventory: (signal) => fetchExtensionInventory({ signal }),
+  loadInventory: async (signal) => {
+    const inventory = await fetchExtensionInventory({ signal });
+    const diagnostics = projectManifestContributions(inventory);
+    for (const diagnostic of diagnostics) {
+      const output = diagnostic.level === "warning" ? console.warn : console.error;
+      output(
+        `[Extension ${diagnostic.extensionId}] ${diagnostic.message}`,
+        diagnostic.error,
+      );
+    }
+    return inventory;
+  },
   importModule: importApprovedFrontendModule,
-  composeModule: composeManifestContributions,
   onCompatibilityWarning: (extensionId, message) => {
     console.warn(`[Extension ${extensionId}] ${message}`);
   },

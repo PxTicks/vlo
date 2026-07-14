@@ -104,43 +104,56 @@ export class ExtensionContributionRegistry<
   }
 
   /**
-   * Host adapters use this for approved declarative manifest contributions.
-   * The caller must enroll the returned registration in the package activation
-   * scope; this method is never exposed through the extension API.
+   * Atomically replaces one owner's projected manifest contributions. This is
+   * a host-only operation: executable extensions continue to use `bind(scope)`
+   * so activation owns their individual registrations.
    */
-  registerHostOwned(
+  replaceForOwner(
     ownerId: string,
-    definition: TDefinition,
-  ): ExtensionContributionRegistration<TDefinition> {
-    return this.registerForOwner(ownerId, definition);
+    definitions: readonly TDefinition[],
+  ): void {
+    assertValidId("extension ID", ownerId);
+
+    // Build the complete replacement before mutating live state. Validation or
+    // duplicate failure therefore leaves the previous projection untouched.
+    const replacements = new Map<
+      string,
+      RegisteredExtensionContribution<TDefinition>
+    >();
+    for (const definition of definitions) {
+      const contribution = this.createContribution(ownerId, definition);
+      if (replacements.has(contribution.id)) {
+        throw new DuplicateExtensionContributionError(
+          this.kind,
+          contribution.id,
+        );
+      }
+      replacements.set(contribution.id, contribution);
+    }
+
+    const currentIds = [...this.contributions.values()]
+      .filter((contribution) => contribution.ownerId === ownerId)
+      .map((contribution) => contribution.id);
+    if (currentIds.length === 0 && replacements.size === 0) return;
+
+    for (const id of currentIds) {
+      this.contributions.delete(id);
+    }
+    for (const [id, contribution] of replacements) {
+      this.contributions.set(id, contribution);
+    }
+    this.emitChange();
   }
 
   private registerForOwner(
     ownerId: string,
     definition: TDefinition,
   ): ExtensionContributionRegistration<TDefinition> {
-    assertValidId("extension ID", ownerId);
-    assertValidId("contribution ID", definition.id);
-
-    if (!Number.isInteger(definition.apiVersion) || definition.apiVersion < 1) {
-      throw new Error(
-        `Contribution '${definition.id}' must declare a positive integer apiVersion.`,
-      );
-    }
-
-    const id = createContributionId(ownerId, definition.id);
+    const contribution = this.createContribution(ownerId, definition);
+    const id = contribution.id;
     if (this.contributions.has(id)) {
       throw new DuplicateExtensionContributionError(this.kind, id);
     }
-
-    const contribution: RegisteredExtensionContribution<TDefinition> =
-      Object.freeze({
-        id,
-        localId: definition.id,
-        ownerId,
-        registryKind: this.kind,
-        definition: Object.freeze({ ...definition }) as Readonly<TDefinition>,
-      });
 
     this.contributions.set(id, contribution);
     this.emitChange();
@@ -152,10 +165,33 @@ export class ExtensionContributionRegistry<
       dispose: () => {
         if (isDisposed) return;
         isDisposed = true;
-        if (this.contributions.delete(id)) {
+        if (this.contributions.get(id) === contribution) {
+          this.contributions.delete(id);
           this.emitChange();
         }
       },
+    });
+  }
+
+  private createContribution(
+    ownerId: string,
+    definition: TDefinition,
+  ): RegisteredExtensionContribution<TDefinition> {
+    assertValidId("extension ID", ownerId);
+    assertValidId("contribution ID", definition.id);
+
+    if (!Number.isInteger(definition.apiVersion) || definition.apiVersion < 1) {
+      throw new Error(
+        `Contribution '${definition.id}' must declare a positive integer apiVersion.`,
+      );
+    }
+
+    return Object.freeze({
+      id: createContributionId(ownerId, definition.id),
+      localId: definition.id,
+      ownerId,
+      registryKind: this.kind,
+      definition: Object.freeze({ ...definition }) as Readonly<TDefinition>,
     });
   }
 

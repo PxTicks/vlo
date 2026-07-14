@@ -30,7 +30,9 @@ For a static LUT-only package, omit both executable halves and declare
 `contributions.luts` as a package-relative JSON catalogue. Keep each catalogue
 entry owner-local, point it at a regular `.cube` resource, and use
 `extension-fixtures/look-pack/` as the conformance shape. The package still uses
-the exact-digest approval lifecycle, but approval executes no code.
+the exact-digest approval lifecycle, but approval executes no code. Approved,
+compatible entries are projected directly from startup inventory rather than
+through a synthetic frontend activation.
 
 A Pixi filter pack remains an ordinary frontend package. Register each effect as
 `trusted-filter`; use `extension-fixtures/filter-pack/` rather than introducing

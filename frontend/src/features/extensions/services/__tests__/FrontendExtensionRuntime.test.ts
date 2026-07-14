@@ -140,41 +140,19 @@ function createHarness(
 }
 
 describe("FrontendExtensionRuntime", () => {
-  it("activates code-free declarative packages without importing a module", async () => {
+  it("does not treat code-free declarative packages as activation candidates", async () => {
     const item = inventoryItem("example.looks", {
       frontend: false,
       declarative: true,
     });
     const importModule = vi.fn();
-    const registry = new ExtensionContributionRegistry<TestContribution>(
-      "runtime.declarative",
-    );
-    const host = new ExtensionHost<TestApi>({
-      sdkVersion: "1.5.0",
-      createApi: (scope) => {
-        const bound = registry.bind(scope);
-        return { register: (definition) => void bound.register(definition) };
-      },
-    });
-    const runtime = new FrontendExtensionRuntime({
-      host,
-      loadInventory: async () => [item],
-      importModule,
-      composeModule: (_inventoryItem, executableModule) => ({
-        activate(context) {
-          context.api.register({ id: "look", apiVersion: 1, value: "ready" });
-          return executableModule?.activate(context);
-        },
-      }),
-    });
+    const { host, runtime } = createHarness([item], importModule);
 
     const summary = await runtime.start();
 
     expect(importModule).not.toHaveBeenCalled();
-    expect(summary.results).toMatchObject([
-      { extensionId: "example.looks", status: "active" },
-    ]);
-    expect(registry.has("example.looks/look")).toBe(true);
+    expect(summary.results).toEqual([]);
+    expect(host.getState(item.id)).toBeUndefined();
   });
 
   it("rolls trusted patches back on activation failure and deactivation", async () => {

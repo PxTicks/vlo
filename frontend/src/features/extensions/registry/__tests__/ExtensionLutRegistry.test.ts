@@ -1,105 +1,100 @@
-import { describe, expect, it } from "vitest";
-import { ExtensionHost } from "../../ExtensionHost";
-import type { ExtensionInventoryItem } from "../../services/extensionManagementApi";
-import { composeManifestContributions } from "../../services/manifestContributions";
-import { createVloExtensionApi } from "../../services/FrontendExtensionRuntime";
-import type { VloExtensionApi } from "../../types";
-import { ExtensionLutRegistry, extensionLutRegistry } from "../ExtensionLutRegistry";
+import { describe, expect, it, vi } from "vitest";
+import { ExtensionLutRegistry } from "../ExtensionLutRegistry";
 
-function definition(id: string, order: number) {
+const DIGEST_A = `sha256:${"a".repeat(64)}`;
+const DIGEST_B = `sha256:${"b".repeat(64)}`;
+
+function projection(
+  packageDigest: string,
+  luts: readonly { id: string; order: number }[],
+) {
   return {
-    id,
-    apiVersion: 1 as const,
-    label: id.toUpperCase(),
-    order,
-    resourceUrl: `/resources/${id}.cube`,
+    ownerId: "example.looks",
     packageVersion: "1.0.0",
-    packageDigest: `sha256:${"a".repeat(64)}`,
+    packageDigest,
+    luts: luts.map(({ id, order }) => ({
+      id,
+      label: id.toUpperCase(),
+      order,
+      resourceUrl: `/resources/${id}.cube`,
+    })),
   };
 }
 
 describe("ExtensionLutRegistry", () => {
-  it("owner-qualifies, orders, and disposes package LUTs", () => {
+  it("owner-qualifies, orders, and removes projected package LUTs", () => {
     const registry = new ExtensionLutRegistry();
-    const second = registry.registerPackageLut(
-      "example.looks",
-      definition("second", 20),
-    );
-    const first = registry.registerPackageLut(
-      "example.looks",
-      definition("first", 10),
-    );
 
+    expect(
+      registry.reconcilePackages([
+        projection(DIGEST_A, [
+          { id: "second", order: 20 },
+          { id: "first", order: 10 },
+        ]),
+      ]),
+    ).toEqual([]);
     expect(registry.list().map((entry) => entry.id)).toEqual([
       "example.looks/first",
       "example.looks/second",
     ]);
 
-    first.dispose();
-    second.dispose();
+    registry.reconcilePackages([]);
     expect(registry.list()).toEqual([]);
   });
 
-  it("enrolls manifest contributions in the normal activation lifecycle", async () => {
-    const digest = `sha256:${"b".repeat(64)}`;
-    const item: ExtensionInventoryItem = {
-      id: "example.manifest-looks",
-      sourcePath: "/extensions/installed/example.manifest-looks",
-      status: "approved",
-      digest,
-      errors: [],
-      manifest: {
-        manifestVersion: 1,
-        id: "example.manifest-looks",
-        name: "Manifest Looks",
-        version: "1.0.0",
-        sdk: ">=1.0.0 <2.0.0",
-        contributions: { luts: "luts.json" },
-        capabilities: ["color.luts"],
-      },
-      approval: {
-        digest,
-        version: "1.0.0",
-        approvedAt: 1,
-        enabled: true,
-      },
-      backendRuntime: {
-        status: "not_declared",
-        message: "No backend entry point is declared.",
-        digest: null,
-      },
-      preflight: null,
-      frontendEntryUrl: null,
-      lutContributions: [
-        {
-          id: "warm",
-          label: "Warm",
-          description: null,
-          order: 0,
-          resourceUrl: "/resources/warm.cube",
-        },
-      ],
-    };
-    const module = composeManifestContributions(item);
-    expect(module).toBeDefined();
-    const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.5.0",
-      createApi: createVloExtensionApi,
+  it("replaces one package atomically and emits one revision", () => {
+    const registry = new ExtensionLutRegistry();
+    registry.reconcilePackages([
+      projection(DIGEST_A, [{ id: "old", order: 0 }]),
+    ]);
+    const snapshots: string[][] = [];
+    const unsubscribe = registry.subscribe(() => {
+      snapshots.push(registry.list().map((entry) => entry.id));
     });
 
-    try {
-      await host.activate(
-        { id: item.id, version: item.manifest!.version },
-        module!,
-      );
-      expect(
-        extensionLutRegistry.list().some((entry) => entry.id === `${item.id}/warm`),
-      ).toBe(true);
-    } finally {
-      await host.deactivate(item.id);
-    }
-    expect(
-      extensionLutRegistry.list().some((entry) => entry.id === `${item.id}/warm`),
-    ).toBe(false);
+    registry.reconcilePackages([
+      projection(DIGEST_B, [
+        { id: "new-a", order: 0 },
+        { id: "new-b", order: 1 },
+      ]),
+    ]);
+
+    expect(snapshots).toEqual([
+      ["example.looks/new-a", "example.looks/new-b"],
+    ]);
+    unsubscribe();
+  });
+
+  it("fails a malformed replacement closed without exposing a partial set", () => {
+    const registry = new ExtensionLutRegistry();
+    registry.reconcilePackages([
+      projection(DIGEST_A, [{ id: "old", order: 0 }]),
+    ]);
+    const listener = vi.fn();
+    registry.subscribe(listener);
+
+    const failures = registry.reconcilePackages([
+      projection(DIGEST_B, [
+        { id: "duplicate", order: 0 },
+        { id: "duplicate", order: 1 },
+      ]),
+    ]);
+
+    expect(failures).toHaveLength(1);
+    expect(registry.list()).toEqual([]);
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it("does not re-register an unchanged package digest", () => {
+    const registry = new ExtensionLutRegistry();
+    const packageProjection = projection(DIGEST_A, [
+      { id: "stable", order: 0 },
+    ]);
+    registry.reconcilePackages([packageProjection]);
+    const revision = registry.getRevision();
+
+    registry.reconcilePackages([packageProjection]);
+
+    expect(registry.getRevision()).toBe(revision);
   });
 });

@@ -116,6 +116,38 @@ describe("extensionManagementApi", () => {
     expect(items[0]?.manifest?.pythonDependencies?.[0]?.module).toBe("torch");
   });
 
+  it("parses declarative look-pack contributions and resource URLs", async () => {
+    const item = {
+      ...inventoryItem("approved"),
+      manifest: {
+        ...inventoryItem("approved").manifest,
+        frontend: undefined,
+        contributions: { luts: "luts.json" },
+      },
+      frontendEntryUrl: null,
+      lutContributions: [
+        {
+          id: "warm",
+          label: "Warm",
+          description: null,
+          order: 0,
+          resourceUrl: "/app/extensions/example.test/resources/digest/resources/warm.cube",
+        },
+      ],
+    };
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      jsonResponse({ extensions: [item] }),
+    );
+
+    const items = await fetchExtensionInventory();
+
+    expect(items[0]?.manifest?.contributions?.luts).toBe("luts.json");
+    expect(items[0]?.lutContributions?.[0]).toMatchObject({
+      id: "warm",
+      resourceUrl: "/app/extensions/example.test/resources/digest/resources/warm.cube",
+    });
+  });
+
   it("prefixes backend artifact paths for sub-path deployments", () => {
     expect(
       prefixExtensionFrontendEntryUrl(

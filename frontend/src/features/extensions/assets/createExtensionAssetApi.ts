@@ -5,6 +5,11 @@ import {
   getAssets,
   toExtensionAssetSnapshot,
 } from "../../userAssets/api";
+import { ingestExtensionAsset } from "./ingestExtensionAsset";
+
+function abortIfNeeded(signal: AbortSignal): void {
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+}
 
 export function createExtensionAssetApi(scope: ExtensionApiScope): ExtensionAssetApi {
   const api: ExtensionAssetApi = {
@@ -14,14 +19,15 @@ export function createExtensionAssetApi(scope: ExtensionApiScope): ExtensionAsse
       return asset ? toExtensionAssetSnapshot(asset) : undefined;
     },
     readBlob: async (assetId: string) => {
-      if (scope.signal.aborted) throw new DOMException("Aborted", "AbortError");
+      abortIfNeeded(scope.signal);
       const file = await ensureAssetFileLoaded(assetId);
-      if (scope.signal.aborted) throw new DOMException("Aborted", "AbortError");
+      abortIfNeeded(scope.signal);
       if (!file) {
         throw new Error(`Asset '${assetId}' bytes are unavailable.`);
       }
       return file;
     },
+    ingest: (input) => ingestExtensionAsset(input, scope.signal),
   };
   return Object.freeze(api);
 }

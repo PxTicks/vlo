@@ -23,6 +23,7 @@ from services.extensions.package_digest import (
 
 _METADATA_FILE_NAME = ".vlo-artifact.json"
 _METADATA_SCHEMA_VERSION = 1
+_PACKAGE_RESOURCE_DIRECTORY = ".vlo-resources"
 _EXTENSION_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$")
 
 
@@ -30,11 +31,19 @@ class FrontendArtifactError(ValueError):
     """Raised when approved frontend artifacts cannot be staged or read safely."""
 
 
+def staged_package_resource_path(package_relative_path: str) -> str:
+    normalized = validate_package_relative_path(
+        package_relative_path,
+        "package resource path",
+    )
+    return (PurePosixPath(_PACKAGE_RESOURCE_DIRECTORY) / normalized).as_posix()
+
+
 @dataclass(frozen=True)
 class StagedFrontendArtifacts:
     extension_id: str
     digest: str
-    entry_path: str
+    entry_path: str | None
 
 
 class FrontendArtifactStore:
@@ -60,21 +69,65 @@ class FrontendArtifactStore:
         expected_digest: str,
     ) -> StagedFrontendArtifacts | None:
         manifest = item.manifest
-        if manifest is None or manifest.frontend is None:
+        if manifest is None or (
+            manifest.frontend is None and not item.lut_contributions
+        ):
             return None
         if item.digest != expected_digest or not is_package_digest(expected_digest):
             raise FrontendArtifactError("package digest changed before artifact staging")
 
-        entry = PurePosixPath(manifest.frontend.entry)
-        bundle_root = entry.parent
-        entry_path = entry.relative_to(bundle_root).as_posix()
+        entry = (
+            PurePosixPath(manifest.frontend.entry)
+            if manifest.frontend is not None
+            else None
+        )
+        bundle_root = entry.parent if entry is not None else None
+        entry_path = (
+            entry.relative_to(bundle_root).as_posix()
+            if entry is not None and bundle_root is not None
+            else None
+        )
         package_snapshot = inspect_package_snapshot(item.package_dir)
-        artifact_paths = [
-            snapshot.relative_path
-            for snapshot in package_snapshot
-            if PurePosixPath(snapshot.relative_path).is_relative_to(bundle_root)
-        ]
-        if manifest.frontend.entry not in artifact_paths:
+        staged_paths: list[tuple[str, PurePosixPath]] = []
+        staged_path_keys: set[tuple[str, str]] = set()
+        destination_sources: dict[str, str] = {}
+
+        def add_staged_path(source: str, destination: PurePosixPath) -> None:
+            destination_text = destination.as_posix()
+            key = (source, destination_text)
+            if key in staged_path_keys:
+                return
+            previous_source = destination_sources.get(destination_text)
+            if previous_source is not None and previous_source != source:
+                raise FrontendArtifactError(
+                    "frontend bundle and package resources collide at "
+                    f"'{destination_text}'"
+                )
+            staged_path_keys.add(key)
+            destination_sources[destination_text] = source
+            staged_paths.append((source, destination))
+
+        if bundle_root is not None:
+            for snapshot in package_snapshot:
+                source = PurePosixPath(snapshot.relative_path)
+                if source.is_relative_to(bundle_root):
+                    add_staged_path(
+                        snapshot.relative_path,
+                        source.relative_to(bundle_root),
+                    )
+        for contribution in item.lut_contributions:
+            add_staged_path(
+                contribution.path,
+                PurePosixPath(staged_package_resource_path(contribution.path)),
+            )
+
+        if (
+            manifest.frontend is not None
+            and (
+                entry_path is None
+                or (manifest.frontend.entry, entry_path) not in staged_path_keys
+            )
+        ):
             raise FrontendArtifactError("frontend entry disappeared before staging")
 
         destination = self._destination(item.extension_id, expected_digest)
@@ -94,10 +147,11 @@ class FrontendArtifactStore:
         temporary = destination.parent / f".{destination.name}.{uuid4().hex}.tmp"
         temporary.mkdir(mode=0o700)
         try:
-            contents = read_package_files_bytes(item.package_dir, artifact_paths)
-            for package_relative in artifact_paths:
-                source_relative = PurePosixPath(package_relative)
-                staged_relative = source_relative.relative_to(bundle_root)
+            contents = read_package_files_bytes(
+                item.package_dir,
+                list(dict.fromkeys(source for source, _destination in staged_paths)),
+            )
+            for package_relative, staged_relative in staged_paths:
                 self._write_staged_file(
                     temporary,
                     staged_relative,
@@ -179,6 +233,28 @@ class FrontendArtifactStore:
             self._assert_no_symlink_path(destination, entry)
             return entry.is_file()
         except (FrontendArtifactError, ValueError):
+            return False
+
+    def has_path(self, extension_id: str, digest: str, artifact_path: str) -> bool:
+        """Return whether one immutable staged package resource is available."""
+
+        try:
+            normalized_path = validate_package_relative_path(
+                artifact_path,
+                "package resource path",
+            )
+            destination = self._destination(extension_id, digest)
+            self._assert_no_symlink_path(self._root, destination)
+            metadata = self._read_metadata(destination)
+            if (
+                metadata.get("extensionId") != extension_id
+                or metadata.get("digest") != digest
+            ):
+                return False
+            artifact = destination.joinpath(*PurePosixPath(normalized_path).parts)
+            self._assert_no_symlink_path(destination, artifact)
+            return artifact.is_file() and not artifact.is_symlink()
+        except (FrontendArtifactError, ValueError, OSError):
             return False
 
     def read(self, extension_id: str, digest: str, artifact_path: str) -> bytes:

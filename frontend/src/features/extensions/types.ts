@@ -128,6 +128,7 @@ export type {
 
 export type {
   ExtensionAssetApi,
+  ExtensionAssetIngestInput,
   ExtensionBackendApi,
   ExtensionBackendArtifact,
   ExtensionBackendArtifactUploadOptions,

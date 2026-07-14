@@ -14,6 +14,9 @@
 # Authoring packages and executable conformance fixtures.
 /extension-template/** extension-surface=authoring
 /extensions/extension-development/** extension-surface=authoring
+/extensions/README.md extension-surface=authoring
+/extensions/.gitignore extension-surface=authoring
+/extensions/installed/.gitkeep extension-surface=authoring
 /extension-fixtures/** extension-surface=fixture
 /backend/tests/test_extension*.py extension-surface=fixture
 /backend/tests/test_backend_extension_runtime.py extension-surface=fixture
@@ -30,6 +33,9 @@
 /frontend/src/core/pixi/activeApplication.ts extension-surface=adapter
 /frontend/src/core/playback/PlaybackClock.ts extension-surface=adapter
 /frontend/src/features/colorGrading/components/GradeManagementControl.tsx extension-surface=adapter
+/frontend/src/features/colorGrading/components/LutControl.tsx extension-surface=adapter
+/frontend/src/features/colorGrading/gradeParameters.ts extension-surface=adapter
+/frontend/src/features/userAssets/services/AssetService.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
 /frontend/src/features/project/constants.ts extension-surface=adapter
@@ -76,6 +82,10 @@
 /docs/extension-system-plan.md extension-surface=governance
 /docs/trusted-extension-authority-plan.md extension-surface=governance
 /docs/trusted-extension-authority.md extension-surface=governance
+/docs/extension-look-and-filter-packs.md extension-surface=governance
+/docs/grading-extension-surface-plan.md extension-surface=governance
+/docs/deep_dive/extensions-architecture-review.md extension-surface=governance
+/backend/config.py extension-surface=governance
 /frontend/vite.config.ts extension-surface=governance
 /package.json extension-surface=governance
 /scripts/check-extension-surface.mjs extension-surface=governance

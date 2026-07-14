@@ -84,6 +84,60 @@ describe("GradeManagementControl", () => {
     });
   });
 
+  it("does not carry a project-local LUT ID through user presets", async () => {
+    useGradePresetStore.setState({
+      presets: [
+        {
+          id: "legacy-lut-preset",
+          name: "Legacy LUT preset",
+          parameters: { exposure: 0.5, lutAssetId: "other-project-lut" },
+          createdAt: 1,
+        },
+      ],
+    });
+    const onCommitMany = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <GradeManagementControl
+        control={control}
+        value={undefined}
+        values={{ exposure: 0 }}
+        onCommit={vi.fn()}
+        onCommitMany={onCommitMany}
+        groupId="grade"
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("option", { name: "Legacy LUT preset" }));
+
+    expect(onCommitMany).toHaveBeenCalledWith({ exposure: 0.5 });
+  });
+
+  it("tells the user when saving omits a project-local LUT", () => {
+    render(
+      <GradeManagementControl
+        control={control}
+        value={undefined}
+        values={{ exposure: 0.5, lutAssetId: "project-lut" }}
+        onCommit={vi.fn()}
+        onCommitMany={vi.fn()}
+        groupId="grade"
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Preset name"), {
+      target: { value: "Portable" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save grade preset" }));
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Saved Portable without its project-local LUT",
+    );
+    expect(useGradePresetStore.getState().presets[0].parameters).toEqual({
+      exposure: 0.5,
+    });
+  });
+
   it("applies a contributed preset and drops it when the extension deactivates", async () => {
     const registration = registerExtensionPreset();
     const onCommitMany = vi.fn();

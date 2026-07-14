@@ -5,7 +5,11 @@ conformance fixture, or verifying activation.
 
 ## Start from the official package shape
 
-Copy or follow `extension-template/`. Keep at minimum:
+Executable packages copy or follow `extension-template/`. Install packages as
+direct children of `extensions/installed/`; `extensions/extension-development/`
+is authoring tooling and is deliberately outside runtime discovery.
+
+Keep at minimum:
 
 ```text
 extension-package/
@@ -21,6 +25,16 @@ extension-package/
 
 Omit a half that the extension does not need. Keep Python runtime data under
 `backend/` because only that subtree is staged for backend activation.
+
+For a static LUT-only package, omit both executable halves and declare
+`contributions.luts` as a package-relative JSON catalogue. Keep each catalogue
+entry owner-local, point it at a regular `.cube` resource, and use
+`extension-fixtures/look-pack/` as the conformance shape. The package still uses
+the exact-digest approval lifecycle, but approval executes no code.
+
+A Pixi filter pack remains an ordinary frontend package. Register each effect as
+`trusted-filter`; use `extension-fixtures/filter-pack/` rather than introducing
+a parallel shader loader.
 
 Set manifest version, globally namespaced extension ID, display name, semantic
 version, supported SDK range, explicit frontend/backend entries, and honest

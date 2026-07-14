@@ -80,7 +80,7 @@ function statusMessage(item: ExtensionInventoryItem) {
     return (
       <Alert severity="warning">
         Package bytes changed after approval. Review and approve the new digest
-        before any code can run.
+        before the package can activate.
       </Alert>
     );
   }
@@ -240,6 +240,16 @@ function ExtensionCard({
               {item.id}
               {manifest ? ` · v${manifest.version}` : ""}
             </Typography>
+            <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
+              <Chip
+                size="small"
+                variant="outlined"
+                label={manifest?.contributions?.luts ? "Look pack" : "Extension"}
+              />
+              {manifest?.capabilities.includes("render.filter-pack") ? (
+                <Chip size="small" variant="outlined" label="Filter pack" />
+              ) : null}
+            </Stack>
           </Box>
           <Chip
             size="small"
@@ -303,11 +313,17 @@ function ExtensionCard({
                 <strong>{VLO_APP_VERSION ?? "unknown"}</strong>
               </Typography>
             ) : null}
-            <Typography variant="body2">
-              Entry points: {[manifest.frontend?.entry, manifest.backend?.entry]
-                .filter((entry): entry is string => Boolean(entry))
-                .join(", ")}
-            </Typography>
+            {[manifest.frontend?.entry, manifest.backend?.entry].some(Boolean) ? (
+              <Typography variant="body2">
+                Entry points: {[manifest.frontend?.entry, manifest.backend?.entry]
+                  .filter((entry): entry is string => Boolean(entry))
+                  .join(", ")}
+              </Typography>
+            ) : (
+              <Typography variant="body2">
+                Declarative package; no executable entry point.
+              </Typography>
+            )}
             <Box>
               <Typography variant="caption" color="text.secondary">
                 Requested capabilities
@@ -379,12 +395,19 @@ function ExtensionApprovalDialog({
       <DialogTitle>Trust and approve extension?</DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
-          <Alert severity="warning">
-            Approved extensions are trusted code. Frontend code can access the
-            editor and browser context; backend code runs with the backend
-            process&apos;s authority. Capability declarations are informational,
-            not enforced permissions.
-          </Alert>
+          {manifest?.frontend || manifest?.backend ? (
+            <Alert severity="warning">
+              Approved extensions are trusted code. Frontend code can access the
+              editor and browser context; backend code runs with the backend
+              process&apos;s authority. Capability declarations are informational,
+              not enforced permissions.
+            </Alert>
+          ) : (
+            <Alert severity="info">
+              This package contains declarative resources only; approval exposes
+              its exact digest to the editor but does not execute package code.
+            </Alert>
+          )}
           <Typography>
             Approve <strong>{manifest?.name ?? item?.id}</strong> only if you
             trust its source and have reviewed the requested capabilities.

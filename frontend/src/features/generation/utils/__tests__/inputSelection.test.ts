@@ -654,6 +654,21 @@ describe("inputSelection", () => {
     await expect(renderAssetToMaskMp4("audio")).rejects.toThrow(
       "Cannot derive a transparency mask from audio",
     );
+    useAssetStore.setState({
+      assets: [
+        {
+          id: "lut",
+          name: "look.cube",
+          type: "lut",
+          src: "blob:lut",
+          hash: "lut",
+          createdAt: 0,
+        },
+      ],
+    });
+    await expect(renderAssetToMaskMp4("lut")).rejects.toThrow(
+      "Cannot derive a transparency mask from lut",
+    );
   });
 
   it("renders image transparency masks with a synthetic one-frame project", async () => {

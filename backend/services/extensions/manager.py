@@ -9,10 +9,12 @@ from typing import Literal
 
 from services.extensions.approval_store import ExtensionApproval, ExtensionApprovalStore
 from services.extensions.manifest import (
+    ExtensionLutContribution,
     ExtensionManifest,
     ExtensionManifestError,
     backend_entry_candidates,
     load_extension_manifest,
+    load_extension_lut_catalog,
     is_stable_semver_range_compatible,
 )
 from services.extensions.host_version import VLO_APPLICATION_VERSION
@@ -47,6 +49,7 @@ class ExtensionInventoryItem:
     status: ExtensionInventoryStatus
     errors: tuple[str, ...] = ()
     approval: ExtensionApproval | None = None
+    lut_contributions: tuple[ExtensionLutContribution, ...] = ()
 
     @property
     def is_approved_for_activation(self) -> bool:
@@ -212,6 +215,7 @@ class ExtensionManager:
         errors: list[str] = []
         manifest: ExtensionManifest | None = None
         digest: str | None = None
+        lut_contributions: tuple[ExtensionLutContribution, ...] = ()
         extension_id = package_dir.name
 
         if package_dir.is_symlink():
@@ -230,6 +234,14 @@ class ExtensionManager:
             else:
                 extension_id = manifest.id
             errors.extend(self._validate_entry_artifacts(package_dir, manifest))
+            if not errors:
+                try:
+                    lut_contributions = load_extension_lut_catalog(
+                        package_dir,
+                        manifest,
+                    )
+                except ExtensionManifestError as exc:
+                    errors.append(str(exc))
 
         if not errors:
             try:
@@ -251,6 +263,7 @@ class ExtensionManager:
             status=status,
             errors=tuple(errors),
             approval=approval,
+            lut_contributions=lut_contributions,
         )
 
     def _get_package_digest(self, package_dir: Path, *, force: bool) -> str:

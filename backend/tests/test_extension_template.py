@@ -34,6 +34,11 @@ LAYOUT_PROMPT_FIXTURE_ROOT = (
 TRUSTED_HOST_FIXTURE_ROOT = (
     REPOSITORY_ROOT / "extension-fixtures" / "trusted-host-access"
 )
+LOOK_PACK_FIXTURE_ROOT = REPOSITORY_ROOT / "extension-fixtures" / "look-pack"
+FILTER_PACK_FIXTURE_ROOT = REPOSITORY_ROOT / "extension-fixtures" / "filter-pack"
+GRADING_TOOLS_FIXTURE_ROOT = (
+    REPOSITORY_ROOT / "extension-fixtures" / "grading-tools"
+)
 SDK_ROOT = REPOSITORY_ROOT / "packages" / "extension-sdk"
 NODE_EXECUTABLE = shutil.which("node")
 TYPESCRIPT_CLI = (
@@ -97,6 +102,26 @@ def _copy_trusted_host_fixture_workspace(tmp_path: Path) -> Path:
     fixture = workspace / "extension-fixtures" / "trusted-host-access"
     fixture.parent.mkdir(parents=True)
     shutil.copytree(TRUSTED_HOST_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_filter_pack_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "filter-pack"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(FILTER_PACK_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_grading_tools_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "grading-tools"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(GRADING_TOOLS_FIXTURE_ROOT, fixture)
     shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return fixture
@@ -228,6 +253,52 @@ def test_official_template_builds_and_activates_through_approval_path(
         "sdkVersion": EXTENSION_SDK_VERSION,
     }
     assert asyncio.run(runtime.stop()) == ()
+
+
+def test_declarative_look_pack_scans_without_executable_entries(tmp_path: Path):
+    extensions_root = tmp_path / "extensions"
+    package_dir = extensions_root / "example.look-pack"
+    shutil.copytree(LOOK_PACK_FIXTURE_ROOT, package_dir)
+    manager = ExtensionManager(
+        extensions_root,
+        ExtensionApprovalStore(tmp_path / "state" / "approvals.json"),
+    )
+
+    item = manager.scan(force_digest=True)[0]
+
+    assert item.status == "pending_approval"
+    assert item.manifest is not None
+    assert item.manifest.frontend is None
+    assert item.manifest.backend is None
+    assert [(lut.id, lut.path) for lut in item.lut_contributions] == [
+        ("clean-warm", "luts/clean-warm.cube")
+    ]
+
+
+def test_filter_pack_fixture_builds_as_an_ordinary_trusted_extension(
+    tmp_path: Path,
+):
+    fixture = _copy_filter_pack_fixture_workspace(tmp_path)
+    _build_template(fixture)
+
+    bundle = fixture / "frontend" / "dist" / "index.js"
+    assert bundle.is_file()
+    contents = bundle.read_bytes()
+    assert b"trusted-filter" in contents
+    assert b"example-filter-pack-desaturate" in contents
+
+
+def test_grading_tools_fixture_builds_with_project_asset_ingestion(
+    tmp_path: Path,
+):
+    fixture = _copy_grading_tools_fixture_workspace(tmp_path)
+    _build_template(fixture)
+
+    bundle = fixture / "frontend" / "dist" / "index.js"
+    assert bundle.is_file()
+    contents = bundle.read_bytes()
+    assert b"grading-tools-identity.cube" in contents
+    assert b"Attach project identity LUT" in contents
 
 
 def test_official_template_rejects_duplicate_host_singletons(tmp_path: Path):

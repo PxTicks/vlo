@@ -356,6 +356,35 @@ describe("AssetService", () => {
     expect(mockProcessor.computeDuration).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects an expected type mismatch before hashing or persistence", async () => {
+    const file = new File(["video"], "mislabeled.mp4", {
+      type: "video/mp4",
+    });
+    const persistAssetEntry = vi.spyOn(
+      projectPersistenceService,
+      "persistAssetEntry",
+    );
+
+    const result = await assetService.ingestAssetWithResult(
+      file,
+      false,
+      false,
+      [],
+      { source: "uploaded" },
+      undefined,
+      undefined,
+      { expectedType: "image" },
+    );
+
+    expect(result).toEqual({
+      status: "skipped",
+      reason: "type_mismatch",
+    });
+    expect(mediaProcessingService.computeChecksum).not.toHaveBeenCalled();
+    expect(fileSystemService.saveAssetFile).not.toHaveBeenCalled();
+    expect(persistAssetEntry).not.toHaveBeenCalled();
+  });
+
   it("reuses an existing generation mask asset when the hash matches", async () => {
     const maskFile = new File(["mask"], "generation-mask.mp4", {
       type: "video/mp4",

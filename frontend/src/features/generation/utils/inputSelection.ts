@@ -465,9 +465,9 @@ export async function renderAssetToMaskMp4(
   if (!asset) {
     throw new Error(`Asset '${assetId}' not found`);
   }
-  if (asset.type === "audio") {
+  if (asset.type !== "image" && asset.type !== "video") {
     throw new Error(
-      `Cannot derive a transparency mask from audio asset '${assetId}'`,
+      `Cannot derive a transparency mask from ${asset.type} asset '${assetId}'`,
     );
   }
 

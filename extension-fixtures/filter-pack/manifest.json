@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "example.filter-pack",
+  "name": "Example Pixi Filter Pack",
+  "version": "1.0.0",
+  "sdk": ">=1.5.0 <2.0.0",
+  "frontend": {
+    "entry": "frontend/dist/index.js"
+  },
+  "capabilities": ["render.filter-pack", "render.custom-shader"]
+}

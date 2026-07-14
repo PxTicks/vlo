@@ -58,8 +58,9 @@ normally needs lifecycle, assets/timeline, UI, backend jobs, and packaging.
 2. List the frontend and backend contributions the extension needs.
 3. Define a globally namespaced manifest ID, stable local contribution IDs,
    versioned JSON data, capabilities, and teardown first.
-4. Start from `extension-template/` or preserve its type-only SDK/runtime-singleton
-   rules in an existing package.
+4. Use a code-free declarative look pack for static `.cube` resources, an
+   ordinary `trusted-filter` frontend extension for Pixi filter packs, or start
+   other executable work from `extension-template/`.
 5. Register contributions inside `activate(context)`; use scoped APIs first and
    `api.trusted.host` when they are materially insufficient.
 6. Put user-visible writes in synchronous labelled transactions.
@@ -79,6 +80,8 @@ normally needs lifecycle, assets/timeline, UI, backend jobs, and packaging.
 - Keep render and animation callbacks synchronous, deterministic, and cacheable.
   Move I/O and heavy AI/model work into backend jobs.
 - Preserve identical provider behaviour in live preview, still capture, and export.
+- Treat installed package resources as sources. Materialize durable bytes through
+  `assets.ingest` before persisting their project asset ID.
 - Obtain live frontend internals through `api.trusted.host`, not runtime source-tree
   imports that may fail or bundle duplicate module state.
 - Keep host attachment, compositing, and final destruction of Pixi objects in host

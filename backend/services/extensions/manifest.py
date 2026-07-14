@@ -44,9 +44,11 @@ _SDK_COMPARATOR_PATTERN = re.compile(
     r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))"
 )
 _MAX_MANIFEST_BYTES = 1024 * 1024
+_MAX_LUT_CATALOG_BYTES = 1024 * 1024
+MAX_EXTENSION_LUT_BYTES = 16 * 1024 * 1024
 # Runtime deployments do not need the TypeScript authoring package. Its package
 # version is the release authority, with a contract test keeping this copy aligned.
-EXTENSION_SDK_VERSION = "1.4.0"
+EXTENSION_SDK_VERSION = "1.5.0"
 
 
 class ExtensionManifestError(ValueError):
@@ -192,6 +194,81 @@ class PythonDependency(_ManifestModel):
         return normalized
 
 
+class ExtensionContributions(_ManifestModel):
+    """Declarative package contributions that require no executable entry."""
+
+    luts: str | None = Field(default=None, min_length=1, max_length=512)
+
+    @field_validator("luts")
+    @classmethod
+    def validate_lut_catalog(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = validate_package_relative_path(value, "LUT catalogue")
+        if PurePosixPath(normalized).suffix.lower() != ".json":
+            raise ValueError("LUT catalogue must be a .json file")
+        return normalized
+
+
+class ExtensionLutContribution(_ManifestModel):
+    id: str = Field(min_length=1, max_length=128)
+    label: str = Field(min_length=1, max_length=200)
+    path: str = Field(min_length=1, max_length=512)
+    description: str | None = Field(default=None, max_length=500)
+    order: float = Field(default=0, allow_inf_nan=False)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        if not _EXTENSION_ID_PATTERN.fullmatch(value):
+            raise ValueError(
+                "LUT ID must use lowercase letters, numbers, dots, underscores, or hyphens"
+            )
+        return value
+
+    @field_validator("label")
+    @classmethod
+    def validate_label(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("LUT label cannot be blank")
+        return normalized
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        normalized = validate_package_relative_path(value, "LUT resource")
+        if PurePosixPath(normalized).suffix.lower() != ".cube":
+            raise ValueError("LUT resource must be a .cube file")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class ExtensionLutCatalog(_ManifestModel):
+    api_version: Literal[1] = Field(alias="apiVersion")
+    luts: list[ExtensionLutContribution] = Field(min_length=1, max_length=500)
+
+    @field_validator("luts")
+    @classmethod
+    def validate_unique_ids(
+        cls,
+        values: list[ExtensionLutContribution],
+    ) -> list[ExtensionLutContribution]:
+        seen: set[str] = set()
+        for value in values:
+            if value.id in seen:
+                raise ValueError(f"duplicate LUT ID '{value.id}'")
+            seen.add(value.id)
+        return values
+
+
 class ExtensionManifest(_ManifestModel):
     manifest_version: Literal[1] = Field(alias="manifestVersion")
     id: str = Field(min_length=1, max_length=128)
@@ -201,6 +278,7 @@ class ExtensionManifest(_ManifestModel):
     vlo: str | None = Field(default=None, min_length=1, max_length=200)
     frontend: FrontendExtensionEntry | None = None
     backend: BackendExtensionEntry | None = None
+    contributions: ExtensionContributions | None = None
     capabilities: list[str] = Field(default_factory=list, max_length=100)
     python_dependencies: list[PythonDependency] = Field(
         default_factory=list,
@@ -280,8 +358,17 @@ class ExtensionManifest(_ManifestModel):
 
     @model_validator(mode="after")
     def require_entry_point(self) -> "ExtensionManifest":
-        if self.frontend is None and self.backend is None:
-            raise ValueError("manifest must declare a frontend or backend entry")
+        has_declarative_contribution = (
+            self.contributions is not None and self.contributions.luts is not None
+        )
+        if (
+            self.frontend is None
+            and self.backend is None
+            and not has_declarative_contribution
+        ):
+            raise ValueError(
+                "manifest must declare a frontend, backend, or declarative contribution"
+            )
         return self
 
 
@@ -337,6 +424,67 @@ def load_extension_manifest(manifest_path: Path) -> ExtensionManifest:
         return ExtensionManifest.model_validate(raw)
     except ValidationError as exc:
         raise ExtensionManifestError(f"manifest validation failed: {exc}") from exc
+
+
+def load_extension_lut_catalog(
+    package_dir: Path,
+    manifest: ExtensionManifest,
+) -> tuple[ExtensionLutContribution, ...]:
+    """Validate a declarative LUT catalogue and its inert package resources."""
+
+    catalog_path_value = (
+        manifest.contributions.luts
+        if manifest.contributions is not None
+        else None
+    )
+    if catalog_path_value is None:
+        return ()
+
+    catalog_path = package_dir.joinpath(*PurePosixPath(catalog_path_value).parts)
+    try:
+        catalog_stat = catalog_path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise ExtensionManifestError(f"cannot read LUT catalogue: {exc}") from exc
+    if catalog_path.is_symlink() or not catalog_path.is_file():
+        raise ExtensionManifestError("LUT catalogue must be a regular file")
+    if catalog_stat.st_size > _MAX_LUT_CATALOG_BYTES:
+        raise ExtensionManifestError("LUT catalogue exceeds the 1 MiB size limit")
+
+    try:
+        raw = json.loads(
+            catalog_path.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_keys,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ExtensionManifestError(
+            f"LUT catalogue is not valid UTF-8 JSON: {exc}"
+        ) from exc
+
+    try:
+        catalog = ExtensionLutCatalog.model_validate(raw)
+    except ValidationError as exc:
+        raise ExtensionManifestError(
+            f"LUT catalogue validation failed: {exc}"
+        ) from exc
+
+    for contribution in catalog.luts:
+        resource_path = package_dir.joinpath(*PurePosixPath(contribution.path).parts)
+        try:
+            resource_stat = resource_path.stat(follow_symlinks=False)
+        except OSError as exc:
+            raise ExtensionManifestError(
+                f"cannot read LUT resource '{contribution.path}': {exc}"
+            ) from exc
+        if resource_path.is_symlink() or not resource_path.is_file():
+            raise ExtensionManifestError(
+                f"LUT resource must be a regular file: {contribution.path}"
+            )
+        if resource_stat.st_size > MAX_EXTENSION_LUT_BYTES:
+            raise ExtensionManifestError(
+                f"LUT resource exceeds the 16 MiB size limit: {contribution.path}"
+            )
+
+    return tuple(catalog.luts)
 
 
 def backend_entry_candidates(package_dir: Path, entry: str) -> tuple[Path, Path]:

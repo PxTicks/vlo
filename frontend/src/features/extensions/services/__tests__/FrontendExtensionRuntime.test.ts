@@ -40,6 +40,7 @@ function inventoryItem(
     sdk?: string;
     vlo?: string;
     frontend?: boolean;
+    declarative?: boolean;
     backend?: boolean;
     backendStatus?: ExtensionInventoryItem["backendRuntime"]["status"];
   } = {},
@@ -61,7 +62,7 @@ function inventoryItem(
       sdk: options.sdk ?? ">=1.0.0 <2.0.0",
       ...(options.vlo ? { vlo: options.vlo } : {}),
       ...(frontend ? { frontend: { entry: "frontend/dist/index.js" } } : {}),
-      ...(!frontend || options.backend
+      ...((!frontend && !options.declarative) || options.backend
         ? {
             backend: {
               mode: "in_process" as const,
@@ -70,6 +71,9 @@ function inventoryItem(
           }
         : {}),
       capabilities: [],
+      ...(options.declarative
+        ? { contributions: { luts: "luts.json" } }
+        : {}),
     },
     approval:
       status === "approved"
@@ -93,6 +97,19 @@ function inventoryItem(
       ? `/app/extensions/${id}/frontend/${digest}/index.js`
       : null,
     preflight: null,
+    ...(options.declarative
+      ? {
+          lutContributions: [
+            {
+              id: "look",
+              label: "Look",
+              description: null,
+              order: 0,
+              resourceUrl: `/app/extensions/${id}/resources/${digest}/resources/look.cube`,
+            },
+          ],
+        }
+      : {}),
   };
 }
 
@@ -123,6 +140,43 @@ function createHarness(
 }
 
 describe("FrontendExtensionRuntime", () => {
+  it("activates code-free declarative packages without importing a module", async () => {
+    const item = inventoryItem("example.looks", {
+      frontend: false,
+      declarative: true,
+    });
+    const importModule = vi.fn();
+    const registry = new ExtensionContributionRegistry<TestContribution>(
+      "runtime.declarative",
+    );
+    const host = new ExtensionHost<TestApi>({
+      sdkVersion: "1.5.0",
+      createApi: (scope) => {
+        const bound = registry.bind(scope);
+        return { register: (definition) => void bound.register(definition) };
+      },
+    });
+    const runtime = new FrontendExtensionRuntime({
+      host,
+      loadInventory: async () => [item],
+      importModule,
+      composeModule: (_inventoryItem, executableModule) => ({
+        activate(context) {
+          context.api.register({ id: "look", apiVersion: 1, value: "ready" });
+          return executableModule?.activate(context);
+        },
+      }),
+    });
+
+    const summary = await runtime.start();
+
+    expect(importModule).not.toHaveBeenCalled();
+    expect(summary.results).toMatchObject([
+      { extensionId: "example.looks", status: "active" },
+    ]);
+    expect(registry.has("example.looks/look")).toBe(true);
+  });
+
   it("rolls trusted patches back on activation failure and deactivation", async () => {
     const target = { value: "original" };
     const host = new ExtensionHost<VloExtensionApi>({
@@ -408,6 +462,22 @@ describe("FrontendExtensionRuntime", () => {
         status: "active",
       }),
     ]);
+  });
+
+  it("rejects a frontend package with no staged entry URL before compatibility or import", async () => {
+    const item = inventoryItem("example.missing-entry", { sdk: ">=2.0.0" });
+    item.frontendEntryUrl = null;
+    const importModule = vi.fn(async () => ({ activate: vi.fn() }));
+    const { runtime } = createHarness([item], importModule);
+
+    const summary = await runtime.start();
+
+    expect(importModule).not.toHaveBeenCalled();
+    expect(summary.results[0]).toMatchObject({
+      status: "failed",
+      stage: "validation",
+      message: expect.stringContaining("content-addressed entry URL"),
+    });
   });
 
   it("fails closed before import for incompatible SDK ranges", async () => {

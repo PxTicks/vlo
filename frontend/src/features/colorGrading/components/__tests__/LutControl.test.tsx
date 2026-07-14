@@ -1,20 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { parseCubeLut } from "../../../../core/color";
 import type { CustomControlRenderProps } from "../../../panelUI";
 import type { Asset } from "../../../../types/Asset";
+import { extensionLutRegistry } from "../../../extensions/registry/publicApi";
 
-const { useAssetMock, addLocalAssetMock, ensureAssetFileLoadedMock } =
+const {
+  useAssetMock,
+  ensureAssetFileLoadedMock,
+  ingestExtensionAssetMock,
+} =
   vi.hoisted(() => ({
     useAssetMock: vi.fn<(assetId: string | null | undefined) => Asset | undefined>(),
-    addLocalAssetMock: vi.fn<(file: File) => Promise<Asset | null>>(),
     ensureAssetFileLoadedMock: vi.fn<(assetId: string) => Promise<File | null>>(),
+    ingestExtensionAssetMock: vi.fn(),
   }));
 
 vi.mock("../../../userAssets", () => ({
   useAsset: useAssetMock,
-  addLocalAsset: addLocalAssetMock,
   ensureAssetFileLoaded: ensureAssetFileLoadedMock,
+}));
+
+vi.mock("../../../extensions/assets/publicApi", () => ({
+  ingestExtensionAsset: ingestExtensionAssetMock,
 }));
 
 import { LutControl } from "../LutControl";
@@ -74,6 +82,7 @@ function renderControl(
 describe("LutControl", () => {
   beforeEach(() => {
     useAssetMock.mockReturnValue(undefined);
+    ingestExtensionAssetMock.mockResolvedValue({ id: "lut-asset-1" });
   });
 
   afterEach(() => {
@@ -81,7 +90,6 @@ describe("LutControl", () => {
   });
 
   it("ingests a browsed .cube file and commits its asset id", async () => {
-    addLocalAssetMock.mockResolvedValue({ id: "lut-asset-1" } as Asset);
     const onCommitMany = renderControl({ lutAssetId: null, lutIntensity: 1 });
 
     const input = document.querySelector<HTMLInputElement>(
@@ -96,10 +104,111 @@ describe("LutControl", () => {
     await waitFor(() =>
       expect(onCommitMany).toHaveBeenCalledWith({ lutAssetId: "lut-asset-1" }),
     );
-    expect(addLocalAssetMock).toHaveBeenCalledWith(file);
+    expect(ingestExtensionAssetMock).toHaveBeenCalledWith({
+      name: "identity.cube",
+      type: "lut",
+      blob: file,
+    });
   });
 
-  it("rejects malformed cube files before they become assets", async () => {
+  it("materializes a contributed look-pack LUT before committing it", async () => {
+    const registration = extensionLutRegistry.registerPackageLut(
+      "example.looks",
+      {
+        id: "warm",
+        apiVersion: 1,
+        label: "Warm",
+        order: 0,
+        resourceUrl: "/look-pack/warm.cube",
+        packageVersion: "1.0.0",
+        packageDigest: `sha256:${"a".repeat(64)}`,
+      },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers(),
+        blob: async () => new Blob([IDENTITY_2_CUBE], { type: "text/plain" }),
+      })),
+    );
+    ingestExtensionAssetMock.mockResolvedValue({ id: "project-lut" });
+    const onCommitMany = renderControl({ lutAssetId: null, lutIntensity: 1 });
+
+    try {
+      fireEvent.mouseDown(screen.getByRole("combobox"));
+      fireEvent.click(await screen.findByText("Warm — example.looks"));
+
+      await waitFor(() =>
+        expect(onCommitMany).toHaveBeenCalledWith({ lutAssetId: "project-lut" }),
+      );
+      expect(ingestExtensionAssetMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "example.looks.warm.cube",
+          type: "lut",
+        }),
+      );
+      expect(
+        screen.getByText(/LUT is now stored in this project/i),
+      ).toBeInTheDocument();
+
+      fireEvent.mouseDown(screen.getByRole("combobox"));
+      fireEvent.click(await screen.findByText("Warm — example.looks"));
+      await waitFor(() => expect(onCommitMany).toHaveBeenCalledTimes(2));
+    } finally {
+      act(() => registration.dispose());
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps a failed look-pack choice retryable", async () => {
+    const registration = extensionLutRegistry.registerPackageLut(
+      "example.looks",
+      {
+        id: "warm",
+        apiVersion: 1,
+        label: "Warm",
+        order: 0,
+        resourceUrl: "/look-pack/warm.cube",
+        packageVersion: "1.0.0",
+        packageDigest: `sha256:${"b".repeat(64)}`,
+      },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        blob: async () => new Blob([IDENTITY_2_CUBE], { type: "text/plain" }),
+      })),
+    );
+    ingestExtensionAssetMock
+      .mockRejectedValueOnce(new Error("Temporary ingest failure"))
+      .mockResolvedValueOnce({ id: "project-lut" });
+    const onCommitMany = renderControl({ lutAssetId: null, lutIntensity: 1 });
+
+    try {
+      fireEvent.mouseDown(screen.getByRole("combobox"));
+      fireEvent.click(await screen.findByText("Warm — example.looks"));
+      await screen.findByText("Temporary ingest failure");
+      expect(screen.getByRole("combobox")).toHaveTextContent(
+        "Apply from look packs",
+      );
+
+      fireEvent.mouseDown(screen.getByRole("combobox"));
+      fireEvent.click(await screen.findByText("Warm — example.looks"));
+      await waitFor(() =>
+        expect(onCommitMany).toHaveBeenCalledWith({ lutAssetId: "project-lut" }),
+      );
+    } finally {
+      act(() => registration.dispose());
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("surfaces a malformed cube rejection without committing it", async () => {
+    ingestExtensionAssetMock.mockRejectedValue(
+      new Error("Invalid .cube data"),
+    );
     const onCommitMany = renderControl({ lutAssetId: null, lutIntensity: 1 });
 
     const input = document.querySelector<HTMLInputElement>(
@@ -111,7 +220,7 @@ describe("LutControl", () => {
     fireEvent.change(input!, { target: { files: [file] } });
 
     await screen.findByRole("alert");
-    expect(addLocalAssetMock).not.toHaveBeenCalled();
+    expect(ingestExtensionAssetMock).toHaveBeenCalledOnce();
     expect(onCommitMany).not.toHaveBeenCalled();
   });
 

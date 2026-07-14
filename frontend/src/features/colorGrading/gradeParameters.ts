@@ -59,6 +59,16 @@ export function captureGradeParameters(
   );
 }
 
+/** Cross-project presets cannot retain an asset ID from the project of origin. */
+export function captureGradePresetParameters(
+  values: Readonly<Record<string, unknown>>,
+): GradeParameterJson {
+  const parameters = captureGradeParameters(values);
+  return Object.fromEntries(
+    Object.entries(parameters).filter(([name]) => name !== "lutAssetId"),
+  );
+}
+
 export function copyGradeParameters(
   parameters: GradeParameterJson,
   sourceTimeRange?: GradeTimeRange,

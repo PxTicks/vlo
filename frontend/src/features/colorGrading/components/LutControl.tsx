@@ -1,5 +1,17 @@
-import { useRef, useState } from "react";
-import { Alert, Box, Button, Typography } from "@mui/material";
+import {
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import {
+  Alert,
+  Box,
+  Button,
+  MenuItem,
+  Select,
+  Typography,
+} from "@mui/material";
 import { Download, FileUpload } from "@mui/icons-material";
 import {
   bakeColorGradeCube,
@@ -16,10 +28,21 @@ import {
 import type { CustomControlRenderProps } from "../../panelUI";
 import { AssetDropSlot } from "../../panelUI";
 import {
-  addLocalAsset,
   ensureAssetFileLoaded,
   useAsset,
 } from "../../userAssets";
+import { ingestExtensionAsset } from "../../extensions/assets/publicApi";
+import { extensionLutRegistry } from "../../extensions/registry/publicApi";
+
+const LOOK_PACK_FETCH_TIMEOUT_MS = 15_000;
+
+function subscribeExtensionLuts(listener: () => void): () => void {
+  return extensionLutRegistry.subscribe(listener);
+}
+
+function getExtensionLutRevision(): number {
+  return extensionLutRegistry.getRevision();
+}
 
 function readLutAssetId(values: Readonly<Record<string, unknown>>): string | null {
   return typeof values.lutAssetId === "string" && values.lutAssetId.length > 0
@@ -75,6 +98,28 @@ function downloadCubeFile(contents: string, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+async function fetchLookPackLut(resourceUrl: string): Promise<Blob> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    LOOK_PACK_FETCH_TIMEOUT_MS,
+  );
+  try {
+    const response = await fetch(resourceUrl, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error("The look-pack resource is no longer available.");
+    }
+    return await response.blob();
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("The look-pack resource took too long to load.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export function LutControl({
   values,
   onCommitMany,
@@ -88,32 +133,77 @@ export function LutControl({
     text: string;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const extensionLutRevision = useSyncExternalStore(
+    subscribeExtensionLuts,
+    getExtensionLutRevision,
+    getExtensionLutRevision,
+  );
+  const extensionLuts = useMemo(
+    () => extensionLutRegistry.list(),
+    // `extensionLutRevision` is the registry's change signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [extensionLutRevision],
+  );
 
   const commitLutAsset = (assetId: string | null): void => {
     setMessage(null);
     onCommitMany({ lutAssetId: assetId });
   };
 
+  const materializeLutFile = async (file: File): Promise<string> => {
+    const created = await ingestExtensionAsset({
+      name: file.name,
+      type: "lut",
+      blob: file,
+    });
+    return created.id;
+  };
+
   const importLutFile = async (file: File): Promise<void> => {
     setBusy(true);
     setMessage(null);
     try {
-      // Validate before ingesting so a broken file never becomes an asset.
-      parseCubeLut(await file.text());
-      const created = await addLocalAsset(file);
-      if (created) {
-        commitLutAsset(created.id);
-      } else {
-        setMessage({
-          severity: "info",
-          text: "This LUT is already in the library — drop it from the LUT tab of the asset browser.",
-        });
-      }
+      const assetId = await materializeLutFile(file);
+      commitLutAsset(assetId);
     } catch (error) {
       setMessage({
         severity: "error",
         text:
           error instanceof Error ? error.message : "Could not read LUT file",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyExtensionLut = async (contributionId: string): Promise<void> => {
+    const contribution = extensionLuts.find(
+      (candidate) => candidate.id === contributionId,
+    );
+    if (!contribution) return;
+
+    setBusy(true);
+    setMessage(null);
+    try {
+      const blob = await fetchLookPackLut(
+        contribution.definition.resourceUrl,
+      );
+      const filename = `${contribution.ownerId}.${contribution.localId}.cube`;
+      const assetId = await materializeLutFile(
+        new File([blob], filename, { type: "text/plain" }),
+      );
+      commitLutAsset(assetId);
+      setMessage({
+        severity: "info",
+        text: `Applied ${contribution.definition.label}. The LUT is now stored in this project.`,
+      });
+    } catch (error) {
+      setMessage({
+        severity: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Could not apply look-pack LUT",
       });
     } finally {
       setBusy(false);
@@ -143,6 +233,27 @@ export function LutControl({
 
   return (
     <Box>
+      {extensionLuts.length > 0 ? (
+        <Select
+          size="small"
+          displayEmpty
+          fullWidth
+          value=""
+          disabled={disabled || busy}
+          aria-label="Look pack LUT"
+          onChange={(event) => void applyExtensionLut(event.target.value)}
+          sx={{ mb: 1 }}
+        >
+          <MenuItem value="" disabled>
+            Apply from look packs…
+          </MenuItem>
+          {extensionLuts.map((contribution) => (
+            <MenuItem key={contribution.id} value={contribution.id}>
+              {contribution.definition.label} — {contribution.ownerId}
+            </MenuItem>
+          ))}
+        </Select>
+      ) : null}
       <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
         <AssetDropSlot
           id="color-grade-lut"

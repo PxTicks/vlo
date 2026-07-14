@@ -151,6 +151,9 @@ function createConformanceApi() {
         fps: 30,
       }),
       readBlob,
+      ingest: async () => {
+        throw new Error("Asset ingest is not used by this fixture.");
+      },
     },
     generation: {
       listInputs: () => [],

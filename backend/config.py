@@ -11,10 +11,11 @@ except ImportError:
 # Adjust .parent.parent if you want it outside the backend folder
 PROJECTS_ROOT = Path(__file__).parent.parent / "projects"
 RUNTIME_ROOT = Path(__file__).parent.parent / "backend" / "runtime"
+EXTENSIONS_HOME = Path(__file__).parent.parent / "extensions"
 EXTENSIONS_ROOT = Path(
     os.environ.get(
         "VLO_EXTENSIONS_ROOT",
-        str(Path(__file__).parent.parent / "extensions"),
+        str(EXTENSIONS_HOME / "installed"),
     )
 ).expanduser().resolve()
 EXTENSION_STATE_DIR = Path(

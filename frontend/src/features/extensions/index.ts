@@ -6,6 +6,7 @@ export {
 export { ExtensionManagerDialog } from "./components/ExtensionManagerDialog";
 export { FrontendExtensionBootstrap } from "./components/FrontendExtensionBootstrap";
 export { VLO_EXTENSION_SDK_VERSION } from "./constants";
+export { ingestExtensionAsset } from "./assets/publicApi";
 export {
   extensionPayloadSchema,
   jsonValueSchema,
@@ -90,6 +91,7 @@ export type {
 } from "./types";
 export type {
   ExtensionAssetApi,
+  ExtensionAssetIngestInput,
   ExtensionBackendApi,
   ExtensionBackendArtifact,
   ExtensionBackendArtifactUploadOptions,

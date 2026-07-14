@@ -79,6 +79,13 @@ Use `assets.list()` and `assets.get()` for detached metadata. Use
 `assets.readBlob(assetId)` to read browser/project-backed content. Do not assume the
 Python backend can open a browser-selected project path.
 
+Use `assets.ingest({ name, type, blob })` to copy bytes into the active project.
+The host validates the input, hash-reuses an existing project asset when possible,
+waits for persistence, and always returns a usable asset snapshot. LUT input is
+parsed and size-limited before storage. Package and user-wide resources are sources,
+not project state: materialize them first, then persist only the returned project
+asset ID.
+
 For backend processing, read the blob, upload it through
 `backend.uploadArtifact`, and submit the returned artifact ID to a job. Treat
 artifacts as temporary exchange objects with host cleanup, not persistent project

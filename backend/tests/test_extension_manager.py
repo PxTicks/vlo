@@ -53,6 +53,41 @@ def _create_frontend_package(root: Path, extension_id: str) -> Path:
     return package_dir
 
 
+def _create_lut_package(root: Path, extension_id: str) -> Path:
+    package_dir = root / extension_id
+    _write_manifest(
+        package_dir,
+        {
+            "manifestVersion": 1,
+            "id": extension_id,
+            "name": "Look Pack",
+            "version": "1.0.0",
+            "sdk": ">=1.0.0 <2.0.0",
+            "contributions": {"luts": "luts.json"},
+            "capabilities": ["color.luts"],
+        },
+    )
+    (package_dir / "luts.json").write_text(
+        json.dumps(
+            {
+                "apiVersion": 1,
+                "luts": [
+                    {
+                        "id": "neutral",
+                        "label": "Neutral",
+                        "path": "luts/neutral.cube",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    resource = package_dir / "luts" / "neutral.cube"
+    resource.parent.mkdir()
+    resource.write_text("LUT_1D_SIZE 2\n0 0 0\n1 1 1\n", encoding="utf-8")
+    return package_dir
+
+
 def _create_manager(tmp_path: Path) -> tuple[ExtensionManager, Path, Path]:
     extensions_root = tmp_path / "extensions"
     extensions_root.mkdir()
@@ -94,6 +129,23 @@ def test_scan_discovers_valid_package_without_importing_backend_code(tmp_path: P
     assert items[0].status == "pending_approval"
     assert items[0].digest is not None
     assert items[0].errors == ()
+
+
+def test_scan_accepts_code_free_lut_pack_and_validates_resources(tmp_path: Path):
+    manager, extensions_root, _state_path = _create_manager(tmp_path)
+    package_dir = _create_lut_package(extensions_root, "example.looks")
+
+    item = manager.scan()[0]
+
+    assert item.status == "pending_approval"
+    assert [(lut.id, lut.path) for lut in item.lut_contributions] == [
+        ("neutral", "luts/neutral.cube")
+    ]
+
+    (package_dir / "luts" / "neutral.cube").unlink()
+    invalid = manager.scan(force_digest=True)[0]
+    assert invalid.status == "invalid"
+    assert "cannot read LUT resource" in invalid.errors[0]
 
 
 def test_approval_is_bound_to_current_digest_and_detects_changes(tmp_path: Path):

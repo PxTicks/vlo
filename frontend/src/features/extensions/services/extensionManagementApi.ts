@@ -18,6 +18,10 @@ const pythonDependencySchema = z.object({
   purpose: z.string().optional(),
 });
 
+const extensionContributionsSchema = z.object({
+  luts: z.string().optional(),
+});
+
 const extensionManifestSchema = z.object({
   manifestVersion: z.literal(1),
   id: z.string(),
@@ -27,6 +31,7 @@ const extensionManifestSchema = z.object({
   vlo: z.string().optional(),
   frontend: frontendEntrySchema.optional(),
   backend: backendEntrySchema.optional(),
+  contributions: extensionContributionsSchema.optional(),
   capabilities: z.array(z.string()),
   pythonDependencies: z.array(pythonDependencySchema).optional(),
 });
@@ -66,6 +71,17 @@ const preflightSchema = z.object({
   isolated: z.boolean(),
 });
 
+const extensionLutContributionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string().nullable(),
+  order: z.number(),
+  resourceUrl: z
+    .string()
+    .startsWith("/app/extensions/")
+    .transform((url) => `${API_BASE_URL}${url}`),
+});
+
 export type ExtensionPreflightReport = z.infer<typeof preflightSchema>;
 
 export function prefixExtensionFrontendEntryUrl(
@@ -98,6 +114,7 @@ const extensionInventoryItemSchema = z.object({
     .startsWith("/app/extensions/")
     .transform((url) => prefixExtensionFrontendEntryUrl(url))
     .nullable(),
+  lutContributions: z.array(extensionLutContributionSchema).optional(),
 });
 
 const extensionInventoryResponseSchema = z.object({

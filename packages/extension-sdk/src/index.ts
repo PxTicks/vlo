@@ -447,11 +447,22 @@ export interface ExtensionEntityAssetSnapshot {
   readonly hasAudio?: boolean;
 }
 
+export interface ExtensionAssetIngestInput {
+  readonly name: string;
+  readonly type: "video" | "image" | "audio" | "lut";
+  readonly blob: Blob;
+}
+
 export interface ExtensionAssetApi {
   list(): readonly ExtensionEntityAssetSnapshot[];
   get(assetId: string): ExtensionEntityAssetSnapshot | undefined;
   /** Loads browser-selected/project-backed bytes without exposing a file path. */
   readBlob(assetId: string): Promise<Blob>;
+  /**
+   * Copies bytes into the active project and resolves only after persistence.
+   * A hash match returns the existing project asset rather than a sentinel.
+   */
+  ingest(input: ExtensionAssetIngestInput): Promise<ExtensionEntityAssetSnapshot>;
 }
 
 export interface ExtensionEntityRenderParameters {

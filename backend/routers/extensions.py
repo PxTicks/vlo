@@ -35,6 +35,7 @@ from services.extensions import (
     ExtensionJobArtifactTooLargeError,
     check_python_dependencies,
 )
+from services.extensions.frontend_artifacts import staged_package_resource_path
 
 router = APIRouter(prefix="/app/extensions", tags=["extensions"])
 
@@ -115,6 +116,34 @@ def _frontend_entry_url(
     )
 
 
+def _lut_contribution_resources(
+    item: ExtensionInventoryItem,
+    artifacts: FrontendArtifactStore,
+) -> list[dict[str, object]]:
+    if item.status != "approved" or item.digest is None:
+        return []
+
+    resources: list[dict[str, object]] = []
+    for contribution in item.lut_contributions:
+        artifact_path = staged_package_resource_path(contribution.path)
+        if not artifacts.has_path(item.extension_id, item.digest, artifact_path):
+            continue
+        resource_url = (
+            f"/app/extensions/{quote(item.extension_id, safe='')}/resources/"
+            f"{quote(item.digest, safe='')}/{quote(contribution.path, safe='/')}"
+        )
+        resources.append(
+            {
+                "id": contribution.id,
+                "label": contribution.label,
+                "description": contribution.description,
+                "order": contribution.order,
+                "resourceUrl": resource_url,
+            }
+        )
+    return resources
+
+
 def _preflight_report(item: ExtensionInventoryItem) -> dict[str, object] | None:
     """Report declared Python dependency readiness as an inert checklist.
 
@@ -173,6 +202,7 @@ def _serialize_inventory_item(
         "manifest": manifest,
         "approval": approval,
         "frontendEntryUrl": _frontend_entry_url(item, artifacts),
+        "lutContributions": _lut_contribution_resources(item, artifacts),
         "backendRuntime": {
             "status": backend_runtime_view.status,
             "message": backend_runtime_view.message,
@@ -527,6 +557,38 @@ def get_frontend_artifact(
     return Response(
         content=content,
         media_type=media_type,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "ETag": f'"{digest}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/{extension_id}/resources/{digest}/{artifact_path:path}")
+def get_extension_resource(
+    extension_id: str,
+    digest: str,
+    artifact_path: str,
+    services: ExtensionServicesDependency,
+):
+    try:
+        services.manager.require_approved_digest(extension_id, digest)
+        staged_path = staged_package_resource_path(artifact_path)
+        content = services.artifacts.read(extension_id, digest, staged_path)
+    except (ExtensionInventoryError, FrontendArtifactError, OSError, ValueError):
+        return error_response(
+            404,
+            "extension_resource_not_found",
+            "Approved extension resource was not found.",
+            retryable=False,
+        )
+
+    return Response(
+        content=content,
+        media_type=(
+            mimetypes.guess_type(artifact_path)[0] or "application/octet-stream"
+        ),
         headers={
             "Cache-Control": "public, max-age=31536000, immutable",
             "ETag": f'"{digest}"',

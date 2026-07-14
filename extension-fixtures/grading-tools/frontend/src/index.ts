@@ -13,7 +13,9 @@ import type {
  * 2. the same registered control reused inside the extension's own
  *    transformation, proving the panel-control path is generic rather than
  *    grading-only. There it sees only that transformation's parameters and may
- *    commit only what its allowlist permits.
+ *    commit only what its allowlist permits;
+ * 3. programmatic LUT ingestion into project storage through the public asset
+ *    API before committing the returned project asset ID.
  */
 
 const SAMPLE: readonly [number, number, number] = [0.4, 0.45, 0.5];
@@ -67,6 +69,22 @@ export const activate: ExtensionModule["activate"] = (context) => {
       });
     };
 
+    const attachIdentityLut = async () => {
+      try {
+        const lut = color.createIdentityCubeLut(17);
+        const asset = await context.api.assets.ingest({
+          name: "grading-tools-identity.cube",
+          type: "lut",
+          blob: new Blob([color.serializeCubeLut(lut)], {
+            type: "text/plain",
+          }),
+        });
+        props.commitParameters({ lutAssetId: asset.id });
+      } catch (error) {
+        context.logger.error("Could not attach the fixture LUT.", error);
+      }
+    };
+
     return h(
       "div",
       { "data-extension": "example.grading-tools" },
@@ -85,6 +103,15 @@ export const activate: ExtensionModule["activate"] = (context) => {
           disabled: props.disabled || !resolved,
         },
         "Neutralize mid-grey",
+      ),
+      h(
+        "button",
+        {
+          type: "button",
+          onClick: () => void attachIdentityLut(),
+          disabled: props.disabled,
+        },
+        "Attach project identity LUT",
       ),
     );
   }

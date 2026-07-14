@@ -1,0 +1,12 @@
+{
+  "apiVersion": 1,
+  "luts": [
+    {
+      "id": "clean-warm",
+      "label": "Clean Warm",
+      "description": "A small identity-like fixture look for contract testing.",
+      "path": "luts/clean-warm.cube",
+      "order": 10
+    }
+  ]
+}

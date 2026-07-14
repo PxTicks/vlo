@@ -1,4 +1,8 @@
 /*
 !/.gitignore
+!/README.md
 !/extension-development/
 !/extension-development/**
+!/installed/
+/installed/*
+!/installed/.gitkeep

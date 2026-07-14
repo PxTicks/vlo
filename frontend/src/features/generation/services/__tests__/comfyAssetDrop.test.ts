@@ -56,6 +56,13 @@ describe("buildComfyAssetDropPlan", () => {
     });
   });
 
+  it("does not offer project LUTs to media loader nodes", () => {
+    expect(buildComfyAssetDropPlan("lut", null, null)).toEqual({
+      targets: [],
+      create: null,
+    });
+  });
+
   it("includes dynamically discovered loaders from the merged input node map", () => {
     const merged = mergeInputNodeMap({
       CustomImageLoader: [{ input_type: "image", param: "picture" }],

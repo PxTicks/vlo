@@ -218,6 +218,33 @@ describe("useAssetStore - Local Assets", () => {
     expect(useAssetStore.getState().assets[0].hash).toBe("shared-hash");
   });
 
+  it("can return an existing hash match for callers that need its asset ID", async () => {
+    const { mediaProcessingService } =
+      await import("../services/MediaProcessingService");
+    vi.mocked(mediaProcessingService.computeChecksum).mockResolvedValue(
+      "shared-hash",
+    );
+    const existing = {
+      id: "existing-asset",
+      name: "look.cube",
+      src: "look.cube",
+      hash: "shared-hash",
+      type: "lut" as const,
+      createdAt: 1,
+    };
+    useAssetStore.setState({ assets: [existing] });
+
+    const result = await useAssetStore.getState().addLocalAsset(
+      new File(["same"], "look.cube", { type: "text/plain" }),
+      undefined,
+      undefined,
+      { reuseExistingHash: true },
+    );
+
+    expect(result).toBe(existing);
+    expect(useAssetStore.getState().assets).toEqual([existing]);
+  });
+
   it("can bypass hash deduplication when explicitly requested", async () => {
     const { mediaProcessingService } =
       await import("../services/MediaProcessingService");

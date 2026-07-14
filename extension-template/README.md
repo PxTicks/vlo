@@ -10,7 +10,8 @@ both frontend and backend entry points.
 2. Change the package directory name and `manifest.json` ID together. IDs use
    lowercase letters, numbers, dots, underscores, and hyphens.
 3. Run `npm install`, then `npm run build`.
-4. Copy the package into vlo's configured extension root.
+4. Copy the package into `extensions/installed/<manifest-id>/` (or the root set
+   by `VLO_EXTENSIONS_ROOT`).
 5. Review and approve its exact digest in the extension manager. Backend activation
    occurs after a backend restart; frontend activation occurs on the following page
    load after the matching backend digest reports active.
@@ -113,6 +114,11 @@ it. The fallback is expected trusted-alpha behaviour, but it is version-coupled.
   `context.api.backend.uploadArtifact(...)`; the backend must not assume it can open
   browser-selected project paths. Prefer the standard `submitJob`/`waitForJob` API.
   `backend.call(...)` remains the owner-bound raw-route escape hatch.
+- `context.api.assets.ingest(...)` copies bytes into the active project, waits
+  for persistence, and returns the existing or newly created asset on a hash
+  match. Use it for generated resources; never persist extension package paths
+  in timeline data. LUT-only packages can instead use the declarative look-pack
+  format documented in `docs/extension-look-and-filter-packs.md`.
 - Tracking-style integrations can use `context.api.timeline.sourceFrameToTicks(...)`
   plus `clipProgressToSourceTicks(...)`/`sourceTicksToClipProgress(...)` to cross a
   clip's crop and speed clock. `sourcePointToProject(...)` maps declared source pixels

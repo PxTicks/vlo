@@ -19,6 +19,7 @@ import { COLOR_GRADE_FILTER_NAME } from "../../transformations/catalogue/filters
 import type { GradeParameterJson, GradeTimeRange } from "../gradeParameters";
 import {
   captureGradeParameters,
+  captureGradePresetParameters,
   copyGradeParameters,
   readCopiedGradeParameters,
   remapGradeParameterTimes,
@@ -82,7 +83,16 @@ export function GradeManagementControl({
     [extensionRevision],
   );
   const presets = useMemo<readonly PresetEntry[]>(
-    () => [...BUILT_IN_GRADE_PRESETS, ...customPresets, ...extensionPresets],
+    () => [
+      ...BUILT_IN_GRADE_PRESETS,
+      ...customPresets.map((preset) => ({
+        ...preset,
+        // Legacy user presets may contain a project-local LUT asset ID. Never
+        // apply that ID in another project; look packs materialize explicitly.
+        parameters: captureGradePresetParameters(preset.parameters),
+      })),
+      ...extensionPresets,
+    ],
     [customPresets, extensionPresets],
   );
 
@@ -147,8 +157,20 @@ export function GradeManagementControl({
           aria-label="Save grade preset"
           disabled={disabled || name.trim().length === 0}
           onClick={() => {
-            savePreset(name, captureGradeParameters(values), sourceTimeRange);
-            setMessage(`Saved ${name.trim()}`);
+            const presetName = name.trim();
+            const omitsProjectLut =
+              typeof values.lutAssetId === "string" &&
+              values.lutAssetId.length > 0;
+            savePreset(
+              name,
+              captureGradePresetParameters(values),
+              sourceTimeRange,
+            );
+            setMessage(
+              omitsProjectLut
+                ? `Saved ${presetName} without its project-local LUT. Use a look pack to share LUTs across projects.`
+                : `Saved ${presetName}`,
+            );
             setName("");
           }}
         >

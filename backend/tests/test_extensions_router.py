@@ -21,6 +21,7 @@ from routers.extensions import (
     approve_extension,
     disable_extension,
     get_frontend_artifact,
+    get_extension_resource,
     get_extension_services,
     list_extensions,
     revoke_extension_approval,
@@ -91,6 +92,95 @@ def _create_backend_package(extensions_root: Path, extension_id: str) -> Path:
     return package_dir
 
 
+def _create_lut_package(extensions_root: Path, extension_id: str) -> Path:
+    package_dir = extensions_root / extension_id
+    resource = package_dir / "look-pack" / "warm.cube"
+    resource.parent.mkdir(parents=True)
+    resource.write_text(
+        "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
+        "0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
+        encoding="utf-8",
+    )
+    (package_dir / "luts.json").write_text(
+        json.dumps(
+            {
+                "apiVersion": 1,
+                "luts": [
+                    {
+                        "id": "warm",
+                        "label": "Warm",
+                        "description": "A warm test look",
+                        "path": "look-pack/warm.cube",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (package_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "manifestVersion": 1,
+                "id": extension_id,
+                "name": "Router Test Look Pack",
+                "version": "1.0.0",
+                "sdk": ">=1.0.0 <2.0.0",
+                "contributions": {"luts": "luts.json"},
+                "capabilities": ["color.luts"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return package_dir
+
+
+def _create_frontend_package_with_bundled_lut(
+    extensions_root: Path,
+    extension_id: str,
+) -> Path:
+    package_dir = extensions_root / extension_id
+    entry = package_dir / "frontend" / "dist" / "index.js"
+    resource = package_dir / "frontend" / "dist" / "luts" / "warm.cube"
+    resource.parent.mkdir(parents=True)
+    entry.write_text("export function activate() {}\n", encoding="utf-8")
+    resource.write_text(
+        "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
+        "0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
+        encoding="utf-8",
+    )
+    (package_dir / "luts.json").write_text(
+        json.dumps(
+            {
+                "apiVersion": 1,
+                "luts": [
+                    {
+                        "id": "warm",
+                        "label": "Warm",
+                        "path": "frontend/dist/luts/warm.cube",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (package_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "manifestVersion": 1,
+                "id": extension_id,
+                "name": "Bundled Look Pack",
+                "version": "1.0.0",
+                "sdk": ">=1.0.0 <2.0.0",
+                "frontend": {"entry": "frontend/dist/index.js"},
+                "contributions": {"luts": "luts.json"},
+                "capabilities": ["color.luts"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return package_dir
+
+
 def _create_services(
     tmp_path: Path,
 ) -> tuple[ExtensionServices, Path, Path]:
@@ -144,6 +234,7 @@ def test_router_registers_management_and_artifact_paths():
         "/app/extensions/{extension_id}/disable",
         "/app/extensions/{extension_id}/approval",
         "/app/extensions/{extension_id}/frontend/{digest}/{artifact_path:path}",
+        "/app/extensions/{extension_id}/resources/{digest}/{artifact_path:path}",
         "/app/extensions/{extension_id}/jobs",
         "/app/extensions/{extension_id}/jobs/{job_type}",
         "/app/extensions/{extension_id}/jobs/{job_id}",
@@ -151,6 +242,94 @@ def test_router_registers_management_and_artifact_paths():
         "/app/extensions/{extension_id}/artifacts",
         "/app/extensions/{extension_id}/artifacts/{artifact_id}",
     }
+
+
+def test_code_free_lut_pack_is_approved_and_served_immutably(tmp_path: Path):
+    services, extensions_root, state_root = _create_services(tmp_path)
+    _create_lut_package(extensions_root, "example.looks")
+
+    pending = list_extensions(services)["extensions"][0]
+    assert pending["status"] == "pending_approval"
+    assert pending["frontendEntryUrl"] is None
+    assert pending["lutContributions"] == []
+
+    approved = _approve(services, "example.looks", pending["digest"])
+    assert approved["frontendEntryUrl"] is None
+    assert approved["lutContributions"] == [
+        {
+            "id": "warm",
+            "label": "Warm",
+            "description": "A warm test look",
+            "order": 0.0,
+            "resourceUrl": (
+                "/app/extensions/example.looks/resources/"
+                f"{pending['digest'].replace(':', '%3A')}"
+                "/look-pack/warm.cube"
+            ),
+        }
+    ]
+
+    response = get_extension_resource(
+        "example.looks",
+        pending["digest"],
+        "look-pack/warm.cube",
+        services,
+    )
+    assert isinstance(response, Response)
+    assert response.status_code == 200
+    assert response.body.startswith(b"LUT_3D_SIZE 2")
+    assert response.headers["cache-control"] == (
+        "public, max-age=31536000, immutable"
+    )
+    staged = (
+        state_root
+        / "frontend-artifacts"
+        / "example.looks"
+        / pending["digest"].removeprefix("sha256:")
+        / ".vlo-resources"
+        / "look-pack"
+        / "warm.cube"
+    )
+    assert staged.is_file()
+
+    disable_extension("example.looks", services)
+    denied = get_extension_resource(
+        "example.looks",
+        pending["digest"],
+        "look-pack/warm.cube",
+        services,
+    )
+    assert isinstance(denied, JSONResponse)
+    assert denied.status_code == 404
+
+
+def test_bundled_lut_is_staged_for_frontend_and_resource_urls(tmp_path: Path):
+    services, extensions_root, _state_root = _create_services(tmp_path)
+    _create_frontend_package_with_bundled_lut(
+        extensions_root,
+        "example.bundled-looks",
+    )
+
+    pending = list_extensions(services)["extensions"][0]
+    _approve(services, "example.bundled-looks", pending["digest"])
+
+    bundle_response = get_frontend_artifact(
+        "example.bundled-looks",
+        pending["digest"],
+        "luts/warm.cube",
+        services,
+    )
+    resource_response = get_extension_resource(
+        "example.bundled-looks",
+        pending["digest"],
+        "frontend/dist/luts/warm.cube",
+        services,
+    )
+
+    assert isinstance(bundle_response, Response)
+    assert isinstance(resource_response, Response)
+    assert bundle_response.body == resource_response.body
+    assert bundle_response.body.startswith(b"LUT_3D_SIZE 2")
 
 
 def test_standard_backend_job_routes_exchange_bytes_and_results(tmp_path: Path):

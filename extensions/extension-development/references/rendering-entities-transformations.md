@@ -31,6 +31,11 @@ Choose the least restrictive contract that matches the behaviour:
 - Use `host-filter` only as a declarative convenience over the bounded host list.
   Do not widen that list to simulate trusted extensibility.
 
+Treat a Pixi-style filter pack as an ordinary trusted frontend extension containing
+several `trusted-filter` registrations. This existing registry is the specialized
+filter architecture; keep executable shader code inside the approved package rather
+than creating a second directory scanner or raw shader loader.
+
 Define a stable local ID (the host owner-qualifies it), label, API version,
 compatible control groups, defaults, and parameter validation. Use native
 number/slider, checkbox, text/colour, and select controls where suitable. Mark

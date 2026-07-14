@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "example.look-pack",
+  "name": "Example Film Looks",
+  "version": "1.0.0",
+  "sdk": ">=1.5.0 <2.0.0",
+  "contributions": {
+    "luts": "luts.json"
+  },
+  "capabilities": ["color.luts"]
+}

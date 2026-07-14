@@ -2,6 +2,7 @@ import type {
   Asset,
   AssetFamily,
   AssetFamilyCompatibility,
+  AssetType,
 } from "../../../types/Asset";
 import {
   doesAssetMatchFamilyCompatibility,
@@ -32,11 +33,15 @@ export type AssetIngestResult =
     }
   | {
       status: "skipped";
-      reason: "unsupported" | "failed";
+      reason: "unsupported" | "type_mismatch" | "failed";
     };
 
 export interface AssetIngestOptions {
   allowDuplicateHash?: boolean;
+  /** Return the matching project asset instead of reporting a skipped upload. */
+  reuseExistingHash?: boolean;
+  /** Reject a detected type mismatch before hashing or persisting any bytes. */
+  expectedType?: AssetType;
 }
 
 type AssetCreationSource = Exclude<Asset["creationMetadata"], undefined>["source"];
@@ -361,10 +366,35 @@ export class AssetService {
         };
       }
 
+      const assetType: AssetType = isLut
+        ? "lut"
+        : isImage
+          ? "image"
+          : isAudio
+            ? "audio"
+            : "video";
+      if (
+        options.expectedType !== undefined &&
+        assetType !== options.expectedType
+      ) {
+        console.warn(
+          `Skipping ${file.name}: detected '${assetType}', expected '${options.expectedType}'.`,
+        );
+        return {
+          status: "skipped",
+          reason: "type_mismatch",
+        };
+      }
+
       const hash = await mediaProcessingService.computeChecksum(file);
 
       const isIncomingMask = creationMetadata?.source === "generation_mask";
-      const matchingAsset = existingAssets.find((a) => a.hash === hash);
+      const matchingAsset = existingAssets.find(
+        (asset) =>
+          asset.hash === hash &&
+          (options.expectedType === undefined ||
+            asset.type === options.expectedType),
+      );
 
       if (matchingAsset && !options.allowDuplicateHash) {
         // Generation masks frequently produce identical bytes across runs (same
@@ -383,6 +413,13 @@ export class AssetService {
 
         if (!isIncomingMask) {
           console.log("Skipping duplicate asset (hash match):", file.name);
+          if (options.reuseExistingHash) {
+            return {
+              status: "reused_existing",
+              asset: matchingAsset,
+              reason: "hash",
+            };
+          }
           return {
             status: "skipped_existing",
             reason: "hash",
@@ -463,13 +500,6 @@ export class AssetService {
         }
       }
 
-      const assetType = isLut
-        ? "lut"
-        : isImage
-          ? "image"
-          : isAudio
-            ? "audio"
-            : "video";
       const resolvedCompatibilityHint =
         compatibilityHint &&
         isAssetFamilyCompatibilityComplete(compatibilityHint) &&

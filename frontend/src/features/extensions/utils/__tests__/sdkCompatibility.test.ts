@@ -9,11 +9,11 @@ import { VLO_EXTENSION_SDK_VERSION } from "../../constants";
 // should force a deliberate review of what it makes (in)compatible.
 describe("evaluateExtensionSdkCompatibility", () => {
   it.each([
-    "1.4.0",
-    "=1.4.0",
+    "1.5.0",
+    "=1.5.0",
     ">=1.0.0 <2.0.0",
     ">= 1.0.0 < 2.0.0",
-    ">1.0.0 <=1.4.0",
+    ">1.0.0 <=1.5.0",
   ])("accepts compatible v1 ranges: %s", (range) => {
     expect(evaluateExtensionSdkCompatibility(range)).toMatchObject({
       compatible: true,
@@ -22,7 +22,7 @@ describe("evaluateExtensionSdkCompatibility", () => {
     });
   });
 
-  it.each(["1.0.0", "<=1.0.0", ">1.4.0", ">=2.0.0"])(
+  it.each(["1.0.0", "<=1.0.0", ">1.5.0", ">=2.0.0"])(
     "rejects incompatible ranges: %s",
     (range) => {
       expect(evaluateExtensionSdkCompatibility(range)).toMatchObject({

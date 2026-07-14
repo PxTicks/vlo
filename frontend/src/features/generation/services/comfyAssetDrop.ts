@@ -24,6 +24,7 @@ const CREATE_NODE_PREFERENCES: Record<AssetType, readonly string[]> = {
   image: ["LoadImage"],
   video: ["VHS_LoadVideo", "LoadVideo"],
   audio: ["LoadAudio"],
+  lut: [],
 };
 
 export interface ComfyAssetDropPlan {

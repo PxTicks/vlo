@@ -103,6 +103,18 @@ export class ExtensionContributionRegistry<
     });
   }
 
+  /**
+   * Host adapters use this for approved declarative manifest contributions.
+   * The caller must enroll the returned registration in the package activation
+   * scope; this method is never exposed through the extension API.
+   */
+  registerHostOwned(
+    ownerId: string,
+    definition: TDefinition,
+  ): ExtensionContributionRegistration<TDefinition> {
+    return this.registerForOwner(ownerId, definition);
+  }
+
   private registerForOwner(
     ownerId: string,
     definition: TDefinition,

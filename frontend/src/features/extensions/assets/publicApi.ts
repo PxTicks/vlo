@@ -1,0 +1,1 @@
+export { ingestExtensionAsset } from "./ingestExtensionAsset";

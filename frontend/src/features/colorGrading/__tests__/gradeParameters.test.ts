@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  captureGradePresetParameters,
   clearCopiedGradeParameters,
   copyGradeParameters,
   readCopiedGradeParameters,
@@ -25,6 +26,16 @@ describe("grade parameter clipboard", () => {
     });
 
     await expect(readCopiedGradeParameters()).resolves.toEqual({ exposure: 1 });
+  });
+
+  it("removes project-local LUT IDs from cross-project presets", () => {
+    expect(
+      captureGradePresetParameters({
+        exposure: 1,
+        lutAssetId: "project-a-lut",
+        _gradeManagement: true,
+      }),
+    ).toEqual({ exposure: 1 });
   });
 
   it("rejects unrelated clipboard JSON", async () => {

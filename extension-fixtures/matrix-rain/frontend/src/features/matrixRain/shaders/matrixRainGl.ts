@@ -44,6 +44,7 @@ in vec2 vTextureCoord;
 out vec4 finalColor;
 
 uniform sampler2D uTexture;
+uniform sampler2D uState;
 uniform vec4 uInputSize;
 uniform vec4 uOutputFrame;
 
@@ -59,6 +60,7 @@ uniform float uPulseDensity;
 uniform float uHeadWidth;
 uniform float uRainStrength;
 uniform float uHeadIntensity;
+uniform float uDirectShapeStrength;
 uniform float uDitherMagnitude;
 uniform float uOutputMode;
 uniform float uDebugMode;
@@ -170,6 +172,16 @@ void main(void) {
   uint gi = hash3(col, row, bucket ^ seed) % 16u;
   float lit = glyphCoverage(gi, sub) * glyphRegion;
 
+  // Read the one-texel-per-cell state explicitly at its texel centre. This
+  // prevents adjacent cells bleeding together in the full-resolution pass.
+  vec2 stateSize = max(vec2(textureSize(uState, 0)), vec2(1.0));
+  vec2 stateCell = clamp(cellIndex, vec2(0.0), stateSize - vec2(1.0));
+  vec2 stateUv = (stateCell + vec2(0.5)) / stateSize;
+  vec4 state = texture(uState, stateUv);
+  float rainR = state.r;   // accumulated / advected rain
+  float headG = state.g;   // current procedural head
+  float signalB = state.b; // current source signal (luma)
+
   // Debug views short-circuit the palette compositing.
   if (dbgMode == 1) {
     float border = (sub.x < 0.06 || sub.y < 0.06) ? 1.0 : 0.0;
@@ -185,11 +197,24 @@ void main(void) {
     finalColor = vec4(clamp(head, 0.0, 1.0) * vec3(0.6, 1.0, 0.75), 1.0);
     return;
   }
+  if (dbgMode == 4) {
+    // rainState: R=rain, G=head, B=source signal.
+    finalColor = vec4(clamp(vec3(rainR, headG, signalB), 0.0, 1.0), 1.0);
+    return;
+  }
+  if (dbgMode == 5) {
+    // advectedPrevious: the accumulated rain channel isolated.
+    finalColor = vec4(0.0, clamp(rainR, 0.0, 1.0), 0.0, 1.0);
+    return;
+  }
 
-  float bodyB = clamp(trail, 0.0, 1.0) * lit;
-  float headB = head * uHeadIntensity * lit;
+  // Final body brightness combines accumulated rain with the direct
+  // current-shape term, so a newly visible source is recognizable immediately.
+  float bodyState = rainR * uRainStrength + signalB * uDirectShapeStrength;
+  float bodyB = clamp(bodyState, 0.0, 1.0) * lit;
+  float headB = headG * uHeadIntensity * lit;
   float coverage = clamp(bodyB + headB, 0.0, 1.0);
-  vec3 grade = paletteGrade(trail);
+  vec3 grade = paletteGrade(bodyState);
 
   // Static per-pixel dither (no time bucket, so the background never shimmers)
   // scaled by glyph coverage, so the flat background stays exactly uBackground
@@ -201,7 +226,7 @@ void main(void) {
     // matrixOnly: dither the straight colour, then premultiply by coverage so no
     // channel can exceed alpha (no bright compositing fringe).
     vec3 straight = clamp(
-      grade + uHead * head * uHeadIntensity + vec3(dither),
+      grade + uHead * headG * uHeadIntensity + vec3(dither),
       0.0,
       1.0
     );

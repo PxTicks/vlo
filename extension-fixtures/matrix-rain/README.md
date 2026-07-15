@@ -10,39 +10,51 @@ transformation.
 The full design and phase plan lives in
 [`docs/source-aware-matrix-rain-filter-extension-plan.md`](../../docs/source-aware-matrix-rain-filter-extension-plan.md).
 
-## What ships today (Phase 2: stateless appearance)
+## What ships today (Phase 3: source-aware temporal feedback)
 
 - One primary transformation registered through the ordinary `trusted-filter`
   lane. Its persisted identity is `example.matrix-rain/matrix-rain`.
-- The full **stateless Matrix appearance**, rendered from the injected host Pixi
-  singleton (`api.runtime.pixi`) with no bundled copy of Pixi:
+- The **Matrix appearance**, rendered from the injected host Pixi singleton
+  (`api.runtime.pixi`) with no bundled copy of Pixi:
   - a fixed grid of 16 original analytic stroke glyphs anchored to the input
     bounds, with smooth derivative-based antialiasing and editable source-space
     glyph size and spacing between rows;
   - deterministic glyph cycling, per-column phase, and speed variation derived
     only from cell coordinates, an explicit seed, and quantized visual time;
-  - a descending procedural trail with a bright head (no feedback texture yet);
-  - a five-colour piecewise green palette and low dither;
-  - `replaceBlack` and `matrixOnly` output modes;
-  - `cellGrid`, `proceduralTrail`, and `proceduralHead` debug views.
-- **Matching GLSL and WGSL programs** so both the WebGL and WebGPU construction
-  paths are covered. The WGSL uniform struct order mirrors the JS uniform order,
-  which mirrors the CPU reference — all three are kept in lockstep.
-- Motion and cycling are a pure function of the render sample's canonical visual
-  time (`context.render.visualTimeTicks`), so repeated renders of one logical
-  sample are identical and there is no per-frame CPU grid loop or GPU texture
-  allocation.
-- The declared `rendering` metadata is `timeDependency: "sample"` with
-  `maxStepSeconds: 1/30`: the appearance is a pure function of the current
-  sample's visual time, with no previous-frame state, so it must not trigger
-  history replay. It becomes `history` with a bounded replay window when Phase 3
-  adds the feedback texture.
+  - a five-colour piecewise green palette and coverage-gated low dither;
+  - `replaceBlack` and `matrixOnly` output modes.
+- **Two-pass temporal feedback.** The top-level glyph filter overrides Pixi's
+  `apply()` to drive a low-resolution state-update child filter over two
+  persistent RGBA8 ping-pong textures. Each new logical sample advances the
+  feedback once — frame-rate-independent half-life decay, downward
+  fractional-cell advection, and source-luma injection gated by the procedural
+  trail — while repeated/paused samples re-render from the current state without
+  advancing it. The state's B channel carries the current source signal, so a
+  newly visible or static shape stays legible immediately through the direct
+  current-shape term, before the rain history develops.
+  - state lifecycle: the ping-pong textures reallocate on input resize and reset
+    on any grid-topology change (glyph size / spacing) or timeline discontinuity;
+  - `rainState` and `advectedPrevious` debug views (plus `cellGrid`,
+    `proceduralTrail`, `proceduralHead`).
+- **Matching GLSL and WGSL programs for both passes** so both the WebGL and
+  WebGPU construction paths are covered. Every WGSL uniform struct order mirrors
+  its JS uniform order, which mirrors the CPU reference — all kept in lockstep.
+- The declared `rendering` metadata is `timeDependency: "history"` with
+  `maxHistorySeconds: 6` and `maxStepSeconds: 1/30`: the effect now genuinely
+  depends on earlier samples.
 - A custom authored-parameter validator (exact key set, numeric/integer/color
   fields, enum membership, preserved host spline objects) plus a fail-closed
   `update()` narrowing path.
 
-Later phases add the low-resolution ping-pong feedback state, edge/motion source
-injection, host warm-up scheduling, and the source-composition output modes.
+Later phases add edge- and motion-aware source injection, host warm-up
+scheduling for deterministic seek/export, and the source-composition output
+modes.
+
+> Note: the GPU multi-pass orchestration (the `apply()` override, ping-pong
+> textures, and both fragment programs) is verified structurally here — CPU
+> reference parity, program construction through the real Pixi factory, and
+> controller-level advance/reset/dispose behaviour. On-device WebGL/WebGPU
+> rendering is validated separately in the GPU visual suite.
 
 ## Tests
 
@@ -50,10 +62,13 @@ injection, host warm-up scheduling, and the source-composition output modes.
 npm run test --prefix extension-fixtures/matrix-rain
 ```
 
-The CPU reference in `utils/matrixRainMath.ts` mirrors both shader programs
-exactly, so the deterministic hashing, glyph selection, trail/head profile, and
-palette are unit-tested without a GPU. Parameter validation is covered
-separately.
+The CPU reference in `utils/matrixRainMath.ts` mirrors every shader program
+exactly, so the deterministic hashing, glyph selection, trail/head profile,
+palette, and the feedback math (half-life retention, soft-add, luma, advection)
+are unit-tested without a GPU. `utils/feedbackLifecycle.ts` covers the
+reallocation/reset rules, and `MatrixRainFilter.test.ts` covers the multi-pass
+controller (advance-once-per-sample, resize reset, exact-once dispose).
+Parameter validation is covered separately.
 
 ## The generic contract it leans on
 
@@ -88,19 +103,23 @@ second copy of Pixi.
 
 ```text
 frontend/src/
-├── index.ts                       # activate(): registers matrix-rain
+├── index.ts                        # activate(): registers matrix-rain
 └── features/matrixRain/
-    ├── MatrixRainFilter.ts        # createMatrixRainFilter(pixi, ticksPerSecond)
-    ├── constants.ts               # defaults, control groups, rendering policy
-    ├── types.ts                   # public resolved parameter + enum types
-    ├── index.ts                   # feature barrel (factory + metadata only)
+    ├── MatrixRainFilter.ts         # top-level glyph filter + apply() feedback controller
+    ├── MatrixRainStateFilter.ts    # low-res state-update child filter
+    ├── constants.ts                # defaults, control groups, rendering policy
+    ├── types.ts                    # public resolved parameter + enum types
+    ├── index.ts                    # feature barrel (factory + metadata only)
     ├── shaders/
-    │   ├── matrixRainGl.ts        # GLSL vertex + fragment
-    │   └── matrixRainWgsl.ts      # matching WGSL program
+    │   ├── matrixRainGl.ts         # GLSL glyph program (reads state)
+    │   ├── matrixRainWgsl.ts       # matching WGSL glyph program
+    │   ├── matrixRainStateGl.ts    # GLSL state-update program
+    │   └── matrixRainStateWgsl.ts  # matching WGSL state-update program
     ├── utils/
-    │   ├── matrixRainMath.ts      # deterministic CPU reference (shared masks)
-    │   └── parameterValidation.ts # validation + fail-closed narrowing
-    └── __tests__/                 # math + validation unit tests
+    │   ├── matrixRainMath.ts       # deterministic CPU reference (+ feedback math)
+    │   ├── feedbackLifecycle.ts    # state reallocation / reset predicates
+    │   └── parameterValidation.ts  # validation + fail-closed narrowing
+    └── __tests__/                  # math, feedback, lifecycle, filter, validation
 ```
 
 The feature barrel exports only the factory, definition metadata, defaults, and

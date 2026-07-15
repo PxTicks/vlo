@@ -1,9 +1,9 @@
 /**
- * Phase 2 resolved parameter surface: the stateless Matrix appearance. It adds
- * the glyph grid, procedural motion, brightness, palette, and composition
- * controls on top of the Phase 0 baseline. Later phases widen this again with
- * the source-injection, feedback, and full composition parameters from the
- * extension plan.
+ * Phase 3 resolved parameter surface: the stateless appearance plus the
+ * low-resolution temporal-feedback controls. It adds a `feedback` group
+ * (half-life decay, luma injection, and the direct current-shape term) on top
+ * of the Phase 2 grid/motion/brightness/palette/composition controls. Later
+ * phases widen this again with the edge/motion source-injection parameters.
  */
 
 /** Opaque black-background glyphs, or transparent premultiplied glyphs. */
@@ -14,7 +14,9 @@ export type MatrixDebugMode =
   | "none"
   | "cellGrid"
   | "proceduralTrail"
-  | "proceduralHead";
+  | "proceduralHead"
+  | "rainState"
+  | "advectedPrevious";
 
 export interface MatrixRainParameters {
   // Grid
@@ -38,6 +40,16 @@ export interface MatrixRainParameters {
   readonly pulseDensity: number;
   /** Bright-head width as a fraction of the trail, 0.01..0.5. */
   readonly headWidth: number;
+
+  // Feedback (Phase 3 temporal state)
+  /** Half-life of the rain trail's decay, in seconds. */
+  readonly trailHalfLife: number;
+  /** Constant rain injected every step, keeping columns alive, 0..1. */
+  readonly baseInjection: number;
+  /** How strongly source luma injects into the rain, 0..2. */
+  readonly sourceInfluence: number;
+  /** Weight of the immediate current-shape (source signal) term, 0..2. */
+  readonly directShapeStrength: number;
 
   // Brightness
   /** Overall body/trail brightness multiplier. */

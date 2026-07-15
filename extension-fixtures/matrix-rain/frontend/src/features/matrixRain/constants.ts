@@ -12,15 +12,16 @@ import type {
 export const MATRIX_RAIN_TRANSFORM_ID = "matrix-rain";
 
 /**
- * Render-dependency policy. Phase 2 renders the appearance as a pure function of
- * the current sample's canonical visual time, with no previous-frame state, so
- * it declares `sample` (not `history`) and avoids triggering unnecessary
- * history replay/warm-up. It becomes `history` with a bounded replay window when
- * Phase 3 introduces the feedback texture. Rendering metadata is authoring
- * policy and is not persisted per transform, so this can change across phases.
+ * Render-dependency policy. Phase 3 retains per-cell feedback state across
+ * frames (a decaying, advecting rain trail), so the effect now genuinely
+ * depends on earlier samples and declares `history` with a bounded replay
+ * window. `maxStepSeconds` caps the continuous step the state update accepts
+ * before the host must subdivide or warm up. Rendering metadata is authoring
+ * policy and is not persisted per transform.
  */
 export const MATRIX_RAIN_RENDERING: ExtensionTrustedFilterRenderingDefinition = {
-  timeDependency: "sample",
+  timeDependency: "history",
+  maxHistorySeconds: 6,
   maxStepSeconds: 1 / 30,
 };
 
@@ -39,6 +40,8 @@ export const DEBUG_MODES: readonly MatrixDebugMode[] = [
   "cellGrid",
   "proceduralTrail",
   "proceduralHead",
+  "rainState",
+  "advectedPrevious",
 ];
 
 // `satisfies` (not an annotation) keeps the anonymous literal type so the
@@ -54,6 +57,10 @@ export const DEFAULT_MATRIX_RAIN_PARAMETERS = {
   trailShape: 1.8,
   pulseDensity: 0.7,
   headWidth: 0.1,
+  trailHalfLife: 0.45,
+  baseInjection: 0.04,
+  sourceInfluence: 0.85,
+  directShapeStrength: 0.25,
   rainStrength: 1,
   headIntensity: 1.5,
   ditherMagnitude: 0.015,
@@ -173,6 +180,52 @@ export const MATRIX_RAIN_CONTROL_GROUPS: readonly ExtensionTransformationControl
       ],
     },
     {
+      id: "feedback",
+      title: "Feedback",
+      controls: [
+        {
+          type: "slider",
+          name: "trailHalfLife",
+          label: "Trail Half-life",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.trailHalfLife,
+          min: 0.05,
+          max: 2,
+          step: 0.01,
+          supportsSpline: true,
+        },
+        {
+          type: "slider",
+          name: "baseInjection",
+          label: "Base Injection",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.baseInjection,
+          min: 0,
+          max: 1,
+          step: 0.01,
+          supportsSpline: true,
+        },
+        {
+          type: "slider",
+          name: "sourceInfluence",
+          label: "Source Influence",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.sourceInfluence,
+          min: 0,
+          max: 2,
+          step: 0.01,
+          supportsSpline: true,
+        },
+        {
+          type: "slider",
+          name: "directShapeStrength",
+          label: "Direct Shape",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.directShapeStrength,
+          min: 0,
+          max: 2,
+          step: 0.01,
+          supportsSpline: true,
+        },
+      ],
+    },
+    {
       id: "brightness",
       title: "Brightness",
       controls: [
@@ -275,6 +328,8 @@ export const MATRIX_RAIN_CONTROL_GROUPS: readonly ExtensionTransformationControl
             { label: "Cell Grid", value: "cellGrid" },
             { label: "Procedural Trail", value: "proceduralTrail" },
             { label: "Procedural Head", value: "proceduralHead" },
+            { label: "Rain State", value: "rainState" },
+            { label: "Advected Previous", value: "advectedPrevious" },
           ],
         },
       ],
@@ -292,6 +347,10 @@ export const MATRIX_RAIN_NUMERIC_BOUNDS = {
   trailShape: { min: 0.25, max: 5, integer: false },
   pulseDensity: { min: 0.05, max: 2, integer: false },
   headWidth: { min: 0.01, max: 0.5, integer: false },
+  trailHalfLife: { min: 0.05, max: 2, integer: false },
+  baseInjection: { min: 0, max: 1, integer: false },
+  sourceInfluence: { min: 0, max: 2, integer: false },
+  directShapeStrength: { min: 0, max: 2, integer: false },
   rainStrength: { min: 0, max: 3, integer: false },
   headIntensity: { min: 0, max: 4, integer: false },
   ditherMagnitude: { min: 0, max: 0.05, integer: false },
@@ -313,6 +372,10 @@ export const MATRIX_RAIN_SPLINE_KEYS: ReadonlySet<string> = new Set([
   "trailShape",
   "pulseDensity",
   "headWidth",
+  "trailHalfLife",
+  "baseInjection",
+  "sourceInfluence",
+  "directShapeStrength",
   "rainStrength",
   "headIntensity",
   "ditherMagnitude",

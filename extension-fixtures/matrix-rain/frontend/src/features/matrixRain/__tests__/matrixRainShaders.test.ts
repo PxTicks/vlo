@@ -4,6 +4,11 @@ import {
   MATRIX_RAIN_VERTEX,
 } from "../shaders/matrixRainGl";
 import { MATRIX_RAIN_WGSL } from "../shaders/matrixRainWgsl";
+import {
+  MATRIX_RAIN_STATE_FRAGMENT,
+  MATRIX_RAIN_STATE_VERTEX,
+} from "../shaders/matrixRainStateGl";
+import { MATRIX_RAIN_STATE_WGSL } from "../shaders/matrixRainStateWgsl";
 
 describe("Matrix Rain WebGL programs", () => {
   it("declare GLSL ES 3.00 before using unsigned integer operations", () => {
@@ -39,5 +44,25 @@ describe("Matrix Rain WebGL programs", () => {
     expect(MATRIX_RAIN_WGSL).toContain("fn glyphCoverage");
     expect(MATRIX_RAIN_WGSL).toContain("fwidth(distanceToStroke)");
     expect(MATRIX_RAIN_WGSL).not.toContain("sub.x * 5.0");
+  });
+
+  it("uses a cell-resolution state target and explicit cell-centre sampling", () => {
+    expect(MATRIX_RAIN_STATE_VERTEX).toContain(
+      "aPosition * uOutputTexture.xy",
+    );
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain("uniform vec2 uStateSize");
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain(
+      "floor(vStateCoord * stateSize)",
+    );
+    expect(MATRIX_RAIN_FRAGMENT).toContain("textureSize(uState, 0)");
+
+    expect(MATRIX_RAIN_STATE_WGSL).toContain(
+      "aPosition * gfu.uOutputTexture.xy",
+    );
+    expect(MATRIX_RAIN_STATE_WGSL).toContain("uStateSize: vec2<f32>");
+    expect(MATRIX_RAIN_STATE_WGSL).toContain(
+      "floor(stateCoord * stateSize)",
+    );
+    expect(MATRIX_RAIN_WGSL).toContain("textureDimensions(uState)");
   });
 });

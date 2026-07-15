@@ -40,6 +40,7 @@ struct MatrixRainUniforms {
   uHeadWidth: f32,
   uRainStrength: f32,
   uHeadIntensity: f32,
+  uDirectShapeStrength: f32,
   uDitherMagnitude: f32,
   uOutputMode: f32,
   uDebugMode: f32,
@@ -55,6 +56,8 @@ struct MatrixRainUniforms {
 @group(0) @binding(1) var uTexture: texture_2d<f32>;
 @group(0) @binding(2) var uSampler: sampler;
 @group(1) @binding(0) var<uniform> matrixRainUniforms: MatrixRainUniforms;
+@group(1) @binding(1) var uState: texture_2d<f32>;
+@group(1) @binding(2) var uStateSampler: sampler;
 
 var<private> GLYPHS: array<u32, 16> = array<u32, 16>(${GLYPH_ARRAY});
 var<private> SEGMENT_A: array<vec2<f32>, 16> = array<vec2<f32>, 16>(
@@ -172,6 +175,15 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   let gi = hash3(col, row, bucket ^ seed) % 16u;
   let lit = glyphCoverage(gi, sub) * glyphRegion;
 
+  // Persistent feedback state: one texel per cell, sampled at its centre.
+  let stateSize = vec2<f32>(textureDimensions(uState));
+  let stateCell = clamp(cellIndex, vec2<f32>(0.0), stateSize - vec2<f32>(1.0));
+  let stateUv = (stateCell + vec2<f32>(0.5)) / stateSize;
+  let state = textureSample(uState, uStateSampler, stateUv);
+  let rainR = state.r;
+  let headG = state.g;
+  let signalB = state.b;
+
   if (dbgMode == 1) {
     let border = select(0.0, 1.0, sub.x < 0.06 || sub.y < 0.06);
     let grid = mix(vec3<f32>(0.0, 0.15, 0.0), vec3<f32>(0.0, 0.6, 0.0), border);
@@ -183,11 +195,18 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   if (dbgMode == 3) {
     return vec4<f32>(clamp(head, 0.0, 1.0) * vec3<f32>(0.6, 1.0, 0.75), 1.0);
   }
+  if (dbgMode == 4) {
+    return vec4<f32>(clamp(vec3<f32>(rainR, headG, signalB), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+  }
+  if (dbgMode == 5) {
+    return vec4<f32>(0.0, clamp(rainR, 0.0, 1.0), 0.0, 1.0);
+  }
 
-  let bodyB = clamp(trail, 0.0, 1.0) * lit;
-  let headB = head * mu.uHeadIntensity * lit;
+  let bodyState = rainR * mu.uRainStrength + signalB * mu.uDirectShapeStrength;
+  let bodyB = clamp(bodyState, 0.0, 1.0) * lit;
+  let headB = headG * mu.uHeadIntensity * lit;
   let coverage = clamp(bodyB + headB, 0.0, 1.0);
-  let grade = paletteGrade(trail);
+  let grade = paletteGrade(bodyState);
   // Static per-pixel dither scaled by coverage: the flat background never
   // shimmers and stays exactly uBackground; transparent output stays clear.
   let dither = (unitFloat(hash2(u32(pixel.x), u32(pixel.y))) - 0.5)
@@ -197,7 +216,7 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
     // matrixOnly: dither the straight colour, then premultiply by coverage so no
     // channel can exceed alpha (no bright compositing fringe).
     let straight = clamp(
-      grade + mu.uHead * head * mu.uHeadIntensity + vec3<f32>(dither),
+      grade + mu.uHead * headG * mu.uHeadIntensity + vec3<f32>(dither),
       vec3<f32>(0.0),
       vec3<f32>(1.0),
     );

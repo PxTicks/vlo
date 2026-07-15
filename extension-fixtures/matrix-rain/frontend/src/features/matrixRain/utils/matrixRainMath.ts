@@ -244,3 +244,122 @@ export function paletteGrade(brightness: number, palette: Palette): Vec3 {
   }
   return mix(palette.body, palette.bright, (b - 0.5) / 0.5);
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3: low-resolution temporal feedback
+//
+// The state texture stores, per glyph cell, four channels:
+//   R = accumulated / advected rain brightness
+//   G = current procedural head brightness
+//   B = current source signal (luma) for the next sample's comparison
+//   A = current motion / change signal (introduced in Phase 4; 0 here)
+//
+// The functions below are the CPU reference for the state-update fragment
+// program. They are deterministic and frame-rate independent, and every one
+// mirrors the GLSL/WGSL exactly.
+// ---------------------------------------------------------------------------
+
+export function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/** Rec.709 luma on unpremultiplied linear-ish RGB, matching the shader. */
+export function luma(r: number, g: number, b: number): number {
+  return r * 0.2126 + g * 0.7152 + b * 0.0722;
+}
+
+/**
+ * Frame-rate-independent retention factor for a half-life decay: after
+ * `halfLifeSeconds` the retained fraction is 0.5, regardless of frame rate.
+ * `exp2(-dt / halfLife)`.
+ */
+export function retention(deltaSeconds: number, halfLifeSeconds: number): number {
+  return 2 ** (-Math.max(deltaSeconds, 0) / Math.max(halfLifeSeconds, 1e-4));
+}
+
+/**
+ * Soft-union accumulation: `1 - (1 - a)(1 - b)`. Combining a decayed trail with
+ * new injection this way saturates gracefully toward 1 instead of clipping.
+ */
+export function softAdd(a: number, b: number): number {
+  return 1 - (1 - clamp01(a)) * (1 - clamp01(b));
+}
+
+/**
+ * The source row a cell's advected rain is read from. Rain descends, so a cell's
+ * next value comes from `fallCells` above it. Fractional values are sampled with
+ * linear interpolation on the GPU.
+ */
+export function advectionSourceRow(row: number, fallCells: number): number {
+  return row - fallCells;
+}
+
+/** Fall distance in cells across one continuous step. */
+export function fallCells(fallSpeed: number, deltaSeconds: number): number {
+  return fallSpeed * Math.max(deltaSeconds, 0);
+}
+
+export interface RainState {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+  readonly a: number;
+}
+
+export interface FeedbackParameters {
+  readonly trailHalfLife: number;
+  readonly baseInjection: number;
+  readonly sourceInfluence: number;
+}
+
+export interface RainStateUpdateInput {
+  /** Previous rain (R) sampled at the advected (upstream) coordinate. */
+  readonly advectedRain: number;
+  /** Current source signal (luma) at this cell. */
+  readonly currentSignal: number;
+  /** Phase-2 procedural trail at this cell; gates static injection. */
+  readonly proceduralTrail: number;
+  /** Phase-2 procedural head at this cell. */
+  readonly proceduralHead: number;
+  readonly deltaSeconds: number;
+  readonly params: FeedbackParameters;
+}
+
+/**
+ * One feedback step for a cell. Static source injection is gated by the
+ * procedural trail so a still silhouette cannot saturate permanently, and it is
+ * further gated to zero on a zero-delta sample so repeated/paused renders never
+ * accumulate. The current signal is always written to B, so a newly visible or
+ * static feature stays legible through the direct-shape term even before the
+ * rain history develops.
+ */
+export function updateRainState(input: RainStateUpdateInput): RainState {
+  const { advectedRain, currentSignal, proceduralTrail, proceduralHead } = input;
+  const dt = Math.max(input.deltaSeconds, 0);
+  const decayed = advectedRain * retention(dt, input.params.trailHalfLife);
+  const injectionGate = dt > 0 ? 1 : 0;
+  const injection = clamp01(
+    (input.params.baseInjection +
+      input.params.sourceInfluence * currentSignal * proceduralTrail) *
+      injectionGate,
+  );
+  return {
+    r: softAdd(decayed, injection),
+    g: clamp01(proceduralHead),
+    b: clamp01(currentSignal),
+    a: 0,
+  };
+}
+
+/**
+ * Final glyph body brightness from the state: accumulated rain plus a direct
+ * current-shape contribution, so a source shape is recognizable immediately.
+ * (Phase 4 adds the motion term `state.a * directMotionStrength`.)
+ */
+export function rainBodyBrightness(
+  state: RainState,
+  rainStrength: number,
+  directShapeStrength: number,
+): number {
+  return state.r * rainStrength + state.b * directShapeStrength;
+}

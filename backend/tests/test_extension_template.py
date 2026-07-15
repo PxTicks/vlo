@@ -314,10 +314,12 @@ def test_matrix_rain_fixture_builds_as_an_ordinary_trusted_extension(
     # declaring the history time-dependency and carrying no bundled Pixi copy.
     assert b"trusted-filter" in contents
     assert b"example-matrix-rain" in contents
-    # Sample-dependent (feedback-free) appearance; not history yet.
-    assert b"sample" in contents
-    # Both renderer programs ship: the GLSL name and the WGSL struct/uniforms.
+    # History-dependent temporal feedback (Phase 3 ping-pong state).
+    assert b"history" in contents
+    # Both passes ship as WGSL structs: the glyph program and the state program.
     assert b"MatrixRainUniforms" in contents
+    assert b"StateUniforms" in contents
+    assert b"example-matrix-rain-state" in contents
     assert b"mainFragment" in contents
 
 
@@ -329,23 +331,31 @@ def test_matrix_rain_fixture_activates_with_matching_gl_and_wgsl_programs(
     built_entry = fixture / "frontend" / "dist" / "index.js"
     assert built_entry.is_file()
 
-    # Drive activation with a mock host, capture the exact `Filter.from` options,
-    # and then construct the WGSL program through the real Pixi `GpuProgram`
-    # factory to prove Pixi actually parses it (struct + bind-group extraction),
-    # not merely that a string was supplied. The GLSL program can only be
-    # constructed against a live GL context, so headless we assert its source is
-    # present and defer real compilation to the GPU visual suite. Also asserts
-    # the render sample's visual time reaches the time uniform. Runs from the
-    # frontend workspace so `pixi.js` resolves.
+    # Drive activation with a mock host, capture the exact `Filter.from` options
+    # for both the glyph and state passes, and construct each WGSL program
+    # through the real Pixi `GpuProgram` factory to prove Pixi parses them (struct
+    # + bind-group extraction), not merely that strings were supplied. The GLSL
+    # programs can only be constructed against a live GL context, so headless we
+    # assert their sources are present and defer real compilation to the GPU
+    # visual suite. Also asserts the render sample's visual time reaches the time
+    # uniform. Runs from the frontend workspace so `pixi.js` resolves.
     script = (
         f"const extension = await import({json.dumps(built_entry.as_uri())});"
         "const pixiReal = await import('pixi.js');"
+        "const isGroup = (v) => v && typeof v === 'object' && !('style' in v)"
+        "  && Object.values(v).length > 0"
+        "  && Object.values(v).every((e) => e && typeof e === 'object' && 'value' in e);"
         "const options = [];"
         "const pixi = { Filter: { from(o) { options.push(o);"
-        "  const values = Object.fromEntries(Object.entries("
-        "    o.resources.matrixRainUniforms).map(([k, v]) => [k, v.value]));"
-        "  return { resources: { matrixRainUniforms: { uniforms: values } },"
-        "    destroy() {} }; } } };"
+        "  const resources = {};"
+        "  for (const [k, v] of Object.entries(o.resources || {})) {"
+        "    resources[k] = isGroup(v)"
+        "      ? { uniforms: Object.fromEntries(Object.entries(v)"
+        "          .map(([n, s]) => [n, s.value])) } : v; }"
+        "  return { name: o.gl && o.gl.name, resources, destroy() {} }; } },"
+        "  Texture: { WHITE: { source: { style: {} } } },"
+        "  RenderTexture: { create: () => ("
+        "    { source: { style: {}, width: 1, height: 1 }, destroy() {} }) } };"
         "let def;"
         "const api = {"
         "  timeline: { ticksPerSecond: 96000 },"
@@ -359,25 +369,31 @@ def test_matrix_rain_fixture_activates_with_matching_gl_and_wgsl_programs(
         "  logger: { debug() {}, info() {}, warn() {}, error() {} },"
         "  onDispose() {} });"
         "if (!def || def.kind !== 'trusted-filter') throw new Error('registration');"
-        "if (def.rendering.timeDependency !== 'sample') throw new Error('rendering');"
+        "if (def.rendering.timeDependency !== 'history') throw new Error('rendering');"
         "const instance = def.createFilter();"
-        "const o = options[0];"
-        "if (!o.gl || !o.gl.vertex || !o.gl.fragment) throw new Error('missing gl');"
-        "if (o.clipToViewport !== false) throw new Error('clipToViewport');"
-        # Construct the WGSL program with the real Pixi GPU factory.
-        "const program = pixiReal.GpuProgram.from(o.gpu);"
-        "if (!program) throw new Error('gpu program construction failed');"
-        "const structs = program.structsAndGroups.structs.map((s) => s.name);"
-        "if (!structs.includes('MatrixRainUniforms'))"
-        "  throw new Error('wgsl struct not extracted');"
-        "const groups = program.structsAndGroups.groups;"
-        "if (!groups.some((g) => g.group === 1 && g.binding === 0"
-        "    && g.name === 'matrixRainUniforms' && g.isUniform))"
-        "  throw new Error('wgsl uniform binding missing');"
+        "if (options.length !== 2) throw new Error('expected glyph + state filters');"
+        "for (const o of options) {"
+        "  if (!o.gl || !o.gl.vertex || !o.gl.fragment) throw new Error('missing gl');"
+        "  if (o.clipToViewport !== false) throw new Error('clipToViewport');"
+        "  const program = pixiReal.GpuProgram.from(o.gpu);"
+        "  if (!program) throw new Error('gpu program construction failed'); }"
+        # Glyph pass: reads its uniforms plus the state texture at group 1.
+        "const glyph = pixiReal.GpuProgram.from(options[0].gpu).structsAndGroups;"
+        "if (!glyph.structs.some((s) => s.name === 'MatrixRainUniforms'))"
+        "  throw new Error('glyph struct not extracted');"
+        "if (!glyph.groups.some((g) => g.group === 1 && g.binding === 1"
+        "    && g.name === 'uState')) throw new Error('glyph uState binding missing');"
+        # State pass: reads its uniforms plus the previous-state texture at group 1.
+        "const st = pixiReal.GpuProgram.from(options[1].gpu).structsAndGroups;"
+        "if (!st.structs.some((s) => s.name === 'StateUniforms'))"
+        "  throw new Error('state struct not extracted');"
+        "if (!st.groups.some((g) => g.group === 1 && g.binding === 1"
+        "    && g.name === 'uPrevState')) throw new Error('uPrevState binding missing');"
         "const u = instance.object.resources.matrixRainUniforms.uniforms;"
         "if (!u || !Object.hasOwn(u, 'uTimeSeconds'))"
         "  throw new Error('missing uniforms');"
         "instance.update(def.defaultParameters, { target: {}, transformId: 't',"
+        "  contentSize: { width: 1920, height: 1080 },"
         "  render: { sequenceId: 0, sampleId: 1, mode: 'preview',"
         "    continuity: 'sequential', presentationTimeTicks: 96000,"
         "    visualTimeTicks: 96000, sourceTimeTicks: 0, deltaTimeTicks: null,"

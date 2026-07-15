@@ -14,6 +14,8 @@ import { GLYPH_BITMASKS } from "../utils/matrixRainMath";
  */
 
 export const MATRIX_RAIN_VERTEX = `
+#version 300 es
+
 in vec2 aPosition;
 out vec2 vTextureCoord;
 uniform vec4 uInputSize;
@@ -32,6 +34,8 @@ void main(void) {
 const GLYPH_ARRAY = GLYPH_BITMASKS.map((mask) => `${mask >>> 0}u`).join(", ");
 
 export const MATRIX_RAIN_FRAGMENT = `
+#version 300 es
+
 precision highp float;
 precision highp int;
 
@@ -40,6 +44,7 @@ out vec4 finalColor;
 
 uniform sampler2D uTexture;
 uniform vec4 uInputSize;
+uniform vec4 uOutputFrame;
 
 uniform float uTimeSeconds;
 uniform float uSize;
@@ -55,6 +60,7 @@ uniform float uHeadIntensity;
 uniform float uDitherMagnitude;
 uniform float uOutputMode;
 uniform float uDebugMode;
+uniform vec2 uContentSize;
 uniform vec3 uBackground;
 uniform vec3 uShadow;
 uniform vec3 uBody;
@@ -84,7 +90,15 @@ void main(void) {
   int outMode = int(uOutputMode + 0.5);
   int dbgMode = int(uDebugMode + 0.5);
 
-  vec2 pixel = vTextureCoord * uInputSize.xy;
+  vec2 frameSize = max(uOutputFrame.zw, vec2(1.0));
+  vec2 contentSize = uContentSize;
+  if (contentSize.x <= 0.0 || contentSize.y <= 0.0) {
+    contentSize = frameSize;
+  }
+  // Convert filter-frame pixels back into source-local pixels. Spatial
+  // transforms then scale the completed glyph grid naturally instead of the
+  // grid remaining screen-sized and sliding as the clip is zoomed.
+  vec2 pixel = vTextureCoord * uInputSize.xy * (contentSize / frameSize);
   float size = max(uSize, 1.0);
   vec2 cellf = pixel / size;
   vec2 cellIndex = floor(cellf);

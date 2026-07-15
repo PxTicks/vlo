@@ -29,6 +29,37 @@ function color(hex: string) {
   return { value: new Float32Array(colorToVec3(hex)), type: "vec3<f32>" as const };
 }
 
+interface MatrixRainUniformValues {
+  uTimeSeconds: number;
+  uSize: number;
+  uSeed: number;
+  uGlyphCycleRate: number;
+  uFallSpeed: number;
+  uSpeedVariation: number;
+  uTrailShape: number;
+  uPulseDensity: number;
+  uHeadWidth: number;
+  uRainStrength: number;
+  uHeadIntensity: number;
+  uDitherMagnitude: number;
+  uOutputMode: number;
+  uDebugMode: number;
+  uContentSize: Float32Array;
+  uBackground: Float32Array;
+  uShadow: Float32Array;
+  uBody: Float32Array;
+  uBright: Float32Array;
+  uHead: Float32Array;
+}
+
+interface MatrixRainFilterObject {
+  readonly resources: {
+    readonly matrixRainUniforms: {
+      readonly uniforms: MatrixRainUniformValues;
+    };
+  };
+}
+
 /**
  * Phase 2 controller: one host `Filter` carrying matching GLSL and WGSL programs
  * for the stateless Matrix appearance. The uniform-group key order is the GPU
@@ -47,7 +78,7 @@ export function createMatrixRainFilter(
 ): ExtensionTrustedFilterInstance {
   const d = DEFAULT_MATRIX_RAIN_PARAMETERS;
   // Insertion order MUST match the MatrixRainUniforms WGSL struct field order.
-  const uniforms = {
+  const uniformStructures = {
     uTimeSeconds: scalar(0),
     uSize: scalar(d.size),
     uSeed: scalar(d.seed),
@@ -62,6 +93,7 @@ export function createMatrixRainFilter(
     uDitherMagnitude: scalar(d.ditherMagnitude),
     uOutputMode: scalar(outputModeIndex(d.outputMode)),
     uDebugMode: scalar(debugModeIndex(d.debugMode)),
+    uContentSize: { value: new Float32Array(2), type: "vec2<f32>" as const },
     uBackground: color(d.backgroundColor),
     uShadow: color(d.shadowColor),
     uBody: color(d.bodyColor),
@@ -91,9 +123,13 @@ export function createMatrixRainFilter(
         entryPoint: MATRIX_RAIN_WGSL_FRAGMENT_ENTRY,
       },
     },
-    resources: { matrixRainUniforms: uniforms },
+    resources: { matrixRainUniforms: uniformStructures },
     clipToViewport: false,
-  });
+  }) as MatrixRainFilterObject;
+  // Pixi copies primitive descriptor values when it creates a UniformGroup.
+  // Update the live resource, not `uniformStructures`: array-backed colours
+  // otherwise appear to work while every scalar remains stuck at its default.
+  const uniforms = object.resources.matrixRainUniforms.uniforms;
 
   const writeColor = (target: Float32Array, hex: string) => {
     const [r, g, b] = colorToVec3(hex);
@@ -113,27 +149,34 @@ export function createMatrixRainFilter(
       const visualTicks = context.render?.visualTimeTicks ?? 0;
       const reduced =
         ((visualTicks % reductionTicks) + reductionTicks) % reductionTicks;
-      uniforms.uTimeSeconds.value = reduced / safeTicksPerSecond;
+      uniforms.uTimeSeconds = reduced / safeTicksPerSecond;
 
-      uniforms.uSize.value = resolved.size;
-      uniforms.uSeed.value = resolved.seed;
-      uniforms.uGlyphCycleRate.value = resolved.glyphCycleRate;
-      uniforms.uFallSpeed.value = resolved.fallSpeed;
-      uniforms.uSpeedVariation.value = resolved.speedVariation;
-      uniforms.uTrailShape.value = resolved.trailShape;
-      uniforms.uPulseDensity.value = resolved.pulseDensity;
-      uniforms.uHeadWidth.value = resolved.headWidth;
-      uniforms.uRainStrength.value = resolved.rainStrength;
-      uniforms.uHeadIntensity.value = resolved.headIntensity;
-      uniforms.uDitherMagnitude.value = resolved.ditherMagnitude;
-      uniforms.uOutputMode.value = outputModeIndex(resolved.outputMode);
-      uniforms.uDebugMode.value = debugModeIndex(resolved.debugMode);
+      uniforms.uSize = resolved.size;
+      uniforms.uSeed = resolved.seed;
+      uniforms.uGlyphCycleRate = resolved.glyphCycleRate;
+      uniforms.uFallSpeed = resolved.fallSpeed;
+      uniforms.uSpeedVariation = resolved.speedVariation;
+      uniforms.uTrailShape = resolved.trailShape;
+      uniforms.uPulseDensity = resolved.pulseDensity;
+      uniforms.uHeadWidth = resolved.headWidth;
+      uniforms.uRainStrength = resolved.rainStrength;
+      uniforms.uHeadIntensity = resolved.headIntensity;
+      uniforms.uDitherMagnitude = resolved.ditherMagnitude;
+      uniforms.uOutputMode = outputModeIndex(resolved.outputMode);
+      uniforms.uDebugMode = debugModeIndex(resolved.debugMode);
 
-      writeColor(uniforms.uBackground.value, resolved.backgroundColor);
-      writeColor(uniforms.uShadow.value, resolved.shadowColor);
-      writeColor(uniforms.uBody.value, resolved.bodyColor);
-      writeColor(uniforms.uBright.value, resolved.brightColor);
-      writeColor(uniforms.uHead.value, resolved.headColor);
+      const contentWidth = context.contentSize?.width ?? 0;
+      const contentHeight = context.contentSize?.height ?? 0;
+      uniforms.uContentSize[0] =
+        Number.isFinite(contentWidth) && contentWidth > 0 ? contentWidth : 0;
+      uniforms.uContentSize[1] =
+        Number.isFinite(contentHeight) && contentHeight > 0 ? contentHeight : 0;
+
+      writeColor(uniforms.uBackground, resolved.backgroundColor);
+      writeColor(uniforms.uShadow, resolved.shadowColor);
+      writeColor(uniforms.uBody, resolved.bodyColor);
+      writeColor(uniforms.uBright, resolved.brightColor);
+      writeColor(uniforms.uHead, resolved.headColor);
     },
   };
 }

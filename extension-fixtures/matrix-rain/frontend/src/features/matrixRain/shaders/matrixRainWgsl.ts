@@ -42,6 +42,7 @@ struct MatrixRainUniforms {
   uDitherMagnitude: f32,
   uOutputMode: f32,
   uDebugMode: f32,
+  uContentSize: vec2<f32>,
   uBackground: vec3<f32>,
   uShadow: vec3<f32>,
   uBody: vec3<f32>,
@@ -99,7 +100,12 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   let outMode = i32(mu.uOutputMode + 0.5);
   let dbgMode = i32(mu.uDebugMode + 0.5);
 
-  let pixel = uv * gfu.uInputSize.xy;
+  let frameSize = max(gfu.uOutputFrame.zw, vec2<f32>(1.0));
+  var contentSize = mu.uContentSize;
+  if (contentSize.x <= 0.0 || contentSize.y <= 0.0) {
+    contentSize = frameSize;
+  }
+  let pixel = uv * gfu.uInputSize.xy * (contentSize / frameSize);
   let size = max(mu.uSize, 1.0);
   let cellf = pixel / size;
   let cellIndex = floor(cellf);

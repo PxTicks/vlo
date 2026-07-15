@@ -1,34 +1,44 @@
-import { MATRIX_RAIN_BOUNDS } from "../constants";
-import type { MatrixRainParameters } from "../types";
+import {
+  DEBUG_MODES,
+  MATRIX_RAIN_COLOR_KEYS,
+  MATRIX_RAIN_NUMERIC_BOUNDS,
+  MATRIX_RAIN_SPLINE_KEYS,
+  OUTPUT_MODES,
+} from "../constants";
+import type {
+  MatrixDebugMode,
+  MatrixOutputMode,
+  MatrixRainParameters,
+} from "../types";
 
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
-const EXPECTED_KEYS: ReadonlySet<string> = new Set([
-  "size",
-  "seed",
-  "debugTint",
-  "backgroundColor",
+type NumericKey = keyof typeof MATRIX_RAIN_NUMERIC_BOUNDS;
+const NUMERIC_KEYS = Object.keys(MATRIX_RAIN_NUMERIC_BOUNDS) as NumericKey[];
+
+const EXPECTED_KEYS: ReadonlySet<string> = new Set<string>([
+  ...NUMERIC_KEYS,
+  ...MATRIX_RAIN_COLOR_KEYS,
+  "outputMode",
+  "debugMode",
 ]);
 
-function isInBounds(
-  value: unknown,
-  bounds: { min: number; max: number },
-  integer: boolean,
-): boolean {
+function isNumberInBounds(value: unknown, key: NumericKey): boolean {
+  const bounds = MATRIX_RAIN_NUMERIC_BOUNDS[key];
   return (
     typeof value === "number" &&
     Number.isFinite(value) &&
     value >= bounds.min &&
     value <= bounds.max &&
-    (!integer || Number.isInteger(value))
+    (!bounds.integer || Number.isInteger(value))
   );
 }
 
 /**
  * A host-supported animated scalar the panel persists when a continuous control
- * opts into splines. The registration's native control bounds already validate
- * the envelope and every point; the authored validator must preserve it rather
- * than demand a plain number, so animated debug-tint survives round-tripping.
+ * opts into splines. The native control bounds already validate the envelope
+ * and every point; the authored validator must preserve it rather than demand a
+ * plain number so animated fields survive round-tripping.
  */
 function isSupportedScalarObject(value: unknown): boolean {
   return (
@@ -38,12 +48,24 @@ function isSupportedScalarObject(value: unknown): boolean {
   );
 }
 
+function isColor(value: unknown): value is string {
+  return typeof value === "string" && COLOR_PATTERN.test(value);
+}
+
+function isOutputMode(value: unknown): value is MatrixOutputMode {
+  return typeof value === "string" && OUTPUT_MODES.includes(value as MatrixOutputMode);
+}
+
+function isDebugMode(value: unknown): value is MatrixDebugMode {
+  return typeof value === "string" && DEBUG_MODES.includes(value as MatrixDebugMode);
+}
+
 /**
- * Custom authored-parameter validator. It enforces the exact key set,
- * static-field types, integer fields, color format, and continuous-field
- * ranges, while accepting host-supported scalar animation objects for the
- * spline-enabled `debugTint`. It never clamps — persisted invalid data fails
- * closed instead of being silently rewritten during rendering.
+ * Custom authored-parameter validator. It enforces the exact key set, numeric
+ * bounds and integer fields, color formats, and enum membership, while
+ * accepting host-supported scalar animation objects for spline-enabled fields.
+ * It never clamps — persisted invalid data fails closed instead of being
+ * silently rewritten during rendering.
  */
 export function validateMatrixRainAuthoredParameters(
   parameters: Readonly<Record<string, unknown>>,
@@ -54,55 +76,66 @@ export function validateMatrixRainAuthoredParameters(
     if (!EXPECTED_KEYS.has(key)) return false;
   }
 
-  if (!isInBounds(parameters.size, MATRIX_RAIN_BOUNDS.size, true)) return false;
-  if (!isInBounds(parameters.seed, MATRIX_RAIN_BOUNDS.seed, true)) return false;
-
-  const debugTint = parameters.debugTint;
-  if (
-    !isInBounds(debugTint, MATRIX_RAIN_BOUNDS.debugTint, false) &&
-    !isSupportedScalarObject(debugTint)
-  ) {
+  for (const key of NUMERIC_KEYS) {
+    const value = parameters[key];
+    if (isNumberInBounds(value, key)) continue;
+    if (MATRIX_RAIN_SPLINE_KEYS.has(key) && isSupportedScalarObject(value)) {
+      continue;
+    }
     return false;
   }
 
-  return (
-    typeof parameters.backgroundColor === "string" &&
-    COLOR_PATTERN.test(parameters.backgroundColor)
-  );
+  for (const key of MATRIX_RAIN_COLOR_KEYS) {
+    if (!isColor(parameters[key])) return false;
+  }
+
+  return isOutputMode(parameters.outputMode) && isDebugMode(parameters.debugMode);
 }
 
 /**
  * Fail-closed narrowing used by `update()`. The host resolves animated scalars
  * to numbers before dispatch, so every numeric field must be finite and in
- * range here; a non-finite value returns `null` rather than reaching a GPU
+ * range here; anything invalid returns `null` rather than reaching a GPU
  * uniform.
  */
 export function resolveMatrixRainParameters(
   parameters: Readonly<Record<string, unknown>>,
 ): MatrixRainParameters | null {
-  if (
-    !isInBounds(parameters.size, MATRIX_RAIN_BOUNDS.size, true) ||
-    !isInBounds(parameters.seed, MATRIX_RAIN_BOUNDS.seed, true) ||
-    !isInBounds(parameters.debugTint, MATRIX_RAIN_BOUNDS.debugTint, false) ||
-    typeof parameters.backgroundColor !== "string" ||
-    !COLOR_PATTERN.test(parameters.backgroundColor)
-  ) {
-    return null;
+  for (const key of NUMERIC_KEYS) {
+    if (!isNumberInBounds(parameters[key], key)) return null;
   }
+  for (const key of MATRIX_RAIN_COLOR_KEYS) {
+    if (!isColor(parameters[key])) return null;
+  }
+  if (!isOutputMode(parameters.outputMode)) return null;
+  if (!isDebugMode(parameters.debugMode)) return null;
+
   return {
     size: parameters.size as number,
     seed: parameters.seed as number,
-    debugTint: parameters.debugTint as number,
-    backgroundColor: parameters.backgroundColor,
+    glyphCycleRate: parameters.glyphCycleRate as number,
+    fallSpeed: parameters.fallSpeed as number,
+    speedVariation: parameters.speedVariation as number,
+    trailShape: parameters.trailShape as number,
+    pulseDensity: parameters.pulseDensity as number,
+    headWidth: parameters.headWidth as number,
+    rainStrength: parameters.rainStrength as number,
+    headIntensity: parameters.headIntensity as number,
+    ditherMagnitude: parameters.ditherMagnitude as number,
+    backgroundColor: parameters.backgroundColor as string,
+    shadowColor: parameters.shadowColor as string,
+    bodyColor: parameters.bodyColor as string,
+    brightColor: parameters.brightColor as string,
+    headColor: parameters.headColor as string,
+    outputMode: parameters.outputMode as MatrixOutputMode,
+    debugMode: parameters.debugMode as MatrixDebugMode,
   };
 }
 
-/** Convert a #RRGGBB string to a normalized [r, g, b] vector for uniforms. */
-export function colorToVec3(color: string): [number, number, number] {
-  const value = Number.parseInt(color.slice(1), 16);
-  return [
-    ((value >> 16) & 0xff) / 255,
-    ((value >> 8) & 0xff) / 255,
-    (value & 0xff) / 255,
-  ];
+export function outputModeIndex(mode: MatrixOutputMode): number {
+  return Math.max(0, OUTPUT_MODES.indexOf(mode));
+}
+
+export function debugModeIndex(mode: MatrixDebugMode): number {
+  return Math.max(0, DEBUG_MODES.indexOf(mode));
 }

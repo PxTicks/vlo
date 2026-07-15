@@ -1,7 +1,7 @@
 /**
  * Public feature barrel. It exposes only the factory, definition metadata,
- * defaults, and public parameter types. The child shader strings and validation
- * internals remain private to the feature.
+ * defaults, and public parameter types. The child shader strings, math, and
+ * validation internals remain private to the feature.
  */
 export { createMatrixRainFilter } from "./MatrixRainFilter";
 export {
@@ -11,4 +11,8 @@ export {
   MATRIX_RAIN_TRANSFORM_ID,
 } from "./constants";
 export { validateMatrixRainAuthoredParameters } from "./utils/parameterValidation";
-export type { MatrixRainParameters } from "./types";
+export type {
+  MatrixDebugMode,
+  MatrixOutputMode,
+  MatrixRainParameters,
+} from "./types";

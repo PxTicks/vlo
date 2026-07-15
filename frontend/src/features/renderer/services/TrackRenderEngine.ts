@@ -25,6 +25,8 @@ import {
   resolveLiveActiveClip,
 } from "../utils/clipLookup";
 import { applyClipTransforms } from "../../transformations/applyTransformations";
+import { createFrameFilterRenderContext } from "../../transformations/catalogue/renderSampleContext";
+import type { FilterRenderMode } from "../../transformations/catalogue/types";
 import { releaseTransformationFilters } from "../../transformations/catalogue/filterRuntime";
 import {
   planTransformRender,
@@ -294,6 +296,12 @@ export class TrackRenderEngine {
     | "text"
     | "extension"
     | null = null;
+  // Frame-scoped render-sample metadata for time-dependent filters. Set at each
+  // render entry point (live `update`, export/live frame job) and read by the
+  // clip applicators so a sample/history filter animates from canonical visual
+  // time instead of the synthesized zero-time stateless fallback.
+  private currentRenderFps = 30;
+  private currentRenderMode: FilterRenderMode = "preview";
   private currentTextTextureSignature: string | null = null;
   private lastRenderRequest: {
     time: number;
@@ -640,6 +648,8 @@ export class TrackRenderEngine {
     assetsById: Map<string, Asset>,
     policy: FrameExecutionPolicy,
   ): Promise<boolean> {
+    this.currentRenderFps = job.fps;
+    this.currentRenderMode = policy.mode === "export" ? "export" : "preview";
     if (policy.mode === "export" && policy.signal?.aborted) {
       sourceHandle?.release();
       throw createRenderAbortError();
@@ -801,6 +811,8 @@ export class TrackRenderEngine {
     options: { shouldRender?: boolean; fps?: number } = {},
   ): Promise<void> | void {
     const { shouldRender = true, fps = 30 } = options;
+    this.currentRenderFps = fps;
+    this.currentRenderMode = "preview";
     const nowMs = performance.now();
     const isLikelyScrubbing = this.detectScrubbing(currentTime, fps, nowMs);
     const resolved = this.resolveActiveClipAtPresentation(
@@ -2578,6 +2590,15 @@ export class TrackRenderEngine {
     return contentSizeChanged;
   }
 
+  /** Render-sample identity for this frame's clip render (see the field docs). */
+  private buildFrameRenderContext(rawTime: number) {
+    return createFrameFilterRenderContext(
+      rawTime,
+      this.currentRenderFps,
+      this.currentRenderMode,
+    );
+  }
+
   private applyClipTransformsForClip(
     clip: TimelineClip,
     logicalDimensions: { width: number; height: number },
@@ -2593,6 +2614,7 @@ export class TrackRenderEngine {
         logicalDimensions,
         rawTime,
         clip.type === "text" ? logicalDimensions : undefined,
+        { render: this.buildFrameRenderContext(rawTime) },
       );
     }
     this.maskController.syncMaskSpriteTransform();
@@ -2658,10 +2680,12 @@ export class TrackRenderEngine {
       stackTime,
     );
 
+    const render = this.buildFrameRenderContext(rawTime);
     const output = renderer.render({
       input: source,
       steps: plan.steps,
       contentSize,
+      render,
       cacheKey: this.buildEffectMaskCacheKey(
         source,
         contentSize,
@@ -2696,7 +2720,7 @@ export class TrackRenderEngine {
       logicalDimensions,
       rawTime,
       clip.type === "text" ? logicalDimensions : undefined,
-      { applyFilterTransforms: false },
+      { applyFilterTransforms: false, render },
     );
     return true;
   }

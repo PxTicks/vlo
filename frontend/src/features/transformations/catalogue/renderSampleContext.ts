@@ -1,4 +1,7 @@
-import type { FilterRenderContext } from "./types";
+import type {
+  FilterRenderContext,
+  FilterRenderMode,
+} from "./types";
 
 /**
  * Monotonic host-generated sample identity. It must never be derived from
@@ -42,5 +45,39 @@ export function createStatelessFilterRenderContext(
     fps: 0,
     isWarmup: false,
     ...overrides,
+  });
+}
+
+/**
+ * Build the render sample for a live/export frame. The presentation tick is the
+ * project output sample, so it doubles as a stable, non-floating-point
+ * `sampleId`: two clips in one frame and a repeated paused render at the same
+ * tick observe the same identity, while moving the playhead changes it. Visual
+ * and source times are seeded from the presentation tick; the clip applicator
+ * overrides them with its resolved pre-speed visual time and post-speed source
+ * time, and the offscreen effect-mask path consumes them directly.
+ *
+ * Sequence identity and certified continuity/delta (seek detection, warm-up)
+ * are deferred to the bounded history-scheduling milestone; this establishes a
+ * single monotonic sequence with sequential samples so sample-dependent filters
+ * animate correctly in preview and export.
+ */
+export function createFrameFilterRenderContext(
+  presentationTimeTicks: number,
+  fps: number,
+  mode: FilterRenderMode,
+): FilterRenderContext {
+  const tick = Math.round(presentationTimeTicks);
+  return Object.freeze({
+    sequenceId: 0,
+    sampleId: tick,
+    mode,
+    continuity: "sequential",
+    presentationTimeTicks: tick,
+    visualTimeTicks: tick,
+    sourceTimeTicks: tick,
+    deltaTimeTicks: null,
+    fps: Number.isFinite(fps) && fps > 0 ? fps : 0,
+    isWarmup: false,
   });
 }

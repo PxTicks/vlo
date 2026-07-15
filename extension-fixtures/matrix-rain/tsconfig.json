@@ -17,5 +17,6 @@
       "@vlo/extension-sdk": ["../../packages/extension-sdk/src/index.ts"]
     }
   },
-  "include": ["frontend/src"]
+  "include": ["frontend/src"],
+  "exclude": ["frontend/src/**/__tests__/**"]
 }

@@ -314,7 +314,80 @@ def test_matrix_rain_fixture_builds_as_an_ordinary_trusted_extension(
     # declaring the history time-dependency and carrying no bundled Pixi copy.
     assert b"trusted-filter" in contents
     assert b"example-matrix-rain" in contents
-    assert b"history" in contents
+    # Sample-dependent (feedback-free) appearance; not history yet.
+    assert b"sample" in contents
+    # Both renderer programs ship: the GLSL name and the WGSL struct/uniforms.
+    assert b"MatrixRainUniforms" in contents
+    assert b"mainFragment" in contents
+
+
+def test_matrix_rain_fixture_activates_with_matching_gl_and_wgsl_programs(
+    tmp_path: Path,
+):
+    fixture = _copy_matrix_rain_fixture_workspace(tmp_path)
+    _build_template(fixture)
+    built_entry = fixture / "frontend" / "dist" / "index.js"
+    assert built_entry.is_file()
+
+    # Drive activation with a mock host, capture the exact `Filter.from` options,
+    # and then construct the WGSL program through the real Pixi `GpuProgram`
+    # factory to prove Pixi actually parses it (struct + bind-group extraction),
+    # not merely that a string was supplied. The GLSL program can only be
+    # constructed against a live GL context, so headless we assert its source is
+    # present and defer real compilation to the GPU visual suite. Also asserts
+    # the render sample's visual time reaches the time uniform. Runs from the
+    # frontend workspace so `pixi.js` resolves.
+    script = (
+        f"const extension = await import({json.dumps(built_entry.as_uri())});"
+        "const pixiReal = await import('pixi.js');"
+        "const options = [];"
+        "const pixi = { Filter: { from(o) { options.push(o);"
+        "  return { destroy() {} }; } } };"
+        "let def;"
+        "const api = {"
+        "  timeline: { ticksPerSecond: 96000 },"
+        "  runtime: { pixi },"
+        "  transformations: { register(d) { def = d;"
+        "    return { id: d.id, dispose() {} }; } },"
+        "};"
+        "await extension.activate({"
+        "  extension: { id: 'example.matrix-rain', version: '1.0.0' },"
+        "  sdkVersion: '1.6.0', signal: new AbortController().signal, api,"
+        "  logger: { debug() {}, info() {}, warn() {}, error() {} },"
+        "  onDispose() {} });"
+        "if (!def || def.kind !== 'trusted-filter') throw new Error('registration');"
+        "if (def.rendering.timeDependency !== 'sample') throw new Error('rendering');"
+        "const instance = def.createFilter();"
+        "const o = options[0];"
+        "if (!o.gl || !o.gl.vertex || !o.gl.fragment) throw new Error('missing gl');"
+        "if (o.clipToViewport !== false) throw new Error('clipToViewport');"
+        # Construct the WGSL program with the real Pixi GPU factory.
+        "const program = pixiReal.GpuProgram.from(o.gpu);"
+        "if (!program) throw new Error('gpu program construction failed');"
+        "const structs = program.structsAndGroups.structs.map((s) => s.name);"
+        "if (!structs.includes('MatrixRainUniforms'))"
+        "  throw new Error('wgsl struct not extracted');"
+        "const groups = program.structsAndGroups.groups;"
+        "if (!groups.some((g) => g.group === 1 && g.binding === 0"
+        "    && g.name === 'matrixRainUniforms' && g.isUniform))"
+        "  throw new Error('wgsl uniform binding missing');"
+        "const u = o.resources.matrixRainUniforms;"
+        "if (!u || !u.uTimeSeconds) throw new Error('missing uniforms');"
+        "instance.update(def.defaultParameters, { target: {}, transformId: 't',"
+        "  render: { sequenceId: 0, sampleId: 1, mode: 'preview',"
+        "    continuity: 'sequential', presentationTimeTicks: 96000,"
+        "    visualTimeTicks: 96000, sourceTimeTicks: 0, deltaTimeTicks: null,"
+        "    fps: 30, isWarmup: false } });"
+        "if (u.uTimeSeconds.value !== 1)"
+        "  throw new Error('visual time not applied: ' + u.uTimeSeconds.value);"
+        "console.log('matrix-rain dual-program smoke ok');"
+    )
+    smoke = _run_node(
+        ["--input-type=module", "--eval", script],
+        cwd=REPOSITORY_ROOT / "frontend",
+    )
+    _assert_command_succeeded(smoke)
+    assert "matrix-rain dual-program smoke ok" in smoke.stdout
 
 
 def test_grading_tools_fixture_builds_with_project_asset_ingestion(

@@ -2,6 +2,7 @@ import type { Container } from "pixi.js";
 import type { ClipTransform } from "../../types/TimelineTypes";
 import { useDebugStore } from "../../shared/debug/useDebugStore";
 import { applyTransformStack, runApplicators } from "./applyTransformations";
+import { releaseTransformationFilters } from "./catalogue/filterRuntime";
 
 /**
  * Minimal shape `applyGroupTransforms` consumes from its `group` argument.
@@ -54,7 +55,6 @@ export function applyGroupTransforms(
   container.position.set(0, 0);
   container.scale.set(1, 1);
   container.rotation = 0;
-  container.filters = null;
   // Debug-mode visible cue (separate from any transform-driven alpha): this
   // function only runs for groups active at `currentTick` (the orchestrator
   // detaches inactive group containers), so flipping alpha here makes "the
@@ -64,6 +64,7 @@ export function applyGroupTransforms(
 
   // Identity is in place; no work to do.
   if (!group.transformations || group.transformations.length === 0) {
+    releaseTransformationFilters(container);
     return;
   }
 

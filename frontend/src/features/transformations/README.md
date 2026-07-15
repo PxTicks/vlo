@@ -32,6 +32,7 @@ Each transformation definition is self-contained and typically provides:
 - a `label`;
 - a `handler`;
 - optional applicator metadata such as `FilterClass`;
+- an optional advanced native `filterRuntime` and temporal `rendering` policy;
 - a `uiConfig` schema for rendering controls.
 
 ### Atomic and Composite Transformations
@@ -74,6 +75,8 @@ catalogue/
 ├── types.ts                    # TransformationDefinition, TransformState, etc.
 ├── filterHandler.ts            # Generic handler for filter-type transforms
 ├── filterFactory.ts            # Filter applicator and filter lifecycle management
+├── filterRuntime.ts            # Native transform identity, ownership, and lifecycle
+├── renderingPolicy.ts          # Native temporal policy validation/defaults
 ├── layout/
 │   ├── layoutDefinition.ts     # Composite layout definition and base layout defaults
 │   ├── position.ts             # Position handler
@@ -108,9 +111,18 @@ Standard filters use the generic filter pipeline:
 
 1. `filterHandler` reads timeline data and pushes filter operations into `state.filters`.
 2. `filterApplicator` walks those operations in order.
-3. The applicator looks up the registered definition, reuses any existing filter instances, and updates their parameters.
+3. The applicator looks up the registered definition, reuses the instance bound
+   to each authored transform ID, and updates it through the native filter
+   runtime.
 
 Filters are cumulative and ordered. If multiple filters are active, they are applied in the order they appear in `state.filters`.
+
+`FilterClass` is the convenience path for ordinary Pixi filters; the host
+automatically adapts it to the native runtime. A source-aware or stateful native
+filter can provide `filterRuntime` directly to receive `transformId`, immutable
+render-sample context, custom update behavior, and exact cleanup. Trusted
+extension filters are adapted onto this same contract and do not have a
+separate, more capable runtime.
 
 ## How to Add a New Transformation
 

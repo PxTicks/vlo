@@ -14,6 +14,7 @@ import {
 } from "./OffscreenFilterApplicator";
 import { MaskedEffectCompositor } from "./MaskedEffectCompositor";
 import { EffectChainTexturePool } from "./EffectChainTexturePool";
+import type { FilterRenderContext } from "../../transformations/catalogue/types";
 
 export interface MaskedEffectRenderOptions {
   /**
@@ -59,6 +60,12 @@ export interface MaskedEffectRenderOptions {
    * texture is destroyed.
    */
   cacheKey?: string;
+  /**
+   * Optional host-certified render-sample identity forwarded to time-dependent
+   * filters applied in the offscreen chain, matching the on-screen applicator
+   * path. Omit for stateless steps.
+   */
+  render?: FilterRenderContext;
 }
 
 /**
@@ -84,6 +91,15 @@ export class MaskedEffectRenderer {
 
   render(options: MaskedEffectRenderOptions): Texture {
     const { cacheKey } = options;
+    if (options.steps.length === 0) {
+      this.filterApplicator.retainOnly(EMPTY_TRANSFORM_IDS);
+      // No GPU work; the input passes through. Still cache it so a later
+      // non-empty render with a differing key cannot reuse an older output.
+      this.cached =
+        cacheKey !== undefined ? { key: cacheKey, output: options.input } : null;
+      return options.input;
+    }
+
     if (
       cacheKey !== undefined &&
       this.cached?.key === cacheKey &&
@@ -91,16 +107,12 @@ export class MaskedEffectRenderer {
     ) {
       return this.cached.output;
     }
-
-    if (options.steps.length === 0) {
-      // No GPU work; the input passes through. Still cache it so a same-key
-      // follow-up short-circuits identically (and so a later differing key
-      // correctly drops this entry).
-      this.cached =
-        cacheKey !== undefined ? { key: cacheKey, output: options.input } : null;
-      return options.input;
-    }
     this.pool.ensure(options.contentSize);
+
+    // Track which retained offscreen filter slots the current plan touches so
+    // the ones it does not (removed/reordered transforms, switched clips) can be
+    // pruned and released after the chain runs.
+    const usedTransformIds = new Set<string>();
 
     const ops: MaskedEffectGpuOps = {
       applyFilter: (input, transform) => {
@@ -110,6 +122,7 @@ export class MaskedEffectRenderer {
         if (!filterOp) {
           return input;
         }
+        usedTransformIds.add(filterOp.sourceTransformId ?? filterOp.type);
         // Exclude only the input being read; the output becomes the new
         // `current` (unmasked) or the `effectOutput` (masked).
         const target = this.pool.acquireExcluding(input);
@@ -118,6 +131,7 @@ export class MaskedEffectRenderer {
           filterOp,
           target,
           options.contentSize,
+          options.render,
         );
         return target;
       },
@@ -130,9 +144,23 @@ export class MaskedEffectRenderer {
       },
     };
 
-    const output = runMaskedEffectChain(options.input, options.steps, ops);
-    this.cached = cacheKey !== undefined ? { key: cacheKey, output } : null;
-    return output;
+    try {
+      const output = runMaskedEffectChain(options.input, options.steps, ops);
+      this.filterApplicator.retainOnly(usedTransformIds);
+      this.cached = cacheKey !== undefined ? { key: cacheKey, output } : null;
+      return output;
+    } catch (error) {
+      // A partial chain is not valid history. Release every retained filter so
+      // the next render cannot continue from a failed GPU submission.
+      this.reset();
+      throw error;
+    }
+  }
+
+  /** Release retained offscreen filter state without destroying texture pools. */
+  reset(): void {
+    this.cached = null;
+    this.filterApplicator.retainOnly(EMPTY_TRANSFORM_IDS);
   }
 
   dispose(): void {
@@ -142,3 +170,5 @@ export class MaskedEffectRenderer {
     this.pool.dispose();
   }
 }
+
+const EMPTY_TRANSFORM_IDS: ReadonlySet<string> = new Set();

@@ -129,6 +129,43 @@ describe("applyGroupTransforms — real dispatch", () => {
     expect(filters![0]).toBeInstanceOf(BlurFilter);
   });
 
+  it("keeps duplicate native filter instances bound to transform IDs when reordered", () => {
+    const container = new Container();
+    const blurA: ClipTransform = {
+      id: "blur-a",
+      type: "filter",
+      isEnabled: true,
+      parameters: { strength: 2, quality: 2 },
+      ...({ filterName: "BlurFilter" } as Record<string, unknown>),
+    };
+    const blurB: ClipTransform = {
+      id: "blur-b",
+      type: "filter",
+      isEnabled: true,
+      parameters: { strength: 8, quality: 2 },
+      ...({ filterName: "BlurFilter" } as Record<string, unknown>),
+    };
+
+    applyGroupTransforms(
+      container,
+      group({ id: "g1", transformations: [blurA, blurB] }),
+      LOGICAL,
+      0,
+    );
+    const filterA = container.filters?.[0];
+    const filterB = container.filters?.[1];
+    expect(filterA).not.toBe(filterB);
+
+    applyGroupTransforms(
+      container,
+      group({ id: "g1", transformations: [blurB, blurA] }),
+      LOGICAL,
+      0,
+    );
+    expect(container.filters?.[0]).toBe(filterB);
+    expect(container.filters?.[1]).toBe(filterA);
+  });
+
   it("samples keyframe time clip-locally (currentTick - group.start)", () => {
     // Use a position transform whose value tracks an x-only ramp via
     // SplineParameter would be overkill; we just confirm that calling

@@ -35,7 +35,8 @@ import {
   filterHandler,
   resolveTransformationParameters,
 } from "../catalogue/filterHandler";
-import { createTrustedExtensionFilterFactory } from "./TrustedExtensionFilterRuntime";
+import { createTrustedExtensionFilterRuntime } from "./TrustedExtensionFilterRuntime";
+import { normalizeTransformationRenderingPolicy } from "../catalogue/renderingPolicy";
 
 interface RuntimeTransformationContribution
   extends ExtensionContributionDefinition {
@@ -634,14 +635,18 @@ function compileDefinition(
     );
   }
 
-  const filterFactory =
+  const filterRuntime =
     definition.kind === "trusted-filter"
-      ? createTrustedExtensionFilterFactory(
+      ? createTrustedExtensionFilterRuntime(
           contributionId,
           definition,
           reportFailureOnce,
         )
       : undefined;
+  const rendering = normalizeTransformationRenderingPolicy(
+    definition.kind === "trusted-filter" ? definition.rendering : undefined,
+    definition.id,
+  );
   const runtimeDefinition: TransformationDefinition = Object.freeze({
     type:
       definition.kind === "trusted-transformation"
@@ -652,7 +657,8 @@ function compileDefinition(
         ? undefined
         : contributionId,
     FilterClass: hostFilter?.FilterClass,
-    filterFactory,
+    filterRuntime,
+    ...(definition.kind === "trusted-filter" ? { rendering } : {}),
     label: definition.label.trim(),
     compatibleClips: "visual",
     adjustmentCompatible: definition.adjustmentCompatible === true,
@@ -692,7 +698,7 @@ function compileDefinition(
     execution:
       definition.kind === "host-filter" ? "restricted" : "trusted",
     runtimeDefinition,
-    disposeRuntime: filterFactory?.dispose,
+    disposeRuntime: filterRuntime?.dispose,
   };
 }
 

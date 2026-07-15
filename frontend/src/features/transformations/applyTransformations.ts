@@ -7,6 +7,7 @@ import { Texture } from "pixi.js";
 import type { ClipTransform } from "../../types/TimelineTypes";
 import type {
   ClipTransformTarget,
+  FilterRenderContext,
   TransformState,
 } from "./catalogue/types";
 import type { TimelineClip } from "../../types/TimelineTypes";
@@ -28,6 +29,14 @@ export interface ApplyClipTransformsOptions {
    * instead. Layout and the range-mask AlphaFilter still apply. Defaults true.
    */
   applyFilterTransforms?: boolean;
+  /**
+   * Optional host-certified render-sample identity forwarded to time-dependent
+   * filters. The clip applicator overrides its `visualTimeTicks` and
+   * `sourceTimeTicks` with the times it resolves, so callers supply only the
+   * sample identity (sequence/sample IDs, mode, continuity, fps, presentation
+   * time, warm-up flag, delta). Omit it for stateless callers.
+   */
+  render?: FilterRenderContext;
 }
 
 function isSizeLike(value: unknown): value is { width: number; height: number } {
@@ -241,9 +250,10 @@ export function runApplicators(
   target: ClipTransformTarget,
   state: TransformState,
   contentSize: { width: number; height: number },
+  render?: FilterRenderContext,
 ): void {
   TransformationSystem.applicators.forEach((apply) =>
-    apply(target, state, contentSize),
+    apply(target, state, contentSize, render),
   );
 }
 
@@ -327,5 +337,16 @@ export function applyClipTransforms(
     }
   }
 
-  runApplicators(target, state, contentSize);
+  // Fill the resolved visual/source times into the caller's sample identity so
+  // a temporal filter reads the same post-speed source time the host used for
+  // parameter animation, and the pre-remap visual time for procedural motion.
+  const renderContext: FilterRenderContext | undefined = options?.render
+    ? {
+        ...options.render,
+        visualTimeTicks: time ?? 0,
+        sourceTimeTicks,
+      }
+    : undefined;
+
+  runApplicators(target, state, contentSize, renderContext);
 }

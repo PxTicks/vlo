@@ -10,11 +10,19 @@ import type {
   ClipTransformTarget,
   FilterParameterPointBinding,
   FilterParameterScaleMode,
+  FilterRenderContext,
   TransformState,
 } from "./types";
 import { getEntryByFilterName } from "./TransformationRegistry";
-import { releaseTrustedExtensionFilter } from "../extensions/TrustedExtensionFilterRuntime";
 import { preResolveFilterOperations } from "./filterPreResolution";
+import {
+  createImmutableFilterRenderContext,
+  createStatelessFilterRenderContext,
+} from "./renderSampleContext";
+import {
+  getTransformationFilterRuntime,
+  releaseTransformationFilter,
+} from "./filterRuntime";
 
 // Re-export handler for backwards compatibility
 export { filterHandler } from "./filterHandler";
@@ -240,48 +248,47 @@ export const filterApplicator = (
   target: ClipTransformTarget,
   state: TransformState,
   contentSize?: { width: number; height: number },
+  render?: FilterRenderContext,
 ) => {
   const mutableTarget = target as { filters?: Filter[] | null };
   const existingFilters = mutableTarget.filters || [];
   const newFilters: Filter[] = [];
 
+  // Every filter update for this pass shares one render sample so
+  // duplicate GPU submissions of one logical frame carry the same identity.
+  // Absent a host-certified sample (non-frame callers), synthesize a stateless
+  // cold sample that never advances feedback from an unrelated frame.
+  const renderContext: FilterRenderContext =
+    render !== undefined
+      ? createImmutableFilterRenderContext(render)
+      : createStatelessFilterRenderContext();
+
   // Create a pool of available existing filters for reuse
   const pool = [...existingFilters];
 
   for (const filterOp of preResolveFilterOperations(state.filters)) {
+    // The authored transform this op resolved from. Every filter runtime is
+    // keyed by this so two transforms never swap state.
+    const transformId = filterOp.sourceTransformId ?? filterOp.type;
     // 1. Look up entry in Registry
     const registryEntry = getEntryByFilterName(filterOp.type);
-    if (
-      !registryEntry ||
-      (!registryEntry.FilterClass && !registryEntry.filterFactory)
-    ) {
-      continue;
-    }
-
-    const FilterClass = registryEntry.FilterClass;
-    const filterFactory = registryEntry.filterFactory;
+    if (!registryEntry) continue;
+    const filterRuntime = getTransformationFilterRuntime(registryEntry);
+    if (!filterRuntime) continue;
     let filterInstance: Filter | undefined;
     try {
-      // 2. Find reusable instance in pool
+      // 2. Find the instance bound to this exact authored transform ID.
       const poolIndex = pool.findIndex((filter) =>
-        filterFactory
-          ? filterFactory.owns(filter)
-          : FilterClass
-            ? filter instanceof FilterClass
-            : false,
+        filterRuntime.matches(filter, transformId),
       );
 
       if (poolIndex !== -1) {
         filterInstance = pool[poolIndex];
         pool.splice(poolIndex, 1);
-      } else if (filterFactory) {
-        const createdFilter = filterFactory.create();
+      } else {
+        const createdFilter = filterRuntime.create(transformId);
         if (!createdFilter) continue;
         filterInstance = createdFilter;
-      } else if (FilterClass) {
-        filterInstance = new FilterClass();
-      } else {
-        continue;
       }
 
       // Disable viewport clipping for filters with spatial point bindings
@@ -316,32 +323,19 @@ export const filterApplicator = (
         safePadding,
         contentSize,
       );
-      if (filterFactory) {
-        const updated = filterFactory.update(
-          filterInstance,
-          resolvedParams,
-          { target, contentSize },
-          newFilters,
-        );
-        if (!updated) continue;
-      } else {
-        for (const [key, value] of Object.entries(resolvedParams)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (filterInstance as any)[key] = value;
-        }
-      }
+      const updated = filterRuntime.update(
+        filterInstance,
+        resolvedParams,
+        { target, transformId, contentSize, render: renderContext },
+        newFilters,
+      );
+      if (!updated) continue;
 
       if (registryEntry.filterPadding && Number.isFinite(nextPadding)) {
         filterInstance.padding = nextPadding;
       }
-
-      if (!filterFactory) {
-        newFilters.push(filterInstance);
-      }
     } catch (error) {
-      if (filterFactory && filterInstance) {
-        filterFactory.release(filterInstance);
-      }
+      if (filterInstance) filterRuntime.release(filterInstance);
       if (!registryEntry.extension) throw error;
       registryEntry.extension.reportFailureOnce(
         "filter-application",
@@ -352,10 +346,10 @@ export const filterApplicator = (
     }
   }
 
-  // A removed transform or disposed contribution must release any trusted
-  // instance that was attached to this target on the previous frame.
+  // A removed transform or disposed definition releases its host-owned runtime
+  // instance regardless of whether its implementation is native or adapted.
   for (const unusedFilter of pool) {
-    releaseTrustedExtensionFilter(unusedFilter);
+    if (!releaseTransformationFilter(unusedFilter)) unusedFilter.destroy();
   }
 
   mutableTarget.filters = newFilters;

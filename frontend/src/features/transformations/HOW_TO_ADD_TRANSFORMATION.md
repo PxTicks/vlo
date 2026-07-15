@@ -74,6 +74,52 @@ export const TransformationRegistry: TransformationDefinition[] = [
 - **`uiConfig`**: Defines the sliders/inputs generated in the right panel.
 - **`filterName`**: A unique string ID for the filter type.
 - **`FilterClass`**: The actual class instantiated by the PixiJS renderer.
+- **`filterRuntime`**: Optional advanced native lifecycle/update adapter for a
+  stateful or source-aware filter. Do not combine it with `FilterClass`.
+- **`rendering`**: Optional normalized native temporal policy (`none`, `sample`,
+  or `history`).
+
+## Advanced Native Filters
+
+New rendering capabilities are implemented in the host first. For a temporal
+or custom-lifecycle native filter, create a runtime with
+`createTransformationFilterRuntime()` and a policy with
+`normalizeTransformationRenderingPolicy()`. Its `update` receives the same
+transform identity and immutable render sample used by preview, export,
+offscreen masking, and extension adapters.
+
+```typescript
+const filterRuntime = createTransformationFilterRuntime({
+  create: () => new MyTemporalFilter(),
+  update: (filter, parameters, context, outputFilters) => {
+    const temporalFilter = filter as MyTemporalFilter;
+    temporalFilter.updateParameters(parameters);
+    temporalFilter.setRenderSample(context.render);
+    outputFilters.push(temporalFilter);
+    return true;
+  },
+  release: (filter) => filter.destroy(),
+});
+
+export const myTemporalFilterDefinition: TransformationDefinition = {
+  type: "filter",
+  filterName: "MyTemporalFilter",
+  filterRuntime,
+  rendering: normalizeTransformationRenderingPolicy(
+    {
+      timeDependency: "history",
+      maxHistorySeconds: 2,
+      maxStepSeconds: 1 / 30,
+    },
+    "MyTemporalFilter",
+  ),
+  // label, handler, and uiConfig...
+};
+```
+
+The extension SDK mirrors these host capabilities. Matrix Rain itself remains
+an extension fixture because its particular shaders and simulation are not a
+core application feature.
 
 ## 4. How to Find Filter Properties
 

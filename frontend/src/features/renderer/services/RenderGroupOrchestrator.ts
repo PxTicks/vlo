@@ -1,6 +1,7 @@
 import { Container, Sprite, Texture } from "pixi.js";
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { applyGroupTransforms } from "../../transformations/applyGroupTransforms";
+import { releaseTransformationFilters } from "../../transformations/catalogue/filterRuntime";
 import { type DerivedRenderGroup } from "../utils/deriveAdjustmentGroups";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import type { ScenePresentationPlan } from "./framePlanning";
@@ -409,6 +410,7 @@ export class RenderGroupOrchestrator {
 
   private destroyGroupContainer(container: Container): void {
     if (container.destroyed) return;
+    releaseTransformationFilters(container);
     if (container.children.length > 0) {
       container.removeChildren();
     }

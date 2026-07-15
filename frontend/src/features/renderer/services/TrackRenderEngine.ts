@@ -25,6 +25,7 @@ import {
   resolveLiveActiveClip,
 } from "../utils/clipLookup";
 import { applyClipTransforms } from "../../transformations/applyTransformations";
+import { releaseTransformationFilters } from "../../transformations/catalogue/filterRuntime";
 import {
   planTransformRender,
   type FilterRenderStep,
@@ -2583,6 +2584,9 @@ export class TrackRenderEngine {
     rawTime: number,
   ) {
     if (!this.tryApplyOffscreenEffectMask(clip, logicalDimensions, rawTime)) {
+      // Leaving the offscreen effect-mask path ends ownership of its retained
+      // filter slots. A later masked render must not inherit stale history.
+      this.maskedEffectRenderer?.reset();
       applyClipTransforms(
         this.sprite,
         clip,
@@ -3102,6 +3106,7 @@ export class TrackRenderEngine {
     sharedTextureHandle?.release();
     this.retiredTextures.flush();
 
+    releaseTransformationFilters(this.sprite);
     this.maskedEffectRenderer?.dispose();
     this.extensionEntityRenderer?.dispose();
     this.maskController.dispose();

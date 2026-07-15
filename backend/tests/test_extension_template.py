@@ -36,6 +36,9 @@ TRUSTED_HOST_FIXTURE_ROOT = (
 )
 LOOK_PACK_FIXTURE_ROOT = REPOSITORY_ROOT / "extension-fixtures" / "look-pack"
 FILTER_PACK_FIXTURE_ROOT = REPOSITORY_ROOT / "extension-fixtures" / "filter-pack"
+MATRIX_RAIN_FIXTURE_ROOT = (
+    REPOSITORY_ROOT / "extension-fixtures" / "matrix-rain"
+)
 GRADING_TOOLS_FIXTURE_ROOT = (
     REPOSITORY_ROOT / "extension-fixtures" / "grading-tools"
 )
@@ -112,6 +115,16 @@ def _copy_filter_pack_fixture_workspace(tmp_path: Path) -> Path:
     fixture = workspace / "extension-fixtures" / "filter-pack"
     fixture.parent.mkdir(parents=True)
     shutil.copytree(FILTER_PACK_FIXTURE_ROOT, fixture)
+    shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
+    shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
+    return fixture
+
+
+def _copy_matrix_rain_fixture_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "author-workspace"
+    fixture = workspace / "extension-fixtures" / "matrix-rain"
+    fixture.parent.mkdir(parents=True)
+    shutil.copytree(MATRIX_RAIN_FIXTURE_ROOT, fixture)
     shutil.copytree(TEMPLATE_ROOT, workspace / "extension-template")
     shutil.copytree(SDK_ROOT, workspace / "packages" / "extension-sdk")
     return fixture
@@ -286,6 +299,22 @@ def test_filter_pack_fixture_builds_as_an_ordinary_trusted_extension(
     contents = bundle.read_bytes()
     assert b"trusted-filter" in contents
     assert b"example-filter-pack-desaturate" in contents
+
+
+def test_matrix_rain_fixture_builds_as_an_ordinary_trusted_extension(
+    tmp_path: Path,
+):
+    fixture = _copy_matrix_rain_fixture_workspace(tmp_path)
+    _build_template(fixture)
+
+    bundle = fixture / "frontend" / "dist" / "index.js"
+    assert bundle.is_file()
+    contents = bundle.read_bytes()
+    # Registered through the ordinary trusted-filter lane with its own program,
+    # declaring the history time-dependency and carrying no bundled Pixi copy.
+    assert b"trusted-filter" in contents
+    assert b"example-matrix-rain" in contents
+    assert b"history" in contents
 
 
 def test_grading_tools_fixture_builds_with_project_asset_ingestion(

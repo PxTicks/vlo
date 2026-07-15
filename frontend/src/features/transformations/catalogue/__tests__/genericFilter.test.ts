@@ -5,6 +5,8 @@ import { extensionTransformationRegistry } from "../../extensions/ExtensionTrans
 import type { GenericFilterTransform } from "../../types";
 import type { TransformationDefinition, TransformState } from "../types";
 import { Sprite, Filter, Matrix } from "pixi.js";
+import { createTransformationFilterRuntime } from "../filterRuntime";
+import { normalizeTransformationRenderingPolicy } from "../renderingPolicy";
 
 // Mock Registry
 const MockFilter = class extends Filter {
@@ -72,7 +74,9 @@ vi.mock("pixi.js", async (importOriginal) => {
     ...actual,
   } as typeof import("pixi.js") & Record<string, unknown>;
 
-  mockedPixi.Filter = class {} as unknown as typeof actual.Filter;
+  mockedPixi.Filter = class {
+    destroy(): void {}
+  } as unknown as typeof actual.Filter;
   mockedPixi.Sprite = class {
     filters: Filter[] = [];
     alpha = 1;
@@ -219,14 +223,17 @@ describe("Generic Filter System", () => {
       expect(instance.foo).toBe(99);
     });
 
-    it("should reuse existing filter instances", () => {
+    it("should reuse a native filter instance for the same transform ID", () => {
       const state = createBaseState();
-      state.filters.push({ type: "MockFilter", params: { foo: 1 } });
+      state.filters.push({
+        type: "MockFilter",
+        sourceTransformId: "native-1",
+        params: { foo: 1 },
+      });
 
       const sprite = new Sprite();
-      const existing = new MockFilter();
-      sprite.filters = [existing];
-
+      filterApplicator(sprite, state);
+      const existing = sprite.filters![0];
       filterApplicator(sprite, state);
 
       expect(sprite.filters).toHaveLength(1);
@@ -234,6 +241,98 @@ describe("Generic Filter System", () => {
       expect((sprite.filters![0] as InstanceType<typeof MockFilter>).foo).toBe(
         1,
       );
+    });
+
+    it("gives advanced native filters transform identity, render context, and lifecycle", () => {
+      const updates: Array<{
+        filter: Filter;
+        transformId: string;
+        sampleId: number;
+        frozen: boolean;
+      }> = [];
+      const release = vi.fn();
+      const runtime = createTransformationFilterRuntime({
+        create: () => new MockFilter(),
+        update: (filter, _parameters, context, outputFilters) => {
+          updates.push({
+            filter,
+            transformId: context.transformId,
+            sampleId: context.render.sampleId,
+            frozen: Object.isFrozen(context.render),
+          });
+          outputFilters.push(filter);
+          return true;
+        },
+        release,
+      });
+      registerTestDefinition({
+        type: "filter",
+        filterName: "NativeTemporalFilter",
+        filterRuntime: runtime,
+        rendering: normalizeTransformationRenderingPolicy(
+          {
+            timeDependency: "history",
+            maxHistorySeconds: 2,
+            maxStepSeconds: 1 / 30,
+          },
+          "NativeTemporalFilter",
+        ),
+        label: "Native Temporal Filter",
+        isDefault: false,
+        uiConfig: { groups: [] },
+      });
+
+      const state = createBaseState();
+      state.filters.push(
+        {
+          type: "NativeTemporalFilter",
+          sourceTransformId: "native-a",
+          params: {},
+        },
+        {
+          type: "NativeTemporalFilter",
+          sourceTransformId: "native-b",
+          params: {},
+        },
+      );
+      const sprite = new Sprite();
+      const render = {
+        sequenceId: 4,
+        sampleId: 12,
+        mode: "preview" as const,
+        continuity: "sequential" as const,
+        presentationTimeTicks: 100,
+        visualTimeTicks: 100,
+        sourceTimeTicks: 100,
+        deltaTimeTicks: 10,
+        fps: 30,
+        isWarmup: false,
+      };
+
+      filterApplicator(sprite, state, undefined, render);
+      const filterA = updates.find((update) => update.transformId === "native-a")
+        ?.filter;
+      const filterB = updates.find((update) => update.transformId === "native-b")
+        ?.filter;
+      expect(filterA).toBeDefined();
+      expect(filterB).toBeDefined();
+      expect(filterA).not.toBe(filterB);
+      expect(updates.every((update) => update.sampleId === 12)).toBe(true);
+      expect(updates.every((update) => update.frozen)).toBe(true);
+
+      updates.length = 0;
+      state.filters.reverse();
+      filterApplicator(sprite, state, undefined, render);
+      expect(
+        updates.find((update) => update.transformId === "native-a")?.filter,
+      ).toBe(filterA);
+      expect(
+        updates.find((update) => update.transformId === "native-b")?.filter,
+      ).toBe(filterB);
+
+      filterApplicator(sprite, createBaseState());
+      expect(release).toHaveBeenCalledTimes(2);
+      runtime.dispose();
     });
 
     it("should handle unknown filters gracefully", () => {

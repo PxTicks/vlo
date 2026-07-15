@@ -78,6 +78,54 @@ export interface TransformContext {
   visualDuration?: number;
 }
 
+/**
+ * Host-owned time-dependency policy for a filter transformation. Native filter
+ * definitions use this directly; extension metadata is projected into the
+ * same policy by its adapter.
+ */
+export type FilterTimeDependency = "none" | "sample" | "history";
+
+export interface TransformationRenderingPolicy {
+  readonly timeDependency: FilterTimeDependency;
+  /** Bounded, finite seconds of history a `history` filter may replay. */
+  readonly maxHistorySeconds: number;
+  /** Largest continuous step accepted without replay, or null when unbounded. */
+  readonly maxStepSeconds: number | null;
+}
+
+/** Author-facing input normalized into `TransformationRenderingPolicy`. */
+export interface TransformationRenderingPolicyInput {
+  readonly timeDependency: FilterTimeDependency;
+  readonly maxHistorySeconds?: number;
+  readonly maxStepSeconds?: number;
+}
+
+export type FilterRenderMode = "preview" | "export" | "still";
+
+export type FilterRenderContinuity =
+  | "initial"
+  | "sequential"
+  | "repeat"
+  | "discontinuous";
+
+/**
+ * Host-side render-sample identity and timing carried through every filter
+ * runtime. The extension SDK mirrors this native contract; it is never
+ * persisted.
+ */
+export interface FilterRenderContext {
+  readonly sequenceId: number;
+  readonly sampleId: number;
+  readonly mode: FilterRenderMode;
+  readonly continuity: FilterRenderContinuity;
+  readonly presentationTimeTicks: number;
+  readonly visualTimeTicks: number;
+  readonly sourceTimeTicks: number;
+  readonly deltaTimeTicks: number | null;
+  readonly fps: number;
+  readonly isWarmup: boolean;
+}
+
 export type TransformHandler<T extends ClipTransform = ClipTransform> = (
   state: TransformState,
   transform: T,
@@ -103,25 +151,43 @@ export type StateApplicator = (
    * size (e.g. `layoutApplicator`) ignore this parameter.
    */
   contentSize?: { width: number; height: number },
+  /**
+   * Optional render-sample context forwarded to time-dependent filters. Only
+   * the filter applicator consumes it; omitting it synthesizes a stateless
+   * `none`/`initial` sample so existing callers stay behavior-compatible.
+   */
+  render?: FilterRenderContext,
 ) => void;
 
 // Import UI types
 import type { TransformationLayoutConfig } from "./ui/UITypes";
 
-// Type for PixiJS filter class constructor
-type FilterConstructor = new () => Filter;
+// Convenience constructor for ordinary host-owned PixiJS filters.
+export type TransformationFilterConstructor = new () => Filter;
 
-export interface TransformationFilterFactory {
-  readonly contributionId: string;
-  create(): Filter | null;
+export interface TransformationFilterUpdateContext {
+  readonly target: ClipTransformTarget;
+  readonly transformId: string;
+  readonly contentSize?: Readonly<{ width: number; height: number }>;
+  readonly render: FilterRenderContext;
+}
+
+/**
+ * Native filter-runtime contract used by every filter implementation. Basic
+ * `FilterClass` definitions are adapted automatically; advanced native filters
+ * can provide a runtime directly, and trusted extensions are adapted onto the
+ * same contract at their boundary.
+ */
+export interface TransformationFilterRuntime {
+  create(transformId: string): Filter | null;
+  /** True when `filter` is this factory's instance for exactly `transformId`. */
+  matches(filter: Filter, transformId: string): boolean;
+  /** True when `filter` is owned by this runtime, regardless of transform. */
   owns(filter: Filter): boolean;
   update(
     filter: Filter,
     parameters: Readonly<Record<string, unknown>>,
-    context: {
-      readonly target: ClipTransformTarget;
-      readonly contentSize?: Readonly<{ width: number; height: number }>;
-    },
+    context: TransformationFilterUpdateContext,
     outputFilters: Filter[],
   ): boolean;
   release(filter: Filter): void;
@@ -186,11 +252,26 @@ export interface TransformationDefinition {
   /** For filter types: the unique filter identifier */
   filterName?: string;
 
-  /** For filter types: the PixiJS Filter class constructor */
-  FilterClass?: FilterConstructor;
+  /**
+   * For ordinary native filter types: a PixiJS Filter constructor. The host
+   * automatically supplies transform-keyed reuse, parameter updates, render
+   * context, and destruction through its native filter runtime.
+   */
+  FilterClass?: TransformationFilterConstructor;
 
-  /** Trusted extension factory for arbitrary host-Pixi filter instances. */
-  filterFactory?: TransformationFilterFactory;
+  /**
+   * Advanced native runtime for filters that need render context, custom
+   * updates, or child-resource lifecycle. Extension adapters target this same
+   * host contract; the capability itself is not extension-specific.
+   */
+  filterRuntime?: TransformationFilterRuntime;
+
+  /**
+   * Normalized native time-dependency policy for this transformation. Omission
+   * means stateless (`none`). Extension declarations are validated and
+   * projected into this host-owned policy.
+   */
+  rendering?: TransformationRenderingPolicy;
 
   /**
    * Optional per-parameter scale metadata for spatial filters whose authored

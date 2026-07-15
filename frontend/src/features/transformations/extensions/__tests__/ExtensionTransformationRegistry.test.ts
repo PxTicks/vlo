@@ -79,6 +79,17 @@ function registerColorGrade(
   });
 }
 
+const PROBE_GL = {
+  vertex: `
+    in vec2 aPosition;
+    void main(void) { gl_Position = vec4(aPosition, 0.0, 1.0); }
+  `,
+  fragment: `
+    out vec4 finalColor;
+    void main(void) { finalColor = vec4(1.0); }
+  `,
+};
+
 describe("ExtensionTransformationRegistry", () => {
   afterEach(() => {
     while (disposers.length > 0) disposers.pop()?.();
@@ -242,10 +253,21 @@ describe("ExtensionTransformationRegistry", () => {
     const firstFilter = target.filters[0];
     expect(firstFilter).toBeInstanceOf(Filter);
     expect(createFilter).toHaveBeenCalledOnce();
-    expect(update).toHaveBeenCalledWith(transform.parameters, {
-      target,
-      contentSize: { width: 100, height: 100 },
-    });
+    expect(update).toHaveBeenCalledWith(
+      transform.parameters,
+      expect.objectContaining({
+        target,
+        transformId: transform.id,
+        contentSize: { width: 100, height: 100 },
+        render: expect.objectContaining({
+          mode: "preview",
+          continuity: "initial",
+          sequenceId: 0,
+          isWarmup: false,
+        }),
+      }),
+    );
+    expect(Object.isFrozen(update.mock.calls[0]?.[1].render)).toBe(true);
 
     filterApplicator(target, applied.state, { width: 100, height: 100 });
     expect(target.filters[0]).toBe(firstFilter);
@@ -266,6 +288,275 @@ describe("ExtensionTransformationRegistry", () => {
     expect(destroy).toHaveBeenCalledTimes(2);
     expect(target.filters).toEqual([]);
     expect(getEntryByFilterName("example.custom-shader/custom-glsl")).toBeUndefined();
+  });
+
+  it("projects declared history rendering metadata into the runtime definition", () => {
+    const api = createVloExtensionApi(createScope("example.temporal"));
+    const registration = api.transformations.register({
+      id: "rain",
+      apiVersion: 1,
+      kind: "trusted-filter",
+      label: "Rain",
+      rendering: {
+        timeDependency: "history",
+        maxHistorySeconds: 6,
+        maxStepSeconds: 1 / 30,
+      },
+      groups: [
+        {
+          id: "g",
+          title: "G",
+          controls: [
+            { type: "slider", name: "a", label: "A", defaultValue: 1, min: 0, max: 1 },
+          ],
+        },
+      ],
+      createFilter: () => ({
+        object: api.runtime.pixi.Filter.from({ gl: PROBE_GL }),
+        update: vi.fn(),
+      }),
+    });
+    disposers.push(() => registration.dispose());
+
+    expect(getEntryByFilterName("example.temporal/rain")?.rendering).toEqual({
+      timeDependency: "history",
+      maxHistorySeconds: 6,
+      maxStepSeconds: 1 / 30,
+    });
+  });
+
+  it("defaults omitted rendering metadata to a stateless none policy", () => {
+    const api = createVloExtensionApi(createScope("example.stateless"));
+    const registration = api.transformations.register({
+      id: "flat",
+      apiVersion: 1,
+      kind: "trusted-filter",
+      label: "Flat",
+      groups: [
+        {
+          id: "g",
+          title: "G",
+          controls: [
+            { type: "slider", name: "a", label: "A", defaultValue: 1, min: 0, max: 1 },
+          ],
+        },
+      ],
+      createFilter: () => ({
+        object: api.runtime.pixi.Filter.from({ gl: PROBE_GL }),
+        update: vi.fn(),
+      }),
+    });
+    disposers.push(() => registration.dispose());
+
+    expect(getEntryByFilterName("example.stateless/flat")?.rendering).toEqual({
+      timeDependency: "none",
+      maxHistorySeconds: 0,
+      maxStepSeconds: null,
+    });
+  });
+
+  it("rejects invalid rendering metadata at registration", () => {
+    const api = createVloExtensionApi(createScope("example.badrender"));
+    const groups = [
+      {
+        id: "g",
+        title: "G",
+        controls: [
+          { type: "slider" as const, name: "a", label: "A", defaultValue: 1, min: 0, max: 1 },
+        ],
+      },
+    ];
+    const base = {
+      id: "x",
+      apiVersion: 1 as const,
+      kind: "trusted-filter" as const,
+      label: "X",
+      groups,
+      createFilter: () => ({
+        object: api.runtime.pixi.Filter.from({ gl: PROBE_GL }),
+        update: vi.fn(),
+      }),
+    };
+
+    // maxHistorySeconds is only permitted for a history filter.
+    expect(() =>
+      api.transformations.register({
+        ...base,
+        rendering: { timeDependency: "sample", maxHistorySeconds: 1 },
+      }),
+    ).toThrow();
+
+    // History beyond the host maximum is rejected.
+    expect(() =>
+      api.transformations.register({
+        ...base,
+        rendering: { timeDependency: "history", maxHistorySeconds: 9999 },
+      }),
+    ).toThrow();
+
+    // maxStepSeconds must be positive and within host policy.
+    expect(() =>
+      api.transformations.register({
+        ...base,
+        rendering: { timeDependency: "history", maxStepSeconds: 0 },
+      }),
+    ).toThrow();
+  });
+
+  it("keeps two same-contribution trusted transforms bound to their own instances across reordering", () => {
+    const api = createVloExtensionApi(createScope("example.probe"));
+    const updates: Array<{ object: object; transformId: string }> = [];
+    const createFilter = vi.fn(() => {
+      const object = api.runtime.pixi.Filter.from({ gl: PROBE_GL });
+      return {
+        object,
+        update: (
+          _parameters: Readonly<Record<string, unknown>>,
+          context: { transformId: string },
+        ) => updates.push({ object, transformId: context.transformId }),
+      };
+    });
+    const registration = api.transformations.register({
+      id: "probe",
+      apiVersion: 1,
+      kind: "trusted-filter",
+      label: "Probe",
+      rendering: {
+        timeDependency: "history",
+        maxHistorySeconds: 2,
+        maxStepSeconds: 1 / 30,
+      },
+      groups: [
+        {
+          id: "g",
+          title: "G",
+          controls: [
+            { type: "slider", name: "a", label: "A", defaultValue: 1, min: 0, max: 1 },
+          ],
+        },
+      ],
+      createFilter,
+    });
+    disposers.push(() => registration.dispose());
+
+    const t1 = createAddTransform("example.probe/probe", true);
+    const t2 = createAddTransform("example.probe/probe", true);
+    if (!t1 || !t2) throw new Error("Expected two probe transforms.");
+    const size = { width: 100, height: 100 };
+    const target: ClipTransformTarget & { filters: Filter[] } = {
+      position: { x: 0, y: 0, set: vi.fn() },
+      scale: { x: 1, y: 1, set: vi.fn() },
+      rotation: 0,
+      filters: [],
+    };
+
+    const forward = applyTransformStack(
+      [t1, t2],
+      { container: size, content: size },
+      0,
+      { notifyLiveParams: false },
+    );
+    filterApplicator(target, forward.state, size);
+
+    expect(createFilter).toHaveBeenCalledTimes(2);
+    const filterForT1 = updates.find((u) => u.transformId === t1.id)?.object;
+    const filterForT2 = updates.find((u) => u.transformId === t2.id)?.object;
+    expect(filterForT1).toBeDefined();
+    expect(filterForT2).toBeDefined();
+    expect(filterForT1).not.toBe(filterForT2);
+
+    // Reorder the stack: neither transform may create a new instance or adopt
+    // the other's (a temporal filter's feedback state must not migrate).
+    updates.length = 0;
+    const reversed = applyTransformStack(
+      [t2, t1],
+      { container: size, content: size },
+      0,
+      { notifyLiveParams: false },
+    );
+    filterApplicator(target, reversed.state, size);
+
+    expect(createFilter).toHaveBeenCalledTimes(2);
+    expect(updates.find((u) => u.transformId === t1.id)?.object).toBe(filterForT1);
+    expect(updates.find((u) => u.transformId === t2.id)?.object).toBe(filterForT2);
+  });
+
+  it("shares one immutable render sample across every trusted filter in a pass", () => {
+    const api = createVloExtensionApi(createScope("example.sample"));
+    const samples: Array<{ transformId: string; render: { sampleId: number } }> =
+      [];
+    const mutationResults: boolean[] = [];
+    const registration = api.transformations.register({
+      id: "probe",
+      apiVersion: 1,
+      kind: "trusted-filter",
+      label: "Probe",
+      groups: [
+        {
+          id: "g",
+          title: "G",
+          controls: [
+            { type: "slider", name: "a", label: "A", defaultValue: 1, min: 0, max: 1 },
+          ],
+        },
+      ],
+      createFilter: () => ({
+        object: api.runtime.pixi.Filter.from({ gl: PROBE_GL }),
+        update: (
+          _parameters: Readonly<Record<string, unknown>>,
+          context: { transformId: string; render: { sampleId: number } },
+        ) => {
+          if (samples.length === 0) {
+            mutationResults.push(Reflect.set(context.render, "sampleId", 99));
+          }
+          samples.push({ transformId: context.transformId, render: context.render });
+        },
+      }),
+    });
+    disposers.push(() => registration.dispose());
+
+    const t1 = createAddTransform("example.sample/probe", true);
+    const t2 = createAddTransform("example.sample/probe", true);
+    if (!t1 || !t2) throw new Error("Expected two probe transforms.");
+    const size = { width: 100, height: 100 };
+    const target: ClipTransformTarget & { filters: Filter[] } = {
+      position: { x: 0, y: 0, set: vi.fn() },
+      scale: { x: 1, y: 1, set: vi.fn() },
+      rotation: 0,
+      filters: [],
+    };
+    const applied = applyTransformStack(
+      [t1, t2],
+      { container: size, content: size },
+      0,
+      { notifyLiveParams: false },
+    );
+
+    const render = {
+      sequenceId: 7,
+      sampleId: 42,
+      mode: "export" as const,
+      continuity: "sequential" as const,
+      presentationTimeTicks: 96_000,
+      visualTimeTicks: 96_000,
+      sourceTimeTicks: 96_000,
+      deltaTimeTicks: 3_200,
+      fps: 30,
+      isWarmup: false,
+    };
+    filterApplicator(target, applied.state, size, render);
+
+    // Both authored transforms in the one logical frame observe the identical
+    // host-certified sample identity, so a duplicate GPU submission cannot be
+    // mistaken for a new sample.
+    expect(samples).toHaveLength(2);
+    expect(samples[0].render).not.toBe(render);
+    expect(samples[1].render).toBe(samples[0].render);
+    expect(Object.isFrozen(samples[0].render)).toBe(true);
+    expect(mutationResults).toEqual([false]);
+    expect(samples[0].render.sampleId).toBe(42);
+    expect(samples[1].render.sampleId).toBe(42);
+    expect(render.sampleId).toBe(42);
   });
 
   it("isolates invalid persisted parameters and reports the owning extension", () => {

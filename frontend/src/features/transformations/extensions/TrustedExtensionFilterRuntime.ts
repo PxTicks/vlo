@@ -5,14 +5,14 @@ import type {
 } from "../../extensions/types";
 import {
   TrustedHostObjectManager,
-  releaseTrustedHostObject,
   type TrustedHostObjectFailureReporter,
   type TrustedHostObjectSlotAdapter,
 } from "../../extensions/runtime/publicApi";
 import type {
   ClipTransformTarget,
-  TransformationFilterFactory,
+  TransformationFilterRuntime,
 } from "../catalogue/types";
+import { createTransformationFilterRuntime } from "../catalogue/filterRuntime";
 
 const FILTER_SLOT_ADAPTER: TrustedHostObjectSlotAdapter<
   Filter,
@@ -35,11 +35,11 @@ const FILTER_SLOT_ADAPTER: TrustedHostObjectSlotAdapter<
   destroy: (filter) => filter.destroy(),
 };
 
-export function createTrustedExtensionFilterFactory(
+export function createTrustedExtensionFilterRuntime(
   contributionId: string,
   definition: ExtensionTrustedFilterTransformationDefinition,
   reportFailureOnce: TrustedHostObjectFailureReporter,
-): TransformationFilterFactory {
+): TransformationFilterRuntime {
   const manager = new TrustedHostObjectManager<
     Filter,
     Readonly<Record<string, unknown>>,
@@ -53,24 +53,19 @@ export function createTrustedExtensionFilterFactory(
     reportFailureOnce,
   });
 
-  const factory: TransformationFilterFactory = {
-    contributionId,
+  // The native runtime owns transform identity and generic lifecycle. This
+  // adapter contributes only the trusted extension object's implementation.
+  return createTransformationFilterRuntime({
     create: () => manager.create(),
-    owns: (filter) => manager.owns(filter),
     update: (filter, parameters, context, outputFilters) =>
       manager.update(
         filter,
         parameters,
         context,
-        context.target,
+        context.target as ClipTransformTarget,
         outputFilters,
       ),
     release: (filter) => manager.release(filter),
     dispose: () => manager.dispose(),
-  };
-  return Object.freeze(factory);
-}
-
-export function releaseTrustedExtensionFilter(filter: Filter): boolean {
-  return releaseTrustedHostObject(filter);
+  });
 }

@@ -6,7 +6,7 @@ import { OffscreenFilterApplicator } from "../OffscreenFilterApplicator";
  * Offscreen single-filter application. Uses a mock renderer (records render
  * calls) + a real RenderTexture target, the same pattern the mask GPU pipeline
  * is tested with. Asserts it reuses the canonical filterApplicator (a real Pixi
- * filter is built and on the sprite at render time) and renders to the target.
+ * filter is built and retained on the sprite) and renders to the target.
  */
 
 function mockRenderer(): {
@@ -25,7 +25,7 @@ describe("OffscreenFilterApplicator", () => {
     const applicator = new OffscreenFilterApplicator(renderer);
     const target = RenderTexture.create(CONTENT);
 
-    // Capture sprite state *at render time* (the applicator clears filters after).
+    // Capture sprite state at render time.
     let filtersAtRender: readonly unknown[] | null | undefined;
     let textureAtRender: Texture | undefined;
     let targetAtRender: unknown;
@@ -61,7 +61,7 @@ describe("OffscreenFilterApplicator", () => {
     applicator.dispose();
   });
 
-  it("clears the sprite's filters after rendering (no leak between passes)", () => {
+  it("retains the filter on its transform slot across passes (temporal reuse)", () => {
     const { renderer } = mockRenderer();
     const applicator = new OffscreenFilterApplicator(renderer);
     const target = RenderTexture.create(CONTENT);
@@ -75,25 +75,90 @@ describe("OffscreenFilterApplicator", () => {
 
     applicator.applyFilterToTexture(
       Texture.WHITE,
-      { type: "AlphaFilter", params: { alpha: 1 } },
+      { type: "AlphaFilter", params: { alpha: 1 }, sourceTransformId: "t1" },
       target,
       CONTENT,
     );
 
-    expect(spriteRef?.filters).toBeNull();
+    // The slot keeps its temporal filter instance for reuse on the next frame's
+    // pass — it is not nulled after render.
+    expect(spriteRef?.filters).toHaveLength(1);
+    expect(spriteRef?.filters?.[0]).toBeInstanceOf(AlphaFilter);
     target.destroy(true);
     applicator.dispose();
   });
 
-  it("clears the sprite's filters even when the render throws", () => {
-    const { renderer } = mockRenderer();
+  it("keeps a separate slot per transform ID and prunes unused ones", () => {
+    const { renderer, render } = mockRenderer();
     const applicator = new OffscreenFilterApplicator(renderer);
     const target = RenderTexture.create(CONTENT);
 
-    let spriteRef: { filters?: readonly unknown[] | null } | undefined;
-    (renderer.render as ReturnType<typeof vi.fn>).mockImplementation(
+    const containers: unknown[] = [];
+    render.mockImplementation((opts: { container: unknown }) => {
+      containers.push(opts.container);
+    });
+
+    applicator.applyFilterToTexture(
+      Texture.WHITE,
+      { type: "AlphaFilter", params: { alpha: 1 }, sourceTransformId: "t1" },
+      target,
+      CONTENT,
+    );
+    applicator.applyFilterToTexture(
+      Texture.WHITE,
+      { type: "AlphaFilter", params: { alpha: 0.5 }, sourceTransformId: "t2" },
+      target,
+      CONTENT,
+    );
+
+    // Distinct authored transforms get distinct retained sprites, so their
+    // (possibly temporal) filter instances never share a slot.
+    expect(containers[0]).not.toBe(containers[1]);
+    const spriteForT1 = containers[0] as { destroyed: boolean };
+
+    // A later plan that only uses t2 prunes t1's slot and destroys its sprite.
+    applicator.retainOnly(new Set(["t2"]));
+    expect(spriteForT1.destroyed).toBe(true);
+
+    target.destroy(true);
+    applicator.dispose();
+  });
+
+  it("destroys native filters when their retained slot is disposed", () => {
+    const { renderer, render } = mockRenderer();
+    const applicator = new OffscreenFilterApplicator(renderer);
+    const target = RenderTexture.create(CONTENT);
+
+    let filter: AlphaFilter | undefined;
+    render.mockImplementation(
       (opts: { container: { filters?: readonly unknown[] | null } }) => {
-        spriteRef = opts.container;
+        filter = opts.container.filters?.[0] as AlphaFilter | undefined;
+      },
+    );
+    applicator.applyFilterToTexture(
+      Texture.WHITE,
+      { type: "AlphaFilter", params: { alpha: 1 }, sourceTransformId: "t1" },
+      target,
+      CONTENT,
+    );
+
+    expect(filter).toBeDefined();
+    const destroy = vi.spyOn(filter!, "destroy");
+    applicator.dispose();
+    expect(destroy).toHaveBeenCalledOnce();
+
+    target.destroy(true);
+  });
+
+  it("drops a retained slot when rendering throws", () => {
+    const { renderer, render } = mockRenderer();
+    const applicator = new OffscreenFilterApplicator(renderer);
+    const target = RenderTexture.create(CONTENT);
+    let failedSprite: { destroyed: boolean } | undefined;
+
+    render.mockImplementationOnce(
+      (opts: { container: { destroyed: boolean } }) => {
+        failedSprite = opts.container;
         throw new Error("render boom");
       },
     );
@@ -101,14 +166,24 @@ describe("OffscreenFilterApplicator", () => {
     expect(() =>
       applicator.applyFilterToTexture(
         Texture.WHITE,
-        { type: "AlphaFilter", params: { alpha: 1 } },
+        { type: "AlphaFilter", params: { alpha: 1 }, sourceTransformId: "t1" },
         target,
         CONTENT,
       ),
     ).toThrow("render boom");
+    expect(failedSprite?.destroyed).toBe(true);
 
-    // The failed pass's filter must not linger on the reused sprite.
-    expect(spriteRef?.filters).toBeNull();
+    let retrySprite: unknown;
+    render.mockImplementationOnce((opts: { container: unknown }) => {
+      retrySprite = opts.container;
+    });
+    applicator.applyFilterToTexture(
+      Texture.WHITE,
+      { type: "AlphaFilter", params: { alpha: 1 }, sourceTransformId: "t1" },
+      target,
+      CONTENT,
+    );
+    expect(retrySprite).not.toBe(failedSprite);
 
     target.destroy(true);
     applicator.dispose();

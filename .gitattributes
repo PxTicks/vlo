@@ -35,6 +35,8 @@
 /frontend/src/features/colorGrading/components/GradeManagementControl.tsx extension-surface=adapter
 /frontend/src/features/colorGrading/components/LutControl.tsx extension-surface=adapter
 /frontend/src/features/colorGrading/gradeParameters.ts extension-surface=adapter
+/frontend/src/features/masks/runtime/MaskedEffectRenderer.ts extension-surface=adapter
+/frontend/src/features/masks/runtime/OffscreenFilterApplicator.ts extension-surface=adapter
 /frontend/src/features/userAssets/services/AssetService.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
@@ -43,6 +45,7 @@
 /frontend/src/features/project/useProjectStore.ts extension-surface=adapter
 /frontend/src/features/project/utils/extensionRequirements.ts extension-surface=adapter
 /frontend/src/features/renderer/services/ExportRenderer.ts extension-surface=adapter
+/frontend/src/features/renderer/services/RenderGroupOrchestrator.ts extension-surface=adapter
 /frontend/src/features/renderer/services/TrackRenderEngine.ts extension-surface=adapter
 /frontend/src/features/renderer/services/projectFrameCapture.ts extension-surface=adapter
 /frontend/src/features/timeline/api.ts extension-surface=adapter
@@ -51,9 +54,14 @@
 /frontend/src/features/timeline/model/** extension-surface=adapter
 /frontend/src/features/timeline/useTimelineStore.ts extension-surface=adapter
 /frontend/src/features/transitions/** extension-surface=adapter
+/frontend/src/features/transformations/applyGroupTransforms.ts extension-surface=adapter
+/frontend/src/features/transformations/applyTransformations.ts extension-surface=adapter
 /frontend/src/features/transformations/animation/** extension-surface=adapter
 /frontend/src/features/transformations/catalogue/TransformationRegistry.ts extension-surface=adapter
 /frontend/src/features/transformations/catalogue/filterFactory.ts extension-surface=adapter
+/frontend/src/features/transformations/catalogue/filterRuntime.ts extension-surface=adapter
+/frontend/src/features/transformations/catalogue/renderSampleContext.ts extension-surface=adapter
+/frontend/src/features/transformations/catalogue/renderingPolicy.ts extension-surface=adapter
 /frontend/src/features/transformations/catalogue/filters/** extension-surface=adapter
 /frontend/src/features/transformations/catalogue/types.ts extension-surface=adapter
 /frontend/src/features/transformations/components/ControlRenderer.tsx extension-surface=adapter
@@ -83,7 +91,10 @@
 /docs/trusted-extension-authority-plan.md extension-surface=governance
 /docs/trusted-extension-authority.md extension-surface=governance
 /docs/extension-look-and-filter-packs.md extension-surface=governance
+/docs/source-aware-matrix-rain-filter-extension-plan.md extension-surface=governance
 /docs/grading-extension-surface-plan.md extension-surface=governance
+/frontend/src/features/transformations/HOW_TO_ADD_TRANSFORMATION.md extension-surface=governance
+/frontend/src/features/transformations/README.md extension-surface=governance
 /docs/deep_dive/extensions-architecture-review.md extension-surface=governance
 /backend/config.py extension-surface=governance
 /frontend/vite.config.ts extension-surface=governance

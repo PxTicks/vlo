@@ -33,21 +33,32 @@ function step(
 }
 
 interface Pass {
+  container: { destroyed: boolean };
   input: Texture | undefined;
   target: unknown;
 }
 
 function setup(options: { coverage?: Texture | null } = {}) {
   const passes: Pass[] = [];
-  const render = vi.fn((opts: { container: { texture?: Texture }; target: unknown }) => {
-    passes.push({ input: opts.container.texture, target: opts.target });
-  });
+  const render = vi.fn(
+    (opts: {
+      container: { destroyed: boolean; texture?: Texture };
+      target: unknown;
+    }) => {
+      passes.push({
+        container: opts.container,
+        input: opts.container.texture,
+        target: opts.target,
+      });
+    },
+  );
   const renderer = { render } as unknown as Renderer;
   const maskedRenderer = new MaskedEffectRenderer(renderer);
 
   const resolveFilterOp = vi.fn((t: ClipTransform) => ({
     type: "AlphaFilter",
     params: { alpha: 1, _id: t.id },
+    sourceTransformId: t.id,
   }));
   const resolveCoverage = vi.fn(() =>
     options.coverage === undefined ? (Texture.WHITE as Texture) : options.coverage,
@@ -68,6 +79,59 @@ describe("MaskedEffectRenderer", () => {
     });
     expect(out).toBe(Texture.WHITE);
     expect(render).not.toHaveBeenCalled();
+    maskedRenderer.dispose();
+  });
+
+  it("releases retained filters when a later plan is empty", () => {
+    const { maskedRenderer, passes, resolveFilterOp, resolveCoverage } = setup();
+    maskedRenderer.render({
+      input: Texture.WHITE,
+      steps: [step("blur", { kind: "unmasked" })],
+      contentSize: CONTENT,
+      resolveFilterOp,
+      resolveCoverage,
+    });
+    const retainedSprite = passes[0].container;
+    expect(retainedSprite.destroyed).toBe(false);
+
+    maskedRenderer.render({
+      input: Texture.WHITE,
+      steps: [],
+      contentSize: CONTENT,
+      resolveFilterOp,
+      resolveCoverage,
+    });
+    expect(retainedSprite.destroyed).toBe(true);
+    maskedRenderer.dispose();
+  });
+
+  it("releases every retained filter after a partial chain failure", () => {
+    const { maskedRenderer, passes, render, resolveFilterOp, resolveCoverage } =
+      setup();
+    render.mockImplementationOnce((opts) => {
+      passes.push({
+        container: opts.container,
+        input: opts.container.texture,
+        target: opts.target,
+      });
+    });
+    render.mockImplementationOnce(() => {
+      throw new Error("render boom");
+    });
+
+    expect(() =>
+      maskedRenderer.render({
+        input: Texture.WHITE,
+        steps: [
+          step("blur", { kind: "unmasked" }),
+          step("sharpen", { kind: "unmasked" }),
+        ],
+        contentSize: CONTENT,
+        resolveFilterOp,
+        resolveCoverage,
+      }),
+    ).toThrow("render boom");
+    expect(passes[0].container.destroyed).toBe(true);
     maskedRenderer.dispose();
   });
 

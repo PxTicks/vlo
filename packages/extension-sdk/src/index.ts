@@ -943,10 +943,70 @@ export interface ExtensionHostFilterTransformationDefinition
   readonly hostFilter: ExtensionDeclarativeHostFilter;
 }
 
+/**
+ * Extension-facing projection of the host's native filter time dependency.
+ *
+ * - `none`: the output is a pure function of its parameters and the current
+ *   input texture. Stateless filters (e.g. desaturate) omit rendering metadata
+ *   and default to this.
+ * - `sample`: the output reads the current timeline sample (procedural filters
+ *   that animate from canonical visual time) but keep no previous-frame state.
+ * - `history`: the output depends on earlier samples through retained feedback
+ *   state (e.g. Matrix Rain). The host may replay bounded warm-up frames.
+ */
+export type ExtensionFilterTimeDependency = "none" | "sample" | "history";
+
+/**
+ * Optional authoring/runtime policy describing how a trusted filter consumes
+ * time. It is not persisted per transform; it is definition metadata the host
+ * uses to schedule replay and to key sample-aware caches.
+ */
+export interface ExtensionTrustedFilterRenderingDefinition {
+  readonly timeDependency: ExtensionFilterTimeDependency;
+  /** Maximum earlier presentation time the host may need to replay. */
+  readonly maxHistorySeconds?: number;
+  /** Largest continuous step the effect accepts without replay/subdivision. */
+  readonly maxStepSeconds?: number;
+}
+
+export type ExtensionRenderMode = "preview" | "export" | "still";
+
+export type ExtensionRenderContinuity =
+  | "initial"
+  | "sequential"
+  | "repeat"
+  | "discontinuous";
+
+/**
+ * Immutable extension projection of the host's native render-sample identity
+ * and timing. It lets a temporal filter distinguish sequential frames,
+ * repeated paused renders, seeks, stills, and exports without reading any
+ * global clock.
+ */
+export interface ExtensionFilterRenderSample {
+  /** Changes whenever the host invalidates temporal history. */
+  readonly sequenceId: number;
+  /** Stable across duplicate GPU submissions for one logical sample. */
+  readonly sampleId: number;
+  readonly mode: ExtensionRenderMode;
+  readonly continuity: ExtensionRenderContinuity;
+  readonly presentationTimeTicks: number;
+  readonly visualTimeTicks: number;
+  readonly sourceTimeTicks: number;
+  /** Present only when the host certifies continuity from the previous sample. */
+  readonly deltaTimeTicks: number | null;
+  readonly fps: number;
+  /** Warm-up frames update state but are not presented or encoded. */
+  readonly isWarmup: boolean;
+}
+
 export interface ExtensionTrustedFilterApplyContext {
   /** The actual host Pixi target. Trusted extensions may narrow this object. */
   readonly target: object;
+  /** The authored transform ID this filter instance is bound to. */
+  readonly transformId: string;
   readonly contentSize?: Readonly<{ width: number; height: number }>;
+  readonly render: ExtensionFilterRenderSample;
 }
 
 /**
@@ -981,6 +1041,11 @@ export interface ExtensionTrustedFilterTransformationDefinition
   readonly validateParameters?: (
     parameters: Readonly<Record<string, unknown>>,
   ) => boolean;
+  /**
+   * Optional render-dependency policy. Omitting it means
+   * `timeDependency: "none"`, preserving existing stateless extensions.
+   */
+  readonly rendering?: ExtensionTrustedFilterRenderingDefinition;
   readonly createFilter: () => ExtensionTrustedFilterInstance;
 }
 

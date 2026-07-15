@@ -16,7 +16,9 @@ The full design and phase plan lives in
   lane. Its persisted identity is `example.matrix-rain/matrix-rain`.
 - The full **stateless Matrix appearance**, rendered from the injected host Pixi
   singleton (`api.runtime.pixi`) with no bundled copy of Pixi:
-  - a fixed grid of 16 original 5×5 bitmask glyphs anchored to the input bounds;
+  - a fixed grid of 16 original analytic stroke glyphs anchored to the input
+    bounds, with smooth derivative-based antialiasing and editable source-space
+    glyph size and spacing between rows;
   - deterministic glyph cycling, per-column phase, and speed variation derived
     only from cell coordinates, an explicit seed, and quantized visual time;
   - a descending procedural trail with a bright head (no feedback texture yet);

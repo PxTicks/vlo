@@ -1,4 +1,4 @@
-import { GLYPH_BITMASKS } from "../utils/matrixRainMath";
+import { GLYPH_STROKE_MASKS } from "../utils/matrixRainMath";
 
 /**
  * WebGPU (WGSL) program for the stateless Phase 2 Matrix appearance. It is a
@@ -15,7 +15,7 @@ import { GLYPH_BITMASKS } from "../utils/matrixRainMath";
 export const MATRIX_RAIN_WGSL_VERTEX_ENTRY = "mainVertex";
 export const MATRIX_RAIN_WGSL_FRAGMENT_ENTRY = "mainFragment";
 
-const GLYPH_ARRAY = GLYPH_BITMASKS.map((mask) => `${mask >>> 0}u`).join(", ");
+const GLYPH_ARRAY = GLYPH_STROKE_MASKS.map((mask) => `${mask >>> 0}u`).join(", ");
 
 export const MATRIX_RAIN_WGSL = `
 struct GlobalFilterUniforms {
@@ -30,6 +30,7 @@ struct GlobalFilterUniforms {
 struct MatrixRainUniforms {
   uTimeSeconds: f32,
   uSize: f32,
+  uVerticalSpacing: f32,
   uSeed: f32,
   uGlyphCycleRate: f32,
   uFallSpeed: f32,
@@ -56,6 +57,18 @@ struct MatrixRainUniforms {
 @group(1) @binding(0) var<uniform> matrixRainUniforms: MatrixRainUniforms;
 
 var<private> GLYPHS: array<u32, 16> = array<u32, 16>(${GLYPH_ARRAY});
+var<private> SEGMENT_A: array<vec2<f32>, 16> = array<vec2<f32>, 16>(
+  vec2<f32>(0.22, 0.14), vec2<f32>(0.30, 0.34), vec2<f32>(0.18, 0.50), vec2<f32>(0.30, 0.66),
+  vec2<f32>(0.22, 0.86), vec2<f32>(0.20, 0.15), vec2<f32>(0.80, 0.15), vec2<f32>(0.50, 0.12),
+  vec2<f32>(0.22, 0.15), vec2<f32>(0.78, 0.15), vec2<f32>(0.50, 0.15), vec2<f32>(0.50, 0.15),
+  vec2<f32>(0.20, 0.50), vec2<f32>(0.80, 0.50), vec2<f32>(0.50, 0.15), vec2<f32>(0.50, 0.50),
+);
+var<private> SEGMENT_B: array<vec2<f32>, 16> = array<vec2<f32>, 16>(
+  vec2<f32>(0.78, 0.14), vec2<f32>(0.70, 0.34), vec2<f32>(0.82, 0.50), vec2<f32>(0.70, 0.66),
+  vec2<f32>(0.78, 0.86), vec2<f32>(0.20, 0.85), vec2<f32>(0.80, 0.85), vec2<f32>(0.50, 0.88),
+  vec2<f32>(0.78, 0.85), vec2<f32>(0.22, 0.85), vec2<f32>(0.20, 0.50), vec2<f32>(0.80, 0.50),
+  vec2<f32>(0.50, 0.85), vec2<f32>(0.50, 0.85), vec2<f32>(0.50, 0.50), vec2<f32>(0.50, 0.85),
+);
 
 fn pcgHash(v: u32) -> u32 {
   let state = v * 747796405u + 2891336453u;
@@ -65,6 +78,33 @@ fn pcgHash(v: u32) -> u32 {
 fn hash2(a: u32, b: u32) -> u32 { return pcgHash(a ^ pcgHash(b)); }
 fn hash3(a: u32, b: u32, c: u32) -> u32 { return pcgHash(a ^ hash2(b, c)); }
 fn unitFloat(h: u32) -> f32 { return f32(h & 0x00ffffffu) / 16777216.0; }
+
+fn segmentDistance(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
+  let pa = p - a;
+  let ba = b - a;
+  let h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h);
+}
+
+fn glyphCoverage(glyphIndex: u32, uv: vec2<f32>) -> f32 {
+  let strokeMask = GLYPHS[glyphIndex];
+  var distanceToStroke = 10.0;
+  for (var segment = 0u; segment < 16u; segment += 1u) {
+    let segmentBit = 1u << segment;
+    if ((strokeMask & segmentBit) != 0u) {
+      distanceToStroke = min(
+        distanceToStroke,
+        segmentDistance(uv, SEGMENT_A[segment], SEGMENT_B[segment]),
+      );
+    }
+  }
+  let antialias = max(fwidth(distanceToStroke), 0.0015);
+  return 1.0 - smoothstep(
+    0.055 - antialias,
+    0.055 + antialias,
+    distanceToStroke,
+  );
+}
 
 fn paletteGrade(bIn: f32) -> vec3<f32> {
   let b = clamp(bIn, 0.0, 1.0);
@@ -107,9 +147,11 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   }
   let pixel = uv * gfu.uInputSize.xy * (contentSize / frameSize);
   let size = max(mu.uSize, 1.0);
-  let cellf = pixel / size;
-  let cellIndex = floor(cellf);
-  let sub = cellf - cellIndex;
+  let rowPitch = size + max(mu.uVerticalSpacing, 0.0);
+  let cellIndex = vec2<f32>(floor(pixel.x / size), floor(pixel.y / rowPitch));
+  let rowPixel = pixel.y - rowPitch * floor(pixel.y / rowPitch);
+  let sub = vec2<f32>(fract(pixel.x / size), rowPixel / size);
+  let glyphRegion = select(0.0, 1.0, sub.y < 1.0);
   let col = u32(max(cellIndex.x, 0.0));
   let row = u32(max(cellIndex.y, 0.0));
   let seed = u32(max(mu.uSeed, 0.0));
@@ -128,10 +170,7 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 
   let bucket = u32(floor(max(mu.uTimeSeconds, 0.0) * mu.uGlyphCycleRate));
   let gi = hash3(col, row, bucket ^ seed) % 16u;
-  let bx = u32(clamp(sub.x * 5.0, 0.0, 4.0));
-  let by = u32(clamp(sub.y * 5.0, 0.0, 4.0));
-  let bit = by * 5u + bx;
-  let lit = f32((GLYPHS[gi] >> bit) & 1u);
+  let lit = glyphCoverage(gi, sub) * glyphRegion;
 
   if (dbgMode == 1) {
     let border = select(0.0, 1.0, sub.x < 0.06 || sub.y < 0.06);

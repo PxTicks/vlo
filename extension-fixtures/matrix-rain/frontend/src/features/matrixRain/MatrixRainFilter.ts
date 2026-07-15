@@ -32,6 +32,7 @@ function color(hex: string) {
 interface MatrixRainUniformValues {
   uTimeSeconds: number;
   uSize: number;
+  uVerticalSpacing: number;
   uSeed: number;
   uGlyphCycleRate: number;
   uFallSpeed: number;
@@ -81,6 +82,7 @@ export function createMatrixRainFilter(
   const uniformStructures = {
     uTimeSeconds: scalar(0),
     uSize: scalar(d.size),
+    uVerticalSpacing: scalar(d.verticalSpacing),
     uSeed: scalar(d.seed),
     uGlyphCycleRate: scalar(d.glyphCycleRate),
     uFallSpeed: scalar(d.fallSpeed),
@@ -152,6 +154,7 @@ export function createMatrixRainFilter(
       uniforms.uTimeSeconds = reduced / safeTicksPerSecond;
 
       uniforms.uSize = resolved.size;
+      uniforms.uVerticalSpacing = resolved.verticalSpacing;
       uniforms.uSeed = resolved.seed;
       uniforms.uGlyphCycleRate = resolved.glyphCycleRate;
       uniforms.uFallSpeed = resolved.fallSpeed;

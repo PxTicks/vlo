@@ -54,6 +54,7 @@ describe("createMatrixRainFilter", () => {
       {
         ...DEFAULT_MATRIX_RAIN_PARAMETERS,
         size: 24,
+        verticalSpacing: 7,
         seed: 77,
         fallSpeed: 13,
         outputMode: "matrixOnly",
@@ -81,6 +82,7 @@ describe("createMatrixRainFilter", () => {
     const uniforms = pixi.getLiveUniforms();
     expect(uniforms.uTimeSeconds).toBe(0.5);
     expect(uniforms.uSize).toBe(24);
+    expect(uniforms.uVerticalSpacing).toBe(7);
     expect(uniforms.uSeed).toBe(77);
     expect(uniforms.uFallSpeed).toBe(13);
     expect(uniforms.uOutputMode).toBe(1);

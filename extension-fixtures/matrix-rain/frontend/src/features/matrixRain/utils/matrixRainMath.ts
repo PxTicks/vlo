@@ -10,56 +10,83 @@
  */
 
 export const GLYPH_COUNT = 16;
-export const GLYPH_SIZE = 5;
+export const GLYPH_SEGMENT_COUNT = 16;
 
-/**
- * Sixteen original 5×5 "cyber glyph" bitmasks. Row 0 is the top of the cell;
- * bit index is `row * 5 + col` with col 0 on the left. Encoded once from a
- * readable layout and shared with both shader programs so the CPU reference and
- * the GPU can never drift.
- */
-const GLYPH_ROWS: readonly string[][] = [
-  ["01110", "10001", "10101", "10001", "01110"],
-  ["00100", "01110", "10101", "00100", "00100"],
-  ["10001", "01010", "00100", "01010", "10001"],
-  ["11111", "00100", "00100", "00100", "11111"],
-  ["10000", "11000", "10100", "00010", "00001"],
-  ["01010", "01010", "11111", "01010", "01010"],
-  ["11100", "10010", "11100", "10010", "11100"],
-  ["00100", "00100", "11111", "00100", "00100"],
-  ["10001", "10001", "11111", "10001", "10001"],
-  ["01110", "10000", "01110", "00001", "01110"],
-  ["11111", "00001", "00110", "01000", "11111"],
-  ["10101", "01010", "10101", "01010", "10101"],
-  ["00001", "00010", "00100", "01000", "10000"],
-  ["11011", "11011", "00000", "11011", "11011"],
-  ["01110", "10001", "10001", "10001", "01110"],
-  ["10001", "11011", "10101", "11011", "10001"],
-];
-
-function encodeGlyph(rows: readonly string[]): number {
-  let mask = 0;
-  for (let row = 0; row < GLYPH_SIZE; row += 1) {
-    for (let col = 0; col < GLYPH_SIZE; col += 1) {
-      if (rows[row][col] === "1") {
-        mask |= 1 << (row * GLYPH_SIZE + col);
-      }
-    }
-  }
-  return mask >>> 0;
+export interface GlyphCellSample {
+  readonly column: number;
+  readonly row: number;
+  /** Normalized horizontal coordinate within the glyph, in [0, 1). */
+  readonly glyphX: number;
+  /** Normalized vertical coordinate; values >= 1 are in the row gap. */
+  readonly glyphY: number;
+  readonly isGlyphRegion: boolean;
 }
 
-/** The 16 glyph bitmasks as unsigned 25-bit integers, shared with the shaders. */
-export const GLYPH_BITMASKS: readonly number[] = GLYPH_ROWS.map(encodeGlyph);
+/**
+ * Map a source-space pixel to the shader's glyph grid. Glyphs remain square;
+ * only the vertical row pitch grows when spacing is added.
+ */
+export function sampleGlyphCell(
+  pixelX: number,
+  pixelY: number,
+  sizeValue: number,
+  verticalSpacingValue: number,
+): GlyphCellSample {
+  const size = Math.max(sizeValue, 1);
+  const rowPitch = size + Math.max(verticalSpacingValue, 0);
+  const column = Math.floor(pixelX / size);
+  const row = Math.floor(pixelY / rowPitch);
+  const glyphX = positiveMod(pixelX, size) / size;
+  const glyphY = positiveMod(pixelY, rowPitch) / size;
+  return {
+    column,
+    row,
+    glyphX,
+    glyphY,
+    isGlyphRegion: glyphY < 1,
+  };
+}
 
-/** True when pixel (col, row) of glyph `glyphIndex` is lit. */
-export function glyphBit(
+/**
+ * Sixteen original cyber glyphs expressed as combinations of normalized line
+ * segments. The shaders rasterize these as analytic, anti-aliased strokes, so
+ * increasing Glyph Size adds real edge resolution instead of magnifying a 5×5
+ * bitmap. Segment indices are documented beside the shader endpoint tables.
+ */
+const GLYPH_SEGMENTS: readonly (readonly number[])[] = [
+  [0, 4, 5, 6],
+  [0, 7],
+  [8, 9],
+  [0, 4, 7],
+  [5, 8, 9],
+  [0, 2, 4, 5],
+  [0, 2, 4, 5, 6],
+  [2, 7],
+  [2, 5, 6],
+  [0, 2, 4, 6, 10, 13],
+  [0, 4, 9],
+  [10, 11, 12, 13],
+  [8],
+  [1, 3, 14, 15],
+  [5, 6, 10, 11],
+  [5, 6, 12, 13],
+];
+
+function encodeGlyphSegments(segments: readonly number[]): number {
+  return segments.reduce((mask, segment) => mask | (1 << segment), 0) >>> 0;
+}
+
+/** Segment-presence masks shared verbatim with both shader programs. */
+export const GLYPH_STROKE_MASKS: readonly number[] =
+  GLYPH_SEGMENTS.map(encodeGlyphSegments);
+
+/** True when a procedural glyph contains the requested analytic segment. */
+export function glyphUsesSegment(
   glyphIndex: number,
-  col: number,
-  row: number,
+  segment: number,
 ): boolean {
-  const mask = GLYPH_BITMASKS[glyphIndex % GLYPH_COUNT];
-  return ((mask >>> (row * GLYPH_SIZE + col)) & 1) === 1;
+  const mask = GLYPH_STROKE_MASKS[glyphIndex % GLYPH_COUNT];
+  return ((mask >>> segment) & 1) === 1;
 }
 
 /**

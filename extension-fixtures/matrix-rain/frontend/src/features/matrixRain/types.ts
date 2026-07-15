@@ -18,8 +18,10 @@ export type MatrixDebugMode =
 
 export interface MatrixRainParameters {
   // Grid
-  /** Glyph grid cell size in rendered pixels. Integer, topology-affecting. */
+  /** Glyph width/height in source pixels. Integer, topology-affecting. */
   readonly size: number;
+  /** Empty source pixels inserted between glyph rows. Integer. */
+  readonly verticalSpacing: number;
   /** Deterministic seed for column/glyph variation. Integer. */
   readonly seed: number;
   /** Glyph changes per second (0 holds glyphs forever). */

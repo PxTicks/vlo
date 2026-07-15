@@ -46,6 +46,7 @@ export const DEBUG_MODES: readonly MatrixDebugMode[] = [
 // bag while still being checked against the resolved parameter shape.
 export const DEFAULT_MATRIX_RAIN_PARAMETERS = {
   size: 10,
+  verticalSpacing: 2,
   seed: 1,
   glyphCycleRate: 3,
   fallSpeed: 8,
@@ -79,9 +80,18 @@ export const MATRIX_RAIN_CONTROL_GROUPS: readonly ExtensionTransformationControl
         {
           type: "slider",
           name: "size",
-          label: "Cell Size",
+          label: "Glyph Size",
           defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.size,
           min: 4,
+          max: 128,
+          step: 1,
+        },
+        {
+          type: "slider",
+          name: "verticalSpacing",
+          label: "Vertical Spacing",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.verticalSpacing,
+          min: 0,
           max: 32,
           step: 1,
         },
@@ -273,7 +283,8 @@ export const MATRIX_RAIN_CONTROL_GROUPS: readonly ExtensionTransformationControl
 
 /** Numeric authoring bounds enforced by the custom validator (mirrors controls). */
 export const MATRIX_RAIN_NUMERIC_BOUNDS = {
-  size: { min: 4, max: 32, integer: true },
+  size: { min: 4, max: 128, integer: true },
+  verticalSpacing: { min: 0, max: 32, integer: true },
   seed: { min: 0, max: 16_777_215, integer: true },
   glyphCycleRate: { min: 0, max: 15, integer: false },
   fallSpeed: { min: 0, max: 30, integer: false },

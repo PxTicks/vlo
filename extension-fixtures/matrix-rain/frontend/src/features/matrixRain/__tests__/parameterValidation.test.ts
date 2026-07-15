@@ -31,8 +31,20 @@ describe("validateMatrixRainAuthoredParameters", () => {
       validateMatrixRainAuthoredParameters({ ...DEFAULTS, size: 10.5 }),
     ).toBe(false);
     expect(
+      validateMatrixRainAuthoredParameters({ ...DEFAULTS, size: 129 }),
+    ).toBe(false);
+    expect(
+      validateMatrixRainAuthoredParameters({ ...DEFAULTS, verticalSpacing: 2.5 }),
+    ).toBe(false);
+    expect(
       validateMatrixRainAuthoredParameters({ ...DEFAULTS, headWidth: Infinity }),
     ).toBe(false);
+  });
+
+  it("accepts large source-space glyphs for fitted high-resolution media", () => {
+    expect(
+      validateMatrixRainAuthoredParameters({ ...DEFAULTS, size: 96 }),
+    ).toBe(true);
   });
 
   it("rejects malformed colors and unknown enum values", () => {
@@ -52,9 +64,15 @@ describe("validateMatrixRainAuthoredParameters", () => {
     expect(
       validateMatrixRainAuthoredParameters({ ...DEFAULTS, fallSpeed: spline }),
     ).toBe(true);
-    // A static field (size) must not accept a scalar object.
+    // Static grid fields must not accept scalar objects.
     expect(
       validateMatrixRainAuthoredParameters({ ...DEFAULTS, size: spline }),
+    ).toBe(false);
+    expect(
+      validateMatrixRainAuthoredParameters({
+        ...DEFAULTS,
+        verticalSpacing: spline,
+      }),
     ).toBe(false);
   });
 });
@@ -64,6 +82,9 @@ describe("resolveMatrixRainParameters", () => {
     const resolved = resolveMatrixRainParameters(DEFAULTS);
     expect(resolved).not.toBeNull();
     expect(resolved?.size).toBe(DEFAULT_MATRIX_RAIN_PARAMETERS.size);
+    expect(resolved?.verticalSpacing).toBe(
+      DEFAULT_MATRIX_RAIN_PARAMETERS.verticalSpacing,
+    );
     expect(resolved?.outputMode).toBe("replaceBlack");
   });
 

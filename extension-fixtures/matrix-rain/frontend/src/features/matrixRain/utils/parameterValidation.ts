@@ -112,6 +112,7 @@ export function resolveMatrixRainParameters(
 
   return {
     size: parameters.size as number,
+    verticalSpacing: parameters.verticalSpacing as number,
     seed: parameters.seed as number,
     glyphCycleRate: parameters.glyphCycleRate as number,
     fallSpeed: parameters.fallSpeed as number,

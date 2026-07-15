@@ -1,4 +1,4 @@
-import { GLYPH_BITMASKS } from "../utils/matrixRainMath";
+import { GLYPH_STROKE_MASKS } from "../utils/matrixRainMath";
 
 /**
  * WebGL (GLSL ES 3.00) programs for the stateless Phase 2 Matrix appearance.
@@ -6,8 +6,9 @@ import { GLYPH_BITMASKS } from "../utils/matrixRainMath";
  * The vertex stage is the standard Pixi v8 filter header. The fragment stage
  * anchors a glyph grid to the input pixel bounds, animates a per-column
  * descending trail and bright head purely from canonical visual time, cycles
- * fixed 5×5 bitmask glyphs deterministically, and maps brightness through a
- * five-colour piecewise palette. No feedback texture is used at this phase.
+ * analytic anti-aliased stroke glyphs deterministically, and maps brightness
+ * through a five-colour piecewise palette. No feedback texture is used at this
+ * phase.
  *
  * Every hash, glyph, and profile here mirrors `matrixRainMath.ts` (the CPU
  * reference) and `matrixRainWgsl.ts`, so the three can never drift.
@@ -31,7 +32,7 @@ void main(void) {
 }
 `;
 
-const GLYPH_ARRAY = GLYPH_BITMASKS.map((mask) => `${mask >>> 0}u`).join(", ");
+const GLYPH_ARRAY = GLYPH_STROKE_MASKS.map((mask) => `${mask >>> 0}u`).join(", ");
 
 export const MATRIX_RAIN_FRAGMENT = `
 #version 300 es
@@ -48,6 +49,7 @@ uniform vec4 uOutputFrame;
 
 uniform float uTimeSeconds;
 uniform float uSize;
+uniform float uVerticalSpacing;
 uniform float uSeed;
 uniform float uGlyphCycleRate;
 uniform float uFallSpeed;
@@ -68,6 +70,21 @@ uniform vec3 uBright;
 uniform vec3 uHead;
 
 const uint GLYPHS[16] = uint[16](${GLYPH_ARRAY});
+// Normalized analytic stroke vocabulary: five horizontals, two outer
+// verticals, one full centre vertical, two full diagonals, four diamond
+// diagonals, and two half-height centre verticals.
+const vec2 SEGMENT_A[16] = vec2[16](
+  vec2(0.22, 0.14), vec2(0.30, 0.34), vec2(0.18, 0.50), vec2(0.30, 0.66),
+  vec2(0.22, 0.86), vec2(0.20, 0.15), vec2(0.80, 0.15), vec2(0.50, 0.12),
+  vec2(0.22, 0.15), vec2(0.78, 0.15), vec2(0.50, 0.15), vec2(0.50, 0.15),
+  vec2(0.20, 0.50), vec2(0.80, 0.50), vec2(0.50, 0.15), vec2(0.50, 0.50)
+);
+const vec2 SEGMENT_B[16] = vec2[16](
+  vec2(0.78, 0.14), vec2(0.70, 0.34), vec2(0.82, 0.50), vec2(0.70, 0.66),
+  vec2(0.78, 0.86), vec2(0.20, 0.85), vec2(0.80, 0.85), vec2(0.50, 0.88),
+  vec2(0.78, 0.85), vec2(0.22, 0.85), vec2(0.20, 0.50), vec2(0.80, 0.50),
+  vec2(0.50, 0.85), vec2(0.50, 0.85), vec2(0.50, 0.50), vec2(0.50, 0.85)
+);
 
 uint pcgHash(uint v) {
   uint state = v * 747796405u + 2891336453u;
@@ -77,6 +94,33 @@ uint pcgHash(uint v) {
 uint hash2(uint a, uint b) { return pcgHash(a ^ pcgHash(b)); }
 uint hash3(uint a, uint b, uint c) { return pcgHash(a ^ hash2(b, c)); }
 float unitFloat(uint h) { return float(h & 0x00ffffffu) / 16777216.0; }
+
+float segmentDistance(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h);
+}
+
+float glyphCoverage(uint glyphIndex, vec2 uv) {
+  uint strokeMask = GLYPHS[int(glyphIndex)];
+  float distanceToStroke = 10.0;
+  for (int segment = 0; segment < 16; segment++) {
+    uint segmentBit = 1u << uint(segment);
+    if ((strokeMask & segmentBit) != 0u) {
+      distanceToStroke = min(
+        distanceToStroke,
+        segmentDistance(uv, SEGMENT_A[segment], SEGMENT_B[segment])
+      );
+    }
+  }
+  float antialias = max(fwidth(distanceToStroke), 0.0015);
+  return 1.0 - smoothstep(
+    0.055 - antialias,
+    0.055 + antialias,
+    distanceToStroke
+  );
+}
 
 vec3 paletteGrade(float b) {
   b = clamp(b, 0.0, 1.0);
@@ -100,9 +144,13 @@ void main(void) {
   // grid remaining screen-sized and sliding as the clip is zoomed.
   vec2 pixel = vTextureCoord * uInputSize.xy * (contentSize / frameSize);
   float size = max(uSize, 1.0);
-  vec2 cellf = pixel / size;
-  vec2 cellIndex = floor(cellf);
-  vec2 sub = cellf - cellIndex;
+  float rowPitch = size + max(uVerticalSpacing, 0.0);
+  vec2 cellIndex = vec2(floor(pixel.x / size), floor(pixel.y / rowPitch));
+  vec2 sub = vec2(
+    fract(pixel.x / size),
+    mod(pixel.y, rowPitch) / size
+  );
+  float glyphRegion = sub.y < 1.0 ? 1.0 : 0.0;
   uint col = uint(max(cellIndex.x, 0.0));
   uint row = uint(max(cellIndex.y, 0.0));
   uint seed = uint(max(uSeed, 0.0));
@@ -120,10 +168,7 @@ void main(void) {
 
   uint bucket = uint(floor(max(uTimeSeconds, 0.0) * uGlyphCycleRate));
   uint gi = hash3(col, row, bucket ^ seed) % 16u;
-  int bx = int(clamp(sub.x * 5.0, 0.0, 4.0));
-  int by = int(clamp(sub.y * 5.0, 0.0, 4.0));
-  uint bit = uint(by * 5 + bx);
-  float lit = float((GLYPHS[int(gi)] >> bit) & 1u);
+  float lit = glyphCoverage(gi, sub) * glyphRegion;
 
   // Debug views short-circuit the palette compositing.
   if (dbgMode == 1) {

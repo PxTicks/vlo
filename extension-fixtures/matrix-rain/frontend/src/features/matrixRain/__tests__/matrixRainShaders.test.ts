@@ -18,4 +18,26 @@ describe("Matrix Rain WebGL programs", () => {
     expect(MATRIX_RAIN_WGSL).toContain("uContentSize: vec2<f32>");
     expect(MATRIX_RAIN_WGSL).toContain("contentSize / frameSize");
   });
+
+  it("uses an independently adjustable vertical glyph-row pitch", () => {
+    expect(MATRIX_RAIN_FRAGMENT).toContain("uniform float uVerticalSpacing");
+    expect(MATRIX_RAIN_FRAGMENT).toContain(
+      "float rowPitch = size + max(uVerticalSpacing, 0.0)",
+    );
+    expect(MATRIX_RAIN_FRAGMENT).toContain("* glyphRegion");
+    expect(MATRIX_RAIN_WGSL).toContain("uVerticalSpacing: f32");
+    expect(MATRIX_RAIN_WGSL).toContain(
+      "let rowPitch = size + max(mu.uVerticalSpacing, 0.0)",
+    );
+    expect(MATRIX_RAIN_WGSL).toContain("* glyphRegion");
+  });
+
+  it("rasterizes resolution-independent anti-aliased stroke glyphs", () => {
+    expect(MATRIX_RAIN_FRAGMENT).toContain("float glyphCoverage");
+    expect(MATRIX_RAIN_FRAGMENT).toContain("fwidth(distanceToStroke)");
+    expect(MATRIX_RAIN_FRAGMENT).not.toContain("sub.x * 5.0");
+    expect(MATRIX_RAIN_WGSL).toContain("fn glyphCoverage");
+    expect(MATRIX_RAIN_WGSL).toContain("fwidth(distanceToStroke)");
+    expect(MATRIX_RAIN_WGSL).not.toContain("sub.x * 5.0");
+  });
 });

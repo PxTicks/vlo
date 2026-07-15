@@ -1,17 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
-  GLYPH_BITMASKS,
   GLYPH_COUNT,
+  GLYPH_SEGMENT_COUNT,
+  GLYPH_STROKE_MASKS,
   colorToVec3,
   columnPhase,
   columnSpacing,
   columnSpeedRandom,
-  glyphBit,
   glyphIndex,
   glyphTimeBucket,
+  glyphUsesSegment,
   paletteGrade,
   pcgHash,
   positiveMod,
+  sampleGlyphCell,
   sampleRain,
   unitFloat,
   type RainParameters,
@@ -78,22 +80,21 @@ describe("column variation", () => {
 });
 
 describe("glyphs", () => {
-  it("defines 16 distinct 25-bit masks", () => {
-    expect(GLYPH_BITMASKS).toHaveLength(GLYPH_COUNT);
-    expect(new Set(GLYPH_BITMASKS).size).toBe(GLYPH_COUNT);
-    for (const mask of GLYPH_BITMASKS) {
+  it("defines 16 distinct analytic-stroke masks", () => {
+    expect(GLYPH_STROKE_MASKS).toHaveLength(GLYPH_COUNT);
+    expect(new Set(GLYPH_STROKE_MASKS).size).toBe(GLYPH_COUNT);
+    for (const mask of GLYPH_STROKE_MASKS) {
       expect(mask).toBeGreaterThanOrEqual(0);
-      expect(mask).toBeLessThan(1 << 25);
+      expect(mask).toBeLessThan(1 << GLYPH_SEGMENT_COUNT);
     }
   });
 
-  it("glyphBit reads the mask consistently", () => {
+  it("glyphUsesSegment reads every stroke mask consistently", () => {
     for (let g = 0; g < GLYPH_COUNT; g += 1) {
-      for (let row = 0; row < 5; row += 1) {
-        for (let col = 0; col < 5; col += 1) {
-          const expected = ((GLYPH_BITMASKS[g] >>> (row * 5 + col)) & 1) === 1;
-          expect(glyphBit(g, col, row)).toBe(expected);
-        }
+      for (let segment = 0; segment < GLYPH_SEGMENT_COUNT; segment += 1) {
+        const expected =
+          ((GLYPH_STROKE_MASKS[g] >>> segment) & 1) === 1;
+        expect(glyphUsesSegment(g, segment)).toBe(expected);
       }
     }
   });
@@ -129,6 +130,37 @@ describe("positiveMod", () => {
     expect(positiveMod(-1, 5)).toBe(4);
     expect(positiveMod(7, 5)).toBe(2);
     expect(positiveMod(0, 5)).toBe(0);
+  });
+});
+
+describe("sampleGlyphCell", () => {
+  it("keeps glyphs square and inserts a vertical gap between rows", () => {
+    expect(sampleGlyphCell(9, 9, 10, 2)).toMatchObject({
+      column: 0,
+      row: 0,
+      isGlyphRegion: true,
+    });
+    expect(sampleGlyphCell(9, 10, 10, 2)).toMatchObject({
+      column: 0,
+      row: 0,
+      isGlyphRegion: false,
+    });
+    expect(sampleGlyphCell(9, 12, 10, 2)).toMatchObject({
+      column: 0,
+      row: 1,
+      glyphY: 0,
+      isGlyphRegion: true,
+    });
+  });
+
+  it("reduces to the original square grid when spacing is zero", () => {
+    expect(sampleGlyphCell(15, 25, 10, 0)).toMatchObject({
+      column: 1,
+      row: 2,
+      glyphX: 0.5,
+      glyphY: 0.5,
+      isGlyphRegion: true,
+    });
   });
 });
 

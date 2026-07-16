@@ -45,6 +45,7 @@ struct MatrixRainUniforms {
   uSourceHeadInfluence: f32,
   uMotionHeadInfluence: f32,
   uBaseInjection: f32,
+  uAmbientSpawn: f32,
   uSourceInfluence: f32,
   uMotionInfluence: f32,
   uMotionImmediateAmount: f32,
@@ -219,11 +220,23 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
     return vec4<f32>(clamp(motionA, 0.0, 1.0) * vec3<f32>(1.0, 0.4, 0.2), 1.0);
   }
   if (dbgMode == 8) {
-    let motionGate = proceduralTrail
-      + (1.0 - proceduralTrail) * mu.uMotionImmediateAmount;
+    let pulseIndex = floor((headLine - f32(row)) / spacing);
+    let pulseKey = bitcast<u32>(i32(pulseIndex));
+    let spawnNoise = unitFloat(hash2(hash2(col, pulseKey), seed));
+    let spawnDrive = clamp(
+      mu.uSourceInfluence * signalB + mu.uMotionInfluence * motionA,
+      0.0,
+      1.0,
+    );
+    let spawnProbability = 1.0
+      - (1.0 - clamp(mu.uAmbientSpawn, 0.0, 1.0)) * (1.0 - spawnDrive);
+    let streamGate = select(0.0, 1.0, spawnNoise < spawnProbability);
+    let trailGate = proceduralTrail * streamGate;
+    let motionGate = streamGate
+      * (proceduralTrail + (1.0 - proceduralTrail) * mu.uMotionImmediateAmount);
     let injection = clamp(
-      (mu.uBaseInjection
-        + mu.uSourceInfluence * signalB * proceduralTrail
+      (mu.uBaseInjection * trailGate
+        + mu.uSourceInfluence * signalB * trailGate
         + mu.uMotionInfluence * motionA * motionGate)
         * mu.uInjectionStrength * mu.uInjectionGate,
       0.0,

@@ -35,6 +35,29 @@ describe("retention", () => {
   it("does not decay across a zero-delta sample", () => {
     expect(retention(0, 0.45)).toBe(1);
   });
+
+  it("applies source-conditioned damping independently of frame subdivision", () => {
+    const input = {
+      advectedRain: 0.8,
+      advectedHead: 0.8,
+      currentSignal: 0,
+      proceduralTrail: 0,
+      proceduralHead: 0,
+      streamAccepted: false,
+      params: { ...PARAMS, baseInjection: 0, darkDamping: 1.5 },
+    };
+    const one = updateRainState({ ...input, deltaSeconds: 1 / 15 });
+    const halfway = updateRainState({ ...input, deltaSeconds: 1 / 30 });
+    const two = updateRainState({
+      ...input,
+      advectedRain: halfway.r,
+      advectedHead: halfway.g,
+      deltaSeconds: 1 / 30,
+    });
+
+    expect(two.r).toBeCloseTo(one.r, 6);
+    expect(two.g).toBeCloseTo(one.g, 6);
+  });
 });
 
 describe("softAdd", () => {

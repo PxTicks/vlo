@@ -1,6 +1,6 @@
 /**
- * Phase 4 resolved parameter surface: the temporal-feedback appearance plus
- * edge- and motion-aware source injection. It adds a `signal` group (how the
+ * Source-conditioned temporal parameter surface: edge/motion-aware injection
+ * plus deterministic stream spawning. It adds a `signal` group (how the
  * source is read: luma / inverse-luma / alpha / edge combinations, then
  * threshold/gain/gamma) and motion controls (compare the current signal with
  * the previous one and inject new bright activity) on top of the Phase 3
@@ -81,8 +81,10 @@ export interface MatrixRainParameters {
   // Feedback (Phase 3 temporal state)
   /** Half-life of the rain trail's decay, in seconds. */
   readonly trailHalfLife: number;
-  /** Constant rain injected every step, keeping columns alive, 0..1. */
+  /** Base injection amplitude within an accepted procedural stream, 0..1. */
   readonly baseInjection: number;
+  /** Minimum probability that a procedural stream spawns without source drive. */
+  readonly ambientSpawn: number;
   /** How strongly the source signal injects into the rain, 0..2. */
   readonly sourceInfluence: number;
   /** How strongly motion injects new bright activity, 0..2. */
@@ -97,6 +99,8 @@ export interface MatrixRainParameters {
   readonly motionImmediateAmount: number;
   /** Overall strength applied to base, source, and motion injection, 0..2. */
   readonly injectionStrength: number;
+  /** Additional per-second decay in dark/unsupported source regions, 0..8. */
+  readonly darkDamping: number;
   /** How the decayed trail and new injection combine. */
   readonly accumulationMode: MatrixAccumulationMode;
   /** Weight of the immediate current-shape (source signal) term, 0..2. */

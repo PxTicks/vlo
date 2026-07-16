@@ -42,6 +42,12 @@ describe("validateMatrixRainAuthoredParameters", () => {
     expect(
       validateMatrixRainAuthoredParameters({ ...DEFAULTS, headWidth: Infinity }),
     ).toBe(false);
+    expect(
+      validateMatrixRainAuthoredParameters({ ...DEFAULTS, ambientSpawn: 1.1 }),
+    ).toBe(false);
+    expect(
+      validateMatrixRainAuthoredParameters({ ...DEFAULTS, darkDamping: 8.1 }),
+    ).toBe(false);
   });
 
   it("accepts large source-space glyphs for fitted high-resolution media", () => {

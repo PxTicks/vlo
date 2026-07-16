@@ -18,11 +18,10 @@ import {
  * on failure, and the filter renders through the normal live/adjustment/export
  * transformation stack.
  *
- * Phase 2 renders the stateless Matrix appearance — a fixed glyph grid with
- * deterministic cycling and a descending procedural trail/head — driven purely
- * by the render sample's canonical visual time, in matching GLSL and WGSL
- * programs. Feedback textures arrive in the later phases; the declared history
- * rendering metadata reserves that temporal contract now.
+ * The extension renders a fixed analytic glyph grid plus source-conditioned
+ * temporal rain in matching GLSL and WGSL programs. Deterministic pulse hashes,
+ * ping-pong feedback state, and the render sample's canonical visual time keep
+ * preview and export on the same history-aware contract.
  */
 export const activate: ExtensionModule["activate"] = (context) => {
   const ticksPerSecond = context.api.timeline.ticksPerSecond;

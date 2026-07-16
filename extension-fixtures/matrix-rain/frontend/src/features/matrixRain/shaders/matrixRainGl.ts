@@ -65,6 +65,7 @@ uniform float uDirectMotionStrength;
 uniform float uSourceHeadInfluence;
 uniform float uMotionHeadInfluence;
 uniform float uBaseInjection;
+uniform float uAmbientSpawn;
 uniform float uSourceInfluence;
 uniform float uMotionInfluence;
 uniform float uMotionImmediateAmount;
@@ -189,7 +190,7 @@ void main(void) {
   vec2 stateUv = (stateCell + vec2(0.5)) / stateSize;
   vec4 state = texture(uState, stateUv);
   float rainR = state.r;   // accumulated / advected rain
-  float headG = state.g;   // current procedural head
+  float headG = state.g;   // advected source-seeded head vitality
   float signalB = state.b; // current source signal (luma)
   float motionA = state.a; // current motion / change signal
 
@@ -229,11 +230,23 @@ void main(void) {
     return;
   }
   if (dbgMode == 8) {
-    float motionGate = proceduralTrail
-      + (1.0 - proceduralTrail) * uMotionImmediateAmount;
+    float pulseIndex = floor((headLine - float(row)) / spacing);
+    uint pulseKey = uint(int(pulseIndex));
+    float spawnNoise = unitFloat(hash2(hash2(col, pulseKey), seed));
+    float spawnDrive = clamp(
+      uSourceInfluence * signalB + uMotionInfluence * motionA,
+      0.0,
+      1.0
+    );
+    float spawnProbability = 1.0
+      - (1.0 - clamp(uAmbientSpawn, 0.0, 1.0)) * (1.0 - spawnDrive);
+    float streamGate = spawnNoise < spawnProbability ? 1.0 : 0.0;
+    float trailGate = proceduralTrail * streamGate;
+    float motionGate = streamGate
+      * (proceduralTrail + (1.0 - proceduralTrail) * uMotionImmediateAmount);
     float injection = clamp(
-      (uBaseInjection
-        + uSourceInfluence * signalB * proceduralTrail
+      (uBaseInjection * trailGate
+        + uSourceInfluence * signalB * trailGate
         + uMotionInfluence * motionA * motionGate)
         * uInjectionStrength * uInjectionGate,
       0.0,

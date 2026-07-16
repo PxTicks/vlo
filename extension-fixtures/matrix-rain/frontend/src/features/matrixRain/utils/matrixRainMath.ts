@@ -118,6 +118,38 @@ export function unitFloat(hash: number): number {
   return (hash & 0x00ffffff) / 16777216;
 }
 
+/** Probability that one stable column/pulse candidate becomes an active stream. */
+export function sourceSpawnProbability(
+  currentSignal: number,
+  motion: number,
+  ambientSpawn: number,
+  sourceInfluence: number,
+  motionInfluence: number,
+): number {
+  const drive = clamp01(
+    sourceInfluence * currentSignal + motionInfluence * motion,
+  );
+  const ambient = clamp01(ambientSpawn);
+  return 1 - (1 - ambient) * (1 - drive);
+}
+
+/**
+ * Stable Bernoulli decision for a procedural pulse. `pulseIndex` is converted
+ * to an unsigned 32-bit key exactly like GLSL's `uint(int(...))` and WGSL's
+ * signed-to-unsigned bitcast, including negative pre-roll indices.
+ */
+export function acceptsSourceSpawn(
+  column: number,
+  pulseIndex: number,
+  seed: number,
+  probability: number,
+): boolean {
+  const noise = unitFloat(
+    hash2(hash2(column >>> 0, pulseIndex >>> 0), seed >>> 0),
+  );
+  return noise < clamp01(probability);
+}
+
 /** Per-column falling phase in [0, 1). */
 export function columnPhase(column: number, seed: number): number {
   return unitFloat(hash2((column * 2) >>> 0, seed >>> 0));
@@ -443,12 +475,15 @@ export interface FeedbackParameters {
   readonly motionGain?: number;
   readonly motionImmediateAmount?: number;
   readonly injectionStrength?: number;
+  readonly darkDamping?: number;
   readonly accumulationMode?: MatrixAccumulationMode;
 }
 
 export interface RainStateUpdateInput {
   /** Previous rain (R) sampled at the advected (upstream) coordinate. */
   readonly advectedRain: number;
+  /** Previous head vitality (G) sampled at the same advected coordinate. */
+  readonly advectedHead?: number;
   /** Current (already shaped) source signal at this cell. */
   readonly currentSignal: number;
   /** Previous source signal (prev state B) at the SAME cell, for motion. */
@@ -457,17 +492,20 @@ export interface RainStateUpdateInput {
   readonly proceduralTrail: number;
   /** Procedural head at this cell. */
   readonly proceduralHead: number;
+  /** Whether the analytic head crossed this cell between bounded samples. */
+  readonly headCrossed?: boolean;
+  /** Stable source-conditioned decision for this column/pulse. */
+  readonly streamAccepted?: boolean;
   readonly deltaSeconds: number;
   readonly params: FeedbackParameters;
 }
 
 /**
- * One feedback step for a cell. Static source injection is gated by the
- * procedural trail so a still silhouette cannot saturate permanently; motion
- * injection can bypass that gate by `motionImmediateAmount`, creating new bright
- * activity where the source changes. Injection is gated to zero on a zero-delta
- * sample so repeated/paused renders never accumulate. The current signal is
- * always written to B (direct-shape legibility) and motion to A (direct-motion).
+ * One feedback step for a cell. A stable per-pulse spawn decision gates the
+ * procedural trail, while accepted head vitality is carried in G. Source-aware
+ * dark damping applies a continuous, frame-rate-independent survival factor to
+ * both historical rain and heads. Injection is zero on a zero-delta sample so
+ * repeated/paused renders never accumulate; B/A retain direct source/motion.
  */
 export function updateRainState(input: RainStateUpdateInput): RainState {
   const { advectedRain, currentSignal, proceduralTrail, proceduralHead } = input;
@@ -484,22 +522,32 @@ export function updateRainState(input: RainStateUpdateInput): RainState {
     p.motionGain ?? 0,
   );
 
-  const trailGate = proceduralTrail;
+  const streamGate = input.streamAccepted === false ? 0 : 1;
+  const trailGate = proceduralTrail * streamGate;
   // Motion partially (or fully) bypasses the procedural gate.
   const immediate = p.motionImmediateAmount ?? 0;
-  const motionGate = trailGate + (1 - trailGate) * immediate;
+  const motionGate =
+    streamGate * (proceduralTrail + (1 - proceduralTrail) * immediate);
+  const baseInject = p.baseInjection * trailGate;
   const sourceInject = p.sourceInfluence * currentSignal * trailGate;
   const motionInject = (p.motionInfluence ?? 0) * motion * motionGate;
   const injection = clamp01(
-    (p.baseInjection + sourceInject + motionInject) *
+    (baseInject + sourceInject + motionInject) *
       (p.injectionStrength ?? 1) *
       injectionGate,
   );
 
-  const decayed = advectedRain * retention(dt, p.trailHalfLife);
+  const sourceSurvival = Math.pow(
+    2,
+    -dt * Math.max(p.darkDamping ?? 0, 0) * (1 - clamp01(currentSignal)),
+  );
+  const decayed =
+    advectedRain * retention(dt, p.trailHalfLife) * sourceSurvival;
+  const carriedHead = (input.advectedHead ?? 0) * sourceSurvival;
+  const headSeed = Math.max(proceduralHead, input.headCrossed ? 1 : 0);
   return {
     r: accumulate(p.accumulationMode ?? "softAdd", decayed, injection),
-    g: clamp01(proceduralHead),
+    g: clamp01(Math.max(carriedHead, headSeed * streamGate)),
     b: clamp01(currentSignal),
     a: clamp01(motion),
   };

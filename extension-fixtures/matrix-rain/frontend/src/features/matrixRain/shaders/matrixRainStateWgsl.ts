@@ -1,5 +1,5 @@
 /**
- * WebGPU (WGSL) state-update program for Phase 3 temporal feedback. A
+ * WebGPU (WGSL) state-update program for source-conditioned temporal feedback. A
  * line-for-line mirror of `matrixRainStateGl.ts`.
  *
  * `@group(0)` holds the global filter uniforms plus the input texture/sampler.
@@ -42,6 +42,7 @@ struct StateUniforms {
   uSignalGamma: f32,
   uTrailHalfLife: f32,
   uBaseInjection: f32,
+  uAmbientSpawn: f32,
   uSourceInfluence: f32,
   uMotionInfluence: f32,
   uMotionMode: f32,
@@ -49,6 +50,7 @@ struct StateUniforms {
   uMotionGain: f32,
   uMotionImmediateAmount: f32,
   uInjectionStrength: f32,
+  uDarkDamping: f32,
   uAccumulationMode: f32,
   uReset: f32,
   uContentSize: vec2<f32>,
@@ -138,6 +140,15 @@ fn mainFragment(
   let proceduralTrail = pow(fade, max(su.uTrailShape, 1e-3));
   let headEdge = max(su.uHeadWidth, 1e-4);
   let proceduralHead = 1.0 - smoothstep(0.0, headEdge, d / spacing);
+  // One stable random decision per column/pulse. Bitcasting the signed pulse
+  // index keeps pre-roll pulses aligned with GLSL and the CPU reference.
+  let pulseIndex = floor((headLine - f32(row)) / spacing);
+  let pulseKey = bitcast<u32>(i32(pulseIndex));
+  let spawnNoise = unitFloat(hash2(hash2(col, pulseKey), seed));
+  let previousPulseIndex = floor(
+    (headLine - speed * max(su.uDeltaSeconds, 0.0) - f32(row)) / spacing,
+  );
+  let headCrossed = select(0.0, 1.0, previousPulseIndex < pulseIndex);
 
   // Current source signal: sample the cell centre plus four cell-scale
   // neighbours and assemble per the selected signal mode.
@@ -199,6 +210,15 @@ fn mainFragment(
   if (motionMode == 1) { rawMotion = max(deltaSignal, 0.0); }
   let motion = clamp(max(0.0, rawMotion - su.uMotionThreshold) * su.uMotionGain, 0.0, 1.0);
 
+  let spawnDrive = clamp(
+    su.uSourceInfluence * currentSignal + su.uMotionInfluence * motion,
+    0.0,
+    1.0,
+  );
+  let spawnProbability = 1.0
+    - (1.0 - clamp(su.uAmbientSpawn, 0.0, 1.0)) * (1.0 - spawnDrive);
+  let streamGate = select(0.0, 1.0, spawnNoise < spawnProbability);
+
   let fallCells = su.uFallSpeed * max(su.uDeltaSeconds, 0.0);
   let previousRow = cellIndex.y - fallCells;
   let previousUv = vec2<f32>(
@@ -207,20 +227,31 @@ fn mainFragment(
   );
   let previousRowWeight = clamp(previousRow + 1.0, 0.0, 1.0);
   // On a reset frame the previous state is stale/garbage, so ignore it.
-  let advectedRain = textureSample(
+  let advectedState = textureSample(
     uPrevState, uPrevStateSampler, clamp(previousUv, vec2<f32>(0.0), vec2<f32>(1.0))
-  ).r * previousRowWeight * (1.0 - su.uReset);
+  );
+  let historyGate = previousRowWeight * (1.0 - su.uReset);
+  let advectedRain = advectedState.r * historyGate;
+  let advectedHead = advectedState.g * historyGate;
 
   let retention = exp2(-max(su.uDeltaSeconds, 0.0) / max(su.uTrailHalfLife, 1e-4));
-  let decayed = advectedRain * retention;
+  let sourceSurvival = exp2(
+    -max(su.uDeltaSeconds, 0.0)
+      * max(su.uDarkDamping, 0.0)
+      * (1.0 - currentSignal),
+  );
+  let decayed = advectedRain * retention * sourceSurvival;
+  let carriedHead = advectedHead * sourceSurvival;
   // Motion injection can bypass the procedural gate by motionImmediateAmount.
   let injectionGate = select(0.0, 1.0, su.uDeltaSeconds > 0.0);
-  let trailGate = proceduralTrail;
-  let motionGate = trailGate + (1.0 - trailGate) * su.uMotionImmediateAmount;
+  let trailGate = proceduralTrail * streamGate;
+  let motionGate = streamGate
+    * (proceduralTrail + (1.0 - proceduralTrail) * su.uMotionImmediateAmount);
+  let baseInject = su.uBaseInjection * trailGate;
   let sourceInject = su.uSourceInfluence * currentSignal * trailGate;
   let motionInject = su.uMotionInfluence * motion * motionGate;
   let injection = clamp(
-    (su.uBaseInjection + sourceInject + motionInject)
+    (baseInject + sourceInject + motionInject)
       * su.uInjectionStrength * injectionGate,
     0.0,
     1.0
@@ -235,7 +266,9 @@ fn mainFragment(
   } else if (accumMode == 2) {
     nextRain = clamp(dc + ic, 0.0, 1.0);
   }
+  let headSeed = max(proceduralHead, headCrossed) * streamGate;
+  let nextHead = max(carriedHead, headSeed);
 
-  return vec4<f32>(nextRain, clamp(proceduralHead, 0.0, 1.0), currentSignal, clamp(motion, 0.0, 1.0));
+  return vec4<f32>(nextRain, clamp(nextHead, 0.0, 1.0), currentSignal, clamp(motion, 0.0, 1.0));
 }
 `;

@@ -144,6 +144,8 @@ describe("createMatrixRainFilter", () => {
         fallSpeed: 13,
         directShapeStrength: 0.4,
         injectionStrength: 0.6,
+        ambientSpawn: 0.2,
+        darkDamping: 1.5,
         motionInfluence: 1.1,
         outputMode: "matrixOnly",
         debugMode: "rainState",
@@ -159,6 +161,7 @@ describe("createMatrixRainFilter", () => {
     expect(uniforms.uFallSpeed).toBe(13);
     expect(uniforms.uDirectShapeStrength).toBe(0.4);
     expect(uniforms.uInjectionStrength).toBe(0.6);
+    expect(uniforms.uAmbientSpawn).toBe(0.2);
     expect(uniforms.uMotionInfluence).toBe(1.1);
     expect(uniforms.uOutputMode).toBe(1);
     expect(uniforms.uDebugMode).toBe(4);

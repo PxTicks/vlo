@@ -72,6 +72,16 @@ describe("Matrix Rain WebGL programs", () => {
       "rawSignal = sc.a * (1.0 - lumaC)",
     );
     expect(MATRIX_RAIN_STATE_FRAGMENT).toContain("uInjectionStrength");
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain(
+      "spawnNoise < spawnProbability",
+    );
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain(
+      "advectedState.g * historyGate",
+    );
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain(
+      "previousPulseIndex < pulseIndex",
+    );
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain("uDarkDamping");
     expect(MATRIX_RAIN_FRAGMENT).toContain("vec3(injection)");
 
     expect(MATRIX_RAIN_STATE_WGSL).toContain("abs(unlum(sL) - lumaC)");
@@ -79,6 +89,16 @@ describe("Matrix Rain WebGL programs", () => {
       "rawSignal = sc.a * (1.0 - lumaC)",
     );
     expect(MATRIX_RAIN_STATE_WGSL).toContain("su.uInjectionStrength");
+    expect(MATRIX_RAIN_STATE_WGSL).toContain(
+      "spawnNoise < spawnProbability",
+    );
+    expect(MATRIX_RAIN_STATE_WGSL).toContain(
+      "advectedState.g * historyGate",
+    );
+    expect(MATRIX_RAIN_STATE_WGSL).toContain(
+      "previousPulseIndex < pulseIndex",
+    );
+    expect(MATRIX_RAIN_STATE_WGSL).toContain("su.uDarkDamping");
     expect(MATRIX_RAIN_WGSL).toContain("vec3<f32>(injection)");
   });
 });

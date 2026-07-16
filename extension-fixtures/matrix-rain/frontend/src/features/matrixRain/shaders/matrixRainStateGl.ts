@@ -4,7 +4,7 @@
  * It reads the current filter input and the previous state texture and writes
  * the next state with one output texel per glyph cell:
  *   R = accumulated / advected rain brightness
- *   G = current procedural head brightness
+ *   G = advected source-seeded head vitality
  *   B = current source signal (luma) for the next sample
  *   A = motion / change signal (0 in Phase 3; Phase 4 fills it)
  *
@@ -71,6 +71,7 @@ uniform float uSignalGain;
 uniform float uSignalGamma;
 uniform float uTrailHalfLife;
 uniform float uBaseInjection;
+uniform float uAmbientSpawn;
 uniform float uSourceInfluence;
 uniform float uMotionInfluence;
 uniform float uMotionMode;
@@ -78,6 +79,7 @@ uniform float uMotionThreshold;
 uniform float uMotionGain;
 uniform float uMotionImmediateAmount;
 uniform float uInjectionStrength;
+uniform float uDarkDamping;
 uniform float uAccumulationMode;
 uniform float uReset;
 uniform vec2 uContentSize;
@@ -129,6 +131,15 @@ void main(void) {
   float proceduralTrail = pow(fade, max(uTrailShape, 1e-3));
   float headEdge = max(uHeadWidth, 1e-4);
   float proceduralHead = 1.0 - smoothstep(0.0, headEdge, d / spacing);
+  // One stable random decision per column/pulse. The same pulse key follows
+  // the analytic head down the column, so accepted streams never flicker.
+  float pulseIndex = floor((headLine - float(row)) / spacing);
+  uint pulseKey = uint(int(pulseIndex));
+  float spawnNoise = unitFloat(hash2(hash2(col, pulseKey), seed));
+  float previousPulseIndex = floor(
+    (headLine - speed * max(uDeltaSeconds, 0.0) - float(row)) / spacing
+  );
+  float headCrossed = previousPulseIndex < pulseIndex ? 1.0 : 0.0;
 
   // Current source signal: sample the cell centre plus four cell-scale
   // neighbours and assemble per the selected signal mode.
@@ -193,6 +204,16 @@ void main(void) {
   float motion =
     clamp(max(0.0, rawMotion - uMotionThreshold) * uMotionGain, 0.0, 1.0);
 
+  // Source drive controls stream frequency separately from brightness.
+  float spawnDrive = clamp(
+    uSourceInfluence * currentSignal + uMotionInfluence * motion,
+    0.0,
+    1.0
+  );
+  float spawnProbability = 1.0
+    - (1.0 - clamp(uAmbientSpawn, 0.0, 1.0)) * (1.0 - spawnDrive);
+  float streamGate = spawnNoise < spawnProbability ? 1.0 : 0.0;
+
   // Advect the previous rain down the column by fallSpeed*dt cells, sampling
   // with linear interpolation for fractional-cell motion.
   float fallCells = uFallSpeed * max(uDeltaSeconds, 0.0);
@@ -206,22 +227,35 @@ void main(void) {
   float previousRowWeight = clamp(previousRow + 1.0, 0.0, 1.0);
   // On a reset frame the previous state is stale/garbage (fresh allocation or
   // a discontinuity), so ignore it and start the trail cold.
-  float advectedRain =
-    texture(uPrevState, clamp(previousUv, vec2(0.0), vec2(1.0))).r
-      * previousRowWeight * (1.0 - uReset);
+  vec4 advectedState = texture(
+    uPrevState,
+    clamp(previousUv, vec2(0.0), vec2(1.0))
+  );
+  float historyGate = previousRowWeight * (1.0 - uReset);
+  float advectedRain = advectedState.r * historyGate;
+  float advectedHead = advectedState.g * historyGate;
 
   float retention = exp2(-max(uDeltaSeconds, 0.0) / max(uTrailHalfLife, 1e-4));
-  float decayed = advectedRain * retention;
+  // Continuous source-conditioned damping remains frame-rate independent.
+  float sourceSurvival = exp2(
+    -max(uDeltaSeconds, 0.0)
+      * max(uDarkDamping, 0.0)
+      * (1.0 - currentSignal)
+  );
+  float decayed = advectedRain * retention * sourceSurvival;
+  float carriedHead = advectedHead * sourceSurvival;
   // Static injection is gated by the procedural trail (so a still silhouette
   // never saturates) and by delta (so a zero-delta/paused sample adds nothing).
   // Motion injection can bypass the procedural gate by motionImmediateAmount.
   float injectionGate = uDeltaSeconds > 0.0 ? 1.0 : 0.0;
-  float trailGate = proceduralTrail;
-  float motionGate = trailGate + (1.0 - trailGate) * uMotionImmediateAmount;
+  float trailGate = proceduralTrail * streamGate;
+  float motionGate = streamGate
+    * (proceduralTrail + (1.0 - proceduralTrail) * uMotionImmediateAmount);
+  float baseInject = uBaseInjection * trailGate;
   float sourceInject = uSourceInfluence * currentSignal * trailGate;
   float motionInject = uMotionInfluence * motion * motionGate;
   float injection = clamp(
-    (uBaseInjection + sourceInject + motionInject)
+    (baseInject + sourceInject + motionInject)
       * uInjectionStrength * injectionGate,
     0.0,
     1.0
@@ -238,10 +272,14 @@ void main(void) {
   } else {
     nextRain = 1.0 - (1.0 - dc) * (1.0 - ic);
   }
+  // Crossing detection prevents a narrow head from being skipped when it
+  // passes a cell between two bounded history samples.
+  float headSeed = max(proceduralHead, headCrossed) * streamGate;
+  float nextHead = max(carriedHead, headSeed);
 
   finalColor = vec4(
     nextRain,
-    clamp(proceduralHead, 0.0, 1.0),
+    clamp(nextHead, 0.0, 1.0),
     currentSignal,
     clamp(motion, 0.0, 1.0)
   );

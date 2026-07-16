@@ -10,7 +10,7 @@ transformation.
 The full design and phase plan lives in
 [`docs/source-aware-matrix-rain-filter-extension-plan.md`](../../docs/source-aware-matrix-rain-filter-extension-plan.md).
 
-## What ships today (Phase 4: edge- and motion-aware source injection)
+## What ships today (Phase 4: source-conditioned temporal rain)
 
 - One primary transformation registered through the ordinary `trusted-filter`
   lane. Its persisted identity is `example.matrix-rain/matrix-rain`.
@@ -46,6 +46,15 @@ The full design and phase plan lives in
   (A), and source/motion boost the pale head. Injection combines with the trail
   via an overall `injectionStrength` and selectable `accumulationMode`
   (`softAdd` / `max` / `add`).
+  - **Source-emitted streams.** Each procedural column/pulse is only a candidate:
+    a stable GPU hash accepts it according to an `ambientSpawn` floor plus the
+    current source/motion drive. Accepted heads are stored as vitality in state
+    G and advected with the rain, so the bright descending layer originates in
+    source features instead of being composited independently. Analytic crossing
+    detection prevents narrow heads being skipped between history samples.
+    `darkDamping`
+    applies continuous frame-rate-independent attenuation in unsupported cells;
+    lowering Ambient Spawn to zero makes the rain fully source-bound.
   - debug views: `currentSignal`, `motion`, `injection`, plus `rainState`,
     `advectedPrevious`, `cellGrid`, `proceduralTrail`, `proceduralHead`.
 - **Matching GLSL and WGSL programs for both passes** so both the WebGL and
@@ -76,8 +85,9 @@ npm run test --prefix extension-fixtures/matrix-rain
 
 The CPU reference in `utils/matrixRainMath.ts` mirrors every shader program
 exactly, so the deterministic hashing, glyph selection, trail/head profile,
-palette, and the feedback math (half-life retention, soft-add, luma, advection)
-are unit-tested without a GPU. `utils/feedbackLifecycle.ts` covers the
+palette, and the feedback math (source-conditioned spawning, head vitality,
+dark damping, half-life retention, soft-add, luma, and advection) are unit-tested
+without a GPU. `utils/feedbackLifecycle.ts` covers the
 reallocation/reset rules, and `MatrixRainFilter.test.ts` covers the multi-pass
 controller (advance-once-per-sample, resize reset, exact-once dispose).
 Parameter validation is covered separately.

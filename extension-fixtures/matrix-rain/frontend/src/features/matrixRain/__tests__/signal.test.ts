@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  acceptsSourceSpawn,
   accumulate,
   assembleSourceSignal,
   computeMotion,
   rainBodyBrightness,
   shapeSignal,
+  sourceSpawnProbability,
   updateRainState,
   type Rgba,
   type SignalWeights,
@@ -135,6 +137,35 @@ describe("accumulate", () => {
   });
 });
 
+describe("source-conditioned stream spawning", () => {
+  it("combines ambient, source, and motion into spawn frequency", () => {
+    expect(sourceSpawnProbability(0, 0, 0.08, 0.85, 0.6)).toBeCloseTo(
+      0.08,
+      6,
+    );
+    expect(sourceSpawnProbability(1, 0, 0.08, 0.85, 0.6)).toBeCloseTo(
+      0.862,
+      6,
+    );
+    expect(sourceSpawnProbability(1, 1, 0.08, 0.85, 0.6)).toBe(1);
+  });
+
+  it("makes a stable decision per pulse and increases accepted density", () => {
+    const low = Array.from({ length: 2_000 }, (_, pulse) =>
+      acceptsSourceSpawn(7, pulse - 1_000, 23, 0.1),
+    ).filter(Boolean).length;
+    const high = Array.from({ length: 2_000 }, (_, pulse) =>
+      acceptsSourceSpawn(7, pulse - 1_000, 23, 0.8),
+    ).filter(Boolean).length;
+
+    expect(acceptsSourceSpawn(7, -12, 23, 0.4)).toBe(
+      acceptsSourceSpawn(7, -12, 23, 0.4),
+    );
+    expect(low).toBeGreaterThan(100);
+    expect(high).toBeGreaterThan(low * 4);
+  });
+});
+
 describe("motion-aware injection (updateRainState)", () => {
   const motionParams = {
     trailHalfLife: 0.45,
@@ -200,6 +231,67 @@ describe("motion-aware injection (updateRainState)", () => {
       }).r;
     }
     expect(r).toBe(0);
+  });
+
+  it("rejects both trail injection and the procedural head for an unspawned stream", () => {
+    const rejected = updateRainState({
+      advectedRain: 0,
+      currentSignal: 1,
+      previousSignal: 1,
+      proceduralTrail: 1,
+      proceduralHead: 1,
+      streamAccepted: false,
+      deltaSeconds: 1 / 30,
+      params: motionParams,
+    });
+
+    expect(rejected.r).toBe(0);
+    expect(rejected.g).toBe(0);
+  });
+
+  it("seeds an accepted narrow head when it crossed between samples", () => {
+    const crossed = updateRainState({
+      advectedRain: 0,
+      currentSignal: 1,
+      previousSignal: 1,
+      proceduralTrail: 0,
+      proceduralHead: 0,
+      headCrossed: true,
+      streamAccepted: true,
+      deltaSeconds: 1 / 30,
+      params: motionParams,
+    });
+
+    expect(crossed.g).toBe(1);
+  });
+
+  it("carries an accepted head and damps it faster in dark cells", () => {
+    const bright = updateRainState({
+      advectedRain: 0.8,
+      advectedHead: 0.8,
+      currentSignal: 1,
+      previousSignal: 1,
+      proceduralTrail: 0,
+      proceduralHead: 0,
+      streamAccepted: false,
+      deltaSeconds: 0.5,
+      params: { ...motionParams, darkDamping: 2 },
+    });
+    const dark = updateRainState({
+      advectedRain: 0.8,
+      advectedHead: 0.8,
+      currentSignal: 0,
+      previousSignal: 0,
+      proceduralTrail: 0,
+      proceduralHead: 0,
+      streamAccepted: false,
+      deltaSeconds: 0.5,
+      params: { ...motionParams, darkDamping: 2 },
+    });
+
+    expect(bright.g).toBeCloseTo(0.8, 6);
+    expect(dark.g).toBeCloseTo(0.4, 6);
+    expect(dark.r).toBeCloseTo(bright.r * 0.5, 6);
   });
 
   it("carries the motion term into the glyph body brightness", () => {

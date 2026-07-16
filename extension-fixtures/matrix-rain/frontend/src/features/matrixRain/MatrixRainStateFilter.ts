@@ -37,6 +37,7 @@ export interface StateUniformValues {
   uSignalGamma: number;
   uTrailHalfLife: number;
   uBaseInjection: number;
+  uAmbientSpawn: number;
   uSourceInfluence: number;
   uMotionInfluence: number;
   uMotionMode: number;
@@ -44,6 +45,7 @@ export interface StateUniformValues {
   uMotionGain: number;
   uMotionImmediateAmount: number;
   uInjectionStrength: number;
+  uDarkDamping: number;
   uAccumulationMode: number;
   uReset: number;
   uContentSize: Float32Array;
@@ -104,6 +106,7 @@ export function createMatrixRainStateFilter(
     uSignalGamma: scalar(d.signalGamma),
     uTrailHalfLife: scalar(d.trailHalfLife),
     uBaseInjection: scalar(d.baseInjection),
+    uAmbientSpawn: scalar(d.ambientSpawn),
     uSourceInfluence: scalar(d.sourceInfluence),
     uMotionInfluence: scalar(d.motionInfluence),
     uMotionMode: scalar(motionModeIndex(d.motionMode)),
@@ -111,6 +114,7 @@ export function createMatrixRainStateFilter(
     uMotionGain: scalar(d.motionGain),
     uMotionImmediateAmount: scalar(d.motionImmediateAmount),
     uInjectionStrength: scalar(d.injectionStrength),
+    uDarkDamping: scalar(d.darkDamping),
     uAccumulationMode: scalar(accumulationModeIndex(d.accumulationMode)),
     uReset: scalar(1),
     uContentSize: { value: new Float32Array(2), type: "vec2<f32>" as const },

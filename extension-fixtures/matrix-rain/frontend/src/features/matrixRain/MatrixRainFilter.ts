@@ -60,6 +60,7 @@ interface GlyphUniformValues {
   uSourceHeadInfluence: number;
   uMotionHeadInfluence: number;
   uBaseInjection: number;
+  uAmbientSpawn: number;
   uSourceInfluence: number;
   uMotionInfluence: number;
   uMotionImmediateAmount: number;
@@ -146,6 +147,7 @@ function stateParameterSignature(sample: PendingSample): string {
     p.signalGamma,
     p.trailHalfLife,
     p.baseInjection,
+    p.ambientSpawn,
     p.sourceInfluence,
     p.motionInfluence,
     p.motionMode,
@@ -153,6 +155,7 @@ function stateParameterSignature(sample: PendingSample): string {
     p.motionGain,
     p.motionImmediateAmount,
     p.injectionStrength,
+    p.darkDamping,
     p.accumulationMode,
   ].join("|");
 }
@@ -190,6 +193,7 @@ export function createMatrixRainFilter(
     uSourceHeadInfluence: scalar(d.sourceHeadInfluence),
     uMotionHeadInfluence: scalar(d.motionHeadInfluence),
     uBaseInjection: scalar(d.baseInjection),
+    uAmbientSpawn: scalar(d.ambientSpawn),
     uSourceInfluence: scalar(d.sourceInfluence),
     uMotionInfluence: scalar(d.motionInfluence),
     uMotionImmediateAmount: scalar(d.motionImmediateAmount),
@@ -396,6 +400,7 @@ export function createMatrixRainFilter(
         su.uSignalGamma = sample.params.signalGamma;
         su.uTrailHalfLife = sample.params.trailHalfLife;
         su.uBaseInjection = sample.params.baseInjection;
+        su.uAmbientSpawn = sample.params.ambientSpawn;
         su.uSourceInfluence = sample.params.sourceInfluence;
         su.uMotionInfluence = sample.params.motionInfluence;
         su.uMotionMode = motionModeIndex(sample.params.motionMode);
@@ -403,6 +408,7 @@ export function createMatrixRainFilter(
         su.uMotionGain = sample.params.motionGain;
         su.uMotionImmediateAmount = sample.params.motionImmediateAmount;
         su.uInjectionStrength = sample.params.injectionStrength;
+        su.uDarkDamping = sample.params.darkDamping;
         su.uAccumulationMode = accumulationModeIndex(sample.params.accumulationMode);
         const statePassReset = reset || (recompute && lastAdvanceWasReset);
         su.uReset = statePassReset ? 1 : 0;
@@ -468,6 +474,7 @@ export function createMatrixRainFilter(
       glyphUniforms.uSourceHeadInfluence = resolved.sourceHeadInfluence;
       glyphUniforms.uMotionHeadInfluence = resolved.motionHeadInfluence;
       glyphUniforms.uBaseInjection = resolved.baseInjection;
+      glyphUniforms.uAmbientSpawn = resolved.ambientSpawn;
       glyphUniforms.uSourceInfluence = resolved.sourceInfluence;
       glyphUniforms.uMotionInfluence = resolved.motionInfluence;
       glyphUniforms.uMotionImmediateAmount = resolved.motionImmediateAmount;

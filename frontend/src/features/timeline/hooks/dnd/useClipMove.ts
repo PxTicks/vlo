@@ -183,8 +183,12 @@ export const useClipMove = (
   // 1. Handle Visual Gap Feedback (Interstitial)
   const handleMove = (event: DragMoveEvent) => {
     const currentInsertGapIndex = getInsertGapIndex();
+    const isExternalAssetDrag = event.active.data.current?.type === "asset";
 
-    if (useTimelineStore.getState().selectedClipIds.length > 1) {
+    if (
+      !isExternalAssetDrag &&
+      useTimelineStore.getState().selectedClipIds.length > 1
+    ) {
       if (currentInsertGapIndex !== null) setInsertGapIndex(null);
       useInteractionStore.getState().clearSnapPreview();
       return;

@@ -11,6 +11,7 @@ import { getDefaultSectionId } from "../../../transformations/utils/sectionKeyfr
 import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
 import type { Asset } from "../../../../types/Asset";
 import type {
+  BaseClip,
   TimelineClip as TimelineClipType,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
@@ -514,6 +515,56 @@ describe("TimelineClip Visual Geometry", () => {
     // Note: In JSDOM, style properties set via JS are reflected in the style object
     expect(clipElement.style.getPropertyValue("--drag-delta-x")).toBe("50px");
     expect(clipElement.style.getPropertyValue("--drag-delta-w")).toBe("-50px");
+  });
+
+  it("does not move a selected timeline clip with an external asset drag", () => {
+    const draggedAssetClip: BaseClip = {
+      id: "new_composite_placement",
+      type: "video",
+      name: "Composite",
+      assetId: "baked-composite",
+      compositeId: "composite-1",
+      timelineDuration: 200,
+      transformations: [],
+      offset: 0,
+      sourceDuration: 200,
+      transformedDuration: 200,
+      transformedOffset: 0,
+      croppedSourceDuration: 200,
+    };
+    useTimelineStore.setState({ selectedClipIds: [mockClip.id] });
+    useInteractionStore.setState({
+      activeId: "composite-asset-composite-1",
+      activeClip: draggedAssetClip,
+      operation: "move",
+      currentDeltaX: 50,
+      currentDeltaY: 20,
+    });
+
+    render(<TimelineClipItem clip={mockClip} isOverlay={false} />);
+
+    expect(screen.getByTestId("timeline-clip").style.transform).toBe("");
+  });
+
+  it("continues to move selected followers during an internal timeline drag", () => {
+    const leaderClip: TimelineClipType = {
+      ...mockClip,
+      id: "clip_leader",
+    };
+    useTimelineStore.setState({ selectedClipIds: [mockClip.id, leaderClip.id] });
+    useInteractionStore.setState({
+      activeId: leaderClip.id,
+      activeClip: leaderClip,
+      operation: "move",
+      currentDeltaX: 50,
+      currentDeltaY: 20,
+    });
+
+    render(<TimelineClipItem clip={mockClip} isOverlay={false} />);
+
+    expect(screen.getByTestId("timeline-clip").style.transform).toBe(
+      "translate3d(50px, 20px, 0)",
+    );
   });
 
   it("shows extract audio for clips with audio and opens the extraction dialog for the clicked clip", () => {

@@ -217,6 +217,12 @@ function TimelineClipComponent({
   );
 
   const operation = useInteractionStore((state) => state.operation);
+  const isInternalMove = useInteractionStore(
+    (state) =>
+      state.operation === "move" &&
+      state.activeClip !== null &&
+      "trackId" in state.activeClip,
+  );
   const transformDropPreview = useInteractionStore((state) =>
     state.transformDropPreview?.kind === "clip" &&
     state.transformDropPreview.clipId === clip.id
@@ -279,8 +285,10 @@ function TimelineClipComponent({
   useEffect(() => {
     // We need to listen if:
     // 1. We are the Active Item (Leader or Resizing)
-    // 2. OR We are Selected and the operation is "move" (Follower)
-    const shouldSubscribe = isActive || (isSelected && operation === "move");
+    // 2. OR We are Selected and another timeline clip is moving (Follower).
+    // External asset drags also use the "move" operation, but must never pull
+    // the current timeline selection along with their preview.
+    const shouldSubscribe = isActive || (isSelected && isInternalMove);
 
     if (isOverlay || !shouldSubscribe) return;
 
@@ -318,7 +326,13 @@ function TimelineClipComponent({
       // B. MOVE (Follower Logic)
       // If we are part of the selection but NOT the leader (no transform from dnd-kit),
       // we must manually mirror the drag deltas.
-      else if (state.operation === "move" && isSelected && !transform) {
+      else if (
+        state.operation === "move" &&
+        state.activeClip !== null &&
+        "trackId" in state.activeClip &&
+        isSelected &&
+        !transform
+      ) {
         element.style.transform = `translate3d(${currentDeltaX}px, ${currentDeltaY}px, 0)`;
       }
     };
@@ -351,7 +365,15 @@ function TimelineClipComponent({
         if (!transform) element.style.transform = "";
       }
     };
-  }, [isActive, operation, clip.id, isOverlay, isSelected, transform]);
+  }, [
+    isActive,
+    isInternalMove,
+    operation,
+    clip.id,
+    isOverlay,
+    isSelected,
+    transform,
+  ]);
 
   const getBackgroundColor = () => {
     // Composite placements are video clips; keep their distinct colour.

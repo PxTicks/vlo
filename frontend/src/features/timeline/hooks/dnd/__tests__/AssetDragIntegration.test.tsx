@@ -303,6 +303,57 @@ describe("Asset Drag Integration", () => {
     });
   });
 
+  it("keeps an external asset drag active when timeline clips become selected", async () => {
+    render(<TestDragApp asset={mockAsset} forceNoCollision={true} />);
+
+    const container = screen.getByTestId("timeline-container");
+    const payloadClip = createClipFromAsset(mockAsset);
+    mockRect(container, { left: 0, top: 0, width: 800, height: 600 });
+
+    await act(async () => {
+      latestAssetDragHandlersRef.current?.handleAssetDragStart({
+        active: {
+          id: `asset_${mockAsset.id}`,
+          data: {
+            current: {
+              type: "asset",
+              asset: mockAsset,
+              clip: payloadClip,
+            },
+          },
+        },
+      } as unknown as DragStartEvent);
+
+      // Composite-browser selection can reselect every existing placement
+      // after the generic asset-drag start clears the timeline selection.
+      useTimelineStore.setState({
+        selectedClipIds: ["existing-placement-1", "existing-placement-2"],
+      });
+      fireEvent.pointerMove(window, {
+        clientX: 250,
+        clientY: 55,
+        buttons: 1,
+      });
+      latestAssetDragHandlersRef.current?.handleAssetDragMove({
+        active: {
+          data: {
+            current: {
+              type: "asset",
+              asset: mockAsset,
+              clip: payloadClip,
+            },
+          },
+        },
+        over: null,
+        delta: { x: 0, y: 0 },
+        activatorEvent: null,
+      } as unknown as DragMoveEvent);
+    });
+
+    expect(useInteractionStore.getState().isOverTimeline).toBe(true);
+    expect(useInteractionStore.getState().projectedEndTime).not.toBeNull();
+  });
+
   it("REGRESSION: inserts a new track when an asset is dropped on an interstitial gap", async () => {
     render(<TestDragApp asset={mockAsset} forceNoCollision={true} />);
 

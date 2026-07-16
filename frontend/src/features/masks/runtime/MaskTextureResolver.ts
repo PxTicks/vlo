@@ -51,6 +51,11 @@ export interface ResolveMaskCoverageOptions {
   compositeState: ResolvedMaskCompositeState;
 }
 
+export type ProbeMaskCoverageOptions = Pick<
+  ResolveMaskCoverageOptions,
+  "expressionAnalysis" | "maskClipByLocalId"
+>;
+
 /**
  * Sprite-independent GPU pipeline that turns a mask boolean expression into a
  * coverage texture: render each referenced leaf mask, evaluate the boolean
@@ -99,6 +104,14 @@ export class MaskTextureResolver {
     Record<"union" | "intersect" | "subtract", MaskBooleanBlendFilter>
   > {
     return this.maskBooleanBlendFilters;
+  }
+
+  /** Cheap node/texture probe used before deciding whether a GPU resolve is needed. */
+  public hasRenderableCoverage(options: ProbeMaskCoverageOptions): boolean {
+    return options.expressionAnalysis.maskIds.some((maskId) => {
+      const maskClip = options.maskClipByLocalId.get(maskId);
+      return !!(maskClip && this.isMaskClipRenderable(maskClip));
+    });
   }
 
   /**

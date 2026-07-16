@@ -12,6 +12,8 @@ import type {
 } from "../../../../types/TimelineTypes";
 import type { Component } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
+import { TICKS_PER_SECOND } from "../../../timeline";
+import { extensionTransformationRegistry } from "../../../transformations/extensions/ExtensionTransformationRegistry";
 
 const audioRendererMocks = vi.hoisted(() => ({
   instances: [] as Array<{
@@ -870,6 +872,156 @@ describe("ExportRenderer", () => {
       registerTrackSpy.mockRestore();
       syncSpy.mockRestore();
       disposeSpy.mockRestore();
+    }
+  });
+
+  it("repeats bounded warm-up for mid-clip exports and stills", async () => {
+    const registration = extensionTransformationRegistry.registerRuntime(
+      {
+        extension: { id: "test.export-temporal", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: (resource) => resource,
+        report: () => undefined,
+      },
+      "history-filter",
+      {
+        type: "filter",
+        filterName: "test.export-temporal/history-filter",
+        label: "History filter",
+        handler: () => undefined,
+        uiConfig: { groups: [] },
+        rendering: {
+          timeDependency: "history",
+          maxHistorySeconds: 2 / 30,
+          maxStepSeconds: 1 / 30,
+        },
+      },
+    );
+    const config = {
+      logicalWidth: 1920,
+      logicalHeight: 1080,
+      outputWidth: 1920,
+      outputHeight: 1080,
+    };
+    const clip = {
+      id: "c1",
+      trackId: "t1",
+      assetId: "a1",
+      start: 0,
+      timelineDuration: 2 * TICKS_PER_SECOND,
+      offset: 0,
+      type: "video",
+      transformations: [
+        {
+          id: "history-1",
+          type: "filter",
+          filterName: "test.export-temporal/history-filter",
+          isEnabled: true,
+          parameters: {},
+        },
+      ],
+    } as TimelineClip;
+    const track = {
+      id: "t1",
+      type: "visual",
+      isVisible: true,
+    } as TimelineTrack;
+    const projectData = {
+      tracks: [track],
+      clips: [clip],
+      assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
+      duration: 2 * TICKS_PER_SECOND,
+      fps: 30,
+    } satisfies ProjectData;
+    const registerTrackSpy = vi
+      .spyOn(RenderGroupOrchestrator.prototype, "registerTrack")
+      .mockImplementation(() => {});
+    const syncSpy = vi
+      .spyOn(RenderGroupOrchestrator.prototype, "syncPresentationPlan")
+      .mockImplementation(() => {});
+    const disposeSpy = vi
+      .spyOn(RenderGroupOrchestrator.prototype, "dispose")
+      .mockImplementation(() => {});
+    const presentSpy = vi
+      .spyOn(TrackRenderEngine.prototype, "presentResolvedFrameJob")
+      .mockResolvedValue(true);
+    const selectionStart = TICKS_PER_SECOND;
+    const run = async () => {
+      syncSpy.mockClear();
+      const renderer = await ExportRenderer.create(config);
+      await renderer.render(projectData, config, () => {}, {
+        timelineSelection: {
+          start: selectionStart,
+          end: selectionStart + TICKS_PER_SECOND / 30,
+          fps: 30,
+          clips: [clip],
+          tracks: [track],
+        },
+      });
+      return syncSpy.mock.calls.map(([tick, , render]) => ({
+        tick,
+        render,
+      }));
+    };
+
+    try {
+      const first = await run();
+      const second = await run();
+
+      expect(second).toEqual(first);
+      expect(first.map(({ tick }) => tick)).toEqual([
+        selectionStart - (2 * TICKS_PER_SECOND) / 30,
+        selectionStart - TICKS_PER_SECOND / 30,
+        selectionStart,
+      ]);
+      expect(first.map(({ render }) => render?.isWarmup)).toEqual([
+        true,
+        true,
+        false,
+      ]);
+      expect(
+        first.every(
+          ({ render }) => render?.sequenceId === first[0]?.render?.sequenceId,
+        ),
+      ).toBe(true);
+
+      syncSpy.mockClear();
+      const stillRenderer = await ExportRenderer.create(config);
+      const testStillRenderer = stillRenderer as unknown as TestExportRenderer;
+      Object.defineProperty(testStillRenderer.app.canvas, "toBlob", {
+        value: vi.fn((callback: BlobCallback) =>
+          callback(new Blob(["frame"], { type: "image/png" })),
+        ),
+        configurable: true,
+      });
+      await stillRenderer.renderStill(projectData, config, selectionStart);
+
+      const stillSamples = syncSpy.mock.calls.map(([tick, , render]) => ({
+        tick,
+        render,
+      }));
+      expect(stillSamples.map(({ tick }) => tick)).toEqual(
+        first.map(({ tick }) => tick),
+      );
+      expect(stillSamples.map(({ render }) => render?.mode)).toEqual([
+        "still",
+        "still",
+        "still",
+      ]);
+      expect(testStillRenderer.app.renderer.render).toHaveBeenCalledTimes(3);
+      expect(testStillRenderer.app.renderer.render).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ target: expect.anything() }),
+      );
+      expect(
+        (testStillRenderer.app.renderer.render as Mock).mock.calls[2]?.[0],
+      ).not.toHaveProperty("target");
+    } finally {
+      registration.dispose();
+      registerTrackSpy.mockRestore();
+      syncSpy.mockRestore();
+      disposeSpy.mockRestore();
+      presentSpy.mockRestore();
     }
   });
 

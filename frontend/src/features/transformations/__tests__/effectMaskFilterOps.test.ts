@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildResolvedFilterOpLookup } from "../effectMaskFilterOps";
+import {
+  buildResolvedFilterOpLookup,
+  buildResolvedFilterOpLookupWithTime,
+} from "../effectMaskFilterOps";
 import type { ApplyTransformStackContext } from "../applyTransformations";
 import type { ClipTransform } from "../../../types/TimelineTypes";
 
@@ -105,5 +108,24 @@ describe("buildResolvedFilterOpLookup", () => {
   it("returns an empty lookup for no transforms", () => {
     expect(buildResolvedFilterOpLookup([], CTX, 0).size).toBe(0);
     expect(buildResolvedFilterOpLookup(undefined, CTX, 0).size).toBe(0);
+  });
+
+  it("returns the post-speed source tick from the same resolution pass", () => {
+    const speed = {
+      id: "speed",
+      type: "speed",
+      isEnabled: true,
+      parameters: { factor: 2 },
+    } as ClipTransform;
+    const alpha = filter("alpha", "AlphaFilter", { alpha: 0.5 });
+
+    const result = buildResolvedFilterOpLookupWithTime(
+      [speed, alpha],
+      { ...CTX, visualTime: 1000, visualDuration: 10_000 },
+      1000,
+    );
+
+    expect(result.lookup.get(alpha)?.type).toBe("AlphaFilter");
+    expect(result.sourceTimeTicks).not.toBe(1000);
   });
 });

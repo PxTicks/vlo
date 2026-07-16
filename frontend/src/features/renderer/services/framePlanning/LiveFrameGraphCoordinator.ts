@@ -19,6 +19,13 @@ import type {
   ScenePresentationPlan,
 } from "./framePlanningTypes";
 import { resolveTransitionFrame } from "../../../transitions/rendering/TransitionResolver";
+import { TemporalRenderCoordinator } from "../TemporalRenderCoordinator";
+import {
+  collectTemporalRenderingRequirements,
+  getTemporalClipSourceIdentity,
+  getTemporalTransformationTopologyKey,
+} from "../../../transformations/catalogue/temporalRenderingRequirements";
+import type { FilterRenderContext } from "../../../transformations/catalogue/types";
 
 export interface LiveFrameGraphParticipant {
   trackId: string;
@@ -37,11 +44,18 @@ export interface LiveFrameGraphRenderOptions {
   tracks?: readonly TimelineTrack[];
   clips?: readonly TimelineClip[];
   transitions?: readonly Transition[];
+  earliestTick?: number;
+  submitWarmupFrame?: (
+    tick: number,
+    plan: ScenePresentationPlan,
+    render: FilterRenderContext,
+  ) => void | Promise<void>;
 }
 
 export interface LiveFrameGraphRenderResult {
   presentationPlan: ScenePresentationPlan;
   execution: BatchFrameGraphExecutionResult;
+  render: FilterRenderContext;
 }
 
 /**
@@ -56,6 +70,7 @@ export class LiveFrameGraphCoordinator {
   private readonly resolver = new FrameJobResolver();
   private epoch = 0;
   private disposed = false;
+  private readonly temporal = new TemporalRenderCoordinator();
   private readonly executor = new BatchFrameGraphExecutor({
     isLiveEpochCurrent: (epoch) => epoch === this.epoch && !this.disposed,
   });
@@ -102,6 +117,121 @@ export class LiveFrameGraphCoordinator {
   async renderFrame(
     presentationTick: number,
     options: LiveFrameGraphRenderOptions,
+  ): Promise<LiveFrameGraphRenderResult | null> {
+    const stableTransformationSets: TimelineClip["transformations"][] = [];
+    const activeTransformationSets: TimelineClip["transformations"][] = [];
+    const activeSourceIdentities: string[] = [];
+    const activeTemporalStartTicks: number[] = [];
+    for (const participant of this.participants.values()) {
+      const trackClips = participant.getTrackClips();
+      for (const clip of trackClips) {
+        stableTransformationSets.push(clip.transformations ?? []);
+      }
+      const active = participant.engine.resolveActiveClipAtPresentation(
+        trackClips,
+        presentationTick,
+      );
+      if (active) {
+        const transformations = active.activeClip.transformations ?? [];
+        activeTransformationSets.push(transformations);
+        activeSourceIdentities.push(
+          getTemporalClipSourceIdentity(active.activeClip),
+        );
+        if (
+          collectTemporalRenderingRequirements([transformations])
+            .timeDependency !== "none"
+        ) {
+          activeTemporalStartTicks.push(active.presentationStart);
+        }
+      }
+    }
+    for (const clip of options.clips ?? []) {
+      if (clip.type === "adjustment") {
+        stableTransformationSets.push(clip.transformations ?? []);
+      }
+    }
+    const collectGroupTransforms = (
+      groups: ReturnType<AdjustmentEffectResolver["deriveGroups"]>,
+    ): void => {
+      for (const group of groups) {
+        const transformations = group.transformations ?? [];
+        activeTransformationSets.push(transformations);
+        if (
+          collectTemporalRenderingRequirements([transformations])
+            .timeDependency !== "none"
+        ) {
+          const localElapsed = Math.max(
+            0,
+            (group.sampleTick ?? presentationTick) - group.start,
+          );
+          activeTemporalStartTicks.push(presentationTick - localElapsed);
+        }
+        collectGroupTransforms(group.children);
+      }
+    };
+    collectGroupTransforms(
+      options.adjustmentEffectResolver.deriveGroups(presentationTick),
+    );
+    const temporalPlan = this.temporal.plan({
+      presentationTick,
+      fps: options.fps,
+      mode: "preview",
+      requirements: collectTemporalRenderingRequirements(
+        activeTransformationSets,
+      ),
+      earliestTick: Math.max(
+        options.earliestTick ?? 0,
+        activeTemporalStartTicks.length > 0
+          ? Math.min(...activeTemporalStartTicks)
+          : 0,
+      ),
+      topologyKey: [
+        getTemporalTransformationTopologyKey(stableTransformationSets),
+        ...activeSourceIdentities,
+      ].join("::"),
+    });
+
+    for (const render of temporalPlan.warmup) {
+      try {
+        const result = await this.renderSingleFrame(
+          render.presentationTimeTicks,
+          options,
+          render,
+        );
+        if (!result) {
+          this.temporal.invalidate();
+          return null;
+        }
+        await options.submitWarmupFrame?.(
+          render.presentationTimeTicks,
+          result.presentationPlan,
+          render,
+        );
+      } catch (error) {
+        this.temporal.invalidate();
+        throw error;
+      }
+    }
+    try {
+      const result = await this.renderSingleFrame(
+        presentationTick,
+        options,
+        temporalPlan.target,
+      );
+      if (!result) {
+        this.temporal.invalidate();
+      }
+      return result;
+    } catch (error) {
+      this.temporal.invalidate();
+      throw error;
+    }
+  }
+
+  private async renderSingleFrame(
+    presentationTick: number,
+    options: LiveFrameGraphRenderOptions,
+    render: FilterRenderContext,
   ): Promise<LiveFrameGraphRenderResult | null> {
     if (this.disposed) return null;
     this.epoch += 1;
@@ -160,11 +290,12 @@ export class LiveFrameGraphCoordinator {
       const execution = await this.executor.execute(graph, resolution, {
         mode: "live",
         epoch,
+        render,
       });
       if (epoch !== this.epoch || this.disposed) {
         return null;
       }
-      return { presentationPlan, execution };
+      return { presentationPlan, execution, render };
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         return null;

@@ -17,6 +17,7 @@ export interface PresentationLookupProvider {
 export interface ActiveClipResolution {
   clip: TimelineClip;
   effectiveTick: number;
+  presentationStart: number;
 }
 
 /**
@@ -39,13 +40,25 @@ export function resolveLiveActiveClip(
   trackClips: readonly TimelineClip[],
   presentationTick: number,
 ): ActiveClipResolution | null {
-  const found = resolver
-    .getPresentationLookup()
-    .findActiveClipAt(trackId, presentationTick);
+  const lookup = resolver.getPresentationLookup();
+  const found = lookup.findActiveClipAt(trackId, presentationTick);
   if (!found) return null;
   const liveClip = trackClips.find((clip) => clip.id === found.clipId);
   if (!liveClip) return null;
-  return { clip: liveClip, effectiveTick: found.effectiveTick };
+  const getPresentationStart = (
+    lookup as TimelineClipPresentationLookup & {
+      getPresentationStart?: (clipId: string) => number | null;
+    }
+  ).getPresentationStart;
+  return {
+    clip: liveClip,
+    effectiveTick: found.effectiveTick,
+    presentationStart:
+      (typeof getPresentationStart === "function"
+        ? getPresentationStart.call(lookup, found.clipId)
+        : null) ??
+      liveClip.start,
+  };
 }
 
 /**

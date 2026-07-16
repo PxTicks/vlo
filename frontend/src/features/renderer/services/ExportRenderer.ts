@@ -16,6 +16,12 @@ import {
 } from "../utils/mediaTime";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import { RenderGroupOrchestrator } from "./RenderGroupOrchestrator";
+import { TemporalRenderCoordinator } from "./TemporalRenderCoordinator";
+import {
+  collectTemporalRenderingRequirements,
+  type TemporalRenderingRequirements,
+} from "../../transformations/catalogue/temporalRenderingRequirements";
+import type { FilterRenderContext } from "../../transformations/catalogue/types";
 import {
   TrackRenderEngine,
   createEmptyStrictRenderHealth,
@@ -65,6 +71,62 @@ function createRenderAbortError(): Error {
 const AUDIO_EXPORT_CHUNK_DURATION_SEC = 10;
 const MAX_AUDIO_EXPORT_PREROLL_SEC = 30;
 const AUDIO_EXPORT_SAMPLE_RATE = 48_000;
+
+interface ActiveTemporalFrameScope {
+  requirements: TemporalRenderingRequirements;
+  earliestTick: number;
+}
+
+function collectActiveTemporalFrameScope(
+  presentationTick: number,
+  resolutionTracks: readonly FrameJobResolutionTrack[],
+  adjustmentEffectResolver: AdjustmentEffectResolver,
+): ActiveTemporalFrameScope {
+  const transformationSets: TimelineClip["transformations"][] = [];
+  const temporalStartTicks: number[] = [];
+  for (const track of resolutionTracks) {
+    const active = track.engine.resolveActiveClipAtPresentation(
+      track.trackClips,
+      presentationTick,
+    );
+    if (!active) continue;
+    const transformations = active.activeClip.transformations ?? [];
+    transformationSets.push(transformations);
+    if (
+      collectTemporalRenderingRequirements([transformations]).timeDependency !==
+      "none"
+    ) {
+      temporalStartTicks.push(active.presentationStart);
+    }
+  }
+
+  const collectGroups = (
+    groups: ReturnType<AdjustmentEffectResolver["deriveGroups"]>,
+  ): void => {
+    for (const group of groups) {
+      const transformations = group.transformations ?? [];
+      transformationSets.push(transformations);
+      if (
+        collectTemporalRenderingRequirements([transformations])
+          .timeDependency !== "none"
+      ) {
+        const localElapsed = Math.max(
+          0,
+          (group.sampleTick ?? presentationTick) - group.start,
+        );
+        temporalStartTicks.push(presentationTick - localElapsed);
+      }
+      collectGroups(group.children);
+    }
+  };
+  collectGroups(adjustmentEffectResolver.deriveGroups(presentationTick));
+
+  return {
+    requirements: collectTemporalRenderingRequirements(transformationSets),
+    earliestTick:
+      temporalStartTicks.length > 0 ? Math.min(...temporalStartTicks) : 0,
+  };
+}
 
 function estimateAudioExportPrerollSeconds(
   clips: readonly TimelineClip[],
@@ -601,14 +663,13 @@ export class ExportRenderer {
         }),
       );
 
-      for (let i = 0; i < totalFrames; i += 1) {
-        this.throwIfCancelled();
-
-        const currentTime = startTick + i * ticksPerFrame;
-        // Output timestamp from the frame index (drift-free, monotonic) via the
-        // single media-time boundary — never accumulated from ticks/seconds.
-        const timestamp = frameIndexToOutputTimestamp(i, renderFps);
-
+      const temporalCoordinator = new TemporalRenderCoordinator();
+      let renderEpoch = 0;
+      const renderTimelineFrame = async (
+        currentTime: number,
+        render: FilterRenderContext,
+      ): Promise<void> => {
+        renderEpoch += 1;
         const adjustmentForest =
           adjustmentEffectResolver.deriveGroups(currentTime);
         const transitionFrame = resolveTransitionFrame({
@@ -625,7 +686,7 @@ export class ExportRenderer {
           adjustmentForest,
         });
         const resolution = frameJobResolver.resolve({
-          epoch: i + 1,
+          epoch: renderEpoch,
           presentationTick: currentTime,
           tracks: resolutionTracks,
           assets,
@@ -636,9 +697,9 @@ export class ExportRenderer {
           fps: renderFps,
           transitionTransformsByClipId: transitionFrame.transformsByClipId,
         });
-        const graph = buildFrameResolutionGraph(i + 1, resolution.jobs);
+        const graph = buildFrameResolutionGraph(renderEpoch, resolution.jobs);
         const presentationPlan = buildScenePresentationPlan({
-          epoch: i + 1,
+          epoch: renderEpoch,
           visualTrackOrder,
           jobs: resolution.jobs,
           adjustmentForest,
@@ -649,22 +710,45 @@ export class ExportRenderer {
         await frameGraphExecutor.execute(graph, resolution, {
           mode: "export",
           signal: this.cancelController?.signal,
+          render,
         });
         this.throwIfCancelled();
-
-        // Rewrite parenting (track engines into / out of group containers) and
-        // apply group transforms before the GPU frame submit.
-        this.orchestrator.syncPresentationPlan(
+        this.orchestrator!.syncPresentationPlan(
           currentTime,
           presentationPlan,
+          render,
         );
-
-        // Render timeline frame once to an offscreen texture.
         this.app.renderer.render({
           container: this.logicalStage,
           target: frameTexture,
           clear: true,
         });
+      };
+
+      for (let i = 0; i < totalFrames; i += 1) {
+        this.throwIfCancelled();
+
+        const currentTime = startTick + i * ticksPerFrame;
+        // Output timestamp from the frame index (drift-free, monotonic) via the
+        // single media-time boundary — never accumulated from ticks/seconds.
+        const timestamp = frameIndexToOutputTimestamp(i, renderFps);
+
+        const temporalScope = collectActiveTemporalFrameScope(
+          currentTime,
+          resolutionTracks,
+          adjustmentEffectResolver,
+        );
+        const temporalPlan = temporalCoordinator.plan({
+          presentationTick: currentTime,
+          fps: renderFps,
+          mode: "export",
+          requirements: temporalScope.requirements,
+          earliestTick: temporalScope.earliestTick,
+        });
+        for (const warmup of temporalPlan.warmup) {
+          await renderTimelineFrame(warmup.presentationTimeTicks, warmup);
+        }
+        await renderTimelineFrame(currentTime, temporalPlan.target);
 
         // Encode one or more outputs by applying per-output transform stacks.
         await outputEncoder.addTextureFrame(
@@ -799,59 +883,103 @@ export class ExportRenderer {
           maskClipsByParent,
         }),
       );
-      const adjustmentForest = adjustmentEffectResolver.deriveGroups(tick);
-      const transitionFrame = resolveTransitionFrame({
-        tracks: projectData.tracks,
-        clips: projectData.clips,
-        transitions: projectData.transitions ?? [],
-        fps,
+      const temporalCoordinator = new TemporalRenderCoordinator();
+      const temporalScope = collectActiveTemporalFrameScope(
+        tick,
+        resolutionTracks,
+        adjustmentEffectResolver,
+      );
+      const temporalPlan = temporalCoordinator.plan({
         presentationTick: tick,
-        logicalDimensions: {
-          width: logicalWidth,
-          height: logicalHeight,
-        },
-        visualTrackOrder,
-        adjustmentForest,
-      });
-      const resolution = frameJobResolver.resolve({
-        epoch: 1,
-        presentationTick: tick,
-        tracks: resolutionTracks,
-        assets,
-        logicalDimensions: {
-          width: logicalWidth,
-          height: logicalHeight,
-        },
         fps,
-        transitionTransformsByClipId: transitionFrame.transformsByClipId,
+        mode: "still",
+        requirements: temporalScope.requirements,
+        earliestTick: temporalScope.earliestTick,
       });
-      const graph = buildFrameResolutionGraph(1, resolution.jobs);
-      const presentationPlan = buildScenePresentationPlan({
-        epoch: 1,
-        visualTrackOrder,
-        jobs: resolution.jobs,
-        adjustmentForest,
-        zIndexOverrides: transitionFrame.zIndexOverrides,
-        transitionColorLayers: transitionFrame.colorLayers,
-      });
-      await frameGraphExecutor.execute(graph, resolution, {
-        mode: "export",
-        signal: this.cancelController?.signal,
-      });
-      this.throwIfCancelled();
+      const warmupTarget =
+        temporalPlan.warmup.length > 0
+          ? RenderTexture.create({
+              width: Math.max(1, this.app.renderer.width),
+              height: Math.max(1, this.app.renderer.height),
+            })
+          : null;
+      let renderEpoch = 0;
+      const renderTimelineFrame = async (
+        currentTime: number,
+        render: FilterRenderContext,
+        target?: RenderTexture,
+      ): Promise<void> => {
+        renderEpoch += 1;
+        const adjustmentForest =
+          adjustmentEffectResolver.deriveGroups(currentTime);
+        const transitionFrame = resolveTransitionFrame({
+          tracks: projectData.tracks,
+          clips: projectData.clips,
+          transitions: projectData.transitions ?? [],
+          fps,
+          presentationTick: currentTime,
+          logicalDimensions: {
+            width: logicalWidth,
+            height: logicalHeight,
+          },
+          visualTrackOrder,
+          adjustmentForest,
+        });
+        const resolution = frameJobResolver.resolve({
+          epoch: renderEpoch,
+          presentationTick: currentTime,
+          tracks: resolutionTracks,
+          assets,
+          logicalDimensions: {
+            width: logicalWidth,
+            height: logicalHeight,
+          },
+          fps,
+          transitionTransformsByClipId: transitionFrame.transformsByClipId,
+        });
+        const graph = buildFrameResolutionGraph(renderEpoch, resolution.jobs);
+        const presentationPlan = buildScenePresentationPlan({
+          epoch: renderEpoch,
+          visualTrackOrder,
+          jobs: resolution.jobs,
+          adjustmentForest,
+          zIndexOverrides: transitionFrame.zIndexOverrides,
+          transitionColorLayers: transitionFrame.colorLayers,
+        });
+        await frameGraphExecutor.execute(graph, resolution, {
+          mode: "export",
+          signal: this.cancelController?.signal,
+          render,
+        });
+        this.throwIfCancelled();
+        this.orchestrator!.syncPresentationPlan(
+          currentTime,
+          presentationPlan,
+          render,
+        );
+        this.app.renderer.render({
+          container: this.logicalStage,
+          ...(target ? { target } : {}),
+          clear: true,
+        });
+      };
+      try {
+        for (const warmup of temporalPlan.warmup) {
+          await renderTimelineFrame(
+            warmup.presentationTimeTicks,
+            warmup,
+            warmupTarget ?? undefined,
+          );
+        }
+        await renderTimelineFrame(tick, temporalPlan.target);
+      } finally {
+        warmupTarget?.destroy(true);
+      }
 
       this.warnOnDegradedRenderHealth(
         this.collectRenderHealth(visualTracks),
         "still capture",
       );
-
-      // Rewrite parenting and apply group transforms before the GPU submit.
-      this.orchestrator.syncPresentationPlan(tick, presentationPlan);
-
-      this.app.renderer.render({
-        container: this.logicalStage,
-        clear: true,
-      });
       this.throwIfCancelled();
 
       return canvasToBlob(

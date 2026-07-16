@@ -88,6 +88,8 @@ export interface TimelineClipPresentationLookup {
     /** The tick visual adjustment grouping should use for activation. */
     presentationInputTick: number;
   } | null;
+  /** Quantized visible start for a clip, or null when it has no presentation. */
+  getPresentationStart(clipId: string): number | null;
   /**
    * Map a presentation tick that is known to fall within `clip`'s footprint
    * to the corresponding effective track tick. Returns the input unchanged
@@ -420,6 +422,9 @@ export function buildTimelineClipPresentationLookup(
         }
       }
       return null;
+    },
+    getPresentationStart(clipId) {
+      return internalMap.get(clipId)?.start ?? null;
     },
     resolveEffectiveTrackTickWithinClip(clip, presentationTick) {
       const entry = internalMap.get(clip.id);

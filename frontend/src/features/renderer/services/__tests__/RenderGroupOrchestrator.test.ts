@@ -1,7 +1,8 @@
 import { Container, Sprite } from "pixi.js";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AdjustmentTimelineClip,
+  ClipTransform,
   TimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
@@ -35,6 +36,7 @@ function adjustmentClip(overrides: {
   start: number;
   timelineDuration: number;
   depth: number;
+  transformations?: ClipTransform[];
 }): AdjustmentTimelineClip {
   return {
     id: overrides.id,
@@ -48,7 +50,7 @@ function adjustmentClip(overrides: {
     transformedOffset: 0,
     croppedSourceDuration: overrides.timelineDuration,
     offset: 0,
-    transformations: [],
+    transformations: overrides.transformations ?? [],
     depth: overrides.depth,
   };
 }
@@ -434,6 +436,38 @@ describe("RenderGroupOrchestrator", () => {
       // Further calls are inert.
       expect(() => fx.orchestrator.sync(50, ["track-1"])).not.toThrow();
     });
+  });
+
+  it("releases retained adjustment filters while their branch is inactive", () => {
+    const tracks = [adjustmentTrack("adj"), ...fx.visualTracks];
+    const blur = {
+      id: "blur-1",
+      type: "filter",
+      filterName: "BlurFilter",
+      isEnabled: true,
+      parameters: { strength: 4, quality: 2 },
+    } as ClipTransform;
+    const adjustment = adjustmentClip({
+      id: "a",
+      trackId: "adj",
+      start: 10,
+      timelineDuration: 100,
+      depth: 1,
+      transformations: [blur],
+    });
+    fx.orchestrator.setAdjustmentSource(tracks, [adjustment], 30);
+    fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
+    const container = fx.orchestrator.getGroupContainer("a@track-1")!;
+    const retainedFilter = container.filters?.[0];
+    expect(retainedFilter).toBeDefined();
+    const destroy = vi.spyOn(retainedFilter!, "destroy");
+
+    fx.orchestrator.sync(200, ["track-1", "track-2", "track-3"]);
+    expect(destroy).toHaveBeenCalledOnce();
+
+    fx.orchestrator.sync(50, ["track-1", "track-2", "track-3"]);
+    expect(container.filters?.[0]).toBeDefined();
+    expect(container.filters?.[0]).not.toBe(retainedFilter);
   });
 
   it("creates and removes transient transition color layers from presentation plans", () => {

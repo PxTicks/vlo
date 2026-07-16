@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { Container, AlphaFilter, BlurFilter } from "pixi.js";
 import type { ClipTransform, TimelineGroup } from "../../../types/TimelineTypes";
 import { applyGroupTransforms } from "../applyGroupTransforms";
+import { filterHandler } from "../catalogue/filterFactory";
+import { createTransformationFilterRuntime } from "../catalogue/filterRuntime";
+import type {
+  FilterRenderContext,
+  TransformationFilterUpdateContext,
+} from "../catalogue/types";
+import { extensionTransformationRegistry } from "../extensions/ExtensionTransformationRegistry";
 
 function group(overrides: Partial<TimelineGroup> & Pick<TimelineGroup, "id">): TimelineGroup {
   return {
@@ -239,5 +246,87 @@ describe("applyGroupTransforms — real dispatch", () => {
     );
     expect(container.position.x).toBe(0);
     expect(container.position.y).toBe(0);
+  });
+
+  it("forwards host render identity with adjustment-local visual/source time", () => {
+    const updates: TransformationFilterUpdateContext[] = [];
+    const runtime = createTransformationFilterRuntime({
+      create: () => new AlphaFilter(),
+      update: (filter, _parameters, context, outputFilters) => {
+        updates.push(context);
+        outputFilters.push(filter);
+        return true;
+      },
+      release: (filter) => filter.destroy(),
+      dispose: () => undefined,
+    });
+    const registration = extensionTransformationRegistry.registerRuntime(
+      {
+        extension: { id: "test.adjustment-temporal", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: (resource) => resource,
+        report: () => undefined,
+      },
+      "history-filter",
+      {
+        type: "filter",
+        filterName: "test.adjustment-temporal/history-filter",
+        label: "History filter",
+        handler: filterHandler,
+        filterRuntime: runtime,
+        uiConfig: { groups: [] },
+        rendering: {
+          timeDependency: "history",
+          maxHistorySeconds: 1,
+          maxStepSeconds: 1 / 30,
+        },
+      },
+    );
+    const transform = {
+      id: "history-1",
+      type: "filter",
+      filterName: "test.adjustment-temporal/history-filter",
+      isEnabled: true,
+      parameters: {},
+    } as ClipTransform;
+    const render: FilterRenderContext = {
+      sequenceId: 3,
+      sampleId: 9,
+      mode: "preview",
+      continuity: "sequential",
+      presentationTimeTicks: 130,
+      visualTimeTicks: 130,
+      sourceTimeTicks: 130,
+      deltaTimeTicks: 1,
+      fps: 30,
+      isWarmup: true,
+    };
+
+    try {
+      applyGroupTransforms(
+        new Container(),
+        group({
+          id: "temporal-group",
+          start: 100,
+          transformations: [transform],
+        }),
+        LOGICAL,
+        130,
+        render,
+      );
+
+      expect(updates).toHaveLength(1);
+      expect(updates[0]?.render).toMatchObject({
+        sequenceId: 3,
+        sampleId: 9,
+        isWarmup: true,
+        presentationTimeTicks: 130,
+        visualTimeTicks: 30,
+        sourceTimeTicks: 30,
+      });
+    } finally {
+      registration.dispose();
+      runtime.dispose();
+    }
   });
 });

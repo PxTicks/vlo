@@ -14,6 +14,11 @@ import type { FilterOperation } from "./catalogue/types";
  */
 export type ResolvedFilterOp = FilterOperation;
 
+export interface ResolvedFilterOpLookup {
+  readonly lookup: Map<ClipTransform, ResolvedFilterOp>;
+  readonly sourceTimeTicks: number;
+}
+
 /**
  * Resolve each enabled filter transform to its time-sampled filter op.
  *
@@ -40,16 +45,40 @@ export function buildResolvedFilterOpLookup(
   time?: number,
   options?: ApplyTransformStackOptions,
 ): Map<ClipTransform, ResolvedFilterOp> {
+  return buildResolvedFilterOpLookupWithTime(
+    transformations,
+    ctx,
+    time,
+    options,
+  ).lookup;
+}
+
+/**
+ * Resolve filter operations together with the post-speed source tick used by
+ * the same stack pass. The masked offscreen path needs both so temporal filters
+ * receive timing equivalent to the ordinary on-container applicator.
+ */
+export function buildResolvedFilterOpLookupWithTime(
+  transformations: readonly ClipTransform[] | undefined,
+  ctx: ApplyTransformStackContext,
+  time?: number,
+  options?: ApplyTransformStackOptions,
+): ResolvedFilterOpLookup {
   const lookup = new Map<ClipTransform, ResolvedFilterOp>();
   if (!transformations || transformations.length === 0) {
-    return lookup;
+    return { lookup, sourceTimeTicks: time ?? 0 };
   }
 
-  const { state } = applyTransformStack(transformations, ctx, time, {
-    ...options,
-    // Pure resolution — never fire live-param notifications as a side effect.
-    notifyLiveParams: false,
-  });
+  const { state, sourceTimeTicks } = applyTransformStack(
+    transformations,
+    ctx,
+    time,
+    {
+      ...options,
+      // Pure resolution — never fire live-param notifications as a side effect.
+      notifyLiveParams: false,
+    },
+  );
 
   let opIndex = 0;
   for (const transform of transformations) {
@@ -68,5 +97,5 @@ export function buildResolvedFilterOpLookup(
       lookup.set(transform, op);
     }
   }
-  return lookup;
+  return { lookup, sourceTimeTicks };
 }

@@ -226,6 +226,24 @@ describe("MaskedEffectRenderer", () => {
     maskedRenderer.dispose();
   });
 
+  it("does not resolve mask coverage again on a cache hit", () => {
+    const { maskedRenderer, resolveFilterOp, resolveCoverage } = setup();
+    const opts = {
+      input: Texture.WHITE,
+      steps: [step("blur", { kind: "masked" as const, expression: EXPR })],
+      contentSize: CONTENT,
+      resolveFilterOp,
+      resolveCoverage,
+      cacheKey: "masked-k1",
+    };
+
+    maskedRenderer.render(opts);
+    expect(resolveCoverage).toHaveBeenCalledOnce();
+    maskedRenderer.render(opts);
+    expect(resolveCoverage).toHaveBeenCalledOnce();
+    maskedRenderer.dispose();
+  });
+
   it("re-renders when the cacheKey changes", () => {
     const { maskedRenderer, render, resolveFilterOp, resolveCoverage } = setup();
     const base = {

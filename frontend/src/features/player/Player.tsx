@@ -1,5 +1,6 @@
 import { useEffect, useRef, useMemo, memo, useCallback, useState } from "react";
 import { Box } from "@mui/material";
+import { RenderTexture } from "pixi.js";
 import {
   AudioTrackLayer,
   getSharedDecoderWorkerPool,
@@ -71,6 +72,7 @@ function PlayerImpl() {
     [] as Array<{ time: number; enqueuedAtMs: number }>,
   );
   const synchronizedPlaybackBusyRef = useRef(false);
+  const temporalWarmupTargetRef = useRef<RenderTexture | null>(null);
   const maxTimelineDurationRef = useRef(0);
 
   // --- Store Data ---
@@ -192,6 +194,8 @@ function PlayerImpl() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLiveFrameGraphCoordinator(coordinator);
     return () => {
+      temporalWarmupTargetRef.current?.destroy(true);
+      temporalWarmupTargetRef.current = null;
       coordinator.dispose();
       setLiveFrameGraphCoordinator((current) =>
         current === coordinator ? null : current,
@@ -354,12 +358,39 @@ function PlayerImpl() {
                 logicalDimensions,
                 visualTrackOrder: visualTrackIdsRef.current,
                 adjustmentEffectResolver,
+                submitWarmupFrame: (tick, plan, render) => {
+                  if (!pixiApp?.renderer) return;
+                  renderGroupOrchestrator?.syncPresentationPlan(
+                    tick,
+                    plan,
+                    render,
+                  );
+                  const width = Math.max(1, pixiApp.renderer.width);
+                  const height = Math.max(1, pixiApp.renderer.height);
+                  let target = temporalWarmupTargetRef.current;
+                  if (
+                    !target ||
+                    target.destroyed ||
+                    target.width !== width ||
+                    target.height !== height
+                  ) {
+                    target?.destroy(true);
+                    target = RenderTexture.create({ width, height });
+                    temporalWarmupTargetRef.current = target;
+                  }
+                  pixiApp.renderer.render({
+                    container: viewport ?? pixiApp.stage,
+                    target,
+                    clear: true,
+                  });
+                },
               },
             );
             if (result) {
               renderGroupOrchestrator?.syncPresentationPlan(
                 nextFrame.time,
                 result.presentationPlan,
+                result.render,
               );
               usedFrameGraph = true;
             }

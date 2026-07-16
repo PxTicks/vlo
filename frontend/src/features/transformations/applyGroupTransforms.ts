@@ -3,6 +3,7 @@ import type { ClipTransform } from "../../types/TimelineTypes";
 import { useDebugStore } from "../../shared/debug/useDebugStore";
 import { applyTransformStack, runApplicators } from "./applyTransformations";
 import { releaseTransformationFilters } from "./catalogue/filterRuntime";
+import type { FilterRenderContext } from "./catalogue/types";
 
 /**
  * Minimal shape `applyGroupTransforms` consumes from its `group` argument.
@@ -48,6 +49,7 @@ export function applyGroupTransforms(
   group: AppliableGroup,
   logicalDimensions: { width: number; height: number },
   currentTick: number,
+  render?: FilterRenderContext,
 ): void {
   // Reset to identity before dispatch so toggling a transform off — or a
   // group's `transformations` array shrinking — reverts cleanly without
@@ -69,7 +71,7 @@ export function applyGroupTransforms(
   }
 
   const stackTime = (group.sampleTick ?? currentTick) - group.start;
-  const { state } = applyTransformStack(
+  const { state, sourceTimeTicks } = applyTransformStack(
     group.transformations,
     {
       container: logicalDimensions,
@@ -85,5 +87,16 @@ export function applyGroupTransforms(
       notifyLiveParams: false,
     },
   );
-  runApplicators(container, state, logicalDimensions);
+  runApplicators(
+    container,
+    state,
+    logicalDimensions,
+    render
+      ? {
+          ...render,
+          visualTimeTicks: stackTime,
+          sourceTimeTicks,
+        }
+      : undefined,
+  );
 }

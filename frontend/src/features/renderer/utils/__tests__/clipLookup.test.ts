@@ -20,6 +20,7 @@ function providerReturning(
 ): { getPresentationLookup: () => TimelineClipPresentationLookup } {
   const lookup: TimelineClipPresentationLookup = {
     findActiveClipAt: () => result,
+    getPresentationStart: () => 10,
     resolveEffectiveTrackTickWithinClip: (_clip, tick) => tick,
   };
   return { getPresentationLookup: () => lookup };
@@ -44,6 +45,7 @@ describe("resolveLiveActiveClip", () => {
 
     expect(resolved?.clip).toBe(live);
     expect(resolved?.effectiveTick).toBe(50);
+    expect(resolved?.presentationStart).toBe(10);
   });
 
   it("returns null when the resolved id is absent from the live clips", () => {

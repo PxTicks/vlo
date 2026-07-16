@@ -36,7 +36,10 @@
 /frontend/src/features/colorGrading/components/LutControl.tsx extension-surface=adapter
 /frontend/src/features/colorGrading/gradeParameters.ts extension-surface=adapter
 /frontend/src/features/masks/runtime/MaskedEffectRenderer.ts extension-surface=adapter
+/frontend/src/features/masks/runtime/MaskTextureResolver.ts extension-surface=adapter
 /frontend/src/features/masks/runtime/OffscreenFilterApplicator.ts extension-surface=adapter
+/frontend/src/features/masks/runtime/SpriteClipMaskController.ts extension-surface=adapter
+/frontend/src/features/player/Player.tsx extension-surface=adapter
 /frontend/src/features/userAssets/services/AssetService.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
 /frontend/src/features/project/schemas/projectPersistenceSchemas.ts extension-surface=adapter
@@ -46,7 +49,10 @@
 /frontend/src/features/project/utils/extensionRequirements.ts extension-surface=adapter
 /frontend/src/features/renderer/services/ExportRenderer.ts extension-surface=adapter
 /frontend/src/features/renderer/services/RenderGroupOrchestrator.ts extension-surface=adapter
+/frontend/src/features/renderer/services/TemporalRenderCoordinator.ts extension-surface=adapter
 /frontend/src/features/renderer/services/TrackRenderEngine.ts extension-surface=adapter
+/frontend/src/features/renderer/services/framePlanning/LiveFrameGraphCoordinator.ts extension-surface=adapter
+/frontend/src/features/renderer/services/framePlanning/framePlanningTypes.ts extension-surface=adapter
 /frontend/src/features/renderer/services/projectFrameCapture.ts extension-surface=adapter
 /frontend/src/features/timeline/api.ts extension-surface=adapter
 /frontend/src/features/timeline/components/TimelineClip.tsx extension-surface=adapter
@@ -56,12 +62,14 @@
 /frontend/src/features/transitions/** extension-surface=adapter
 /frontend/src/features/transformations/applyGroupTransforms.ts extension-surface=adapter
 /frontend/src/features/transformations/applyTransformations.ts extension-surface=adapter
+/frontend/src/features/transformations/effectMaskFilterOps.ts extension-surface=adapter
 /frontend/src/features/transformations/animation/** extension-surface=adapter
 /frontend/src/features/transformations/catalogue/TransformationRegistry.ts extension-surface=adapter
 /frontend/src/features/transformations/catalogue/filterFactory.ts extension-surface=adapter
 /frontend/src/features/transformations/catalogue/filterRuntime.ts extension-surface=adapter
 /frontend/src/features/transformations/catalogue/renderSampleContext.ts extension-surface=adapter
 /frontend/src/features/transformations/catalogue/renderingPolicy.ts extension-surface=adapter
+/frontend/src/features/transformations/catalogue/temporalRenderingRequirements.ts extension-surface=adapter
 /frontend/src/features/transformations/catalogue/filters/** extension-surface=adapter
 /frontend/src/features/transformations/catalogue/types.ts extension-surface=adapter
 /frontend/src/features/transformations/components/ControlRenderer.tsx extension-surface=adapter
@@ -82,6 +90,8 @@
 /frontend/src/features/transformations/utils/hydrateTransformationParameters.ts extension-surface=adapter
 /frontend/src/features/transformations/utils/__tests__/hydrateTransformationParameters.test.ts extension-surface=adapter
 /frontend/src/features/timeline/utils/formatting.ts extension-surface=adapter
+/frontend/src/features/timeline/utils/clipPresentation.ts extension-surface=adapter
+/frontend/src/features/renderer/utils/clipLookup.ts extension-surface=adapter
 /frontend/src/features/panelUI/customControlRegistry.ts extension-surface=adapter
 /frontend/src/features/panelUI/types.ts extension-surface=adapter
 /frontend/src/types/TimelineTypes.ts extension-surface=adapter

@@ -623,6 +623,16 @@ describe("SpriteClipMaskController mask composition", () => {
     expect(spatialRoot?.visible).toBe(true);
     expect(effectRoot?.visible).toBe(false);
 
+    const renderSpy = renderer.render as ReturnType<typeof vi.fn>;
+    renderSpy.mockClear();
+    expect(
+      controller.canResolveEffectMaskCoverage({
+        kind: "mask_ref",
+        maskId: "mask_fx",
+      }),
+    ).toBe(true);
+    expect(renderSpy).not.toHaveBeenCalled();
+
     // mask_fx has a synced node (via the effect-mask path), so its coverage
     // resolves even though it is absent from the spatial expression.
     expect(
@@ -646,6 +656,12 @@ describe("SpriteClipMaskController mask composition", () => {
         maskId: "mask_never_synced",
       }),
     ).toBeNull();
+    expect(
+      controller.canResolveEffectMaskCoverage({
+        kind: "mask_ref",
+        maskId: "mask_never_synced",
+      }),
+    ).toBe(false);
 
     controller.dispose();
   });

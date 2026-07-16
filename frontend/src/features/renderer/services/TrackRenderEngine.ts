@@ -26,14 +26,19 @@ import {
 } from "../utils/clipLookup";
 import { applyClipTransforms } from "../../transformations/applyTransformations";
 import { createFrameFilterRenderContext } from "../../transformations/catalogue/renderSampleContext";
-import type { FilterRenderMode } from "../../transformations/catalogue/types";
+import { getTemporalSampleCacheIdentity } from "../../transformations/catalogue/temporalRenderingRequirements";
+import type {
+  FilterRenderContext,
+  FilterRenderMode,
+} from "../../transformations/catalogue/types";
 import { releaseTransformationFilters } from "../../transformations/catalogue/filterRuntime";
+import { TemporalRenderBranch } from "./TemporalRenderCoordinator";
 import {
   planTransformRender,
   type FilterRenderStep,
 } from "../../transformations/effectMaskRenderPlan";
 import {
-  buildResolvedFilterOpLookup,
+  buildResolvedFilterOpLookupWithTime,
   type ResolvedFilterOp,
 } from "../../transformations/effectMaskFilterOps";
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
@@ -302,6 +307,8 @@ export class TrackRenderEngine {
   // time instead of the synthesized zero-time stateless fallback.
   private currentRenderFps = 30;
   private currentRenderMode: FilterRenderMode = "preview";
+  private currentRenderContext: FilterRenderContext | null = null;
+  private readonly effectMaskTemporalBranch = new TemporalRenderBranch();
   private currentTextTextureSignature: string | null = null;
   private lastRenderRequest: {
     time: number;
@@ -448,11 +455,19 @@ export class TrackRenderEngine {
   public resolveActiveClipAtPresentation(
     trackClips: TimelineClip[],
     presentationTick: number,
-  ): { activeClip: TimelineClip; effectiveTick: number } | null {
+  ): {
+    activeClip: TimelineClip;
+    effectiveTick: number;
+    presentationStart: number;
+  } | null {
     if (!this.trackId || !this.adjustmentEffectResolver) {
       const activeClip = findActiveClipAtTicks(trackClips, presentationTick);
       return activeClip
-        ? { activeClip, effectiveTick: presentationTick }
+        ? {
+            activeClip,
+            effectiveTick: presentationTick,
+            presentationStart: activeClip.start,
+          }
         : null;
     }
     // The lookup owns identity + timing only; `resolveLiveActiveClip` re-binds
@@ -466,7 +481,11 @@ export class TrackRenderEngine {
       presentationTick,
     );
     return resolved
-      ? { activeClip: resolved.clip, effectiveTick: resolved.effectiveTick }
+      ? {
+          activeClip: resolved.clip,
+          effectiveTick: resolved.effectiveTick,
+          presentationStart: resolved.presentationStart,
+        }
       : null;
   }
 
@@ -650,6 +669,7 @@ export class TrackRenderEngine {
   ): Promise<boolean> {
     this.currentRenderFps = job.fps;
     this.currentRenderMode = policy.mode === "export" ? "export" : "preview";
+    this.currentRenderContext = policy.render ?? null;
     if (policy.mode === "export" && policy.signal?.aborted) {
       sourceHandle?.release();
       throw createRenderAbortError();
@@ -813,6 +833,7 @@ export class TrackRenderEngine {
     const { shouldRender = true, fps = 30 } = options;
     this.currentRenderFps = fps;
     this.currentRenderMode = "preview";
+    this.currentRenderContext = null;
     const nowMs = performance.now();
     const isLikelyScrubbing = this.detectScrubbing(currentTime, fps, nowMs);
     const resolved = this.resolveActiveClipAtPresentation(
@@ -1622,9 +1643,14 @@ export class TrackRenderEngine {
     logicalDimensions: { width: number; height: number },
     maskClips: MaskTimelineClip[] = [],
     assetsById: Map<string, Asset> = new Map<string, Asset>(),
-    options: { fps?: number; signal?: AbortSignal } = {},
+    options: {
+      fps?: number;
+      signal?: AbortSignal;
+      render?: FilterRenderContext;
+    } = {},
   ): Promise<void> {
     this.invalidateLivePipeline();
+    this.currentRenderContext = options.render ?? null;
     const effectiveTick = this.resolveEffectiveTrackTickForClip(
       activeClip,
       currentTime,
@@ -2592,10 +2618,13 @@ export class TrackRenderEngine {
 
   /** Render-sample identity for this frame's clip render (see the field docs). */
   private buildFrameRenderContext(rawTime: number) {
-    return createFrameFilterRenderContext(
-      rawTime,
-      this.currentRenderFps,
-      this.currentRenderMode,
+    return (
+      this.currentRenderContext ??
+      createFrameFilterRenderContext(
+        rawTime,
+        this.currentRenderFps,
+        this.currentRenderMode,
+      )
     );
   }
 
@@ -2608,6 +2637,7 @@ export class TrackRenderEngine {
       // Leaving the offscreen effect-mask path ends ownership of its retained
       // filter slots. A later masked render must not inherit stale history.
       this.maskedEffectRenderer?.reset();
+      this.effectMaskTemporalBranch.reset();
       applyClipTransforms(
         this.sprite,
         clip,
@@ -2669,18 +2699,51 @@ export class TrackRenderEngine {
         ? logicalDimensions
         : { width: source.width, height: source.height };
     const stackTime = rawTime + (clip.transformedOffset || 0);
-    const filterOpLookup = buildResolvedFilterOpLookup(
-      clip.transformations,
-      {
-        container: logicalDimensions,
-        content: contentSize,
-        visualTime: rawTime,
-        visualDuration: clip.timelineDuration,
-      },
-      stackTime,
-    );
+    const { lookup: filterOpLookup, sourceTimeTicks } =
+      buildResolvedFilterOpLookupWithTime(
+        clip.transformations,
+        {
+          container: logicalDimensions,
+          content: contentSize,
+          visualTime: rawTime,
+          visualDuration: clip.timelineDuration,
+        },
+        stackTime,
+      );
 
-    const render = this.buildFrameRenderContext(rawTime);
+    const baseRender = {
+      ...this.buildFrameRenderContext(rawTime),
+      visualTimeTicks: rawTime,
+      sourceTimeTicks,
+    };
+    const availabilityByExpression = new Map<string, boolean>();
+    const coverageByExpression = new Map<string, Texture | null>();
+    for (const step of plan.steps) {
+      if (step.resolution.kind !== "masked") continue;
+      const expressionKey = JSON.stringify(step.resolution.expression);
+      if (!availabilityByExpression.has(expressionKey)) {
+        availabilityByExpression.set(
+          expressionKey,
+          this.maskController.canResolveEffectMaskCoverage(
+            step.resolution.expression,
+            contentSize,
+          ),
+        );
+      }
+    }
+    const availabilityKey = plan.steps
+      .map((step) => {
+        if (step.resolution.kind !== "masked") return step.resolution.kind;
+        const expressionKey = JSON.stringify(step.resolution.expression);
+        return availabilityByExpression.get(expressionKey)
+          ? `masked:${expressionKey}`
+          : `unavailable:${expressionKey}`;
+      })
+      .join("|");
+    const render = this.effectMaskTemporalBranch.map(
+      baseRender,
+      availabilityKey,
+    );
     const output = renderer.render({
       input: source,
       steps: plan.steps,
@@ -2691,13 +2754,22 @@ export class TrackRenderEngine {
         contentSize,
         plan.steps,
         filterOpLookup,
+        render,
       ),
       resolveFilterOp: (transform) => filterOpLookup.get(transform),
       resolveCoverage: (expression) => {
-        const coverage = this.maskController.resolveEffectMaskCoverage(
-          expression,
-          contentSize,
-        );
+        const expressionKey = JSON.stringify(expression);
+        if (!availabilityByExpression.get(expressionKey)) return null;
+        if (!coverageByExpression.has(expressionKey)) {
+          coverageByExpression.set(
+            expressionKey,
+            this.maskController.resolveEffectMaskCoverage(
+              expression,
+              contentSize,
+            ),
+          );
+        }
+        const coverage = coverageByExpression.get(expressionKey) ?? null;
         // A masked filter with no coverage contributes nothing (no whole-clip
         // effect); surface that under debug mode so a missing/inactive mask is
         // diagnosable rather than silent.
@@ -2742,6 +2814,7 @@ export class TrackRenderEngine {
     contentSize: { width: number; height: number },
     steps: readonly FilterRenderStep[],
     filterOpLookup: Map<ClipTransform, ResolvedFilterOp>,
+    render: FilterRenderContext,
   ): string {
     const parts: string[] = [
       `src:${source.uid}`,
@@ -2756,6 +2829,13 @@ export class TrackRenderEngine {
           ? `masked:${JSON.stringify(step.resolution.expression)}`
           : step.resolution.kind;
       parts.push(`${step.transform.id}|${resKey}|${opKey}`);
+    }
+    const sampleIdentity = getTemporalSampleCacheIdentity(
+      steps.map((step) => step.transform),
+      render,
+    );
+    if (sampleIdentity) {
+      parts.push(sampleIdentity);
     }
     return parts.join("::");
   }

@@ -818,6 +818,24 @@ export class SpriteClipMaskController {
     });
   }
 
+  /**
+   * Return whether an effect-mask expression has a currently renderable leaf
+   * without allocating textures or issuing GPU passes.
+   */
+  public canResolveEffectMaskCoverage(
+    expression: MaskBooleanExpression,
+    contentSize?: { width: number; height: number },
+  ): boolean {
+    if (!this.effectMaskCoverageResolver) return false;
+    const expressionAnalysis = analyzeMaskBooleanExpression(expression);
+    if (expressionAnalysis.maskIds.length === 0) return false;
+    if (!(contentSize ?? this.lastNodeSyncContentSize)) return false;
+    return this.effectMaskCoverageResolver.hasRenderableCoverage({
+      expressionAnalysis,
+      maskClipByLocalId: this.lastNodeSyncMaskClipByLocalId,
+    });
+  }
+
   public clear(): void {
     // Clearing drops the coverage source, so it must invalidate effect-mask
     // caches keyed on the sync epoch (same reasoning as `syncMaskClips`).

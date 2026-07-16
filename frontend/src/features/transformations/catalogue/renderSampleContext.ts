@@ -57,10 +57,9 @@ export function createStatelessFilterRenderContext(
  * overrides them with its resolved pre-speed visual time and post-speed source
  * time, and the offscreen effect-mask path consumes them directly.
  *
- * Sequence identity and certified continuity/delta (seek detection, warm-up)
- * are deferred to the bounded history-scheduling milestone; this establishes a
- * single monotonic sequence with sequential samples so sample-dependent filters
- * animate correctly in preview and export.
+ * This is the compatibility fallback for renderer callers that have not joined
+ * the frame coordinator. The coordinated preview/export/still paths override it
+ * with host-certified sequence, continuity, delta, and warm-up metadata.
  */
 export function createFrameFilterRenderContext(
   presentationTimeTicks: number,

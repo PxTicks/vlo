@@ -6,6 +6,7 @@ import { type DerivedRenderGroup } from "../utils/deriveAdjustmentGroups";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
 import type { ScenePresentationPlan } from "./framePlanning";
 import type { TransitionColorLayerCommand } from "./framePlanning";
+import type { FilterRenderContext } from "../../transformations/catalogue/types";
 
 export interface RenderGroupOrchestratorOptions {
   /** Project resolution used by applyGroupTransforms. Defaults to 1920x1080
@@ -171,13 +172,18 @@ export class RenderGroupOrchestrator {
    * is constant between adjacent active-window boundary ticks, so a
    * window cache fed by `setAdjustmentSource` would skip most ticks.
    */
-  sync(currentTick: number, visualTrackOrder: readonly string[]): void {
+  sync(
+    currentTick: number,
+    visualTrackOrder: readonly string[],
+    render?: FilterRenderContext,
+  ): void {
     if (this.disposed) return;
     this.syncResolvedForest(
       currentTick,
       visualTrackOrder,
       this.adjustmentEffectResolver.deriveGroups(currentTick),
       [],
+      render,
     );
   }
 
@@ -189,6 +195,7 @@ export class RenderGroupOrchestrator {
   syncPresentationPlan(
     currentTick: number,
     plan: ScenePresentationPlan,
+    render?: FilterRenderContext,
   ): void {
     if (this.disposed) return;
     const visualTrackOrder = [...plan.tracks]
@@ -199,6 +206,7 @@ export class RenderGroupOrchestrator {
       visualTrackOrder,
       plan.adjustmentForest,
       plan.transitionColorLayers ?? [],
+      render,
     );
   }
 
@@ -207,6 +215,7 @@ export class RenderGroupOrchestrator {
     visualTrackOrder: readonly string[],
     forest: readonly DerivedRenderGroup[],
     transitionColorLayers: readonly TransitionColorLayerCommand[],
+    render?: FilterRenderContext,
   ): void {
     const visualIndexByTrackId = new Map<string, number>();
     visualTrackOrder.forEach((id, index) => {
@@ -264,6 +273,11 @@ export class RenderGroupOrchestrator {
     //    containers that exist in the cache but aren't active this tick.
     for (const [groupId, container] of this.groupContainers) {
       if (activeGroupIds.has(groupId)) continue;
+      // An inactive adjustment branch receives no intermediate samples. Drop
+      // retained filter state now so reactivation cannot continue stale
+      // history from its previous coverage window; warm-up will rebuild it
+      // when a random-access render crosses the active window again.
+      releaseTransformationFilters(container);
       if (container.parent) {
         if (container.children.length > 0) {
           container.removeChildren();
@@ -374,6 +388,7 @@ export class RenderGroupOrchestrator {
         entry.group,
         this.logicalDimensions,
         currentTick,
+        render,
       );
     }
 

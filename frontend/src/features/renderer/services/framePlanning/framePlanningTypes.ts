@@ -5,6 +5,7 @@ import type {
   TimelineClip,
 } from "../../../../types/TimelineTypes";
 import type { DerivedRenderGroup } from "../../utils/deriveAdjustmentGroups";
+import type { FilterRenderContext } from "../../../transformations/catalogue/types";
 import type { SourceFrameSyncRef } from "../../utils/sourceFrameSync";
 
 export type FrameJobId = string;
@@ -113,8 +114,8 @@ export interface ScenePresentationPlan {
 }
 
 export type FrameExecutionPolicy =
-  | { mode: "export"; signal?: AbortSignal }
-  | { mode: "live"; epoch: number };
+  | { mode: "export"; signal?: AbortSignal; render?: FilterRenderContext }
+  | { mode: "live"; epoch: number; render?: FilterRenderContext };
 
 export interface FrameResourceLease<T> {
   readonly key: FrameWorkKey;

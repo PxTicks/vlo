@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
-import type { CompositeContent } from "../../../../types/TimelineTypes";
+import type {
+  CompositeContent,
+  TimelineSelection,
+} from "../../../../types/TimelineTypes";
 
 const mocks = vi.hoisted(() => ({
   renderSelectionToVideoFile: vi.fn(),
   getProjectDimensions: vi.fn(() => ({ width: 1919, height: 1079 })),
-  compositeContentToSelection: vi.fn(() => ({
+  compositeContentToSelection: vi.fn<() => TimelineSelection>(() => ({
     start: 0,
-    duration: 100,
+    end: 100,
     clips: [],
   })),
   hashCompositeContent: vi.fn(() => "content-hash"),
@@ -79,6 +82,7 @@ describe("bakeComposite", () => {
   it("renders project-sized content and registers a private composite asset", async () => {
     const controller = new AbortController();
     const onProgress = vi.fn();
+    const onBeforeEncodeFrame = vi.fn();
     const sourceContent = content();
 
     const result = await bakeComposite(sourceContent, {
@@ -87,10 +91,11 @@ describe("bakeComposite", () => {
       compositeAssetId: "composite-1",
       compositeClipId: "clip-1",
       allowDuplicateHash: false,
+      onBeforeEncodeFrame,
     });
 
     expect(mocks.renderSelectionToVideoFile).toHaveBeenCalledWith(
-      expect.objectContaining({ start: 0, duration: 100 }),
+      expect.objectContaining({ start: 0, end: 100 }),
       {
         renderInputs: {
           exportConfig: {
@@ -111,6 +116,7 @@ describe("bakeComposite", () => {
         signal: controller.signal,
         onProgress,
         filenamePrefix: "composite",
+        onBeforeEncodeFrame,
       },
     );
     expect(mocks.addLocalAsset).toHaveBeenCalledWith(
@@ -159,6 +165,29 @@ describe("bakeComposite", () => {
       }),
       undefined,
       { allowDuplicateHash: true },
+    );
+  });
+
+  it("renders every playback frame without overwriting authored selection metadata", async () => {
+    const authoredSelection = {
+      start: 0,
+      end: 96000,
+      clips: [],
+      frameStep: 4,
+    };
+    mocks.compositeContentToSelection.mockReturnValueOnce(authoredSelection);
+
+    await bakeComposite(content({ frameStep: 4 }));
+
+    expect(mocks.renderSelectionToVideoFile).toHaveBeenCalledWith(
+      { ...authoredSelection, frameStep: 1 },
+      expect.anything(),
+    );
+    expect(mocks.addLocalAsset).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.objectContaining({ timelineSelection: authoredSelection }),
+      undefined,
+      expect.anything(),
     );
   });
 

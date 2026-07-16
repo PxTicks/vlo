@@ -333,6 +333,22 @@ export interface RenderOptions {
   outputs?: OutputVideoDefinition[];
   includeTimelineMasks?: boolean;
   signal?: AbortSignal;
+  /**
+   * Optional headed parity/testing seam. Called from the final project
+   * composite after scene rendering and before output transforms/encoding.
+   * The pixels are copied, so callers may retain them after the next frame.
+   */
+  onBeforeEncodeFrame?: (
+    frame: RenderedFramePixelCapture,
+  ) => void | Promise<void>;
+}
+
+export interface RenderedFramePixelCapture {
+  frameIndex: number;
+  presentationTick: number;
+  width: number;
+  height: number;
+  pixels: Uint8ClampedArray;
 }
 
 export interface RenderStillOptions {
@@ -749,6 +765,19 @@ export class ExportRenderer {
           await renderTimelineFrame(warmup.presentationTimeTicks, warmup);
         }
         await renderTimelineFrame(currentTime, temporalPlan.target);
+
+        if (options.onBeforeEncodeFrame) {
+          const extracted = this.app.renderer.extract.pixels({
+            target: frameTexture,
+          });
+          await options.onBeforeEncodeFrame({
+            frameIndex: i,
+            presentationTick: currentTime,
+            width: extracted.width,
+            height: extracted.height,
+            pixels: new Uint8ClampedArray(extracted.pixels),
+          });
+        }
 
         // Encode one or more outputs by applying per-output transform stacks.
         await outputEncoder.addTextureFrame(

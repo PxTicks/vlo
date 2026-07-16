@@ -28,3 +28,21 @@ export {
   createCompositeTimelineClip,
   createCompositeTimelineClipFromAsset,
 } from "./utils/createCompositeClip";
+export {
+  COMPOSITE_FRAME_INTERVAL,
+  COMPOSITE_RENDER_ALPHA_MODE,
+  COMPOSITE_RENDER_CONTRACT_VERSION,
+  COMPOSITE_RENDER_FRAME_STEP,
+  collectCompositeDependencyAssetIds,
+  createCompositeBakeKey,
+  createCompositeDependencyRevision,
+  createCompositeFrameSchedule,
+  resolveCompositeFrameSample,
+  resolveCompositeRenderFps,
+  serializeCompositeBakeKey,
+  type CompositeBakeKey,
+  type CompositeFrameSample,
+  type CompositeFrameSchedule,
+  type CompositeRenderDimensions,
+  type CreateCompositeBakeKeyOptions,
+} from "./utils/compositeRenderContract";

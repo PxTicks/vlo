@@ -156,6 +156,15 @@ function projectClipForHash(clip: TimelineClip): unknown {
       ? { compositeId: clip.compositeId }
       : {}),
     ...("textData" in clip ? { textData: clip.textData } : {}),
+    ...(clip.type === "extension"
+      ? { extensionPayload: clip.extensionPayload }
+      : {}),
+    ...(clip.type === "adjustment"
+      ? {
+          depth: clip.depth,
+          retimingMode: clip.retimingMode ?? "static",
+        }
+      : {}),
   };
 }
 

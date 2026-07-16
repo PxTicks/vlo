@@ -6,6 +6,7 @@ import {
   type ExportConfig,
   type ExportRenderHealth,
   type ProjectData,
+  type RenderedFramePixelCapture,
 } from "./ExportRenderer";
 import { buildProjectRenderInputs } from "./projectFrameCapture";
 
@@ -39,6 +40,10 @@ export interface RenderSelectionToVideoFileOptions {
    * prep) can inspect it and throw.
    */
   onRenderHealth?: (renderHealth: ExportRenderHealth | undefined) => void;
+  /** Captures project-composite pixels immediately before video encoding. */
+  onBeforeEncodeFrame?: (
+    frame: RenderedFramePixelCapture,
+  ) => void | Promise<void>;
 }
 
 /**
@@ -78,6 +83,9 @@ export async function renderSelectionToVideoFile(
       format: "mp4",
       includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,
+      ...(options.onBeforeEncodeFrame
+        ? { onBeforeEncodeFrame: options.onBeforeEncodeFrame }
+        : {}),
     },
   );
 

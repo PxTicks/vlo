@@ -16,6 +16,7 @@ export type {
   ExportRenderHealth,
   ProjectData,
   RenderOptions,
+  RenderedFramePixelCapture,
   RenderStillOptions,
   RenderResult,
 } from "./services/ExportRenderer";

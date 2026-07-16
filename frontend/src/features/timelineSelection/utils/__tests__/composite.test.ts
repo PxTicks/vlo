@@ -211,6 +211,70 @@ describe("composite adapters", () => {
     );
   });
 
+  it("includes adjustment reach and extension payload in the content hash", () => {
+    const adjustment: AdjustmentTimelineClip = {
+      id: "adjustment",
+      type: "adjustment",
+      name: "Adjustment",
+      trackId: "adjustment-track",
+      start: 0,
+      timelineDuration: 1000,
+      sourceDuration: 1000,
+      croppedSourceDuration: 1000,
+      transformedDuration: 1000,
+      transformedOffset: 0,
+      offset: 0,
+      transformations: [],
+      depth: 1,
+    };
+    const extension = {
+      id: "extension",
+      type: "extension" as const,
+      name: "Extension",
+      trackId: "track-1",
+      start: 0,
+      timelineDuration: 1000,
+      sourceDuration: null,
+      croppedSourceDuration: 1000,
+      transformedDuration: 1000,
+      transformedOffset: 0,
+      offset: 0,
+      transformations: [],
+      extensionPayload: {
+        extensionId: "example.shapes",
+        typeId: "star",
+        schemaVersion: 1,
+        data: { points: 5 },
+      },
+    };
+    const base = {
+      clips: [adjustment, extension],
+      durationTicks: 1000,
+    };
+
+    expect(
+      hashCompositeContent({
+        ...base,
+        clips: [{ ...adjustment, depth: 2 }, extension],
+      }),
+    ).not.toBe(hashCompositeContent(base));
+    expect(
+      hashCompositeContent({
+        ...base,
+        clips: [
+          adjustment,
+          {
+            ...extension,
+            extensionPayload: {
+              ...extension.extensionPayload,
+              data: { points: 8 },
+            },
+          },
+        ],
+      }),
+    ).not.toBe(hashCompositeContent(base));
+  });
+
   it("re-namespaces content track ids so they never collide with the parent timeline", () => {
     const parentTrackId = "track_parent";
     const content = selectionToCompositeContent(

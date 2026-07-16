@@ -349,6 +349,61 @@ describe("ExportRenderer", () => {
     renderer.dispose();
   });
 
+  it("captures copied project-composite pixels before encoding", async () => {
+    const config = {
+      logicalWidth: 4,
+      logicalHeight: 2,
+      outputWidth: 4,
+      outputHeight: 2,
+    };
+    const projectData: ProjectData = {
+      tracks: [],
+      clips: [],
+      assets: [],
+      duration: 0,
+      fps: 30,
+    };
+    const renderer = await ExportRenderer.create(config);
+    const testRenderer = renderer as unknown as TestExportRenderer;
+    const extractedPixels = new Uint8ClampedArray(4 * 2 * 4);
+    extractedPixels[0] = 17;
+    (
+      testRenderer.app.renderer as unknown as {
+        extract: {
+          pixels: Mock;
+        };
+      }
+    ).extract = {
+      pixels: vi.fn(() => ({
+        width: 4,
+        height: 2,
+        pixels: extractedPixels,
+      })),
+    };
+    const captures: Array<{
+      frameIndex: number;
+      presentationTick: number;
+      pixels: Uint8ClampedArray;
+    }> = [];
+
+    await renderer.render(projectData, config, () => {}, {
+      onBeforeEncodeFrame: (capture) => {
+        captures.push(capture);
+      },
+    });
+    extractedPixels[0] = 99;
+
+    expect(captures).toHaveLength(1);
+    expect(captures[0]).toMatchObject({
+      frameIndex: 0,
+      presentationTick: 0,
+      width: 4,
+      height: 2,
+    });
+    expect(captures[0].pixels[0]).toBe(17);
+    renderer.dispose();
+  });
+
   it("decodes duplicate asset clips once per source frame", async () => {
     const config = {
       logicalWidth: 1920,

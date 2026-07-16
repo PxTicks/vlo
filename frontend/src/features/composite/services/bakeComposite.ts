@@ -7,12 +7,14 @@ import type { CompositeContent } from "../../../types/TimelineTypes";
 import type {
   ExportConfig,
   ProjectData,
+  RenderedFramePixelCapture,
   SelectionRenderInputs,
 } from "../../renderer";
 import {
   compositeContentToSelection,
   hashCompositeContent,
 } from "../../timelineSelection";
+import { COMPOSITE_RENDER_FRAME_STEP } from "../utils/compositeRenderContract";
 import { useProjectStore } from "../../project/useProjectStore";
 import { getAssets, addLocalAsset } from "../../userAssets";
 import { getTimelineTracks } from "../../timeline/api";
@@ -23,6 +25,10 @@ export interface BakeCompositeOptions {
   compositeAssetId?: string;
   compositeClipId?: string;
   allowDuplicateHash?: boolean;
+  /** Phase-0 parity seam: captures the project composite before encoding. */
+  onBeforeEncodeFrame?: (
+    frame: RenderedFramePixelCapture,
+  ) => void | Promise<void>;
 }
 
 export interface BakedComposite {
@@ -98,6 +104,13 @@ export async function bakeComposite(
   options: BakeCompositeOptions = {},
 ): Promise<BakedComposite> {
   const selection = compositeContentToSelection(content);
+  // frameStep is workflow sampling guidance, not a playback-cache cadence.
+  // Composite bakes contain every frame at the resolved FPS so direct and
+  // baked playback share the same frame-edge contract.
+  const renderSelection = {
+    ...selection,
+    frameStep: COMPOSITE_RENDER_FRAME_STEP,
+  };
   const contentHash = hashCompositeContent(content);
 
   // Dynamic import keeps `composite` off the static renderer import graph.
@@ -108,11 +121,14 @@ export async function bakeComposite(
       import("../../renderer/utils/mediaTime"),
     ]);
 
-  const file = await renderSelectionToVideoFile(selection, {
+  const file = await renderSelectionToVideoFile(renderSelection, {
     renderInputs: buildCompositeRenderInputs(content, getProjectDimensions),
     signal: options.signal,
     onProgress: options.onProgress,
     filenamePrefix: "composite",
+    ...(options.onBeforeEncodeFrame
+      ? { onBeforeEncodeFrame: options.onBeforeEncodeFrame }
+      : {}),
   });
 
   const asset = await addLocalAsset(

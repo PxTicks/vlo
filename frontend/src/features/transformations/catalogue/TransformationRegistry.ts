@@ -57,6 +57,7 @@ import { maskGrowDefinition } from "./mask/grow";
 import { filterApplicator } from "./filterFactory";
 import { colorMatrixDefinition } from "./filters/colorMatrix";
 import { extensionTransformationRegistry } from "../extensions/ExtensionTransformationRegistry";
+import { hydrateTransformationParameters } from "../utils/hydrateTransformationParameters";
 
 // =============================================================================
 // REGISTRY
@@ -398,12 +399,21 @@ export function dispatchTransform(
   const entry = getEntryForTransform(transform);
 
   if (entry && entry.handler) {
+    const parameters = hydrateTransformationParameters(
+      entry,
+      transform.parameters,
+      transform.type,
+    );
+    const hydratedTransform =
+      parameters === transform.parameters
+        ? transform
+        : ({ ...transform, parameters } as ClipTransform);
     // 2. Execute the handler defined in the Registry entry
     // The handler inside 'layoutDefinition' must be capable of handling
     // position/scale/rotation types (see Step 4 below).
     if (
       entry.extension &&
-      !entry.extension.validateParameters(transform.parameters)
+      !entry.extension.validateParameters(parameters)
     ) {
       entry.extension.reportFailureOnce(
         `invalid-parameters:${transform.id}`,
@@ -414,7 +424,7 @@ export function dispatchTransform(
       return;
     }
     try {
-      entry.handler(state, transform, context);
+      entry.handler(state, hydratedTransform, context);
     } catch (error) {
       if (entry.extension) {
         entry.extension.reportFailureOnce(

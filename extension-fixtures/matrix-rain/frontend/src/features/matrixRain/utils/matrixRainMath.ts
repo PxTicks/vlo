@@ -9,6 +9,12 @@
  * effect stable under repeated renders and identical across preview and export.
  */
 
+import type {
+  MatrixAccumulationMode,
+  MatrixMotionMode,
+  MatrixSignalMode,
+} from "../types";
+
 export const GLYPH_COUNT = 16;
 export const GLYPH_SEGMENT_COUNT = 16;
 
@@ -306,20 +312,150 @@ export interface RainState {
   readonly a: number;
 }
 
+// --- Phase 4: edge- and motion-aware source signal -------------------------
+
+export interface Rgba {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+  readonly a: number;
+}
+
+export interface SignalWeights {
+  readonly lumaWeight: number;
+  readonly edgeWeight: number;
+  readonly edgeGain: number;
+  readonly alphaEdgeWeight: number;
+}
+
+/** Unpremultiplied Rec.709 luma of a sample (alpha-safe). */
+function sampleLuma(sample: Rgba): number {
+  const rgb =
+    sample.a > 0
+      ? { r: sample.r / sample.a, g: sample.g / sample.a, b: sample.b / sample.a }
+      : sample;
+  return luma(rgb.r, rgb.g, rgb.b);
+}
+
+/**
+ * Assemble the raw per-cell source signal from the selected mode. Edge modes use
+ * a four-neighbour (horizontal + vertical) gradient of luma and/or alpha, so
+ * fine line art and transparent silhouettes both register. Threshold/gain/gamma
+ * shaping is applied separately by {@link shapeSignal}.
+ */
+export function assembleSourceSignal(
+  mode: MatrixSignalMode,
+  center: Rgba,
+  left: Rgba,
+  right: Rgba,
+  up: Rgba,
+  down: Rgba,
+  weights: SignalWeights,
+): number {
+  const lumaC = sampleLuma(center);
+  const colorEdge =
+    (Math.abs(sampleLuma(left) - lumaC) +
+      Math.abs(sampleLuma(right) - lumaC) +
+      Math.abs(sampleLuma(up) - lumaC) +
+      Math.abs(sampleLuma(down) - lumaC)) *
+    weights.edgeGain;
+  const alphaEdge =
+    (Math.abs(left.a - center.a) +
+      Math.abs(right.a - center.a) +
+      Math.abs(up.a - center.a) +
+      Math.abs(down.a - center.a)) *
+    weights.edgeGain;
+
+  switch (mode) {
+    case "luma":
+      return lumaC;
+    case "inverseLuma":
+      return center.a * (1 - lumaC);
+    case "edge":
+      return colorEdge;
+    case "lumaEdge":
+      return weights.lumaWeight * lumaC + weights.edgeWeight * colorEdge;
+    case "alpha":
+      return center.a;
+    case "alphaEdge":
+      return (
+        weights.alphaEdgeWeight * alphaEdge + weights.edgeWeight * colorEdge
+      );
+  }
+}
+
+/** Apply soft threshold, then gamma, then gain to the assembled signal. */
+export function shapeSignal(
+  signal: number,
+  threshold: number,
+  gain: number,
+  gamma: number,
+): number {
+  const above =
+    Math.max(0, signal - threshold) / Math.max(1 - threshold, 1e-4);
+  return clamp01(Math.pow(clamp01(above), Math.max(gamma, 1e-3)) * gain);
+}
+
+/**
+ * Motion from the current vs previous source signal. `absolute` reacts to any
+ * change; `brightening` reacts only to increases. Thresholded and gained into
+ * [0, 1].
+ */
+export function computeMotion(
+  currentSignal: number,
+  previousSignal: number,
+  mode: MatrixMotionMode,
+  threshold: number,
+  gain: number,
+): number {
+  const delta = currentSignal - previousSignal;
+  const raw = mode === "brightening" ? Math.max(delta, 0) : Math.abs(delta);
+  return clamp01(Math.max(0, raw - threshold) * gain);
+}
+
+/** Combine the decayed trail with new injection per the accumulation mode. */
+export function accumulate(
+  mode: MatrixAccumulationMode,
+  decayed: number,
+  injection: number,
+): number {
+  const a = clamp01(decayed);
+  const b = clamp01(injection);
+  switch (mode) {
+    case "max":
+      return Math.max(a, b);
+    case "add":
+      return clamp01(a + b);
+    case "softAdd":
+      return softAdd(a, b);
+  }
+}
+
 export interface FeedbackParameters {
   readonly trailHalfLife: number;
   readonly baseInjection: number;
   readonly sourceInfluence: number;
+  // Phase 4 motion/accumulation. Optional so Phase 3 callers stay valid: the
+  // defaults (no motion, soft-add) reproduce the pure luma-feedback behaviour.
+  readonly motionInfluence?: number;
+  readonly motionMode?: MatrixMotionMode;
+  readonly motionThreshold?: number;
+  readonly motionGain?: number;
+  readonly motionImmediateAmount?: number;
+  readonly injectionStrength?: number;
+  readonly accumulationMode?: MatrixAccumulationMode;
 }
 
 export interface RainStateUpdateInput {
   /** Previous rain (R) sampled at the advected (upstream) coordinate. */
   readonly advectedRain: number;
-  /** Current source signal (luma) at this cell. */
+  /** Current (already shaped) source signal at this cell. */
   readonly currentSignal: number;
-  /** Phase-2 procedural trail at this cell; gates static injection. */
+  /** Previous source signal (prev state B) at the SAME cell, for motion. */
+  readonly previousSignal?: number;
+  /** Procedural trail at this cell; gates static injection. */
   readonly proceduralTrail: number;
-  /** Phase-2 procedural head at this cell. */
+  /** Procedural head at this cell. */
   readonly proceduralHead: number;
   readonly deltaSeconds: number;
   readonly params: FeedbackParameters;
@@ -327,39 +463,62 @@ export interface RainStateUpdateInput {
 
 /**
  * One feedback step for a cell. Static source injection is gated by the
- * procedural trail so a still silhouette cannot saturate permanently, and it is
- * further gated to zero on a zero-delta sample so repeated/paused renders never
- * accumulate. The current signal is always written to B, so a newly visible or
- * static feature stays legible through the direct-shape term even before the
- * rain history develops.
+ * procedural trail so a still silhouette cannot saturate permanently; motion
+ * injection can bypass that gate by `motionImmediateAmount`, creating new bright
+ * activity where the source changes. Injection is gated to zero on a zero-delta
+ * sample so repeated/paused renders never accumulate. The current signal is
+ * always written to B (direct-shape legibility) and motion to A (direct-motion).
  */
 export function updateRainState(input: RainStateUpdateInput): RainState {
   const { advectedRain, currentSignal, proceduralTrail, proceduralHead } = input;
+  const p = input.params;
   const dt = Math.max(input.deltaSeconds, 0);
-  const decayed = advectedRain * retention(dt, input.params.trailHalfLife);
   const injectionGate = dt > 0 ? 1 : 0;
+
+  const previousSignal = input.previousSignal ?? currentSignal;
+  const motion = computeMotion(
+    currentSignal,
+    previousSignal,
+    p.motionMode ?? "absolute",
+    p.motionThreshold ?? 0,
+    p.motionGain ?? 0,
+  );
+
+  const trailGate = proceduralTrail;
+  // Motion partially (or fully) bypasses the procedural gate.
+  const immediate = p.motionImmediateAmount ?? 0;
+  const motionGate = trailGate + (1 - trailGate) * immediate;
+  const sourceInject = p.sourceInfluence * currentSignal * trailGate;
+  const motionInject = (p.motionInfluence ?? 0) * motion * motionGate;
   const injection = clamp01(
-    (input.params.baseInjection +
-      input.params.sourceInfluence * currentSignal * proceduralTrail) *
+    (p.baseInjection + sourceInject + motionInject) *
+      (p.injectionStrength ?? 1) *
       injectionGate,
   );
+
+  const decayed = advectedRain * retention(dt, p.trailHalfLife);
   return {
-    r: softAdd(decayed, injection),
+    r: accumulate(p.accumulationMode ?? "softAdd", decayed, injection),
     g: clamp01(proceduralHead),
     b: clamp01(currentSignal),
-    a: 0,
+    a: clamp01(motion),
   };
 }
 
 /**
- * Final glyph body brightness from the state: accumulated rain plus a direct
- * current-shape contribution, so a source shape is recognizable immediately.
- * (Phase 4 adds the motion term `state.a * directMotionStrength`.)
+ * Final glyph body brightness from the state: accumulated rain, plus the direct
+ * current-shape term (B), plus the direct motion term (A), so a newly visible
+ * or moving source is recognizable immediately, before rain history develops.
  */
 export function rainBodyBrightness(
   state: RainState,
   rainStrength: number,
   directShapeStrength: number,
+  directMotionStrength = 0,
 ): number {
-  return state.r * rainStrength + state.b * directShapeStrength;
+  return (
+    state.r * rainStrength +
+    state.b * directShapeStrength +
+    state.a * directMotionStrength
+  );
 }

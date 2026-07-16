@@ -14,9 +14,12 @@ import {
 } from "./MatrixRainStateFilter";
 import { DEFAULT_MATRIX_RAIN_PARAMETERS, MATRIX_RAIN_RENDERING } from "./constants";
 import {
+  accumulationModeIndex,
   debugModeIndex,
+  motionModeIndex,
   outputModeIndex,
   resolveMatrixRainParameters,
+  signalModeIndex,
 } from "./utils/parameterValidation";
 import { colorToVec3 } from "./utils/matrixRainMath";
 import {
@@ -53,6 +56,15 @@ interface GlyphUniformValues {
   uRainStrength: number;
   uHeadIntensity: number;
   uDirectShapeStrength: number;
+  uDirectMotionStrength: number;
+  uSourceHeadInfluence: number;
+  uMotionHeadInfluence: number;
+  uBaseInjection: number;
+  uSourceInfluence: number;
+  uMotionInfluence: number;
+  uMotionImmediateAmount: number;
+  uInjectionStrength: number;
+  uInjectionGate: number;
   uDitherMagnitude: number;
   uOutputMode: number;
   uDebugMode: number;
@@ -124,9 +136,24 @@ function stateParameterSignature(sample: PendingSample): string {
     p.trailShape,
     p.pulseDensity,
     p.headWidth,
+    p.signalMode,
+    p.lumaWeight,
+    p.edgeWeight,
+    p.edgeGain,
+    p.alphaEdgeWeight,
+    p.signalThreshold,
+    p.signalGain,
+    p.signalGamma,
     p.trailHalfLife,
     p.baseInjection,
     p.sourceInfluence,
+    p.motionInfluence,
+    p.motionMode,
+    p.motionThreshold,
+    p.motionGain,
+    p.motionImmediateAmount,
+    p.injectionStrength,
+    p.accumulationMode,
   ].join("|");
 }
 
@@ -159,6 +186,15 @@ export function createMatrixRainFilter(
     uRainStrength: scalar(d.rainStrength),
     uHeadIntensity: scalar(d.headIntensity),
     uDirectShapeStrength: scalar(d.directShapeStrength),
+    uDirectMotionStrength: scalar(d.directMotionStrength),
+    uSourceHeadInfluence: scalar(d.sourceHeadInfluence),
+    uMotionHeadInfluence: scalar(d.motionHeadInfluence),
+    uBaseInjection: scalar(d.baseInjection),
+    uSourceInfluence: scalar(d.sourceInfluence),
+    uMotionInfluence: scalar(d.motionInfluence),
+    uMotionImmediateAmount: scalar(d.motionImmediateAmount),
+    uInjectionStrength: scalar(d.injectionStrength),
+    uInjectionGate: scalar(0),
     uDitherMagnitude: scalar(d.ditherMagnitude),
     uOutputMode: scalar(outputModeIndex(d.outputMode)),
     uDebugMode: scalar(debugModeIndex(d.debugMode)),
@@ -350,9 +386,24 @@ export function createMatrixRainFilter(
         su.uTrailShape = sample.params.trailShape;
         su.uPulseDensity = sample.params.pulseDensity;
         su.uHeadWidth = sample.params.headWidth;
+        su.uSignalMode = signalModeIndex(sample.params.signalMode);
+        su.uLumaWeight = sample.params.lumaWeight;
+        su.uEdgeWeight = sample.params.edgeWeight;
+        su.uEdgeGain = sample.params.edgeGain;
+        su.uAlphaEdgeWeight = sample.params.alphaEdgeWeight;
+        su.uSignalThreshold = sample.params.signalThreshold;
+        su.uSignalGain = sample.params.signalGain;
+        su.uSignalGamma = sample.params.signalGamma;
         su.uTrailHalfLife = sample.params.trailHalfLife;
         su.uBaseInjection = sample.params.baseInjection;
         su.uSourceInfluence = sample.params.sourceInfluence;
+        su.uMotionInfluence = sample.params.motionInfluence;
+        su.uMotionMode = motionModeIndex(sample.params.motionMode);
+        su.uMotionThreshold = sample.params.motionThreshold;
+        su.uMotionGain = sample.params.motionGain;
+        su.uMotionImmediateAmount = sample.params.motionImmediateAmount;
+        su.uInjectionStrength = sample.params.injectionStrength;
+        su.uAccumulationMode = accumulationModeIndex(sample.params.accumulationMode);
         const statePassReset = reset || (recompute && lastAdvanceWasReset);
         su.uReset = statePassReset ? 1 : 0;
         su.uContentSize[0] = contentWidth;
@@ -375,6 +426,7 @@ export function createMatrixRainFilter(
         lastInputSource = input.source;
         lastAdvanceDeltaSeconds = deltaSeconds;
         lastAdvanceWasReset = statePassReset;
+        glyphUniforms.uInjectionGate = deltaSeconds > 0 ? 1 : 0;
       }
 
       glyphFilter.resources.uState = textures[currentIndex]!.source;
@@ -412,6 +464,14 @@ export function createMatrixRainFilter(
       glyphUniforms.uRainStrength = resolved.rainStrength;
       glyphUniforms.uHeadIntensity = resolved.headIntensity;
       glyphUniforms.uDirectShapeStrength = resolved.directShapeStrength;
+      glyphUniforms.uDirectMotionStrength = resolved.directMotionStrength;
+      glyphUniforms.uSourceHeadInfluence = resolved.sourceHeadInfluence;
+      glyphUniforms.uMotionHeadInfluence = resolved.motionHeadInfluence;
+      glyphUniforms.uBaseInjection = resolved.baseInjection;
+      glyphUniforms.uSourceInfluence = resolved.sourceInfluence;
+      glyphUniforms.uMotionInfluence = resolved.motionInfluence;
+      glyphUniforms.uMotionImmediateAmount = resolved.motionImmediateAmount;
+      glyphUniforms.uInjectionStrength = resolved.injectionStrength;
       glyphUniforms.uDitherMagnitude = resolved.ditherMagnitude;
       glyphUniforms.uOutputMode = outputModeIndex(resolved.outputMode);
       glyphUniforms.uDebugMode = debugModeIndex(resolved.debugMode);

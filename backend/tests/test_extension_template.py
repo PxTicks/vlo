@@ -389,6 +389,17 @@ def test_matrix_rain_fixture_activates_with_matching_gl_and_wgsl_programs(
         "  throw new Error('state struct not extracted');"
         "if (!st.groups.some((g) => g.group === 1 && g.binding === 1"
         "    && g.name === 'uPrevState')) throw new Error('uPrevState binding missing');"
+        # The JS uniform-group key order must equal the WGSL struct member order,
+        # or Pixi's UBO byte layout and the WGSL struct disagree on WebGPU.
+        "const checkOrder = (opt, groupName, structName, sg) => {"
+        "  const jsOrder = Object.keys(opt.resources[groupName]);"
+        "  const struct = sg.structs.find((s) => s.name === structName);"
+        "  const wgslOrder = Object.keys(struct.members);"
+        "  if (JSON.stringify(jsOrder) !== JSON.stringify(wgslOrder))"
+        "    throw new Error(structName + ' order mismatch: js=' + jsOrder"
+        "      + ' wgsl=' + wgslOrder); };"
+        "checkOrder(options[0], 'matrixRainUniforms', 'MatrixRainUniforms', glyph);"
+        "checkOrder(options[1], 'stateUniforms', 'StateUniforms', st);"
         "const u = instance.object.resources.matrixRainUniforms.uniforms;"
         "if (!u || !Object.hasOwn(u, 'uTimeSeconds'))"
         "  throw new Error('missing uniforms');"

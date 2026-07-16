@@ -1,14 +1,20 @@
 import {
+  ACCUMULATION_MODES,
   DEBUG_MODES,
   MATRIX_RAIN_COLOR_KEYS,
   MATRIX_RAIN_NUMERIC_BOUNDS,
   MATRIX_RAIN_SPLINE_KEYS,
+  MOTION_MODES,
   OUTPUT_MODES,
+  SIGNAL_MODES,
 } from "../constants";
 import type {
+  MatrixAccumulationMode,
   MatrixDebugMode,
+  MatrixMotionMode,
   MatrixOutputMode,
   MatrixRainParameters,
+  MatrixSignalMode,
 } from "../types";
 
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -19,6 +25,9 @@ const NUMERIC_KEYS = Object.keys(MATRIX_RAIN_NUMERIC_BOUNDS) as NumericKey[];
 const EXPECTED_KEYS: ReadonlySet<string> = new Set<string>([
   ...NUMERIC_KEYS,
   ...MATRIX_RAIN_COLOR_KEYS,
+  "signalMode",
+  "motionMode",
+  "accumulationMode",
   "outputMode",
   "debugMode",
 ]);
@@ -60,6 +69,21 @@ function isDebugMode(value: unknown): value is MatrixDebugMode {
   return typeof value === "string" && DEBUG_MODES.includes(value as MatrixDebugMode);
 }
 
+function isSignalMode(value: unknown): value is MatrixSignalMode {
+  return typeof value === "string" && SIGNAL_MODES.includes(value as MatrixSignalMode);
+}
+
+function isMotionMode(value: unknown): value is MatrixMotionMode {
+  return typeof value === "string" && MOTION_MODES.includes(value as MatrixMotionMode);
+}
+
+function isAccumulationMode(value: unknown): value is MatrixAccumulationMode {
+  return (
+    typeof value === "string" &&
+    ACCUMULATION_MODES.includes(value as MatrixAccumulationMode)
+  );
+}
+
 /**
  * Custom authored-parameter validator. It enforces the exact key set, numeric
  * bounds and integer fields, color formats, and enum membership, while
@@ -89,7 +113,13 @@ export function validateMatrixRainAuthoredParameters(
     if (!isColor(parameters[key])) return false;
   }
 
-  return isOutputMode(parameters.outputMode) && isDebugMode(parameters.debugMode);
+  return (
+    isSignalMode(parameters.signalMode) &&
+    isMotionMode(parameters.motionMode) &&
+    isAccumulationMode(parameters.accumulationMode) &&
+    isOutputMode(parameters.outputMode) &&
+    isDebugMode(parameters.debugMode)
+  );
 }
 
 /**
@@ -107,6 +137,9 @@ export function resolveMatrixRainParameters(
   for (const key of MATRIX_RAIN_COLOR_KEYS) {
     if (!isColor(parameters[key])) return null;
   }
+  if (!isSignalMode(parameters.signalMode)) return null;
+  if (!isMotionMode(parameters.motionMode)) return null;
+  if (!isAccumulationMode(parameters.accumulationMode)) return null;
   if (!isOutputMode(parameters.outputMode)) return null;
   if (!isDebugMode(parameters.debugMode)) return null;
 
@@ -120,12 +153,30 @@ export function resolveMatrixRainParameters(
     trailShape: parameters.trailShape as number,
     pulseDensity: parameters.pulseDensity as number,
     headWidth: parameters.headWidth as number,
+    signalMode: parameters.signalMode as MatrixSignalMode,
+    lumaWeight: parameters.lumaWeight as number,
+    edgeWeight: parameters.edgeWeight as number,
+    edgeGain: parameters.edgeGain as number,
+    alphaEdgeWeight: parameters.alphaEdgeWeight as number,
+    signalThreshold: parameters.signalThreshold as number,
+    signalGain: parameters.signalGain as number,
+    signalGamma: parameters.signalGamma as number,
     trailHalfLife: parameters.trailHalfLife as number,
     baseInjection: parameters.baseInjection as number,
     sourceInfluence: parameters.sourceInfluence as number,
+    motionInfluence: parameters.motionInfluence as number,
+    motionMode: parameters.motionMode as MatrixMotionMode,
+    motionThreshold: parameters.motionThreshold as number,
+    motionGain: parameters.motionGain as number,
+    motionImmediateAmount: parameters.motionImmediateAmount as number,
+    injectionStrength: parameters.injectionStrength as number,
+    accumulationMode: parameters.accumulationMode as MatrixAccumulationMode,
     directShapeStrength: parameters.directShapeStrength as number,
+    directMotionStrength: parameters.directMotionStrength as number,
     rainStrength: parameters.rainStrength as number,
     headIntensity: parameters.headIntensity as number,
+    sourceHeadInfluence: parameters.sourceHeadInfluence as number,
+    motionHeadInfluence: parameters.motionHeadInfluence as number,
     ditherMagnitude: parameters.ditherMagnitude as number,
     backgroundColor: parameters.backgroundColor as string,
     shadowColor: parameters.shadowColor as string,
@@ -143,4 +194,16 @@ export function outputModeIndex(mode: MatrixOutputMode): number {
 
 export function debugModeIndex(mode: MatrixDebugMode): number {
   return Math.max(0, DEBUG_MODES.indexOf(mode));
+}
+
+export function signalModeIndex(mode: MatrixSignalMode): number {
+  return Math.max(0, SIGNAL_MODES.indexOf(mode));
+}
+
+export function motionModeIndex(mode: MatrixMotionMode): number {
+  return Math.max(0, MOTION_MODES.indexOf(mode));
+}
+
+export function accumulationModeIndex(mode: MatrixAccumulationMode): number {
+  return Math.max(0, ACCUMULATION_MODES.indexOf(mode));
 }

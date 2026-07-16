@@ -72,12 +72,15 @@
 /frontend/src/features/transformations/extensionApi.ts extension-surface=adapter
 /frontend/src/features/transformations/extensions/** extension-surface=adapter
 /frontend/src/features/transformations/hooks/useSplinePopover.ts extension-surface=adapter
+/frontend/src/features/transformations/hooks/controller/commitComputation.ts extension-surface=adapter
 /frontend/src/features/transformations/types.ts extension-surface=adapter
 /frontend/src/features/transformations/utils/positionPath.ts extension-surface=adapter
 /frontend/src/features/transformations/utils/resolveScalar.ts extension-surface=adapter
 /frontend/src/features/transformations/utils/reverseSpline.ts extension-surface=adapter
 /frontend/src/features/transformations/utils/reverseTransformations.ts extension-surface=adapter
 /frontend/src/features/transformations/utils/timeCalculation.ts extension-surface=adapter
+/frontend/src/features/transformations/utils/hydrateTransformationParameters.ts extension-surface=adapter
+/frontend/src/features/transformations/utils/__tests__/hydrateTransformationParameters.test.ts extension-surface=adapter
 /frontend/src/features/timeline/utils/formatting.ts extension-surface=adapter
 /frontend/src/features/panelUI/customControlRegistry.ts extension-surface=adapter
 /frontend/src/features/panelUI/types.ts extension-surface=adapter

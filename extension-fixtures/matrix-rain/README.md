@@ -10,7 +10,7 @@ transformation.
 The full design and phase plan lives in
 [`docs/source-aware-matrix-rain-filter-extension-plan.md`](../../docs/source-aware-matrix-rain-filter-extension-plan.md).
 
-## What ships today (Phase 3: source-aware temporal feedback)
+## What ships today (Phase 4: edge- and motion-aware source injection)
 
 - One primary transformation registered through the ordinary `trusted-filter`
   lane. Its persisted identity is `example.matrix-rain/matrix-rain`.
@@ -33,22 +33,34 @@ The full design and phase plan lives in
   newly visible or static shape stays legible immediately through the direct
   current-shape term, before the rain history develops.
   - state lifecycle: the ping-pong textures reallocate on input resize and reset
-    on any grid-topology change (glyph size / spacing) or timeline discontinuity;
-  - `rainState` and `advectedPrevious` debug views (plus `cellGrid`,
-    `proceduralTrail`, `proceduralHead`).
+    on any grid-topology change (glyph size / spacing) or timeline discontinuity.
+- **Edge- and motion-aware source injection.** The state pass reads the source
+  through a selectable `signalMode` — `luma`, `inverseLuma`, `alpha`, `edge`,
+  `lumaEdge`, `alphaEdge` — with four-neighbour colour/alpha edge detection and
+  threshold/gain/gamma shaping, so opaque and transparent, bright and dark, and
+  fine-line-art silhouettes all register. It compares the shaped signal with the
+  previous signal at the same cell to derive **motion** (`absolute` or
+  `brightening`), which injects new bright activity — optionally bypassing the
+  procedural-trail gate via `motionImmediateAmount` — and is stored in the state
+  A channel. The glyph body then combines rain + direct-shape (B) + direct-motion
+  (A), and source/motion boost the pale head. Injection combines with the trail
+  via an overall `injectionStrength` and selectable `accumulationMode`
+  (`softAdd` / `max` / `add`).
+  - debug views: `currentSignal`, `motion`, `injection`, plus `rainState`,
+    `advectedPrevious`, `cellGrid`, `proceduralTrail`, `proceduralHead`.
 - **Matching GLSL and WGSL programs for both passes** so both the WebGL and
   WebGPU construction paths are covered. Every WGSL uniform struct order mirrors
-  its JS uniform order, which mirrors the CPU reference — all kept in lockstep.
+  its JS uniform order, which mirrors the CPU reference — all kept in lockstep
+  (a backend test asserts the JS/WGSL field orders are identical for both
+  filters).
 - The declared `rendering` metadata is `timeDependency: "history"` with
-  `maxHistorySeconds: 6` and `maxStepSeconds: 1/30`: the effect now genuinely
-  depends on earlier samples.
+  `maxHistorySeconds: 6` and `maxStepSeconds: 1/30`.
 - A custom authored-parameter validator (exact key set, numeric/integer/color
   fields, enum membership, preserved host spline objects) plus a fail-closed
   `update()` narrowing path.
 
-Later phases add edge- and motion-aware source injection, host warm-up
-scheduling for deterministic seek/export, and the source-composition output
-modes.
+Later phases add host warm-up scheduling for deterministic seek/export and the
+source-composition output modes.
 
 > Note: the GPU multi-pass orchestration (the `apply()` override, ping-pong
 > textures, and both fragment programs) is verified structurally here — CPU

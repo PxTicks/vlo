@@ -9,6 +9,11 @@ import {
   MATRIX_RAIN_STATE_WGSL_VERTEX_ENTRY,
 } from "./shaders/matrixRainStateWgsl";
 import { DEFAULT_MATRIX_RAIN_PARAMETERS } from "./constants";
+import {
+  accumulationModeIndex,
+  motionModeIndex,
+  signalModeIndex,
+} from "./utils/parameterValidation";
 
 /** Live uniform values of the state-update pass; mutate these each frame. */
 export interface StateUniformValues {
@@ -22,9 +27,24 @@ export interface StateUniformValues {
   uTrailShape: number;
   uPulseDensity: number;
   uHeadWidth: number;
+  uSignalMode: number;
+  uLumaWeight: number;
+  uEdgeWeight: number;
+  uEdgeGain: number;
+  uAlphaEdgeWeight: number;
+  uSignalThreshold: number;
+  uSignalGain: number;
+  uSignalGamma: number;
   uTrailHalfLife: number;
   uBaseInjection: number;
   uSourceInfluence: number;
+  uMotionInfluence: number;
+  uMotionMode: number;
+  uMotionThreshold: number;
+  uMotionGain: number;
+  uMotionImmediateAmount: number;
+  uInjectionStrength: number;
+  uAccumulationMode: number;
   uReset: number;
   uContentSize: Float32Array;
   uStateSize: Float32Array;
@@ -74,9 +94,24 @@ export function createMatrixRainStateFilter(
     uTrailShape: scalar(d.trailShape),
     uPulseDensity: scalar(d.pulseDensity),
     uHeadWidth: scalar(d.headWidth),
+    uSignalMode: scalar(signalModeIndex(d.signalMode)),
+    uLumaWeight: scalar(d.lumaWeight),
+    uEdgeWeight: scalar(d.edgeWeight),
+    uEdgeGain: scalar(d.edgeGain),
+    uAlphaEdgeWeight: scalar(d.alphaEdgeWeight),
+    uSignalThreshold: scalar(d.signalThreshold),
+    uSignalGain: scalar(d.signalGain),
+    uSignalGamma: scalar(d.signalGamma),
     uTrailHalfLife: scalar(d.trailHalfLife),
     uBaseInjection: scalar(d.baseInjection),
     uSourceInfluence: scalar(d.sourceInfluence),
+    uMotionInfluence: scalar(d.motionInfluence),
+    uMotionMode: scalar(motionModeIndex(d.motionMode)),
+    uMotionThreshold: scalar(d.motionThreshold),
+    uMotionGain: scalar(d.motionGain),
+    uMotionImmediateAmount: scalar(d.motionImmediateAmount),
+    uInjectionStrength: scalar(d.injectionStrength),
+    uAccumulationMode: scalar(accumulationModeIndex(d.accumulationMode)),
     uReset: scalar(1),
     uContentSize: { value: new Float32Array(2), type: "vec2<f32>" as const },
     uStateSize: { value: new Float32Array(2), type: "vec2<f32>" as const },

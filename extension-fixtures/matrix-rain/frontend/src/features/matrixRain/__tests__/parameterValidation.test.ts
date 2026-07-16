@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MATRIX_RAIN_PARAMETERS } from "../constants";
+import {
+  DEFAULT_MATRIX_RAIN_PARAMETERS,
+  MATRIX_RAIN_CONTROL_GROUPS,
+} from "../constants";
 import {
   debugModeIndex,
   outputModeIndex,
@@ -110,5 +113,25 @@ describe("enum indices", () => {
     expect(debugModeIndex("cellGrid")).toBe(1);
     expect(debugModeIndex("proceduralTrail")).toBe(2);
     expect(debugModeIndex("proceduralHead")).toBe(3);
+  });
+
+  it("exposes every Phase 4 debug mode through the authored select", () => {
+    const debugControl = MATRIX_RAIN_CONTROL_GROUPS
+      .find((group) => group.id === "debug")
+      ?.controls.find((control) => control.name === "debugMode");
+    if (!debugControl || debugControl.type !== "select") {
+      throw new Error("Expected the Matrix Rain debug select");
+    }
+    expect(debugControl.options.map((option) => option.value)).toEqual([
+      "none",
+      "cellGrid",
+      "proceduralTrail",
+      "proceduralHead",
+      "rainState",
+      "advectedPrevious",
+      "currentSignal",
+      "motion",
+      "injection",
+    ]);
   });
 });

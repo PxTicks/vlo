@@ -65,4 +65,20 @@ describe("Matrix Rain WebGL programs", () => {
     );
     expect(MATRIX_RAIN_WGSL).toContain("textureDimensions(uState)");
   });
+
+  it("keeps Phase 4 edge, transparency, and injection behavior aligned", () => {
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain("abs(unlum(sL) - lumaC)");
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain(
+      "rawSignal = sc.a * (1.0 - lumaC)",
+    );
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain("uInjectionStrength");
+    expect(MATRIX_RAIN_FRAGMENT).toContain("vec3(injection)");
+
+    expect(MATRIX_RAIN_STATE_WGSL).toContain("abs(unlum(sL) - lumaC)");
+    expect(MATRIX_RAIN_STATE_WGSL).toContain(
+      "rawSignal = sc.a * (1.0 - lumaC)",
+    );
+    expect(MATRIX_RAIN_STATE_WGSL).toContain("su.uInjectionStrength");
+    expect(MATRIX_RAIN_WGSL).toContain("vec3<f32>(injection)");
+  });
 });

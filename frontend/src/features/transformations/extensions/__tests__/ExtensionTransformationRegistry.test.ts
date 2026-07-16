@@ -751,6 +751,69 @@ describe("ExtensionTransformationRegistry", () => {
     );
   });
 
+  it("hydrates additive defaults for persisted extension transformations", () => {
+    const registration = extensionTransformationRegistry
+      .bind(createScope("example.additive-defaults"))
+      .register({
+        id: "offset-x",
+        apiVersion: 1,
+        kind: "trusted-transformation",
+        label: "Evolving X Offset",
+        groups: [
+          {
+            id: "offset",
+            title: "Offset",
+            controls: [
+              {
+                type: "number",
+                name: "amount",
+                label: "Amount",
+                defaultValue: 2,
+                min: -100,
+                max: 100,
+              },
+              {
+                type: "number",
+                name: "bias",
+                label: "Bias",
+                defaultValue: 5,
+                min: -100,
+                max: 100,
+              },
+            ],
+          },
+        ],
+        validateParameters: (parameters) =>
+          Object.keys(parameters).length === 2 &&
+          typeof parameters.amount === "number" &&
+          typeof parameters.bias === "number",
+        apply: ({ state, transform }) => {
+          state.x += Number(transform.parameters.amount);
+          state.x += Number(transform.parameters.bias);
+        },
+      });
+    disposers.push(() => registration.dispose());
+
+    const legacy = createAddTransform(
+      "example.additive-defaults/offset-x",
+    );
+    if (!legacy) throw new Error("Expected trusted transformation.");
+    delete legacy.parameters.bias;
+
+    const result = applyTransformStack(
+      [legacy],
+      {
+        container: { width: 100, height: 100 },
+        content: { width: 100, height: 100 },
+      },
+      0,
+      { notifyLiveParams: false },
+    );
+
+    expect(result.state.x).toBe(57);
+    expect(legacy.parameters).toEqual({ amount: 2 });
+  });
+
   it("rejects invalid metadata and releases IDs on disposal", () => {
     const registry = new ExtensionTransformationRegistry();
     const scope = createScope("example.owner");

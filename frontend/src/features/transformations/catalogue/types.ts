@@ -247,6 +247,14 @@ export interface TransformationDefinition {
   /** Defaults beyond or overriding those declared by native controls. */
   defaultParameters?: Readonly<Record<string, unknown>>;
 
+  /**
+   * Fill parameters absent from older persisted instances with current control
+   * defaults before validation and dispatch. Opt in explicitly: some native
+   * definitions historically assigned semantics to a missing value that differ
+   * from their current authoring default.
+   */
+  hydrateMissingParameters?: boolean;
+
   // --- Filter-specific properties (optional) ---
 
   /** For filter types: the unique filter identifier */

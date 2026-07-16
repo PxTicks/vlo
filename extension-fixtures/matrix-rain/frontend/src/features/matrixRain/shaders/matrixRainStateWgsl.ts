@@ -32,9 +32,24 @@ struct StateUniforms {
   uTrailShape: f32,
   uPulseDensity: f32,
   uHeadWidth: f32,
+  uSignalMode: f32,
+  uLumaWeight: f32,
+  uEdgeWeight: f32,
+  uEdgeGain: f32,
+  uAlphaEdgeWeight: f32,
+  uSignalThreshold: f32,
+  uSignalGain: f32,
+  uSignalGamma: f32,
   uTrailHalfLife: f32,
   uBaseInjection: f32,
   uSourceInfluence: f32,
+  uMotionInfluence: f32,
+  uMotionMode: f32,
+  uMotionThreshold: f32,
+  uMotionGain: f32,
+  uMotionImmediateAmount: f32,
+  uInjectionStrength: f32,
+  uAccumulationMode: f32,
   uReset: f32,
   uContentSize: vec2<f32>,
   uStateSize: vec2<f32>,
@@ -54,6 +69,16 @@ fn pcgHash(v: u32) -> u32 {
 }
 fn hash2(a: u32, b: u32) -> u32 { return pcgHash(a ^ pcgHash(b)); }
 fn unitFloat(h: u32) -> f32 { return f32(h & 0x00ffffffu) / 16777216.0; }
+
+fn lumaOf(rgb: vec3<f32>) -> f32 { return dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722)); }
+fn sampleSource(uv: vec2<f32>) -> vec4<f32> {
+  return textureSample(uTexture, uSampler, clamp(uv, gfu.uInputClamp.xy, gfu.uInputClamp.zw));
+}
+fn unlum(s: vec4<f32>) -> f32 {
+  var rgb = s.rgb;
+  if (s.a > 0.0) { rgb = s.rgb / s.a; }
+  return lumaOf(rgb);
+}
 
 fn filterVertexPosition(aPosition: vec2<f32>) -> vec4<f32> {
   var position = aPosition * gfu.uOutputTexture.xy;
@@ -114,19 +139,65 @@ fn mainFragment(
   let headEdge = max(su.uHeadWidth, 1e-4);
   let proceduralHead = 1.0 - smoothstep(0.0, headEdge, d / spacing);
 
+  // Current source signal: sample the cell centre plus four cell-scale
+  // neighbours and assemble per the selected signal mode.
+  let texelStep = (frameSize / contentSize) * gfu.uInputSize.zw;
   let sourcePixel = vec2<f32>(
     (cellIndex.x + 0.5) * size,
     (cellIndex.y + 0.5) * rowPitch,
   );
-  let sourceUv = sourcePixel * (frameSize / contentSize) * gfu.uInputSize.zw;
-  let src = textureSample(
-    uTexture,
-    uSampler,
-    clamp(sourceUv, gfu.uInputClamp.xy, gfu.uInputClamp.zw),
+  let sourceUv = sourcePixel * texelStep;
+  let offX = vec2<f32>(size, 0.0) * texelStep;
+  let offY = vec2<f32>(0.0, rowPitch) * texelStep;
+  let sc = sampleSource(sourceUv);
+  let sL = sampleSource(sourceUv - offX);
+  let sR = sampleSource(sourceUv + offX);
+  let sU = sampleSource(sourceUv - offY);
+  let sD = sampleSource(sourceUv + offY);
+  let lumaC = unlum(sc);
+  let colorEdge =
+    (abs(unlum(sL) - lumaC) + abs(unlum(sR) - lumaC)
+      + abs(unlum(sU) - lumaC) + abs(unlum(sD) - lumaC)) * su.uEdgeGain;
+  let alphaEdge =
+    (abs(sL.a - sc.a) + abs(sR.a - sc.a)
+      + abs(sU.a - sc.a) + abs(sD.a - sc.a)) * su.uEdgeGain;
+
+  let signalMode = i32(su.uSignalMode + 0.5);
+  var rawSignal = lumaC;
+  if (signalMode == 1) {
+    rawSignal = sc.a * (1.0 - lumaC);
+  } else if (signalMode == 2) {
+    rawSignal = colorEdge;
+  } else if (signalMode == 3) {
+    rawSignal = su.uLumaWeight * lumaC + su.uEdgeWeight * colorEdge;
+  } else if (signalMode == 4) {
+    rawSignal = sc.a;
+  } else if (signalMode == 5) {
+    rawSignal = su.uAlphaEdgeWeight * alphaEdge + su.uEdgeWeight * colorEdge;
+  }
+  let aboveThreshold =
+    max(0.0, rawSignal - su.uSignalThreshold) / max(1.0 - su.uSignalThreshold, 1e-4);
+  let currentSignal = clamp(
+    pow(clamp(aboveThreshold, 0.0, 1.0), max(su.uSignalGamma, 1e-3)) * su.uSignalGain,
+    0.0,
+    1.0
   );
-  var rgb = src.rgb;
-  if (src.a > 0.0) { rgb = src.rgb / src.a; }
-  let currentSignal = clamp(dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+
+  // Motion: compare with the previous signal at the SAME cell (prev state B).
+  let sameCellUv = vec2<f32>(
+    (cellIndex.x + 0.5) / stateSize.x,
+    (cellIndex.y + 0.5) / stateSize.y,
+  );
+  let previousSignal = mix(
+    textureSample(uPrevState, uPrevStateSampler, clamp(sameCellUv, vec2<f32>(0.0), vec2<f32>(1.0))).b,
+    currentSignal,
+    su.uReset
+  );
+  let motionMode = i32(su.uMotionMode + 0.5);
+  let deltaSignal = currentSignal - previousSignal;
+  var rawMotion = abs(deltaSignal);
+  if (motionMode == 1) { rawMotion = max(deltaSignal, 0.0); }
+  let motion = clamp(max(0.0, rawMotion - su.uMotionThreshold) * su.uMotionGain, 0.0, 1.0);
 
   let fallCells = su.uFallSpeed * max(su.uDeltaSeconds, 0.0);
   let previousRow = cellIndex.y - fallCells;
@@ -142,15 +213,29 @@ fn mainFragment(
 
   let retention = exp2(-max(su.uDeltaSeconds, 0.0) / max(su.uTrailHalfLife, 1e-4));
   let decayed = advectedRain * retention;
+  // Motion injection can bypass the procedural gate by motionImmediateAmount.
   let injectionGate = select(0.0, 1.0, su.uDeltaSeconds > 0.0);
+  let trailGate = proceduralTrail;
+  let motionGate = trailGate + (1.0 - trailGate) * su.uMotionImmediateAmount;
+  let sourceInject = su.uSourceInfluence * currentSignal * trailGate;
+  let motionInject = su.uMotionInfluence * motion * motionGate;
   let injection = clamp(
-    (su.uBaseInjection + su.uSourceInfluence * currentSignal * proceduralTrail)
-      * injectionGate,
+    (su.uBaseInjection + sourceInject + motionInject)
+      * su.uInjectionStrength * injectionGate,
     0.0,
     1.0
   );
-  let nextRain = 1.0 - (1.0 - clamp(decayed, 0.0, 1.0)) * (1.0 - injection);
 
-  return vec4<f32>(nextRain, clamp(proceduralHead, 0.0, 1.0), currentSignal, 0.0);
+  let dc = clamp(decayed, 0.0, 1.0);
+  let ic = clamp(injection, 0.0, 1.0);
+  let accumMode = i32(su.uAccumulationMode + 0.5);
+  var nextRain = 1.0 - (1.0 - dc) * (1.0 - ic);
+  if (accumMode == 1) {
+    nextRain = max(dc, ic);
+  } else if (accumMode == 2) {
+    nextRain = clamp(dc + ic, 0.0, 1.0);
+  }
+
+  return vec4<f32>(nextRain, clamp(proceduralHead, 0.0, 1.0), currentSignal, clamp(motion, 0.0, 1.0));
 }
 `;

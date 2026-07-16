@@ -1,13 +1,29 @@
 /**
- * Phase 3 resolved parameter surface: the stateless appearance plus the
- * low-resolution temporal-feedback controls. It adds a `feedback` group
- * (half-life decay, luma injection, and the direct current-shape term) on top
- * of the Phase 2 grid/motion/brightness/palette/composition controls. Later
- * phases widen this again with the edge/motion source-injection parameters.
+ * Phase 4 resolved parameter surface: the temporal-feedback appearance plus
+ * edge- and motion-aware source injection. It adds a `signal` group (how the
+ * source is read: luma / inverse-luma / alpha / edge combinations, then
+ * threshold/gain/gamma) and motion controls (compare the current signal with
+ * the previous one and inject new bright activity) on top of the Phase 3
+ * feedback controls.
  */
 
 /** Opaque black-background glyphs, or transparent premultiplied glyphs. */
 export type MatrixOutputMode = "replaceBlack" | "matrixOnly";
+
+/** How the per-cell source signal is derived from the input. */
+export type MatrixSignalMode =
+  | "luma"
+  | "inverseLuma"
+  | "edge"
+  | "lumaEdge"
+  | "alpha"
+  | "alphaEdge";
+
+/** How motion is measured from the current vs previous source signal. */
+export type MatrixMotionMode = "absolute" | "brightening";
+
+/** How new injection combines with the decayed trail. */
+export type MatrixAccumulationMode = "softAdd" | "max" | "add";
 
 /** Diagnostic views; `none` is the normal render. */
 export type MatrixDebugMode =
@@ -16,7 +32,10 @@ export type MatrixDebugMode =
   | "proceduralTrail"
   | "proceduralHead"
   | "rainState"
-  | "advectedPrevious";
+  | "advectedPrevious"
+  | "currentSignal"
+  | "motion"
+  | "injection";
 
 export interface MatrixRainParameters {
   // Grid
@@ -41,21 +60,59 @@ export interface MatrixRainParameters {
   /** Bright-head width as a fraction of the trail, 0.01..0.5. */
   readonly headWidth: number;
 
+  // Signal (Phase 4 source read)
+  /** How the per-cell source signal is derived. */
+  readonly signalMode: MatrixSignalMode;
+  /** Weight of the luma term in combined modes, 0..2. */
+  readonly lumaWeight: number;
+  /** Weight of the colour-edge term in combined modes, 0..2. */
+  readonly edgeWeight: number;
+  /** Edge gradient gain, 0..8. */
+  readonly edgeGain: number;
+  /** Weight of the alpha-edge term in alpha modes, 0..2. */
+  readonly alphaEdgeWeight: number;
+  /** Signal cutoff below which the source is ignored, 0..1. */
+  readonly signalThreshold: number;
+  /** Post-threshold signal gain, 0..5. */
+  readonly signalGain: number;
+  /** Post-threshold signal gamma, 0.1..4. */
+  readonly signalGamma: number;
+
   // Feedback (Phase 3 temporal state)
   /** Half-life of the rain trail's decay, in seconds. */
   readonly trailHalfLife: number;
   /** Constant rain injected every step, keeping columns alive, 0..1. */
   readonly baseInjection: number;
-  /** How strongly source luma injects into the rain, 0..2. */
+  /** How strongly the source signal injects into the rain, 0..2. */
   readonly sourceInfluence: number;
+  /** How strongly motion injects new bright activity, 0..2. */
+  readonly motionInfluence: number;
+  /** How motion is measured. */
+  readonly motionMode: MatrixMotionMode;
+  /** Motion cutoff below which change is ignored, 0..1. */
+  readonly motionThreshold: number;
+  /** Motion gain, 0..10. */
+  readonly motionGain: number;
+  /** How much motion injection bypasses the procedural-trail gate, 0..1. */
+  readonly motionImmediateAmount: number;
+  /** Overall strength applied to base, source, and motion injection, 0..2. */
+  readonly injectionStrength: number;
+  /** How the decayed trail and new injection combine. */
+  readonly accumulationMode: MatrixAccumulationMode;
   /** Weight of the immediate current-shape (source signal) term, 0..2. */
   readonly directShapeStrength: number;
+  /** Weight of the immediate motion term in the glyph body, 0..2. */
+  readonly directMotionStrength: number;
 
   // Brightness
   /** Overall body/trail brightness multiplier. */
   readonly rainStrength: number;
   /** Isolated pale-head brightness multiplier. */
   readonly headIntensity: number;
+  /** How strongly the source signal boosts the head, 0..2. */
+  readonly sourceHeadInfluence: number;
+  /** How strongly motion boosts the head, 0..2. */
+  readonly motionHeadInfluence: number;
   /** Low ordered dither magnitude to reduce banding, 0..0.05. */
   readonly ditherMagnitude: number;
 

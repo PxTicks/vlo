@@ -9,6 +9,7 @@ import {
   getEntryByType,
 } from "../../catalogue/TransformationRegistry";
 import type { LayoutGroup } from "../../catalogue/ui/UITypes";
+import type { TransformationDefinition } from "../../catalogue/types";
 import { calculateLinkedParameter } from "../../utils/aspectRatio";
 import { clipVisualToSourceTime } from "../../utils/clipTimeDomains";
 import { resolveScalar } from "../../utils/resolveScalar";
@@ -20,6 +21,7 @@ import {
   hasExplicitSplinePointAtTime,
 } from "../../utils/splineKeyframeUtils";
 import { createCommittedTransform } from "./transformFactory";
+import { hydrateTransformationParameters } from "../../utils/hydrateTransformationParameters";
 
 const SHARED_MASK_EDGE_SIBLING_TYPES: Record<string, string> = {
   mask_grow: "feather",
@@ -111,12 +113,14 @@ export function computeCommitMutation({
 }: CommitComputationInput): CommitComputationResult {
   // 1. Resolve configuration
   let groupConfig: LayoutGroup | undefined;
+  let definition: TransformationDefinition | undefined;
   const existingTransform = transformId
     ? transforms.find((transform) => transform.id === transformId)
     : transforms.find((transform) => transform.type === groupId);
 
   if (existingTransform) {
     const entry = getEntryForTransform(existingTransform);
+    definition = entry;
     if (entry) {
       const requestedGroup =
         entry.uiConfig.groups.find((group) => group.id === groupId) ||
@@ -141,7 +145,15 @@ export function computeCommitMutation({
   let finalParams: Record<string, unknown> = {};
 
   if (existingTransform) {
-    finalParams = { ...existingTransform.parameters };
+    finalParams = {
+      ...(definition
+        ? hydrateTransformationParameters(
+            definition,
+            existingTransform.parameters,
+            existingTransform.type,
+          )
+        : existingTransform.parameters),
+    };
   } else if (groupConfig) {
     groupConfig.controls.forEach((control) => {
       finalParams[control.name] = control.defaultValue;

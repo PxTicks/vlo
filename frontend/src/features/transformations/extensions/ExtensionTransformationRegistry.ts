@@ -684,6 +684,7 @@ function compileDefinition(
         : filterHandler,
     uiConfig: Object.freeze({ groups: Object.freeze(groups) }),
     defaultParameters: Object.freeze(defaultParameters),
+    hydrateMissingParameters: true,
     extension: Object.freeze({
       ownerId,
       contributionId,

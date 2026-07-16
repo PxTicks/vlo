@@ -61,9 +61,24 @@ uniform float uSpeedVariation;
 uniform float uTrailShape;
 uniform float uPulseDensity;
 uniform float uHeadWidth;
+uniform float uSignalMode;
+uniform float uLumaWeight;
+uniform float uEdgeWeight;
+uniform float uEdgeGain;
+uniform float uAlphaEdgeWeight;
+uniform float uSignalThreshold;
+uniform float uSignalGain;
+uniform float uSignalGamma;
 uniform float uTrailHalfLife;
 uniform float uBaseInjection;
 uniform float uSourceInfluence;
+uniform float uMotionInfluence;
+uniform float uMotionMode;
+uniform float uMotionThreshold;
+uniform float uMotionGain;
+uniform float uMotionImmediateAmount;
+uniform float uInjectionStrength;
+uniform float uAccumulationMode;
 uniform float uReset;
 uniform vec2 uContentSize;
 uniform vec2 uStateSize;
@@ -75,6 +90,15 @@ uint pcgHash(uint v) {
 }
 uint hash2(uint a, uint b) { return pcgHash(a ^ pcgHash(b)); }
 float unitFloat(uint h) { return float(h & 0x00ffffffu) / 16777216.0; }
+
+float lumaOf(vec3 rgb) { return dot(rgb, vec3(0.2126, 0.7152, 0.0722)); }
+vec4 sampleSource(vec2 uv) {
+  return texture(uTexture, clamp(uv, uInputClamp.xy, uInputClamp.zw));
+}
+float unlum(vec4 s) {
+  vec3 rgb = s.a > 0.0 ? s.rgb / s.a : s.rgb;
+  return lumaOf(rgb);
+}
 
 void main(void) {
   vec2 frameSize = max(uOutputFrame.zw, vec2(1.0));
@@ -106,15 +130,68 @@ void main(void) {
   float headEdge = max(uHeadWidth, 1e-4);
   float proceduralHead = 1.0 - smoothstep(0.0, headEdge, d / spacing);
 
-  // Current source signal (Rec.709 luma on unpremultiplied RGB).
+  // Current source signal: sample the cell centre plus four cell-scale
+  // neighbours and assemble per the selected signal mode.
+  vec2 texelStep = (frameSize / contentSize) * uInputSize.zw;
   vec2 sourcePixel = vec2(
     (cellIndex.x + 0.5) * size,
     (cellIndex.y + 0.5) * rowPitch
   );
-  vec2 sourceUv = sourcePixel * (frameSize / contentSize) * uInputSize.zw;
-  vec4 src = texture(uTexture, clamp(sourceUv, uInputClamp.xy, uInputClamp.zw));
-  vec3 rgb = src.a > 0.0 ? src.rgb / src.a : src.rgb;
-  float currentSignal = clamp(dot(rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+  vec2 sourceUv = sourcePixel * texelStep;
+  vec2 offX = vec2(size, 0.0) * texelStep;
+  vec2 offY = vec2(0.0, rowPitch) * texelStep;
+  vec4 sc = sampleSource(sourceUv);
+  vec4 sL = sampleSource(sourceUv - offX);
+  vec4 sR = sampleSource(sourceUv + offX);
+  vec4 sU = sampleSource(sourceUv - offY);
+  vec4 sD = sampleSource(sourceUv + offY);
+  float lumaC = unlum(sc);
+  float colorEdge =
+    (abs(unlum(sL) - lumaC) + abs(unlum(sR) - lumaC)
+      + abs(unlum(sU) - lumaC) + abs(unlum(sD) - lumaC)) * uEdgeGain;
+  float alphaEdge =
+    (abs(sL.a - sc.a) + abs(sR.a - sc.a)
+      + abs(sU.a - sc.a) + abs(sD.a - sc.a)) * uEdgeGain;
+
+  int signalMode = int(uSignalMode + 0.5);
+  float rawSignal;
+  if (signalMode == 1) {
+    // Empty transparent pixels must not become a full-strength dark signal.
+    rawSignal = sc.a * (1.0 - lumaC);
+  } else if (signalMode == 2) {
+    rawSignal = colorEdge;
+  } else if (signalMode == 3) {
+    rawSignal = uLumaWeight * lumaC + uEdgeWeight * colorEdge;
+  } else if (signalMode == 4) {
+    rawSignal = sc.a;
+  } else if (signalMode == 5) {
+    rawSignal = uAlphaEdgeWeight * alphaEdge + uEdgeWeight * colorEdge;
+  } else {
+    rawSignal = lumaC;
+  }
+  float aboveThreshold =
+    max(0.0, rawSignal - uSignalThreshold) / max(1.0 - uSignalThreshold, 1e-4);
+  float currentSignal = clamp(
+    pow(clamp(aboveThreshold, 0.0, 1.0), max(uSignalGamma, 1e-3)) * uSignalGain,
+    0.0,
+    1.0
+  );
+
+  // Motion: compare with the previous signal at the SAME cell (prev state B).
+  vec2 sameCellUv = vec2(
+    (cellIndex.x + 0.5) / stateSize.x,
+    (cellIndex.y + 0.5) / stateSize.y
+  );
+  float previousSignal = mix(
+    texture(uPrevState, clamp(sameCellUv, vec2(0.0), vec2(1.0))).b,
+    currentSignal,
+    uReset
+  );
+  int motionMode = int(uMotionMode + 0.5);
+  float deltaSignal = currentSignal - previousSignal;
+  float rawMotion = motionMode == 1 ? max(deltaSignal, 0.0) : abs(deltaSignal);
+  float motion =
+    clamp(max(0.0, rawMotion - uMotionThreshold) * uMotionGain, 0.0, 1.0);
 
   // Advect the previous rain down the column by fallSpeed*dt cells, sampling
   // with linear interpolation for fractional-cell motion.
@@ -137,20 +214,36 @@ void main(void) {
   float decayed = advectedRain * retention;
   // Static injection is gated by the procedural trail (so a still silhouette
   // never saturates) and by delta (so a zero-delta/paused sample adds nothing).
+  // Motion injection can bypass the procedural gate by motionImmediateAmount.
   float injectionGate = uDeltaSeconds > 0.0 ? 1.0 : 0.0;
+  float trailGate = proceduralTrail;
+  float motionGate = trailGate + (1.0 - trailGate) * uMotionImmediateAmount;
+  float sourceInject = uSourceInfluence * currentSignal * trailGate;
+  float motionInject = uMotionInfluence * motion * motionGate;
   float injection = clamp(
-    (uBaseInjection + uSourceInfluence * currentSignal * proceduralTrail)
-      * injectionGate,
+    (uBaseInjection + sourceInject + motionInject)
+      * uInjectionStrength * injectionGate,
     0.0,
     1.0
   );
-  float nextRain = 1.0 - (1.0 - clamp(decayed, 0.0, 1.0)) * (1.0 - injection);
+
+  float dc = clamp(decayed, 0.0, 1.0);
+  float ic = clamp(injection, 0.0, 1.0);
+  int accumMode = int(uAccumulationMode + 0.5);
+  float nextRain;
+  if (accumMode == 1) {
+    nextRain = max(dc, ic);
+  } else if (accumMode == 2) {
+    nextRain = clamp(dc + ic, 0.0, 1.0);
+  } else {
+    nextRain = 1.0 - (1.0 - dc) * (1.0 - ic);
+  }
 
   finalColor = vec4(
     nextRain,
     clamp(proceduralHead, 0.0, 1.0),
     currentSignal,
-    0.0
+    clamp(motion, 0.0, 1.0)
   );
 }
 `;

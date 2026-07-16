@@ -41,6 +41,15 @@ struct MatrixRainUniforms {
   uRainStrength: f32,
   uHeadIntensity: f32,
   uDirectShapeStrength: f32,
+  uDirectMotionStrength: f32,
+  uSourceHeadInfluence: f32,
+  uMotionHeadInfluence: f32,
+  uBaseInjection: f32,
+  uSourceInfluence: f32,
+  uMotionInfluence: f32,
+  uMotionImmediateAmount: f32,
+  uInjectionStrength: f32,
+  uInjectionGate: f32,
   uDitherMagnitude: f32,
   uOutputMode: f32,
   uDebugMode: f32,
@@ -167,7 +176,8 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   var d = headLine - f32(row);
   d = d - spacing * floor(d / spacing);
   let fade = max(0.0, 1.0 - d / spacing);
-  let trail = pow(fade, max(mu.uTrailShape, 1e-3)) * mu.uRainStrength;
+  let proceduralTrail = pow(fade, max(mu.uTrailShape, 1e-3));
+  let trail = proceduralTrail * mu.uRainStrength;
   let headEdge = max(mu.uHeadWidth, 1e-4);
   let head = 1.0 - smoothstep(0.0, headEdge, d / spacing);
 
@@ -183,6 +193,7 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   let rainR = state.r;
   let headG = state.g;
   let signalB = state.b;
+  let motionA = state.a;
 
   if (dbgMode == 1) {
     let border = select(0.0, 1.0, sub.x < 0.06 || sub.y < 0.06);
@@ -201,10 +212,33 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   if (dbgMode == 5) {
     return vec4<f32>(0.0, clamp(rainR, 0.0, 1.0), 0.0, 1.0);
   }
+  if (dbgMode == 6) {
+    return vec4<f32>(0.0, clamp(signalB, 0.0, 1.0), 0.0, 1.0);
+  }
+  if (dbgMode == 7) {
+    return vec4<f32>(clamp(motionA, 0.0, 1.0) * vec3<f32>(1.0, 0.4, 0.2), 1.0);
+  }
+  if (dbgMode == 8) {
+    let motionGate = proceduralTrail
+      + (1.0 - proceduralTrail) * mu.uMotionImmediateAmount;
+    let injection = clamp(
+      (mu.uBaseInjection
+        + mu.uSourceInfluence * signalB * proceduralTrail
+        + mu.uMotionInfluence * motionA * motionGate)
+        * mu.uInjectionStrength * mu.uInjectionGate,
+      0.0,
+      1.0,
+    );
+    return vec4<f32>(vec3<f32>(injection), 1.0);
+  }
 
-  let bodyState = rainR * mu.uRainStrength + signalB * mu.uDirectShapeStrength;
+  let bodyState = rainR * mu.uRainStrength
+    + signalB * mu.uDirectShapeStrength
+    + motionA * mu.uDirectMotionStrength;
   let bodyB = clamp(bodyState, 0.0, 1.0) * lit;
-  let headB = headG * mu.uHeadIntensity * lit;
+  let headScalar = headG
+    * (1.0 + mu.uSourceHeadInfluence * signalB + mu.uMotionHeadInfluence * motionA);
+  let headB = headScalar * mu.uHeadIntensity * lit;
   let coverage = clamp(bodyB + headB, 0.0, 1.0);
   let grade = paletteGrade(bodyState);
   // Static per-pixel dither scaled by coverage: the flat background never
@@ -216,7 +250,7 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
     // matrixOnly: dither the straight colour, then premultiply by coverage so no
     // channel can exceed alpha (no bright compositing fringe).
     let straight = clamp(
-      grade + mu.uHead * headG * mu.uHeadIntensity + vec3<f32>(dither),
+      grade + mu.uHead * headScalar * mu.uHeadIntensity + vec3<f32>(dither),
       vec3<f32>(0.0),
       vec3<f32>(1.0),
     );

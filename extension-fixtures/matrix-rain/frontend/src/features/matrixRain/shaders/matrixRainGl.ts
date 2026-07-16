@@ -61,6 +61,15 @@ uniform float uHeadWidth;
 uniform float uRainStrength;
 uniform float uHeadIntensity;
 uniform float uDirectShapeStrength;
+uniform float uDirectMotionStrength;
+uniform float uSourceHeadInfluence;
+uniform float uMotionHeadInfluence;
+uniform float uBaseInjection;
+uniform float uSourceInfluence;
+uniform float uMotionInfluence;
+uniform float uMotionImmediateAmount;
+uniform float uInjectionStrength;
+uniform float uInjectionGate;
 uniform float uDitherMagnitude;
 uniform float uOutputMode;
 uniform float uDebugMode;
@@ -164,7 +173,8 @@ void main(void) {
   float headLine = phase * spacing + uTimeSeconds * speed;
   float d = mod(headLine - float(row), spacing);
   float fade = max(0.0, 1.0 - d / spacing);
-  float trail = pow(fade, max(uTrailShape, 1e-3)) * uRainStrength;
+  float proceduralTrail = pow(fade, max(uTrailShape, 1e-3));
+  float trail = proceduralTrail * uRainStrength;
   float headEdge = max(uHeadWidth, 1e-4);
   float head = 1.0 - smoothstep(0.0, headEdge, d / spacing);
 
@@ -181,6 +191,7 @@ void main(void) {
   float rainR = state.r;   // accumulated / advected rain
   float headG = state.g;   // current procedural head
   float signalB = state.b; // current source signal (luma)
+  float motionA = state.a; // current motion / change signal
 
   // Debug views short-circuit the palette compositing.
   if (dbgMode == 1) {
@@ -207,12 +218,42 @@ void main(void) {
     finalColor = vec4(0.0, clamp(rainR, 0.0, 1.0), 0.0, 1.0);
     return;
   }
+  if (dbgMode == 6) {
+    // currentSignal: the shaped source signal (B).
+    finalColor = vec4(0.0, clamp(signalB, 0.0, 1.0), 0.0, 1.0);
+    return;
+  }
+  if (dbgMode == 7) {
+    // motion: the change signal (A).
+    finalColor = vec4(clamp(motionA, 0.0, 1.0) * vec3(1.0, 0.4, 0.2), 1.0);
+    return;
+  }
+  if (dbgMode == 8) {
+    float motionGate = proceduralTrail
+      + (1.0 - proceduralTrail) * uMotionImmediateAmount;
+    float injection = clamp(
+      (uBaseInjection
+        + uSourceInfluence * signalB * proceduralTrail
+        + uMotionInfluence * motionA * motionGate)
+        * uInjectionStrength * uInjectionGate,
+      0.0,
+      1.0
+    );
+    finalColor = vec4(vec3(injection), 1.0);
+    return;
+  }
 
   // Final body brightness combines accumulated rain with the direct
-  // current-shape term, so a newly visible source is recognizable immediately.
-  float bodyState = rainR * uRainStrength + signalB * uDirectShapeStrength;
+  // current-shape and motion terms, so a newly visible or moving source is
+  // recognizable immediately, before rain history develops.
+  float bodyState = rainR * uRainStrength
+    + signalB * uDirectShapeStrength
+    + motionA * uDirectMotionStrength;
   float bodyB = clamp(bodyState, 0.0, 1.0) * lit;
-  float headB = headG * uHeadIntensity * lit;
+  // Source and motion boost the isolated pale head where they are strong.
+  float headScalar = headG
+    * (1.0 + uSourceHeadInfluence * signalB + uMotionHeadInfluence * motionA);
+  float headB = headScalar * uHeadIntensity * lit;
   float coverage = clamp(bodyB + headB, 0.0, 1.0);
   vec3 grade = paletteGrade(bodyState);
 
@@ -226,7 +267,7 @@ void main(void) {
     // matrixOnly: dither the straight colour, then premultiply by coverage so no
     // channel can exceed alpha (no bright compositing fringe).
     vec3 straight = clamp(
-      grade + uHead * headG * uHeadIntensity + vec3(dither),
+      grade + uHead * headScalar * uHeadIntensity + vec3(dither),
       0.0,
       1.0
     );

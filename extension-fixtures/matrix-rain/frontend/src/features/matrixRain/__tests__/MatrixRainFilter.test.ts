@@ -143,6 +143,8 @@ describe("createMatrixRainFilter", () => {
         seed: 77,
         fallSpeed: 13,
         directShapeStrength: 0.4,
+        injectionStrength: 0.6,
+        motionInfluence: 1.1,
         outputMode: "matrixOnly",
         debugMode: "rainState",
       },
@@ -156,6 +158,8 @@ describe("createMatrixRainFilter", () => {
     expect(uniforms.uSeed).toBe(77);
     expect(uniforms.uFallSpeed).toBe(13);
     expect(uniforms.uDirectShapeStrength).toBe(0.4);
+    expect(uniforms.uInjectionStrength).toBe(0.6);
+    expect(uniforms.uMotionInfluence).toBe(1.1);
     expect(uniforms.uOutputMode).toBe(1);
     expect(uniforms.uDebugMode).toBe(4);
     expect(Array.from(uniforms.uContentSize as Float32Array)).toEqual([1920, 1080]);

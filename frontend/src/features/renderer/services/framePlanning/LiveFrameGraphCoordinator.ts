@@ -45,7 +45,12 @@ export interface LiveFrameGraphRenderOptions {
   clips?: readonly TimelineClip[];
   transitions?: readonly Transition[];
   earliestTick?: number;
-  /** Approximate skips history replay for this live target only. */
+  /**
+   * Approximate skips history replay for this live target only. The resulting
+   * pixels are intentionally not timeline-faithful: retained state is
+   * path-dependent and may contain activity originating after the requested
+   * tick when scrubbing backwards. Never use this policy for still or export.
+   */
   temporalPreviewQuality?: "exact" | "approximate";
   submitWarmupFrame?: (
     tick: number,
@@ -121,10 +126,13 @@ export class LiveFrameGraphCoordinator {
     options: LiveFrameGraphRenderOptions,
   ): Promise<LiveFrameGraphRenderResult | null> {
     if (options.temporalPreviewQuality === "approximate") {
-      // Match the responsive pre-history-scheduler preview path: retain one
-      // compatibility sequence, perform no temporal discovery/replay, and let
-      // history filters make one bounded best-effort update against the current
-      // source. A later playback/exact request sees invalidation and rebuilds.
+      // IMPORTANT — INTENTIONALLY UNFAITHFUL PREVIEW:
+      // Match the responsive pre-history-scheduler path by retaining one
+      // compatibility sequence and performing no temporal discovery/replay.
+      // This is visually useful but path-dependent: a backward scrub can show
+      // state produced by later source frames. Only paused interactive preview
+      // may enter this branch; playback/exact requests rebuild, and still/export
+      // use their deterministic renderers rather than this coordinator policy.
       const result = await this.renderSingleFrame(
         presentationTick,
         options,

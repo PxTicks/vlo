@@ -80,7 +80,10 @@ export class TemporalRenderCoordinator {
   /**
    * Produce the pre-scheduler best-effort context used only while scrubbing.
    * It preserves the current sequence so retained filter state remains useful,
-   * but leaves delta uncertified and invalidates the next exact plan.
+   * but leaves delta uncertified and invalidates the next exact plan. This is
+   * deliberately path-dependent and temporally unfaithful: backward preview
+   * may retain state produced after the requested tick. Never use it for still
+   * capture or export.
    */
   createApproximatePreviewContext(
     presentationTick: number,

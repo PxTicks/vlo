@@ -215,8 +215,13 @@ fn mainFragment(
     0.0,
     1.0,
   );
-  let spawnProbability = 1.0
+  let baseSpawnProbability = 1.0
     - (1.0 - clamp(su.uAmbientSpawn, 0.0, 1.0)) * (1.0 - spawnDrive);
+  let spawnRateScale = max(su.uPulseDensity / 0.7, 1e-4);
+  let spawnProbability = 1.0 - pow(
+    1.0 - baseSpawnProbability,
+    spawnRateScale,
+  );
   let streamGate = select(0.0, 1.0, spawnNoise < spawnProbability);
 
   let fallCells = su.uFallSpeed * max(su.uDeltaSeconds, 0.0);

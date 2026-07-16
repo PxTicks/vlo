@@ -54,6 +54,7 @@ interface GlyphUniformValues {
   uPulseDensity: number;
   uHeadWidth: number;
   uRainStrength: number;
+  uContrast: number;
   uHeadIntensity: number;
   uDirectShapeStrength: number;
   uDirectMotionStrength: number;
@@ -187,6 +188,7 @@ export function createMatrixRainFilter(
     uPulseDensity: scalar(d.pulseDensity),
     uHeadWidth: scalar(d.headWidth),
     uRainStrength: scalar(d.rainStrength),
+    uContrast: scalar(d.contrast),
     uHeadIntensity: scalar(d.headIntensity),
     uDirectShapeStrength: scalar(d.directShapeStrength),
     uDirectMotionStrength: scalar(d.directMotionStrength),
@@ -468,6 +470,7 @@ export function createMatrixRainFilter(
       glyphUniforms.uPulseDensity = resolved.pulseDensity;
       glyphUniforms.uHeadWidth = resolved.headWidth;
       glyphUniforms.uRainStrength = resolved.rainStrength;
+      glyphUniforms.uContrast = resolved.contrast;
       glyphUniforms.uHeadIntensity = resolved.headIntensity;
       glyphUniforms.uDirectShapeStrength = resolved.directShapeStrength;
       glyphUniforms.uDirectMotionStrength = resolved.directMotionStrength;

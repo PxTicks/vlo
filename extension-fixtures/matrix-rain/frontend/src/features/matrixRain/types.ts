@@ -38,6 +38,14 @@ export type MatrixDebugMode =
   | "injection";
 
 export interface MatrixRainParameters {
+  // Compact creative macros
+  /** Final glyph-body contrast, where 1 is neutral. */
+  readonly contrast: number;
+  /** Combined visible trail length/fullness control, 0..1. */
+  readonly trailDensity: number;
+  /** Coupling between source activity and rain spawning/survival, 0..1. */
+  readonly sourceCoupling: number;
+
   // Grid
   /** Glyph width/height in source pixels. Integer, topology-affecting. */
   readonly size: number;

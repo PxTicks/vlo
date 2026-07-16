@@ -56,7 +56,21 @@ The full design and phase plan lives in
     applies continuous frame-rate-independent attenuation in unsupported cells;
     lowering Ambient Spawn to zero makes the rain fully source-bound.
   - debug views: `currentSignal`, `motion`, `injection`, plus `rainState`,
-    `advectedPrevious`, `cellGrid`, `proceduralTrail`, `proceduralHead`.
+    `advectedPrevious`, `cellGrid`, `proceduralTrail`, `proceduralHead` remain
+    available internally for shader development rather than occupying the
+    normal creative interface.
+- **Compact creative controls.** The panel exposes twelve intent-level values:
+  Brightness, Contrast, Head Brightness, Speed, Glyph Size, Spawn Rate, Trail
+  Density, Vertical Spacing, source Mode, Source Coupling, Tint, and Output.
+  Head Brightness sets the glowing heads relative to the body while overall
+  Brightness scales both. Trail Density resolves half-life/shape/head width;
+  Source Coupling resolves ambient spawning,
+  source/motion influence, and dark damping; Tint derives the full palette.
+  Spawn Rate changes both pulse spacing and the probability that a candidate
+  pulse becomes an active stream, so its visual range remains pronounced even
+  when broad procedural trails would otherwise have similar average coverage.
+  Detailed Phase 4 values remain validated defaults for project compatibility
+  but are no longer presented as independent sliders.
 - **Matching GLSL and WGSL programs for both passes** so both the WebGL and
   WebGPU construction paths are covered. Every WGSL uniform struct order mirrors
   its JS uniform order, which mirrors the CPU reference — all kept in lockstep

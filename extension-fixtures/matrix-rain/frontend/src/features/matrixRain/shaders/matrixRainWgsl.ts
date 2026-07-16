@@ -39,6 +39,7 @@ struct MatrixRainUniforms {
   uPulseDensity: f32,
   uHeadWidth: f32,
   uRainStrength: f32,
+  uContrast: f32,
   uHeadIntensity: f32,
   uDirectShapeStrength: f32,
   uDirectMotionStrength: f32,
@@ -125,6 +126,15 @@ fn paletteGrade(bIn: f32) -> vec3<f32> {
     return mix(matrixRainUniforms.uShadow, matrixRainUniforms.uBody, b / 0.5);
   }
   return mix(matrixRainUniforms.uBody, matrixRainUniforms.uBright, (b - 0.5) / 0.5);
+}
+
+fn contrastCurve(value: f32, contrast: f32) -> f32 {
+  let x = clamp(value, 0.0, 1.0);
+  let exponent = exp2((contrast - 1.0) * 2.0);
+  if (x < 0.5) {
+    return 0.5 * pow(2.0 * x, exponent);
+  }
+  return 1.0 - 0.5 * pow(2.0 * (1.0 - x), exponent);
 }
 
 fn filterVertexPosition(aPosition: vec2<f32>) -> vec4<f32> {
@@ -228,8 +238,13 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
       0.0,
       1.0,
     );
-    let spawnProbability = 1.0
+    let baseSpawnProbability = 1.0
       - (1.0 - clamp(mu.uAmbientSpawn, 0.0, 1.0)) * (1.0 - spawnDrive);
+    let spawnRateScale = max(mu.uPulseDensity / 0.7, 1e-4);
+    let spawnProbability = 1.0 - pow(
+      1.0 - baseSpawnProbability,
+      spawnRateScale,
+    );
     let streamGate = select(0.0, 1.0, spawnNoise < spawnProbability);
     let trailGate = proceduralTrail * streamGate;
     let motionGate = streamGate
@@ -245,9 +260,10 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
     return vec4<f32>(vec3<f32>(injection), 1.0);
   }
 
-  let bodyState = rainR * mu.uRainStrength
+  let rawBodyState = rainR * mu.uRainStrength
     + signalB * mu.uDirectShapeStrength
     + motionA * mu.uDirectMotionStrength;
+  let bodyState = contrastCurve(rawBodyState, mu.uContrast);
   let bodyB = clamp(bodyState, 0.0, 1.0) * lit;
   let headScalar = headG
     * (1.0 + mu.uSourceHeadInfluence * signalB + mu.uMotionHeadInfluence * motionA);

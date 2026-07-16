@@ -75,6 +75,9 @@ export const ACCUMULATION_MODES: readonly MatrixAccumulationMode[] = [
 // defaults stay assignable to the host's `Record<string, JsonValue>` parameter
 // bag while still being checked against the resolved parameter shape.
 export const DEFAULT_MATRIX_RAIN_PARAMETERS = {
+  contrast: 1,
+  trailDensity: 0.5,
+  sourceCoupling: 0.5,
   size: 10,
   verticalSpacing: 2,
   seed: 1,
@@ -121,11 +124,11 @@ export const DEFAULT_MATRIX_RAIN_PARAMETERS = {
 } satisfies MatrixRainParameters;
 
 /**
- * Phase 2 control surface, grouped by the plan's taxonomy. `size`, `seed`,
- * enums, and colors are static; continuous aesthetic controls opt into spline
- * animation so they can be keyframed by the host.
+ * Detailed Phase 4 tuning surface retained as an executable record of the
+ * internal parameter ranges. It is deliberately not registered with the host;
+ * the compact creative surface below is the only visible UI.
  */
-export const MATRIX_RAIN_CONTROL_GROUPS: readonly ExtensionTransformationControlGroup[] =
+export const MATRIX_RAIN_INTERNAL_CONTROL_GROUPS: readonly ExtensionTransformationControlGroup[] =
   [
     {
       id: "grid",
@@ -603,8 +606,160 @@ export const MATRIX_RAIN_CONTROL_GROUPS: readonly ExtensionTransformationControl
     },
   ];
 
+/**
+ * Compact creative surface. The detailed controls above remain documented as
+ * internal tuning inputs and persisted defaults for backward compatibility;
+ * authors keyframe these intent-level macros instead. Runtime resolution maps
+ * them to the detailed shader parameters on every sample.
+ */
+export const MATRIX_RAIN_CONTROL_GROUPS: readonly ExtensionTransformationControlGroup[] =
+  [
+    {
+      id: "appearance",
+      title: "Appearance",
+      columns: 2,
+      controls: [
+        {
+          type: "slider",
+          name: "rainStrength",
+          label: "Brightness",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.rainStrength,
+          min: 0,
+          max: 3,
+          step: 0.01,
+          supportsSpline: true,
+        },
+        {
+          type: "slider",
+          name: "contrast",
+          label: "Contrast",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.contrast,
+          min: 0,
+          max: 2,
+          step: 0.01,
+          supportsSpline: true,
+        },
+        {
+          type: "slider",
+          name: "headIntensity",
+          label: "Head Brightness",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.headIntensity,
+          min: 0,
+          max: 4,
+          step: 0.01,
+          supportsSpline: true,
+        },
+        {
+          type: "color",
+          name: "bodyColor",
+          label: "Tint",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.bodyColor,
+        },
+        {
+          type: "select",
+          name: "outputMode",
+          label: "Output",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.outputMode,
+          options: [
+            { label: "Replace (black bg)", value: "replaceBlack" },
+            { label: "Matrix only (transparent)", value: "matrixOnly" },
+          ],
+        },
+      ],
+    },
+    {
+      id: "rain",
+      title: "Rain",
+      columns: 2,
+      controls: [
+        {
+          type: "slider",
+          name: "fallSpeed",
+          label: "Speed",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.fallSpeed,
+          min: 0,
+          max: 30,
+          step: 0.1,
+          supportsSpline: true,
+        },
+        {
+          type: "slider",
+          name: "size",
+          label: "Glyph Size",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.size,
+          min: 4,
+          max: 128,
+          step: 1,
+        },
+        {
+          type: "slider",
+          name: "pulseDensity",
+          label: "Spawn Rate",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.pulseDensity,
+          min: 0.05,
+          max: 2,
+          step: 0.01,
+          supportsSpline: true,
+        },
+        {
+          type: "slider",
+          name: "trailDensity",
+          label: "Trail Density",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.trailDensity,
+          min: 0,
+          max: 1,
+          step: 0.01,
+          supportsSpline: true,
+        },
+        {
+          type: "slider",
+          name: "verticalSpacing",
+          label: "Vertical Spacing",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.verticalSpacing,
+          min: 0,
+          max: 32,
+          step: 1,
+        },
+      ],
+    },
+    {
+      id: "source",
+      title: "Source",
+      columns: 2,
+      controls: [
+        {
+          type: "select",
+          name: "signalMode",
+          label: "Mode",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.signalMode,
+          options: [
+            { label: "Brightness", value: "luma" },
+            { label: "Darkness", value: "inverseLuma" },
+            { label: "Edges", value: "edge" },
+            { label: "Brightness + Edges", value: "lumaEdge" },
+            { label: "Alpha", value: "alpha" },
+            { label: "Alpha + Edges", value: "alphaEdge" },
+          ],
+        },
+        {
+          type: "slider",
+          name: "sourceCoupling",
+          label: "Source Coupling",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.sourceCoupling,
+          min: 0,
+          max: 1,
+          step: 0.01,
+          supportsSpline: true,
+        },
+      ],
+    },
+  ];
+
 /** Numeric authoring bounds enforced by the custom validator (mirrors controls). */
 export const MATRIX_RAIN_NUMERIC_BOUNDS = {
+  contrast: { min: 0, max: 2, integer: false },
+  trailDensity: { min: 0, max: 1, integer: false },
+  sourceCoupling: { min: 0, max: 1, integer: false },
   size: { min: 4, max: 128, integer: true },
   verticalSpacing: { min: 0, max: 32, integer: true },
   seed: { min: 0, max: 16_777_215, integer: true },
@@ -650,6 +805,9 @@ export const MATRIX_RAIN_COLOR_KEYS = [
 
 /** Continuous numeric fields that may carry a host spline object when authored. */
 export const MATRIX_RAIN_SPLINE_KEYS: ReadonlySet<string> = new Set([
+  "contrast",
+  "trailDensity",
+  "sourceCoupling",
   "glyphCycleRate",
   "fallSpeed",
   "speedVariation",

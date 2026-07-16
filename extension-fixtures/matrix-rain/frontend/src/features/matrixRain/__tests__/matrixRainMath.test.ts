@@ -4,6 +4,7 @@ import {
   GLYPH_SEGMENT_COUNT,
   GLYPH_STROKE_MASKS,
   colorToVec3,
+  deriveMatrixPalette,
   columnPhase,
   columnSpacing,
   columnSpeedRandom,
@@ -245,5 +246,16 @@ describe("colorToVec3", () => {
     expect(r).toBeCloseTo(0, 5);
     expect(g).toBeCloseTo(0xc2 / 255, 5);
     expect(b).toBeCloseTo(0x1f / 255, 5);
+  });
+});
+
+describe("deriveMatrixPalette", () => {
+  it("builds a shadow-to-head ramp from one tint", () => {
+    expect(deriveMatrixPalette("#00c21f")).toEqual({
+      shadowColor: "#003a09",
+      bodyColor: "#00c21f",
+      brightColor: "#85e293",
+      headColor: "#d6f5db",
+    });
   });
 });

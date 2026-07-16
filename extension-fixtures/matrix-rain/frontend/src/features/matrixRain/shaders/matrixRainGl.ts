@@ -59,6 +59,7 @@ uniform float uTrailShape;
 uniform float uPulseDensity;
 uniform float uHeadWidth;
 uniform float uRainStrength;
+uniform float uContrast;
 uniform float uHeadIntensity;
 uniform float uDirectShapeStrength;
 uniform float uDirectMotionStrength;
@@ -140,6 +141,15 @@ vec3 paletteGrade(float b) {
     return mix(uShadow, uBody, b / 0.5);
   }
   return mix(uBody, uBright, (b - 0.5) / 0.5);
+}
+
+float contrastCurve(float value) {
+  float x = clamp(value, 0.0, 1.0);
+  float exponent = exp2((uContrast - 1.0) * 2.0);
+  if (x < 0.5) {
+    return 0.5 * pow(2.0 * x, exponent);
+  }
+  return 1.0 - 0.5 * pow(2.0 * (1.0 - x), exponent);
 }
 
 void main(void) {
@@ -238,8 +248,13 @@ void main(void) {
       0.0,
       1.0
     );
-    float spawnProbability = 1.0
+    float baseSpawnProbability = 1.0
       - (1.0 - clamp(uAmbientSpawn, 0.0, 1.0)) * (1.0 - spawnDrive);
+    float spawnRateScale = max(uPulseDensity / 0.7, 1e-4);
+    float spawnProbability = 1.0 - pow(
+      1.0 - baseSpawnProbability,
+      spawnRateScale
+    );
     float streamGate = spawnNoise < spawnProbability ? 1.0 : 0.0;
     float trailGate = proceduralTrail * streamGate;
     float motionGate = streamGate
@@ -259,9 +274,10 @@ void main(void) {
   // Final body brightness combines accumulated rain with the direct
   // current-shape and motion terms, so a newly visible or moving source is
   // recognizable immediately, before rain history develops.
-  float bodyState = rainR * uRainStrength
+  float rawBodyState = rainR * uRainStrength
     + signalB * uDirectShapeStrength
     + motionA * uDirectMotionStrength;
+  float bodyState = contrastCurve(rawBodyState);
   float bodyB = clamp(bodyState, 0.0, 1.0) * lit;
   // Source and motion boost the isolated pale head where they are strong.
   float headScalar = headG

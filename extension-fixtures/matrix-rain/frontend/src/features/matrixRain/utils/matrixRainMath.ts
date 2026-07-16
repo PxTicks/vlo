@@ -125,12 +125,14 @@ export function sourceSpawnProbability(
   ambientSpawn: number,
   sourceInfluence: number,
   motionInfluence: number,
+  spawnRateScale = 1,
 ): number {
   const drive = clamp01(
     sourceInfluence * currentSignal + motionInfluence * motion,
   );
   const ambient = clamp01(ambientSpawn);
-  return 1 - (1 - ambient) * (1 - drive);
+  const baseProbability = 1 - (1 - ambient) * (1 - drive);
+  return 1 - Math.pow(1 - baseProbability, Math.max(spawnRateScale, 1e-4));
 }
 
 /**
@@ -255,6 +257,43 @@ export function colorToVec3(color: string): Vec3 {
     ((value >> 8) & 0xff) / 255,
     (value & 0xff) / 255,
   ];
+}
+
+function colorChannelToHex(value: number): string {
+  return Math.round(clamp01(value) * 255)
+    .toString(16)
+    .padStart(2, "0");
+}
+
+function vec3ToColor(value: Vec3): string {
+  return `#${value.map(colorChannelToHex).join("")}`;
+}
+
+function mixColor(a: Vec3, b: Vec3, amount: number): Vec3 {
+  const t = clamp01(amount);
+  return [
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+    a[2] + (b[2] - a[2]) * t,
+  ];
+}
+
+/** Derive the full Matrix ramp from one authored tint. */
+export function deriveMatrixPalette(tint: string): {
+  shadowColor: string;
+  bodyColor: string;
+  brightColor: string;
+  headColor: string;
+} {
+  const body = colorToVec3(tint);
+  const black: Vec3 = [0, 0, 0];
+  const white: Vec3 = [1, 1, 1];
+  return {
+    shadowColor: vec3ToColor(mixColor(black, body, 0.3)),
+    bodyColor: tint.toLowerCase(),
+    brightColor: vec3ToColor(mixColor(body, white, 0.52)),
+    headColor: vec3ToColor(mixColor(body, white, 0.84)),
+  };
 }
 
 function mix(a: Vec3, b: Vec3, t: number): Vec3 {

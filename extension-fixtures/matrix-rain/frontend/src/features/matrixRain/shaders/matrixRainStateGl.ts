@@ -210,8 +210,13 @@ void main(void) {
     0.0,
     1.0
   );
-  float spawnProbability = 1.0
+  float baseSpawnProbability = 1.0
     - (1.0 - clamp(uAmbientSpawn, 0.0, 1.0)) * (1.0 - spawnDrive);
+  float spawnRateScale = max(uPulseDensity / 0.7, 1e-4);
+  float spawnProbability = 1.0 - pow(
+    1.0 - baseSpawnProbability,
+    spawnRateScale
+  );
   float streamGate = spawnNoise < spawnProbability ? 1.0 : 0.0;
 
   // Advect the previous rain down the column by fallSpeed*dt cells, sampling

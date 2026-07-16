@@ -121,23 +121,92 @@ describe("enum indices", () => {
     expect(debugModeIndex("proceduralHead")).toBe(3);
   });
 
-  it("exposes every Phase 4 debug mode through the authored select", () => {
-    const debugControl = MATRIX_RAIN_CONTROL_GROUPS
-      .find((group) => group.id === "debug")
-      ?.controls.find((control) => control.name === "debugMode");
-    if (!debugControl || debugControl.type !== "select") {
-      throw new Error("Expected the Matrix Rain debug select");
-    }
-    expect(debugControl.options.map((option) => option.value)).toEqual([
-      "none",
-      "cellGrid",
-      "proceduralTrail",
-      "proceduralHead",
-      "rainState",
-      "advectedPrevious",
-      "currentSignal",
-      "motion",
-      "injection",
+  it("exposes only the compact creative surface", () => {
+    expect(
+      MATRIX_RAIN_CONTROL_GROUPS.flatMap((group) =>
+        group.controls.map((control) => control.name),
+      ),
+    ).toEqual([
+      "rainStrength",
+      "contrast",
+      "headIntensity",
+      "bodyColor",
+      "outputMode",
+      "fallSpeed",
+      "size",
+      "pulseDensity",
+      "trailDensity",
+      "verticalSpacing",
+      "signalMode",
+      "sourceCoupling",
     ]);
+    expect(
+      MATRIX_RAIN_CONTROL_GROUPS.flatMap((group) => group.controls),
+    ).toHaveLength(12);
+  });
+});
+
+describe("creative macro resolution", () => {
+  it("keeps the detailed defaults neutral at midpoint macros", () => {
+    const resolved = resolveMatrixRainParameters(DEFAULTS);
+    expect(resolved?.trailHalfLife).toBeCloseTo(0.45, 6);
+    expect(resolved?.trailShape).toBeCloseTo(1.8, 6);
+    expect(resolved?.ambientSpawn).toBeCloseTo(0.08, 6);
+    expect(resolved?.sourceInfluence).toBeCloseTo(0.85, 6);
+    expect(resolved?.darkDamping).toBeCloseTo(0.75, 6);
+    expect(resolved?.glyphCycleRate).toBeCloseTo(3, 6);
+  });
+
+  it("maps trail density and source coupling to related detailed controls", () => {
+    const sparse = resolveMatrixRainParameters({
+      ...DEFAULTS,
+      trailDensity: 0,
+      sourceCoupling: 0,
+    });
+    const dense = resolveMatrixRainParameters({
+      ...DEFAULTS,
+      trailDensity: 1,
+      sourceCoupling: 1,
+    });
+
+    expect(dense!.trailHalfLife).toBeGreaterThan(sparse!.trailHalfLife);
+    expect(dense!.trailShape).toBeLessThan(sparse!.trailShape);
+    expect(dense!.ambientSpawn).toBe(0);
+    expect(dense!.sourceInfluence).toBeGreaterThan(sparse!.sourceInfluence);
+    expect(dense!.darkDamping).toBeGreaterThan(sparse!.darkDamping);
+  });
+
+  it("links brightness and speed to the subordinate render controls", () => {
+    const resolved = resolveMatrixRainParameters({
+      ...DEFAULTS,
+      rainStrength: 2,
+      fallSpeed: 16,
+    });
+
+    expect(resolved?.rainStrength).toBe(2);
+    expect(resolved?.headIntensity).toBe(3);
+    expect(resolved?.directShapeStrength).toBe(0.5);
+    expect(resolved?.glyphCycleRate).toBe(6);
+  });
+
+  it("derives a palette from Tint but preserves a customized legacy ramp", () => {
+    const tinted = resolveMatrixRainParameters({
+      ...DEFAULTS,
+      bodyColor: "#ff0000",
+    });
+    expect(tinted?.shadowColor).toBe("#4d0000");
+    expect(tinted?.headColor).toBe("#ffd6d6");
+
+    const legacy = resolveMatrixRainParameters({
+      ...DEFAULTS,
+      bodyColor: "#123456",
+      shadowColor: "#010203",
+      brightColor: "#abcdef",
+      headColor: "#fedcba",
+    });
+    expect(legacy?.shadowColor).toBe("#010203");
+    expect(legacy?.bodyColor).toBe("#123456");
+    expect(legacy?.brightColor).toBe("#abcdef");
+    expect(legacy?.headColor).toBe("#fedcba");
   });
 });

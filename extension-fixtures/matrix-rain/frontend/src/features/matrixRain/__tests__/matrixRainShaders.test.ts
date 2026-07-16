@@ -75,6 +75,7 @@ describe("Matrix Rain WebGL programs", () => {
     expect(MATRIX_RAIN_STATE_FRAGMENT).toContain(
       "spawnNoise < spawnProbability",
     );
+    expect(MATRIX_RAIN_STATE_FRAGMENT).toContain("uPulseDensity / 0.7");
     expect(MATRIX_RAIN_STATE_FRAGMENT).toContain(
       "advectedState.g * historyGate",
     );
@@ -92,6 +93,7 @@ describe("Matrix Rain WebGL programs", () => {
     expect(MATRIX_RAIN_STATE_WGSL).toContain(
       "spawnNoise < spawnProbability",
     );
+    expect(MATRIX_RAIN_STATE_WGSL).toContain("su.uPulseDensity / 0.7");
     expect(MATRIX_RAIN_STATE_WGSL).toContain(
       "advectedState.g * historyGate",
     );
@@ -100,5 +102,16 @@ describe("Matrix Rain WebGL programs", () => {
     );
     expect(MATRIX_RAIN_STATE_WGSL).toContain("su.uDarkDamping");
     expect(MATRIX_RAIN_WGSL).toContain("vec3<f32>(injection)");
+  });
+
+  it("applies the compact contrast macro in both glyph programs", () => {
+    expect(MATRIX_RAIN_FRAGMENT).toContain("uniform float uContrast");
+    expect(MATRIX_RAIN_FRAGMENT).toContain(
+      "bodyState = contrastCurve(rawBodyState)",
+    );
+    expect(MATRIX_RAIN_WGSL).toContain("uContrast: f32");
+    expect(MATRIX_RAIN_WGSL).toContain(
+      "bodyState = contrastCurve(rawBodyState, mu.uContrast)",
+    );
   });
 });

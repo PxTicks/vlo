@@ -142,6 +142,7 @@ describe("createMatrixRainFilter", () => {
         verticalSpacing: 7,
         seed: 77,
         fallSpeed: 13,
+        contrast: 1.4,
         directShapeStrength: 0.4,
         injectionStrength: 0.6,
         ambientSpawn: 0.2,
@@ -159,6 +160,7 @@ describe("createMatrixRainFilter", () => {
     expect(uniforms.uVerticalSpacing).toBe(7);
     expect(uniforms.uSeed).toBe(77);
     expect(uniforms.uFallSpeed).toBe(13);
+    expect(uniforms.uContrast).toBe(1.4);
     expect(uniforms.uDirectShapeStrength).toBe(0.4);
     expect(uniforms.uInjectionStrength).toBe(0.6);
     expect(uniforms.uAmbientSpawn).toBe(0.2);

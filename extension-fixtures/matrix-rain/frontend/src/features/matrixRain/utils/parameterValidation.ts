@@ -1,6 +1,7 @@
 import {
   ACCUMULATION_MODES,
   DEBUG_MODES,
+  DEFAULT_MATRIX_RAIN_PARAMETERS,
   MATRIX_RAIN_COLOR_KEYS,
   MATRIX_RAIN_NUMERIC_BOUNDS,
   MATRIX_RAIN_SPLINE_KEYS,
@@ -16,6 +17,7 @@ import type {
   MatrixRainParameters,
   MatrixSignalMode,
 } from "../types";
+import { deriveMatrixPalette } from "./matrixRainMath";
 
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
@@ -143,16 +145,53 @@ export function resolveMatrixRainParameters(
   if (!isOutputMode(parameters.outputMode)) return null;
   if (!isDebugMode(parameters.debugMode)) return null;
 
+  const contrast = parameters.contrast as number;
+  const trailDensity = parameters.trailDensity as number;
+  const sourceCoupling = parameters.sourceCoupling as number;
+  const brightness = parameters.rainStrength as number;
+  const fallSpeed = parameters.fallSpeed as number;
+  const densityOffset = (trailDensity - 0.5) * 2;
+  const hasLegacyCustomPalette =
+    parameters.shadowColor !== DEFAULT_MATRIX_RAIN_PARAMETERS.shadowColor ||
+    parameters.brightColor !== DEFAULT_MATRIX_RAIN_PARAMETERS.brightColor ||
+    parameters.headColor !== DEFAULT_MATRIX_RAIN_PARAMETERS.headColor;
+  const palette = hasLegacyCustomPalette
+    ? {
+        shadowColor: parameters.shadowColor as string,
+        bodyColor: parameters.bodyColor as string,
+        brightColor: parameters.brightColor as string,
+        headColor: parameters.headColor as string,
+      }
+    : deriveMatrixPalette(parameters.bodyColor as string);
+
+  const clampNumeric = (value: number, key: NumericKey): number => {
+    const bounds = MATRIX_RAIN_NUMERIC_BOUNDS[key];
+    return Math.min(bounds.max, Math.max(bounds.min, value));
+  };
+
   return {
+    contrast,
+    trailDensity,
+    sourceCoupling,
     size: parameters.size as number,
     verticalSpacing: parameters.verticalSpacing as number,
     seed: parameters.seed as number,
-    glyphCycleRate: parameters.glyphCycleRate as number,
-    fallSpeed: parameters.fallSpeed as number,
+    glyphCycleRate: clampNumeric(
+      (parameters.glyphCycleRate as number) *
+        (fallSpeed / DEFAULT_MATRIX_RAIN_PARAMETERS.fallSpeed),
+      "glyphCycleRate",
+    ),
+    fallSpeed,
     speedVariation: parameters.speedVariation as number,
-    trailShape: parameters.trailShape as number,
+    trailShape: clampNumeric(
+      (parameters.trailShape as number) * Math.pow(2, -densityOffset),
+      "trailShape",
+    ),
     pulseDensity: parameters.pulseDensity as number,
-    headWidth: parameters.headWidth as number,
+    headWidth: clampNumeric(
+      (parameters.headWidth as number) * Math.pow(2, densityOffset * 0.35),
+      "headWidth",
+    ),
     signalMode: parameters.signalMode as MatrixSignalMode,
     lumaWeight: parameters.lumaWeight as number,
     edgeWeight: parameters.edgeWeight as number,
@@ -161,30 +200,54 @@ export function resolveMatrixRainParameters(
     signalThreshold: parameters.signalThreshold as number,
     signalGain: parameters.signalGain as number,
     signalGamma: parameters.signalGamma as number,
-    trailHalfLife: parameters.trailHalfLife as number,
+    trailHalfLife: clampNumeric(
+      (parameters.trailHalfLife as number) * Math.pow(2, densityOffset),
+      "trailHalfLife",
+    ),
     baseInjection: parameters.baseInjection as number,
-    ambientSpawn: parameters.ambientSpawn as number,
-    sourceInfluence: parameters.sourceInfluence as number,
-    motionInfluence: parameters.motionInfluence as number,
+    ambientSpawn: clampNumeric(
+      (parameters.ambientSpawn as number) * 2 * (1 - sourceCoupling),
+      "ambientSpawn",
+    ),
+    sourceInfluence: clampNumeric(
+      (parameters.sourceInfluence as number) * (0.5 + sourceCoupling),
+      "sourceInfluence",
+    ),
+    motionInfluence: clampNumeric(
+      (parameters.motionInfluence as number) * (0.5 + sourceCoupling),
+      "motionInfluence",
+    ),
     motionMode: parameters.motionMode as MatrixMotionMode,
     motionThreshold: parameters.motionThreshold as number,
     motionGain: parameters.motionGain as number,
     motionImmediateAmount: parameters.motionImmediateAmount as number,
     injectionStrength: parameters.injectionStrength as number,
-    darkDamping: parameters.darkDamping as number,
+    darkDamping: clampNumeric(
+      (parameters.darkDamping as number) * 2 * sourceCoupling,
+      "darkDamping",
+    ),
     accumulationMode: parameters.accumulationMode as MatrixAccumulationMode,
-    directShapeStrength: parameters.directShapeStrength as number,
-    directMotionStrength: parameters.directMotionStrength as number,
-    rainStrength: parameters.rainStrength as number,
-    headIntensity: parameters.headIntensity as number,
+    directShapeStrength: clampNumeric(
+      (parameters.directShapeStrength as number) * brightness,
+      "directShapeStrength",
+    ),
+    directMotionStrength: clampNumeric(
+      (parameters.directMotionStrength as number) * brightness,
+      "directMotionStrength",
+    ),
+    rainStrength: brightness,
+    headIntensity: clampNumeric(
+      (parameters.headIntensity as number) * brightness,
+      "headIntensity",
+    ),
     sourceHeadInfluence: parameters.sourceHeadInfluence as number,
     motionHeadInfluence: parameters.motionHeadInfluence as number,
     ditherMagnitude: parameters.ditherMagnitude as number,
     backgroundColor: parameters.backgroundColor as string,
-    shadowColor: parameters.shadowColor as string,
-    bodyColor: parameters.bodyColor as string,
-    brightColor: parameters.brightColor as string,
-    headColor: parameters.headColor as string,
+    shadowColor: palette.shadowColor,
+    bodyColor: palette.bodyColor,
+    brightColor: palette.brightColor,
+    headColor: palette.headColor,
     outputMode: parameters.outputMode as MatrixOutputMode,
     debugMode: parameters.debugMode as MatrixDebugMode,
   };

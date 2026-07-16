@@ -150,6 +150,15 @@ describe("source-conditioned stream spawning", () => {
     expect(sourceSpawnProbability(1, 1, 0.08, 0.85, 0.6)).toBe(1);
   });
 
+  it("makes Spawn Rate strongly scale stream acceptance", () => {
+    const low = sourceSpawnProbability(1, 0, 0.08, 0.85, 0.6, 0.1);
+    const neutral = sourceSpawnProbability(1, 0, 0.08, 0.85, 0.6, 1);
+    const high = sourceSpawnProbability(1, 0, 0.08, 0.85, 0.6, 3);
+
+    expect(low).toBeLessThan(neutral * 0.3);
+    expect(high).toBeGreaterThan(0.99);
+  });
+
   it("makes a stable decision per pulse and increases accepted density", () => {
     const low = Array.from({ length: 2_000 }, (_, pulse) =>
       acceptsSourceSpawn(7, pulse - 1_000, 23, 0.1),

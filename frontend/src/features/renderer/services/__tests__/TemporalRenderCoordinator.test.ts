@@ -73,6 +73,37 @@ describe("TemporalRenderCoordinator", () => {
     expect(next.target.deltaTimeTicks).toBe(TICKS_PER_SECOND / 30);
   });
 
+  it("retains the current sequence for approximate backward preview, then replays exactly", () => {
+    const coordinator = new TemporalRenderCoordinator();
+    const exact = coordinator.plan({
+      presentationTick: 5 * TICKS_PER_SECOND,
+      fps: 30,
+      mode: "preview",
+      requirements: HISTORY,
+    });
+    const approximate = coordinator.createApproximatePreviewContext(
+      3 * TICKS_PER_SECOND,
+      30,
+    );
+
+    expect(approximate).toMatchObject({
+      sequenceId: exact.target.sequenceId,
+      presentationTimeTicks: 3 * TICKS_PER_SECOND,
+      continuity: "sequential",
+      deltaTimeTicks: null,
+      isWarmup: false,
+    });
+
+    const refined = coordinator.plan({
+      presentationTick: 3 * TICKS_PER_SECOND,
+      fps: 30,
+      mode: "preview",
+      requirements: HISTORY,
+    });
+    expect(refined.warmup).toHaveLength(60);
+    expect(refined.target.sequenceId).not.toBe(approximate.sequenceId);
+  });
+
   it("starts a new sequence and never replays future samples after a backward seek", () => {
     const coordinator = new TemporalRenderCoordinator();
     const later = coordinator.plan({

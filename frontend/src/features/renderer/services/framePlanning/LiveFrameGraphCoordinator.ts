@@ -45,6 +45,8 @@ export interface LiveFrameGraphRenderOptions {
   clips?: readonly TimelineClip[];
   transitions?: readonly Transition[];
   earliestTick?: number;
+  /** Approximate skips history replay for this live target only. */
+  temporalPreviewQuality?: "exact" | "approximate";
   submitWarmupFrame?: (
     tick: number,
     plan: ScenePresentationPlan,
@@ -118,6 +120,21 @@ export class LiveFrameGraphCoordinator {
     presentationTick: number,
     options: LiveFrameGraphRenderOptions,
   ): Promise<LiveFrameGraphRenderResult | null> {
+    if (options.temporalPreviewQuality === "approximate") {
+      // Match the responsive pre-history-scheduler preview path: retain one
+      // compatibility sequence, perform no temporal discovery/replay, and let
+      // history filters make one bounded best-effort update against the current
+      // source. A later playback/exact request sees invalidation and rebuilds.
+      const result = await this.renderSingleFrame(
+        presentationTick,
+        options,
+        this.temporal.createApproximatePreviewContext(
+          presentationTick,
+          options.fps,
+        ),
+      );
+      return result;
+    }
     const stableTransformationSets: TimelineClip["transformations"][] = [];
     const activeTransformationSets: TimelineClip["transformations"][] = [];
     const activeSourceIdentities: string[] = [];
@@ -172,13 +189,14 @@ export class LiveFrameGraphCoordinator {
     collectGroupTransforms(
       options.adjustmentEffectResolver.deriveGroups(presentationTick),
     );
+    const temporalRequirements = collectTemporalRenderingRequirements(
+      activeTransformationSets,
+    );
     const temporalPlan = this.temporal.plan({
       presentationTick,
       fps: options.fps,
       mode: "preview",
-      requirements: collectTemporalRenderingRequirements(
-        activeTransformationSets,
-      ),
+      requirements: temporalRequirements,
       earliestTick: Math.max(
         options.earliestTick ?? 0,
         activeTemporalStartTicks.length > 0

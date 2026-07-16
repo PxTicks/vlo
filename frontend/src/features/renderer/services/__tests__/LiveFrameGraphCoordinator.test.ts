@@ -267,7 +267,7 @@ describe("LiveFrameGraphCoordinator", () => {
     coordinator.dispose();
   });
 
-  it("executes bounded hidden warm-up frames before a random-access preview", async () => {
+  it("approximates a scrub target before exact bounded warm-up", async () => {
     const registration = extensionTransformationRegistry.registerRuntime(
       {
         extension: { id: "test.live-temporal", version: "1.0.0" },
@@ -325,6 +325,20 @@ describe("LiveFrameGraphCoordinator", () => {
     };
 
     try {
+      const approximate = await coordinator.renderFrame(
+        10 * TICKS_PER_SECOND,
+        { ...renderOptions, temporalPreviewQuality: "approximate" },
+      );
+
+      expect(submitWarmupFrame).not.toHaveBeenCalled();
+      expect(harness.presentedPolicies).toHaveLength(1);
+      expect(harness.presentedPolicies[0]?.render).toMatchObject({
+        isWarmup: false,
+        continuity: "sequential",
+        sequenceId: 0,
+      });
+
+      harness.presentedPolicies.length = 0;
       const result = await coordinator.renderFrame(
         10 * TICKS_PER_SECOND,
         renderOptions,
@@ -354,6 +368,7 @@ describe("LiveFrameGraphCoordinator", () => {
       );
       expect(replaced?.render.sequenceId).not.toBe(result?.render.sequenceId);
       expect(submitWarmupFrame).toHaveBeenCalledTimes(1);
+
     } finally {
       coordinator.dispose();
       registration.dispose();

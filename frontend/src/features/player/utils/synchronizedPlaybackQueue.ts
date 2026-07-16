@@ -1,6 +1,7 @@
 export interface SynchronizedPlaybackQueueEntry {
   time: number;
   enqueuedAtMs: number;
+  temporalPreviewQuality?: "exact" | "approximate";
 }
 
 export const MAX_SYNCHRONIZED_PLAYBACK_QUEUE = 4;

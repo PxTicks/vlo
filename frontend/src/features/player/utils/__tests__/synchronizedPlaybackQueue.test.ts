@@ -41,6 +41,39 @@ describe("synchronizedPlaybackQueue", () => {
     ]);
   });
 
+  it("coalesces scrub approximations to the newest requested tick", () => {
+    const queue = [
+      { time: 10, enqueuedAtMs: 10, temporalPreviewQuality: "exact" as const },
+    ];
+
+    enqueueSynchronizedPlaybackQueueEntry(
+      queue,
+      {
+        time: 20,
+        enqueuedAtMs: 20,
+        temporalPreviewQuality: "approximate",
+      },
+      { maxQueueSize: 1 },
+    );
+    enqueueSynchronizedPlaybackQueueEntry(
+      queue,
+      {
+        time: 30,
+        enqueuedAtMs: 30,
+        temporalPreviewQuality: "approximate",
+      },
+      { maxQueueSize: 1 },
+    );
+
+    expect(queue).toEqual([
+      {
+        time: 30,
+        enqueuedAtMs: 30,
+        temporalPreviewQuality: "approximate",
+      },
+    ]);
+  });
+
   it("drops the oldest queued batches when capacity is exceeded", () => {
     const queue: Array<{ time: number; enqueuedAtMs: number }> = [];
 

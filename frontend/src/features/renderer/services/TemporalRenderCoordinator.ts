@@ -77,6 +77,30 @@ export class TemporalRenderCoordinator {
     this.invalidated = true;
   }
 
+  /**
+   * Produce the pre-scheduler best-effort context used only while scrubbing.
+   * It preserves the current sequence so retained filter state remains useful,
+   * but leaves delta uncertified and invalidates the next exact plan.
+   */
+  createApproximatePreviewContext(
+    presentationTick: number,
+    fps: number,
+  ): FilterRenderContext {
+    const tick = Math.round(presentationTick);
+    const target = this.createContext({
+      sequenceId: this.lastTarget?.sequenceId ?? this.sequenceId,
+      presentationTick: tick,
+      mode: "preview",
+      fps: Number.isFinite(fps) && fps > 0 ? fps : 0,
+      continuity: "sequential",
+      deltaTimeTicks: null,
+      isWarmup: false,
+    });
+    this.lastTarget = target;
+    this.invalidated = true;
+    return target;
+  }
+
   plan(request: TemporalFramePlanRequest): TemporalFramePlan {
     const presentationTick = Math.round(request.presentationTick);
     const fps = Number.isFinite(request.fps) && request.fps > 0 ? request.fps : 0;

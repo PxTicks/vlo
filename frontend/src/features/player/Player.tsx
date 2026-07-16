@@ -49,6 +49,7 @@ import {
 import {
   enqueueSynchronizedPlaybackQueueEntry,
   pruneSynchronizedPlaybackQueue,
+  type SynchronizedPlaybackQueueEntry,
 } from "./utils/synchronizedPlaybackQueue";
 
 type SynchronizedPlaybackRenderer = (time: number) => Promise<void>;
@@ -69,7 +70,7 @@ function PlayerImpl() {
     new Map<string, SynchronizedPlaybackRenderer>(),
   );
   const pendingPlaybackFrameQueueRef = useRef(
-    [] as Array<{ time: number; enqueuedAtMs: number }>,
+    [] as SynchronizedPlaybackQueueEntry[],
   );
   const synchronizedPlaybackBusyRef = useRef(false);
   const temporalWarmupTargetRef = useRef<RenderTexture | null>(null);
@@ -358,6 +359,8 @@ function PlayerImpl() {
                 logicalDimensions,
                 visualTrackOrder: visualTrackIdsRef.current,
                 adjustmentEffectResolver,
+                temporalPreviewQuality:
+                  nextFrame.temporalPreviewQuality ?? "exact",
                 submitWarmupFrame: (tick, plan, render) => {
                   if (!pixiApp?.renderer) return;
                   renderGroupOrchestrator?.syncPresentationPlan(
@@ -443,6 +446,7 @@ function PlayerImpl() {
       {
         time: activeClock.time,
         enqueuedAtMs: performance.now(),
+        temporalPreviewQuality: isPlaying ? "exact" : "approximate",
       },
     );
     void processPendingPlaybackFrames();
@@ -453,7 +457,9 @@ function PlayerImpl() {
         {
           time,
           enqueuedAtMs: performance.now(),
+          temporalPreviewQuality: isPlaying ? "exact" : "approximate",
         },
+        isPlaying ? undefined : { maxQueueSize: 1 },
       );
       void processPendingPlaybackFrames();
     });
@@ -464,7 +470,9 @@ function PlayerImpl() {
           {
             time,
             enqueuedAtMs: performance.now(),
+            temporalPreviewQuality: isPlaying ? "exact" : "approximate",
           },
+          isPlaying ? undefined : { maxQueueSize: 1 },
         );
         void processPendingPlaybackFrames();
       });

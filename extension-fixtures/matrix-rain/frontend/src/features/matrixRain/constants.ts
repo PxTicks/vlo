@@ -36,6 +36,8 @@ export const MATRIX_RAIN_RENDERING: ExtensionTrustedFilterRenderingDefinition = 
 export const OUTPUT_MODES: readonly MatrixOutputMode[] = [
   "replaceBlack",
   "matrixOnly",
+  "overlaySource",
+  "sourceTinted",
 ];
 
 export const DEBUG_MODES: readonly MatrixDebugMode[] = [
@@ -577,6 +579,8 @@ export const MATRIX_RAIN_INTERNAL_CONTROL_GROUPS: readonly ExtensionTransformati
           options: [
             { label: "Replace (black bg)", value: "replaceBlack" },
             { label: "Matrix only (transparent)", value: "matrixOnly" },
+            { label: "Overlay source", value: "overlaySource" },
+            { label: "Source-alpha tinted", value: "sourceTinted" },
           ],
         },
       ],
@@ -663,6 +667,8 @@ export const MATRIX_RAIN_CONTROL_GROUPS: readonly ExtensionTransformationControl
           options: [
             { label: "Replace (black bg)", value: "replaceBlack" },
             { label: "Matrix only (transparent)", value: "matrixOnly" },
+            { label: "Overlay source", value: "overlaySource" },
+            { label: "Source-alpha tinted", value: "sourceTinted" },
           ],
         },
       ],

@@ -1,14 +1,17 @@
-import { GLYPH_STROKE_MASKS } from "../utils/matrixRainMath";
+import {
+  GLYPH_COUNT,
+  GLYPH_STROKE_MASKS,
+} from "../utils/matrixRainMath";
 
 /**
- * WebGL (GLSL ES 3.00) programs for the stateless Phase 2 Matrix appearance.
+ * WebGL (GLSL ES 3.00) programs for the full-resolution Matrix glyph pass.
  *
  * The vertex stage is the standard Pixi v8 filter header. The fragment stage
  * anchors a glyph grid to the input pixel bounds, animates a per-column
  * descending trail and bright head purely from canonical visual time, cycles
  * analytic anti-aliased stroke glyphs deterministically, and maps brightness
- * through a five-colour piecewise palette. No feedback texture is used at this
- * phase.
+ * through a five-colour piecewise palette, reads cell feedback state, and
+ * applies the selected premultiplied source-composition mode.
  *
  * Every hash, glyph, and profile here mirrors `matrixRainMath.ts` (the CPU
  * reference) and `matrixRainWgsl.ts`, so the three can never drift.
@@ -82,7 +85,7 @@ uniform vec3 uBody;
 uniform vec3 uBright;
 uniform vec3 uHead;
 
-const uint GLYPHS[16] = uint[16](${GLYPH_ARRAY});
+const uint GLYPHS[${GLYPH_COUNT}] = uint[${GLYPH_COUNT}](${GLYPH_ARRAY});
 // Normalized analytic stroke vocabulary: five horizontals, two outer
 // verticals, one full centre vertical, two full diagonals, four diamond
 // diagonals, and two half-height centre verticals.
@@ -190,7 +193,7 @@ void main(void) {
   float head = 1.0 - smoothstep(0.0, headEdge, d / spacing);
 
   uint bucket = uint(floor(max(uTimeSeconds, 0.0) * uGlyphCycleRate));
-  uint gi = hash3(col, row, bucket ^ seed) % 16u;
+  uint gi = hash3(col, row, bucket ^ seed) % ${GLYPH_COUNT}u;
   float lit = glyphCoverage(gi, sub) * glyphRegion;
 
   // Read the one-texel-per-cell state explicitly at its texel centre. This
@@ -292,19 +295,34 @@ void main(void) {
   float dither = (unitFloat(hash2(uint(pixel.x), uint(pixel.y))) - 0.5)
     * uDitherMagnitude * coverage;
 
+  vec3 straight = clamp(
+    grade + uHead * headScalar * uHeadIntensity + vec3(dither),
+    0.0,
+    1.0
+  );
+  vec3 matrixPremul = straight * coverage;
+  vec4 source = texture(uTexture, vTextureCoord);
+  float sourceAlpha = clamp(source.a, 0.0, 1.0);
+  vec3 sourcePremul = clamp(source.rgb, vec3(0.0), vec3(sourceAlpha));
+
   if (outMode == 1) {
-    // matrixOnly: dither the straight colour, then premultiply by coverage so no
-    // channel can exceed alpha (no bright compositing fringe).
-    vec3 straight = clamp(
-      grade + uHead * headScalar * uHeadIntensity + vec3(dither),
-      0.0,
-      1.0
+    // matrixOnly: transparent, premultiplied Matrix glyphs.
+    finalColor = vec4(matrixPremul, coverage);
+  } else if (outMode == 2) {
+    // overlaySource: additive Matrix light over the premultiplied source while
+    // preserving the source alpha and the rgb <= alpha invariant.
+    float alpha = sourceAlpha + coverage * (1.0 - sourceAlpha);
+    finalColor = vec4(
+      min(vec3(alpha), sourcePremul + matrixPremul),
+      alpha
     );
-    finalColor = vec4(straight * coverage, coverage);
+  } else if (outMode == 3) {
+    // sourceTinted: Matrix glyphs exist only where the source has alpha.
+    float alpha = coverage * sourceAlpha;
+    finalColor = vec4(straight * alpha, alpha);
   } else {
-    // replaceBlack: opaque background with Matrix glyphs.
-    vec3 rgb = mix(uBackground, grade, bodyB) + uHead * headB + vec3(dither);
-    finalColor = vec4(rgb, 1.0);
+    // replaceBlack: opaque background with premultiplied Matrix glyphs.
+    finalColor = vec4(uBackground * (1.0 - coverage) + matrixPremul, 1.0);
   }
 }
 `;

@@ -10,19 +10,21 @@ transformation.
 The full design and phase plan lives in
 [`docs/source-aware-matrix-rain-filter-extension-plan.md`](../../docs/source-aware-matrix-rain-filter-extension-plan.md).
 
-## What ships today (Phase 4: source-conditioned temporal rain)
+## What ships today (finished Phase 6 example)
 
 - One primary transformation registered through the ordinary `trusted-filter`
   lane. Its persisted identity is `example.matrix-rain/matrix-rain`.
 - The **Matrix appearance**, rendered from the injected host Pixi singleton
   (`api.runtime.pixi`) with no bundled copy of Pixi:
-  - a fixed grid of 16 original analytic stroke glyphs anchored to the input
+  - a fixed grid of 24 original analytic stroke glyphs anchored to the input
     bounds, with smooth derivative-based antialiasing and editable source-space
     glyph size and spacing between rows;
   - deterministic glyph cycling, per-column phase, and speed variation derived
     only from cell coordinates, an explicit seed, and quantized visual time;
   - a five-colour piecewise green palette and coverage-gated low dither;
-  - `replaceBlack` and `matrixOnly` output modes.
+  - four premultiplied-alpha output modes: opaque `replaceBlack`, transparent
+    `matrixOnly`, additive `overlaySource`, and source-alpha-constrained
+    `sourceTinted`.
 - **Two-pass temporal feedback.** The top-level glyph filter overrides Pixi's
   `apply()` to drive a low-resolution state-update child filter over two
   persistent RGBA8 ping-pong textures. Each new logical sample advances the
@@ -80,12 +82,13 @@ The full design and phase plan lives in
   filters).
 - The declared `rendering` metadata is `timeDependency: "history"` with
   `maxHistorySeconds: 6` and `maxStepSeconds: 1/30`.
+- The native host discovers those requirements, carries stable sample/sequence
+  identity, bridges dropped playback samples, and performs bounded hidden GPU
+  warm-up for seek, mid-clip export, and still capture. The extension contains
+  no private seek detector or export renderer.
 - A custom authored-parameter validator (exact key set, numeric/integer/color
   fields, enum membership, preserved host spline objects) plus a fail-closed
   `update()` narrowing path.
-
-Later phases add host warm-up scheduling for deterministic seek/export and the
-source-composition output modes.
 
 > Note: the GPU multi-pass orchestration (the `apply()` override, ping-pong
 > textures, and both fragment programs) is verified structurally here — CPU
@@ -106,7 +109,42 @@ dark damping, half-life retention, soft-add, luma, and advection) are unit-teste
 without a GPU. `utils/feedbackLifecycle.ts` covers the
 reallocation/reset rules, and `MatrixRainFilter.test.ts` covers the multi-pass
 controller (advance-once-per-sample, resize reset, exact-once dispose).
-Parameter validation is covered separately.
+Parameter validation is covered separately. CPU visual signatures pin
+representative circle, transparent-silhouette, line-art, low-contrast, and
+moving-feature cases; shader contract tests keep GLSL/WGSL composition aligned.
+
+## Creative recipes
+
+These are starting points, not separate effects. `MATRIX_RAIN_RECIPES` contains
+the same values as executable data; merge a recipe over the shipped defaults.
+
+| Recipe | Key settings | Use |
+|---|---|---|
+| Classic Matrix | Defaults | Balanced replacement with visible source structure |
+| Source-bound Edges | Mode `edge`, Source Coupling `1`, Ambient Spawn `0`, Trail Density `0.42` | Rain emitted almost entirely from detected edges |
+| Ghost Overlay | Output `overlaySource`, Tint `#20d9c2`, Brightness `0.7` | Preserve the source while adding restrained cyan rain |
+| Bloom Heads | Output `matrixOnly`, Head Brightness `3`, Brightness `0.8`, Contrast `1.25` | Transparent glyph layer prepared for Bloom |
+
+### Matrix followed by Bloom
+
+Filter order is significant. Add **Matrix Rain first**, then add the native
+**Bloom** filter after it with Strength `2.5` and Quality `4`. Matrix emits the
+structured glyph/head image; Bloom consumes that result. Keeping Matrix head
+brightness above body brightness makes Bloom emphasize tips without turning the
+entire trail into an undifferentiated glow. When the original source must remain
+visible, use `overlaySource` instead of `matrixOnly` and lower Bloom Strength.
+
+## Performance instrumentation
+
+`estimateMatrixRainWorkload()` reports the full-resolution pixel count,
+cell-resolution state dimensions, ping-pong RGBA8 bytes, and maximum warm-up
+sample count without iterating over cells. The fixture tests cover 720p, 1080p,
+and 4K examples at representative glyph sizes. With the shipped 10 px glyph and
+2 px row spacing, 1080p uses 17,280 state texels (0.83% of full resolution) and
+138,240 bytes for both state textures. A six-second, 30 Hz history declaration
+has a maximum 180-sample cold pre-roll; ordinary dropped frames are bridged from
+valid state rather than replaying that whole window. Bloom cost is separate and
+depends on its own quality setting.
 
 ## The generic contract it leans on
 
@@ -114,7 +152,7 @@ Matrix Rain does not get special treatment. It relies only on additions that are
 useful to **any** temporal filter author, introduced in SDK `1.6.0`:
 
 - `ExtensionTrustedFilterRenderingDefinition` — declare `none` / `sample` /
-  `none` / `sample` / `history` time dependency plus bounded replay/step limits.
+  `history` time dependency plus bounded replay/step limits.
 - `ExtensionFilterRenderSample` on `ExtensionTrustedFilterApplyContext` —
   immutable render-sample identity (sequence/sample IDs, mode, continuity,
   presentation/visual/source ticks, delta, warm-up flag) so a filter can tell
@@ -137,6 +175,11 @@ The build type-checks against the local `@vlo/extension-sdk` and emits
 injected runtime for every runtime constructor so the bundle never contains a
 second copy of Pixi.
 
+For live UI testing, keep this fixture as the canonical source, build it, then
+copy the distributable `manifest.json`, `README.md`, and `frontend/dist/` into
+`extensions/installed/example.matrix-rain/`. Rescan/approve the changed digest
+and refresh the page. Never edit the installed bundle by hand.
+
 ## Layout
 
 ```text
@@ -146,6 +189,7 @@ frontend/src/
     ├── MatrixRainFilter.ts         # top-level glyph filter + apply() feedback controller
     ├── MatrixRainStateFilter.ts    # low-res state-update child filter
     ├── constants.ts                # defaults, control groups, rendering policy
+    ├── recipes.ts                  # documented creative presets + Bloom stack
     ├── types.ts                    # public resolved parameter + enum types
     ├── index.ts                    # feature barrel (factory + metadata only)
     ├── shaders/
@@ -156,10 +200,11 @@ frontend/src/
     ├── utils/
     │   ├── matrixRainMath.ts       # deterministic CPU reference (+ feedback math)
     │   ├── feedbackLifecycle.ts    # state reallocation / reset predicates
+    │   ├── performance.ts          # static workload / warm-up instrumentation
     │   └── parameterValidation.ts  # validation + fail-closed narrowing
     └── __tests__/                  # math, feedback, lifecycle, filter, validation
 ```
 
-The feature barrel exports only the factory, definition metadata, defaults, and
-public parameter types; shader strings, math, and validation internals stay
-private.
+The feature barrel exports only the factory, definition metadata, defaults,
+recipes, workload estimator, and public parameter types; shader strings, render
+math, and validation internals stay private.

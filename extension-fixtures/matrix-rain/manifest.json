@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "example.matrix-rain",
   "name": "Source-aware Matrix Rain",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "sdk": ">=1.6.0 <2.0.0",
   "frontend": {
     "entry": "frontend/dist/index.js"

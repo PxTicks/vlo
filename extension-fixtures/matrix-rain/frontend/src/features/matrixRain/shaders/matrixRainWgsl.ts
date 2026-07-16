@@ -1,7 +1,10 @@
-import { GLYPH_STROKE_MASKS } from "../utils/matrixRainMath";
+import {
+  GLYPH_COUNT,
+  GLYPH_STROKE_MASKS,
+} from "../utils/matrixRainMath";
 
 /**
- * WebGPU (WGSL) program for the stateless Phase 2 Matrix appearance. It is a
+ * WebGPU (WGSL) program for the full-resolution Matrix glyph pass. It is a
  * line-for-line mirror of `matrixRainGl.ts` using Pixi v8's filter binding
  * convention: global filter uniforms + input texture/sampler at `@group(0)`,
  * and this filter's own uniform struct at `@group(1) @binding(0)`.
@@ -70,7 +73,7 @@ struct MatrixRainUniforms {
 @group(1) @binding(1) var uState: texture_2d<f32>;
 @group(1) @binding(2) var uStateSampler: sampler;
 
-var<private> GLYPHS: array<u32, 16> = array<u32, 16>(${GLYPH_ARRAY});
+var<private> GLYPHS: array<u32, ${GLYPH_COUNT}> = array<u32, ${GLYPH_COUNT}>(${GLYPH_ARRAY});
 var<private> SEGMENT_A: array<vec2<f32>, 16> = array<vec2<f32>, 16>(
   vec2<f32>(0.22, 0.14), vec2<f32>(0.30, 0.34), vec2<f32>(0.18, 0.50), vec2<f32>(0.30, 0.66),
   vec2<f32>(0.22, 0.86), vec2<f32>(0.20, 0.15), vec2<f32>(0.80, 0.15), vec2<f32>(0.50, 0.12),
@@ -193,7 +196,7 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   let head = 1.0 - smoothstep(0.0, headEdge, d / spacing);
 
   let bucket = u32(floor(max(mu.uTimeSeconds, 0.0) * mu.uGlyphCycleRate));
-  let gi = hash3(col, row, bucket ^ seed) % 16u;
+  let gi = hash3(col, row, bucket ^ seed) % ${GLYPH_COUNT}u;
   let lit = glyphCoverage(gi, sub) * glyphRegion;
 
   // Persistent feedback state: one texel per cell, sampled at its centre.
@@ -275,17 +278,37 @@ fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
   let dither = (unitFloat(hash2(u32(pixel.x), u32(pixel.y))) - 0.5)
     * mu.uDitherMagnitude * coverage;
 
+  let straight = clamp(
+    grade + mu.uHead * headScalar * mu.uHeadIntensity + vec3<f32>(dither),
+    vec3<f32>(0.0),
+    vec3<f32>(1.0),
+  );
+  let matrixPremul = straight * coverage;
+  let source = textureSample(uTexture, uSampler, uv);
+  let sourceAlpha = clamp(source.a, 0.0, 1.0);
+  let sourcePremul = clamp(
+    source.rgb,
+    vec3<f32>(0.0),
+    vec3<f32>(sourceAlpha),
+  );
+
   if (outMode == 1) {
-    // matrixOnly: dither the straight colour, then premultiply by coverage so no
-    // channel can exceed alpha (no bright compositing fringe).
-    let straight = clamp(
-      grade + mu.uHead * headScalar * mu.uHeadIntensity + vec3<f32>(dither),
-      vec3<f32>(0.0),
-      vec3<f32>(1.0),
-    );
-    return vec4<f32>(straight * coverage, coverage);
+    return vec4<f32>(matrixPremul, coverage);
   }
-  let rgb = mix(mu.uBackground, grade, bodyB) + mu.uHead * headB + vec3<f32>(dither);
-  return vec4<f32>(rgb, 1.0);
+  if (outMode == 2) {
+    let alpha = sourceAlpha + coverage * (1.0 - sourceAlpha);
+    return vec4<f32>(
+      min(vec3<f32>(alpha), sourcePremul + matrixPremul),
+      alpha,
+    );
+  }
+  if (outMode == 3) {
+    let alpha = coverage * sourceAlpha;
+    return vec4<f32>(straight * alpha, alpha);
+  }
+  return vec4<f32>(
+    mu.uBackground * (1.0 - coverage) + matrixPremul,
+    1.0,
+  );
 }
 `;

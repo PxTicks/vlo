@@ -95,6 +95,7 @@ describe("resolveMatrixRainParameters", () => {
       DEFAULT_MATRIX_RAIN_PARAMETERS.verticalSpacing,
     );
     expect(resolved?.outputMode).toBe("replaceBlack");
+    expect(resolved?.debugMode).toBe("none");
   });
 
   it("fails closed when the host resolved a value out of range", () => {
@@ -115,6 +116,8 @@ describe("enum indices", () => {
   it("map to their shader integer contract", () => {
     expect(outputModeIndex("replaceBlack")).toBe(0);
     expect(outputModeIndex("matrixOnly")).toBe(1);
+    expect(outputModeIndex("overlaySource")).toBe(2);
+    expect(outputModeIndex("sourceTinted")).toBe(3);
     expect(debugModeIndex("none")).toBe(0);
     expect(debugModeIndex("cellGrid")).toBe(1);
     expect(debugModeIndex("proceduralTrail")).toBe(2);

@@ -4,6 +4,7 @@ import {
   GLYPH_SEGMENT_COUNT,
   GLYPH_STROKE_MASKS,
   colorToVec3,
+  composeMatrixOutput,
   deriveMatrixPalette,
   columnPhase,
   columnSpacing,
@@ -81,7 +82,8 @@ describe("column variation", () => {
 });
 
 describe("glyphs", () => {
-  it("defines 16 distinct analytic-stroke masks", () => {
+  it("defines 24 distinct analytic-stroke masks", () => {
+    expect(GLYPH_COUNT).toBe(24);
     expect(GLYPH_STROKE_MASKS).toHaveLength(GLYPH_COUNT);
     expect(new Set(GLYPH_STROKE_MASKS).size).toBe(GLYPH_COUNT);
     for (const mask of GLYPH_STROKE_MASKS) {
@@ -235,6 +237,74 @@ describe("paletteGrade", () => {
   it("clamps out-of-range brightness", () => {
     expect(paletteGrade(-1, palette)).toEqual([0, 0.2, 0]);
     expect(paletteGrade(5, palette)).toEqual([0.5, 1, 0.6]);
+  });
+});
+
+describe("premultiplied output composition", () => {
+  const matrix = [0.25, 1, 0.5] as const;
+  const background = [0, 0, 0] as const;
+
+  it("keeps every alpha mode premultiplied", () => {
+    const sources = [
+      { r: 0, g: 0, b: 0, a: 0 },
+      { r: 1, g: 1, b: 1, a: 0 },
+      { r: 0.1, g: 0.25, b: 0.05, a: 0.5 },
+      { r: 0.8, g: 0.2, b: 0.1, a: 1 },
+    ];
+    for (const mode of ["matrixOnly", "overlaySource", "sourceTinted"] as const) {
+      for (const source of sources) {
+        for (const coverage of [0, 0.25, 1]) {
+          const output = composeMatrixOutput(
+            mode,
+            source,
+            matrix,
+            coverage,
+            background,
+          );
+          expect(output.r).toBeGreaterThanOrEqual(0);
+          expect(output.g).toBeGreaterThanOrEqual(0);
+          expect(output.b).toBeGreaterThanOrEqual(0);
+          expect(output.r).toBeLessThanOrEqual(output.a);
+          expect(output.g).toBeLessThanOrEqual(output.a);
+          expect(output.b).toBeLessThanOrEqual(output.a);
+        }
+      }
+    }
+  });
+
+  it("writes exact transparent black when effect coverage is zero", () => {
+    const transparentSource = { r: 1, g: 1, b: 1, a: 0 };
+    expect(
+      composeMatrixOutput(
+        "matrixOnly",
+        transparentSource,
+        matrix,
+        0,
+        background,
+      ),
+    ).toEqual({ r: 0, g: 0, b: 0, a: 0 });
+    expect(
+      composeMatrixOutput(
+        "sourceTinted",
+        transparentSource,
+        matrix,
+        1,
+        background,
+      ),
+    ).toEqual({ r: 0, g: 0, b: 0, a: 0 });
+  });
+
+  it("preserves source alpha in overlay and constrains tinted output", () => {
+    const source = { r: 0.2, g: 0.1, b: 0.05, a: 0.4 };
+    expect(
+      composeMatrixOutput("overlaySource", source, matrix, 0, background),
+    ).toEqual(source);
+    expect(
+      composeMatrixOutput("sourceTinted", source, matrix, 0.5, background),
+    ).toEqual({ r: 0.05, g: 0.2, b: 0.1, a: 0.2 });
+    expect(
+      composeMatrixOutput("replaceBlack", source, matrix, 0.5, background).a,
+    ).toBe(1);
   });
 });
 

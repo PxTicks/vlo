@@ -11,6 +11,8 @@ export {
   MATRIX_RAIN_TRANSFORM_ID,
 } from "./constants";
 export { validateMatrixRainAuthoredParameters } from "./utils/parameterValidation";
+export { MATRIX_RAIN_RECIPES } from "./recipes";
+export { estimateMatrixRainWorkload } from "./utils/performance";
 export type {
   MatrixDebugMode,
   MatrixOutputMode,

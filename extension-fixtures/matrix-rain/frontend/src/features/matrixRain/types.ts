@@ -1,14 +1,19 @@
 /**
- * Source-conditioned temporal parameter surface: edge/motion-aware injection
- * plus deterministic stream spawning. It adds a `signal` group (how the
+ * Source-conditioned temporal parameter surface: edge/motion-aware injection,
+ * deterministic stream spawning, and premultiplied source composition. It adds
+ * a `signal` group (how the
  * source is read: luma / inverse-luma / alpha / edge combinations, then
  * threshold/gain/gamma) and motion controls (compare the current signal with
  * the previous one and inject new bright activity) on top of the Phase 3
  * feedback controls.
  */
 
-/** Opaque black-background glyphs, or transparent premultiplied glyphs. */
-export type MatrixOutputMode = "replaceBlack" | "matrixOnly";
+/** Premultiplied-alpha composition selected for the final glyph pass. */
+export type MatrixOutputMode =
+  | "replaceBlack"
+  | "matrixOnly"
+  | "overlaySource"
+  | "sourceTinted";
 
 /** How the per-cell source signal is derived from the input. */
 export type MatrixSignalMode =

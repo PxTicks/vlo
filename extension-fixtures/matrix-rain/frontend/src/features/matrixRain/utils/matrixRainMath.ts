@@ -12,10 +12,10 @@
 import type {
   MatrixAccumulationMode,
   MatrixMotionMode,
+  MatrixOutputMode,
   MatrixSignalMode,
 } from "../types";
 
-export const GLYPH_COUNT = 16;
 export const GLYPH_SEGMENT_COUNT = 16;
 
 export interface GlyphCellSample {
@@ -54,7 +54,7 @@ export function sampleGlyphCell(
 }
 
 /**
- * Sixteen original cyber glyphs expressed as combinations of normalized line
+ * Original cyber glyphs expressed as combinations of normalized line
  * segments. The shaders rasterize these as analytic, anti-aliased strokes, so
  * increasing Glyph Size adds real edge resolution instead of magnifying a 5×5
  * bitmap. Segment indices are documented beside the shader endpoint tables.
@@ -76,6 +76,14 @@ const GLYPH_SEGMENTS: readonly (readonly number[])[] = [
   [1, 3, 14, 15],
   [5, 6, 10, 11],
   [5, 6, 12, 13],
+  [0, 1, 3, 4, 7],
+  [0, 2, 4, 7, 14, 15],
+  [1, 3, 5, 6, 14, 15],
+  [0, 4, 10, 11],
+  [2, 8, 9, 12, 13],
+  [0, 5, 6, 12, 13],
+  [4, 5, 6, 10, 11],
+  [1, 2, 3, 7],
 ];
 
 function encodeGlyphSegments(segments: readonly number[]): number {
@@ -85,6 +93,7 @@ function encodeGlyphSegments(segments: readonly number[]): number {
 /** Segment-presence masks shared verbatim with both shader programs. */
 export const GLYPH_STROKE_MASKS: readonly number[] =
   GLYPH_SEGMENTS.map(encodeGlyphSegments);
+export const GLYPH_COUNT = GLYPH_STROKE_MASKS.length;
 
 /** True when a procedural glyph contains the requested analytic segment. */
 export function glyphUsesSegment(
@@ -390,6 +399,73 @@ export interface Rgba {
   readonly g: number;
   readonly b: number;
   readonly a: number;
+}
+
+/**
+ * CPU reference for the glyph shader's premultiplied-alpha composition.
+ * `source` is already premultiplied, while `matrixStraight` is straight RGB.
+ */
+export function composeMatrixOutput(
+  mode: MatrixOutputMode,
+  source: Rgba,
+  matrixStraight: Vec3,
+  coverageValue: number,
+  background: Vec3,
+): Rgba {
+  const coverage = clamp01(coverageValue);
+  const straight: Vec3 = [
+    clamp01(matrixStraight[0]),
+    clamp01(matrixStraight[1]),
+    clamp01(matrixStraight[2]),
+  ];
+  const matrixPremultiplied: Vec3 = [
+    straight[0] * coverage,
+    straight[1] * coverage,
+    straight[2] * coverage,
+  ];
+
+  if (mode === "replaceBlack") {
+    return {
+      r: background[0] * (1 - coverage) + matrixPremultiplied[0],
+      g: background[1] * (1 - coverage) + matrixPremultiplied[1],
+      b: background[2] * (1 - coverage) + matrixPremultiplied[2],
+      a: 1,
+    };
+  }
+  if (mode === "sourceTinted") {
+    const alpha = coverage * clamp01(source.a);
+    return {
+      r: straight[0] * alpha,
+      g: straight[1] * alpha,
+      b: straight[2] * alpha,
+      a: alpha,
+    };
+  }
+  if (mode === "overlaySource") {
+    const sourceAlpha = clamp01(source.a);
+    const alpha = sourceAlpha + coverage * (1 - sourceAlpha);
+    return {
+      r: Math.min(
+        alpha,
+        Math.min(sourceAlpha, clamp01(source.r)) + matrixPremultiplied[0],
+      ),
+      g: Math.min(
+        alpha,
+        Math.min(sourceAlpha, clamp01(source.g)) + matrixPremultiplied[1],
+      ),
+      b: Math.min(
+        alpha,
+        Math.min(sourceAlpha, clamp01(source.b)) + matrixPremultiplied[2],
+      ),
+      a: alpha,
+    };
+  }
+  return {
+    r: matrixPremultiplied[0],
+    g: matrixPremultiplied[1],
+    b: matrixPremultiplied[2],
+    a: coverage,
+  };
 }
 
 export interface SignalWeights {

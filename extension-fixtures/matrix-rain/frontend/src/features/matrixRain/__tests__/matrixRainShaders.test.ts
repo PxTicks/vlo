@@ -9,6 +9,7 @@ import {
   MATRIX_RAIN_STATE_VERTEX,
 } from "../shaders/matrixRainStateGl";
 import { MATRIX_RAIN_STATE_WGSL } from "../shaders/matrixRainStateWgsl";
+import { GLYPH_COUNT } from "../utils/matrixRainMath";
 
 describe("Matrix Rain WebGL programs", () => {
   it("declare GLSL ES 3.00 before using unsigned integer operations", () => {
@@ -44,6 +45,21 @@ describe("Matrix Rain WebGL programs", () => {
     expect(MATRIX_RAIN_WGSL).toContain("fn glyphCoverage");
     expect(MATRIX_RAIN_WGSL).toContain("fwidth(distanceToStroke)");
     expect(MATRIX_RAIN_WGSL).not.toContain("sub.x * 5.0");
+    expect(MATRIX_RAIN_FRAGMENT).toContain(`GLYPHS[${GLYPH_COUNT}]`);
+    expect(MATRIX_RAIN_WGSL).toContain(`array<u32, ${GLYPH_COUNT}>`);
+  });
+
+  it("implements all premultiplied source-composition modes on both backends", () => {
+    expect(MATRIX_RAIN_FRAGMENT).toContain(
+      "vec4 source = texture(uTexture, vTextureCoord)",
+    );
+    expect(MATRIX_RAIN_FRAGMENT).toContain("sourcePremul + matrixPremul");
+    expect(MATRIX_RAIN_FRAGMENT).toContain("coverage * sourceAlpha");
+    expect(MATRIX_RAIN_WGSL).toContain(
+      "let source = textureSample(uTexture, uSampler, uv)",
+    );
+    expect(MATRIX_RAIN_WGSL).toContain("sourcePremul + matrixPremul");
+    expect(MATRIX_RAIN_WGSL).toContain("coverage * sourceAlpha");
   });
 
   it("uses a cell-resolution state target and explicit cell-centre sampling", () => {

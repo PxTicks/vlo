@@ -59,13 +59,15 @@ The full design and phase plan lives in
     `advectedPrevious`, `cellGrid`, `proceduralTrail`, `proceduralHead` remain
     available internally for shader development rather than occupying the
     normal creative interface.
-- **Compact creative controls.** The panel exposes twelve intent-level values:
+- **Compact creative controls.** The panel exposes thirteen intent-level values:
   Brightness, Contrast, Head Brightness, Speed, Glyph Size, Spawn Rate, Trail
-  Density, Vertical Spacing, source Mode, Source Coupling, Tint, and Output.
+  Density, Vertical Spacing, source Mode, Source Coupling, Ambient Spawn, Tint,
+  and Output.
   Head Brightness sets the glowing heads relative to the body while overall
   Brightness scales both. Trail Density resolves half-life/shape/head width;
-  Source Coupling resolves ambient spawning,
-  source/motion influence, and dark damping; Tint derives the full palette.
+  Source Coupling resolves source/motion influence and dark damping, while
+  Ambient Spawn independently controls source-free streams. Tint derives the
+  full palette.
   Spawn Rate changes both pulse spacing and the probability that a candidate
   pulse becomes an active stream, so its visual range remains pronounced even
   when broad procedural trails would otherwise have similar average coverage.

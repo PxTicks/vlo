@@ -139,10 +139,11 @@ describe("enum indices", () => {
       "verticalSpacing",
       "signalMode",
       "sourceCoupling",
+      "ambientSpawn",
     ]);
     expect(
       MATRIX_RAIN_CONTROL_GROUPS.flatMap((group) => group.controls),
-    ).toHaveLength(12);
+    ).toHaveLength(13);
   });
 });
 
@@ -171,9 +172,21 @@ describe("creative macro resolution", () => {
 
     expect(dense!.trailHalfLife).toBeGreaterThan(sparse!.trailHalfLife);
     expect(dense!.trailShape).toBeLessThan(sparse!.trailShape);
-    expect(dense!.ambientSpawn).toBe(0);
+    expect(dense!.ambientSpawn).toBe(sparse!.ambientSpawn);
     expect(dense!.sourceInfluence).toBeGreaterThan(sparse!.sourceInfluence);
     expect(dense!.darkDamping).toBeGreaterThan(sparse!.darkDamping);
+  });
+
+  it("keeps Ambient Spawn independent from Source Coupling", () => {
+    const resolved = resolveMatrixRainParameters({
+      ...DEFAULTS,
+      ambientSpawn: 0,
+      sourceCoupling: 1,
+    });
+    expect(resolved?.ambientSpawn).toBe(0);
+    expect(resolved?.sourceInfluence).toBeGreaterThan(
+      DEFAULT_MATRIX_RAIN_PARAMETERS.sourceInfluence,
+    );
   });
 
   it("links brightness and speed to the subordinate render controls", () => {

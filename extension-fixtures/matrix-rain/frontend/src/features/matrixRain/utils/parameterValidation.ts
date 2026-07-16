@@ -205,10 +205,7 @@ export function resolveMatrixRainParameters(
       "trailHalfLife",
     ),
     baseInjection: parameters.baseInjection as number,
-    ambientSpawn: clampNumeric(
-      (parameters.ambientSpawn as number) * 2 * (1 - sourceCoupling),
-      "ambientSpawn",
-    ),
+    ambientSpawn: parameters.ambientSpawn as number,
     sourceInfluence: clampNumeric(
       (parameters.sourceInfluence as number) * (0.5 + sourceCoupling),
       "sourceInfluence",

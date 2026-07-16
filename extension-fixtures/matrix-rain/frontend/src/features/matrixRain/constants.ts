@@ -751,6 +751,16 @@ export const MATRIX_RAIN_CONTROL_GROUPS: readonly ExtensionTransformationControl
           step: 0.01,
           supportsSpline: true,
         },
+        {
+          type: "slider",
+          name: "ambientSpawn",
+          label: "Ambient Spawn",
+          defaultValue: DEFAULT_MATRIX_RAIN_PARAMETERS.ambientSpawn,
+          min: 0,
+          max: 1,
+          step: 0.01,
+          supportsSpline: true,
+        },
       ],
     },
   ];

@@ -5,7 +5,8 @@ import { useTimelineClipsForTrack } from "../../timeline/api";
 import { useAssetStore } from "../../userAssets";
 import { usePlayerStore } from "../../player/usePlayerStore";
 import { audioSystem } from "../../player/services/AudioSystem";
-import { TrackAudioRenderer } from "../services/TrackAudioRenderer";
+import { CompositeAudioTrackRenderer } from "../services/CompositeAudioTrackRenderer";
+import type { CompositeAudioSourceData } from "../services/CompositeAudioResolver";
 import type { AdjustmentEffectResolver } from "../services/AdjustmentEffectResolver";
 import { sortTrackClipsByStart } from "../utils/clipLookup";
 import type { TimelineClip } from "../../../types/TimelineTypes";
@@ -14,7 +15,7 @@ const SHARED_LOOKAHEAD_SECONDS = 2.0;
 const SHARED_SCHEDULER_INTERVAL_MS = 50;
 
 interface SharedAudioTrackEntry {
-  rendererRef: MutableRefObject<TrackAudioRenderer | null>;
+  rendererRef: MutableRefObject<CompositeAudioTrackRenderer | null>;
   trackClipsRef: MutableRefObject<TimelineClip[]>;
   getInputRef: MutableRefObject<(assetId: string) => Promise<Input | null>>;
   lastStartTimeRef: MutableRefObject<number>;
@@ -110,9 +111,10 @@ function ensureSharedSchedulerLoop() {
 export function useAudioTrack(
   trackId: string,
   adjustmentEffectResolver?: AdjustmentEffectResolver | null,
+  compositeSourceData?: CompositeAudioSourceData | null,
 ) {
   // --- Refs ---
-  const rendererRef = useRef<TrackAudioRenderer | null>(null);
+  const rendererRef = useRef<CompositeAudioTrackRenderer | null>(null);
   const lastStartTimeRef = useRef<number>(0);
 
   // --- Store Selectors ---
@@ -132,7 +134,7 @@ export function useAudioTrack(
 
   // --- Initialize Renderer ---
   useEffect(() => {
-    rendererRef.current = new TrackAudioRenderer(
+    rendererRef.current = new CompositeAudioTrackRenderer(
       trackId,
       adjustmentEffectResolver,
     );
@@ -155,6 +157,10 @@ export function useAudioTrack(
       maybeStopSharedSchedulerLoop();
     };
   }, [adjustmentEffectResolver, trackId]);
+
+  useEffect(() => {
+    rendererRef.current?.setCompositeSourceData(compositeSourceData ?? null);
+  }, [compositeSourceData]);
 
   // --- Handle Play/Pause ---
   useEffect(() => {

@@ -726,4 +726,34 @@ describe("TrackAudioRenderer process lifecycle", () => {
       expect.any(Number),
     );
   });
+
+  it("uses an injected parent-owned timing map for composite child audio", async () => {
+    mocks.bufferBatches = [[wrappedBuffer(0.2)], []];
+    const child = clip({ id: "synthetic-child" });
+    const timingResolver = {
+      findActiveClipAtPresentation: vi.fn(() => ({
+        clip: child,
+        effectiveTick: 0,
+      })),
+      getSourceTicksAtPresentationTick: vi.fn(() => TICKS_PER_SECOND * 1.25),
+    };
+    const renderer = new TrackAudioRenderer(
+      "composite-lane",
+      null,
+      timingResolver,
+    );
+    const { context } = createContext();
+
+    await renderer.process(
+      context,
+      destination,
+      [child],
+      vi.fn(async () => inputWithTrack()),
+      mapping,
+      { lookahead: 0.05, forceFlush: true },
+    );
+
+    expect(timingResolver.findActiveClipAtPresentation).toHaveBeenCalled();
+    expect(mocks.sinkStarts[0]).toBeCloseTo(1.25);
+  });
 });

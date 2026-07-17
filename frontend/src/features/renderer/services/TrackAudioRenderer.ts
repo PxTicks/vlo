@@ -8,7 +8,6 @@ import {
 } from "../utils/mediaTime";
 import {
   resolveClipRenderTime,
-  resolveClipRenderTimeFromEffectiveTick,
 } from "../utils/clipRenderTime";
 import { resolveLiveActiveClip } from "../utils/clipLookup";
 import type { AudioEffectTransform, ScalarParameter } from "../../transformations";
@@ -108,6 +107,27 @@ interface ScheduledAudioEffectChain {
   transforms: AudioEffectTransform[];
 }
 
+export interface TrackAudioActiveClipResolution {
+  clip: TimelineClip;
+  effectiveTick: number;
+}
+
+/**
+ * Optional timing seam for sources whose presentation clock is owned by a
+ * parent clip. Composite audio uses it to map parent presentation time into a
+ * child timeline without cloning timing transforms onto child clips.
+ */
+export interface TrackAudioTimingResolver {
+  findActiveClipAtPresentation(
+    trackClips: readonly TimelineClip[],
+    presentationTick: number,
+  ): TrackAudioActiveClipResolution | null;
+  getSourceTicksAtPresentationTick(
+    clip: TimelineClip,
+    presentationTick: number,
+  ): number;
+}
+
 export class TrackAudioRenderer {
   private state: TrackAudioRendererState = {
     input: null,
@@ -142,13 +162,16 @@ export class TrackAudioRenderer {
 
   public readonly trackId: string;
   private readonly adjustmentEffectResolver: AdjustmentEffectResolver | null;
+  private readonly timingResolver: TrackAudioTimingResolver | null;
 
   constructor(
     trackId: string,
     adjustmentEffectResolver?: AdjustmentEffectResolver | null,
+    timingResolver?: TrackAudioTimingResolver | null,
   ) {
     this.trackId = trackId;
     this.adjustmentEffectResolver = adjustmentEffectResolver ?? null;
+    this.timingResolver = timingResolver ?? null;
   }
 
   public getNextScheduleTime() {
@@ -176,6 +199,13 @@ export class TrackAudioRenderer {
     trackClips: TimelineClip[],
     presentationTick: number,
   ): { clip: TimelineClip; effectiveTick: number } | null {
+    if (this.timingResolver) {
+      return this.timingResolver.findActiveClipAtPresentation(
+        trackClips,
+        presentationTick,
+      );
+    }
+
     if (this.adjustmentEffectResolver && this.trackId) {
       // Lookup owns identity + timing; re-bind to the live clip by id so volume
       // /timing edits aren't served from the stale cache. See clipLookup.
@@ -206,6 +236,13 @@ export class TrackAudioRenderer {
     clip: TimelineClip,
     presentationTick: number,
   ): number {
+    if (this.timingResolver) {
+      return this.timingResolver.getSourceTicksAtPresentationTick(
+        clip,
+        presentationTick,
+      );
+    }
+
     return resolveClipRenderTime({
       clip,
       presentationTick,
@@ -775,7 +812,6 @@ export class TrackAudioRenderer {
         targetTicks,
       );
       const activeClip = resolved?.clip;
-      const effectiveTrackTick = resolved?.effectiveTick ?? targetTicks;
 
       if (
         !activeClip ||
@@ -848,12 +884,9 @@ export class TrackAudioRenderer {
       }
 
       // Get/Create Iterator
-      const renderTime = resolveClipRenderTimeFromEffectiveTick({
-        clip: activeClip,
-        presentationTick: targetTicks,
-        effectiveTrackTick,
-      });
-      const localTimeSeconds = renderTime.sourceTimeSeconds;
+      const localTimeSeconds = tickToMediaSeconds(
+        this.getSourceTicksAtPresentationTick(activeClip, targetTicks),
+      );
       const epsilon = 0.1;
       const isSequential =
         c.lastAudioEndTimestamp !== null &&

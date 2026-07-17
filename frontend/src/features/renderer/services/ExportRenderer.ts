@@ -25,7 +25,7 @@ import {
   isBlankStrictRenderHealth,
   type StrictRenderHealth,
 } from "./TrackRenderEngine";
-import { TrackAudioRenderer } from "./TrackAudioRenderer";
+import { CompositeAudioTrackRenderer } from "./CompositeAudioTrackRenderer";
 import {
   estimateAudioEffectTailSeconds,
   getAudioEffectTransforms,
@@ -566,7 +566,23 @@ export class ExportRenderer {
           );
 
           const audioRenderers = relevantForAudio.map(
-            (track) => new TrackAudioRenderer(track.id, adjustmentEffectResolver),
+            (track) =>
+              new CompositeAudioTrackRenderer(
+                track.id,
+                adjustmentEffectResolver,
+                {
+                  tracks: projectData.tracks,
+                  clips: projectData.clips,
+                  composites: projectData.composites ?? [],
+                  assets: projectData.assets,
+                  projectFps: fps,
+                  logicalDimensions: {
+                    width: logicalWidth,
+                    height: logicalHeight,
+                  },
+                  sourcePolicy: projectData.compositeSourcePolicy,
+                },
+              ),
           );
           let renderedBuffer: AudioBuffer | null = null;
 

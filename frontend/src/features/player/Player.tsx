@@ -13,6 +13,7 @@ import {
   createCompositeSourcePolicySnapshot,
   isLiveFrameGraphEnabled,
   startFramePlanningDiagnosticsConsole,
+  type CompositeAudioSourceData,
 } from "../renderer";
 import {
   useTimelineDuration,
@@ -28,7 +29,7 @@ import { useProjectStore } from "../project";
 import { audioSystem } from "./services/AudioSystem";
 import { usePlayerStore } from "./usePlayerStore";
 import { useExtractStore } from "../../core/extract/useExtractStore";
-import { addLocalAsset } from "../userAssets";
+import { addLocalAsset, useAssetStore } from "../userAssets";
 import { TrackLayer } from "./components/TrackLayer";
 import {
   alignPlaybackTickToFrame,
@@ -44,6 +45,7 @@ import {
   getCompositeAssets,
   publishCompositeSourcePresentations,
   reportCompositeDirectRenderError,
+  useCompositeLibraryStore,
   useCompositeRenderStatusStore,
 } from "../composite";
 
@@ -88,6 +90,8 @@ function PlayerImpl() {
   const tracks = useTimelineTracks();
   const clips = useTimelineClips();
   const transitions = useTimelineTransitions();
+  const assets = useAssetStore((state) => state.assets);
+  const composites = useCompositeLibraryStore((state) => state.composites);
   const timelineDuration = useTimelineDuration();
   const config = useProjectStore((state) => state.config);
   const forceLiveCompositeIds = useCompositeRenderStatusStore(
@@ -108,6 +112,26 @@ function PlayerImpl() {
   const logicalDimensions = useMemo(
     () => getProjectDimensions(config.aspectRatio),
     [config.aspectRatio],
+  );
+  const compositeAudioSourceData = useMemo<CompositeAudioSourceData>(
+    () => ({
+      tracks,
+      clips,
+      composites,
+      assets,
+      projectFps: config.fps,
+      logicalDimensions,
+      sourcePolicy: compositeSourcePolicy,
+    }),
+    [
+      assets,
+      clips,
+      compositeSourcePolicy,
+      composites,
+      config.fps,
+      logicalDimensions,
+      tracks,
+    ],
   );
   const { cancel, runSelectionExport, runProjectExport } =
     useExportJobController({
@@ -819,6 +843,7 @@ function PlayerImpl() {
             key={track.id}
             trackId={track.id}
             adjustmentEffectResolver={adjustmentEffectResolver}
+            compositeSourceData={compositeAudioSourceData}
           />
         ))}
       </Box>

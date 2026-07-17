@@ -29,6 +29,8 @@ export type {
   OutputVideoFormat,
 } from "./services/TextureOutputEncoder";
 export { TrackAudioRenderer } from "./services/TrackAudioRenderer";
+export { CompositeAudioTrackRenderer } from "./services/CompositeAudioTrackRenderer";
+export type { CompositeAudioSourceData } from "./services/CompositeAudioResolver";
 export {
   buildProjectRenderInputs,
   renderProjectFrameFileAtTick,

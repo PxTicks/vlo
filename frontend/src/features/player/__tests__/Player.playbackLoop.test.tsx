@@ -155,6 +155,8 @@ vi.mock("../../project", async () => {
 
 vi.mock("../../userAssets", () => ({
   addLocalAsset: addLocalAssetMock,
+  useAssetStore: (selector: (state: { assets: never[] }) => unknown) =>
+    selector({ assets: [] }),
 }));
 
 vi.mock("../../../core/extract/useExtractStore", async () => {

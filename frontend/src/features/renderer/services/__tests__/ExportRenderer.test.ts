@@ -1087,7 +1087,7 @@ describe("ExportRenderer", () => {
           parameters: {},
         },
       ],
-    } as TimelineClip;
+    } as unknown as TimelineClip;
     const track = {
       id: "t1",
       type: "visual",

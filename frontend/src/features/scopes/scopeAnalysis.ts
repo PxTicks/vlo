@@ -27,7 +27,7 @@ function clampByte(value: number): number {
 export function analyzeScopePixels(
   pixels: ArrayLike<number>,
   width: number,
-  height: number,
+  _height: number,
   sampledAt = performance.now(),
 ): ScopeSnapshot {
   const red = new Float32Array(HISTOGRAM_BINS);

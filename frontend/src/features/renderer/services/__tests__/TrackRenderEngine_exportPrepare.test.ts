@@ -107,6 +107,7 @@ describe("TrackRenderEngine.prepareClipsForExportFrame effective-tick keying", (
     vi.spyOn(engine, "resolveActiveClipAtPresentation").mockReturnValue({
       activeClip: clip,
       effectiveTick: 0,
+      presentationStart: farPresentationTick,
     });
 
     engine.prepareClipsForExportFrame(farPresentationTick, [clip], [asset]);
@@ -121,6 +122,7 @@ describe("TrackRenderEngine.prepareClipsForExportFrame effective-tick keying", (
     vi.spyOn(engine, "resolveActiveClipAtPresentation").mockReturnValue({
       activeClip: clip,
       effectiveTick: farPresentationTick,
+      presentationStart: farPresentationTick,
     });
 
     engine.prepareClipsForExportFrame(farPresentationTick, [clip], [asset]);

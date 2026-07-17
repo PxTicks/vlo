@@ -20,7 +20,7 @@ describe("QualifierControl", () => {
       <QualifierControl
         control={control}
         value={undefined}
-        values={DEFAULT_COLOR_QUALIFIER}
+        values={{ ...DEFAULT_COLOR_QUALIFIER }}
         onCommit={vi.fn()}
         onCommitMany={onCommitMany}
         groupId="color_grade_qualifier"
@@ -145,7 +145,7 @@ describe("QualifierControl", () => {
     const handle = screen.getByRole("slider", {
       name: "Hue outer low",
     });
-    const svg = handle.ownerSVGElement;
+    const svg = (handle as unknown as SVGElement).ownerSVGElement;
     expect(svg).not.toBeNull();
     if (!svg) return;
     vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { Transition } from "../../../../types/TimelineTypes";
+import type { ClipTransform, Transition } from "../../../../types/TimelineTypes";
+import type { GenericFilterTransform } from "../../../transformations/types";
 import { buildTransitionTransforms } from "../buildTransitionTransforms";
+
+const filterName = (t: ClipTransform): string | undefined =>
+  (t as GenericFilterTransform).filterName;
 
 function transition(
   type: Transition["type"],
@@ -66,7 +70,7 @@ describe("buildTransitionTransforms", () => {
       y: 1.5,
     });
     expect(
-      outgoing.find((t) => t.filterName === "AlphaFilter")?.parameters.alpha,
+      outgoing.find((t) => filterName(t) === "AlphaFilter")?.parameters.alpha,
     ).toBe(0.5);
     const incoming = buildTransitionTransforms(
       definition,
@@ -80,7 +84,7 @@ describe("buildTransitionTransforms", () => {
       y: 1,
     });
     expect(
-      incoming.find((t) => t.filterName === "AlphaFilter")?.parameters.alpha,
+      incoming.find((t) => filterName(t) === "AlphaFilter")?.parameters.alpha,
     ).toBe(1);
   });
 
@@ -111,7 +115,7 @@ describe("buildTransitionTransforms", () => {
     const definition = transition("whipPan", { direction: "left", blur: 12 });
     const blurAt = (progress: number) =>
       buildTransitionTransforms(definition, "outgoing", progress, dimensions).find(
-        (t) => t.filterName === "BlurFilter",
+        (t) => filterName(t) === "BlurFilter",
       )?.parameters.strength as number;
     expect(blurAt(0)).toBeCloseTo(0);
     expect(blurAt(1)).toBeCloseTo(0);

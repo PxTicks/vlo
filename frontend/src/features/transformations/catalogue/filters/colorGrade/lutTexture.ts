@@ -167,7 +167,7 @@ export function planCubeLutAtlas(
   return { tiles, width, height: Math.max(1, height) };
 }
 
-export function writeCubeLutAtlas(plan: CubeLutAtlasPlan): Float32Array {
+export function writeCubeLutAtlas(plan: CubeLutAtlasPlan): Float32Array<ArrayBuffer> {
   const pixels = new Float32Array(plan.width * plan.height * 4);
   for (const tile of plan.tiles) {
     if (!tile) continue;

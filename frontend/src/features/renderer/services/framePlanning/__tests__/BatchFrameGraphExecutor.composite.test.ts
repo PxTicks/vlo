@@ -33,6 +33,7 @@ function compositeJob(): ResolvedClipFrameJob {
     contentSize: { width: 1920, height: 1080 },
     fps: 30,
     compositeSource: {
+      mode: "live",
       compositeId: "composite",
       placementId: "placement",
       revision: 1,
@@ -183,6 +184,49 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
       expect.any(Map),
       { mode: "export" },
     );
+    executor.dispose();
+  });
+
+  it("decodes a selected bake without invoking the composite scene renderer", async () => {
+    const job = compositeJob();
+    job.compositeSource = {
+      ...job.compositeSource!,
+      mode: "baked",
+      fallbackAssetId: "legacy-bake",
+    };
+    job.sourceFrame = {
+      ...job.sourceFrame,
+      key: "placement:legacy-bake:0",
+      decodeKey: "legacy-bake:0:30:0",
+    };
+    const present = vi.fn(async (_job, handle) => {
+      handle?.release();
+      return true;
+    });
+    const decodeResolvedSourceFrame = vi.fn(async () => null);
+    const compositeSceneRenderer = {
+      renderCompositeScene: vi.fn(async () => Texture.EMPTY),
+      dispose: vi.fn(),
+    } satisfies CompositeSceneFrameRenderer;
+    const executor = new BatchFrameGraphExecutor({ compositeSceneRenderer });
+
+    const result = await executor.execute(
+      buildFrameResolutionGraph(1, [job]),
+      resolution(job, present, {
+        decodeResolvedSourceFrame,
+        getCurrentPlannedSourceFrameIntent: vi.fn(() => ({
+          key: job.sourceFrame.key,
+          generation: job.sourceFrame.generation,
+        })),
+      }),
+      { mode: "export" },
+    );
+
+    expect(decodeResolvedSourceFrame).toHaveBeenCalledWith(job, {
+      signal: undefined,
+    });
+    expect(compositeSceneRenderer.renderCompositeScene).not.toHaveBeenCalled();
+    expect(result.diagnostics.nodesExecutedByKind["composite-scene"]).toBe(0);
     executor.dispose();
   });
 });

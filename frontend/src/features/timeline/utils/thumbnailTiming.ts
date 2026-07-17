@@ -37,10 +37,19 @@ export function resolveThumbnailBucketRequestSeconds(
   bucketIndex: number,
   bucketIntervalTicks: number,
   firstTimestampSeconds?: number | null,
+  sourceDurationTicks?: number | null,
 ): number {
   const bucketStartTicks = bucketIndex * bucketIntervalTicks;
+  const representativeTick =
+    bucketStartTicks + Math.max(0, bucketIntervalTicks / 2);
+  const lastSourceTick =
+    typeof sourceDurationTicks === "number" &&
+    Number.isFinite(sourceDurationTicks) &&
+    sourceDurationTicks > 0
+      ? Math.max(0, sourceDurationTicks - 1)
+      : Number.POSITIVE_INFINITY;
   const requestTicks = clampThumbnailAssetTickToFirstFrame(
-    bucketStartTicks,
+    Math.min(representativeTick, lastSourceTick),
     firstTimestampSeconds,
   );
 

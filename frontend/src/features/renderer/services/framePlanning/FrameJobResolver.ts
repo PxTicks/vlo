@@ -100,7 +100,12 @@ export class FrameJobResolver {
             expectedBakeKey: bakeKey,
             availableAssetIds,
           });
+          const useBakedSource =
+            !isCompositeForceLive(composite.id) &&
+            validity.valid &&
+            validity.assetId === job.activeClip.assetId;
           job.compositeSource = {
+            mode: useBakedSource ? "baked" : "live",
             compositeId: composite.id,
             placementId: job.activeClip.id,
             revision: resolveCompositeRevision(composite),
@@ -112,12 +117,7 @@ export class FrameJobResolver {
               compositeProjectFps,
             ),
             content: structuredClone(composite.content),
-            fallbackAssetId:
-              !isCompositeForceLive(composite.id) &&
-              validity.valid &&
-              validity.assetId === job.activeClip.assetId
-                ? validity.assetId
-                : null,
+            fallbackAssetId: useBakedSource ? validity.assetId : null,
           };
           // A composite source is a project-logical layer even when its
           // fallback codec pads the decoded texture to an even frame size.

@@ -341,6 +341,7 @@ export function useThumbnailRenderer({
               i,
               bucketIntervalTicks,
               firstTimestampSeconds,
+              clipSourceDuration,
             ),
           );
 

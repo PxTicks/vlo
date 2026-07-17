@@ -44,6 +44,7 @@ describe("CompositeSceneRuntimeManager", () => {
       .spyOn(TemporalRenderCoordinator.prototype, "plan")
       .mockReturnValue({ warmup: [warmup], target, isDiscontinuous: true });
     const source: ResolvedCompositeSource = {
+      mode: "live",
       compositeId: "composite",
       placementId: "placement",
       revision: 1,
@@ -93,6 +94,7 @@ describe("CompositeSceneRuntimeManager", () => {
       "createApproximatePreviewContext",
     );
     const source: ResolvedCompositeSource = {
+      mode: "live",
       compositeId: "composite",
       placementId: "placement",
       revision: 1,
@@ -146,6 +148,7 @@ describe("CompositeSceneRuntimeManager", () => {
       }),
     });
     const source: ResolvedCompositeSource = {
+      mode: "live",
       compositeId: "composite",
       placementId: "placement",
       revision: 1,
@@ -195,6 +198,7 @@ describe("CompositeSceneRuntimeManager", () => {
     const renderer = { render: vi.fn() } as unknown as Renderer;
     const manager = new CompositeSceneRuntimeManager(renderer);
     const source: ResolvedCompositeSource = {
+      mode: "live",
       compositeId: "outer",
       placementId: "outer-placement",
       revision: 1,

@@ -47,7 +47,7 @@ describe("thumbnailTiming", () => {
     expect(getFirstPresentedFrameTicks(firstTimestampSeconds)).toBe(44989);
   });
 
-  it("uses the first presented frame when a bucket starts before it", () => {
+  it("uses a representative bucket center without preceding the first frame", () => {
     const firstTimestampSeconds = 0.0585;
     const requestSeconds = resolveThumbnailBucketRequestSeconds(
       0,
@@ -58,6 +58,12 @@ describe("thumbnailTiming", () => {
     expect(requestSeconds).toBeCloseTo(firstTimestampSeconds, 6);
     expect(
       resolveThumbnailBucketRequestSeconds(2, 4000, firstTimestampSeconds),
-    ).toBeCloseTo(8000 / TICKS_PER_SECOND, 6);
+    ).toBeCloseTo(10000 / TICKS_PER_SECOND, 6);
+  });
+
+  it("keeps the representative request inside the source duration", () => {
+    expect(resolveThumbnailBucketRequestSeconds(2, 4000, 0, 9000)).toBe(
+      8999 / TICKS_PER_SECOND,
+    );
   });
 });

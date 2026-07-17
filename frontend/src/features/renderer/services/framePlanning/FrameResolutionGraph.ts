@@ -154,7 +154,7 @@ export function buildFrameResolutionGraph(
       jobIds: [job.id],
       sourceFrame: job.sourceFrame,
     });
-    if (job.compositeSource) {
+    if (job.compositeSource?.mode === "live") {
       const source = job.compositeSource;
       sourceId = builder.addNode(
         {

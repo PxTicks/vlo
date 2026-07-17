@@ -91,6 +91,7 @@ describe("FrameResolutionGraph", () => {
       "bake:0:30:0",
     );
     compositeJob.compositeSource = {
+      mode: "live",
       compositeId: "composite-1",
       placementId: "placement",
       revision: 2,
@@ -120,6 +121,39 @@ describe("FrameResolutionGraph", () => {
     expect(ordered.map((node) => node.kind)).toEqual([
       "source",
       "composite-scene",
+      "mask-sync",
+      "mask-coverage",
+      "effect-chain",
+      "clip-output",
+    ]);
+  });
+
+  it("routes a selected bake through the ordinary asset graph", () => {
+    const compositeJob = job(
+      "3:t1:placement",
+      "t1",
+      "placement",
+      "bake:0:30:0",
+    );
+    compositeJob.compositeSource = {
+      mode: "baked",
+      compositeId: "composite-1",
+      placementId: "placement",
+      revision: 2,
+      bakeKey: "key-2",
+      localPresentationTick: 25,
+      logicalDimensions: { width: 1920, height: 1080 },
+      fps: 30,
+      content: { durationTicks: 100, clips: [] },
+      fallbackAssetId: "bake",
+    };
+
+    const ordered = validateFrameResolutionGraph(
+      buildFrameResolutionGraph(3, [compositeJob]),
+    );
+
+    expect(ordered.map((node) => node.kind)).toEqual([
+      "source",
       "mask-sync",
       "mask-coverage",
       "effect-chain",

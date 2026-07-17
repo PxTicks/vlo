@@ -141,7 +141,9 @@ export class BatchFrameGraphExecutor {
     const assetList = [...resolution.assetsById.values()];
 
     const fallbackSourceJobs = graph.jobs.filter(
-      (job) => !job.compositeSource || job.compositeSource.fallbackAssetId,
+      (job) =>
+        job.compositeSource?.mode !== "live" ||
+        job.compositeSource.fallbackAssetId,
     );
     for (const job of fallbackSourceJobs) {
       const planned = toPlannedJob(job);

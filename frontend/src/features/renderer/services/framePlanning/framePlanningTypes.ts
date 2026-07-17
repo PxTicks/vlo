@@ -34,6 +34,7 @@ export interface ResolvedClipFrameJob {
 }
 
 export interface ResolvedCompositeSource {
+  mode: "live" | "baked";
   compositeId: string;
   placementId: string;
   revision: number;

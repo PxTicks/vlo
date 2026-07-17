@@ -181,6 +181,7 @@ describe("FrameJobResolver composite sources", () => {
 
     const resolved = resolve();
     expect(resolved.compositeSource).toMatchObject({
+      mode: "baked",
       compositeId: composite.id,
       placementId: placement.id,
       revision: 2,
@@ -192,22 +193,24 @@ describe("FrameJobResolver composite sources", () => {
     expect(resolved.contentSize).toEqual({ width: 1920, height: 1080 });
   });
 
-  it("does not expose a stale bake as fallback", () => {
+  it("selects live rendering when the bake is stale", () => {
     setCompositeRenderDagEnabled(true);
 
-    expect(
-      resolve({
+    expect(resolve({
         ...composite,
         bake: { ...composite.bake, readyKey: "stale-key" },
-      }).compositeSource?.fallbackAssetId,
-    ).toBeNull();
+      }).compositeSource,
+    ).toMatchObject({ mode: "live", fallbackAssetId: null });
   });
 
-  it("does not expose a valid bake fallback while force-live is active", () => {
+  it("selects live rendering while force-live is active", () => {
     setCompositeRenderDagEnabled(true);
     setCompositeForceLive(composite.id, true);
 
-    expect(resolve().compositeSource?.fallbackAssetId).toBeNull();
+    expect(resolve().compositeSource).toMatchObject({
+      mode: "live",
+      fallbackAssetId: null,
+    });
   });
 
   it("leaves baked source jobs unchanged while the rollout flag is off", () => {

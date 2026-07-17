@@ -26,6 +26,7 @@ import {
   assetIndexDocumentSchema,
   assetMetadataDocumentSchema,
   compositeLibraryDocumentSchema,
+  compositeLibraryDocumentSchemaV1,
   legacyProjectDocumentSchema,
   projectManifestDocumentSchema,
   timelineDocumentSchema,
@@ -678,9 +679,54 @@ export class ProjectPersistenceService {
       const file = await fileSystemService.readFile(COMPOSITE_LIBRARY_PATH);
       const raw = JSON.parse(await file.text()) as unknown;
       throwIfNewerSchemaVersion(raw, COMPOSITE_LIBRARY_NEWER_SCHEMA_CHECK);
-      const compositeLibrary = compositeLibraryDocumentSchema.parse(raw);
-      this.compositeLibraryCache = compositeLibrary;
-      return clone(compositeLibrary);
+      const currentParsed = compositeLibraryDocumentSchema.safeParse(raw);
+      if (currentParsed.success) {
+        this.compositeLibraryCache = currentParsed.data;
+        return clone(currentParsed.data);
+      }
+
+      const v1Parsed = compositeLibraryDocumentSchemaV1.safeParse(raw);
+      if (!v1Parsed.success) {
+        throw currentParsed.error;
+      }
+
+      const composites = Object.fromEntries(
+        Object.entries(v1Parsed.data.composites).map(([id, composite]) => {
+          const revision =
+            typeof composite.revision === "number" &&
+            Number.isInteger(composite.revision) &&
+            composite.revision > 0
+              ? composite.revision
+              : 1;
+          return [
+            id,
+            {
+              ...composite,
+              revision,
+              bake:
+                composite.bake ??
+                (composite.bakedAssetId
+                  ? {
+                      status: "ready" as const,
+                      assetId: composite.bakedAssetId,
+                      readyRevision: revision,
+                      updatedAt: composite.updatedAt,
+                    }
+                  : {
+                      status: "none" as const,
+                      updatedAt: composite.updatedAt,
+                    }),
+            },
+          ];
+        }),
+      );
+      const migrated: CompositeLibraryDocument = {
+        documentType: "vlo.composites",
+        schemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
+        updated_at: v1Parsed.data.updated_at,
+        composites,
+      };
+      return this.persistCompositeLibrary(migrated);
     } catch (error) {
       if (!isNotFoundError(error)) {
         throw error;

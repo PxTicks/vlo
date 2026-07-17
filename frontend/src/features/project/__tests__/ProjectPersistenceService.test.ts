@@ -6,6 +6,7 @@ import {
 } from "../services/ProjectPersistenceService";
 import { fileSystemService } from "../services/FileSystemService";
 import {
+  COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
 } from "../constants";
@@ -1004,6 +1005,71 @@ describe("ProjectPersistenceService", () => {
         };
       });
     expect(updatedComposites.composites.example).toBeDefined();
+  });
+
+  it("migrates v1 composite libraries without losing the legacy bake pointer", async () => {
+    files.set(
+      ".vloproject/composites.json",
+      JSON.stringify({
+        documentType: "vlo.composites",
+        schemaVersion: 1,
+        updated_at: 25,
+        composites: {
+          legacy: {
+            id: "legacy",
+            name: "Legacy composite",
+            content: { durationTicks: 100, clips: [] },
+            bakedAssetId: "legacy-bake",
+            createdAt: 10,
+            updatedAt: 20,
+          },
+        },
+      }),
+    );
+
+    const migrated = await projectPersistenceService.readCompositeLibrary();
+
+    expect(migrated).toMatchObject({
+      schemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
+      composites: {
+        legacy: {
+          revision: 1,
+          bakedAssetId: "legacy-bake",
+          bake: {
+            status: "ready",
+            assetId: "legacy-bake",
+            readyRevision: 1,
+            updatedAt: 20,
+          },
+        },
+      },
+    });
+    const persisted = JSON.parse(
+      files.get(".vloproject/composites.json") ?? "{}",
+    );
+    expect(persisted.schemaVersion).toBe(
+      COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
+    );
+    expect(persisted.composites.legacy.content).toEqual({
+      durationTicks: 100,
+      clips: [],
+    });
+  });
+
+  it("rejects composite libraries from a newer schema", async () => {
+    files.set(
+      ".vloproject/composites.json",
+      JSON.stringify({
+        documentType: "vlo.composites",
+        schemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION + 1,
+        updated_at: 1,
+        composites: {},
+      }),
+    );
+
+    await expect(
+      projectPersistenceService.readCompositeLibrary(),
+    ).rejects.toThrow(ProjectSchemaVersionError);
   });
 
   it("propagates non-missing asset/composite read failures", async () => {

@@ -90,6 +90,7 @@ describe("bakeComposite", () => {
       onProgress,
       compositeAssetId: "composite-1",
       compositeClipId: "clip-1",
+      compositeRevision: 7,
       allowDuplicateHash: false,
       onBeforeEncodeFrame,
     });
@@ -125,7 +126,11 @@ describe("bakeComposite", () => {
         source: "composite",
         compositeAssetId: "composite-1",
         compositeClipId: "clip-1",
+        compositeRevision: 7,
         contentHash: "content-hash",
+        bakeKey: expect.stringMatching(
+          /^v1:content-hash:30fps:1919x1079:transparent:/,
+        ),
       }),
       undefined,
       { allowDuplicateHash: false },
@@ -134,6 +139,9 @@ describe("bakeComposite", () => {
       asset: { id: "baked-asset" },
       bakedDurationTicks: 240000,
       contentHash: "content-hash",
+      bakeKey: expect.stringMatching(
+        /^v1:content-hash:30fps:1919x1079:transparent:/,
+      ),
     });
   });
 

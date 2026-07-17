@@ -151,6 +151,8 @@ const timelineClipSchema = z
     start: z.number(),
     transformations: z.array(clipTransformSchema),
     extensionPayload: extensionPayloadSchema.optional(),
+    compositeId: z.string().optional(),
+    compositeRevision: z.number().int().positive().optional(),
     // Adjustment-clip extras (sit on the same passthrough; required when
     // type === "adjustment", enforced by the superRefine below).
     depth: z
@@ -328,6 +330,18 @@ const compositeAssetSchema = z
     id: z.string(),
     name: z.string(),
     content: compositeContentSchema,
+    revision: z.number().int().positive().optional(),
+    bake: z
+      .object({
+        status: z.enum(["none", "queued", "rendering", "ready", "failed"]),
+        requestedKey: z.string().optional(),
+        readyKey: z.string().optional(),
+        readyRevision: z.number().int().positive().optional(),
+        assetId: z.string().optional(),
+        error: z.string().optional(),
+        updatedAt: z.number().optional(),
+      })
+      .optional(),
     bakedAssetId: z.string().optional(),
     createdAt: z.number(),
     updatedAt: z.number(),
@@ -337,6 +351,14 @@ const compositeAssetSchema = z
 export const compositeLibraryDocumentSchema = z.object({
   documentType: z.literal("vlo.composites"),
   schemaVersion: z.literal(COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION),
+  updated_at: z.number(),
+  composites: z.record(z.string(), compositeAssetSchema),
+});
+
+/** v1 composites only carried their canonical content and legacy bake pointer. */
+export const compositeLibraryDocumentSchemaV1 = z.object({
+  documentType: z.literal("vlo.composites"),
+  schemaVersion: z.literal(1),
   updated_at: z.number(),
   composites: z.record(z.string(), compositeAssetSchema),
 });

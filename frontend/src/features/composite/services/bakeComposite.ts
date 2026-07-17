@@ -14,7 +14,11 @@ import {
   compositeContentToSelection,
   hashCompositeContent,
 } from "../../timelineSelection";
-import { COMPOSITE_RENDER_FRAME_STEP } from "../utils/compositeRenderContract";
+import {
+  COMPOSITE_RENDER_FRAME_STEP,
+  createCompositeBakeKey,
+  serializeCompositeBakeKey,
+} from "../utils/compositeRenderContract";
 import { useProjectStore } from "../../project/useProjectStore";
 import { getAssets, addLocalAsset } from "../../userAssets";
 import { getTimelineTracks } from "../../timeline/api";
@@ -24,6 +28,7 @@ export interface BakeCompositeOptions {
   onProgress?: (percentage: number) => void;
   compositeAssetId?: string;
   compositeClipId?: string;
+  compositeRevision?: number;
   allowDuplicateHash?: boolean;
   /** Phase-0 parity seam: captures the project composite before encoding. */
   onBeforeEncodeFrame?: (
@@ -38,6 +43,8 @@ export interface BakedComposite {
   bakedDurationTicks: number | null;
   /** Hash of the content this bake was rendered from (for staleness checks). */
   contentHash: string;
+  /** Complete serialized render-contract identity for this cache asset. */
+  bakeKey: string;
 }
 
 function toEven(value: number): number {
@@ -67,6 +74,7 @@ function durationSecondsToTicks(
 function buildCompositeRenderInputs(
   content: CompositeContent,
   getProjectDimensions: typeof import("../../renderer/utils/dimensions")["getProjectDimensions"],
+  assets: readonly Asset[],
 ): SelectionRenderInputs {
   const project = useProjectStore.getState();
   const dimensions = getProjectDimensions(project.config.aspectRatio);
@@ -87,7 +95,7 @@ function buildCompositeRenderInputs(
     tracks: content.tracks ?? getTimelineTracks(),
     clips: content.clips,
     transitions: content.transitions,
-    assets: getAssets(),
+    assets: [...assets],
     duration: content.durationTicks,
     fps,
   };
@@ -114,15 +122,36 @@ export async function bakeComposite(
   const contentHash = hashCompositeContent(content);
 
   // Dynamic import keeps `composite` off the static renderer import graph.
-  const [{ renderSelectionToVideoFile }, { getProjectDimensions }, { mediaSecondsToTick }] =
-    await Promise.all([
-      import("../../renderer/services/renderSelectionToVideoFile"),
-      import("../../renderer/utils/dimensions"),
-      import("../../renderer/utils/mediaTime"),
-    ]);
+  const [
+    { renderSelectionToVideoFile },
+    { getProjectDimensions },
+    { mediaSecondsToTick },
+  ] = await Promise.all([
+    import("../../renderer/services/renderSelectionToVideoFile"),
+    import("../../renderer/utils/dimensions"),
+    import("../../renderer/utils/mediaTime"),
+  ]);
+
+  // Use one asset snapshot for both dependency identity and rendering so the
+  // published key describes the exact dependency set supplied to the renderer.
+  const assets = getAssets();
+  const project = useProjectStore.getState();
+  const logicalDimensions = getProjectDimensions(project.config.aspectRatio);
+  const bakeKey = serializeCompositeBakeKey(
+    createCompositeBakeKey({
+      content,
+      projectFps: project.config.fps,
+      logicalDimensions,
+      assets,
+    }),
+  );
 
   const file = await renderSelectionToVideoFile(renderSelection, {
-    renderInputs: buildCompositeRenderInputs(content, getProjectDimensions),
+    renderInputs: buildCompositeRenderInputs(
+      content,
+      getProjectDimensions,
+      assets,
+    ),
     signal: options.signal,
     onProgress: options.onProgress,
     filenamePrefix: "composite",
@@ -143,6 +172,10 @@ export async function bakeComposite(
         : {}),
       timelineSelection: selection,
       contentHash,
+      bakeKey,
+      ...(options.compositeRevision
+        ? { compositeRevision: options.compositeRevision }
+        : {}),
     },
     undefined,
     {
@@ -157,7 +190,11 @@ export async function bakeComposite(
 
   return {
     asset,
-    bakedDurationTicks: durationSecondsToTicks(asset.duration, mediaSecondsToTick),
+    bakedDurationTicks: durationSecondsToTicks(
+      asset.duration,
+      mediaSecondsToTick,
+    ),
     contentHash,
+    bakeKey,
   };
 }

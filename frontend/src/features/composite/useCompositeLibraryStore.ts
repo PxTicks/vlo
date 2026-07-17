@@ -17,6 +17,7 @@ import {
   endCompositeRender,
 } from "./useCompositeRenderStatusStore";
 import { createCompositeBaseClipFromAsset } from "./utils/createCompositeClip";
+import { resolveCompositeRevision } from "./utils/compositeBakeValidity";
 import { contentContainsComposite } from "./utils/compositeReferences";
 
 interface CompositeBrowserRevealRequest {
@@ -127,6 +128,10 @@ async function deleteBakedAsset(assetId: string | undefined): Promise<void> {
   }
 }
 
+function getPublishedBakeAssetId(composite: CompositeAsset): string | undefined {
+  return composite.bake?.assetId ?? composite.bakedAssetId;
+}
+
 export const useCompositeLibraryStore = create<CompositeLibraryState>(
   (set, get) => ({
     composites: [],
@@ -157,16 +162,27 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
       }
 
       beginCompositeRender(id);
-      const { asset } = await bakeComposite(content, {
+      const revision = 1;
+      const { asset, bakeKey } = await bakeComposite(content, {
         signal: input.signal,
         onProgress: input.onProgress,
         compositeAssetId: id,
+        compositeRevision: revision,
       }).finally(() => endCompositeRender(id));
 
       const composite: CompositeAsset = {
         id,
         name: input.name?.trim() || "Composite",
         content,
+        revision,
+        bake: {
+          status: "ready",
+          requestedKey: bakeKey,
+          readyKey: bakeKey,
+          readyRevision: revision,
+          assetId: asset.id,
+          updatedAt: now,
+        },
         bakedAssetId: asset.id,
         createdAt: now,
         updatedAt: now,
@@ -198,18 +214,31 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
         throw new Error("Composites cannot contain other composites.");
       }
 
+      const revision = resolveCompositeRevision(existing) + 1;
       beginCompositeRender(compositeAssetId);
-      const { asset, bakedDurationTicks } = await bakeComposite(content, {
+      const { asset, bakeKey } = await bakeComposite(content, {
         signal: input.signal,
         onProgress: input.onProgress,
         compositeAssetId,
+        compositeRevision: revision,
       }).finally(() => endCompositeRender(compositeAssetId));
+
+      const updatedAt = Date.now();
 
       const updated: CompositeAsset = {
         ...existing,
         content,
+        revision,
+        bake: {
+          status: "ready",
+          requestedKey: bakeKey,
+          readyKey: bakeKey,
+          readyRevision: revision,
+          assetId: asset.id,
+          updatedAt,
+        },
         bakedAssetId: asset.id,
-        updatedAt: Date.now(),
+        updatedAt,
       };
       const nextComposites = sortComposites(
         currentComposites.map((candidate) =>
@@ -230,10 +259,11 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
       relinkTimelineCompositePlacements(
         compositeAssetId,
         asset.id,
-        bakedDurationTicks,
+        revision,
       );
-      if (existing.bakedAssetId && existing.bakedAssetId !== asset.id) {
-        await deleteBakedAsset(existing.bakedAssetId);
+      const previousBakeAssetId = getPublishedBakeAssetId(existing);
+      if (previousBakeAssetId && previousBakeAssetId !== asset.id) {
+        await deleteBakedAsset(previousBakeAssetId);
       }
       return updated;
     },
@@ -281,7 +311,7 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
       if (placementIds.length > 0) {
         removeTimelineClips(placementIds);
       }
-      await deleteBakedAsset(composite.bakedAssetId);
+      await deleteBakedAsset(getPublishedBakeAssetId(composite));
     },
 
     placeCompositeAssetAtTime: (compositeAssetId, startTick) => {

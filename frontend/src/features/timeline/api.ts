@@ -568,11 +568,11 @@ export function groupTimelineClipsIntoComposite(
 export function relinkTimelineCompositePlacements(
   compositeId: string,
   bakedAssetId: string,
-  bakedDurationTicks: number | null,
+  compositeRevision: number,
 ): void {
   useTimelineStore
     .getState()
-    .relinkCompositePlacements(compositeId, bakedAssetId, bakedDurationTicks);
+    .relinkCompositePlacements(compositeId, bakedAssetId, compositeRevision);
 }
 
 export function removeTimelineClip(clipId: string): void {

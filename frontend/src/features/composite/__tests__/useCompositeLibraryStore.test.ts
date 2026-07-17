@@ -87,6 +87,7 @@ function composite(overrides: Partial<CompositeAsset> = {}): CompositeAsset {
     name: "Composite",
     content: content(),
     bakedAssetId: "proxy-old",
+    revision: 1,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -120,7 +121,7 @@ describe("useCompositeLibraryStore", () => {
     mocks.updateCompositeLibrary.mockImplementation(async (mutator) => {
       const document = {
         documentType: "vlo.composites",
-        schemaVersion: 1,
+        schemaVersion: 2,
         updated_at: 1,
         composites: {},
       };
@@ -158,6 +159,7 @@ describe("useCompositeLibraryStore", () => {
       asset: bakedAsset("proxy-new"),
       bakedDurationTicks: TICKS_PER_SECOND,
       contentHash: "new-hash",
+      bakeKey: "new-key",
     });
 
     await useCompositeLibraryStore
@@ -167,13 +169,32 @@ describe("useCompositeLibraryStore", () => {
     expect(useCompositeLibraryStore.getState().composites[0]).toMatchObject({
       id: current.id,
       bakedAssetId: "proxy-new",
+      revision: 2,
+      bake: {
+        status: "ready",
+        readyKey: "new-key",
+        readyRevision: 2,
+        assetId: "proxy-new",
+      },
       content: nextContent,
     });
+    expect(mocks.bakeComposite).toHaveBeenCalledWith(
+      nextContent,
+      expect.objectContaining({
+        compositeAssetId: current.id,
+        compositeRevision: 2,
+      }),
+    );
     // The placement must point at the new bake before the old one is deleted.
     const relinked = useTimelineStore
       .getState()
       .clips.find((clip) => clip.id === "clip-composite");
-    expect(relinked).toMatchObject({ assetId: "proxy-new" });
+    expect(relinked).toMatchObject({
+      assetId: "proxy-new",
+      compositeRevision: 2,
+      sourceDuration: TICKS_PER_SECOND,
+      timelineDuration: TICKS_PER_SECOND,
+    });
     expect(mocks.deleteAsset).toHaveBeenCalledWith("proxy-old");
   });
 
@@ -222,6 +243,7 @@ describe("useCompositeLibraryStore", () => {
       asset: bakedAsset("proxy-created"),
       bakedDurationTicks: TICKS_PER_SECOND,
       contentHash: "created-hash",
+      bakeKey: "created-key",
     });
 
     await useCompositeLibraryStore.getState().createCompositeAsset({
@@ -285,6 +307,7 @@ describe("useCompositeLibraryStore", () => {
       asset: bakedAsset("proxy-created"),
       bakedDurationTicks: TICKS_PER_SECOND,
       contentHash: "hash",
+      bakeKey: "created-key",
     });
 
     const created = await useCompositeLibraryStore
@@ -301,6 +324,13 @@ describe("useCompositeLibraryStore", () => {
       name: "Named scene",
       createdAt: 100,
       updatedAt: 100,
+      revision: 1,
+      bake: {
+        status: "ready",
+        readyKey: "created-key",
+        readyRevision: 1,
+        assetId: "proxy-created",
+      },
     });
     expect(mocks.bakeComposite).toHaveBeenCalledWith(
       expect.anything(),
@@ -309,6 +339,7 @@ describe("useCompositeLibraryStore", () => {
         onProgress,
         compositeAssetId:
           "composite_00000000-0000-4000-8000-000000000001",
+        compositeRevision: 1,
       },
     );
   });
@@ -318,6 +349,7 @@ describe("useCompositeLibraryStore", () => {
       asset: bakedAsset("orphan"),
       bakedDurationTicks: null,
       contentHash: "hash",
+      bakeKey: "orphan-key",
     });
     mocks.updateCompositeLibrary.mockRejectedValue(new Error("disk full"));
 
@@ -364,6 +396,7 @@ describe("useCompositeLibraryStore", () => {
       asset: bakedAsset("proxy-failed"),
       bakedDurationTicks: TICKS_PER_SECOND,
       contentHash: "hash",
+      bakeKey: "failed-key",
     });
     mocks.updateCompositeLibrary.mockRejectedValue(new Error("persist failed"));
 
@@ -383,6 +416,7 @@ describe("useCompositeLibraryStore", () => {
       asset: bakedAsset("proxy-old"),
       bakedDurationTicks: null,
       contentHash: "hash",
+      bakeKey: "same-key",
     });
 
     await useCompositeLibraryStore
@@ -454,6 +488,8 @@ describe("useCompositeLibraryStore", () => {
       expect.objectContaining({
         id: placedId,
         compositeId: current.id,
+        compositeRevision: 1,
+        assetId: "proxy-old",
         start: 100,
       }),
     ]);

@@ -88,10 +88,36 @@ export interface CompositeContent extends TimelineRegionData {
   durationTicks: number;
 }
 
+export type CompositeBakeStatus =
+  | "none"
+  | "queued"
+  | "rendering"
+  | "ready"
+  | "failed";
+
+/**
+ * Durable cache state for a composite. Runtime job controllers and progress do
+ * not belong here; this state is only the persisted identity of requested and
+ * successfully published bake work.
+ */
+export interface CompositeBakeState {
+  status: CompositeBakeStatus;
+  requestedKey?: string;
+  readyKey?: string;
+  readyRevision?: number;
+  assetId?: string;
+  error?: string;
+  updatedAt?: number;
+}
+
 export interface CompositeAsset {
   id: string;
   name: string;
   content: CompositeContent;
+  /** Canonical content identity. Legacy persisted composites resolve as revision 1. */
+  revision?: number;
+  /** Versioned bake-cache metadata. Absent on pre-v2 composite libraries. */
+  bake?: CompositeBakeState;
   /** The current baked video asset for `content`; swapped atomically on edit. */
   bakedAssetId?: string;
   createdAt: number;
@@ -298,13 +324,12 @@ export interface AssetBackedBaseClipCommon extends InsertableClipBaseCommon {
   type: AssetBackedClipType;
   assetId: string;
   /**
-   * Marks this clip as a placement of a composite. Purely an identity tag for
-   * the timeline UI (badge / reveal / open-to-edit) — the renderer ignores it
-   * and treats the clip as an ordinary asset-backed video pointed at its baked
-   * `assetId`. Editing the composite re-bakes and updates `assetId` on every
-   * placement sharing this id.
+   * Marks this clip as a placement of a composite. During the renderer
+   * migration, `assetId` remains the legacy baked playback pointer.
    */
   compositeId?: string;
+  /** Revision paired with compositeId for renderer-facing source identity. */
+  compositeRevision?: number;
 }
 
 export interface AssetBackedTimelineClipCommon
@@ -313,6 +338,8 @@ export interface AssetBackedTimelineClipCommon
   assetId: string;
   /** See {@link AssetBackedBaseClipCommon.compositeId}. */
   compositeId?: string;
+  /** See {@link AssetBackedBaseClipCommon.compositeRevision}. */
+  compositeRevision?: number;
 }
 
 export interface VideoBaseClip extends AssetBackedBaseClipCommon {

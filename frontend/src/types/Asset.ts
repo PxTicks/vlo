@@ -129,6 +129,10 @@ export type CreationMetadata =
       compositeClipId?: string;
       timelineSelection?: TimelineSelection;
       contentHash?: string;
+      /** Complete render-contract cache key for freshness validation. */
+      bakeKey?: string;
+      /** Canonical composite revision rendered into this asset. */
+      compositeRevision?: number;
     }
   | {
       source: "sam2_mask";

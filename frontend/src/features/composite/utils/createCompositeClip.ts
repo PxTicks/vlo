@@ -3,17 +3,20 @@ import type {
   VideoBaseClip,
   VideoTimelineClip,
 } from "../../../types/TimelineTypes";
-
+import { resolveCompositeRevision } from "./compositeBakeValidity";
 
 export interface CreateCompositePlacementArgs {
   id?: string;
   compositeId: string;
+  compositeRevision?: number;
   assetId: string;
   durationTicks: number;
   name?: string;
 }
 
-function buildCompositeBaseClip(args: CreateCompositePlacementArgs): VideoBaseClip {
+function buildCompositeBaseClip(
+  args: CreateCompositePlacementArgs,
+): VideoBaseClip {
   const duration = Math.max(1, Math.round(args.durationTicks));
   return {
     id: args.id ?? `clip_${crypto.randomUUID()}`,
@@ -21,6 +24,9 @@ function buildCompositeBaseClip(args: CreateCompositePlacementArgs): VideoBaseCl
     name: args.name ?? "Composite",
     assetId: args.assetId,
     compositeId: args.compositeId,
+    ...(args.compositeRevision
+      ? { compositeRevision: args.compositeRevision }
+      : {}),
     sourceDuration: duration,
     timelineDuration: duration,
     croppedSourceDuration: duration,
@@ -57,6 +63,7 @@ export function createCompositeBaseClipFromAsset(
   return buildCompositeBaseClip({
     id: options.id,
     compositeId: composite.id,
+    compositeRevision: resolveCompositeRevision(composite),
     assetId: requireBakedAssetId(composite),
     durationTicks: options.durationTicks ?? composite.content.durationTicks,
     name: composite.name,

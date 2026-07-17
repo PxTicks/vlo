@@ -46,7 +46,7 @@ describe("useTimelineStore.relinkCompositePlacements", () => {
     });
   });
 
-  it("repoints every placement of a composite at the fresh bake and re-aligns timing", () => {
+  it("repoints placements without changing authored timing", () => {
     act(() => {
       useTimelineStore
         .getState()
@@ -60,7 +60,7 @@ describe("useTimelineStore.relinkCompositePlacements", () => {
         .addClip(compositePlacement("other", "composite-2", "bake-other"));
       useTimelineStore
         .getState()
-        .relinkCompositePlacements("composite-1", "bake-new", 120);
+        .relinkCompositePlacements("composite-1", "bake-new", 2);
     });
 
     const clips = useTimelineStore.getState().clips;
@@ -71,8 +71,11 @@ describe("useTimelineStore.relinkCompositePlacements", () => {
     for (const placement of [placement1, placement2]) {
       expect(placement).toMatchObject({
         assetId: "bake-new",
-        sourceDuration: 120,
-        timelineDuration: 120,
+        compositeRevision: 2,
+        sourceDuration: 100,
+        timelineDuration: 100,
+        croppedSourceDuration: 100,
+        transformedDuration: 100,
       });
     }
     expect(other).toMatchObject({ assetId: "bake-other" });

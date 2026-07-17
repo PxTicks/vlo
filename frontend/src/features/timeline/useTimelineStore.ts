@@ -114,18 +114,6 @@ function transactionFailure(
   };
 }
 
-function isCompositeFullLengthTiming(clip: TimelineClip): boolean {
-  return (
-    isCompositeClip(clip) &&
-    clip.sourceDuration !== null &&
-    clip.offset === 0 &&
-    clip.transformedOffset === 0 &&
-    clip.timelineDuration === clip.sourceDuration &&
-    clip.croppedSourceDuration === clip.sourceDuration &&
-    clip.transformedDuration === clip.sourceDuration
-  );
-}
-
 export {
   countBrushMaskAssetConsumers,
   countSam2MaskAssetConsumers,
@@ -184,7 +172,7 @@ interface TimelineState extends TimelineModelState {
   relinkCompositePlacements: (
     compositeId: string,
     bakedAssetId: string,
-    bakedDurationTicks: number | null,
+    compositeRevision: number,
   ) => void;
 
   removeClip: (id: string) => void;
@@ -516,28 +504,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     relinkCompositePlacements: (
       compositeId,
       bakedAssetId,
-      bakedDurationTicks,
+      compositeRevision,
     ) => {
       // A composite was (re)baked. Repoint every placement of it at the new
-      // baked asset so they render through the ordinary video path. Full-length
-      // placements re-align to the new bake's real (frame-snapped) duration.
+      // baked asset so Phase-1 playback continues through the ordinary video
+      // path. Authored timing is never derived from codec/container duration.
       mutationPipeline.commitModelMutation((draft) => {
         draft.clips = draft.clips.map((clip) =>
           isCompositeClip(clip) && clip.compositeId === compositeId
             ? {
                 ...clip,
                 assetId: bakedAssetId,
-                ...(bakedDurationTicks !== null &&
-                isCompositeFullLengthTiming(clip)
-                  ? {
-                      sourceDuration: bakedDurationTicks,
-                      timelineDuration: bakedDurationTicks,
-                      croppedSourceDuration: bakedDurationTicks,
-                      offset: 0,
-                      transformedDuration: bakedDurationTicks,
-                      transformedOffset: 0,
-                    }
-                  : {}),
+                compositeRevision,
               }
             : clip,
         );

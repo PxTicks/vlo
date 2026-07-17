@@ -29,6 +29,13 @@ export {
   createCompositeTimelineClipFromAsset,
 } from "./utils/createCompositeClip";
 export {
+  resolveCompositeBakeValidity,
+  resolveCompositeRevision,
+  type CompositeBakeInvalidReason,
+  type CompositeBakeValidity,
+  type ResolveCompositeBakeValidityOptions,
+} from "./utils/compositeBakeValidity";
+export {
   COMPOSITE_FRAME_INTERVAL,
   COMPOSITE_RENDER_ALPHA_MODE,
   COMPOSITE_RENDER_CONTRACT_VERSION,

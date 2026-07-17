@@ -12,7 +12,10 @@ export {
 } from "./services/groupSelectionIntoComposite";
 export {
   beginCompositeRender,
+  clearCompositeDirectRenderError,
   endCompositeRender,
+  reportCompositeDirectRenderError,
+  useCompositeDirectRenderError,
   useCompositeRenderStatusStore,
   useIsCompositeRendering,
 } from "./useCompositeRenderStatusStore";

@@ -38,6 +38,11 @@ import { usePixiApp } from "./hooks/usePixiApp";
 import { useCanvasSelectionManager } from "./hooks/interaction/useCanvasSelectionManager";
 import { useCanvasSelectionKeyboard } from "./hooks/interaction/useCanvasSelectionKeyboard";
 import { useRenderGroupOrchestrator } from "./hooks/useRenderGroupOrchestrator";
+import {
+  clearCompositeDirectRenderError,
+  getCompositeAssets,
+  reportCompositeDirectRenderError,
+} from "../composite";
 
 import { PlayerControls } from "./components/PlayerControls";
 import { ExtractDialog } from "./components/ExtractDialog";
@@ -188,8 +193,16 @@ function PlayerImpl() {
     liveFrameGraphEnabled,
   );
   useEffect(() => {
-    if (!liveFrameGraphEnabled) return;
-    const coordinator = new LiveFrameGraphCoordinator();
+    if (!liveFrameGraphEnabled || !pixiApp?.renderer) return;
+    const coordinator = new LiveFrameGraphCoordinator({
+      renderer: pixiApp.renderer,
+      onCompositeSceneError: (error, job) => {
+        reportCompositeDirectRenderError(job.activeClip.id, error);
+      },
+      onCompositeSceneRendered: (job) => {
+        clearCompositeDirectRenderError(job.activeClip.id);
+      },
+    });
     // Own an external resource's lifecycle, not derived state — the setState
     // publishes the freshly created instance to children. One-time mount cost.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -202,7 +215,7 @@ function PlayerImpl() {
         current === coordinator ? null : current,
       );
     };
-  }, [liveFrameGraphEnabled]);
+  }, [liveFrameGraphEnabled, pixiApp]);
   useEffect(() => startFramePlanningDiagnosticsConsole(), []);
   useEffect(() => {
     liveFrameGraphCoordinator?.requestFrame(playbackClock.time);
@@ -355,6 +368,7 @@ function PlayerImpl() {
                 tracks: timelineState.tracks,
                 clips: timelineState.clips,
                 transitions: timelineState.transitions,
+                composites: getCompositeAssets(),
                 fps: config.fps,
                 logicalDimensions,
                 visualTrackOrder: visualTrackIdsRef.current,
@@ -495,6 +509,7 @@ function PlayerImpl() {
     pixiApp,
     renderGroupOrchestrator,
     renderGroupSyncRef,
+    viewport,
   ]);
 
   // --- Extract / Export Logic ---

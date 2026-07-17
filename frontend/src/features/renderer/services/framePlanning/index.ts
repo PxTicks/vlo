@@ -22,11 +22,14 @@ export {
   subscribeFramePlanningDiagnostics,
 } from "./framePlanningDiagnostics";
 export {
+  isCompositeRenderDagEnabled,
   isLiveFrameGraphEnabled,
+  setCompositeRenderDagEnabled,
   setLiveFrameGraphEnabled,
 } from "./framePlanningFlags";
 export {
   createClipOutputWorkKey,
+  createCompositeSceneWorkKey,
   createEffectChainWorkKey,
   createMaskCoverageWorkKey,
   createMaskSyncWorkKey,
@@ -34,6 +37,7 @@ export {
 } from "./frameWorkKeys";
 export type {
   ClipOutputNode,
+  CompositeSceneNode,
   EffectChainNode,
   FrameDimensions,
   FrameExecutionPolicy,
@@ -49,6 +53,7 @@ export type {
   MaskSyncNode,
   OutputSinkCommand,
   ResolvedClipFrameJob,
+  ResolvedCompositeSource,
   ScenePresentationPlan,
   SourceFrameNode,
   TrackPresentationCommand,
@@ -68,5 +73,6 @@ export type {
   LiveFrameGraphParticipant,
   LiveFrameGraphRenderOptions,
   LiveFrameGraphRenderResult,
+  LiveFrameGraphCoordinatorOptions,
 } from "./LiveFrameGraphCoordinator";
 export { createEmptyFramePlanningDiagnostics } from "./framePlanningTypes";

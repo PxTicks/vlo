@@ -5,14 +5,22 @@ import type { TimelineClipOverlayDefinition } from "../../timeline/clipOverlayAp
 import { createEndpointOverlayItem } from "../../timeline/clipOverlayApi";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import { isCompositeClip } from "../../../types/TimelineTypes";
-import { useIsCompositeRendering } from "../useCompositeRenderStatusStore";
+import {
+  useCompositeDirectRenderError,
+  useIsCompositeRendering,
+} from "../useCompositeRenderStatusStore";
 
 function useCompositeRenderStatusOverlayItems({ clip }: { clip: TimelineClip }) {
   const isRendering = useIsCompositeRendering(
     isCompositeClip(clip) ? clip.compositeId : undefined,
   );
+  const directRenderError = useCompositeDirectRenderError(
+    isCompositeClip(clip) ? clip.id : undefined,
+  );
   return useMemo(() => {
-    if (!isRendering || !isCompositeClip(clip)) return [];
+    if ((!isRendering && !directRenderError) || !isCompositeClip(clip)) {
+      return [];
+    }
     return [
       createEndpointOverlayItem({
         id: "clip-composite-render-status",
@@ -28,7 +36,9 @@ function useCompositeRenderStatusOverlayItems({ clip }: { clip: TimelineClip }) 
               px: 0.75,
               height: 18,
               borderRadius: "9px",
-              bgcolor: "rgba(17,24,39,0.85)",
+              bgcolor: directRenderError
+                ? "rgba(127,29,29,0.92)"
+                : "rgba(17,24,39,0.85)",
               color: "#fff",
               fontSize: 11,
               fontWeight: 600,
@@ -40,19 +50,21 @@ function useCompositeRenderStatusOverlayItems({ clip }: { clip: TimelineClip }) 
             <LayersIcon
               sx={{
                 fontSize: 12,
-                animation: "clip-composite-pulse 1s ease-in-out infinite",
+                animation: directRenderError
+                  ? undefined
+                  : "clip-composite-pulse 1s ease-in-out infinite",
                 "@keyframes clip-composite-pulse": {
                   "0%, 100%": { opacity: 0.4 },
                   "50%": { opacity: 1 },
                 },
               }}
             />
-            Rendering…
+            {directRenderError ? "Direct render failed" : "Rendering…"}
           </Box>
         ),
       }),
     ];
-  }, [clip.type, isRendering]);
+  }, [clip, directRenderError, isRendering]);
 }
 
 const TIMELINE_COMPOSITE_RENDER_STATUS_OVERLAY: TimelineClipOverlayDefinition = {

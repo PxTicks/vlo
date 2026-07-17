@@ -1,11 +1,21 @@
 import type { Asset } from "../../../../types/Asset";
 import type {
   ClipTransform,
+  CompositeAsset,
   MaskTimelineClip,
   TimelineClip,
 } from "../../../../types/TimelineTypes";
+import { isCompositeClip } from "../../../../types/TimelineTypes";
+import {
+  createCompositeBakeKey,
+  resolveCompositeBakeValidity,
+  resolveCompositeRenderFps,
+  resolveCompositeRevision,
+  serializeCompositeBakeKey,
+} from "../../../composite";
 import type { TrackRenderEngine } from "../TrackRenderEngine";
 import type { ResolvedClipFrameJob } from "./framePlanningTypes";
+import { isCompositeRenderDagEnabled } from "./framePlanningFlags";
 
 export interface FrameJobResolutionTrack {
   trackId: string;
@@ -19,8 +29,11 @@ export interface FrameJobResolutionInput {
   presentationTick: number;
   tracks: readonly FrameJobResolutionTrack[];
   assets: readonly Asset[];
+  composites?: readonly CompositeAsset[];
   logicalDimensions: { width: number; height: number };
   fps: number;
+  /** Project presentation FPS used by composite content when it has no override. */
+  compositeProjectFps?: number;
   transitionTransformsByClipId?: ReadonlyMap<
     string,
     readonly ClipTransform[]
@@ -47,6 +60,10 @@ export class FrameJobResolver {
     const jobs: ResolvedClipFrameJob[] = [];
     const engineByJobId = new Map<string, TrackRenderEngine>();
     const trackInputByJobId = new Map<string, FrameJobResolutionTrack>();
+    const compositeById = new Map(
+      (input.composites ?? []).map((composite) => [composite.id, composite]),
+    );
+    const availableAssetIds = new Set(input.assets.map((asset) => asset.id));
 
     for (const track of input.tracks) {
       const job = track.engine.resolveFrameJob({
@@ -61,6 +78,45 @@ export class FrameJobResolver {
       if (!job) {
         track.engine.presentBlankFrame();
         continue;
+      }
+      if (
+        isCompositeRenderDagEnabled() &&
+        isCompositeClip(job.activeClip)
+      ) {
+        const composite = compositeById.get(job.activeClip.compositeId);
+        if (composite) {
+          const compositeProjectFps = input.compositeProjectFps ?? input.fps;
+          const bakeKey = serializeCompositeBakeKey(
+            createCompositeBakeKey({
+              content: composite.content,
+              projectFps: compositeProjectFps,
+              logicalDimensions: input.logicalDimensions,
+              assets: input.assets,
+            }),
+          );
+          const validity = resolveCompositeBakeValidity({
+            composite,
+            expectedBakeKey: bakeKey,
+            availableAssetIds,
+          });
+          job.compositeSource = {
+            compositeId: composite.id,
+            placementId: job.activeClip.id,
+            revision: resolveCompositeRevision(composite),
+            bakeKey,
+            localPresentationTick: job.sourceFrame.sourceTimeTicks,
+            logicalDimensions: input.logicalDimensions,
+            fps: resolveCompositeRenderFps(
+              composite.content,
+              compositeProjectFps,
+            ),
+            content: structuredClone(composite.content),
+            fallbackAssetId:
+              validity.valid && validity.assetId === job.activeClip.assetId
+                ? validity.assetId
+                : null,
+          };
+        }
       }
       const transitionTransforms =
         input.transitionTransformsByClipId?.get(job.activeClip.id);

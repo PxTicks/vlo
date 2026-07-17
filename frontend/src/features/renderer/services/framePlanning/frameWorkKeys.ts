@@ -5,6 +5,7 @@ import type {
 import type {
   FrameDimensions,
   FrameWorkKey,
+  ResolvedCompositeSource,
   ResolvedClipFrameJob,
 } from "./framePlanningTypes";
 
@@ -32,6 +33,22 @@ export function createSourceFrameWorkKey(
         job.activeClip.id,
         job.sourceFrame.key,
       ]);
+}
+
+export function createCompositeSceneWorkKey(
+  epoch: number,
+  source: ResolvedCompositeSource,
+): FrameWorkKey {
+  return serializeParts("composite-scene", [
+    epoch,
+    source.placementId,
+    source.compositeId,
+    source.revision,
+    source.bakeKey,
+    keyNumber(source.localPresentationTick),
+    dimensionsKey(source.logicalDimensions),
+    source.fps,
+  ]);
 }
 
 function maskIdentity(mask: MaskTimelineClip): readonly unknown[] {

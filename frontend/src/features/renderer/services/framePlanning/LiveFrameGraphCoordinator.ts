@@ -1,10 +1,12 @@
 import type { Asset } from "../../../../types/Asset";
 import type {
+  CompositeAsset,
   MaskTimelineClip,
   TimelineClip,
   TimelineTrack,
   Transition,
 } from "../../../../types/TimelineTypes";
+import type { Renderer } from "pixi.js";
 import type { AdjustmentEffectResolver } from "../AdjustmentEffectResolver";
 import type { TrackRenderEngine } from "../TrackRenderEngine";
 import {
@@ -26,6 +28,7 @@ import {
   getTemporalTransformationTopologyKey,
 } from "../../../transformations/catalogue/temporalRenderingRequirements";
 import type { FilterRenderContext } from "../../../transformations/catalogue/types";
+import { CompositeSceneRuntimeManager } from "../CompositeSceneRuntime";
 
 export interface LiveFrameGraphParticipant {
   trackId: string;
@@ -44,6 +47,7 @@ export interface LiveFrameGraphRenderOptions {
   tracks?: readonly TimelineTrack[];
   clips?: readonly TimelineClip[];
   transitions?: readonly Transition[];
+  composites?: readonly CompositeAsset[];
   earliestTick?: number;
   /**
    * Approximate skips history replay for this live target only. The resulting
@@ -65,6 +69,15 @@ export interface LiveFrameGraphRenderResult {
   render: FilterRenderContext;
 }
 
+export interface LiveFrameGraphCoordinatorOptions {
+  renderer?: Renderer;
+  onCompositeSceneError?: (
+    error: unknown,
+    job: ResolvedClipFrameJob,
+  ) => void;
+  onCompositeSceneRendered?: (job: ResolvedClipFrameJob) => void;
+}
+
 /**
  * Shared live frame barrier. Every registered track resolves first, then one
  * graph shares source work across tracks and commits serial GPU work. Paused
@@ -78,9 +91,29 @@ export class LiveFrameGraphCoordinator {
   private epoch = 0;
   private disposed = false;
   private readonly temporal = new TemporalRenderCoordinator();
-  private readonly executor = new BatchFrameGraphExecutor({
-    isLiveEpochCurrent: (epoch) => epoch === this.epoch && !this.disposed,
-  });
+  private readonly executor: BatchFrameGraphExecutor;
+
+  constructor(options: LiveFrameGraphCoordinatorOptions = {}) {
+    this.executor = new BatchFrameGraphExecutor({
+      isLiveEpochCurrent: (epoch) => epoch === this.epoch && !this.disposed,
+      ...(options.renderer
+        ? {
+            compositeSceneRenderer: new CompositeSceneRuntimeManager(
+              options.renderer,
+            ),
+          }
+        : {}),
+      onCompositeSceneError:
+        options.onCompositeSceneError ??
+        ((error, job) => {
+          console.warn(
+            `[CompositeScene] Direct render failed for '${job.activeClip.id}'; using a valid bake fallback when available.`,
+            error,
+          );
+        }),
+      onCompositeSceneRendered: options.onCompositeSceneRendered,
+    });
+  }
 
   get participantCount(): number {
     return this.participants.size;
@@ -291,6 +324,7 @@ export class LiveFrameGraphCoordinator {
         maskClipsByParent: participant.getMaskClipsByParent(),
       })),
       assets,
+      composites: options.composites,
       logicalDimensions: options.logicalDimensions,
       fps: options.fps,
       transitionTransformsByClipId: transitionFrame.transformsByClipId,

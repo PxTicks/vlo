@@ -1,5 +1,6 @@
 import type {
   ClipTransform,
+  CompositeContent,
   MaskBooleanExpression,
   MaskTimelineClip,
   TimelineClip,
@@ -29,6 +30,19 @@ export interface ResolvedClipFrameJob {
   contentSize: FrameDimensions;
   fps: number;
   transitionTransforms?: readonly ClipTransform[];
+  compositeSource?: ResolvedCompositeSource;
+}
+
+export interface ResolvedCompositeSource {
+  compositeId: string;
+  placementId: string;
+  revision: number;
+  bakeKey: string;
+  localPresentationTick: number;
+  logicalDimensions: FrameDimensions;
+  fps: number;
+  content: CompositeContent;
+  fallbackAssetId: string | null;
 }
 
 export interface FrameNodeBase {
@@ -42,6 +56,18 @@ export interface SourceFrameNode extends FrameNodeBase {
   sourceKind: "asset" | "generated";
   jobIds: readonly FrameJobId[];
   sourceFrame: SourceFrameSyncRef;
+}
+
+export interface CompositeSceneNode extends FrameNodeBase {
+  kind: "composite-scene";
+  jobId: FrameJobId;
+  compositeId: string;
+  placementId: string;
+  revision: number;
+  bakeKey: string;
+  localPresentationTick: number;
+  logicalDimensions: FrameDimensions;
+  childOutputIds: readonly FrameNodeId[];
 }
 
 export interface MaskSyncNode extends FrameNodeBase {
@@ -73,6 +99,7 @@ export interface ClipOutputNode extends FrameNodeBase {
 
 export type FrameNode =
   | SourceFrameNode
+  | CompositeSceneNode
   | MaskSyncNode
   | MaskCoverageNode
   | EffectChainNode
@@ -149,6 +176,7 @@ export function createEmptyFramePlanningDiagnostics(
     nodesPlanned: 0,
     nodesExecutedByKind: {
       source: 0,
+      "composite-scene": 0,
       "mask-sync": 0,
       "mask-coverage": 0,
       "effect-chain": 0,

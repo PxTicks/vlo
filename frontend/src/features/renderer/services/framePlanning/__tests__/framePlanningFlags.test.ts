@@ -2,15 +2,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const STORAGE_KEY = "vlo.liveFrameGraph";
+const COMPOSITE_STORAGE_KEY = "vlo.compositeRenderDag";
 
 describe("framePlanningFlags", () => {
   beforeEach(() => {
     globalThis.localStorage.removeItem(STORAGE_KEY);
+    globalThis.localStorage.removeItem(COMPOSITE_STORAGE_KEY);
     vi.resetModules();
   });
 
   afterEach(() => {
     globalThis.localStorage.removeItem(STORAGE_KEY);
+    globalThis.localStorage.removeItem(COMPOSITE_STORAGE_KEY);
   });
 
   it("defaults to enabled", async () => {
@@ -36,5 +39,26 @@ describe("framePlanningFlags", () => {
     expect(isLiveFrameGraphEnabled()).toBe(false);
     setLiveFrameGraphEnabled(true);
     expect(isLiveFrameGraphEnabled()).toBe(true);
+  });
+
+  it("keeps direct composite DAG rendering off unless explicitly enabled", async () => {
+    const {
+      isCompositeRenderDagEnabled,
+      setCompositeRenderDagEnabled,
+    } = await import("../framePlanningFlags");
+
+    expect(isCompositeRenderDagEnabled()).toBe(false);
+    setCompositeRenderDagEnabled(true);
+    expect(isCompositeRenderDagEnabled()).toBe(true);
+  });
+
+  it("reads the persisted composite DAG opt-in", async () => {
+    globalThis.localStorage.setItem(COMPOSITE_STORAGE_KEY, "on");
+
+    const { isCompositeRenderDagEnabled } = await import(
+      "../framePlanningFlags"
+    );
+
+    expect(isCompositeRenderDagEnabled()).toBe(true);
   });
 });

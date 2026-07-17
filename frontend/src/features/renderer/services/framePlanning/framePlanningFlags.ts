@@ -11,6 +11,7 @@
  * not consult this flag.
  */
 const STORAGE_KEY = "vlo.liveFrameGraph";
+const COMPOSITE_STORAGE_KEY = "vlo.compositeRenderDag";
 
 function readOverride(): boolean | null {
   try {
@@ -24,6 +25,14 @@ function readOverride(): boolean | null {
 }
 
 let enabled = readOverride() ?? true;
+let compositeRenderDagEnabled = (() => {
+  try {
+    const value = globalThis.localStorage?.getItem(COMPOSITE_STORAGE_KEY);
+    return value === "on" || value === "true";
+  } catch {
+    return false;
+  }
+})();
 
 export function isLiveFrameGraphEnabled(): boolean {
   return enabled;
@@ -31,4 +40,16 @@ export function isLiveFrameGraphEnabled(): boolean {
 
 export function setLiveFrameGraphEnabled(next: boolean): void {
   enabled = next;
+}
+
+/**
+ * Phase-2 rollout flag. Defaults off so legacy projects keep baked playback
+ * until direct composite rendering has completed its parity gates.
+ */
+export function isCompositeRenderDagEnabled(): boolean {
+  return compositeRenderDagEnabled;
+}
+
+export function setCompositeRenderDagEnabled(next: boolean): void {
+  compositeRenderDagEnabled = next;
 }

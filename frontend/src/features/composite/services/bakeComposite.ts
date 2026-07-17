@@ -95,6 +95,7 @@ function buildCompositeRenderInputs(
     tracks: content.tracks ?? getTimelineTracks(),
     clips: content.clips,
     transitions: content.transitions,
+    composites: [],
     assets: [...assets],
     duration: content.durationTicks,
     fps,

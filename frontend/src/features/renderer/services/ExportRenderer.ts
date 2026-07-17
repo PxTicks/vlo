@@ -3,6 +3,7 @@ import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes"
 import type {
   TimelineTrack,
   TimelineClip,
+  CompositeAsset,
   MaskTimelineClip,
   TimelineSelection,
   Transition,
@@ -61,6 +62,7 @@ import {
   type FrameJobResolutionTrack,
 } from "./framePlanning";
 import { resolveTransitionFrame } from "../../transitions/rendering/TransitionResolver";
+import { CompositeSceneRuntimeManager } from "./CompositeSceneRuntime";
 
 function createRenderAbortError(): Error {
   const error = new Error("Render cancelled");
@@ -323,6 +325,7 @@ export interface ProjectData {
   clips: TimelineClip[];
   transitions?: Transition[];
   assets: Asset[];
+  composites?: CompositeAsset[];
   duration: number;
   fps: number;
 }
@@ -441,7 +444,18 @@ export class ExportRenderer {
     this.cancelController = new AbortController();
     const decoderPool = createDecoderWorkerPool({ label: "export" });
     const frameJobResolver = new FrameJobResolver();
-    const frameGraphExecutor = new BatchFrameGraphExecutor();
+    const frameGraphExecutor = new BatchFrameGraphExecutor({
+      compositeSceneRenderer: new CompositeSceneRuntimeManager(
+        this.app.renderer,
+        decoderPool,
+      ),
+      onCompositeSceneError: (error, job) => {
+        console.warn(
+          `[CompositeScene] Export direct render failed for '${job.activeClip.id}'; using a valid bake fallback when available.`,
+          error,
+        );
+      },
+    });
     if (options.signal?.aborted) {
       this.cancel();
       throw createRenderAbortError();
@@ -706,11 +720,13 @@ export class ExportRenderer {
           presentationTick: currentTime,
           tracks: resolutionTracks,
           assets,
+          composites: projectData.composites,
           logicalDimensions: {
             width: logicalWidth,
             height: logicalHeight,
           },
           fps: renderFps,
+          compositeProjectFps: fps,
           transitionTransformsByClipId: transitionFrame.transformsByClipId,
         });
         const graph = buildFrameResolutionGraph(renderEpoch, resolution.jobs);
@@ -837,7 +853,18 @@ export class ExportRenderer {
     this.cancelController = new AbortController();
     const decoderPool = createDecoderWorkerPool({ label: "export" });
     const frameJobResolver = new FrameJobResolver();
-    const frameGraphExecutor = new BatchFrameGraphExecutor();
+    const frameGraphExecutor = new BatchFrameGraphExecutor({
+      compositeSceneRenderer: new CompositeSceneRuntimeManager(
+        this.app.renderer,
+        decoderPool,
+      ),
+      onCompositeSceneError: (error, job) => {
+        console.warn(
+          `[CompositeScene] Still direct render failed for '${job.activeClip.id}'; using a valid bake fallback when available.`,
+          error,
+        );
+      },
+    });
     if (options.signal?.aborted) {
       this.cancel();
       throw createRenderAbortError();
@@ -959,11 +986,13 @@ export class ExportRenderer {
           presentationTick: currentTime,
           tracks: resolutionTracks,
           assets,
+          composites: projectData.composites,
           logicalDimensions: {
             width: logicalWidth,
             height: logicalHeight,
           },
           fps,
+          compositeProjectFps: fps,
           transitionTransformsByClipId: transitionFrame.transformsByClipId,
         });
         const graph = buildFrameResolutionGraph(renderEpoch, resolution.jobs);

@@ -109,6 +109,7 @@ describe("bakeComposite", () => {
           projectData: {
             tracks: sourceContent.tracks,
             clips: sourceContent.clips,
+            composites: [],
             assets: [{ id: "asset-1" }],
             duration: 96000,
             fps: 30,

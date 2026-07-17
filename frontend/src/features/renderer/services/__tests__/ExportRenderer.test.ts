@@ -14,6 +14,11 @@ import type { Component } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../../timeline";
 import { extensionTransformationRegistry } from "../../../transformations/extensions/ExtensionTransformationRegistry";
+import { setCompositeRenderDagEnabled } from "../framePlanning";
+import {
+  createCompositeBakeKey,
+  serializeCompositeBakeKey,
+} from "../../../composite";
 
 const audioRendererMocks = vi.hoisted(() => ({
   instances: [] as Array<{
@@ -254,6 +259,7 @@ describe("ExportRenderer", () => {
   beforeEach(() => {
     audioRendererMocks.instances = [];
     offlineAudioContextMocks.instances = [];
+    setCompositeRenderDagEnabled(false);
   });
 
   it("should correctly scale the stage for 4K export from 1080p logic", async () => {
@@ -347,6 +353,99 @@ describe("ExportRenderer", () => {
     expect(result.outputs.video).toBeInstanceOf(Blob);
 
     renderer.dispose();
+  });
+
+  it("renders enabled composite content into a transparent logical-size source texture", async () => {
+    setCompositeRenderDagEnabled(true);
+    const config = {
+      logicalWidth: 640,
+      logicalHeight: 360,
+      outputWidth: 640,
+      outputHeight: 360,
+      backgroundAlpha: 0,
+    };
+    const asset = {
+      id: "bake",
+      hash: "bake-hash",
+      name: "bake.mp4",
+      src: "bake.mp4",
+      type: "video",
+      createdAt: 1,
+    } satisfies Asset;
+    const content = { durationTicks: 3200, clips: [], fps: 30 };
+    const bakeKey = serializeCompositeBakeKey(
+      createCompositeBakeKey({
+        content,
+        projectFps: 30,
+        logicalDimensions: { width: 640, height: 360 },
+        assets: [asset],
+      }),
+    );
+    const projectData: ProjectData = {
+      tracks: [
+        {
+          id: "track",
+          type: "visual",
+          label: "Track",
+          isVisible: true,
+          isMuted: false,
+          isLocked: false,
+        },
+      ],
+      clips: [
+        {
+          id: "placement",
+          trackId: "track",
+          type: "video",
+          name: "Composite",
+          assetId: asset.id,
+          compositeId: "composite",
+          compositeRevision: 1,
+          start: 0,
+          sourceDuration: 3200,
+          transformedDuration: 3200,
+          transformedOffset: 0,
+          timelineDuration: 3200,
+          croppedSourceDuration: 3200,
+          offset: 0,
+          transformations: [],
+        },
+      ],
+      composites: [
+        {
+          id: "composite",
+          name: "Composite",
+          content,
+          revision: 1,
+          bake: {
+            status: "ready",
+            requestedKey: bakeKey,
+            readyKey: bakeKey,
+            readyRevision: 1,
+            assetId: asset.id,
+          },
+          bakedAssetId: asset.id,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      assets: [asset],
+      duration: 3200,
+      fps: 30,
+    };
+    const renderer = await ExportRenderer.create(config);
+    const app = (renderer as unknown as TestExportRenderer).app;
+
+    await renderer.render(projectData, config, () => {});
+
+    expect(app.renderer.render).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: expect.objectContaining({ width: 640, height: 360 }),
+        clear: true,
+        clearColor: [0, 0, 0, 0],
+      }),
+    );
+    setCompositeRenderDagEnabled(false);
   });
 
   it("captures copied project-composite pixels before encoding", async () => {

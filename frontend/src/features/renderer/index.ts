@@ -7,7 +7,9 @@ export { AudioTrackLayer } from "./components/AudioTrackLayer";
 export { TrackRenderEngine } from "./services/TrackRenderEngine";
 export {
   LiveFrameGraphCoordinator,
+  isCompositeRenderDagEnabled,
   isLiveFrameGraphEnabled,
+  setCompositeRenderDagEnabled,
   startFramePlanningDiagnosticsConsole,
 } from "./services/framePlanning";
 export { ExportRenderer, isBlankStrictRenderHealth } from "./services/ExportRenderer";

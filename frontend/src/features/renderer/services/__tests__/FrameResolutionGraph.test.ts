@@ -83,6 +83,42 @@ describe("FrameResolutionGraph", () => {
     );
   });
 
+  it("inserts a placement-private composite scene between fallback source and parent effects", () => {
+    const compositeJob = job(
+      "3:t1:placement",
+      "t1",
+      "placement",
+      "bake:0:30:0",
+    );
+    compositeJob.compositeSource = {
+      compositeId: "composite-1",
+      placementId: "placement",
+      revision: 2,
+      bakeKey: "key-2",
+      localPresentationTick: 25,
+      logicalDimensions: { width: 1920, height: 1080 },
+      fps: 30,
+      content: { durationTicks: 100, clips: [] },
+      fallbackAssetId: "bake",
+    };
+
+    const graph = buildFrameResolutionGraph(3, [compositeJob]);
+    const ordered = validateFrameResolutionGraph(graph);
+    const compositeNode = ordered.find(
+      (node) => node.kind === "composite-scene",
+    );
+    const effectNode = ordered.find((node) => node.kind === "effect-chain");
+
+    expect(compositeNode).toMatchObject({
+      placementId: "placement",
+      compositeId: "composite-1",
+      revision: 2,
+      localPresentationTick: 25,
+    });
+    expect(compositeNode?.inputs).toHaveLength(1);
+    expect(effectNode?.inputs).toContain(compositeNode?.id);
+  });
+
   it("rejects missing inputs", () => {
     const frameJob = job("1:t1:c1", "t1", "c1", "asset:0:30:0");
     const builder = new FrameResolutionGraphBuilder(1, [frameJob]);

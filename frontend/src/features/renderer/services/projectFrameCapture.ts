@@ -6,6 +6,7 @@ import {
   getTimelineTransitions,
 } from "../../timeline/api";
 import { getAssets } from "../../userAssets";
+import { getCompositeAssets } from "../../composite";
 import { getProjectDimensions } from "../utils/dimensions";
 import {
   ExportRenderer,
@@ -56,6 +57,7 @@ export function buildProjectRenderInputs(): ProjectRenderInputs {
     tracks: getTimelineTracks(),
     clips: getTimelineClips(),
     transitions: getTimelineTransitions(),
+    composites: getCompositeAssets(),
     assets,
     duration: getTimelineDuration(),
     fps: projectStore.config.fps,

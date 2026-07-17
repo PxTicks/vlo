@@ -5,7 +5,11 @@ import {
   countDedupedDecodes,
   type PlannedClipJob,
 } from "../RenderFramePlanner";
-import { SharedTextureStore } from "../SharedTextureStore";
+import {
+  SharedTextureHandle,
+  SharedTextureStore,
+} from "../SharedTextureStore";
+import type { CompositeSceneFrameRenderer } from "../CompositeSceneRuntime";
 import { SourceFrameDecodeScheduler } from "../SourceFrameDecodeScheduler";
 import { validateFrameResolutionGraph } from "./FrameResolutionGraph";
 import {
@@ -33,6 +37,9 @@ export interface BatchFrameGraphExecutionResult {
 export interface BatchFrameGraphExecutorOptions {
   isLiveEpochCurrent?: (epoch: number) => boolean;
   onDiagnostics?: (diagnostics: FramePlanningDiagnostics) => void;
+  compositeSceneRenderer?: CompositeSceneFrameRenderer;
+  onCompositeSceneError?: (error: unknown, job: ResolvedClipFrameJob) => void;
+  onCompositeSceneRendered?: (job: ResolvedClipFrameJob) => void;
 }
 
 function createAbortError(message: string): Error {
@@ -129,7 +136,10 @@ export class BatchFrameGraphExecutor {
     const exportPreparations: Promise<void>[] = [];
     const assetList = [...resolution.assetsById.values()];
 
-    for (const job of graph.jobs) {
+    const fallbackSourceJobs = graph.jobs.filter(
+      (job) => !job.compositeSource || job.compositeSource.fallbackAssetId,
+    );
+    for (const job of fallbackSourceJobs) {
       const planned = toPlannedJob(job);
       plannedByResolved.set(job, planned);
       resolvedByPlanned.set(planned, job);
@@ -167,7 +177,7 @@ export class BatchFrameGraphExecutor {
     const decodePlan = this.planner.plan(
       policy.mode === "live"
         ? liveReadyJobs
-        : graph.jobs.map((job) => plannedByResolved.get(job)!),
+        : fallbackSourceJobs.map((job) => plannedByResolved.get(job)!),
     );
     diagnostics.withinFrameDedupHits = countDedupedDecodes(decodePlan);
     const cachedBefore = decodePlan.decodeGroups.filter((group) =>
@@ -240,6 +250,37 @@ export class BatchFrameGraphExecutor {
       for (const node of orderedNodes) {
         throwIfCancelled(policy, this.options.isLiveEpochCurrent);
         diagnostics.nodesExecutedByKind[node.kind] += 1;
+        if (node.kind === "composite-scene") {
+          const job = graph.jobs.find(
+            (candidate) => candidate.id === node.jobId,
+          );
+          const source = job?.compositeSource;
+          if (!job || !source) {
+            throw new Error(
+              `Missing composite-scene source for '${node.jobId}'`,
+            );
+          }
+          try {
+            const texture = await this.options.compositeSceneRenderer
+              ?.renderCompositeScene(source, assetList, policy);
+            if (!texture) {
+              throw new Error("Composite scene renderer is unavailable");
+            }
+            const fallbackHandle = handleByJobId.get(node.jobId);
+            fallbackHandle?.release();
+            handleByJobId.set(
+              node.jobId,
+              new SharedTextureHandle(node.workKey, texture, () => {}),
+            );
+            this.options.onCompositeSceneRendered?.(job);
+          } catch (error) {
+            this.options.onCompositeSceneError?.(error, job);
+            if (!source.fallbackAssetId) {
+              handleByJobId.delete(node.jobId);
+            }
+          }
+          continue;
+        }
         if (node.kind !== "clip-output") {
           continue;
         }
@@ -293,6 +334,7 @@ export class BatchFrameGraphExecutor {
     if (this.disposed) return;
     this.disposed = true;
     this.store.dispose();
+    this.options.compositeSceneRenderer?.dispose();
   }
 }
 

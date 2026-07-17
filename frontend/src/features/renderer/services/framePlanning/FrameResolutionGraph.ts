@@ -8,6 +8,7 @@ import type {
 } from "./framePlanningTypes";
 import {
   createClipOutputWorkKey,
+  createCompositeSceneWorkKey,
   createEffectChainWorkKey,
   createMaskCoverageWorkKey,
   createMaskSyncWorkKey,
@@ -144,7 +145,7 @@ export function buildFrameResolutionGraph(
   const sourceIdByJobId = new Map<string, string>();
 
   for (const job of jobs) {
-    const sourceId = builder.addNode({
+    let sourceId = builder.addNode({
       id: nodeId(epoch, "source", job.id),
       kind: "source",
       workKey: createSourceFrameWorkKey(job),
@@ -153,6 +154,26 @@ export function buildFrameResolutionGraph(
       jobIds: [job.id],
       sourceFrame: job.sourceFrame,
     });
+    if (job.compositeSource) {
+      const source = job.compositeSource;
+      sourceId = builder.addNode(
+        {
+          id: nodeId(epoch, "composite-scene", job.id),
+          kind: "composite-scene",
+          workKey: createCompositeSceneWorkKey(epoch, source),
+          inputs: [sourceId],
+          jobId: job.id,
+          compositeId: source.compositeId,
+          placementId: source.placementId,
+          revision: source.revision,
+          bakeKey: source.bakeKey,
+          localPresentationTick: source.localPresentationTick,
+          logicalDimensions: source.logicalDimensions,
+          childOutputIds: [],
+        },
+        { deduplicate: false },
+      );
+    }
     sourceIdByJobId.set(job.id, sourceId);
   }
 

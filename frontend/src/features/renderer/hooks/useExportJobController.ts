@@ -18,6 +18,7 @@ import {
 import { renderSelectionToVideoFile } from "../services/renderSelectionToVideoFile";
 import { deriveTrueDimensionsFromShortEdge } from "../utils/dimensions";
 import type { AspectRatio } from "../../project/useProjectStore";
+import { getCompositeAssets } from "../../composite";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
@@ -106,6 +107,7 @@ export function useExportJobController({
       tracks: getTimelineTracks(),
       clips: getTimelineClips(),
       transitions: getTimelineTransitions(),
+      composites: getCompositeAssets(),
       assets,
       duration,
       fps: projectFps,

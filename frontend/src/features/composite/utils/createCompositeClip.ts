@@ -47,13 +47,12 @@ export function createCompositeTimelineClip(
   };
 }
 
-function requireBakedAssetId(composite: CompositeAsset): string {
-  if (!composite.bakedAssetId) {
-    throw new Error(
-      `Composite '${composite.id}' has no baked asset to place yet.`,
-    );
-  }
-  return composite.bakedAssetId;
+function resolveCompositePlacementAssetId(composite: CompositeAsset): string {
+  return (
+    composite.bake?.assetId ??
+    composite.bakedAssetId ??
+    `composite-live:${composite.id}`
+  );
 }
 
 export function createCompositeBaseClipFromAsset(
@@ -64,7 +63,7 @@ export function createCompositeBaseClipFromAsset(
     id: options.id,
     compositeId: composite.id,
     compositeRevision: resolveCompositeRevision(composite),
-    assetId: requireBakedAssetId(composite),
+    assetId: resolveCompositePlacementAssetId(composite),
     durationTicks: options.durationTicks ?? composite.content.durationTicks,
     name: composite.name,
   });

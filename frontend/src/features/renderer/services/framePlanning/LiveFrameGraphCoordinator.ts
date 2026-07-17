@@ -304,6 +304,8 @@ export class LiveFrameGraphCoordinator {
         mode: "live",
         epoch,
         render,
+        temporalPreviewQuality:
+          options.temporalPreviewQuality ?? "exact",
       });
       if (epoch !== this.epoch || this.disposed) {
         return null;

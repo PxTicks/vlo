@@ -39,8 +39,6 @@ export interface BakeCompositeOptions {
 export interface BakedComposite {
   /** The registered baked video asset. */
   asset: Asset;
-  /** Duration of the registered bake in timeline ticks when available. */
-  bakedDurationTicks: number | null;
   /** Hash of the content this bake was rendered from (for staleness checks). */
   contentHash: string;
   /** Complete serialized render-contract identity for this cache asset. */
@@ -49,21 +47,6 @@ export interface BakedComposite {
 
 function toEven(value: number): number {
   return Math.max(2, Math.round(value / 2) * 2);
-}
-
-function durationSecondsToTicks(
-  durationSeconds: number | null | undefined,
-  mediaSecondsToTick: typeof import("../../renderer/utils/mediaTime")["mediaSecondsToTick"],
-): number | null {
-  if (
-    typeof durationSeconds !== "number" ||
-    !Number.isFinite(durationSeconds) ||
-    durationSeconds <= 0
-  ) {
-    return null;
-  }
-
-  return Math.max(0, mediaSecondsToTick(durationSeconds, "floor"));
 }
 
 /**
@@ -124,15 +107,11 @@ export async function bakeComposite(
   const contentHash = hashCompositeContent(content);
 
   // Dynamic import keeps `composite` off the static renderer import graph.
-  const [
-    { renderSelectionToVideoFile },
-    { getProjectDimensions },
-    { mediaSecondsToTick },
-  ] = await Promise.all([
-    import("../../renderer/services/renderSelectionToVideoFile"),
-    import("../../renderer/utils/dimensions"),
-    import("../../renderer/utils/mediaTime"),
-  ]);
+  const [{ renderSelectionToVideoFile }, { getProjectDimensions }] =
+    await Promise.all([
+      import("../../renderer/services/renderSelectionToVideoFile"),
+      import("../../renderer/utils/dimensions"),
+    ]);
 
   // Use one asset snapshot for both dependency identity and rendering so the
   // published key describes the exact dependency set supplied to the renderer.
@@ -194,10 +173,6 @@ export async function bakeComposite(
 
   return {
     asset,
-    bakedDurationTicks: durationSecondsToTicks(
-      asset.duration,
-      mediaSecondsToTick,
-    ),
     contentHash,
     bakeKey,
   };

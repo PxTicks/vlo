@@ -28,10 +28,12 @@ let enabled = readOverride() ?? true;
 let compositeRenderDagEnabled = (() => {
   try {
     const value = globalThis.localStorage?.getItem(COMPOSITE_STORAGE_KEY);
-    return value === "on" || value === "true";
+    if (value === "off" || value === "false") return false;
+    if (value === "on" || value === "true") return true;
   } catch {
-    return false;
+    // localStorage may be unavailable (workers, tests, privacy mode).
   }
+  return true;
 })();
 
 export function isLiveFrameGraphEnabled(): boolean {
@@ -43,8 +45,9 @@ export function setLiveFrameGraphEnabled(next: boolean): void {
 }
 
 /**
- * Phase-2 rollout flag. Defaults off so legacy projects keep baked playback
- * until direct composite rendering has completed its parity gates.
+ * Direct composite rendering is the safe default now that creation can exist
+ * without a bake. A dev rollback can force legacy baked-only playback with
+ * `localStorage["vlo.compositeRenderDag"] = "off"` (then reload).
  */
 export function isCompositeRenderDagEnabled(): boolean {
   return compositeRenderDagEnabled;

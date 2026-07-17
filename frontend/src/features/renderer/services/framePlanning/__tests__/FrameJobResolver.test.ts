@@ -6,6 +6,7 @@ import type {
 } from "../../../../../types/TimelineTypes";
 import {
   createCompositeBakeKey,
+  setCompositeForceLive,
   serializeCompositeBakeKey,
 } from "../../../../composite";
 import type { TrackRenderEngine } from "../../TrackRenderEngine";
@@ -138,7 +139,10 @@ describe("FrameJobResolver composite sources", () => {
     updatedAt: 2,
   } satisfies CompositeAsset;
 
-  afterEach(() => setCompositeRenderDagEnabled(false));
+  afterEach(() => {
+    setCompositeRenderDagEnabled(false);
+    setCompositeForceLive(composite.id, false);
+  });
 
   function resolve(sourceComposite: CompositeAsset = composite) {
     const resolvedJob = job({
@@ -197,6 +201,13 @@ describe("FrameJobResolver composite sources", () => {
         bake: { ...composite.bake, readyKey: "stale-key" },
       }).compositeSource?.fallbackAssetId,
     ).toBeNull();
+  });
+
+  it("does not expose a valid bake fallback while force-live is active", () => {
+    setCompositeRenderDagEnabled(true);
+    setCompositeForceLive(composite.id, true);
+
+    expect(resolve().compositeSource?.fallbackAssetId).toBeNull();
   });
 
   it("leaves baked source jobs unchanged while the rollout flag is off", () => {

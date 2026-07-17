@@ -28,6 +28,8 @@ import type {
   ResolvedCompositeSource,
 } from "./framePlanning/framePlanningTypes";
 import type { FilterRenderContext } from "../../transformations/catalogue/types";
+import { getAssetInput } from "../../userAssets";
+import { resolveCompositeRasterDimensions } from "../utils/compositeRasterDimensions";
 
 export interface CompositeSceneFrameRenderer {
   renderCompositeScene(
@@ -41,17 +43,24 @@ export interface CompositeSceneFrameRenderer {
 interface RuntimeIdentity {
   revision: number;
   bakeKey: string;
+  logicalWidth: number;
+  logicalHeight: number;
   width: number;
   height: number;
   fps: number;
 }
 
-function identityFor(source: ResolvedCompositeSource): RuntimeIdentity {
+function identityFor(
+  source: ResolvedCompositeSource,
+  rasterDimensions: { width: number; height: number },
+): RuntimeIdentity {
   return {
     revision: source.revision,
     bakeKey: source.bakeKey,
-    width: source.logicalDimensions.width,
-    height: source.logicalDimensions.height,
+    logicalWidth: source.logicalDimensions.width,
+    logicalHeight: source.logicalDimensions.height,
+    width: rasterDimensions.width,
+    height: rasterDimensions.height,
     fps: source.fps,
   };
 }
@@ -60,9 +69,55 @@ function sameIdentity(left: RuntimeIdentity, right: RuntimeIdentity): boolean {
   return (
     left.revision === right.revision &&
     left.bakeKey === right.bakeKey &&
+    left.logicalWidth === right.logicalWidth &&
+    left.logicalHeight === right.logicalHeight &&
     left.width === right.width &&
     left.height === right.height &&
     left.fps === right.fps
+  );
+}
+
+async function resolveAssetDimensions(
+  asset: Asset,
+): Promise<{ width: number; height: number } | null> {
+  if (asset.type !== "video" && asset.type !== "image") {
+    return null;
+  }
+  try {
+    const input = await getAssetInput(asset.id);
+    const track = await input?.getPrimaryVideoTrack();
+    const width = track?.displayWidth ?? 0;
+    const height = track?.displayHeight ?? 0;
+    return width > 0 && height > 0 ? { width, height } : null;
+  } catch {
+    // Missing/unreadable sources still render through the ordinary diagnostic
+    // path; they must not prevent the composite's remaining content appearing.
+    return null;
+  }
+}
+
+async function resolveSourceRasterDimensions(
+  source: ResolvedCompositeSource,
+  assets: readonly Asset[],
+): Promise<{ width: number; height: number }> {
+  const referencedAssetIds = new Set(
+    source.content.clips.flatMap((clip) =>
+      "assetId" in clip && typeof clip.assetId === "string"
+        ? [clip.assetId]
+        : [],
+    ),
+  );
+  const dimensions = await Promise.all(
+    assets
+      .filter((asset) => referencedAssetIds.has(asset.id))
+      .map(resolveAssetDimensions),
+  );
+  return resolveCompositeRasterDimensions(
+    source.logicalDimensions,
+    dimensions.filter(
+      (candidate): candidate is { width: number; height: number } =>
+        candidate !== null,
+    ),
   );
 }
 
@@ -137,6 +192,10 @@ class CompositePlacementRuntime {
       height: Math.max(1, identity.height),
       dynamic: true,
     });
+    this.root.scale.set(
+      identity.width / Math.max(1, identity.logicalWidth),
+      identity.height / Math.max(1, identity.logicalHeight),
+    );
     this.adjustmentResolver.setAdjustmentSource(
       this.tracks,
       this.clips,
@@ -192,16 +251,27 @@ class CompositePlacementRuntime {
       stableClips: this.clips,
       adjustmentEffectResolver: this.adjustmentResolver,
     });
-    const temporalPlan = this.temporal.plan({
-      presentationTick: localPresentationTick,
-      fps: this.source.fps,
-      mode:
-        policy.render?.mode ??
-        (policy.mode === "export" ? "export" : "preview"),
-      requirements: temporalScope.requirements,
-      earliestTick: temporalScope.earliestTick,
-      topologyKey: temporalScope.topologyKey,
-    });
+    const temporalPlan =
+      policy.mode === "live" &&
+      policy.temporalPreviewQuality === "approximate"
+        ? {
+            warmup: [],
+            target: this.temporal.createApproximatePreviewContext(
+              localPresentationTick,
+              this.source.fps,
+            ),
+            isDiscontinuous: true,
+          }
+        : this.temporal.plan({
+            presentationTick: localPresentationTick,
+            fps: this.source.fps,
+            mode:
+              policy.render?.mode ??
+              (policy.mode === "export" ? "export" : "preview"),
+            requirements: temporalScope.requirements,
+            earliestTick: temporalScope.earliestTick,
+            topologyKey: temporalScope.topologyKey,
+          });
 
     try {
       for (const warmup of temporalPlan.warmup) {
@@ -295,6 +365,10 @@ export class CompositeSceneRuntimeManager
   >();
   private readonly renderer: Renderer;
   private readonly decoderPool?: DecoderWorkerPool;
+  private readonly rasterDimensionsByIdentity = new Map<
+    string,
+    Promise<{ width: number; height: number }>
+  >();
 
   constructor(renderer: Renderer, decoderPool?: DecoderWorkerPool) {
     this.renderer = renderer;
@@ -306,7 +380,13 @@ export class CompositeSceneRuntimeManager
     assets: readonly Asset[],
     policy: FrameExecutionPolicy,
   ): Promise<Texture> {
-    const identity = identityFor(source);
+    const rasterIdentity = `${source.compositeId}:${source.revision}:${source.bakeKey}`;
+    let rasterDimensions = this.rasterDimensionsByIdentity.get(rasterIdentity);
+    if (!rasterDimensions) {
+      rasterDimensions = resolveSourceRasterDimensions(source, assets);
+      this.rasterDimensionsByIdentity.set(rasterIdentity, rasterDimensions);
+    }
+    const identity = identityFor(source, await rasterDimensions);
     let entry = this.runtimes.get(source.placementId);
     if (!entry || !sameIdentity(entry.identity, identity)) {
       entry?.runtime.dispose();
@@ -333,5 +413,6 @@ export class CompositeSceneRuntimeManager
       entry.runtime.dispose();
     }
     this.runtimes.clear();
+    this.rasterDimensionsByIdentity.clear();
   }
 }

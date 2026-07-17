@@ -3,6 +3,15 @@ export {
   type BakeCompositeOptions,
   type BakedComposite,
 } from "./services/bakeComposite";
+export {
+  cancelCompositeBakeJobs,
+  cancelCompositeBakeJobsAndWait,
+  CompositeBakeQueue,
+  compositeBakeQueue,
+  type CompositeBakeQueueCallbacks,
+  type CompositeBakeQueueOptions,
+  type CompositeBakeRequest,
+} from "./services/CompositeBakeQueue";
 export { CompositePanel } from "./CompositePanel";
 export { useTimelineCompositeRevealClipOverlay } from "./hooks/useTimelineCompositeRevealClipOverlay";
 export { useTimelineCompositeRenderStatusOverlay } from "./hooks/useTimelineCompositeRenderStatusOverlay";
@@ -14,15 +23,21 @@ export {
   beginCompositeRender,
   clearCompositeDirectRenderError,
   endCompositeRender,
+  isCompositeForceLive,
   reportCompositeDirectRenderError,
+  resetCompositeRenderRuntimeState,
+  setCompositeForceLive,
+  useCompositeBakeRuntimeStatus,
   useCompositeDirectRenderError,
   useCompositeRenderStatusStore,
+  useIsCompositeForceLive,
   useIsCompositeRendering,
 } from "./useCompositeRenderStatusStore";
 export {
   getCompositeAssetById,
   getCompositeAssets,
   revealCompositeInBrowser,
+  retryCompositeBake,
   useCompositeLibraryStore,
 } from "./useCompositeLibraryStore";
 export { useCompositeTimelineStore } from "./useCompositeTimelineStore";
@@ -32,6 +47,7 @@ export {
   createCompositeTimelineClipFromAsset,
 } from "./utils/createCompositeClip";
 export {
+  INITIAL_COMPOSITE_REVISION,
   resolveCompositeBakeValidity,
   resolveCompositeRevision,
   type CompositeBakeInvalidReason,

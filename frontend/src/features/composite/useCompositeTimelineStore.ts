@@ -166,13 +166,10 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
             typeof frame.ownerCompositeAssetId === "string" ||
             !isEmptyNewSceneContent(contentToSave);
 
-          // Restore the parent timeline BEFORE committing. Committing an edit
-          // re-bakes and relinks every placement of this composite to the fresh
-          // asset; that relink must run against the parent timeline's
-          // placements, not the subtimeline content we just captured. Restoring
-          // first (and dropping persistence suspension when we're back on the
-          // main timeline) keeps the placement's `assetId` consistent with the
-          // bake we keep, so it never points at the deleted old bake.
+          // Restore the parent timeline BEFORE committing. The canonical edit
+          // immediately advances every parent placement's revision, while the
+          // background bake may relink its cache later. Both mutations must run
+          // against the parent timeline, not the subtimeline just captured.
           replaceTimelineSnapshot(cloneTimelineSnapshot(frame.previousSnapshot));
 
           const returningToMainTimeline = stack.length === 0;

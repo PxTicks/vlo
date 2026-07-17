@@ -45,8 +45,9 @@ function pickTargetTrackId(selection: TimelineSelection): string | null {
 
 /**
  * Captures a timeline selection as a Composite clip: normalize the region to
- * local zero, bake its proxy video, then atomically swap the selection's clips
- * for a single composite clip anchored at the selection start.
+ * local zero, commit its canonical asset, then atomically swap the selection's
+ * clips for a single live-renderable composite clip anchored at the selection
+ * start. Cache baking continues independently after this function returns.
  *
  * Returns the created clip, or null if the selection had no placeable track.
  */

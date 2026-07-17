@@ -1,5 +1,7 @@
 import type { CompositeAsset } from "../../../types/TimelineTypes";
 
+export const INITIAL_COMPOSITE_REVISION = 1;
+
 export type CompositeBakeInvalidReason =
   | "missing-metadata"
   | "not-ready"
@@ -39,7 +41,7 @@ export function resolveCompositeRevision(composite: CompositeAsset): number {
   ) {
     return revision;
   }
-  return 1;
+  return INITIAL_COMPOSITE_REVISION;
 }
 
 /**

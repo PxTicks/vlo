@@ -4,21 +4,43 @@ import type {
   CompositeContent,
 } from "../../types/TimelineTypes";
 import { projectPersistenceService } from "../project";
-import { deleteAsset } from "../userAssets";
+import { useProjectStore } from "../project/useProjectStore";
 import {
+  deleteAsset,
+  getAssetById,
+  getAssets,
+  waitForAssetPersistence,
+} from "../userAssets";
+import {
+  getTimelineClips,
   getTimelineCompositePlacementIds,
   insertTimelineBaseClipAtTime,
   relinkTimelineCompositePlacements,
   removeTimelineClips,
 } from "../timeline/api";
-import { bakeComposite } from "./services/bakeComposite";
+import type {
+  CompositeBakeRequest,
+  CompositeBakeQueueCallbacks,
+} from "./services/CompositeBakeQueue";
+import { compositeBakeQueue } from "./services/CompositeBakeQueue";
+import type { BakedComposite } from "./services/bakeComposite";
 import {
   beginCompositeRender,
   endCompositeRender,
+  setCompositeBakeRuntimeStatus,
+  useCompositeRenderStatusStore,
 } from "./useCompositeRenderStatusStore";
 import { createCompositeBaseClipFromAsset } from "./utils/createCompositeClip";
-import { resolveCompositeRevision } from "./utils/compositeBakeValidity";
+import {
+  INITIAL_COMPOSITE_REVISION,
+  resolveCompositeBakeValidity,
+  resolveCompositeRevision,
+} from "./utils/compositeBakeValidity";
 import { contentContainsComposite } from "./utils/compositeReferences";
+import {
+  createCompositeBakeKey,
+  serializeCompositeBakeKey,
+} from "./utils/compositeRenderContract";
 
 interface CompositeBrowserRevealRequest {
   compositeAssetId: string;
@@ -52,6 +74,7 @@ interface CompositeLibraryState {
     compositeAssetId: string,
     input: UpdateCompositeAssetContentInput,
   ) => Promise<CompositeAsset | null>;
+  retryCompositeBake: (compositeAssetId: string) => Promise<boolean>;
   renameCompositeAsset: (
     compositeAssetId: string,
     name: string,
@@ -66,6 +89,23 @@ interface CompositeLibraryState {
   clearSelection: () => void;
   revealCompositeInBrowser: (compositeAssetId: string) => void;
   clearRevealRequest: (requestId: number) => void;
+}
+
+let compositeMutationTail = Promise.resolve();
+
+async function runCompositeMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = compositeMutationTail;
+  let release: () => void = () => undefined;
+  compositeMutationTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  try {
+    await previous.catch(() => undefined);
+    return await operation();
+  } finally {
+    release();
+  }
 }
 
 function clone<T>(value: T): T {
@@ -119,10 +159,10 @@ async function deleteBakedAsset(assetId: string | undefined): Promise<void> {
   }
 
   try {
-    await deleteAsset(assetId);
+    await deleteAsset(assetId, { cleanupMode: "immediate" });
   } catch (error) {
     console.warn(
-      `[CompositeLibrary] Failed to delete old composite bake '${assetId}'`,
+      `[CompositeLibrary] Failed to delete composite bake '${assetId}'`,
       error,
     );
   }
@@ -130,6 +170,317 @@ async function deleteBakedAsset(assetId: string | undefined): Promise<void> {
 
 function getPublishedBakeAssetId(composite: CompositeAsset): string | undefined {
   return composite.bake?.assetId ?? composite.bakedAssetId;
+}
+
+function isBakeAssetReferenced(assetId: string): boolean {
+  const placementOwnsAsset = getTimelineClips().some(
+    (clip) => "assetId" in clip && clip.assetId === assetId,
+  );
+  if (placementOwnsAsset) {
+    return true;
+  }
+  return useCompositeLibraryStore
+    .getState()
+    .composites.some(
+      (composite) => getPublishedBakeAssetId(composite) === assetId,
+    );
+}
+
+async function retireBakeAssetWhenUnowned(
+  assetId: string | undefined,
+): Promise<void> {
+  if (!assetId || isBakeAssetReferenced(assetId)) {
+    return;
+  }
+  // Frame jobs retain decoded texture handles rather than asset-store entries.
+  // Yield once so relink subscribers can claim the replacement frame before
+  // the obsolete URL and decoder source are removed.
+  await Promise.resolve();
+  if (!isBakeAssetReferenced(assetId)) {
+    await deleteBakedAsset(assetId);
+  }
+}
+
+function getSafeBakeError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.trim() || "Composite bake failed.";
+}
+
+function isValidProducedBake(
+  request: CompositeBakeRequest,
+  result: BakedComposite,
+): boolean {
+  const registered = getAssetById(result.asset.id);
+  const metadata = registered?.creationMetadata;
+  return Boolean(
+    registered &&
+      registered.type === "video" &&
+      typeof registered.duration === "number" &&
+      Number.isFinite(registered.duration) &&
+      registered.duration > 0 &&
+      result.bakeKey === request.requestedKey &&
+      metadata?.source === "composite" &&
+      metadata.compositeAssetId === request.compositeId &&
+      metadata.compositeRevision === request.revision &&
+      metadata.bakeKey === request.requestedKey &&
+      (registered.src || registered.sourcePath || registered.file),
+  );
+}
+
+async function createRequestedBakeKey(
+  content: CompositeContent,
+): Promise<string> {
+  const { getProjectDimensions } = await import("../renderer/utils/dimensions");
+  const project = useProjectStore.getState();
+  return serializeCompositeBakeKey(
+    createCompositeBakeKey({
+      content,
+      projectFps: project.config.fps,
+      logicalDimensions: getProjectDimensions(project.config.aspectRatio),
+      assets: getAssets(),
+    }),
+  );
+}
+
+function matchesBakeRequest(
+  composite: CompositeAsset | undefined,
+  request: CompositeBakeRequest,
+): composite is CompositeAsset {
+  return Boolean(
+    composite &&
+      resolveCompositeRevision(composite) === request.revision &&
+      composite.bake?.requestedKey === request.requestedKey,
+  );
+}
+
+const bakeQueueCallbacks: CompositeBakeQueueCallbacks = {
+  onStarted: async (request) => {
+    beginCompositeRender(request.compositeId);
+    setCompositeBakeRuntimeStatus(request.compositeId, {
+      status: "rendering",
+      progress: 0,
+      revision: request.revision,
+      requestedKey: request.requestedKey,
+    });
+    await runCompositeMutation(async () => {
+      const currentComposites = useCompositeLibraryStore.getState().composites;
+      const current = currentComposites.find(
+        (candidate) => candidate.id === request.compositeId,
+      );
+      if (!matchesBakeRequest(current, request)) {
+        return;
+      }
+      const next = sortComposites(
+        currentComposites.map((candidate) =>
+          candidate.id === request.compositeId
+            ? {
+                ...candidate,
+                bake: {
+                  ...candidate.bake,
+                  status: "rendering" as const,
+                  requestedKey: request.requestedKey,
+                  error: undefined,
+                  updatedAt: Date.now(),
+                },
+              }
+            : candidate,
+        ),
+      );
+      await persistComposites(next);
+      useCompositeLibraryStore.setState({ composites: next });
+    });
+  },
+  onProgress: (request, percentage) => {
+    setCompositeBakeRuntimeStatus(request.compositeId, {
+      status: "rendering",
+      progress: Math.max(0, Math.min(100, percentage)),
+      revision: request.revision,
+      requestedKey: request.requestedKey,
+    });
+  },
+  onCompleted: async (request, result) => {
+    await waitForAssetPersistence(result.asset.id);
+    if (!isValidProducedBake(request, result)) {
+      throw new Error("The produced composite cache failed validation.");
+    }
+
+    let previousBakeAssetId: string | undefined;
+    let didPublish = false;
+    await runCompositeMutation(async () => {
+      const currentComposites = useCompositeLibraryStore.getState().composites;
+      const current = currentComposites.find(
+        (candidate) => candidate.id === request.compositeId,
+      );
+      if (
+        useProjectStore.getState().project?.id !== request.projectId ||
+        !matchesBakeRequest(current, request) ||
+        result.bakeKey !== request.requestedKey
+      ) {
+        return;
+      }
+
+      previousBakeAssetId = getPublishedBakeAssetId(current);
+      const updatedAt = Date.now();
+      const ready: CompositeAsset = {
+        ...current,
+        bake: {
+          status: "ready",
+          requestedKey: request.requestedKey,
+          readyKey: request.requestedKey,
+          readyRevision: request.revision,
+          assetId: result.asset.id,
+          updatedAt,
+        },
+        bakedAssetId: result.asset.id,
+        updatedAt,
+      };
+      const next = sortComposites(
+        currentComposites.map((candidate) =>
+          candidate.id === request.compositeId ? ready : candidate,
+        ),
+      );
+
+      await persistComposites(next);
+      useCompositeLibraryStore.setState({ composites: next });
+      relinkTimelineCompositePlacements(
+        request.compositeId,
+        result.asset.id,
+        request.revision,
+      );
+      didPublish = true;
+    });
+
+    if (!didPublish) {
+      await deleteBakedAsset(result.asset.id);
+      return;
+    }
+
+    setCompositeBakeRuntimeStatus(request.compositeId, null);
+    endCompositeRender(request.compositeId);
+    if (previousBakeAssetId !== result.asset.id) {
+      await retireBakeAssetWhenUnowned(previousBakeAssetId);
+    }
+  },
+  onFailed: async (request, error) => {
+    await runCompositeMutation(async () => {
+      const currentComposites = useCompositeLibraryStore.getState().composites;
+      const current = currentComposites.find(
+        (candidate) => candidate.id === request.compositeId,
+      );
+      if (!matchesBakeRequest(current, request)) {
+        return;
+      }
+      const next = sortComposites(
+        currentComposites.map((candidate) =>
+          candidate.id === request.compositeId
+            ? {
+                ...candidate,
+                bake: {
+                  ...candidate.bake,
+                  status: "failed" as const,
+                  requestedKey: request.requestedKey,
+                  error: getSafeBakeError(error),
+                  updatedAt: Date.now(),
+                },
+              }
+            : candidate,
+        ),
+      );
+      await persistComposites(next);
+      useCompositeLibraryStore.setState({ composites: next });
+    });
+    setCompositeBakeRuntimeStatus(request.compositeId, null);
+    endCompositeRender(request.compositeId);
+  },
+  onCancelled: (request) => {
+    const runtime = useCompositeRenderStatusStore
+      .getState()
+      .bakeStatusByCompositeId.get(request.compositeId);
+    if (
+      runtime?.revision === request.revision &&
+      runtime.requestedKey === request.requestedKey
+    ) {
+      setCompositeBakeRuntimeStatus(request.compositeId, null);
+      endCompositeRender(request.compositeId);
+    }
+  },
+  disposeResult: async (result) => {
+    await deleteBakedAsset(result.asset.id);
+  },
+};
+
+function enqueueCompositeBake(
+  composite: CompositeAsset,
+  requestedKey: string,
+  options: Pick<CreateCompositeAssetInput, "signal" | "onProgress"> = {},
+): void {
+  const revision = resolveCompositeRevision(composite);
+  setCompositeBakeRuntimeStatus(composite.id, {
+    status: "queued",
+    progress: 0,
+    revision,
+    requestedKey,
+  });
+  compositeBakeQueue.enqueue(
+    {
+      compositeId: composite.id,
+      projectId: useProjectStore.getState().project?.id ?? null,
+      revision,
+      requestedKey,
+      content: composite.content,
+      signal: options.signal,
+      onProgress: options.onProgress,
+    },
+    bakeQueueCallbacks,
+  );
+}
+
+async function queueCurrentCompositeBake(
+  compositeAssetId: string,
+): Promise<boolean> {
+  const current = useCompositeLibraryStore
+    .getState()
+    .composites.find((candidate) => candidate.id === compositeAssetId);
+  if (!current) {
+    return false;
+  }
+  const requestedKey = await createRequestedBakeKey(current.content);
+  let queued: CompositeAsset | null = null;
+  await runCompositeMutation(async () => {
+    const currentComposites = useCompositeLibraryStore.getState().composites;
+    const latest = currentComposites.find(
+      (candidate) => candidate.id === compositeAssetId,
+    );
+    if (
+      !latest ||
+      resolveCompositeRevision(latest) !== resolveCompositeRevision(current)
+    ) {
+      return;
+    }
+    const updated: CompositeAsset = {
+      ...latest,
+      bake: {
+        ...latest.bake,
+        status: "queued",
+        requestedKey,
+        error: undefined,
+        updatedAt: Date.now(),
+      },
+    };
+    const next = sortComposites(
+      currentComposites.map((candidate) =>
+        candidate.id === compositeAssetId ? updated : candidate,
+      ),
+    );
+    await persistComposites(next);
+    useCompositeLibraryStore.setState({ composites: next });
+    queued = updated;
+  });
+  if (!queued) {
+    return false;
+  }
+  enqueueCompositeBake(queued, requestedKey);
+  return true;
 }
 
 export const useCompositeLibraryStore = create<CompositeLibraryState>(
@@ -143,9 +494,53 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
       set({ isLoading: true });
       try {
         const document = await projectPersistenceService.readCompositeLibrary();
-        set({
-          composites: sortComposites(Object.values(document.composites)),
-        });
+        const availableAssetIds = new Set(getAssets().map((asset) => asset.id));
+        const normalized: CompositeAsset[] = [];
+        const toQueue: Array<{
+          composite: CompositeAsset;
+          requestedKey: string;
+        }> = [];
+
+        for (const persisted of Object.values(document.composites)) {
+          const composite = clone(persisted);
+          const requestedKey = await createRequestedBakeKey(composite.content);
+          const validity = resolveCompositeBakeValidity({
+            composite,
+            expectedBakeKey: requestedKey,
+            availableAssetIds,
+          });
+          const interrupted =
+            composite.bake?.status === "queued" ||
+            composite.bake?.status === "rendering";
+          const staleFailure =
+            composite.bake?.status === "failed" &&
+            composite.bake.requestedKey !== requestedKey;
+          if (
+            !validity.valid &&
+            (interrupted ||
+              staleFailure ||
+              composite.bake?.status !== "failed")
+          ) {
+            composite.bake = {
+              ...composite.bake,
+              status: "queued",
+              requestedKey,
+              error: undefined,
+              updatedAt: Date.now(),
+            };
+            toQueue.push({ composite, requestedKey });
+          }
+          normalized.push(composite);
+        }
+
+        const next = sortComposites(normalized);
+        if (toQueue.length > 0) {
+          await persistComposites(next);
+        }
+        set({ composites: next });
+        for (const queued of toQueue) {
+          enqueueCompositeBake(queued.composite, queued.requestedKey);
+        }
       } finally {
         set({ isLoading: false });
       }
@@ -153,165 +548,146 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
 
     createCompositeAsset: async (input) => {
       const id = input.id ?? `composite_${crypto.randomUUID()}`;
-      const now = Date.now();
       const content = clone(input.content);
-      const currentComposites = get().composites;
-
       if (contentContainsComposite(content)) {
         throw new Error("Composites cannot contain other composites.");
       }
-
-      beginCompositeRender(id);
-      const revision = 1;
-      const { asset, bakeKey } = await bakeComposite(content, {
-        signal: input.signal,
-        onProgress: input.onProgress,
-        compositeAssetId: id,
-        compositeRevision: revision,
-      }).finally(() => endCompositeRender(id));
-
+      const requestedKey = await createRequestedBakeKey(content);
+      const now = Date.now();
       const composite: CompositeAsset = {
         id,
         name: input.name?.trim() || "Composite",
         content,
-        revision,
+        revision: INITIAL_COMPOSITE_REVISION,
         bake: {
-          status: "ready",
-          requestedKey: bakeKey,
-          readyKey: bakeKey,
-          readyRevision: revision,
-          assetId: asset.id,
+          status: "queued",
+          requestedKey,
           updatedAt: now,
         },
-        bakedAssetId: asset.id,
         createdAt: now,
         updatedAt: now,
       };
-      const nextComposites = sortComposites([...currentComposites, composite]);
 
-      try {
-        await persistComposites(nextComposites);
-      } catch (error) {
-        await deleteBakedAsset(asset.id);
-        throw error;
-      }
-
-      set({ composites: nextComposites });
+      await runCompositeMutation(async () => {
+        const currentComposites = get().composites;
+        if (currentComposites.some((candidate) => candidate.id === id)) {
+          throw new Error(`Composite '${id}' already exists.`);
+        }
+        const next = sortComposites([...currentComposites, composite]);
+        await persistComposites(next);
+        set({ composites: next });
+      });
+      enqueueCompositeBake(composite, requestedKey, input);
       return composite;
     },
 
     updateCompositeAssetContent: async (compositeAssetId, input) => {
-      const currentComposites = get().composites;
-      const existing = currentComposites.find(
-        (candidate) => candidate.id === compositeAssetId,
-      );
-      if (!existing) {
-        return null;
-      }
-
       const content = clone(input.content);
       if (contentContainsComposite(content)) {
         throw new Error("Composites cannot contain other composites.");
       }
+      const requestedKey = await createRequestedBakeKey(content);
+      let updated: CompositeAsset | null = null;
 
-      const revision = resolveCompositeRevision(existing) + 1;
-      beginCompositeRender(compositeAssetId);
-      const { asset, bakeKey } = await bakeComposite(content, {
-        signal: input.signal,
-        onProgress: input.onProgress,
-        compositeAssetId,
-        compositeRevision: revision,
-      }).finally(() => endCompositeRender(compositeAssetId));
-
-      const updatedAt = Date.now();
-
-      const updated: CompositeAsset = {
-        ...existing,
-        content,
-        revision,
-        bake: {
-          status: "ready",
-          requestedKey: bakeKey,
-          readyKey: bakeKey,
-          readyRevision: revision,
-          assetId: asset.id,
+      await runCompositeMutation(async () => {
+        const currentComposites = get().composites;
+        const existing = currentComposites.find(
+          (candidate) => candidate.id === compositeAssetId,
+        );
+        if (!existing) {
+          return;
+        }
+        const revision = resolveCompositeRevision(existing) + 1;
+        const updatedAt = Date.now();
+        updated = {
+          ...existing,
+          content,
+          revision,
+          bake: {
+            ...existing.bake,
+            status: "queued",
+            requestedKey,
+            error: undefined,
+            updatedAt,
+          },
           updatedAt,
-        },
-        bakedAssetId: asset.id,
-        updatedAt,
-      };
-      const nextComposites = sortComposites(
-        currentComposites.map((candidate) =>
-          candidate.id === compositeAssetId ? updated : candidate,
-        ),
-      );
+        };
+        const next = sortComposites(
+          currentComposites.map((candidate) =>
+            candidate.id === compositeAssetId ? updated! : candidate,
+          ),
+        );
+        await persistComposites(next);
+        set({ composites: next });
 
-      try {
-        await persistComposites(nextComposites);
-      } catch (error) {
-        await deleteBakedAsset(asset.id);
-        throw error;
-      }
+        const placementAssetId =
+          getPublishedBakeAssetId(existing) ?? `composite-live:${compositeAssetId}`;
+        relinkTimelineCompositePlacements(
+          compositeAssetId,
+          placementAssetId,
+          revision,
+        );
+      });
 
-      set({ composites: nextComposites });
-      // Repoint every placement at the fresh bake so the edit shows everywhere,
-      // then drop the now-unreferenced previous bake.
-      relinkTimelineCompositePlacements(
-        compositeAssetId,
-        asset.id,
-        revision,
-      );
-      const previousBakeAssetId = getPublishedBakeAssetId(existing);
-      if (previousBakeAssetId && previousBakeAssetId !== asset.id) {
-        await deleteBakedAsset(previousBakeAssetId);
+      if (updated) {
+        enqueueCompositeBake(updated, requestedKey, input);
       }
       return updated;
     },
+
+    retryCompositeBake: queueCurrentCompositeBake,
 
     renameCompositeAsset: async (compositeAssetId, name) => {
       const trimmedName = name.trim();
       if (!trimmedName) {
         return;
       }
-
-      const currentComposites = get().composites;
-      getCompositeOrThrow(currentComposites, compositeAssetId);
-      const nextComposites = sortComposites(
-        currentComposites.map((candidate) =>
-          candidate.id === compositeAssetId
-            ? { ...candidate, name: trimmedName, updatedAt: Date.now() }
-            : candidate,
-        ),
-      );
-      await persistComposites(nextComposites);
-      set({ composites: nextComposites });
+      await runCompositeMutation(async () => {
+        const currentComposites = get().composites;
+        getCompositeOrThrow(currentComposites, compositeAssetId);
+        const next = sortComposites(
+          currentComposites.map((candidate) =>
+            candidate.id === compositeAssetId
+              ? { ...candidate, name: trimmedName, updatedAt: Date.now() }
+              : candidate,
+          ),
+        );
+        await persistComposites(next);
+        set({ composites: next });
+      });
     },
 
     deleteCompositeAsset: async (compositeAssetId) => {
-      const currentComposites = get().composites;
-      const composite = currentComposites.find(
-        (candidate) => candidate.id === compositeAssetId,
-      );
-      if (!composite) {
+      compositeBakeQueue.cancel(compositeAssetId);
+      let deleted: CompositeAsset | null = null;
+      await runCompositeMutation(async () => {
+        const currentComposites = get().composites;
+        const composite = currentComposites.find(
+          (candidate) => candidate.id === compositeAssetId,
+        );
+        if (!composite) {
+          return;
+        }
+        const next = currentComposites.filter(
+          (candidate) => candidate.id !== compositeAssetId,
+        );
+        await persistComposites(next);
+        set((state) => ({
+          composites: sortComposites(next),
+          selectedCompositeIds: state.selectedCompositeIds.filter(
+            (id) => id !== compositeAssetId,
+          ),
+        }));
+        deleted = composite;
+      });
+      if (!deleted) {
         return;
       }
-
-      const nextComposites = currentComposites.filter(
-        (candidate) => candidate.id !== compositeAssetId,
-      );
-      await persistComposites(nextComposites);
-      set((state) => ({
-        composites: sortComposites(nextComposites),
-        selectedCompositeIds: state.selectedCompositeIds.filter(
-          (id) => id !== compositeAssetId,
-        ),
-      }));
-
       const placementIds = getPlacementIdsForComposite(compositeAssetId);
       if (placementIds.length > 0) {
         removeTimelineClips(placementIds);
       }
-      await deleteBakedAsset(getPublishedBakeAssetId(composite));
+      await retireBakeAssetWhenUnowned(getPublishedBakeAssetId(deleted));
     },
 
     placeCompositeAssetAtTime: (compositeAssetId, startTick) => {
@@ -321,7 +697,6 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
       if (!composite) {
         return null;
       }
-
       return insertTimelineBaseClipAtTime(
         createCompositeBaseClipFromAsset(composite),
         startTick,
@@ -333,7 +708,6 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
         if (compositeAssetId === null) {
           return { selectedCompositeIds: [] };
         }
-
         if (isMulti) {
           const isSelected =
             state.selectedCompositeIds.includes(compositeAssetId);
@@ -345,7 +719,6 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
               : [...state.selectedCompositeIds, compositeAssetId],
           };
         }
-
         return { selectedCompositeIds: [compositeAssetId] };
       });
     },
@@ -394,4 +767,12 @@ export function revealCompositeInBrowser(compositeAssetId: string): void {
   useCompositeLibraryStore
     .getState()
     .revealCompositeInBrowser(compositeAssetId);
+}
+
+export async function retryCompositeBake(
+  compositeAssetId: string,
+): Promise<boolean> {
+  return useCompositeLibraryStore
+    .getState()
+    .retryCompositeBake(compositeAssetId);
 }

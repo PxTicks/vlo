@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompositeAsset } from "../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../timeline/constants";
 import { CompositeCard } from "../CompositeCard";
+import { useCompositeLibraryStore } from "../../useCompositeLibraryStore";
+import { useCompositeRenderStatusStore } from "../../useCompositeRenderStatusStore";
 
 const mocks = vi.hoisted(() => ({
   asset: null as { thumbnail?: string; src?: string } | null,
@@ -44,6 +46,12 @@ describe("CompositeCard", () => {
     mocks.asset = null;
     mocks.draggable.isDragging = false;
     mocks.useDraggable.mockReturnValue(mocks.draggable);
+    useCompositeRenderStatusStore.setState({
+      renderingClipIds: new Set(),
+      directRenderErrors: new Map(),
+      bakeStatusByCompositeId: new Map(),
+      forceLiveCompositeIds: new Set(),
+    });
   });
 
   it("configures dragging and renders fallback content", () => {
@@ -134,5 +142,39 @@ describe("CompositeCard", () => {
       expect(handler).toHaveBeenCalledOnce();
     }
     expect(handlers.onSelect).toHaveBeenCalledOnce();
+  });
+
+  it("surfaces bake failure retry and force-live controls", () => {
+    const retryCompositeBake = vi.fn(async () => true);
+    useCompositeLibraryStore.setState({ retryCompositeBake });
+    const failed = composite();
+    failed.bake = {
+      status: "failed",
+      requestedKey: "key",
+      error: "encoder failed",
+    };
+    render(
+      <CompositeCard
+        composite={failed}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        onRename={vi.fn()}
+        onDelete={vi.fn()}
+        onPlaceOnTimeline={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("composite-bake-status")).toHaveTextContent(
+      "Bake failed: encoder failed",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry background bake" }));
+    expect(retryCompositeBake).toHaveBeenCalledWith(failed.id);
+
+    const forceLive = screen.getByRole("button", { name: "Force live rendering" });
+    fireEvent.click(forceLive);
+    expect(useCompositeRenderStatusStore.getState().forceLiveCompositeIds).toContain(
+      failed.id,
+    );
   });
 });

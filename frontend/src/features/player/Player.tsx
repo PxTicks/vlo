@@ -42,6 +42,7 @@ import {
   clearCompositeDirectRenderError,
   getCompositeAssets,
   reportCompositeDirectRenderError,
+  useCompositeRenderStatusStore,
 } from "../composite";
 
 import { PlayerControls } from "./components/PlayerControls";
@@ -87,6 +88,9 @@ function PlayerImpl() {
   const transitions = useTimelineTransitions();
   const timelineDuration = useTimelineDuration();
   const config = useProjectStore((state) => state.config);
+  const forceLiveCompositeIds = useCompositeRenderStatusStore(
+    (state) => state.forceLiveCompositeIds,
+  );
 
   const logicalDimensions = useMemo(
     () => getProjectDimensions(config.aspectRatio),
@@ -222,6 +226,7 @@ function PlayerImpl() {
   }, [
     config.fps,
     clips,
+    forceLiveCompositeIds,
     liveFrameGraphCoordinator,
     logicalDimensions,
     tracks,

@@ -31,9 +31,6 @@ vi.mock("../../../renderer/services/renderSelectionToVideoFile", () => ({
 vi.mock("../../../renderer/utils/dimensions", () => ({
   getProjectDimensions: mocks.getProjectDimensions,
 }));
-// `mediaSecondsToTick` is intentionally left unmocked (as before this refactor);
-// bakeComposite dynamically imports the real implementation.
-
 vi.mock("../../../timelineSelection", () => ({
   compositeContentToSelection: mocks.compositeContentToSelection,
   hashCompositeContent: mocks.hashCompositeContent,
@@ -140,7 +137,6 @@ describe("bakeComposite", () => {
     );
     expect(result).toMatchObject({
       asset: { id: "baked-asset" },
-      bakedDurationTicks: 240000,
       contentHash: "content-hash",
       bakeKey: expect.stringMatching(
         /^v2:content-hash:30fps:1919x1079:transparent:/,
@@ -201,19 +197,6 @@ describe("bakeComposite", () => {
       expect.anything(),
     );
   });
-
-  it.each([undefined, null, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
-    "returns no baked duration for %s",
-    async (duration) => {
-      mocks.addLocalAsset.mockResolvedValue({
-        id: "asset",
-        duration,
-      } as Asset);
-      await expect(bakeComposite(content())).resolves.toMatchObject({
-        bakedDurationTicks: null,
-      });
-    },
-  );
 
   it("rejects when the rendered file cannot be registered", async () => {
     mocks.addLocalAsset.mockResolvedValue(null);

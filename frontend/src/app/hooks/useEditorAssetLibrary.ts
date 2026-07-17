@@ -20,8 +20,11 @@ export function useEditorAssetLibrary() {
 
     void (async () => {
       try {
-        await fetchComposites();
         await fetchAssets();
+        // Composite bake freshness depends on the hydrated asset index. Load
+        // assets first so missing/stale cache normalization does not enqueue
+        // healthy bakes simply because their records have not loaded yet.
+        await fetchComposites();
       } catch (error) {
         // Skip the disk scan if we couldn't load the asset index — scanning against
         // an empty/stale store would re-ingest existing files under new IDs.

@@ -11,11 +11,19 @@ import EditIcon from "@mui/icons-material/Edit";
 import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
 import AddToTimelineIcon from "@mui/icons-material/PlaylistAdd";
 import LayersIcon from "@mui/icons-material/Layers";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import SensorsIcon from "@mui/icons-material/Sensors";
 import { styled } from "@mui/material/styles";
 import type { CompositeAsset } from "../../../types/TimelineTypes";
 import { useAsset } from "../../userAssets/api";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { createCompositeBaseClipFromAsset } from "../utils/createCompositeClip";
+import { useCompositeLibraryStore } from "../useCompositeLibraryStore";
+import {
+  setCompositeForceLive,
+  useCompositeBakeRuntimeStatus,
+  useIsCompositeForceLive,
+} from "../useCompositeRenderStatusStore";
 
 interface CompositeCardProps {
   composite: CompositeAsset;
@@ -78,7 +86,12 @@ function CompositeCardComponent({
   onDelete,
   onPlaceOnTimeline,
 }: CompositeCardProps) {
-  const bakedAsset = useAsset(composite.bakedAssetId);
+  const bakedAsset = useAsset(composite.bake?.assetId ?? composite.bakedAssetId);
+  const retryCompositeBake = useCompositeLibraryStore(
+    (state) => state.retryCompositeBake,
+  );
+  const runtimeBake = useCompositeBakeRuntimeStatus(composite.id);
+  const forceLive = useIsCompositeForceLive(composite.id);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `composite-asset-${composite.id}`,
     data: {
@@ -163,7 +176,55 @@ function CompositeCardComponent({
         <Typography variant="caption" sx={{ color: "#c4b5fd" }}>
           {tickToMediaSeconds(composite.content.durationTicks).toFixed(2)}s
         </Typography>
+        <Typography
+          variant="caption"
+          data-testid="composite-bake-status"
+          sx={{ color: composite.bake?.status === "failed" ? "#fecaca" : "#aeb4bd" }}
+          noWrap
+          title={composite.bake?.error}
+        >
+          {runtimeBake?.status === "rendering"
+            ? `Baking ${Math.round(runtimeBake.progress)}%`
+            : runtimeBake?.status === "queued"
+              ? "Bake queued"
+              : composite.bake?.status === "failed"
+                ? `Bake failed: ${composite.bake.error ?? "Retry available"}`
+                : composite.bake?.status === "ready"
+                  ? "Bake ready"
+                  : "Live only"}
+        </Typography>
         <Box sx={{ display: "flex", gap: 0.5, justifyContent: "flex-end" }}>
+          {composite.bake?.status === "failed" ? (
+            <Tooltip title="Retry background bake">
+              <IconButton
+                size="small"
+                aria-label="Retry background bake"
+                onMouseDown={stopAction}
+                onClick={(event) => {
+                  stopAction(event);
+                  void retryCompositeBake(composite.id);
+                }}
+                sx={{ color: "#fecaca" }}
+              >
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : null}
+          <Tooltip title={forceLive ? "Use automatic source policy" : "Force live rendering"}>
+            <IconButton
+              size="small"
+              aria-label={forceLive ? "Use automatic source policy" : "Force live rendering"}
+              aria-pressed={forceLive}
+              onMouseDown={stopAction}
+              onClick={(event) => {
+                stopAction(event);
+                setCompositeForceLive(composite.id, !forceLive);
+              }}
+              sx={{ color: forceLive ? "#86efac" : "#cbd5e1" }}
+            >
+              <SensorsIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
           <Tooltip title="Rename">
             <IconButton
               size="small"

@@ -142,7 +142,12 @@ export interface ScenePresentationPlan {
 
 export type FrameExecutionPolicy =
   | { mode: "export"; signal?: AbortSignal; render?: FilterRenderContext }
-  | { mode: "live"; epoch: number; render?: FilterRenderContext };
+  | {
+      mode: "live";
+      epoch: number;
+      render?: FilterRenderContext;
+      temporalPreviewQuality?: "exact" | "approximate";
+    };
 
 export interface FrameResourceLease<T> {
   readonly key: FrameWorkKey;

@@ -47,6 +47,7 @@
 /frontend/src/features/project/services/ProjectPersistenceService.ts extension-surface=adapter
 /frontend/src/features/project/useProjectStore.ts extension-surface=adapter
 /frontend/src/features/project/utils/extensionRequirements.ts extension-surface=adapter
+/frontend/src/features/composite/services/CompositeBakeQueue.ts extension-surface=adapter
 /frontend/src/features/renderer/services/CompositeSceneRuntime.ts extension-surface=adapter
 /frontend/src/features/renderer/services/ExportRenderer.ts extension-surface=adapter
 /frontend/src/features/renderer/services/RenderGroupOrchestrator.ts extension-surface=adapter

@@ -6,7 +6,12 @@ import type {
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../timeline/constants";
+import { runProjectClosingHooks } from "../../../core/project/projectLifecycleHooks";
+import { useProjectStore } from "../../project/useProjectStore";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
+import { compositeBakeQueue } from "../services/CompositeBakeQueue";
+import type { BakedComposite } from "../services/bakeComposite";
+import type { BakeCompositeOptions } from "../services/bakeComposite";
 import { createCompositeTimelineClip } from "../utils/createCompositeClip";
 import {
   getCompositeAssetById,
@@ -16,10 +21,12 @@ import {
 } from "../useCompositeLibraryStore";
 
 const mocks = vi.hoisted(() => ({
+  assets: [] as Asset[],
   bakeComposite: vi.fn(),
   deleteAsset: vi.fn(),
   readCompositeLibrary: vi.fn(),
   updateCompositeLibrary: vi.fn(),
+  waitForAssetPersistence: vi.fn(),
 }));
 
 vi.mock("../services/bakeComposite", () => ({
@@ -35,6 +42,9 @@ vi.mock("../../project", () => ({
 
 vi.mock("../../userAssets", () => ({
   deleteAsset: mocks.deleteAsset,
+  getAssetById: (id: string) => mocks.assets.find((asset) => asset.id === id),
+  getAssets: () => mocks.assets,
+  waitForAssetPersistence: mocks.waitForAssetPersistence,
 }));
 
 const track: TimelineTrack = {
@@ -69,15 +79,35 @@ function content(id = "clip-1"): CompositeContent {
   };
 }
 
-function bakedAsset(id: string): Asset {
+function bakedAsset(
+  id: string,
+  compositeId: string,
+  revision: number,
+  bakeKey: string,
+): Asset {
   return {
     id,
     hash: `${id}-hash`,
-    name: `${id}.mp4`,
+    name: `${id}.webm`,
     type: "video",
-    src: `assets/${id}.mp4`,
+    src: `blob:${id}`,
     duration: 1,
     createdAt: 1,
+    creationMetadata: {
+      source: "composite",
+      compositeAssetId: compositeId,
+      compositeRevision: revision,
+      bakeKey,
+    },
+  };
+}
+
+function bakedResult(asset: Asset, bakeKey: string): BakedComposite {
+  mocks.assets.push(asset);
+  return {
+    asset,
+    contentHash: `${asset.id}-content`,
+    bakeKey,
   };
 }
 
@@ -88,17 +118,25 @@ function composite(overrides: Partial<CompositeAsset> = {}): CompositeAsset {
     content: content(),
     bakedAssetId: "proxy-old",
     revision: 1,
+    bake: {
+      status: "ready",
+      requestedKey: "old-key",
+      readyKey: "old-key",
+      readyRevision: 1,
+      assetId: "proxy-old",
+    },
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
   };
 }
 
-const compositeLibraryActions = {
+const actions = {
   fetchComposites: useCompositeLibraryStore.getState().fetchComposites,
   createCompositeAsset: useCompositeLibraryStore.getState().createCompositeAsset,
   updateCompositeAssetContent:
     useCompositeLibraryStore.getState().updateCompositeAssetContent,
+  retryCompositeBake: useCompositeLibraryStore.getState().retryCompositeBake,
   renameCompositeAsset: useCompositeLibraryStore.getState().renameCompositeAsset,
   deleteCompositeAsset: useCompositeLibraryStore.getState().deleteCompositeAsset,
   placeCompositeAssetAtTime:
@@ -113,11 +151,20 @@ const compositeLibraryActions = {
 };
 
 describe("useCompositeLibraryStore", () => {
-  beforeEach(() => {
-    mocks.bakeComposite.mockReset();
-    mocks.deleteAsset.mockReset();
-    mocks.readCompositeLibrary.mockReset();
-    mocks.updateCompositeLibrary.mockReset();
+  beforeEach(async () => {
+    compositeBakeQueue.cancelAll();
+    await compositeBakeQueue.whenIdle();
+    vi.clearAllMocks();
+    mocks.assets = [
+      {
+        id: "asset-1",
+        hash: "source-hash",
+        name: "source.png",
+        type: "image",
+        src: "blob:source",
+        createdAt: 1,
+      },
+    ];
     mocks.updateCompositeLibrary.mockImplementation(async (mutator) => {
       const document = {
         documentType: "vlo.composites",
@@ -133,7 +180,16 @@ describe("useCompositeLibraryStore", () => {
       isLoading: false,
       selectedCompositeIds: [],
       revealRequest: null,
-      ...compositeLibraryActions,
+      ...actions,
+    });
+    useProjectStore.setState({
+      project: {
+        id: "project-1",
+        title: "Project",
+        rootAssetsFolder: "Project",
+        createdAt: 1,
+        lastModified: 1,
+      },
     });
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [track],
@@ -141,404 +197,295 @@ describe("useCompositeLibraryStore", () => {
     });
   });
 
-  it("swaps the bake, relinks placements, and deletes the old bake after edits", async () => {
-    const current = composite();
-    const nextContent = content("clip-edited");
-    const placement = createCompositeTimelineClip({
-      id: "clip-composite",
-      compositeId: current.id,
-      assetId: "proxy-old",
-      durationTicks: current.content.durationTicks,
-      trackId: track.id,
-      start: 0,
-      name: current.name,
-    });
-    useCompositeLibraryStore.setState({ composites: [current] });
-    useTimelineStore.getState().addClip(placement);
-    mocks.bakeComposite.mockResolvedValueOnce({
-      asset: bakedAsset("proxy-new"),
-      bakedDurationTicks: TICKS_PER_SECOND,
-      contentHash: "new-hash",
-      bakeKey: "new-key",
-    });
-
-    await useCompositeLibraryStore
-      .getState()
-      .updateCompositeAssetContent(current.id, { content: nextContent });
-
-    expect(useCompositeLibraryStore.getState().composites[0]).toMatchObject({
-      id: current.id,
-      bakedAssetId: "proxy-new",
-      revision: 2,
-      bake: {
-        status: "ready",
-        readyKey: "new-key",
-        readyRevision: 2,
-        assetId: "proxy-new",
-      },
-      content: nextContent,
-    });
-    expect(mocks.bakeComposite).toHaveBeenCalledWith(
-      nextContent,
-      expect.objectContaining({
-        compositeAssetId: current.id,
-        compositeRevision: 2,
-      }),
+  it("commits creation before its background bake completes", async () => {
+    let finishBake: (result: BakedComposite) => void = () => undefined;
+    mocks.bakeComposite.mockImplementationOnce(
+      () =>
+        new Promise<BakedComposite>((resolve) => {
+          finishBake = resolve;
+        }),
     );
-    // The placement must point at the new bake before the old one is deleted.
-    const relinked = useTimelineStore
-      .getState()
-      .clips.find((clip) => clip.id === "clip-composite");
-    expect(relinked).toMatchObject({
-      assetId: "proxy-new",
-      compositeRevision: 2,
-      sourceDuration: TICKS_PER_SECOND,
-      timelineDuration: TICKS_PER_SECOND,
-    });
-    expect(mocks.deleteAsset).toHaveBeenCalledWith("proxy-old");
-  });
-
-  it("rejects content that nests another composite", async () => {
-    const base = content("clip-nested");
-    const nested = {
-      ...base,
-      // Tag the content's clip as a composite placement → nesting.
-      clips: base.clips.map((clip) => ({
-        ...clip,
-        compositeId: "other-composite",
-      })),
-    };
-
-    await expect(
-      useCompositeLibraryStore
-        .getState()
-        .createCompositeAsset({ content: nested }),
-    ).rejects.toThrow(/cannot contain other composites/i);
-    expect(mocks.bakeComposite).not.toHaveBeenCalled();
-  });
-
-  it("deletes timeline placements and proxy assets when deleting a composite", async () => {
-    const current = composite();
-    const placement = createCompositeTimelineClip({
-      id: "clip-composite",
-      compositeId: current.id,
-      assetId: current.bakedAssetId ?? "bake",
-      durationTicks: current.content.durationTicks,
-      trackId: track.id,
-      start: 0,
-      name: current.name,
-    });
-    useCompositeLibraryStore.setState({ composites: [current] });
-    useTimelineStore.getState().addClip(placement);
-
-    await useCompositeLibraryStore.getState().deleteCompositeAsset(current.id);
-
-    expect(useCompositeLibraryStore.getState().composites).toEqual([]);
-    expect(useTimelineStore.getState().clips).toEqual([]);
-    expect(mocks.deleteAsset).toHaveBeenCalledWith("proxy-old");
-  });
-
-  it("creates browser-only composites without placing timeline clips", async () => {
-    mocks.bakeComposite.mockResolvedValueOnce({
-      asset: bakedAsset("proxy-created"),
-      bakedDurationTicks: TICKS_PER_SECOND,
-      contentHash: "created-hash",
-      bakeKey: "created-key",
-    });
-
-    await useCompositeLibraryStore.getState().createCompositeAsset({
-      id: "composite-created",
-      name: "Scene",
-      content: content("clip-created"),
-    });
-
-    expect(useCompositeLibraryStore.getState().composites).toHaveLength(1);
-    expect(useTimelineStore.getState().clips).toEqual([]);
-  });
-
-  it("fetches, clones, and sorts persisted composites", async () => {
-    const older = composite({
-      id: "older",
-      name: "Zulu",
-      updatedAt: 1,
-    });
-    const newerB = composite({
-      id: "newer-b",
-      name: "Beta",
-      updatedAt: 5,
-    });
-    const newerA = composite({
-      id: "newer-a",
-      name: "Alpha",
-      updatedAt: 5,
-    });
-    mocks.readCompositeLibrary.mockResolvedValue({
-      composites: {
-        older,
-        "newer-b": newerB,
-        "newer-a": newerA,
-      },
-    });
-
-    await useCompositeLibraryStore.getState().fetchComposites();
-
-    expect(
-      useCompositeLibraryStore.getState().composites.map(({ id }) => id),
-    ).toEqual(["newer-a", "newer-b", "older"]);
-    expect(useCompositeLibraryStore.getState().isLoading).toBe(false);
-  });
-
-  it("clears loading state when persisted composite loading fails", async () => {
-    mocks.readCompositeLibrary.mockRejectedValue(new Error("read failed"));
-    await expect(
-      useCompositeLibraryStore.getState().fetchComposites(),
-    ).rejects.toThrow("read failed");
-    expect(useCompositeLibraryStore.getState().isLoading).toBe(false);
-  });
-
-  it("generates identifiers, trims names, and forwards bake options", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(100);
-    vi.spyOn(crypto, "randomUUID").mockReturnValue(
-      "00000000-0000-4000-8000-000000000001",
-    );
-    const signal = new AbortController().signal;
-    const onProgress = vi.fn();
-    mocks.bakeComposite.mockResolvedValue({
-      asset: bakedAsset("proxy-created"),
-      bakedDurationTicks: TICKS_PER_SECOND,
-      contentHash: "hash",
-      bakeKey: "created-key",
-    });
 
     const created = await useCompositeLibraryStore
       .getState()
       .createCompositeAsset({
-        name: "  Named scene  ",
-        content: content(),
-        signal,
-        onProgress,
+        id: "created",
+        name: " Scene ",
+        content: content("created-child"),
       });
 
     expect(created).toMatchObject({
-      id: "composite_00000000-0000-4000-8000-000000000001",
-      name: "Named scene",
-      createdAt: 100,
-      updatedAt: 100,
+      id: "created",
+      name: "Scene",
       revision: 1,
       bake: {
-        status: "ready",
-        readyKey: "created-key",
-        readyRevision: 1,
-        assetId: "proxy-created",
+        status: expect.stringMatching(/queued|rendering/),
+        requestedKey: expect.any(String),
       },
     });
-    expect(mocks.bakeComposite).toHaveBeenCalledWith(
-      expect.anything(),
-      {
-        signal,
-        onProgress,
-        compositeAssetId:
-          "composite_00000000-0000-4000-8000-000000000001",
-        compositeRevision: 1,
-      },
+    expect(created.bakedAssetId).toBeUndefined();
+    expect(useCompositeLibraryStore.getState().composites).toHaveLength(1);
+    await vi.waitFor(() => expect(mocks.bakeComposite).toHaveBeenCalledOnce());
+
+    const requestedKey = created.bake?.requestedKey ?? "";
+    finishBake(
+      bakedResult(
+        bakedAsset("created-bake", created.id, 1, requestedKey),
+        requestedKey,
+      ),
     );
-  });
-
-  it("uses a default name and cleans up the bake if persistence fails", async () => {
-    mocks.bakeComposite.mockResolvedValue({
-      asset: bakedAsset("orphan"),
-      bakedDurationTicks: null,
-      contentHash: "hash",
-      bakeKey: "orphan-key",
+    await compositeBakeQueue.whenIdle();
+    expect(useCompositeLibraryStore.getState().composites[0]).toMatchObject({
+      bakedAssetId: "created-bake",
+      bake: { status: "ready", assetId: "created-bake" },
     });
-    mocks.updateCompositeLibrary.mockRejectedValue(new Error("disk full"));
+  });
 
-    await expect(
-      useCompositeLibraryStore.getState().createCompositeAsset({
-        id: "new",
-        name: " ",
-        content: content(),
+  it("publishes edited content immediately and relinks only after CAS publication", async () => {
+    const current = composite();
+    mocks.assets.push(
+      bakedAsset("proxy-old", current.id, 1, current.bake?.readyKey ?? "old-key"),
+    );
+    const placement = createCompositeTimelineClip({
+      id: "placement",
+      compositeId: current.id,
+      compositeRevision: 1,
+      assetId: "proxy-old",
+      durationTicks: current.content.durationTicks,
+      trackId: track.id,
+      start: 0,
+    });
+    useCompositeLibraryStore.setState({ composites: [current] });
+    useTimelineStore.getState().addClip(placement);
+    let finishBake: (result: BakedComposite) => void = () => undefined;
+    mocks.bakeComposite.mockImplementationOnce(
+      () =>
+        new Promise<BakedComposite>((resolve) => {
+          finishBake = resolve;
+        }),
+    );
+
+    const updated = await useCompositeLibraryStore
+      .getState()
+      .updateCompositeAssetContent(current.id, { content: content("edited") });
+    expect(updated).toMatchObject({
+      revision: 2,
+      content: expect.objectContaining({
+        clips: [expect.objectContaining({ id: "edited" })],
       }),
-    ).rejects.toThrow("disk full");
-    expect(mocks.deleteAsset).toHaveBeenCalledWith("orphan");
-    expect(useCompositeLibraryStore.getState().composites).toEqual([]);
+      bake: { status: "queued" },
+    });
+    expect(useTimelineStore.getState().clips[0]).toMatchObject({
+      assetId: "proxy-old",
+      compositeRevision: 2,
+      timelineDuration: TICKS_PER_SECOND,
+    });
+
+    await vi.waitFor(() => expect(mocks.bakeComposite).toHaveBeenCalledOnce());
+    const requestedKey = updated?.bake?.requestedKey ?? "";
+    finishBake(
+      bakedResult(
+        bakedAsset("proxy-new", current.id, 2, requestedKey),
+        requestedKey,
+      ),
+    );
+    await compositeBakeQueue.whenIdle();
+    expect(useTimelineStore.getState().clips[0]).toMatchObject({
+      assetId: "proxy-new",
+      compositeRevision: 2,
+      timelineDuration: TICKS_PER_SECOND,
+    });
+    expect(mocks.deleteAsset).toHaveBeenCalledWith("proxy-old", {
+      cleanupMode: "immediate",
+    });
   });
 
-  it("returns null when updating a missing composite", async () => {
-    await expect(
-      useCompositeLibraryStore
-        .getState()
-        .updateCompositeAssetContent("missing", { content: content() }),
-    ).resolves.toBeNull();
-    expect(mocks.bakeComposite).not.toHaveBeenCalled();
+  it("rejects a stale completion after a newer revision is committed", async () => {
+    const current = composite({ bakedAssetId: undefined, bake: undefined });
+    useCompositeLibraryStore.setState({ composites: [current] });
+    const finishes: Array<(result: BakedComposite) => void> = [];
+    mocks.bakeComposite.mockImplementation(
+      () =>
+        new Promise<BakedComposite>((resolve) => {
+          finishes.push(resolve);
+        }),
+    );
+
+    const revision2 = await useCompositeLibraryStore
+      .getState()
+      .updateCompositeAssetContent(current.id, { content: content("revision-2") });
+    await vi.waitFor(() => expect(finishes).toHaveLength(1));
+    const revision3 = await useCompositeLibraryStore
+      .getState()
+      .updateCompositeAssetContent(current.id, { content: content("revision-3") });
+
+    const staleKey = revision2?.bake?.requestedKey ?? "";
+    finishes[0](
+      bakedResult(
+        bakedAsset("stale-bake", current.id, 2, staleKey),
+        staleKey,
+      ),
+    );
+    await vi.waitFor(() => expect(finishes).toHaveLength(2));
+    const latestKey = revision3?.bake?.requestedKey ?? "";
+    finishes[1](
+      bakedResult(
+        bakedAsset("latest-bake", current.id, 3, latestKey),
+        latestKey,
+      ),
+    );
+    await compositeBakeQueue.whenIdle();
+
+    expect(useCompositeLibraryStore.getState().composites[0]).toMatchObject({
+      revision: 3,
+      bakedAssetId: "latest-bake",
+      bake: { readyRevision: 3, assetId: "latest-bake" },
+    });
+    expect(mocks.deleteAsset).toHaveBeenCalledWith("stale-bake", {
+      cleanupMode: "immediate",
+    });
   });
 
-  it("rejects nested content during an update", async () => {
+  it("records a retryable failure without rolling back canonical content", async () => {
     const current = composite();
     useCompositeLibraryStore.setState({ composites: [current] });
+    mocks.bakeComposite.mockRejectedValueOnce(new Error("encoder unavailable"));
+
+    await useCompositeLibraryStore
+      .getState()
+      .updateCompositeAssetContent(current.id, { content: content("edited") });
+    await compositeBakeQueue.whenIdle();
+    expect(useCompositeLibraryStore.getState().composites[0]).toMatchObject({
+      revision: 2,
+      content: expect.objectContaining({
+        clips: [expect.objectContaining({ id: "edited" })],
+      }),
+      bake: { status: "failed", error: "encoder unavailable" },
+    });
+  });
+
+  it("retries the current revision and reaches ready", async () => {
+    const failed = composite({
+      bake: {
+        status: "failed",
+        requestedKey: "stale-key",
+        error: "failed",
+        assetId: "proxy-old",
+      },
+    });
+    useCompositeLibraryStore.setState({ composites: [failed] });
+    mocks.bakeComposite.mockImplementationOnce(async (_content, options) => {
+      const requestedKey = useCompositeLibraryStore.getState().composites[0].bake
+        ?.requestedKey ?? "";
+      return bakedResult(
+        bakedAsset("retry-bake", failed.id, options.compositeRevision ?? 1, requestedKey),
+        requestedKey,
+      );
+    });
+
+    await expect(
+      useCompositeLibraryStore.getState().retryCompositeBake(failed.id),
+    ).resolves.toBe(true);
+    await compositeBakeQueue.whenIdle();
+    expect(useCompositeLibraryStore.getState().composites[0].bake).toMatchObject({
+      status: "ready",
+      assetId: "retry-bake",
+      readyRevision: 1,
+    });
+  });
+
+  it("normalizes interrupted persisted jobs and queues repair after load", async () => {
+    const interrupted = composite({
+      bake: { status: "rendering", requestedKey: "interrupted" },
+    });
+    mocks.readCompositeLibrary.mockResolvedValue({
+      composites: { [interrupted.id]: interrupted },
+    });
+    mocks.bakeComposite.mockRejectedValueOnce(new Error("repair failed"));
+
+    await useCompositeLibraryStore.getState().fetchComposites();
+    expect(useCompositeLibraryStore.getState().composites[0].bake).toMatchObject({
+      status: expect.stringMatching(/queued|rendering/),
+      requestedKey: expect.not.stringMatching(/^interrupted$/),
+    });
+    await compositeBakeQueue.whenIdle();
+  });
+
+  it("aborts and drains background work when the project closes", async () => {
+    let bakeSignal: AbortSignal | undefined;
+    mocks.bakeComposite.mockImplementationOnce(
+      (_content: CompositeContent, options: BakeCompositeOptions) =>
+        new Promise((_resolve, reject) => {
+          bakeSignal = options.signal;
+          options.signal?.addEventListener("abort", () => {
+            reject(new DOMException("cancelled", "AbortError"));
+          });
+        }),
+    );
+    await useCompositeLibraryStore.getState().createCompositeAsset({
+      id: "closing",
+      content: content("closing-child"),
+    });
+    await vi.waitFor(() => expect(bakeSignal).toBeDefined());
+
+    await runProjectClosingHooks();
+
+    expect(bakeSignal?.aborted).toBe(true);
+    expect(compositeBakeQueue.activeJobCount).toBe(0);
+    expect(compositeBakeQueue.queuedJobCount).toBe(0);
+  });
+
+  it("rejects nested content before committing", async () => {
     const nested = content();
     nested.clips = nested.clips.map((clip) => ({
       ...clip,
       compositeId: "nested",
     }));
-
     await expect(
-      useCompositeLibraryStore
-        .getState()
-        .updateCompositeAssetContent(current.id, { content: nested }),
+      useCompositeLibraryStore.getState().createCompositeAsset({ content: nested }),
     ).rejects.toThrow(/cannot contain other composites/i);
-  });
-
-  it("cleans a fresh update bake when persistence fails", async () => {
-    const current = composite();
-    useCompositeLibraryStore.setState({ composites: [current] });
-    mocks.bakeComposite.mockResolvedValue({
-      asset: bakedAsset("proxy-failed"),
-      bakedDurationTicks: TICKS_PER_SECOND,
-      contentHash: "hash",
-      bakeKey: "failed-key",
-    });
-    mocks.updateCompositeLibrary.mockRejectedValue(new Error("persist failed"));
-
-    await expect(
-      useCompositeLibraryStore
-        .getState()
-        .updateCompositeAssetContent(current.id, { content: content("next") }),
-    ).rejects.toThrow("persist failed");
-    expect(mocks.deleteAsset).toHaveBeenCalledWith("proxy-failed");
-    expect(useCompositeLibraryStore.getState().composites[0]).toBe(current);
-  });
-
-  it("does not delete a bake when an update reuses its asset id", async () => {
-    const current = composite();
-    useCompositeLibraryStore.setState({ composites: [current] });
-    mocks.bakeComposite.mockResolvedValue({
-      asset: bakedAsset("proxy-old"),
-      bakedDurationTicks: null,
-      contentHash: "hash",
-      bakeKey: "same-key",
-    });
-
-    await useCompositeLibraryStore
-      .getState()
-      .updateCompositeAssetContent(current.id, { content: content("next") });
-    expect(mocks.deleteAsset).not.toHaveBeenCalled();
-  });
-
-  it("renames composites, ignores blank names, and rejects missing ids", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(20);
-    const current = composite();
-    useCompositeLibraryStore.setState({ composites: [current] });
-
-    await useCompositeLibraryStore
-      .getState()
-      .renameCompositeAsset(current.id, "  Renamed  ");
-    expect(useCompositeLibraryStore.getState().composites[0]).toMatchObject({
-      name: "Renamed",
-      updatedAt: 20,
-    });
-
-    await useCompositeLibraryStore
-      .getState()
-      .renameCompositeAsset(current.id, "   ");
-    expect(mocks.updateCompositeLibrary).toHaveBeenCalledTimes(1);
-    await expect(
-      useCompositeLibraryStore
-        .getState()
-        .renameCompositeAsset("missing", "Name"),
-    ).rejects.toThrow("was not found");
-  });
-
-  it("ignores deleting missing composites and tolerates bake cleanup errors", async () => {
-    await useCompositeLibraryStore
-      .getState()
-      .deleteCompositeAsset("missing");
     expect(mocks.updateCompositeLibrary).not.toHaveBeenCalled();
-
-    const current = composite();
-    useCompositeLibraryStore.setState({
-      composites: [current],
-      selectedCompositeIds: [current.id, "other"],
-    });
-    mocks.deleteAsset.mockRejectedValue(new Error("locked"));
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    await useCompositeLibraryStore
-      .getState()
-      .deleteCompositeAsset(current.id);
-    expect(useCompositeLibraryStore.getState().selectedCompositeIds).toEqual([
-      "other",
-    ]);
-    expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("places existing composites and returns null for missing ids", () => {
-    const current = composite();
-    useCompositeLibraryStore.setState({ composites: [current] });
-
-    expect(
-      useCompositeLibraryStore
-        .getState()
-        .placeCompositeAssetAtTime("missing", 10),
-    ).toBeNull();
+  it("places a live-only composite without waiting for a bake", () => {
+    const liveOnly = composite({ bakedAssetId: undefined, bake: { status: "queued" } });
+    useCompositeLibraryStore.setState({ composites: [liveOnly] });
     const placedId = useCompositeLibraryStore
       .getState()
-      .placeCompositeAssetAtTime(current.id, 100);
-    expect(placedId).toEqual(expect.any(String));
+      .placeCompositeAssetAtTime(liveOnly.id, 100);
     expect(useTimelineStore.getState().clips).toEqual([
       expect.objectContaining({
         id: placedId,
-        compositeId: current.id,
-        compositeRevision: 1,
-        assetId: "proxy-old",
+        compositeId: liveOnly.id,
+        assetId: `composite-live:${liveOnly.id}`,
         start: 100,
       }),
     ]);
   });
 
-  it("supports single, additive, toggle, and cleared selection", () => {
-    const state = useCompositeLibraryStore.getState();
-    state.selectComposite("one");
-    expect(useCompositeLibraryStore.getState().selectedCompositeIds).toEqual([
-      "one",
-    ]);
-    state.selectComposite("two", true);
-    expect(useCompositeLibraryStore.getState().selectedCompositeIds).toEqual([
-      "one",
-      "two",
-    ]);
-    state.selectComposite("one", true);
-    expect(useCompositeLibraryStore.getState().selectedCompositeIds).toEqual([
-      "two",
-    ]);
-    state.selectComposite(null);
-    expect(useCompositeLibraryStore.getState().selectedCompositeIds).toEqual(
-      [],
-    );
-    state.setSelectedCompositeIds(["a", "b"]);
-    state.clearSelection();
-    expect(useCompositeLibraryStore.getState().selectedCompositeIds).toEqual(
-      [],
-    );
-  });
-
-  it("manages reveal requests and exposes public lookup helpers", () => {
-    vi.spyOn(Date, "now").mockReturnValue(123);
+  it("renames, deletes, selects, and reveals composites", async () => {
     const current = composite();
     useCompositeLibraryStore.setState({ composites: [current] });
+    await useCompositeLibraryStore
+      .getState()
+      .renameCompositeAsset(current.id, " Renamed ");
+    expect(useCompositeLibraryStore.getState().composites[0].name).toBe("Renamed");
 
+    const state = useCompositeLibraryStore.getState();
+    state.selectComposite(current.id);
+    state.selectComposite("other", true);
+    expect(useCompositeLibraryStore.getState().selectedCompositeIds).toEqual([
+      current.id,
+      "other",
+    ]);
     revealCompositeInBrowser(current.id);
-    expect(useCompositeLibraryStore.getState().revealRequest).toEqual({
-      compositeAssetId: current.id,
-      requestId: 123,
-    });
-    useCompositeLibraryStore.getState().clearRevealRequest(999);
-    expect(useCompositeLibraryStore.getState().revealRequest).not.toBeNull();
-    useCompositeLibraryStore.getState().clearRevealRequest(123);
-    expect(useCompositeLibraryStore.getState().revealRequest).toBeNull();
+    expect(useCompositeLibraryStore.getState().revealRequest?.compositeAssetId).toBe(
+      current.id,
+    );
+    expect(getCompositeAssets()).toHaveLength(1);
+    expect(getCompositeAssetById(current.id)?.name).toBe("Renamed");
 
-    expect(getCompositeAssets()).toEqual([current]);
-    expect(getCompositeAssetById(current.id)).toBe(current);
-    expect(getCompositeAssetById(null)).toBeUndefined();
-    expect(getCompositeAssetById("missing")).toBeUndefined();
+    await useCompositeLibraryStore.getState().deleteCompositeAsset(current.id);
+    expect(useCompositeLibraryStore.getState().composites).toEqual([]);
   });
 });

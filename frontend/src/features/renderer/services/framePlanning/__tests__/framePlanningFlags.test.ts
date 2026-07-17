@@ -41,24 +41,24 @@ describe("framePlanningFlags", () => {
     expect(isLiveFrameGraphEnabled()).toBe(true);
   });
 
-  it("keeps direct composite DAG rendering off unless explicitly enabled", async () => {
+  it("defaults direct composite DAG rendering on and supports programmatic rollback", async () => {
     const {
       isCompositeRenderDagEnabled,
       setCompositeRenderDagEnabled,
     } = await import("../framePlanningFlags");
 
-    expect(isCompositeRenderDagEnabled()).toBe(false);
-    setCompositeRenderDagEnabled(true);
     expect(isCompositeRenderDagEnabled()).toBe(true);
+    setCompositeRenderDagEnabled(false);
+    expect(isCompositeRenderDagEnabled()).toBe(false);
   });
 
-  it("reads the persisted composite DAG opt-in", async () => {
-    globalThis.localStorage.setItem(COMPOSITE_STORAGE_KEY, "on");
+  it("reads the persisted composite DAG rollback", async () => {
+    globalThis.localStorage.setItem(COMPOSITE_STORAGE_KEY, "off");
 
     const { isCompositeRenderDagEnabled } = await import(
       "../framePlanningFlags"
     );
 
-    expect(isCompositeRenderDagEnabled()).toBe(true);
+    expect(isCompositeRenderDagEnabled()).toBe(false);
   });
 });

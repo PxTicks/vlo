@@ -8,6 +8,7 @@ import type {
 import { isCompositeClip } from "../../../../types/TimelineTypes";
 import {
   createCompositeBakeKey,
+  isCompositeForceLive,
   resolveCompositeBakeValidity,
   resolveCompositeRenderFps,
   resolveCompositeRevision,
@@ -112,7 +113,9 @@ export class FrameJobResolver {
             ),
             content: structuredClone(composite.content),
             fallbackAssetId:
-              validity.valid && validity.assetId === job.activeClip.assetId
+              !isCompositeForceLive(composite.id) &&
+              validity.valid &&
+              validity.assetId === job.activeClip.assetId
                 ? validity.assetId
                 : null,
           };

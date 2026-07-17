@@ -368,7 +368,7 @@ describe("ExportRenderer", () => {
     renderer.dispose();
   });
 
-  it("renders enabled composite content into a transparent logical-size source texture", async () => {
+  it("renders enabled composite content into a transparent adaptive source texture", async () => {
     setCompositeRenderDagEnabled(true);
     const config = {
       logicalWidth: 640,
@@ -453,7 +453,10 @@ describe("ExportRenderer", () => {
 
     expect(app.renderer.render).toHaveBeenCalledWith(
       expect.objectContaining({
-        target: expect.objectContaining({ width: 640, height: 360 }),
+        container: expect.objectContaining({
+          scale: expect.objectContaining({ x: 2, y: 2 }),
+        }),
+        target: expect.objectContaining({ width: 1280, height: 720 }),
         clear: true,
         clearColor: [0, 0, 0, 0],
       }),

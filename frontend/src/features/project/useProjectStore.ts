@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Project } from "../../types/ProjectState";
 import { runPreSaveHooks } from "../../core/persistence/preSaveHooks";
+import { runProjectClosingHooks } from "../../core/project/projectLifecycleHooks";
 import { fileSystemService } from "./services/FileSystemService";
 import { projectPersistenceService } from "./services/ProjectPersistenceService";
 import { projectTemporaryFileService } from "./services/ProjectTemporaryFileService";
@@ -196,6 +197,7 @@ export const useProjectStore = create<ProjectState>()(
         configOverrides?: Partial<ProjectConfig>,
       ) => {
         try {
+          await runProjectClosingHooks();
           await flushOpenProjectPersistence();
           await clearProjectDeferredCleanupTrash();
           await clearProjectTemporaryFiles();
@@ -252,6 +254,7 @@ export const useProjectStore = create<ProjectState>()(
 
       loadProject: async (handle: FileSystemDirectoryHandle) => {
         try {
+          await runProjectClosingHooks();
           await flushOpenProjectPersistence();
           await clearProjectDeferredCleanupTrash();
           await clearProjectTemporaryFiles();
@@ -404,6 +407,7 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       resetProject: () => {
+        void runProjectClosingHooks();
         void clearProjectDeferredCleanupTrash();
         void clearProjectTemporaryFiles();
         projectPersistenceService.resetCaches();

@@ -48,9 +48,14 @@ export function createCompositeTimelineClip(
 }
 
 function resolveCompositePlacementAssetId(composite: CompositeAsset): string {
-  // Persistence still requires an asset-shaped clip during the compatibility
-  // window, but render/audio source policy resolves canonical composite state.
-  return `composite-live:${composite.id}`;
+  // The pointer is a denormalized integration cache for thumbnails and other
+  // ordinary asset consumers; canonical render/audio policy still validates
+  // the composite revision and bake key independently.
+  return (
+    composite.bake?.assetId ??
+    composite.bakedAssetId ??
+    `composite-live:${composite.id}`
+  );
 }
 
 export function createCompositeBaseClipFromAsset(

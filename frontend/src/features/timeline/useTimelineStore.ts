@@ -96,6 +96,7 @@ import {
   ExtensionTimelineCommandError,
   type ExtensionTimelineCommand,
 } from "./model/extensionTimelineCommands";
+import { resolveStoredStartForPresentationStart } from "./utils/clipPresentation";
 
 enablePatches();
 
@@ -156,9 +157,11 @@ interface TimelineState extends TimelineModelState {
   ) => string[];
   /**
    * Atomically replaces `sourceClipIds` (and their subordinate clips) with a
-   * single composite clip in one undoable step. Deliberately skips SAM2/brush
-   * post-commit cleanup: the absorbed clips' mask assets live on inside the
-   * composite's content for re-baking.
+   * single composite clip in one undoable step. The incoming clip's `start` is
+   * a presentation tick and is converted to stored track time inside the same
+   * transaction. Deliberately skips SAM2/brush post-commit cleanup: the
+   * absorbed clips' mask assets live on inside the composite's content for
+   * re-baking.
    */
   groupClipsIntoComposite: (
     sourceClipIds: string[],
@@ -168,6 +171,7 @@ interface TimelineState extends TimelineModelState {
   syncCompositePlacementRevision: (
     compositeId: string,
     compositeRevision: number,
+    bakedAssetId?: string,
   ) => void;
   remapCompositePlacement: (
     clipId: string,
@@ -465,6 +469,24 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const removalPlan = planTimelineRemoval(get().clips, sourceClipIds);
       const didCommit = mutationPipeline.commitModelMutation(
         (draft) => {
+          // Selection boundaries are presentation ticks, while clip.start is
+          // stored track time. Resolve against the final clip set so an
+          // earlier ripple adjustment cannot pull the replacement composite
+          // left of the range it replaces (and a selected adjustment that is
+          // about to be removed cannot influence the conversion).
+          const clipsAfterRemoval = draft.clips.filter(
+            (clip) => !removalPlan.clipIdsToRemove.has(clip.id),
+          );
+          const placedCompositeClip = {
+            ...compositeClip,
+            start: resolveStoredStartForPresentationStart(
+              draft.tracks,
+              clipsAfterRemoval,
+              compositeClip.trackId,
+              compositeClip.start,
+            ),
+          };
+
           // Add the composite BEFORE removing the source clips. If we removed
           // first, grouping the *entire* timeline would leave every track empty
           // mid-mutation, at which point maybeTrimAndPadTracks rebuilds the track
@@ -473,14 +495,16 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           // that no longer exists, orphaning it and wiping the timeline. Adding
           // first keeps the target track populated throughout, so it survives the
           // removal.
-          addClipToDraft(draft, compositeClip);
+          addClipToDraft(draft, placedCompositeClip);
 
           // Safety net: if the composite could not be placed (e.g. addClipToDraft
           // rejected it on a track-type mismatch), bail out without removing
           // anything. Returning here leaves the draft untouched, so the commit
           // produces no patches and the timeline is left exactly as it was rather
           // than being emptied.
-          const placed = draft.clips.some((clip) => clip.id === compositeClip.id);
+          const placed = draft.clips.some(
+            (clip) => clip.id === placedCompositeClip.id,
+          );
           if (!placed) {
             return;
           }
@@ -502,13 +526,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return didCommit;
     },
 
-    syncCompositePlacementRevision: (compositeId, compositeRevision) => {
+    syncCompositePlacementRevision: (
+      compositeId,
+      compositeRevision,
+      bakedAssetId,
+    ) => {
       mutationPipeline.commitModelMutation((draft) => {
         draft.clips = draft.clips.map((clip) =>
           isCompositeClip(clip) && clip.compositeId === compositeId
             ? {
                 ...clip,
                 compositeRevision,
+                ...(bakedAssetId ? { assetId: bakedAssetId } : {}),
               }
             : clip,
         );

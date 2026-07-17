@@ -267,6 +267,7 @@ describe("TrackRenderEngine masks", () => {
         anchor: { set: ReturnType<typeof vi.fn> };
         position: { set: ReturnType<typeof vi.fn> };
         scale: { set: ReturnType<typeof vi.fn> };
+        texture: Texture;
       };
       applyClipTransformsForClip: (
         clip: StandardTimelineClip,
@@ -276,6 +277,11 @@ describe("TrackRenderEngine masks", () => {
       ) => void;
     };
     const logicalDimensions = { width: 1920, height: 1080 };
+    internals.sprite.texture = {
+      width: 1280,
+      height: 720,
+      destroy: vi.fn(),
+    } as unknown as Texture;
 
     internals.applyClipTransformsForClip(
       createParentClip(),
@@ -286,7 +292,72 @@ describe("TrackRenderEngine masks", () => {
 
     expect(internals.sprite.anchor.set).toHaveBeenCalledWith(0.5);
     expect(internals.sprite.position.set).toHaveBeenCalledWith(960, 540);
-    expect(internals.sprite.scale.set).toHaveBeenCalledWith(1, 1);
+    expect(internals.sprite.scale.set).toHaveBeenCalledWith(1.5, 1.5);
+    engine.dispose();
+  });
+
+  it("keeps mask geometry in the composite's logical boundary", () => {
+    const engine = new TrackRenderEngine(1);
+    const internals = engine as unknown as {
+      maskController: {
+        setActiveClipContentSizeOverride: (
+          contentSize: { width: number; height: number } | null,
+        ) => void;
+        getActiveClipContentSize: (logicalDimensions: {
+          width: number;
+          height: number;
+        }) => { width: number; height: number };
+      };
+    };
+
+    internals.maskController.setActiveClipContentSizeOverride({
+      width: 1920,
+      height: 1080,
+    });
+
+    expect(
+      internals.maskController.getActiveClipContentSize({
+        width: 1920,
+        height: 1080,
+      }),
+    ).toEqual({ width: 1920, height: 1080 });
+    engine.dispose();
+  });
+
+  it("retains composite layout when an async frame refreshes transforms", () => {
+    const engine = new TrackRenderEngine(1);
+    const clip = createParentClip();
+    const internals = engine as unknown as {
+      sprite: {
+        visible: boolean;
+        texture: Texture;
+        scale: { set: ReturnType<typeof vi.fn> };
+      };
+      currentTextureClipId: string | null;
+      setCurrentContentSizeOverride: (
+        clipId: string,
+        contentSize: { width: number; height: number } | null,
+      ) => void;
+    };
+    internals.sprite.visible = true;
+    internals.sprite.texture = {
+      width: 1280,
+      height: 720,
+      destroy: vi.fn(),
+    } as unknown as Texture;
+    internals.currentTextureClipId = clip.id;
+    internals.setCurrentContentSizeOverride(clip.id, {
+      width: 1920,
+      height: 1080,
+    });
+
+    engine.refreshClipTransformsAtRawTime(
+      clip,
+      { width: 1920, height: 1080 },
+      0,
+    );
+
+    expect(internals.sprite.scale.set).toHaveBeenCalledWith(1.5, 1.5);
     engine.dispose();
   });
 

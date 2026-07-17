@@ -208,11 +208,15 @@ describe("FrameJobResolver composite sources", () => {
   });
 
   it("selects live rendering when the bake is stale", () => {
-    expect(resolve({
+    const resolved = resolve({
         ...composite,
         bake: { ...composite.bake, readyKey: "stale-key" },
-      }).compositeSource,
-    ).toMatchObject({ mode: "live", fallbackAssetId: null });
+      });
+    expect(resolved.compositeSource).toMatchObject({
+      mode: "live",
+      fallbackAssetId: null,
+    });
+    expect(resolved.contentSize).toEqual({ width: 1920, height: 1080 });
   });
 
   it("selects live rendering while force-live is active", () => {

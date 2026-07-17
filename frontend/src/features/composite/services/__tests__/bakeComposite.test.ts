@@ -8,6 +8,10 @@ import type {
 const mocks = vi.hoisted(() => ({
   renderSelectionToVideoFile: vi.fn(),
   getProjectDimensions: vi.fn(() => ({ width: 1919, height: 1079 })),
+  resolveCompositeRasterDimensionsForContent: vi.fn(async () => ({
+    width: 1280,
+    height: 720,
+  })),
   compositeContentToSelection: vi.fn<() => TimelineSelection>(() => ({
     start: 0,
     end: 100,
@@ -30,6 +34,10 @@ vi.mock("../../../renderer/services/renderSelectionToVideoFile", () => ({
 
 vi.mock("../../../renderer/utils/dimensions", () => ({
   getProjectDimensions: mocks.getProjectDimensions,
+}));
+vi.mock("../../../renderer/utils/compositeRasterDimensions", () => ({
+  resolveCompositeRasterDimensionsForContent:
+    mocks.resolveCompositeRasterDimensionsForContent,
 }));
 vi.mock("../../../timelineSelection", () => ({
   compositeContentToSelection: mocks.compositeContentToSelection,
@@ -67,6 +75,10 @@ describe("bakeComposite", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.projectState.config = { aspectRatio: "16:9", fps: 24 };
+    mocks.resolveCompositeRasterDimensionsForContent.mockResolvedValue({
+      width: 1280,
+      height: 720,
+    });
     mocks.renderSelectionToVideoFile.mockResolvedValue(
       new File(["video"], "composite.webm", { type: "video/webm" }),
     );
@@ -76,7 +88,7 @@ describe("bakeComposite", () => {
     } as Asset);
   });
 
-  it("renders project-sized content and registers a private composite asset", async () => {
+  it("renders at the adaptive composite raster and registers a private composite asset", async () => {
     const controller = new AbortController();
     const onProgress = vi.fn();
     const onBeforeEncodeFrame = vi.fn();
@@ -99,8 +111,8 @@ describe("bakeComposite", () => {
           exportConfig: {
             logicalWidth: 1919,
             logicalHeight: 1079,
-            outputWidth: 1920,
-            outputHeight: 1080,
+            outputWidth: 1280,
+            outputHeight: 720,
             backgroundAlpha: 0,
           },
           projectData: {
@@ -129,7 +141,7 @@ describe("bakeComposite", () => {
         compositeRevision: 7,
         contentHash: "content-hash",
         bakeKey: expect.stringMatching(
-          /^v2:content-hash:30fps:1919x1079:transparent:/,
+          /^v3:content-hash:30fps:1919x1079:transparent:/,
         ),
       }),
       undefined,
@@ -139,7 +151,7 @@ describe("bakeComposite", () => {
       asset: { id: "baked-asset" },
       contentHash: "content-hash",
       bakeKey: expect.stringMatching(
-        /^v2:content-hash:30fps:1919x1079:transparent:/,
+        /^v3:content-hash:30fps:1919x1079:transparent:/,
       ),
     });
   });

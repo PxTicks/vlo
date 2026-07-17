@@ -16,7 +16,6 @@ import type {
   TimelineClip,
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
-import { applyClipTransforms } from "../../transformations/applyTransformations";
 import {
   livePreviewParamStore,
   type LivePreviewParamChange,
@@ -618,16 +617,15 @@ export function useTrackRenderEngine(
     const engine = new TrackRenderEngine(
       zIndex,
       (clipId, transformTime) => {
-        // Callback when frame is ready (Live Mode)
-        if (activeClipRef.current && activeClipRef.current.id === clipId) {
-          applyClipTransforms(
-            engine.sprite,
-            activeClipRef.current,
-            logicalDimensionsRef.current,
-            transformTime,
-          );
-          engine.syncMaskSpriteTransform();
+        const activeClip = activeClipRef.current;
+        if (activeClip?.id !== clipId) {
+          return;
         }
+        engine.refreshClipTransformsAtRawTime(
+          activeClip,
+          logicalDimensionsRef.current,
+          transformTime,
+        );
       },
       app.renderer,
       { trackId, adjustmentEffectResolver },

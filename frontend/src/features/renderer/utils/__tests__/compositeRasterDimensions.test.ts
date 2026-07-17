@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MIN_COMPOSITE_RASTER_HEIGHT,
+  MIN_COMPOSITE_RASTER_SHORT_EDGE,
   resolveCompositeRasterDimensions,
 } from "../compositeRasterDimensions";
 
@@ -11,7 +11,7 @@ describe("resolveCompositeRasterDimensions", () => {
         { width: 1920, height: 1080 },
         [{ width: 640, height: 360 }],
       ),
-    ).toEqual({ width: 1280, height: MIN_COMPOSITE_RASTER_HEIGHT });
+    ).toEqual({ width: 1280, height: MIN_COMPOSITE_RASTER_SHORT_EDGE });
   });
 
   it("matches the largest source pixel resolution while preserving project aspect", () => {
@@ -26,7 +26,7 @@ describe("resolveCompositeRasterDimensions", () => {
     ).toEqual({ width: 3840, height: 2160 });
   });
 
-  it("uses source pixel area when source and project aspect ratios differ", () => {
+  it("matches source pixel resolution without inflating mismatched aspect ratios", () => {
     expect(
       resolveCompositeRasterDimensions(
         { width: 1920, height: 1080 },

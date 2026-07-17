@@ -67,6 +67,92 @@ describe("applyClipTransforms", () => {
     expect(mockSprite.scale.y).toBe(0.5);
   });
 
+  it("maps a logical composite boundary onto its adaptive physical raster", () => {
+    mockSprite.texture = {
+      valid: true,
+      width: 1280,
+      height: 720,
+    } as unknown as Texture;
+
+    applyClipTransforms(
+      mockSprite,
+      mockClip,
+      containerSize,
+      undefined,
+      { width: 1920, height: 1080 },
+      { mapContentSizeToTexture: true },
+    );
+
+    expect(mockSprite.scale.x).toBe(1.5);
+    expect(mockSprite.scale.y).toBe(1.5);
+  });
+
+  it("preserves contain and cover semantics across logical-to-raster mapping", () => {
+    mockSprite.texture = {
+      valid: true,
+      width: 1000,
+      height: 500,
+    } as unknown as Texture;
+    const logicalSquare = { width: 1000, height: 1000 };
+
+    mockClip.transformations = [
+      {
+        id: "fit-contain",
+        type: "fitMode",
+        isEnabled: true,
+        parameters: { fitMode: "contain" },
+      },
+    ];
+    applyClipTransforms(
+      mockSprite,
+      mockClip,
+      containerSize,
+      undefined,
+      logicalSquare,
+      { mapContentSizeToTexture: true },
+    );
+    expect(mockSprite.scale.x).toBeCloseTo(1.08);
+    expect(mockSprite.scale.y).toBeCloseTo(2.16);
+
+    mockClip.transformations = [
+      {
+        id: "fit-cover",
+        type: "fitMode",
+        isEnabled: true,
+        parameters: { fitMode: "cover" },
+      },
+    ];
+    applyClipTransforms(
+      mockSprite,
+      mockClip,
+      containerSize,
+      undefined,
+      logicalSquare,
+      { mapContentSizeToTexture: true },
+    );
+    expect(mockSprite.scale.x).toBeCloseTo(1.92);
+    expect(mockSprite.scale.y).toBeCloseTo(3.84);
+  });
+
+  it("does not map semantic content overrides onto tight textures", () => {
+    mockSprite.texture = {
+      valid: true,
+      width: 320,
+      height: 80,
+    } as unknown as Texture;
+
+    applyClipTransforms(
+      mockSprite,
+      mockClip,
+      containerSize,
+      undefined,
+      containerSize,
+    );
+
+    expect(mockSprite.scale.x).toBe(1);
+    expect(mockSprite.scale.y).toBe(1);
+  });
+
   it("applies rotation", () => {
     mockClip.transformations = [
       {

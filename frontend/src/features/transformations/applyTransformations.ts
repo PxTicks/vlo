@@ -23,6 +23,14 @@ export interface ApplyClipTransformsOptions {
   baseLayoutMode?: FitMode | "origin";
   notifyLiveParams?: boolean;
   /**
+   * Map the logical content boundary onto the target texture's physical
+   * dimensions. Composite frames use this because their adaptive live/baked
+   * raster can be smaller than the authored boundary. Other callers (notably
+   * text, whose logical boundary intentionally differs from its tight glyph
+   * texture) must retain the existing unscaled behavior.
+   */
+  mapContentSizeToTexture?: boolean;
+  /**
    * When `false`, the transform stack's filter ops are NOT applied to the
    * target's `sprite.filters` — used in effect-masking's offscreen mode, where
    * those filters are baked into the target texture by the masked-effect chain
@@ -56,6 +64,30 @@ function getTargetTextureSize(
   const maybeTexture = (target as { texture?: unknown }).texture;
   if (!maybeTexture || maybeTexture === Texture.EMPTY) return null;
   return isSizeLike(maybeTexture) ? maybeTexture : null;
+}
+
+function applyLogicalTextureScale(
+  state: TransformState,
+  contentSizeOverride: { width: number; height: number } | undefined,
+  targetTextureSize: { width: number; height: number } | null,
+): void {
+  if (!contentSizeOverride || !targetTextureSize) return;
+  if (
+    !(contentSizeOverride.width > 0) ||
+    !(contentSizeOverride.height > 0) ||
+    !(targetTextureSize.width > 0) ||
+    !(targetTextureSize.height > 0)
+  ) {
+    return;
+  }
+
+  // Layout is authored in logical content coordinates, but Pixi applies the
+  // resulting scale to the texture's physical dimensions. Adaptive composite
+  // rasters (and decoded bakes of those rasters) therefore need this mapping
+  // or a 1280x720 texture with a 1920x1080 logical boundary is drawn at 2/3
+  // size. Ordinary assets have no override and remain exactly 1:1.
+  state.scaleX *= contentSizeOverride.width / targetTextureSize.width;
+  state.scaleY *= contentSizeOverride.height / targetTextureSize.height;
 }
 
 function applyLivePreviewOverrides<T extends ClipTransform>(transform: T): T {
@@ -307,6 +339,10 @@ export function applyClipTransforms(
       notifyLiveParams: options?.notifyLiveParams,
     },
   );
+
+  if (options?.mapContentSizeToTexture) {
+    applyLogicalTextureScale(state, contentSizeOverride, targetTextureSize);
+  }
 
   if (options?.applyFilterTransforms === false) {
     // Offscreen effect masking owns the filter chain; drop the transform

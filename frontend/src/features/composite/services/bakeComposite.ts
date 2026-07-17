@@ -58,14 +58,15 @@ function buildCompositeRenderInputs(
   content: CompositeContent,
   getProjectDimensions: typeof import("../../renderer/utils/dimensions")["getProjectDimensions"],
   assets: readonly Asset[],
+  rasterDimensions: { width: number; height: number },
 ): SelectionRenderInputs {
   const project = useProjectStore.getState();
   const dimensions = getProjectDimensions(project.config.aspectRatio);
   const exportConfig: ExportConfig = {
     logicalWidth: dimensions.width,
     logicalHeight: dimensions.height,
-    outputWidth: toEven(dimensions.width),
-    outputHeight: toEven(dimensions.height),
+    outputWidth: toEven(rasterDimensions.width),
+    outputHeight: toEven(rasterDimensions.height),
     backgroundAlpha: 0,
   };
 
@@ -107,10 +108,15 @@ export async function bakeComposite(
   const contentHash = hashCompositeContent(content);
 
   // Dynamic import keeps `composite` off the static renderer import graph.
-  const [{ renderSelectionToVideoFile }, { getProjectDimensions }] =
+  const [
+    { renderSelectionToVideoFile },
+    { getProjectDimensions },
+    { resolveCompositeRasterDimensionsForContent },
+  ] =
     await Promise.all([
       import("../../renderer/services/renderSelectionToVideoFile"),
       import("../../renderer/utils/dimensions"),
+      import("../../renderer/utils/compositeRasterDimensions"),
     ]);
 
   // Use one asset snapshot for both dependency identity and rendering so the
@@ -118,6 +124,11 @@ export async function bakeComposite(
   const assets = getAssets();
   const project = useProjectStore.getState();
   const logicalDimensions = getProjectDimensions(project.config.aspectRatio);
+  const rasterDimensions = await resolveCompositeRasterDimensionsForContent(
+    content,
+    assets,
+    logicalDimensions,
+  );
   const bakeKey = serializeCompositeBakeKey(
     createCompositeBakeKey({
       content,
@@ -132,6 +143,7 @@ export async function bakeComposite(
       content,
       getProjectDimensions,
       assets,
+      rasterDimensions,
     ),
     signal: options.signal,
     onProgress: options.onProgress,

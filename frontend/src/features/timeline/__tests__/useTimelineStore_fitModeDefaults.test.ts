@@ -109,6 +109,39 @@ describe("useTimelineStore fit mode defaults", () => {
     ]);
   });
 
+  it("stamps the project fit mode onto grouped composite placements", () => {
+    useProjectStore.setState((state) => ({
+      ...state,
+      config: {
+        ...state.config,
+        fitMode: "contain",
+      },
+    }));
+    const source = createTimelineClip({ id: "source" });
+    useTimelineStore.getState().addClip(source);
+
+    useTimelineStore.getState().groupClipsIntoComposite(
+      [source.id],
+      createTimelineClip({
+        id: "composite-placement",
+        assetId: "composite-live:composite-1",
+        compositeId: "composite-1",
+        transformations: [],
+      }),
+    );
+
+    expect(useTimelineStore.getState().clips[0]).toMatchObject({
+      id: "composite-placement",
+      transformations: [
+        expect.objectContaining({
+          type: "fitMode",
+          isEnabled: true,
+          parameters: { fitMode: "contain" },
+        }),
+      ],
+    });
+  });
+
   it("does not stamp fit mode onto audio clips", () => {
     // Add an audio track so the audio clip has a compatible destination —
     // addClipToDraft's track-type compatibility check (the same gate that

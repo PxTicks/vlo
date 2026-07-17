@@ -9,7 +9,7 @@ import { hashCompositeContent } from "../../timelineSelection";
  * authored-content or dependency change. Existing bakes with an older version
  * are caches for a different render contract and must not be selected.
  */
-export const COMPOSITE_RENDER_CONTRACT_VERSION = 2;
+export const COMPOSITE_RENDER_CONTRACT_VERSION = 3;
 
 /**
  * Composite scenes are isolated transparent, project-sized layers. User-facing

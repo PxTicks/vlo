@@ -29,8 +29,7 @@ import type {
   ResolvedCompositeSource,
 } from "./framePlanning/framePlanningTypes";
 import type { FilterRenderContext } from "../../transformations/catalogue/types";
-import { getAssetInput } from "../../userAssets";
-import { resolveCompositeRasterDimensions } from "../utils/compositeRasterDimensions";
+import { resolveCompositeRasterDimensionsForContent } from "../utils/compositeRasterDimensions";
 
 export interface CompositeSceneFrameRenderer {
   renderCompositeScene(
@@ -95,47 +94,14 @@ function sameIdentity(left: RuntimeIdentity, right: RuntimeIdentity): boolean {
   );
 }
 
-async function resolveAssetDimensions(
-  asset: Asset,
-): Promise<{ width: number; height: number } | null> {
-  if (asset.type !== "video" && asset.type !== "image") {
-    return null;
-  }
-  try {
-    const input = await getAssetInput(asset.id);
-    const track = await input?.getPrimaryVideoTrack();
-    const width = track?.displayWidth ?? 0;
-    const height = track?.displayHeight ?? 0;
-    return width > 0 && height > 0 ? { width, height } : null;
-  } catch {
-    // Missing/unreadable sources still render through the ordinary diagnostic
-    // path; they must not prevent the composite's remaining content appearing.
-    return null;
-  }
-}
-
 async function resolveSourceRasterDimensions(
   source: ResolvedCompositeSource,
   assets: readonly Asset[],
 ): Promise<{ width: number; height: number }> {
-  const referencedAssetIds = new Set(
-    source.content.clips.flatMap((clip) =>
-      "assetId" in clip && typeof clip.assetId === "string"
-        ? [clip.assetId]
-        : [],
-    ),
-  );
-  const dimensions = await Promise.all(
-    assets
-      .filter((asset) => referencedAssetIds.has(asset.id))
-      .map(resolveAssetDimensions),
-  );
-  return resolveCompositeRasterDimensions(
+  return resolveCompositeRasterDimensionsForContent(
+    source.content,
+    assets,
     source.logicalDimensions,
-    dimensions.filter(
-      (candidate): candidate is { width: number; height: number } =>
-        candidate !== null,
-    ),
   );
 }
 

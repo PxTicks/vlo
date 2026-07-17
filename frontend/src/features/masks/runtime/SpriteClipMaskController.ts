@@ -136,6 +136,10 @@ export class SpriteClipMaskController {
     new Map();
   private lastNodeSyncContentSize: { width: number; height: number } | null =
     null;
+  private activeClipContentSizeOverride: {
+    width: number;
+    height: number;
+  } | null = null;
   // Monotonic counter bumped whenever the mask scene this controller resolves
   // coverage from changes (every `syncMaskClips`, and `clear`). Effect-mask
   // output caching keys on this so a coverage change (new mask, edited mask,
@@ -626,6 +630,14 @@ export class SpriteClipMaskController {
     );
   }
 
+  public setActiveClipContentSizeOverride(
+    contentSize: { width: number; height: number } | null,
+  ): void {
+    this.activeClipContentSizeOverride = contentSize
+      ? { ...contentSize }
+      : null;
+  }
+
   /**
    * Apply transient layout overrides directly to the existing mask scene.
    *
@@ -840,6 +852,7 @@ export class SpriteClipMaskController {
     // Clearing drops the coverage source, so it must invalidate effect-mask
     // caches keyed on the sync epoch (same reasoning as `syncMaskClips`).
     this.maskSyncEpoch += 1;
+    this.activeClipContentSizeOverride = null;
     this.clearMaskNodes();
     this.clearSpatialPresentation();
   }
@@ -1671,6 +1684,9 @@ export class SpriteClipMaskController {
     width: number;
     height: number;
   }): { width: number; height: number } {
+    if (this.activeClipContentSizeOverride) {
+      return this.activeClipContentSizeOverride;
+    }
     const texture = this.sprite.texture;
     if (
       texture &&

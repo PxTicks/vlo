@@ -1,6 +1,9 @@
+import type { Asset } from "../../../types/Asset";
+import type { CompositeContent } from "../../../types/TimelineTypes";
+import { getAssetInput } from "../../userAssets";
 import type { FrameDimensions } from "../services/framePlanning/framePlanningTypes";
 
-export const MIN_COMPOSITE_RASTER_HEIGHT = 720;
+export const MIN_COMPOSITE_RASTER_SHORT_EDGE = 720;
 
 function isUsableDimensions(
   dimensions: FrameDimensions,
@@ -15,8 +18,8 @@ function isUsableDimensions(
 
 /**
  * Preserve the composite's logical aspect while matching the largest source's
- * pixel area. The 720-line floor keeps generated/text-only scenes useful
- * without forcing every low-resolution composite through a 1080p target.
+ * pixel resolution. The 720px short-edge floor keeps generated and text-only
+ * scenes useful without forcing low-resolution composites to 1080p.
  */
 export function resolveCompositeRasterDimensions(
   logicalDimensions: FrameDimensions,
@@ -24,22 +27,68 @@ export function resolveCompositeRasterDimensions(
 ): FrameDimensions {
   const logicalWidth = Math.max(1, logicalDimensions.width);
   const logicalHeight = Math.max(1, logicalDimensions.height);
-  const aspectRatio = logicalWidth / logicalHeight;
-  const minimumArea =
-    aspectRatio * MIN_COMPOSITE_RASTER_HEIGHT * MIN_COMPOSITE_RASTER_HEIGHT;
-  const largestSourceArea = sourceDimensions.reduce((largest, dimensions) => {
+  const minimumScale =
+    MIN_COMPOSITE_RASTER_SHORT_EDGE /
+    Math.max(1, Math.min(logicalWidth, logicalHeight));
+  const rasterScale = sourceDimensions.reduce((largest, dimensions) => {
     if (!isUsableDimensions(dimensions)) {
       return largest;
     }
-    return Math.max(largest, dimensions.width * dimensions.height);
-  }, 0);
-  const rasterHeight = Math.max(
-    MIN_COMPOSITE_RASTER_HEIGHT,
-    Math.round(Math.sqrt(Math.max(minimumArea, largestSourceArea) / aspectRatio)),
-  );
+    return Math.max(
+      largest,
+      Math.sqrt(
+        (dimensions.width * dimensions.height) /
+          (logicalWidth * logicalHeight),
+      ),
+    );
+  }, minimumScale);
 
   return {
-    width: Math.max(1, Math.round(rasterHeight * aspectRatio)),
-    height: rasterHeight,
+    width: Math.max(1, Math.round(logicalWidth * rasterScale)),
+    height: Math.max(1, Math.round(logicalHeight * rasterScale)),
   };
+}
+
+async function resolveAssetDimensions(
+  asset: Asset,
+): Promise<FrameDimensions | null> {
+  if (asset.type !== "video" && asset.type !== "image") {
+    return null;
+  }
+  try {
+    const input = await getAssetInput(asset.id);
+    const track = await input?.getPrimaryVideoTrack();
+    const width = track?.displayWidth ?? 0;
+    const height = track?.displayHeight ?? 0;
+    return width > 0 && height > 0 ? { width, height } : null;
+  } catch {
+    // Missing or irregular media falls back to the 720p floor and remains
+    // renderable through the ordinary diagnostic path.
+    return null;
+  }
+}
+
+export async function resolveCompositeRasterDimensionsForContent(
+  content: CompositeContent,
+  assets: readonly Asset[],
+  logicalDimensions: FrameDimensions,
+): Promise<FrameDimensions> {
+  const referencedAssetIds = new Set(
+    content.clips.flatMap((clip) =>
+      "assetId" in clip && typeof clip.assetId === "string"
+        ? [clip.assetId]
+        : [],
+    ),
+  );
+  const dimensions = await Promise.all(
+    assets
+      .filter((asset) => referencedAssetIds.has(asset.id))
+      .map(resolveAssetDimensions),
+  );
+  return resolveCompositeRasterDimensions(
+    logicalDimensions,
+    dimensions.filter(
+      (candidate): candidate is FrameDimensions => candidate !== null,
+    ),
+  );
 }

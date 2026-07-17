@@ -313,6 +313,10 @@ export class TrackRenderEngine {
     | "text"
     | "extension"
     | null = null;
+  private currentContentSizeOverride: {
+    clipId: string;
+    size: { width: number; height: number };
+  } | null = null;
   // Frame-scoped render-sample metadata for time-dependent filters. Set at each
   // render entry point (live `update`, export/live frame job) and read by the
   // clip applicators so a sample/history filter animates from canonical visual
@@ -623,9 +627,12 @@ export class TrackRenderEngine {
     trackClips: TimelineClip[],
     assets: Asset[],
   ): boolean {
+    const preparationClips = trackClips.map((clip) =>
+      clip.id === job.activeClip.id ? job.activeClip : clip,
+    );
     this.syncPreparedClips(
       job.effectiveTrackTick,
-      trackClips,
+      preparationClips,
       assets,
       performance.now(),
       false,
@@ -718,6 +725,8 @@ export class TrackRenderEngine {
       sourceHandle?.release();
       return false;
     }
+    const contentSizeOverride = job.compositeSource ? job.contentSize : null;
+    this.setCurrentContentSizeOverride(job.activeClip.id, contentSizeOverride);
 
     const presentationClip: TimelineClip =
       job.transitionTransforms && job.transitionTransforms.length > 0
@@ -843,13 +852,14 @@ export class TrackRenderEngine {
       presentationClip,
       job.logicalDimensions,
       job.rawClipTick,
-      job.compositeSource ? job.contentSize : undefined,
+      contentSizeOverride ?? undefined,
     );
     return true;
   }
 
   public presentBlankFrame(): void {
     this.currentPlannedSourceFrameIntent = null;
+    this.currentContentSizeOverride = null;
     this.sprite.visible = false;
     this.currentTextureClipId = null;
     this.maskController.clear();
@@ -1107,6 +1117,7 @@ export class TrackRenderEngine {
         activeClip,
         logicalDimensions,
         clipVisualTimeTicks,
+        this.getCurrentContentSizeOverride(activeClip.id),
       );
     }
 
@@ -1363,6 +1374,7 @@ export class TrackRenderEngine {
         activeClip,
         logicalDimensions,
         clipVisualTimeTicks,
+        this.getCurrentContentSizeOverride(activeClip.id),
       );
     }
   }
@@ -2697,10 +2709,31 @@ export class TrackRenderEngine {
           logicalDimensions,
           contentSizeOverride,
         ),
-        { render: this.buildFrameRenderContext(rawTime) },
+        {
+          mapContentSizeToTexture: contentSizeOverride != null,
+          render: this.buildFrameRenderContext(rawTime),
+        },
       );
     }
     this.maskController.syncMaskSpriteTransform();
+  }
+
+  private setCurrentContentSizeOverride(
+    clipId: string,
+    contentSize: { width: number; height: number } | null,
+  ): void {
+    this.currentContentSizeOverride = contentSize
+      ? { clipId, size: { ...contentSize } }
+      : null;
+    this.maskController.setActiveClipContentSizeOverride(contentSize);
+  }
+
+  private getCurrentContentSizeOverride(
+    clipId: string,
+  ): { width: number; height: number } | undefined {
+    return this.currentContentSizeOverride?.clipId === clipId
+      ? this.currentContentSizeOverride.size
+      : undefined;
   }
 
   /**
@@ -2847,8 +2880,12 @@ export class TrackRenderEngine {
       clip,
       logicalDimensions,
       rawTime,
-      clip.type === "text" ? logicalDimensions : undefined,
-      { applyFilterTransforms: false, render },
+      contentSize,
+      {
+        applyFilterTransforms: false,
+        mapContentSizeToTexture: contentSizeOverride != null,
+        render,
+      },
     );
     return true;
   }
@@ -3117,6 +3154,7 @@ export class TrackRenderEngine {
         activeClip,
         logicalDimensions,
         clipVisualTimeTicks,
+        this.getCurrentContentSizeOverride(activeClip.id),
       );
     }
 
@@ -3170,6 +3208,31 @@ export class TrackRenderEngine {
       activeClip,
       logicalDimensions,
       clipVisualTimeTicks,
+      this.getCurrentContentSizeOverride(activeClip.id),
+    );
+  }
+
+  /**
+   * Reapply the latest authored transforms after an asynchronous decoder frame
+   * arrives. The engine retains the frame's logical content boundary so this
+   * refresh cannot downgrade a composite to ordinary physical-texture layout.
+   */
+  public refreshClipTransformsAtRawTime(
+    activeClip: TimelineClip,
+    logicalDimensions: { width: number; height: number },
+    rawTime: number,
+  ): void {
+    if (
+      !this.sprite.visible ||
+      this.currentTextureClipId !== activeClip.id
+    ) {
+      return;
+    }
+    this.applyClipTransformsForClip(
+      activeClip,
+      logicalDimensions,
+      rawTime,
+      this.getCurrentContentSizeOverride(activeClip.id),
     );
   }
 
@@ -3208,6 +3271,7 @@ export class TrackRenderEngine {
       activeClip,
       logicalDimensions,
       clipVisualTimeTicks,
+      this.getCurrentContentSizeOverride(activeClip.id),
     );
     void this.maskController
       .syncMaskClips(
@@ -3223,6 +3287,7 @@ export class TrackRenderEngine {
           activeClip,
           logicalDimensions,
           clipVisualTimeTicks,
+          this.getCurrentContentSizeOverride(activeClip.id),
         );
       })
       .catch((error) => {

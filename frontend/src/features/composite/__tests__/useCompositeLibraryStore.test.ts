@@ -246,7 +246,7 @@ describe("useCompositeLibraryStore", () => {
     });
   });
 
-  it("publishes edited content while leaving placement cache pointers migration-only", async () => {
+  it("publishes edited content and relinks placements after the new bake is ready", async () => {
     const current = composite();
     mocks.assets.push(
       bakedAsset("proxy-old", current.id, 1, current.bake?.readyKey ?? "old-key"),
@@ -311,7 +311,7 @@ describe("useCompositeLibraryStore", () => {
     ]);
     await compositeBakeQueue.whenIdle();
     expect(useTimelineStore.getState().clips[0]).toMatchObject({
-      assetId: "proxy-old",
+      assetId: "proxy-new",
       compositeRevision: 2,
       timelineDuration: TICKS_PER_SECOND,
     });

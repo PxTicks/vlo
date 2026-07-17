@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Asset } from "../../../../types/Asset";
 import type { TimelineClip, TimelineTrack } from "../../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../timeline";
 import { AdjustmentEffectResolver } from "../AdjustmentEffectResolver";
+import type { DecoderWorkerPool } from "../DecoderWorkerPool";
 import { TrackRenderEngine } from "../TrackRenderEngine";
 
 /**
@@ -82,5 +84,60 @@ describe("TrackRenderEngine active-clip re-binding", () => {
     ).toBe(12);
     // Effective-tick math is unaffected (identity without an adjustment).
     expect(second?.effectiveTick).toBe(50);
+  });
+
+  it("prepares the canonical bake selected for a sentinel composite placement", () => {
+    const lease = {
+      prepare: vi.fn(),
+      render: vi.fn(),
+      disposeSource: vi.fn(),
+      reportStall: vi.fn(async () => "released" as const),
+      release: vi.fn(),
+    };
+    const decoderPool = {
+      warmUp: vi.fn(),
+      acquireLease: vi.fn(() => lease),
+      dispose: vi.fn(),
+    } satisfies DecoderWorkerPool;
+    const engine = new TrackRenderEngine(1, undefined, undefined, {
+      trackId: "t1",
+      decoderPool,
+    });
+    engines.push(engine);
+    const placement = {
+      ...baseClip,
+      assetId: "composite-live:composite-1",
+      compositeId: "composite-1",
+      compositeRevision: 1,
+      transformations: [],
+    } as TimelineClip;
+    const bake = {
+      id: "bake-1",
+      hash: "bake-hash",
+      name: "bake.webm",
+      type: "video",
+      src: "blob:bake",
+      file: new File(["bake"], "bake.webm", { type: "video/webm" }),
+      createdAt: 1,
+    } satisfies Asset;
+    const resolved = engine.resolveFrameJob({
+      epoch: 1,
+      presentationTick: 10,
+      trackClips: [placement],
+      maskClipsByParent: new Map(),
+      assetsById: new Map([[bake.id, bake]]),
+      logicalDimensions: { width: 1920, height: 1080 },
+      fps: 30,
+    });
+    expect(resolved).not.toBeNull();
+    const retargeted = engine.retargetResolvedFrameJobAsset(
+      resolved!,
+      bake,
+      30,
+    );
+
+    expect(
+      engine.prepareResolvedFrameJob(retargeted, [placement], [bake]),
+    ).toBe(true);
   });
 });

@@ -570,10 +570,15 @@ export function groupTimelineClipsIntoComposite(
 export function syncTimelineCompositePlacementRevision(
   compositeId: string,
   compositeRevision: number,
+  bakedAssetId?: string,
 ): void {
   useTimelineStore
     .getState()
-    .syncCompositePlacementRevision(compositeId, compositeRevision);
+    .syncCompositePlacementRevision(
+      compositeId,
+      compositeRevision,
+      bakedAssetId,
+    );
 }
 
 export function remapTimelineCompositePlacement(

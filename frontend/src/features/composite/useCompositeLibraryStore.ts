@@ -3,7 +3,6 @@ import type {
   CompositeAsset,
   CompositeContent,
 } from "../../types/TimelineTypes";
-import { isCompositeClip } from "../../types/TimelineTypes";
 import { projectPersistenceService } from "../project";
 import { useProjectStore } from "../project/useProjectStore";
 import {
@@ -183,8 +182,7 @@ function getPublishedBakeAssetId(composite: CompositeAsset): string | undefined 
 
 function isBakeAssetReferenced(assetId: string): boolean {
   const placementOwnsAsset = getTimelineClips().some(
-    (clip) =>
-      !isCompositeClip(clip) && "assetId" in clip && clip.assetId === assetId,
+    (clip) => "assetId" in clip && clip.assetId === assetId,
   );
   if (placementOwnsAsset) {
     return true;
@@ -362,6 +360,11 @@ const bakeQueueCallbacks: CompositeBakeQueueCallbacks = {
 
       await persistComposites(next);
       useCompositeLibraryStore.setState({ composites: next });
+      syncTimelineCompositePlacementRevision(
+        request.compositeId,
+        request.revision,
+        result.asset.id,
+      );
       didPublish = true;
     });
 
@@ -519,6 +522,11 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
           composite: CompositeAsset;
           requestedKey: string;
         }> = [];
+        const readyPlacements: Array<{
+          compositeId: string;
+          revision: number;
+          assetId: string;
+        }> = [];
 
         for (const persisted of Object.values(document.composites)) {
           const composite = clone(persisted);
@@ -549,6 +557,13 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
             };
             toQueue.push({ composite, requestedKey });
           }
+          if (validity.valid) {
+            readyPlacements.push({
+              compositeId: composite.id,
+              revision: resolveCompositeRevision(composite),
+              assetId: validity.assetId,
+            });
+          }
           normalized.push(composite);
         }
 
@@ -557,6 +572,13 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
           await persistComposites(next);
         }
         set({ composites: next });
+        for (const ready of readyPlacements) {
+          syncTimelineCompositePlacementRevision(
+            ready.compositeId,
+            ready.revision,
+            ready.assetId,
+          );
+        }
         for (const queued of toQueue) {
           enqueueCompositeBake(queued.composite, queued.requestedKey);
         }

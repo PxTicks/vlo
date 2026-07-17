@@ -1,9 +1,14 @@
 import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  AdjustmentTimelineClip,
+  ClipTransform,
   TimelineTrack,
   VideoTimelineClip,
 } from "../../../types/TimelineTypes";
+import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../types/TimelineTypes";
+import { TICKS_PER_SECOND } from "../../../core/time/constants";
+import { buildTimelineClipPresentationIndex } from "../utils/clipPresentation";
 
 vi.mock("../../userAssets", () => ({
   deleteAsset: vi.fn(async () => undefined),
@@ -38,7 +43,11 @@ function videoClip(id: string, trackId: string, start: number): VideoTimelineCli
   };
 }
 
-function compositeClip(id: string, trackId: string): VideoTimelineClip {
+function compositeClip(
+  id: string,
+  trackId: string,
+  start = 0,
+): VideoTimelineClip {
   return {
     id,
     trackId,
@@ -46,7 +55,7 @@ function compositeClip(id: string, trackId: string): VideoTimelineClip {
     name: "Composite",
     assetId: "bake-1",
     compositeId: "composite-asset-1",
-    start: 0,
+    start,
     timelineDuration: 200,
     offset: 0,
     croppedSourceDuration: 200,
@@ -54,6 +63,31 @@ function compositeClip(id: string, trackId: string): VideoTimelineClip {
     sourceDuration: 200,
     transformedDuration: 200,
     transformations: [],
+  };
+}
+
+function rippleAdjustmentClip(): AdjustmentTimelineClip {
+  const speed: ClipTransform = {
+    id: "speed-2x",
+    type: "speed",
+    isEnabled: true,
+    parameters: { factor: 2 },
+  };
+  return {
+    id: "adjustment",
+    trackId: "adjustment-track",
+    type: "adjustment",
+    name: "Adjustment",
+    start: 0,
+    timelineDuration: TICKS_PER_SECOND,
+    sourceDuration: 2 * TICKS_PER_SECOND,
+    transformedDuration: TICKS_PER_SECOND,
+    transformedOffset: 0,
+    croppedSourceDuration: 2 * TICKS_PER_SECOND,
+    offset: 0,
+    transformations: [speed],
+    depth: 1,
+    retimingMode: ADJUSTMENT_RETIMING_RIPPLE,
   };
 }
 
@@ -88,5 +122,41 @@ describe("useTimelineStore.groupClipsIntoComposite", () => {
     // orphaned and the timeline renders empty (the catastrophic wipe).
     const trackIds = new Set(tracks.map((t) => t.id));
     expect(trackIds.has(clips[0].trackId)).toBe(true);
+  });
+
+  it("keeps the composite at the selection's presentation start under ripple retiming", () => {
+    const targetPresentationStart = 1.5 * TICKS_PER_SECOND;
+    const source = videoClip("source", "track-1", 2 * TICKS_PER_SECOND);
+    const adjustmentTrack = createTrack("adjustment-track");
+    adjustmentTrack.type = "adjustment";
+
+    act(() => {
+      useTimelineStore.getState().replaceTimelineSnapshot({
+        tracks: [adjustmentTrack, createTrack("track-1")],
+        clips: [rippleAdjustmentClip(), source],
+      });
+    });
+
+    const composite = compositeClip(
+      "composite-ripple",
+      "track-1",
+      targetPresentationStart,
+    );
+    act(() => {
+      useTimelineStore
+        .getState()
+        .groupClipsIntoComposite([source.id], composite);
+    });
+
+    const { clips, tracks } = useTimelineStore.getState();
+    const placed = clips.find((clip) => clip.id === composite.id);
+    const presentation = buildTimelineClipPresentationIndex(
+      tracks,
+      clips,
+      30,
+    ).get(composite.id);
+
+    expect(placed?.start).toBeGreaterThan(targetPresentationStart);
+    expect(presentation?.start).toBe(targetPresentationStart);
   });
 });

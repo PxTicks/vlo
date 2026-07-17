@@ -80,4 +80,68 @@ describe("useTimelineStore.syncCompositePlacementRevision", () => {
     }
     expect(other).toMatchObject({ assetId: "bake-other" });
   });
+
+  it("remaps only the edited placement to a forked composite", () => {
+    act(() => {
+      useTimelineStore
+        .getState()
+        .addClip(compositePlacement("edited", "composite-1", "bake-old"));
+      useTimelineStore
+        .getState()
+        .addClip(compositePlacement("shared", "composite-1", "bake-old"));
+    });
+
+    expect(
+      useTimelineStore
+        .getState()
+        .remapCompositePlacement(
+          "edited",
+          "composite-1",
+          "composite-fork",
+          1,
+        ),
+    ).toBe(true);
+
+    expect(useTimelineStore.getState().clips).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "edited",
+          compositeId: "composite-fork",
+          compositeRevision: 1,
+          assetId: "composite-live:composite-fork",
+        }),
+        expect.objectContaining({
+          id: "shared",
+          compositeId: "composite-1",
+          assetId: "bake-old",
+        }),
+      ]),
+    );
+  });
+
+  it("does not overwrite a placement that no longer references the expected composite", () => {
+    act(() => {
+      useTimelineStore
+        .getState()
+        .addClip(compositePlacement("edited", "composite-new", "bake-new"));
+    });
+
+    expect(
+      useTimelineStore
+        .getState()
+        .remapCompositePlacement(
+          "edited",
+          "composite-old",
+          "composite-fork",
+          1,
+        ),
+    ).toBe(false);
+    expect(useTimelineStore.getState().clips).toEqual([
+      expect.objectContaining({
+        id: "edited",
+        compositeId: "composite-new",
+        assetId: "bake-new",
+      }),
+    ]);
+  });
 });

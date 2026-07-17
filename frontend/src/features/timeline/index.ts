@@ -102,6 +102,7 @@ export {
   addTimelineClipsOnNewTracksBelow,
   groupTimelineClipsIntoComposite,
   syncTimelineCompositePlacementRevision,
+  remapTimelineCompositePlacement,
   removeTimelineClip,
   removeTimelineClips,
   moveTimelineClips,

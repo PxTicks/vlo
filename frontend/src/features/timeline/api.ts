@@ -265,6 +265,7 @@ export function getTimelinePresentationContext(): {
 
 export function getTimelineCompositeContent(): CompositeContent {
   const { clips, tracks, fps } = getTimelinePresentationContext();
+  const transitions = useTimelineStore.getState().transitions;
   const durationTicks = Math.max(
     TICKS_PER_SECOND,
     computeFurthestPresentationEnd(tracks, clips, fps),
@@ -273,6 +274,7 @@ export function getTimelineCompositeContent(): CompositeContent {
   return {
     clips: structuredClone(clips),
     tracks: structuredClone(tracks),
+    transitions: structuredClone(transitions),
     durationTicks,
     fps,
     frameStep: 1,
@@ -572,6 +574,22 @@ export function syncTimelineCompositePlacementRevision(
   useTimelineStore
     .getState()
     .syncCompositePlacementRevision(compositeId, compositeRevision);
+}
+
+export function remapTimelineCompositePlacement(
+  clipId: string,
+  expectedCompositeId: string,
+  compositeId: string,
+  compositeRevision: number,
+): boolean {
+  return useTimelineStore
+    .getState()
+    .remapCompositePlacement(
+      clipId,
+      expectedCompositeId,
+      compositeId,
+      compositeRevision,
+    );
 }
 
 export function removeTimelineClip(clipId: string): void {

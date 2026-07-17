@@ -169,6 +169,12 @@ interface TimelineState extends TimelineModelState {
     compositeId: string,
     compositeRevision: number,
   ) => void;
+  remapCompositePlacement: (
+    clipId: string,
+    expectedCompositeId: string,
+    compositeId: string,
+    compositeRevision: number,
+  ) => boolean;
 
   removeClip: (id: string) => void;
   removeClips: (ids: string[]) => boolean;
@@ -508,6 +514,30 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         );
       });
     },
+
+    remapCompositePlacement: (
+      clipId,
+      expectedCompositeId,
+      compositeId,
+      compositeRevision,
+    ) =>
+      mutationPipeline.commitModelMutation(
+        (draft) => {
+          draft.clips = draft.clips.map((clip) =>
+            clip.id === clipId &&
+            isCompositeClip(clip) &&
+            clip.compositeId === expectedCompositeId
+              ? {
+                  ...clip,
+                  compositeId,
+                  compositeRevision,
+                  assetId: `composite-live:${compositeId}`,
+                }
+              : clip,
+          );
+        },
+        { label: "Fork composite placement" },
+      ),
 
     duplicateClip: (clip) => duplicateTimelineClip(clip, get().clips),
 

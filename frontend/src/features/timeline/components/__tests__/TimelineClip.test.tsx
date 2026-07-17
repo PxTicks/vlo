@@ -258,7 +258,7 @@ describe("TimelineClip Visual Geometry", () => {
     expect(screen.getByTestId("timeline-clip").style.cursor).toBe("default");
   });
 
-  it("renders an inert composite label on timeline composite clips", () => {
+  it("opens the placement-owned composite editor from the clip button", () => {
     const compositeClip: TimelineClipType = {
       id: "composite_1",
       trackId: "track_1",
@@ -287,17 +287,36 @@ describe("TimelineClip Visual Geometry", () => {
         },
       ],
     });
+    useCompositeLibraryStore.setState({
+      composites: [
+        {
+          id: compositeClip.compositeId!,
+          name: "Nested Scene",
+          content: {
+            durationTicks: 200,
+            clips: [],
+            tracks: [],
+          },
+          revision: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
 
     render(<TimelineClipItem clip={compositeClip} isOverlay={false} />);
 
-    const label = screen.getByTestId("timeline-clip-composite-label");
-    expect(label).toHaveTextContent("Composite");
-    expect(screen.queryByTestId("timeline-clip-composite-open")).toBeNull();
+    const openButton = screen.getByTestId("timeline-clip-composite-open");
+    expect(openButton).toHaveTextContent("Composite");
+    fireEvent.click(openButton);
 
-    fireEvent.click(label);
-
-    expect(useCompositeTimelineStore.getState().stack).toHaveLength(0);
-    expect(useTimelineStore.getState().clips).toEqual([compositeClip]);
+    expect(useCompositeTimelineStore.getState().stack).toEqual([
+      expect.objectContaining({
+        ownerCompositeAssetId: compositeClip.compositeId,
+        ownerClipId: compositeClip.id,
+      }),
+    ]);
+    expect(useTimelineStore.getState().clips).toEqual([]);
   });
 
   it("renders composite thumbnails through the normal thumbnail canvas", () => {

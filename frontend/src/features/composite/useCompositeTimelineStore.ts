@@ -7,11 +7,14 @@ import {
   createEmptyTimelineSnapshot,
   getTimelineClipById,
   getTimelineCompositeContent,
+  getTimelineCompositePlacementIds,
   getTimelineSnapshot,
+  remapTimelineCompositePlacement,
   replaceTimelineSnapshot,
   setTimelinePersistenceSuspended,
 } from "../timeline/api";
 import { useCompositeLibraryStore } from "./useCompositeLibraryStore";
+import { resolveCompositeRevision } from "./utils/compositeBakeValidity";
 
 interface CompositeTimelineFrame {
   previousSnapshot: TimelineSnapshot;
@@ -19,6 +22,7 @@ interface CompositeTimelineFrame {
   name: string;
   ownerClipId?: string | null;
   insertStartTick?: number;
+  initialContentSnapshot?: string;
 }
 
 interface CompositeTimelineState {
@@ -37,6 +41,7 @@ function cloneTimelineSnapshot(snapshot: TimelineSnapshot): TimelineSnapshot {
   return {
     tracks: structuredClone(snapshot.tracks),
     clips: structuredClone(snapshot.clips),
+    transitions: structuredClone(snapshot.transitions ?? []),
   };
 }
 
@@ -51,6 +56,7 @@ function getSnapshotForCompositeContent(content: CompositeContent): TimelineSnap
         ? structuredClone(content.tracks)
         : createEmptyTimelineSnapshot().tracks,
     clips: structuredClone(content.clips),
+    transitions: structuredClone(content.transitions ?? []),
   };
 }
 
@@ -60,6 +66,10 @@ function getCurrentCompositeContent(): CompositeContent {
 
 function isEmptyNewSceneContent(content: CompositeContent): boolean {
   return content.clips.length === 0;
+}
+
+function serializeCompositeContent(content: CompositeContent): string {
+  return JSON.stringify(content);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -125,6 +135,9 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
       setTimelinePersistenceSuspended(true);
       replaceTimelineSnapshot(getSnapshotForCompositeContent(compositeAsset.content));
       playbackClock.setTime(0);
+      const initialContentSnapshot = serializeCompositeContent(
+        getCurrentCompositeContent(),
+      );
 
       set({
         stack: [
@@ -133,6 +146,7 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
             previousSnapshot: timelineSnapshot,
             ownerCompositeAssetId: compositeAsset.id,
             name: compositeAsset.name,
+            initialContentSnapshot,
           },
         ],
         lastError: null,
@@ -145,7 +159,12 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
       if (!isCompositeClip(clip)) {
         return false;
       }
-      return get().openCompositeAsset(clip.compositeId);
+      if (!get().openCompositeAsset(clip.compositeId)) return false;
+      const stack = [...get().stack];
+      const frame = stack[stack.length - 1];
+      stack[stack.length - 1] = { ...frame, ownerClipId: clip.id };
+      set({ stack });
+      return true;
     },
 
     exitToMainTimeline: async () => {
@@ -163,8 +182,11 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
           stack = stack.slice(0, -1);
 
           const shouldCommitFrame =
-            typeof frame.ownerCompositeAssetId === "string" ||
-            !isEmptyNewSceneContent(contentToSave);
+            (typeof frame.ownerCompositeAssetId === "string" &&
+              serializeCompositeContent(contentToSave) !==
+                frame.initialContentSnapshot) ||
+            (typeof frame.ownerCompositeAssetId !== "string" &&
+              !isEmptyNewSceneContent(contentToSave));
 
           // Restore the parent timeline BEFORE committing. The canonical edit
           // immediately advances every parent placement's revision, while the
@@ -179,11 +201,41 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
 
           if (shouldCommitFrame) {
             if (typeof frame.ownerCompositeAssetId === "string") {
-              await useCompositeLibraryStore
-                .getState()
-                .updateCompositeAssetContent(frame.ownerCompositeAssetId, {
-                  content: contentToSave,
-                });
+              const placementIds = getTimelineCompositePlacementIds([
+                frame.ownerCompositeAssetId,
+              ]);
+              const shouldForkPlacement =
+                typeof frame.ownerClipId === "string" &&
+                placementIds.length > 1;
+
+              if (shouldForkPlacement) {
+                const fork = await useCompositeLibraryStore
+                  .getState()
+                  .createCompositeAsset({
+                    name: frame.name,
+                    content: contentToSave,
+                  });
+                const didRemap = remapTimelineCompositePlacement(
+                  frame.ownerClipId!,
+                  frame.ownerCompositeAssetId,
+                  fork.id,
+                  resolveCompositeRevision(fork),
+                );
+                if (!didRemap) {
+                  await useCompositeLibraryStore
+                    .getState()
+                    .deleteCompositeAsset(fork.id);
+                  throw new Error(
+                    "The edited composite placement no longer exists.",
+                  );
+                }
+              } else {
+                await useCompositeLibraryStore
+                  .getState()
+                  .updateCompositeAssetContent(frame.ownerCompositeAssetId, {
+                    content: contentToSave,
+                  });
+              }
             } else {
               await useCompositeLibraryStore.getState().createCompositeAsset({
                 name: frame.name,

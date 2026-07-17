@@ -320,6 +320,22 @@ describe("useCompositeLibraryStore", () => {
     });
   });
 
+  it("treats an identical content update as a no-op without queueing a bake", async () => {
+    const current = composite();
+    useCompositeLibraryStore.setState({ composites: [current] });
+
+    const result = await useCompositeLibraryStore
+      .getState()
+      .updateCompositeAssetContent(current.id, {
+        content: structuredClone(current.content),
+      });
+
+    expect(result).toBe(current);
+    expect(useCompositeLibraryStore.getState().composites).toEqual([current]);
+    expect(mocks.bakeComposite).not.toHaveBeenCalled();
+    expect(mocks.updateCompositeLibrary).not.toHaveBeenCalled();
+  });
+
   it("rejects a stale completion after a newer revision is committed", async () => {
     const current = composite({ bakedAssetId: undefined, bake: undefined });
     useCompositeLibraryStore.setState({ composites: [current] });

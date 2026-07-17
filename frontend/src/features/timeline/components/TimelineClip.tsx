@@ -52,6 +52,7 @@ import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
 import type { TimelineClipPresentation } from "../utils/clipPresentation";
 import { extensionEntityProviderRegistry } from "../../extensions/entities/publicApi";
+import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
 
 // --- Sub-component for Handles ---
 interface HandleProps {
@@ -195,8 +196,8 @@ function TimelineClipComponent({
           : extensionProviderAvailability === "available"
             ? extensionPresentation?.label ?? "Extension"
           : null;
-  // Composite placements are ordinary asset-backed video clips, so the
-  // thumbnail strip renders straight from the clip's own baked `assetId`.
+  // Composite placements retain an asset-backed shape, while thumbnail frame
+  // planning resolves canonical live/baked source policy.
   const thumbnailClip: AssetBackedBaseClip | AssetBackedTimelineClip | null =
     isAssetBackedClip(clip) ? clip : null;
   const isClipMuted =
@@ -509,6 +510,13 @@ function TimelineClipComponent({
     useSamAudioExtractDialogStore.getState().openForClip(timelineClip.id);
   };
 
+  const handleOpenComposite = (event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!timelineClip || !isCompositeClip(timelineClip)) return;
+    useCompositeTimelineStore.getState().openCompositeClip(timelineClip.id);
+  };
+
   return (
     <ClipRoot
       ref={setRefs}
@@ -580,13 +588,29 @@ function TimelineClipComponent({
     >
       {showCompositeLabel || extensionProviderId ? (
         <Box
+          component={showCompositeLabel ? "button" : "div"}
+          type={showCompositeLabel ? "button" : undefined}
           data-testid={
             extensionProviderAvailability === "missing"
               ? "timeline-clip-missing-extension-label"
               : extensionProviderId
                 ? "timeline-clip-extension-label"
-                : "timeline-clip-composite-label"
+                : "timeline-clip-composite-open"
           }
+          aria-label={showCompositeLabel ? "Open composite editor" : undefined}
+          onPointerDown={
+            showCompositeLabel
+              ? (event: React.PointerEvent<HTMLElement>) =>
+                  event.stopPropagation()
+              : undefined
+          }
+          onMouseDown={
+            showCompositeLabel
+              ? (event: React.MouseEvent<HTMLElement>) =>
+                  event.stopPropagation()
+              : undefined
+          }
+          onClick={showCompositeLabel ? handleOpenComposite : undefined}
           sx={{
             position: "absolute",
             top: 3,
@@ -606,7 +630,11 @@ function TimelineClipComponent({
             overflow: "hidden",
             whiteSpace: "nowrap",
             textOverflow: "ellipsis",
-            pointerEvents: "none",
+            m: 0,
+            appearance: "none",
+            fontFamily: "inherit",
+            pointerEvents: showCompositeLabel ? "auto" : "none",
+            cursor: showCompositeLabel ? "pointer" : "default",
           }}
         >
           {extensionProviderId

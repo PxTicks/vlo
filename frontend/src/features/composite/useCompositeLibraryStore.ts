@@ -114,6 +114,13 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
+function hasIdenticalCompositeContent(
+  left: CompositeContent,
+  right: CompositeContent,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function sortComposites(composites: readonly CompositeAsset[]): CompositeAsset[] {
   return [...composites].sort((left, right) => {
     const updatedDelta = right.updatedAt - left.updatedAt;
@@ -598,8 +605,16 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
       if (contentContainsComposite(content)) {
         throw new Error("Composites cannot contain other composites.");
       }
+      const initial = get().composites.find(
+        (candidate) => candidate.id === compositeAssetId,
+      );
+      if (!initial) return null;
+      if (hasIdenticalCompositeContent(initial.content, content)) {
+        return initial;
+      }
       const requestedKey = await createRequestedBakeKey(content);
       let updated: CompositeAsset | null = null;
+      let didChange = false;
 
       await runCompositeMutation(async () => {
         const currentComposites = get().composites;
@@ -607,6 +622,10 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
           (candidate) => candidate.id === compositeAssetId,
         );
         if (!existing) {
+          return;
+        }
+        if (hasIdenticalCompositeContent(existing.content, content)) {
+          updated = existing;
           return;
         }
         const revision = resolveCompositeRevision(existing) + 1;
@@ -633,9 +652,10 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
         set({ composites: next });
 
         syncTimelineCompositePlacementRevision(compositeAssetId, revision);
+        didChange = true;
       });
 
-      if (updated) {
+      if (updated && didChange) {
         enqueueCompositeBake(updated, requestedKey, input);
       }
       return updated;

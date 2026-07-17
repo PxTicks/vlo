@@ -6,7 +6,6 @@ import type {
 } from "../../../../../types/TimelineTypes";
 import {
   createCompositeBakeKey,
-  setCompositeForceLive,
   serializeCompositeBakeKey,
 } from "../../../../composite";
 import type { TrackRenderEngine } from "../../TrackRenderEngine";
@@ -16,6 +15,10 @@ import {
 } from "../FrameJobResolver";
 import { setCompositeRenderDagEnabled } from "../framePlanningFlags";
 import type { ResolvedClipFrameJob } from "../framePlanningTypes";
+import {
+  createCompositeSourcePolicySnapshot,
+  type CompositeSourcePolicySnapshot,
+} from "../CompositeSourcePolicy";
 
 const clip = { id: "clip-1" } as unknown as TimelineClip;
 
@@ -141,10 +144,13 @@ describe("FrameJobResolver composite sources", () => {
 
   afterEach(() => {
     setCompositeRenderDagEnabled(false);
-    setCompositeForceLive(composite.id, false);
   });
 
-  function resolve(sourceComposite: CompositeAsset = composite) {
+  function resolve(
+    sourceComposite: CompositeAsset = composite,
+    compositeSourcePolicy?: CompositeSourcePolicySnapshot,
+    resolver = new FrameJobResolver(),
+  ) {
     const resolvedJob = job({
       activeClip: placement,
       sourceFrame: {
@@ -158,7 +164,7 @@ describe("FrameJobResolver composite sources", () => {
       resolveFrameJob: vi.fn(() => resolvedJob),
       presentBlankFrame: vi.fn(),
     } as unknown as TrackRenderEngine;
-    return new FrameJobResolver().resolve({
+    return resolver.resolve({
       epoch: 1,
       presentationTick: 340,
       tracks: [
@@ -173,6 +179,7 @@ describe("FrameJobResolver composite sources", () => {
       composites: [sourceComposite],
       logicalDimensions: { width: 1920, height: 1080 },
       fps: 30,
+      compositeSourcePolicy,
     }).jobs[0];
   }
 
@@ -205,11 +212,46 @@ describe("FrameJobResolver composite sources", () => {
 
   it("selects live rendering while force-live is active", () => {
     setCompositeRenderDagEnabled(true);
-    setCompositeForceLive(composite.id, true);
 
-    expect(resolve().compositeSource).toMatchObject({
+    expect(
+      resolve(
+        composite,
+        createCompositeSourcePolicySnapshot({
+          forceLiveCompositeIds: new Set([composite.id]),
+        }),
+      ).compositeSource,
+    ).toMatchObject({
       mode: "live",
+      fallbackReason: "forced-live",
       fallbackAssetId: null,
+    });
+  });
+
+  it("records a frame-epoch source switch and bake publication latency", () => {
+    setCompositeRenderDagEnabled(true);
+    const resolver = new FrameJobResolver();
+    const stale = {
+      ...composite,
+      bake: { ...composite.bake, readyKey: "stale-key" },
+    } satisfies CompositeAsset;
+
+    expect(resolve(stale, undefined, resolver).compositeSource).toMatchObject({
+      mode: "live",
+      sourceChanged: false,
+    });
+    expect(
+      resolve(
+        {
+          ...composite,
+          bake: { ...composite.bake, updatedAt: Date.now() - 25 },
+        },
+        undefined,
+        resolver,
+      ).compositeSource,
+    ).toMatchObject({
+      mode: "baked",
+      sourceChanged: true,
+      switchLatencyMs: expect.any(Number),
     });
   });
 

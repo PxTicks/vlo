@@ -31,7 +31,17 @@ interface DecodedSourceFrame {
 
 export interface BatchFrameGraphExecutionResult {
   committedJobIds: ReadonlySet<string>;
+  compositeSourceCommits: readonly CompositeSourceCommit[];
   diagnostics: FramePlanningDiagnostics;
+}
+
+export interface CompositeSourceCommit {
+  epoch: number;
+  placementId: string;
+  compositeId: string;
+  revision: number;
+  mode: "live" | "baked";
+  assetId: string | null;
 }
 
 export interface BatchFrameGraphExecutorOptions {
@@ -133,6 +143,24 @@ export class BatchFrameGraphExecutor {
     const diagnostics = createEmptyFramePlanningDiagnostics(graph.epoch);
     diagnostics.jobsPlanned = graph.jobs.length;
     diagnostics.nodesPlanned = graph.nodes.length;
+    for (const job of graph.jobs) {
+      const source = job.compositeSource;
+      if (!source) continue;
+      if (source.mode === "baked") {
+        diagnostics.compositeBakedJobs += 1;
+      } else {
+        diagnostics.compositeLiveJobs += 1;
+      }
+      if (source.fallbackReason) {
+        diagnostics.compositeFallbackReasons[source.fallbackReason] =
+          (diagnostics.compositeFallbackReasons[source.fallbackReason] ?? 0) +
+          1;
+      }
+      if (source.sourceChanged) {
+        diagnostics.compositeSourceSwitches += 1;
+        diagnostics.compositeSwitchLatencyMs += source.switchLatencyMs ?? 0;
+      }
+    }
     const orderedNodes = validateFrameResolutionGraph(graph);
     const plannedByResolved = new Map<ResolvedClipFrameJob, PlannedClipJob>();
     const resolvedByPlanned = new Map<PlannedClipJob, ResolvedClipFrameJob>();
@@ -250,6 +278,7 @@ export class BatchFrameGraphExecutor {
     }
 
     const committedJobIds = new Set<string>();
+    const committedCompositeSourceJobIds = new Set<string>();
     const consumedHandles = new Set<string>();
     const gpuStart = performance.now();
     try {
@@ -280,8 +309,15 @@ export class BatchFrameGraphExecutor {
             );
             this.options.onCompositeSceneRendered?.(job, texture);
           } catch (error) {
+            diagnostics.compositeNodeFailures += 1;
             this.options.onCompositeSceneError?.(error, job);
             if (!source.fallbackAssetId) {
+              if (policy.mode === "export") {
+                throw new Error(
+                  `Composite '${source.compositeId}' failed to render live during export.`,
+                  { cause: error },
+                );
+              }
               handleByJobId.delete(node.jobId);
             }
           }
@@ -308,6 +344,14 @@ export class BatchFrameGraphExecutor {
         }
         if (committed) {
           committedJobIds.add(job.id);
+          if (
+            job.compositeSource &&
+            handle &&
+            (job.compositeSource.mode === "live" ||
+              handle.texture !== Texture.EMPTY)
+          ) {
+            committedCompositeSourceJobIds.add(job.id);
+          }
         } else {
           diagnostics.staleGenerationsDropped += 1;
         }
@@ -333,7 +377,24 @@ export class BatchFrameGraphExecutor {
     diagnostics.outstandingLeases = this.store.totalRefCount;
     publishFramePlanningDiagnostics(diagnostics);
     this.options.onDiagnostics?.(diagnostics);
-    return { committedJobIds, diagnostics };
+    const compositeSourceCommits = graph.jobs.flatMap((job) => {
+      const source = job.compositeSource;
+      if (!source || !committedCompositeSourceJobIds.has(job.id)) return [];
+      return [
+        {
+          epoch: graph.epoch,
+          placementId: source.placementId,
+          compositeId: source.compositeId,
+          revision: source.revision,
+          mode: source.mode,
+          assetId:
+            source.mode === "baked" && "assetId" in job.activeClip
+              ? job.activeClip.assetId
+              : null,
+        } satisfies CompositeSourceCommit,
+      ];
+    });
+    return { committedJobIds, compositeSourceCommits, diagnostics };
   }
 
   dispose(): void {

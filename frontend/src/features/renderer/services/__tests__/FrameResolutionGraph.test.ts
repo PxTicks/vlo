@@ -92,6 +92,9 @@ describe("FrameResolutionGraph", () => {
     );
     compositeJob.compositeSource = {
       mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
       compositeId: "composite-1",
       placementId: "placement",
       revision: 2,
@@ -137,6 +140,9 @@ describe("FrameResolutionGraph", () => {
     );
     compositeJob.compositeSource = {
       mode: "baked",
+      fallbackReason: null,
+      sourceChanged: false,
+      switchLatencyMs: null,
       compositeId: "composite-1",
       placementId: "placement",
       revision: 2,

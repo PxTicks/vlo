@@ -18,7 +18,12 @@ import {
 import { renderSelectionToVideoFile } from "../services/renderSelectionToVideoFile";
 import { deriveTrueDimensionsFromShortEdge } from "../utils/dimensions";
 import type { AspectRatio } from "../../project/useProjectStore";
-import { getCompositeAssets } from "../../composite";
+import {
+  getCompositeAssets,
+  getCompositeForceBakedIds,
+  getCompositeForceLiveIds,
+} from "../../composite";
+import { createCompositeSourcePolicySnapshot } from "../services/framePlanning";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
@@ -111,6 +116,10 @@ export function useExportJobController({
       assets,
       duration,
       fps: projectFps,
+      compositeSourcePolicy: createCompositeSourcePolicySnapshot({
+        forceLiveCompositeIds: getCompositeForceLiveIds(),
+        forceBakedCompositeIds: getCompositeForceBakedIds(),
+      }),
     };
   }, [projectFps]);
 

@@ -51,6 +51,7 @@ describe("CompositeCard", () => {
       directRenderErrors: new Map(),
       bakeStatusByCompositeId: new Map(),
       forceLiveCompositeIds: new Set(),
+      forceBakedCompositeIds: new Set(),
     });
   });
 
@@ -176,5 +177,15 @@ describe("CompositeCard", () => {
     expect(useCompositeRenderStatusStore.getState().forceLiveCompositeIds).toContain(
       failed.id,
     );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Force baked rendering" }),
+    );
+    expect(
+      useCompositeRenderStatusStore.getState().forceBakedCompositeIds,
+    ).toContain(failed.id);
+    expect(
+      useCompositeRenderStatusStore.getState().forceLiveCompositeIds,
+    ).not.toContain(failed.id);
   });
 });

@@ -10,6 +10,10 @@ import { runProjectClosingHooks } from "../../../core/project/projectLifecycleHo
 import { useProjectStore } from "../../project/useProjectStore";
 import { useTimelineStore } from "../../timeline/useTimelineStore";
 import { compositeBakeQueue } from "../services/CompositeBakeQueue";
+import {
+  publishCompositeSourcePresentations,
+  resetCompositeSourcePresentations,
+} from "../services/CompositeSourcePresentationService";
 import type { BakedComposite } from "../services/bakeComposite";
 import type { BakeCompositeOptions } from "../services/bakeComposite";
 import { createCompositeTimelineClip } from "../utils/createCompositeClip";
@@ -155,6 +159,7 @@ describe("useCompositeLibraryStore", () => {
     compositeBakeQueue.cancelAll();
     await compositeBakeQueue.whenIdle();
     vi.clearAllMocks();
+    resetCompositeSourcePresentations();
     mocks.assets = [
       {
         id: "asset-1",
@@ -289,6 +294,22 @@ describe("useCompositeLibraryStore", () => {
         requestedKey,
       ),
     );
+    await vi.waitFor(() =>
+      expect(useTimelineStore.getState().clips[0]).toMatchObject({
+        assetId: "proxy-new",
+        compositeRevision: 2,
+      }),
+    );
+    publishCompositeSourcePresentations([
+      {
+        epoch: 1,
+        placementId: placement.id,
+        compositeId: current.id,
+        revision: 2,
+        mode: "baked",
+        assetId: "proxy-new",
+      },
+    ]);
     await compositeBakeQueue.whenIdle();
     expect(useTimelineStore.getState().clips[0]).toMatchObject({
       assetId: "proxy-new",

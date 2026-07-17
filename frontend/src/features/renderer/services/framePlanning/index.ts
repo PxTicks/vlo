@@ -15,6 +15,10 @@ export {
 } from "./BatchFrameGraphExecutor";
 export { LiveFrameGraphCoordinator } from "./LiveFrameGraphCoordinator";
 export {
+  createCompositeSourcePolicySnapshot,
+  resolveCompositeSourceDecision,
+} from "./CompositeSourcePolicy";
+export {
   clearFramePlanningDiagnostics,
   getLatestFramePlanningDiagnostics,
   publishFramePlanningDiagnostics,
@@ -68,7 +72,14 @@ export type {
 export type {
   BatchFrameGraphExecutionResult,
   BatchFrameGraphExecutorOptions,
+  CompositeSourceCommit,
 } from "./BatchFrameGraphExecutor";
+export type {
+  CompositeSourceDecision,
+  CompositeSourceFallbackReason,
+  CompositeSourcePolicySnapshot,
+  CompositeSourcePreference,
+} from "./CompositeSourcePolicy";
 export type {
   LiveFrameGraphParticipant,
   LiveFrameGraphRenderOptions,

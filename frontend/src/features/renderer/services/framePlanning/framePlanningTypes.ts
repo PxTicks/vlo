@@ -8,6 +8,7 @@ import type {
 import type { DerivedRenderGroup } from "../../utils/deriveAdjustmentGroups";
 import type { FilterRenderContext } from "../../../transformations/catalogue/types";
 import type { SourceFrameSyncRef } from "../../utils/sourceFrameSync";
+import type { CompositeSourceFallbackReason } from "./CompositeSourcePolicy";
 
 export type FrameJobId = string;
 export type FrameNodeId = string;
@@ -35,6 +36,9 @@ export interface ResolvedClipFrameJob {
 
 export interface ResolvedCompositeSource {
   mode: "live" | "baked";
+  fallbackReason: CompositeSourceFallbackReason | null;
+  sourceChanged: boolean;
+  switchLatencyMs: number | null;
   compositeId: string;
   placementId: string;
   revision: number;
@@ -165,6 +169,14 @@ export interface FramePlanningDiagnostics {
   cacheHits: number;
   cacheMisses: number;
   staleGenerationsDropped: number;
+  compositeLiveJobs: number;
+  compositeBakedJobs: number;
+  compositeFallbackReasons: Partial<
+    Record<CompositeSourceFallbackReason, number>
+  >;
+  compositeNodeFailures: number;
+  compositeSourceSwitches: number;
+  compositeSwitchLatencyMs: number;
   decodeTimeMs: number;
   gpuTimeMs: number;
   residentSourceResources: number;
@@ -192,6 +204,12 @@ export function createEmptyFramePlanningDiagnostics(
     cacheHits: 0,
     cacheMisses: 0,
     staleGenerationsDropped: 0,
+    compositeLiveJobs: 0,
+    compositeBakedJobs: 0,
+    compositeFallbackReasons: {},
+    compositeNodeFailures: 0,
+    compositeSourceSwitches: 0,
+    compositeSwitchLatencyMs: 0,
     decodeTimeMs: 0,
     gpuTimeMs: 0,
     residentSourceResources: 0,

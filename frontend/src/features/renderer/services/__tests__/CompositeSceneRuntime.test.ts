@@ -45,6 +45,9 @@ describe("CompositeSceneRuntimeManager", () => {
       .mockReturnValue({ warmup: [warmup], target, isDiscontinuous: true });
     const source: ResolvedCompositeSource = {
       mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
       compositeId: "composite",
       placementId: "placement",
       revision: 1,
@@ -95,6 +98,9 @@ describe("CompositeSceneRuntimeManager", () => {
     );
     const source: ResolvedCompositeSource = {
       mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
       compositeId: "composite",
       placementId: "placement",
       revision: 1,
@@ -149,6 +155,9 @@ describe("CompositeSceneRuntimeManager", () => {
     });
     const source: ResolvedCompositeSource = {
       mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
       compositeId: "composite",
       placementId: "placement",
       revision: 1,
@@ -199,6 +208,9 @@ describe("CompositeSceneRuntimeManager", () => {
     const manager = new CompositeSceneRuntimeManager(renderer);
     const source: ResolvedCompositeSource = {
       mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
       compositeId: "outer",
       placementId: "outer-placement",
       revision: 1,

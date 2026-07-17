@@ -34,6 +34,9 @@ function compositeJob(): ResolvedClipFrameJob {
     fps: 30,
     compositeSource: {
       mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
       compositeId: "composite",
       placementId: "placement",
       revision: 1,
@@ -101,12 +104,25 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
     );
     expect(result.committedJobIds).toEqual(new Set([job.id]));
     expect(result.diagnostics.nodesExecutedByKind["composite-scene"]).toBe(1);
+    expect(result.diagnostics).toMatchObject({
+      compositeLiveJobs: 1,
+      compositeBakedJobs: 0,
+      compositeFallbackReasons: { "not-ready": 1 },
+    });
+    expect(result.compositeSourceCommits).toEqual([
+      expect.objectContaining({
+        compositeId: "composite",
+        placementId: "placement",
+        mode: "live",
+        assetId: null,
+      }),
+    ]);
 
     executor.dispose();
     expect(renderer.dispose).toHaveBeenCalledOnce();
   });
 
-  it("presents transparent content and reports the error without a valid fallback", async () => {
+  it("keeps live preview non-fatal and reports an error without a fallback", async () => {
     const job = compositeJob();
     const failure = new Error("child failed");
     const present = vi.fn(async () => true);
@@ -124,7 +140,7 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
     await executor.execute(
       buildFrameResolutionGraph(1, [job]),
       resolution(job, present),
-      { mode: "export" },
+      { mode: "live", epoch: 1 },
     );
 
     expect(onCompositeSceneError).toHaveBeenCalledWith(failure, job);
@@ -132,8 +148,32 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
       job,
       null,
       expect.any(Map),
-      { mode: "export" },
+      { mode: "live", epoch: 1 },
     );
+    executor.dispose();
+  });
+
+  it("fails export when live rendering fails without a valid bake", async () => {
+    const job = compositeJob();
+    const failure = new Error("child failed");
+    const present = vi.fn(async () => true);
+    const executor = new BatchFrameGraphExecutor({
+      compositeSceneRenderer: {
+        renderCompositeScene: vi.fn(async () => {
+          throw failure;
+        }),
+        dispose: vi.fn(),
+      },
+    });
+
+    await expect(
+      executor.execute(
+        buildFrameResolutionGraph(1, [job]),
+        resolution(job, present),
+        { mode: "export" },
+      ),
+    ).rejects.toThrow(/failed to render live during export/);
+    expect(present).not.toHaveBeenCalled();
     executor.dispose();
   });
 
@@ -227,6 +267,13 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
     });
     expect(compositeSceneRenderer.renderCompositeScene).not.toHaveBeenCalled();
     expect(result.diagnostics.nodesExecutedByKind["composite-scene"]).toBe(0);
+    expect(result.diagnostics).toMatchObject({
+      compositeLiveJobs: 0,
+      compositeBakedJobs: 1,
+    });
+    // A null decode retains the prior live frame and must not be advertised as
+    // a committed baked presentation.
+    expect(result.compositeSourceCommits).toEqual([]);
     executor.dispose();
   });
 });

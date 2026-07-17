@@ -57,6 +57,7 @@ import {
   buildFrameResolutionGraph,
   buildScenePresentationPlan,
   type FrameJobResolutionTrack,
+  type CompositeSourcePolicySnapshot,
 } from "./framePlanning";
 import { resolveTransitionFrame } from "../../transitions/rendering/TransitionResolver";
 import { CompositeSceneRuntimeManager } from "./CompositeSceneRuntime";
@@ -304,6 +305,8 @@ export interface ProjectData {
   composites?: CompositeAsset[];
   duration: number;
   fps: number;
+  /** Immutable for the lifetime of this render/export invocation. */
+  compositeSourcePolicy?: CompositeSourcePolicySnapshot;
 }
 
 export interface RenderOptions {
@@ -699,6 +702,7 @@ export class ExportRenderer {
           tracks: resolutionTracks,
           assets,
           composites: projectData.composites,
+          compositeSourcePolicy: projectData.compositeSourcePolicy,
           logicalDimensions: {
             width: logicalWidth,
             height: logicalHeight,
@@ -969,6 +973,7 @@ export class ExportRenderer {
           tracks: resolutionTracks,
           assets,
           composites: projectData.composites,
+          compositeSourcePolicy: projectData.compositeSourcePolicy,
           logicalDimensions: {
             width: logicalWidth,
             height: logicalHeight,

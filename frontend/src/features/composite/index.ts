@@ -12,6 +12,13 @@ export {
   type CompositeBakeQueueOptions,
   type CompositeBakeRequest,
 } from "./services/CompositeBakeQueue";
+export {
+  publishCompositeSourcePresentations,
+  resetCompositeSourcePresentations,
+  waitForCompositeSourcePresentation,
+  type CompositeSourcePresentationCommit,
+  type CompositeSourcePresentationTarget,
+} from "./services/CompositeSourcePresentationService";
 export { CompositePanel } from "./CompositePanel";
 export { useTimelineCompositeRevealClipOverlay } from "./hooks/useTimelineCompositeRevealClipOverlay";
 export { useTimelineCompositeRenderStatusOverlay } from "./hooks/useTimelineCompositeRenderStatusOverlay";
@@ -23,14 +30,18 @@ export {
   beginCompositeRender,
   clearCompositeDirectRenderError,
   endCompositeRender,
+  getCompositeForceBakedIds,
+  getCompositeForceLiveIds,
   isCompositeForceLive,
   reportCompositeDirectRenderError,
   resetCompositeRenderRuntimeState,
   setCompositeForceLive,
+  setCompositeForceBaked,
   useCompositeBakeRuntimeStatus,
   useCompositeDirectRenderError,
   useCompositeRenderStatusStore,
   useIsCompositeForceLive,
+  useIsCompositeForceBaked,
   useIsCompositeRendering,
 } from "./useCompositeRenderStatusStore";
 export {

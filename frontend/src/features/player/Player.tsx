@@ -10,6 +10,7 @@ import {
   useViewport,
   mediaSecondsToTickExact,
   LiveFrameGraphCoordinator,
+  createCompositeSourcePolicySnapshot,
   isLiveFrameGraphEnabled,
   startFramePlanningDiagnosticsConsole,
 } from "../renderer";
@@ -41,6 +42,7 @@ import { useRenderGroupOrchestrator } from "./hooks/useRenderGroupOrchestrator";
 import {
   clearCompositeDirectRenderError,
   getCompositeAssets,
+  publishCompositeSourcePresentations,
   reportCompositeDirectRenderError,
   useCompositeRenderStatusStore,
 } from "../composite";
@@ -90,6 +92,17 @@ function PlayerImpl() {
   const config = useProjectStore((state) => state.config);
   const forceLiveCompositeIds = useCompositeRenderStatusStore(
     (state) => state.forceLiveCompositeIds,
+  );
+  const forceBakedCompositeIds = useCompositeRenderStatusStore(
+    (state) => state.forceBakedCompositeIds,
+  );
+  const compositeSourcePolicy = useMemo(
+    () =>
+      createCompositeSourcePolicySnapshot({
+        forceLiveCompositeIds,
+        forceBakedCompositeIds,
+      }),
+    [forceBakedCompositeIds, forceLiveCompositeIds],
   );
 
   const logicalDimensions = useMemo(
@@ -227,6 +240,7 @@ function PlayerImpl() {
     config.fps,
     clips,
     forceLiveCompositeIds,
+    forceBakedCompositeIds,
     liveFrameGraphCoordinator,
     logicalDimensions,
     tracks,
@@ -361,6 +375,9 @@ function PlayerImpl() {
           }
 
           let usedFrameGraph = false;
+          let compositeSourceCommits = [] as Parameters<
+            typeof publishCompositeSourcePresentations
+          >[0];
           if (
             adjustmentEffectResolver &&
             liveFrameGraphCoordinator &&
@@ -374,6 +391,7 @@ function PlayerImpl() {
                 clips: timelineState.clips,
                 transitions: timelineState.transitions,
                 composites: getCompositeAssets(),
+                compositeSourcePolicy,
                 fps: config.fps,
                 logicalDimensions,
                 visualTrackOrder: visualTrackIdsRef.current,
@@ -415,6 +433,7 @@ function PlayerImpl() {
                 result.render,
               );
               usedFrameGraph = true;
+              compositeSourceCommits = result.execution.compositeSourceCommits;
             }
           } else {
             const frameRenderers = visualTrackIdsRef.current
@@ -445,6 +464,7 @@ function PlayerImpl() {
 
           if (pixiApp && pixiApp.renderer) {
             pixiApp.render();
+            publishCompositeSourcePresentations(compositeSourceCommits);
           }
         }
       } finally {
@@ -511,6 +531,7 @@ function PlayerImpl() {
     isPlaying,
     liveFrameGraphCoordinator,
     logicalDimensions,
+    compositeSourcePolicy,
     pixiApp,
     renderGroupOrchestrator,
     renderGroupSyncRef,

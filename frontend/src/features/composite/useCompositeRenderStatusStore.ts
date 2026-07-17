@@ -12,6 +12,7 @@ interface CompositeRenderStatusState {
   directRenderErrors: ReadonlyMap<string, string>;
   bakeStatusByCompositeId: ReadonlyMap<string, CompositeBakeRuntimeStatus>;
   forceLiveCompositeIds: ReadonlySet<string>;
+  forceBakedCompositeIds: ReadonlySet<string>;
   beginRender: (clipId: string) => void;
   endRender: (clipId: string) => void;
   setBakeStatus: (
@@ -19,6 +20,7 @@ interface CompositeRenderStatusState {
     status: CompositeBakeRuntimeStatus | null,
   ) => void;
   setForceLive: (compositeId: string, forceLive: boolean) => void;
+  setForceBaked: (compositeId: string, forceBaked: boolean) => void;
   reportDirectRenderError: (placementId: string, message: string) => void;
   clearDirectRenderError: (placementId: string) => void;
 }
@@ -29,6 +31,7 @@ export const useCompositeRenderStatusStore =
     directRenderErrors: new Map<string, string>(),
     bakeStatusByCompositeId: new Map<string, CompositeBakeRuntimeStatus>(),
     forceLiveCompositeIds: new Set<string>(),
+    forceBakedCompositeIds: new Set<string>(),
     beginRender: (clipId) =>
       set((state) => {
         if (state.renderingClipIds.has(clipId)) return state;
@@ -74,7 +77,30 @@ export const useCompositeRenderStatusStore =
         } else {
           next.delete(compositeId);
         }
-        return { forceLiveCompositeIds: next };
+        const nextBaked = new Set(state.forceBakedCompositeIds);
+        if (forceLive) nextBaked.delete(compositeId);
+        return {
+          forceLiveCompositeIds: next,
+          forceBakedCompositeIds: nextBaked,
+        };
+      }),
+    setForceBaked: (compositeId, forceBaked) =>
+      set((state) => {
+        if (state.forceBakedCompositeIds.has(compositeId) === forceBaked) {
+          return state;
+        }
+        const next = new Set(state.forceBakedCompositeIds);
+        if (forceBaked) {
+          next.add(compositeId);
+        } else {
+          next.delete(compositeId);
+        }
+        const nextLive = new Set(state.forceLiveCompositeIds);
+        if (forceBaked) nextLive.delete(compositeId);
+        return {
+          forceBakedCompositeIds: next,
+          forceLiveCompositeIds: nextLive,
+        };
       }),
     endRender: (clipId) =>
       set((state) => {
@@ -129,6 +155,35 @@ export function isCompositeForceLive(compositeId: string): boolean {
     .forceLiveCompositeIds.has(compositeId);
 }
 
+export function getCompositeForceLiveIds(): ReadonlySet<string> {
+  return new Set(
+    useCompositeRenderStatusStore.getState().forceLiveCompositeIds,
+  );
+}
+
+export function setCompositeForceBaked(
+  compositeId: string,
+  forceBaked: boolean,
+): void {
+  useCompositeRenderStatusStore
+    .getState()
+    .setForceBaked(compositeId, forceBaked);
+}
+
+export function getCompositeForceBakedIds(): ReadonlySet<string> {
+  return new Set(
+    useCompositeRenderStatusStore.getState().forceBakedCompositeIds,
+  );
+}
+
+export function useIsCompositeForceBaked(
+  compositeId: string | undefined,
+): boolean {
+  return useCompositeRenderStatusStore((state) =>
+    compositeId ? state.forceBakedCompositeIds.has(compositeId) : false,
+  );
+}
+
 export function useIsCompositeForceLive(
   compositeId: string | undefined,
 ): boolean {
@@ -143,6 +198,7 @@ export function resetCompositeRenderRuntimeState(): void {
     directRenderErrors: new Map<string, string>(),
     bakeStatusByCompositeId: new Map<string, CompositeBakeRuntimeStatus>(),
     forceLiveCompositeIds: new Set<string>(),
+    forceBakedCompositeIds: new Set<string>(),
   });
 }
 

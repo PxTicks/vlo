@@ -8,12 +8,15 @@ import type {
 import { isCompositeClip } from "../../../../types/TimelineTypes";
 import {
   createCompositeBakeKey,
-  isCompositeForceLive,
   resolveCompositeBakeValidity,
   resolveCompositeRenderFps,
   resolveCompositeRevision,
   serializeCompositeBakeKey,
 } from "../../../composite";
+import {
+  resolveCompositeSourceDecision,
+  type CompositeSourcePolicySnapshot,
+} from "./CompositeSourcePolicy";
 import type { TrackRenderEngine } from "../TrackRenderEngine";
 import type { ResolvedClipFrameJob } from "./framePlanningTypes";
 import { isCompositeRenderDagEnabled } from "./framePlanningFlags";
@@ -39,6 +42,7 @@ export interface FrameJobResolutionInput {
     string,
     readonly ClipTransform[]
   >;
+  compositeSourcePolicy?: CompositeSourcePolicySnapshot;
 }
 
 export interface FrameJobResolutionResult {
@@ -54,6 +58,11 @@ export interface FrameJobResolutionResult {
  * this facade only coordinates one immutable job per active track.
  */
 export class FrameJobResolver {
+  private readonly lastCompositeModeByPlacementId = new Map<
+    string,
+    "live" | "baked"
+  >();
+
   resolve(input: FrameJobResolutionInput): FrameJobResolutionResult {
     const assetsById = new Map(
       input.assets.map((asset) => [asset.id, asset] as const),
@@ -100,15 +109,31 @@ export class FrameJobResolver {
             expectedBakeKey: bakeKey,
             availableAssetIds,
           });
-          // TODO(phase5): source policy must be passed as a frame/export
-          // snapshot. Reading the runtime force-live store here is suitable
-          // for preview but lets a UI toggle alter later frames of an export.
-          const useBakedSource =
-            !isCompositeForceLive(composite.id) &&
-            validity.valid &&
-            validity.assetId === job.activeClip.assetId;
+          const decision = resolveCompositeSourceDecision({
+            compositeId: composite.id,
+            placementAssetId: job.activeClip.assetId,
+            validity,
+            policy: input.compositeSourcePolicy,
+          });
+          const previousMode = this.lastCompositeModeByPlacementId.get(
+            job.activeClip.id,
+          );
+          const sourceChanged =
+            previousMode !== undefined && previousMode !== decision.mode;
+          this.lastCompositeModeByPlacementId.set(
+            job.activeClip.id,
+            decision.mode,
+          );
           job.compositeSource = {
-            mode: useBakedSource ? "baked" : "live",
+            mode: decision.mode,
+            fallbackReason: decision.fallbackReason,
+            sourceChanged,
+            switchLatencyMs:
+              sourceChanged &&
+              decision.mode === "baked" &&
+              typeof composite.bake?.updatedAt === "number"
+                ? Math.max(0, Date.now() - composite.bake.updatedAt)
+                : null,
             compositeId: composite.id,
             placementId: job.activeClip.id,
             revision: resolveCompositeRevision(composite),
@@ -120,7 +145,7 @@ export class FrameJobResolver {
               compositeProjectFps,
             ),
             content: structuredClone(composite.content),
-            fallbackAssetId: useBakedSource ? validity.assetId : null,
+            fallbackAssetId: decision.bakeAssetId,
           };
           // A composite source is a project-logical layer even when its
           // fallback codec pads the decoded texture to an even frame size.

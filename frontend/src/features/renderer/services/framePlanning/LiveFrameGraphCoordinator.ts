@@ -25,6 +25,7 @@ import { TemporalRenderCoordinator } from "../TemporalRenderCoordinator";
 import type { FilterRenderContext } from "../../../transformations/catalogue/types";
 import { CompositeSceneRuntimeManager } from "../CompositeSceneRuntime";
 import { collectTemporalFrameScope } from "../TemporalFrameScopeResolver";
+import type { CompositeSourcePolicySnapshot } from "./CompositeSourcePolicy";
 
 export interface LiveFrameGraphParticipant {
   trackId: string;
@@ -44,6 +45,7 @@ export interface LiveFrameGraphRenderOptions {
   clips?: readonly TimelineClip[];
   transitions?: readonly Transition[];
   composites?: readonly CompositeAsset[];
+  compositeSourcePolicy?: CompositeSourcePolicySnapshot;
   earliestTick?: number;
   /**
    * Approximate skips history replay for this live target only. The resulting
@@ -278,6 +280,7 @@ export class LiveFrameGraphCoordinator {
       })),
       assets,
       composites: options.composites,
+      compositeSourcePolicy: options.compositeSourcePolicy,
       logicalDimensions: options.logicalDimensions,
       fps: options.fps,
       transitionTransformsByClipId: transitionFrame.transformsByClipId,

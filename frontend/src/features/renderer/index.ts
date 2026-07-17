@@ -6,6 +6,7 @@ export { useExportJobController } from "./hooks/useExportJobController";
 export { AudioTrackLayer } from "./components/AudioTrackLayer";
 export { TrackRenderEngine } from "./services/TrackRenderEngine";
 export {
+  createCompositeSourcePolicySnapshot,
   LiveFrameGraphCoordinator,
   isCompositeRenderDagEnabled,
   isLiveFrameGraphEnabled,

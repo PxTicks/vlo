@@ -39,6 +39,7 @@ describe("useTimelineCompositeRenderStatusOverlay", () => {
       directRenderErrors: new Map(),
       bakeStatusByCompositeId: new Map(),
       forceLiveCompositeIds: new Set(),
+      forceBakedCompositeIds: new Set(),
     });
   });
 

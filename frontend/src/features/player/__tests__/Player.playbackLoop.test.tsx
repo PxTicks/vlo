@@ -296,6 +296,7 @@ vi.mock("../../renderer", () => ({
     subscribeFrameRequests = vi.fn(() => () => {});
   },
   isLiveFrameGraphEnabled: () => mockLiveFrameGraphState.enabled,
+  createCompositeSourcePolicySnapshot: (options: unknown) => options,
   startFramePlanningDiagnosticsConsole: () => () => {},
   getSharedDecoderWorkerPool: () => mockDecoderWorkerPool,
   useViewport: () => mockViewport,

@@ -24,6 +24,7 @@ import type {
 } from "./services/CompositeBakeQueue";
 import { compositeBakeQueue } from "./services/CompositeBakeQueue";
 import type { BakedComposite } from "./services/bakeComposite";
+import { waitForCompositeSourcePresentation } from "./services/CompositeSourcePresentationService";
 import {
   beginCompositeRender,
   endCompositeRender,
@@ -188,16 +189,24 @@ function isBakeAssetReferenced(assetId: string): boolean {
 
 async function retireBakeAssetWhenUnowned(
   assetId: string | undefined,
+  replacement?: {
+    compositeId: string;
+    revision: number;
+    assetId: string;
+  },
 ): Promise<void> {
   if (!assetId || isBakeAssetReferenced(assetId)) {
     return;
   }
-  // Frame jobs retain decoded texture handles rather than asset-store entries.
-  // Yield once so relink subscribers can claim the replacement frame before
-  // the obsolete URL and decoder source are removed.
-  // TODO(phase5): retire against a committed replacement frame epoch instead
-  // of assuming one microtask is enough for every decoder/GPU handoff.
-  await Promise.resolve();
+  if (replacement && getPlacementIdsForComposite(replacement.compositeId).length > 0) {
+    const presented = await waitForCompositeSourcePresentation(replacement);
+    if (!presented) {
+      // Retaining an orphaned cache is safer than revoking a decoder source
+      // before a slow replacement frame reaches the GPU. Project cleanup can
+      // collect it later.
+      return;
+    }
+  }
   if (!isBakeAssetReferenced(assetId)) {
     await deleteBakedAsset(assetId);
   }
@@ -360,7 +369,11 @@ const bakeQueueCallbacks: CompositeBakeQueueCallbacks = {
     setCompositeBakeRuntimeStatus(request.compositeId, null);
     endCompositeRender(request.compositeId);
     if (previousBakeAssetId !== result.asset.id) {
-      await retireBakeAssetWhenUnowned(previousBakeAssetId);
+      await retireBakeAssetWhenUnowned(previousBakeAssetId, {
+        compositeId: request.compositeId,
+        revision: request.revision,
+        assetId: result.asset.id,
+      });
     }
   },
   onFailed: async (request, error) => {

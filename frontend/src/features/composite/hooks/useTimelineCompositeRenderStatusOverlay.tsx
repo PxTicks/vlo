@@ -3,15 +3,18 @@ import { Box, IconButton, Tooltip } from "@mui/material";
 import LayersIcon from "@mui/icons-material/Layers";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SensorsIcon from "@mui/icons-material/Sensors";
+import StorageIcon from "@mui/icons-material/Storage";
 import type { TimelineClipOverlayDefinition } from "../../timeline/clipOverlayApi";
 import { createEndpointOverlayItem } from "../../timeline/clipOverlayApi";
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import { isCompositeClip } from "../../../types/TimelineTypes";
 import {
   setCompositeForceLive,
+  setCompositeForceBaked,
   useCompositeBakeRuntimeStatus,
   useCompositeDirectRenderError,
   useIsCompositeForceLive,
+  useIsCompositeForceBaked,
   useIsCompositeRendering,
 } from "../useCompositeRenderStatusStore";
 import { useCompositeLibraryStore } from "../useCompositeLibraryStore";
@@ -31,6 +34,7 @@ function useCompositeRenderStatusOverlayItems({ clip }: { clip: TimelineClip }) 
   );
   const bakeRuntime = useCompositeBakeRuntimeStatus(compositeId);
   const forceLive = useIsCompositeForceLive(compositeId);
+  const forceBaked = useIsCompositeForceBaked(compositeId);
   const directRenderError = useCompositeDirectRenderError(
     isCompositeClip(clip) ? clip.id : undefined,
   );
@@ -41,7 +45,8 @@ function useCompositeRenderStatusOverlayItems({ clip }: { clip: TimelineClip }) 
         !bakeRuntime &&
         !directRenderError &&
         !bakeFailed &&
-        !forceLive) ||
+        !forceLive &&
+        !forceBaked) ||
       !isCompositeClip(clip)
     ) {
       return [];
@@ -54,6 +59,8 @@ function useCompositeRenderStatusOverlayItems({ clip }: { clip: TimelineClip }) 
           ? `Baking ${Math.round(bakeRuntime.progress)}%`
           : forceLive
             ? "Live"
+            : forceBaked
+              ? "Baked"
             : "Bake queued";
     return [
       createEndpointOverlayItem({
@@ -125,6 +132,31 @@ function useCompositeRenderStatusOverlayItems({ clip }: { clip: TimelineClip }) 
                 <SensorsIcon sx={{ fontSize: 12 }} />
               </IconButton>
             </Tooltip>
+            <Tooltip
+              title={
+                forceBaked
+                  ? "Use automatic source policy"
+                  : "Force baked rendering"
+              }
+            >
+              <IconButton
+                size="small"
+                aria-label={
+                  forceBaked
+                    ? "Use automatic baked composite source"
+                    : "Force baked composite rendering"
+                }
+                aria-pressed={forceBaked}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setCompositeForceBaked(clip.compositeId, !forceBaked);
+                }}
+                sx={{ p: 0.1, color: forceBaked ? "#fbbf24" : "#fff" }}
+              >
+                <StorageIcon sx={{ fontSize: 12 }} />
+              </IconButton>
+            </Tooltip>
           </Box>
         ),
       }),
@@ -135,6 +167,7 @@ function useCompositeRenderStatusOverlayItems({ clip }: { clip: TimelineClip }) 
     composite?.bake?.status,
     directRenderError,
     forceLive,
+    forceBaked,
     isRendering,
     retryCompositeBake,
   ]);

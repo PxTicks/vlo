@@ -145,7 +145,7 @@ describe("CompositeCard", () => {
     expect(handlers.onSelect).toHaveBeenCalledOnce();
   });
 
-  it("surfaces bake failure retry and force-live controls", () => {
+  it("surfaces bake failure retry and only the force-live source override", () => {
     const retryCompositeBake = vi.fn(async () => true);
     useCompositeLibraryStore.setState({ retryCompositeBake });
     const failed = composite();
@@ -177,15 +177,8 @@ describe("CompositeCard", () => {
     expect(useCompositeRenderStatusStore.getState().forceLiveCompositeIds).toContain(
       failed.id,
     );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Force baked rendering" }),
-    );
     expect(
-      useCompositeRenderStatusStore.getState().forceBakedCompositeIds,
-    ).toContain(failed.id);
-    expect(
-      useCompositeRenderStatusStore.getState().forceLiveCompositeIds,
-    ).not.toContain(failed.id);
+      screen.queryByRole("button", { name: "Force baked rendering" }),
+    ).not.toBeInTheDocument();
   });
 });

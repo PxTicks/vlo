@@ -13,7 +13,6 @@ import AddToTimelineIcon from "@mui/icons-material/PlaylistAdd";
 import LayersIcon from "@mui/icons-material/Layers";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SensorsIcon from "@mui/icons-material/Sensors";
-import StorageIcon from "@mui/icons-material/Storage";
 import { styled } from "@mui/material/styles";
 import type { CompositeAsset } from "../../../types/TimelineTypes";
 import { useAsset } from "../../userAssets/api";
@@ -22,10 +21,8 @@ import { createCompositeBaseClipFromAsset } from "../utils/createCompositeClip";
 import { useCompositeLibraryStore } from "../useCompositeLibraryStore";
 import {
   setCompositeForceLive,
-  setCompositeForceBaked,
   useCompositeBakeRuntimeStatus,
   useIsCompositeForceLive,
-  useIsCompositeForceBaked,
 } from "../useCompositeRenderStatusStore";
 
 interface CompositeCardProps {
@@ -95,7 +92,6 @@ function CompositeCardComponent({
   );
   const runtimeBake = useCompositeBakeRuntimeStatus(composite.id);
   const forceLive = useIsCompositeForceLive(composite.id);
-  const forceBaked = useIsCompositeForceBaked(composite.id);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `composite-asset-${composite.id}`,
     data: {
@@ -227,31 +223,6 @@ function CompositeCardComponent({
               sx={{ color: forceLive ? "#86efac" : "#cbd5e1" }}
             >
               <SensorsIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip
-            title={
-              forceBaked
-                ? "Use automatic source policy"
-                : "Force baked rendering"
-            }
-          >
-            <IconButton
-              size="small"
-              aria-label={
-                forceBaked
-                  ? "Use automatic baked source policy"
-                  : "Force baked rendering"
-              }
-              aria-pressed={forceBaked}
-              onMouseDown={stopAction}
-              onClick={(event) => {
-                stopAction(event);
-                setCompositeForceBaked(composite.id, !forceBaked);
-              }}
-              sx={{ color: forceBaked ? "#fbbf24" : "#cbd5e1" }}
-            >
-              <StorageIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title="Rename">

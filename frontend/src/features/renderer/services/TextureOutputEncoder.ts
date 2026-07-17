@@ -27,6 +27,8 @@ export interface OutputVideoDefinition {
   format?: OutputVideoFormat;
   includeAudio?: boolean;
   bitrate?: number;
+  /** Seconds between keyframes. Mediabunny defaults to 5 seconds. */
+  keyFrameInterval?: number;
   audioBitrate?: number;
   transformStack?: OutputTransform[];
   fileHandle?: FileSystemFileHandle;
@@ -184,6 +186,7 @@ export class TextureOutputEncoder {
         const videoSource = new CanvasSource(this.app.canvas, {
           codec: isAlphaWebM ? "vp9" : "avc",
           bitrate: definition.bitrate ?? 6_000_000,
+          keyFrameInterval: definition.keyFrameInterval,
           ...(isAlphaWebM ? { alpha: "keep" as const } : {}),
           latencyMode: "quality",
           hardwareAcceleration: "prefer-hardware",

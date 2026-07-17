@@ -159,4 +159,43 @@ describe("useTimelineStore.groupClipsIntoComposite", () => {
     expect(placed?.start).toBeGreaterThan(targetPresentationStart);
     expect(presentation?.start).toBe(targetPresentationStart);
   });
+
+  it("keeps bake publication inside the original grouping undo step", () => {
+    const composite = compositeClip("composite-1", "track-1");
+
+    act(() => {
+      useTimelineStore
+        .getState()
+        .groupClipsIntoComposite(["clip-a", "clip-b"], composite);
+      useTimelineStore
+        .getState()
+        .syncCompositePlacementRevision(
+          "composite-asset-1",
+          1,
+          "bake-current",
+        );
+    });
+
+    expect(useTimelineStore.getState().clips).toEqual([
+      expect.objectContaining({
+        id: composite.id,
+        assetId: "bake-current",
+      }),
+    ]);
+
+    act(() => {
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+    expect(useTimelineStore.getState().clips.map((clip) => clip.id)).toEqual([
+      "clip-a",
+      "clip-b",
+    ]);
+
+    act(() => {
+      expect(useTimelineStore.getState().redo()).toBe(true);
+    });
+    expect(useTimelineStore.getState().clips).toEqual([
+      expect.objectContaining({ id: composite.id }),
+    ]);
+  });
 });

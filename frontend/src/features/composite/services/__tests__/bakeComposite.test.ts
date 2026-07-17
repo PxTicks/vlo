@@ -128,6 +128,7 @@ describe("bakeComposite", () => {
         onProgress,
         filenamePrefix: "composite",
         format: "webm",
+        keyFrameInterval: 1,
         preserveAlpha: true,
         onBeforeEncodeFrame,
       },
@@ -141,7 +142,7 @@ describe("bakeComposite", () => {
         compositeRevision: 7,
         contentHash: "content-hash",
         bakeKey: expect.stringMatching(
-          /^v3:content-hash:30fps:1919x1079:transparent:/,
+          /^v4:content-hash:30fps:1919x1079:transparent:1s-gop:/,
         ),
       }),
       undefined,
@@ -151,7 +152,7 @@ describe("bakeComposite", () => {
       asset: { id: "baked-asset" },
       contentHash: "content-hash",
       bakeKey: expect.stringMatching(
-        /^v3:content-hash:30fps:1919x1079:transparent:/,
+        /^v4:content-hash:30fps:1919x1079:transparent:1s-gop:/,
       ),
     });
   });

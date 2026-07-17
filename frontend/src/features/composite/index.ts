@@ -66,6 +66,12 @@ export {
   type ResolveCompositeBakeValidityOptions,
 } from "./utils/compositeBakeValidity";
 export {
+  resolveCompositeBakeSelection,
+  type CompositeBakeSelection,
+  type ResolveCompositeBakeSelectionOptions,
+} from "./utils/resolveCompositeBakeSelection";
+export {
+  COMPOSITE_BAKE_KEY_FRAME_INTERVAL_SECONDS,
   COMPOSITE_FRAME_INTERVAL,
   COMPOSITE_RENDER_ALPHA_MODE,
   COMPOSITE_RENDER_CONTRACT_VERSION,

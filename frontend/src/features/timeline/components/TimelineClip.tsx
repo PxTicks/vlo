@@ -38,6 +38,7 @@ import type {
 } from "../../../types/TimelineTypes";
 import { isAssetBackedClip, isCompositeClip } from "../../../types/TimelineTypes";
 import type { MarkersComponent } from "../../../types/Components";
+import type { Asset } from "../../../types/Asset";
 import { isBeatMarker } from "../../../types/Components";
 import type { TimelineClipOverlayDefinition } from "../clipOverlayApi";
 import { toExtensionClipSnapshot } from "../api";
@@ -53,6 +54,13 @@ import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
 import type { TimelineClipPresentation } from "../utils/clipPresentation";
 import { extensionEntityProviderRegistry } from "../../extensions/entities/publicApi";
 import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
+import { useCompositeLibraryStore } from "../../composite/useCompositeLibraryStore";
+import { useAssetStore } from "../../userAssets";
+import { useProjectStore } from "../../project/useProjectStore";
+import { getProjectDimensions } from "../../renderer/utils/dimensions";
+import { resolveTimelineThumbnailClip } from "../utils/resolveTimelineThumbnailClip";
+
+const EMPTY_ASSETS: readonly Asset[] = [];
 
 // --- Sub-component for Handles ---
 interface HandleProps {
@@ -146,6 +154,23 @@ function TimelineClipComponent({
     ("start" in clip ? (clip as TimelineClipType).start : 0);
   const displayDuration = presentation?.duration ?? clip.timelineDuration;
   const timelineClip = "start" in clip ? (clip as TimelineClipType) : null;
+  const compositeId = isCompositeClip(timelineClip)
+    ? timelineClip.compositeId
+    : null;
+  const compositeAsset = useCompositeLibraryStore((state) =>
+    compositeId
+      ? state.composites.find((candidate) => candidate.id === compositeId)
+      : undefined,
+  );
+  const assets = useAssetStore((state) =>
+    compositeId ? state.assets : EMPTY_ASSETS,
+  );
+  const projectFps = useProjectStore((state) =>
+    compositeId ? state.config.fps : 0,
+  );
+  const projectAspectRatio = useProjectStore(
+    (state) => compositeId ? state.config.aspectRatio : "16:9",
+  );
   const showCompositeLabel = isCompositeClip(timelineClip) && !isOverlay;
   // Detached subject for extension context-menu commands. Non-overlay clips
   // (the only ones whose menu can open) always narrow to a full TimelineClip.
@@ -199,7 +224,24 @@ function TimelineClipComponent({
   // Composite placements retain an asset-backed shape, while thumbnail frame
   // planning resolves canonical live/baked source policy.
   const thumbnailClip: AssetBackedBaseClip | AssetBackedTimelineClip | null =
-    isAssetBackedClip(clip) ? clip : null;
+    useMemo(() => {
+      if (!isAssetBackedClip(clip)) {
+        return null;
+      }
+      return resolveTimelineThumbnailClip({
+        clip,
+        composite: compositeAsset,
+        assets,
+        logicalDimensions: getProjectDimensions(projectAspectRatio),
+        projectFps,
+      });
+    }, [
+      assets,
+      clip,
+      compositeAsset,
+      projectAspectRatio,
+      projectFps,
+    ]);
   const isClipMuted =
     timelineClip !== null && timelineClip.type !== "mask"
       ? timelineClip.isMuted === true

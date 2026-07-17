@@ -114,6 +114,7 @@ describe("FrameJobResolver composite sources", () => {
   const content = {
     durationTicks: 1000,
     fps: 24,
+    frameStep: 7,
     clips: [],
   };
   const expectedKey = serializeCompositeBakeKey(
@@ -205,6 +206,10 @@ describe("FrameJobResolver composite sources", () => {
       fallbackAssetId: asset.id,
     });
     expect(resolved.contentSize).toEqual({ width: 1920, height: 1080 });
+    expect(resolved.compositeSource?.content).toEqual({
+      durationTicks: 0,
+      clips: [],
+    });
   });
 
   it("selects live rendering when the bake is stale", () => {
@@ -215,6 +220,7 @@ describe("FrameJobResolver composite sources", () => {
     expect(resolved.compositeSource).toMatchObject({
       mode: "live",
       fallbackAssetId: null,
+      content: expect.objectContaining({ frameStep: 7 }),
     });
     expect(resolved.contentSize).toEqual({ width: 1920, height: 1080 });
   });

@@ -28,6 +28,8 @@ export interface RenderSelectionToVideoFileOptions {
   onProgress?: (percentage: number) => void;
   /** Output container. WebM is used for alpha-preserving composite caches. */
   format?: OutputVideoFormat;
+  /** Seconds between keyframes in the rendered video. */
+  keyFrameInterval?: number;
   preserveAlpha?: boolean;
   /** Base name for the produced File; timestamp and extension are appended. */
   filenamePrefix?: string;
@@ -85,6 +87,7 @@ export async function renderSelectionToVideoFile(
     {
       timelineSelection: selection,
       format: options.format ?? "mp4",
+      keyFrameInterval: options.keyFrameInterval,
       preserveAlpha: options.preserveAlpha,
       includeTimelineMasks: options.includeTimelineMasks,
       signal: options.signal,

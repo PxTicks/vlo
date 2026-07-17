@@ -531,17 +531,20 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       compositeRevision,
       bakedAssetId,
     ) => {
-      mutationPipeline.commitModelMutation((draft) => {
-        draft.clips = draft.clips.map((clip) =>
-          isCompositeClip(clip) && clip.compositeId === compositeId
-            ? {
-                ...clip,
-                compositeRevision,
-                ...(bakedAssetId ? { assetId: bakedAssetId } : {}),
-              }
-            : clip,
-        );
-      });
+      mutationPipeline.commitModelMutation(
+        (draft) => {
+          draft.clips = draft.clips.map((clip) =>
+            isCompositeClip(clip) && clip.compositeId === compositeId
+              ? {
+                  ...clip,
+                  compositeRevision,
+                  ...(bakedAssetId ? { assetId: bakedAssetId } : {}),
+                }
+              : clip,
+          );
+        },
+        { recordHistory: false },
+      );
     },
 
     remapCompositePlacement: (

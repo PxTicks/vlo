@@ -4,14 +4,8 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import {
-  isCompositeClip,
-} from "../../../types/TimelineTypes";
-import {
-  createCompositeBakeKey,
-  resolveCompositeBakeValidity,
-  serializeCompositeBakeKey,
-} from "../../composite";
+import { isCompositeClip } from "../../../types/TimelineTypes";
+import { resolveCompositeBakeSelection } from "../../composite";
 import { sortTrackClipsByStart, resolveLiveActiveClip } from "../utils/clipLookup";
 import { resolveClipRenderTime } from "../utils/clipRenderTime";
 import { AdjustmentEffectResolver } from "./AdjustmentEffectResolver";
@@ -313,7 +307,6 @@ export function createCompositeAudioTrackPlan(
   const compositeById = new Map(
     source.composites.map((composite) => [composite.id, composite] as const),
   );
-  const availableAssetIds = new Set(source.assets.map((asset) => asset.id));
   const mainClips: TimelineClip[] = [];
   const directPlacements: DirectCompositeAudioPlacementPlan[] = [];
 
@@ -329,18 +322,11 @@ export function createCompositeAudioTrackPlan(
       continue;
     }
 
-    const expectedBakeKey = serializeCompositeBakeKey(
-      createCompositeBakeKey({
-        content: composite.content,
-        projectFps: source.projectFps,
-        logicalDimensions: source.logicalDimensions,
-        assets: source.assets,
-      }),
-    );
-    const validity = resolveCompositeBakeValidity({
+    const { validity } = resolveCompositeBakeSelection({
       composite,
-      expectedBakeKey,
-      availableAssetIds,
+      projectFps: source.projectFps,
+      logicalDimensions: source.logicalDimensions,
+      assets: source.assets,
     });
     const decision = resolveCompositeSourceDecision({
       compositeId: composite.id,

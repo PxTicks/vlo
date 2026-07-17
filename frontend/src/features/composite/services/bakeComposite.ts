@@ -15,6 +15,7 @@ import {
   hashCompositeContent,
 } from "../../timelineSelection";
 import {
+  COMPOSITE_BAKE_KEY_FRAME_INTERVAL_SECONDS,
   COMPOSITE_RENDER_FRAME_STEP,
   createCompositeBakeKey,
   serializeCompositeBakeKey,
@@ -149,6 +150,7 @@ export async function bakeComposite(
     onProgress: options.onProgress,
     filenamePrefix: "composite",
     format: "webm",
+    keyFrameInterval: COMPOSITE_BAKE_KEY_FRAME_INTERVAL_SECONDS,
     preserveAlpha: true,
     ...(options.onBeforeEncodeFrame
       ? { onBeforeEncodeFrame: options.onBeforeEncodeFrame }

@@ -9,7 +9,7 @@ import { hashCompositeContent } from "../../timelineSelection";
  * authored-content or dependency change. Existing bakes with an older version
  * are caches for a different render contract and must not be selected.
  */
-export const COMPOSITE_RENDER_CONTRACT_VERSION = 3;
+export const COMPOSITE_RENDER_CONTRACT_VERSION = 4;
 
 /**
  * Composite scenes are isolated transparent, project-sized layers. User-facing
@@ -23,6 +23,9 @@ export const COMPOSITE_FRAME_INTERVAL = "half-open" as const;
 /** Playback caches always render every frame; workflow stride is not inherited. */
 export const COMPOSITE_RENDER_FRAME_STEP = 1;
 
+/** Bounded GOP used by both timeline thumbnails and random-access playback. */
+export const COMPOSITE_BAKE_KEY_FRAME_INTERVAL_SECONDS = 1;
+
 export interface CompositeRenderDimensions {
   width: number;
   height: number;
@@ -35,6 +38,7 @@ export interface CompositeBakeKey {
   logicalHeight: number;
   renderContractVersion: number;
   alphaMode: typeof COMPOSITE_RENDER_ALPHA_MODE;
+  keyFrameIntervalSeconds: typeof COMPOSITE_BAKE_KEY_FRAME_INTERVAL_SECONDS;
   dependencyRevision: string;
 }
 
@@ -157,6 +161,7 @@ export function createCompositeBakeKey(
     logicalHeight: height,
     renderContractVersion: COMPOSITE_RENDER_CONTRACT_VERSION,
     alphaMode: COMPOSITE_RENDER_ALPHA_MODE,
+    keyFrameIntervalSeconds: COMPOSITE_BAKE_KEY_FRAME_INTERVAL_SECONDS,
     dependencyRevision: createCompositeDependencyRevision(
       options.content,
       options.assets,
@@ -172,6 +177,7 @@ export function serializeCompositeBakeKey(key: CompositeBakeKey): string {
     `${key.resolvedFps}fps`,
     `${key.logicalWidth}x${key.logicalHeight}`,
     key.alphaMode,
+    `${key.keyFrameIntervalSeconds}s-gop`,
     key.dependencyRevision,
   ].join(":");
 }

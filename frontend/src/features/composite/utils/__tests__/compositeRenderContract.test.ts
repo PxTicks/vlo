@@ -114,13 +114,14 @@ describe("composite render contract", () => {
       logicalHeight: 1080,
       renderContractVersion: COMPOSITE_RENDER_CONTRACT_VERSION,
       alphaMode: COMPOSITE_RENDER_ALPHA_MODE,
+      keyFrameIntervalSeconds: 1,
       dependencyRevision: createCompositeDependencyRevision(
         sourceContent,
         assets,
       ),
     });
     expect(serializeCompositeBakeKey(key)).toBe(
-      `v3:${key.contentHash}:30fps:1919x1080:transparent:${key.dependencyRevision}`,
+      `v4:${key.contentHash}:30fps:1919x1080:transparent:1s-gop:${key.dependencyRevision}`,
     );
   });
 

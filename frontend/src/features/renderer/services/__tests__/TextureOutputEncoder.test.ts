@@ -24,6 +24,7 @@ const addCalls: DeferredAdd[] = [];
 const canvasSourceConfigs: Array<{
   codec?: string;
   alpha?: "discard" | "keep";
+  keyFrameInterval?: number;
   onEncoderConfig?: (config: VideoEncoderConfig) => void;
   onEncodedPacket?: (
     packet: unknown,
@@ -132,7 +133,14 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     const encoder = new TextureOutputEncoder(
       app,
       30,
-      [{ id: "composite", format: "webm", includeAudio: false }],
+      [
+        {
+          id: "composite",
+          format: "webm",
+          includeAudio: false,
+          keyFrameInterval: 1,
+        },
+      ],
       { encodeQueueSize: 1 },
     );
 
@@ -141,6 +149,7 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     expect(canvasSourceConfigs[0]).toMatchObject({
       codec: "vp9",
       alpha: "keep",
+      keyFrameInterval: 1,
     });
     encoder.dispose();
   });

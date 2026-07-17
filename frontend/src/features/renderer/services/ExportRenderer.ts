@@ -174,6 +174,7 @@ export function resolveOutputDefinitions(
       id: "video",
       format: fallbackFormat,
       includeAudio: true,
+      keyFrameInterval: options.keyFrameInterval,
       transformStack: options.preserveAlpha
         ? []
         : [
@@ -312,6 +313,8 @@ export interface ProjectData {
 export interface RenderOptions {
   timelineSelection?: TimelineSelection;
   format?: OutputVideoFormat;
+  /** Seconds between keyframes in the default output. */
+  keyFrameInterval?: number;
   /** Keep transparent project pixels; requires an alpha-capable output. */
   preserveAlpha?: boolean;
   outputs?: OutputVideoDefinition[];

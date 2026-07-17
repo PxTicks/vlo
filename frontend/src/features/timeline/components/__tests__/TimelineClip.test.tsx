@@ -6,6 +6,13 @@ import { useTimelineStore } from "../../useTimelineStore";
 import { useInteractionStore } from "../../hooks/useInteractionStore";
 import { useCompositeTimelineStore } from "../../../composite/useCompositeTimelineStore";
 import { useCompositeLibraryStore } from "../../../composite/useCompositeLibraryStore";
+import {
+  createCompositeBakeKey,
+  serializeCompositeBakeKey,
+} from "../../../composite";
+import { useAssetStore } from "../../../userAssets";
+import { useProjectStore } from "../../../project/useProjectStore";
+import { getProjectDimensions } from "../../../renderer/utils/dimensions";
 import { useTimelineKeyframeClipOverlay } from "../../../transformations/hooks/useTimelineKeyframeClipOverlay";
 import { getDefaultSectionId } from "../../../transformations/utils/sectionKeyframes";
 import { useTransformationViewStore } from "../../../transformations/store/useTransformationViewStore";
@@ -190,6 +197,7 @@ describe("TimelineClip Visual Geometry", () => {
       revealRequest: null,
       isLoading: false,
     });
+    useAssetStore.setState({ assets: [] });
     useTransformationViewStore.setState({
       activeSection: null,
       activeSpline: null,
@@ -320,6 +328,19 @@ describe("TimelineClip Visual Geometry", () => {
   });
 
   it("renders composite thumbnails through the normal thumbnail canvas", () => {
+    const bakeAsset: Asset = {
+      id: "bake-current",
+      hash: "bake-hash",
+      name: "bake.webm",
+      type: "video",
+      src: "blob:bake",
+      createdAt: 1,
+    };
+    const content = {
+      durationTicks: 200,
+      clips: [],
+      tracks: [],
+    };
     const compositeClip: TimelineClipType = {
       id: "composite_1",
       trackId: "track_1",
@@ -327,7 +348,7 @@ describe("TimelineClip Visual Geometry", () => {
       timelineDuration: 200,
       type: "video",
       name: "Nested Scene",
-      assetId: "proxy-asset-1",
+      assetId: "composite-live:composite-asset-1",
       compositeId: "composite-asset-1",
       transformations: [],
       offset: 0,
@@ -348,6 +369,36 @@ describe("TimelineClip Visual Geometry", () => {
         },
       ],
     });
+    useAssetStore.setState({ assets: [bakeAsset] });
+    const project = useProjectStore.getState();
+    const bakeKey = serializeCompositeBakeKey(
+      createCompositeBakeKey({
+        content,
+        projectFps: project.config.fps,
+        logicalDimensions: getProjectDimensions(project.config.aspectRatio),
+        assets: [bakeAsset],
+      }),
+    );
+    useCompositeLibraryStore.setState({
+      composites: [
+        {
+          id: compositeClip.compositeId!,
+          name: "Nested Scene",
+          content,
+          revision: 1,
+          bake: {
+            status: "ready",
+            requestedKey: bakeKey,
+            readyKey: bakeKey,
+            readyRevision: 1,
+            assetId: bakeAsset.id,
+          },
+          bakedAssetId: bakeAsset.id,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
 
     render(<TimelineClipItem clip={compositeClip} isOverlay={false} />);
 
@@ -357,7 +408,7 @@ describe("TimelineClip Visual Geometry", () => {
         clip: expect.objectContaining({
           id: compositeClip.id,
           type: "video",
-          assetId: "proxy-asset-1",
+          assetId: bakeAsset.id,
         }),
       }),
     );

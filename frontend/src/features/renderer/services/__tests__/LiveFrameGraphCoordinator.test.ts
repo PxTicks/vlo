@@ -325,7 +325,7 @@ describe("LiveFrameGraphCoordinator", () => {
     };
 
     try {
-      const approximate = await coordinator.renderFrame(
+      await coordinator.renderFrame(
         10 * TICKS_PER_SECOND,
         { ...renderOptions, temporalPreviewQuality: "approximate" },
       );

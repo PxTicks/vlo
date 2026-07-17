@@ -26,9 +26,7 @@ export {
   subscribeFramePlanningDiagnostics,
 } from "./framePlanningDiagnostics";
 export {
-  isCompositeRenderDagEnabled,
   isLiveFrameGraphEnabled,
-  setCompositeRenderDagEnabled,
   setLiveFrameGraphEnabled,
 } from "./framePlanningFlags";
 export {

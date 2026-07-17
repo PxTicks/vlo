@@ -167,6 +167,41 @@ describe("FrameResolutionGraph", () => {
     ]);
   });
 
+  it("shares complete stateless composite work keys but isolates temporal placements", () => {
+    const first = job("4:t1:p1", "t1", "p1", null);
+    const second = job("4:t2:p2", "t2", "p2", null);
+    const source = {
+      mode: "live" as const,
+      fallbackReason: "not-ready" as const,
+      sourceChanged: false,
+      switchLatencyMs: null,
+      compositeId: "composite",
+      placementId: "p1",
+      revision: 1,
+      bakeKey: "key",
+      localPresentationTick: 10,
+      logicalDimensions: { width: 1920, height: 1080 },
+      fps: 30,
+      content: { durationTicks: 100, clips: [] },
+      fallbackAssetId: null,
+      isStateless: true,
+    };
+    first.compositeSource = source;
+    second.compositeSource = { ...source, placementId: "p2" };
+
+    const statelessNodes = buildFrameResolutionGraph(4, [first, second]).nodes
+      .filter((node) => node.kind === "composite-scene");
+    expect(statelessNodes[0].workKey).toBe(statelessNodes[1].workKey);
+
+    second.compositeSource = {
+      ...second.compositeSource,
+      isStateless: false,
+    };
+    const temporalNodes = buildFrameResolutionGraph(4, [first, second]).nodes
+      .filter((node) => node.kind === "composite-scene");
+    expect(temporalNodes[0].workKey).not.toBe(temporalNodes[1].workKey);
+  });
+
   it("rejects missing inputs", () => {
     const frameJob = job("1:t1:c1", "t1", "c1", "asset:0:30:0");
     const builder = new FrameResolutionGraphBuilder(1, [frameJob]);

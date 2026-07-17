@@ -128,8 +128,6 @@ export function getTemporalClipSourceIdentity(clip: TimelineClip): string {
       "composite",
       clip.compositeId,
       clip.compositeRevision ?? "legacy",
-      "fallback",
-      clip.assetId,
     ].join(":");
   }
   if (clip.type === "video" || clip.type === "image" || clip.type === "audio") {

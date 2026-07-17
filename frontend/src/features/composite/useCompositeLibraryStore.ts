@@ -3,6 +3,7 @@ import type {
   CompositeAsset,
   CompositeContent,
 } from "../../types/TimelineTypes";
+import { isCompositeClip } from "../../types/TimelineTypes";
 import { projectPersistenceService } from "../project";
 import { useProjectStore } from "../project/useProjectStore";
 import {
@@ -15,7 +16,7 @@ import {
   getTimelineClips,
   getTimelineCompositePlacementIds,
   insertTimelineBaseClipAtTime,
-  relinkTimelineCompositePlacements,
+  syncTimelineCompositePlacementRevision,
   removeTimelineClips,
 } from "../timeline/api";
 import type {
@@ -175,7 +176,8 @@ function getPublishedBakeAssetId(composite: CompositeAsset): string | undefined 
 
 function isBakeAssetReferenced(assetId: string): boolean {
   const placementOwnsAsset = getTimelineClips().some(
-    (clip) => "assetId" in clip && clip.assetId === assetId,
+    (clip) =>
+      !isCompositeClip(clip) && "assetId" in clip && clip.assetId === assetId,
   );
   if (placementOwnsAsset) {
     return true;
@@ -353,11 +355,6 @@ const bakeQueueCallbacks: CompositeBakeQueueCallbacks = {
 
       await persistComposites(next);
       useCompositeLibraryStore.setState({ composites: next });
-      relinkTimelineCompositePlacements(
-        request.compositeId,
-        result.asset.id,
-        request.revision,
-      );
       didPublish = true;
     });
 
@@ -635,13 +632,7 @@ export const useCompositeLibraryStore = create<CompositeLibraryState>(
         await persistComposites(next);
         set({ composites: next });
 
-        const placementAssetId =
-          getPublishedBakeAssetId(existing) ?? `composite-live:${compositeAssetId}`;
-        relinkTimelineCompositePlacements(
-          compositeAssetId,
-          placementAssetId,
-          revision,
-        );
+        syncTimelineCompositePlacementRevision(compositeAssetId, revision);
       });
 
       if (updated) {

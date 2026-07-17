@@ -25,6 +25,7 @@ import { buildFrameResolutionGraph } from "./framePlanning/FrameResolutionGraph"
 import { buildScenePresentationPlan } from "./framePlanning/ScenePresentationPlanner";
 import type {
   FrameExecutionPolicy,
+  FrameResourceLease,
   ResolvedCompositeSource,
 } from "./framePlanning/framePlanningTypes";
 import type { FilterRenderContext } from "../../transformations/catalogue/types";
@@ -36,9 +37,26 @@ export interface CompositeSceneFrameRenderer {
     source: ResolvedCompositeSource,
     assets: readonly Asset[],
     policy: FrameExecutionPolicy,
-  ): Promise<Texture>;
+  ): Promise<FrameResourceLease<Texture>>;
+  getDiagnostics?(): CompositeSceneRuntimeDiagnostics;
   dispose(): void;
 }
+
+export interface CompositeSceneRuntimeDiagnostics {
+  runtimeCount: number;
+  pooledRuntimeCount: number;
+  textureBytes: number;
+  outstandingLeases: number;
+  renderDedupHits: number;
+}
+
+export interface CompositeSceneRuntimeManagerOptions {
+  maxRuntimeCount?: number;
+  maxTextureBytes?: number;
+}
+
+export const DEFAULT_COMPOSITE_RUNTIME_LIMIT = 12;
+export const DEFAULT_COMPOSITE_TEXTURE_BUDGET_BYTES = 96 * 1024 * 1024;
 
 interface RuntimeIdentity {
   revision: number;
@@ -355,31 +373,103 @@ class CompositePlacementRuntime {
   }
 }
 
-/** Owns one conservative child-scene runtime per parent placement. */
+interface CompositeRuntimeEntry {
+  key: string;
+  identity: RuntimeIdentity;
+  runtime: CompositePlacementRuntime;
+  textureBytes: number;
+  lastUsed: number;
+  leaseCount: number;
+  lastRenderedWorkKey: string | null;
+  lastTexture: Texture | null;
+  disposed: boolean;
+}
+
+function runtimePoolKey(source: ResolvedCompositeSource): string {
+  if (!source.isStateless) return `placement:${source.placementId}`;
+  return [
+    "stateless",
+    source.compositeId,
+    source.revision,
+    source.bakeKey,
+    source.localPresentationTick,
+    source.logicalDimensions.width,
+    source.logicalDimensions.height,
+    source.fps,
+  ].join(":");
+}
+
+function renderWorkKey(
+  source: ResolvedCompositeSource,
+  identity: RuntimeIdentity,
+): string {
+  return JSON.stringify([
+    source.compositeId,
+    source.revision,
+    source.bakeKey,
+    source.isStateless ? "stateless" : source.placementId,
+    source.localPresentationTick,
+    identity.logicalWidth,
+    identity.logicalHeight,
+    identity.width,
+    identity.height,
+    identity.fps,
+  ]);
+}
+
+/**
+ * Pools child-scene runtimes behind reference-counted frame leases. Stateless
+ * placements may share a complete work key; temporal placements always retain
+ * placement-private history. Inactive entries are held only within explicit
+ * count and texture-memory budgets.
+ */
 export class CompositeSceneRuntimeManager
   implements CompositeSceneFrameRenderer
 {
   private readonly runtimes = new Map<
     string,
-    { identity: RuntimeIdentity; runtime: CompositePlacementRuntime }
+    CompositeRuntimeEntry
   >();
+  private readonly allEntries = new Set<CompositeRuntimeEntry>();
   private readonly renderer: Renderer;
   private readonly decoderPool?: DecoderWorkerPool;
+  private readonly maxRuntimeCount: number;
+  private readonly maxTextureBytes: number;
   private readonly rasterDimensionsByIdentity = new Map<
     string,
     Promise<{ width: number; height: number }>
   >();
+  private useCounter = 0;
+  private renderDedupHits = 0;
+  private disposed = false;
 
-  constructor(renderer: Renderer, decoderPool?: DecoderWorkerPool) {
+  constructor(
+    renderer: Renderer,
+    decoderPool?: DecoderWorkerPool,
+    options: CompositeSceneRuntimeManagerOptions = {},
+  ) {
     this.renderer = renderer;
     this.decoderPool = decoderPool;
+    this.maxRuntimeCount = Math.max(
+      1,
+      Math.floor(options.maxRuntimeCount ?? DEFAULT_COMPOSITE_RUNTIME_LIMIT),
+    );
+    this.maxTextureBytes = Math.max(
+      4,
+      Math.floor(
+        options.maxTextureBytes ?? DEFAULT_COMPOSITE_TEXTURE_BUDGET_BYTES,
+      ),
+    );
   }
 
   async renderCompositeScene(
     source: ResolvedCompositeSource,
     assets: readonly Asset[],
     policy: FrameExecutionPolicy,
-  ): Promise<Texture> {
+  ): Promise<FrameResourceLease<Texture>> {
+    if (this.disposed) {
+      throw new Error("Composite scene runtime manager has been disposed");
+    }
     const rasterIdentity = `${source.compositeId}:${source.revision}:${source.bakeKey}`;
     let rasterDimensions = this.rasterDimensionsByIdentity.get(rasterIdentity);
     if (!rasterDimensions) {
@@ -387,10 +477,12 @@ export class CompositeSceneRuntimeManager
       this.rasterDimensionsByIdentity.set(rasterIdentity, rasterDimensions);
     }
     const identity = identityFor(source, await rasterDimensions);
-    let entry = this.runtimes.get(source.placementId);
+    const key = runtimePoolKey(source);
+    let entry = this.runtimes.get(key);
     if (!entry || !sameIdentity(entry.identity, identity)) {
-      entry?.runtime.dispose();
+      if (entry) this.retireEntry(entry);
       entry = {
+        key,
         identity,
         runtime: new CompositePlacementRuntime(
           this.renderer,
@@ -398,19 +490,122 @@ export class CompositeSceneRuntimeManager
           identity,
           this.decoderPool,
         ),
+        textureBytes: identity.width * identity.height * 4,
+        lastUsed: ++this.useCounter,
+        leaseCount: 0,
+        lastRenderedWorkKey: null,
+        lastTexture: null,
+        disposed: false,
       };
-      this.runtimes.set(source.placementId, entry);
+      this.runtimes.set(key, entry);
+      this.allEntries.add(entry);
     }
-    return entry.runtime.render(
-      source.localPresentationTick,
-      assets,
-      policy,
-    );
+    entry.lastUsed = ++this.useCounter;
+    const workKey = renderWorkKey(source, identity);
+    let texture = entry.lastTexture;
+    if (
+      source.isStateless &&
+      entry.lastRenderedWorkKey === workKey &&
+      texture
+    ) {
+      this.renderDedupHits += 1;
+    } else {
+      texture = await entry.runtime.render(
+        source.localPresentationTick,
+        assets,
+        policy,
+      );
+      entry.lastRenderedWorkKey = workKey;
+      entry.lastTexture = texture;
+    }
+    if (!texture) {
+      throw new Error("Composite scene did not produce an output texture");
+    }
+
+    entry.leaseCount += 1;
+    this.enforceBudget(entry);
+    let released = false;
+    return {
+      key: workKey,
+      value: texture,
+      release: () => {
+        if (released) return;
+        released = true;
+        entry!.leaseCount = Math.max(0, entry!.leaseCount - 1);
+        if (this.runtimes.get(entry!.key) !== entry) {
+          this.disposeEntryIfUnleased(entry!);
+        }
+        this.enforceBudget();
+      },
+    };
+  }
+
+  getDiagnostics(): CompositeSceneRuntimeDiagnostics {
+    let textureBytes = 0;
+    let outstandingLeases = 0;
+    let pooledRuntimeCount = 0;
+    for (const entry of this.allEntries) {
+      if (entry.disposed) continue;
+      textureBytes += entry.textureBytes;
+      outstandingLeases += entry.leaseCount;
+      if (entry.leaseCount === 0) pooledRuntimeCount += 1;
+    }
+    return {
+      runtimeCount: this.allEntries.size,
+      pooledRuntimeCount,
+      textureBytes,
+      outstandingLeases,
+      renderDedupHits: this.renderDedupHits,
+    };
+  }
+
+  private enforceBudget(protectedEntry?: CompositeRuntimeEntry): void {
+    const getResident = () =>
+      [...this.allEntries].filter((entry) => !entry.disposed);
+    let resident = getResident();
+    let bytes = resident.reduce((sum, entry) => sum + entry.textureBytes, 0);
+    while (
+      resident.length > this.maxRuntimeCount ||
+      bytes > this.maxTextureBytes
+    ) {
+      const candidate = resident
+        .filter(
+          (entry) => entry !== protectedEntry && entry.leaseCount === 0,
+        )
+        .sort((left, right) => left.lastUsed - right.lastUsed)[0];
+      if (!candidate) break;
+      if (this.runtimes.get(candidate.key) === candidate) {
+        this.runtimes.delete(candidate.key);
+      }
+      this.disposeEntry(candidate);
+      resident = getResident();
+      bytes = resident.reduce((sum, entry) => sum + entry.textureBytes, 0);
+    }
+  }
+
+  private retireEntry(entry: CompositeRuntimeEntry): void {
+    if (this.runtimes.get(entry.key) === entry) {
+      this.runtimes.delete(entry.key);
+    }
+    this.disposeEntryIfUnleased(entry);
+  }
+
+  private disposeEntryIfUnleased(entry: CompositeRuntimeEntry): void {
+    if (entry.leaseCount === 0) this.disposeEntry(entry);
+  }
+
+  private disposeEntry(entry: CompositeRuntimeEntry): void {
+    if (entry.disposed) return;
+    entry.disposed = true;
+    entry.runtime.dispose();
+    this.allEntries.delete(entry);
   }
 
   dispose(): void {
-    for (const entry of this.runtimes.values()) {
-      entry.runtime.dispose();
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const entry of [...this.allEntries]) {
+      this.disposeEntry(entry);
     }
     this.runtimes.clear();
     this.rasterDimensionsByIdentity.clear();

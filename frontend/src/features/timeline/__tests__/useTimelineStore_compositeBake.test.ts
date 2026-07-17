@@ -36,7 +36,7 @@ function compositePlacement(
   };
 }
 
-describe("useTimelineStore.relinkCompositePlacements", () => {
+describe("useTimelineStore.syncCompositePlacementRevision", () => {
   beforeEach(() => {
     act(() => {
       useTimelineStore.getState().replaceTimelineSnapshot({
@@ -46,7 +46,7 @@ describe("useTimelineStore.relinkCompositePlacements", () => {
     });
   });
 
-  it("repoints placements without changing authored timing", () => {
+  it("updates revision identity without changing cache pointers or authored timing", () => {
     act(() => {
       useTimelineStore
         .getState()
@@ -60,7 +60,7 @@ describe("useTimelineStore.relinkCompositePlacements", () => {
         .addClip(compositePlacement("other", "composite-2", "bake-other"));
       useTimelineStore
         .getState()
-        .relinkCompositePlacements("composite-1", "bake-new", 2);
+        .syncCompositePlacementRevision("composite-1", 2);
     });
 
     const clips = useTimelineStore.getState().clips;
@@ -70,7 +70,7 @@ describe("useTimelineStore.relinkCompositePlacements", () => {
 
     for (const placement of [placement1, placement2]) {
       expect(placement).toMatchObject({
-        assetId: "bake-new",
+        assetId: "bake-old",
         compositeRevision: 2,
         sourceDuration: 100,
         timelineDuration: 100,

@@ -101,7 +101,7 @@ export {
   insertTimelineAssetAtTime,
   addTimelineClipsOnNewTracksBelow,
   groupTimelineClipsIntoComposite,
-  relinkTimelineCompositePlacements,
+  syncTimelineCompositePlacementRevision,
   removeTimelineClip,
   removeTimelineClips,
   moveTimelineClips,

@@ -48,6 +48,8 @@ export interface ResolvedCompositeSource {
   fps: number;
   content: CompositeContent;
   fallbackAssetId: string | null;
+  /** Only stateless child scenes may share a complete render work key. */
+  isStateless?: boolean;
 }
 
 export interface FrameNodeBase {
@@ -177,6 +179,11 @@ export interface FramePlanningDiagnostics {
   compositeNodeFailures: number;
   compositeSourceSwitches: number;
   compositeSwitchLatencyMs: number;
+  compositeRuntimeCount: number;
+  compositePooledRuntimeCount: number;
+  compositeTextureBytes: number;
+  compositeOutstandingLeases: number;
+  compositeRenderDedupHits: number;
   decodeTimeMs: number;
   gpuTimeMs: number;
   residentSourceResources: number;
@@ -210,6 +217,11 @@ export function createEmptyFramePlanningDiagnostics(
     compositeNodeFailures: 0,
     compositeSourceSwitches: 0,
     compositeSwitchLatencyMs: 0,
+    compositeRuntimeCount: 0,
+    compositePooledRuntimeCount: 0,
+    compositeTextureBytes: 0,
+    compositeOutstandingLeases: 0,
+    compositeRenderDedupHits: 0,
     decodeTimeMs: 0,
     gpuTimeMs: 0,
     residentSourceResources: 0,

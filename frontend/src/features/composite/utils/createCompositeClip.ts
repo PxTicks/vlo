@@ -48,11 +48,9 @@ export function createCompositeTimelineClip(
 }
 
 function resolveCompositePlacementAssetId(composite: CompositeAsset): string {
-  return (
-    composite.bake?.assetId ??
-    composite.bakedAssetId ??
-    `composite-live:${composite.id}`
-  );
+  // Persistence still requires an asset-shaped clip during the compatibility
+  // window, but render/audio source policy resolves canonical composite state.
+  return `composite-live:${composite.id}`;
 }
 
 export function createCompositeBaseClipFromAsset(

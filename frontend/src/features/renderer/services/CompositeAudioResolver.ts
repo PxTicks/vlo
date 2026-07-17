@@ -344,7 +344,6 @@ export function createCompositeAudioTrackPlan(
     });
     const decision = resolveCompositeSourceDecision({
       compositeId: composite.id,
-      placementAssetId: clip.assetId,
       validity,
       policy: source.sourcePolicy,
     });

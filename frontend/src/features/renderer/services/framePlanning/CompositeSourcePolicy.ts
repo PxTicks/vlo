@@ -7,7 +7,6 @@ export type CompositeSourcePreference =
 
 export type CompositeSourceFallbackReason =
   | "forced-live"
-  | "placement-not-relinked"
   | "forced-bake-unavailable"
   | Exclude<CompositeBakeValidity, { valid: true }>["reason"];
 
@@ -43,7 +42,6 @@ export function createCompositeSourcePolicySnapshot(options: {
 
 export function resolveCompositeSourceDecision(options: {
   compositeId: string;
-  placementAssetId: string | null;
   validity: CompositeBakeValidity;
   policy?: CompositeSourcePolicySnapshot;
 }): CompositeSourceDecision {
@@ -60,20 +58,10 @@ export function resolveCompositeSourceDecision(options: {
   }
 
   if (options.validity.valid) {
-    if (options.validity.assetId === options.placementAssetId) {
-      return {
-        mode: "baked",
-        fallbackReason: null,
-        bakeAssetId: options.validity.assetId,
-      };
-    }
     return {
-      mode: "live",
-      fallbackReason:
-        preference === "force-baked"
-          ? "forced-bake-unavailable"
-          : "placement-not-relinked",
-      bakeAssetId: null,
+      mode: "baked",
+      fallbackReason: null,
+      bakeAssetId: options.validity.assetId,
     };
   }
 

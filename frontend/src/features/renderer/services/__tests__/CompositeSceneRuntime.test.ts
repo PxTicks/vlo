@@ -60,7 +60,7 @@ describe("CompositeSceneRuntimeManager", () => {
     };
 
     try {
-      const texture = await manager.renderCompositeScene(source, [], {
+      const lease = await manager.renderCompositeScene(source, [], {
         mode: "export",
       });
 
@@ -76,12 +76,13 @@ describe("CompositeSceneRuntimeManager", () => {
       expect(renderer.render).toHaveBeenNthCalledWith(
         1,
         expect.objectContaining({
-          target: texture,
+          target: lease.value,
           clear: true,
           clearColor: [0, 0, 0, 0],
         }),
       );
-      expect(texture).toMatchObject({ width: 1280, height: 720 });
+      expect(lease.value).toMatchObject({ width: 1280, height: 720 });
+      lease.release();
     } finally {
       plan.mockRestore();
       manager.dispose();
@@ -113,7 +114,7 @@ describe("CompositeSceneRuntimeManager", () => {
     };
 
     try {
-      await manager.renderCompositeScene(source, [], {
+      const lease = await manager.renderCompositeScene(source, [], {
         mode: "live",
         epoch: 1,
         temporalPreviewQuality: "approximate",
@@ -122,6 +123,7 @@ describe("CompositeSceneRuntimeManager", () => {
       expect(plan).not.toHaveBeenCalled();
       expect(approximate).toHaveBeenCalledWith(500, 30);
       expect(renderer.render).toHaveBeenCalledTimes(1);
+      lease.release();
     } finally {
       plan.mockRestore();
       approximate.mockRestore();
@@ -190,12 +192,13 @@ describe("CompositeSceneRuntimeManager", () => {
     };
 
     try {
-      const texture = await manager.renderCompositeScene(source, [asset], {
+      const lease = await manager.renderCompositeScene(source, [asset], {
         mode: "export",
       });
 
       expect(userAssetMocks.getAssetInput).toHaveBeenCalledWith(asset.id);
-      expect(texture).toMatchObject({ width: 1920, height: 1080 });
+      expect(lease.value).toMatchObject({ width: 1920, height: 1080 });
+      lease.release();
     } finally {
       userAssetMocks.getAssetInput.mockReset();
       plan.mockRestore();
@@ -237,6 +240,93 @@ describe("CompositeSceneRuntimeManager", () => {
       manager.renderCompositeScene(source, [], { mode: "export" }),
     ).rejects.toThrow(/Nested composite content is not supported/);
     expect(renderer.render).not.toHaveBeenCalled();
+    manager.dispose();
+  });
+
+  it("deduplicates complete stateless work keys and accounts for every lease", async () => {
+    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const manager = new CompositeSceneRuntimeManager(renderer);
+    const source: ResolvedCompositeSource = {
+      mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
+      compositeId: "shared",
+      placementId: "placement-a",
+      revision: 1,
+      bakeKey: "shared-key",
+      localPresentationTick: 100,
+      logicalDimensions: { width: 640, height: 360 },
+      fps: 30,
+      content: { durationTicks: 1000, clips: [], tracks: [] },
+      fallbackAssetId: null,
+      isStateless: true,
+    };
+
+    const first = await manager.renderCompositeScene(source, [], {
+      mode: "export",
+    });
+    const second = await manager.renderCompositeScene(
+      { ...source, placementId: "placement-b" },
+      [],
+      { mode: "export" },
+    );
+
+    expect(renderer.render).toHaveBeenCalledTimes(1);
+    expect(second.value).toBe(first.value);
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 1,
+      outstandingLeases: 2,
+      renderDedupHits: 1,
+    });
+
+    first.release();
+    second.release();
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 1,
+      pooledRuntimeCount: 1,
+      outstandingLeases: 0,
+    });
+    manager.dispose();
+  });
+
+  it("retains leased outputs beyond budget and evicts them immediately on release", async () => {
+    const renderer = { render: vi.fn() } as unknown as Renderer;
+    const manager = new CompositeSceneRuntimeManager(renderer, undefined, {
+      maxRuntimeCount: 1,
+      maxTextureBytes: 4,
+    });
+    const source: ResolvedCompositeSource = {
+      mode: "live",
+      fallbackReason: "not-ready",
+      sourceChanged: false,
+      switchLatencyMs: null,
+      compositeId: "budgeted",
+      placementId: "placement",
+      revision: 1,
+      bakeKey: "budget-key",
+      localPresentationTick: 0,
+      logicalDimensions: { width: 640, height: 360 },
+      fps: 30,
+      content: { durationTicks: 100, clips: [], tracks: [] },
+      fallbackAssetId: null,
+      isStateless: false,
+    };
+
+    const lease = await manager.renderCompositeScene(source, [], {
+      mode: "export",
+    });
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 1,
+      outstandingLeases: 1,
+    });
+
+    lease.release();
+    expect(manager.getDiagnostics()).toMatchObject({
+      runtimeCount: 0,
+      textureBytes: 0,
+      outstandingLeases: 0,
+    });
     manager.dispose();
   });
 });

@@ -19,7 +19,7 @@ import {
 } from "./CompositeSourcePolicy";
 import type { TrackRenderEngine } from "../TrackRenderEngine";
 import type { ResolvedClipFrameJob } from "./framePlanningTypes";
-import { isCompositeRenderDagEnabled } from "./framePlanningFlags";
+import { collectClipTemporalRenderingRequirements } from "../../../transformations/catalogue/temporalRenderingRequirements";
 
 export interface FrameJobResolutionTrack {
   trackId: string;
@@ -76,7 +76,7 @@ export class FrameJobResolver {
     const availableAssetIds = new Set(input.assets.map((asset) => asset.id));
 
     for (const track of input.tracks) {
-      const job = track.engine.resolveFrameJob({
+      let job = track.engine.resolveFrameJob({
         epoch: input.epoch,
         presentationTick: input.presentationTick,
         trackClips: track.trackClips,
@@ -89,10 +89,7 @@ export class FrameJobResolver {
         track.engine.presentBlankFrame();
         continue;
       }
-      if (
-        isCompositeRenderDagEnabled() &&
-        isCompositeClip(job.activeClip)
-      ) {
+      if (isCompositeClip(job.activeClip)) {
         const composite = compositeById.get(job.activeClip.compositeId);
         if (composite) {
           const compositeProjectFps = input.compositeProjectFps ?? input.fps;
@@ -111,10 +108,19 @@ export class FrameJobResolver {
           });
           const decision = resolveCompositeSourceDecision({
             compositeId: composite.id,
-            placementAssetId: job.activeClip.assetId,
             validity,
             policy: input.compositeSourcePolicy,
           });
+          if (decision.mode === "baked" && decision.bakeAssetId) {
+            const bakeAsset = assetsById.get(decision.bakeAssetId);
+            if (bakeAsset) {
+              job = track.engine.retargetResolvedFrameJobAsset(
+                job,
+                bakeAsset,
+                input.fps,
+              );
+            }
+          }
           const previousMode = this.lastCompositeModeByPlacementId.get(
             job.activeClip.id,
           );
@@ -146,6 +152,13 @@ export class FrameJobResolver {
             ),
             content: structuredClone(composite.content),
             fallbackAssetId: decision.bakeAssetId,
+            isStateless:
+              !composite.content.clips.some(
+                (clip) => clip.type === "extension",
+              ) &&
+              collectClipTemporalRenderingRequirements(
+                composite.content.clips,
+              ).timeDependency === "none",
           };
           // A composite source is a project-logical layer even when its
           // fallback codec pads the decoded texture to an even frame size.

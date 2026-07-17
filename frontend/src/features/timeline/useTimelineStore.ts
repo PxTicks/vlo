@@ -164,14 +164,9 @@ interface TimelineState extends TimelineModelState {
     sourceClipIds: string[],
     compositeClip: TimelineClip,
   ) => boolean;
-  /**
-   * Repoints every placement of a composite at its freshly baked asset (called
-   * after create/edit). Placements are ordinary video clips whose `assetId` is
-   * the bake; this is the only composite-specific timeline operation.
-   */
-  relinkCompositePlacements: (
+  /** Keep persisted placement revision identity aligned with canonical content. */
+  syncCompositePlacementRevision: (
     compositeId: string,
-    bakedAssetId: string,
     compositeRevision: number,
   ) => void;
 
@@ -501,20 +496,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return didCommit;
     },
 
-    relinkCompositePlacements: (
-      compositeId,
-      bakedAssetId,
-      compositeRevision,
-    ) => {
-      // A composite was (re)baked. Repoint every placement of it at the new
-      // baked asset so Phase-1 playback continues through the ordinary video
-      // path. Authored timing is never derived from codec/container duration.
+    syncCompositePlacementRevision: (compositeId, compositeRevision) => {
       mutationPipeline.commitModelMutation((draft) => {
         draft.clips = draft.clips.map((clip) =>
           isCompositeClip(clip) && clip.compositeId === compositeId
             ? {
                 ...clip,
-                assetId: bakedAssetId,
                 compositeRevision,
               }
             : clip,

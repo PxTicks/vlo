@@ -296,18 +296,25 @@ export class BatchFrameGraphExecutor {
             );
           }
           try {
-            const texture = await this.options.compositeSceneRenderer
+            const lease = await this.options.compositeSceneRenderer
               ?.renderCompositeScene(source, assetList, policy);
-            if (!texture) {
+            if (!lease) {
               throw new Error("Composite scene renderer is unavailable");
+            }
+            try {
+              this.options.onCompositeSceneRendered?.(job, lease.value);
+            } catch (error) {
+              lease.release();
+              throw error;
             }
             const fallbackHandle = handleByJobId.get(node.jobId);
             fallbackHandle?.release();
             handleByJobId.set(
               node.jobId,
-              new SharedTextureHandle(node.workKey, texture, () => {}),
+              new SharedTextureHandle(lease.key, lease.value, () =>
+                lease.release(),
+              ),
             );
-            this.options.onCompositeSceneRendered?.(job, texture);
           } catch (error) {
             diagnostics.compositeNodeFailures += 1;
             this.options.onCompositeSceneError?.(error, job);
@@ -375,6 +382,18 @@ export class BatchFrameGraphExecutor {
     }
     diagnostics.residentSourceResources = this.store.size;
     diagnostics.outstandingLeases = this.store.totalRefCount;
+    const compositeDiagnostics =
+      this.options.compositeSceneRenderer?.getDiagnostics?.();
+    if (compositeDiagnostics) {
+      diagnostics.compositeRuntimeCount = compositeDiagnostics.runtimeCount;
+      diagnostics.compositePooledRuntimeCount =
+        compositeDiagnostics.pooledRuntimeCount;
+      diagnostics.compositeTextureBytes = compositeDiagnostics.textureBytes;
+      diagnostics.compositeOutstandingLeases =
+        compositeDiagnostics.outstandingLeases;
+      diagnostics.compositeRenderDedupHits =
+        compositeDiagnostics.renderDedupHits;
+    }
     publishFramePlanningDiagnostics(diagnostics);
     this.options.onDiagnostics?.(diagnostics);
     const compositeSourceCommits = graph.jobs.flatMap((job) => {
@@ -388,9 +407,7 @@ export class BatchFrameGraphExecutor {
           revision: source.revision,
           mode: source.mode,
           assetId:
-            source.mode === "baked" && "assetId" in job.activeClip
-              ? job.activeClip.assetId
-              : null,
+            source.mode === "baked" ? source.fallbackAssetId : null,
         } satisfies CompositeSourceCommit,
       ];
     });

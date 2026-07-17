@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../../types/Asset";
 import type {
   CompositeAsset,
@@ -13,7 +13,6 @@ import {
   FrameJobResolver,
   compareResolvedJobToLegacy,
 } from "../FrameJobResolver";
-import { setCompositeRenderDagEnabled } from "../framePlanningFlags";
 import type { ResolvedClipFrameJob } from "../framePlanningTypes";
 import {
   createCompositeSourcePolicySnapshot,
@@ -142,10 +141,6 @@ describe("FrameJobResolver composite sources", () => {
     updatedAt: 2,
   } satisfies CompositeAsset;
 
-  afterEach(() => {
-    setCompositeRenderDagEnabled(false);
-  });
-
   function resolve(
     sourceComposite: CompositeAsset = composite,
     compositeSourcePolicy?: CompositeSourcePolicySnapshot,
@@ -162,6 +157,20 @@ describe("FrameJobResolver composite sources", () => {
     });
     const engine = {
       resolveFrameJob: vi.fn(() => resolvedJob),
+      retargetResolvedFrameJobAsset: vi.fn(
+        (targetJob: ResolvedClipFrameJob, targetAsset: Asset) => ({
+          ...targetJob,
+          activeClip: {
+            ...targetJob.activeClip,
+            assetId: targetAsset.id,
+          },
+          sourceFrame: {
+            ...targetJob.sourceFrame,
+            assetId: targetAsset.id,
+            decodeKey: `${targetAsset.id}:0:30:0`,
+          },
+        }),
+      ),
       presentBlankFrame: vi.fn(),
     } as unknown as TrackRenderEngine;
     return resolver.resolve({
@@ -184,8 +193,6 @@ describe("FrameJobResolver composite sources", () => {
   }
 
   it("resolves canonical content time and a validated bake fallback", () => {
-    setCompositeRenderDagEnabled(true);
-
     const resolved = resolve();
     expect(resolved.compositeSource).toMatchObject({
       mode: "baked",
@@ -201,8 +208,6 @@ describe("FrameJobResolver composite sources", () => {
   });
 
   it("selects live rendering when the bake is stale", () => {
-    setCompositeRenderDagEnabled(true);
-
     expect(resolve({
         ...composite,
         bake: { ...composite.bake, readyKey: "stale-key" },
@@ -211,8 +216,6 @@ describe("FrameJobResolver composite sources", () => {
   });
 
   it("selects live rendering while force-live is active", () => {
-    setCompositeRenderDagEnabled(true);
-
     expect(
       resolve(
         composite,
@@ -228,7 +231,6 @@ describe("FrameJobResolver composite sources", () => {
   });
 
   it("records a frame-epoch source switch and bake publication latency", () => {
-    setCompositeRenderDagEnabled(true);
     const resolver = new FrameJobResolver();
     const stale = {
       ...composite,
@@ -255,8 +257,58 @@ describe("FrameJobResolver composite sources", () => {
     });
   });
 
-  it("leaves baked source jobs unchanged while the rollout flag is off", () => {
-    setCompositeRenderDagEnabled(false);
-    expect(resolve().compositeSource).toBeUndefined();
+  it("selects the canonical bake even when the placement retains a legacy asset pointer", () => {
+    const legacyPlacement = { ...placement, assetId: "old-bake" };
+    const resolvedJob = job({
+      activeClip: legacyPlacement,
+      sourceFrame: {
+        ...job().sourceFrame,
+        assetId: legacyPlacement.assetId,
+        sourceTimeTicks: 240,
+        decodeKey: "old-bake:0:30:0",
+      },
+    });
+    const retargetResolvedFrameJobAsset = vi.fn(
+      (targetJob: ResolvedClipFrameJob, targetAsset: Asset) => ({
+        ...targetJob,
+        activeClip: { ...targetJob.activeClip, assetId: targetAsset.id },
+        sourceFrame: {
+          ...targetJob.sourceFrame,
+          assetId: targetAsset.id,
+          decodeKey: `${targetAsset.id}:0:30:0`,
+        },
+      }),
+    );
+    const engine = {
+      resolveFrameJob: vi.fn(() => resolvedJob),
+      retargetResolvedFrameJobAsset,
+      presentBlankFrame: vi.fn(),
+    } as unknown as TrackRenderEngine;
+
+    const resolved = new FrameJobResolver().resolve({
+      epoch: 1,
+      presentationTick: 340,
+      tracks: [
+        {
+          trackId: "track-1",
+          engine,
+          trackClips: [legacyPlacement],
+          maskClipsByParent: new Map(),
+        },
+      ],
+      assets: [asset],
+      composites: [composite],
+      logicalDimensions: { width: 1920, height: 1080 },
+      fps: 30,
+    }).jobs[0];
+
+    expect(retargetResolvedFrameJobAsset).toHaveBeenCalledWith(
+      resolvedJob,
+      asset,
+      30,
+    );
+    expect(resolved.activeClip).toMatchObject({ assetId: asset.id });
+    expect(resolved.sourceFrame.decodeKey).toBe("bake-1:0:30:0");
+    expect(resolved.compositeSource?.mode).toBe("baked");
   });
 });

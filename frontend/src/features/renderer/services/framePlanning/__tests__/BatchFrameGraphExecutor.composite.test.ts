@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { TimelineClip } from "../../../../../types/TimelineTypes";
 import type { CompositeSceneFrameRenderer } from "../../CompositeSceneRuntime";
 import type { TrackRenderEngine } from "../../TrackRenderEngine";
+import type { SharedTextureHandle } from "../../SharedTextureStore";
 import { BatchFrameGraphExecutor } from "../BatchFrameGraphExecutor";
 import type { FrameJobResolutionResult } from "../FrameJobResolver";
 import { buildFrameResolutionGraph } from "../FrameResolutionGraph";
@@ -70,9 +71,19 @@ function resolution(
 describe("BatchFrameGraphExecutor composite scenes", () => {
   it("feeds the isolated scene texture into the ordinary parent clip path", async () => {
     const job = compositeJob();
-    const present = vi.fn(async () => true);
+    const present = vi.fn(
+      async (
+        _job: ResolvedClipFrameJob,
+        _handle: SharedTextureHandle | null,
+      ) => true,
+    );
+    const release = vi.fn();
     const renderer = {
-      renderCompositeScene: vi.fn(async () => Texture.EMPTY),
+      renderCompositeScene: vi.fn(async () => ({
+        key: "composite-output",
+        value: Texture.EMPTY,
+        release,
+      })),
       dispose: vi.fn(),
     } satisfies CompositeSceneFrameRenderer;
     const onCompositeSceneRendered = vi.fn();
@@ -117,6 +128,9 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
         assetId: null,
       }),
     ]);
+    const presentedHandle = present.mock.calls[0][1];
+    presentedHandle?.release();
+    expect(release).toHaveBeenCalledOnce();
 
     executor.dispose();
     expect(renderer.dispose).toHaveBeenCalledOnce();
@@ -245,7 +259,11 @@ describe("BatchFrameGraphExecutor composite scenes", () => {
     });
     const decodeResolvedSourceFrame = vi.fn(async () => null);
     const compositeSceneRenderer = {
-      renderCompositeScene: vi.fn(async () => Texture.EMPTY),
+      renderCompositeScene: vi.fn(async () => ({
+        key: "unused",
+        value: Texture.EMPTY,
+        release: vi.fn(),
+      })),
       dispose: vi.fn(),
     } satisfies CompositeSceneFrameRenderer;
     const executor = new BatchFrameGraphExecutor({ compositeSceneRenderer });

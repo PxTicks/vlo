@@ -11,7 +11,6 @@
  * not consult this flag.
  */
 const STORAGE_KEY = "vlo.liveFrameGraph";
-const COMPOSITE_STORAGE_KEY = "vlo.compositeRenderDag";
 
 function readOverride(): boolean | null {
   try {
@@ -25,16 +24,6 @@ function readOverride(): boolean | null {
 }
 
 let enabled = readOverride() ?? true;
-let compositeRenderDagEnabled = (() => {
-  try {
-    const value = globalThis.localStorage?.getItem(COMPOSITE_STORAGE_KEY);
-    if (value === "off" || value === "false") return false;
-    if (value === "on" || value === "true") return true;
-  } catch {
-    // localStorage may be unavailable (workers, tests, privacy mode).
-  }
-  return true;
-})();
 
 export function isLiveFrameGraphEnabled(): boolean {
   return enabled;
@@ -42,17 +31,4 @@ export function isLiveFrameGraphEnabled(): boolean {
 
 export function setLiveFrameGraphEnabled(next: boolean): void {
   enabled = next;
-}
-
-/**
- * Direct composite rendering is the safe default now that creation can exist
- * without a bake. A dev rollback can force legacy baked-only playback with
- * `localStorage["vlo.compositeRenderDag"] = "off"` (then reload).
- */
-export function isCompositeRenderDagEnabled(): boolean {
-  return compositeRenderDagEnabled;
-}
-
-export function setCompositeRenderDagEnabled(next: boolean): void {
-  compositeRenderDagEnabled = next;
 }

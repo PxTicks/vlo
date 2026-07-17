@@ -8,9 +8,7 @@ export { TrackRenderEngine } from "./services/TrackRenderEngine";
 export {
   createCompositeSourcePolicySnapshot,
   LiveFrameGraphCoordinator,
-  isCompositeRenderDagEnabled,
   isLiveFrameGraphEnabled,
-  setCompositeRenderDagEnabled,
   startFramePlanningDiagnosticsConsole,
 } from "./services/framePlanning";
 export { ExportRenderer, isBlankStrictRenderHealth } from "./services/ExportRenderer";

@@ -246,7 +246,7 @@ describe("useCompositeLibraryStore", () => {
     });
   });
 
-  it("publishes edited content immediately and relinks only after CAS publication", async () => {
+  it("publishes edited content while leaving placement cache pointers migration-only", async () => {
     const current = composite();
     mocks.assets.push(
       bakedAsset("proxy-old", current.id, 1, current.bake?.readyKey ?? "old-key"),
@@ -295,9 +295,8 @@ describe("useCompositeLibraryStore", () => {
       ),
     );
     await vi.waitFor(() =>
-      expect(useTimelineStore.getState().clips[0]).toMatchObject({
-        assetId: "proxy-new",
-        compositeRevision: 2,
+      expect(useCompositeLibraryStore.getState().composites[0]).toMatchObject({
+        bake: { status: "ready", assetId: "proxy-new" },
       }),
     );
     publishCompositeSourcePresentations([
@@ -312,7 +311,7 @@ describe("useCompositeLibraryStore", () => {
     ]);
     await compositeBakeQueue.whenIdle();
     expect(useTimelineStore.getState().clips[0]).toMatchObject({
-      assetId: "proxy-new",
+      assetId: "proxy-old",
       compositeRevision: 2,
       timelineDuration: TICKS_PER_SECOND,
     });

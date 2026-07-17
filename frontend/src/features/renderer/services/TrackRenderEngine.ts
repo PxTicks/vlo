@@ -583,6 +583,34 @@ export class TrackRenderEngine {
     return this.currentPlannedSourceFrameIntent;
   }
 
+  /**
+   * Composite placements retain an assetId only as persisted migration data.
+   * Once source policy selects a validated bake, rebuild the immutable job
+   * against that cache asset so decode/preparation never reads the placement's
+   * legacy pointer.
+   */
+  public retargetResolvedFrameJobAsset(
+    job: ResolvedClipFrameJob,
+    asset: Asset,
+    fallbackFps: number,
+  ): ResolvedClipFrameJob {
+    if (!isAssetBackedClip(job.activeClip)) return job;
+    const activeClip = { ...job.activeClip, assetId: asset.id };
+    const fps = asset.fps && asset.fps > 0 ? asset.fps : Math.max(1, fallbackFps);
+    const sourceFrame = createSourceFrameSyncRef({
+      clip: activeClip,
+      assetId: asset.id,
+      effectiveTrackTick: job.effectiveTrackTick,
+      fps,
+      generation: job.sourceFrame.generation,
+    });
+    this.currentPlannedSourceFrameIntent = {
+      key: sourceFrame.key,
+      generation: sourceFrame.generation,
+    };
+    return { ...job, activeClip, sourceFrame, fps };
+  }
+
   public isFrameJobCurrent(job: ResolvedClipFrameJob): boolean {
     return isSourceFrameIntentCurrent(this.currentPlannedSourceFrameIntent, {
       key: job.sourceFrame.key,

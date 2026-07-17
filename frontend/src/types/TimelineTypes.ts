@@ -324,8 +324,8 @@ export interface AssetBackedBaseClipCommon extends InsertableClipBaseCommon {
   type: AssetBackedClipType;
   assetId: string;
   /**
-   * Marks this clip as a placement of a composite. During the renderer
-   * migration, `assetId` remains the legacy baked playback pointer.
+   * Marks this clip as a placement of a composite. `assetId` is retained only
+   * as migration-compatible shape; canonical source policy ignores it.
    */
   compositeId?: string;
   /** Revision paired with compositeId for renderer-facing source identity. */

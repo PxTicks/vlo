@@ -69,6 +69,13 @@ export function startFramePlanningDiagnosticsConsole(): () => void {
       compositeSwitchLatencyMs: roundMs(
         sum((d) => d.compositeSwitchLatencyMs),
       ),
+      compositeRenderDedupHits: sum((d) => d.compositeRenderDedupHits),
+      peakCompositeRuntimes: max((d) => d.compositeRuntimeCount),
+      peakCompositePooledRuntimes: max(
+        (d) => d.compositePooledRuntimeCount,
+      ),
+      peakCompositeTextureBytes: max((d) => d.compositeTextureBytes),
+      peakCompositeLeases: max((d) => d.compositeOutstandingLeases),
       avgDecodeMs: roundMs(sum((d) => d.decodeTimeMs) / frames.length),
       avgGpuMs: roundMs(sum((d) => d.gpuTimeMs) / frames.length),
       peakResidentSources: max((d) => d.residentSourceResources),

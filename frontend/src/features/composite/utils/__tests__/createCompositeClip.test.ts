@@ -29,7 +29,7 @@ describe("createCompositeTimelineClip", () => {
     });
   });
 
-  it("places a legacy composite as revision 1 while retaining its bake pointer", () => {
+  it("places a legacy composite as revision 1 without coupling playback to its bake pointer", () => {
     const clip = createCompositeTimelineClipFromAsset(
       {
         id: "legacy-composite",
@@ -45,7 +45,7 @@ describe("createCompositeTimelineClip", () => {
     expect(clip).toMatchObject({
       compositeId: "legacy-composite",
       compositeRevision: 1,
-      assetId: "legacy-bake",
+      assetId: "composite-live:legacy-composite",
       timelineDuration: 90,
     });
   });

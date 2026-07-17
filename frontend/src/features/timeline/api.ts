@@ -565,14 +565,13 @@ export function groupTimelineClipsIntoComposite(
     .groupClipsIntoComposite(sourceClipIds, compositeClip);
 }
 
-export function relinkTimelineCompositePlacements(
+export function syncTimelineCompositePlacementRevision(
   compositeId: string,
-  bakedAssetId: string,
   compositeRevision: number,
 ): void {
   useTimelineStore
     .getState()
-    .relinkCompositePlacements(compositeId, bakedAssetId, compositeRevision);
+    .syncCompositePlacementRevision(compositeId, compositeRevision);
 }
 
 export function removeTimelineClip(clipId: string): void {

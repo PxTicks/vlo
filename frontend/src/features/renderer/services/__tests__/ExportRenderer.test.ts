@@ -17,7 +17,6 @@ import type { Component } from "../../../../types/Components";
 import type { Asset } from "../../../../types/Asset";
 import { TICKS_PER_SECOND } from "../../../timeline";
 import { extensionTransformationRegistry } from "../../../transformations/extensions/ExtensionTransformationRegistry";
-import { setCompositeRenderDagEnabled } from "../framePlanning";
 import {
   createCompositeBakeKey,
   serializeCompositeBakeKey,
@@ -263,7 +262,6 @@ describe("ExportRenderer", () => {
   beforeEach(() => {
     audioRendererMocks.instances = [];
     offlineAudioContextMocks.instances = [];
-    setCompositeRenderDagEnabled(false);
   });
 
   it("rejects preserveAlpha when explicit output contracts are supplied", () => {
@@ -369,7 +367,6 @@ describe("ExportRenderer", () => {
   });
 
   it("routes a valid composite bake through the ordinary asset source path", async () => {
-    setCompositeRenderDagEnabled(true);
     const config = {
       logicalWidth: 640,
       logicalHeight: 360,
@@ -465,7 +462,6 @@ describe("ExportRenderer", () => {
         target: expect.objectContaining({ width: 1280, height: 720 }),
       }),
     );
-    setCompositeRenderDagEnabled(false);
   });
 
   it("captures copied project-composite pixels before encoding", async () => {

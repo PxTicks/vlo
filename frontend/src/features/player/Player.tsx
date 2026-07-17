@@ -263,6 +263,7 @@ function PlayerImpl() {
   }, [
     config.fps,
     clips,
+    composites,
     forceLiveCompositeIds,
     forceBakedCompositeIds,
     liveFrameGraphCoordinator,

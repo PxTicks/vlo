@@ -17,23 +17,21 @@ describe("CompositeSourcePolicy", () => {
     expect(
       resolveCompositeSourceDecision({
         compositeId: "composite",
-        placementAssetId: "bake",
         validity: validBake,
       }),
     ).toEqual({ mode: "baked", fallbackReason: null, bakeAssetId: "bake" });
   });
 
-  it("keeps live content when placement relinking has not committed", () => {
+  it("selects canonical bake metadata without consulting a placement asset pointer", () => {
     expect(
       resolveCompositeSourceDecision({
         compositeId: "composite",
-        placementAssetId: "old-bake",
         validity: validBake,
       }),
     ).toEqual({
-      mode: "live",
-      fallbackReason: "placement-not-relinked",
-      bakeAssetId: null,
+      mode: "baked",
+      fallbackReason: null,
+      bakeAssetId: "bake",
     });
   });
 
@@ -45,7 +43,6 @@ describe("CompositeSourcePolicy", () => {
     expect(
       resolveCompositeSourceDecision({
         compositeId: "composite",
-        placementAssetId: "bake",
         validity: validBake,
         policy,
       }),
@@ -64,7 +61,6 @@ describe("CompositeSourcePolicy", () => {
     expect(
       resolveCompositeSourceDecision({
         compositeId: "composite",
-        placementAssetId: "bake",
         validity: {
           valid: false,
           reason: "stale-key",
@@ -89,7 +85,6 @@ describe("CompositeSourcePolicy", () => {
     expect(
       resolveCompositeSourceDecision({
         compositeId: "composite",
-        placementAssetId: "bake",
         validity: validBake,
         policy,
       }).mode,
